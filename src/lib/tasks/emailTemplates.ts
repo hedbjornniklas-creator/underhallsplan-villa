@@ -56,7 +56,7 @@ function bulletproofButton(href: string, label: string) {
 }
 
 /**
- * Email-safe HusHub/Signe shell. It deliberately uses table layout and inline
+ * Email-safe HusHub/Gizmo shell. It deliberately uses table layout and inline
  * styles so the hierarchy survives Gmail, Outlook and mobile mail clients.
  */
 export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
@@ -126,7 +126,7 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
                     </td>
                     <td style="vertical-align:middle;">
                       <p style="margin:0;font-family:Arial,sans-serif;font-size:19px;font-weight:800;line-height:22px;color:#171717;">HusHub</p>
-                      <p style="margin:3px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;line-height:15px;letter-spacing:.15em;text-transform:uppercase;color:#a16207;">Uppdrag med Signe</p>
+                      <p style="margin:3px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;line-height:15px;letter-spacing:.15em;text-transform:uppercase;color:#a16207;">Uppdrag med Gizmo</p>
                     </td>
                     <td align="right" style="vertical-align:middle;">
                       <span style="display:inline-block;width:34px;height:34px;border-radius:10px;background:#f59e0b;font-family:Arial,sans-serif;font-size:24px;font-weight:700;line-height:34px;text-align:center;color:#ffffff;">&#10003;</span>
@@ -162,7 +162,7 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
                       <span style="display:inline-block;width:24px;height:24px;border-radius:8px;background:#f59e0b;font-family:Arial,sans-serif;font-size:17px;font-weight:700;line-height:24px;text-align:center;color:#ffffff;">&#10003;</span>
                     </td>
                     <td style="font-family:Arial,sans-serif;font-size:13px;line-height:19px;color:#78716c;vertical-align:middle;">
-                      <strong style="color:#44403c;">Signe</strong><br>HusHubs digitala uppföljningsassistent
+                      <strong style="color:#44403c;">Gizmo</strong><br>HusHubs digitala uppföljningsassistent
                     </td>
                   </tr>
                 </table>

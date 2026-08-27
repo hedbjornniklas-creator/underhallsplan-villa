@@ -1,13 +1,30 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
-import { CalendarClock, Camera, ChevronDown, FileText, Image as ImageIcon, Paperclip, Trash2, UserPlus, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import {
+  AlertTriangle,
+  CalendarClock,
+  Camera,
+  ChevronDown,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
+  Mail,
+  Paperclip,
+  Plus,
+  Repeat2,
+  Sparkles,
+  Trash2,
+  UserPlus,
+  X,
+} from 'lucide-react'
 import type {
   TaskChannel,
   TaskAiSuggestionView,
   TaskCompletionEvidenceType,
   TaskKind,
   TaskPerson,
+  TaskRecurrenceInterval,
   TaskView,
 } from '@/lib/tasks/contracts'
 import {
@@ -19,7 +36,28 @@ import {
   taskTimeZoneLabel,
   taskTodayDateInput,
 } from '@/lib/tasks/dateTime'
+import {
+  TASK_EMAIL_PDF_MAX_BYTES,
+  TASK_EMAIL_PDF_MAX_MEGABYTES,
+  TASK_EMAIL_PDF_MAX_SUBTASKS,
+  type TaskEmailPdfAnalysis,
+} from '@/lib/tasks/emailPdfAnalysisContracts'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
+
+type EmailPdfSubtaskDraft = TaskEmailPdfAnalysis['subtasks'][number] & {
+  id: string
+  included: boolean
+}
+
+type CreationMode = 'manual' | 'email_pdf'
+
+type MainTaskDraftSnapshot = {
+  title: string
+  description: string
+  contextLabel: string
+  taskKind: TaskKind
+  evidenceRequirements: TaskCompletionEvidenceType[]
+}
 
 type CreatePayload = {
   parentTaskId: string | null
@@ -40,8 +78,13 @@ type CreatePayload = {
   nextFollowupAt: string
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | ''
+  recurrenceInterval: TaskRecurrenceInterval | ''
   evidenceRequirements: TaskCompletionEvidenceType[]
   attachments: File[]
+  aiSubtasks: Array<{
+    title: string
+    description: string
+  }>
 }
 
 type Props = {
@@ -73,6 +116,18 @@ function formatFileSize(bytes: number) {
 
 function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`
+}
+
+function draftId() {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isPdfFile(file: File) {
+  const type = file.type.toLowerCase()
+  return /\.pdf$/i.test(file.name)
+    && (!type || type === 'application/pdf' || type === 'application/octet-stream')
 }
 
 function supportedInitialAttachment(file: File) {
@@ -119,36 +174,99 @@ export default function TaskComposerSheet({
   const initialFollowupTime = initialFollowupDate === initialDueDate && '09:00' > initialDueTime
     ? initialDueTime
     : '09:00'
-  const [title, setTitle] = useState(suggestion?.title ?? '')
-  const [description, setDescription] = useState(suggestion?.description ?? '')
-  const [contextLabel, setContextLabel] = useState(parentTask?.contextLabel ?? '')
-  const [taskKind, setTaskKind] = useState<TaskKind>(parentTask?.taskKind ?? 'simple')
-  const [assigneeRef, setAssigneeRef] = useState(
-    defaultAssignee ? `${defaultAssignee.kind}:${defaultAssignee.id}` : 'new_contact'
-  )
+  const [initialDraft] = useState(() => ({
+    title: suggestion?.title ?? '',
+    description: suggestion?.description ?? '',
+    contextLabel: parentTask?.contextLabel ?? '',
+    taskKind: (parentTask?.taskKind ?? 'simple') as TaskKind,
+    assigneeRef: defaultAssignee
+      ? `${defaultAssignee.kind}:${defaultAssignee.id}`
+      : 'new_contact',
+    dueDate: initialDueDate,
+    dueTime: initialDueTime,
+    followupDate: initialFollowupDate,
+    followupTime: initialFollowupTime,
+    primaryChannel: 'email' as TaskChannel,
+    fallbackChannel: 'whatsapp' as TaskChannel | '',
+    recurrenceInterval: '' as TaskRecurrenceInterval | '',
+  }))
+  const [title, setTitle] = useState(initialDraft.title)
+  const [description, setDescription] = useState(initialDraft.description)
+  const [contextLabel, setContextLabel] = useState(initialDraft.contextLabel)
+  const [taskKind, setTaskKind] = useState<TaskKind>(initialDraft.taskKind)
+  const [assigneeRef, setAssigneeRef] = useState(initialDraft.assigneeRef)
   const [contactName, setContactName] = useState('')
   const [contactCompany, setContactCompany] = useState('')
   const [contactEmail, setContactEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
-  const [dueDate, setDueDate] = useState(initialDueDate)
-  const [dueTime, setDueTime] = useState(initialDueTime)
-  const [followupDate, setFollowupDate] = useState(initialFollowupDate)
-  const [followupTime, setFollowupTime] = useState(initialFollowupTime)
-  const [primaryChannel, setPrimaryChannel] = useState<TaskChannel>('email')
-  const [fallbackChannel, setFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
+  const [dueDate, setDueDate] = useState(initialDraft.dueDate)
+  const [dueTime, setDueTime] = useState(initialDraft.dueTime)
+  const [followupDate, setFollowupDate] = useState(initialDraft.followupDate)
+  const [followupTime, setFollowupTime] = useState(initialDraft.followupTime)
+  const [primaryChannel, setPrimaryChannel] = useState<TaskChannel>(initialDraft.primaryChannel)
+  const [fallbackChannel, setFallbackChannel] = useState<TaskChannel | ''>(initialDraft.fallbackChannel)
+  const [recurrenceInterval, setRecurrenceInterval] = useState<TaskRecurrenceInterval | ''>(initialDraft.recurrenceInterval)
   const [evidenceRequirements, setEvidenceRequirements] = useState<TaskCompletionEvidenceType[]>([])
   const [attachments, setAttachments] = useState<File[]>([])
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [dateTimeError, setDateTimeError] = useState<string | null>(null)
+  const [creationMode, setCreationMode] = useState<CreationMode>('manual')
+  const [emailPdf, setEmailPdf] = useState<File | null>(null)
+  const [emailPdfInstruction, setEmailPdfInstruction] = useState('')
+  const [emailPdfAnalysis, setEmailPdfAnalysis] = useState<TaskEmailPdfAnalysis | null>(null)
+  const [emailPdfSubtasks, setEmailPdfSubtasks] = useState<EmailPdfSubtaskDraft[]>([])
+  const [emailPdfError, setEmailPdfError] = useState<string | null>(null)
+  const [analyzingEmailPdf, setAnalyzingEmailPdf] = useState(false)
+  const [lastAnalyzedInstruction, setLastAnalyzedInstruction] = useState<string | null>(null)
+  const [mainTaskDraftSnapshot, setMainTaskDraftSnapshot] = useState<MainTaskDraftSnapshot | null>(null)
+  const emailPdfAnalysisController = useRef<AbortController | null>(null)
+
+  const hasEmailImportDraft = Boolean(
+    !parentTask
+    && !suggestion
+    && creationMode === 'email_pdf'
+    && (emailPdf || emailPdfInstruction.trim() || emailPdfAnalysis)
+  )
+  const hasUnsavedTaskDraft = Boolean(
+    title !== initialDraft.title
+    || description !== initialDraft.description
+    || contextLabel !== initialDraft.contextLabel
+    || taskKind !== initialDraft.taskKind
+    || assigneeRef !== initialDraft.assigneeRef
+    || contactName
+    || contactCompany
+    || contactEmail
+    || contactPhone
+    || dueDate !== initialDraft.dueDate
+    || dueTime !== initialDraft.dueTime
+    || followupDate !== initialDraft.followupDate
+    || followupTime !== initialDraft.followupTime
+    || primaryChannel !== initialDraft.primaryChannel
+    || fallbackChannel !== initialDraft.fallbackChannel
+    || recurrenceInterval !== initialDraft.recurrenceInterval
+    || evidenceRequirements.length > 0
+    || attachments.length > 0
+    || hasEmailImportDraft
+  )
+
+  const requestClose = useCallback(() => {
+    if (busy) return
+    if (
+      hasUnsavedTaskDraft
+      && !window.confirm('Stäng utan att skapa uppdraget? Alla ändringar och bilagor i utkastet försvinner.')
+    ) return
+    emailPdfAnalysisController.current?.abort()
+    onClose()
+  }, [busy, hasUnsavedTaskDraft, onClose])
 
   useEffect(() => {
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) onClose()
+      if (event.key === 'Escape' && !busy) requestClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [busy, onClose, open])
+  }, [busy, open, requestClose])
 
   if (!open) return null
 
@@ -169,6 +287,22 @@ export default function TaskComposerSheet({
     Boolean(externalEmail) &&
       ((primaryChannel !== 'email' && fallbackChannel !== 'email') || Boolean(externalEmail)) &&
       ((primaryChannel !== 'whatsapp' && fallbackChannel !== 'whatsapp') || Boolean(externalPhone))
+  const canUseEmailPdf = !parentTask && !suggestion
+  const includedEmailPdfSubtasks = emailPdfSubtasks.filter(
+    (subtask) => subtask.included && subtask.title.trim()
+  )
+  const initialAttachmentCount = attachments.length
+    + (creationMode === 'email_pdf' && emailPdf ? 1 : 0)
+  const interactionBusy = busy || analyzingEmailPdf
+  const emailPdfInstructionIsCurrent =
+    Boolean(emailPdfAnalysis)
+    && lastAnalyzedInstruction === emailPdfInstruction.trim()
+  const emailPdfReviewReady =
+    creationMode !== 'email_pdf'
+    || Boolean(emailPdf && emailPdfAnalysis && emailPdfInstructionIsCurrent)
+  const hasIncompleteIncludedSubtask = emailPdfSubtasks.some(
+    (subtask) => subtask.included && !subtask.title.trim()
+  )
 
   const addAttachmentFiles = (selected: File[]) => {
     if (selected.length === 0) return
@@ -179,10 +313,15 @@ export default function TaskComposerSheet({
     const valid = selected.filter(
       (file) => supportedInitialAttachment(file) && file.size > 0 && file.size <= MAX_ATTACHMENT_BYTES
     )
-    const existing = new Set(attachments.map(fileKey))
+    const existing = new Set([
+      ...attachments,
+      ...(creationMode === 'email_pdf' && emailPdf ? [emailPdf] : []),
+    ].map(fileKey))
     const unique = valid.filter((file) => !existing.has(fileKey(file)))
-    const available = Math.max(0, MAX_INITIAL_ATTACHMENTS - attachments.length)
+    const reservedEmailPdf = creationMode === 'email_pdf' && emailPdf ? 1 : 0
+    const available = Math.max(0, MAX_INITIAL_ATTACHMENTS - attachments.length - reservedEmailPdf)
     let totalBytes = attachments.reduce((sum, file) => sum + file.size, 0)
+      + (reservedEmailPdf ? emailPdf?.size ?? 0 : 0)
     const accepted: File[] = []
     for (const file of unique.slice(0, available)) {
       if (totalBytes + file.size > MAX_INITIAL_ATTACHMENT_TOTAL_BYTES) continue
@@ -212,12 +351,215 @@ export default function TaskComposerSheet({
     addAttachmentFiles(selected)
   }
 
+  const clearEmailPdfAnalysis = (restoreMainTask: boolean) => {
+    if (restoreMainTask && mainTaskDraftSnapshot) {
+      setTitle(mainTaskDraftSnapshot.title)
+      setDescription(mainTaskDraftSnapshot.description)
+      setContextLabel(mainTaskDraftSnapshot.contextLabel)
+      setTaskKind(mainTaskDraftSnapshot.taskKind)
+      setEvidenceRequirements(mainTaskDraftSnapshot.evidenceRequirements)
+    }
+    setEmailPdfAnalysis(null)
+    setEmailPdfSubtasks([])
+    setLastAnalyzedInstruction(null)
+    setMainTaskDraftSnapshot(null)
+  }
+
+  const switchToManualCreation = () => {
+    if (
+      hasEmailImportDraft
+      && !window.confirm('Byt till manuellt läge och kasta PDF-underlaget och AI-förslaget?')
+    ) return
+    clearEmailPdfAnalysis(true)
+    setEmailPdf(null)
+    setEmailPdfInstruction('')
+    setEmailPdfError(null)
+    setCreationMode('manual')
+  }
+
+  const chooseEmailPdf = (selected: File[]) => {
+    const file = selected[0]
+    if (!file) return
+    if (selected.length > 1) {
+      setEmailPdfError('Välj en PDF åt gången för analys.')
+      return
+    }
+    if (!isPdfFile(file)) {
+      setEmailPdfError('Mejlet måste vara utskrivet som en PDF-fil.')
+      return
+    }
+    if (file.size <= 0) {
+      setEmailPdfError('PDF-filen är tom.')
+      return
+    }
+    if (file.size > TASK_EMAIL_PDF_MAX_BYTES) {
+      setEmailPdfError(
+        `PDF-filen får vara högst ${TASK_EMAIL_PDF_MAX_MEGABYTES} MB för AI-analys.`
+      )
+      return
+    }
+    const selectedFileKey = fileKey(file)
+    const remainingAttachments = attachments.filter(
+      (attachment) => fileKey(attachment) !== selectedFileKey
+    )
+    if (remainingAttachments.length >= MAX_INITIAL_ATTACHMENTS) {
+      setEmailPdfError(`Du kan lägga till högst ${MAX_INITIAL_ATTACHMENTS} filer totalt.`)
+      return
+    }
+    const attachmentBytes = remainingAttachments.reduce(
+      (sum, attachment) => sum + attachment.size,
+      0
+    )
+    if (attachmentBytes + file.size > MAX_INITIAL_ATTACHMENT_TOTAL_BYTES) {
+      setEmailPdfError('PDF-filen och övriga bilagor får tillsammans vara högst 100 MB.')
+      return
+    }
+    if (
+      emailPdfAnalysis
+      && !window.confirm('Byt PDF och kasta det nuvarande AI-förslaget och dina ändringar i det?')
+    ) return
+    clearEmailPdfAnalysis(Boolean(emailPdfAnalysis))
+    setAttachments(remainingAttachments)
+    setEmailPdf(file)
+    setEmailPdfError(null)
+  }
+
+  const removeEmailPdf = () => {
+    if (
+      emailPdfAnalysis
+      && !window.confirm('Ta bort PDF-filen och kasta det nuvarande AI-förslaget?')
+    ) return
+    clearEmailPdfAnalysis(Boolean(emailPdfAnalysis))
+    setEmailPdf(null)
+    setEmailPdfError(null)
+  }
+
+  const analyzeEmailPdf = async () => {
+    const instruction = emailPdfInstruction.trim()
+    if (!emailPdf) {
+      setEmailPdfError('Lägg till mejlet som PDF först.')
+      return
+    }
+    if (!instruction) {
+      setEmailPdfError('Beskriv kort vad Gizmo ska reda ut.')
+      return
+    }
+    if (instruction.length < 5) {
+      setEmailPdfError('Beskriv med några ord vad Gizmo ska reda ut.')
+      return
+    }
+    if (
+      emailPdfAnalysis
+      && !window.confirm('Analysera igen och ersätt AI-förslaget och dina ändringar i det?')
+    ) return
+
+    emailPdfAnalysisController.current?.abort()
+    const controller = new AbortController()
+    emailPdfAnalysisController.current = controller
+    if (emailPdfAnalysis) setLastAnalyzedInstruction(null)
+    setAnalyzingEmailPdf(true)
+    setEmailPdfError(null)
+    try {
+      const form = new FormData()
+      form.append('file', emailPdf)
+      form.append('instruction', instruction)
+      const response = await fetch('/api/tasks/analyze-pdf', {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+      })
+      const body = (await response.json().catch(() => ({}))) as {
+        analysis?: TaskEmailPdfAnalysis
+        error?: string
+      }
+      if (!response.ok || !body.analysis) {
+        throw new Error(body.error || 'Gizmo kunde inte analysera PDF-filen.')
+      }
+
+      const analysis = body.analysis
+      if (!mainTaskDraftSnapshot) {
+        setMainTaskDraftSnapshot({
+          title,
+          description,
+          contextLabel,
+          taskKind,
+          evidenceRequirements,
+        })
+      }
+      setEmailPdfAnalysis(analysis)
+      setLastAnalyzedInstruction(instruction)
+      setTitle(analysis.mainTask.title)
+      setDescription(analysis.mainTask.description)
+      setContextLabel(analysis.mainTask.contextLabel)
+      setTaskKind(analysis.mainTask.taskKind)
+      setEvidenceRequirements(analysis.mainTask.evidenceRequirements)
+      setEmailPdfSubtasks(
+        analysis.subtasks.map((subtask) => ({
+          ...subtask,
+          id: draftId(),
+          included: true,
+        }))
+      )
+    } catch (error) {
+      if (controller.signal.aborted) return
+      setEmailPdfError(
+        error instanceof Error ? error.message : 'Gizmo kunde inte analysera PDF-filen.'
+      )
+    } finally {
+      if (emailPdfAnalysisController.current === controller) {
+        emailPdfAnalysisController.current = null
+      }
+      setAnalyzingEmailPdf(false)
+    }
+  }
+
+  const addEmailPdfSubtask = () => {
+    if (emailPdfSubtasks.length >= TASK_EMAIL_PDF_MAX_SUBTASKS) return
+    setEmailPdfSubtasks((current) => [
+      ...current,
+      {
+        id: draftId(),
+        included: true,
+        title: '',
+        description: '',
+        rationale: 'Tillagd manuellt i granskningen.',
+        sourcePages: [],
+      },
+    ])
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     const submittedAt = event.timeStamp > 1_000_000_000_000
       ? event.timeStamp
       : window.performance.timeOrigin + event.timeStamp
-    if (!title.trim() || !assigneeRef || !dueDate || !dueTime || !followupDate || !followupTime) return
+    if (
+      analyzingEmailPdf ||
+      !emailPdfReviewReady ||
+      hasIncompleteIncludedSubtask ||
+      !title.trim() ||
+      !assigneeRef ||
+      !dueDate ||
+      !dueTime ||
+      !followupDate ||
+      !followupTime
+    ) return
+    const submissionAttachments =
+      creationMode === 'email_pdf' && emailPdf
+        ? [emailPdf, ...attachments.filter((file) => fileKey(file) !== fileKey(emailPdf))]
+        : attachments
+    if (submissionAttachments.length > MAX_INITIAL_ATTACHMENTS) {
+      setAttachmentError(`Du kan lägga till högst ${MAX_INITIAL_ATTACHMENTS} filer totalt.`)
+      return
+    }
+    if (
+      submissionAttachments.reduce((sum, file) => sum + file.size, 0)
+      > MAX_INITIAL_ATTACHMENT_TOTAL_BYTES
+    ) {
+      setAttachmentError('Bilagorna får tillsammans vara högst 100 MB.')
+      return
+    }
+    setAttachmentError(null)
     const dueAt = taskDateTimeInputToIso(dueDate, dueTime, effectiveTimeZone)
     const nextFollowupAt = taskDateTimeInputToIso(followupDate, followupTime, effectiveTimeZone)
     if (!dueAt || !nextFollowupAt) {
@@ -262,14 +604,27 @@ export default function TaskComposerSheet({
       nextFollowupAt,
       primaryChannel,
       fallbackChannel,
+      recurrenceInterval,
       evidenceRequirements,
-      attachments,
+      attachments: submissionAttachments,
+      aiSubtasks:
+        creationMode === 'email_pdf'
+          ? includedEmailPdfSubtasks.map((subtask) => ({
+              title: subtask.title.trim(),
+              description: subtask.description.trim(),
+            }))
+          : [],
     })
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-6">
-      <button className="absolute inset-0 cursor-default" aria-label="Stäng" onClick={busy ? undefined : onClose} />
+      <button
+        className="absolute inset-0 cursor-default"
+        aria-label="Stäng"
+        tabIndex={-1}
+        onClick={busy ? undefined : requestClose}
+      />
       <section
         role="dialog"
         aria-modal="true"
@@ -287,7 +642,7 @@ export default function TaskComposerSheet({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={busy}
             className="inline-flex h-11 w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
             aria-label="Stäng"
@@ -297,19 +652,314 @@ export default function TaskComposerSheet({
         </header>
 
         <form onSubmit={submit} className="max-h-[calc(94dvh-77px)] overflow-y-auto px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 sm:px-6">
-          <div className="space-y-5">
+          <fieldset disabled={interactionBusy} className="contents">
+            <div className="space-y-5">
             {suggestion ? (
               <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-950">
-                <p className="font-semibold">Utgår från ett Signe-förslag</p>
+                <p className="font-semibold">Utgår från ett Gizmo-förslag</p>
                 <p className="mt-0.5 text-xs leading-5 text-violet-800">
                   Du kan ändra alla fält. Förslaget markeras som använt först när underuppgiften har skapats.
                 </p>
               </div>
             ) : null}
+            {canUseEmailPdf ? (
+              <>
+                <div
+                  className="grid grid-cols-2 rounded-2xl border border-slate-200 bg-white p-1"
+                  role="group"
+                  aria-label="Välj hur uppdraget ska skapas"
+                >
+                  <button
+                    type="button"
+                    autoFocus
+                    aria-pressed={creationMode === 'manual'}
+                    onClick={switchToManualCreation}
+                    disabled={interactionBusy}
+                    className={`min-h-11 rounded-xl px-3 text-sm font-semibold transition ${
+                      creationMode === 'manual'
+                        ? 'bg-slate-950 text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Skapa manuellt
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={creationMode === 'email_pdf'}
+                    onClick={() => setCreationMode('email_pdf')}
+                    disabled={interactionBusy}
+                    className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${
+                      creationMode === 'email_pdf'
+                        ? 'bg-violet-700 text-white shadow-sm'
+                        : 'text-violet-800 hover:bg-violet-50'
+                    }`}
+                  >
+                    <Sparkles size={17} aria-hidden="true" /> Tolka mejl-PDF
+                  </button>
+                </div>
+
+                {creationMode === 'email_pdf' ? (
+                  <section
+                    className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4"
+                    aria-labelledby="email-pdf-analysis-title"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                        <Mail size={20} aria-hidden="true" />
+                      </span>
+                      <div>
+                        <h3 id="email-pdf-analysis-title" className="font-semibold text-violet-950">
+                          Skapa utkast från ett mejl
+                        </h3>
+                        <p className="mt-1 text-xs leading-5 text-violet-800">
+                          Dra in mejlet utskrivet som PDF och beskriv vad Gizmo ska reda ut. Inget skapas eller skickas innan du granskar formuläret.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      {emailPdf ? (
+                        <div className="flex min-w-0 items-center gap-3 rounded-xl border border-violet-200 bg-white px-3 py-2.5">
+                          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                            <FileText size={18} aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-slate-900">{emailPdf.name}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">{formatFileSize(emailPdf.size)}</p>
+                          </div>
+                          <label className="inline-flex min-h-10 cursor-pointer items-center rounded-lg px-3 text-xs font-semibold text-violet-700 hover:bg-violet-50">
+                            Byt PDF
+                            <input
+                              type="file"
+                              accept=".pdf,application/pdf"
+                              className="sr-only"
+                              disabled={interactionBusy}
+                              onChange={(event) => {
+                                chooseEmailPdf(Array.from(event.currentTarget.files ?? []))
+                                event.currentTarget.value = ''
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={removeEmailPdf}
+                            disabled={interactionBusy}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                            aria-label={`Ta bort ${emailPdf.name}`}
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
+                      ) : (
+                        <TaskAttachmentDropZone
+                          accept=".pdf,application/pdf"
+                          title="Dra in mejlet som PDF"
+                          activeTitle="Släpp PDF-filen för att lägga till den"
+                          description={`Du kan även klicka och välja en PDF. Max ${TASK_EMAIL_PDF_MAX_MEGABYTES} MB.`}
+                          disabled={interactionBusy}
+                          multiple={false}
+                          icon={<Mail className="text-violet-700" size={24} aria-hidden="true" />}
+                          onFiles={chooseEmailPdf}
+                        />
+                      )}
+                    </div>
+
+                    <label className="mt-4 block">
+                      <span className="mb-1.5 block text-sm font-semibold text-violet-950">
+                        Vad vill du att Gizmo ska göra?
+                      </span>
+                      <textarea
+                        value={emailPdfInstruction}
+                        onChange={(event) => {
+                          setEmailPdfInstruction(event.target.value)
+                          setEmailPdfError(null)
+                        }}
+                        rows={3}
+                        maxLength={1200}
+                        disabled={interactionBusy}
+                        placeholder="Exempel: Identifiera vad som behöver göras och dela upp arbetet i tydliga underuppgifter."
+                        className={inputClass}
+                      />
+                      <span className="mt-1 block text-right text-[11px] text-violet-700">
+                        {emailPdfInstruction.length}/1200
+                      </span>
+                    </label>
+
+                    {emailPdfError ? (
+                      <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
+                        {emailPdfError}
+                      </p>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => void analyzeEmailPdf()}
+                      disabled={interactionBusy || !emailPdf || emailPdfInstruction.trim().length < 5}
+                      className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {analyzingEmailPdf ? (
+                        <Loader2 className="animate-spin" size={18} aria-hidden="true" />
+                      ) : (
+                        <Sparkles size={18} aria-hidden="true" />
+                      )}
+                      {analyzingEmailPdf
+                        ? 'Gizmo läser och tar fram ett förslag…'
+                        : emailPdfAnalysis
+                          ? 'Analysera igen'
+                          : 'Analysera underlaget'}
+                    </button>
+
+                    <p className="sr-only" aria-live="polite" role="status">
+                      {analyzingEmailPdf
+                        ? 'Gizmo läser PDF-filen och tar fram ett förslag.'
+                        : emailPdfAnalysis
+                          ? 'Gizmos förslag är klart för granskning.'
+                          : ''}
+                    </p>
+                    {emailPdfAnalysis && !emailPdfInstructionIsCurrent ? (
+                      <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+                        Det visade förslaget är inte den senaste analysen. Analysera igen innan uppdraget kan skapas.
+                      </p>
+                    ) : null}
+                    {emailPdfAnalysis ? (
+                        <div className="mt-4 space-y-3 border-t border-violet-200 pt-4">
+                          <div className="rounded-xl bg-white px-3.5 py-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Gizmos sammanfattning</p>
+                            <p className="mt-1 text-sm leading-6 text-slate-700">{emailPdfAnalysis.summary}</p>
+                            {emailPdfAnalysis.mainTask.sourcePages.length > 0 ? (
+                              <p className="mt-1 text-xs text-slate-500">
+                                AI-förslagets källa: sida {emailPdfAnalysis.mainTask.sourcePages.join(', ')}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          {[...emailPdfAnalysis.missingInformation, ...emailPdfAnalysis.warnings].length > 0 ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
+                              <p className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+                                <AlertTriangle size={16} aria-hidden="true" /> Kontrollera innan du skapar
+                              </p>
+                              <ul className="mt-2 space-y-1 text-xs leading-5 text-amber-900">
+                                {[...emailPdfAnalysis.missingInformation, ...emailPdfAnalysis.warnings].map((item, index) => (
+                                  <li key={`${index}:${item}`}>• {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          <fieldset className="rounded-xl border border-violet-200 bg-white p-3.5">
+                            <legend className="px-1 text-sm font-semibold text-slate-900">
+                              Föreslagna underuppgifter ({includedEmailPdfSubtasks.length})
+                            </legend>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                              De valda underuppgifterna ärver mottagare, projekt och sluttid från huvuduppdraget. Du kan ändra dem efter skapandet.
+                            </p>
+                            <div className="mt-3 space-y-3">
+                              {emailPdfSubtasks.map((subtask, index) => (
+                                <div
+                                  key={subtask.id}
+                                  className={`rounded-xl border p-3 transition ${
+                                    subtask.included
+                                      ? 'border-violet-200 bg-violet-50/50'
+                                      : 'border-slate-200 bg-slate-50 opacity-70'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <label className="inline-flex min-h-10 flex-1 cursor-pointer items-center gap-2 text-sm font-semibold text-slate-800">
+                                      <input
+                                        type="checkbox"
+                                        checked={subtask.included}
+                                        onChange={(event) => {
+                                          const included = event.target.checked
+                                          setEmailPdfSubtasks((current) => current.map((item) =>
+                                            item.id === subtask.id ? { ...item, included } : item
+                                          ))
+                                        }}
+                                        className="h-5 w-5 rounded border-slate-300 accent-violet-700"
+                                      />
+                                      Ta med underuppgift {index + 1}
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEmailPdfSubtasks((current) => current.filter((item) => item.id !== subtask.id))}
+                                      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                                      aria-label={`Ta bort underuppgift ${index + 1}`}
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                  <label className="mt-2 block">
+                                    <span className="sr-only">Titel för underuppgift {index + 1}</span>
+                                    <input
+                                      value={subtask.title}
+                                      maxLength={180}
+                                      disabled={!subtask.included}
+                                      onChange={(event) => {
+                                        const title = event.target.value
+                                        setEmailPdfSubtasks((current) => current.map((item) =>
+                                          item.id === subtask.id
+                                            ? { ...item, title, rationale: '', sourcePages: [] }
+                                            : item
+                                        ))
+                                      }}
+                                      className={inputClass}
+                                      placeholder="Vad ska bli gjort?"
+                                    />
+                                  </label>
+                                  <label className="mt-2 block">
+                                    <span className="sr-only">Beskrivning för underuppgift {index + 1}</span>
+                                    <textarea
+                                      value={subtask.description}
+                                      rows={2}
+                                      maxLength={1200}
+                                      disabled={!subtask.included}
+                                      onChange={(event) => {
+                                        const description = event.target.value
+                                        setEmailPdfSubtasks((current) => current.map((item) =>
+                                          item.id === subtask.id
+                                            ? { ...item, description, rationale: '', sourcePages: [] }
+                                            : item
+                                        ))
+                                      }}
+                                      className={inputClass}
+                                      placeholder="Beskriv önskat resultat."
+                                    />
+                                  </label>
+                                  {subtask.rationale || subtask.sourcePages.length > 0 ? (
+                                    <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                                      {subtask.rationale}
+                                      {subtask.sourcePages.length > 0
+                                        ? ` Källa: sida ${subtask.sourcePages.join(', ')}.`
+                                        : ''}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={addEmailPdfSubtask}
+                              disabled={emailPdfSubtasks.length >= TASK_EMAIL_PDF_MAX_SUBTASKS}
+                              className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg border border-violet-200 px-3 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Plus size={15} aria-hidden="true" /> Lägg till underuppgift
+                            </button>
+                            {hasIncompleteIncludedSubtask ? (
+                              <p role="alert" className="mt-2 text-xs font-medium text-rose-700">
+                                Fyll i en titel eller välj bort den tomma underuppgiften.
+                              </p>
+                            ) : null}
+                            <p className="mt-2 text-[11px] text-slate-500">Högst {TASK_EMAIL_PDF_MAX_SUBTASKS} underuppgifter i version 1.</p>
+                          </fieldset>
+                        </div>
+                    ) : null}
+                  </section>
+                ) : null}
+              </>
+            ) : null}
             <label className="block">
               <span className="mb-1.5 block text-sm font-semibold text-slate-800">Uppgift</span>
               <input
-                autoFocus
+                autoFocus={!canUseEmailPdf}
                 required
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
@@ -422,7 +1072,7 @@ export default function TaskComposerSheet({
                 <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800">
                   <CalendarClock size={16} /> Ska vara klart
                 </legend>
-                <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem] sm:grid-cols-1 lg:grid-cols-[minmax(0,1fr)_9rem]">
+                <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem] sm:grid-cols-1">
                   <label className="block min-w-0">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Datum</span>
                     <input
@@ -472,9 +1122,9 @@ export default function TaskComposerSheet({
 
               <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
                 <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800">
-                  <CalendarClock size={16} /> Signe följer upp
+                  <CalendarClock size={16} /> Gizmo följer upp
                 </legend>
-                <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem] sm:grid-cols-1 lg:grid-cols-[minmax(0,1fr)_9rem]">
+                <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem] sm:grid-cols-1">
                   <label className="block min-w-0">
                     <span className="mb-1 block text-xs font-semibold text-slate-600">Datum</span>
                     <input
@@ -509,13 +1159,38 @@ export default function TaskComposerSheet({
               </fieldset>
             </div>
             <div className="text-xs leading-5 text-slate-500">
-              <p>Alla nya tider anges i {taskTimeZoneLabel(effectiveTimeZone)}. Mottagaren ser sluttiden; Signes uppföljning är intern.</p>
+              <p>Alla nya tider anges i {taskTimeZoneLabel(effectiveTimeZone)}. Mottagaren ser sluttiden; Gizmos uppföljning är intern.</p>
               {parentTask ? (
                 <p>
                   Huvuduppgiftens sluttid är {formatTaskDateTime(parentTask.dueAt, parentTask.dueTimeZone)} ({taskTimeZoneLabel(parentTask.dueTimeZone)}). Underuppgiften kan inte gå förbi samma tidpunkt.
                 </p>
               ) : null}
             </div>
+            {!parentTask ? (
+              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800">
+                  <Repeat2 size={16} /> Återkommande uppgift
+                </legend>
+                <label className="mt-1 block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Intervall</span>
+                  <select
+                    value={recurrenceInterval}
+                    onChange={(event) => setRecurrenceInterval(event.target.value as TaskRecurrenceInterval | '')}
+                    className={inputClass}
+                  >
+                    <option value="">Inte återkommande</option>
+                    <option value="weekly">Varje vecka</option>
+                    <option value="monthly">Varje månad</option>
+                    <option value="quarterly">Varje kvartal</option>
+                    <option value="yearly">Varje år</option>
+                  </select>
+                </label>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Nästa tillfälle skapas när uppgiften godkänns. Mottagare, beskrivning,
+                  kontrollpunkter och färdigbevis kopieras. Bilagor och underuppgifter kopieras inte.
+                </p>
+              </fieldset>
+            ) : null}
             {dateTimeError ? (
               <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
                 {dateTimeError}
@@ -556,7 +1231,7 @@ export default function TaskComposerSheet({
 
             {hasExternalAssignee && externalEmail ? (
               <p className="text-xs leading-5 text-slate-500">
-                Första kontoaktiveringen skickas alltid till mottagarens e-post. När kontot är aktiverat använder Signe vald huvud- och reservkanal.
+                Första kontoaktiveringen skickas alltid till mottagarens e-post. När kontot är aktiverat använder Gizmo vald huvud- och reservkanal.
               </p>
             ) : null}
 
@@ -611,7 +1286,7 @@ export default function TaskComposerSheet({
                   title="Dra och släpp bilder eller dokument här"
                   activeTitle="Släpp för att lägga till underlagen"
                   description="Du kan även klicka här och välja flera filer. Max 10 filer, 25 MB per fil."
-                  disabled={busy}
+                  disabled={interactionBusy}
                   onFiles={addAttachmentFiles}
                 />
               </div>
@@ -668,20 +1343,38 @@ export default function TaskComposerSheet({
                       </div>
                     )
                   })}
-                  <p className="text-right text-xs text-slate-500">{attachments.length} av {MAX_INITIAL_ATTACHMENTS} filer</p>
                 </div>
               ) : null}
+              {initialAttachmentCount > 0 ? (
+                <p className="mt-2 text-right text-xs text-slate-500">
+                  {initialAttachmentCount} av {MAX_INITIAL_ATTACHMENTS} filer
+                </p>
+              ) : null}
             </fieldset>
-          </div>
+            </div>
+          </fieldset>
 
           <div className="sticky bottom-0 -mx-5 mt-6 border-t border-slate-200 bg-white/95 px-5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:-mx-6 sm:px-6">
             <button
               type="submit"
-              disabled={busy || !title.trim() || !assigneeRef || !externalChannelsCovered}
+              disabled={
+                interactionBusy ||
+                !emailPdfReviewReady ||
+                hasIncompleteIncludedSubtask ||
+                !title.trim() ||
+                !assigneeRef ||
+                !externalChannelsCovered
+              }
               className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <UserPlus size={18} />
-              {busy ? 'Skapar…' : parentTask ? 'Skapa underuppgift' : 'Skapa och tilldela'}
+              {busy
+                ? 'Skapar…'
+                : parentTask
+                  ? 'Skapa underuppgift'
+                  : creationMode === 'email_pdf' && emailPdfAnalysis
+                    ? `Skapa huvuduppdrag${includedEmailPdfSubtasks.length > 0 ? ` + ${includedEmailPdfSubtasks.length} underuppgifter` : ''}`
+                    : 'Skapa och tilldela'}
             </button>
           </div>
         </form>

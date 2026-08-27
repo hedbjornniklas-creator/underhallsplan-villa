@@ -6,6 +6,7 @@ import { buildTaskEmailHtml } from './emailTemplates'
 import { formatTaskDateTime } from './dateTime'
 import { hasInternalTaskModuleAccess } from './internalAccess'
 import { issueDirectTaskAccessLink } from './recipientAuth'
+import { taskActorDisplayName } from './branding'
 import type {
   TaskEventAuthorSide,
   TaskEventView,
@@ -41,6 +42,7 @@ export type TaskConversationSnapshot = {
   latestIncomingMessageEventId: string | null
 }
 
+/** @deprecated Comments are routed by the durable task-event outbox. */
 export type CommentNotificationActor =
   | {
       kind: 'profile'
@@ -246,7 +248,7 @@ export async function loadTaskConversationSnapshots(input: {
       comments: taskComments.map((comment) => ({
         id: comment.id,
         type: 'comment',
-        actorName: comment.actor_name?.trim() || 'HusHub',
+        actorName: taskActorDisplayName(comment.actor_name, 'HusHub', comment.actor_type),
         message: comment.message?.trim() || '',
         fromStatus: null,
         toStatus: null,
@@ -259,7 +261,7 @@ export async function loadTaskConversationSnapshots(input: {
       latestMessage: latest
         ? {
             id: latest.id,
-            actorName: latest.actor_name?.trim() || 'HusHub',
+            actorName: taskActorDisplayName(latest.actor_name, 'HusHub', latest.actor_type),
             message: latest.message?.trim() || '',
             createdAt: latest.created_at,
             authorSide: taskEventAuthorSide(latest, input.viewer),
@@ -329,9 +331,47 @@ export async function notifyTaskComment(input: {
   message: string
   actor: CommentNotificationActor
   requestOrigin?: string | null
-}): Promise<{ warning: string | null }> {
-  const genericWarning = 'Meddelandet finns sparat, men e-postnotifieringen kunde inte skickas.'
+}): Promise<{ warning: string | null; queued?: boolean; sent?: boolean; skipped?: boolean }> {
+  const genericWarning = 'Meddelandet finns sparat, men notifieringen kunde inte skickas.'
   const ambiguousWarning = 'Meddelandet finns sparat, men e-postleveransen kunde inte bekräftas. Inget nytt utskick görs innan leveransen har kontrollerats.'
+  try {
+    const admin = createSupabaseAdminClient()
+    const { data: queuedJob, error: queuedJobError } = await admin
+      .from('task_automation_jobs')
+      .select('id,status,error_message')
+      .eq('org_id', input.orgId)
+      .eq('task_id', input.taskId)
+      .eq('job_type', 'send_message')
+      .eq('idempotency_key', `task-notification:${input.eventId}`)
+      .limit(1)
+      .maybeSingle()
+    // Fail closed on an uncertain lookup. Falling through to the legacy send
+    // could duplicate an outbox delivery that was committed with the event.
+    if (queuedJobError) {
+      console.error('[tasks.conversation] notification outbox lookup failed', {
+        code: 'TASK_NOTIFICATION_OUTBOX_READ_FAILED',
+        taskId: input.taskId,
+        eventId: input.eventId,
+      })
+      return { warning: genericWarning }
+    }
+    if (queuedJob?.status === 'dead_letter') {
+      console.error('[tasks.conversation] notification outbox rejected delivery', {
+        code: queuedJob.error_message || 'TASK_NOTIFICATION_OUTBOX_DEAD_LETTER',
+        taskId: input.taskId,
+        eventId: input.eventId,
+      })
+      return { warning: genericWarning }
+    }
+    if (queuedJob) return { warning: null, queued: true }
+  } catch {
+    console.error('[tasks.conversation] notification outbox lookup failed', {
+      code: 'TASK_NOTIFICATION_OUTBOX_READ_FAILED',
+      taskId: input.taskId,
+      eventId: input.eventId,
+    })
+    return { warning: genericWarning }
+  }
   try {
     const admin = createSupabaseAdminClient()
     const { data: task, error: taskError } = await admin
@@ -355,7 +395,7 @@ export async function notifyTaskComment(input: {
       input.actor.kind === recipient.kind &&
       (input.actor.kind === 'profile' ? input.actor.profileId : input.actor.contactId) === recipient.id
     ) {
-      return { warning: null }
+      return { warning: null, skipped: true }
     }
 
     if (
@@ -463,7 +503,9 @@ export async function notifyTaskComment(input: {
       return { warning: genericWarning }
     }
 
-    if (senderEmail && senderEmail === deliveryRecipientEmail) return { warning: null }
+    if (senderEmail && senderEmail === deliveryRecipientEmail) {
+      return { warning: null, skipped: true }
+    }
 
     const { data: delivery, error: deliveryError } = await admin
       .from('task_message_deliveries')
@@ -587,7 +629,7 @@ export async function notifyTaskComment(input: {
         await updateDeliveryAmbiguous(delivery.id)
         return { warning: ambiguousWarning }
       }
-      return { warning: null }
+      return { warning: null, sent: true }
     } catch (error) {
       if (isAmbiguousTaskDeliveryError(error)) {
         await updateDeliveryAmbiguous(delivery.id)

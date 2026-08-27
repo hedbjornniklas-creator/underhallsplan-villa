@@ -18,14 +18,26 @@ import {
 import type { TaskStatus } from '@/lib/tasks/contracts'
 import { formatTaskDateTime } from '@/lib/tasks/dateTime'
 import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
-import { issueDirectTaskAccessLink } from '@/lib/tasks/recipientAuth'
+import { hasInternalTaskModuleAccess } from '@/lib/tasks/internalAccess'
+import { taskActorDisplayName } from '@/lib/tasks/branding'
+import {
+  ensureRecipientTaskEntryLink,
+  issueDirectTaskAccessLink,
+} from '@/lib/tasks/recipientAuth'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
+type PersistedTaskCommunicationChannel = TaskCommunicationChannel | 'in_app'
+type TaskNotificationProvider = 'resend' | 'meta_whatsapp' | 'hushub'
+type TaskNotificationTarget = 'creator' | 'assignee'
+type TaskNotificationRecipientKind = 'profile' | 'contact'
+type TaskNotificationJobPhase = 'deliver' | 'reconcile'
 
 type AutomationJob = {
   id: string
   org_id: string
   task_id: string
+  message_id: string | null
+  delivery_id: string | null
   job_type: string
   attempt_count: number
   max_attempts: number
@@ -47,13 +59,18 @@ type OperationalTask = {
   due_at: string
   due_timezone: string
   next_followup_at: string
-  primary_channel: TaskCommunicationChannel
-  fallback_channel: TaskCommunicationChannel | null
+  primary_channel: PersistedTaskCommunicationChannel
+  fallback_channel: PersistedTaskCommunicationChannel | null
   last_activity_at: string
   submitted_for_review_at: string | null
   created_at: string
   version: number
   archived_at: string | null
+}
+
+type ExternallyRoutableOperationalTask = OperationalTask & {
+  primary_channel: TaskCommunicationChannel
+  fallback_channel: TaskCommunicationChannel | null
 }
 
 type TaskFollowupRule = {
@@ -135,6 +152,79 @@ type DeliveryResult = {
   errorCode: string | null
 }
 
+const TASK_NOTIFICATION_EVENT_TYPES = [
+  'comment',
+  'deadline_change_requested',
+  'deadline_change_approved',
+  'deadline_change_rejected',
+  'status_changed',
+] as const
+
+type TaskNotificationEventType = (typeof TASK_NOTIFICATION_EVENT_TYPES)[number]
+
+type TaskNotificationEvent = {
+  id: string
+  org_id: string
+  task_id: string
+  event_type: TaskNotificationEventType
+  actor_type: string
+  actor_profile_id: string | null
+  actor_contact_id: string | null
+  actor_name: string
+  message: string | null
+  from_status: TaskStatus | null
+  to_status: TaskStatus | null
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+type TaskNotificationJobRecipient = {
+  target: TaskNotificationTarget
+  recipientKind: TaskNotificationRecipientKind
+  recipientId: string
+}
+
+type ReconciledTaskNotificationDelivery = {
+  id: string
+  messageId: string
+  sourceEventId: string
+  channel: TaskCommunicationChannel
+  provider: Exclude<TaskNotificationProvider, 'hushub'>
+  status: StoredDelivery['status']
+  isFallback: boolean
+  accountActivation: boolean
+  recipientKind: TaskNotificationRecipientKind
+  recipientId: string
+  attemptCount: number
+  reconciliationRetryForAttempt: number | null
+}
+
+type PreparedTaskNotificationDelivery = {
+  skipped: false
+  target: 'creator' | 'assignee'
+  deliveryId: string
+  messageId: string
+  recipientKind: 'profile' | 'contact'
+  recipientId: string
+  recipientName: string
+  recipientAddress: string
+  channel: PersistedTaskCommunicationChannel
+  provider: TaskNotificationProvider
+  status: StoredDelivery['status']
+  idempotencyKey: string
+}
+
+type SkippedTaskNotificationDelivery = {
+  skipped: true
+  reason: string
+  eventId: string
+  taskId: string | null
+}
+
+type TaskNotificationDeliveryPreparation =
+  | PreparedTaskNotificationDelivery
+  | SkippedTaskNotificationDelivery
+
 export type TaskAutomationBatchResult = {
   claimed: number
   completed: number
@@ -153,6 +243,13 @@ class TaskAutomationError extends Error {
 }
 
 const TERMINAL_STATUSES = new Set<TaskStatus>(['approved', 'cancelled'])
+const BENIGN_TASK_NOTIFICATION_SKIP_REASONS = new Set([
+  'self_recipient',
+  'task_unavailable',
+  'event_not_notifiable',
+  'legacy_delivery_exists',
+  'legacy_delivery_unresolved',
+])
 const SUCCESSFUL_DELIVERY_STATUSES = new Set<StoredDelivery['status']>([
   'sent',
   'delivered',
@@ -230,10 +327,126 @@ function isCommunicationChannel(value: unknown): value is TaskCommunicationChann
   return value === 'email' || value === 'whatsapp'
 }
 
+function isPersistedTaskCommunicationChannel(
+  value: unknown
+): value is PersistedTaskCommunicationChannel {
+  return isCommunicationChannel(value) || value === 'in_app'
+}
+
+function hasExternalTaskChannels(
+  task: OperationalTask
+): task is ExternallyRoutableOperationalTask {
+  return isCommunicationChannel(task.primary_channel)
+    && (task.fallback_channel === null || isCommunicationChannel(task.fallback_channel))
+}
+
 function toObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {}
+}
+
+function isTaskNotificationEventType(value: unknown): value is TaskNotificationEventType {
+  return TASK_NOTIFICATION_EVENT_TYPES.includes(value as TaskNotificationEventType)
+}
+
+function isTaskDeliveryStatus(value: unknown): value is StoredDelivery['status'] {
+  return [
+    'queued',
+    'sending',
+    'sent',
+    'delivered',
+    'read',
+    'replied',
+    'failed',
+    'cancelled',
+    'ambiguous',
+  ].includes(String(value))
+}
+
+function isTaskNotificationProviderForChannel(
+  provider: unknown,
+  channel: unknown
+): provider is TaskNotificationProvider {
+  return (channel === 'email' && provider === 'resend')
+    || (channel === 'whatsapp' && provider === 'meta_whatsapp')
+    || (channel === 'in_app' && provider === 'hushub')
+}
+
+function parseTaskNotificationEvent(value: unknown): TaskNotificationEvent | null {
+  const row = toObject(value)
+  if (
+    typeof row.id !== 'string'
+    || typeof row.org_id !== 'string'
+    || typeof row.task_id !== 'string'
+    || !isTaskNotificationEventType(row.event_type)
+    || typeof row.actor_type !== 'string'
+    || typeof row.created_at !== 'string'
+  ) {
+    return null
+  }
+  return {
+    id: row.id,
+    org_id: row.org_id,
+    task_id: row.task_id,
+    event_type: row.event_type,
+    actor_type: row.actor_type,
+    actor_profile_id: typeof row.actor_profile_id === 'string' ? row.actor_profile_id : null,
+    actor_contact_id: typeof row.actor_contact_id === 'string' ? row.actor_contact_id : null,
+    actor_name: taskActorDisplayName(optionalString(row.actor_name), 'HusHub', row.actor_type),
+    message: optionalString(row.message),
+    from_status: isTaskStatus(row.from_status) ? row.from_status : null,
+    to_status: isTaskStatus(row.to_status) ? row.to_status : null,
+    metadata: toObject(row.metadata),
+    created_at: row.created_at,
+  }
+}
+
+function parsePreparedTaskNotificationDelivery(
+  value: unknown
+): TaskNotificationDeliveryPreparation | null {
+  const row = toObject(value)
+  if (row.skipped === true) {
+    if (typeof row.reason !== 'string' || typeof row.eventId !== 'string') return null
+    return {
+      skipped: true,
+      reason: row.reason,
+      eventId: row.eventId,
+      taskId: typeof row.taskId === 'string' ? row.taskId : null,
+    }
+  }
+  const channel = row.channel
+  const provider = row.provider
+  if (
+    row.skipped !== false
+    || (row.target !== 'creator' && row.target !== 'assignee')
+    || typeof row.deliveryId !== 'string'
+    || typeof row.messageId !== 'string'
+    || (row.recipientKind !== 'profile' && row.recipientKind !== 'contact')
+    || typeof row.recipientId !== 'string'
+    || typeof row.recipientName !== 'string'
+    || typeof row.recipientAddress !== 'string'
+    || !isPersistedTaskCommunicationChannel(channel)
+    || !isTaskNotificationProviderForChannel(provider, channel)
+    || !isTaskDeliveryStatus(row.status)
+    || typeof row.idempotencyKey !== 'string'
+  ) {
+    return null
+  }
+  return {
+    skipped: false,
+    target: row.target,
+    deliveryId: row.deliveryId,
+    messageId: row.messageId,
+    recipientKind: row.recipientKind,
+    recipientId: row.recipientId,
+    recipientName: row.recipientName,
+    recipientAddress: row.recipientAddress,
+    channel,
+    provider,
+    status: row.status,
+    idempotencyKey: row.idempotencyKey,
+  }
 }
 
 function parseAutomationJob(value: unknown): AutomationJob | null {
@@ -252,6 +465,8 @@ function parseAutomationJob(value: unknown): AutomationJob | null {
     id: row.id,
     org_id: row.org_id,
     task_id: row.task_id,
+    message_id: typeof row.message_id === 'string' ? row.message_id : null,
+    delivery_id: typeof row.delivery_id === 'string' ? row.delivery_id : null,
     job_type: row.job_type,
     attempt_count: normalizeInteger(row.attempt_count, 1, 0, 20),
     max_attempts: normalizeInteger(row.max_attempts, 5, 1, 20),
@@ -263,6 +478,29 @@ function parseAutomationJob(value: unknown): AutomationJob | null {
 function expectedTaskVersion(job: AutomationJob) {
   const version = Number(job.payload.taskVersion)
   return Number.isInteger(version) && version > 0 ? version : null
+}
+
+function notificationEventId(job: AutomationJob) {
+  const eventId = optionalString(job.payload.notificationEventId)
+  const phase = notificationJobPhase(job)
+  return eventId && phase ? eventId : null
+}
+
+function notificationJobPhase(job: AutomationJob): TaskNotificationJobPhase | null {
+  const phase = optionalString(job.payload.phase)
+  return phase === 'deliver' || phase === 'reconcile' ? phase : null
+}
+
+function notificationJobRecipient(job: AutomationJob): TaskNotificationJobRecipient | null {
+  const target = optionalString(job.payload.target)
+  const recipientKind = optionalString(job.payload.recipientKind)
+  const recipientId = optionalString(job.payload.recipientId)
+  if (
+    (target !== 'creator' && target !== 'assignee')
+    || (recipientKind !== 'profile' && recipientKind !== 'contact')
+    || !recipientId
+  ) return null
+  return { target, recipientKind, recipientId }
 }
 
 function parseOperationalTask(value: unknown): OperationalTask | null {
@@ -279,7 +517,7 @@ function parseOperationalTask(value: unknown): OperationalTask | null {
     || typeof row.last_activity_at !== 'string'
     || typeof row.created_at !== 'string'
     || !isTaskStatus(row.status)
-    || !isCommunicationChannel(row.primary_channel)
+    || !isPersistedTaskCommunicationChannel(row.primary_channel)
   ) {
     return null
   }
@@ -300,7 +538,9 @@ function parseOperationalTask(value: unknown): OperationalTask | null {
     due_timezone: row.due_timezone,
     next_followup_at: row.next_followup_at,
     primary_channel: row.primary_channel,
-    fallback_channel: isCommunicationChannel(row.fallback_channel) ? row.fallback_channel : null,
+    fallback_channel: isPersistedTaskCommunicationChannel(row.fallback_channel)
+      ? row.fallback_channel
+      : null,
     last_activity_at: row.last_activity_at,
     submitted_for_review_at: typeof row.submitted_for_review_at === 'string'
       ? row.submitted_for_review_at
@@ -478,6 +718,15 @@ function messageTarget(message: StoredMessage | undefined, task?: OperationalTas
   return message?.message_type === 'assignment' ? 'assignee' : null
 }
 
+function isReminderOrAssignmentMessage(message: StoredMessage | undefined) {
+  return Boolean(
+    message
+    && message.message_type !== 'comment'
+    && message.metadata?.humanEvent !== true
+    && message.metadata?.humanEventNotification !== true
+  )
+}
+
 function effectiveDeliveryAt(delivery: StoredDelivery) {
   return delivery.sent_at && Number.isFinite(Date.parse(delivery.sent_at))
     ? delivery.sent_at
@@ -559,7 +808,7 @@ async function loadLatestAssigneeFallbackDelivery(
     }))
     const fallback = deliveries.find((delivery) => {
       const message = messages.get(delivery.message_id)
-      return message?.message_type !== 'comment'
+      return isReminderOrAssignmentMessage(message)
         && messageTarget(message, task) === 'assignee'
     })
     if (fallback) return fallback
@@ -653,7 +902,7 @@ async function loadTaskDeliverySafetyState(
     if (messageTarget(message, task) !== 'assignee') return false
     const newerPrimaryAttempt = !delivery.is_fallback
       && delivery.channel === task.primary_channel
-      && message?.message_type !== 'comment'
+      && isReminderOrAssignmentMessage(message)
       && Date.parse(delivery.created_at) > fallbackEpoch
     const newerSuccessfulContact = SUCCESSFUL_DELIVERY_STATUSES.has(delivery.status)
       && Date.parse(effectiveDeliveryAt(delivery)) > fallbackEpoch
@@ -749,11 +998,13 @@ async function loadTaskHistory(
     (delivery) => messageTarget(messagesById.get(delivery.message_id), task) === 'assignee'
   )
   const assigneeReminderSuccessful = assigneeSuccessful.filter(
-    (delivery) => messagesById.get(delivery.message_id)?.message_type !== 'comment'
+    (delivery) => isReminderOrAssignmentMessage(messagesById.get(delivery.message_id))
   )
-  const creatorSuccessful = successful.filter(
-    (delivery) => messageTarget(messagesById.get(delivery.message_id), task) === 'creator'
-  )
+  const creatorSuccessful = successful.filter((delivery) => {
+    const message = messagesById.get(delivery.message_id)
+    return isReminderOrAssignmentMessage(message)
+      && messageTarget(message, task) === 'creator'
+  })
   const lastActivityMs = Date.parse(task.last_activity_at)
   const unansweredAttempts = assigneeReminderSuccessful.filter(
     (delivery) => Date.parse(effectiveDeliveryAt(delivery)) > lastActivityMs
@@ -765,11 +1016,11 @@ async function loadTaskHistory(
   const latestPrimary = deliveries.find((delivery) => {
     const message = messagesById.get(delivery.message_id)
     return delivery.channel === task.primary_channel
-      && message?.message_type !== 'comment'
+      && isReminderOrAssignmentMessage(message)
       && messageTarget(message, task) === 'assignee'
   })
   const latestSuccessfulAssigneeAt = latestIso(
-    assigneeSuccessful.map(effectiveDeliveryAt)
+    assigneeReminderSuccessful.map(effectiveDeliveryAt)
   )
   const primaryDeliveryState: TaskDeliveryState = !latestPrimary
     ? 'unknown'
@@ -972,11 +1223,11 @@ function actionHeading(action: TaskReminderAction) {
     case 'due_soon': return 'Uppdraget närmar sig slutdatum'
     case 'due_today': return 'Uppdraget har slutdatum idag'
     case 'overdue': return 'Uppdraget är försenat'
-    case 'status_check': return 'Signe behöver en statusuppdatering'
+    case 'status_check': return 'Gizmo behöver en statusuppdatering'
     case 'review_follow_up': return 'Uppdraget väntar på kontroll'
     case 'review_overdue': return 'Kontrollen av uppdraget är försenad'
     case 'deadline_change_request': return 'Nytt önskemål om förlängt slutdatum'
-    case 'escalation': return 'Signe behöver din hjälp'
+    case 'escalation': return 'Gizmo behöver din hjälp'
     case 'delivery_fallback': return 'Påminnelse om uppdrag'
   }
 }
@@ -1033,14 +1284,14 @@ function buildReminderContent(input: {
     actionUrl ? `Öppna uppdraget: ${actionUrl}` : externalLinkNote,
     myTasksUrl ? `Mina uppdrag (inloggning krävs): ${myTasksUrl}` : null,
     '',
-    'Hälsningar, Signe',
+    'Hälsningar, Gizmo',
   ].filter((line): line is string => line !== null).join('\n')
   const html = buildTaskEmailHtml({
     previewText: `${heading}: ${input.task.title}`,
-    eyebrow: 'Signe följer upp',
+    eyebrow: 'Gizmo följer upp',
     heading,
     recipientName: input.recipient.name,
-    lead: 'Signe följer upp uppdraget och ser till att nästa steg blir tydligt.',
+    lead: 'Gizmo följer upp uppdraget och ser till att nästa steg blir tydligt.',
     taskTitle: input.task.title,
     contextLabel: input.task.context_label,
     dueLabel,
@@ -1061,9 +1312,204 @@ function buildReminderContent(input: {
     instruction,
     actionUrl ? 'En direktlänk bifogades i leveransen men sparades inte i meddelandeloggen.' : externalLinkNote,
     '',
-    'Hälsningar, Signe',
+    'Hälsningar, Gizmo',
   ].filter((line): line is string => line !== null).join('\n')
   return { subject: `${heading}: ${input.task.title}`, text, html, auditText, actionUrl }
+}
+
+type TaskNotificationDescriptor = {
+  heading: string
+  lead: string
+  instruction: string
+  actionLabel: string
+  includeEventMessage: boolean
+}
+
+function notificationMetadataDate(
+  value: unknown,
+  task: OperationalTask
+) {
+  const date = optionalString(value)
+  return date && Number.isFinite(Date.parse(date))
+    ? dueDateLabel(date, task.due_timezone)
+    : null
+}
+
+function taskNotificationDescriptor(
+  event: TaskNotificationEvent,
+  task: OperationalTask
+): TaskNotificationDescriptor | null {
+  if (event.event_type === 'comment') {
+    return {
+      heading: 'Du har fått ett nytt meddelande',
+      lead: `${event.actor_name} har skrivit i uppdraget.`,
+      instruction: 'Öppna uppdraget för att läsa hela konversationen och svara.',
+      actionLabel: 'Läs och svara',
+      includeEventMessage: true,
+    }
+  }
+  if (event.event_type === 'deadline_change_requested') {
+    const requestedDue = notificationMetadataDate(event.metadata.requestedDueAt, task)
+    return {
+      heading: 'Förlängning har begärts',
+      lead: `${event.actor_name} har begärt ett nytt slutdatum för uppdraget.`,
+      instruction: requestedDue
+        ? `Föreslaget nytt slutdatum är ${requestedDue}. Godkänn eller avslå begäran i HusHub.`
+        : 'Öppna uppdraget och godkänn eller avslå begäran.',
+      actionLabel: 'Ta ställning till begäran',
+      includeEventMessage: true,
+    }
+  }
+  if (event.event_type === 'deadline_change_approved') {
+    const requestedDue = notificationMetadataDate(event.metadata.requestedDueAt, task)
+    return {
+      heading: 'Förlängningen har godkänts',
+      lead: `${event.actor_name} har godkänt det nya slutdatumet.`,
+      instruction: requestedDue
+        ? `Det nya slutdatumet är ${requestedDue}.`
+        : 'Öppna uppdraget för att se det nya slutdatumet.',
+      actionLabel: 'Öppna uppdraget',
+      includeEventMessage: true,
+    }
+  }
+  if (event.event_type === 'deadline_change_rejected') {
+    return {
+      heading: 'Förlängningen har avslagits',
+      lead: `${event.actor_name} har avslagit begäran om ett nytt slutdatum.`,
+      instruction: 'Det nuvarande slutdatumet gäller fortfarande. Öppna uppdraget för att se beslutet.',
+      actionLabel: 'Öppna uppdraget',
+      includeEventMessage: true,
+    }
+  }
+  if (event.event_type !== 'status_changed') return null
+  switch (event.to_status) {
+    case 'waiting':
+      return {
+        heading: 'Uppdraget är markerat som väntande',
+        lead: `${event.actor_name} har meddelat att uppdraget väntar på något.`,
+        instruction: 'Öppna uppdraget för att granska orsaken och hjälpa arbetet vidare.',
+        actionLabel: 'Granska uppdraget',
+        includeEventMessage: true,
+      }
+    case 'ready_for_review':
+      return {
+        heading: 'Uppdraget är klart för kontroll',
+        lead: `${event.actor_name} har lämnat in uppdraget för kontroll.`,
+        instruction: 'Öppna uppdraget, granska resultatet och godkänn eller begär komplettering.',
+        actionLabel: 'Granska uppdraget',
+        includeEventMessage: true,
+      }
+    case 'returned':
+      return {
+        heading: 'Uppdraget behöver kompletteras',
+        lead: `${event.actor_name} har skickat tillbaka uppdraget för komplettering.`,
+        instruction: 'Öppna uppdraget, läs återkopplingen och komplettera det som saknas.',
+        actionLabel: 'Se återkopplingen',
+        includeEventMessage: true,
+      }
+    case 'approved':
+      return {
+        heading: 'Uppdraget har godkänts',
+        lead: `${event.actor_name} har godkänt uppdraget.`,
+        instruction: 'Uppdraget är nu avslutat och finns kvar i din uppdragshistorik.',
+        actionLabel: 'Visa uppdraget',
+        includeEventMessage: true,
+      }
+    case 'cancelled':
+      return {
+        heading: 'Uppdraget har avbrutits',
+        lead: `${event.actor_name} har avbrutit uppdraget.`,
+        instruction: 'Öppna uppdraget för att se informationen om beslutet.',
+        actionLabel: 'Visa uppdraget',
+        includeEventMessage: true,
+      }
+    default:
+      return null
+  }
+}
+
+function buildTaskNotificationAuditText(input: {
+  event: TaskNotificationEvent
+  task: OperationalTask
+  descriptor: TaskNotificationDescriptor
+}) {
+  const dueLabel = dueDateLabel(input.task.due_at, input.task.due_timezone)
+  return [
+    input.descriptor.heading,
+    `Händelse från ${input.event.actor_name}`,
+    `Uppdrag: ${input.task.title}`,
+    input.task.context_label ? `Projekt: ${input.task.context_label}` : null,
+    `Slutdatum: ${dueLabel}`,
+    '',
+    input.descriptor.instruction,
+    input.descriptor.includeEventMessage && input.event.message
+      ? `Meddelande: ${input.event.message}`
+      : null,
+    '',
+    'En uppdragslänk bifogas först i leveransen och sparas inte i meddelandeloggen.',
+  ].filter((line): line is string => line !== null).join('\n')
+}
+
+function buildTaskNotificationContent(input: {
+  event: TaskNotificationEvent
+  task: OperationalTask
+  recipient: Recipient
+  descriptor: TaskNotificationDescriptor
+  actionUrl: string
+  linkMode: 'internal' | 'bearer' | 'portal' | 'activation'
+}) {
+  const dueLabel = dueDateLabel(input.task.due_at, input.task.due_timezone)
+  const eventMessage = input.descriptor.includeEventMessage
+    ? input.event.message
+    : null
+  const myTasksUrl = input.recipient.kind === 'contact'
+    ? `${appBaseUrl()}/mina-uppdrag`
+    : null
+  const notice = input.linkMode === 'bearer'
+    ? 'Länken är personlig och öppnar bara detta uppdrag. Vidarebefordra den inte.'
+    : input.linkMode === 'activation'
+      ? 'Länken är personlig. Välj lösenord för Mina uppdrag så öppnas uppdraget direkt efter aktiveringen.'
+      : null
+  const text = [
+    `Hej ${input.recipient.name},`,
+    '',
+    input.descriptor.lead,
+    eventMessage ? `\n${eventMessage}\n` : null,
+    input.descriptor.instruction,
+    '',
+    `Uppdrag: ${input.task.title}`,
+    input.task.context_label ? `Projekt: ${input.task.context_label}` : null,
+    `Slutdatum: ${dueLabel}`,
+    '',
+    `Öppna uppdraget: ${input.actionUrl}`,
+    myTasksUrl ? `Mina uppdrag (inloggning krävs): ${myTasksUrl}` : null,
+    '',
+    `Meddelande från ${input.event.actor_name} – skickat via HusHub.`,
+  ].filter((line): line is string => line !== null).join('\n')
+  const html = buildTaskEmailHtml({
+    previewText: `${input.descriptor.heading}: ${input.task.title}`,
+    eyebrow: `Meddelande från ${input.event.actor_name}`,
+    heading: input.descriptor.heading,
+    recipientName: input.recipient.name,
+    lead: input.descriptor.lead,
+    taskTitle: input.task.title,
+    contextLabel: input.task.context_label,
+    dueLabel,
+    instruction: input.descriptor.instruction,
+    message: eventMessage
+      ? { authorName: input.event.actor_name, text: eventMessage }
+      : null,
+    actionUrl: input.actionUrl,
+    actionLabel: input.descriptor.actionLabel,
+    secondaryActionUrl: myTasksUrl,
+    secondaryActionLabel: myTasksUrl ? 'Mina uppdrag' : undefined,
+    notice,
+  })
+  return {
+    subject: `${input.descriptor.heading}: ${input.task.title}`,
+    text,
+    html,
+  }
 }
 
 function normalizedWhatsAppNumber(value: string | null) {
@@ -1314,7 +1760,7 @@ async function ensureDelivery(input: {
       direction: 'outbound',
       message_type: messageType(input.action),
       actor_type: 'system',
-      actor_name: 'Signe',
+      actor_name: 'Gizmo',
       body_text: input.content.auditText,
       generated_by_ai: false,
       metadata: {
@@ -1403,10 +1849,10 @@ async function recordDeliveryEvent(input: {
     task_id: input.task.id,
     event_type: eventType,
     actor_type: 'system',
-    actor_name: 'Signe',
+    actor_name: 'Gizmo',
     message: input.action.target === 'creator'
-      ? `Signe uppmärksammade ${input.recipient.name} via ${input.channel === 'email' ? 'e-post' : 'WhatsApp'}.`
-      : `Signe skickade en uppföljning till ${input.recipient.name} via ${input.channel === 'email' ? 'e-post' : 'WhatsApp'}.`,
+      ? `Gizmo uppmärksammade ${input.recipient.name} via ${input.channel === 'email' ? 'e-post' : 'WhatsApp'}.`
+      : `Gizmo skickade en uppföljning till ${input.recipient.name} via ${input.channel === 'email' ? 'e-post' : 'WhatsApp'}.`,
     metadata: {
       taskMutationApplied: true,
       automationFollowup: true,
@@ -1426,9 +1872,10 @@ async function recordDeliveryEvent(input: {
 async function updateDeliveryFailure(
   admin: AdminClient,
   deliveryId: string,
-  errorCode: string
+  errorCode: string,
+  expected?: { status: StoredDelivery['status']; attemptCount: number }
 ) {
-  const { error } = await admin
+  let update = admin
     .from('task_message_deliveries')
     .update({
       status: 'failed',
@@ -1437,15 +1884,24 @@ async function updateDeliveryFailure(
       error_message: errorCode,
     })
     .eq('id', deliveryId)
+  if (expected) {
+    update = update
+      .eq('status', expected.status)
+      .eq('attempt_count', expected.attemptCount)
+  }
+  const { data, error } = await update.select('id').maybeSingle()
   if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  if (expected && !data) throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
+  return Boolean(data)
 }
 
 async function updateDeliveryAmbiguous(
   admin: AdminClient,
   deliveryId: string,
-  errorCode: string
+  errorCode: string,
+  expectedAttemptCount?: number
 ) {
-  const { error } = await admin
+  let update = admin
     .from('task_message_deliveries')
     .update({
       status: 'ambiguous',
@@ -1455,7 +1911,14 @@ async function updateDeliveryAmbiguous(
     })
     .eq('id', deliveryId)
     .in('status', ['sending', 'ambiguous'])
+  if (expectedAttemptCount !== undefined) {
+    update = update.eq('attempt_count', expectedAttemptCount)
+  }
+  const { data, error } = await update.select('id').maybeSingle()
   if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  if (expectedAttemptCount !== undefined && !data) {
+    throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
+  }
 }
 
 async function markUnresolvedDeliveriesForReconciliation(
@@ -1505,6 +1968,7 @@ async function cancelPreparedStaleDelivery(input: {
   admin: AdminClient
   deliveryId: string
   accessLinkId: string | null
+  expectedAttemptCount: number
 }) {
   const cancelledAt = new Date().toISOString()
   const { error } = await input.admin
@@ -1516,6 +1980,7 @@ async function cancelPreparedStaleDelivery(input: {
     })
     .eq('id', input.deliveryId)
     .eq('status', 'sending')
+    .eq('attempt_count', input.expectedAttemptCount)
   if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
   if (input.accessLinkId) {
     const { error: linkError } = await input.admin
@@ -1577,7 +2042,8 @@ async function deliverViaChannel(input: {
         await updateDeliveryAmbiguous(
           input.admin,
           delivery.id,
-          'TASK_DELIVERY_RECONCILIATION_REQUIRED'
+          'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+          delivery.attempt_count
         )
       }
       return {
@@ -1668,7 +2134,8 @@ async function deliverViaChannel(input: {
       await updateDeliveryAmbiguous(
         input.admin,
         delivery.id,
-        'TASK_DELIVERY_RECONCILIATION_REQUIRED'
+        'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+        delivery.attempt_count
       )
     }
     return {
@@ -1691,7 +2158,12 @@ async function deliverViaChannel(input: {
 
   const address = recipientAddress
   if (!address) {
-    await updateDeliveryFailure(input.admin, delivery.id, 'TASK_DELIVERY_ADDRESS_MISSING')
+    await updateDeliveryFailure(
+      input.admin,
+      delivery.id,
+      'TASK_DELIVERY_ADDRESS_MISSING',
+      { status: delivery.status, attemptCount: delivery.attempt_count }
+    )
     return {
       delivered: false,
       ambiguous: false,
@@ -1699,6 +2171,14 @@ async function deliverViaChannel(input: {
       messageId: delivery.message_id,
       errorCode: 'TASK_DELIVERY_ADDRESS_MISSING',
     }
+  }
+  const providerPayload = {
+    subject: content.subject,
+    actionKind: input.action.kind,
+    reason: input.action.reason,
+    ...(recipientAccessLinkId ? { accessLinkId: recipientAccessLinkId } : {}),
+    providerCallStarted: false,
+    tokenPersisted: false,
   }
   const { data: sendingData, error: sendingError } = await input.admin
     .from('task_message_deliveries')
@@ -1709,13 +2189,7 @@ async function deliverViaChannel(input: {
       failed_at: null,
       next_attempt_at: null,
       error_message: null,
-      provider_payload: {
-        subject: content.subject,
-        actionKind: input.action.kind,
-        reason: input.action.reason,
-        ...(recipientAccessLinkId ? { accessLinkId: recipientAccessLinkId } : {}),
-        tokenPersisted: false,
-      },
+      provider_payload: providerPayload,
     })
     .eq('id', delivery.id)
     .eq('status', delivery.status)
@@ -1724,6 +2198,7 @@ async function deliverViaChannel(input: {
     .maybeSingle()
   if (sendingError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
   if (!sendingData) throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
+  const reservedAttemptCount = delivery.attempt_count + 1
 
   const { error: messageMetadataError } = await input.admin
     .from('task_messages')
@@ -1745,7 +2220,12 @@ async function deliverViaChannel(input: {
     .eq('id', delivery.message_id)
     .eq('task_id', input.task.id)
   if (messageMetadataError) {
-    await updateDeliveryFailure(input.admin, delivery.id, 'TASK_MESSAGE_UPDATE_FAILED')
+    await updateDeliveryFailure(
+      input.admin,
+      delivery.id,
+      'TASK_MESSAGE_UPDATE_FAILED',
+      { status: 'sending', attemptCount: reservedAttemptCount }
+    )
     return {
       delivered: false,
       ambiguous: false,
@@ -1763,9 +2243,26 @@ async function deliverViaChannel(input: {
         admin: input.admin,
         deliveryId: delivery.id,
         accessLinkId: recipientAccessLinkId,
+        expectedAttemptCount: reservedAttemptCount,
       })
     }
     throw error
+  }
+
+  const { data: providerStarted, error: providerStartError } = await input.admin
+    .from('task_message_deliveries')
+    .update({
+      provider_payload: { ...providerPayload, providerCallStarted: true },
+    })
+    .eq('id', delivery.id)
+    .eq('status', 'sending')
+    .eq('attempt_count', reservedAttemptCount)
+    .select('id')
+    .maybeSingle()
+  if (providerStartError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  if (!providerStarted) {
+    await revokeUnsentTaskAccessLink(input.admin, recipientAccessLinkId)
+    throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
   }
 
   let providerMessageId: string
@@ -1774,9 +2271,10 @@ async function deliverViaChannel(input: {
     // new provider attempt with a different payload. Bind the provider key to
     // that link. A timeout/unknown outcome never reaches this code again:
     // sending/ambiguous state blocks replay until audited reconciliation.
-    const providerIdempotencyKey = recipientAccessDeliveryKey
+    const providerAttemptKey = recipientAccessDeliveryKey
       ? `${input.idempotencyKey}:${recipientAccessDeliveryKey}`
       : input.idempotencyKey
+    const providerIdempotencyKey = `${providerAttemptKey}:attempt:${reservedAttemptCount}`
     providerMessageId = input.channel === 'email'
       ? await sendResendEmail({
           to: address,
@@ -1808,7 +2306,12 @@ async function deliverViaChannel(input: {
   } catch (error) {
     const errorCode = safeErrorCode(error)
     if (isAmbiguousTaskDeliveryError(error)) {
-      await updateDeliveryAmbiguous(input.admin, delivery.id, errorCode)
+      await updateDeliveryAmbiguous(
+        input.admin,
+        delivery.id,
+        errorCode,
+        reservedAttemptCount
+      )
       return {
         delivered: false,
         ambiguous: true,
@@ -1817,7 +2320,12 @@ async function deliverViaChannel(input: {
         errorCode,
       }
     }
-    await updateDeliveryFailure(input.admin, delivery.id, errorCode)
+    await updateDeliveryFailure(
+      input.admin,
+      delivery.id,
+      errorCode,
+      { status: 'sending', attemptCount: reservedAttemptCount }
+    )
     return {
       delivered: false,
       ambiguous: false,
@@ -1828,7 +2336,7 @@ async function deliverViaChannel(input: {
   }
 
   const sentAt = new Date().toISOString()
-  const { error: sentError } = await input.admin
+  const { data: sentDelivery, error: sentError } = await input.admin
     .from('task_message_deliveries')
     .update({
       status: 'sent',
@@ -1837,7 +2345,20 @@ async function deliverViaChannel(input: {
       error_message: null,
     })
     .eq('id', delivery.id)
+    .eq('status', 'sending')
+    .eq('attempt_count', reservedAttemptCount)
+    .select('id')
+    .maybeSingle()
   if (sentError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  if (!sentDelivery) {
+    return {
+      delivered: false,
+      ambiguous: true,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+    }
+  }
   if (recipientAccessLinkId) {
     await input.admin
       .from('task_access_links')
@@ -1868,7 +2389,7 @@ async function deliverViaChannel(input: {
 async function deliverAction(input: {
   admin: AdminClient
   job: AutomationJob
-  task: OperationalTask
+  task: ExternallyRoutableOperationalTask
   action: TaskReminderAction
   recipients: { creator: Recipient; assignee: Recipient; issuer: Profile }
 }) {
@@ -1932,6 +2453,1280 @@ async function deliverAction(input: {
     throw automationError(fallbackResult.errorCode ?? 'TASK_DELIVERY_FALLBACK_FAILED')
   }
   return 'delivered' as const
+}
+
+async function loadTaskNotificationEvent(
+  admin: AdminClient,
+  job: AutomationJob
+) {
+  const eventId = notificationEventId(job)
+  if (!eventId) throw automationError('TASK_NOTIFICATION_JOB_PAYLOAD_INVALID')
+  const { data, error } = await admin
+    .from('task_events')
+    .select(
+      'id,org_id,task_id,event_type,actor_type,actor_profile_id,actor_contact_id,actor_name,message,from_status,to_status,metadata,created_at'
+    )
+    .eq('id', eventId)
+    .eq('org_id', job.org_id)
+    .eq('task_id', job.task_id)
+    .maybeSingle()
+  if (error) throw automationError('TASK_NOTIFICATION_EVENT_READ_FAILED')
+  if (!data) return null
+  const event = parseTaskNotificationEvent(data)
+  if (!event) throw automationError('TASK_NOTIFICATION_EVENT_INVALID')
+  const payloadEventType = optionalString(job.payload.eventType)
+  if (payloadEventType && payloadEventType !== event.event_type) {
+    throw automationError('TASK_NOTIFICATION_JOB_PAYLOAD_INVALID')
+  }
+  return event
+}
+
+async function prepareTaskNotificationDelivery(input: {
+  admin: AdminClient
+  event: TaskNotificationEvent
+  channel: PersistedTaskCommunicationChannel | null
+  auditText: string
+  accountActivation?: boolean
+}) {
+  const { data, error } = await input.admin.rpc('prepare_task_event_notification_delivery', {
+    p_event_id: input.event.id,
+    p_channel: input.channel,
+    p_body_text: input.auditText,
+    p_metadata: {
+      eventId: input.event.id,
+      eventType: input.event.event_type,
+      fromStatus: input.event.from_status,
+      toStatus: input.event.to_status,
+      actorName: taskActorDisplayName(input.event.actor_name, 'HusHub', input.event.actor_type),
+      humanEvent: true,
+      ...(input.accountActivation ? { accountActivation: true } : {}),
+      tokenPersisted: false,
+    },
+    p_provider_payload: {
+      eventId: input.event.id,
+      eventType: input.event.event_type,
+      toStatus: input.event.to_status,
+      humanEvent: true,
+      ...(input.accountActivation ? { accountActivation: true } : {}),
+      tokenPersisted: false,
+    },
+  })
+  if (error) {
+    const code = error.message?.match(/TASK_[A-Z0-9_]+/)?.[0]
+    throw automationError(code ?? 'TASK_NOTIFICATION_PREPARE_FAILED')
+  }
+  const prepared = parsePreparedTaskNotificationDelivery(data)
+  if (!prepared) throw automationError('TASK_NOTIFICATION_PREPARE_INVALID')
+  return prepared
+}
+
+function preparedRecipient(
+  prepared: PreparedTaskNotificationDelivery,
+  recipients: { creator: Recipient; assignee: Recipient }
+) {
+  const recipient = prepared.target === 'creator'
+    ? recipients.creator
+    : recipients.assignee
+  if (recipient.kind === prepared.recipientKind && recipient.id === prepared.recipientId) {
+    return recipient
+  }
+  throw automationError('TASK_NOTIFICATION_RECIPIENT_MISMATCH')
+}
+
+async function taskNotificationReplyTo(input: {
+  admin: AdminClient
+  event: TaskNotificationEvent
+  recipients: { creator: Recipient; assignee: Recipient; issuer: Profile }
+}) {
+  if (
+    input.event.actor_type === input.recipients.assignee.kind
+    && (
+      input.event.actor_profile_id === input.recipients.assignee.id
+      || input.event.actor_contact_id === input.recipients.assignee.id
+    )
+  ) {
+    return input.recipients.assignee.email
+  }
+  if (input.event.actor_type === 'profile' && input.event.actor_profile_id) {
+    if (input.event.actor_profile_id === input.recipients.issuer.id) {
+      return input.recipients.issuer.email
+    }
+    const actor = await loadProfile(
+      input.admin,
+      input.event.org_id,
+      input.event.actor_profile_id
+    )
+    return actor?.email ?? null
+  }
+  if (input.event.actor_type === 'contact' && input.event.actor_contact_id) {
+    const actor = await loadContact(
+      input.admin,
+      input.event.org_id,
+      input.event.actor_contact_id
+    )
+    return actor?.email ?? null
+  }
+  return null
+}
+
+function taskNotificationErrorCode(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : ''
+  return message.match(/TASK_[A-Z0-9_]+/)?.[0] ?? fallback
+}
+
+function taskNotificationSkipError(reason: string) {
+  const codes: Record<string, string> = {
+    recipient_missing: 'TASK_NOTIFICATION_RECIPIENT_MISSING',
+    recipient_inactive: 'TASK_NOTIFICATION_RECIPIENT_INACTIVE',
+    recipient_access_denied: 'TASK_NOTIFICATION_RECIPIENT_ACCESS_DENIED',
+    actor_invalid: 'TASK_NOTIFICATION_ACTOR_INVALID',
+  }
+  return automationError(codes[reason] ?? 'TASK_NOTIFICATION_PREPARE_SKIPPED_INVALID')
+}
+
+async function revokeUnsentTaskAccessLink(
+  admin: AdminClient,
+  accessLinkId: string | null
+) {
+  if (!accessLinkId) return
+  await admin
+    .from('task_access_links')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('id', accessLinkId)
+    .is('sent_at', null)
+    .is('revoked_at', null)
+}
+
+async function contactHasActiveTaskPortalAccount(
+  admin: AdminClient,
+  contactId: string
+) {
+  const { data: contact, error: contactError } = await admin
+    .from('organization_contacts')
+    .select('recipient_identity_id')
+    .eq('id', contactId)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (contactError) throw automationError('TASK_RECIPIENT_IDENTITY_READ_FAILED')
+  const identityId = contact && optionalString(contact.recipient_identity_id)
+  if (!identityId) return false
+  const { data: identity, error: identityError } = await admin
+    .from('task_recipient_identities')
+    .select('status,auth_user_id')
+    .eq('id', identityId)
+    .maybeSingle()
+  if (identityError) throw automationError('TASK_RECIPIENT_IDENTITY_READ_FAILED')
+  return identity?.status === 'active' && Boolean(optionalString(identity.auth_user_id))
+}
+
+async function contactCanReceiveTaskNotification(
+  admin: AdminClient,
+  contactId: string
+) {
+  const { data: contact, error: contactError } = await admin
+    .from('organization_contacts')
+    .select('recipient_identity_id')
+    .eq('id', contactId)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (contactError) throw automationError('TASK_RECIPIENT_IDENTITY_READ_FAILED')
+  if (!contact) return false
+  const identityId = optionalString(contact.recipient_identity_id)
+  // Legacy contacts without a recipient identity remain valid recipients. Once
+  // an identity exists, its explicit disabled state is the global revocation
+  // boundary for both task links and the notification content itself.
+  if (!identityId) return true
+  const { data: identity, error: identityError } = await admin
+    .from('task_recipient_identities')
+    .select('status')
+    .eq('id', identityId)
+    .maybeSingle()
+  if (identityError) throw automationError('TASK_RECIPIENT_IDENTITY_READ_FAILED')
+  if (!identity) return false
+  return identity.status !== 'disabled'
+}
+
+async function taskNotificationIsSuperseded(
+  admin: AdminClient,
+  event: TaskNotificationEvent,
+  prepared: PreparedTaskNotificationDelivery,
+  expectedRecipientAddress?: string
+) {
+  const { data: task, error: taskError } = await admin
+    .from('operational_tasks')
+    .select('status,archived_at,issuer_profile_id,assignee_profile_id,assignee_contact_id')
+    .eq('id', event.task_id)
+    .eq('org_id', event.org_id)
+    .maybeSingle()
+  if (taskError) throw automationError('TASK_NOTIFICATION_FENCE_FAILED')
+  if (!task || task.archived_at !== null) return true
+  const recipientStillCurrent = prepared.target === 'creator'
+    ? prepared.recipientKind === 'profile'
+      && task.issuer_profile_id === prepared.recipientId
+    : prepared.recipientKind === 'contact'
+      ? task.assignee_contact_id === prepared.recipientId
+      : task.assignee_profile_id === prepared.recipientId
+  if (!recipientStillCurrent) return true
+  if (prepared.recipientKind === 'profile') {
+    if (!(await hasInternalTaskModuleAccess({
+      orgId: event.org_id,
+      profileId: prepared.recipientId,
+    }))) return true
+    const currentProfile = await loadProfile(admin, event.org_id, prepared.recipientId)
+    if (!currentProfile) return true
+    if (expectedRecipientAddress && isCommunicationChannel(prepared.channel)) {
+      const currentAddress = deliveryAddress({
+        kind: 'profile',
+        id: currentProfile.id,
+        name: currentProfile.full_name || currentProfile.email || 'Mottagare',
+        email: currentProfile.email,
+        whatsappNumber: currentProfile.phone,
+      }, prepared.channel)
+      if (currentAddress !== expectedRecipientAddress) return true
+    }
+  } else {
+    const currentContact = await loadContact(admin, event.org_id, prepared.recipientId)
+    if (!currentContact) return true
+    if (!(await contactCanReceiveTaskNotification(admin, prepared.recipientId))) return true
+    if (expectedRecipientAddress && isCommunicationChannel(prepared.channel)) {
+      const currentAddress = deliveryAddress({
+        kind: 'contact',
+        id: currentContact.id,
+        name: currentContact.name,
+        email: currentContact.email,
+        whatsappNumber: currentContact.whatsapp_number || currentContact.phone,
+      }, prepared.channel)
+      if (currentAddress !== expectedRecipientAddress) return true
+    }
+  }
+  if (event.event_type === 'status_changed') {
+    return !event.to_status || task.status !== event.to_status
+  }
+  if (event.event_type !== 'deadline_change_requested') return false
+  const requestId = optionalString(event.metadata.requestId)
+  if (!requestId) throw automationError('TASK_NOTIFICATION_EVENT_INVALID')
+  const { data: request, error: requestError } = await admin
+    .from('task_deadline_change_requests')
+    .select('status')
+    .eq('id', requestId)
+    .eq('task_id', event.task_id)
+    .eq('org_id', event.org_id)
+    .maybeSingle()
+  if (requestError) throw automationError('TASK_NOTIFICATION_FENCE_FAILED')
+  return !request || request.status !== 'pending'
+}
+
+async function cancelSupersededTaskNotificationDelivery(
+  admin: AdminClient,
+  prepared: PreparedTaskNotificationDelivery,
+  accessLinkId: string | null,
+  expectedAttemptCount?: number
+) {
+  await revokeUnsentTaskAccessLink(admin, accessLinkId)
+  let update = admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'cancelled',
+      next_attempt_at: null,
+      error_message: 'TASK_NOTIFICATION_SUPERSEDED',
+    })
+    .eq('id', prepared.deliveryId)
+    .in('status', ['queued', 'failed', 'sending'])
+  if (expectedAttemptCount !== undefined) {
+    update = update.eq('attempt_count', expectedAttemptCount)
+  }
+  const { error } = await update
+  if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+
+  let siblings = admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'cancelled',
+      next_attempt_at: null,
+      error_message: 'TASK_NOTIFICATION_SUPERSEDED',
+    })
+    .eq('message_id', prepared.messageId)
+    .eq('recipient_kind', prepared.recipientKind)
+    .neq('id', prepared.deliveryId)
+    .in('status', ['queued', 'failed'])
+  siblings = prepared.recipientKind === 'profile'
+    ? siblings.eq('recipient_profile_id', prepared.recipientId)
+    : siblings.eq('recipient_contact_id', prepared.recipientId)
+  const { error: siblingError } = await siblings
+  if (siblingError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+}
+
+async function recordTaskNotificationDeliveryEvent(input: {
+  admin: AdminClient
+  job: AutomationJob
+  task: OperationalTask
+  event: TaskNotificationEvent
+  prepared: PreparedTaskNotificationDelivery
+  isFallback: boolean
+}) {
+  const { data: existing, error: readError } = await input.admin
+    .from('task_events')
+    .select('id')
+    .eq('org_id', input.task.org_id)
+    .eq('task_id', input.task.id)
+    .eq('event_type', 'automation_message_sent')
+    .contains('metadata', { deliveryId: input.prepared.deliveryId })
+    .limit(1)
+    .maybeSingle()
+  if (readError) throw automationError('TASK_AUTOMATION_EVENT_READ_FAILED')
+  if (existing) return
+  const { error } = await input.admin.from('task_events').insert({
+    org_id: input.task.org_id,
+    task_id: input.task.id,
+    event_type: 'automation_message_sent',
+    actor_type: 'system',
+    actor_name: 'HusHub',
+    message: `HusHub skickade en notifiering via ${
+      input.prepared.channel === 'email'
+        ? 'e-post'
+        : input.prepared.channel === 'whatsapp'
+          ? 'WhatsApp'
+          : 'HusHub'
+    }.`,
+    metadata: {
+      taskMutationApplied: true,
+      humanEventNotification: true,
+      sourceEventId: input.event.id,
+      sourceEventType: input.event.event_type,
+      jobId: input.job.id,
+      messageId: input.prepared.messageId,
+      deliveryId: input.prepared.deliveryId,
+      channel: input.prepared.channel,
+      isFallback: input.isFallback,
+    },
+  })
+  if (error) throw automationError('TASK_AUTOMATION_EVENT_CREATE_FAILED')
+}
+
+async function taskNotificationWasAlreadyDelivered(
+  admin: AdminClient,
+  event: TaskNotificationEvent
+) {
+  const { data, error } = await admin
+    .from('task_message_deliveries')
+    .select('id')
+    .eq('org_id', event.org_id)
+    .eq('task_id', event.task_id)
+    .eq('source_event_id', event.id)
+    .in('status', ['sent', 'delivered', 'read', 'replied'])
+    .limit(1)
+    .maybeSingle()
+  if (error) throw automationError('TASK_NOTIFICATION_DELIVERY_READ_FAILED')
+  return Boolean(data)
+}
+
+function taskNotificationRecipientIsCurrent(
+  task: OperationalTask,
+  recipient: TaskNotificationJobRecipient
+) {
+  if (recipient.target === 'creator') {
+    return recipient.recipientKind === 'profile'
+      && recipient.recipientId === task.issuer_profile_id
+  }
+  return recipient.recipientKind === 'contact'
+    ? recipient.recipientId === task.assignee_contact_id
+    : recipient.recipientId === task.assignee_profile_id
+}
+
+function preparedMatchesJobRecipient(
+  prepared: PreparedTaskNotificationDelivery,
+  expected: TaskNotificationJobRecipient
+) {
+  return prepared.target === expected.target
+    && prepared.recipientKind === expected.recipientKind
+    && prepared.recipientId === expected.recipientId
+}
+
+async function cancelQueuedTaskNotificationForChangedRecipient(input: {
+  admin: AdminClient
+  event: TaskNotificationEvent
+  expectedRecipient: TaskNotificationJobRecipient
+}) {
+  let unresolved = input.admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'ambiguous',
+      failed_at: null,
+      next_attempt_at: null,
+      error_message: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+    })
+    .eq('org_id', input.event.org_id)
+    .eq('task_id', input.event.task_id)
+    .eq('source_event_id', input.event.id)
+    .eq('recipient_kind', input.expectedRecipient.recipientKind)
+  unresolved = input.expectedRecipient.recipientKind === 'profile'
+    ? unresolved.eq('recipient_profile_id', input.expectedRecipient.recipientId)
+    : unresolved.eq('recipient_contact_id', input.expectedRecipient.recipientId)
+  const { error: unresolvedError } = await unresolved.eq('status', 'sending')
+  if (unresolvedError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+
+  let cancellation = input.admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'cancelled',
+      next_attempt_at: null,
+      error_message: 'TASK_NOTIFICATION_RECIPIENT_CHANGED',
+    })
+    .eq('org_id', input.event.org_id)
+    .eq('task_id', input.event.task_id)
+    .eq('source_event_id', input.event.id)
+    .eq('recipient_kind', input.expectedRecipient.recipientKind)
+  cancellation = input.expectedRecipient.recipientKind === 'profile'
+    ? cancellation.eq('recipient_profile_id', input.expectedRecipient.recipientId)
+    : cancellation.eq('recipient_contact_id', input.expectedRecipient.recipientId)
+  const { error } = await cancellation.in('status', ['queued', 'failed'])
+  if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+}
+
+async function cancelMismatchedPreparedDelivery(
+  admin: AdminClient,
+  prepared: PreparedTaskNotificationDelivery
+) {
+  const { error } = await admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'cancelled',
+      next_attempt_at: null,
+      error_message: 'TASK_NOTIFICATION_RECIPIENT_CHANGED',
+    })
+    .eq('id', prepared.deliveryId)
+    .in('status', ['queued', 'failed'])
+  if (error) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+}
+
+function parseReconciledTaskNotificationDelivery(
+  value: unknown
+): ReconciledTaskNotificationDelivery | null {
+  const row = toObject(value)
+  const recipientKind = optionalString(row.recipient_kind)
+  const recipientId = recipientKind === 'profile'
+    ? optionalString(row.recipient_profile_id)
+    : recipientKind === 'contact'
+      ? optionalString(row.recipient_contact_id)
+      : null
+  const retryMarker = row.reconciliation_retry_for_attempt === null
+    || row.reconciliation_retry_for_attempt === undefined
+    ? null
+    : Number(row.reconciliation_retry_for_attempt)
+  if (
+    typeof row.id !== 'string'
+    || typeof row.message_id !== 'string'
+    || typeof row.source_event_id !== 'string'
+    || !isCommunicationChannel(row.channel)
+    || !isTaskNotificationProviderForChannel(row.provider, row.channel)
+    || row.provider === 'hushub'
+    || !isTaskDeliveryStatus(row.status)
+    || (recipientKind !== 'profile' && recipientKind !== 'contact')
+    || !recipientId
+    || (retryMarker !== null && (!Number.isInteger(retryMarker) || retryMarker < 1))
+  ) return null
+  return {
+    id: row.id,
+    messageId: row.message_id,
+    sourceEventId: row.source_event_id,
+    channel: row.channel,
+    provider: row.provider,
+    status: row.status,
+    isFallback: row.is_fallback === true,
+    accountActivation: toObject(row.provider_payload).accountActivation === true,
+    recipientKind,
+    recipientId,
+    attemptCount: normalizeInteger(row.attempt_count, 0, 0, 20),
+    reconciliationRetryForAttempt: retryMarker,
+  }
+}
+
+async function loadReconciledTaskNotificationDelivery(input: {
+  admin: AdminClient
+  job: AutomationJob
+  event: TaskNotificationEvent
+  expectedRecipient: TaskNotificationJobRecipient
+}) {
+  const retryDeliveryId = optionalString(input.job.payload.retryDeliveryId)
+  const retryAttemptCount = Number(input.job.payload.retryAttemptCount)
+  if (
+    !retryDeliveryId
+    || !Number.isInteger(retryAttemptCount)
+    || retryAttemptCount < 1
+    || retryAttemptCount > 20
+  ) throw automationError('TASK_NOTIFICATION_RECONCILIATION_PAYLOAD_INVALID')
+  const { data, error } = await input.admin
+    .from('task_message_deliveries')
+    .select(
+      'id,message_id,source_event_id,channel,provider,status,is_fallback,recipient_kind,recipient_profile_id,recipient_contact_id,attempt_count,reconciliation_retry_for_attempt,provider_payload'
+    )
+    .eq('id', retryDeliveryId)
+    .eq('org_id', input.event.org_id)
+    .eq('task_id', input.event.task_id)
+    .eq('source_event_id', input.event.id)
+    .maybeSingle()
+  if (error) throw automationError('TASK_NOTIFICATION_DELIVERY_READ_FAILED')
+  const delivery = parseReconciledTaskNotificationDelivery(data)
+  if (!delivery) throw automationError('TASK_NOTIFICATION_RECONCILIATION_DELIVERY_INVALID')
+  if (
+    input.job.delivery_id !== retryDeliveryId
+    || (input.job.message_id !== null && input.job.message_id !== delivery.messageId)
+    || delivery.sourceEventId !== input.event.id
+    || delivery.recipientKind !== input.expectedRecipient.recipientKind
+    || delivery.recipientId !== input.expectedRecipient.recipientId
+    || delivery.attemptCount !== retryAttemptCount
+  ) return null
+  return { delivery, retryAttemptCount }
+}
+
+async function authorizeOneReconciliationAttempt(input: {
+  admin: AdminClient
+  prepared: PreparedTaskNotificationDelivery
+  event: TaskNotificationEvent
+  retryDeliveryId: string
+  retryAttemptCount: number
+}) {
+  const selection = 'id,status,attempt_count,max_attempts,reconciliation_retry_for_delivery_id,reconciliation_retry_for_attempt'
+  const load = async () => {
+    const { data, error } = await input.admin
+      .from('task_message_deliveries')
+      .select(selection)
+      .eq('id', input.prepared.deliveryId)
+      .eq('message_id', input.prepared.messageId)
+      .eq('org_id', input.event.org_id)
+      .eq('task_id', input.event.task_id)
+      .eq('source_event_id', input.event.id)
+      .maybeSingle()
+    if (error || !data) throw automationError('TASK_NOTIFICATION_DELIVERY_READ_FAILED')
+    const row = toObject(data)
+    const attemptCount = Number(row.attempt_count)
+    const maxAttempts = Number(row.max_attempts)
+    const markerDeliveryId = optionalString(row.reconciliation_retry_for_delivery_id)
+    const markerAttempt = row.reconciliation_retry_for_attempt === null
+      || row.reconciliation_retry_for_attempt === undefined
+      ? null
+      : Number(row.reconciliation_retry_for_attempt)
+    if (
+      typeof row.id !== 'string'
+      || !isTaskDeliveryStatus(row.status)
+      || !Number.isInteger(attemptCount)
+      || attemptCount < 0
+      || !Number.isInteger(maxAttempts)
+      || maxAttempts < 1
+      || ((markerDeliveryId === null) !== (markerAttempt === null))
+      || (markerAttempt !== null && (!Number.isInteger(markerAttempt) || markerAttempt < 1))
+    ) throw automationError('TASK_NOTIFICATION_DELIVERY_INVALID')
+    return {
+      id: row.id,
+      status: row.status,
+      attemptCount,
+      maxAttempts,
+      markerDeliveryId,
+      markerAttempt,
+    }
+  }
+
+  let row = await load()
+  if (SUCCESSFUL_DELIVERY_STATUSES.has(row.status)) return
+  if (row.status === 'sending' || row.status === 'ambiguous') {
+    throw automationError('TASK_DELIVERY_RECONCILIATION_REQUIRED')
+  }
+  if (row.status !== 'queued' && row.status !== 'failed') {
+    throw automationError('TASK_NOTIFICATION_RECONCILIATION_DELIVERY_STALE')
+  }
+  if (
+    row.markerDeliveryId === input.retryDeliveryId
+    && row.markerAttempt === input.retryAttemptCount
+  ) {
+    if (row.attemptCount < row.maxAttempts) return
+    throw automationError('TASK_DELIVERY_ATTEMPTS_EXHAUSTED')
+  }
+  if (row.attemptCount >= 20) throw automationError('TASK_DELIVERY_ATTEMPTS_EXHAUSTED')
+
+  let update = input.admin
+    .from('task_message_deliveries')
+    .update({
+      max_attempts: row.attemptCount + 1,
+      reconciliation_retry_for_delivery_id: input.retryDeliveryId,
+      reconciliation_retry_for_attempt: input.retryAttemptCount,
+      next_attempt_at: new Date().toISOString(),
+    })
+    .eq('id', row.id)
+    .eq('status', row.status)
+    .eq('attempt_count', row.attemptCount)
+  update = row.markerDeliveryId === null
+    ? update
+        .is('reconciliation_retry_for_delivery_id', null)
+        .is('reconciliation_retry_for_attempt', null)
+    : update
+        .eq('reconciliation_retry_for_delivery_id', row.markerDeliveryId)
+        .eq('reconciliation_retry_for_attempt', row.markerAttempt)
+  const { data: updated, error: updateError } = await update
+    .select('id')
+    .maybeSingle()
+  if (updateError) throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  if (updated) return
+
+  row = await load()
+  if (
+    row.markerDeliveryId === input.retryDeliveryId
+    && row.markerAttempt === input.retryAttemptCount
+    && row.attemptCount < row.maxAttempts
+  ) return
+  throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
+}
+
+async function deliverPreparedTaskNotification(input: {
+  admin: AdminClient
+  job: AutomationJob
+  task: OperationalTask
+  event: TaskNotificationEvent
+  descriptor: TaskNotificationDescriptor
+  recipients: { creator: Recipient; assignee: Recipient; issuer: Profile }
+  prepared: PreparedTaskNotificationDelivery
+  isFallback: boolean
+}): Promise<DeliveryResult> {
+  const { data: deliveryData, error: deliveryReadError } = await input.admin
+    .from('task_message_deliveries')
+    .select('id,message_id,channel,status,is_fallback,attempt_count,max_attempts,idempotency_key,sent_at,created_at')
+    .eq('id', input.prepared.deliveryId)
+    .eq('message_id', input.prepared.messageId)
+    .eq('org_id', input.task.org_id)
+    .eq('task_id', input.task.id)
+    .maybeSingle()
+  if (deliveryReadError || !deliveryData) {
+    throw automationError('TASK_NOTIFICATION_DELIVERY_READ_FAILED')
+  }
+  const delivery = parseStoredDelivery(deliveryData)
+  if (
+    !delivery
+    || delivery.channel !== input.prepared.channel
+    || delivery.idempotency_key !== input.prepared.idempotencyKey
+  ) {
+    throw automationError('TASK_NOTIFICATION_DELIVERY_INVALID')
+  }
+  if (SUCCESSFUL_DELIVERY_STATUSES.has(delivery.status)) {
+    await recordTaskNotificationDeliveryEvent({ ...input })
+    return {
+      delivered: true,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: null,
+    }
+  }
+  // Legacy tasks can use the persisted in-app channel. Its preparation RPC
+  // completes the delivery atomically; never reinterpret a non-successful
+  // in-app row as an email or WhatsApp provider attempt.
+  if (input.prepared.channel === 'in_app') {
+    return {
+      delivered: false,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_NOTIFICATION_IN_APP_NOT_DELIVERED',
+    }
+  }
+  if (delivery.status === 'sending' || delivery.status === 'ambiguous') {
+    if (delivery.status === 'sending') {
+      await updateDeliveryAmbiguous(
+        input.admin,
+        delivery.id,
+        'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+        delivery.attempt_count
+      )
+    }
+    return {
+      delivered: false,
+      ambiguous: true,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+    }
+  }
+  if (await taskNotificationIsSuperseded(input.admin, input.event, input.prepared)) {
+    await cancelSupersededTaskNotificationDelivery(
+      input.admin,
+      input.prepared,
+      null,
+      delivery.attempt_count
+    )
+    return {
+      delivered: false,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_NOTIFICATION_SUPERSEDED',
+    }
+  }
+  if (delivery.status === 'cancelled' || delivery.attempt_count >= delivery.max_attempts) {
+    return {
+      delivered: false,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_DELIVERY_ATTEMPTS_EXHAUSTED',
+    }
+  }
+  const recipient = preparedRecipient(input.prepared, input.recipients)
+  let actionUrl = recipient.kind === 'profile'
+    ? `${appBaseUrl()}/uppdrag?task=${encodeURIComponent(input.task.id)}`
+    : `${appBaseUrl()}/mina-uppdrag/uppdrag/${encodeURIComponent(input.task.id)}`
+  let linkMode: 'internal' | 'bearer' | 'portal' | 'activation' = recipient.kind === 'profile'
+    ? 'internal'
+    : 'portal'
+  let accessLinkId: string | null = null
+  let accessDeliveryKey: string | null = null
+  // Re-resolve mutable profile/contact details for every attempt. The address
+  // prepared with the outbox row is an audit snapshot, not a send authority.
+  let recipientAddress = deliveryAddress(recipient, input.prepared.channel) ?? ''
+  if (recipient.kind === 'contact' && !TERMINAL_STATUSES.has(input.task.status)) {
+    try {
+      const directLink = await issueDirectTaskAccessLink({
+        contactId: recipient.id,
+        taskId: input.task.id,
+        createdByProfileId: input.recipients.issuer.id,
+        baseUrl: appBaseUrl(),
+        issuedBySystem: true,
+      })
+      actionUrl = directLink.url
+      linkMode = 'bearer'
+      accessLinkId = directLink.accessLinkId
+      accessDeliveryKey = directLink.deliveryKey
+      recipientAddress = input.prepared.channel === 'email'
+        ? directLink.recipientEmail ?? ''
+        : normalizedWhatsAppNumber(directLink.recipientWhatsappNumber) ?? ''
+    } catch (error) {
+      const errorCode = taskNotificationErrorCode(error, 'TASK_ACCESS_CREATE_FAILED')
+      await updateDeliveryFailure(
+        input.admin,
+        delivery.id,
+        errorCode,
+        { status: delivery.status, attemptCount: delivery.attempt_count }
+      )
+      return {
+        delivered: false,
+        ambiguous: false,
+        deliveryId: delivery.id,
+        messageId: delivery.message_id,
+        errorCode,
+      }
+    }
+  } else if (recipient.kind === 'contact') {
+    try {
+      // Never put a fresh account-activation secret into WhatsApp. A dormant
+      // recipient must receive the activation through the configured email
+      // fallback, while an already active account may receive its exact portal
+      // URL through either configured channel.
+      if (
+        input.prepared.channel === 'whatsapp'
+        && !(await contactHasActiveTaskPortalAccount(input.admin, recipient.id))
+      ) {
+        await updateDeliveryFailure(
+          input.admin,
+          delivery.id,
+          'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED',
+          { status: delivery.status, attemptCount: delivery.attempt_count }
+        )
+        return {
+          delivered: false,
+          ambiguous: false,
+          deliveryId: delivery.id,
+          messageId: delivery.message_id,
+          errorCode: 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED',
+        }
+      }
+      const entryLink = await ensureRecipientTaskEntryLink({
+        contactId: recipient.id,
+        taskId: input.task.id,
+        baseUrl: appBaseUrl(),
+        allowActivation: true,
+      })
+      actionUrl = entryLink.url
+      linkMode = entryLink.mode
+      accessDeliveryKey = entryLink.deliveryKey
+      if (input.prepared.channel === 'email') {
+        recipientAddress = entryLink.recipientEmail
+      }
+    } catch (error) {
+      const errorCode = taskNotificationErrorCode(
+        error,
+        'TASK_RECIPIENT_ENTRY_LINK_FAILED'
+      )
+      await updateDeliveryFailure(
+        input.admin,
+        delivery.id,
+        errorCode,
+        { status: delivery.status, attemptCount: delivery.attempt_count }
+      )
+      return {
+        delivered: false,
+        ambiguous: false,
+        deliveryId: delivery.id,
+        messageId: delivery.message_id,
+        errorCode,
+      }
+    }
+  }
+  if (!recipientAddress) {
+    await revokeUnsentTaskAccessLink(input.admin, accessLinkId)
+    await updateDeliveryFailure(
+      input.admin,
+      delivery.id,
+      'TASK_DELIVERY_ADDRESS_MISSING',
+      { status: delivery.status, attemptCount: delivery.attempt_count }
+    )
+    return {
+      delivered: false,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_DELIVERY_ADDRESS_MISSING',
+    }
+  }
+  const content = buildTaskNotificationContent({
+    event: input.event,
+    task: input.task,
+    recipient,
+    descriptor: input.descriptor,
+    actionUrl,
+    linkMode,
+  })
+  const providerPayload = {
+    subject: content.subject,
+    eventId: input.event.id,
+    eventType: input.event.event_type,
+    toStatus: input.event.to_status,
+    target: input.prepared.target,
+    recipientKind: input.prepared.recipientKind,
+    recipientId: input.prepared.recipientId,
+    humanEvent: true,
+    ...(linkMode === 'activation' ? { accountActivation: true } : {}),
+    ...(accessLinkId ? { accessLinkId } : {}),
+    providerCallStarted: false,
+    tokenPersisted: false,
+  }
+  const { data: reserved, error: reservationError } = await input.admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'sending',
+      recipient_address: recipientAddress,
+      attempt_count: delivery.attempt_count + 1,
+      failed_at: null,
+      next_attempt_at: null,
+      error_message: null,
+      provider_payload: providerPayload,
+    })
+    .eq('id', delivery.id)
+    .eq('status', delivery.status)
+    .eq('attempt_count', delivery.attempt_count)
+    .select('id')
+    .maybeSingle()
+  if (reservationError) {
+    await revokeUnsentTaskAccessLink(input.admin, accessLinkId)
+    throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  }
+  if (!reserved) {
+    await revokeUnsentTaskAccessLink(input.admin, accessLinkId)
+    throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
+  }
+  const reservedAttemptCount = delivery.attempt_count + 1
+
+  if (await taskNotificationIsSuperseded(
+    input.admin,
+    input.event,
+    input.prepared,
+    recipientAddress
+  )) {
+    await cancelSupersededTaskNotificationDelivery(
+      input.admin,
+      input.prepared,
+      accessLinkId,
+      reservedAttemptCount
+    )
+    return {
+      delivered: false,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_NOTIFICATION_SUPERSEDED',
+    }
+  }
+
+  const { data: providerStarted, error: providerStartError } = await input.admin
+    .from('task_message_deliveries')
+    .update({
+      provider_payload: { ...providerPayload, providerCallStarted: true },
+    })
+    .eq('id', delivery.id)
+    .eq('status', 'sending')
+    .eq('attempt_count', reservedAttemptCount)
+    .select('id')
+    .maybeSingle()
+  if (providerStartError) {
+    await revokeUnsentTaskAccessLink(input.admin, accessLinkId)
+    throw automationError('TASK_DELIVERY_UPDATE_FAILED')
+  }
+  if (!providerStarted) {
+    await revokeUnsentTaskAccessLink(input.admin, accessLinkId)
+    throw automationError('TASK_DELIVERY_CONCURRENT_ATTEMPT')
+  }
+
+  let providerMessageId: string
+  try {
+    const providerAttemptKey = accessDeliveryKey
+      ? `${delivery.idempotency_key}:${accessDeliveryKey}`
+      : delivery.idempotency_key
+    const providerIdempotencyKey = `${providerAttemptKey}:attempt:${reservedAttemptCount}`
+    providerMessageId = input.prepared.channel === 'email'
+      ? await sendResendEmail({
+          to: recipientAddress,
+          replyTo: await taskNotificationReplyTo(input),
+          subject: content.subject,
+          text: content.text,
+          html: content.html,
+          idempotencyKey: providerIdempotencyKey,
+        })
+      : await sendWhatsAppTemplate({
+          to: recipientAddress,
+          templateName: process.env.WHATSAPP_TASK_EVENT_TEMPLATE_NAME?.trim() || null,
+          // The approved template contains only routing context. Free-form
+          // comments/reasons stay inside HusHub and are never WhatsApp params.
+          parameters: [
+            recipient.name.slice(0, 256),
+            input.event.actor_name.slice(0, 256),
+            input.descriptor.heading.slice(0, 512),
+            input.task.title.slice(0, 1024),
+            actionUrl,
+          ],
+          idempotencyKey: providerIdempotencyKey,
+        })
+  } catch (error) {
+    const errorCode = taskNotificationErrorCode(error, 'TASK_NOTIFICATION_PROVIDER_FAILED')
+    if (isAmbiguousTaskDeliveryError(error)) {
+      await updateDeliveryAmbiguous(
+        input.admin,
+        delivery.id,
+        errorCode,
+        reservedAttemptCount
+      )
+      return {
+        delivered: false,
+        ambiguous: true,
+        deliveryId: delivery.id,
+        messageId: delivery.message_id,
+        errorCode,
+      }
+    }
+    await revokeUnsentTaskAccessLink(input.admin, accessLinkId)
+    await updateDeliveryFailure(
+      input.admin,
+      delivery.id,
+      errorCode,
+      { status: 'sending', attemptCount: reservedAttemptCount }
+    )
+    return {
+      delivered: false,
+      ambiguous: false,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode,
+    }
+  }
+
+  const sentAt = new Date().toISOString()
+  const { data: updatedDelivery, error: deliveryError } = await input.admin
+    .from('task_message_deliveries')
+    .update({
+      status: 'sent',
+      sent_at: sentAt,
+      provider_message_id: providerMessageId,
+      error_message: null,
+    })
+    .eq('id', delivery.id)
+    .eq('status', 'sending')
+    .eq('attempt_count', reservedAttemptCount)
+    .select('id')
+    .maybeSingle()
+  if (deliveryError || !updatedDelivery) {
+    await updateDeliveryAmbiguous(
+      input.admin,
+      delivery.id,
+      'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+      reservedAttemptCount
+    )
+    return {
+      delivered: false,
+      ambiguous: true,
+      deliveryId: delivery.id,
+      messageId: delivery.message_id,
+      errorCode: 'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+    }
+  }
+  const { error: messageError } = await input.admin
+    .from('task_messages')
+    .update({ provider_message_id: providerMessageId })
+    .eq('id', delivery.message_id)
+    .eq('task_id', input.task.id)
+  if (messageError) {
+    // The exact delivery row is already the durable provider audit. A failure
+    // to copy the same provider id onto the parent message must never replay a
+    // provider call that has been accepted.
+    console.error('[tasks.automation] message provider audit update failed', {
+      taskId: input.task.id,
+      messageId: delivery.message_id,
+      deliveryId: delivery.id,
+      code: 'TASK_MESSAGE_UPDATE_FAILED',
+    })
+  }
+  if (accessLinkId) {
+    await input.admin
+      .from('task_access_links')
+      .update({ sent_at: sentAt })
+      .eq('id', accessLinkId)
+      .is('revoked_at', null)
+  }
+  await recordTaskNotificationDeliveryEvent({ ...input })
+  return {
+    delivered: true,
+    ambiguous: false,
+    deliveryId: delivery.id,
+    messageId: delivery.message_id,
+    errorCode: null,
+  }
+}
+
+async function deliverReconciledTaskNotification(input: {
+  admin: AdminClient
+  job: AutomationJob
+  task: OperationalTask
+  event: TaskNotificationEvent
+  descriptor: TaskNotificationDescriptor
+  auditText: string
+  expectedRecipient: TaskNotificationJobRecipient
+  recipients: { creator: Recipient; assignee: Recipient; issuer: Profile }
+}) {
+  const resolution = await loadReconciledTaskNotificationDelivery({
+      admin: input.admin,
+      job: input.job,
+      event: input.event,
+      expectedRecipient: input.expectedRecipient,
+    })
+  if (!resolution) return 'completed' as const
+  const { delivery: resolvedDelivery, retryAttemptCount } = resolution
+  if (resolvedDelivery.status === 'sending') {
+    await updateDeliveryAmbiguous(
+      input.admin,
+      resolvedDelivery.id,
+      'TASK_DELIVERY_RECONCILIATION_REQUIRED',
+      resolvedDelivery.attemptCount
+    )
+    return 'completed' as const
+  }
+  if (resolvedDelivery.status === 'ambiguous') return 'completed' as const
+  if (resolvedDelivery.status !== 'failed') return 'completed' as const
+
+  let channel = resolvedDelivery.channel
+  let accountActivation = resolvedDelivery.accountActivation
+  if (input.expectedRecipient.target === 'assignee' && !resolvedDelivery.isFallback) {
+    const configuredFallback = isCommunicationChannel(input.task.fallback_channel)
+      && input.task.fallback_channel !== resolvedDelivery.channel
+      ? input.task.fallback_channel
+      : null
+    if (configuredFallback) {
+      channel = configuredFallback
+    } else if (
+      resolvedDelivery.channel === 'whatsapp'
+      && TERMINAL_STATUSES.has(input.task.status)
+      && input.recipients.assignee.kind === 'contact'
+      && input.recipients.assignee.email
+      && !(await contactHasActiveTaskPortalAccount(
+        input.admin,
+        input.recipients.assignee.id
+      ))
+    ) {
+      // A dormant terminal recipient cannot receive an activation secret over
+      // WhatsApp. A confirmed-not-sent WhatsApp attempt therefore continues
+      // once through the canonical email activation path.
+      channel = 'email'
+      accountActivation = true
+    }
+  }
+  if (resolvedDelivery.channel === 'whatsapp' && channel === 'whatsapp') {
+    // Meta does not provide the provider idempotency guarantee we rely on for
+    // a same-channel replay. Once an operator confirms a WhatsApp attempt as
+    // not sent, only a distinct configured/safe email fallback may continue.
+    return 'completed' as const
+  }
+
+  const prepared = await prepareTaskNotificationDelivery({
+    admin: input.admin,
+    event: input.event,
+    channel,
+    auditText: input.auditText,
+    accountActivation,
+  })
+  if (prepared.skipped) {
+    if (!BENIGN_TASK_NOTIFICATION_SKIP_REASONS.has(prepared.reason)) {
+      throw taskNotificationSkipError(prepared.reason)
+    }
+    return 'completed' as const
+  }
+  if (!preparedMatchesJobRecipient(prepared, input.expectedRecipient)) {
+    await cancelMismatchedPreparedDelivery(input.admin, prepared)
+    await cancelQueuedTaskNotificationForChangedRecipient({
+      admin: input.admin,
+      event: input.event,
+      expectedRecipient: input.expectedRecipient,
+    })
+    return 'completed' as const
+  }
+  if (prepared.channel !== channel) {
+    throw automationError('TASK_NOTIFICATION_RECONCILIATION_CHANNEL_MISMATCH')
+  }
+
+  await authorizeOneReconciliationAttempt({
+    admin: input.admin,
+    prepared,
+    event: input.event,
+    retryDeliveryId: resolvedDelivery.id,
+    retryAttemptCount,
+  })
+  const result = await deliverPreparedTaskNotification({
+    admin: input.admin,
+    job: input.job,
+    task: input.task,
+    event: input.event,
+    descriptor: input.descriptor,
+    recipients: input.recipients,
+    prepared,
+    isFallback: channel !== input.task.primary_channel,
+  })
+  if (
+    result.delivered
+    || result.ambiguous
+    || result.errorCode === 'TASK_NOTIFICATION_SUPERSEDED'
+  ) return 'completed' as const
+  throw automationError(result.errorCode ?? 'TASK_NOTIFICATION_RECONCILIATION_FAILED')
+}
+
+async function deliverTaskNotificationJob(admin: AdminClient, job: AutomationJob) {
+  const phase = notificationJobPhase(job)
+  const expectedRecipient = notificationJobRecipient(job)
+  if (!phase || !expectedRecipient) {
+    throw automationError('TASK_NOTIFICATION_JOB_PAYLOAD_INVALID')
+  }
+  const event = await loadTaskNotificationEvent(admin, job)
+  if (!event) return 'stale' as const
+  const task = await loadTask(admin, job)
+  if (!task || task.archived_at) return 'stale' as const
+  if (!taskNotificationRecipientIsCurrent(task, expectedRecipient)) {
+    await cancelQueuedTaskNotificationForChangedRecipient({
+      admin,
+      event,
+      expectedRecipient,
+    })
+    return 'completed' as const
+  }
+  // A provider success is the durable completion fence for the whole business
+  // event. If the worker crashed after a fallback succeeded but before the job
+  // was finished, never replay the failed primary channel on the next claim.
+  if (await taskNotificationWasAlreadyDelivered(admin, event)) {
+    return 'completed' as const
+  }
+  const descriptor = taskNotificationDescriptor(event, task)
+  if (!descriptor) return 'completed' as const
+  const auditText = buildTaskNotificationAuditText({ event, task, descriptor })
+  const recipients = await loadRecipients(admin, task)
+  if (phase === 'reconcile') {
+    return deliverReconciledTaskNotification({
+      admin,
+      job,
+      task,
+      event,
+      descriptor,
+      auditText,
+      expectedRecipient,
+      recipients,
+    })
+  }
+  const prepared = await prepareTaskNotificationDelivery({
+    admin,
+    event,
+    channel: null,
+    auditText,
+  })
+  if (prepared.skipped) {
+    if (!BENIGN_TASK_NOTIFICATION_SKIP_REASONS.has(prepared.reason)) {
+      throw taskNotificationSkipError(prepared.reason)
+    }
+    return 'completed' as const
+  }
+  if (!preparedMatchesJobRecipient(prepared, expectedRecipient)) {
+    await cancelMismatchedPreparedDelivery(admin, prepared)
+    await cancelQueuedTaskNotificationForChangedRecipient({
+      admin,
+      event,
+      expectedRecipient,
+    })
+    return 'completed' as const
+  }
+  const primary = await deliverPreparedTaskNotification({
+    admin,
+    job,
+    task,
+    event,
+    descriptor,
+    recipients,
+    prepared,
+    isFallback: false,
+  })
+  if (
+    primary.delivered
+    || primary.ambiguous
+    || primary.errorCode === 'TASK_NOTIFICATION_SUPERSEDED'
+  ) return 'completed' as const
+  const targetsAssignee = prepared.target === 'assignee'
+  const activationEmailFallback = targetsAssignee
+    && primary.errorCode === 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED'
+    && Boolean(recipients.assignee.email?.trim())
+  const fallbackChannel = activationEmailFallback
+    ? 'email'
+    : targetsAssignee
+      ? task.fallback_channel
+      : null
+  if (!fallbackChannel || fallbackChannel === prepared.channel) {
+    throw automationError(primary.errorCode ?? 'TASK_NOTIFICATION_DELIVERY_FAILED')
+  }
+  const fallbackPrepared = await prepareTaskNotificationDelivery({
+    admin,
+    event,
+    channel: fallbackChannel,
+    auditText,
+    accountActivation: activationEmailFallback,
+  })
+  if (fallbackPrepared.skipped) {
+    if (!BENIGN_TASK_NOTIFICATION_SKIP_REASONS.has(fallbackPrepared.reason)) {
+      throw taskNotificationSkipError(fallbackPrepared.reason)
+    }
+    return 'completed' as const
+  }
+  const fallback = await deliverPreparedTaskNotification({
+    admin,
+    job,
+    task,
+    event,
+    descriptor,
+    recipients,
+    prepared: fallbackPrepared,
+    isFallback: true,
+  })
+  if (
+    fallback.delivered
+    || fallback.ambiguous
+    || fallback.errorCode === 'TASK_NOTIFICATION_SUPERSEDED'
+  ) return 'completed' as const
+  throw automationError(fallback.errorCode ?? 'TASK_NOTIFICATION_FALLBACK_FAILED')
 }
 
 function nextEvaluationAt(
@@ -2012,6 +3807,11 @@ async function evaluateFollowupJob(admin: AdminClient, job: AutomationJob) {
   if (task.archived_at || task.status === 'draft' || TERMINAL_STATUSES.has(task.status)) {
     return 'completed' as const
   }
+  // Historical tasks may still use the database's in-app-only channel. Human
+  // event jobs support it through their atomic outbox row, but the periodic
+  // email/WhatsApp reminder policy must never reinterpret it as an external
+  // provider channel.
+  if (!hasExternalTaskChannels(task)) return 'completed' as const
 
   const [
     { active, maxReminders, policy },
@@ -2205,7 +4005,13 @@ async function finishJob(input: {
 
 async function processJob(admin: AdminClient, job: AutomationJob, workerId: string) {
   try {
-    const outcome = await evaluateFollowupJob(admin, job)
+    const outcome = job.job_type === 'evaluate_followup'
+      ? await evaluateFollowupJob(admin, job)
+      : job.job_type === 'send_message'
+        ? await deliverTaskNotificationJob(admin, job)
+        : (() => {
+            throw automationError('TASK_AUTOMATION_JOB_TYPE_UNSUPPORTED')
+          })()
     await finishJob({ admin, job, workerId, succeeded: true })
     return outcome
   } catch (error) {

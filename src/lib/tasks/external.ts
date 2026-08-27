@@ -10,6 +10,7 @@ import {
 import { buildTaskEmailHtml } from './emailTemplates'
 import { formatTaskDateTime, normalizeTaskTimeZone } from './dateTime'
 import { isTaskStatus } from './domain'
+import { taskActorDisplayName } from './branding'
 import type {
   TaskChannel,
   TaskCompletionEvidenceType,
@@ -437,7 +438,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
     .map((event) => ({
       id: String(event.id),
       type: String(event.event_type),
-      actorName: event.actor_name?.trim() || 'Signe',
+      actorName: taskActorDisplayName(event.actor_name, undefined, event.actor_type),
       message: event.message ?? null,
       fromStatus: isTaskStatus(event.from_status) ? event.from_status : null,
       toStatus: isTaskStatus(event.to_status) ? event.to_status : null,
@@ -732,9 +733,13 @@ export async function performExternalTaskAction(input: {
       requestOrigin: input.requestOrigin,
     })
     warning = notification.warning
-    notice = notification.warning
-      ? 'Meddelandet finns sparat.'
-      : 'Meddelandet har skickats och mottagaren har notifierats via e-post.'
+    notice = notification.queued
+      ? 'Meddelandet har sparats och notifieringen har köats.'
+      : notification.warning
+        ? 'Meddelandet finns sparat.'
+        : notification.sent
+          ? 'Meddelandet har sparats och e-posttjänsten har tagit emot utskicket.'
+          : 'Meddelandet har sparats.'
   } else if (input.action === 'create_subtask') {
     const created = await createExternalSubtask({
       access,
@@ -760,6 +765,7 @@ export async function performExternalTaskAction(input: {
       p_actor_access_link_id: access.id,
     })
     if (error) throw taskDatabaseError(error, 'TASK_EXTENSION_CREATE_FAILED')
+    notice = 'Din begäran har sparats. HusHub hanterar notifieringen till uppdragsansvarig.'
   } else {
     const toStatus: TaskStatus | null =
       input.action === 'start'
@@ -791,6 +797,11 @@ export async function performExternalTaskAction(input: {
       p_actor_access_link_id: access.id,
     })
     if (error) throw taskDatabaseError(error, 'TASK_UPDATE_FAILED')
+    notice = toStatus === 'in_progress'
+      ? 'Uppgiften är startad.'
+      : toStatus === 'waiting'
+        ? 'Uppgiften är markerad som väntande. HusHub hanterar notifieringen.'
+        : 'Uppgiften har lämnats för kontroll. HusHub hanterar notifieringen.'
   }
 
   const workspace = await getExternalTaskWorkspace(input.token)
@@ -919,7 +930,7 @@ export async function issueTaskAccessLink(input: {
     '',
     'Länken är personlig och ska inte vidarebefordras.',
     '',
-    'Signe är HusHubs digitala uppföljningsassistent.',
+    'Gizmo är HusHubs digitala uppföljningsassistent.',
   ].filter((line): line is string => line !== null).join('\n')
   const bodyHtml = buildTaskEmailHtml({
     previewText: `${issuerName} har tilldelat dig uppdraget ${task.title}.`,

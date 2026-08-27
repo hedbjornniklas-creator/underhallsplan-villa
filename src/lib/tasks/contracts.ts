@@ -12,6 +12,9 @@ export type TaskKind = 'simple' | 'paid_external' | 'warranty' | 'general'
 
 export type TaskChannel = 'email' | 'whatsapp'
 
+export const TASK_RECURRENCE_INTERVALS = ['weekly', 'monthly', 'quarterly', 'yearly'] as const
+export type TaskRecurrenceInterval = (typeof TASK_RECURRENCE_INTERVALS)[number]
+
 export type TaskEvidenceRequirement = 'optional' | 'text' | 'photo' | 'document' | 'any'
 
 export const TASK_COMPLETION_EVIDENCE_TYPES = ['photo', 'document', 'text'] as const
@@ -142,6 +145,29 @@ export type TaskLatestMessageView = {
   authorSide: TaskEventAuthorSide
 }
 
+export type TaskNotificationDeliveryStatus =
+  | 'queued'
+  | 'processing'
+  | 'sending'
+  | 'sent'
+  | 'delivered'
+  | 'read'
+  | 'replied'
+  | 'failed'
+  | 'cancelled'
+  | 'ambiguous'
+
+export type TaskNotificationDeliveryView = {
+  id: string
+  label: string
+  channel: TaskChannel | 'in_app' | null
+  status: TaskNotificationDeliveryStatus
+  stage: 'outbox' | 'channel'
+  isFallback: boolean
+  statusAt: string
+  requiresAttention: boolean
+}
+
 export type TaskDeadlineRequestView = {
   id: string
   requestedDueAt: string
@@ -189,6 +215,8 @@ export type TaskView = {
   dueAt: string
   dueTimeZone: string
   nextFollowupAt: string
+  recurrenceInterval: TaskRecurrenceInterval | null
+  recurrenceSequence: number | null
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | null
   evidenceRequirement: TaskEvidenceRequirement
@@ -210,6 +238,8 @@ export type TaskView = {
   unreadMessageCount: number
   latestMessage: TaskLatestMessageView | null
   latestIncomingMessageEventId: string | null
+  notificationDeliveries: TaskNotificationDeliveryView[]
+  notificationDeliveryProblemCount: number
   createdAt: string
   updatedAt: string
 }

@@ -34,7 +34,7 @@ function taskErrorResponse(error: unknown) {
     TASK_REQUIREMENTS_INPUT_INVALID: 'Kontrollpunkterna är ogiltiga.',
     TASK_EVIDENCE_CHECKLIST_INVALID: 'Kontrollera valen för färdigbevis.',
     TASK_DUE_REQUIRED: 'Ange ett giltigt slutdatum.',
-    TASK_FOLLOWUP_REQUIRED: 'Ange när Signe ska följa upp nästa gång.',
+    TASK_FOLLOWUP_REQUIRED: 'Ange när Gizmo ska följa upp nästa gång.',
     TASK_FOLLOWUP_AFTER_DUE: 'Nästa uppföljning måste ligga senast på slutdatumet.',
     TASK_ASSIGNEE_REQUIRED: 'Välj en mottagare.',
     TASK_ASSIGNEE_NOT_IN_ORG: 'Den interna mottagaren tillhör inte organisationen.',
@@ -81,16 +81,19 @@ function taskErrorResponse(error: unknown) {
     TASK_DEADLINE_REQUEST_INVALID: 'Begäran om nytt slutdatum är ogiltig.',
     TASK_DEADLINE_REQUEST_NOT_PENDING: 'Förlängningen är redan behandlad eller saknas.',
     TASK_TERMINAL: 'Uppgiften är stängd och kan inte ändras.',
-    SIGNE_MAX_DEPTH: 'Signe kan inte föreslå fler nivåer av underuppgifter för den här uppgiften.',
+    TASK_RECURRENCE_INTERVAL_INVALID: 'Välj ett giltigt intervall för den återkommande uppgiften.',
+    TASK_RECURRENCE_ROOT_ONLY: 'Endast huvuduppgifter kan göras återkommande.',
+    TASK_RECURRENCE_TERMINAL: 'En avslutad uppgift kan inte göras återkommande.',
+    SIGNE_MAX_DEPTH: 'Gizmo kan inte föreslå fler nivåer av underuppgifter för den här uppgiften.',
     SIGNE_CHILD_BUDGET_REACHED: 'Uppgiften har redan maximalt antal öppna underuppgifter och förslag.',
-    SIGNE_PENDING_BUDGET_REACHED: 'Huvuduppdraget har redan maximalt antal väntande Signe-förslag.',
+    SIGNE_PENDING_BUDGET_REACHED: 'Huvuduppdraget har redan maximalt antal väntande Gizmo-förslag.',
     SIGNE_DESCENDANT_BUDGET_REACHED: 'Huvuduppdraget har redan maximalt antal aktiva underuppgifter och förslag.',
-    TASK_AI_MAX_DEPTH_EXCEEDED: 'Signe kan inte föreslå fler nivåer av underuppgifter för den här uppgiften.',
+    TASK_AI_MAX_DEPTH_EXCEEDED: 'Gizmo kan inte föreslå fler nivåer av underuppgifter för den här uppgiften.',
     TASK_AI_CHILD_BUDGET_EXCEEDED: 'Uppgiften har redan maximalt antal öppna underuppgifter och förslag.',
-    TASK_AI_PENDING_BUDGET_EXCEEDED: 'Huvuduppdraget har redan maximalt antal väntande Signe-förslag.',
+    TASK_AI_PENDING_BUDGET_EXCEEDED: 'Huvuduppdraget har redan maximalt antal väntande Gizmo-förslag.',
     TASK_AI_ACTIVE_DESCENDANT_BUDGET_EXCEEDED: 'Huvuduppdraget har redan maximalt antal aktiva underuppgifter och förslag.',
-    TASK_AI_SUGGESTION_PARENT_REQUIRED: 'Ett Signe-förslag kan bara användas för en underuppgift.',
-    SIGNE_TASK_CLOSED: 'Signe kan inte analysera ett avslutat uppdrag.',
+    TASK_AI_SUGGESTION_PARENT_REQUIRED: 'Ett Gizmo-förslag kan bara användas för en underuppgift.',
+    SIGNE_TASK_CLOSED: 'Gizmo kan inte analysera ett avslutat uppdrag.',
     SIGNE_REJECTION_REASON_REQUIRED: 'Beskriv varför förslaget avvisas.',
     TASK_ACTION_INVALID: 'Åtgärden stöds inte.',
     TASK_INITIAL_DISPATCH_TERMINAL: 'Uppgiften är stängd och kan inte skickas.',
@@ -114,6 +117,8 @@ function taskErrorResponse(error: unknown) {
     'TASK_ACTOR_NOT_IN_ORG',
     'TASK_CREATE_FORBIDDEN',
     'TASK_CREATE_WITH_DISPATCH_CONTROL_FORBIDDEN',
+    'TASK_CREATE_WITH_RECURRENCE_FORBIDDEN',
+    'TASK_RECURRENCE_UPDATE_FORBIDDEN',
     'TASK_INITIAL_DISPATCH_FINALIZE_FORBIDDEN',
     'TASK_SUBTASK_CREATE_FORBIDDEN',
     'TASK_REQUIREMENT_DECISION_FORBIDDEN',
@@ -130,13 +135,13 @@ function taskErrorResponse(error: unknown) {
     return jsonError('Den publika adressen för personliga uppdragslänkar är inte konfigurerad.', 503, code)
   }
   if (code === 'MISSING_ENV:OPENAI_API_KEY') {
-    return jsonError('Signe är inte konfigurerad på servern ännu.', 503, code)
+    return jsonError('Gizmo är inte konfigurerad på servern ännu.', 503, code)
   }
   if (code === 'TASK_ACCESS_READ_FAILED') {
     return jsonError('Behörigheterna kunde inte kontrolleras just nu. Försök igen om en stund.', 503, code)
   }
   if (code === 'SIGNE_PROVIDER_UNAVAILABLE' || code === 'SIGNE_RESPONSE_INVALID') {
-    return jsonError('Signe kunde inte svara just nu. Försök igen om en stund.', 502, code)
+    return jsonError('Gizmo kunde inte svara just nu. Försök igen om en stund.', 502, code)
   }
   if (
     code === 'SIGNE_RUN_CREATE_FAILED' ||
@@ -145,13 +150,13 @@ function taskErrorResponse(error: unknown) {
     code === 'SIGNE_SUGGESTION_REJECT_FAILED' ||
     code === 'SIGNE_ANALYSIS_FAILED'
   ) {
-    return jsonError('Signe kunde inte spara resultatet just nu. Försök igen om en stund.', 500, code)
+    return jsonError('Gizmo kunde inte spara resultatet just nu. Försök igen om en stund.', 500, code)
   }
   if (forbidden.has(code)) return jsonError('Du får inte utföra den här åtgärden.', 403, code)
   if (code === 'TASK_NOT_FOUND') return jsonError('Uppgiften kunde inte hittas.', 404, code)
-  if (code === 'SIGNE_SUGGESTION_NOT_FOUND') return jsonError('Signe-förslaget kunde inte hittas.', 404, code)
+  if (code === 'SIGNE_SUGGESTION_NOT_FOUND') return jsonError('Gizmo-förslaget kunde inte hittas.', 404, code)
   if (code === 'SIGNE_ALREADY_RUNNING') {
-    return jsonError('Signe analyserar redan uppgiften. Vänta en kort stund och försök igen.', 409, code)
+    return jsonError('Gizmo analyserar redan uppgiften. Vänta en kort stund och försök igen.', 409, code)
   }
   if (code === 'TASK_ARCHIVE_CHILDREN_EXIST') {
     return jsonError('Uppdraget har underuppgifter och kan inte raderas. Radera underuppgifterna först.', 409, code)
@@ -170,6 +175,7 @@ function taskErrorResponse(error: unknown) {
     code.includes('operational_tasks') ||
     code.includes('organization_contacts') ||
     code === 'TASKS_SCHEMA_REQUIRED' ||
+    code === 'TASK_RECURRENCE_UPDATE_FAILED' ||
     code === 'TASK_RECIPIENT_IDENTITY_ENSURE_FAILED' ||
     code === 'TASK_RECIPIENT_PORTAL_GRANT_FAILED' ||
     code === 'TASK_RECIPIENT_ACTIVATION_CREATE_FAILED' ||

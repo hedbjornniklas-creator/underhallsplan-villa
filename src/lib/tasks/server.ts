@@ -11,15 +11,19 @@ import type {
   TaskEventView,
   TaskEvidenceRequirement,
   TaskKind,
+  TaskNotificationDeliveryStatus,
+  TaskNotificationDeliveryView,
   TaskPerson,
   TaskRequirementStatus,
   TaskRequirementView,
+  TaskRecurrenceInterval,
   TaskStatus,
   TaskView,
   TaskWorkspace,
 } from './contracts'
 import {
   TASK_COMPLETION_EVIDENCE_TYPES,
+  TASK_RECURRENCE_INTERVALS,
   evidenceTypesFromLegacyRequirement,
   legacyRequirementFromEvidenceTypes,
 } from './contracts'
@@ -38,6 +42,7 @@ import {
   isTerminalTaskStatus,
 } from './domain'
 import { normalizeTaskTimeZone } from './dateTime'
+import { taskActorDisplayName } from './branding'
 import { issueTaskAccessLink, resolveTaskPublicBaseUrl } from './external'
 import { rejectSigneSuggestion, requestSigneSuggestions } from './signe'
 import {
@@ -177,6 +182,45 @@ type FollowupRuleRow = {
   initial_dispatch_pending: boolean
 }
 
+type RecurrenceRuleRow = {
+  task_id: string
+  recurrence_interval: TaskRecurrenceInterval
+  sequence: number
+  is_active: boolean
+}
+
+type NotificationMessageRow = {
+  message_type: string
+  metadata: Record<string, unknown> | null
+}
+
+type NotificationDeliveryRow = {
+  id: string
+  task_id: string
+  message_id: string
+  channel: TaskChannel | 'in_app'
+  status: TaskNotificationDeliveryStatus
+  is_fallback: boolean
+  scheduled_at: string
+  sent_at: string | null
+  delivered_at: string | null
+  read_at: string | null
+  replied_at: string | null
+  failed_at: string | null
+  created_at: string
+  updated_at: string
+  message: NotificationMessageRow | NotificationMessageRow[] | null
+}
+
+type NotificationJobRow = {
+  id: string
+  task_id: string
+  status: 'queued' | 'processing' | 'failed' | 'dead_letter'
+  payload: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
 type InternalTaskContext = {
   orgId: string
   userId: string
@@ -222,6 +266,105 @@ function isTaskKind(value: unknown): value is TaskKind {
 
 function isTaskChannel(value: unknown): value is TaskChannel {
   return value === 'email' || value === 'whatsapp'
+}
+
+function notificationMessage(row: NotificationDeliveryRow) {
+  return Array.isArray(row.message) ? row.message[0] ?? null : row.message
+}
+
+function notificationMetadataText(metadata: Record<string, unknown> | null, key: string) {
+  const value = metadata?.[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function notificationDeliveryEventId(row: NotificationDeliveryRow) {
+  const metadata = notificationMessage(row)?.metadata ?? null
+  return (
+    notificationMetadataText(metadata, 'sourceEventId') ||
+    notificationMetadataText(metadata, 'eventId') ||
+    null
+  )
+}
+
+function isRelevantNotificationDelivery(row: NotificationDeliveryRow) {
+  const message = notificationMessage(row)
+  if (!message) return false
+  const metadata = message.metadata
+  return Boolean(
+    message.message_type === 'assignment' ||
+      metadata?.notification === true ||
+      notificationMetadataText(metadata, 'sourceEventId') ||
+      notificationMetadataText(metadata, 'eventId') ||
+      notificationMetadataText(metadata, 'eventType') ||
+      notificationMetadataText(metadata, 'actionKind')
+  )
+}
+
+function notificationLabel(eventKind: string, toStatus?: string | null) {
+  const normalizedEventKind = eventKind.toLowerCase()
+  const kind = normalizedEventKind === 'status_changed'
+    ? toStatus?.toLowerCase() ?? ''
+    : normalizedEventKind
+  switch (kind) {
+    case 'assignment':
+      return 'Nytt uppdrag'
+    case 'comment':
+      return 'Nytt meddelande'
+    case 'deadline_change_request':
+    case 'deadline_change_requested':
+      return 'Begärd förlängning'
+    case 'deadline_change_approved':
+      return 'Förlängning godkänd'
+    case 'deadline_change_rejected':
+      return 'Förlängning avslagen'
+    case 'waiting':
+    case 'task_waiting':
+      return 'Uppdraget väntar'
+    case 'ready_for_review':
+    case 'task_ready_for_review':
+      return 'Klart för kontroll'
+    case 'returned':
+    case 'task_returned':
+      return 'Komplettering begärd'
+    case 'approved':
+    case 'task_approved':
+      return 'Uppdrag godkänt'
+    case 'cancelled':
+    case 'task_cancelled':
+      return 'Uppdrag avbrutet'
+    case 'status_request':
+    case 'status_check':
+      return 'Statusförfrågan'
+    case 'reminder':
+      return 'Påminnelse'
+    case 'escalation':
+      return 'Uppföljning'
+    case 'decision':
+      return 'Beslut om uppdraget'
+    default:
+      return 'Uppdragsnotis'
+  }
+}
+
+function notificationDeliveryLabel(row: NotificationDeliveryRow) {
+  const message = notificationMessage(row)
+  const metadata = message?.metadata ?? null
+  return notificationLabel(
+    notificationMetadataText(metadata, 'eventType') ||
+      notificationMetadataText(metadata, 'actionKind') ||
+      message?.message_type ||
+      '',
+    notificationMetadataText(metadata, 'toStatus')
+  )
+}
+
+function notificationDeliveryStatusAt(row: NotificationDeliveryRow) {
+  if (row.status === 'replied') return row.replied_at ?? row.updated_at
+  if (row.status === 'read') return row.read_at ?? row.updated_at
+  if (row.status === 'delivered') return row.delivered_at ?? row.updated_at
+  if (row.status === 'sent') return row.sent_at ?? row.updated_at
+  if (row.status === 'failed') return row.failed_at ?? row.updated_at
+  return row.updated_at || row.scheduled_at || row.created_at
 }
 
 function isEvidenceRequirement(value: unknown): value is TaskEvidenceRequirement {
@@ -374,9 +517,12 @@ async function loadRows(orgId: string) {
   let attachments: AttachmentRow[] = []
   let aiSuggestions: AiSuggestionRow[] = []
   let followupRules: FollowupRuleRow[] = []
+  let recurrenceRules: RecurrenceRuleRow[] = []
   let completionEvidenceRequirements: CompletionEvidenceRequirementRow[] = []
+  let notificationDeliveries: NotificationDeliveryRow[] = []
+  let notificationJobs: NotificationJobRow[] = []
   if (taskIds.length > 0) {
-    const [requirementsResult, eventsResult, deadlineResult, attachmentsResult, suggestionsResult, followupResult, completionEvidenceResult] = await Promise.all([
+    const [requirementsResult, eventsResult, deadlineResult, attachmentsResult, suggestionsResult, followupResult, recurrenceResult, completionEvidenceResult, notificationDeliveriesResult, notificationJobsResult] = await Promise.all([
       admin
         .from('task_requirements')
         .select('id,task_id,requirement_key,label,status,is_required,verified_by_profile_id,verified_at')
@@ -409,9 +555,27 @@ async function loadRows(orgId: string) {
         .select('task_id,initial_dispatch_pending')
         .in('task_id', taskIds),
       admin
+        .from('task_recurrence_rules')
+        .select('task_id,recurrence_interval,sequence,is_active')
+        .in('task_id', taskIds),
+      admin
         .from('task_completion_evidence_requirements')
         .select('task_id,evidence_type')
         .in('task_id', taskIds),
+      admin
+        .from('task_message_deliveries')
+        .select(
+          'id,task_id,message_id,channel,status,is_fallback,scheduled_at,sent_at,delivered_at,read_at,replied_at,failed_at,created_at,updated_at,message:task_messages!inner(message_type,metadata)'
+        )
+        .in('task_id', taskIds)
+        .order('created_at', { ascending: false }),
+      admin
+        .from('task_automation_jobs')
+        .select('id,task_id,status,payload,created_at,updated_at')
+        .in('task_id', taskIds)
+        .eq('job_type', 'send_message')
+        .in('status', ['queued', 'processing', 'failed', 'dead_letter'])
+        .order('created_at', { ascending: false }),
     ])
     if (requirementsResult.error) throw new Error('TASK_REQUIREMENTS_READ_FAILED')
     if (eventsResult.error) throw new Error('TASK_EVENTS_READ_FAILED')
@@ -419,14 +583,20 @@ async function loadRows(orgId: string) {
     if (attachmentsResult.error) throw new Error('TASK_ATTACHMENTS_READ_FAILED')
     if (suggestionsResult.error) throw new Error('TASK_AI_SUGGESTIONS_READ_FAILED')
     if (followupResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
+    if (recurrenceResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
     if (completionEvidenceResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
+    if (notificationDeliveriesResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
+    if (notificationJobsResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
     requirements = (requirementsResult.data ?? []) as RequirementRow[]
     events = (eventsResult.data ?? []) as EventRow[]
     deadlineRequests = (deadlineResult.data ?? []) as DeadlineRequestRow[]
     attachments = (attachmentsResult.data ?? []) as AttachmentRow[]
     aiSuggestions = (suggestionsResult.data ?? []) as AiSuggestionRow[]
     followupRules = (followupResult.data ?? []) as FollowupRuleRow[]
+    recurrenceRules = (recurrenceResult.data ?? []) as RecurrenceRuleRow[]
     completionEvidenceRequirements = (completionEvidenceResult.data ?? []) as CompletionEvidenceRequirementRow[]
+    notificationDeliveries = (notificationDeliveriesResult.data ?? []) as unknown as NotificationDeliveryRow[]
+    notificationJobs = (notificationJobsResult.data ?? []) as NotificationJobRow[]
   }
 
   return {
@@ -441,7 +611,10 @@ async function loadRows(orgId: string) {
     attachments,
     aiSuggestions,
     followupRules,
+    recurrenceRules,
     completionEvidenceRequirements,
+    notificationDeliveries,
+    notificationJobs,
   }
 }
 
@@ -524,11 +697,105 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
   const initialDispatchByTask = new Map(
     rows.followupRules.map((rule) => [rule.task_id, rule.initial_dispatch_pending])
   )
+  const recurrenceByTask = new Map(
+    rows.recurrenceRules
+      .filter((rule) => rule.is_active)
+      .map((rule) => [rule.task_id, rule] as const)
+  )
   const evidenceRequirementsByTask = new Map<string, TaskCompletionEvidenceType[]>()
   for (const requirement of rows.completionEvidenceRequirements) {
     const list = evidenceRequirementsByTask.get(requirement.task_id) ?? []
     list.push(requirement.evidence_type)
     evidenceRequirementsByTask.set(requirement.task_id, list)
+  }
+
+  const relevantNotificationDeliveries = rows.notificationDeliveries.filter(
+    isRelevantNotificationDelivery
+  )
+  const notificationDeliveryEventIds = new Set(
+    relevantNotificationDeliveries
+      .map(notificationDeliveryEventId)
+      .filter((eventId): eventId is string => Boolean(eventId))
+  )
+  const notificationDeliveryStatusesByEvent = new Map<
+    string,
+    Set<TaskNotificationDeliveryStatus>
+  >()
+  for (const delivery of relevantNotificationDeliveries) {
+    const eventId = notificationDeliveryEventId(delivery)
+    if (!eventId) continue
+    const statuses = notificationDeliveryStatusesByEvent.get(eventId) ?? new Set()
+    statuses.add(delivery.status)
+    notificationDeliveryStatusesByEvent.set(eventId, statuses)
+  }
+  const notificationEventsById = new Map(rows.events.map((event) => [event.id, event]))
+  const syntheticNotificationViewsByTask = new Map<string, TaskNotificationDeliveryView[]>()
+  const syntheticNotificationProblemEventIdsByTask = new Map<string, Set<string>>()
+  for (const job of rows.notificationJobs) {
+    const eventId = notificationMetadataText(job.payload, 'notificationEventId')
+    const failed = job.status === 'failed' || job.status === 'dead_letter'
+    if (!eventId) continue
+    const deliveryStatuses = notificationDeliveryStatusesByEvent.get(eventId)
+    const statuses = deliveryStatuses ? Array.from(deliveryStatuses) : []
+    const deliveryHasSuccess = statuses.some((status) =>
+      ['sent', 'delivered', 'read', 'replied'].includes(status)
+    )
+    const deliveryIsAmbiguous = statuses.includes('ambiguous')
+    const deliveryHasFailed = statuses.includes('failed')
+    const deliveryHasContinued = statuses.some((status) =>
+      ['queued', 'sending', 'sent', 'delivered', 'read', 'replied'].includes(status)
+    )
+    const deliveryAlreadyShowsOutcome = deliveryHasSuccess
+      || deliveryIsAmbiguous
+      || (deliveryHasFailed && !deliveryHasContinued)
+    if (
+      notificationDeliveryEventIds.has(eventId)
+      && (!failed || deliveryAlreadyShowsOutcome)
+    ) continue
+    const event = notificationEventsById.get(eventId)
+    const eventType = event?.event_type || notificationMetadataText(job.payload, 'eventType')
+    const view: TaskNotificationDeliveryView = {
+      id: `outbox:${job.id}`,
+      label: notificationLabel(eventType, event?.to_status),
+      channel: null,
+      status: job.status === 'processing' ? 'processing' : failed ? 'failed' : 'queued',
+      stage: 'outbox',
+      isFallback: false,
+      statusAt: job.updated_at || job.created_at,
+      requiresAttention: failed,
+    }
+    const list = syntheticNotificationViewsByTask.get(job.task_id) ?? []
+    list.push(view)
+    syntheticNotificationViewsByTask.set(job.task_id, list)
+    if (failed) {
+      const problemEventIds = syntheticNotificationProblemEventIdsByTask.get(job.task_id) ?? new Set<string>()
+      problemEventIds.add(eventId)
+      syntheticNotificationProblemEventIdsByTask.set(job.task_id, problemEventIds)
+    }
+  }
+  const notificationDeliveriesByMessage = new Map<string, NotificationDeliveryRow[]>()
+  for (const delivery of relevantNotificationDeliveries) {
+    const list = notificationDeliveriesByMessage.get(delivery.message_id) ?? []
+    list.push(delivery)
+    notificationDeliveriesByMessage.set(delivery.message_id, list)
+  }
+  const notificationProblemMessageIds = new Set<string>()
+  for (const [messageId, deliveries] of notificationDeliveriesByMessage) {
+    if (deliveries.some((delivery) => delivery.status === 'ambiguous')) {
+      notificationProblemMessageIds.add(messageId)
+      continue
+    }
+    const hasFailed = deliveries.some((delivery) => delivery.status === 'failed')
+    const hasContinuedDelivery = deliveries.some((delivery) =>
+      ['queued', 'sending', 'sent', 'delivered', 'read', 'replied'].includes(delivery.status)
+    )
+    if (hasFailed && !hasContinuedDelivery) notificationProblemMessageIds.add(messageId)
+  }
+  const notificationRowsByTask = new Map<string, NotificationDeliveryRow[]>()
+  for (const delivery of relevantNotificationDeliveries) {
+    const list = notificationRowsByTask.get(delivery.task_id) ?? []
+    list.push(delivery)
+    notificationRowsByTask.set(delivery.task_id, list)
   }
 
   const childCounts = new Map<string, { total: number; open: number }>()
@@ -568,10 +835,12 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
         .map((event) => ({
           id: event.id,
           type: event.event_type,
-          actorName:
-            event.actor_name?.trim() ||
-            (event.actor_profile_id ? profilesById.get(event.actor_profile_id)?.full_name?.trim() : null) ||
-            'Signe',
+          actorName: taskActorDisplayName(
+            event.actor_name,
+            (event.actor_profile_id ? profilesById.get(event.actor_profile_id)?.full_name?.trim() : null)
+              || 'Gizmo',
+            event.actor_type
+          ),
           message: event.message,
           fromStatus: event.from_status,
           toStatus: event.to_status,
@@ -616,6 +885,56 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       status: suggestion.status,
       createdAt: suggestion.created_at,
     }))
+    const allNotificationRows = notificationRowsByTask.get(task.id) ?? []
+    const attentionRows = allNotificationRows.filter(
+      (delivery) =>
+        delivery.status === 'ambiguous' ||
+        (delivery.status === 'failed' && notificationProblemMessageIds.has(delivery.message_id))
+    )
+    const selectedNotificationRows = Array.from(
+      new Map(
+        [...attentionRows, ...allNotificationRows].map((delivery) => [delivery.id, delivery])
+      ).values()
+    )
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      .slice(0, Math.max(8, attentionRows.length))
+    const notificationDeliveryViews: TaskNotificationDeliveryView[] = selectedNotificationRows.map(
+      (delivery) => ({
+        id: delivery.id,
+        label: notificationDeliveryLabel(delivery),
+        channel: delivery.channel,
+        status: delivery.status,
+        stage: 'channel',
+        isFallback: delivery.is_fallback,
+        statusAt: notificationDeliveryStatusAt(delivery),
+        requiresAttention:
+          delivery.status === 'ambiguous' ||
+          (delivery.status === 'failed' && notificationProblemMessageIds.has(delivery.message_id)),
+      })
+    )
+    const deliveryProblemCount = new Set(
+      allNotificationRows
+        .filter((delivery) => notificationProblemMessageIds.has(delivery.message_id))
+        .map((delivery) => delivery.message_id)
+    ).size
+    const syntheticNotificationViews = syntheticNotificationViewsByTask.get(task.id) ?? []
+    const combinedNotificationViews = [...notificationDeliveryViews, ...syntheticNotificationViews]
+    const attentionNotificationViews = combinedNotificationViews.filter(
+      (delivery) => delivery.requiresAttention
+    )
+    const selectedNotificationViews = Array.from(
+      new Map(
+        [...attentionNotificationViews, ...combinedNotificationViews].map((delivery) => [
+          delivery.id,
+          delivery,
+        ])
+      ).values()
+    )
+      .sort((left, right) => right.statusAt.localeCompare(left.statusAt))
+      .slice(0, Math.max(8, attentionNotificationViews.length))
+    const notificationDeliveryProblemCount =
+      deliveryProblemCount +
+      (syntheticNotificationProblemEventIdsByTask.get(task.id)?.size ?? 0)
     const count = childCounts.get(task.id) ?? { total: 0, open: 0 }
     const assignee: TaskPerson = assigneeProfile
       ? {
@@ -678,6 +997,8 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       dueAt: task.due_at,
       dueTimeZone: task.due_timezone,
       nextFollowupAt: task.next_followup_at,
+      recurrenceInterval: recurrenceByTask.get(task.id)?.recurrence_interval ?? null,
+      recurrenceSequence: recurrenceByTask.get(task.id)?.sequence ?? null,
       primaryChannel: task.primary_channel,
       fallbackChannel: task.fallback_channel,
       evidenceRequirement: task.evidence_requirement,
@@ -701,6 +1022,14 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       unreadMessageCount: conversation.unreadMessageCount,
       latestMessage: conversation.latestMessage,
       latestIncomingMessageEventId: conversation.latestIncomingMessageEventId,
+      notificationDeliveries:
+        input.isOrgAdmin || task.issuer_profile_id === input.userId
+          ? selectedNotificationViews
+          : [],
+      notificationDeliveryProblemCount:
+        input.isOrgAdmin || task.issuer_profile_id === input.userId
+          ? notificationDeliveryProblemCount
+          : 0,
       createdAt: task.created_at,
       updatedAt: task.updated_at,
     }
@@ -949,11 +1278,20 @@ async function createTask(input: TaskActionInput) {
   const evidenceRequirement = legacyRequirementFromEvidenceTypes(evidenceRequirements)
   const parentTaskId = optionalText(input.payload.parentTaskId)
   const sourceAiSuggestionId = optionalText(input.payload.sourceAiSuggestionId)
+  const recurrenceInterval = TASK_RECURRENCE_INTERVALS.includes(
+    input.payload.recurrenceInterval as TaskRecurrenceInterval
+  )
+    ? (input.payload.recurrenceInterval as TaskRecurrenceInterval)
+    : null
   let parent: OperationalTaskRow | null = null
 
   if (sourceAiSuggestionId && !parentTaskId) {
     throw new Error('TASK_AI_SUGGESTION_PARENT_REQUIRED')
   }
+  if (input.payload.recurrenceInterval && !recurrenceInterval) {
+    throw new Error('TASK_RECURRENCE_INTERVAL_INVALID')
+  }
+  if (parentTaskId && recurrenceInterval) throw new Error('TASK_RECURRENCE_ROOT_ONLY')
 
   if (parentTaskId) {
     parent = await requireTask(input.orgId, parentTaskId)
@@ -992,7 +1330,7 @@ async function createTask(input: TaskActionInput) {
   const expectedParentVersion = parent
     ? requireExpectedVersion(input.payload.parentVersion)
     : null
-  const { data: createdData, error } = await admin.rpc('create_operational_task_with_dispatch_control', {
+  const { data: createdData, error } = await admin.rpc('create_operational_task_with_recurrence', {
     p_org_id: input.orgId,
     p_title: title,
     p_due_at: dueAt,
@@ -1014,6 +1352,7 @@ async function createTask(input: TaskActionInput) {
     p_actor_access_link_id: null,
     p_source_ai_suggestion_id: sourceAiSuggestionId,
     p_defer_initial_dispatch: input.payload.sendAssignment === false,
+    p_recurrence_interval: recurrenceInterval,
   })
   if (error) throw taskDatabaseError(error, 'TASK_CREATE_FAILED')
   const created = Array.isArray(createdData) ? createdData[0] : createdData
@@ -1023,11 +1362,41 @@ async function createTask(input: TaskActionInput) {
     taskId: created.id,
     hasExternalAssignee: Boolean(assignee.assignee_contact_id),
     notice: sourceAiSuggestionId
-      ? 'Underuppgiften skapades och Signe-förslaget markerades som använt.'
+      ? 'Underuppgiften skapades och Gizmo-förslaget markerades som använt.'
       : parent
         ? 'Underuppgiften skapades.'
         : 'Uppgiften skapades.',
   }
+}
+
+async function setTaskRecurrence(input: TaskActionInput) {
+  const taskId = asText(input.payload.taskId)
+  if (!taskId) throw new Error('TASK_NOT_FOUND')
+  const task = await requireTask(input.orgId, taskId)
+  if (!input.isOrgAdmin && task.issuer_profile_id !== input.userId) {
+    throw new Error('TASK_RECURRENCE_UPDATE_FORBIDDEN')
+  }
+  if (task.parent_task_id) throw new Error('TASK_RECURRENCE_ROOT_ONLY')
+  if (isTerminalTaskStatus(task.status)) throw new Error('TASK_RECURRENCE_TERMINAL')
+  const rawInterval = input.payload.interval
+  const interval = rawInterval === null || rawInterval === '' || rawInterval === undefined
+    ? null
+    : TASK_RECURRENCE_INTERVALS.includes(rawInterval as TaskRecurrenceInterval)
+      ? (rawInterval as TaskRecurrenceInterval)
+      : undefined
+  if (interval === undefined) throw new Error('TASK_RECURRENCE_INTERVAL_INVALID')
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin.rpc('set_task_recurrence_rule', {
+    p_org_id: input.orgId,
+    p_task_id: taskId,
+    p_expected_version: requireExpectedVersion(input.payload.version),
+    p_interval: interval,
+    p_actor_profile_id: input.userId,
+  })
+  if (error) throw taskDatabaseError(error, 'TASK_RECURRENCE_UPDATE_FAILED')
+  return interval
+    ? 'Den återkommande uppgiften har uppdaterats.'
+    : 'Återkommande uppgift har stängts av.'
 }
 
 async function dispatchTaskAssignment(input: TaskActionInput) {
@@ -1047,7 +1416,7 @@ async function dispatchTaskAssignment(input: TaskActionInput) {
   })
   if (error) throw taskDatabaseError(error, 'TASK_ASSIGNMENT_QUEUE_FAILED')
 
-  return 'Uppdraget och bilagorna är klara. Signe skickar uppdraget till mottagaren.'
+  return 'Uppdraget och bilagorna är klara. Gizmo skickar uppdraget till mottagaren.'
 }
 
 async function archiveTask(input: TaskActionInput) {
@@ -1101,11 +1470,65 @@ async function transitionTask(input: TaskActionInput) {
   })
   if (error) throw taskDatabaseError(error, 'TASK_UPDATE_FAILED')
 
-  return toStatus === 'approved'
-    ? 'Uppgiften är godkänd.'
-    : toStatus === 'returned'
-      ? 'Uppgiften skickades tillbaka.'
-      : 'Statusen uppdaterades.'
+  if (toStatus === 'waiting') {
+    return 'Uppgiften har pausats. Notifieringsstatus visas i uppdraget.'
+  }
+  if (toStatus === 'ready_for_review') {
+    return 'Uppgiften skickades för kontroll. Notifieringsstatus visas i uppdraget.'
+  }
+  if (toStatus === 'returned') {
+    return 'Uppgiften skickades tillbaka. Notifieringsstatus visas i uppdraget.'
+  }
+  if (toStatus === 'approved') {
+    const { data: recurrenceEvent } = await admin
+      .from('task_events')
+      .select('metadata')
+      .eq('task_id', task.id)
+      .eq('event_type', 'recurrence_generated')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const metadata = recurrenceEvent?.metadata && typeof recurrenceEvent.metadata === 'object'
+      ? recurrenceEvent.metadata as Record<string, unknown>
+      : null
+    const nextTaskId = typeof metadata?.nextTaskId === 'string' ? metadata.nextTaskId : null
+    if (nextTaskId) {
+      const { data: nextTask } = await admin
+        .from('operational_tasks')
+        .select('assignee_contact_id')
+        .eq('id', nextTaskId)
+        .eq('org_id', input.orgId)
+        .maybeSingle()
+      if (nextTask?.assignee_contact_id) {
+        try {
+          const issued = await issueTaskAccessLink({
+            orgId: input.orgId,
+            userId: input.userId,
+            taskId: nextTaskId,
+            requestOrigin: input.requestOrigin,
+            sendEmail: true,
+          })
+          const { error: finalizeError } = await admin.rpc('finalize_operational_task_initial_dispatch', {
+            p_org_id: input.orgId,
+            p_task_id: nextTaskId,
+            p_actor_profile_id: input.userId,
+          })
+          if (finalizeError) throw taskDatabaseError(finalizeError, 'TASK_ASSIGNMENT_QUEUE_FAILED')
+          if (issued.warning) {
+            return `Uppgiften är godkänd och nästa tillfälle skapades. ${issued.warning}`
+          }
+        } catch {
+          return 'Uppgiften är godkänd och nästa tillfälle skapades, men mottagarlänken kunde inte skickas. Öppna nästa uppgift och försök igen.'
+        }
+      }
+      return 'Uppgiften är godkänd och nästa återkommande tillfälle skapades.'
+    }
+    return 'Uppgiften är godkänd. Notifieringsstatus visas i uppdraget.'
+  }
+  if (toStatus === 'cancelled') {
+    return 'Uppgiften avbröts. Notifieringsstatus visas i uppdraget.'
+  }
+  return 'Statusen uppdaterades.'
 }
 
 async function addComment(input: TaskActionInput) {
@@ -1141,9 +1564,13 @@ async function addComment(input: TaskActionInput) {
     requestOrigin: input.requestOrigin,
   })
   return {
-    notice: notification.warning
-      ? 'Meddelandet finns sparat.'
-      : 'Meddelandet har skickats och mottagaren har notifierats via e-post.',
+    notice: notification.queued
+      ? 'Meddelandet har sparats och notifieringen har köats.'
+      : notification.warning
+        ? 'Meddelandet finns sparat.'
+        : notification.sent
+          ? 'Meddelandet har sparats och e-posttjänsten har tagit emot utskicket.'
+          : 'Meddelandet har sparats.',
     warning: notification.warning,
   }
 }
@@ -1216,7 +1643,7 @@ async function requestDeadlineChange(input: TaskActionInput) {
     p_actor_access_link_id: null,
   })
   if (error) throw taskDatabaseError(error, 'TASK_EXTENSION_CREATE_FAILED')
-  return 'Förlängningen skickades till uppdragsansvarig.'
+  return 'Begäran har sparats. Notifieringsstatus visas i uppdraget.'
 }
 
 async function decideDeadlineChange(input: TaskActionInput) {
@@ -1241,7 +1668,9 @@ async function decideDeadlineChange(input: TaskActionInput) {
     p_actor_profile_id: input.userId,
   })
   if (error) throw taskDatabaseError(error, 'TASK_EXTENSION_UPDATE_FAILED')
-  return decision === 'approved' ? 'Förlängningen godkändes.' : 'Förlängningen avslogs.'
+  return decision === 'approved'
+    ? 'Förlängningen godkändes. Notifieringsstatus visas i uppdraget.'
+    : 'Förlängningen avslogs. Notifieringsstatus visas i uppdraget.'
 }
 
 async function issueAccessLink(input: TaskActionInput) {
@@ -1288,6 +1717,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     }
   } else if (input.action === 'archive_task') {
     notice = await archiveTask(input)
+  } else if (input.action === 'set_recurrence') {
+    notice = await setTaskRecurrence(input)
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
   } else if (input.action === 'comment') {

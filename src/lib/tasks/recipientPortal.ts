@@ -18,6 +18,7 @@ import {
   type TaskAnalyticsDeadlineRequestInput,
 } from './analytics'
 import { normalizeTaskTimeZone } from './dateTime'
+import { taskActorDisplayName } from './branding'
 import type { ExternalTaskWorkspace } from './external'
 import {
   loadTaskConversationSnapshots,
@@ -650,7 +651,7 @@ export async function getRecipientPortalTaskWorkspace(
     .map((event) => ({
       id: String(event.id),
       type: String(event.event_type),
-      actorName: asText(event.actor_name) || 'Signe',
+      actorName: taskActorDisplayName(asText(event.actor_name), undefined, asText(event.actor_type)),
       message: typeof event.message === 'string' ? event.message : null,
       fromStatus: isTaskStatus(event.from_status) ? event.from_status : null,
       toStatus: isTaskStatus(event.to_status) ? event.to_status : null,
@@ -852,7 +853,7 @@ export async function performRecipientPortalTaskAction(input: {
         actor_name: context.contactName,
         message,
         metadata: { recipientIdentityId: context.identityId },
-      })
+    })
       .select('id')
       .single()
     if (error || !event) throw new Error('TASK_EVENT_CREATE_FAILED')
@@ -869,9 +870,13 @@ export async function performRecipientPortalTaskAction(input: {
       },
     })
     warning = notification.warning
-    notice = notification.warning
-      ? 'Meddelandet finns sparat.'
-      : 'Meddelandet har skickats och mottagaren har notifierats via e-post.'
+    notice = notification.queued
+      ? 'Meddelandet har sparats och notifieringen har köats.'
+      : notification.warning
+        ? 'Meddelandet finns sparat.'
+        : notification.sent
+          ? 'Meddelandet har sparats och e-posttjänsten har tagit emot utskicket.'
+          : 'Meddelandet har sparats.'
   } else if (input.action === 'request_deadline_change') {
     const reason = asText(input.payload.reason)
     const requestedDueAt = parseIso(input.payload.requestedDueAt, 'TASK_EXTENSION_DATE_REQUIRED')
@@ -888,7 +893,7 @@ export async function performRecipientPortalTaskAction(input: {
       p_actor_access_link_id: context.accessLinkId,
     })
     if (error) throw databaseErrorCode(error, 'TASK_EXTENSION_CREATE_FAILED')
-    notice = 'Din begäran har skickats till uppdragsansvarig.'
+    notice = 'Din begäran har sparats. HusHub hanterar notifieringen till uppdragsansvarig.'
   } else {
     const toStatus: TaskStatus | null = input.action === 'start'
       ? 'in_progress'
@@ -922,8 +927,8 @@ export async function performRecipientPortalTaskAction(input: {
     notice = toStatus === 'in_progress'
       ? 'Uppgiften är startad.'
       : toStatus === 'waiting'
-        ? 'Uppgiften är markerad som väntande.'
-        : 'Uppgiften har skickats för kontroll.'
+        ? 'Uppgiften är markerad som väntande. HusHub hanterar notifieringen.'
+        : 'Uppgiften har lämnats för kontroll. HusHub hanterar notifieringen.'
   }
 
   const workspace = await getRecipientPortalTaskWorkspace(input.session, input.taskId)

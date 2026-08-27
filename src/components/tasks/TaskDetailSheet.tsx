@@ -16,6 +16,7 @@ import {
   Mic,
   Paperclip,
   Plus,
+  Repeat2,
   RotateCcw,
   Send,
   ShieldCheck,
@@ -28,6 +29,7 @@ import {
 import type {
   TaskAiSuggestionView,
   TaskStatus,
+  TaskRecurrenceInterval,
   TaskView,
   TaskWorkspace,
 } from '@/lib/tasks/contracts'
@@ -43,6 +45,7 @@ import {
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
+import TaskNotificationDeliveryStatus from './TaskNotificationDeliveryStatus'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
@@ -86,6 +89,14 @@ function matchesCompletionEvidenceRequirement(
   return task.evidenceRequirement === 'any' || task.evidenceRequirement === type
 }
 
+function recurrenceLabel(interval: TaskRecurrenceInterval | null) {
+  if (interval === 'weekly') return 'Varje vecka'
+  if (interval === 'monthly') return 'Varje månad'
+  if (interval === 'quarterly') return 'Varje kvartal'
+  if (interval === 'yearly') return 'Varje år'
+  return 'Inte återkommande'
+}
+
 export default function TaskDetailSheet({
   task,
   workspace,
@@ -115,6 +126,7 @@ export default function TaskDetailSheet({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [recurrenceInterval, setRecurrenceInterval] = useState<TaskRecurrenceInterval | ''>('')
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -126,6 +138,10 @@ export default function TaskDetailSheet({
   const deleteTriggerButtonRef = useRef<HTMLButtonElement>(null)
   const deleteBusy = busy || deleteSubmitting
   const taskId = task?.id ?? null
+
+  useEffect(() => {
+    setRecurrenceInterval(task?.recurrenceInterval ?? '')
+  }, [task?.id, task?.recurrenceInterval])
 
   const markMessagesRead = useCallback(async (throughEventId: string) => {
     if (!taskId) return
@@ -265,7 +281,7 @@ export default function TaskDetailSheet({
     }
     if (panel === 'waiting') {
       if (Date.parse(selectedAt) < Date.now() || Date.parse(selectedAt) > Date.parse(task.dueAt)) {
-        setDateTimeError('Signe måste följa upp framåt i tiden och senast när uppdraget ska vara klart.')
+        setDateTimeError('Gizmo måste följa upp framåt i tiden och senast när uppdraget ska vara klart.')
         return
       }
       setDateTimeError(null)
@@ -498,7 +514,7 @@ export default function TaskDetailSheet({
             {isTaskIssuer ? (
               <div className="col-span-2 rounded-2xl border border-slate-200 bg-white p-3.5">
                 <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <Clock3 size={14} /> Signe följer upp internt
+                  <Clock3 size={14} /> Gizmo följer upp internt
                 </dt>
                 <dd className="mt-2 text-sm font-semibold text-slate-900">
                   {formatTaskDateTime(task.nextFollowupAt, effectiveTimeZone)}
@@ -506,6 +522,52 @@ export default function TaskDetailSheet({
               </div>
             ) : null}
           </dl>
+
+          {!task.parentTaskId ? (
+            <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4" aria-labelledby="task-recurrence-heading">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                  <Repeat2 size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 id="task-recurrence-heading" className="text-sm font-semibold text-slate-900">Återkommande uppgift</h3>
+                  {canActAsIssuer && !['approved', 'cancelled'].includes(task.status) ? (
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <select
+                        value={recurrenceInterval}
+                        onChange={(event) => setRecurrenceInterval(event.target.value as TaskRecurrenceInterval | '')}
+                        className={smallInput}
+                        aria-label="Intervall för återkommande uppgift"
+                      >
+                        <option value="">Inte återkommande</option>
+                        <option value="weekly">Varje vecka</option>
+                        <option value="monthly">Varje månad</option>
+                        <option value="quarterly">Varje kvartal</option>
+                        <option value="yearly">Varje år</option>
+                      </select>
+                      <button
+                        type="button"
+                        disabled={busy || recurrenceInterval === (task.recurrenceInterval ?? '')}
+                        onClick={() => onAction('set_recurrence', {
+                          taskId: task.id,
+                          version: task.version,
+                          interval: recurrenceInterval || null,
+                        })}
+                        className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Spara
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm font-semibold text-slate-700">{recurrenceLabel(task.recurrenceInterval)}</p>
+                  )}
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Nästa tillfälle skapas när uppgiften godkänns. Bilagor och underuppgifter kopieras inte.
+                  </p>
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           {(canActAsAssignee || (canActAsIssuer && task.status === 'ready_for_review')) ? (
             <section className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4" aria-labelledby="task-next-step-heading">
@@ -614,6 +676,14 @@ export default function TaskDetailSheet({
             </div>
           ) : null}
 
+          {canActAsIssuer ? (
+            <TaskNotificationDeliveryStatus
+              deliveries={task.notificationDeliveries}
+              problemCount={task.notificationDeliveryProblemCount}
+              timeZone={effectiveTimeZone}
+            />
+          ) : null}
+
           {pendingDeadlineRequests.length > 0 ? (
             <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <h3 className="text-sm font-semibold text-amber-950">Begärd förlängning</h3>
@@ -718,10 +788,10 @@ export default function TaskDetailSheet({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-violet-950">
-                  <SigneCheckIcon size={19} /> Signe · förslag på nästa steg
+                  <SigneCheckIcon size={19} /> Gizmo · förslag på nästa steg
                 </h3>
                 <p className="mt-1 text-xs leading-5 text-violet-800">
-                  Signe kan föreslå högst tre underuppgifter. Förslagen skapar inget och skickar inget förrän du själv väljer hur du vill gå vidare.
+                  Gizmo kan föreslå högst tre underuppgifter. Förslagen skapar inget och skickar inget förrän du själv väljer hur du vill gå vidare.
                 </p>
               </div>
               {canRequestSigneSuggestions ? (
@@ -731,7 +801,7 @@ export default function TaskDetailSheet({
                   onClick={() => onAction('request_signe_suggestions', { taskId: task.id })}
                   className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
                 >
-                  <SigneCheckIcon size={18} /> Be Signe föreslå nästa steg
+                  <SigneCheckIcon size={18} /> Be Gizmo föreslå nästa steg
                 </button>
               ) : null}
             </div>
@@ -758,7 +828,7 @@ export default function TaskDetailSheet({
                           ) : null}
                           {suggestion.rationale ? (
                             <p className="mt-2 rounded-xl bg-violet-50 px-3 py-2 text-xs leading-5 text-violet-900">
-                              Varför Signe föreslår detta: {suggestion.rationale}
+                              Varför Gizmo föreslår detta: {suggestion.rationale}
                             </p>
                           ) : null}
                         </div>
@@ -840,7 +910,7 @@ export default function TaskDetailSheet({
               </div>
             ) : (
               <p className="mt-3 rounded-xl border border-dashed border-violet-200 bg-white/60 px-4 py-3 text-xs leading-5 text-violet-800">
-                Inga väntande Signe-förslag för uppgiften.
+                Inga väntande Gizmo-förslag för uppgiften.
               </p>
             )}
           </section>
@@ -1109,7 +1179,7 @@ export default function TaskDetailSheet({
                 {panel === 'waiting' || panel === 'extension' ? (
                   <fieldset className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
                     <legend className="px-1 text-xs font-semibold text-slate-700">
-                      {panel === 'waiting' ? 'När ska Signe följa upp internt?' : 'Önskad ny sluttid'}
+                      {panel === 'waiting' ? 'När ska Gizmo följa upp internt?' : 'Önskad ny sluttid'}
                     </legend>
                     <div className="mt-1 grid gap-2 min-[420px]:grid-cols-[minmax(0,1fr)_8.5rem]">
                       <label className="block text-xs font-semibold text-slate-600">
@@ -1286,7 +1356,7 @@ export default function TaskDetailSheet({
             </h2>
             <p className="mt-2 break-words text-sm font-semibold text-slate-800">{task.title}</p>
             <p id="task-delete-dialog-description" className="mt-2 text-sm leading-6 text-slate-600">
-              Uppdraget försvinner från arbetsvyerna. Signe slutar påminna och mottagaren förlorar åtkomsten. Historik och bilagor sparas för spårbarhet.
+              Uppdraget försvinner från arbetsvyerna. Gizmo slutar påminna och mottagaren förlorar åtkomsten. Historik och bilagor sparas för spårbarhet.
             </p>
 
             {deleteError ? (

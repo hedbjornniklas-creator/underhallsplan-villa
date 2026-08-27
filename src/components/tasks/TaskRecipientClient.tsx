@@ -662,7 +662,7 @@ export default function TaskRecipientClient({
           <div className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700">
             <Link2Off size={23} aria-hidden="true" />
           </div>
-          <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Signe</p>
+          <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">{copy.title}</h1>
           <p className="mt-3 text-sm leading-7 text-slate-600">{copy.text}</p>
         </section>
@@ -730,7 +730,7 @@ export default function TaskRecipientClient({
           ) : null}
           <SigneMark />
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Signe följer upp</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo följer upp</p>
             <p className="mt-0.5 truncate text-sm text-slate-600">Hej {workspace.recipientName}</p>
           </div>
           {showMyTasksLink ? (
@@ -867,7 +867,7 @@ export default function TaskRecipientClient({
         {delegatedAccessUrl ? (
           <section className="mt-4 rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
             <p className="text-sm font-semibold text-slate-900">Personlig länk till den nya mottagaren</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">Dela länken manuellt om Signe inte kunde skicka den i vald kanal.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Dela länken manuellt om Gizmo inte kunde skicka den i vald kanal.</p>
             <div className="mt-3 flex gap-2">
               <input
                 readOnly
@@ -1213,7 +1213,7 @@ export default function TaskRecipientClient({
           </div>
         ) : null}
 
-        <p className="mt-8 text-center text-xs leading-5 text-slate-500">Signe är den digitala uppföljningsassistenten för det här uppdraget.</p>
+        <p className="mt-8 text-center text-xs leading-5 text-slate-500">Gizmo är den digitala uppföljningsassistenten för det här uppdraget.</p>
       </div>
 
       {showActionBar ? (
@@ -1271,7 +1271,7 @@ export default function TaskRecipientClient({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
-                  {panel === 'delegate' ? 'Signe tilldelar vidare' : 'Signe meddelar uppdragsansvarig'}
+                  {panel === 'delegate' ? 'Gizmo tilldelar vidare' : 'Gizmo meddelar uppdragsansvarig'}
                 </p>
                 <h2 id="recipient-action-title" className="mt-2 text-xl font-semibold">
                   {panel === 'waiting'
@@ -1293,7 +1293,7 @@ export default function TaskRecipientClient({
                   <textarea value={waitingReason} onChange={(event) => setWaitingReason(event.target.value)} rows={3} placeholder="Exempel: väntar på materialleverans" className={`${inputClassName} mt-2 resize-y`} />
                 </label>
                 <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
-                  <legend className="px-1 text-sm font-semibold text-slate-700">När ska Signe följa upp igen?</legend>
+                  <legend className="px-1 text-sm font-semibold text-slate-700">När ska Gizmo följa upp igen?</legend>
                   <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem]">
                     <label className="block min-w-0 text-sm font-semibold text-slate-700">
                       Datum
@@ -1465,7 +1465,7 @@ export default function TaskRecipientClient({
                   </fieldset>
 
                   <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
-                    <legend className="px-1 text-sm font-semibold text-slate-700">Signe följer upp underuppgiften</legend>
+                    <legend className="px-1 text-sm font-semibold text-slate-700">Gizmo följer upp underuppgiften</legend>
                     <div className="mt-1 grid gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_9rem]">
                       <label className="block min-w-0 text-sm font-semibold text-slate-700">
                         Datum

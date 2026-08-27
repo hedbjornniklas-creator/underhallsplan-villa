@@ -263,7 +263,7 @@ export default function RecipientPortalOverviewClient({
 
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-9">
         <section className="overflow-hidden rounded-[2rem] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5 shadow-xl shadow-amber-950/5 sm:p-8">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Signe håller koll</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo håller koll</p>
           <div className="mt-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Det här behöver bli gjort</h1>

@@ -13,6 +13,7 @@ import {
   ListFilter,
   MessageCircle,
   Plus,
+  Repeat2,
   RefreshCw,
   Search,
   UserRoundCheck,
@@ -98,6 +99,14 @@ function statusSortRank(status: TaskView['status']) {
 function latestMessageLabel(task: TaskView) {
   if (!task.latestMessage) return 'Inga meddelanden'
   return `${task.latestMessage.actorName}: ${task.latestMessage.message}`
+}
+
+function recurrenceShortLabel(task: TaskView) {
+  if (task.recurrenceInterval === 'weekly') return 'Varje vecka'
+  if (task.recurrenceInterval === 'monthly') return 'Varje månad'
+  if (task.recurrenceInterval === 'quarterly') return 'Varje kvartal'
+  if (task.recurrenceInterval === 'yearly') return 'Varje år'
+  return null
 }
 
 function SortButton({
@@ -186,6 +195,11 @@ function TaskCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <TaskStatusBadge status={task.status} />
+            {recurrenceShortLabel(task) ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800">
+                <Repeat2 size={12} /> {recurrenceShortLabel(task)}
+              </span>
+            ) : null}
             {task.unreadMessageCount > 0 ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white">
                 <MessageCircle size={12} /> {task.unreadMessageCount} nya
@@ -516,7 +530,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
           <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
-                <SigneCheckIcon size={17} /> Signe håller i uppföljningen
+                <SigneCheckIcon size={17} /> Gizmo håller i uppföljningen
               </div>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">Uppdrag</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
@@ -703,7 +717,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                                 <td className="px-3 py-3 align-middle"><TaskRiskDot risk={task.risk} /></td>
                                 <td className="px-3 py-3 align-middle">
                                   <p className={`truncate text-slate-950 ${task.unreadMessageCount > 0 ? 'font-bold' : 'font-semibold'}`}>{task.title}</p>
-                                  <p className="mt-0.5 truncate text-xs text-slate-500">{parentTitle ? `↳ ${parentTitle}` : task.contextLabel || 'Inget projekt angivet'}</p>
+                                  <p className="mt-0.5 truncate text-xs text-slate-500">
+                                    {recurrenceShortLabel(task) ? `${recurrenceShortLabel(task)} · ` : ''}
+                                    {parentTitle ? `↳ ${parentTitle}` : task.contextLabel || 'Inget projekt angivet'}
+                                  </p>
                                 </td>
                                 <td className="px-3 py-3 align-middle"><TaskStatusBadge status={task.status} /></td>
                                 <td className="px-3 py-3 align-middle">
@@ -812,9 +829,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   setComposerSuggestion(null)
                 }}
                 onCreate={async (payload) => {
-                  const { attachments, ...taskPayload } = payload
+                  const { attachments, aiSubtasks, ...taskPayload } = payload
                   const isExternalRecipient = !payload.assigneeRef.startsWith('profile:')
-                  const deferAssignment = attachments.length > 0
+                  const createsTaskTree = !payload.parentTaskId && aiSubtasks.length > 0
+                  const deferAssignment = attachments.length > 0 || createsTaskTree
                   const created = await runAction(
                     payload.parentTaskId ? 'create_subtask' : 'create_task',
                     {
@@ -833,17 +851,82 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   setComposerParentId(null)
                   setComposerSuggestion(null)
 
+                  let latestResult = created
+                  const createdTaskIds = [createdTaskId]
+                  let treeFailure: string | null = null
+                  if (createsTaskTree) {
+                    const rootTask = latestResult.workspace.tasks.find((task) => task.id === createdTaskId)
+                    if (!rootTask) {
+                      treeFailure = 'Huvuduppdraget kunde inte läsas tillbaka efter skapandet.'
+                    } else {
+                      const inheritedAssigneeRef = `${rootTask.assignee.kind}:${rootTask.assignee.id}`
+                      for (let index = 0; index < aiSubtasks.length; index += 1) {
+                        const subtask = aiSubtasks[index]
+                        const currentParent = latestResult.workspace.tasks.find(
+                          (task) => task.id === createdTaskId
+                        )
+                        if (!currentParent) {
+                          treeFailure = 'Huvuduppdragets aktuella version kunde inte läsas.'
+                          break
+                        }
+                        try {
+                          const childResult = await runAction(
+                            'create_subtask',
+                            {
+                              ...taskPayload,
+                              parentTaskId: createdTaskId,
+                              recurrenceInterval: '',
+                              parentVersion: currentParent.version,
+                              sourceAiSuggestionId: null,
+                              title: subtask.title,
+                              description: subtask.description,
+                              assigneeRef: inheritedAssigneeRef,
+                              newContact: null,
+                              evidenceRequirements: [],
+                              sendAssignment: false,
+                            },
+                            { showResultToast: false, showErrorToast: false }
+                          )
+                          if (!childResult.createdTaskId) {
+                            throw new Error('Underuppgiften saknar id efter skapandet.')
+                          }
+                          createdTaskIds.push(childResult.createdTaskId)
+                          latestResult = childResult
+                        } catch (error) {
+                          const remaining = aiSubtasks.length - index
+                          const detail = error instanceof Error ? error.message : 'Okänt fel.'
+                          treeFailure = `${remaining} ${remaining === 1 ? 'underuppgift kunde' : 'underuppgifter kunde'} inte skapas. ${detail}`
+                          break
+                        }
+                      }
+                    }
+                  }
+
                   const uploadResult = await uploadInitialAttachments(createdTaskId, attachments)
+                  if (treeFailure) {
+                    const attachmentFailure = uploadResult.failed.length > 0
+                      ? ` Dessutom kunde ${uploadResult.failed.length} ${
+                          uploadResult.failed.length === 1 ? 'bilaga' : 'bilagor'
+                        } inte sparas: ${uploadResult.failed.join(', ')}.`
+                      : ''
+                    showWarning(
+                      `Huvuduppdraget skapades och ${createdTaskIds.length - 1} ${
+                        createdTaskIds.length - 1 === 1 ? 'underuppgift sparades' : 'underuppgifter sparades'
+                      }, men hela trädet kunde inte slutföras. ${treeFailure}${attachmentFailure} Ingen mottagare har meddelats.`
+                    )
+                    setSelectedTaskId(createdTaskId)
+                    return
+                  }
                   if (uploadResult.failed.length > 0) {
                     let recipientNotice = ''
-                    if (deferAssignment && !isExternalRecipient) {
+                    if (deferAssignment && !isExternalRecipient && !createsTaskTree) {
                       try {
                         const dispatched = await runAction(
                           'dispatch_assignment',
                           { taskId: createdTaskId },
                           { showResultToast: false, showErrorToast: false }
                         )
-                        recipientNotice = ` ${dispatched.notice ?? 'Signe meddelar mottagaren.'}`
+                        recipientNotice = ` ${dispatched.notice ?? 'Gizmo meddelar mottagaren.'}`
                       } catch {
                         recipientNotice = ' Mottagaren kunde inte meddelas automatiskt.'
                       }
@@ -854,42 +937,69 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                       } ${
                         uploadResult.failed.length === 1 ? 'fil kunde' : 'filer kunde'
                       } inte laddas upp: ${uploadResult.failed.join(', ')}. Lägg till dem från uppdraget.${
-                        deferAssignment && isExternalRecipient ? ' Mottagaren har därför inte meddelats ännu.' : ''
+                        deferAssignment && (isExternalRecipient || createsTaskTree)
+                          ? ' Ingen mottagare har därför meddelats ännu.'
+                          : ''
                       }`
                     )
                     setSelectedTaskId(createdTaskId)
                     return
                   }
 
+                  if (!deferAssignment) return
+
                   let dispatchResult = created
+                  const dispatchWarnings: string[] = []
                   if (deferAssignment) {
-                    try {
-                      dispatchResult = isExternalRecipient
-                        ? await runAction(
-                            'issue_access_link',
-                            {
-                              taskId: createdTaskId,
-                              sendEmail: true,
-                            },
-                            { showResultToast: false }
-                          )
-                        : await runAction(
-                            'dispatch_assignment',
-                            { taskId: createdTaskId },
-                            { showResultToast: false }
-                          )
-                    } catch {
-                      setSelectedTaskId(createdTaskId)
-                      return
+                    for (const taskId of createdTaskIds) {
+                      const taskToDispatch = latestResult.workspace.tasks.find((task) => task.id === taskId)
+                      if (!taskToDispatch) {
+                        showWarning(
+                          'Uppdraget och underlagen sparades, men ett uppdrag kunde inte förberedas för utskick. Ingen ytterligare mottagare har meddelats.'
+                        )
+                        setSelectedTaskId(createdTaskId)
+                        return
+                      }
+                      try {
+                        dispatchResult = taskToDispatch.assignee.kind === 'contact'
+                          ? await runAction(
+                              'issue_access_link',
+                              {
+                                taskId,
+                                sendEmail: true,
+                              },
+                              { showResultToast: false, showErrorToast: false }
+                            )
+                          : await runAction(
+                              'dispatch_assignment',
+                              { taskId },
+                              { showResultToast: false, showErrorToast: false }
+                            )
+                        latestResult = dispatchResult
+                        if (dispatchResult.warning) dispatchWarnings.push(dispatchResult.warning)
+                      } catch {
+                        showWarning(
+                          'Uppdraget och underlagen sparades, men alla mottagare kunde inte meddelas. Öppna uppdraget och försök skicka igen.'
+                        )
+                        setSelectedTaskId(createdTaskId)
+                        return
+                      }
                     }
                   }
 
-                  if (uploadResult.uploaded > 0) {
-                    const message = `${dispatchResult.warning ?? dispatchResult.notice ?? 'Uppgiften skapades.'} ${
-                      uploadResult.uploaded
-                    } ${uploadResult.uploaded === 1 ? 'bilaga sparades' : 'bilagor sparades'}.`
-                    if (dispatchResult.warning) showWarning(message)
-                    else showSuccess(message)
+                  const taskTreeMessage = createsTaskTree
+                    ? `Huvuduppdraget och ${aiSubtasks.length} ${
+                        aiSubtasks.length === 1 ? 'underuppgift skapades' : 'underuppgifter skapades'
+                      }.`
+                    : dispatchResult.notice ?? 'Uppgiften skapades.'
+                  const attachmentMessage = uploadResult.uploaded > 0
+                    ? ` ${uploadResult.uploaded} ${uploadResult.uploaded === 1 ? 'bilaga sparades' : 'bilagor sparades'}.`
+                    : ''
+                  const message = `${taskTreeMessage}${attachmentMessage}`
+                  if (dispatchWarnings.length > 0) {
+                    showWarning(`${message} ${[...new Set(dispatchWarnings)].join(' ')}`)
+                  } else {
+                    showSuccess(message)
                   }
                 }}
               />

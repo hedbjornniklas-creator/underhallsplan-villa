@@ -206,7 +206,7 @@ reservkanal kan fortfarande användas. Funktionen är endast tilldelad
 `service_role`. Kör inte en direkt `update` på leveranstabellen och skriv aldrig
 hemligheter, bearer-länkar eller personuppgifter i operatörsanteckningen.
 
-Om även den konfigurerade reservleveransen är definitivt uttömd skickar Signe
+Om även den konfigurerade reservleveransen är definitivt uttömd skickar Gizmo
 en enda idempotent eskalering till uppdragsansvarig. Den omöjliga leveransen
 försöks inte igen och uppdragets automation pausas tills en människa ändrar
 uppdraget.

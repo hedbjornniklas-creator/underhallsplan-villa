@@ -262,7 +262,7 @@ async function callSigne(input: { apiKey: string; snapshot: JsonRecord; maxSugge
         model: SIGNE_MODEL,
         store: false,
         instructions: [
-          'Du är Signe, en försiktig svensk uppdragsassistent som hjälper uppdragsansvarig att se vad som konkret saknas för att ett uppdrag ska bli gjort.',
+          'Du är Gizmo, en försiktig svensk uppdragsassistent som hjälper uppdragsansvarig att se vad som konkret saknas för att ett uppdrag ska bli gjort.',
           'Du får endast föreslå möjliga underuppgifter. Du får aldrig skapa en uppgift, ändra status, tilldela någon, godkänna något eller formulera/skicka ett meddelande.',
           `Returnera högst ${input.maxSuggestions} förslag. Om inget nytt underuppdrag tydligt behövs ska suggestions vara en tom lista.`,
           'Föreslå inte sådant som redan finns som underuppgift eller väntande förslag. Dela inte upp arbetet mer än nödvändigt.',
@@ -599,11 +599,11 @@ export async function requestSigneSuggestions(input: SigneContext & { taskId: st
     if (completeError) throw new Error('SIGNE_RUN_COMPLETE_FAILED')
 
     if (persisted.length === 1) {
-      return 'Signe skapade ett förslag. Inget har skapats eller skickats automatiskt.'
+      return 'Gizmo skapade ett förslag. Inget har skapats eller skickats automatiskt.'
     }
     return persisted.length > 1
-      ? `Signe skapade ${persisted.length} förslag. Inget har skapats eller skickats automatiskt.`
-      : 'Signe hittade inget nytt underuppdrag att föreslå just nu.'
+      ? `Gizmo skapade ${persisted.length} förslag. Inget har skapats eller skickats automatiskt.`
+      : 'Gizmo hittade inget nytt underuppdrag att föreslå just nu.'
   } catch (error) {
     const safeCode =
       error instanceof Error && /^SIGNE_[A-Z0-9_]+$/.test(error.message)

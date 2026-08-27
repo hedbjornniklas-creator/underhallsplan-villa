@@ -94,7 +94,7 @@ Kärntabeller:
 - `task_deadline_change_requests`: begärd förlängning och uppdragsansvarigs beslut.
 - `task_access_links`: enbart SHA-256-hash av personliga, tidsbegränsade externa länkar.
 - `task_followup_rules`, `task_messages`, `task_message_deliveries`, `task_automation_jobs`: uppföljnings- och kommunikationskö.
-- `task_ai_runs`, `task_ai_suggestions`: auditerbara Signe-körningar och människogranskade förslag.
+- `task_ai_runs`, `task_ai_suggestions`: auditerbara Gizmo-körningar och människogranskade förslag.
 
 V1-gränser per organisation är två undernivåer, fem öppna barn per uppgift,
 fem AI-barn per uppgift, tre väntande AI-förslag per rot och femton aktiva
