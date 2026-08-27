@@ -57,6 +57,62 @@ export type TaskPerson = {
   isActive: boolean
 }
 
+export const TASK_ANALYTICS_PERIODS = ['30d', '90d', '12m', 'all'] as const
+export type TaskAnalyticsPeriod = (typeof TASK_ANALYTICS_PERIODS)[number]
+
+export type TaskDeliveryStats = {
+  approvedCount: number
+  measuredCount: number
+  unknownCount: number
+  onTimeCount: number
+  lateCount: number
+  onTimePercent: number | null
+  limitedSample: boolean
+  taskIds: {
+    approved: string[]
+    onTime: string[]
+    late: string[]
+    unknown: string[]
+  }
+}
+
+export type TaskCurrentStats = {
+  activeCount: number
+  overdueCount: number
+  dueWithin7DaysCount: number
+  awaitingReviewCount: number
+  taskIds: {
+    active: string[]
+    overdue: string[]
+    dueWithin7Days: string[]
+    awaitingReview: string[]
+  }
+}
+
+export type TaskAnalyticsScope = {
+  current: TaskCurrentStats
+  deliveryByPeriod: Record<TaskAnalyticsPeriod, TaskDeliveryStats>
+}
+
+export type TaskAssigneeAnalytics = TaskAnalyticsScope & {
+  assignee: TaskPerson
+}
+
+export type TaskWorkspaceAnalytics = {
+  asOf: string
+  defaultPeriod: '90d'
+  self: TaskAnalyticsScope
+  issuedByMe: TaskAnalyticsScope & {
+    assignees: TaskAssigneeAnalytics[]
+  }
+}
+
+export type TaskRecipientAnalytics = {
+  asOf: string
+  defaultPeriod: '90d'
+  self: TaskAnalyticsScope
+}
+
 export type TaskRequirementView = {
   id: string
   key: string
@@ -180,6 +236,7 @@ export type TaskWorkspace = {
   tasks: TaskView[]
   people: TaskPerson[]
   summary: TaskWorkspaceSummary
+  analytics: TaskWorkspaceAnalytics
   limits: {
     maxDepth: number
     maxOpenChildren: number

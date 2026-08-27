@@ -24,6 +24,13 @@ import {
   legacyRequirementFromEvidenceTypes,
 } from './contracts'
 import {
+  buildTaskAnalyticsScope,
+  buildTaskAssigneeAnalytics,
+  type TaskAnalyticsAssigneeInput,
+  type TaskAnalyticsDeadlineRequestInput,
+  type TaskAnalyticsTaskInput,
+} from './analytics'
+import {
   DEFAULT_TASK_AUTOMATION_LIMITS,
   evaluateTaskRisk,
   getTaskBallHolderKind,
@@ -132,6 +139,7 @@ type EventRow = {
 type DeadlineRequestRow = {
   id: string
   task_id: string
+  current_due_at: string
   requested_due_at: string
   reason: string
   status: 'pending' | 'approved' | 'rejected' | 'cancelled'
@@ -381,7 +389,7 @@ async function loadRows(orgId: string) {
         .order('created_at', { ascending: false }),
       admin
         .from('task_deadline_change_requests')
-        .select('id,task_id,requested_due_at,reason,status,decided_at,decision_note,created_at')
+        .select('id,task_id,current_due_at,requested_due_at,reason,status,decided_at,decision_note,created_at')
         .in('task_id', taskIds)
         .order('created_at', { ascending: false }),
       admin
@@ -439,6 +447,7 @@ async function loadRows(orgId: string) {
 
 export async function getTaskWorkspace(input: InternalTaskContext): Promise<TaskWorkspace> {
   const rows = await loadRows(input.orgId)
+  const analyticsAsOf = new Date().toISOString()
   const visibleIds = actorCanSeeTaskTree(rows.tasks, input.userId, input.isOrgAdmin)
   const visibleTasks = rows.tasks.filter((task) => visibleIds.has(task.id))
   const profilesById = new Map(rows.profiles.map((profile) => [profile.id, profile]))
@@ -704,6 +713,46 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
     return false
   }).length
 
+  const taskViewsById = new Map(taskViews.map((task) => [task.id, task]))
+  const analyticsTask = (task: OperationalTaskRow): TaskAnalyticsTaskInput => ({
+    id: task.id,
+    status: task.status,
+    dueAt: task.due_at,
+    submittedForReviewAt: task.submitted_for_review_at,
+    approvedAt: task.approved_at,
+    // A missing follow-up rule must never make an undispatched task look late.
+    initialDispatchPending: initialDispatchByTask.get(task.id) ?? true,
+  })
+  const analyticsDeadlineRequests: TaskAnalyticsDeadlineRequestInput[] = rows.deadlineRequests.map(
+    (request) => ({
+      taskId: request.task_id,
+      currentDueAt: request.current_due_at,
+      status: request.status,
+      decidedAt: request.decided_at,
+    })
+  )
+  const selfAnalyticsTasks = visibleTasks
+    .filter((task) => task.assignee_profile_id === input.userId)
+    .map(analyticsTask)
+  const issuedAnalyticsTasks: TaskAnalyticsAssigneeInput[] = visibleTasks
+    .filter((task) => task.created_by_profile_id === input.userId)
+    .flatMap((task) => {
+      const taskView = taskViewsById.get(task.id)
+      return taskView
+        ? [{ ...analyticsTask(task), assignee: taskView.assignee }]
+        : []
+    })
+  const selfAnalytics = buildTaskAnalyticsScope({
+    tasks: selfAnalyticsTasks,
+    deadlineRequests: analyticsDeadlineRequests,
+    asOf: analyticsAsOf,
+  })
+  const issuedByMeAnalytics = buildTaskAnalyticsScope({
+    tasks: issuedAnalyticsTasks,
+    deadlineRequests: analyticsDeadlineRequests,
+    asOf: analyticsAsOf,
+  })
+
   return {
     timeZone: rows.timeZone,
     currentUser: {
@@ -727,6 +776,19 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       yellow: activeTasks.filter((task) => task.risk === 'yellow').length,
       red: activeTasks.filter((task) => task.risk === 'red').length,
       unreadMessages: taskViews.reduce((total, task) => total + task.unreadMessageCount, 0),
+    },
+    analytics: {
+      asOf: analyticsAsOf,
+      defaultPeriod: '90d',
+      self: selfAnalytics,
+      issuedByMe: {
+        ...issuedByMeAnalytics,
+        assignees: buildTaskAssigneeAnalytics({
+          tasks: issuedAnalyticsTasks,
+          deadlineRequests: analyticsDeadlineRequests,
+          asOf: analyticsAsOf,
+        }),
+      },
     },
     limits: TASK_LIMITS,
   }

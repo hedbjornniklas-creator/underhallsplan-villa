@@ -5,6 +5,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { evaluateTaskRisk, isTaskStatus } from './domain'
 import type { TaskAttachmentActor } from './attachments'
 import type {
+  TaskRecipientAnalytics,
   TaskCompletionEvidenceType,
   TaskEvidenceRequirement,
   TaskRequirementStatus,
@@ -12,6 +13,10 @@ import type {
   TaskStatus,
 } from './contracts'
 import { evidenceTypesFromLegacyRequirement } from './contracts'
+import {
+  buildTaskAnalyticsScope,
+  type TaskAnalyticsDeadlineRequestInput,
+} from './analytics'
 import { normalizeTaskTimeZone } from './dateTime'
 import type { ExternalTaskWorkspace } from './external'
 import {
@@ -53,6 +58,7 @@ export type RecipientPortalOverview = {
     completed: number
     unreadMessages: number
   }
+  analytics: TaskRecipientAnalytics
 }
 
 type PortalScopeRow = {
@@ -89,8 +95,21 @@ type PortalTaskRow = {
   created_at: string
   evidence_requirement: TaskEvidenceRequirement
   submitted_for_review_at: string | null
+  approved_at: string | null
   version: number
   archived_at?: string | null
+}
+
+type PortalDeadlineRequestRow = {
+  task_id: string
+  current_due_at: string
+  status: 'pending' | 'approved'
+  decided_at: string | null
+}
+
+type PortalFollowupRuleRow = {
+  task_id: string
+  initial_dispatch_pending: boolean
 }
 
 export type RecipientPortalActorContext = {
@@ -130,6 +149,7 @@ const TASK_SELECT = [
   'created_at',
   'evidence_requirement',
   'submitted_for_review_at',
+  'approved_at',
   'version',
   'archived_at',
 ].join(',')
@@ -240,6 +260,7 @@ function parseTask(value: unknown): PortalTaskRow | null {
     submitted_for_review_at: typeof row.submitted_for_review_at === 'string'
       ? row.submitted_for_review_at
       : null,
+    approved_at: typeof row.approved_at === 'string' ? row.approved_at : null,
     version: Number(row.version),
     archived_at: typeof row.archived_at === 'string' ? row.archived_at : null,
   }
@@ -336,6 +357,7 @@ function profileName(value: unknown, fallback = 'Uppdragsansvarig') {
 export async function getRecipientPortalOverview(
   session: RecipientPortalSession
 ): Promise<RecipientPortalOverview> {
+  const analyticsAsOf = new Date().toISOString()
   const scopes = await resolvePortalScopes(session.authUserId)
   if (scopes.length === 0) {
     return {
@@ -343,6 +365,15 @@ export async function getRecipientPortalOverview(
       email: session.email,
       tasks: [],
       summary: { active: 0, needsAction: 0, overdue: 0, completed: 0, unreadMessages: 0 },
+      analytics: {
+        asOf: analyticsAsOf,
+        defaultPeriod: '90d',
+        self: buildTaskAnalyticsScope({
+          tasks: [],
+          deadlineRequests: [],
+          asOf: analyticsAsOf,
+        }),
+      },
     }
   }
 
@@ -350,7 +381,7 @@ export async function getRecipientPortalOverview(
   const orgIds = [...new Set(scopes.map((scope) => scope.org_id))]
   const contactIds = [...new Set(scopes.map((scope) => scope.contact_id))]
   const admin = createSupabaseAdminClient()
-  const [tasksResult, orgsResult, contactsResult] = await Promise.all([
+  const [tasksResult, orgsResult, contactsResult, deadlinesResult, followupResult] = await Promise.all([
     admin
       .from('operational_tasks')
       .select(TASK_SELECT)
@@ -362,8 +393,25 @@ export async function getRecipientPortalOverview(
       .select('id,org_id,name,email')
       .in('id', contactIds)
       .eq('is_active', true),
+    admin
+      .from('task_deadline_change_requests')
+      .select('task_id,current_due_at,status,decided_at')
+      .in('task_id', taskIds)
+      .in('org_id', orgIds)
+      .in('status', ['approved', 'pending']),
+    admin
+      .from('task_followup_rules')
+      .select('task_id,initial_dispatch_pending')
+      .in('task_id', taskIds)
+      .in('org_id', orgIds),
   ])
-  if (tasksResult.error || orgsResult.error || contactsResult.error) {
+  if (
+    tasksResult.error
+    || orgsResult.error
+    || contactsResult.error
+    || deadlinesResult.error
+    || followupResult.error
+  ) {
     throw new Error('TASK_RECIPIENT_PORTAL_READ_FAILED')
   }
 
@@ -443,6 +491,26 @@ export async function getRecipientPortalOverview(
   })
 
   const activeTasks = tasks.filter((task) => !TERMINAL_STATUSES.has(task.status))
+  const scopedTaskIds = new Set(taskRows.map((task) => task.id))
+  const initialDispatchByTask = new Map(
+    ((followupResult.data ?? []) as PortalFollowupRuleRow[])
+      .filter((rule) => scopedTaskIds.has(rule.task_id))
+      .map((rule) => [rule.task_id, rule.initial_dispatch_pending])
+  )
+  const analyticsDeadlineRequests: TaskAnalyticsDeadlineRequestInput[] = (
+    (deadlinesResult.data ?? []) as PortalDeadlineRequestRow[]
+  ).flatMap((request) => {
+    if (
+      !scopedTaskIds.has(request.task_id)
+      || (request.status !== 'approved' && request.status !== 'pending')
+    ) return []
+    return [{
+      taskId: request.task_id,
+      currentDueAt: request.current_due_at,
+      status: request.status,
+      decidedAt: request.decided_at,
+    }]
+  })
   return {
     recipientName: asText(primaryContact?.name) || session.fallbackName,
     email: session.email ?? (asText(primaryContact?.email) || null),
@@ -453,6 +521,24 @@ export async function getRecipientPortalOverview(
       overdue: activeTasks.filter((task) => task.risk === 'red').length,
       completed: tasks.filter((task) => task.status === 'approved').length,
       unreadMessages: tasks.reduce((total, task) => total + task.unreadMessageCount, 0),
+    },
+    analytics: {
+      asOf: analyticsAsOf,
+      defaultPeriod: '90d',
+      self: buildTaskAnalyticsScope({
+        tasks: taskRows.map((task) => ({
+          id: task.id,
+          status: task.status,
+          dueAt: task.due_at,
+          submittedForReviewAt: task.submitted_for_review_at,
+          approvedAt: task.approved_at,
+          // Fail closed when a legacy row has no follow-up rule: the recipient
+          // must not be blamed before initial dispatch is known to be complete.
+          initialDispatchPending: initialDispatchByTask.get(task.id) ?? true,
+        })),
+        deadlineRequests: analyticsDeadlineRequests,
+        asOf: analyticsAsOf,
+      }),
     },
   }
 }

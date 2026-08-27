@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  BarChart3,
   ChevronLeft,
   CheckCircle2,
   ChevronRight,
@@ -15,11 +16,13 @@ import {
   RefreshCw,
   Search,
   UserRoundCheck,
+  X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { useToast } from '@/components/ui/AppToastProvider'
 import type {
   TaskActionResponse,
+  TaskAnalyticsPeriod,
   TaskAiSuggestionView,
   TaskView,
   TaskWorkspace,
@@ -31,10 +34,12 @@ import {
 } from '@/lib/tasks/dateTime'
 import TaskComposerSheet from './TaskComposerSheet'
 import TaskDetailSheet from './TaskDetailSheet'
+import TaskIssuerAnalyticsPanel from './TaskIssuerAnalyticsPanel'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
+type WorkspaceView = 'current' | 'statistics'
 type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated'
 type SortDirection = 'asc' | 'desc'
 
@@ -45,6 +50,11 @@ const TASK_COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: tr
 type Props = {
   initialWorkspace: TaskWorkspace | null
   initialError: string | null
+}
+
+type TaskDrilldown = {
+  label: string
+  taskIds: string[]
 }
 
 function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
@@ -224,9 +234,15 @@ function TaskCard({
 export default function TaskDashboardClient({ initialWorkspace, initialError }: Props) {
   const { success: showSuccess, error: showError, warning: showWarning } = useToast()
   const deepLinkHandled = useRef(false)
+  const taskListRef = useRef<HTMLElement>(null)
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [workspaceError, setWorkspaceError] = useState(initialError)
   const [busy, setBusy] = useState(false)
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('current')
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<TaskAnalyticsPeriod>(
+    initialWorkspace?.analytics.defaultPeriod ?? '90d'
+  )
+  const [taskDrilldown, setTaskDrilldown] = useState<TaskDrilldown | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
   const workspaceTimeZone = normalizeTaskTimeZone(workspace?.timeZone)
@@ -252,6 +268,11 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
       setSelectedTaskId(taskId)
     }
   }, [workspace])
+
+  const drilldownTaskIds = useMemo(
+    () => taskDrilldown ? new Set(taskDrilldown.taskIds) : null,
+    [taskDrilldown]
+  )
 
   useEffect(() => {
     try {
@@ -295,13 +316,14 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
 
   useEffect(() => {
     setPage(1)
-  }, [filter, pageSize, search, sortDirection, sortField])
+  }, [drilldownTaskIds, filter, pageSize, search, sortDirection, sortField])
 
   const visibleTasks = useMemo(() => {
     if (!workspace) return []
     const term = search.trim().toLocaleLowerCase('sv-SE')
     const byId = new Map(workspace.tasks.map((task) => [task.id, task]))
     return workspace.tasks
+      .filter((task) => !drilldownTaskIds || drilldownTaskIds.has(task.id))
       .filter((task) => taskMatchesFilter(task, filter, workspace.currentUser.id))
       .filter((task) => {
         if (!term) return true
@@ -322,7 +344,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
         return sortDirection === 'asc' ? comparison : -comparison
       })
       .map((task) => ({ task, parentTitle: task.parentTaskId ? byId.get(task.parentTaskId)?.title ?? null : null }))
-  }, [filter, search, sortDirection, sortField, workspace])
+  }, [drilldownTaskIds, filter, search, sortDirection, sortField, workspace])
 
   const filterCounts = useMemo(() => {
     if (!workspace) return { all: 0, my_ball: 0, review: 0, overdue: 0, unread: 0 }
@@ -347,6 +369,26 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
     setSortField(field)
     setSortDirection(field === 'updated' ? 'desc' : 'asc')
   }
+
+  const selectTaskFilter = (nextFilter: FilterKey) => {
+    setTaskDrilldown(null)
+    setFilter(nextFilter)
+  }
+
+  const openAnalyticsDrilldown = (label: string, taskIds: string[]) => {
+    setTaskDrilldown({ label, taskIds })
+    setFilter('all')
+    setSearch('')
+    setWorkspaceView('current')
+  }
+
+  useEffect(() => {
+    if (workspaceView !== 'current' || !taskDrilldown) return
+    const frame = window.requestAnimationFrame(() => {
+      taskListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [taskDrilldown, workspaceView])
 
   const refresh = async () => {
     setBusy(true)
@@ -514,15 +556,49 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
             </section>
           ) : (
             <>
-              <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                <SummaryCard label="Din åtgärd" value={workspace.summary.userHasBall} icon={<UserRoundCheck size={19} />} tone="bg-indigo-100 text-indigo-700" onClick={() => setFilter('my_ball')} />
-                <SummaryCard label="Väntar på kontroll" value={workspace.summary.awaitingReview} icon={<CheckCircle2 size={19} />} tone="bg-violet-100 text-violet-700" onClick={() => setFilter('review')} />
-                <SummaryCard label="Nya meddelanden" value={workspace.summary.unreadMessages} icon={<MessageCircle size={19} />} tone="bg-blue-100 text-blue-700" onClick={() => setFilter('unread')} />
-                <SummaryCard label="Försenade" value={workspace.summary.overdue} icon={<AlertTriangle size={19} />} tone="bg-rose-100 text-rose-700" onClick={() => setFilter('overdue')} />
-                <SummaryCard label="Aktiva totalt" value={workspace.summary.totalActive} icon={<CircleDot size={19} />} tone="bg-amber-100 text-amber-800" onClick={() => setFilter('all')} />
-              </section>
+              <div
+                className="mt-6 inline-flex w-full rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:w-auto"
+                role="tablist"
+                aria-label="Välj uppdragsvy"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={workspaceView === 'current'}
+                  onClick={() => setWorkspaceView('current')}
+                  className={`min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'current' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                >
+                  Aktuellt
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={workspaceView === 'statistics'}
+                  onClick={() => setWorkspaceView('statistics')}
+                  className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'statistics' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                >
+                  <BarChart3 size={17} aria-hidden="true" /> Statistik
+                </button>
+              </div>
 
-              <section className="mt-7">
+              {workspaceView === 'statistics' ? (
+                <TaskIssuerAnalyticsPanel
+                  analytics={workspace.analytics}
+                  period={analyticsPeriod}
+                  onPeriodChange={setAnalyticsPeriod}
+                  onDrilldown={openAnalyticsDrilldown}
+                />
+              ) : (
+                <>
+                  <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                    <SummaryCard label="Din åtgärd" value={workspace.summary.userHasBall} icon={<UserRoundCheck size={19} />} tone="bg-indigo-100 text-indigo-700" onClick={() => selectTaskFilter('my_ball')} />
+                    <SummaryCard label="Väntar på kontroll" value={workspace.summary.awaitingReview} icon={<CheckCircle2 size={19} />} tone="bg-violet-100 text-violet-700" onClick={() => selectTaskFilter('review')} />
+                    <SummaryCard label="Nya meddelanden" value={workspace.summary.unreadMessages} icon={<MessageCircle size={19} />} tone="bg-blue-100 text-blue-700" onClick={() => selectTaskFilter('unread')} />
+                    <SummaryCard label="Försenade" value={workspace.summary.overdue} icon={<AlertTriangle size={19} />} tone="bg-rose-100 text-rose-700" onClick={() => selectTaskFilter('overdue')} />
+                    <SummaryCard label="Aktiva totalt" value={workspace.summary.totalActive} icon={<CircleDot size={19} />} tone="bg-amber-100 text-amber-800" onClick={() => selectTaskFilter('all')} />
+                  </section>
+
+                  <section ref={taskListRef} className="mt-7 scroll-mt-24">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {([
@@ -535,7 +611,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                       <button
                         type="button"
                         key={key}
-                        onClick={() => setFilter(key)}
+                        onClick={() => selectTaskFilter(key)}
                         className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold transition ${filter === key ? 'bg-slate-950 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                       >
                         {label}
@@ -569,6 +645,23 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                     </select>
                   </label>
                 </div>
+
+                {taskDrilldown ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2" role="status">
+                    <span className="inline-flex min-h-10 items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-950">
+                      Visar: {taskDrilldown.label}
+                      <span className="rounded-full bg-white px-2 py-0.5 text-xs text-amber-800">{visibleTasks.length}</span>
+                      <button
+                        type="button"
+                        onClick={() => setTaskDrilldown(null)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-amber-800 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                        aria-label={`Ta bort filtret ${taskDrilldown.label}`}
+                      >
+                        <X size={15} aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
+                ) : null}
 
                 {visibleTasks.length > 0 ? (
                   <>
@@ -665,7 +758,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                     <p className="mt-1 text-sm text-slate-500">Byt filter eller skapa ett nytt uppdrag.</p>
                   </div>
                 )}
-              </section>
+                  </section>
+                </>
+              )}
             </>
           )}
         </div>
