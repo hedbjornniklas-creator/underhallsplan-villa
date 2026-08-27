@@ -565,7 +565,7 @@ async function loadRows(orgId: string) {
       admin
         .from('task_message_deliveries')
         .select(
-          'id,task_id,message_id,channel,status,is_fallback,scheduled_at,sent_at,delivered_at,read_at,replied_at,failed_at,created_at,updated_at,message:task_messages!inner(message_type,metadata)'
+          'id,task_id,message_id,channel,status,is_fallback,scheduled_at,sent_at,delivered_at,read_at,replied_at,failed_at,created_at,updated_at,message:task_messages!task_message_deliveries_message_id_fkey!inner(message_type,metadata)'
         )
         .in('task_id', taskIds)
         .order('created_at', { ascending: false }),
