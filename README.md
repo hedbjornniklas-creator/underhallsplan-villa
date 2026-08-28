@@ -23,8 +23,8 @@ Open `http://localhost:3000`.
 - `/uppdrag`: Mobile-first task ownership, follow-up and approval module.
 - `/signe/[token]`: Personal external recipient view for a task branch.
 - `/mina-uppdrag`: Authenticated recipient overview across organizations.
-- `/mina-uppdrag/aktivera/[token]`: Single-use account activation for a new
-  task recipient.
+- `/mina-uppdrag/aktivera/[token]`: Legacy single-use account activation kept
+  for links that have already been delivered.
 - `/inspections`: Global inspections list in dashboard shell (no sidebar).
 - `/properties`: Property-centric flow and links into the inspection wizard.
 - `/settings`: Profile/business card and admin configuration pages.
@@ -59,9 +59,12 @@ Open `http://localhost:3000`.
    then `docs/db/2026-08-27_03_task_email_pdf_analysis_rate_limit.sql`.
 4. Before deploying this application version, apply
    `docs/db/2026-08-27_05_task_assistant_gizmo_branding.sql` and then
-   `docs/db/2026-08-27_06_task_recurrence.sql`. Migration 04 is deliberately
-   skipped here and applied only after the compatible worker is live. Migration
-   06 must already exist when the new application starts creating tasks.
+   `docs/db/2026-08-27_06_task_recurrence.sql`. Before deploying the recipient
+   first-login flow, also apply
+   `docs/db/2026-08-28_01_task_recipient_first_login_code.sql`. Migration 04 is
+   deliberately skipped here and applied only after the compatible worker is
+   live. Migrations 06 and 2026-08-28_01 must already exist when the matching
+   application code starts serving task and recipient-account requests.
 5. In Supabase Authentication > URL Configuration, set the production Site URL
    to `https://hushub.se` and add the exact Redirect URL
    `https://hushub.se/mina-uppdrag/logga-in` for password recovery. Add the
@@ -82,10 +85,9 @@ Open `http://localhost:3000`.
     never passed as WhatsApp template parameters. All Meta templates must be
     approved before automated messages can be delivered. When the task-event
     template is missing, WhatsApp fails closed and the task's configured
-    fallback channel is used. For an approved or cancelled task whose external
-    recipient has not activated Mina uppdrag, activation is always delivered by
-    email even when WhatsApp is primary and no fallback channel was configured.
-    Keep the task-event template unset until HusHub has an auditable, per-person
+    fallback channel is used. Approved and cancelled tasks use an exact-task,
+    read-only `/signe` link; they never mint a new legacy activation URL. Keep
+    the task-event template unset until HusHub has an auditable, per-person
     WhatsApp opt-in for every affected recipient. A stored phone number or a
     task created by somebody else is not consent to automated WhatsApp messages.
 8. Deploy the application version that supports `send_message` automation
@@ -112,7 +114,11 @@ configured local send window; the default is 07:00-20:00 in
 `Europe/Stockholm`. Human-triggered task events use the same durable queue but
 are eligible immediately and do not wait for the reminder cadence or send
 window.
-New external recipients receive their first account activation by email.
-Personal `/signe` links still open the exact linked task without login, while
-the collected `/mina-uppdrag` overview requires the recipient's email/password
-session after activation.
+New external recipients receive one personal `/signe` link that opens only the
+linked task and does not require login. From that task, **Mina uppdrag** starts
+first login: HusHub sends a six-digit code to the recipient's stored email and,
+after verification, lets the recipient choose a password. Existing
+`/mina-uppdrag/aktivera/[token]` links remain valid for already delivered
+messages, but new task notifications do not issue a separate activation link.
+The collected `/mina-uppdrag` overview still requires the recipient's
+email/password session.

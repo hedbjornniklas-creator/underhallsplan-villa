@@ -38,6 +38,7 @@ import {
   taskTodayDateInput,
 } from '@/lib/tasks/dateTime'
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
+import RecipientAccountAction from './RecipientAccountAction'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
@@ -50,7 +51,7 @@ type Props = {
   endpoint: string
   backHref?: string
   backLabel?: string
-  showMyTasksLink?: boolean
+  showRecipientAccountAction?: boolean
 }
 
 type ApiResponse = {
@@ -145,7 +146,7 @@ export default function TaskRecipientClient({
   endpoint,
   backHref,
   backLabel = 'Mina uppdrag',
-  showMyTasksLink = false,
+  showRecipientAccountAction = false,
 }: Props) {
   const {
     success: showSuccessToast,
@@ -733,14 +734,12 @@ export default function TaskRecipientClient({
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo följer upp</p>
             <p className="mt-0.5 truncate text-sm text-slate-600">Hej {workspace.recipientName}</p>
           </div>
-          {showMyTasksLink ? (
-            <Link
-              href="/mina-uppdrag"
-              prefetch={false}
-              className="ml-auto inline-flex min-h-11 shrink-0 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              Mina uppdrag
-            </Link>
+          {showRecipientAccountAction ? (
+            <RecipientAccountAction
+              account={workspace.recipientAccount}
+              endpoint={endpoint}
+              recipientName={workspace.recipientName}
+            />
           ) : null}
         </div>
       </header>

@@ -5,7 +5,6 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { recipientTaskPath } from './recipientAuthPaths'
 
-const ACTIVATION_LIFETIME_MS = 14 * 24 * 60 * 60 * 1000
 const DIRECT_TASK_ACCESS_LIFETIME_MS = 180 * 24 * 60 * 60 * 1000
 const MIN_PASSWORD_LENGTH = 8
 const MAX_PASSWORD_LENGTH = 128
@@ -13,7 +12,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 type RecipientIdentityStatus = 'dormant' | 'invited' | 'active' | 'disabled'
 
-type RecipientIdentityRow = {
+export type RecipientIdentityRow = {
   id: string
   email: string
   email_normalized: string
@@ -38,11 +37,6 @@ type ActivationAcceptRow = {
   contact_id: string
   identity_status: RecipientIdentityStatus
   already_consumed: boolean
-}
-
-type ActivationTokenRow = {
-  id: string
-  recipient_identity_id: string
 }
 
 type RecipientPortalGrantRow = {
@@ -84,11 +78,6 @@ type RecipientPortalEntryLinkResult = RecipientTaskEntryLinkBase & {
   mode: 'portal'
 }
 
-type RecipientActivationEntryLinkResult = RecipientTaskEntryLinkBase & {
-  url: string
-  mode: 'activation'
-}
-
 type RecipientActivationRequiredResult = RecipientTaskEntryLinkBase & {
   url: null
   mode: 'activation_required'
@@ -96,14 +85,17 @@ type RecipientActivationRequiredResult = RecipientTaskEntryLinkBase & {
 
 export type EnsureRecipientTaskEntryLinkResult =
   | RecipientPortalEntryLinkResult
-  | RecipientActivationEntryLinkResult
   | RecipientActivationRequiredResult
+
+export type RecipientTaskAccountState = {
+  state: 'first_login' | 'password_login' | 'unavailable'
+  emailHint: string
+}
 
 type EnsureRecipientTaskEntryLinkInput = {
   contactId: string
   taskId: string
   baseUrl: string
-  allowActivation?: boolean
 }
 
 function oneRpcRow<T>(data: unknown): T | null {
@@ -162,6 +154,7 @@ export async function issueDirectTaskAccessLink(input: {
   createdByProfileId: string
   baseUrl: string
   issuedBySystem?: boolean
+  readOnly?: boolean
 }) {
   assertUuid(input.taskId, 'TASK_RECIPIENT_TASK_INVALID')
   assertUuid(input.contactId, 'TASK_RECIPIENT_CONTACT_INVALID')
@@ -170,18 +163,30 @@ export async function issueDirectTaskAccessLink(input: {
   const token = generateAssignmentToken()
   const expiresAt = new Date(Date.now() + DIRECT_TASK_ACCESS_LIFETIME_MS).toISOString()
   const admin = createSupabaseAdminClient()
-  const { data, error } = await admin.rpc('issue_task_bearer_access_link', {
-    p_task_id: input.taskId,
-    p_contact_id: input.contactId,
-    p_token_hash: hashAssignmentToken(token),
-    p_expires_at: expiresAt,
-    p_created_by_profile_id: input.createdByProfileId,
-    p_issued_by_system: input.issuedBySystem === true,
-  })
+  // Persist the exact-task portal grant for every assignment, including
+  // dormant and repaired legacy contacts, before delivering any bearer URL.
+  await ensureExactRecipientTaskGrant({ contactId: input.contactId, taskId: input.taskId })
+  const { data, error } = await admin.rpc(
+    input.readOnly
+      ? 'issue_terminal_task_readonly_bearer_access_link'
+      : 'issue_task_bearer_access_link',
+    {
+      p_task_id: input.taskId,
+      p_contact_id: input.contactId,
+      p_token_hash: hashAssignmentToken(token),
+      p_expires_at: expiresAt,
+      p_created_by_profile_id: input.createdByProfileId,
+      p_issued_by_system: input.issuedBySystem === true,
+    }
+  )
   if (error) {
     if (
       error.code === 'PGRST202' ||
-      error.message?.includes('issue_task_bearer_access_link')
+      error.message?.includes(
+        input.readOnly
+          ? 'issue_terminal_task_readonly_bearer_access_link'
+          : 'issue_task_bearer_access_link'
+      )
     ) {
       throw new Error('TASKS_SCHEMA_REQUIRED')
     }
@@ -219,7 +224,7 @@ export async function issueDirectTaskAccessLink(input: {
   }
 }
 
-async function ensureIdentityForContact(contactId: string) {
+export async function ensureRecipientIdentityForContact(contactId: string) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin.rpc('ensure_task_recipient_identity_for_contact', {
     p_contact_id: contactId,
@@ -231,6 +236,43 @@ async function ensureIdentityForContact(contactId: string) {
   const identity = oneRpcRow<RecipientIdentityRow>(data)
   if (!identity?.id || !identity.email) throw new Error('TASK_RECIPIENT_IDENTITY_ENSURE_FAILED')
   return identity
+}
+
+function maskedRecipientEmail(value: string) {
+  const email = normalizeEmail(value)
+  const separator = email.lastIndexOf('@')
+  if (separator <= 0 || separator === email.length - 1) return ''
+  const local = email.slice(0, separator)
+  const domain = email.slice(separator + 1)
+  const visible = local.slice(0, Math.min(local.length, 2))
+  return `${visible}${'*'.repeat(Math.max(3, Math.min(8, local.length - visible.length)))}@${domain}`
+}
+
+export async function getRecipientTaskAccountState(
+  contactId: string
+): Promise<RecipientTaskAccountState> {
+  try {
+    const identity = await ensureRecipientIdentityForContact(contactId)
+    const emailHint = maskedRecipientEmail(canonicalRecipientEmail(identity))
+    if (!emailHint || identity.status === 'disabled') {
+      return { state: 'unavailable', emailHint: '' }
+    }
+    return {
+      state: identity.auth_user_id ? 'password_login' : 'first_login',
+      emailHint,
+    }
+  } catch (error) {
+    if (
+      error instanceof Error
+      && [
+        'TASK_RECIPIENT_EMAIL_INVALID',
+        'TASK_RECIPIENT_IDENTITY_EMAIL_INVALID',
+      ].includes(error.message)
+    ) {
+      return { state: 'unavailable', emailHint: '' }
+    }
+    throw error
+  }
 }
 
 async function requireRecipientIdentity(identityId: string) {
@@ -247,43 +289,42 @@ async function requireRecipientIdentity(identityId: string) {
   return identity
 }
 
+async function ensureExactRecipientTaskGrant(input: {
+  contactId: string
+  taskId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.rpc('ensure_task_recipient_portal_grant', {
+    p_contact_id: input.contactId,
+    p_task_id: input.taskId,
+  })
+  const grant = oneRpcRow<RecipientPortalGrantRow>(data)
+  if (error || !grant?.id || !grant.recipient_identity_id) {
+    const databaseCode = error?.message?.match(/TASK_RECIPIENT_[A-Z0-9_]+/)?.[0]
+    throw new Error(databaseCode ?? 'TASK_RECIPIENT_PORTAL_GRANT_FAILED')
+  }
+  const identity = await requireRecipientIdentity(grant.recipient_identity_id)
+  if (identity.status === 'disabled') throw new Error('TASK_RECIPIENT_IDENTITY_DISABLED')
+  return { grant, identity }
+}
+
 /**
- * Chooses the optional account link shown beside a direct task link. Active
- * recipients get an authenticated portal URL. Everyone else gets a newly
- * rotated, hash-only activation link; its plaintext only exists in this
- * process and the provider-bound notification URL.
+ * Chooses the optional account entry shown beside a direct task link. Every
+ * current recipient first receives a durable exact-task grant. Active
+ * recipients get the authenticated portal URL; new direct-link flows defer
+ * account setup to /signe without minting a legacy activation credential.
  */
-export function ensureRecipientTaskEntryLink(
-  input: EnsureRecipientTaskEntryLinkInput & { allowActivation: false }
-): Promise<RecipientPortalEntryLinkResult | RecipientActivationRequiredResult>
-export function ensureRecipientTaskEntryLink(
-  input: EnsureRecipientTaskEntryLinkInput & { allowActivation?: true }
-): Promise<RecipientPortalEntryLinkResult | RecipientActivationEntryLinkResult>
-export function ensureRecipientTaskEntryLink(
-  input: EnsureRecipientTaskEntryLinkInput
-): Promise<EnsureRecipientTaskEntryLinkResult>
 export async function ensureRecipientTaskEntryLink(
   input: EnsureRecipientTaskEntryLinkInput
 ): Promise<EnsureRecipientTaskEntryLinkResult> {
   assertUuid(input.contactId, 'TASK_RECIPIENT_CONTACT_INVALID')
   assertUuid(input.taskId, 'TASK_RECIPIENT_TASK_INVALID')
 
-  let identity = await ensureIdentityForContact(input.contactId)
+  let identity = await ensureRecipientIdentityForContact(input.contactId)
   if (identity.status === 'disabled') throw new Error('TASK_RECIPIENT_IDENTITY_DISABLED')
 
   if (identity.status === 'active' && identity.auth_user_id) {
-    const admin = createSupabaseAdminClient()
-    const { data, error } = await admin.rpc('ensure_task_recipient_portal_grant', {
-      p_contact_id: input.contactId,
-      p_task_id: input.taskId,
-    })
-    const grant = oneRpcRow<RecipientPortalGrantRow>(data)
-    if (error || !grant?.id || !grant.recipient_identity_id) {
-      const databaseCode = error?.message?.match(/TASK_RECIPIENT_[A-Z0-9_]+/)?.[0]
-      throw new Error(databaseCode ?? 'TASK_RECIPIENT_PORTAL_GRANT_FAILED')
-    }
-    const grantedIdentity = await requireRecipientIdentity(grant.recipient_identity_id)
-    if (grantedIdentity.status === 'disabled') throw new Error('TASK_RECIPIENT_IDENTITY_DISABLED')
+    const { grant, identity: grantedIdentity } = await ensureExactRecipientTaskGrant(input)
     if (grantedIdentity.status === 'active' && grantedIdentity.auth_user_id) {
       return {
         url: absolutePortalUrl(input.baseUrl, recipientTaskPath(input.taskId)),
@@ -296,39 +337,22 @@ export async function ensureRecipientTaskEntryLink(
     identity = grantedIdentity
   }
 
-  if (input.allowActivation === false) {
+  const { grant, identity: grantedIdentity } = await ensureExactRecipientTaskGrant(input)
+  if (grantedIdentity.status === 'active' && grantedIdentity.auth_user_id) {
     return {
-      url: null,
-      mode: 'activation_required',
-      recipientIdentityId: identity.id,
-      recipientEmail: canonicalRecipientEmail(identity),
-      deliveryKey: `activation-required:${identity.id}:${input.taskId}`,
+      url: absolutePortalUrl(input.baseUrl, recipientTaskPath(input.taskId)),
+      mode: 'portal',
+      recipientIdentityId: grantedIdentity.id,
+      recipientEmail: canonicalRecipientEmail(grantedIdentity),
+      deliveryKey: `portal:${grant.id}`,
     }
   }
-
-  const token = generateAssignmentToken()
-  const expiresAt = new Date(Date.now() + ACTIVATION_LIFETIME_MS).toISOString()
-  const admin = createSupabaseAdminClient()
-  const { data, error } = await admin.rpc('rotate_task_recipient_activation', {
-    p_contact_id: input.contactId,
-    p_task_id: input.taskId,
-    p_token_hash: hashAssignmentToken(token),
-    p_expires_at: expiresAt,
-  })
-  const activation = oneRpcRow<ActivationTokenRow>(data)
-  if (error || !activation?.id || !activation.recipient_identity_id) {
-    const databaseCode = error?.message?.match(/TASK_RECIPIENT_[A-Z0-9_]+/)?.[0]
-    throw new Error(databaseCode ?? 'TASK_RECIPIENT_ACTIVATION_CREATE_FAILED')
-  }
-  const activationIdentity = await requireRecipientIdentity(activation.recipient_identity_id)
-  if (activationIdentity.status === 'disabled') throw new Error('TASK_RECIPIENT_IDENTITY_DISABLED')
-
   return {
-    url: absolutePortalUrl(input.baseUrl, `/mina-uppdrag/aktivera/${encodeURIComponent(token)}`),
-    mode: 'activation',
-    recipientIdentityId: activationIdentity.id,
-    recipientEmail: canonicalRecipientEmail(activationIdentity),
-    deliveryKey: `activation:${activation.id}`,
+    url: null,
+    mode: 'activation_required',
+    recipientIdentityId: grantedIdentity.id,
+    recipientEmail: canonicalRecipientEmail(grantedIdentity),
+    deliveryKey: `first-login:${grant.id}`,
   }
 }
 

@@ -17,7 +17,7 @@ export default async function SigneTaskPage({
     <TaskRecipientClient
       initialWorkspace={workspace}
       endpoint={`/api/signe/${token}`}
-      showMyTasksLink
+      showRecipientAccountAction
     />
   )
 }

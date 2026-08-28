@@ -12,7 +12,10 @@ export async function GET(
 ) {
   try {
     const { token, attachmentId } = await context.params
-    const { access, task } = await requireExternalTaskActor(token, { allowLocked: true })
+    const { access, task } = await requireExternalTaskActor(token, {
+      allowLocked: true,
+      allowTerminalReadOnlyRecipient: true,
+    })
     const admin = createSupabaseAdminClient()
     const { data: attachment, error } = await admin
       .from('task_attachments')

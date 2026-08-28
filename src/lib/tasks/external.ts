@@ -26,7 +26,12 @@ import {
   legacyRequirementFromEvidenceTypes,
 } from './contracts'
 import type { TaskAttachmentActor } from './attachments'
-import { ensureRecipientTaskEntryLink, issueDirectTaskAccessLink } from './recipientAuth'
+import {
+  ensureRecipientTaskEntryLink,
+  getRecipientTaskAccountState,
+  issueDirectTaskAccessLink,
+} from './recipientAuth'
+import type { RecipientTaskAccountState } from './recipientAuth'
 import {
   loadTaskConversationSnapshots,
   markTaskConversationRead,
@@ -38,6 +43,7 @@ export type ExternalTaskWorkspace = {
   accessState: 'open' | 'expired' | 'revoked'
   timeZone: string
   recipientName: string
+  recipientAccount: RecipientTaskAccountState
   canDelegate: boolean
   task: {
     id: string
@@ -246,13 +252,28 @@ async function requireExternalTask(access: AccessRow) {
   return task
 }
 
-export async function requireExternalTaskActor(token: string, options?: { allowLocked?: boolean }) {
+export async function requireExternalTaskActor(
+  token: string,
+  options?: { allowLocked?: boolean; allowTerminalReadOnlyRecipient?: boolean }
+) {
   const access = await resolveAccess(token)
   if (!access) throw new Error('TASK_ACCESS_NOT_FOUND')
   if (accessState(access) !== 'open') throw new Error('TASK_ACCESS_CLOSED')
-  if (access.role === 'viewer') throw new Error('TASK_EXTERNAL_ACTION_FORBIDDEN')
-  await enforceExternalActionRateLimit(access)
+  if (access.role === 'viewer' && !options?.allowTerminalReadOnlyRecipient) {
+    throw new Error('TASK_EXTERNAL_ACTION_FORBIDDEN')
+  }
   const task = await requireExternalTask(access)
+  if (
+    access.role === 'viewer'
+    && (
+      access.scope !== 'task'
+      || !['approved', 'cancelled'].includes(task.status)
+      || task.assignee_contact_id !== access.contact_id
+    )
+  ) {
+    throw new Error('TASK_EXTERNAL_ACTION_FORBIDDEN')
+  }
+  await enforceExternalActionRateLimit(access)
   if (!options?.allowLocked && ['ready_for_review', 'approved', 'cancelled'].includes(task.status)) {
     throw new Error('TASK_ATTACHMENT_LOCKED')
   }
@@ -290,6 +311,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
       accessState: state,
       timeZone: normalizeTaskTimeZone(),
       recipientName: '',
+      recipientAccount: { state: 'unavailable', emailHint: '' },
       canDelegate: false,
       task: {
         id: '',
@@ -388,6 +410,14 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
   if (firstError) throw new Error('TASK_EXTERNAL_WORKSPACE_FAILED')
   if (!contactResult.data) throw new Error('TASK_CONTACT_NOT_FOUND')
 
+  const terminalReadOnlyRecipient = access.role === 'viewer'
+    && access.scope === 'task'
+    && ['approved', 'cancelled'].includes(task.status)
+  const recipientAccount = task.assignee_contact_id === access.contact_id
+    && (access.role === 'assignee' || terminalReadOnlyRecipient)
+    ? await getRecipientTaskAccountState(access.contact_id)
+    : { state: 'unavailable' as const, emailHint: '' }
+
   await admin.from('task_access_links').update({ last_used_at: new Date().toISOString() }).eq('id', access.id)
 
   const childRows = childrenResult.data ?? []
@@ -458,6 +488,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
     accessState: state,
     timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
     recipientName,
+    recipientAccount,
     canDelegate: access.role === 'delegator' && access.scope === 'branch',
     task: {
       id: task.id,
@@ -832,7 +863,7 @@ export async function issueTaskAccessLink(input: {
   const admin = createSupabaseAdminClient()
   const { data: task, error: taskError } = await admin
     .from('operational_tasks')
-    .select('id,title,description,due_at,due_timezone,primary_channel,fallback_channel,assignee_contact_id,issuer_profile_id')
+    .select('id,title,description,status,due_at,due_timezone,primary_channel,fallback_channel,assignee_contact_id,issuer_profile_id')
     .eq('id', input.taskId)
     .eq('org_id', input.orgId)
     .is('archived_at', null)
@@ -855,7 +886,7 @@ export async function issueTaskAccessLink(input: {
   }
 
   let recipientIdentityId: string | null = null
-  let entryMode: 'activation' | 'portal' | 'legacy' = 'legacy'
+  let entryMode: 'first_login' | 'portal' | 'legacy' = 'legacy'
   let secondaryActionUrl: string | null = null
   let secondaryActionLabel: string | null = null
 
@@ -863,6 +894,8 @@ export async function issueTaskAccessLink(input: {
     contactId: contact.id,
     taskId: task.id,
     baseUrl: publicBaseUrl,
+    // New recipients set up their account from the direct /signe workspace.
+    // Existing activation URLs remain accepted but are no longer issued here.
   }).catch((error: unknown) => {
     if (
       error instanceof Error &&
@@ -871,14 +904,14 @@ export async function issueTaskAccessLink(input: {
     throw error
   })
   if (entry) {
-    entryMode = entry.mode
+    entryMode = entry.mode === 'activation_required' ? 'first_login' : entry.mode
     recipientIdentityId = entry.recipientIdentityId
-    secondaryActionUrl = entry.mode === 'activation'
-      ? entry.url
-      : `${publicBaseUrl}/mina-uppdrag`
-    secondaryActionLabel = entry.mode === 'activation'
-      ? 'Aktivera Mina uppdrag'
-      : 'Gå till Mina uppdrag'
+    secondaryActionUrl = entry.mode === 'portal'
+      ? `${publicBaseUrl}/mina-uppdrag`
+      : null
+    secondaryActionLabel = entry.mode === 'portal'
+      ? 'Gå till Mina uppdrag'
+      : null
   }
 
   const directLink = await issueDirectTaskAccessLink({
@@ -886,6 +919,7 @@ export async function issueTaskAccessLink(input: {
     contactId: contact.id,
     createdByProfileId: input.userId,
     baseUrl: publicBaseUrl,
+    readOnly: ['approved', 'cancelled'].includes(task.status),
   })
   const accessUrl = directLink.url
   const deliveryKey = directLink.deliveryKey
@@ -905,9 +939,8 @@ export async function issueTaskAccessLink(input: {
     secondaryActionLabel = null
   }
 
-  // Both the direct bearer URL and a possible activation URL are credentials.
-  // They may only leave this process in the provider payload below, never in
-  // an internal API response, audit text or provider metadata.
+  // The direct bearer URL may only leave this process in the provider payload
+  // below, never in an internal API response, audit text or metadata.
   const { data: issuer } = await admin
     .from('profiles')
     .select('full_name,email')
@@ -947,7 +980,7 @@ export async function issueTaskAccessLink(input: {
     secondaryActionLabel: secondaryActionLabel ?? undefined,
     notice: 'Den direkta uppdragslänken är personlig. Vidarebefordra den inte till någon annan.',
   })
-  const auditBodyText = `${contact.name} fick en personlig direktlänk till ”${task.title}”${entryMode === 'activation' ? ' samt möjlighet att aktivera Mina uppdrag' : entryMode === 'portal' ? ' samt en genväg till Mina uppdrag' : ''}. Själva länktoken sparas inte i meddelandeloggen.`
+  const auditBodyText = `${contact.name} fick en personlig direktlänk till ”${task.title}”${entryMode === 'first_login' ? ' med möjlighet till trygg förstainloggning' : entryMode === 'portal' ? ' samt en genväg till Mina uppdrag' : ''}. Själva länktoken sparas inte i meddelandeloggen.`
   const { data: message, error: messageError } = await admin
     .from('task_messages')
     .insert({
@@ -983,131 +1016,6 @@ export async function issueTaskAccessLink(input: {
     : null
   const configuredChannels = [primaryChannel, fallbackChannel]
     .filter((channel): channel is TaskChannel => channel !== null)
-
-  const sendActivationCompanionEmail = async () => {
-    if (
-      entry?.mode !== 'activation' ||
-      !secondaryActionUrl ||
-      !deliveryEmail
-    ) return null
-
-    const activationSubject = `Aktivera Mina uppdrag: ${task.title}`
-    const activationText = [
-      `${contact.name},`,
-      '',
-      'Din personliga WhatsApp-länk öppnar det aktuella uppdraget utan inloggning.',
-      'Välj ett lösenord för att även kunna logga in och se alla dina uppdrag på ett ställe.',
-      '',
-      `Aktivera Mina uppdrag: ${secondaryActionUrl}`,
-      `Öppna aktuellt uppdrag: ${accessUrl}`,
-      '',
-      'Aktiveringslänken är personlig och ska inte vidarebefordras.',
-    ].join('\n')
-    const activationHtml = buildTaskEmailHtml({
-      previewText: 'Välj ett lösenord för Mina uppdrag i HusHub.',
-      eyebrow: 'Mina uppdrag',
-      heading: 'Samla dina uppdrag på ett ställe',
-      recipientName: contact.name,
-      lead: 'Välj ett lösenord för att kunna logga in och se alla uppdrag som har skickats till dig.',
-      taskTitle: task.title,
-      dueLabel,
-      instruction: 'WhatsApp-länken fortsätter att öppna det aktuella uppdraget direkt. Kontot behövs först när du vill använda Mina uppdrag.',
-      actionUrl: secondaryActionUrl,
-      actionLabel: 'Aktivera Mina uppdrag',
-      secondaryActionUrl: accessUrl,
-      secondaryActionLabel: 'Öppna aktuellt uppdrag',
-      notice: 'Aktiveringslänken är personlig. Vidarebefordra den inte till någon annan.',
-    })
-    const activationIdempotencyKey = `task-entry:${deliveryKey}:${entry.deliveryKey}:activation-email`
-    const { data: activationDelivery, error: activationDeliveryError } = await admin
-      .from('task_message_deliveries')
-      .insert({
-        org_id: input.orgId,
-        task_id: task.id,
-        message_id: message.id,
-        channel: 'email',
-        recipient_address: deliveryEmail,
-        provider: 'resend',
-        status: 'sending',
-        is_fallback: false,
-        attempt_count: 1,
-        idempotency_key: activationIdempotencyKey,
-        provider_payload: {
-          accessLinkId: directLink.accessLinkId,
-          recipientIdentityId: entry.recipientIdentityId,
-          entryMode: 'activation',
-          accountActivation: true,
-          tokenPersisted: false,
-        },
-      })
-      .select('id')
-      .single()
-    if (activationDeliveryError || !activationDelivery) {
-      return 'Uppdraget skickades via WhatsApp, men aktiveringsmejlet för Mina uppdrag kunde inte skapas.'
-    }
-
-    try {
-      const activationResult = await sendTaskAccessLinkEmail({
-        to: deliveryEmail,
-        replyTo: issuer?.email ?? null,
-        subject: activationSubject,
-        text: activationText,
-        html: activationHtml,
-        idempotencyKey: activationIdempotencyKey,
-      })
-      const sentAt = new Date().toISOString()
-      const deliveryUpdate = await admin
-        .from('task_message_deliveries')
-        .update({
-          status: 'sent',
-          sent_at: sentAt,
-          provider_message_id: activationResult.providerMessageId,
-          error_message: null,
-        })
-        .eq('id', activationDelivery.id)
-      const eventResult = await admin.from('task_events').insert({
-        org_id: input.orgId,
-        task_id: task.id,
-        event_type: 'recipient_activation_delivery_sent',
-        actor_type: 'profile',
-        actor_profile_id: input.userId,
-        actor_name: issuerName,
-        message: `Aktiveringsmejlet för Mina uppdrag skickades till ${contact.name}.`,
-        metadata: {
-          taskMutationApplied: true,
-          accessLinkId: directLink.accessLinkId,
-          recipientIdentityId: entry.recipientIdentityId,
-          messageId: message.id,
-          deliveryId: activationDelivery.id,
-          channel: 'email',
-          accountActivation: true,
-          tokenPersisted: false,
-        },
-      })
-      if (deliveryUpdate.error || eventResult.error) {
-        return 'Uppdraget skickades via WhatsApp. Aktiveringsmejlet skickades, men kunde inte loggas fullständigt.'
-      }
-      return null
-    } catch (error) {
-      const providerErrorCode = taskDeliveryErrorCode(error, 'email')
-      const deliveryAmbiguous = isAmbiguousTaskDeliveryError(error)
-      await admin
-        .from('task_message_deliveries')
-        .update({
-          status: deliveryAmbiguous ? 'ambiguous' : 'failed',
-          failed_at: deliveryAmbiguous ? null : new Date().toISOString(),
-          next_attempt_at: null,
-          error_message: deliveryAmbiguous
-            ? 'TASK_DELIVERY_RECONCILIATION_REQUIRED'
-            : providerErrorCode,
-        })
-        .eq('id', activationDelivery.id)
-      if (deliveryAmbiguous) {
-        return 'Uppdraget skickades via WhatsApp, men leveransstatusen för aktiveringsmejlet kunde inte bekräftas. Kontrollera leveransen manuellt innan ett nytt mejl skickas.'
-      }
-      return 'Uppdraget skickades via WhatsApp, men aktiveringsmejlet för Mina uppdrag kunde inte skickas.'
-    }
-  }
 
   for (const [channelIndex, channel] of configuredChannels.entries()) {
     const recipientAddress = channel === 'email' ? deliveryEmail : whatsappAddress
@@ -1197,13 +1105,10 @@ export async function issueTaskAccessLink(input: {
               tokenPersisted: false,
             },
           })
-      const activationWarning = channel === 'whatsapp'
-        ? await sendActivationCompanionEmail()
-        : null
       if (deliveryUpdate.error || linkUpdate.error || eventResult.error) {
-        return { accessUrl: undefined, warning: activationWarning }
+        return { accessUrl: undefined, warning: null }
       }
-      return { accessUrl: undefined, warning: activationWarning }
+      return { accessUrl: undefined, warning: null }
     } catch (error) {
       const providerErrorCode = taskDeliveryErrorCode(error, channel)
       const deliveryAmbiguous = isAmbiguousTaskDeliveryError(error)

@@ -670,6 +670,7 @@ export async function getRecipientPortalTaskWorkspace(
     accessState: 'open',
     timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
     recipientName,
+    recipientAccount: { state: 'password_login', emailHint: '' },
     canDelegate: false,
     task: {
       id: task.id,

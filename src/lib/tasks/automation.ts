@@ -20,10 +20,7 @@ import { formatTaskDateTime } from '@/lib/tasks/dateTime'
 import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
 import { hasInternalTaskModuleAccess } from '@/lib/tasks/internalAccess'
 import { taskActorDisplayName } from '@/lib/tasks/branding'
-import {
-  ensureRecipientTaskEntryLink,
-  issueDirectTaskAccessLink,
-} from '@/lib/tasks/recipientAuth'
+import { issueDirectTaskAccessLink } from '@/lib/tasks/recipientAuth'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type PersistedTaskCommunicationChannel = TaskCommunicationChannel | 'in_app'
@@ -1456,7 +1453,7 @@ function buildTaskNotificationContent(input: {
   recipient: Recipient
   descriptor: TaskNotificationDescriptor
   actionUrl: string
-  linkMode: 'internal' | 'bearer' | 'portal' | 'activation'
+  linkMode: 'internal' | 'bearer' | 'portal'
 }) {
   const dueLabel = dueDateLabel(input.task.due_at, input.task.due_timezone)
   const eventMessage = input.descriptor.includeEventMessage
@@ -1467,9 +1464,7 @@ function buildTaskNotificationContent(input: {
     : null
   const notice = input.linkMode === 'bearer'
     ? 'Länken är personlig och öppnar bara detta uppdrag. Vidarebefordra den inte.'
-    : input.linkMode === 'activation'
-      ? 'Länken är personlig. Välj lösenord för Mina uppdrag så öppnas uppdraget direkt efter aktiveringen.'
-      : null
+    : null
   const text = [
     `Hej ${input.recipient.name},`,
     '',
@@ -2414,24 +2409,13 @@ async function deliverAction(input: {
   if (primaryResult.delivered) return 'delivered' as const
   if (primaryResult.ambiguous) return 'ambiguous' as const
 
-  const activationEmailFallbackRequired = input.action.target === 'assignee'
-    && input.action.kind !== 'delivery_fallback'
-    && input.task.primary_channel === 'whatsapp'
-    && selectedChannel === 'whatsapp'
-    && primaryResult.errorCode === 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED'
-    && recipient.kind === 'contact'
-    && Boolean(recipient.email?.trim())
   const configuredFallbackChannel = input.action.target === 'assignee'
     && input.action.kind !== 'delivery_fallback'
     && input.task.fallback_channel
     && input.task.fallback_channel !== selectedChannel
     ? input.task.fallback_channel
     : null
-  // Before account activation, email is the trust-establishing channel even
-  // when WhatsApp is the task's configured primary channel.
-  const fallbackChannel: TaskCommunicationChannel | null = activationEmailFallbackRequired
-    ? 'email'
-    : configuredFallbackChannel
+  const fallbackChannel: TaskCommunicationChannel | null = configuredFallbackChannel
   if (!fallbackChannel) {
     throw automationError(primaryResult.errorCode ?? 'TASK_DELIVERY_FAILED')
   }
@@ -2595,28 +2579,6 @@ async function revokeUnsentTaskAccessLink(
     .eq('id', accessLinkId)
     .is('sent_at', null)
     .is('revoked_at', null)
-}
-
-async function contactHasActiveTaskPortalAccount(
-  admin: AdminClient,
-  contactId: string
-) {
-  const { data: contact, error: contactError } = await admin
-    .from('organization_contacts')
-    .select('recipient_identity_id')
-    .eq('id', contactId)
-    .eq('is_active', true)
-    .maybeSingle()
-  if (contactError) throw automationError('TASK_RECIPIENT_IDENTITY_READ_FAILED')
-  const identityId = contact && optionalString(contact.recipient_identity_id)
-  if (!identityId) return false
-  const { data: identity, error: identityError } = await admin
-    .from('task_recipient_identities')
-    .select('status,auth_user_id')
-    .eq('id', identityId)
-    .maybeSingle()
-  if (identityError) throw automationError('TASK_RECIPIENT_IDENTITY_READ_FAILED')
-  return identity?.status === 'active' && Boolean(optionalString(identity.auth_user_id))
 }
 
 async function contactCanReceiveTaskNotification(
@@ -3172,7 +3134,7 @@ async function deliverPreparedTaskNotification(input: {
   let actionUrl = recipient.kind === 'profile'
     ? `${appBaseUrl()}/uppdrag?task=${encodeURIComponent(input.task.id)}`
     : `${appBaseUrl()}/mina-uppdrag/uppdrag/${encodeURIComponent(input.task.id)}`
-  let linkMode: 'internal' | 'bearer' | 'portal' | 'activation' = recipient.kind === 'profile'
+  let linkMode: 'internal' | 'bearer' | 'portal' = recipient.kind === 'profile'
     ? 'internal'
     : 'portal'
   let accessLinkId: string | null = null
@@ -3180,7 +3142,7 @@ async function deliverPreparedTaskNotification(input: {
   // Re-resolve mutable profile/contact details for every attempt. The address
   // prepared with the outbox row is an audit snapshot, not a send authority.
   let recipientAddress = deliveryAddress(recipient, input.prepared.channel) ?? ''
-  if (recipient.kind === 'contact' && !TERMINAL_STATUSES.has(input.task.status)) {
+  if (recipient.kind === 'contact') {
     try {
       const directLink = await issueDirectTaskAccessLink({
         contactId: recipient.id,
@@ -3188,6 +3150,7 @@ async function deliverPreparedTaskNotification(input: {
         createdByProfileId: input.recipients.issuer.id,
         baseUrl: appBaseUrl(),
         issuedBySystem: true,
+        readOnly: TERMINAL_STATUSES.has(input.task.status),
       })
       actionUrl = directLink.url
       linkMode = 'bearer'
@@ -3198,61 +3161,6 @@ async function deliverPreparedTaskNotification(input: {
         : normalizedWhatsAppNumber(directLink.recipientWhatsappNumber) ?? ''
     } catch (error) {
       const errorCode = taskNotificationErrorCode(error, 'TASK_ACCESS_CREATE_FAILED')
-      await updateDeliveryFailure(
-        input.admin,
-        delivery.id,
-        errorCode,
-        { status: delivery.status, attemptCount: delivery.attempt_count }
-      )
-      return {
-        delivered: false,
-        ambiguous: false,
-        deliveryId: delivery.id,
-        messageId: delivery.message_id,
-        errorCode,
-      }
-    }
-  } else if (recipient.kind === 'contact') {
-    try {
-      // Never put a fresh account-activation secret into WhatsApp. A dormant
-      // recipient must receive the activation through the configured email
-      // fallback, while an already active account may receive its exact portal
-      // URL through either configured channel.
-      if (
-        input.prepared.channel === 'whatsapp'
-        && !(await contactHasActiveTaskPortalAccount(input.admin, recipient.id))
-      ) {
-        await updateDeliveryFailure(
-          input.admin,
-          delivery.id,
-          'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED',
-          { status: delivery.status, attemptCount: delivery.attempt_count }
-        )
-        return {
-          delivered: false,
-          ambiguous: false,
-          deliveryId: delivery.id,
-          messageId: delivery.message_id,
-          errorCode: 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED',
-        }
-      }
-      const entryLink = await ensureRecipientTaskEntryLink({
-        contactId: recipient.id,
-        taskId: input.task.id,
-        baseUrl: appBaseUrl(),
-        allowActivation: true,
-      })
-      actionUrl = entryLink.url
-      linkMode = entryLink.mode
-      accessDeliveryKey = entryLink.deliveryKey
-      if (input.prepared.channel === 'email') {
-        recipientAddress = entryLink.recipientEmail
-      }
-    } catch (error) {
-      const errorCode = taskNotificationErrorCode(
-        error,
-        'TASK_RECIPIENT_ENTRY_LINK_FAILED'
-      )
       await updateDeliveryFailure(
         input.admin,
         delivery.id,
@@ -3301,7 +3209,6 @@ async function deliverPreparedTaskNotification(input: {
     recipientKind: input.prepared.recipientKind,
     recipientId: input.prepared.recipientId,
     humanEvent: true,
-    ...(linkMode === 'activation' ? { accountActivation: true } : {}),
     ...(accessLinkId ? { accessLinkId } : {}),
     providerCallStarted: false,
     tokenPersisted: false,
@@ -3527,30 +3434,13 @@ async function deliverReconciledTaskNotification(input: {
   if (resolvedDelivery.status !== 'failed') return 'completed' as const
 
   let channel = resolvedDelivery.channel
-  let accountActivation = resolvedDelivery.accountActivation
+  const accountActivation = false
   if (input.expectedRecipient.target === 'assignee' && !resolvedDelivery.isFallback) {
     const configuredFallback = isCommunicationChannel(input.task.fallback_channel)
       && input.task.fallback_channel !== resolvedDelivery.channel
       ? input.task.fallback_channel
       : null
-    if (configuredFallback) {
-      channel = configuredFallback
-    } else if (
-      resolvedDelivery.channel === 'whatsapp'
-      && TERMINAL_STATUSES.has(input.task.status)
-      && input.recipients.assignee.kind === 'contact'
-      && input.recipients.assignee.email
-      && !(await contactHasActiveTaskPortalAccount(
-        input.admin,
-        input.recipients.assignee.id
-      ))
-    ) {
-      // A dormant terminal recipient cannot receive an activation secret over
-      // WhatsApp. A confirmed-not-sent WhatsApp attempt therefore continues
-      // once through the canonical email activation path.
-      channel = 'email'
-      accountActivation = true
-    }
+    if (configuredFallback) channel = configuredFallback
   }
   if (resolvedDelivery.channel === 'whatsapp' && channel === 'whatsapp') {
     // Meta does not provide the provider idempotency guarantee we rely on for
@@ -3687,14 +3577,7 @@ async function deliverTaskNotificationJob(admin: AdminClient, job: AutomationJob
     || primary.errorCode === 'TASK_NOTIFICATION_SUPERSEDED'
   ) return 'completed' as const
   const targetsAssignee = prepared.target === 'assignee'
-  const activationEmailFallback = targetsAssignee
-    && primary.errorCode === 'TASK_RECIPIENT_ACTIVATION_EMAIL_REQUIRED'
-    && Boolean(recipients.assignee.email?.trim())
-  const fallbackChannel = activationEmailFallback
-    ? 'email'
-    : targetsAssignee
-      ? task.fallback_channel
-      : null
+  const fallbackChannel = targetsAssignee ? task.fallback_channel : null
   if (!fallbackChannel || fallbackChannel === prepared.channel) {
     throw automationError(primary.errorCode ?? 'TASK_NOTIFICATION_DELIVERY_FAILED')
   }
@@ -3703,7 +3586,7 @@ async function deliverTaskNotificationJob(admin: AdminClient, job: AutomationJob
     event,
     channel: fallbackChannel,
     auditText,
-    accountActivation: activationEmailFallback,
+    accountActivation: false,
   })
   if (fallbackPrepared.skipped) {
     if (!BENIGN_TASK_NOTIFICATION_SKIP_REASONS.has(fallbackPrepared.reason)) {

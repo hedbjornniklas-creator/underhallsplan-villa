@@ -390,7 +390,9 @@ export default function RecipientLoginPage() {
                 <div className="mt-8 border-t border-stone-200 pt-6">
                   <p className="flex gap-3 text-sm leading-6 text-stone-600">
                     <Mail className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
-                    Första gången aktiverar du kontot via den personliga länken i meddelandet från HusHub.
+                    <span>
+                      <strong className="font-semibold text-stone-800">Första gången?</strong> Öppna din personliga uppdragslänk och välj Mina uppdrag. Där verifierar du e-posten med en kod och väljer ditt lösenord.
+                    </span>
                   </p>
                 </div>
               </>
