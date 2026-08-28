@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { CheckCircle2, KeyRound, Loader2, Mail, ShieldCheck, X } from 'lucide-react'
 import ActionButton from '@/components/ui/ActionButton'
 import { supabase } from '@/lib/supabaseClient'
@@ -70,6 +71,7 @@ export default function RecipientAccountAction({
   const dialogRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
   const codeInputRef = useRef<HTMLInputElement>(null)
   const passwordInputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -145,12 +147,30 @@ export default function RecipientAccountAction({
 
   useEffect(() => {
     if (!open) return
-    const timer = window.setTimeout(() => {
-      if (step === 'code') codeInputRef.current?.focus()
-      else if (step === 'password') passwordInputRef.current?.focus()
-      else closeRef.current?.focus()
-    }, 0)
-    return () => window.clearTimeout(timer)
+
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      scrollAreaRef.current?.scrollTo({ top: 0, behavior: 'auto' })
+
+      secondFrame = window.requestAnimationFrame(() => {
+        const shouldFocusFormField = window.matchMedia(
+          '(min-width: 640px) and (pointer: fine)'
+        ).matches
+
+        if (step === 'code' && shouldFocusFormField) {
+          codeInputRef.current?.focus({ preventScroll: true })
+        } else if (step === 'password' && shouldFocusFormField) {
+          passwordInputRef.current?.focus({ preventScroll: true })
+        } else {
+          closeRef.current?.focus({ preventScroll: true })
+        }
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      window.cancelAnimationFrame(secondFrame)
+    }
   }, [open, step])
 
   const rememberLoginUrl = (result: FirstLoginApiResult) => {
@@ -212,7 +232,6 @@ export default function RecipientAccountAction({
       setStep('code')
       applyResendWait(60)
       setNotice(isResend ? 'En ny kod har skickats.' : 'Koden är skickad.')
-      if (isResend) window.setTimeout(() => codeInputRef.current?.focus(), 0)
     } catch {
       setError('Koden kunde inte skickas. Kontrollera anslutningen och försök igen.')
     } finally {
@@ -431,9 +450,9 @@ export default function RecipientAccountAction({
         Mina uppdrag
       </button>
 
-      {open ? (
+      {open && typeof document !== 'undefined' ? createPortal(
         <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-[2px] sm:items-center sm:p-5"
+          className="fixed inset-0 z-[80] flex min-h-0 items-stretch justify-center overflow-hidden bg-slate-950/55 backdrop-blur-[2px] sm:items-center sm:p-5"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setOpen(false)
           }}
@@ -444,9 +463,9 @@ export default function RecipientAccountAction({
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
-            className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-[28px] border border-white/70 bg-white shadow-2xl sm:max-w-lg sm:rounded-[28px]"
+            className="relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-lg sm:rounded-[28px] sm:border sm:border-white/70"
           >
-            <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
+            <div className="z-10 flex shrink-0 items-start gap-4 border-b border-slate-200 bg-white/95 px-5 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] backdrop-blur sm:px-6 sm:pt-4">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Mina uppdrag</p>
                 <h2 id={titleId} className="mt-1 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">
@@ -464,7 +483,10 @@ export default function RecipientAccountAction({
               </button>
             </div>
 
-            <div className="px-5 py-5 sm:px-6 sm:py-6">
+            <div
+              ref={scrollAreaRef}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:py-6"
+            >
               <p id={descriptionId} className="text-sm leading-6 text-slate-600">
                 Verifiera din e-post och välj ett lösenord. Uppdraget du tittar på går att använda även om du stänger den här rutan.
               </p>
@@ -635,7 +657,8 @@ export default function RecipientAccountAction({
               ) : null}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       ) : null}
     </>
   )
