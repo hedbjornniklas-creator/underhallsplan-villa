@@ -2195,6 +2195,7 @@ export default function TuInvestigationEditorClient({
             inspectionId={investigation.inspectionId}
             refreshToken={fieldQueue.completedRevision}
             locked={locked}
+            queue={fieldQueue}
             sections={draft.sections}
             images={images}
             imageBusy={imageBusy}
