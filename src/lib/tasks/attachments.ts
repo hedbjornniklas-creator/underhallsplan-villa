@@ -305,6 +305,36 @@ export async function transcribeAndStoreTaskAudio(input: {
   }
 }
 
+export async function updateTaskAudioTranscript(input: {
+  orgId: string
+  taskId: string
+  attachmentId: string
+  actor: TaskAttachmentActor
+  transcript: unknown
+}) {
+  const transcript = typeof input.transcript === 'string' ? input.transcript.trim() : ''
+  if (!transcript) throw new Error('TASK_TRANSCRIPT_REQUIRED')
+  if (transcript.length > 20_000) throw new Error('TASK_TRANSCRIPT_TOO_LONG')
+
+  const admin = createSupabaseAdminClient()
+  let query = admin
+    .from('task_attachments')
+    .update({ transcript_text: transcript })
+    .eq('id', input.attachmentId)
+    .eq('task_id', input.taskId)
+    .eq('org_id', input.orgId)
+    .eq('attachment_type', 'audio')
+
+  query = input.actor.type === 'profile'
+    ? query.eq('uploaded_by_profile_id', input.actor.profileId)
+    : query.eq('uploaded_by_contact_id', input.actor.contactId)
+
+  const { data, error } = await query.select('id').maybeSingle()
+  if (error) throw new Error('TASK_TRANSCRIPT_UPDATE_FAILED')
+  if (!data) throw new Error('TASK_ATTACHMENT_NOT_FOUND')
+  return transcript
+}
+
 export async function createTaskAttachmentSignedUrl(input: {
   orgId: string
   taskId: string

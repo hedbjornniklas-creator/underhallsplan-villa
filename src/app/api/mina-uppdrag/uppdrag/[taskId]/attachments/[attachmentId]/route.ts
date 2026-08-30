@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { createTaskAttachmentSignedUrl } from '@/lib/tasks/attachments'
+import { createTaskAttachmentSignedUrl, updateTaskAudioTranscript } from '@/lib/tasks/attachments'
 import {
+  getRecipientPortalTaskWorkspace,
   requireRecipientPortalSession,
+  requireRecipientPortalTaskActor,
   requireRecipientPortalTaskScope,
 } from '@/lib/tasks/recipientPortal'
 import { recipientPortalErrorResponse } from '@/lib/tasks/recipientPortalHttp'
@@ -43,5 +45,32 @@ export async function GET(
     })
   } catch (error) {
     return recipientPortalErrorResponse(error, 'Bilagan kunde inte öppnas.')
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ taskId: string; attachmentId: string }> }
+) {
+  try {
+    const { taskId, attachmentId } = await context.params
+    const session = await requireRecipientPortalSession()
+    const actorContext = await requireRecipientPortalTaskActor({ session, taskId })
+    const body = (await request.json().catch(() => ({}))) as { transcript?: unknown }
+    await updateTaskAudioTranscript({
+      orgId: actorContext.orgId,
+      taskId,
+      attachmentId,
+      actor: actorContext.actor,
+      transcript: body.transcript,
+    })
+    const workspace = await getRecipientPortalTaskWorkspace(session, taskId)
+    if (!workspace) throw new Error('TASK_NOT_FOUND')
+    return NextResponse.json(
+      { workspace, notice: 'Transkriberingen uppdaterades.' },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    )
+  } catch (error) {
+    return recipientPortalErrorResponse(error, 'Transkriberingen kunde inte uppdateras.')
   }
 }

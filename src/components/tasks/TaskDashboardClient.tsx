@@ -481,6 +481,34 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
     }
   }
 
+  const updateTranscript = async (taskId: string, attachmentId: string, transcript: string) => {
+    setBusy(true)
+    try {
+      const response = await fetch(
+        `/api/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript }),
+        }
+      )
+      const body = (await response.json().catch(() => ({}))) as Partial<TaskActionResponse> & {
+        error?: string
+      }
+      if (!response.ok || !body.workspace) {
+        throw new Error(body.error || 'Transkriberingen kunde inte uppdateras.')
+      }
+      setWorkspace(body.workspace)
+      showSuccess(body.notice ?? 'Transkriberingen uppdaterades.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Transkriberingen kunde inte uppdateras.'
+      showError(message)
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const uploadInitialAttachments = async (taskId: string, files: File[]) => {
     if (files.length === 0) return { uploaded: 0, failed: [] as string[] }
     setBusy(true)
@@ -807,6 +835,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   })
                 }}
                 onUpload={uploadEvidence}
+                onUpdateTranscript={updateTranscript}
                 onCreateSubtask={(task, suggestion) => {
                   setSelectedTaskId(null)
                   openComposer(task, suggestion ?? null)

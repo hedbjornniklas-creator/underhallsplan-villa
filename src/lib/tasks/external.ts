@@ -88,6 +88,7 @@ export type ExternalTaskWorkspace = {
       fileName: string | null
       textContent: string | null
       transcriptText: string | null
+      canEditTranscript: boolean
       isCompletionEvidence: boolean
       createdAt: string
     }>
@@ -375,7 +376,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         .order('created_at', { ascending: false }),
       admin
         .from('task_attachments')
-        .select('id,attachment_type,title,file_name,text_content,transcript_text,is_completion_evidence,created_at')
+        .select('id,attachment_type,title,file_name,text_content,transcript_text,uploaded_by_contact_id,is_completion_evidence,created_at')
         .eq('task_id', task.id)
         .or(
           `uploaded_by_contact_id.eq.${access.contact_id},and(is_completion_evidence.eq.false,uploaded_by_profile_id.eq.${task.issuer_profile_id})`
@@ -531,6 +532,9 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         fileName: attachment.file_name ?? null,
         textContent: attachment.text_content ?? null,
         transcriptText: attachment.transcript_text ?? null,
+        canEditTranscript:
+          attachment.attachment_type === 'audio'
+          && attachment.uploaded_by_contact_id === access.contact_id,
         isCompletionEvidence: Boolean(attachment.is_completion_evidence),
         createdAt: String(attachment.created_at),
       })),

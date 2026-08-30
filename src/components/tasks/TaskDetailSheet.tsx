@@ -15,6 +15,7 @@ import {
   Link2,
   Mic,
   Paperclip,
+  Pencil,
   Plus,
   Repeat2,
   RotateCcw,
@@ -56,6 +57,7 @@ type Props = {
   onClose: () => void
   onAction: (action: string, payload: Record<string, unknown>) => Promise<void>
   onUpload: (taskId: string, formData: FormData, transcribe?: boolean) => Promise<void>
+  onUpdateTranscript: (taskId: string, attachmentId: string, transcript: string) => Promise<void>
   onCreateSubtask: (task: TaskView, suggestion?: TaskAiSuggestionView) => void
   onSelectTask: (taskId: string) => void
 }
@@ -104,6 +106,7 @@ export default function TaskDetailSheet({
   onClose,
   onAction,
   onUpload,
+  onUpdateTranscript,
   onCreateSubtask,
   onSelectTask,
 }: Props) {
@@ -116,6 +119,9 @@ export default function TaskDetailSheet({
   const [time, setTime] = useState('09:00')
   const [dateTimeError, setDateTimeError] = useState<string | null>(null)
   const [evidenceText, setEvidenceText] = useState('')
+  const [editingTranscriptId, setEditingTranscriptId] = useState<string | null>(null)
+  const [transcriptDraft, setTranscriptDraft] = useState('')
+  const [transcriptError, setTranscriptError] = useState<string | null>(null)
   const [evidencePanelOpen, setEvidencePanelOpen] = useState(false)
   const [dropUploadBusy, setDropUploadBusy] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -141,7 +147,29 @@ export default function TaskDetailSheet({
 
   useEffect(() => {
     setRecurrenceInterval(task?.recurrenceInterval ?? '')
+    setEditingTranscriptId(null)
+    setTranscriptDraft('')
+    setTranscriptError(null)
   }, [task?.id, task?.recurrenceInterval])
+
+  const saveTranscript = async (attachmentId: string) => {
+    if (!task) return
+    const transcript = transcriptDraft.trim()
+    if (!transcript) {
+      setTranscriptError('Transkriberingen får inte vara tom.')
+      return
+    }
+    setTranscriptError(null)
+    try {
+      await onUpdateTranscript(task.id, attachmentId, transcript)
+      setEditingTranscriptId(null)
+      setTranscriptDraft('')
+    } catch (error) {
+      setTranscriptError(
+        error instanceof Error ? error.message : 'Transkriberingen kunde inte uppdateras.'
+      )
+    }
+  }
 
   const markMessagesRead = useCallback(async (throughEventId: string) => {
     if (!taskId) return
@@ -1112,8 +1140,68 @@ export default function TaskDetailSheet({
                     {attachment.textContent ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{attachment.textContent}</p> : null}
                     {attachment.transcriptText ? (
                       <div className="mt-3 rounded-xl bg-slate-50 p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Transkribering</p>
-                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{attachment.transcriptText}</p>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Transkribering</p>
+                          {attachment.canEditTranscript
+                          && !['ready_for_review', 'approved', 'cancelled'].includes(task.status) ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingTranscriptId(attachment.id)
+                                setTranscriptDraft(attachment.transcriptText ?? '')
+                                setTranscriptError(null)
+                              }}
+                              disabled={busy}
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-50"
+                            >
+                              <Pencil size={14} />
+                              Redigera
+                            </button>
+                          ) : null}
+                        </div>
+                        {editingTranscriptId === attachment.id ? (
+                          <div className="mt-2">
+                            <label htmlFor={`transcript-${attachment.id}`} className="sr-only">Redigera transkribering</label>
+                            <textarea
+                              id={`transcript-${attachment.id}`}
+                              value={transcriptDraft}
+                              onChange={(event) => {
+                                setTranscriptDraft(event.target.value)
+                                setTranscriptError(null)
+                              }}
+                              maxLength={20_000}
+                              rows={5}
+                              autoFocus
+                              className="min-h-32 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-base leading-6 text-slate-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100"
+                            />
+                            {transcriptError ? <p className="mt-2 text-xs font-medium text-rose-700">{transcriptError}</p> : null}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void saveTranscript(attachment.id)}
+                                disabled={busy || !transcriptDraft.trim()}
+                                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-semibold text-white disabled:opacity-50"
+                              >
+                                <Check size={15} />
+                                Spara ändring
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingTranscriptId(null)
+                                  setTranscriptDraft('')
+                                  setTranscriptError(null)
+                                }}
+                                disabled={busy}
+                                className="min-h-10 rounded-xl px-3 text-xs font-semibold text-slate-600 hover:bg-white disabled:opacity-50"
+                              >
+                                Avbryt
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{attachment.transcriptText}</p>
+                        )}
                       </div>
                     ) : null}
                   </article>

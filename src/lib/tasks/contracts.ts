@@ -186,6 +186,7 @@ export type TaskAttachmentView = {
   contentType: string | null
   textContent: string | null
   transcriptText: string | null
+  canEditTranscript: boolean
   isCompletionEvidence: boolean
   createdAt: string
 }

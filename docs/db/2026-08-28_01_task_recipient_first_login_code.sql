@@ -1163,7 +1163,7 @@ begin
     challenge_row.task_id,
     'assignee'
   )
-  on conflict (task_id, recipient_identity_id, contact_id) do update
+  on conflict on constraint task_recipient_portal_grants_exact_unique do update
   set
     revoked_at = null,
     revocation_reason = null,

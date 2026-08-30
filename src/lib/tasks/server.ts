@@ -162,6 +162,7 @@ type AttachmentRow = {
   content_type: string | null
   text_content: string | null
   transcript_text: string | null
+  uploaded_by_profile_id: string | null
   is_completion_evidence: boolean
   created_at: string
 }
@@ -540,7 +541,7 @@ async function loadRows(orgId: string) {
         .order('created_at', { ascending: false }),
       admin
         .from('task_attachments')
-        .select('id,task_id,attachment_type,title,file_name,content_type,text_content,transcript_text,is_completion_evidence,created_at')
+        .select('id,task_id,attachment_type,title,file_name,content_type,text_content,transcript_text,uploaded_by_profile_id,is_completion_evidence,created_at')
         .in('task_id', taskIds)
         .order('created_at', { ascending: false }),
       admin
@@ -870,6 +871,9 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       contentType: attachment.content_type,
       textContent: attachment.text_content,
       transcriptText: attachment.transcript_text,
+      canEditTranscript:
+        attachment.attachment_type === 'audio'
+        && attachment.uploaded_by_profile_id === input.userId,
       isCompletionEvidence: attachment.is_completion_evidence,
       createdAt: attachment.created_at,
     }))

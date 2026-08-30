@@ -595,7 +595,7 @@ export async function getRecipientPortalTaskWorkspace(
         .order('created_at', { ascending: false }),
       admin
         .from('task_attachments')
-        .select('id,attachment_type,title,file_name,text_content,transcript_text,is_completion_evidence,created_at')
+        .select('id,attachment_type,title,file_name,text_content,transcript_text,uploaded_by_contact_id,is_completion_evidence,created_at')
         .eq('task_id', task.id)
         .eq('org_id', task.org_id)
         .or(
@@ -721,6 +721,9 @@ export async function getRecipientPortalTaskWorkspace(
           fileName: typeof attachment.file_name === 'string' ? attachment.file_name : null,
           textContent: typeof attachment.text_content === 'string' ? attachment.text_content : null,
           transcriptText: typeof attachment.transcript_text === 'string' ? attachment.transcript_text : null,
+          canEditTranscript:
+            attachment.attachment_type === 'audio'
+            && attachment.uploaded_by_contact_id === scope.contact_id,
           isCompletionEvidence: Boolean(attachment.is_completion_evidence),
           createdAt: String(attachment.created_at),
         }]

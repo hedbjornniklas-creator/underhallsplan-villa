@@ -25,6 +25,8 @@ const BAD_REQUEST_MESSAGES: Record<string, string> = {
   TASK_ATTACHMENT_TYPE_INVALID: 'Filtypen stöds inte.',
   TASK_COMPLETION_EVIDENCE_TYPE_INVALID: 'Filtypen motsvarar inte något valt krav på färdigbevis.',
   TASK_ATTACHMENT_TOO_LARGE: 'Filen är för stor. Maximal storlek är 25 MB.',
+  TASK_TRANSCRIPT_REQUIRED: 'Transkriberingen får inte vara tom.',
+  TASK_TRANSCRIPT_TOO_LONG: 'Transkriberingen är för lång.',
 }
 
 export function recipientPortalErrorResponse(
