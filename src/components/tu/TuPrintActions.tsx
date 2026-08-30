@@ -48,6 +48,8 @@ type DeliveryResponse = {
   history: DeliveryHistoryItem[]
   activityLog?: DeliveryActivityLogEntry[]
   deliveryDocuments?: DeliveryDocumentItem[]
+  revisionNumber?: number | null
+  revisionStatus?: 'finalized' | 'published' | null
 }
 
 function isValidEmail(value: string) {
@@ -105,10 +107,16 @@ export default function TuPrintActions({
   backHref,
   inspectionId,
   printTitle = '',
+  embedded = false,
+  finalizationBlockedReason = null,
+  onStatusChange,
 }: {
   backHref: string
   inspectionId: string
   printTitle?: string
+  embedded?: boolean
+  finalizationBlockedReason?: string | null
+  onStatusChange?: (state: { reportLockedAt: string | null }) => void
 }) {
   const [meta, setMeta] = useState<DeliveryResponse | null>(null)
   const [recipient, setRecipient] = useState('')
@@ -136,12 +144,13 @@ export default function TuPrintActions({
         publicLink: payload.publicLink ?? current?.publicLink ?? null,
       }))
       setRecipient((current) => current.trim() || payload.defaultRecipientEmail || '')
+      onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? null })
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta leveransstatus.')
     } finally {
       if (!options?.silent) setLoading(false)
     }
-  }, [inspectionId])
+  }, [inspectionId, onStatusChange])
 
   useEffect(() => {
     void loadMeta()
@@ -226,12 +235,14 @@ export default function TuPrintActions({
           ? ` Misslyckade mottagare: ${payload.failedRecipients.map((item) => item.email).join(', ')}.`
           : ''
       if (action === 'lock_only') {
-        setResult('PDF och digitalt utlåtande skapas. Utlåtandet är låst för manuell hantering.')
+        const revisionLabel = payload.revisionNumber ? `Revision ${payload.revisionNumber}` : 'Utlåtandet'
+        setResult(`${revisionLabel} är fastställd. PDF skapas i bakgrunden och kan därefter skickas.`)
       } else {
         const sentCount = payload.sentRecipients?.length ?? 0
         const lockText = action === 'send_and_lock' ? ' Utlåtandet är låst.' : ' Utlåtandet är fortsatt upplåst.'
         setResult(`Digitalt utlåtande skickades till ${sentCount} mottagare.${failedText}${lockText}`)
       }
+      onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? null })
     } catch (deliveryError) {
       setError(deliveryError instanceof Error ? deliveryError.message : 'Kunde inte hantera utlåtandet.')
     } finally {
@@ -273,6 +284,7 @@ export default function TuPrintActions({
         'Utlåtandet är upplåst för redigering. Publicerad digital version och PDF ligger kvar tills en ny version publiceras.'
       )
       await loadMeta({ silent: true })
+      onStatusChange?.({ reportLockedAt: null })
     } catch (unlockError) {
       setError(unlockError instanceof Error ? unlockError.message : 'Kunde inte lÃ¥sa upp utlÃ¥tandet.')
     } finally {
@@ -298,6 +310,7 @@ export default function TuPrintActions({
         publicLink: payload.publicLink ?? current?.publicLink ?? null,
       }))
       setResult('PDF-genereringen har startats om. Statusen uppdateras automatiskt.')
+      onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? meta?.reportLockedAt ?? null })
     } catch (pdfError) {
       setError(pdfError instanceof Error ? pdfError.message : 'Kunde inte starta om PDF-genereringen.')
     } finally {
@@ -310,7 +323,12 @@ export default function TuPrintActions({
   const unlockedWithPublishedVersion = !locked && hasPublishedVersion
   const downloadUrl = meta?.downloadUrl ?? null
   const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
-  const canSend = !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
+  const canSend = locked && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
+  const canFinalize = !locked
+    && !finalizationBlockedReason
+    && !busyAction
+    && !unlockBusy
+    && !regeneratingPdf
   const unlockEvents = meta?.activityLog?.filter((item) => item.type === 'report_unlocked') ?? []
   const statusText = loading
     ? 'Hämtar leveransstatus...'
@@ -324,7 +342,8 @@ export default function TuPrintActions({
       : 'border-slate-200 bg-slate-50 text-slate-700'
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-3 px-4 py-4 print:hidden">
+    <div className={embedded ? 'w-full space-y-3 print:hidden' : 'mx-auto w-full max-w-5xl space-y-3 px-4 py-4 print:hidden'}>
+      {!embedded ? (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href={backHref}
@@ -342,16 +361,17 @@ export default function TuPrintActions({
           Skriv ut / Spara PDF i webbläsaren
         </button>
       </div>
+      ) : null}
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Publicering
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-700">
+              Steg 5
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-gray-950">Leverera TU-utlåtandet</h2>
+            <h2 className="mt-1 text-xl font-semibold text-gray-950">Fastställ och leverera</h2>
             <p className="mt-1 text-sm leading-6 text-gray-600">
-              Skapa en fryst publicerad version, lås utlåtandet och generera PDF för nedladdning.
+              Fastställ först en fryst revision. Välj därefter mottagare och skicka exakt den versionen.
             </p>
             {unlockedWithPublishedVersion ? (
               <p className="mt-2 max-w-3xl rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-5 text-amber-900">
@@ -373,9 +393,21 @@ export default function TuPrintActions({
                 {pdfStatusLabel(meta.pdfStatus)}
               </span>
             ) : null}
+            {meta?.revisionNumber ? (
+              <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 font-medium text-violet-800">
+                Revision {meta.revisionNumber} · {meta.revisionStatus === 'published' ? 'skickad' : 'fastställd'}
+              </span>
+            ) : null}
           </div>
         </div>
 
+        {!locked && finalizationBlockedReason ? (
+          <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+            Innan utlåtandet kan fastställas: {finalizationBlockedReason}
+          </p>
+        ) : null}
+
+        {locked ? (
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-medium text-gray-700">Huvudmottagare</span>
@@ -403,6 +435,7 @@ export default function TuPrintActions({
             />
           </label>
         </div>
+        ) : null}
 
         {meta?.deliveryDocuments?.length ? (
           <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3">
@@ -434,14 +467,16 @@ export default function TuPrintActions({
         <div className="mt-5 border-t border-slate-200 pt-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-slate-950">Publicera ny version</h3>
+              <h3 className="text-sm font-semibold text-slate-950">Nästa handling</h3>
               <p className="text-xs leading-5 text-slate-500">
-                En ny publicering ersätter tidigare aktiv länk först när den skapas.
+                {locked
+                  ? 'Den fastställda revisionen ändras inte när den skickas.'
+                  : 'Fastställandet låser utlåtandet och skapar en oföränderlig revision.'}
               </p>
             </div>
             <button
               type="button"
-            onClick={() => void loadMeta()}
+              onClick={() => void loadMeta()}
               disabled={loading || Boolean(busyAction) || unlockBusy || regeneratingPdf}
               className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
             >
@@ -451,41 +486,38 @@ export default function TuPrintActions({
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void runDelivery('send_and_lock')}
-            disabled={!canSend}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-          >
-            <Send size={16} aria-hidden />
-            {busyAction === 'send_and_lock' ? 'Skickar...' : locked ? 'Skicka låst version' : 'Skicka och lås'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void runDelivery('send_open')}
-            disabled={!canSend || locked}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Skicka utan låsning
-          </button>
-          <button
-            type="button"
-            onClick={() => void runDelivery('lock_only')}
-            disabled={Boolean(busyAction) || unlockBusy || regeneratingPdf}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <LockKeyhole size={16} aria-hidden />
-            {busyAction === 'lock_only' ? 'Skapar PDF...' : 'Skapa PDF och lås'}
-          </button>
+          {locked ? (
+            <button
+              type="button"
+              onClick={() => void runDelivery('send_and_lock')}
+              disabled={!canSend}
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {busyAction === 'send_and_lock' ? <RefreshCw size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
+              {busyAction === 'send_and_lock' ? 'Skickar revisionen...' : 'Skicka fastställd revision'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void runDelivery('lock_only')}
+              disabled={!canFinalize}
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {busyAction === 'lock_only' ? <RefreshCw size={16} className="animate-spin" aria-hidden /> : <LockKeyhole size={16} aria-hidden />}
+              {busyAction === 'lock_only' ? 'Fastställer revision...' : 'Fastställ utlåtandet'}
+            </button>
+          )}
+          {locked ? (
           <button
             type="button"
             onClick={() => setUnlockOpen(true)}
-            disabled={!locked || Boolean(busyAction) || unlockBusy || regeneratingPdf}
+            disabled={Boolean(busyAction) || unlockBusy || regeneratingPdf}
             className="inline-flex h-10 items-center gap-2 rounded-md border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <LockOpen size={16} aria-hidden />
             {unlockBusy ? 'Låser upp...' : 'Lås upp'}
           </button>
+          ) : null}
           </div>
         </div>
 

@@ -155,6 +155,9 @@ export function useTuFieldQueue({
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
   const [queueError, setQueueError] = useState<string | null>(null)
   const [completedRevision, setCompletedRevision] = useState(0)
+  const [online, setOnline] = useState(() => (
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  ))
   const processorRunningRef = useRef(false)
   const mountedRef = useRef(true)
   const previewUrlsRef = useRef<Record<string, string>>({})
@@ -605,9 +608,17 @@ export function useTuFieldQueue({
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return
-    const handleOnline = () => void processQueue()
+    const handleOnline = () => {
+      setOnline(true)
+      void processQueue()
+    }
+    const handleOffline = () => setOnline(false)
     window.addEventListener('online', handleOnline)
-    return () => window.removeEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
   }, [enabled, processQueue])
 
   useEffect(() => {
@@ -637,6 +648,7 @@ export function useTuFieldQueue({
     previewUrls,
     counts,
     queueError,
+    online,
     completedRevision,
     enqueueFieldEntry,
     enqueueLooseImages,

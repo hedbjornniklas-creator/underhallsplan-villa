@@ -11,9 +11,10 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react'
-import type {
-  TuWholeReportDraftResponse,
-  TuWholeReportDraftState,
+import {
+  TU_REPORT_DRAFT_UPDATED_EVENT,
+  type TuWholeReportDraftResponse,
+  type TuWholeReportDraftState,
 } from '@/lib/tu/reportDraft'
 
 type Props = {
@@ -31,19 +32,6 @@ function errorText(error: unknown, fallback: string) {
 async function responseError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({})) as { error?: unknown }
   return typeof payload.error === 'string' && payload.error.trim() ? payload.error : fallback
-}
-
-function progressPercent(draft: TuWholeReportDraftState | null) {
-  switch (draft?.run?.progressStage) {
-    case 'queued': return 4
-    case 'preparing': return 14
-    case 'synthesizing': return 68
-    case 'saving': return 92
-    case 'completed': return 100
-    case 'failed':
-    case 'cancelled': return 100
-    default: return 2
-  }
 }
 
 export default function TuWholeReportDraftPanel({
@@ -66,6 +54,9 @@ export default function TuWholeReportDraftPanel({
   const applyPayload = useCallback((payload: TuWholeReportDraftResponse) => {
     if (!payload.draft) return
     setDraft(payload.draft)
+    window.dispatchEvent(new CustomEvent(TU_REPORT_DRAFT_UPDATED_EVENT, {
+      detail: { inspectionId, draft: payload.draft },
+    }))
     const runId = payload.draft.run?.id ?? null
     if (runId && runId !== initializedRunIdRef.current && payload.draft.run?.status === 'completed') {
       initializedRunIdRef.current = runId
@@ -76,7 +67,7 @@ export default function TuWholeReportDraftPanel({
           .map((section) => section.id)
       ))
     }
-  }, [])
+  }, [inspectionId])
 
   const loadState = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -264,18 +255,8 @@ export default function TuWholeReportDraftPanel({
                 </p>
               </div>
             </div>
-            <div
-              className="h-2.5 overflow-hidden rounded-full bg-violet-100"
-              role="progressbar"
-              aria-label="Rapportutkastets förlopp"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progressPercent(draft)}
-            >
-              <div
-                className="h-full rounded-full bg-violet-700 transition-[width] duration-500"
-                style={{ width: `${progressPercent(draft)}%` }}
-              />
+            <div className="h-1.5 overflow-hidden rounded-full bg-violet-100" aria-hidden>
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-violet-700" />
             </div>
             <p className="rounded-md border border-violet-100 bg-white px-3 py-2 text-sm text-gray-700">
               Du kan lämna sidan och återkomma senare. Resultatet sparas och visas här när det är klart.

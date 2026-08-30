@@ -310,6 +310,9 @@ export async function getTuAnalysisValidation(input: {
     (sum, observation) => sum + observation.measurements.length,
     0
   )
+  const unreviewedObservationCount = observations.filter(
+    (observation) => observation.reviewStatus !== 'reviewed'
+  ).length
   const emptyObservationCount = observations.filter((observation) => (
     !observation.noteText.trim()
     && !observation.transcriptText?.trim()
@@ -318,6 +321,9 @@ export async function getTuAnalysisValidation(input: {
   )).length
   const unlinkedImageCount = images.filter((image) => !linkedImageIds.has(image.id)).length
   const warnings: string[] = []
+  if (unreviewedObservationCount > 0) {
+    warnings.push(`${unreviewedObservationCount} observationer är inte faktagranskade.`)
+  }
   if (emptyObservationCount > 0) {
     warnings.push(`${emptyObservationCount} observationer saknar text, bild och mätvärde.`)
   }
@@ -329,12 +335,16 @@ export async function getTuAnalysisValidation(input: {
   }
   return {
     observationCount: observations.length,
+    unreviewedObservationCount,
     imageCount: images.length,
     measurementCount,
     unlinkedImageCount,
     emptyObservationCount,
     warnings,
-    canComplete: observations.length > 0 || images.length > 0,
+    canComplete:
+      (observations.length > 0 || images.length > 0)
+      && unreviewedObservationCount === 0
+      && emptyObservationCount === 0,
   }
 }
 

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, BrainCircuit, CheckCircle2, Loader2 } from 'lucide-react'
 import {
   getTuAnalysisProgressMessage,
-  getTuAnalysisProgressPercent,
   TU_ANALYSIS_UPDATED_EVENT,
   type TuAnalysisResponse,
   type TuAnalysisWorkflow,
@@ -82,7 +81,6 @@ export default function TuAnalysisActivityBanner({ inspectionId, enabled, onOpen
   if (!enabled || !workflow) return null
 
   if (processing) {
-    const percent = getTuAnalysisProgressPercent(workflow.run)
     return (
       <aside className="rounded-md border border-violet-200 bg-white px-4 py-3 shadow-sm" aria-live="polite">
         <div className="flex flex-wrap items-center gap-3">
@@ -90,18 +88,12 @@ export default function TuAnalysisActivityBanner({ inspectionId, enabled, onOpen
             <Loader2 size={18} className="animate-spin" aria-hidden />
           </span>
           <div className="min-w-[220px] flex-1">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-gray-950">AI-analysen arbetar i bakgrunden</p>
-              <span className="text-xs font-semibold tabular-nums text-violet-800">{percent}%</span>
-            </div>
+            <p className="text-sm font-semibold text-gray-950">AI-analysen arbetar i bakgrunden</p>
             <p className="mt-0.5 text-xs text-gray-600">
               {getTuAnalysisProgressMessage(workflow.run)} Pågått {elapsedText(workflow.run?.startedAt ?? workflow.run?.createdAt, now)}.
             </p>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100">
-              <div
-                className="h-full rounded-full bg-violet-700 transition-[width] duration-500"
-                style={{ width: `${percent}%` }}
-              />
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100" aria-hidden>
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-violet-700" />
             </div>
           </div>
           <button

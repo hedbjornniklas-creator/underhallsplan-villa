@@ -15,7 +15,6 @@ import {
 } from 'lucide-react'
 import {
   getTuAnalysisProgressMessage,
-  getTuAnalysisProgressPercent,
   getTuAnalysisProgressStep,
   TU_ANALYSIS_UPDATED_EVENT,
   type TuAnalysisItem,
@@ -214,7 +213,6 @@ export default function TuAnalysisWorkspace({
   const processing = shouldPoll
   const failed = workflow?.run?.status === 'failed'
   const queuePending = queueCounts.total > 0
-  const progressPercent = getTuAnalysisProgressPercent(workflow?.run)
   const progressStep = getTuAnalysisProgressStep(workflow?.run)
   const progressMessage = getTuAnalysisProgressMessage(workflow?.run)
 
@@ -237,7 +235,7 @@ export default function TuAnalysisWorkspace({
             <BrainCircuit size={21} aria-hidden />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-gray-950">Samlad AI-analys</h2>
+            <h2 className="text-base font-semibold text-gray-950">Bedöm och komplettera</h2>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
               Hela fältunderlaget och bilderna analyseras tillsammans. Resultatet används först när du har granskat det.
             </p>
@@ -301,14 +299,14 @@ export default function TuAnalysisWorkspace({
                 className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {actionBusy === 'complete' ? <Loader2 size={17} className="animate-spin" aria-hidden /> : <BrainCircuit size={17} aria-hidden />}
-                Besiktningen klar, analysera underlaget
+                Starta samlad analys
               </button>
               <button
                 type="button"
                 onClick={onOpenField}
                 className="inline-flex h-11 items-center rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
               >
-                Fortsätt dokumentera
+                Tillbaka till fältloggen
               </button>
             </div>
           </div>
@@ -328,7 +326,6 @@ export default function TuAnalysisWorkspace({
                     </p>
                     <h3 className="mt-1 text-base font-semibold text-gray-950">Analysen pågår i bakgrunden</h3>
                   </div>
-                  <span className="text-sm font-semibold tabular-nums text-violet-800">{progressPercent}%</span>
                 </div>
                 <p className="mt-2 text-sm leading-5 text-gray-700" aria-live="polite">
                   {progressMessage}
@@ -337,19 +334,15 @@ export default function TuAnalysisWorkspace({
             </div>
 
             <div>
-              <div
-                className="h-2.5 overflow-hidden rounded-full bg-violet-100"
-                role="progressbar"
-                aria-label="Analysens förlopp"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progressPercent}
-              >
-                <div
-                  className="h-full rounded-full bg-violet-700 transition-[width] duration-500"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
+              {workflow?.run?.progressStage === 'analyzing_images' && workflow.run.progressTotal > 0 ? (
+                <p className="text-sm font-medium text-violet-800" aria-live="polite">
+                  Bild {Math.min(workflow.run.progressCurrent, workflow.run.progressTotal)} av {workflow.run.progressTotal} analyseras
+                </p>
+              ) : (
+                <div className="h-1.5 overflow-hidden rounded-full bg-violet-100" aria-hidden>
+                  <div className="h-full w-1/3 animate-pulse rounded-full bg-violet-700" />
+                </div>
+              )}
               <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-3">
                 <span className="inline-flex items-center gap-1.5">
                   <Clock3 size={14} className="text-violet-700" aria-hidden />

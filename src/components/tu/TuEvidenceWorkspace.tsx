@@ -87,6 +87,8 @@ type Props = {
     mode: 'replace' | 'append'
   ) => Promise<void>
   onOpenReport: (sectionId?: string) => void
+  onOpenAnalysis: () => void
+  enableSectionAi?: boolean
 }
 
 const EMPTY_MEASUREMENT: MeasurementForm = {
@@ -196,6 +198,8 @@ export default function TuEvidenceWorkspace({
   onPreviewImage,
   onApplySuggestion,
   onOpenReport,
+  onOpenAnalysis,
+  enableSectionAi = false,
 }: Props) {
   const editableSections = useMemo(
     () => sections.filter((section) => !['assignment_parties', 'signature'].includes(section.key)),
@@ -650,7 +654,7 @@ export default function TuEvidenceWorkspace({
               <ClipboardList size={20} aria-hidden />
             </div>
             <div className="min-w-0">
-              <h2 className="text-base font-semibold text-gray-950">Besiktningsunderlag</h2>
+              <h2 className="text-base font-semibold text-gray-950">Sortera och granska</h2>
               <p className="text-sm text-gray-600">
                 {observations.length} observationer · {reviewedCount} granskade · {reportCount} valda för rapport
               </p>
@@ -1172,6 +1176,7 @@ export default function TuEvidenceWorkspace({
         </div>
       </section>
 
+      {enableSectionAi ? (
       <section className="rounded-lg border border-violet-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-violet-100 px-4 py-4">
           <div className="flex items-start gap-3">
@@ -1308,6 +1313,24 @@ export default function TuEvidenceWorkspace({
           ) : null}
         </div>
       </section>
+      ) : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
+        <p className="text-sm text-gray-600">
+          {reviewedCount < observations.length
+            ? `${observations.length - reviewedCount} observationer behöver faktagranskas innan helhetsanalysen kan starta.`
+            : 'Underlaget är faktagranskat och klart för en samlad bedömning.'}
+        </p>
+        <button
+          type="button"
+          onClick={onOpenAnalysis}
+          disabled={reviewedCount < observations.length || observations.length === 0}
+          className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          Bedöm och komplettera
+          <ChevronRight size={15} aria-hidden />
+        </button>
+      </div>
     </div>
   )
 }

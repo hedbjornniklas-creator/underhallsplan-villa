@@ -105,6 +105,18 @@ export async function POST(request: Request, context: RouteContext) {
       }
       const validation = await getTuAnalysisValidation({ orgId: orgContext.orgId, inspectionId })
       if (!validation.canComplete) {
+        if (validation.unreviewedObservationCount > 0) {
+          return jsonError(
+            `Faktagranska ${validation.unreviewedObservationCount} observationer innan analysen startas.`,
+            409
+          )
+        }
+        if (validation.emptyObservationCount > 0) {
+          return jsonError(
+            `Komplettera eller ta bort ${validation.emptyObservationCount} tomma observationer innan analysen startas.`,
+            409
+          )
+        }
         return jsonError('Lägg till minst en observation eller bild innan analysen startas.', 400)
       }
       const runId = await createTuInspectionAnalysisRun({
@@ -260,4 +272,3 @@ export async function PATCH(request: Request, context: RouteContext) {
     return jsonError('Kunde inte spara granskningen.', 500)
   }
 }
-

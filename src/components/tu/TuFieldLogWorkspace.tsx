@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  BrainCircuit,
   Camera,
   Check,
   ChevronRight,
@@ -46,7 +45,6 @@ type Props = {
   queue: TuFieldQueueController
   onPreviewImage: (imageId: string) => void
   onOpenEvidence: () => void
-  onOpenAnalysis: () => void
 }
 
 type TimelineItem =
@@ -100,7 +98,6 @@ export default function TuFieldLogWorkspace({
   queue,
   onPreviewImage,
   onOpenEvidence,
-  onOpenAnalysis,
 }: Props) {
   const [observations, setObservations] = useState<TuObservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -117,6 +114,7 @@ export default function TuFieldLogWorkspace({
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null)
   const [enqueueing, setEnqueueing] = useState(false)
+  const [composerHasFocus, setComposerHasFocus] = useState(false)
 
   const composerRef = useRef<HTMLDivElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
@@ -335,27 +333,30 @@ export default function TuFieldLogWorkspace({
   }
 
   const renderQueueStatus = () => {
-    if (queue.counts.total === 0 && !queue.queueError) return null
+    if (queue.counts.total === 0 && !queue.queueError && queue.online) return null
     const hasFailure = queue.counts.failed > 0 || Boolean(queue.queueError)
+    const offline = !queue.online
     return (
       <div
         className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${
-          hasFailure
+          hasFailure || offline
             ? 'border-amber-200 bg-amber-50 text-amber-950'
             : 'border-violet-200 bg-violet-50 text-violet-950'
         }`}
         aria-live="polite"
       >
         <div className="flex items-center gap-2">
-          {hasFailure ? <CircleAlert size={15} aria-hidden /> : <Loader2 size={15} className="animate-spin" aria-hidden />}
+          {hasFailure || offline ? <CircleAlert size={15} aria-hidden /> : <Loader2 size={15} className="animate-spin" aria-hidden />}
           <span>
-            <strong>{queue.counts.total} lokalt sparad{queue.counts.total === 1 ? '' : 'e'} post{queue.counts.total === 1 ? '' : 'er'}.</strong>{' '}
+            {offline ? <strong>Offline. </strong> : null}
+            {queue.counts.total > 0 ? <strong>{queue.counts.total} lokalt sparad{queue.counts.total === 1 ? '' : 'e'} post{queue.counts.total === 1 ? '' : 'er'}. </strong> : null}
             {queue.counts.uploading ? `${queue.counts.uploading} laddas upp. ` : ''}
             {queue.counts.transcribing ? `${queue.counts.transcribing} transkriberas. ` : ''}
             {queue.counts.saving ? `${queue.counts.saving} sparas. ` : ''}
             {queue.counts.waiting ? `${queue.counts.waiting} väntar. ` : ''}
             {queue.counts.failed ? `${queue.counts.failed} behöver nytt försök.` : ''}
             {queue.queueError ? ` ${queue.queueError}` : ''}
+            {offline && queue.counts.total > 0 ? ' Synkningen fortsätter automatiskt när anslutningen är tillbaka.' : ''}
           </span>
         </div>
         {hasFailure ? (
@@ -490,34 +491,13 @@ export default function TuFieldLogWorkspace({
   }
 
   return (
-    <section className="space-y-4 pb-24 md:pb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase text-violet-700">På plats</p>
-          <h2 className="mt-1 text-xl font-semibold text-gray-950">Fältlogg</h2>
-          <p className="mt-1 max-w-2xl text-sm text-gray-600">
-            Spara det du ser och hör i den ordning det kommer. Struktureringen görs senare under Bearbeta underlag.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onOpenEvidence}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm hover:bg-violet-50"
-          >
-            <FileText size={16} aria-hidden />
-            Bearbeta underlag
-          </button>
-          <button
-            type="button"
-            onClick={onOpenAnalysis}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
-          >
-            <BrainCircuit size={16} aria-hidden />
-            Slutför besiktning
-            <ChevronRight size={15} aria-hidden />
-          </button>
-        </div>
+    <section className="space-y-4 pb-36 md:pb-4">
+      <div>
+        <p className="text-xs font-semibold uppercase text-violet-700">Steg 1</p>
+        <h2 className="mt-1 text-xl font-semibold text-gray-950">Dokumentera på plats</h2>
+        <p className="mt-1 max-w-2xl text-sm text-gray-600">
+          Lägg in fakta i den ordning de kommer. Sorteringen görs när dokumentationen är klar.
+        </p>
       </div>
 
       {renderQueueStatus()}
@@ -533,7 +513,16 @@ export default function TuFieldLogWorkspace({
         </div>
       ) : null}
 
-      <div ref={composerRef} className="rounded-lg border border-violet-200 bg-white shadow-sm scroll-mt-4">
+      <div
+        ref={composerRef}
+        onFocusCapture={() => setComposerHasFocus(true)}
+        onBlurCapture={() => {
+          window.requestAnimationFrame(() => {
+            setComposerHasFocus(Boolean(composerRef.current?.contains(document.activeElement)))
+          })
+        }}
+        className="rounded-lg border border-violet-200 bg-white shadow-sm scroll-mt-4"
+      >
         <div className="border-b border-gray-200 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -548,7 +537,7 @@ export default function TuFieldLogWorkspace({
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
               >
                 <Camera size={17} aria-hidden />
-                Bild med anteckning
+                Ta foto
               </button>
               <button
                 type="button"
@@ -557,7 +546,7 @@ export default function TuFieldLogWorkspace({
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
               >
                 <ImageIcon size={17} aria-hidden />
-                Lös bild
+                Foto utan anteckning
               </button>
               <button
                 type="button"
@@ -566,7 +555,7 @@ export default function TuFieldLogWorkspace({
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
               >
                 <Images size={17} aria-hidden />
-                Välj lösa bilder
+                Välj bilder
               </button>
             </div>
           </div>
@@ -685,7 +674,7 @@ export default function TuFieldLogWorkspace({
                 className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {enqueueing ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
-                Spara i fältloggen
+                Lägg till i fältloggen
               </button>
             </div>
           </div>
@@ -757,7 +746,7 @@ export default function TuFieldLogWorkspace({
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-700">
                     <ImageIcon size={12} aria-hidden />
-                    Lös bild
+                    Osorterad bild
                   </span>
                   <span className="text-xs text-gray-500">{formatTimestamp(timelineItem.timestamp)}</span>
                 </div>
@@ -765,12 +754,12 @@ export default function TuFieldLogWorkspace({
                   type="button"
                   onClick={() => onPreviewImage(timelineItem.image.id)}
                   className="block max-w-sm overflow-hidden rounded-md bg-gray-100"
-                  aria-label="Visa lös bild i full storlek"
+                  aria-label="Visa osorterad bild i full storlek"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={timelineItem.image.publicUrl}
-                    alt={timelineItem.image.caption ?? 'Lös fältbild'}
+                    alt={timelineItem.image.caption ?? 'Osorterad fältbild'}
                     className="max-h-72 w-full object-contain"
                   />
                 </button>
@@ -783,33 +772,70 @@ export default function TuFieldLogWorkspace({
         </div>
       )}
 
-      <div className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-3 gap-1 rounded-lg border border-violet-200 bg-white p-1.5 shadow-lg md:hidden">
+      <div className="flex justify-end border-t border-gray-200 pt-4">
         <button
           type="button"
-          onClick={focusComposer}
-          disabled={locked}
-          className="inline-flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-[11px] font-semibold text-violet-900 hover:bg-violet-50 disabled:opacity-50"
+          onClick={onOpenEvidence}
+          className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
         >
-          <FileText size={18} aria-hidden />
-          Anteckning
+          Sortera och granska
+          <ChevronRight size={15} aria-hidden />
         </button>
+      </div>
+
+      <div
+        className={`fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 rounded-lg border border-violet-200 bg-white p-1.5 shadow-lg transition md:hidden ${
+          composerHasFocus ? 'pointer-events-none translate-y-[calc(100%+1rem)] opacity-0' : ''
+        }`}
+      >
+        <div className="grid grid-cols-4 gap-1">
+          <button
+            type="button"
+            onClick={focusComposer}
+            disabled={locked}
+            className="inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-[10px] font-semibold text-gray-700 hover:bg-violet-50 disabled:opacity-50"
+          >
+            <FileText size={17} aria-hidden />
+            Anteckning
+          </button>
+          <button
+            type="button"
+            onClick={() => attachedCameraInputRef.current?.click()}
+            disabled={locked}
+            className="inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-[10px] font-semibold text-gray-700 hover:bg-violet-50 disabled:opacity-50"
+          >
+            <Camera size={17} aria-hidden />
+            Ta foto
+          </button>
+          <button
+            type="button"
+            onClick={recording ? stopRecording : () => void startRecording()}
+            disabled={locked || Boolean(capturedAudio)}
+            className={`inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-[10px] font-semibold disabled:opacity-50 ${
+              recording ? 'bg-rose-50 text-rose-700' : 'text-gray-700 hover:bg-violet-50'
+            }`}
+          >
+            {recording ? <Square size={16} fill="currentColor" aria-hidden /> : <Mic size={17} aria-hidden />}
+            {recording ? 'Stoppa' : 'Spela in'}
+          </button>
+          <button
+            type="button"
+            onClick={() => looseCameraInputRef.current?.click()}
+            disabled={locked}
+            className="inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-[10px] font-semibold text-gray-700 hover:bg-violet-50 disabled:opacity-50"
+          >
+            <ImageIcon size={17} aria-hidden />
+            Separat foto
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => attachedCameraInputRef.current?.click()}
-          disabled={locked}
-          className="inline-flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-md bg-violet-700 px-1 text-[11px] font-semibold text-white disabled:bg-gray-300"
+          onClick={() => void submitEntry()}
+          disabled={locked || recording || enqueueing || (!noteText.trim() && draftFiles.length === 0 && !capturedAudio)}
+          className="mt-1 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
         >
-          <Camera size={18} aria-hidden />
-          Bild + text
-        </button>
-        <button
-          type="button"
-          onClick={() => looseCameraInputRef.current?.click()}
-          disabled={locked}
-          className="inline-flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-md px-1 text-[11px] font-semibold text-violet-900 hover:bg-violet-50 disabled:opacity-50"
-        >
-          <ImageIcon size={18} aria-hidden />
-          Lös bild
+          {enqueueing ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
+          Lägg till i fältloggen
         </button>
       </div>
 

@@ -35,6 +35,7 @@ export type TuAnalysisCertainty = 'confirmed' | 'probable' | 'uncertain'
 
 export type TuAnalysisValidation = {
   observationCount: number
+  unreviewedObservationCount: number
   imageCount: number
   measurementCount: number
   unlinkedImageCount: number
@@ -95,31 +96,6 @@ export function isTuAnalysisProgressStage(value: unknown): value is TuAnalysisPr
     || value === 'failed'
     || value === 'cancelled'
   )
-}
-
-export function getTuAnalysisProgressPercent(run: TuAnalysisRun | null | undefined) {
-  if (!run) return 2
-  switch (run.progressStage) {
-    case 'queued':
-      return 2
-    case 'preparing':
-      return 8
-    case 'analyzing_images': {
-      const ratio = run.progressTotal > 0
-        ? Math.min(1, Math.max(0, run.progressCurrent / run.progressTotal))
-        : 0
-      return Math.round(12 + ratio * 58)
-    }
-    case 'synthesizing':
-      return 78
-    case 'saving':
-      return 94
-    case 'completed':
-      return 100
-    case 'failed':
-    case 'cancelled':
-      return 100
-  }
 }
 
 export function getTuAnalysisProgressStep(run: TuAnalysisRun | null | undefined) {

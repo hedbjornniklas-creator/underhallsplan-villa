@@ -3,6 +3,8 @@ import type {
   TuAnalysisRunStatus,
 } from '@/lib/tu/analysis'
 
+export const TU_REPORT_DRAFT_UPDATED_EVENT = 'tu-report-draft-updated'
+
 export type TuWholeReportDraftRun = {
   id: string
   status: TuAnalysisRunStatus

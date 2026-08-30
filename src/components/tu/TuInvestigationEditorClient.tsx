@@ -2,17 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, BrainCircuit, ChevronDown, ChevronUp, ClipboardList, FileText, Image as ImageIcon, Loader2, Mic, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Loader2, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
-import TuAnalysisActivityBanner from '@/components/tu/TuAnalysisActivityBanner'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
+import TuPrintActions from '@/components/tu/TuPrintActions'
+import TuWorkflowRail from '@/components/tu/TuWorkflowRail'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueue'
+import { useTuWorkflowState } from '@/hooks/useTuWorkflowState'
 import { supabase } from '@/lib/supabaseClient'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
+import type { TuWorkspaceView } from '@/lib/tu/workflow'
 import type {
   TuInvestigationDetails,
   TuReportDraft,
@@ -777,7 +780,7 @@ export default function TuInvestigationEditorClient({
   const evidenceWorkspaceEnabled =
     initialInvestigation.reportTemplateKey === TU_MOISTURE_DAMAGE_TEMPLATE_KEY
   const locked = Boolean(investigation.reportLockedAt)
-  const [workspaceView, setWorkspaceView] = useState<'field' | 'evidence' | 'analysis' | 'report'>(
+  const [workspaceView, setWorkspaceView] = useState<TuWorkspaceView>(
     evidenceWorkspaceEnabled ? 'field' : 'report'
   )
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
@@ -1323,6 +1326,58 @@ export default function TuInvestigationEditorClient({
       : autosave.status === 'error'
         ? 'Kunde inte spara'
         : `Sparad: ${autosaveSavedAt}`
+  const systemStatusText = !fieldQueue.online
+    ? fieldQueue.counts.total > 0
+      ? `Offline · ${fieldQueue.counts.total} fältposter väntar på synkning`
+      : 'Offline'
+    : fieldQueue.counts.failed > 0
+      ? `${fieldQueue.counts.failed} bakgrundsjobb behöver nytt försök`
+      : fieldQueue.counts.total > 0
+        ? `${fieldQueue.counts.total} fältposter bearbetas`
+        : autosaveStatusText
+  const systemStatusTone =
+    autosave.status === 'error' || fieldQueue.counts.failed > 0
+      ? 'bg-rose-500'
+      : !fieldQueue.online || fieldQueue.counts.total > 0
+        ? 'bg-amber-500'
+        : autosave.status === 'saving'
+          ? 'animate-pulse bg-violet-600'
+          : 'bg-emerald-500'
+  const workflowReportSections = visibleSections.filter(
+    (section) => !['assignment_parties', 'signature'].includes(section.key)
+  )
+  const workflowReportFilledSectionCount = workflowReportSections.filter(
+    (section) => section.text.trim() || section.subsections?.some((subsection) => subsection.text.trim())
+  ).length
+  const workflowState = useTuWorkflowState({
+    inspectionId: investigation.inspectionId,
+    enabled: evidenceWorkspaceEnabled,
+    refreshToken: fieldQueue.completedRevision,
+    queue: {
+      total: fieldQueue.counts.total,
+      failed: fieldQueue.counts.failed,
+    },
+    reportFilledSectionCount: workflowReportFilledSectionCount,
+    reportSectionCount: workflowReportSections.length,
+  })
+  const refreshWorkflowState = workflowState.refresh
+  const finalizationBlockedReason = useMemo(() => {
+    const assessmentStep = workflowState.steps.find((step) => step.id === 'assessment')
+    const reportStep = workflowState.steps.find((step) => step.id === 'report')
+    if (assessmentStep?.status !== 'complete') {
+      return assessmentStep?.statusText ?? 'Bedömningen måste slutföras.'
+    }
+    if (reportStep?.status !== 'complete') {
+      return reportStep?.statusText ?? 'Utlåtandet måste slutgranskas.'
+    }
+    return null
+  }, [workflowState.steps])
+  const handleDeliveryStatusChange = useCallback(({ reportLockedAt }: { reportLockedAt: string | null }) => {
+    setInvestigation((current) => (
+      current.reportLockedAt === reportLockedAt ? current : { ...current, reportLockedAt }
+    ))
+    void refreshWorkflowState(true)
+  }, [refreshWorkflowState])
 
   const imageSectionLabel = (sectionKey: TuImageSectionKey) => {
     if (sectionKey === 'cover') return 'omslagsbild'
@@ -2064,14 +2119,14 @@ export default function TuInvestigationEditorClient({
 
   return (
     <main className="min-h-screen bg-violet-50/40">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-5 md:px-6">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 md:px-6">
         <header className="space-y-4 border-b border-violet-100 pb-4">
           <Link
             href="/tu"
             className="inline-flex items-center gap-2 text-sm font-medium text-violet-800 hover:text-violet-950"
           >
             <ArrowLeft size={16} aria-hidden />
-            Till TU
+            Till tekniska utlåtanden
           </Link>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -2081,20 +2136,20 @@ export default function TuInvestigationEditorClient({
                 {investigation.property?.address || 'Ingen adress'} {investigation.property?.city || ''}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
-              >
-                <Printer size={16} aria-hidden />
-                Förhandsgranska och skicka
-              </Link>
-              <div
-                className="inline-flex h-10 min-w-[190px] items-center justify-center whitespace-nowrap rounded-md border border-violet-200 bg-white px-3 text-xs text-gray-600 shadow-sm"
-                aria-live="polite"
-              >
-                {autosaveStatusText}
-              </div>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {evidenceWorkspaceEnabled && (workspaceView === 'report' || workspaceView === 'delivery') ? (
+                <Link
+                  href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`}
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
+                >
+                  <Printer size={15} aria-hidden />
+                  Förhandsgranska utkast
+                </Link>
+              ) : null}
+              <p className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-gray-600" aria-live="polite">
+                <span className={`size-2 rounded-full ${systemStatusTone}`} />
+                {systemStatusText}
+              </p>
             </div>
           </div>
         </header>
@@ -2110,72 +2165,21 @@ export default function TuInvestigationEditorClient({
           </div>
         ) : null}
 
-        <TuAnalysisActivityBanner
-          inspectionId={investigation.inspectionId}
-          enabled={evidenceWorkspaceEnabled && workspaceView !== 'analysis'}
-          onOpenAnalysis={() => setWorkspaceView('analysis')}
-        />
-
-        {evidenceWorkspaceEnabled ? (
-          <nav
-            className="grid grid-cols-4 rounded-md border border-gray-200 bg-white p-1 shadow-sm"
-            aria-label="Arbetsläge"
-          >
-            <button
-              type="button"
-              onClick={() => setWorkspaceView('field')}
-              aria-pressed={workspaceView === 'field'}
-              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
-                workspaceView === 'field'
-                  ? 'bg-violet-700 text-white shadow-sm'
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Mic size={16} aria-hidden />
-              Fältlogg
-            </button>
-            <button
-              type="button"
-              onClick={() => setWorkspaceView('evidence')}
-              aria-pressed={workspaceView === 'evidence'}
-              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
-                workspaceView === 'evidence'
-                  ? 'bg-violet-700 text-white shadow-sm'
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <ClipboardList size={16} aria-hidden />
-              <span className="sm:hidden">Bearbeta</span>
-              <span className="hidden sm:inline">Bearbeta underlag</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setWorkspaceView('analysis')}
-              aria-pressed={workspaceView === 'analysis'}
-              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
-                workspaceView === 'analysis'
-                  ? 'bg-violet-700 text-white shadow-sm'
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <BrainCircuit size={16} aria-hidden />
-              Analys
-            </button>
-            <button
-              type="button"
-              onClick={() => setWorkspaceView('report')}
-              aria-pressed={workspaceView === 'report'}
-              className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-xs font-semibold transition sm:gap-2 sm:px-3 sm:text-sm ${
-                workspaceView === 'report'
-                  ? 'bg-violet-700 text-white shadow-sm'
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <FileText size={16} aria-hidden />
-              Utlåtande
-            </button>
-          </nav>
-        ) : null}
+        <div className={evidenceWorkspaceEnabled ? 'grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]' : ''}>
+          {evidenceWorkspaceEnabled ? (
+            <TuWorkflowRail
+              steps={workflowState.steps}
+              current={workspaceView}
+              onChange={setWorkspaceView}
+              loading={workflowState.loading}
+            />
+          ) : null}
+          <div className="min-w-0 space-y-5">
+          {workflowState.error && evidenceWorkspaceEnabled ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Statusen kunde inte uppdateras. Arbetsytan går fortfarande att använda.
+            </div>
+          ) : null}
 
         {evidenceWorkspaceEnabled && workspaceView === 'field' ? (
           <TuFieldLogWorkspace
@@ -2185,7 +2189,6 @@ export default function TuInvestigationEditorClient({
             queue={fieldQueue}
             onPreviewImage={setPreviewImageId}
             onOpenEvidence={() => setWorkspaceView('evidence')}
-            onOpenAnalysis={() => setWorkspaceView('analysis')}
           />
         ) : evidenceWorkspaceEnabled && workspaceView === 'evidence' ? (
           <TuEvidenceWorkspace
@@ -2200,8 +2203,9 @@ export default function TuInvestigationEditorClient({
             onPreviewImage={setPreviewImageId}
             onApplySuggestion={applyEvidenceSuggestion}
             onOpenReport={openReportWorkspace}
+            onOpenAnalysis={() => setWorkspaceView('assessment')}
           />
-        ) : evidenceWorkspaceEnabled && workspaceView === 'analysis' ? (
+        ) : evidenceWorkspaceEnabled && workspaceView === 'assessment' ? (
           <TuAnalysisWorkspace
             inspectionId={investigation.inspectionId}
             refreshToken={fieldQueue.completedRevision}
@@ -2215,9 +2219,36 @@ export default function TuInvestigationEditorClient({
             onApplyReportDraft={applyWholeReportDraft}
             onOpenReport={() => openReportWorkspace()}
           />
+        ) : evidenceWorkspaceEnabled && workspaceView === 'delivery' ? (
+          <TuPrintActions
+            backHref={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`}
+            inspectionId={investigation.inspectionId}
+            embedded
+            finalizationBlockedReason={finalizationBlockedReason}
+            onStatusChange={handleDeliveryStatusChange}
+          />
         ) : (
           <>
 
+        {evidenceWorkspaceEnabled ? (
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase text-violet-700">Steg 4</p>
+              <h2 className="mt-1 text-xl font-semibold text-gray-950">Granska utlåtandet</h2>
+              <p className="mt-1 text-sm text-gray-600">Kontrollera helheten, redigera vid behov och förhandsgranska innan fastställande.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWorkspaceView('delivery')}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+            >
+              Fastställ och leverera
+              <FileText size={16} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+
+        {!evidenceWorkspaceEnabled ? (
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -2315,6 +2346,7 @@ export default function TuInvestigationEditorClient({
             ) : null}
           </div>
         </section>
+        ) : null}
 
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
           <div className="grid gap-4 md:grid-cols-2">
@@ -3401,6 +3433,8 @@ export default function TuInvestigationEditorClient({
         </section>
           </>
         )}
+          </div>
+        </div>
         {renderImagePreview()}
       </div>
     </main>

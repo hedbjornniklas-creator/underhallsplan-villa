@@ -17,6 +17,7 @@ import {
   createTuReportSnapshotPayloadV1,
   type TuReportDeliveryDocument,
 } from '@/lib/tu/reportSnapshot'
+import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -66,6 +67,24 @@ type TuDeliveryDocumentRow = {
   content_type: string | null
   file_size_bytes: number | null
   created_at: string | null
+}
+
+type TuReportRevisionRow = {
+  id: string
+  revision_number: number
+  snapshot_link_id: string
+  published_link_id: string | null
+  status: 'finalized' | 'published' | 'superseded'
+  finalized_at: string
+  published_at: string | null
+}
+
+type ReportSnapshotLinkRow = {
+  id: string
+  org_id: string | null
+  assignment_id: string | null
+  snapshot_schema_version: string | null
+  snapshot_payload: unknown
 }
 
 function normalizePdfStatus(value: unknown): PdfStatus {
@@ -501,6 +520,127 @@ async function getLatestReportLink(
     | null
 }
 
+function isMissingRevisionTable(error: unknown) {
+  const message = String((error as { message?: unknown } | null)?.message ?? error ?? '').toLowerCase()
+  return message.includes('tu_report_revisions') || message.includes('42p01') || message.includes('does not exist')
+}
+
+async function getCurrentTuRevision(
+  admin: AdminClient,
+  orgId: string,
+  inspectionId: string
+): Promise<TuReportRevisionRow | null> {
+  const { data, error } = await admin
+    .from('tu_report_revisions')
+    .select('id,revision_number,snapshot_link_id,published_link_id,status,finalized_at,published_at')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .in('status', ['finalized', 'published'])
+    .order('revision_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) {
+    if (isMissingRevisionTable(error)) return null
+    throw new Error(error.message ?? 'Kunde inte läsa TU-revisionen.')
+  }
+  return (data as TuReportRevisionRow | null) ?? null
+}
+
+async function getReportSnapshotLink(admin: AdminClient, linkId: string) {
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .select('id,org_id,assignment_id,snapshot_schema_version,snapshot_payload')
+    .eq('id', linkId)
+    .maybeSingle()
+  if (error) throw new Error(error.message ?? 'Kunde inte läsa den fastställda rapportversionen.')
+  if (!data) throw new Error('Den fastställda rapportversionen saknas.')
+  return data as ReportSnapshotLinkRow
+}
+
+async function createTuRevision(
+  admin: AdminClient,
+  input: {
+    orgId: string
+    inspectionId: string
+    snapshotLinkId: string
+    userId: string
+    publishedLinkId?: string | null
+  }
+) {
+  const { data: latest, error: latestError } = await admin
+    .from('tu_report_revisions')
+    .select('revision_number')
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .order('revision_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (latestError) {
+    if (isMissingRevisionTable(latestError)) {
+      throw new Error('TU_REVISIONS_NOT_ACTIVATED')
+    }
+    throw new Error(latestError.message ?? 'Kunde inte beräkna nästa TU-revision.')
+  }
+  const revisionNumber = Math.max(1, Number((latest as { revision_number?: unknown } | null)?.revision_number ?? 0) + 1)
+  const published = Boolean(input.publishedLinkId)
+  const now = new Date().toISOString()
+  const { data, error } = await admin
+    .from('tu_report_revisions')
+    .insert({
+      org_id: input.orgId,
+      inspection_id: input.inspectionId,
+      revision_number: revisionNumber,
+      snapshot_link_id: input.snapshotLinkId,
+      published_link_id: input.publishedLinkId ?? null,
+      status: published ? 'published' : 'finalized',
+      finalized_at: now,
+      finalized_by: input.userId,
+      published_at: published ? now : null,
+      published_by: published ? input.userId : null,
+    })
+    .select('id,revision_number,snapshot_link_id,published_link_id,status,finalized_at,published_at')
+    .single()
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa TU-revisionen.')
+  return data as TuReportRevisionRow
+}
+
+async function publishTuRevision(
+  admin: AdminClient,
+  input: {
+    orgId: string
+    inspectionId: string
+    revisionId: string
+    publishedLinkId: string
+    userId: string
+  }
+) {
+  const now = new Date().toISOString()
+  const { error: supersedeError } = await admin
+    .from('tu_report_revisions')
+    .update({ status: 'superseded' })
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('status', 'published')
+    .neq('id', input.revisionId)
+  if (supersedeError) throw new Error(supersedeError.message ?? 'Kunde inte avsluta föregående TU-revision.')
+
+  const { data, error } = await admin
+    .from('tu_report_revisions')
+    .update({
+      status: 'published',
+      published_link_id: input.publishedLinkId,
+      published_at: now,
+      published_by: input.userId,
+    })
+    .eq('id', input.revisionId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .in('status', ['finalized', 'published'])
+    .select('id')
+    .maybeSingle()
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte publicera den fastställda TU-revisionen.')
+}
+
 async function lockTuInvestigation(
   admin: AdminClient,
   input: {
@@ -613,6 +753,36 @@ function resolveInspectionDate(investigation: NonNullable<Awaited<ReturnType<typ
   return investigation.date ?? investigation.assignment?.preferred_date ?? null
 }
 
+async function getFinalizationBlocker(
+  admin: AdminClient,
+  investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
+) {
+  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) return null
+
+  const { data, error } = await admin
+    .from('tu_analysis_workflows')
+    .select('status,analysis_stale_at')
+    .eq('org_id', investigation.orgId)
+    .eq('inspection_id', investigation.inspectionId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const workflow = data as { status?: string | null; analysis_stale_at?: string | null } | null
+  if (workflow?.analysis_stale_at || workflow?.status !== 'analysis_approved') {
+    return 'Den samlade bedömningen måste vara aktuell och godkänd innan utlåtandet kan fastställas.'
+  }
+
+  const missingSections = investigation.reportDraft.sections.filter((section) => {
+    if (!section.isRequired) return false
+    return !section.text.trim() && !section.subsections?.some((subsection) => subsection.text.trim())
+  })
+  if (missingSections.length > 0) {
+    const titles = missingSections.slice(0, 3).map((section) => section.title).join(', ')
+    const suffix = missingSections.length > 3 ? ` och ${missingSections.length - 3} till` : ''
+    return `Fyll i obligatoriska rapportdelar: ${titles}${suffix}.`
+  }
+  return null
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ inspectionId: string }> }
@@ -628,11 +798,12 @@ export async function GET(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
-    const [history, unlockHistory, activeLink, deliveryDocuments] = await Promise.all([
+    const [history, unlockHistory, activeLink, deliveryDocuments, revision] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
       getUnlockHistory(admin, org.orgId, inspectionId),
       getLatestReportLink(admin, inspectionId),
       listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
+      getCurrentTuRevision(admin, org.orgId, inspectionId),
     ])
     const ordererEmail = resolveDefaultRecipient(investigation)
     const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
@@ -652,6 +823,10 @@ export async function GET(
       deliveryDocuments,
       history,
       activityLog,
+      revisionNumber: revision?.revision_number ?? null,
+      revisionStatus: revision?.status ?? null,
+      revisionFinalizedAt: revision?.finalized_at ?? null,
+      revisionPublishedAt: revision?.published_at ?? null,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
@@ -754,6 +929,11 @@ export async function POST(
       })
     }
 
+    if ((action === 'lock_only' || action === 'send_and_lock') && !investigation.reportLockedAt) {
+      const finalizationBlocker = await getFinalizationBlocker(admin, investigation)
+      if (finalizationBlocker) return jsonError(finalizationBlocker, 409)
+    }
+
     const primaryRecipient =
       action === 'lock_only'
         ? null
@@ -761,23 +941,54 @@ export async function POST(
     if (action !== 'lock_only' && !primaryRecipient) {
       return jsonError('Ange en giltig huvudmottagare.', 400)
     }
+    if (action === 'lock_only' && investigation.reportLockedAt) {
+      return jsonError('Utlåtandet är redan fastställt. Lås upp det för att skapa en ny revision.', 409)
+    }
 
     let publicLink = ''
     let linkId = ''
+    let currentRevision = await getCurrentTuRevision(admin, org.orgId, inspectionId)
     const sentRecipients: string[] = []
     const failedRecipients: Array<{ email: string; error: string }> = []
 
-    const [coverImages, appendixImages, deliveryDocuments] = await Promise.all([
-      listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'cover' }),
-      listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'appendix' }),
-      listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
-    ])
-    const snapshotPayload = createTuReportSnapshotPayloadV1({
-      investigation,
-      coverImages,
-      appendixImages,
-      deliveryDocuments,
-    })
+    const deliveryDocuments = await listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId })
+    const sendingFinalizedRevision = action === 'send_and_lock' && Boolean(investigation.reportLockedAt)
+    let snapshotPayload: unknown
+    let snapshotSchemaVersion = 'tu_v1'
+    let snapshotAssignmentId = investigation.assignmentId
+
+    if (sendingFinalizedRevision) {
+      if (!currentRevision) {
+        const latestFrozenLink = await getLatestReportLink(admin, inspectionId)
+        if (!latestFrozenLink) {
+          return jsonError('Den fastställda rapportversionen saknas. Lås upp och fastställ utlåtandet på nytt.', 409)
+        }
+        currentRevision = await createTuRevision(admin, {
+          orgId: org.orgId,
+          inspectionId,
+          snapshotLinkId: latestFrozenLink.id,
+          userId: org.userId,
+        })
+      }
+      const frozenLink = await getReportSnapshotLink(admin, currentRevision.snapshot_link_id)
+      if (frozenLink.org_id !== org.orgId) {
+        return jsonError('Den fastställda rapportversionen tillhör inte din organisation.', 403)
+      }
+      snapshotPayload = frozenLink.snapshot_payload
+      snapshotSchemaVersion = frozenLink.snapshot_schema_version || 'tu_v1'
+      snapshotAssignmentId = frozenLink.assignment_id
+    } else {
+      const [coverImages, appendixImages] = await Promise.all([
+        listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'cover' }),
+        listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'appendix' }),
+      ])
+      snapshotPayload = createTuReportSnapshotPayloadV1({
+        investigation,
+        coverImages,
+        appendixImages,
+        deliveryDocuments,
+      })
+    }
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
 
@@ -786,10 +997,10 @@ export async function POST(
       .insert({
         org_id: org.orgId,
         inspection_id: inspectionId,
-        assignment_id: investigation.assignmentId,
+        assignment_id: snapshotAssignmentId,
         token_hash: tokenHash,
         delivery_mode: 'link_only',
-        snapshot_schema_version: 'tu_v1',
+        snapshot_schema_version: snapshotSchemaVersion,
         snapshot_payload: snapshotPayload,
         pdf_status: 'pending',
         pdf_error: null,
@@ -803,7 +1014,6 @@ export async function POST(
 
     if (linkError || !linkData) throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
     linkId = linkData.id as string
-    await revokeOlderReportLinks(admin, inspectionId, linkId)
 
     const publicBaseUrl = resolvePublicBaseUrl(request)
     publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(token)}`
@@ -871,12 +1081,63 @@ export async function POST(
     }
 
     let reportLockedAt = investigation.reportLockedAt
-    if (action === 'send_and_lock' || action === 'lock_only') {
-      reportLockedAt = reportLockedAt ?? (await lockTuInvestigation(admin, {
+    if (action === 'lock_only') {
+      currentRevision = await createTuRevision(admin, {
         orgId: org.orgId,
         inspectionId,
+        snapshotLinkId: linkId,
         userId: org.userId,
-      }))
+      })
+      try {
+        reportLockedAt = await lockTuInvestigation(admin, {
+          orgId: org.orgId,
+          inspectionId,
+          userId: org.userId,
+        })
+      } catch (lockError) {
+        await Promise.allSettled([
+          admin
+            .from('tu_report_revisions')
+            .update({ status: 'withdrawn' })
+            .eq('id', currentRevision.id)
+            .eq('org_id', org.orgId),
+          admin
+            .from('inspection_report_links')
+            .update({ revoked_at: new Date().toISOString() })
+            .eq('id', linkId),
+        ])
+        throw lockError
+      }
+    } else if (sentRecipients.length > 0) {
+      if (action === 'send_and_lock') {
+        if (!sendingFinalizedRevision) {
+          currentRevision = await createTuRevision(admin, {
+            orgId: org.orgId,
+            inspectionId,
+            snapshotLinkId: linkId,
+            userId: org.userId,
+          })
+        }
+        if (!currentRevision) throw new Error('Den fastställda TU-revisionen saknas.')
+        await publishTuRevision(admin, {
+          orgId: org.orgId,
+          inspectionId,
+          revisionId: currentRevision.id,
+          publishedLinkId: linkId,
+          userId: org.userId,
+        })
+        reportLockedAt = reportLockedAt ?? (await lockTuInvestigation(admin, {
+          orgId: org.orgId,
+          inspectionId,
+          userId: org.userId,
+        }))
+      }
+      await revokeOlderReportLinks(admin, inspectionId, linkId)
+    } else {
+      await admin
+        .from('inspection_report_links')
+        .update({ revoked_at: new Date().toISOString() })
+        .eq('id', linkId)
     }
 
     const [history, unlockHistory, activeLink] = await Promise.all([
@@ -906,11 +1167,19 @@ export async function POST(
       digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
       deliveryDocuments,
       linkId,
+      revisionNumber: currentRevision?.revision_number ?? null,
+      revisionStatus:
+        action === 'send_and_lock' && sentRecipients.length > 0
+          ? 'published'
+          : currentRevision?.status ?? null,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+    if (message === 'TU_REVISIONS_NOT_ACTIVATED') {
+      return jsonError('TU-revisioner är inte aktiverade i databasen ännu.', 409)
+    }
     if (message.includes('RESEND_API_KEY')) return jsonError('Servern saknar mejlkonfiguration.', 500)
     if (message.includes('ASSIGNMENTS_MAIL_FROM')) {
       return jsonError('Servern saknar avsändaradress för mejl.', 500)
