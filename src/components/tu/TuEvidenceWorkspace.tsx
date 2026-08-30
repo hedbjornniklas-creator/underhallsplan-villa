@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  Camera,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -247,12 +246,12 @@ export default function TuEvidenceWorkspace({
   const [observationSearch, setObservationSearch] = useState('')
   const [imagePickerOpen, setImagePickerOpen] = useState(false)
   const [fieldEntryDialogOpen, setFieldEntryDialogOpen] = useState(false)
+  const [observationPanelOpen, setObservationPanelOpen] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const recordingStartedAtRef = useRef<number | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
-  const addMenuRef = useRef<HTMLDetailsElement>(null)
 
   const loadObservations = useCallback(async (preferredId?: string | null) => {
     setLoading(true)
@@ -314,17 +313,19 @@ export default function TuEvidenceWorkspace({
   }, [refreshObservationList, refreshToken])
 
   useEffect(() => {
-    if (!fieldEntryDialogOpen) return
+    if (!fieldEntryDialogOpen && !observationPanelOpen) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    const focusTimer = window.setTimeout(() => {
-      document.getElementById('tu-evidence-field-entry-note')?.focus({ preventScroll: true })
-    }, 50)
+    const focusTimer = fieldEntryDialogOpen
+      ? window.setTimeout(() => {
+          document.getElementById('tu-evidence-field-entry-note')?.focus({ preventScroll: true })
+        }, 50)
+      : null
     return () => {
-      window.clearTimeout(focusTimer)
+      if (focusTimer !== null) window.clearTimeout(focusTimer)
       document.body.style.overflow = previousOverflow
     }
-  }, [fieldEntryDialogOpen])
+  }, [fieldEntryDialogOpen, observationPanelOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -415,13 +416,46 @@ export default function TuEvidenceWorkspace({
   }
 
   const selectObservation = (observation: TuObservation) => {
-    if (formDirty && !window.confirm('Du har osparade ändringar. Vill du lämna observationen utan att spara?')) return
+    if (formDirty && !window.confirm('Du har osparade ändringar. Vill du lämna observationen utan att spara?')) return false
     setError(null)
     setSavedMessage(null)
     setSuggestion(null)
     setImagePickerOpen(false)
     setForm(toObservationForm(observation))
+    return true
   }
+
+  const openObservationPanel = (observation: TuObservation) => {
+    if (!selectObservation(observation)) return
+    setObservationPanelOpen(true)
+  }
+
+  const closeObservationPanel = useCallback(() => {
+    if (recording) {
+      setError('Stoppa röstinspelningen innan du stänger observationen.')
+      return
+    }
+    if (saving || transcribing) {
+      setError('Vänta tills den pågående bearbetningen är klar.')
+      return
+    }
+    if (formDirty && !window.confirm('Du har osparade ändringar. Vill du stänga utan att spara?')) return
+    setObservationPanelOpen(false)
+    setImagePickerOpen(false)
+    setError(null)
+    setSavedMessage(null)
+  }, [formDirty, recording, saving, transcribing])
+
+  useEffect(() => {
+    if (!observationPanelOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      closeObservationPanel()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [closeObservationPanel, observationPanelOpen])
 
   const saveObservation = async (reviewAndNext = false) => {
     if (locked || saving) return false
@@ -463,7 +497,10 @@ export default function TuEvidenceWorkspace({
       const next = await loadObservations(reviewAndNext ? null : payload.observation.id)
       if (reviewAndNext) {
         const remaining = next?.filter((observation) => observation.reviewStatus !== 'reviewed') ?? []
-        if (remaining.length === 0) setObservationFilter('all')
+        if (remaining.length === 0) {
+          setObservationFilter('all')
+          setObservationPanelOpen(false)
+        }
         setSavedMessage(
           remaining.length > 0
             ? 'Observationen är faktagranskad. Nästa observation har öppnats.'
@@ -494,6 +531,7 @@ export default function TuEvidenceWorkspace({
       })
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort observationen.')
+      setObservationPanelOpen(false)
       setForm(createEmptyObservation(sections))
       await loadObservations(null)
     } catch (deleteError) {
@@ -767,45 +805,15 @@ export default function TuEvidenceWorkspace({
                 />
               </div>
             </div>
-            <details ref={addMenuRef} className="relative">
-              <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
-                <Plus size={16} aria-hidden />
-                Lägg till
-                <ChevronDown size={14} aria-hidden />
-              </summary>
-              <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-xl">
-                <button
-                  type="button"
-                  onClick={() => {
-                    addMenuRef.current?.removeAttribute('open')
-                    setFieldEntryDialogOpen(true)
-                  }}
-                  disabled={locked}
-                  className="flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm hover:bg-gray-50 disabled:text-gray-400"
-                >
-                  <Plus size={16} className="mt-0.5 shrink-0 text-violet-700" aria-hidden />
-                  <span>
-                    <span className="block font-semibold text-gray-900">Ny fältpost</span>
-                    <span className="mt-0.5 block text-xs text-gray-500">Anteckning, röst och bilder i samma flöde.</span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    addMenuRef.current?.removeAttribute('open')
-                    imageInputRef.current?.click()
-                  }}
-                  disabled={locked || imageBusy}
-                  className="flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm hover:bg-gray-50 disabled:text-gray-400"
-                >
-                  {imageBusy ? <Loader2 size={16} className="mt-0.5 shrink-0 animate-spin" aria-hidden /> : <Camera size={16} className="mt-0.5 shrink-0 text-violet-700" aria-hidden />}
-                  <span>
-                    <span className="block font-semibold text-gray-900">Bild till vald observation</span>
-                    <span className="mt-0.5 block text-xs text-gray-500">Ta ett foto eller välj en befintlig bild.</span>
-                  </span>
-                </button>
-              </div>
-            </details>
+            <button
+              type="button"
+              onClick={() => setFieldEntryDialogOpen(true)}
+              disabled={locked}
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+            >
+              <Plus size={16} aria-hidden />
+              Lägg till fältpost
+            </button>
             <input
               ref={imageInputRef}
               type="file"
@@ -833,10 +841,10 @@ export default function TuEvidenceWorkspace({
           </div>
         ) : null}
 
-        <div className="grid min-h-[620px] lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="border-b border-gray-200 bg-gray-50/70 lg:border-b-0 lg:border-r">
-            <div className="space-y-3 border-b border-gray-200 p-3">
-              <label className="relative block">
+        <div className="min-h-[420px]">
+          <div>
+            <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <label className="relative block w-full sm:max-w-md">
                 <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden />
                 <span className="sr-only">Sök observationer</span>
                 <input
@@ -846,7 +854,7 @@ export default function TuEvidenceWorkspace({
                   className="h-10 w-full rounded-md border border-gray-300 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                 />
               </label>
-              <div className="grid grid-cols-3 rounded-md border border-gray-200 bg-white p-1" aria-label="Filtrera observationer">
+              <div className="grid w-full grid-cols-3 rounded-md border border-gray-200 bg-white p-1 sm:w-auto sm:min-w-[330px]" aria-label="Filtrera observationer">
                 {([
                   { value: 'needs_review', label: 'Att granska', count: needsReviewCount },
                   { value: 'reviewed', label: 'Granskade', count: reviewedCount },
@@ -874,7 +882,24 @@ export default function TuEvidenceWorkspace({
                 Hämtar underlag...
               </div>
             ) : observations.length === 0 ? (
-              <div className="px-4 py-8 text-sm text-gray-600">Inga observationer ännu.</div>
+              <div className="flex min-h-64 flex-col items-center justify-center px-4 py-10 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+                  <ClipboardList size={20} aria-hidden />
+                </div>
+                <h3 className="mt-3 text-sm font-semibold text-gray-950">Inga observationer ännu</h3>
+                <p className="mt-1 max-w-sm text-sm leading-6 text-gray-600">
+                  Lägg till en fältpost här eller dokumentera under steget Dokumentera på plats.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setFieldEntryDialogOpen(true)}
+                  disabled={locked}
+                  className="mt-4 inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  <Plus size={16} aria-hidden />
+                  Lägg till fältpost
+                </button>
+              </div>
             ) : filteredObservations.length === 0 ? (
               <div className="px-4 py-8 text-sm text-gray-600">
                 {observationSearch.trim()
@@ -885,93 +910,106 @@ export default function TuEvidenceWorkspace({
               </div>
             ) : (
               <div className="divide-y divide-gray-200">
-                {filteredObservations.map((observation, index) => {
-                  const active = observation.id === form.id
+                {filteredObservations.map((observation) => {
+                  const active = observationPanelOpen && observation.id === form.id
+                  const observationNumber = observations.findIndex((item) => item.id === observation.id) + 1
                   return (
                     <button
                       key={observation.id}
                       type="button"
-                      onClick={() => selectObservation(observation)}
-                      className={`group flex w-full items-start gap-3 px-4 py-3 text-left transition ${
-                        active ? 'bg-white shadow-[inset_3px_0_0_#6d28d9]' : 'hover:bg-white'
+                      onClick={() => openObservationPanel(observation)}
+                      className={`group grid w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left transition md:grid-cols-[36px_minmax(0,1fr)_auto_20px] ${
+                        active
+                          ? 'bg-violet-50/60 shadow-[inset_3px_0_0_#6d28d9]'
+                          : 'bg-white hover:bg-gray-50'
                       }`}
                     >
-                      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white text-xs font-semibold text-gray-700">
-                        {index + 1}
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
+                        observation.reviewStatus === 'reviewed'
+                          ? 'bg-emerald-50 text-emerald-800'
+                          : 'bg-violet-50 text-violet-800'
+                      }`}>
+                        {observation.reviewStatus === 'reviewed'
+                          ? <CheckCircle2 size={16} aria-label="Faktagranskad" />
+                          : observationNumber}
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-950">
-                          <span className="truncate">{getObservationTitle(observation)}</span>
-                          {observation.reviewStatus === 'reviewed' ? (
-                            <CheckCircle2 size={14} className="shrink-0 text-emerald-700" aria-label="Granskad" />
-                          ) : null}
+                      <span className="grid min-w-0 gap-1 md:grid-cols-[minmax(180px,0.8fr)_minmax(240px,1.4fr)] md:items-center md:gap-6">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-gray-950">
+                            {getObservationTitle(observation)}
+                          </span>
+                          <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-gray-500">
+                            <span className="shrink-0">{formatObservationTime(observation.observedAt)}</span>
+                            {observation.buildingComponent ? (
+                              <span className="truncate">{observation.buildingComponent}</span>
+                            ) : null}
+                          </span>
                         </span>
-                        <span className="mt-1 line-clamp-2 block text-xs leading-5 text-gray-600">
+                        <span className="line-clamp-2 text-xs leading-5 text-gray-600 md:line-clamp-1 md:text-sm">
                           {getObservationPreview(observation)}
                         </span>
-                        <span className="mt-1.5 flex items-center gap-2 text-[11px] text-gray-500">
-                          <span>{formatObservationTime(observation.observedAt)}</span>
+                      </span>
+                      <span className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center">
+                        <span className={`hidden rounded px-2 py-1 text-[10px] font-semibold xl:inline-flex ${
+                          observation.reviewStatus === 'reviewed'
+                            ? 'bg-emerald-50 text-emerald-800'
+                            : 'bg-violet-50 text-violet-800'
+                        }`}>
+                          {observation.reviewStatus === 'reviewed' ? 'Granskad' : 'Att granska'}
+                        </span>
+                        {observation.includeInReport ? (
+                          <span className="hidden rounded bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-700 sm:inline-flex">
+                            Rapport
+                          </span>
+                        ) : null}
+                        {!observation.location ? (
+                          <span className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">
+                            Saknar plats
+                          </span>
+                        ) : null}
+                        {observation.reviewStatus !== 'reviewed' && observation.imageIds.length === 0 ? (
+                          <span className="hidden rounded bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600 lg:inline-flex">
+                            Ingen bild
+                          </span>
+                        ) : null}
+                        <span className="inline-flex items-center gap-2 text-[11px] text-gray-500">
                           {observation.imageIds.length > 0 ? (
                             <span className="inline-flex items-center gap-1">
-                              <ImageIcon size={11} aria-hidden /> {observation.imageIds.length}
+                              <ImageIcon size={12} aria-hidden /> {observation.imageIds.length}
                             </span>
                           ) : null}
                           {observation.measurements.length > 0 ? (
                             <span className="inline-flex items-center gap-1">
-                              <Ruler size={11} aria-hidden /> {observation.measurements.length}
+                              <Ruler size={12} aria-hidden /> {observation.measurements.length}
                             </span>
                           ) : null}
                         </span>
-                        {observation.reviewStatus !== 'reviewed' && (!observation.location || observation.imageIds.length === 0) ? (
-                          <span className="mt-1.5 flex flex-wrap gap-1">
-                            {!observation.location ? (
-                              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">Saknar plats</span>
-                            ) : null}
-                            {observation.imageIds.length === 0 ? (
-                              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">Ingen kopplad bild</span>
-                            ) : null}
-                          </span>
-                        ) : null}
                       </span>
-                      <ChevronRight size={15} className="mt-1 shrink-0 text-gray-400 group-hover:text-gray-700" aria-hidden />
+                      <ChevronRight size={16} className="hidden shrink-0 text-gray-400 transition group-hover:text-gray-700 md:block" aria-hidden />
                     </button>
                   )
                 })}
               </div>
             )}
-          </aside>
+          </div>
 
-          <div className="min-w-0 px-4 py-4 md:px-5">
-            {!form.id ? (
-              <div className="flex min-h-[500px] items-center justify-center">
-                <div className="max-w-md text-center">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-violet-50 text-violet-700">
-                    <ClipboardList size={22} aria-hidden />
-                  </div>
-                  <h3 className="mt-4 text-base font-semibold text-gray-950">Inget underlag att granska ännu</h3>
-                  <p className="mt-1 text-sm leading-6 text-gray-600">
-                    Lägg till en fältpost med samma formulär som används under Dokumentera på plats. När posten har bearbetats öppnas den här för granskning.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setFieldEntryDialogOpen(true)}
-                    disabled={locked}
-                    className="mt-4 inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-                  >
-                    <Plus size={16} aria-hidden />
-                    Lägg till fältpost
-                  </button>
-                </div>
-              </div>
-            ) : (
+          {observationPanelOpen && form.id ? (
             <>
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-4">
+              <div className="fixed inset-0 z-50 bg-gray-950/25" onClick={closeObservationPanel} />
+              <aside
+                className="fixed inset-0 z-[60] flex w-full flex-col bg-white shadow-2xl lg:inset-y-0 lg:left-auto lg:right-0 lg:max-w-4xl lg:border-l lg:border-gray-200"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="tu-observation-panel-title"
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 md:px-6">
+            <div className="sticky top-0 z-20 -mx-4 flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 bg-white px-4 py-4 md:-mx-6 md:px-6">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-violet-700">
-                  {form.id ? 'Vald observation' : 'Komplettera underlaget'}
+                  Observation {observations.findIndex((observation) => observation.id === form.id) + 1} av {observations.length}
                 </p>
-                <h3 className="mt-1 text-lg font-semibold text-gray-950">
-                  {form.id ? form.location || form.buildingComponent || 'Observation utan plats' : 'Ny observation'}
+                <h3 id="tu-observation-panel-title" className="mt-1 text-lg font-semibold text-gray-950">
+                  {form.location || form.buildingComponent || 'Observation utan plats'}
                 </h3>
               </div>
               <div className="flex items-center gap-2">
@@ -998,8 +1036,28 @@ export default function TuEvidenceWorkspace({
                     <Trash2 size={16} aria-hidden />
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  onClick={closeObservationPanel}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
+                  aria-label="Stäng observationen"
+                  title="Stäng"
+                >
+                  <X size={17} aria-hidden />
+                </button>
               </div>
             </div>
+
+            {error ? (
+              <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+                {error}
+              </div>
+            ) : null}
+            {savedMessage ? (
+              <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" aria-live="polite">
+                {savedMessage}
+              </div>
+            ) : null}
 
             <div className="mt-4">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">Faktauppgifter</p>
@@ -1396,7 +1454,7 @@ export default function TuEvidenceWorkspace({
               </label>
             </div>
 
-            <div className="sticky bottom-2 z-10 mt-5 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white/95 p-2 shadow-lg backdrop-blur">
+            <div className="sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 mt-5 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white/95 p-2 shadow-lg backdrop-blur">
               <span className="px-1 text-xs text-gray-600">
                 {!form.id
                   ? 'Den nya observationen sparas först som utkast.'
@@ -1430,10 +1488,10 @@ export default function TuEvidenceWorkspace({
                     type="button"
                     onClick={() => void saveObservation(true)}
                     disabled={locked || saving || transcribing || recording}
-                    className="inline-flex h-10 min-w-44 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    className="inline-flex min-h-10 min-w-44 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
                     {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
-                    Faktagranska och nästa
+                    Godkänn uppgifterna och öppna nästa
                   </button>
                 ) : formDirty ? (
                   <button
@@ -1462,9 +1520,10 @@ export default function TuEvidenceWorkspace({
                 )}
               </div>
             </div>
+                </div>
+              </aside>
             </>
-            )}
-          </div>
+          ) : null}
         </div>
       </section>
 
@@ -1567,7 +1626,7 @@ export default function TuEvidenceWorkspace({
                       <button
                         key={observationId}
                         type="button"
-                        onClick={() => observation && selectObservation(observation)}
+                        onClick={() => observation && openObservationPanel(observation)}
                         className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
                       >
                         {observation ? getObservationTitle(observation) : observationId.slice(0, 8)}
