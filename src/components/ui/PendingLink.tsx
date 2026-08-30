@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { LoaderCircle } from 'lucide-react'
-import type { ComponentProps, MouseEvent, ReactNode } from 'react'
+import { useState, type ComponentProps, type MouseEvent, type ReactNode } from 'react'
 
 type PendingLinkProps = Omit<ComponentProps<typeof Link>, 'children'> & {
   children: ReactNode
+  autoPending?: boolean
   disabled?: boolean
   icon?: ReactNode
   pending?: boolean
@@ -14,6 +15,7 @@ type PendingLinkProps = Omit<ComponentProps<typeof Link>, 'children'> & {
 }
 
 export default function PendingLink({
+  autoPending = false,
   children,
   className = '',
   disabled = false,
@@ -24,7 +26,9 @@ export default function PendingLink({
   pendingLabel,
   ...linkProps
 }: PendingLinkProps) {
-  const blocked = disabled || pending
+  const [navigationPending, setNavigationPending] = useState(false)
+  const isPending = pending || navigationPending
+  const blocked = disabled || isPending
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (blocked) {
@@ -32,6 +36,18 @@ export default function PendingLink({
       return
     }
     onClick?.(event)
+    if (
+      autoPending &&
+      !event.defaultPrevented &&
+      event.button === 0 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey &&
+      linkProps.target !== '_blank'
+    ) {
+      setNavigationPending(true)
+    }
   }
 
   return (
@@ -39,16 +55,15 @@ export default function PendingLink({
       {...linkProps}
       onClick={handleClick}
       aria-disabled={blocked || undefined}
-      aria-busy={pending || undefined}
+      aria-busy={isPending || undefined}
       className={`inline-flex items-center justify-center gap-2 transition duration-150 active:scale-[0.98] active:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current focus-visible:ring-offset-2 ${
         blocked ? 'pointer-events-none cursor-wait opacity-70 active:scale-100 active:brightness-100' : ''
       } ${className}`}
     >
-      {pending
+      {isPending
         ? pendingIcon ?? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
         : icon}
-      <span>{pending && pendingLabel !== undefined ? pendingLabel : children}</span>
+      <span>{isPending && pendingLabel !== undefined ? pendingLabel : children}</span>
     </Link>
   )
 }
-

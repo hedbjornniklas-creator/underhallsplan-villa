@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import PendingLink from '@/components/ui/PendingLink'
 import type {
   TuAssignmentListItem,
   TuInspectionSummary,
@@ -891,13 +892,15 @@ function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
         </div>
       </div>
       <div className="mt-auto pt-5">
-        <Link
+        <PendingLink
           href="/ob/settings"
+          autoPending
+          pendingLabel="Öppnar profil..."
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
           <Settings size={16} aria-hidden />
           Öppna profil
-        </Link>
+        </PendingLink>
       </div>
     </CardShell>
   )
@@ -917,16 +920,18 @@ function AssignmentMiniRow({
   if (assignment.inspection_id) {
     return (
       <li>
-        <Link
+        <PendingLink
           href={`/tu/investigations/${encodeURIComponent(assignment.inspection_id)}`}
-          className="block rounded-md border border-slate-200 bg-white px-2 py-1.5 transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+          autoPending
+          pendingLabel="Öppnar utredning..."
+          className="flex w-full justify-start rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
         >
           <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
           <span className="block truncate text-[11px] text-slate-600">{meta}</span>
           <span className="mt-0.5 block truncate text-[10px] font-medium text-violet-700">
             Öppna utredning · {address}
           </span>
-        </Link>
+        </PendingLink>
       </li>
     )
   }
@@ -951,14 +956,16 @@ function AssignmentMiniRow({
 
   return (
     <li>
-      <Link
+      <PendingLink
         href="/tu/assignments"
-        className="block rounded-md border border-slate-200 bg-white px-2 py-1.5 transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+        autoPending
+        pendingLabel="Öppnar uppdrag..."
+        className="flex w-full justify-start rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
       >
         <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
         <span className="block truncate text-[11px] text-slate-600">{meta}</span>
         <span className="mt-0.5 block truncate text-[10px] text-slate-500">{address}</span>
-      </Link>
+      </PendingLink>
     </li>
   )
 }
@@ -966,9 +973,11 @@ function AssignmentMiniRow({
 function InvestigationMiniRow({ investigation }: { investigation: TuInspectionSummary }) {
   return (
     <li>
-      <Link
+      <PendingLink
         href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`}
-        className="block rounded-md border border-slate-200 bg-white px-2 py-1.5 transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+        autoPending
+        pendingLabel="Öppnar utredning..."
+        className="flex w-full justify-start rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
       >
         <span className="block truncate text-xs font-medium text-slate-950">{investigation.title}</span>
         <span className="block truncate text-[11px] text-slate-600">
@@ -977,7 +986,7 @@ function InvestigationMiniRow({ investigation }: { investigation: TuInspectionSu
         <span className="mt-0.5 block truncate text-[10px] font-medium text-violet-700">
           Öppna utlåtande
         </span>
-      </Link>
+      </PendingLink>
     </li>
   )
 }
@@ -985,13 +994,15 @@ function InvestigationMiniRow({ investigation }: { investigation: TuInspectionSu
 function CardFooterLink({ href, label }: { href: string; label: string }) {
   return (
     <div className="mt-3">
-      <Link
+      <PendingLink
         href={href}
+        autoPending
+        pendingLabel="Öppnar..."
         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
       >
         {label}
         <ArrowRight size={15} aria-hidden />
-      </Link>
+      </PendingLink>
     </div>
   )
 }
