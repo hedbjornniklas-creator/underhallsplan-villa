@@ -13,9 +13,11 @@ import {
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
 
 export type AppToastTone = 'success' | 'error' | 'warning' | 'info'
+export type AppToastAppearance = 'default' | 'dark'
 
 export type AppToastOptions = {
   tone?: AppToastTone
+  appearance?: AppToastAppearance
   fallback?: string
   durationMs?: number | null
   dedupeKey?: string | null
@@ -28,6 +30,7 @@ type AppToast = {
   dedupeKey: string | null
   message: string
   tone: AppToastTone
+  appearance: AppToastAppearance
 }
 
 type AppToastContextValue = {
@@ -177,12 +180,15 @@ function AppToastProviderRoot({ children }: { children: ReactNode }) {
   const show = useCallback(
     (value: unknown, options: AppToastOptions = {}) => {
       const tone = options.tone ?? 'info'
+      const appearance = options.appearance ?? 'default'
       const message = messageFrom(value, options.fallback ?? DEFAULT_MESSAGE[tone])
       const dedupeKey =
-        options.dedupeKey === null ? null : (options.dedupeKey?.trim() || `${tone}:${message}`)
+        options.dedupeKey === null
+          ? null
+          : (options.dedupeKey?.trim() || `${appearance}:${tone}:${message}`)
       const existingId = dedupeKey ? idsByDedupeKeyRef.current.get(dedupeKey) : undefined
       const id = existingId ?? toastId()
-      const toast: AppToast = { id, dedupeKey, message, tone }
+      const toast: AppToast = { id, dedupeKey, message, tone, appearance }
 
       if (existingId) {
         const timer = timersRef.current.get(existingId)
@@ -285,15 +291,20 @@ function AppToastProviderRoot({ children }: { children: ReactNode }) {
           {toasts.map((toast) => {
             const style = TONE_STYLES[toast.tone]
             const assertive = toast.tone === 'error' || toast.tone === 'warning'
+            const dark = toast.appearance === 'dark'
 
             return (
               <div
                 key={toast.id}
                 role={assertive ? 'alert' : 'status'}
-                className={`pointer-events-auto animate-in slide-in-from-top-2 fade-in rounded-xl border border-slate-200 border-l-4 ${style.border} bg-white px-3 py-3 text-sm text-slate-800 shadow-2xl shadow-slate-950/15`}
+                className={`pointer-events-auto animate-in slide-in-from-top-2 fade-in border px-3 text-sm shadow-2xl ${
+                  dark
+                    ? 'rounded-md border-slate-950 bg-slate-950 py-2 text-white shadow-slate-950/25'
+                    : `rounded-xl border-slate-200 border-l-4 ${style.border} bg-white py-3 text-slate-800 shadow-slate-950/15`
+                }`}
               >
                 <div className="flex items-start gap-3">
-                  <span className={`mt-0.5 shrink-0 ${style.icon}`}>
+                  <span className={`mt-0.5 shrink-0 ${dark ? 'text-white/85' : style.icon}`}>
                     <ToastIcon tone={toast.tone} />
                   </span>
                   <p className="min-w-0 flex-1 break-words font-medium leading-5">
@@ -303,7 +314,11 @@ function AppToastProviderRoot({ children }: { children: ReactNode }) {
                   <button
                     type="button"
                     onClick={() => dismiss(toast.id)}
-                    className="-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                    className={`-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+                      dark
+                        ? 'text-white/75 hover:bg-white/10 hover:text-white focus-visible:ring-white focus-visible:ring-offset-slate-950'
+                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-slate-500'
+                    }`}
                     aria-label={`Stäng ${style.label.toLocaleLowerCase('sv-SE')}`}
                     title="Stäng"
                   >

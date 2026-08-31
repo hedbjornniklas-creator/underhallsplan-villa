@@ -21,6 +21,8 @@ import {
   X,
 } from 'lucide-react'
 import TuFieldEntryComposer from '@/components/tu/TuFieldEntryComposer'
+import { useToast } from '@/components/ui/AppToastProvider'
+import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
 import type {
   TuEvidenceAiSuggestion,
@@ -73,6 +75,15 @@ type MeasurementForm = {
 }
 
 type ObservationFilter = 'needs_review' | 'reviewed' | 'all'
+
+type ObservationSaveJob = {
+  observationId: string
+  fingerprint: string
+  form: ObservationForm
+}
+
+type ObservationSaveBatch = Record<string, ObservationSaveJob>
+type ObservationSaveBatchResult = Record<string, TuObservation>
 
 type Props = {
   inspectionId: string
@@ -188,6 +199,138 @@ function getObservationPreview(observation: TuObservation) {
   return observation.noteText || observation.transcriptText || 'Endast bilddokumentation'
 }
 
+function observationFormFingerprint(form: ObservationForm) {
+  return JSON.stringify(form)
+}
+
+function observationSaveStorageKey(inspectionId: string) {
+  return `tu-observation-saves:${inspectionId}`
+}
+
+function readStoredObservationSaveJobs(inspectionId: string): ObservationSaveBatch {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(observationSaveStorageKey(inspectionId))
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const jobs: ObservationSaveBatch = {}
+    for (const value of Object.values(parsed)) {
+      const job = value as Partial<ObservationSaveJob>
+      if (
+        typeof job.observationId === 'string'
+        && typeof job.fingerprint === 'string'
+        && job.form
+        && job.form.id === job.observationId
+        && typeof job.form.noteText === 'string'
+        && typeof job.form.transcriptText === 'string'
+        && Array.isArray(job.form.imageIds)
+      ) {
+        jobs[job.observationId] = job as ObservationSaveJob
+      }
+    }
+    return jobs
+  } catch {
+    return {}
+  }
+}
+
+function persistObservationSaveJob(inspectionId: string, job: ObservationSaveJob) {
+  if (typeof window === 'undefined') return
+  try {
+    const jobs = readStoredObservationSaveJobs(inspectionId)
+    jobs[job.observationId] = job
+    window.localStorage.setItem(observationSaveStorageKey(inspectionId), JSON.stringify(jobs))
+  } catch {
+    // Best-effort recovery storage; the live autosave request still proceeds.
+  }
+}
+
+function removeStoredObservationSaveJob(
+  inspectionId: string,
+  observationId: string,
+  fingerprint?: string
+) {
+  if (typeof window === 'undefined') return
+  try {
+    const jobs = readStoredObservationSaveJobs(inspectionId)
+    const current = jobs[observationId]
+    if (!current || (fingerprint && current.fingerprint !== fingerprint)) return
+    delete jobs[observationId]
+    if (Object.keys(jobs).length === 0) {
+      window.localStorage.removeItem(observationSaveStorageKey(inspectionId))
+    } else {
+      window.localStorage.setItem(observationSaveStorageKey(inspectionId), JSON.stringify(jobs))
+    }
+  } catch {
+    // Best-effort cleanup.
+  }
+}
+
+function observationRequestBody(form: ObservationForm) {
+  return {
+    observationId: form.id,
+    location: form.location,
+    buildingComponent: form.buildingComponent,
+    noteText: form.noteText,
+    transcriptText: form.transcriptText,
+    riskNote: form.riskNote,
+    suggestedFollowUp: form.suggestedFollowUp,
+    certainty: form.certainty,
+    reviewStatus: form.reviewStatus,
+    targetSectionId: form.targetSectionId,
+    includeInReport: form.includeInReport,
+    imageIds: form.imageIds,
+    audioStorageBucket: form.audioStorageBucket,
+    audioStoragePath: form.audioStoragePath,
+    audioContentType: form.audioContentType,
+    audioDurationSeconds: form.audioDurationSeconds,
+  }
+}
+
+function applyObservationForm(observation: TuObservation, form: ObservationForm): TuObservation {
+  const noteText = form.noteText
+  const transcriptText = form.transcriptText.trim() || null
+  return {
+    ...observation,
+    sourceType: transcriptText && noteText.trim() ? 'mixed' : transcriptText ? 'voice' : 'typed',
+    location: form.location.trim() || null,
+    buildingComponent: form.buildingComponent.trim() || null,
+    noteText,
+    transcriptText,
+    riskNote: form.riskNote.trim() || null,
+    suggestedFollowUp: form.suggestedFollowUp.trim() || null,
+    certainty: form.certainty,
+    reviewStatus: form.reviewStatus,
+    targetSectionId: form.targetSectionId || null,
+    includeInReport: form.includeInReport,
+    imageIds: [...form.imageIds],
+    audioStorageBucket: form.audioStorageBucket || null,
+    audioStoragePath: form.audioStoragePath || null,
+    audioContentType: form.audioContentType || null,
+    audioDurationSeconds: form.audioDurationSeconds,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function overlayPendingObservationSaves(
+  inspectionId: string,
+  observations: TuObservation[]
+) {
+  const jobs = readStoredObservationSaveJobs(inspectionId)
+  return observations.map((observation) => {
+    const job = jobs[observation.id]
+    return job ? applyObservationForm(observation, job.form) : observation
+  })
+}
+
+function preferNewestObservation(
+  loaded: TuObservation,
+  known: TuObservation | undefined
+) {
+  if (!known) return loaded
+  return known.updatedAt.localeCompare(loaded.updatedAt) > 0 ? known : loaded
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json().catch(() => ({}))) as T
 }
@@ -208,6 +351,7 @@ export default function TuEvidenceWorkspace({
   onOpenAnalysis,
   enableSectionAi = false,
 }: Props) {
+  const { success: showSuccessToast } = useToast()
   const editableSections = useMemo(
     () => sections.filter((section) => !['assignment_parties', 'signature'].includes(section.key)),
     [sections]
@@ -234,7 +378,184 @@ export default function TuEvidenceWorkspace({
   const [measurementEditorOpen, setMeasurementEditorOpen] = useState(false)
   const [fieldEntryDialogOpen, setFieldEntryDialogOpen] = useState(false)
   const [observationPanelOpen, setObservationPanelOpen] = useState(false)
+  const [pendingObservationSaveIds, setPendingObservationSaveIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const [failedObservationSaveIds, setFailedObservationSaveIds] = useState<Set<string>>(
+    () => new Set()
+  )
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const formRef = useRef(form)
+  const serverObservationsRef = useRef(new Map<string, TuObservation>())
+  const observationSavePromisesRef = useRef(
+    new Map<string, { fingerprint: string; promise: Promise<TuObservation> }>()
+  )
+
+  formRef.current = form
+
+  const saveObservationBatch = useCallback(
+    async (batch: ObservationSaveBatch): Promise<ObservationSaveBatchResult> => {
+      const result: ObservationSaveBatchResult = {}
+
+      for (const job of Object.values(batch)) {
+        const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(observationRequestBody(job.form)),
+        })
+        const payload = await readJson<TuEvidenceResponse>(response)
+        if (!response.ok || !payload.observation) {
+          throw new Error(payload.error ?? 'Kunde inte spara fältposten.')
+        }
+
+        const savedObservation = payload.observation
+        serverObservationsRef.current.set(savedObservation.id, savedObservation)
+        removeStoredObservationSaveJob(inspectionId, job.observationId, job.fingerprint)
+        const newerStoredJob = readStoredObservationSaveJobs(inspectionId)[job.observationId]
+        result[job.observationId] = savedObservation
+        if (!newerStoredJob) {
+          setPendingObservationSaveIds((current) => {
+            const next = new Set(current)
+            next.delete(job.observationId)
+            return next
+          })
+        }
+        setFailedObservationSaveIds((current) => {
+          if (!current.has(job.observationId)) return current
+          const next = new Set(current)
+          next.delete(job.observationId)
+          return next
+        })
+        if (!newerStoredJob) {
+          setObservations((current) =>
+            current.map((observation) =>
+              observation.id === savedObservation.id ? savedObservation : observation
+            )
+          )
+        }
+        if (
+          formRef.current.id === job.observationId
+          && observationFormFingerprint(formRef.current) === job.fingerprint
+        ) {
+          setForm(toObservationForm(savedObservation))
+        }
+      }
+
+      return result
+    },
+    [inspectionId]
+  )
+
+  const observationAutosave = useAutosaveQueue<ObservationSaveBatch, ObservationSaveBatchResult>({
+    save: saveObservationBatch,
+    mergePayload: (previous, next) => ({ ...previous, ...next }),
+    onError: (saveError, failedBatch) => {
+      const storedJobs = readStoredObservationSaveJobs(inspectionId)
+      const failedIds = new Set(
+        Object.values(failedBatch)
+          .filter((job) => storedJobs[job.observationId]?.fingerprint === job.fingerprint)
+          .map((job) => job.observationId)
+      )
+      if (failedIds.size === 0) return
+
+      setPendingObservationSaveIds((current) => {
+        const next = new Set(current)
+        for (const observationId of failedIds) next.delete(observationId)
+        return next
+      })
+      setFailedObservationSaveIds((current) => new Set([...current, ...failedIds]))
+      setObservations((current) =>
+        current.map((observation) => {
+          const failedJob = failedBatch[observation.id]
+          return failedIds.has(observation.id)
+            && failedJob?.form.reviewStatus === 'reviewed'
+            && observation.reviewStatus === 'reviewed'
+            ? { ...observation, reviewStatus: 'draft' }
+            : observation
+        })
+      )
+      setForm((current) =>
+        current.id
+        && failedIds.has(current.id)
+        && current.reviewStatus === 'reviewed'
+          ? { ...current, reviewStatus: 'draft' }
+          : current
+      )
+      setSavedMessage(null)
+      setError(
+        saveError instanceof Error
+          ? `${saveError.message} Den köade sparningen finns kvar och kan försökas igen.`
+          : 'Kunde inte spara i bakgrunden. Den köade sparningen finns kvar och kan försökas igen.'
+      )
+    },
+  })
+  const {
+    enqueue: enqueueObservationSave,
+    resetError: resetObservationAutosaveError,
+  } = observationAutosave
+
+  const queueObservationSnapshot = useCallback(
+    (snapshot: ObservationForm): Promise<TuObservation> => {
+      const observationId = snapshot.id
+      if (!observationId) return Promise.reject(new Error('Fältpostens id saknas.'))
+      if (locked) return Promise.reject(new Error('Utlåtandet är låst och kan inte ändras.'))
+
+      const fingerprint = observationFormFingerprint(snapshot)
+      const pending = observationSavePromisesRef.current.get(observationId)
+      if (pending?.fingerprint === fingerprint) return pending.promise
+
+      const savedObservation = serverObservationsRef.current.get(observationId)
+      if (
+        savedObservation
+        && observationFormFingerprint(toObservationForm(savedObservation)) === fingerprint
+      ) {
+        return Promise.resolve(savedObservation)
+      }
+
+      const job: ObservationSaveJob = {
+        observationId,
+        fingerprint,
+        form: { ...snapshot, imageIds: [...snapshot.imageIds] },
+      }
+      persistObservationSaveJob(inspectionId, job)
+      setPendingObservationSaveIds((current) => new Set(current).add(observationId))
+      setFailedObservationSaveIds((current) => {
+        if (!current.has(observationId)) return current
+        const next = new Set(current)
+        next.delete(observationId)
+        return next
+      })
+
+      const promise = enqueueObservationSave({ [observationId]: job }).then((savedBatch) => {
+        const observation = savedBatch?.[observationId]
+          ?? serverObservationsRef.current.get(observationId)
+        if (!observation) throw new Error('Servern returnerade ingen sparad fältpost.')
+        return observation
+      })
+      observationSavePromisesRef.current.set(observationId, { fingerprint, promise })
+      void promise.finally(() => {
+        if (observationSavePromisesRef.current.get(observationId)?.promise === promise) {
+          observationSavePromisesRef.current.delete(observationId)
+        }
+      }).catch(() => undefined)
+      return promise
+    },
+    [enqueueObservationSave, inspectionId, locked]
+  )
+
+  const retryStoredObservationSaves = useCallback(() => {
+    if (locked) return
+    const jobs = readStoredObservationSaveJobs(inspectionId)
+    const values = Object.values(jobs)
+    if (values.length === 0) return
+    setPendingObservationSaveIds((current) =>
+      new Set([...current, ...values.map((job) => job.observationId)])
+    )
+    setFailedObservationSaveIds(new Set())
+    setError(null)
+    resetObservationAutosaveError()
+    void enqueueObservationSave(jobs).catch(() => undefined)
+  }, [enqueueObservationSave, inspectionId, locked, resetObservationAutosaveError])
 
   const loadObservations = useCallback(async (preferredId?: string | null) => {
     setLoading(true)
@@ -243,7 +564,13 @@ export default function TuEvidenceWorkspace({
       const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`)
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta besiktningsunderlaget.')
-      const next = payload.observations ?? []
+      const serverObservations = (payload.observations ?? []).map((observation) =>
+        preferNewestObservation(observation, serverObservationsRef.current.get(observation.id))
+      )
+      serverObservationsRef.current = new Map(
+        serverObservations.map((observation) => [observation.id, observation])
+      )
+      const next = overlayPendingObservationSaves(inspectionId, serverObservations)
       setObservations(next)
       const selectedId = preferredId === undefined ? form.id : preferredId
       const selected =
@@ -265,7 +592,13 @@ export default function TuEvidenceWorkspace({
       const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`)
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte uppdatera besiktningsunderlaget.')
-      const next = payload.observations ?? []
+      const serverObservations = (payload.observations ?? []).map((observation) =>
+        preferNewestObservation(observation, serverObservationsRef.current.get(observation.id))
+      )
+      serverObservationsRef.current = new Map(
+        serverObservations.map((observation) => [observation.id, observation])
+      )
+      const next = overlayPendingObservationSaves(inspectionId, serverObservations)
       setObservations(next)
       setForm((current) => {
         if (current.id) return current
@@ -294,6 +627,15 @@ export default function TuEvidenceWorkspace({
     if (refreshToken <= 0) return
     void refreshObservationList()
   }, [refreshObservationList, refreshToken])
+
+  useEffect(() => {
+    if (locked) return
+    const jobs = readStoredObservationSaveJobs(inspectionId)
+    const values = Object.values(jobs)
+    if (values.length === 0) return
+    setPendingObservationSaveIds(new Set(values.map((job) => job.observationId)))
+    void enqueueObservationSave(jobs).catch(() => undefined)
+  }, [enqueueObservationSave, inspectionId, locked])
 
   useEffect(() => {
     if (!fieldEntryDialogOpen && !observationPanelOpen) return
@@ -333,6 +675,10 @@ export default function TuEvidenceWorkspace({
   const selectedObservation = form.id
     ? observations.find((observation) => observation.id === form.id) ?? null
     : null
+  const selectedObservationSaveUnresolved = Boolean(
+    form.id
+    && (pendingObservationSaveIds.has(form.id) || failedObservationSaveIds.has(form.id))
+  )
   const reviewedCount = observations.filter((observation) => observation.reviewStatus === 'reviewed').length
   const linkedImages = images.filter((image) => form.imageIds.includes(image.id))
   const sourceHasLocation = Boolean(selectedObservation?.location?.trim())
@@ -429,7 +775,7 @@ export default function TuEvidenceWorkspace({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [closeObservationPanel, observationPanelOpen])
 
-  const saveObservation = async (reviewAndNext = false) => {
+  const saveObservation = async () => {
     if (locked || saving) return false
     if (!form.noteText.trim() && !form.transcriptText.trim() && form.imageIds.length === 0) {
       setError('Lägg in en anteckning, en röstinmatning eller minst en bild.')
@@ -440,49 +786,23 @@ export default function TuEvidenceWorkspace({
     setError(null)
     setSavedMessage(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`, {
-        method: form.id ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          observationId: form.id,
-          location: form.location,
-          buildingComponent: form.buildingComponent,
-          noteText: form.noteText,
-          transcriptText: form.transcriptText,
-          riskNote: form.riskNote,
-          suggestedFollowUp: form.suggestedFollowUp,
-          certainty: form.certainty,
-          reviewStatus: reviewAndNext ? 'reviewed' : form.reviewStatus,
-          targetSectionId: form.targetSectionId,
-          includeInReport: form.includeInReport,
-          imageIds: form.imageIds,
-          audioStorageBucket: form.audioStorageBucket,
-          audioStoragePath: form.audioStoragePath,
-          audioContentType: form.audioContentType,
-          audioDurationSeconds: form.audioDurationSeconds,
-        }),
-      })
-      const payload = await readJson<TuEvidenceResponse>(response)
-      if (!response.ok || !payload.observation) {
-        throw new Error(payload.error ?? 'Kunde inte spara fältposten.')
-      }
-      const next = await loadObservations(reviewAndNext ? null : payload.observation.id)
-      if (reviewAndNext) {
-        setImagePickerOpen(false)
-        setSupplementOpen(false)
-        setMeasurementEditorOpen(false)
-        const remaining = next?.filter((observation) => observation.reviewStatus !== 'reviewed') ?? []
-        if (remaining.length === 0) {
-          setObservationFilter('all')
-          setObservationPanelOpen(false)
-        }
-        setSavedMessage(
-          remaining.length > 0
-            ? 'Källmaterialet är kontrollerat. Nästa fältpost har öppnats.'
-            : 'Alla fältposter är kontrollerade.'
-        )
+      if (form.id) {
+        await queueObservationSnapshot(form)
+        setSavedMessage('Ändringarna är sparade.')
       } else {
-        setSavedMessage(form.id ? 'Ändringarna är sparade.' : 'Fältposten är sparad som utkast.')
+        const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(observationRequestBody(form)),
+        })
+        const payload = await readJson<TuEvidenceResponse>(response)
+        if (!response.ok || !payload.observation) {
+          throw new Error(payload.error ?? 'Kunde inte spara fältposten.')
+        }
+        serverObservationsRef.current.set(payload.observation.id, payload.observation)
+        setObservations((current) => [...current, payload.observation as TuObservation])
+        setForm(toObservationForm(payload.observation))
+        setSavedMessage('Fältposten är sparad som utkast.')
       }
       return true
     } catch (saveError) {
@@ -493,8 +813,73 @@ export default function TuEvidenceWorkspace({
     }
   }
 
+  const approveObservationAndOpenNext = () => {
+    if (locked || saving || !form.id) return
+    if (!form.noteText.trim() && !form.transcriptText.trim() && form.imageIds.length === 0) {
+      setError('Lägg in en anteckning, en röstinmatning eller minst en bild.')
+      return
+    }
+
+    const currentObservation = observations.find((observation) => observation.id === form.id)
+    if (!currentObservation) {
+      setError('Fältposten kunde inte hittas i underlaget.')
+      return
+    }
+
+    const snapshot: ObservationForm = {
+      ...form,
+      imageIds: [...form.imageIds],
+      reviewStatus: 'reviewed',
+    }
+    const nextObservation = observations.find(
+      (observation) => observation.id !== snapshot.id && observation.reviewStatus !== 'reviewed'
+    ) ?? null
+
+    setError(null)
+    setSuggestion(null)
+    setImagePickerOpen(false)
+    setSupplementOpen(false)
+    setMeasurementEditorOpen(false)
+    setObservations((current) =>
+      current.map((observation) =>
+        observation.id === currentObservation.id
+          ? applyObservationForm(observation, snapshot)
+          : observation
+      )
+    )
+
+    if (nextObservation) {
+      setForm(toObservationForm(nextObservation))
+      setSavedMessage(null)
+      showSuccessToast('Källmaterialet är godkänt. Nästa fältpost har öppnats.', {
+        appearance: 'dark',
+        dedupeKey: 'tu-observation-review-next',
+        durationMs: 3000,
+      })
+    } else {
+      setForm(snapshot)
+      setObservationFilter('all')
+      setObservationPanelOpen(false)
+      setSavedMessage(null)
+      showSuccessToast('Alla fältposter är kontrollerade.', {
+        appearance: 'dark',
+        dedupeKey: 'tu-observation-review-next',
+        durationMs: 3000,
+      })
+    }
+
+    void queueObservationSnapshot(snapshot).catch(() => undefined)
+  }
+
   const deleteObservation = async () => {
     if (locked || saving || !form.id) return
+    if (
+      pendingObservationSaveIds.has(form.id)
+      || failedObservationSaveIds.has(form.id)
+    ) {
+      setError('Slutför den köade sparningen innan fältposten tas bort.')
+      return
+    }
     if (!window.confirm('Ta bort fältposten och dess mätvärden?')) return
     setSaving(true)
     setError(null)
@@ -681,7 +1066,27 @@ export default function TuEvidenceWorkspace({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {pendingObservationSaveIds.size > 0 ? (
+              <span
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-50 px-3 text-xs font-semibold text-violet-800"
+                aria-live="polite"
+              >
+                <Loader2 size={14} className="animate-spin" aria-hidden />
+                Sparar i bakgrunden
+                {pendingObservationSaveIds.size > 1 ? ` (${pendingObservationSaveIds.size})` : ''}
+              </span>
+            ) : failedObservationSaveIds.size > 0 ? (
+              <span className="inline-flex h-9 items-center gap-2 rounded-md bg-rose-50 px-3 text-xs font-semibold text-rose-800">
+                <AlertTriangle size={14} aria-hidden />
+                Sparning misslyckades
+              </span>
+            ) : observationAutosave.status === 'saved' ? (
+              <span className="hidden h-9 items-center gap-2 rounded-md bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 sm:inline-flex">
+                <CheckCircle2 size={14} aria-hidden />
+                Alla ändringar sparade
+              </span>
+            ) : null}
             <div className="hidden w-40 sm:block" aria-label={`${reviewedCount} av ${observations.length} kontrollerade`}>
               <div className="h-1.5 overflow-hidden rounded-full bg-gray-200">
                 <div
@@ -716,8 +1121,19 @@ export default function TuEvidenceWorkspace({
         </div>
 
         {error ? (
-          <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
-            {error}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
+            <span>{error}</span>
+            {failedObservationSaveIds.size > 0 ? (
+              <button
+                type="button"
+                onClick={retryStoredObservationSaves}
+                disabled={locked || pendingObservationSaveIds.size > 0}
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-rose-300 bg-white px-3 text-xs font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Upload size={13} aria-hidden />
+                Försök igen
+              </button>
+            ) : null}
           </div>
         ) : null}
         {savedMessage ? (
@@ -908,7 +1324,7 @@ export default function TuEvidenceWorkspace({
                   <button
                     type="button"
                     onClick={() => void deleteObservation()}
-                    disabled={locked || saving}
+                    disabled={locked || saving || selectedObservationSaveUnresolved}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-gray-300"
                     aria-label="Ta bort fältpost"
                     title="Ta bort fältpost"
@@ -929,8 +1345,19 @@ export default function TuEvidenceWorkspace({
             </div>
 
             {error ? (
-              <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
-                {error}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+                <span>{error}</span>
+                {failedObservationSaveIds.size > 0 ? (
+                  <button
+                    type="button"
+                    onClick={retryStoredObservationSaves}
+                    disabled={locked || pendingObservationSaveIds.size > 0}
+                    className="inline-flex h-8 items-center gap-2 rounded-md border border-rose-300 bg-white px-3 text-xs font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Upload size={13} aria-hidden />
+                    Försök igen
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {savedMessage ? (
@@ -1408,7 +1835,7 @@ export default function TuEvidenceWorkspace({
                 {form.id && form.reviewStatus !== 'reviewed' ? (
                   <button
                     type="button"
-                    onClick={() => void saveObservation(false)}
+                    onClick={() => void saveObservation()}
                     disabled={locked || saving}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
                   >
@@ -1418,7 +1845,7 @@ export default function TuEvidenceWorkspace({
                 {!form.id ? (
                   <button
                     type="button"
-                    onClick={() => void saveObservation(false)}
+                    onClick={() => void saveObservation()}
                     disabled={locked || saving}
                     className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
@@ -1428,17 +1855,17 @@ export default function TuEvidenceWorkspace({
                 ) : form.reviewStatus !== 'reviewed' ? (
                   <button
                     type="button"
-                    onClick={() => void saveObservation(true)}
+                    onClick={approveObservationAndOpenNext}
                     disabled={locked || saving}
                     className="inline-flex min-h-10 min-w-44 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
-                    {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
+                    <Check size={16} aria-hidden />
                     Godkänn underlaget och öppna nästa
                   </button>
                 ) : formDirty ? (
                   <button
                     type="button"
-                    onClick={() => void saveObservation(false)}
+                    onClick={() => void saveObservation()}
                     disabled={locked || saving}
                     className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
