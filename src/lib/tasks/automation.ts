@@ -17,7 +17,11 @@ import {
 } from '@/lib/tasks/domain'
 import type { TaskStatus } from '@/lib/tasks/contracts'
 import { formatTaskDateTime } from '@/lib/tasks/dateTime'
-import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
+import {
+  buildTaskEmailHtml,
+  buildTaskReminderDigestEmailHtml,
+  type TaskReminderDigestEmailItem,
+} from '@/lib/tasks/emailTemplates'
 import { hasInternalTaskModuleAccess } from '@/lib/tasks/internalAccess'
 import { taskActorDisplayName } from '@/lib/tasks/branding'
 import { issueDirectTaskAccessLink } from '@/lib/tasks/recipientAuth'
@@ -28,6 +32,21 @@ type TaskNotificationProvider = 'resend' | 'meta_whatsapp' | 'hushub'
 type TaskNotificationTarget = 'creator' | 'assignee'
 type TaskNotificationRecipientKind = 'profile' | 'contact'
 type TaskNotificationJobPhase = 'deliver' | 'reconcile'
+
+type TaskReminderDigestBatchStatus =
+  | 'queued'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'ambiguous'
+  | 'cancelled'
+  | 'dead_letter'
+
+type TaskReminderDigestItemStatus =
+  | 'pending'
+  | 'processing'
+  | 'sent'
+  | 'cancelled'
 
 type AutomationJob = {
   id: string
@@ -40,6 +59,36 @@ type AutomationJob = {
   max_attempts: number
   available_at: string
   payload: Record<string, unknown>
+}
+
+type TaskReminderDigestBatch = {
+  id: string
+  org_id: string
+  recipient_kind: TaskNotificationRecipientKind
+  recipient_id: string
+  recipient_address: string
+  channel: 'email'
+  status: TaskReminderDigestBatchStatus
+  scheduled_at: string
+  attempt_count: number
+  max_attempts: number
+  idempotency_key: string
+  provider_payload: Record<string, unknown>
+}
+
+type TaskReminderDigestItem = {
+  id: string
+  batch_id: string
+  org_id: string
+  task_id: string
+  task_version: number
+  target: TaskNotificationTarget
+  action_kind: TaskReminderAction['kind']
+  reason: TaskReminderAction['reason']
+  policy_action_idempotency_key: string
+  body_text: string
+  status: TaskReminderDigestItemStatus
+  created_at: string
 }
 
 type OperationalTask = {
@@ -63,6 +112,11 @@ type OperationalTask = {
   created_at: string
   version: number
   archived_at: string | null
+}
+
+type DigestOperationalTask = OperationalTask & {
+  parent_task_id: string | null
+  depth: number
 }
 
 type ExternallyRoutableOperationalTask = OperationalTask & {
@@ -157,6 +211,34 @@ const TASK_NOTIFICATION_EVENT_TYPES = [
   'status_changed',
 ] as const
 
+const TASK_REMINDER_DIGEST_ACTION_KINDS: readonly TaskReminderAction['kind'][] = [
+  'status_check',
+  'due_soon',
+  'due_today',
+  'overdue',
+  'review_follow_up',
+  'review_overdue',
+  'deadline_change_request',
+  'escalation',
+]
+
+const TASK_REMINDER_REASONS: readonly TaskReminderAction['reason'][] = [
+  'initial_assignment',
+  'primary_delivery_failed',
+  'no_activity',
+  'next_follow_up_due',
+  'deadline_approaching',
+  'deadline_today',
+  'deadline_overdue',
+  'review_due',
+  'review_overdue',
+  'deadline_change_requested',
+  'unanswered_attempts',
+  'external_follow_up_paused',
+  'delivery_failed_without_fallback',
+  'assignee_unavailable',
+]
+
 type TaskNotificationEventType = (typeof TASK_NOTIFICATION_EVENT_TYPES)[number]
 
 type TaskNotificationEvent = {
@@ -229,6 +311,15 @@ export type TaskAutomationBatchResult = {
   failed: number
 }
 
+export type TaskReminderDigestBatchResult = {
+  claimed: number
+  sent: number
+  cancelled: number
+  ambiguous: number
+  failed: number
+  deadLetter: number
+}
+
 class TaskAutomationError extends Error {
   readonly code: string
 
@@ -255,6 +346,8 @@ const SUCCESSFUL_DELIVERY_STATUSES = new Set<StoredDelivery['status']>([
 ])
 const DEFAULT_BATCH_LIMIT = 4
 const MAX_BATCH_LIMIT = 4
+const DEFAULT_DIGEST_BATCH_LIMIT = 1
+const MAX_DIGEST_BATCH_LIMIT = 4
 const DEFAULT_RECHECK_MINUTES = 60
 const MIN_RECHECK_MINUTES = 15
 const MAX_RECHECK_MINUTES = 24 * 60
@@ -328,6 +421,26 @@ function isPersistedTaskCommunicationChannel(
   value: unknown
 ): value is PersistedTaskCommunicationChannel {
   return isCommunicationChannel(value) || value === 'in_app'
+}
+
+function isTaskReminderActionKind(value: unknown): value is TaskReminderAction['kind'] {
+  return [
+    'assignment',
+    'delivery_fallback',
+    ...TASK_REMINDER_DIGEST_ACTION_KINDS,
+  ].includes(value as TaskReminderAction['kind'])
+}
+
+function isTaskReminderReason(value: unknown): value is TaskReminderAction['reason'] {
+  return TASK_REMINDER_REASONS.includes(value as TaskReminderAction['reason'])
+}
+
+function isDigestibleEmailReminder(action: TaskReminderAction, channel: TaskCommunicationChannel) {
+  return channel === 'email'
+    && TASK_REMINDER_DIGEST_ACTION_KINDS.includes(action.kind)
+    && action.reason !== 'delivery_failed_without_fallback'
+    && action.reason !== 'assignee_unavailable'
+    && action.reason !== 'external_follow_up_paused'
 }
 
 function hasExternalTaskChannels(
@@ -472,6 +585,86 @@ function parseAutomationJob(value: unknown): AutomationJob | null {
   }
 }
 
+function parseTaskReminderDigestBatch(value: unknown): TaskReminderDigestBatch | null {
+  const row = toObject(value)
+  const status = optionalString(row.status)
+  const recipientKind = optionalString(row.recipient_kind)
+  const recipientId = recipientKind === 'profile'
+    ? optionalString(row.recipient_profile_id)
+    : recipientKind === 'contact'
+      ? optionalString(row.recipient_contact_id)
+      : null
+  if (
+    typeof row.id !== 'string'
+    || typeof row.org_id !== 'string'
+    || (recipientKind !== 'profile' && recipientKind !== 'contact')
+    || !recipientId
+    || typeof row.recipient_address !== 'string'
+    || row.channel !== 'email'
+    || !status
+    || ![
+      'queued',
+      'processing',
+      'sent',
+      'failed',
+      'ambiguous',
+      'cancelled',
+      'dead_letter',
+    ].includes(status)
+    || typeof row.scheduled_at !== 'string'
+    || typeof row.idempotency_key !== 'string'
+  ) return null
+  return {
+    id: row.id,
+    org_id: row.org_id,
+    recipient_kind: recipientKind,
+    recipient_id: recipientId,
+    recipient_address: row.recipient_address.trim().toLowerCase(),
+    channel: 'email',
+    status: status as TaskReminderDigestBatchStatus,
+    scheduled_at: row.scheduled_at,
+    attempt_count: normalizeInteger(row.attempt_count, 1, 0, 20),
+    max_attempts: normalizeInteger(row.max_attempts, 5, 1, 20),
+    idempotency_key: row.idempotency_key,
+    provider_payload: toObject(row.provider_payload),
+  }
+}
+
+function parseTaskReminderDigestItem(value: unknown): TaskReminderDigestItem | null {
+  const row = toObject(value)
+  const target = optionalString(row.target)
+  const status = optionalString(row.status)
+  if (
+    typeof row.id !== 'string'
+    || typeof row.batch_id !== 'string'
+    || typeof row.org_id !== 'string'
+    || typeof row.task_id !== 'string'
+    || !Number.isInteger(Number(row.task_version))
+    || (target !== 'creator' && target !== 'assignee')
+    || !isTaskReminderActionKind(row.action_kind)
+    || !isTaskReminderReason(row.reason)
+    || typeof row.policy_action_idempotency_key !== 'string'
+    || typeof row.body_text !== 'string'
+    || !status
+    || !['pending', 'processing', 'sent', 'cancelled'].includes(status)
+    || typeof row.created_at !== 'string'
+  ) return null
+  return {
+    id: row.id,
+    batch_id: row.batch_id,
+    org_id: row.org_id,
+    task_id: row.task_id,
+    task_version: Number(row.task_version),
+    target,
+    action_kind: row.action_kind,
+    reason: row.reason,
+    policy_action_idempotency_key: row.policy_action_idempotency_key,
+    body_text: row.body_text,
+    status: status as TaskReminderDigestItemStatus,
+    created_at: row.created_at,
+  }
+}
+
 function expectedTaskVersion(job: AutomationJob) {
   const version = Number(job.payload.taskVersion)
   return Number.isInteger(version) && version > 0 ? version : null
@@ -545,6 +738,18 @@ function parseOperationalTask(value: unknown): OperationalTask | null {
     created_at: row.created_at,
     version,
     archived_at: typeof row.archived_at === 'string' ? row.archived_at : null,
+  }
+}
+
+function parseDigestOperationalTask(value: unknown): DigestOperationalTask | null {
+  const task = parseOperationalTask(value)
+  const row = toObject(value)
+  const depth = Number(row.depth)
+  if (!task || !Number.isInteger(depth) || depth < 0) return null
+  return {
+    ...task,
+    parent_task_id: typeof row.parent_task_id === 'string' ? row.parent_task_id : null,
+    depth,
   }
 }
 
@@ -997,11 +1202,9 @@ async function loadTaskHistory(
   const assigneeReminderSuccessful = assigneeSuccessful.filter(
     (delivery) => isReminderOrAssignmentMessage(messagesById.get(delivery.message_id))
   )
-  const creatorSuccessful = successful.filter((delivery) => {
-    const message = messagesById.get(delivery.message_id)
-    return isReminderOrAssignmentMessage(message)
-      && messageTarget(message, task) === 'creator'
-  })
+  const creatorSuccessful = successful.filter(
+    (delivery) => messageTarget(messagesById.get(delivery.message_id), task) === 'creator'
+  )
   const lastActivityMs = Date.parse(task.last_activity_at)
   const unansweredAttempts = assigneeReminderSuccessful.filter(
     (delivery) => Date.parse(effectiveDeliveryAt(delivery)) > lastActivityMs
@@ -1017,7 +1220,7 @@ async function loadTaskHistory(
       && messageTarget(message, task) === 'assignee'
   })
   const latestSuccessfulAssigneeAt = latestIso(
-    assigneeReminderSuccessful.map(effectiveDeliveryAt)
+    assigneeSuccessful.map(effectiveDeliveryAt)
   )
   const primaryDeliveryState: TaskDeliveryState = !latestPrimary
     ? 'unknown'
@@ -1041,6 +1244,10 @@ async function loadTaskHistory(
   return {
     emittedKeys: [...emittedKeys],
     lastAssigneeReminderAt: latestSuccessfulAssigneeAt,
+    // A direct human event is meaningful contact. Counting it only for the
+    // contact interval prevents an immediate automatic follow-up about the
+    // same extension request or status change, without inflating reminder
+    // attempts, overdue counts or pause thresholds.
     lastCreatorReminderAt: latestIso(creatorSuccessful.map(effectiveDeliveryAt)),
     unansweredAttempts,
     overdueReminderCount,
@@ -2381,6 +2588,68 @@ async function deliverViaChannel(input: {
   }
 }
 
+async function enqueueTaskReminderDigestItem(input: {
+  admin: AdminClient
+  job: AutomationJob
+  task: ExternallyRoutableOperationalTask
+  action: TaskReminderAction
+  recipient: Recipient
+}) {
+  const recipientAddress = deliveryAddress(input.recipient, 'email')
+  if (!recipientAddress) return false
+  const content = buildReminderContent({
+    action: input.action,
+    task: input.task,
+    recipient: input.recipient,
+  })
+  const { data, error } = await input.admin.rpc('enqueue_task_reminder_digest_item', {
+    p_org_id: input.task.org_id,
+    p_task_id: input.task.id,
+    p_task_version: input.task.version,
+    p_recipient_kind: input.recipient.kind,
+    p_recipient_id: input.recipient.id,
+    p_recipient_address: recipientAddress,
+    p_target: input.action.target,
+    p_action_kind: input.action.kind,
+    p_reason: input.action.reason,
+    p_policy_action_idempotency_key: input.action.idempotencyKey,
+    p_body_text: content.auditText,
+    p_job_id: input.job.id,
+  })
+  if (error) {
+    const code = error.message?.match(/TASK_[A-Z0-9_]+/)?.[0]
+    throw automationError(code ?? 'TASK_REMINDER_DIGEST_ENQUEUE_FAILED')
+  }
+  const result = toObject(data)
+  if (result.skipped === true && result.reason === 'digest_disabled') {
+    return false
+  }
+  if (
+    result.skipped === true
+    || (
+      result.skipped === false
+      && typeof result.batchId === 'string'
+      && typeof result.itemId === 'string'
+    )
+  ) {
+    return true
+  }
+  throw automationError('TASK_REMINDER_DIGEST_ENQUEUE_INVALID')
+}
+
+function isCanonicalDigestRecipient(
+  task: ExternallyRoutableOperationalTask,
+  action: TaskReminderAction,
+  recipient: Recipient
+) {
+  if (action.target === 'creator') {
+    return recipient.kind === 'profile' && recipient.id === task.issuer_profile_id
+  }
+  return recipient.kind === 'profile'
+    ? recipient.id === task.assignee_profile_id
+    : recipient.id === task.assignee_contact_id
+}
+
 async function deliverAction(input: {
   admin: AdminClient
   job: AutomationJob
@@ -2394,6 +2663,19 @@ async function deliverAction(input: {
   const selectedChannel: TaskCommunicationChannel = input.action.target === 'creator'
     ? 'email'
     : input.action.channel ?? input.task.primary_channel
+  if (
+    isDigestibleEmailReminder(input.action, selectedChannel)
+    && isCanonicalDigestRecipient(input.task, input.action, recipient)
+    && await enqueueTaskReminderDigestItem({
+      admin: input.admin,
+      job: input.job,
+      task: input.task,
+      action: input.action,
+      recipient,
+    })
+  ) {
+    return 'queued' as const
+  }
   const primaryResult = await deliverViaChannel({
     ...input,
     recipient,
@@ -3610,6 +3892,442 @@ async function deliverTaskNotificationJob(admin: AdminClient, job: AutomationJob
     || fallback.errorCode === 'TASK_NOTIFICATION_SUPERSEDED'
   ) return 'completed' as const
   throw automationError(fallback.errorCode ?? 'TASK_NOTIFICATION_FALLBACK_FAILED')
+}
+
+function taskMatchesDigestRecipient(
+  task: DigestOperationalTask,
+  item: TaskReminderDigestItem,
+  batch: TaskReminderDigestBatch
+) {
+  if (
+    task.org_id !== batch.org_id
+    || task.id !== item.task_id
+    || task.version !== item.task_version
+    || task.archived_at
+    || task.status === 'draft'
+    || TERMINAL_STATUSES.has(task.status)
+  ) return false
+  if (item.target === 'creator') {
+    return batch.recipient_kind === 'profile'
+      && task.issuer_profile_id === batch.recipient_id
+  }
+  return batch.recipient_kind === 'profile'
+    ? task.assignee_profile_id === batch.recipient_id
+    : task.assignee_contact_id === batch.recipient_id
+}
+
+function digestItemStatusLabel(item: TaskReminderDigestItem, task: DigestOperationalTask) {
+  switch (item.action_kind) {
+    case 'overdue': return 'Försenat'
+    case 'due_today':
+      return Date.parse(task.due_at) <= Date.now()
+        ? 'Försenat'
+        : 'Ska vara klart idag'
+    case 'due_soon':
+    case 'status_check':
+      return Date.parse(task.due_at) <= Date.now()
+        ? 'Försenat'
+        : item.action_kind === 'due_soon'
+          ? 'Närmar sig sluttid'
+          : 'Status behöver uppdateras'
+    case 'review_follow_up': return 'Väntar på kontroll'
+    case 'review_overdue': return 'Kontrollen är försenad'
+    case 'deadline_change_request': return 'Beslut om förlängning'
+    case 'escalation': return 'Behöver din hjälp'
+    default: return 'Behöver uppmärksamhet'
+  }
+}
+
+async function loadTaskReminderDigestItems(
+  admin: AdminClient,
+  batch: TaskReminderDigestBatch
+) {
+  const { data: itemData, error: itemError } = await admin
+    .from('task_reminder_digest_items')
+    .select(
+      'id,batch_id,org_id,task_id,task_version,target,action_kind,reason,policy_action_idempotency_key,body_text,status,created_at'
+    )
+    .eq('batch_id', batch.id)
+    .eq('org_id', batch.org_id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+  if (itemError) throw automationError('TASK_REMINDER_DIGEST_ITEMS_READ_FAILED')
+  const items = (itemData ?? [])
+    .map(parseTaskReminderDigestItem)
+    .filter((item): item is TaskReminderDigestItem => Boolean(item))
+  if (items.length === 0) return []
+
+  const { data: taskData, error: taskError } = await admin
+    .from('operational_tasks')
+    .select(
+      'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,last_activity_at,submitted_for_review_at,created_at,version,archived_at'
+    )
+    .eq('org_id', batch.org_id)
+    .in('id', items.map((item) => item.task_id))
+  if (taskError) throw automationError('TASK_REMINDER_DIGEST_TASKS_READ_FAILED')
+  const tasks = (taskData ?? [])
+    .map(parseDigestOperationalTask)
+    .filter((task): task is DigestOperationalTask => Boolean(task))
+  const tasksById = new Map(tasks.map((task) => [task.id, task]))
+  return items.flatMap((item) => {
+    const task = tasksById.get(item.task_id)
+    return task && taskMatchesDigestRecipient(task, item, batch)
+      ? [{ item, task }]
+      : []
+  })
+}
+
+async function loadTaskReminderDigestRecipient(
+  admin: AdminClient,
+  batch: TaskReminderDigestBatch
+): Promise<Recipient | null> {
+  if (batch.recipient_kind === 'profile') {
+    const profile = await loadProfile(admin, batch.org_id, batch.recipient_id)
+    return profile
+      ? {
+          kind: 'profile',
+          id: profile.id,
+          name: profile.full_name || profile.email || 'Mottagare',
+          email: profile.email,
+          whatsappNumber: profile.phone,
+        }
+      : null
+  }
+  const contact = await loadContact(admin, batch.org_id, batch.recipient_id)
+  return contact
+    ? {
+        kind: 'contact',
+        id: contact.id,
+        name: contact.name,
+        email: contact.email,
+        whatsappNumber: contact.whatsapp_number || contact.phone,
+      }
+    : null
+}
+
+async function loadTaskReminderDigestVisibleLimit(admin: AdminClient, orgId: string) {
+  const { data, error } = await admin
+    .from('task_organization_settings')
+    .select('reminder_digest_max_visible_items')
+    .eq('org_id', orgId)
+    .maybeSingle()
+  if (error) throw automationError('TASK_REMINDER_DIGEST_SETTINGS_READ_FAILED')
+  return normalizeInteger(
+    toObject(data).reminder_digest_max_visible_items,
+    10,
+    1,
+    100
+  )
+}
+
+function sortTaskReminderDigestPairs(
+  pairs: Array<{ item: TaskReminderDigestItem; task: DigestOperationalTask }>
+) {
+  return [...pairs].sort((left, right) => {
+    const leftDue = Date.parse(left.task.due_at)
+    const rightDue = Date.parse(right.task.due_at)
+    if (leftDue !== rightDue) return leftDue - rightDue
+    if (left.task.root_task_id !== right.task.root_task_id) {
+      return left.task.root_task_id.localeCompare(right.task.root_task_id)
+    }
+    if (left.task.depth !== right.task.depth) return left.task.depth - right.task.depth
+    return left.task.title.localeCompare(right.task.title, 'sv')
+  })
+}
+
+async function buildTaskReminderDigestContent(input: {
+  admin: AdminClient
+  batch: TaskReminderDigestBatch
+  recipient: Recipient
+  pairs: Array<{ item: TaskReminderDigestItem; task: DigestOperationalTask }>
+  visibleLimit: number
+}) {
+  const sortedPairs = sortTaskReminderDigestPairs(input.pairs)
+  const visiblePairs = sortedPairs.slice(0, input.visibleLimit)
+  const accessLinks: Array<{ id: string; deliveryKey: string }> = []
+  const emailItems: TaskReminderDigestEmailItem[] = []
+  try {
+    for (const { item, task } of visiblePairs) {
+      let actionUrl: string
+      if (input.recipient.kind === 'profile') {
+        actionUrl = `${appBaseUrl()}/uppdrag?task=${encodeURIComponent(task.id)}`
+      } else {
+        const directLink = await issueDirectTaskAccessLink({
+          contactId: input.recipient.id,
+          taskId: task.id,
+          createdByProfileId: task.issuer_profile_id,
+          baseUrl: appBaseUrl(),
+          issuedBySystem: true,
+        })
+        actionUrl = directLink.url
+        accessLinks.push({
+          id: directLink.accessLinkId,
+          deliveryKey: directLink.deliveryKey,
+        })
+      }
+      emailItems.push({
+        title: task.title,
+        contextLabel: task.context_label,
+        dueLabel: dueDateLabel(task.due_at, task.due_timezone),
+        statusLabel: digestItemStatusLabel(item, task),
+        actionUrl,
+      })
+    }
+  } catch (error) {
+    await Promise.all(
+      accessLinks.map((link) => revokeUnsentTaskAccessLink(input.admin, link.id))
+    )
+    throw error
+  }
+  const count = sortedPairs.length
+  const heading = count === 1
+    ? 'Ett uppdrag behöver din uppmärksamhet'
+    : `${count} uppdrag behöver din uppmärksamhet`
+  const subject = count === 1
+    ? 'HusHub: 1 uppdrag behöver din uppmärksamhet'
+    : `HusHub: ${count} uppdrag behöver din uppmärksamhet`
+  const overviewUrl = input.recipient.kind === 'profile'
+    ? `${appBaseUrl()}/uppdrag`
+    : `${appBaseUrl()}/mina-uppdrag`
+  const overviewLabel = input.recipient.kind === 'profile'
+    ? 'Visa alla uppdrag'
+    : 'Mina uppdrag (inloggning krävs)'
+  const lead = count === 1
+    ? 'Gizmo har samlat den automatiska uppföljningen här.'
+    : 'Gizmo har samlat de automatiska uppföljningarna i ett mejl för att minska antalet utskick.'
+  const text = [
+    `Hej ${input.recipient.name},`,
+    '',
+    lead,
+    '',
+    ...emailItems.flatMap((item) => [
+      `${item.statusLabel}: ${item.title}`,
+      item.contextLabel ? `Projekt: ${item.contextLabel}` : null,
+      `Slutdatum: ${item.dueLabel}`,
+      `Öppna uppdraget: ${item.actionUrl}`,
+      '',
+    ]).filter((line): line is string => line !== null),
+    count > emailItems.length
+      ? `Ytterligare ${count - emailItems.length} uppdrag finns i HusHub.`
+      : null,
+    `${overviewLabel}: ${overviewUrl}`,
+    '',
+    'Hälsningar, Gizmo',
+  ].filter((line): line is string => line !== null).join('\n')
+  const html = buildTaskReminderDigestEmailHtml({
+    recipientName: input.recipient.name,
+    previewText: heading,
+    heading,
+    lead,
+    items: emailItems,
+    visibleItemLimit: input.visibleLimit,
+    remainingCount: Math.max(0, count - emailItems.length),
+    overviewUrl,
+    overviewLabel,
+  })
+  return {
+    subject,
+    text,
+    html,
+    itemIds: sortedPairs.map(({ item }) => item.id),
+    accessLinks,
+  }
+}
+
+function digestRetryAt(batch: TaskReminderDigestBatch) {
+  const exponent = Math.max(0, Math.min(6, batch.attempt_count - 1))
+  const baseMinutes = Math.min(360, 5 * (2 ** exponent))
+  const jitterSeconds = createHash('sha256')
+    .update(`digest:${batch.id}:${batch.attempt_count}`)
+    .digest()[0] % 60
+  return new Date(Date.now() + baseMinutes * 60_000 + jitterSeconds * 1000).toISOString()
+}
+
+async function callDigestOutcomeRpc(input: {
+  admin: AdminClient
+  name:
+    | 'fail_task_reminder_digest_batch'
+    | 'mark_task_reminder_digest_batch_ambiguous'
+  args: Record<string, unknown>
+  errorCode: string
+}) {
+  const { data, error } = await input.admin.rpc(input.name, input.args)
+  if (error) throw automationError(input.errorCode)
+  return toObject(data)
+}
+
+async function processTaskReminderDigestBatch(
+  admin: AdminClient,
+  batch: TaskReminderDigestBatch,
+  workerId: string
+) {
+  let providerCallStarted = false
+  let providerMessageId: string | null = null
+  let accessLinks: Array<{ id: string; deliveryKey: string }> = []
+  try {
+    const [pairs, recipient, visibleLimit] = await Promise.all([
+      loadTaskReminderDigestItems(admin, batch),
+      loadTaskReminderDigestRecipient(admin, batch),
+      loadTaskReminderDigestVisibleLimit(admin, batch.org_id),
+    ])
+    if (!recipient || !deliveryAddress(recipient, 'email') || pairs.length === 0) {
+      const { error } = await admin.rpc('cancel_task_reminder_digest_batch', {
+        p_batch_id: batch.id,
+        p_worker_id: workerId,
+        p_reason: !recipient || !deliveryAddress(recipient, 'email')
+          ? 'TASK_REMINDER_DIGEST_RECIPIENT_UNAVAILABLE'
+          : 'TASK_REMINDER_DIGEST_NO_CURRENT_ITEMS',
+      })
+      if (error) throw automationError('TASK_REMINDER_DIGEST_CANCEL_FAILED')
+      return 'cancelled' as const
+    }
+
+    const content = await buildTaskReminderDigestContent({
+      admin,
+      batch,
+      recipient,
+      pairs,
+      visibleLimit,
+    })
+    accessLinks = content.accessLinks
+    const providerPayload = {
+      digest: true,
+      digestBatchId: batch.id,
+      itemIds: content.itemIds,
+      visibleItemCount: Math.min(content.itemIds.length, visibleLimit),
+      accessLinkIds: accessLinks.map((link) => link.id),
+      subject: content.subject,
+      tokenPersisted: false,
+    }
+    const { data: reservationData, error: reservationError } = await admin.rpc(
+      'start_task_reminder_digest_provider_call',
+      {
+        p_batch_id: batch.id,
+        p_worker_id: workerId,
+        p_provider_payload: providerPayload,
+      }
+    )
+    if (reservationError) throw automationError('TASK_REMINDER_DIGEST_START_FAILED')
+    const reservation = toObject(reservationData)
+    if (reservation.started !== true) {
+      await Promise.all(accessLinks.map((link) => revokeUnsentTaskAccessLink(admin, link.id)))
+      if (reservation.status === 'cancelled') return 'cancelled' as const
+      if (reservation.status === 'dead_letter') return 'dead_letter' as const
+      return 'failed' as const
+    }
+    providerCallStarted = true
+    const canonicalAddress = optionalString(reservation.recipientAddress)
+      || optionalString(reservation.recipient_address)
+      || deliveryAddress(recipient, 'email')
+    if (!canonicalAddress) throw automationError('TASK_REMINDER_DIGEST_RECIPIENT_UNAVAILABLE')
+    const providerKeyParts = accessLinks.map((link) => link.deliveryKey).sort().join('|')
+    providerMessageId = await sendResendEmail({
+      to: canonicalAddress,
+      replyTo: null,
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+      idempotencyKey: `task-reminder-digest:${batch.id}:attempt:${batch.attempt_count}:${providerKeyParts}`,
+    })
+    const sentAt = new Date().toISOString()
+    if (accessLinks.length > 0) {
+      const { error: linkError } = await admin
+        .from('task_access_links')
+        .update({ sent_at: sentAt })
+        .in('id', accessLinks.map((link) => link.id))
+        .is('revoked_at', null)
+      if (linkError) throw automationError('TASK_REMINDER_DIGEST_ACCESS_LINK_UPDATE_FAILED')
+    }
+    const { error: finishError } = await admin.rpc('finish_task_reminder_digest_batch', {
+      p_batch_id: batch.id,
+      p_worker_id: workerId,
+      p_provider_message_id: providerMessageId,
+      p_subject: content.subject,
+      p_provider_payload: providerPayload,
+    })
+    if (finishError) throw automationError('TASK_REMINDER_DIGEST_FINISH_FAILED')
+    return 'sent' as const
+  } catch (error) {
+    const code = safeErrorCode(error)
+    if (providerMessageId || (providerCallStarted && isAmbiguousTaskDeliveryError(error))) {
+      try {
+        await callDigestOutcomeRpc({
+          admin,
+          name: 'mark_task_reminder_digest_batch_ambiguous',
+          args: {
+            p_batch_id: batch.id,
+            p_worker_id: workerId,
+            p_error_message: providerMessageId
+              ? 'TASK_REMINDER_DIGEST_FINALIZATION_AMBIGUOUS'
+              : code,
+          },
+          errorCode: 'TASK_REMINDER_DIGEST_AMBIGUOUS_UPDATE_FAILED',
+        })
+      } catch {
+        console.error('[tasks.automation] digest ambiguity could not be recorded', {
+          batchId: batch.id,
+          code,
+        })
+      }
+      return 'ambiguous' as const
+    }
+    await Promise.all(accessLinks.map((link) => revokeUnsentTaskAccessLink(admin, link.id)))
+    try {
+      const failed = await callDigestOutcomeRpc({
+        admin,
+        name: 'fail_task_reminder_digest_batch',
+        args: {
+          p_batch_id: batch.id,
+          p_worker_id: workerId,
+          p_error_message: code,
+          p_retry_at: digestRetryAt(batch),
+        },
+        errorCode: 'TASK_REMINDER_DIGEST_FAILURE_UPDATE_FAILED',
+      })
+      return failed.status === 'dead_letter' ? 'dead_letter' as const : 'failed' as const
+    } catch {
+      console.error('[tasks.automation] digest failure could not be recorded', {
+        batchId: batch.id,
+        code,
+      })
+      return 'failed' as const
+    }
+  }
+}
+
+export async function runTaskReminderDigestBatch(input?: {
+  limit?: number
+  workerId?: string
+}): Promise<TaskReminderDigestBatchResult> {
+  const admin = createSupabaseAdminClient()
+  const workerId = input?.workerId?.trim() || `task-reminder-digest-${randomUUID()}`
+  const limit = normalizeInteger(
+    input?.limit,
+    DEFAULT_DIGEST_BATCH_LIMIT,
+    1,
+    MAX_DIGEST_BATCH_LIMIT
+  )
+  const { data, error } = await admin.rpc('claim_task_reminder_digest_batches', {
+    p_worker_id: workerId,
+    p_limit: limit,
+    p_stale_after: '15 minutes',
+  })
+  if (error) throw automationError('TASK_REMINDER_DIGEST_CLAIM_FAILED')
+  const batches = (Array.isArray(data) ? data : [])
+    .map(parseTaskReminderDigestBatch)
+    .filter((batch): batch is TaskReminderDigestBatch => Boolean(batch))
+  const outcomes = await Promise.all(
+    batches.map((batch) => processTaskReminderDigestBatch(admin, batch, workerId))
+  )
+  return {
+    claimed: batches.length,
+    sent: outcomes.filter((outcome) => outcome === 'sent').length,
+    cancelled: outcomes.filter((outcome) => outcome === 'cancelled').length,
+    ambiguous: outcomes.filter((outcome) => outcome === 'ambiguous').length,
+    failed: outcomes.filter((outcome) => outcome === 'failed').length,
+    deadLetter: outcomes.filter((outcome) => outcome === 'dead_letter').length,
+  }
 }
 
 function nextEvaluationAt(

@@ -107,7 +107,7 @@ export async function POST(request: Request, context: RouteContext) {
       if (!validation.canComplete) {
         if (validation.unreviewedObservationCount > 0) {
           return jsonError(
-            `Faktagranska ${validation.unreviewedObservationCount} observationer innan analysen startas.`,
+            `Kontrollera ${validation.unreviewedObservationCount} fältposter innan analysen startas.`,
             409
           )
         }

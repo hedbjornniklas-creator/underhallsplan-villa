@@ -184,7 +184,7 @@ export async function POST(
     ])
     const admin = createSupabaseAdminClient()
     const reviewedEvidence = observations.filter(
-      (observation) => observation.reviewStatus === 'reviewed' && observation.includeInReport
+      (observation) => observation.reviewStatus === 'reviewed'
     )
     const imageById = new Map(images.map((image) => [image.id, image]))
     const sourceIds = new Set(reviewedEvidence.map((observation) => observation.id))
@@ -197,8 +197,6 @@ export async function POST(
       voiceTranscript: observation.transcriptText,
       riskNote: observation.riskNote,
       suggestedFollowUp: observation.suggestedFollowUp,
-      certainty: observation.certainty,
-      assignedSectionId: observation.targetSectionId,
       measurements: observation.measurements.map((measurement) => ({
         location: measurement.location,
         type: measurement.measurementType,
@@ -303,6 +301,7 @@ export async function POST(
         instructions: [
           'Du skriver ett granskningsbart textförslag till en svensk fuktskadeutredning.',
           'Använd endast fakta i JSON-underlaget. Hitta aldrig på observationer, mätvärden, datum, orsaker, ansvar eller åtgärder.',
+          'En kontrollerad fältpost betyder att källmaterialet är korrekt återgivet, inte att varje teknisk slutsats i fritexten är bekräftad.',
           'Skilj verifierade fakta från sannolika tekniska bedömningar och från sådant som inte har kunnat fastställas.',
           'Formulera osäkerheter uttryckligen. Utse inte juridiskt ansvarig part och lämna inga juridiska slutsatser.',
           'Skriv sakligt, precist och proportionerligt på svenska. Undvik upprepning och utfyllnad.',

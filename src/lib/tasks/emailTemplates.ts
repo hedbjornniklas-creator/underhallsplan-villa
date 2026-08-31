@@ -176,3 +176,165 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
   </body>
 </html>`
 }
+
+export type TaskReminderDigestEmailItem = {
+  title: string
+  contextLabel?: string | null
+  dueLabel: string
+  statusLabel: string
+  actionUrl: string
+}
+
+export type TaskReminderDigestEmailInput = {
+  recipientName: string
+  previewText: string
+  heading: string
+  lead: string
+  items: readonly TaskReminderDigestEmailItem[]
+  visibleItemLimit?: number
+  remainingCount?: number
+  overviewUrl: string
+  overviewLabel?: string
+}
+
+function digestItemCard(item: TaskReminderDigestEmailItem) {
+  const context = item.contextLabel
+    ? `<p style="margin:6px 0 0;font-family:Arial,sans-serif;font-size:13px;line-height:20px;color:#78716c;">${escapeHtml(item.contextLabel)}</p>`
+    : ''
+
+  return `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:0 0 12px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:14px;">
+      <tr>
+        <td style="padding:18px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+            <tr>
+              <td style="vertical-align:top;">
+                <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;font-weight:800;line-height:16px;letter-spacing:.09em;text-transform:uppercase;color:#9a3412;">${escapeHtml(item.statusLabel)}</p>
+                <p style="margin:5px 0 0;font-family:Arial,sans-serif;font-size:17px;font-weight:800;line-height:24px;color:#1c1917;">${escapeHtml(item.title)}</p>
+                ${context}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 0 0;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="padding:10px 0;border-top:1px solid #e7e5e4;font-family:Arial,sans-serif;font-size:12px;font-weight:700;line-height:18px;letter-spacing:.08em;text-transform:uppercase;color:#78716c;vertical-align:top;width:104px;">Slutdatum</td>
+                    <td style="padding:10px 0;border-top:1px solid #e7e5e4;font-family:Arial,sans-serif;font-size:14px;font-weight:700;line-height:20px;text-align:right;color:#292524;vertical-align:top;">${escapeHtml(item.dueLabel)}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:5px 0 0;">
+                <a href="${escapeHtml(item.actionUrl)}" target="_blank" rel="noreferrer" style="font-family:Arial,sans-serif;font-size:14px;font-weight:800;line-height:20px;color:#92400e;text-decoration:underline;">Öppna uppdraget&nbsp;→</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>`
+}
+
+/**
+ * Email-safe summary for policy-generated task reminders. The optional visible
+ * limit caps rendered cards; remainingCount represents the total omitted items.
+ */
+export function buildTaskReminderDigestEmailHtml(input: TaskReminderDigestEmailInput) {
+  const requestedLimit = input.visibleItemLimit
+  const visibleItemLimit = typeof requestedLimit === 'number' && Number.isFinite(requestedLimit)
+    ? Math.max(0, Math.floor(requestedLimit))
+    : input.items.length
+  const visibleItems = input.items.slice(0, visibleItemLimit)
+  const hiddenByLimit = Math.max(0, input.items.length - visibleItems.length)
+  const providedRemainingCount = typeof input.remainingCount === 'number' && Number.isFinite(input.remainingCount)
+    ? Math.max(0, Math.floor(input.remainingCount))
+    : 0
+  const remainingCount = Math.max(hiddenByLimit, providedRemainingCount)
+  const itemCards = visibleItems.map(digestItemCard).join('')
+  const emptyState = visibleItems.length === 0
+    ? `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:24px 0 0;background:#fafaf9;border:1px solid #e7e5e4;border-radius:14px;">
+        <tr>
+          <td style="padding:18px;font-family:Arial,sans-serif;font-size:14px;line-height:22px;color:#57534e;">Öppna HusHub för att se uppdragen som behöver din uppmärksamhet.</td>
+        </tr>
+      </table>`
+    : ''
+  const remainingNotice = remainingCount > 0
+    ? `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;margin:4px 0 0;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;">
+        <tr>
+          <td style="padding:13px 15px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;line-height:20px;color:#92400e;">Ytterligare ${remainingCount} uppdrag finns i HusHub.</td>
+        </tr>
+      </table>`
+    : ''
+
+  return `<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8">
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>${escapeHtml(input.heading)}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f5f2ec;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(input.previewText)}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f5f2ec;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:680px;background:#ffffff;border:1px solid #e7e2d8;border-radius:20px;overflow:hidden;">
+            <tr>
+              <td style="padding:20px 24px;border-bottom:1px solid #eee9df;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="width:54px;vertical-align:middle;">
+                      <span style="display:inline-block;font-family:Arial,sans-serif;font-size:42px;font-weight:800;line-height:42px;color:#171717;mso-line-height-rule:exactly;">&#10003;</span>
+                    </td>
+                    <td style="vertical-align:middle;">
+                      <p style="margin:0;font-family:Arial,sans-serif;font-size:19px;font-weight:800;line-height:22px;color:#171717;">HusHub</p>
+                      <p style="margin:3px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;line-height:15px;letter-spacing:.15em;text-transform:uppercase;color:#a16207;">Uppdrag med Gizmo</p>
+                    </td>
+                    <td align="right" style="vertical-align:middle;">
+                      <span style="display:inline-block;width:34px;height:34px;border-radius:10px;background:#f59e0b;font-family:Arial,sans-serif;font-size:24px;font-weight:700;line-height:34px;text-align:center;color:#ffffff;">&#10003;</span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:30px 24px 32px;">
+                <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;font-weight:800;line-height:16px;letter-spacing:.17em;text-transform:uppercase;color:#b45309;">Gizmo följer upp</p>
+                <h1 style="margin:8px 0 0;font-family:Arial,sans-serif;font-size:28px;font-weight:800;line-height:34px;letter-spacing:-.02em;color:#1c1917;">${escapeHtml(input.heading)}</h1>
+                <p style="margin:22px 0 0;font-family:Arial,sans-serif;font-size:16px;line-height:25px;color:#292524;">Hej ${escapeHtml(input.recipientName)},</p>
+                <p style="margin:8px 0 24px;font-family:Arial,sans-serif;font-size:15px;line-height:24px;color:#57534e;">${escapeHtml(input.lead)}</p>
+
+                ${itemCards}
+                ${emptyState}
+                ${remainingNotice}
+
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:24px 0 0;">
+                  <tr>
+                    <td>${bulletproofButton(input.overviewUrl, input.overviewLabel ?? 'Visa alla uppdrag')}</td>
+                  </tr>
+                </table>
+
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:28px 0 0;">
+                  <tr>
+                    <td style="width:30px;vertical-align:middle;">
+                      <span style="display:inline-block;width:24px;height:24px;border-radius:8px;background:#f59e0b;font-family:Arial,sans-serif;font-size:17px;font-weight:700;line-height:24px;text-align:center;color:#ffffff;">&#10003;</span>
+                    </td>
+                    <td style="font-family:Arial,sans-serif;font-size:13px;line-height:19px;color:#78716c;vertical-align:middle;">
+                      <strong style="color:#44403c;">Gizmo</strong><br>HusHubs digitala uppföljningsassistent
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:16px 0 0;font-family:Arial,sans-serif;font-size:11px;line-height:17px;color:#a8a29e;">Automatiska uppdragspåminnelser har samlats i ett mejl för att minska antalet utskick.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}

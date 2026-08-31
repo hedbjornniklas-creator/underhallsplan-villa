@@ -99,7 +99,7 @@ function observationValues(body: Record<string, unknown>, inspectionId: string):
     transcriptText,
     riskNote: nullableText(body.riskNote),
     suggestedFollowUp: nullableText(body.suggestedFollowUp),
-    certainty: isTuObservationCertainty(body.certainty) ? body.certainty : 'confirmed',
+    certainty: isTuObservationCertainty(body.certainty) ? body.certainty : 'uncertain',
     reviewStatus: isTuObservationReviewStatus(body.reviewStatus) ? body.reviewStatus : 'draft',
     targetSectionId: nullableText(body.targetSectionId),
     includeInReport: body.includeInReport !== false,

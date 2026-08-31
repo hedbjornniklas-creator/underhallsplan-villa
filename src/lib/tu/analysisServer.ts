@@ -29,7 +29,7 @@ const TU_ANALYSIS_MODEL =
   || process.env.OPENAI_TU_TEXT_MODEL?.trim()
   || 'gpt-4o-mini'
 const RULESET_KEY = 'tu_moisture_inspection_v1'
-const RULESET_VERSION = 1
+const RULESET_VERSION = 2
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
@@ -322,7 +322,7 @@ export async function getTuAnalysisValidation(input: {
   const unlinkedImageCount = images.filter((image) => !linkedImageIds.has(image.id)).length
   const warnings: string[] = []
   if (unreviewedObservationCount > 0) {
-    warnings.push(`${unreviewedObservationCount} observationer är inte faktagranskade.`)
+    warnings.push(`${unreviewedObservationCount} fältposter är inte kontrollerade.`)
   }
   if (emptyObservationCount > 0) {
     warnings.push(`${emptyObservationCount} observationer saknar text, bild och mätvärde.`)
@@ -494,7 +494,6 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         transcriptText: observation.transcriptText?.slice(0, 12000) ?? null,
         riskNote: observation.riskNote,
         suggestedFollowUp: observation.suggestedFollowUp,
-        certainty: observation.certainty,
         reviewStatus: observation.reviewStatus,
         imageIds: observation.imageIds,
         imageCaptions: observation.imageIds.map((id) => ({
@@ -791,6 +790,7 @@ async function synthesizeInspection(input: {
       'Du analyserar ett samlat besiktningsunderlag för en svensk fuktskadeutredning.',
       'AI-resultatet är ett granskningsunderlag, aldrig ett färdigt utlåtande.',
       'Använd endast fakta och käll-id i underlaget. Hitta inte på mätvärden, datum, händelser, orsaker eller ansvar.',
+      'En kontrollerad fältpost betyder att källmaterialet är korrekt återgivet, inte att varje teknisk slutsats i fritexten är bekräftad.',
       'Håll beställaruppgifter åtskilda från besiktningsmannens verifierade iakttagelser.',
       'En teknisk hypotes ska ha certainty probable eller uncertain och redovisa både stöd och motsägelser.',
       'En bildanalys visar endast synliga bildfakta och får inte ensam bevisa dolda förhållanden eller skadeorsak.',
