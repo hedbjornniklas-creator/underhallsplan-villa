@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   BarChart3,
+  ChevronDown,
   ChevronLeft,
   CheckCircle2,
   ChevronRight,
@@ -41,6 +42,7 @@ import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
 type WorkspaceView = 'current' | 'statistics'
+type TaskListMode = 'grouped' | 'all' | 'attention'
 type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated'
 type SortDirection = 'asc' | 'desc'
 
@@ -58,6 +60,14 @@ type TaskDrilldown = {
   taskIds: string[]
 }
 
+type TaskGroupStats = {
+  total: number
+  completed: number
+  unread: number
+  overdue: number
+  awaitingDecision: number
+}
+
 function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
   if (filter === 'unread') return task.unreadMessageCount > 0
   if (filter === 'overdue') return task.risk === 'red' && !['approved', 'cancelled'].includes(task.status)
@@ -73,6 +83,14 @@ function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
     return task.ballHolder === 'assignee' && task.assignee.kind === 'profile' && task.assignee.id === userId
   }
   return true
+}
+
+function taskNeedsAttention(task: TaskView, userId: string) {
+  return (
+    task.unreadMessageCount > 0
+    || taskMatchesFilter(task, 'overdue', userId)
+    || taskMatchesFilter(task, 'review', userId)
+  )
 }
 
 function ballText(task: TaskView) {
@@ -94,6 +112,32 @@ function statusSortRank(status: TaskView['status']) {
     approved: 6,
     cancelled: 7,
   }[status]
+}
+
+function compareTasks(
+  a: TaskView,
+  b: TaskView,
+  sortField: SortField,
+  sortDirection: SortDirection
+) {
+  let comparison = 0
+  if (sortField === 'title') comparison = TASK_COLLATOR.compare(a.title, b.title)
+  if (sortField === 'status') comparison = statusSortRank(a.status) - statusSortRank(b.status)
+  if (sortField === 'assignee') comparison = TASK_COLLATOR.compare(a.assignee.name, b.assignee.name)
+  if (sortField === 'due') comparison = new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+  if (sortField === 'updated') {
+    comparison = new Date(a.latestMessage?.createdAt ?? a.updatedAt).getTime()
+      - new Date(b.latestMessage?.createdAt ?? b.updatedAt).getTime()
+  }
+  if (comparison === 0) comparison = TASK_COLLATOR.compare(a.title, b.title)
+  return sortDirection === 'asc' ? comparison : -comparison
+}
+
+function taskMatchesSearch(task: TaskView, term: string) {
+  if (!term) return true
+  return [task.title, task.description, task.contextLabel, task.assignee.name, task.issuerName]
+    .filter(Boolean)
+    .some((value) => String(value).toLocaleLowerCase('sv-SE').includes(term))
 }
 
 function latestMessageLabel(task: TaskView) {
@@ -165,10 +209,12 @@ function SummaryCard({
 function TaskCard({
   task,
   parentTitle,
+  groupStats,
   onClick,
 }: {
   task: TaskView
   parentTitle: string | null
+  groupStats?: TaskGroupStats | null
   onClick: () => void
 }) {
   const holder = ballText(task)
@@ -227,7 +273,28 @@ function TaskCard({
             </p>
           ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {task.childCount > 0 ? (
+            {groupStats && groupStats.total > 0 ? (
+              <>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                  {groupStats.completed}/{groupStats.total} underuppgifter klara
+                </span>
+                {groupStats.overdue > 0 ? (
+                  <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700">
+                    {groupStats.overdue} {groupStats.overdue === 1 ? 'försenad' : 'försenade'}
+                  </span>
+                ) : null}
+                {groupStats.unread > 0 ? (
+                  <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    {groupStats.unread} olästa i underuppdrag
+                  </span>
+                ) : null}
+                {groupStats.awaitingDecision > 0 ? (
+                  <span className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                    {groupStats.awaitingDecision} väntar på ditt beslut
+                  </span>
+                ) : null}
+              </>
+            ) : task.childCount > 0 ? (
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                 {task.openChildCount}/{task.childCount} underuppgifter öppna
               </span>
@@ -245,6 +312,110 @@ function TaskCard({
   )
 }
 
+function TaskTableRow({
+  task,
+  parentTitle,
+  groupStats,
+  expanded,
+  onToggle,
+  onClick,
+}: {
+  task: TaskView
+  parentTitle: string | null
+  groupStats?: TaskGroupStats | null
+  expanded?: boolean
+  onToggle?: () => void
+  onClick: () => void
+}) {
+  return (
+    <tr
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      }}
+      aria-label={`Öppna uppdraget ${task.title}${task.unreadMessageCount > 0 ? `, ${task.unreadMessageCount} olästa meddelanden` : ''}`}
+      className={`cursor-pointer border-b border-slate-100 outline-none transition last:border-b-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400 ${
+        task.unreadMessageCount > 0
+          ? 'bg-blue-50/70 hover:bg-blue-50'
+          : parentTitle
+            ? 'bg-slate-50/60'
+            : 'bg-white'
+      }`}
+    >
+      <td className="px-3 py-3 align-middle"><TaskRiskDot risk={task.risk} /></td>
+      <td className="px-3 py-3 align-middle">
+        <div className={parentTitle ? 'pl-5' : ''}>
+          <p className={`truncate text-slate-950 ${task.unreadMessageCount > 0 ? 'font-bold' : 'font-semibold'}`}>{task.title}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-500">
+            {recurrenceShortLabel(task) ? `${recurrenceShortLabel(task)} · ` : ''}
+            {parentTitle ? `↳ ${parentTitle}` : task.contextLabel || 'Inget projekt angivet'}
+          </p>
+          {groupStats && groupStats.total > 0 ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                {groupStats.completed}/{groupStats.total} klara
+              </span>
+              {groupStats.overdue > 0 ? (
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+                  {groupStats.overdue} försenade
+                </span>
+              ) : null}
+              {groupStats.unread > 0 ? (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                  {groupStats.unread} olästa
+                </span>
+              ) : null}
+              {groupStats.awaitingDecision > 0 ? (
+                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                  {groupStats.awaitingDecision} beslut
+                </span>
+              ) : null}
+              {onToggle ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onToggle()
+                  }}
+                  className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                  aria-expanded={expanded}
+                >
+                  {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  {expanded ? 'Dölj' : 'Visa'} underuppdrag
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </td>
+      <td className="px-3 py-3 align-middle"><TaskStatusBadge status={task.status} /></td>
+      <td className="px-3 py-3 align-middle">
+        <p className="truncate font-medium text-slate-800">{task.assignee.name}</p>
+        <p className="mt-0.5 truncate text-xs text-slate-500">Bollen hos {ballText(task)}</p>
+      </td>
+      <td className="px-3 py-3 align-middle font-medium">
+        <span className="block whitespace-nowrap">{formatTaskDateTime(task.dueAt, task.dueTimeZone, 'compact')}</span>
+        <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{taskTimeZoneLabel(task.dueTimeZone)}</span>
+      </td>
+      <td className="px-3 py-3 align-middle">
+        <div className="flex min-w-0 items-center gap-2">
+          {task.unreadMessageCount > 0 ? (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white">
+              <MessageCircle size={11} /> {task.unreadMessageCount}
+            </span>
+          ) : <MessageCircle size={15} className="shrink-0 text-slate-300" />}
+          <p className="truncate text-xs text-slate-600" title={latestMessageLabel(task)}>{latestMessageLabel(task)}</p>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 export default function TaskDashboardClient({ initialWorkspace, initialError }: Props) {
   const { success: showSuccess, error: showError, warning: showWarning } = useToast()
   const deepLinkHandled = useRef(false)
@@ -259,6 +430,8 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
   const [taskDrilldown, setTaskDrilldown] = useState<TaskDrilldown | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
+  const [listMode, setListMode] = useState<TaskListMode>('grouped')
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set())
   const workspaceTimeZone = normalizeTaskTimeZone(workspace?.timeZone)
   const [sortField, setSortField] = useState<SortField>('due')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -298,6 +471,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
           sortField: SortField
           sortDirection: SortDirection
           pageSize: number
+          listMode: TaskListMode
         }>
         if (['all', 'my_ball', 'review', 'overdue', 'unread'].includes(parsed.filter ?? '')) {
           setFilter(parsed.filter as FilterKey)
@@ -312,6 +486,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
         if (TASK_PAGE_SIZE_OPTIONS.includes(parsed.pageSize as 10 | 25 | 50)) {
           setPageSize(parsed.pageSize as number)
         }
+        if (parsed.listMode === 'grouped' || parsed.listMode === 'all' || parsed.listMode === 'attention') {
+          setListMode(parsed.listMode)
+        }
       }
     } catch {
       // A corrupt local preference must never block the task list.
@@ -324,56 +501,116 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
     if (!listPreferencesLoaded) return
     window.localStorage.setItem(
       TASK_LIST_STORAGE_KEY,
-      JSON.stringify({ filter, search, sortField, sortDirection, pageSize })
+      JSON.stringify({ filter, search, sortField, sortDirection, pageSize, listMode })
     )
-  }, [filter, listPreferencesLoaded, pageSize, search, sortDirection, sortField])
+  }, [filter, listMode, listPreferencesLoaded, pageSize, search, sortDirection, sortField])
 
   useEffect(() => {
     setPage(1)
-  }, [drilldownTaskIds, filter, pageSize, search, sortDirection, sortField])
+  }, [drilldownTaskIds, filter, listMode, pageSize, search, sortDirection, sortField])
+
+  const taskHierarchy = useMemo(() => {
+    const tasks = workspace?.tasks ?? []
+    const byId = new Map(tasks.map((task) => [task.id, task]))
+    const rootIdByTask = new Map<string, string>()
+    const descendantsByRoot = new Map<string, TaskView[]>()
+
+    for (const task of tasks) {
+      let current = task
+      const visited = new Set<string>([task.id])
+      while (current.parentTaskId && byId.has(current.parentTaskId) && !visited.has(current.parentTaskId)) {
+        visited.add(current.parentTaskId)
+        current = byId.get(current.parentTaskId)!
+      }
+      rootIdByTask.set(task.id, current.id)
+      if (current.id !== task.id) {
+        const descendants = descendantsByRoot.get(current.id) ?? []
+        descendants.push(task)
+        descendantsByRoot.set(current.id, descendants)
+      }
+    }
+
+    const roots = tasks.filter((task) => rootIdByTask.get(task.id) === task.id)
+    const groupStatsByRoot = new Map<string, TaskGroupStats>()
+    for (const root of roots) {
+      const descendants = descendantsByRoot.get(root.id) ?? []
+      groupStatsByRoot.set(root.id, {
+        total: descendants.length,
+        completed: descendants.filter((task) => ['approved', 'cancelled'].includes(task.status)).length,
+        unread: descendants.reduce((total, task) => total + task.unreadMessageCount, 0),
+        overdue: descendants.filter((task) => taskMatchesFilter(task, 'overdue', workspace?.currentUser.id ?? '')).length,
+        awaitingDecision: descendants.filter((task) => taskMatchesFilter(task, 'review', workspace?.currentUser.id ?? '')).length,
+      })
+    }
+
+    return { byId, roots, rootIdByTask, descendantsByRoot, groupStatsByRoot }
+  }, [workspace])
 
   const visibleTasks = useMemo(() => {
     if (!workspace) return []
     const term = search.trim().toLocaleLowerCase('sv-SE')
-    const byId = new Map(workspace.tasks.map((task) => [task.id, task]))
-    return workspace.tasks
-      .filter((task) => !drilldownTaskIds || drilldownTaskIds.has(task.id))
-      .filter((task) => taskMatchesFilter(task, filter, workspace.currentUser.id))
+    const candidates = listMode === 'all' ? workspace.tasks : taskHierarchy.roots
+    return candidates
       .filter((task) => {
-        if (!term) return true
-        return [task.title, task.description, task.contextLabel, task.assignee.name, task.issuerName]
-          .filter(Boolean)
-          .some((value) => String(value).toLocaleLowerCase('sv-SE').includes(term))
+        const groupedTasks = listMode === 'all'
+          ? [task]
+          : [task, ...(taskHierarchy.descendantsByRoot.get(task.id) ?? [])]
+        return (
+          (!drilldownTaskIds || groupedTasks.some((item) => drilldownTaskIds.has(item.id)))
+          && groupedTasks.some((item) => taskMatchesFilter(item, filter, workspace.currentUser.id))
+          && groupedTasks.some((item) => taskMatchesSearch(item, term))
+          && (listMode !== 'attention' || groupedTasks.some((item) => taskNeedsAttention(item, workspace.currentUser.id)))
+        )
       })
-      .sort((a, b) => {
-        let comparison = 0
-        if (sortField === 'title') comparison = TASK_COLLATOR.compare(a.title, b.title)
-        if (sortField === 'status') comparison = statusSortRank(a.status) - statusSortRank(b.status)
-        if (sortField === 'assignee') comparison = TASK_COLLATOR.compare(a.assignee.name, b.assignee.name)
-        if (sortField === 'due') comparison = new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
-        if (sortField === 'updated') {
-          comparison = new Date(a.latestMessage?.createdAt ?? a.updatedAt).getTime() - new Date(b.latestMessage?.createdAt ?? b.updatedAt).getTime()
-        }
-        if (comparison === 0) comparison = TASK_COLLATOR.compare(a.title, b.title)
-        return sortDirection === 'asc' ? comparison : -comparison
-      })
-      .map((task) => ({ task, parentTitle: task.parentTaskId ? byId.get(task.parentTaskId)?.title ?? null : null }))
-  }, [drilldownTaskIds, filter, search, sortDirection, sortField, workspace])
+      .sort((a, b) => compareTasks(a, b, sortField, sortDirection))
+      .map((task) => ({
+        task,
+        parentTitle: listMode === 'all' && task.parentTaskId
+          ? taskHierarchy.byId.get(task.parentTaskId)?.title ?? null
+          : null,
+      }))
+  }, [drilldownTaskIds, filter, listMode, search, sortDirection, sortField, taskHierarchy, workspace])
 
   const filterCounts = useMemo(() => {
     if (!workspace) return { all: 0, my_ball: 0, review: 0, overdue: 0, unread: 0 }
+    const candidates = listMode === 'all' ? workspace.tasks : taskHierarchy.roots
+    const groupFor = (task: TaskView) => listMode === 'all'
+      ? [task]
+      : [task, ...(taskHierarchy.descendantsByRoot.get(task.id) ?? [])]
+    const inSelectedMode = (tasks: TaskView[]) => (
+      listMode !== 'attention'
+      || tasks.some((task) => taskNeedsAttention(task, workspace.currentUser.id))
+    )
+    const count = (nextFilter: FilterKey) => candidates.filter((task) => {
+      const group = groupFor(task)
+      return inSelectedMode(group)
+        && group.some((item) => taskMatchesFilter(item, nextFilter, workspace.currentUser.id))
+    }).length
     return {
-      all: workspace.tasks.length,
-      my_ball: workspace.tasks.filter((task) => taskMatchesFilter(task, 'my_ball', workspace.currentUser.id)).length,
-      review: workspace.tasks.filter((task) => taskMatchesFilter(task, 'review', workspace.currentUser.id)).length,
-      overdue: workspace.tasks.filter((task) => taskMatchesFilter(task, 'overdue', workspace.currentUser.id)).length,
-      unread: workspace.tasks.filter((task) => task.unreadMessageCount > 0).length,
+      all: count('all'),
+      my_ball: count('my_ball'),
+      review: count('review'),
+      overdue: count('overdue'),
+      unread: count('unread'),
     }
-  }, [workspace])
+  }, [listMode, taskHierarchy, workspace])
 
   const totalPages = Math.max(1, Math.ceil(visibleTasks.length / pageSize))
   const currentPage = Math.min(page, totalPages)
   const pagedTasks = visibleTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const groupedList = listMode !== 'all'
+  const toggleTaskGroup = (taskId: string) => {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current)
+      if (next.has(taskId)) next.delete(taskId)
+      else next.add(taskId)
+      return next
+    })
+  }
+  const sortedGroupChildren = (taskId: string) => (
+    [...(taskHierarchy.descendantsByRoot.get(taskId) ?? [])]
+      .sort((a, b) => compareTasks(a, b, sortField, sortDirection))
+  )
 
   const changeSort = (field: SortField) => {
     if (sortField === field) {
@@ -674,8 +911,41 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   </label>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-slate-500">
-                  <span className="inline-flex items-center gap-2"><ListFilter size={15} /> {visibleTasks.length} uppgifter visas</span>
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto" aria-label="Välj listvisning">
+                    {([
+                      ['grouped', 'Grupperad'],
+                      ['all', 'Alla uppgifter'],
+                      ['attention', 'Kräver uppmärksamhet'],
+                    ] as Array<[TaskListMode, string]>).map(([mode, label]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        aria-pressed={listMode === mode}
+                        onClick={() => setListMode(mode)}
+                        className={`min-h-10 flex-1 rounded-lg px-3 text-xs font-semibold transition sm:flex-none ${
+                          listMode === mode
+                            ? 'bg-white text-slate-950 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-950'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="px-2 text-xs leading-5 text-slate-500">
+                    {listMode === 'grouped'
+                      ? 'Huvuduppdrag visas först. Öppna en grupp för att se underuppgifterna.'
+                      : listMode === 'attention'
+                        ? 'Visar grupper med förseningar, olästa meddelanden eller beslut som väntar.'
+                        : 'Visar varje huvud- och underuppgift som en egen rad.'}
+                  </p>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-slate-500">
+                  <span className="inline-flex items-center gap-2">
+                    <ListFilter size={15} /> {visibleTasks.length} {groupedList ? 'huvuduppdrag' : 'uppgifter'} visas
+                  </span>
                   <label className="inline-flex items-center gap-2">
                     Rader per sida
                     <select
@@ -708,9 +978,46 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                 {visibleTasks.length > 0 ? (
                   <>
                     <div className="mt-3 space-y-3 md:hidden">
-                      {pagedTasks.map(({ task, parentTitle }) => (
-                        <TaskCard key={task.id} task={task} parentTitle={parentTitle} onClick={() => setSelectedTaskId(task.id)} />
-                      ))}
+                      {pagedTasks.map(({ task, parentTitle }) => {
+                        const groupStats = groupedList
+                          ? taskHierarchy.groupStatsByRoot.get(task.id) ?? null
+                          : null
+                        const children = groupedList ? sortedGroupChildren(task.id) : []
+                        const expanded = groupedList && expandedGroupIds.has(task.id)
+                        return (
+                          <Fragment key={task.id}>
+                            <TaskCard
+                              task={task}
+                              parentTitle={parentTitle}
+                              groupStats={groupStats}
+                              onClick={() => setSelectedTaskId(task.id)}
+                            />
+                            {groupStats && groupStats.total > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => toggleTaskGroup(task.id)}
+                                aria-expanded={expanded}
+                                className="-mt-1 ml-4 inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm"
+                              >
+                                {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                                {expanded ? 'Dölj' : 'Visa'} {groupStats.total} underuppgifter
+                              </button>
+                            ) : null}
+                            {expanded ? (
+                              <div className="ml-4 space-y-2 border-l-2 border-slate-200 pl-3">
+                                {children.map((child) => (
+                                  <TaskCard
+                                    key={child.id}
+                                    task={child}
+                                    parentTitle={child.parentTaskId ? taskHierarchy.byId.get(child.parentTaskId)?.title ?? task.title : task.title}
+                                    onClick={() => setSelectedTaskId(child.id)}
+                                  />
+                                ))}
+                              </div>
+                            ) : null}
+                          </Fragment>
+                        )
+                      })}
                     </div>
 
                     <div className="mt-3 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
@@ -727,50 +1034,34 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                             </tr>
                           </thead>
                           <tbody>
-                            {pagedTasks.map(({ task, parentTitle }) => (
-                              <tr
-                                key={task.id}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => setSelectedTaskId(task.id)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault()
-                                    setSelectedTaskId(task.id)
-                                  }
-                                }}
-                                aria-label={`Öppna uppdraget ${task.title}${task.unreadMessageCount > 0 ? `, ${task.unreadMessageCount} olästa meddelanden` : ''}`}
-                                className={`cursor-pointer border-b border-slate-100 outline-none transition last:border-b-0 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400 ${task.unreadMessageCount > 0 ? 'bg-blue-50/70 hover:bg-blue-50' : 'bg-white'}`}
-                              >
-                                <td className="px-3 py-3 align-middle"><TaskRiskDot risk={task.risk} /></td>
-                                <td className="px-3 py-3 align-middle">
-                                  <p className={`truncate text-slate-950 ${task.unreadMessageCount > 0 ? 'font-bold' : 'font-semibold'}`}>{task.title}</p>
-                                  <p className="mt-0.5 truncate text-xs text-slate-500">
-                                    {recurrenceShortLabel(task) ? `${recurrenceShortLabel(task)} · ` : ''}
-                                    {parentTitle ? `↳ ${parentTitle}` : task.contextLabel || 'Inget projekt angivet'}
-                                  </p>
-                                </td>
-                                <td className="px-3 py-3 align-middle"><TaskStatusBadge status={task.status} /></td>
-                                <td className="px-3 py-3 align-middle">
-                                  <p className="truncate font-medium text-slate-800">{task.assignee.name}</p>
-                                  <p className="mt-0.5 truncate text-xs text-slate-500">Bollen hos {ballText(task)}</p>
-                                </td>
-                                <td className="px-3 py-3 align-middle font-medium">
-                                  <span className="block whitespace-nowrap">{formatTaskDateTime(task.dueAt, task.dueTimeZone, 'compact')}</span>
-                                  <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{taskTimeZoneLabel(task.dueTimeZone)}</span>
-                                </td>
-                                <td className="px-3 py-3 align-middle">
-                                  <div className="flex min-w-0 items-center gap-2">
-                                    {task.unreadMessageCount > 0 ? (
-                                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white">
-                                        <MessageCircle size={11} /> {task.unreadMessageCount}
-                                      </span>
-                                    ) : <MessageCircle size={15} className="shrink-0 text-slate-300" />}
-                                    <p className="truncate text-xs text-slate-600" title={latestMessageLabel(task)}>{latestMessageLabel(task)}</p>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                            {pagedTasks.map(({ task, parentTitle }) => {
+                              const groupStats = groupedList
+                                ? taskHierarchy.groupStatsByRoot.get(task.id) ?? null
+                                : null
+                              const expanded = groupedList && expandedGroupIds.has(task.id)
+                              return (
+                                <Fragment key={task.id}>
+                                  <TaskTableRow
+                                    task={task}
+                                    parentTitle={parentTitle}
+                                    groupStats={groupStats}
+                                    expanded={expanded}
+                                    onToggle={groupStats && groupStats.total > 0 ? () => toggleTaskGroup(task.id) : undefined}
+                                    onClick={() => setSelectedTaskId(task.id)}
+                                  />
+                                  {expanded
+                                    ? sortedGroupChildren(task.id).map((child) => (
+                                        <TaskTableRow
+                                          key={child.id}
+                                          task={child}
+                                          parentTitle={child.parentTaskId ? taskHierarchy.byId.get(child.parentTaskId)?.title ?? task.title : task.title}
+                                          onClick={() => setSelectedTaskId(child.id)}
+                                        />
+                                      ))
+                                    : null}
+                                </Fragment>
+                              )
+                            })}
                           </tbody>
                         </table>
                       </div>
