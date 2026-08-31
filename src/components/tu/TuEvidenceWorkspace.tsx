@@ -230,6 +230,8 @@ export default function TuEvidenceWorkspace({
   const [observationFilter, setObservationFilter] = useState<ObservationFilter>('needs_review')
   const [observationSearch, setObservationSearch] = useState('')
   const [imagePickerOpen, setImagePickerOpen] = useState(false)
+  const [supplementOpen, setSupplementOpen] = useState(false)
+  const [measurementEditorOpen, setMeasurementEditorOpen] = useState(false)
   const [fieldEntryDialogOpen, setFieldEntryDialogOpen] = useState(false)
   const [observationPanelOpen, setObservationPanelOpen] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -333,6 +335,12 @@ export default function TuEvidenceWorkspace({
     : null
   const reviewedCount = observations.filter((observation) => observation.reviewStatus === 'reviewed').length
   const linkedImages = images.filter((image) => form.imageIds.includes(image.id))
+  const sourceHasLocation = Boolean(selectedObservation?.location?.trim())
+  const sourceHasBuildingComponent = Boolean(selectedObservation?.buildingComponent?.trim())
+  const sourceHasNote = Boolean(selectedObservation?.noteText.trim())
+  const sourceHasTranscript = Boolean(selectedObservation?.transcriptText?.trim())
+  const sourceHasAudio = Boolean(selectedObservation?.audioStoragePath)
+  const sourceMeasurements = selectedObservation?.measurements ?? []
   const needsReviewCount = observations.length - reviewedCount
   const nextUnreviewedObservation = observations.find(
     (observation) => observation.reviewStatus !== 'reviewed' && observation.id !== form.id
@@ -385,6 +393,8 @@ export default function TuEvidenceWorkspace({
     setSavedMessage(null)
     setSuggestion(null)
     setImagePickerOpen(false)
+    setSupplementOpen(false)
+    setMeasurementEditorOpen(false)
     setForm(toObservationForm(observation))
     return true
   }
@@ -402,6 +412,8 @@ export default function TuEvidenceWorkspace({
     if (formDirty && !window.confirm('Du har osparade ändringar. Vill du stänga utan att spara?')) return
     setObservationPanelOpen(false)
     setImagePickerOpen(false)
+    setSupplementOpen(false)
+    setMeasurementEditorOpen(false)
     setError(null)
     setSavedMessage(null)
   }, [formDirty, saving])
@@ -456,6 +468,9 @@ export default function TuEvidenceWorkspace({
       }
       const next = await loadObservations(reviewAndNext ? null : payload.observation.id)
       if (reviewAndNext) {
+        setImagePickerOpen(false)
+        setSupplementOpen(false)
+        setMeasurementEditorOpen(false)
         const remaining = next?.filter((observation) => observation.reviewStatus !== 'reviewed') ?? []
         if (remaining.length === 0) {
           setObservationFilter('all')
@@ -803,7 +818,7 @@ export default function TuEvidenceWorkspace({
                           ? <CheckCircle2 size={16} aria-label="Kontrollerad" />
                           : observationNumber}
                       </span>
-                      <span className="grid min-w-0 gap-1 md:grid-cols-[minmax(180px,0.8fr)_minmax(240px,1.4fr)] md:items-center md:gap-6">
+                      <span className="flex min-w-0 flex-col gap-1">
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold text-gray-950">
                             {getObservationTitle(observation)}
@@ -815,7 +830,7 @@ export default function TuEvidenceWorkspace({
                             ) : null}
                           </span>
                         </span>
-                        <span className="line-clamp-2 text-xs leading-5 text-gray-600 md:line-clamp-1 md:text-sm">
+                        <span className="line-clamp-2 text-xs leading-5 text-gray-600 md:text-sm">
                           {getObservationPreview(observation)}
                         </span>
                       </span>
@@ -931,46 +946,51 @@ export default function TuEvidenceWorkspace({
               </p>
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-xs font-medium text-gray-700">Plats/rum</span>
-                <input
-                  value={form.location}
-                  onChange={(event) => updateForm('location', event.target.value)}
+            {sourceHasLocation || sourceHasBuildingComponent ? (
+              <div className={`mt-4 grid gap-4 ${sourceHasLocation && sourceHasBuildingComponent ? 'md:grid-cols-2' : ''}`}>
+                {sourceHasLocation ? (
+                  <label className="space-y-1">
+                    <span className="text-xs font-medium text-gray-700">Plats/rum</span>
+                    <input
+                      value={form.location}
+                      onChange={(event) => updateForm('location', event.target.value)}
+                      disabled={locked}
+                      className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                    />
+                  </label>
+                ) : null}
+                {sourceHasBuildingComponent ? (
+                  <label className="space-y-1">
+                    <span className="text-xs font-medium text-gray-700">Byggnadsdel</span>
+                    <input
+                      value={form.buildingComponent}
+                      onChange={(event) => updateForm('buildingComponent', event.target.value)}
+                      disabled={locked}
+                      className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                    />
+                  </label>
+                ) : null}
+              </div>
+            ) : null}
+
+            {sourceHasNote ? (
+              <label className="mt-4 block space-y-1">
+                <span className="text-xs font-medium text-gray-700">Fältanteckning</span>
+                <textarea
+                  value={form.noteText}
+                  onChange={(event) => updateForm('noteText', event.target.value)}
                   disabled={locked}
-                  placeholder="Exempel: Sovrum mot norr"
-                  className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                  rows={5}
+                  className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 />
               </label>
-              <label className="space-y-1">
-                <span className="text-xs font-medium text-gray-700">Byggnadsdel</span>
-                <input
-                  value={form.buildingComponent}
-                  onChange={(event) => updateForm('buildingComponent', event.target.value)}
-                  disabled={locked}
-                  placeholder="Exempel: Källaryttervägg"
-                  className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-                />
-              </label>
-            </div>
+            ) : null}
 
-            <label className="mt-4 block space-y-1">
-              <span className="text-xs font-medium text-gray-700">Fältanteckning</span>
-              <textarea
-                value={form.noteText}
-                onChange={(event) => updateForm('noteText', event.target.value)}
-                disabled={locked}
-                rows={5}
-                placeholder="Det som observerades eller berättades på plats."
-                className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-              />
-            </label>
-
-            {form.audioStoragePath ? (
+            {sourceHasAudio ? (
               <p className="mt-2 text-xs text-gray-500">Röstinspelningen är sparad med originalunderlaget.</p>
             ) : null}
 
-            {form.transcriptText ? (
+            {sourceHasTranscript ? (
               <label className="mt-4 block space-y-1">
                 <span className="flex items-center gap-2 text-xs font-medium text-gray-700">
                   Röstutskrift
@@ -987,6 +1007,154 @@ export default function TuEvidenceWorkspace({
                 />
               </label>
             ) : null}
+
+            {linkedImages.length > 0 ? (
+              <div className="mt-5 border-t border-gray-200 pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-950">Kopplade bilder</h4>
+                    <p className="mt-0.5 text-xs text-gray-600">Kontrollera att bilderna hör till fältposten.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSupplementOpen(true)
+                      setImagePickerOpen(true)
+                    }}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-800 transition hover:bg-gray-50"
+                  >
+                    <ImageIcon size={14} aria-hidden />
+                    Ändra kopplingar
+                  </button>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+                  {linkedImages.map((image) => (
+                    <button
+                      key={image.id}
+                      type="button"
+                      onClick={() => onPreviewImage(image.id)}
+                      className="overflow-hidden rounded-md border border-gray-200 bg-gray-50 text-left transition hover:border-violet-300"
+                      aria-label="Granska kopplad bild i fullformat"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={image.publicUrl}
+                        alt={image.caption ?? 'Besiktningsbild'}
+                        className="aspect-square w-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {sourceMeasurements.length > 0 ? (
+              <div className="mt-5 border-t border-gray-200 pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-950">Registrerade mätvärden</h4>
+                    <p className="mt-0.5 text-xs text-gray-600">Kontrollera typ, värde och metod.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSupplementOpen(true)
+                      setMeasurementEditorOpen(true)
+                    }}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-800 transition hover:bg-gray-50"
+                  >
+                    <Ruler size={14} aria-hidden />
+                    Hantera mätvärden
+                  </button>
+                </div>
+                <div className="mt-3 divide-y divide-gray-200 border-y border-gray-200">
+                  {sourceMeasurements.map((measurement) => (
+                    <div key={measurement.id} className="py-2.5">
+                      <p className="text-sm font-semibold text-gray-950">
+                        {measurement.measurementType}: {measurement.valueText}
+                        {measurement.unit ? ` ${measurement.unit}` : ''}
+                      </p>
+                      {[measurement.method, measurement.instrument, measurement.note].some(Boolean) ? (
+                        <p className="mt-0.5 text-xs text-gray-600">
+                          {[measurement.method, measurement.instrument, measurement.note].filter(Boolean).join(' · ')}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-6 border-t border-gray-200 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (supplementOpen) {
+                    setImagePickerOpen(false)
+                    setMeasurementEditorOpen(false)
+                  }
+                  setSupplementOpen((current) => !current)
+                }}
+                aria-expanded={supplementOpen}
+                className="flex min-h-12 w-full items-center justify-between gap-4 rounded-md px-2 text-left transition hover:bg-gray-50"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-gray-950">Komplettera eller förtydliga</span>
+                  <span className="mt-0.5 block text-xs font-normal text-gray-600">
+                    Frivilligt. Lägg bara till det som behövs för att förstå underlaget.
+                  </span>
+                </span>
+                <ChevronDown
+                  size={17}
+                  className={`shrink-0 text-gray-500 transition ${supplementOpen ? 'rotate-180' : ''}`}
+                  aria-hidden
+                />
+              </button>
+
+              {supplementOpen ? (
+                <div className="mt-3 border-t border-gray-100 px-2 pt-4">
+                  {!sourceHasLocation || !sourceHasBuildingComponent ? (
+                    <div className={`grid gap-4 ${!sourceHasLocation && !sourceHasBuildingComponent ? 'md:grid-cols-2' : ''}`}>
+                      {!sourceHasLocation ? (
+                        <label className="space-y-1">
+                          <span className="text-xs font-medium text-gray-700">Lägg till plats/rum</span>
+                          <input
+                            value={form.location}
+                            onChange={(event) => updateForm('location', event.target.value)}
+                            disabled={locked}
+                            placeholder="Exempel: Sovrum mot norr"
+                            className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                          />
+                        </label>
+                      ) : null}
+                      {!sourceHasBuildingComponent ? (
+                        <label className="space-y-1">
+                          <span className="text-xs font-medium text-gray-700">Lägg till byggnadsdel</span>
+                          <input
+                            value={form.buildingComponent}
+                            onChange={(event) => updateForm('buildingComponent', event.target.value)}
+                            disabled={locked}
+                            placeholder="Exempel: Källaryttervägg"
+                            className="h-10 w-full rounded-md border border-gray-300 px-3 text-sm outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {!sourceHasNote ? (
+                    <label className="mt-4 block space-y-1">
+                      <span className="text-xs font-medium text-gray-700">Förtydligande anteckning</span>
+                      <textarea
+                        value={form.noteText}
+                        onChange={(event) => updateForm('noteText', event.target.value)}
+                        disabled={locked}
+                        rows={4}
+                        placeholder="Lägg till sådant som behövs för att förstå observationen."
+                        className="w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-violet-600 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                      />
+                    </label>
+                  ) : null}
 
             <div className="mt-5 border-t border-gray-200 pt-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1123,7 +1291,11 @@ export default function TuEvidenceWorkspace({
               ) : null}
             </div>
 
-            <details className="group mt-5 border-t border-gray-200 pt-4">
+            <details
+              open={measurementEditorOpen}
+              onToggle={(event) => setMeasurementEditorOpen(event.currentTarget.open)}
+              className="group mt-5 border-t border-gray-200 pt-4"
+            >
               <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 [&::-webkit-details-marker]:hidden">
                 <span className="inline-flex items-center gap-2">
                   <Ruler size={16} className="text-gray-600" aria-hidden />
@@ -1220,6 +1392,9 @@ export default function TuEvidenceWorkspace({
               )}
               </div>
             </details>
+                </div>
+              ) : null}
+            </div>
 
             <div className="sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-10 mt-5 flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white/95 p-2 shadow-lg backdrop-blur">
               <span className="px-1 text-xs text-gray-600">
