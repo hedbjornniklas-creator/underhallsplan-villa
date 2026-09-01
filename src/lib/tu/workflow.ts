@@ -61,6 +61,16 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     (validation?.emptyObservationCount ?? 0) +
     source.queue.failed
   const reportApplied = source.reportDraft?.sections.some((section) => section.status === 'accepted') ?? false
+  const generatedReportSectionCount = source.reportDraft?.sections.filter((section) => (
+    section.status !== 'rejected'
+    && Boolean(section.proposedText.trim())
+    && (section.groundingStatus === 'grounded' || section.groundingStatus === 'manually_edited')
+  )).length ?? 0
+  const generatedReportSectionTotal = source.reportDraft?.sections.length ?? 0
+  const missingGeneratedSectionCount = Math.max(
+    0,
+    generatedReportSectionTotal - generatedReportSectionCount
+  )
   const analysisStale = Boolean(workflow?.analysisStaleAt) || analysisRun?.status === 'cancelled'
   const fieldworkCompleted = Boolean(workflow?.fieldworkCompletedAt)
   const reportProcessing = reportRun?.status === 'queued' || reportRun?.status === 'processing'
@@ -128,9 +138,23 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     assessmentStatusText = 'Förbereder rapportutkastet'
     assessmentBlockers = 0
   } else if (workflow?.status === 'analysis_approved') {
-    assessmentStatus = 'complete'
-    assessmentStatusText = 'Underlaget är sammanställt'
-    assessmentBlockers = 0
+    if (reportProcessing || !reportRun) {
+      assessmentStatus = 'in_progress'
+      assessmentStatusText = reportRun?.progressMessage || 'Skapar rapportens delar'
+      assessmentBlockers = 0
+    } else if (reportFailed) {
+      assessmentStatus = 'needs_attention'
+      assessmentStatusText = 'Utlåtandet kunde inte skapas · försök igen'
+      assessmentBlockers = 1
+    } else if (reportRun.status === 'completed' && missingGeneratedSectionCount > 0) {
+      assessmentStatus = 'needs_attention'
+      assessmentStatusText = `${generatedReportSectionCount} av ${generatedReportSectionTotal} delar skapade · ${missingGeneratedSectionCount} behöver kompletteras`
+      assessmentBlockers = missingGeneratedSectionCount
+    } else if (reportRun.status === 'completed') {
+      assessmentStatus = 'complete'
+      assessmentStatusText = `Alla ${generatedReportSectionTotal} rapportdelar är skapade`
+      assessmentBlockers = 0
+    }
   }
 
   let reportStatus: TuWorkflowStepState = 'not_started'

@@ -851,7 +851,7 @@ export default function TuEvidenceWorkspace({
     if (nextObservation) {
       setForm(toObservationForm(nextObservation))
       setSavedMessage(null)
-      showSuccessToast('Källmaterialet är godkänt. Nästa fältpost har öppnats.', {
+      showSuccessToast('Källmaterialet är markerat som kontrollerat. Nästa fältpost har öppnats.', {
         appearance: 'dark',
         dedupeKey: 'tu-observation-review-next',
         durationMs: 3000,
@@ -1857,10 +1857,11 @@ export default function TuEvidenceWorkspace({
                     type="button"
                     onClick={approveObservationAndOpenNext}
                     disabled={locked || saving}
+                    title="Du bekräftar att du själv har kontrollerat källmaterialet."
                     className="inline-flex min-h-10 min-w-44 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
                     <Check size={16} aria-hidden />
-                    Godkänn underlaget och öppna nästa
+                    Markera som kontrollerad och öppna nästa
                   </button>
                 ) : formDirty ? (
                   <button

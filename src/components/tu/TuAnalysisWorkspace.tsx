@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   BrainCircuit,
-  CheckCircle2,
   Clock3,
   FileText,
   Loader2,
@@ -202,15 +201,6 @@ export default function TuAnalysisWorkspace({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadState()}
-          disabled={Boolean(actionBusy)}
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
-        >
-          <RefreshCw size={15} className={analysisProcessing ? 'animate-spin' : ''} aria-hidden />
-          Uppdatera
-        </button>
       </header>
 
       <div className="space-y-5 p-4 sm:p-5">
@@ -338,29 +328,15 @@ export default function TuAnalysisWorkspace({
         ) : null}
 
         {workflow?.status === 'analysis_approved' ? (
-          <div className="space-y-4">
-            <div className="flex gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-emerald-700" aria-hidden />
-              <div>
-                <h3 className="font-semibold text-emerald-950">Underlaget är sammanställt</h3>
-                <p className="mt-1 text-sm text-emerald-900">Nu skrivs utlåtandet i mallens samtliga rapportdelar.</p>
-              </div>
-            </div>
-            <TuWholeReportDraftPanel
-              inspectionId={inspectionId}
-              locked={locked}
-              autoStart
-              onApplyDraft={onApplyReportDraft}
-              onOpenReport={onOpenReport}
-            />
-            {workflow.run?.overview || workflow.run?.warnings.length ? (
-              <details className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                <summary className="cursor-pointer font-semibold text-gray-800">Analysens tekniska underlag</summary>
-                {workflow.run.overview ? <p className="mt-3 whitespace-pre-wrap leading-6">{workflow.run.overview}</p> : null}
-                {workflow.run.warnings.map((warning) => <p key={warning} className="mt-2 text-amber-900">{warning}</p>)}
-              </details>
-            ) : null}
-          </div>
+          <TuWholeReportDraftPanel
+            inspectionId={inspectionId}
+            locked={locked}
+            autoStart
+            analysisOverview={workflow.run?.overview}
+            analysisWarnings={workflow.run?.warnings ?? []}
+            onApplyDraft={onApplyReportDraft}
+            onOpenReport={onOpenReport}
+          />
         ) : null}
       </div>
     </section>
