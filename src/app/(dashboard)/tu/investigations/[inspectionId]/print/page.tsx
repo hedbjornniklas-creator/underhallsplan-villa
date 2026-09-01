@@ -15,6 +15,7 @@ import {
   type TuInvestigationDetails,
   type TuInvestigationImage,
 } from '@/lib/tu/server'
+import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 
 export const dynamic = 'force-dynamic'
 
@@ -411,6 +412,12 @@ export default async function TuInvestigationPrintPage({
       }
     : null
   const companyLogoAlt = investigation.inspector?.company_name ?? 'Besiktningsbolag'
+  const printTitle = buildReportPdfFileName({
+    assignmentNumber:
+      investigation.assignmentNumber ?? investigation.inspection.assignment_number,
+    inspectionDate: investigation.inspection.date,
+    inspectionFamily: 'TU',
+  }).replace(/\.pdf$/i, '')
 
   return (
     <main className="tu-print-root min-h-screen bg-neutral-100 text-gray-950 print:bg-white">
@@ -418,7 +425,7 @@ export default async function TuInvestigationPrintPage({
         <TuPrintActions
           backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}`}
           inspectionId={inspectionId}
-          printTitle=""
+          printTitle={printTitle}
         />
       )}
       <TuPrintPagedDocument

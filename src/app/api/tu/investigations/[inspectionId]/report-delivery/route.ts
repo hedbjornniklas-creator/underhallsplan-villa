@@ -18,6 +18,8 @@ import {
   type TuReportDeliveryDocument,
 } from '@/lib/tu/reportSnapshot'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { listTuObservations } from '@/lib/tu/evidenceServer'
+import { evaluateTuReportQuality } from '@/lib/tu/reportQuality'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -753,6 +755,34 @@ function resolveInspectionDate(investigation: NonNullable<Awaited<ReturnType<typ
   return investigation.date ?? investigation.assignment?.preferred_date ?? null
 }
 
+async function getReportQualityIssues(
+  investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
+) {
+  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) return []
+  const [observations, appendixImages] = await Promise.all([
+    listTuObservations({
+      orgId: investigation.orgId,
+      inspectionId: investigation.inspectionId,
+    }),
+    listTuInvestigationImages({
+      orgId: investigation.orgId,
+      inspectionId: investigation.inspectionId,
+      sectionKey: 'appendix',
+    }),
+  ])
+  const reportText = investigation.reportDraft.sections
+    .flatMap((section) => [
+      section.text,
+      ...(section.subsections?.map((subsection) => subsection.text) ?? []),
+    ])
+    .join('\n\n')
+  return evaluateTuReportQuality({
+    reportText,
+    observations,
+    appendixImages,
+  })
+}
+
 async function getFinalizationBlocker(
   admin: AdminClient,
   investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
@@ -780,6 +810,9 @@ async function getFinalizationBlocker(
     const suffix = missingSections.length > 3 ? ` och ${missingSections.length - 3} till` : ''
     return `Fyll i obligatoriska rapportdelar: ${titles}${suffix}.`
   }
+  const qualityIssues = await getReportQualityIssues(investigation)
+  const qualityBlocker = qualityIssues.find((issue) => issue.severity === 'blocker')
+  if (qualityBlocker) return qualityBlocker.message
   return null
 }
 
@@ -798,12 +831,13 @@ export async function GET(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
-    const [history, unlockHistory, activeLink, deliveryDocuments, revision] = await Promise.all([
+    const [history, unlockHistory, activeLink, deliveryDocuments, revision, qualityIssues] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
       getUnlockHistory(admin, org.orgId, inspectionId),
       getLatestReportLink(admin, inspectionId),
       listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
       getCurrentTuRevision(admin, org.orgId, inspectionId),
+      getReportQualityIssues(investigation),
     ])
     const ordererEmail = resolveDefaultRecipient(investigation)
     const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
@@ -827,6 +861,7 @@ export async function GET(
       revisionStatus: revision?.status ?? null,
       revisionFinalizedAt: revision?.finalized_at ?? null,
       revisionPublishedAt: revision?.published_at ?? null,
+      qualityIssues,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'

@@ -4,7 +4,7 @@ export function isTuAnalysisSourceImage(image: { sectionKey: string }) {
   return image.sectionKey !== 'cover'
 }
 
-export type TuObservationSourceType = 'typed' | 'voice' | 'mixed'
+export type TuObservationSourceType = 'typed' | 'voice' | 'mixed' | 'measurement'
 export type TuObservationCertainty = 'confirmed' | 'probable' | 'uncertain'
 export type TuObservationReviewStatus = 'draft' | 'reviewed'
 export type TuAiSuggestionStatus = 'pending' | 'accepted' | 'rejected'
@@ -71,7 +71,7 @@ export type TuEvidenceResponse = {
 }
 
 export function isTuObservationSourceType(value: unknown): value is TuObservationSourceType {
-  return value === 'typed' || value === 'voice' || value === 'mixed'
+  return value === 'typed' || value === 'voice' || value === 'mixed' || value === 'measurement'
 }
 
 export function isTuObservationCertainty(value: unknown): value is TuObservationCertainty {

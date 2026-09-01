@@ -89,6 +89,24 @@ export function findTuMoistureGroundingRisks(input: {
     if (rule.generated.test(text) && !rule.source.test(sources)) risks.push(rule.message)
   }
 
+  const comparativeMeasurementClaim = /(?:inga\s+förhöjda|förhöjda|normala?|acceptabla?)\s+fukt(?:värden?|nivåer?)/i
+  if (comparativeMeasurementClaim.test(text)) {
+    const hasStructuredMeasurement = [
+      /mätvärde:/i,
+      /enhet:/i,
+      /metod:/i,
+      /instrument:/i,
+    ].every((pattern) => pattern.test(sources))
+    const hasComparisonBasis = /(?:referens|gränsvärde|jämförelse|normalvärde|förhöjd|normal|acceptabel)/i.test(sources)
+    if (!hasStructuredMeasurement || !hasComparisonBasis) {
+      risks.push('Texten klassificerar ett fuktresultat utan komplett mätunderlag och dokumenterad jämförelsegrund.')
+    }
+  }
+
+  if (/(?:hela|samtliga|konstruktionen|byggnaden).{0,45}(?:saknar fukt|ingen fukt|inga fuktindikationer)/i.test(text)) {
+    risks.push('Texten generaliserar ett begränsat kontrollresultat till en större konstruktion eller byggnad.')
+  }
+
   const assessmentNegatesMoisture = /(?:inte|ej).{0,55}fukt|smutsfläck|missfärgning/.test(assessments)
   if (/fuktfläck/i.test(text) && assessmentNegatesMoisture) {
     risks.push('Texten använder fuktfläck trots att den godkända aktuella bedömningen inte bekräftar fukt.')

@@ -80,13 +80,13 @@ export function validateTuReportSections(input: {
       cleanText(observation.suggestedFollowUp),
       ...(Array.isArray(observation.measurements)
         ? observation.measurements.map(record).flatMap((measurement) => [
-            cleanText(measurement.location),
-            cleanText(measurement.type),
-            cleanText(measurement.value),
-            cleanText(measurement.unit),
-            cleanText(measurement.method),
-            cleanText(measurement.instrument),
-            cleanText(measurement.note),
+            cleanText(measurement.location) ? `Mätplats: ${cleanText(measurement.location)}` : '',
+            cleanText(measurement.type) ? `Mättyp: ${cleanText(measurement.type)}` : '',
+            cleanText(measurement.value) ? `Mätvärde: ${cleanText(measurement.value)}` : '',
+            cleanText(measurement.unit) ? `Enhet: ${cleanText(measurement.unit)}` : '',
+            cleanText(measurement.method) ? `Metod: ${cleanText(measurement.method)}` : '',
+            cleanText(measurement.instrument) ? `Instrument: ${cleanText(measurement.instrument)}` : '',
+            cleanText(measurement.note) ? `Mätkommentar: ${cleanText(measurement.note)}` : '',
           ])
         : []),
     ].filter(Boolean).join('\n'))

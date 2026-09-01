@@ -64,6 +64,30 @@ test('blocks an invented standard method even when a real source id was cited', 
   assert.ok(risks.some((risk) => risk.includes('standardmetod')))
 })
 
+test('blocks a comparative moisture claim without complete measurement context', () => {
+  const risks = findTuMoistureGroundingRisks({
+    text: 'Inga förhöjda fuktvärden noterades i taket.',
+    sourceTexts: ['Mätvärde: 12', 'Mättyp: Fuktindikering'],
+    currentAssessmentTexts: [],
+  })
+  assert.ok(risks.some((risk) => risk.includes('komplett mätunderlag')))
+})
+
+test('allows a comparative moisture claim with instrument, method and comparison basis', () => {
+  const risks = findTuMoistureGroundingRisks({
+    text: 'Inga förhöjda fuktvärden noterades i den kontrollerade mätpunkten.',
+    sourceTexts: [
+      'Mätvärde: 12',
+      'Enhet: %',
+      'Metod: stiftmätning',
+      'Instrument: Protimeter',
+      'Mätkommentar: jämförelse mot dokumenterat gränsvärde, utan förhöjd nivå',
+    ],
+    currentAssessmentTexts: [],
+  })
+  assert.equal(risks.length, 0)
+})
+
 test('keeps a grounded paragraph with valid observation sources', () => {
   const [section] = validateTuGroundedSections({
     expectedSectionIds: ['observations'],

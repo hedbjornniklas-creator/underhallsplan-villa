@@ -12,6 +12,7 @@ import {
   Image as ImageIcon,
   Loader2,
   Paperclip,
+  Pencil,
   Plus,
   Ruler,
   Search,
@@ -30,6 +31,7 @@ import type {
   TuMeasurement,
   TuObservation,
   TuObservationCertainty,
+  TuObservationSourceType,
 } from '@/lib/tu/evidence'
 
 type EvidenceSection = {
@@ -48,6 +50,7 @@ export type TuEvidenceImage = {
 
 type ObservationForm = {
   id: string | null
+  sourceType: TuObservationSourceType
   location: string
   buildingComponent: string
   noteText: string
@@ -66,6 +69,7 @@ type ObservationForm = {
 }
 
 type MeasurementForm = {
+  id: string | null
   measurementType: string
   valueText: string
   unit: string
@@ -107,6 +111,7 @@ type Props = {
 }
 
 const EMPTY_MEASUREMENT: MeasurementForm = {
+  id: null,
   measurementType: '',
   valueText: '',
   unit: '',
@@ -141,6 +146,7 @@ function defaultAiSectionId(sections: EvidenceSection[]) {
 function createEmptyObservation(sections: EvidenceSection[]): ObservationForm {
   return {
     id: null,
+    sourceType: 'typed',
     location: '',
     buildingComponent: '',
     noteText: '',
@@ -162,6 +168,7 @@ function createEmptyObservation(sections: EvidenceSection[]): ObservationForm {
 function toObservationForm(observation: TuObservation): ObservationForm {
   return {
     id: observation.id,
+    sourceType: observation.sourceType,
     location: observation.location ?? '',
     buildingComponent: observation.buildingComponent ?? '',
     noteText: observation.noteText,
@@ -192,10 +199,20 @@ function formatObservationTime(value: string) {
 }
 
 function getObservationTitle(observation: TuObservation) {
+  if (observation.sourceType === 'measurement') {
+    const measurement = observation.measurements[0]
+    return observation.location || (measurement ? `Mätning: ${measurement.measurementType}` : 'Mätning')
+  }
   return observation.location || observation.buildingComponent || 'Fältpost utan plats'
 }
 
 function getObservationPreview(observation: TuObservation) {
+  if (observation.sourceType === 'measurement') {
+    const measurement = observation.measurements[0]
+    if (measurement) {
+      return `${measurement.measurementType}: ${measurement.valueText}${measurement.unit ? ` ${measurement.unit}` : ''}`
+    }
+  }
   return observation.noteText || observation.transcriptText || 'Endast bilddokumentation'
 }
 
@@ -269,6 +286,7 @@ function removeStoredObservationSaveJob(
 function observationRequestBody(form: ObservationForm) {
   return {
     observationId: form.id,
+    sourceType: form.sourceType,
     location: form.location,
     buildingComponent: form.buildingComponent,
     noteText: form.noteText,
@@ -292,7 +310,14 @@ function applyObservationForm(observation: TuObservation, form: ObservationForm)
   const transcriptText = form.transcriptText.trim() || null
   return {
     ...observation,
-    sourceType: transcriptText && noteText.trim() ? 'mixed' : transcriptText ? 'voice' : 'typed',
+    sourceType:
+      form.sourceType === 'measurement'
+        ? 'measurement'
+        : transcriptText && noteText.trim()
+          ? 'mixed'
+          : transcriptText
+            ? 'voice'
+            : 'typed',
     location: form.location.trim() || null,
     buildingComponent: form.buildingComponent.trim() || null,
     noteText,
@@ -740,7 +765,8 @@ export default function TuEvidenceWorkspace({
     setSuggestion(null)
     setImagePickerOpen(false)
     setSupplementOpen(false)
-    setMeasurementEditorOpen(false)
+    setMeasurementEditorOpen(observation.sourceType === 'measurement')
+    setMeasurementForm(EMPTY_MEASUREMENT)
     setForm(toObservationForm(observation))
     return true
   }
@@ -950,9 +976,10 @@ export default function TuEvidenceWorkspace({
     setError(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements`, {
-        method: 'POST',
+        method: measurementForm.id ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          measurementId: measurementForm.id,
           observationId: form.id,
           location: form.location,
           ...measurementForm,
@@ -964,11 +991,25 @@ export default function TuEvidenceWorkspace({
       }
       setMeasurementForm(EMPTY_MEASUREMENT)
       await loadObservations(form.id)
+      showSuccessToast(measurementForm.id ? 'Mätvärdet är uppdaterat.' : 'Mätvärdet är tillagt.')
     } catch (measurementError) {
       setError(measurementError instanceof Error ? measurementError.message : 'Kunde inte spara mätvärdet.')
     } finally {
       setMeasurementBusy(false)
     }
+  }
+
+  const editMeasurement = (measurement: TuMeasurement) => {
+    setMeasurementForm({
+      id: measurement.id,
+      measurementType: measurement.measurementType,
+      valueText: measurement.valueText,
+      unit: measurement.unit ?? '',
+      method: measurement.method ?? '',
+      instrument: measurement.instrument ?? '',
+      note: measurement.note ?? '',
+    })
+    setMeasurementEditorOpen(true)
   }
 
   const deleteMeasurement = async (measurementId: string) => {
@@ -1241,6 +1282,11 @@ export default function TuEvidenceWorkspace({
                           </span>
                           <span className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-gray-500">
                             <span className="shrink-0">{formatObservationTime(observation.observedAt)}</span>
+                            {observation.sourceType === 'measurement' ? (
+                              <span className="inline-flex items-center gap-1 font-medium text-violet-700">
+                                <Ruler size={11} aria-hidden /> Instrumentmätning
+                              </span>
+                            ) : null}
                             {observation.buildingComponent ? (
                               <span className="truncate">{observation.buildingComponent}</span>
                             ) : null}
@@ -1263,7 +1309,7 @@ export default function TuEvidenceWorkspace({
                             Saknar plats
                           </span>
                         ) : null}
-                        {observation.reviewStatus !== 'reviewed' && observation.imageIds.length === 0 ? (
+                        {observation.sourceType !== 'measurement' && observation.reviewStatus !== 'reviewed' && observation.imageIds.length === 0 ? (
                           <span className="hidden rounded bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600 lg:inline-flex">
                             Ingen bild
                           </span>
@@ -1305,7 +1351,7 @@ export default function TuEvidenceWorkspace({
                   Fältpost {observations.findIndex((observation) => observation.id === form.id) + 1} av {observations.length}
                 </p>
                 <h3 id="tu-observation-panel-title" className="mt-1 text-lg font-semibold text-gray-950">
-                  {form.location || form.buildingComponent || 'Fältpost utan plats'}
+                  {selectedObservation ? getObservationTitle(selectedObservation) : 'Fältpost utan plats'}
                 </h3>
               </div>
               <div className="flex items-center gap-2">
@@ -1751,16 +1797,28 @@ export default function TuEvidenceWorkspace({
                               {[measurement.method, measurement.instrument, measurement.note].filter(Boolean).join(' · ')}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => void deleteMeasurement(measurement.id)}
-                            disabled={locked || measurementBusy}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-rose-700 hover:bg-rose-50 disabled:text-gray-300"
-                            aria-label="Ta bort mätvärde"
-                            title="Ta bort mätvärde"
-                          >
-                            <Trash2 size={14} aria-hidden />
-                          </button>
+                          <span className="flex shrink-0 items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => editMeasurement(measurement)}
+                              disabled={locked || measurementBusy}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-violet-700 hover:bg-violet-50 disabled:text-gray-300"
+                              aria-label="Redigera mätvärde"
+                              title="Redigera mätvärde"
+                            >
+                              <Pencil size={14} aria-hidden />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteMeasurement(measurement.id)}
+                              disabled={locked || measurementBusy}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-rose-700 hover:bg-rose-50 disabled:text-gray-300"
+                              aria-label="Ta bort mätvärde"
+                              title="Ta bort mätvärde"
+                            >
+                              <Trash2 size={14} aria-hidden />
+                            </button>
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -1804,15 +1862,33 @@ export default function TuEvidenceWorkspace({
                       className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                     />
                   </div>
+                  <textarea
+                    value={measurementForm.note}
+                    onChange={(event) => setMeasurementForm((current) => ({ ...current, note: event.target.value }))}
+                    disabled={locked}
+                    rows={2}
+                    placeholder="Kommentar, material, mätpunkt eller referens"
+                    className="mt-2 w-full resize-y rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                  />
                   <div className="mt-2 flex justify-end">
+                    {measurementForm.id ? (
+                      <button
+                        type="button"
+                        onClick={() => setMeasurementForm(EMPTY_MEASUREMENT)}
+                        disabled={measurementBusy}
+                        className="mr-2 inline-flex h-9 items-center rounded-md px-3 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+                      >
+                        Avbryt redigering
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void saveMeasurement()}
                       disabled={locked || measurementBusy}
                       className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 disabled:text-gray-400"
                     >
-                      {measurementBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Plus size={14} aria-hidden />}
-                      Lägg till mätvärde
+                      {measurementBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : measurementForm.id ? <Check size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
+                      {measurementForm.id ? 'Spara mätvärde' : 'Lägg till mätvärde'}
                     </button>
                   </div>
                 </>

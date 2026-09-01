@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import {
+  createTuObservation,
   createTuMeasurement,
   deleteTuMeasurement,
+  getTuObservation,
   updateTuMeasurement,
   type TuMeasurementWriteInput,
 } from '@/lib/tu/evidenceServer'
@@ -35,6 +37,9 @@ function mapError(error: unknown) {
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_OBSERVATION_NOT_FOUND') return jsonError('Observationen hittades inte.', 404)
   if (message === 'TU_MEASUREMENT_NOT_FOUND') return jsonError('Mätvärdet hittades inte.', 404)
+  if (message === 'TU_OBSERVATION_ID_CONFLICT' || message === 'TU_MEASUREMENT_ID_CONFLICT') {
+    return jsonError('Det lokala fältunderlaget kunde inte identifieras säkert.', 409)
+  }
   if (normalized.includes('tu_measurements') || normalized.includes('42p01')) {
     return jsonError('Besiktningsunderlag är inte aktiverat i databasen ännu.', 409)
   }
@@ -79,13 +84,58 @@ export async function POST(
     const values = measurementValues(body)
     if (!values) return jsonError('Ange typ och mätvärde.', 400)
 
+    const createFieldEntry = body.createFieldEntry === true
+    const clientObservationId = uuid(body.clientObservationId)
+    const clientMeasurementId = uuid(body.clientMeasurementId)
+    let observation = null
+
+    if (createFieldEntry) {
+      if (!clientObservationId || !clientMeasurementId) {
+        return jsonError('Det lokala mätunderlaget saknar ett giltigt id.', 400)
+      }
+      observation = await getTuObservation({
+        orgId: orgContext.orgId,
+        inspectionId,
+        observationId: clientObservationId,
+      })
+      if (observation && observation.sourceType !== 'measurement') {
+        return jsonError('Det lokala fältunderlaget kunde inte identifieras säkert.', 409)
+      }
+      if (!observation) {
+        observation = await createTuObservation({
+          orgId: orgContext.orgId,
+          inspectionId,
+          userId: orgContext.userId,
+          observationId: clientObservationId,
+          values: {
+            sourceType: 'measurement',
+            location: values.location,
+            noteText: '',
+            certainty: 'uncertain',
+            reviewStatus: 'draft',
+            includeInReport: true,
+            observedAt: values.measuredAt,
+          },
+        })
+      }
+      values.observationId = clientObservationId
+    }
+
     const measurement = await createTuMeasurement({
       orgId: orgContext.orgId,
       inspectionId,
       userId: orgContext.userId,
+      measurementId: clientMeasurementId,
       values,
     })
-    return NextResponse.json({ measurement }, { status: 201 })
+    if (createFieldEntry && clientObservationId) {
+      observation = await getTuObservation({
+        orgId: orgContext.orgId,
+        inspectionId,
+        observationId: clientObservationId,
+      })
+    }
+    return NextResponse.json({ measurement, observation }, { status: 201 })
   } catch (error) {
     const mapped = mapError(error)
     if (mapped) return mapped

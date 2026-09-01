@@ -457,6 +457,7 @@ export async function createTuMeasurement(input: {
   orgId: string
   inspectionId: string
   userId: string
+  measurementId?: string | null
   values: TuMeasurementWriteInput
 }) {
   await assertObservationOwnership({
@@ -465,9 +466,33 @@ export async function createTuMeasurement(input: {
     observationId: input.values.observationId,
   })
   const admin = createSupabaseAdminClient()
+  if (input.measurementId) {
+    const { data: existing, error: existingError } = await admin
+      .from('tu_measurements')
+      .select('id,org_id,inspection_id')
+      .eq('id', input.measurementId)
+      .maybeSingle()
+    if (existingError) {
+      throw new Error(existingError.message ?? 'Kunde inte verifiera mätvärdet.')
+    }
+    if (existing) {
+      const row = existing as { id: string; org_id: string; inspection_id: string }
+      if (row.org_id !== input.orgId || row.inspection_id !== input.inspectionId) {
+        throw new Error('TU_MEASUREMENT_ID_CONFLICT')
+      }
+      return updateTuMeasurement({
+        orgId: input.orgId,
+        inspectionId: input.inspectionId,
+        measurementId: input.measurementId,
+        userId: input.userId,
+        values: input.values,
+      })
+    }
+  }
   const { data, error } = await admin
     .from('tu_measurements')
     .insert({
+      ...(input.measurementId ? { id: input.measurementId } : {}),
       org_id: input.orgId,
       inspection_id: input.inspectionId,
       observation_id: nullableText(input.values.observationId),

@@ -11,6 +11,7 @@ import {
   type TuFieldQueueItem,
   type TuFieldQueuedAudio,
   type TuFieldQueuedImage,
+  type TuFieldQueuedMeasurement,
 } from '@/lib/tu/fieldQueue'
 
 const MAX_CONCURRENT_ITEMS = 2
@@ -58,6 +59,11 @@ type ObservationApiResponse = {
   error?: string
 }
 
+type MeasurementApiResponse = {
+  observation?: TuObservation
+  error?: string
+}
+
 export type TuFieldCapturedAudio = {
   blob: Blob
   contentType: string
@@ -69,6 +75,16 @@ type EnqueueFieldEntryInput = {
   location?: string | null
   files?: File[]
   audio?: TuFieldCapturedAudio | null
+}
+
+export type EnqueueMeasurementInput = {
+  measurementType: string
+  valueText: string
+  unit?: string | null
+  location?: string | null
+  method?: string | null
+  instrument?: string | null
+  note?: string | null
 }
 
 type UseTuFieldQueueOptions = {
@@ -375,6 +391,35 @@ export function useTuFieldQueue({
     [inspectionId, onObservationSaved]
   )
 
+  const saveMeasurement = useCallback(
+    async (queueItem: TuFieldQueueItem) => {
+      const measurement = queueItem.measurement
+      if (!measurement) throw new Error('Mätposten saknar mätuppgifter.')
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          createFieldEntry: true,
+          clientObservationId: queueItem.id,
+          clientMeasurementId: measurement.id,
+          measurementType: measurement.measurementType,
+          valueText: measurement.valueText,
+          unit: measurement.unit,
+          location: measurement.location,
+          method: measurement.method,
+          instrument: measurement.instrument,
+          note: measurement.note,
+          measuredAt: measurement.measuredAt,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as MeasurementApiResponse
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara mätningen.')
+      if (!payload.observation) throw new Error('Servern returnerade ingen mätpost.')
+      onObservationSaved?.(payload.observation)
+    },
+    [inspectionId, onObservationSaved]
+  )
+
   const processItem = useCallback(
     async (itemId: string) => {
       const stored = await getTuFieldQueueItem(itemId)
@@ -404,6 +449,11 @@ export function useTuFieldQueue({
           await saveObservation(workingItem)
         }
 
+        if (workingItem.kind === 'measurement') {
+          workingItem = await persistItem({ ...workingItem, activeStep: 'saving' })
+          await saveMeasurement(workingItem)
+        }
+
         await deleteTuFieldQueueItem(workingItem.id)
         removeItemFromState(workingItem.id)
         if (mountedRef.current) setCompletedRevision((revision) => revision + 1)
@@ -428,7 +478,7 @@ export function useTuFieldQueue({
         replaceItemInState(failed)
       }
     },
-    [inspectionId, persistItem, removeItemFromState, replaceItemInState, saveObservation, transcribeAudio, uploadImage]
+    [inspectionId, persistItem, removeItemFromState, replaceItemInState, saveMeasurement, saveObservation, transcribeAudio, uploadImage]
   )
 
   const processQueue = useCallback(async () => {
@@ -484,6 +534,7 @@ export function useTuFieldQueue({
         error: null,
         images: files.map(queuedImage),
         audio: audio ? queuedAudio(audio) : null,
+        measurement: null,
       }
       await putTuFieldQueueItem(item)
       replaceItemInState(item)
@@ -513,6 +564,51 @@ export function useTuFieldQueue({
         error: null,
         images: files.map(queuedImage),
         audio: null,
+        measurement: null,
+      }
+      await putTuFieldQueueItem(item)
+      replaceItemInState(item)
+      void processQueue()
+      return item.id
+    },
+    [enabled, inspectionId, locked, processQueue, replaceItemInState]
+  )
+
+  const enqueueMeasurement = useCallback(
+    async (input: EnqueueMeasurementInput) => {
+      if (!enabled || locked) throw new Error('Utlåtandet är låst och kan inte ändras.')
+      const measurementType = input.measurementType.trim()
+      const valueText = input.valueText.trim()
+      if (!measurementType || !valueText) throw new Error('Ange typ och resultat.')
+
+      const now = new Date().toISOString()
+      const measurement: TuFieldQueuedMeasurement = {
+        id: createId(),
+        measurementType,
+        valueText,
+        unit: input.unit?.trim() || null,
+        location: input.location?.trim() || null,
+        method: input.method?.trim() || null,
+        instrument: input.instrument?.trim() || null,
+        note: input.note?.trim() || null,
+        measuredAt: now,
+      }
+      const item: TuFieldQueueItem = {
+        id: createId(),
+        inspectionId,
+        kind: 'measurement',
+        noteText: '',
+        location: measurement.location,
+        observedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        status: 'queued',
+        activeStep: null,
+        attempts: 0,
+        error: null,
+        images: [],
+        audio: null,
+        measurement,
       }
       await putTuFieldQueueItem(item)
       replaceItemInState(item)
@@ -652,6 +748,7 @@ export function useTuFieldQueue({
     completedRevision,
     enqueueFieldEntry,
     enqueueLooseImages,
+    enqueueMeasurement,
     retryItem,
     retryAll,
     processQueue,

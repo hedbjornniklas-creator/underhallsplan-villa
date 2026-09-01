@@ -12,9 +12,11 @@ import {
   Mic,
   Plus,
   RefreshCw,
+  Ruler,
   X,
 } from 'lucide-react'
 import TuFieldEntryComposer from '@/components/tu/TuFieldEntryComposer'
+import TuQuickMeasurementDialog from '@/components/tu/TuQuickMeasurementDialog'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
 import type { TuObservation } from '@/lib/tu/evidence'
 import type { TuFieldQueueItem } from '@/lib/tu/fieldQueue'
@@ -72,7 +74,7 @@ function queueStatus(item: TuFieldQueueItem) {
   if (item.status === 'failed') return 'Behöver nytt försök'
   if (item.activeStep === 'uploading') return 'Laddar upp bilder'
   if (item.activeStep === 'transcribing') return 'Transkriberar'
-  if (item.activeStep === 'saving') return 'Sparar anteckning'
+  if (item.activeStep === 'saving') return item.kind === 'measurement' ? 'Sparar mätning' : 'Sparar anteckning'
   return 'Väntar i bakgrunden'
 }
 
@@ -89,6 +91,7 @@ export default function TuFieldLogWorkspace({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [composerVisible, setComposerVisible] = useState(true)
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null)
+  const [measurementDialogOpen, setMeasurementDialogOpen] = useState(false)
 
   const composerRef = useRef<HTMLDivElement>(null)
 
@@ -229,6 +232,13 @@ export default function TuFieldLogWorkspace({
             </div>
           ) : null}
           {item.noteText ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-900">{item.noteText}</p> : null}
+          {item.measurement ? (
+            <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-gray-950">
+              <Ruler size={15} className="text-violet-700" aria-hidden />
+              {item.measurement.measurementType}: {item.measurement.valueText}
+              {item.measurement.unit ? ` ${item.measurement.unit}` : ''}
+            </div>
+          ) : null}
           {item.audio ? (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-600">
               <Mic size={13} aria-hidden />
@@ -280,6 +290,38 @@ export default function TuFieldLogWorkspace({
       .filter((image): image is FieldImage => Boolean(image))
     const transcript = observation.transcriptText?.trim()
     const showTranscript = transcript && transcript !== observation.noteText.trim()
+    const measurement = observation.measurements[0]
+    if (observation.sourceType === 'measurement' && measurement) {
+      return (
+        <article className="rounded-lg border border-violet-200 bg-white p-3 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-1 text-[11px] font-semibold text-violet-900">
+              <Ruler size={12} aria-hidden />
+              Mätning
+            </span>
+            <span className="text-xs text-gray-500">{formatTimestamp(observation.observedAt)}</span>
+            <span className="text-xs text-gray-500">Obearbetad</span>
+          </div>
+          {observation.location ? (
+            <div className="mt-2 flex items-center gap-1 text-xs font-medium text-gray-600">
+              <MapPin size={13} aria-hidden />
+              {observation.location}
+            </div>
+          ) : null}
+          <p className="mt-2 text-base font-semibold text-gray-950">
+            {measurement.measurementType}: {measurement.valueText}
+            {measurement.unit ? ` ${measurement.unit}` : ''}
+          </p>
+          {[measurement.method, measurement.instrument, measurement.note].some(Boolean) ? (
+            <p className="mt-1 text-sm text-gray-600">
+              {[measurement.method, measurement.instrument, measurement.note].filter(Boolean).join(' · ')}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-500">Instrument och metod kan kompletteras vid granskningen.</p>
+          )}
+        </article>
+      )
+    }
     return (
       <article className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
@@ -330,12 +372,24 @@ export default function TuFieldLogWorkspace({
 
   return (
     <section className="space-y-4 pb-24 md:pb-4">
-      <div>
-        <p className="text-xs font-semibold uppercase text-violet-700">Steg 1</p>
-        <h2 className="mt-1 text-xl font-semibold text-gray-950">Dokumentera på plats</h2>
-        <p className="mt-1 max-w-2xl text-sm text-gray-600">
-          Lägg in fakta i den ordning de kommer. Sorteringen görs när dokumentationen är klar.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase text-violet-700">Steg 1</p>
+          <h2 className="mt-1 text-xl font-semibold text-gray-950">Dokumentera på plats</h2>
+          <p className="mt-1 max-w-2xl text-sm text-gray-600">
+            Lägg in fakta i den ordning de kommer. Sorteringen görs när dokumentationen är klar.
+          </p>
+        </div>
+        {!locked ? (
+          <button
+            type="button"
+            onClick={() => setMeasurementDialogOpen(true)}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm hover:bg-violet-50"
+          >
+            <Ruler size={16} aria-hidden />
+            Ny mätning
+          </button>
+        ) : null}
       </div>
 
       {renderQueueStatus()}
@@ -426,14 +480,32 @@ export default function TuFieldLogWorkspace({
       </div>
 
       {!composerVisible && !locked ? (
-        <button
-          type="button"
-          onClick={focusComposer}
-          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-30 inline-flex h-12 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-lg transition hover:bg-violet-800 md:hidden"
-        >
-          <Plus size={18} aria-hidden />
-          Ny fältpost
-        </button>
+        <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-30 flex overflow-hidden rounded-md bg-violet-700 text-white shadow-lg md:hidden">
+          <button
+            type="button"
+            onClick={focusComposer}
+            className="inline-flex h-12 items-center gap-2 border-r border-violet-500 px-3 text-sm font-semibold hover:bg-violet-800"
+          >
+            <Plus size={18} aria-hidden />
+            Anteckning
+          </button>
+          <button
+            type="button"
+            onClick={() => setMeasurementDialogOpen(true)}
+            className="inline-flex h-12 items-center gap-2 px-3 text-sm font-semibold hover:bg-violet-800"
+          >
+            <Ruler size={18} aria-hidden />
+            Mätning
+          </button>
+        </div>
+      ) : null}
+
+      {measurementDialogOpen ? (
+        <TuQuickMeasurementDialog
+          locked={locked}
+          queue={queue}
+          onClose={() => setMeasurementDialogOpen(false)}
+        />
       ) : null}
 
       {localPreviewUrl ? (

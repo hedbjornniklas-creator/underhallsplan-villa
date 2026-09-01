@@ -3060,8 +3060,13 @@ export default function TuInvestigationEditorClient({
                         }}
                         onBlur={(event) => void patchImage(image.id, { caption: event.target.value })}
                         className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-                        placeholder="Kort beskrivande text"
+                        placeholder="Plats, byggnadsdel och vad bilden visar"
                       />
+                      {!image.caption?.trim() || /^(?:bild|foto|besiktningsbild)(?:\s+\d+)?$/i.test(image.caption.trim()) ? (
+                        <p className="text-xs font-medium text-amber-700">
+                          Lägg till en beskrivande bildtext innan utlåtandet fastställs.
+                        </p>
+                      ) : null}
                       </div>
                       </div>
                       {renderAppendixInsertZone(visibleIndex + 1)}

@@ -26,10 +26,22 @@ export type TuFieldQueuedAudio = {
   error: string | null
 }
 
+export type TuFieldQueuedMeasurement = {
+  id: string
+  measurementType: string
+  valueText: string
+  unit: string | null
+  location: string | null
+  method: string | null
+  instrument: string | null
+  note: string | null
+  measuredAt: string
+}
+
 export type TuFieldQueueItem = {
   id: string
   inspectionId: string
-  kind: 'entry' | 'loose-images'
+  kind: 'entry' | 'loose-images' | 'measurement'
   noteText: string
   location: string | null
   observedAt: string
@@ -41,6 +53,7 @@ export type TuFieldQueueItem = {
   error: string | null
   images: TuFieldQueuedImage[]
   audio: TuFieldQueuedAudio | null
+  measurement?: TuFieldQueuedMeasurement | null
 }
 
 const DB_NAME = 'tu-field-capture-queue'

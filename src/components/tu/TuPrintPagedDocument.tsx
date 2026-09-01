@@ -28,6 +28,10 @@ const PRINT_TEXT_STYLE = {
   wordBreak: 'normal',
   hyphens: 'none',
 } satisfies CSSProperties
+const PRINT_META_VALUE_STYLE = {
+  ...PRINT_TEXT_STYLE,
+  overflowWrap: 'anywhere',
+} satisfies CSSProperties
 
 function toPrintImageProxyUrl(src: string, maxLongSidePx: number) {
   if (!src) return src
@@ -585,7 +589,7 @@ function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
           <dt className="text-[13px] font-semibold leading-5 text-gray-950">{row.label}</dt>
           <dd
             className="min-w-0 whitespace-pre-wrap text-[13px] leading-5 text-gray-950"
-            style={PRINT_TEXT_STYLE}
+            style={PRINT_META_VALUE_STYLE}
           >
             {row.value}
           </dd>
@@ -749,23 +753,33 @@ function ImageGridBlock({
   images: TuPrintImage[]
   onImageReady?: (id: string) => void
 }) {
+  const singleImage = images.length === 1
+  const twoImages = images.length === 2
+  const gridClassName = singleImage
+    ? 'grid grid-cols-1 justify-items-center'
+    : 'grid grid-cols-2 gap-x-5 gap-y-5'
+  const figureClassName = singleImage
+    ? 'grid h-[132mm] w-full max-w-[155mm] grid-rows-[minmax(0,1fr)_auto]'
+    : twoImages
+      ? 'grid h-[108mm] grid-rows-[minmax(0,1fr)_auto]'
+      : 'grid h-[66mm] grid-rows-[minmax(0,1fr)_auto]'
   return (
     <section
-      className="tu-report-block tu-report-image-grid-block grid grid-cols-2 gap-x-5 gap-y-5"
+      className={`tu-report-block tu-report-image-grid-block ${gridClassName}`}
       style={{ marginBottom: mm(BLOCK_GAP_MM) }}
     >
       {images.map((image) => (
-        <figure key={image.id} className="grid h-[66mm] grid-rows-[minmax(0,1fr)_auto]">
+        <figure key={image.id} className={figureClassName}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={getAppendixPrintImageSrc(image.src)}
             alt={image.caption}
             data-tu-print-measure-image="true"
-            className="h-full w-full object-contain object-left-bottom"
+            className="h-full w-full object-contain object-center"
             onLoad={() => onImageReady?.(image.id)}
             onError={() => onImageReady?.(image.id)}
           />
-          <figcaption className="mt-1 max-h-[8mm] overflow-hidden whitespace-pre-wrap text-[9px] leading-3 text-gray-700">
+          <figcaption className="mt-1 max-h-[12mm] overflow-hidden whitespace-pre-wrap text-[9px] leading-3 text-gray-700">
             {image.caption}
           </figcaption>
         </figure>

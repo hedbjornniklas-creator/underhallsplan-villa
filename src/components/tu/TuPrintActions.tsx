@@ -50,6 +50,11 @@ type DeliveryResponse = {
   deliveryDocuments?: DeliveryDocumentItem[]
   revisionNumber?: number | null
   revisionStatus?: 'finalized' | 'published' | null
+  qualityIssues?: Array<{
+    id: string
+    severity: 'blocker' | 'warning'
+    message: string
+  }>
 }
 
 function isValidEmail(value: string) {
@@ -324,8 +329,10 @@ export default function TuPrintActions({
   const downloadUrl = meta?.downloadUrl ?? null
   const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
   const canSend = locked && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
+  const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
   const canFinalize = !locked
     && !finalizationBlockedReason
+    && !serverQualityBlocker
     && !busyAction
     && !unlockBusy
     && !regeneratingPdf
@@ -405,6 +412,26 @@ export default function TuPrintActions({
           <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
             Innan utlåtandet kan fastställas: {finalizationBlockedReason}
           </p>
+        ) : null}
+
+        {!locked && meta?.qualityIssues?.length ? (
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <h3 className="text-sm font-semibold text-amber-950">Teknisk slutkontroll</h3>
+            <ul className="mt-2 space-y-1.5 text-sm leading-5 text-amber-950">
+              {meta.qualityIssues.map((issue) => (
+                <li key={issue.id} className="flex items-start gap-2">
+                  <span
+                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${issue.severity === 'blocker' ? 'bg-rose-600' : 'bg-amber-500'}`}
+                    aria-hidden
+                  />
+                  <span>
+                    {issue.message}
+                    {issue.severity === 'blocker' ? ' Detta måste rättas innan utlåtandet kan fastställas.' : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
 
         {locked ? (
