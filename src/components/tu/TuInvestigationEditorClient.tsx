@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Loader2, MessageSquareText, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Images, Loader2, MessageSquareText, MoveDown, MoveUp, Paperclip, Pencil, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
@@ -773,6 +773,9 @@ export default function TuInvestigationEditorClient({
   const [bankDropActive, setBankDropActive] = useState(false)
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
+  const [reportDetailsOpen, setReportDetailsOpen] = useState(false)
+  const [imageBankOpen, setImageBankOpen] = useState(false)
+  const [deliveryDocumentsOpen, setDeliveryDocumentsOpen] = useState(false)
   const [newSectionKey, setNewSectionKey] = useState<TuReportSectionKey>(sectionTypeOptions[0]?.key ?? '')
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
@@ -1303,6 +1306,7 @@ export default function TuInvestigationEditorClient({
   }
 
   const visibleSections = draft.sections.filter((section) => !HIDDEN_SECTION_KEYS.has(section.key))
+  const reportEditorSections = visibleSections.filter((section) => section.key !== 'assignment_parties')
   const coverImages = images.filter((image) => image.sectionKey === 'cover')
   const coverImage = coverImages[0] ?? null
   const bankImages = images.filter((image) => image.sectionKey === 'bank')
@@ -2141,15 +2145,6 @@ export default function TuInvestigationEditorClient({
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              {evidenceWorkspaceEnabled && (workspaceView === 'report' || workspaceView === 'delivery') ? (
-                <Link
-                  href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`}
-                  className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
-                >
-                  <Printer size={15} aria-hidden />
-                  Förhandsgranska utkast
-                </Link>
-              ) : null}
               <p className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-gray-600" aria-live="polite">
                 <span className={`size-2 rounded-full ${systemStatusTone}`} />
                 {systemStatusText}
@@ -2178,7 +2173,7 @@ export default function TuInvestigationEditorClient({
               loading={workflowState.loading}
             />
           ) : null}
-          <div className="min-w-0 space-y-5">
+          <div className="flex min-w-0 flex-col gap-5">
           {workflowState.error && evidenceWorkspaceEnabled ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               Statusen kunde inte uppdateras. Arbetsytan går fortfarande att använda.
@@ -2236,20 +2231,32 @@ export default function TuInvestigationEditorClient({
           <>
 
         {evidenceWorkspaceEnabled ? (
-          <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-4 rounded-lg border border-violet-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase text-violet-700">Steg 4</p>
               <h2 className="mt-1 text-xl font-semibold text-gray-950">Granska utlåtandet</h2>
-              <p className="mt-1 text-sm text-gray-600">Kontrollera helheten, redigera vid behov och förhandsgranska innan fastställande.</p>
+              <p className="mt-1 max-w-2xl text-sm text-gray-600">
+                Läs rapportdelarna och justera det som behövs. Förhandsgranska därefter rapporten innan du går vidare.
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setWorkspaceView('delivery')}
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
-            >
-              Fastställ och leverera
-              <FileText size={16} aria-hidden />
-            </button>
+            <div className="flex flex-col gap-2 sm:items-end">
+              <Link
+                href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
+              >
+                <Printer size={16} aria-hidden />
+                Förhandsgranska rapporten
+              </Link>
+              <button
+                type="button"
+                onClick={() => setWorkspaceView('delivery')}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+              >
+                Klar med granskningen
+                <ArrowRight size={16} aria-hidden />
+              </button>
+              <span className="text-xs text-gray-500">Nästa steg: fastställ och leverera</span>
+            </div>
           </div>
         ) : null}
 
@@ -2354,115 +2361,184 @@ export default function TuInvestigationEditorClient({
         ) : null}
 
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-gray-600">Rubrik</span>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                onBlur={() => void saveHeaderDetails()}
-                disabled={locked}
-                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="block text-xs font-medium text-gray-600">Projekttyp</span>
-              <input
-                value={projectType}
-                onChange={(event) => setProjectType(event.target.value)}
-                onBlur={() => void saveHeaderDetails()}
-                disabled={locked}
-                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-              />
-            </label>
-          </div>
-          <div className="mt-4 border-t border-violet-100 pt-4">
-            <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-              <fieldset className="space-y-1">
-                <legend className="text-xs font-medium text-gray-600">Objekttyp</legend>
-                <div className="grid grid-cols-2 gap-1 rounded-md border border-gray-200 bg-gray-50 p-1">
-                  {[
-                    { value: 'villa' as const, label: 'Villa' },
-                    { value: 'apartment' as const, label: 'BRF/lgh' },
-                  ].map((option) => {
-                    const active = objectDetails.objectType === option.value
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        disabled={locked}
-                        aria-pressed={active}
-                        onClick={() => updateObjectDetailsField('objectType', option.value, true)}
-                        className={
-                          active
-                            ? 'rounded bg-violet-700 px-3 py-2 text-sm font-semibold text-white shadow-sm'
-                            : 'rounded px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-white disabled:text-gray-400'
-                        }
-                      >
-                        {option.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </fieldset>
-
-              <div className="grid gap-3 md:grid-cols-3">
-                {objectDetails.objectType === 'apartment' ? (
-                  <>
-                    <ObjectDetailsInput
-                      label="BRF"
-                      value={objectDetails.brfName}
-                      disabled={locked}
-                      onChange={(value) => updateObjectDetailsField('brfName', value)}
-                      onBlur={() => void saveHeaderDetails()}
-                    />
-                    <ObjectDetailsInput
-                      label="Lägenhetsnummer"
-                      value={objectDetails.apartmentNumber}
-                      disabled={locked}
-                      onChange={(value) => updateObjectDetailsField('apartmentNumber', value)}
-                      onBlur={() => void saveHeaderDetails()}
-                    />
-                    <ObjectDetailsInput
-                      label="Bostadsrättshavare"
-                      value={objectDetails.apartmentHolderName}
-                      disabled={locked}
-                      onChange={(value) => updateObjectDetailsField('apartmentHolderName', value)}
-                      onBlur={() => void saveHeaderDetails()}
-                    />
-                  </>
-                ) : (
-                  <ObjectDetailsInput
-                    label="Fastighetsbeteckning"
-                    value={objectDetails.cadastralId}
-                    disabled={locked}
-                    onChange={(value) => updateObjectDetailsField('cadastralId', value)}
-                    onBlur={() => void saveHeaderDetails()}
-                  />
-                )}
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+                <FileText size={18} aria-hidden />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-950">Rapportuppgifter</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Beställare och objekt visas i rapporthuvudet och rapportens första del.
+                </p>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setReportDetailsOpen((current) => !current)}
+              aria-expanded={reportDetailsOpen}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50"
+            >
+              {reportDetailsOpen ? <ChevronUp size={16} aria-hidden /> : <Pencil size={15} aria-hidden />}
+              {reportDetailsOpen ? 'Stäng uppgifterna' : 'Redigera uppgifter'}
+            </button>
+          </div>
+
+          {!reportDetailsOpen ? (
             <dl className="mt-4 grid gap-3 border-t border-violet-100 pt-4 md:grid-cols-2 lg:grid-cols-3">
+              <ReadOnlyInfoRow label="Dokumentrubrik" value={title} />
+              <ReadOnlyInfoRow label="Projekttyp" value={projectType} />
               <ReadOnlyInfoRow
-                label="Objektadress"
+                label="Objekt"
                 value={objectAddress || investigation.propertyAddress || investigation.property?.address}
               />
-              <ReadOnlyInfoRow
-                label="Arbetsnummer"
-                value={investigation.assignmentNumber ?? investigation.inspection.assignment_number}
-              />
-              <ReadOnlyInfoRow
-                label="Besiktningsdag"
-                value={formatDisplayDate(investigation.date ?? investigation.inspection.date)}
-              />
-              <ReadOnlyInfoRow
-                label="Tid"
-                value={formatDisplayTime(investigation.inspectionTime ?? investigation.inspection.inspection_time)}
-              />
-              <ReadOnlyInfoRow label="Beställare" value={customerName} />
+              <ReadOnlyInfoRow label="Beställare" value={assignmentParties.customerName || customerName} />
               <ReadOnlyInfoRow label="Kontakt" value={customerContact} />
+              <ReadOnlyInfoRow label="Besiktningsman" value={assignmentParties.inspectorName} />
             </dl>
-          </div>
+          ) : (
+            <div className="mt-4 space-y-5 border-t border-violet-100 pt-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="block text-xs font-medium text-gray-600">Dokumentrubrik</span>
+                  <input
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    onBlur={() => void saveHeaderDetails()}
+                    disabled={locked}
+                    className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="block text-xs font-medium text-gray-600">Projekttyp</span>
+                  <input
+                    value={projectType}
+                    onChange={(event) => setProjectType(event.target.value)}
+                    onBlur={() => void saveHeaderDetails()}
+                    disabled={locked}
+                    className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 border-t border-violet-100 pt-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                <fieldset className="space-y-1">
+                  <legend className="text-xs font-medium text-gray-600">Objekttyp</legend>
+                  <div className="grid grid-cols-2 gap-1 rounded-md border border-gray-200 bg-gray-50 p-1">
+                    {[
+                      { value: 'villa' as const, label: 'Villa' },
+                      { value: 'apartment' as const, label: 'BRF/lgh' },
+                    ].map((option) => {
+                      const active = objectDetails.objectType === option.value
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          disabled={locked}
+                          aria-pressed={active}
+                          onClick={() => updateObjectDetailsField('objectType', option.value, true)}
+                          className={
+                            active
+                              ? 'rounded bg-violet-700 px-3 py-2 text-sm font-semibold text-white shadow-sm'
+                              : 'rounded px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-white disabled:text-gray-400'
+                          }
+                        >
+                          {option.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </fieldset>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  {objectDetails.objectType === 'apartment' ? (
+                    <>
+                      <ObjectDetailsInput
+                        label="BRF"
+                        value={objectDetails.brfName}
+                        disabled={locked}
+                        onChange={(value) => updateObjectDetailsField('brfName', value)}
+                        onBlur={() => void saveHeaderDetails()}
+                      />
+                      <ObjectDetailsInput
+                        label="Lägenhetsnummer"
+                        value={objectDetails.apartmentNumber}
+                        disabled={locked}
+                        onChange={(value) => updateObjectDetailsField('apartmentNumber', value)}
+                        onBlur={() => void saveHeaderDetails()}
+                      />
+                      <ObjectDetailsInput
+                        label="Bostadsrättshavare"
+                        value={objectDetails.apartmentHolderName}
+                        disabled={locked}
+                        onChange={(value) => updateObjectDetailsField('apartmentHolderName', value)}
+                        onBlur={() => void saveHeaderDetails()}
+                      />
+                    </>
+                  ) : (
+                    <ObjectDetailsInput
+                      label="Fastighetsbeteckning"
+                      value={objectDetails.cadastralId}
+                      disabled={locked}
+                      onChange={(value) => updateObjectDetailsField('cadastralId', value)}
+                      onBlur={() => void saveHeaderDetails()}
+                    />
+                  )}
+                </div>
+              </div>
+
+              <dl className="grid gap-3 border-t border-violet-100 pt-4 md:grid-cols-2 lg:grid-cols-4">
+                <ReadOnlyInfoRow
+                  label="Objektadress"
+                  value={objectAddress || investigation.propertyAddress || investigation.property?.address}
+                />
+                <ReadOnlyInfoRow
+                  label="Arbetsnummer"
+                  value={investigation.assignmentNumber ?? investigation.inspection.assignment_number}
+                />
+                <ReadOnlyInfoRow
+                  label="Besiktningsdag"
+                  value={formatDisplayDate(investigation.date ?? investigation.inspection.date)}
+                />
+                <ReadOnlyInfoRow
+                  label="Tid"
+                  value={formatDisplayTime(investigation.inspectionTime ?? investigation.inspection.inspection_time)}
+                />
+              </dl>
+
+              <div className="grid gap-4 border-t border-violet-100 pt-4 lg:grid-cols-2">
+                <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
+                  <h3 className="mb-3 text-sm font-semibold text-gray-950">Beställare</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {CUSTOMER_PARTY_FIELDS.map((field) => (
+                      <AssignmentPartiesInput
+                        key={field.key}
+                        field={field}
+                        value={assignmentParties[field.key]}
+                        disabled={locked}
+                        onChange={(value) => updateAssignmentPartiesField(field.key, value)}
+                        onBlur={() => void saveAssignmentParties()}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
+                  <h3 className="mb-3 text-sm font-semibold text-gray-950">Besiktningsman</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {INSPECTOR_PARTY_FIELDS.map((field) => (
+                      <AssignmentPartiesInput
+                        key={field.key}
+                        field={field}
+                        value={assignmentParties[field.key]}
+                        disabled={locked}
+                        readOnly
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="order-last rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
@@ -2470,7 +2546,7 @@ export default function TuInvestigationEditorClient({
             <div>
               <h2 className="text-base font-semibold text-gray-950">Omslagsbild</h2>
               <p className="mt-1 text-sm text-gray-600">
-                Välj den bild som ska visas på rapportens förstasida.
+                Bilden visas på rapportens framsida. Välj en befintlig bild i bildbanken eller en ny bild från datorn.
               </p>
             </div>
             <button
@@ -2481,7 +2557,11 @@ export default function TuInvestigationEditorClient({
               className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {imageDropBusySection === 'cover' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
-              {imageDropBusySection === 'cover' ? 'Bearbetar...' : 'Ladda upp omslag'}
+              {imageDropBusySection === 'cover'
+                ? 'Sparar omslagsbild...'
+                : coverImage
+                  ? 'Välj ny bild från datorn'
+                  : 'Välj bild från datorn'}
             </button>
             <input
               ref={coverFileInputRef}
@@ -2535,7 +2615,7 @@ export default function TuInvestigationEditorClient({
                 <div className="text-left">
                   <p className="text-sm font-semibold text-gray-950">Vald omslagsbild</p>
                   <p className="mt-1 text-sm text-gray-600">
-                    Dra hit en annan bild från bildbanken om du vill byta.
+                    Den här bilden används på rapportens framsida. Dra hit en annan bild från bildbanken om du vill byta.
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
@@ -2570,19 +2650,19 @@ export default function TuInvestigationEditorClient({
                   <ImageIcon size={24} className="mb-2 text-violet-500" aria-hidden />
                 )}
                 <p className="text-sm font-medium">
-                  {imageDropBusySection === 'cover' ? 'Väljer omslagsbild...' : 'Släpp omslagsbild här'}
+                  {imageDropBusySection === 'cover' ? 'Sparar omslagsbild...' : 'Släpp en bild här för att använda den som omslag'}
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
                   {imageDropBusySection === 'cover'
                     ? 'Vänta tills bilden är sparad.'
-                    : 'Du kan även använda knappen ovan eller dra från bildbanken.'}
+                    : 'Bilden läggs direkt på rapportens framsida. Du kan även öppna bildbanken och välja en befintlig bild.'}
                 </p>
               </>
             )}
           </div>
         </section>
 
-        <section className="order-last grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <section className={`order-last grid gap-4 ${imageBankOpen ? 'lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]' : ''}`}>
           {imageError ? (
             <div
               ref={imageErrorRef}
@@ -2602,24 +2682,42 @@ export default function TuInvestigationEditorClient({
           ) : null}
 
           <article className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-base font-semibold text-gray-950">Bildbank</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  {bankImages.length} bild{bankImages.length === 1 ? '' : 'er'} · max {MAX_IMAGE_FILES_PER_UPLOAD} åt gången · max 15 MB/bild
-                </p>
+            <div className={`flex flex-wrap items-center justify-between gap-3 ${imageBankOpen ? 'mb-3' : ''}`}>
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+                  <Images size={18} aria-hidden />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-gray-950">Bildbank</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {bankImages.length} bild{bankImages.length === 1 ? '' : 'er'} som kan användas som omslag eller i bildbilagan.
+                  </p>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {renderImageViewCountButtons()}
+                {imageBankOpen ? (
+                  <>
+                    {renderImageViewCountButtons()}
+                    <button
+                      type="button"
+                      onClick={() => bankFileInputRef.current?.click()}
+                      disabled={locked || imageBusy}
+                      aria-busy={imageDropBusySection === 'bank'}
+                      className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    >
+                      {imageDropBusySection === 'bank' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+                      {imageDropBusySection === 'bank' ? 'Bearbetar...' : 'Ladda upp bilder'}
+                    </button>
+                  </>
+                ) : null}
                 <button
                   type="button"
-                  onClick={() => bankFileInputRef.current?.click()}
-                  disabled={locked || imageBusy}
-                  aria-busy={imageDropBusySection === 'bank'}
-                  className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  onClick={() => setImageBankOpen((current) => !current)}
+                  aria-expanded={imageBankOpen}
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50"
                 >
-                  {imageDropBusySection === 'bank' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
-                  {imageDropBusySection === 'bank' ? 'Bearbetar...' : 'Ladda upp'}
+                  {imageBankOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+                  {imageBankOpen ? 'Minimera' : 'Öppna bildbanken'}
                 </button>
               </div>
               <input
@@ -2636,6 +2734,8 @@ export default function TuInvestigationEditorClient({
               />
             </div>
 
+            {imageBankOpen ? (
+              <>
             <div
               onDragEnter={() => !locked && setBankDropActive(true)}
               onDragLeave={() => setBankDropActive(false)}
@@ -2755,6 +2855,8 @@ export default function TuInvestigationEditorClient({
                 </div>
               </div>
             )}
+              </>
+            ) : null}
           </article>
 
           <article className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
@@ -2972,26 +3074,44 @@ export default function TuInvestigationEditorClient({
         </section>
 
         <section className="order-last rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-base font-semibold text-gray-950">Dokument</h2>
+          <div className={`flex flex-wrap items-center justify-between gap-3 ${deliveryDocumentsOpen ? 'mb-3' : ''}`}>
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+                <Paperclip size={18} aria-hidden />
+              </div>
+              <div>
+              <h2 className="text-base font-semibold text-gray-950">Leveransbilagor <span className="font-normal text-gray-500">(valfritt)</span></h2>
               <p className="mt-1 text-sm text-gray-600">
-                Lagra underlag som PDF, Word, Excel eller textfiler.
+                Extra filer som mottagaren ska kunna ladda ner tillsammans med utlåtandet. De används inte när AI skriver rapporttexten.
                 {documents.length > 0
                   ? ` ${deliveryDocumentCount} av ${documents.length} dokument inkluderas i leveransen.`
                   : ''}
               </p>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => documentFileInputRef.current?.click()}
-              disabled={locked || documentBusy}
-              aria-busy={documentBusy}
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {documentBusy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
-              {documentBusy ? 'Arbetar...' : 'Ladda upp dokument'}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {deliveryDocumentsOpen ? (
+                <button
+                  type="button"
+                  onClick={() => documentFileInputRef.current?.click()}
+                  disabled={locked || documentBusy}
+                  aria-busy={documentBusy}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {documentBusy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+                  {documentBusy ? 'Arbetar...' : 'Ladda upp bilaga'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setDeliveryDocumentsOpen((current) => !current)}
+                aria-expanded={deliveryDocumentsOpen}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50"
+              >
+                {deliveryDocumentsOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+                {deliveryDocumentsOpen ? 'Minimera' : 'Hantera bilagor'}
+              </button>
+            </div>
             <input
               ref={documentFileInputRef}
               type="file"
@@ -3005,6 +3125,8 @@ export default function TuInvestigationEditorClient({
             />
           </div>
 
+          {deliveryDocumentsOpen ? (
+            <>
           <div
             onDragEnter={() => !locked && setDocumentDropActive(true)}
             onDragLeave={() => setDocumentDropActive(false)}
@@ -3112,6 +3234,8 @@ export default function TuInvestigationEditorClient({
               })}
             </div>
           )}
+            </>
+          ) : null}
         </section>
 
         {documentError ? (
@@ -3122,50 +3246,25 @@ export default function TuInvestigationEditorClient({
 
         <section className="space-y-4">
           <div className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-base font-semibold text-gray-950">Utlåtandets delar</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  Lägg till, flytta, ta bort och byt typ på de delar som ska ingå i utlåtandet.
+                <p className="mt-1 max-w-2xl text-sm text-gray-600">
+                  Läs varje rapportdel. Du kan redigera texten direkt eller be AI att justera en del eller hela utlåtandet.
                 </p>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                {evidenceWorkspaceEnabled ? (
-                  <button
-                    type="button"
-                    onClick={() => setReportReviewTarget(null)}
-                    disabled={locked}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-                  >
-                    <MessageSquareText size={16} aria-hidden />
-                    Instruktion för hela utlåtandet
-                  </button>
-                ) : null}
-                <label className="space-y-1">
-                  <span className="block text-xs font-medium text-gray-600">Ny del</span>
-                  <select
-                    value={newSectionKey}
-                    disabled={locked || sectionTypeOptions.length === 0}
-                    onChange={(event) => setNewSectionKey(event.target.value as TuReportSectionKey)}
-                    className="h-10 min-w-[240px] rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-                  >
-                    {sectionTypeOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              {evidenceWorkspaceEnabled ? (
                 <button
                   type="button"
-                  onClick={() => void addReportSection()}
-                  disabled={locked || sectionTypeOptions.length === 0}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  onClick={() => setReportReviewTarget(null)}
+                  disabled={locked}
+                  title="Beskriv en ändring som AI ska tillämpa och kontrollera i hela utlåtandet"
+                  className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                 >
-                  <Plus size={16} aria-hidden />
-                  Lägg till del
+                  <MessageSquareText size={16} aria-hidden />
+                  Justera hela med AI
                 </button>
-              </div>
+              ) : null}
             </div>
             {sectionTypeOptions.length === 0 ? (
               <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -3175,16 +3274,15 @@ export default function TuInvestigationEditorClient({
             ) : null}
           </div>
 
-          {visibleSections.map((section, index) => {
+          {reportEditorSections.map((section, index) => {
             const sectionId = getSectionInstanceId(section)
-            const sectionNumberLabel = String(index + 1)
-            const isAssignmentParties = section.key === 'assignment_parties'
+            const sectionNumberLabel = String(visibleSections.findIndex((item) => getSectionInstanceId(item) === sectionId) + 1)
             const isProtected = PROTECTED_SECTION_KEYS.has(section.key)
             const canChangeSectionType = !isProtected && !section.isRequired
             const canDeleteSection = !isProtected && !section.isRequired && section.allowDelete !== false
             const collapsed = collapsedSections.has(sectionId)
-            const canMoveUp = index > 1 && !isProtected
-            const canMoveDown = index < visibleSections.length - 1 && !isProtected
+            const canMoveUp = index > 0 && !isProtected
+            const canMoveDown = index < reportEditorSections.length - 1 && !isProtected
             const sectionOptions = sectionTypeOptions.some((option) => option.key === section.key)
               ? sectionTypeOptions
               : [{ key: section.key, title: section.title }, ...sectionTypeOptions]
@@ -3219,7 +3317,7 @@ export default function TuInvestigationEditorClient({
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {!isAssignmentParties && !HIDDEN_SECTION_KEYS.has(section.key) ? (
+                    {!HIDDEN_SECTION_KEYS.has(section.key) ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -3279,40 +3377,7 @@ export default function TuInvestigationEditorClient({
                   </div>
                 </div>
 
-                {collapsed ? null : isAssignmentParties ? (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
-                      <h3 className="mb-3 text-sm font-semibold text-gray-950">Uppdragsgivare</h3>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {CUSTOMER_PARTY_FIELDS.map((field) => (
-                          <AssignmentPartiesInput
-                            key={field.key}
-                            field={field}
-                            value={assignmentParties[field.key]}
-                            disabled={locked}
-                            onChange={(value) => updateAssignmentPartiesField(field.key, value)}
-                            onBlur={() => void saveAssignmentParties()}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
-                      <h3 className="mb-3 text-sm font-semibold text-gray-950">Besiktningsman</h3>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {INSPECTOR_PARTY_FIELDS.map((field) => (
-                          <AssignmentPartiesInput
-                            key={field.key}
-                            field={field}
-                            value={assignmentParties[field.key]}
-                            disabled={locked}
-                            readOnly
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
+                {collapsed ? null : (
                   <div className="space-y-4">
                     <DebouncedTextarea
                       value={section.text}
