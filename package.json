@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:tu": "node --experimental-strip-types --test test/tu-grounding.test.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",

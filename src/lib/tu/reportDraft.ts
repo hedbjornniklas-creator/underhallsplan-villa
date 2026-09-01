@@ -2,6 +2,7 @@ import type {
   TuAnalysisProgressStage,
   TuAnalysisRunStatus,
 } from '@/lib/tu/analysis'
+import type { TuGroundingStatus } from '@/lib/tu/grounding'
 
 export const TU_REPORT_DRAFT_UPDATED_EVENT = 'tu-report-draft-updated'
 
@@ -32,7 +33,9 @@ export type TuWholeReportDraftSection = {
   status: 'pending' | 'accepted' | 'rejected'
   sourceObservationIds: string[]
   sourceAnalysisItemIds: string[]
+  sourceFieldKeys: string[]
   warnings: string[]
+  groundingStatus: TuGroundingStatus
   applicationMode: 'replace' | 'append' | null
   createdAt: string
   updatedAt: string

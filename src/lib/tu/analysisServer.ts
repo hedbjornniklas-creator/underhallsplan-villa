@@ -11,12 +11,14 @@ import {
   isTuAnalysisRunStatus,
   isTuAnalysisWorkflowStatus,
   type TuAnalysisItem,
+  type TuAnalysisSourceObservation,
   type TuAnalysisRun,
   type TuAnalysisValidation,
   type TuAnalysisWorkflow,
 } from '@/lib/tu/analysis'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
+import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
@@ -28,8 +30,8 @@ const TU_ANALYSIS_MODEL =
   process.env.OPENAI_TU_ANALYSIS_MODEL?.trim()
   || process.env.OPENAI_TU_TEXT_MODEL?.trim()
   || 'gpt-4o-mini'
-const RULESET_KEY = 'tu_moisture_inspection_v1'
-const RULESET_VERSION = 2
+const RULESET_KEY = 'tu_moisture_inspection_v2'
+const RULESET_VERSION = 3
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
@@ -58,6 +60,7 @@ type RunRow = {
   progress_message: string | null
   heartbeat_at: string | null
   output_payload: unknown
+  input_snapshot: unknown
   created_at: string | null
   started_at: string | null
   completed_at: string | null
@@ -76,6 +79,8 @@ type ItemRow = {
   source_observation_ids: unknown
   source_image_ids: unknown
   source_measurement_ids: unknown
+  earlier_source_observation_ids: unknown
+  later_source_observation_ids: unknown
   supporting_reasons: unknown
   contradicting_reasons: unknown
   warnings: unknown
@@ -110,6 +115,8 @@ type AnalysisDraftItem = {
   sourceObservationIds: string[]
   sourceImageIds: string[]
   sourceMeasurementIds: string[]
+  earlierSourceObservationIds: string[]
+  laterSourceObservationIds: string[]
   supportingReasons: string[]
   contradictingReasons: string[]
   warnings: string[]
@@ -117,6 +124,7 @@ type AnalysisDraftItem = {
 
 type AnalysisDraft = {
   overview: string
+  timelineSummary: string
   warnings: string[]
   items: AnalysisDraftItem[]
 }
@@ -143,6 +151,7 @@ const RUN_COLUMNS = [
   'progress_message',
   'heartbeat_at',
   'output_payload',
+  'input_snapshot',
   'created_at',
   'started_at',
   'completed_at',
@@ -161,6 +170,8 @@ const ITEM_COLUMNS = [
   'source_observation_ids',
   'source_image_ids',
   'source_measurement_ids',
+  'earlier_source_observation_ids',
+  'later_source_observation_ids',
   'supporting_reasons',
   'contradicting_reasons',
   'warnings',
@@ -213,6 +224,7 @@ function mapRun(row: RunRow): TuAnalysisRun {
     progressMessage: cleanText(row.progress_message) || null,
     heartbeatAt: row.heartbeat_at,
     overview: cleanText(output.overview) || null,
+    timelineSummary: cleanText(output.timelineSummary) || null,
     warnings: stringArray(output.warnings),
     createdAt: isoOrNow(row.created_at),
     startedAt: row.started_at,
@@ -220,7 +232,11 @@ function mapRun(row: RunRow): TuAnalysisRun {
   }
 }
 
-function mapItem(row: ItemRow): TuAnalysisItem {
+function mapItem(
+  row: ItemRow,
+  sourceObservationById: Map<string, TuAnalysisSourceObservation> = new Map()
+): TuAnalysisItem {
+  const sourceObservationIds = stringArray(row.source_observation_ids)
   return {
     id: row.id,
     runId: row.run_id,
@@ -231,9 +247,14 @@ function mapItem(row: ItemRow): TuAnalysisItem {
     reviewStatus: isTuAnalysisReviewStatus(row.review_status) ? row.review_status : 'pending',
     targetSectionId: row.target_section_id,
     includeInReport: row.include_in_report !== false,
-    sourceObservationIds: stringArray(row.source_observation_ids),
+    sourceObservationIds,
     sourceImageIds: stringArray(row.source_image_ids),
     sourceMeasurementIds: stringArray(row.source_measurement_ids),
+    earlierSourceObservationIds: stringArray(row.earlier_source_observation_ids),
+    laterSourceObservationIds: stringArray(row.later_source_observation_ids),
+    sourceObservations: sourceObservationIds
+      .map((id) => sourceObservationById.get(id))
+      .filter((item): item is TuAnalysisSourceObservation => Boolean(item)),
     supportingReasons: stringArray(row.supporting_reasons),
     contradictingReasons: stringArray(row.contradicting_reasons),
     warnings: stringArray(row.warnings),
@@ -241,6 +262,51 @@ function mapItem(row: ItemRow): TuAnalysisItem {
     createdAt: isoOrNow(row.created_at),
     updatedAt: isoOrNow(row.updated_at ?? row.created_at),
   }
+}
+
+function mapSnapshotSourceObservations(snapshotValue: unknown) {
+  const snapshot = record(snapshotValue)
+  const rows = Array.isArray(snapshot.observations) ? snapshot.observations.map(record) : []
+  const chronological = sortTuEvidenceChronologically(rows.map((row) => ({
+    id: cleanText(row.id),
+    observedAt: cleanText(row.observedAt),
+    sourceType: cleanText(row.sourceType),
+    location: cleanText(row.location) || null,
+    buildingComponent: cleanText(row.buildingComponent) || null,
+    noteText: cleanText(row.noteText),
+    transcriptText: cleanText(row.transcriptText),
+    riskNote: cleanText(row.riskNote),
+    suggestedFollowUp: cleanText(row.suggestedFollowUp),
+    measurements: Array.isArray(row.measurements) ? row.measurements.map(record) : [],
+  })).filter((row) => row.id))
+
+  return new Map(chronological.map((row, index) => {
+    const textParts = [
+      row.noteText ? `Anteckning: ${row.noteText}` : '',
+      row.transcriptText ? `Transkribering: ${row.transcriptText}` : '',
+      row.riskNote ? `Risknotering: ${row.riskNote}` : '',
+      row.suggestedFollowUp ? `Föreslagen kontroll: ${row.suggestedFollowUp}` : '',
+      ...row.measurements.map((measurement) => {
+        const parts = [
+          cleanText(measurement.measurementType),
+          cleanText(measurement.valueText),
+          cleanText(measurement.unit),
+          cleanText(measurement.location),
+          cleanText(measurement.method),
+        ].filter(Boolean)
+        return parts.length > 0 ? `Mätvärde: ${parts.join(' · ')}` : ''
+      }),
+    ].filter(Boolean)
+    return [row.id, {
+      id: row.id,
+      sequence: index + 1,
+      observedAt: row.observedAt,
+      sourceType: row.sourceType,
+      location: row.location,
+      buildingComponent: row.buildingComponent,
+      text: textParts.join('\n').slice(0, 3000),
+    } satisfies TuAnalysisSourceObservation]
+  }))
 }
 
 function responseText(payload: OpenAiResponse) {
@@ -374,6 +440,7 @@ export async function getTuAnalysisWorkflow(input: {
   const workflow = workflowData as unknown as WorkflowRow
   let run: TuAnalysisRun | null = null
   let items: TuAnalysisItem[] = []
+  let sourceObservationById = new Map<string, TuAnalysisSourceObservation>()
   if (workflow.current_analysis_run_id) {
     const [{ data: runData, error: runError }, { data: itemData, error: itemError }] =
       await Promise.all([
@@ -395,7 +462,9 @@ export async function getTuAnalysisWorkflow(input: {
     if (runError) throw new Error(runError.message)
     if (itemError) throw new Error(itemError.message)
     if (runData) {
-      run = mapRun(runData as unknown as RunRow)
+      const runRow = runData as unknown as RunRow
+      run = mapRun(runRow)
+      sourceObservationById = mapSnapshotSourceObservations(runRow.input_snapshot)
       const lastHeartbeatAt = run.heartbeatAt ?? run.startedAt ?? run.createdAt
       const staleBefore = Date.now() - STALE_RUN_MINUTES * 60 * 1000
       if (
@@ -426,7 +495,8 @@ export async function getTuAnalysisWorkflow(input: {
         }
       }
     }
-    items = ((itemData ?? []) as unknown as ItemRow[]).map(mapItem)
+    items = ((itemData ?? []) as unknown as ItemRow[])
+      .map((row) => mapItem(row, sourceObservationById))
   }
 
   return {
@@ -451,6 +521,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
     throw new Error('TU_ANALYSIS_TEMPLATE_NOT_SUPPORTED')
   }
   const imageById = new Map(images.map((image) => [image.id, image]))
+  const chronologicalObservations = sortTuEvidenceChronologically(observations)
   return {
     investigation,
     images,
@@ -485,8 +556,11 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         title: section.title,
         aiInstruction: section.aiInstruction ?? null,
       })),
-      observations: observations.map((observation) => ({
+      chronologyInstruction:
+        'Observationerna är sorterade äldst till nyast. En senare uppgift kan komplettera eller ersätta en preliminär uppfattning, men är inte automatiskt mer tillförlitlig.',
+      observations: chronologicalObservations.map((observation, index) => ({
         id: observation.id,
+        sequence: index + 1,
         sourceType: observation.sourceType,
         location: observation.location,
         buildingComponent: observation.buildingComponent,
@@ -761,6 +835,7 @@ async function analyzeImageBatch(input: {
 function parseAnalysisDraft(value: JsonRecord): AnalysisDraft {
   return {
     overview: cleanText(value.overview),
+    timelineSummary: cleanText(value.timelineSummary),
     warnings: stringArray(value.warnings),
     items: (Array.isArray(value.items) ? value.items : []).map(record).map((item) => ({
       itemType: cleanText(item.itemType),
@@ -772,6 +847,8 @@ function parseAnalysisDraft(value: JsonRecord): AnalysisDraft {
       sourceObservationIds: stringArray(item.sourceObservationIds),
       sourceImageIds: stringArray(item.sourceImageIds),
       sourceMeasurementIds: stringArray(item.sourceMeasurementIds),
+      earlierSourceObservationIds: stringArray(item.earlierSourceObservationIds),
+      laterSourceObservationIds: stringArray(item.laterSourceObservationIds),
       supportingReasons: stringArray(item.supportingReasons),
       contradictingReasons: stringArray(item.contradictingReasons),
       warnings: stringArray(item.warnings),
@@ -790,11 +867,20 @@ async function synthesizeInspection(input: {
       'Du analyserar ett samlat besiktningsunderlag för en svensk fuktskadeutredning.',
       'AI-resultatet är ett granskningsunderlag, aldrig ett färdigt utlåtande.',
       'Använd endast fakta och käll-id i underlaget. Hitta inte på mätvärden, datum, händelser, orsaker eller ansvar.',
+      'Observationerna är ordnade äldst till nyast. Rekonstruera först hur uppfattningen utvecklas över tid.',
+      'En senare uppgift är inte automatiskt sannare. Väg källa, kontrollmetod, mätresultat, åtkomlighet och om den senare uppgiften uttryckligen korrigerar eller ersätter en tidigare preliminär uppfattning.',
+      'Skapa evidence_conflict när två uppgifter om samma plats och förhållande inte kan användas samtidigt utan förklaring. Ange tidigare källor i earlierSourceObservationIds och senare källor i laterSourceObservationIds.',
+      'Skapa current_assessment för den nu gällande samlade bedömningen. Den ska beskriva både slutsats och kontrollens begränsning och länka till samtliga avgörande källor.',
+      'Använd neutral terminologi tills ett förhållande är verifierat. Skriv fläck eller missfärgning, inte fuktfläck, när fukt inte har konstaterats.',
+      'Skriv aldrig att en konstruktion saknar fukt när underlaget endast visar att inga fuktindikationer noterats i en begränsad kontrollerad del.',
+      'Rubriken, rapportmallen och uppdragstypen är kontext, inte teknisk bevisning.',
       'En kontrollerad fältpost betyder att källmaterialet är korrekt återgivet, inte att varje teknisk slutsats i fritexten är bekräftad.',
       'Håll beställaruppgifter åtskilda från besiktningsmannens verifierade iakttagelser.',
       'En teknisk hypotes ska ha certainty probable eller uncertain och redovisa både stöd och motsägelser.',
       'En bildanalys visar endast synliga bildfakta och får inte ensam bevisa dolda förhållanden eller skadeorsak.',
-      'Identifiera informationsluckor och rekommenderade fortsatta kontroller när underlaget inte räcker.',
+      'Informationsluckor beskriver saknad information. Rekommenderade fortsatta kontroller beskriver nästa handling. Blanda inte ihop dessa kategorier.',
+      'Varje analysresultat måste ha minst ett giltigt sourceObservationId, sourceImageId eller sourceMeasurementId. Saknas källa ska resultatet inte skapas.',
+      'Evidence_conflict används för granskning och ska ha includeInReport false. Den godkända current_assessment används som rapportunderlag.',
       'Välj targetSectionId endast bland rapportsektionerna i underlaget. Använd null om ingen sektion passar.',
       'Skriv koncist, sakligt och granskningsbart på svenska utan juridiska slutsatser.',
     ].join('\n'),
@@ -807,6 +893,7 @@ async function synthesizeInspection(input: {
       type: 'object',
       properties: {
         overview: { type: 'string' },
+        timelineSummary: { type: 'string' },
         warnings: { type: 'array', items: { type: 'string' } },
         items: {
           type: 'array',
@@ -816,6 +903,8 @@ async function synthesizeInspection(input: {
               itemType: {
                 type: 'string',
                 enum: [
+                  'current_assessment',
+                  'evidence_conflict',
                   'verified_observation',
                   'party_statement',
                   'measurement',
@@ -834,6 +923,8 @@ async function synthesizeInspection(input: {
               sourceObservationIds: { type: 'array', items: { type: 'string' } },
               sourceImageIds: { type: 'array', items: { type: 'string' } },
               sourceMeasurementIds: { type: 'array', items: { type: 'string' } },
+              earlierSourceObservationIds: { type: 'array', items: { type: 'string' } },
+              laterSourceObservationIds: { type: 'array', items: { type: 'string' } },
               supportingReasons: { type: 'array', items: { type: 'string' } },
               contradictingReasons: { type: 'array', items: { type: 'string' } },
               warnings: { type: 'array', items: { type: 'string' } },
@@ -848,6 +939,8 @@ async function synthesizeInspection(input: {
               'sourceObservationIds',
               'sourceImageIds',
               'sourceMeasurementIds',
+              'earlierSourceObservationIds',
+              'laterSourceObservationIds',
               'supportingReasons',
               'contradictingReasons',
               'warnings',
@@ -856,7 +949,7 @@ async function synthesizeInspection(input: {
           },
         },
       },
-      required: ['overview', 'warnings', 'items'],
+      required: ['overview', 'timelineSummary', 'warnings', 'items'],
       additionalProperties: false,
     },
     maxOutputTokens: 9000,
@@ -1005,30 +1098,80 @@ export async function runTuInspectionAnalysis(input: {
     )
     const validImageIds = new Set(images.map((image) => image.id))
     const validSectionIds = new Set(snapshotSections.map((item) => cleanText(item.id)).filter(Boolean))
+    const itemPriority = (itemType: string) => (
+      itemType === 'current_assessment' ? 0
+        : itemType === 'evidence_conflict' ? 1
+          : 2
+    )
     const itemRows = analysis.items
       .filter((item) => isTuAnalysisItemType(item.itemType))
-      .map((item, index) => ({
-        org_id: input.orgId,
-        inspection_id: input.inspectionId,
-        run_id: input.runId,
-        item_type: item.itemType,
-        title: item.title,
-        summary: item.summary,
-        certainty: isTuAnalysisCertainty(item.certainty) ? item.certainty : 'uncertain',
-        review_status: 'pending',
-        target_section_id:
-          item.targetSectionId && validSectionIds.has(item.targetSectionId)
-            ? item.targetSectionId
-            : null,
-        include_in_report: item.includeInReport,
-        source_observation_ids: item.sourceObservationIds.filter((id) => validObservationIds.has(id)),
-        source_image_ids: item.sourceImageIds.filter((id) => validImageIds.has(id)),
-        source_measurement_ids: item.sourceMeasurementIds.filter((id) => validMeasurementIds.has(id)),
-        supporting_reasons: item.supportingReasons,
-        contradicting_reasons: item.contradictingReasons,
-        warnings: item.warnings,
-        sort_order: (index + 1) * 10,
-      }))
+      .map((item, originalIndex) => ({ item, originalIndex }))
+      .sort((left, right) => (
+        itemPriority(left.item.itemType) - itemPriority(right.item.itemType)
+        || left.originalIndex - right.originalIndex
+      ))
+      .map(({ item }, index) => {
+        const earlierSourceObservationIds = item.earlierSourceObservationIds
+          .filter((id) => validObservationIds.has(id))
+        const laterSourceObservationIds = item.laterSourceObservationIds
+          .filter((id) => validObservationIds.has(id))
+        const sourceObservationIds = [...new Set([
+          ...item.sourceObservationIds.filter((id) => validObservationIds.has(id)),
+          ...earlierSourceObservationIds,
+          ...laterSourceObservationIds,
+        ])]
+        const sourceImageIds = item.sourceImageIds.filter((id) => validImageIds.has(id))
+        const sourceMeasurementIds = item.sourceMeasurementIds
+          .filter((id) => validMeasurementIds.has(id))
+        const hasSource = sourceObservationIds.length > 0
+          || sourceImageIds.length > 0
+          || sourceMeasurementIds.length > 0
+        const conflictIsIncomplete = item.itemType === 'evidence_conflict'
+          && (earlierSourceObservationIds.length === 0 || laterSourceObservationIds.length === 0)
+        const warnings = [...item.warnings]
+        if (!hasSource) warnings.push('Analysresultatet saknar verifierbar källkoppling och kan inte användas i utlåtandet.')
+        if (conflictIsIncomplete) warnings.push('Konflikten saknar tydlig koppling till både tidigare och senare fältuppgift.')
+        return {
+          org_id: input.orgId,
+          inspection_id: input.inspectionId,
+          run_id: input.runId,
+          item_type: item.itemType,
+          title: item.title,
+          summary: item.summary,
+          certainty: isTuAnalysisCertainty(item.certainty) ? item.certainty : 'uncertain',
+          review_status: 'pending',
+          target_section_id:
+            item.itemType !== 'evidence_conflict'
+            && item.targetSectionId
+            && validSectionIds.has(item.targetSectionId)
+              ? item.targetSectionId
+              : null,
+          include_in_report: item.itemType === 'current_assessment'
+            ? hasSource
+            : item.itemType !== 'evidence_conflict' && hasSource && item.includeInReport,
+          source_observation_ids: sourceObservationIds,
+          source_image_ids: sourceImageIds,
+          source_measurement_ids: sourceMeasurementIds,
+          earlier_source_observation_ids: earlierSourceObservationIds,
+          later_source_observation_ids: laterSourceObservationIds,
+          supporting_reasons: item.supportingReasons,
+          contradicting_reasons: item.contradictingReasons,
+          warnings,
+          sort_order: (index + 1) * 10,
+        }
+      })
+
+    const currentAssessmentRows = itemRows.filter((item) => item.item_type === 'current_assessment')
+    if (currentAssessmentRows.length === 0) {
+      throw new Error('OPENAI_ANALYSIS_MISSING_CURRENT_ASSESSMENT')
+    }
+    if (currentAssessmentRows.every((item) => (
+      item.source_observation_ids.length === 0
+      && item.source_image_ids.length === 0
+      && item.source_measurement_ids.length === 0
+    ))) {
+      throw new Error('OPENAI_ANALYSIS_UNGROUNDED_CURRENT_ASSESSMENT')
+    }
 
     if (!await runStillProcessing()) return
     await updateProgress({
@@ -1052,6 +1195,7 @@ export async function runTuInspectionAnalysis(input: {
     const completedAt = new Date().toISOString()
     const outputPayload = {
       overview: analysis.overview,
+      timelineSummary: analysis.timelineSummary,
       warnings: analysis.warnings,
       imageAnalysisCount: imageAnalyses.length,
       itemCount: itemRows.length,
@@ -1081,7 +1225,12 @@ export async function runTuInspectionAnalysis(input: {
       .eq('status', 'analysis_processing')
     if (workflowError) throw new Error(workflowError.message)
   } catch (error) {
-    const message = error instanceof Error ? error.message.slice(0, 1200) : 'TU_ANALYSIS_FAILED'
+    const rawMessage = error instanceof Error ? error.message.slice(0, 1200) : 'TU_ANALYSIS_FAILED'
+    const message = rawMessage === 'OPENAI_ANALYSIS_MISSING_CURRENT_ASSESSMENT'
+      ? 'AI-analysen saknade en aktuell samlad bedömning och stoppades före granskning.'
+      : rawMessage === 'OPENAI_ANALYSIS_UNGROUNDED_CURRENT_ASSESSMENT'
+        ? 'AI-analysens samlade bedömning saknade verifierbara källor och stoppades före granskning.'
+        : rawMessage
     await admin
       .from('tu_ai_runs')
       .update({

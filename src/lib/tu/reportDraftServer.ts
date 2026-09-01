@@ -7,20 +7,27 @@ import {
   isTuAnalysisRunStatus,
 } from '@/lib/tu/analysis'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { listTuObservations } from '@/lib/tu/evidenceServer'
+import {
+  sortTuEvidenceChronologically,
+  validateTuGroundedSections,
+  type TuGeneratedGroundedSection,
+  type TuGroundingStatus,
+} from '@/lib/tu/grounding'
 import type {
   TuWholeReportDraftRun,
   TuWholeReportDraftSection,
   TuWholeReportDraftState,
 } from '@/lib/tu/reportDraft'
-import { getTuInvestigationById } from '@/lib/tu/server'
+import { getTuInvestigationById, listTuInvestigationImages } from '@/lib/tu/server'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
   || process.env.OPENAI_TU_TEXT_MODEL?.trim()
   || 'gpt-4o-mini'
-const RULESET_KEY = 'tu_moisture_report_v1'
-const RULESET_VERSION = 1
+const RULESET_KEY = 'tu_moisture_report_v2'
+const RULESET_VERSION = 2
 const STALE_RUN_MINUTES = 12
 const NON_EDITABLE_SECTION_KEYS = new Set(['assignment_parties', 'signature'])
 
@@ -53,7 +60,9 @@ type SuggestionRow = {
   status: string
   source_observation_ids: unknown
   source_analysis_item_ids: unknown
+  source_field_keys: unknown
   warnings: unknown
+  grounding_status: string | null
   application_mode: string | null
   created_at: string | null
   updated_at: string | null
@@ -64,18 +73,10 @@ type OpenAiResponse = {
   output?: Array<{ content?: Array<{ type?: string; text?: string }> }>
 }
 
-type GeneratedSection = {
-  sectionId: string
-  text: string
-  sourceAnalysisItemIds: string[]
-  sourceObservationIds: string[]
-  warnings: string[]
-}
-
 type GeneratedReport = {
   overview: string
   warnings: string[]
-  sections: GeneratedSection[]
+  sections: TuGeneratedGroundedSection[]
 }
 
 const RUN_COLUMNS = [
@@ -105,7 +106,9 @@ const SUGGESTION_COLUMNS = [
   'status',
   'source_observation_ids',
   'source_analysis_item_ids',
+  'source_field_keys',
   'warnings',
+  'grounding_status',
   'application_mode',
   'created_at',
   'updated_at',
@@ -131,6 +134,13 @@ function record(value: unknown): JsonRecord {
 
 function isoOrNow(value: string | null | undefined) {
   return value && !Number.isNaN(Date.parse(value)) ? value : new Date().toISOString()
+}
+
+function isGroundingStatus(value: unknown): value is TuGroundingStatus {
+  return value === 'grounded'
+    || value === 'needs_source'
+    || value === 'blocked'
+    || value === 'manually_edited'
 }
 
 function responseText(payload: OpenAiResponse) {
@@ -178,7 +188,11 @@ function mapSection(row: SuggestionRow): TuWholeReportDraftSection {
     status: row.status === 'accepted' || row.status === 'rejected' ? row.status : 'pending',
     sourceObservationIds: stringArray(row.source_observation_ids),
     sourceAnalysisItemIds: stringArray(row.source_analysis_item_ids),
+    sourceFieldKeys: stringArray(row.source_field_keys),
     warnings: stringArray(row.warnings),
+    groundingStatus: isGroundingStatus(row.grounding_status)
+      ? row.grounding_status
+      : 'grounded',
     applicationMode: row.application_mode === 'replace' || row.application_mode === 'append'
       ? row.application_mode
       : null,
@@ -282,7 +296,11 @@ export async function getTuWholeReportDraftState(input: {
 }
 
 async function buildReportSnapshot(input: { orgId: string; inspectionId: string }) {
-  const investigation = await getTuInvestigationById(input)
+  const [investigation, observations, images] = await Promise.all([
+    getTuInvestigationById(input),
+    listTuObservations(input),
+    listTuInvestigationImages(input),
+  ])
   if (!investigation) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
   if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) {
@@ -300,6 +318,71 @@ async function buildReportSnapshot(input: { orgId: string; inspectionId: string 
       order: index + 1,
     }))
   if (sections.length === 0) throw new Error('TU_REPORT_DRAFT_NO_SECTIONS')
+
+  const sourceFields: Array<{ key: string; label: string; value: string }> = []
+  const addSourceField = (key: string, label: string, value: unknown) => {
+    const normalized = cleanText(value)
+    if (normalized) sourceFields.push({ key, label, value: normalized })
+  }
+  addSourceField('assignment.title', 'Uppdragets titel', investigation.title)
+  addSourceField('assignment.assignmentNumber', 'Arbetsnummer', investigation.assignmentNumber)
+  addSourceField('assignment.scopeDescription', 'Registrerad omfattning', investigation.scopeDescription)
+  addSourceField('assignment.inspectionDate', 'Besiktningsdatum', investigation.date)
+  addSourceField('assignment.inspectionTime', 'Besiktningstid', investigation.inspectionTime)
+  addSourceField('assignment.background', 'Registrerad bakgrund', investigation.background)
+  addSourceField('assignment.basis', 'Registrerat underlag', investigation.basis)
+  addSourceField('assignment.accessibility', 'Registrerad åtkomlighet', investigation.accessibility)
+  addSourceField('object.objectType', 'Objekttyp', investigation.objectType)
+  addSourceField('object.address', 'Objektadress', investigation.propertyAddress)
+  addSourceField('object.city', 'Ort', investigation.propertyCity)
+  addSourceField('object.cadastralId', 'Fastighetsbeteckning', investigation.cadastralId)
+  addSourceField('object.brfName', 'Bostadsrättsförening', investigation.brfName)
+  addSourceField('object.apartmentNumber', 'Lägenhetsnummer', investigation.apartmentNumber)
+  for (const image of images) {
+    addSourceField(`image.${image.id}.caption`, 'Bildtext', image.caption)
+  }
+
+  const chronologicalObservations = sortTuEvidenceChronologically(observations)
+  const imageById = new Map(images.map((image) => [image.id, image]))
+  const evidence = {
+    chronologyInstruction:
+      'Fältposterna är sorterade äldst till nyast. Godkända aktuella bedömningar och konfliktlösningar styr hur preliminära uppgifter får användas.',
+    observations: chronologicalObservations.map((observation, index) => ({
+      id: observation.id,
+      sequence: index + 1,
+      observedAt: observation.observedAt,
+      sourceType: observation.sourceType,
+      location: observation.location,
+      buildingComponent: observation.buildingComponent,
+      noteText: observation.noteText.slice(0, 8000),
+      transcriptText: observation.transcriptText?.slice(0, 12000) ?? null,
+      riskNote: observation.riskNote,
+      suggestedFollowUp: observation.suggestedFollowUp,
+      imageIds: observation.imageIds,
+      imageCaptions: observation.imageIds.map((id) => ({
+        imageId: id,
+        caption: imageById.get(id)?.caption ?? null,
+      })),
+      measurements: observation.measurements.map((measurement) => ({
+        id: measurement.id,
+        location: measurement.location,
+        type: measurement.measurementType,
+        value: measurement.valueText,
+        unit: measurement.unit,
+        method: measurement.method,
+        instrument: measurement.instrument,
+        note: measurement.note,
+        measuredAt: measurement.measuredAt,
+      })),
+    })),
+    images: images.map((image) => ({
+      id: image.id,
+      sectionKey: image.sectionKey,
+      caption: image.caption,
+      captionSourceFieldKey: image.caption ? `image.${image.id}.caption` : null,
+      createdAt: image.createdAt,
+    })),
+  }
 
   const admin = createSupabaseAdminClient()
   const { data: workflowData, error: workflowError } = await admin
@@ -338,9 +421,12 @@ async function buildReportSnapshot(input: { orgId: string; inspectionId: string 
           'summary',
           'certainty',
           'target_section_id',
+          'include_in_report',
           'source_observation_ids',
           'source_image_ids',
           'source_measurement_ids',
+          'earlier_source_observation_ids',
+          'later_source_observation_ids',
           'supporting_reasons',
           'contradicting_reasons',
           'warnings',
@@ -350,13 +436,17 @@ async function buildReportSnapshot(input: { orgId: string; inspectionId: string 
         .eq('inspection_id', input.inspectionId)
         .eq('run_id', workflow.current_analysis_run_id)
         .eq('review_status', 'accepted')
-        .eq('include_in_report', true)
         .order('sort_order', { ascending: true }),
     ])
   if (analysisRunError) throw new Error(analysisRunError.message)
   if (itemsError) throw new Error(itemsError.message)
   if (!analysisRun) throw new Error('TU_ANALYSIS_NOT_APPROVED')
-  if (!analysisItems?.length) throw new Error('TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS')
+  const acceptedItems = (analysisItems ?? []) as unknown as Array<Record<string, unknown>>
+  const reportItems = acceptedItems.filter((item) => (
+    item.include_in_report === true || item.item_type === 'current_assessment'
+  ))
+  const resolvedConflicts = acceptedItems.filter((item) => item.item_type === 'evidence_conflict')
+  if (reportItems.length === 0) throw new Error('TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS')
 
   const analysisOutput = record((analysisRun as { output_payload?: unknown }).output_payload)
   return {
@@ -387,12 +477,16 @@ async function buildReportSnapshot(input: { orgId: string; inspectionId: string 
         apartmentNumber: investigation.apartmentNumber,
       },
       sections,
+      sourceFields,
+      evidence,
       approvedAnalysis: {
         runId: workflow.current_analysis_run_id,
         approvedAt: workflow.analysis_approved_at,
         overview: cleanText(analysisOutput.overview),
+        timelineSummary: cleanText(analysisOutput.timelineSummary),
         warnings: stringArray(analysisOutput.warnings),
-        items: analysisItems,
+        items: reportItems,
+        resolvedConflicts,
       },
     },
   }
@@ -473,9 +567,16 @@ function parseGeneratedReport(payload: OpenAiResponse): GeneratedReport {
   const sections = Array.isArray(parsed.sections)
     ? parsed.sections.map(record).map((section) => ({
         sectionId: cleanText(section.sectionId),
-        text: cleanText(section.text),
-        sourceAnalysisItemIds: stringArray(section.sourceAnalysisItemIds),
-        sourceObservationIds: stringArray(section.sourceObservationIds),
+        paragraphs: (Array.isArray(section.paragraphs) ? section.paragraphs : [])
+          .map(record)
+          .map((paragraph) => ({
+            text: cleanText(paragraph.text),
+            sourceAnalysisItemIds: stringArray(paragraph.sourceAnalysisItemIds),
+            sourceObservationIds: stringArray(paragraph.sourceObservationIds),
+            sourceFieldKeys: stringArray(paragraph.sourceFieldKeys),
+            warnings: stringArray(paragraph.warnings),
+          }))
+          .filter((paragraph) => paragraph.text),
         warnings: stringArray(section.warnings),
       }))
     : []
@@ -498,16 +599,25 @@ async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
       store: false,
       instructions: [
         'Du skriver ett komplett, sammanhållet och granskningsbart utkast till en svensk fuktskadeutredning.',
-        'Skriv samtliga angivna rapportdelar i en gemensam disposition så att resonemanget hänger ihop och onödiga upprepningar undviks.',
+        'Bearbeta samtliga angivna rapportdelar i en gemensam disposition så att resonemanget hänger ihop och onödiga upprepningar undviks.',
         'Använd endast uppgifter i JSON-underlaget. Hitta aldrig på observationer, mätvärden, datum, orsaker, ansvar eller utförda kontroller.',
+        'Fältposterna är kronologiska. En godkänd current_assessment och godkända resolvedConflicts styr hur äldre preliminära uppgifter får användas.',
+        'En senare uppgift är inte automatiskt sannare. Bevara den godkända konfliktlösningen och återanvänd inte en benämning som den aktuella bedömningen har ersatt.',
+        'Rapportmallens titel och aiInstruction beskriver önskad struktur men är aldrig en faktakälla.',
+        'Skriv aldrig fuktfläck när fukt inte har verifierats. Använd fläck eller missfärgning enligt den aktuella bedömningen.',
+        'Skriv aldrig att en konstruktion saknar fukt när källan endast säger att inga fuktindikationer noterats i kontrollerade delar.',
+        'Hitta inte på uppdragets omfattning, avgränsning, åtkomlighet, instrument, mätmetod eller kontrollresultat för att fylla en rapportdel.',
         'Skilj tydligt mellan verifierade iakttagelser, uppgifter från part, tekniska bedömningar, hypoteser och sådant som inte kunnat fastställas.',
         'Formulera osäkerheter och begränsningar uttryckligen. Utse inte juridiskt ansvarig part och lämna inga juridiska slutsatser.',
         'Fakta redovisas primärt i en rapportdel. En sammanfattning får återge slutsatser kort men inte kopiera hela stycken.',
         'Iakttagelser beskriver vad som konstaterats. Teknisk bedömning förklarar betydelsen. Rekommendationer beskriver nästa kontroll eller åtgärdsinriktning.',
         'Bevara relevanta befintliga texter men redigera dem till en konsekvent helhet och ta bort dubbleringar.',
+        'Befintlig currentText är redaktionellt utkast och inte en faktakälla. Den får bara bevaras när samma uppgift stöds av en angiven analys-, observations- eller fältkälla.',
         'Följ varje rapportsdels aiInstruction. Skriv inte rubriken i texten eftersom gränssnittet lägger till den.',
-        'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Ingen rapportdel får utelämnas.',
-        'sourceAnalysisItemIds och sourceObservationIds får bara innehålla id:n som finns i underlaget.',
+        'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Om verifierbart underlag saknas ska paragraphs vara en tom array.',
+        'Varje stycke måste ange minst en verklig källa via sourceAnalysisItemIds, sourceObservationIds eller sourceFieldKeys.',
+        'sourceAnalysisItemIds och sourceObservationIds får bara innehålla id:n som finns i underlaget. sourceFieldKeys får bara innehålla key från sourceFields.',
+        'Ett stycke utan källor får inte skapas. Skriv i stället en varning på rapportdelen och lämna paragraphs tom.',
         'Skriv sakligt, precist och proportionerligt på svenska. Textens omfattning ska motiveras av underlaget, inte av utfyllnad.',
       ].join('\n'),
       input: JSON.stringify(input.snapshot, null, 2),
@@ -527,16 +637,32 @@ async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
                   type: 'object',
                   properties: {
                     sectionId: { type: 'string' },
-                    text: { type: 'string' },
-                    sourceAnalysisItemIds: { type: 'array', items: { type: 'string' } },
-                    sourceObservationIds: { type: 'array', items: { type: 'string' } },
+                    paragraphs: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          text: { type: 'string' },
+                          sourceAnalysisItemIds: { type: 'array', items: { type: 'string' } },
+                          sourceObservationIds: { type: 'array', items: { type: 'string' } },
+                          sourceFieldKeys: { type: 'array', items: { type: 'string' } },
+                          warnings: { type: 'array', items: { type: 'string' } },
+                        },
+                        required: [
+                          'text',
+                          'sourceAnalysisItemIds',
+                          'sourceObservationIds',
+                          'sourceFieldKeys',
+                          'warnings',
+                        ],
+                        additionalProperties: false,
+                      },
+                    },
                     warnings: { type: 'array', items: { type: 'string' } },
                   },
                   required: [
                     'sectionId',
-                    'text',
-                    'sourceAnalysisItemIds',
-                    'sourceObservationIds',
+                    'paragraphs',
                     'warnings',
                   ],
                   additionalProperties: false,
@@ -630,7 +756,7 @@ export async function runTuWholeReportDraft(input: {
     const expectedIds = expectedSections.map((section) => cleanText(section.id)).filter(Boolean)
     const generatedIds = generated.sections.map((section) => section.sectionId)
     if (
-      generated.sections.some((section) => !section.sectionId || !section.text)
+      generated.sections.some((section) => !section.sectionId)
       || generatedIds.length !== expectedIds.length
       || new Set(generatedIds).size !== generatedIds.length
       || expectedIds.some((id) => !generatedIds.includes(id))
@@ -643,15 +769,103 @@ export async function runTuWholeReportDraft(input: {
     const analysisItems = Array.isArray(approvedAnalysis.items)
       ? approvedAnalysis.items.map(record)
       : []
-    const validAnalysisIds = new Set(analysisItems.map((item) => cleanText(item.id)).filter(Boolean))
-    const validObservationIds = new Set(
-      analysisItems.flatMap((item) => stringArray(item.source_observation_ids))
+    const resolvedConflicts = Array.isArray(approvedAnalysis.resolvedConflicts)
+      ? approvedAnalysis.resolvedConflicts.map(record)
+      : []
+    const allAnalysisItems = [...analysisItems, ...resolvedConflicts]
+    const validAnalysisIds = new Set(
+      allAnalysisItems.map((item) => cleanText(item.id)).filter(Boolean)
     )
-    const generatedById = new Map(generated.sections.map((section) => [section.sectionId, section]))
+    const evidence = record(snapshot.evidence)
+    const evidenceObservations = Array.isArray(evidence.observations)
+      ? evidence.observations.map(record)
+      : []
+    const validObservationIds = new Set(
+      evidenceObservations.map((observation) => cleanText(observation.id)).filter(Boolean)
+    )
+    const sourceFields = Array.isArray(snapshot.sourceFields)
+      ? snapshot.sourceFields.map(record)
+      : []
+    const validFieldKeys = new Set(
+      sourceFields.map((field) => cleanText(field.key)).filter(Boolean)
+    )
+    const analysisSourceTextById = new Map<string, string>()
+    for (const item of allAnalysisItems) {
+      const id = cleanText(item.id)
+      if (!id) continue
+      analysisSourceTextById.set(id, [
+        cleanText(item.title),
+        cleanText(item.summary),
+        ...stringArray(item.supporting_reasons),
+        ...stringArray(item.contradicting_reasons),
+      ].filter(Boolean).join('\n'))
+    }
+    const observationSourceTextById = new Map<string, string>()
+    for (const observation of evidenceObservations) {
+      const id = cleanText(observation.id)
+      if (!id) continue
+      observationSourceTextById.set(id, [
+        cleanText(observation.noteText),
+        cleanText(observation.transcriptText),
+        cleanText(observation.riskNote),
+        cleanText(observation.suggestedFollowUp),
+        ...(Array.isArray(observation.measurements)
+          ? observation.measurements.map(record).flatMap((measurement) => [
+              cleanText(measurement.location),
+              cleanText(measurement.type),
+              cleanText(measurement.value),
+              cleanText(measurement.unit),
+              cleanText(measurement.method),
+              cleanText(measurement.instrument),
+              cleanText(measurement.note),
+            ])
+          : []),
+      ].filter(Boolean).join('\n'))
+    }
+    const fieldSourceTextByKey = new Map<string, string>()
+    for (const field of sourceFields) {
+      const key = cleanText(field.key)
+      if (key) fieldSourceTextByKey.set(key, cleanText(field.value))
+    }
+    const currentAssessmentTexts = analysisItems
+      .filter((item) => cleanText(item.item_type) === 'current_assessment')
+      .flatMap((item) => [cleanText(item.title), cleanText(item.summary)])
+      .filter(Boolean)
+    const currentAssessmentIds = analysisItems
+      .filter((item) => cleanText(item.item_type) === 'current_assessment')
+      .map((item) => cleanText(item.id))
+      .filter(Boolean)
+    const conflictResolutionAnalysisIdsByObservation = new Map<string, Set<string>>()
+    for (const conflict of resolvedConflicts) {
+      const conflictId = cleanText(conflict.id)
+      if (!conflictId) continue
+      for (const observationId of stringArray(conflict.earlier_source_observation_ids)) {
+        const resolutions = conflictResolutionAnalysisIdsByObservation.get(observationId)
+          ?? new Set<string>()
+        resolutions.add(conflictId)
+        currentAssessmentIds.forEach((id) => resolutions.add(id))
+        conflictResolutionAnalysisIdsByObservation.set(observationId, resolutions)
+      }
+    }
+    const validatedSections = validateTuGroundedSections({
+      expectedSectionIds: expectedIds,
+      generatedSections: generated.sections,
+      validAnalysisItemIds: validAnalysisIds,
+      validObservationIds,
+      validFieldKeys,
+      analysisSourceTextById,
+      observationSourceTextById,
+      fieldSourceTextByKey,
+      currentAssessmentTexts,
+      conflictResolutionAnalysisIdsByObservation,
+    })
+    const validatedById = new Map(
+      validatedSections.map((section) => [section.sectionId, section])
+    )
     const rows = expectedSections.map((section) => {
       const sectionId = cleanText(section.id)
-      const generatedSection = generatedById.get(sectionId)
-      if (!generatedSection) throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
+      const validatedSection = validatedById.get(sectionId)
+      if (!validatedSection) throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
       return {
         org_id: input.orgId,
         inspection_id: input.inspectionId,
@@ -659,11 +873,13 @@ export async function runTuWholeReportDraft(input: {
         target_section_id: sectionId,
         target_section_key: cleanText(section.key),
         target_section_title: cleanText(section.title),
-        proposed_text: generatedSection.text,
+        proposed_text: validatedSection.text,
         status: 'pending',
-        source_observation_ids: generatedSection.sourceObservationIds.filter((id) => validObservationIds.has(id)),
-        source_analysis_item_ids: generatedSection.sourceAnalysisItemIds.filter((id) => validAnalysisIds.has(id)),
-        warnings: generatedSection.warnings,
+        source_observation_ids: validatedSection.sourceObservationIds,
+        source_analysis_item_ids: validatedSection.sourceAnalysisItemIds,
+        source_field_keys: validatedSection.sourceFieldKeys,
+        warnings: validatedSection.warnings,
+        grounding_status: validatedSection.groundingStatus,
         application_mode: null,
       }
     })
@@ -680,19 +896,35 @@ export async function runTuWholeReportDraft(input: {
 
     const completedAt = new Date().toISOString()
     const total = run.progress_total ?? rows.length
+    const blockedSectionCount = validatedSections
+      .filter((section) => section.groundingStatus === 'blocked').length
+    const needsSourceSectionCount = validatedSections
+      .filter((section) => section.groundingStatus === 'needs_source').length
+    const groundingWarnings = [
+      blockedSectionCount > 0
+        ? `${blockedSectionCount} rapportdelar innehöll AI-stycken som stoppades av källkontrollen.`
+        : '',
+      needsSourceSectionCount > 0
+        ? `${needsSourceSectionCount} rapportdelar lämnades tomma eftersom verifierbart underlag saknas.`
+        : '',
+    ].filter(Boolean)
     const { error: completeError } = await admin.from('tu_ai_runs').update({
       status: 'completed',
       output_payload: {
         overview: generated.overview,
-        warnings: generated.warnings,
+        warnings: [...new Set([...generated.warnings, ...groundingWarnings])],
         sectionCount: rows.length,
+        blockedSectionCount,
+        needsSourceSectionCount,
       },
       completed_at: completedAt,
       error_message: null,
       progress_stage: 'completed',
       progress_current: total,
       progress_total: total,
-      progress_message: 'Hela rapportutkastet är klart för granskning.',
+      progress_message: blockedSectionCount || needsSourceSectionCount
+        ? `Rapportutkastet är klart. ${blockedSectionCount + needsSourceSectionCount} rapportdelar behöver din kontroll.`
+        : 'Hela rapportutkastet är klart för granskning.',
       heartbeat_at: completedAt,
     }).eq('id', input.runId).eq('status', 'processing')
     if (completeError) throw new Error(completeError.message)

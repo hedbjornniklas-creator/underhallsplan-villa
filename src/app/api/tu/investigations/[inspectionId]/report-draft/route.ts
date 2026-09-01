@@ -137,7 +137,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (!suggestionId || !proposedText) return jsonError('Rapporttexten får inte vara tom.', 400)
       const { data, error } = await admin
         .from('tu_ai_suggestions')
-        .update({ proposed_text: proposedText })
+        .update({
+          proposed_text: proposedText,
+          grounding_status: 'manually_edited',
+        })
         .eq('id', suggestionId)
         .eq('run_id', state.run.id)
         .eq('org_id', orgContext.orgId)
@@ -146,6 +149,24 @@ export async function PATCH(request: Request, context: RouteContext) {
         .maybeSingle()
       if (error) throw new Error(error.message)
       if (!data) return jsonError('Rapportdelen hittades inte.', 404)
+      return stateResponse(orgContext.orgId, inspectionId)
+    }
+
+    if (action === 'confirm_section') {
+      const suggestionId = cleanText(body.suggestionId)
+      const section = state.sections.find((item) => item.id === suggestionId)
+      if (!section) return jsonError('Rapportdelen hittades inte.', 404)
+      if (!section.proposedText.trim()) {
+        return jsonError('Rapportdelen behöver källförankrad text innan den kan godkännas.', 400)
+      }
+      const { error } = await admin
+        .from('tu_ai_suggestions')
+        .update({ grounding_status: 'manually_edited' })
+        .eq('id', suggestionId)
+        .eq('run_id', state.run.id)
+        .eq('org_id', orgContext.orgId)
+        .eq('inspection_id', inspectionId)
+      if (error) throw new Error(error.message)
       return stateResponse(orgContext.orgId, inspectionId)
     }
 
@@ -158,6 +179,15 @@ export async function PATCH(request: Request, context: RouteContext) {
         || acceptedIds.some((id) => !validIds.has(id))
         || rejectedIds.some((id) => !validIds.has(id))
       ) return jsonError('Ogiltigt urval av rapportdelar.', 400)
+      const acceptedSections = state.sections.filter((section) => acceptedIds.includes(section.id))
+      if (acceptedSections.some((section) => !section.proposedText.trim())) {
+        return jsonError('En vald rapportdel saknar text och kan inte föras över.', 409)
+      }
+      if (acceptedSections.some((section) => (
+        section.groundingStatus === 'needs_source' || section.groundingStatus === 'blocked'
+      ))) {
+        return jsonError('Kontrollera källvarningarna i valda rapportdelar innan de förs över.', 409)
+      }
       const now = new Date().toISOString()
       const { error: acceptedError } = await admin
         .from('tu_ai_suggestions')

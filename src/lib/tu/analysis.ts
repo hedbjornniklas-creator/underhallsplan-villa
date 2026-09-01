@@ -21,6 +21,8 @@ export type TuAnalysisProgressStage =
 export const TU_ANALYSIS_UPDATED_EVENT = 'tu-analysis-updated'
 
 export type TuAnalysisItemType =
+  | 'current_assessment'
+  | 'evidence_conflict'
   | 'verified_observation'
   | 'party_statement'
   | 'measurement'
@@ -32,6 +34,16 @@ export type TuAnalysisItemType =
 
 export type TuAnalysisReviewStatus = 'pending' | 'accepted' | 'rejected'
 export type TuAnalysisCertainty = 'confirmed' | 'probable' | 'uncertain'
+
+export type TuAnalysisSourceObservation = {
+  id: string
+  sequence: number
+  observedAt: string
+  sourceType: string
+  location: string | null
+  buildingComponent: string | null
+  text: string
+}
 
 export type TuAnalysisValidation = {
   observationCount: number
@@ -57,6 +69,9 @@ export type TuAnalysisItem = {
   sourceObservationIds: string[]
   sourceImageIds: string[]
   sourceMeasurementIds: string[]
+  earlierSourceObservationIds: string[]
+  laterSourceObservationIds: string[]
+  sourceObservations: TuAnalysisSourceObservation[]
   supportingReasons: string[]
   contradictingReasons: string[]
   warnings: string[]
@@ -79,6 +94,7 @@ export type TuAnalysisRun = {
   progressMessage: string | null
   heartbeatAt: string | null
   overview: string | null
+  timelineSummary: string | null
   warnings: string[]
   createdAt: string
   startedAt: string | null
@@ -181,7 +197,9 @@ export function isTuAnalysisRunStatus(value: unknown): value is TuAnalysisRunSta
 
 export function isTuAnalysisItemType(value: unknown): value is TuAnalysisItemType {
   return (
-    value === 'verified_observation'
+    value === 'current_assessment'
+    || value === 'evidence_conflict'
+    || value === 'verified_observation'
     || value === 'party_statement'
     || value === 'measurement'
     || value === 'image_observation'

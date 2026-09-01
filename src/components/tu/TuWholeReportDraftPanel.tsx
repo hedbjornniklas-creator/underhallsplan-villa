@@ -9,6 +9,7 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Sparkles,
 } from 'lucide-react'
 import {
@@ -33,6 +34,13 @@ async function responseError(response: Response, fallback: string) {
   const payload = await response.json().catch(() => ({})) as { error?: unknown }
   return typeof payload.error === 'string' && payload.error.trim() ? payload.error : fallback
 }
+
+const GROUNDING_LABELS = {
+  grounded: 'Källförankrad',
+  needs_source: 'Behöver underlag',
+  blocked: 'Källkontroll krävs',
+  manually_edited: 'Kontrollerad av dig',
+} as const
 
 export default function TuWholeReportDraftPanel({
   inspectionId,
@@ -63,7 +71,11 @@ export default function TuWholeReportDraftPanel({
       setTexts(Object.fromEntries(payload.draft.sections.map((section) => [section.id, section.proposedText])))
       setIncludedIds(new Set(
         payload.draft.sections
-          .filter((section) => section.status !== 'rejected')
+          .filter((section) => (
+            section.status !== 'rejected'
+            && Boolean(section.proposedText.trim())
+            && (section.groundingStatus === 'grounded' || section.groundingStatus === 'manually_edited')
+          ))
           .map((section) => section.id)
       ))
     }
@@ -137,6 +149,25 @@ export default function TuWholeReportDraftPanel({
     }
   }
 
+  const confirmSection = async (suggestionId: string) => {
+    setSavingId(suggestionId)
+    setError(null)
+    try {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-draft`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm_section', suggestionId }),
+      })
+      if (!response.ok) throw new Error(await responseError(response, 'Källkontrollen kunde inte sparas.'))
+      applyPayload(await response.json() as TuWholeReportDraftResponse)
+      setIncludedIds((current) => new Set(current).add(suggestionId))
+    } catch (confirmError) {
+      setError(errorText(confirmError, 'Källkontrollen kunde inte sparas.'))
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   const selectedSections = useMemo(
     () => draft?.sections.filter((section) => includedIds.has(section.id)) ?? [],
     [draft?.sections, includedIds]
@@ -154,6 +185,11 @@ export default function TuWholeReportDraftPanel({
       }))
       if (sections.some((section) => !section.text)) {
         throw new Error('Alla valda rapportdelar måste innehålla text.')
+      }
+      if (selectedSections.some((section) => (
+        section.groundingStatus === 'needs_source' || section.groundingStatus === 'blocked'
+      ))) {
+        throw new Error('Kontrollera källvarningarna i valda rapportdelar innan de förs över.')
       }
       await onApplyDraft(sections)
       const acceptedIds = selectedSections.map((section) => section.id)
@@ -299,18 +335,33 @@ export default function TuWholeReportDraftPanel({
             <div className="space-y-3">
               {draft.sections.map((section, index) => {
                 const included = includedIds.has(section.id)
+                const currentText = texts[section.id] ?? section.proposedText
+                const needsHumanCheck = section.groundingStatus === 'blocked'
+                const canInclude = Boolean(currentText.trim())
+                  && section.groundingStatus !== 'needs_source'
+                  && section.groundingStatus !== 'blocked'
+                const statusClass = section.groundingStatus === 'grounded'
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : section.groundingStatus === 'manually_edited'
+                    ? 'bg-blue-50 text-blue-800'
+                    : 'bg-amber-50 text-amber-900'
                 return (
                   <article key={section.id} className={`rounded-md border bg-white p-4 ${included ? 'border-violet-200' : 'border-gray-200 opacity-70'}`}>
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-[0.1em] text-violet-700">Del {index + 1}</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-violet-700">Del {index + 1}</span>
+                          <span className={`rounded px-2 py-1 text-xs font-semibold ${statusClass}`}>
+                            {GROUNDING_LABELS[section.groundingStatus]}
+                          </span>
+                        </div>
                         <h4 className="mt-1 font-semibold text-gray-950">{section.targetSectionTitle}</h4>
                       </div>
                       <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
                         <input
                           type="checkbox"
                           checked={included}
-                          disabled={locked || Boolean(actionBusy)}
+                          disabled={locked || Boolean(actionBusy) || !canInclude}
                           onChange={(event) => setIncludedIds((current) => {
                             const next = new Set(current)
                             if (event.target.checked) next.add(section.id)
@@ -323,23 +374,39 @@ export default function TuWholeReportDraftPanel({
                       </label>
                     </div>
                     <textarea
-                      value={texts[section.id] ?? section.proposedText}
+                      value={currentText}
                       disabled={locked || savingId === section.id}
                       onChange={(event) => setTexts((current) => ({ ...current, [section.id]: event.target.value }))}
-                      onBlur={() => void saveSection(section.id, texts[section.id] ?? section.proposedText)}
+                      onBlur={() => void saveSection(section.id, currentText)}
                       rows={8}
+                      placeholder="Verifierbart underlag saknas. Komplettera endast med uppgifter som du själv kan styrka."
                       className="mt-3 w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-50"
                     />
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
                       <span>
-                        {section.sourceAnalysisItemIds.length} analysunderlag · {section.sourceObservationIds.length} observationer
+                        {section.sourceAnalysisItemIds.length} analysunderlag · {section.sourceObservationIds.length} observationer · {section.sourceFieldKeys.length} registrerade uppgifter
                       </span>
                       {savingId === section.id ? (
                         <span className="inline-flex items-center gap-1 text-violet-700"><Loader2 size={13} className="animate-spin" aria-hidden /> Sparar</span>
                       ) : null}
                     </div>
                     {section.warnings.length > 0 ? (
-                      <p className="mt-2 text-xs leading-5 text-amber-800">{section.warnings.join(' ')}</p>
+                      <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                        {section.warnings.join(' ')}
+                      </div>
+                    ) : null}
+                    {needsHumanCheck && currentText.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => void confirmSection(section.id)}
+                        disabled={locked || savingId === section.id}
+                        className="mt-3 inline-flex h-9 items-center gap-2 rounded-md border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-900 transition hover:bg-amber-50 disabled:opacity-50"
+                      >
+                        {savingId === section.id
+                          ? <Loader2 size={15} className="animate-spin" aria-hidden />
+                          : <ShieldCheck size={15} aria-hidden />}
+                        Jag har kontrollerat texten mot källorna
+                      </button>
                     ) : null}
                   </article>
                 )

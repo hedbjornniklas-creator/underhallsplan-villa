@@ -161,6 +161,28 @@ export async function POST(request: Request, context: RouteContext) {
       if (!workflow.items.some((item) => item.reviewStatus === 'accepted')) {
         return jsonError('Godkänn minst ett analysresultat.', 409)
       }
+      if (workflow.run.rulesetVersion >= 3) {
+        const currentAssessment = workflow.items.find((item) => (
+          item.itemType === 'current_assessment' && item.reviewStatus === 'accepted'
+        ))
+        if (!currentAssessment) {
+          return jsonError('Bekräfta minst en aktuell samlad bedömning innan analysen godkänns.', 409)
+        }
+        if (
+          currentAssessment.sourceObservationIds.length === 0
+          && currentAssessment.sourceImageIds.length === 0
+          && currentAssessment.sourceMeasurementIds.length === 0
+        ) {
+          return jsonError('Den aktuella samlade bedömningen saknar verifierbara källor.', 409)
+        }
+        if (workflow.items.some((item) => (
+          item.itemType === 'evidence_conflict'
+          && item.reviewStatus === 'accepted'
+          && (item.earlierSourceObservationIds.length === 0 || item.laterSourceObservationIds.length === 0)
+        ))) {
+          return jsonError('En godkänd motsägelse saknar tydliga tidigare eller senare källor.', 409)
+        }
+      }
       const now = new Date().toISOString()
       const { error } = await admin
         .from('tu_analysis_workflows')
@@ -208,19 +230,23 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!runId) return jsonError('Det finns ingen aktuell analys.', 409)
 
     const patch: Record<string, unknown> = {}
+    let resetsReview = false
     if ('title' in body) {
       const title = cleanText(body.title)
       if (!title) return jsonError('Rubriken får inte vara tom.', 400)
       patch.title = title
+      resetsReview = true
     }
     if ('summary' in body) {
       const summary = cleanText(body.summary)
       if (!summary) return jsonError('Sammanfattningen får inte vara tom.', 400)
       patch.summary = summary
+      resetsReview = true
     }
     if ('certainty' in body) {
       if (!isTuAnalysisCertainty(body.certainty)) return jsonError('Ogiltig säkerhetsnivå.', 400)
       patch.certainty = body.certainty
+      resetsReview = true
     }
     if ('reviewStatus' in body) {
       if (!isTuAnalysisReviewStatus(body.reviewStatus)) return jsonError('Ogiltig granskningsstatus.', 400)
@@ -238,6 +264,11 @@ export async function PATCH(request: Request, context: RouteContext) {
         return jsonError('Den valda rapportdelen finns inte.', 400)
       }
       patch.target_section_id = targetSectionId
+    }
+    if (resetsReview && !('reviewStatus' in body)) {
+      patch.review_status = 'pending'
+      patch.reviewed_by = null
+      patch.reviewed_at = null
     }
     if (Object.keys(patch).length === 0) return jsonError('Ingen ändring angavs.', 400)
 
