@@ -150,6 +150,57 @@ export async function POST(request: Request, context: RouteContext) {
       return stateResponse(orgContext.orgId, inspectionId)
     }
 
+    if (action === 'approve_generated') {
+      const workflow = await getTuAnalysisWorkflow({ orgId: orgContext.orgId, inspectionId })
+      if (!workflow.run || workflow.run.status !== 'completed') {
+        return jsonError('Helhetsanalysen måste vara klar innan utlåtandet kan skapas.', 409)
+      }
+      const currentAssessment = workflow.items.find((item) => item.itemType === 'current_assessment')
+      if (!currentAssessment) {
+        return jsonError('AI:n kunde inte skapa en källförankrad aktuell bedömning.', 409)
+      }
+      if (
+        currentAssessment.sourceObservationIds.length === 0
+        && currentAssessment.sourceImageIds.length === 0
+        && currentAssessment.sourceMeasurementIds.length === 0
+      ) {
+        return jsonError('Den aktuella samlade bedömningen saknar verifierbara källor.', 409)
+      }
+      if (workflow.items.some((item) => (
+        item.itemType === 'evidence_conflict'
+        && (item.earlierSourceObservationIds.length === 0 || item.laterSourceObservationIds.length === 0)
+      ))) {
+        return jsonError('AI:n kunde inte lösa en motsägelse mot tydliga tidigare och senare källor.', 409)
+      }
+      const now = new Date().toISOString()
+      const [{ error: itemError }, { error: workflowError }] = await Promise.all([
+        admin
+          .from('tu_ai_analysis_items')
+          .update({
+            review_status: 'accepted',
+            reviewed_by: orgContext.userId,
+            reviewed_at: now,
+          })
+          .eq('org_id', orgContext.orgId)
+          .eq('inspection_id', inspectionId)
+          .eq('run_id', workflow.run.id),
+        admin
+          .from('tu_analysis_workflows')
+          .update({
+            status: 'analysis_approved',
+            analysis_approved_at: now,
+            analysis_approved_by: orgContext.userId,
+            analysis_stale_at: null,
+          })
+          .eq('org_id', orgContext.orgId)
+          .eq('inspection_id', inspectionId)
+          .eq('current_analysis_run_id', workflow.run.id),
+      ])
+      if (itemError) throw new Error(itemError.message)
+      if (workflowError) throw new Error(workflowError.message)
+      return stateResponse(orgContext.orgId, inspectionId)
+    }
+
     if (action === 'approve') {
       const workflow = await getTuAnalysisWorkflow({ orgId: orgContext.orgId, inspectionId })
       if (!workflow.run || workflow.run.status !== 'completed') {

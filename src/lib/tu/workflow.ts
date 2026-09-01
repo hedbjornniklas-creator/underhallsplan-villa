@@ -60,8 +60,6 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     (validation?.unreviewedObservationCount ?? 0) +
     (validation?.emptyObservationCount ?? 0) +
     source.queue.failed
-  const analysisPending = workflow?.items.filter((item) => item.reviewStatus === 'pending').length ?? 0
-  const analysisAccepted = workflow?.items.filter((item) => item.reviewStatus === 'accepted').length ?? 0
   const reportApplied = source.reportDraft?.sections.some((section) => section.status === 'accepted') ?? false
   const analysisStale = Boolean(workflow?.analysisStaleAt) || analysisRun?.status === 'cancelled'
   const fieldworkCompleted = Boolean(workflow?.fieldworkCompletedAt)
@@ -126,14 +124,12 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     assessmentStatusText = 'Analysen misslyckades · försök igen'
     assessmentBlockers = 1
   } else if (workflow?.status === 'analysis_ready') {
-    assessmentStatus = analysisPending > 0 ? 'needs_attention' : 'in_progress'
-    assessmentStatusText = analysisPending > 0
-      ? `${analysisPending} analysförslag återstår att granska`
-      : 'Analysen är granskad och kan godkännas'
-    assessmentBlockers = analysisPending
+    assessmentStatus = 'in_progress'
+    assessmentStatusText = 'Förbereder rapportutkastet'
+    assessmentBlockers = 0
   } else if (workflow?.status === 'analysis_approved') {
     assessmentStatus = 'complete'
-    assessmentStatusText = `${analysisAccepted} bedömningar godkända`
+    assessmentStatusText = 'Underlaget är sammanställt'
     assessmentBlockers = 0
   }
 
@@ -207,9 +203,9 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     {
       id: 'assessment',
       number: 3,
-      title: 'Bedöm och komplettera',
-      shortTitle: 'Bedöm',
-      description: 'Samlad AI-analys med mänsklig granskning',
+      title: 'Skapa utlåtandet',
+      shortTitle: 'Skapa',
+      description: 'Samlad analys och sammanhållet textförslag',
       status: assessmentStatus,
       statusText: assessmentStatusText,
       blockerCount: assessmentBlockers,

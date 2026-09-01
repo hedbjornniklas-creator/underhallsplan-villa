@@ -28,8 +28,7 @@ import {
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_ANALYSIS_MODEL =
   process.env.OPENAI_TU_ANALYSIS_MODEL?.trim()
-  || process.env.OPENAI_TU_TEXT_MODEL?.trim()
-  || 'gpt-4o-mini'
+  || 'gpt-5.6'
 const RULESET_KEY = 'tu_moisture_inspection_v2'
 const RULESET_VERSION = 3
 const IMAGE_BATCH_SIZE = 8
@@ -336,6 +335,7 @@ async function structuredOpenAiRequest(input: {
     body: JSON.stringify({
       model: TU_ANALYSIS_MODEL,
       store: false,
+      reasoning: { effort: 'high' },
       instructions: input.instructions,
       input: input.content,
       text: {

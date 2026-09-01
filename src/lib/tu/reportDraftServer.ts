@@ -10,10 +10,10 @@ import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import {
   sortTuEvidenceChronologically,
-  validateTuGroundedSections,
   type TuGeneratedGroundedSection,
   type TuGroundingStatus,
 } from '@/lib/tu/grounding'
+import { validateTuReportSections } from '@/lib/tu/reportGroundingServer'
 import type {
   TuWholeReportDraftRun,
   TuWholeReportDraftSection,
@@ -24,8 +24,7 @@ import { getTuInvestigationById, listTuInvestigationImages } from '@/lib/tu/serv
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
-  || process.env.OPENAI_TU_TEXT_MODEL?.trim()
-  || 'gpt-4o-mini'
+  || 'gpt-5.6'
 const RULESET_KEY = 'tu_moisture_report_v2'
 const RULESET_VERSION = 2
 const STALE_RUN_MINUTES = 12
@@ -295,7 +294,7 @@ export async function getTuWholeReportDraftState(input: {
   }
 }
 
-async function buildReportSnapshot(input: { orgId: string; inspectionId: string }) {
+export async function buildTuReportSnapshot(input: { orgId: string; inspectionId: string }) {
   const [investigation, observations, images] = await Promise.all([
     getTuInvestigationById(input),
     listTuObservations(input),
@@ -498,7 +497,7 @@ export async function createTuWholeReportDraftRun(input: {
   userId: string
 }) {
   const admin = createSupabaseAdminClient()
-  const { snapshot, sectionCount } = await buildReportSnapshot(input)
+  const { snapshot, sectionCount } = await buildTuReportSnapshot(input)
   const inputHash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
   const now = new Date().toISOString()
   const { data: activeData, error: activeError } = await admin
@@ -597,6 +596,7 @@ async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
     body: JSON.stringify({
       model: TU_REPORT_MODEL,
       store: false,
+      reasoning: { effort: 'high' },
       instructions: [
         'Du skriver ett komplett, sammanhållet och granskningsbart utkast till en svensk fuktskadeutredning.',
         'Bearbeta samtliga angivna rapportdelar i en gemensam disposition så att resonemanget hänger ihop och onödiga upprepningar undviks.',
@@ -765,99 +765,10 @@ export async function runTuWholeReportDraft(input: {
       throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
     }
 
-    const approvedAnalysis = record(snapshot.approvedAnalysis)
-    const analysisItems = Array.isArray(approvedAnalysis.items)
-      ? approvedAnalysis.items.map(record)
-      : []
-    const resolvedConflicts = Array.isArray(approvedAnalysis.resolvedConflicts)
-      ? approvedAnalysis.resolvedConflicts.map(record)
-      : []
-    const allAnalysisItems = [...analysisItems, ...resolvedConflicts]
-    const validAnalysisIds = new Set(
-      allAnalysisItems.map((item) => cleanText(item.id)).filter(Boolean)
-    )
-    const evidence = record(snapshot.evidence)
-    const evidenceObservations = Array.isArray(evidence.observations)
-      ? evidence.observations.map(record)
-      : []
-    const validObservationIds = new Set(
-      evidenceObservations.map((observation) => cleanText(observation.id)).filter(Boolean)
-    )
-    const sourceFields = Array.isArray(snapshot.sourceFields)
-      ? snapshot.sourceFields.map(record)
-      : []
-    const validFieldKeys = new Set(
-      sourceFields.map((field) => cleanText(field.key)).filter(Boolean)
-    )
-    const analysisSourceTextById = new Map<string, string>()
-    for (const item of allAnalysisItems) {
-      const id = cleanText(item.id)
-      if (!id) continue
-      analysisSourceTextById.set(id, [
-        cleanText(item.title),
-        cleanText(item.summary),
-        ...stringArray(item.supporting_reasons),
-        ...stringArray(item.contradicting_reasons),
-      ].filter(Boolean).join('\n'))
-    }
-    const observationSourceTextById = new Map<string, string>()
-    for (const observation of evidenceObservations) {
-      const id = cleanText(observation.id)
-      if (!id) continue
-      observationSourceTextById.set(id, [
-        cleanText(observation.noteText),
-        cleanText(observation.transcriptText),
-        cleanText(observation.riskNote),
-        cleanText(observation.suggestedFollowUp),
-        ...(Array.isArray(observation.measurements)
-          ? observation.measurements.map(record).flatMap((measurement) => [
-              cleanText(measurement.location),
-              cleanText(measurement.type),
-              cleanText(measurement.value),
-              cleanText(measurement.unit),
-              cleanText(measurement.method),
-              cleanText(measurement.instrument),
-              cleanText(measurement.note),
-            ])
-          : []),
-      ].filter(Boolean).join('\n'))
-    }
-    const fieldSourceTextByKey = new Map<string, string>()
-    for (const field of sourceFields) {
-      const key = cleanText(field.key)
-      if (key) fieldSourceTextByKey.set(key, cleanText(field.value))
-    }
-    const currentAssessmentTexts = analysisItems
-      .filter((item) => cleanText(item.item_type) === 'current_assessment')
-      .flatMap((item) => [cleanText(item.title), cleanText(item.summary)])
-      .filter(Boolean)
-    const currentAssessmentIds = analysisItems
-      .filter((item) => cleanText(item.item_type) === 'current_assessment')
-      .map((item) => cleanText(item.id))
-      .filter(Boolean)
-    const conflictResolutionAnalysisIdsByObservation = new Map<string, Set<string>>()
-    for (const conflict of resolvedConflicts) {
-      const conflictId = cleanText(conflict.id)
-      if (!conflictId) continue
-      for (const observationId of stringArray(conflict.earlier_source_observation_ids)) {
-        const resolutions = conflictResolutionAnalysisIdsByObservation.get(observationId)
-          ?? new Set<string>()
-        resolutions.add(conflictId)
-        currentAssessmentIds.forEach((id) => resolutions.add(id))
-        conflictResolutionAnalysisIdsByObservation.set(observationId, resolutions)
-      }
-    }
-    const validatedSections = validateTuGroundedSections({
+    const validatedSections = validateTuReportSections({
+      snapshot,
       expectedSectionIds: expectedIds,
       generatedSections: generated.sections,
-      validAnalysisItemIds: validAnalysisIds,
-      validObservationIds,
-      validFieldKeys,
-      analysisSourceTextById,
-      observationSourceTextById,
-      fieldSourceTextByKey,
-      currentAssessmentTexts,
-      conflictResolutionAnalysisIdsByObservation,
     })
     const validatedById = new Map(
       validatedSections.map((section) => [section.sectionId, section])

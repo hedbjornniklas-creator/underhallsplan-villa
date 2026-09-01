@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Loader2, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Loader2, MessageSquareText, MoveDown, MoveUp, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
 import TuPrintActions from '@/components/tu/TuPrintActions'
+import TuReportReviewDrawer from '@/components/tu/TuReportReviewDrawer'
 import TuWorkflowRail from '@/components/tu/TuWorkflowRail'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueue'
@@ -777,6 +778,9 @@ export default function TuInvestigationEditorClient({
   const [aiSuggestions, setAiSuggestions] = useState<TuAiSuggestion[]>([])
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  const [reportReviewTarget, setReportReviewTarget] = useState<
+    { id: string; title: string } | null | undefined
+  >(undefined)
   const evidenceWorkspaceEnabled =
     initialInvestigation.reportTemplateKey === TU_MOISTURE_DAMAGE_TEMPLATE_KEY
   const locked = Boolean(investigation.reportLockedAt)
@@ -3126,6 +3130,17 @@ export default function TuInvestigationEditorClient({
                 </p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                {evidenceWorkspaceEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => setReportReviewTarget(null)}
+                    disabled={locked}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                  >
+                    <MessageSquareText size={16} aria-hidden />
+                    Instruktion för hela utlåtandet
+                  </button>
+                ) : null}
                 <label className="space-y-1">
                   <span className="block text-xs font-medium text-gray-600">Ny del</span>
                   <select
@@ -3207,13 +3222,19 @@ export default function TuInvestigationEditorClient({
                     {!isAssignmentParties && !HIDDEN_SECTION_KEYS.has(section.key) ? (
                       <button
                         type="button"
-                        onClick={() => void requestAiSuggestions({ sectionKey: section.key })}
+                        onClick={() => {
+                          if (evidenceWorkspaceEnabled) {
+                            setReportReviewTarget({ id: sectionId, title: section.title })
+                            return
+                          }
+                          void requestAiSuggestions({ sectionKey: section.key })
+                        }}
                         disabled={locked || aiBusy}
-                        title="Skapa AI-förslag för sektionen"
+                        title={evidenceWorkspaceEnabled ? 'Ge AI en instruktion för rapportdelen' : 'Skapa AI-förslag för sektionen'}
                         className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                       >
-                        <Sparkles size={15} aria-hidden />
-                        AI
+                        {evidenceWorkspaceEnabled ? <MessageSquareText size={15} aria-hidden /> : <Sparkles size={15} aria-hidden />}
+                        {evidenceWorkspaceEnabled ? 'Justera med AI' : 'AI'}
                       </button>
                     ) : null}
                     <button
@@ -3436,6 +3457,15 @@ export default function TuInvestigationEditorClient({
         )}
           </div>
         </div>
+        {reportReviewTarget !== undefined ? (
+          <TuReportReviewDrawer
+            inspectionId={investigation.inspectionId}
+            locked={locked}
+            target={reportReviewTarget}
+            onClose={() => setReportReviewTarget(undefined)}
+            onApplySections={applyWholeReportDraft}
+          />
+        ) : null}
         {renderImagePreview()}
       </div>
     </main>
