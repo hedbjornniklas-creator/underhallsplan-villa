@@ -32,6 +32,9 @@ function mapError(error: unknown) {
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_REPORT_SECTION_NOT_FOUND') return jsonError('Rapportdelen hittades inte.', 404)
   if (message === 'TU_REPORT_REVIEW_BUSY') return jsonError('En annan rapportändring bearbetas redan.', 409)
+  if (message === 'TU_ANALYSIS_STALE') {
+    return jsonError('Källunderlaget har ändrats efter analysen. Uppdatera analysen och skapa om utlåtandet innan AI-revidering.', 409)
+  }
   if (message === 'TU_ANALYSIS_NOT_APPROVED') return jsonError('Skapa först ett sammanhållet utlåtande.', 409)
   if (normalized.includes('tu_report_review_instructions') || normalized.includes('42p01')) {
     return jsonError('Databasstödet för kommentarsstyrd rapportgranskning är inte aktiverat ännu.', 409)

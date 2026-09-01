@@ -6,7 +6,7 @@ import {
   isTuAnalysisProgressStage,
   isTuAnalysisRunStatus,
 } from '@/lib/tu/analysis'
-import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { isTuAnalysisSourceImage, TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import {
   sortTuEvidenceChronologically,
@@ -26,7 +26,7 @@ const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
   || 'gpt-5.6'
 const RULESET_KEY = 'tu_moisture_report_v2'
-const RULESET_VERSION = 2
+const RULESET_VERSION = 3
 const STALE_RUN_MINUTES = 12
 const NON_EDITABLE_SECTION_KEYS = new Set(['assignment_parties', 'signature'])
 
@@ -305,6 +305,8 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) {
     throw new Error('TU_REPORT_DRAFT_TEMPLATE_NOT_SUPPORTED')
   }
+  const sourceImages = images.filter(isTuAnalysisSourceImage)
+  const sourceImageIds = new Set(sourceImages.map((image) => image.id))
 
   const sections = investigation.reportDraft.sections
     .filter((section) => !NON_EDITABLE_SECTION_KEYS.has(section.key))
@@ -337,12 +339,12 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   addSourceField('object.cadastralId', 'Fastighetsbeteckning', investigation.cadastralId)
   addSourceField('object.brfName', 'Bostadsrättsförening', investigation.brfName)
   addSourceField('object.apartmentNumber', 'Lägenhetsnummer', investigation.apartmentNumber)
-  for (const image of images) {
+  for (const image of sourceImages) {
     addSourceField(`image.${image.id}.caption`, 'Bildtext', image.caption)
   }
 
   const chronologicalObservations = sortTuEvidenceChronologically(observations)
-  const imageById = new Map(images.map((image) => [image.id, image]))
+  const imageById = new Map(sourceImages.map((image) => [image.id, image]))
   const evidence = {
     chronologyInstruction:
       'Fältposterna är sorterade äldst till nyast. Godkända aktuella bedömningar och konfliktlösningar styr hur preliminära uppgifter får användas.',
@@ -357,8 +359,8 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
       transcriptText: observation.transcriptText?.slice(0, 12000) ?? null,
       riskNote: observation.riskNote,
       suggestedFollowUp: observation.suggestedFollowUp,
-      imageIds: observation.imageIds,
-      imageCaptions: observation.imageIds.map((id) => ({
+      imageIds: observation.imageIds.filter((id) => sourceImageIds.has(id)),
+      imageCaptions: observation.imageIds.filter((id) => sourceImageIds.has(id)).map((id) => ({
         imageId: id,
         caption: imageById.get(id)?.caption ?? null,
       })),
@@ -374,7 +376,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
         measuredAt: measurement.measuredAt,
       })),
     })),
-    images: images.map((image) => ({
+    images: sourceImages.map((image) => ({
       id: image.id,
       sectionKey: image.sectionKey,
       caption: image.caption,
@@ -386,7 +388,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   const admin = createSupabaseAdminClient()
   const { data: workflowData, error: workflowError } = await admin
     .from('tu_analysis_workflows')
-    .select('status,current_analysis_run_id,analysis_approved_at')
+    .select('status,current_analysis_run_id,analysis_approved_at,analysis_stale_at')
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
     .maybeSingle()
@@ -395,7 +397,9 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
     status?: string
     current_analysis_run_id?: string | null
     analysis_approved_at?: string | null
+    analysis_stale_at?: string | null
   } | null
+  if (workflow?.analysis_stale_at) throw new Error('TU_ANALYSIS_STALE')
   if (workflow?.status !== 'analysis_approved' || !workflow.current_analysis_run_id) {
     throw new Error('TU_ANALYSIS_NOT_APPROVED')
   }

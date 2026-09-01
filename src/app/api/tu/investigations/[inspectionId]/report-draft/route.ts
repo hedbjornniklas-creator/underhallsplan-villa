@@ -38,6 +38,9 @@ function mapError(error: unknown) {
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
+  if (message === 'TU_ANALYSIS_STALE') {
+    return jsonError('Underlaget har ändrats efter analysen. Uppdatera analysen innan utlåtandet skapas om.', 409)
+  }
   if (message === 'TU_ANALYSIS_NOT_APPROVED') return jsonError('Godkänn helhetsanalysen innan rapportutkastet skapas.', 409)
   if (message === 'TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS') return jsonError('Analysen saknar godkända underlag för utlåtandet.', 409)
   if (message === 'TU_REPORT_DRAFT_TEMPLATE_NOT_SUPPORTED') {

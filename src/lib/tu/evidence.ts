@@ -1,5 +1,9 @@
 export const TU_MOISTURE_DAMAGE_TEMPLATE_KEY = 'moisture_damage_investigation'
 
+export function isTuAnalysisSourceImage(image: { sectionKey: string }) {
+  return image.sectionKey !== 'cover'
+}
+
 export type TuObservationSourceType = 'typed' | 'voice' | 'mixed'
 export type TuObservationCertainty = 'confirmed' | 'probable' | 'uncertain'
 export type TuObservationReviewStatus = 'draft' | 'reviewed'

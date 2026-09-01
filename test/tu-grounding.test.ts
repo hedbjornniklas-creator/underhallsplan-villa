@@ -2,6 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { findTuMoistureGroundingRisks, sortTuEvidenceChronologically, validateTuGroundedSections } from '../src/lib/tu/grounding.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { isTuAnalysisSourceImage } from '../src/lib/tu/evidence.ts'
+
+test('excludes cover images from the AI source material', () => {
+  assert.equal(isTuAnalysisSourceImage({ sectionKey: 'cover' }), false)
+  assert.equal(isTuAnalysisSourceImage({ sectionKey: 'bank' }), true)
+  assert.equal(isTuAnalysisSourceImage({ sectionKey: 'appendix' }), true)
+})
 
 test('sorts field evidence from oldest to newest', () => {
   const sorted = sortTuEvidenceChronologically([

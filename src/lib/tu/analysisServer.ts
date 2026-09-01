@@ -16,7 +16,7 @@ import {
   type TuAnalysisValidation,
   type TuAnalysisWorkflow,
 } from '@/lib/tu/analysis'
-import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { isTuAnalysisSourceImage, TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
 import {
@@ -30,7 +30,7 @@ const TU_ANALYSIS_MODEL =
   process.env.OPENAI_TU_ANALYSIS_MODEL?.trim()
   || 'gpt-5.6'
 const RULESET_KEY = 'tu_moisture_inspection_v2'
-const RULESET_VERSION = 3
+const RULESET_VERSION = 4
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
@@ -371,6 +371,7 @@ export async function getTuAnalysisValidation(input: {
     listTuObservations(input),
     listTuInvestigationImages(input),
   ])
+  const sourceImages = images.filter(isTuAnalysisSourceImage)
   const linkedImageIds = new Set(observations.flatMap((observation) => observation.imageIds))
   const measurementCount = observations.reduce(
     (sum, observation) => sum + observation.measurements.length,
@@ -385,7 +386,7 @@ export async function getTuAnalysisValidation(input: {
     && observation.imageIds.length === 0
     && observation.measurements.length === 0
   )).length
-  const unlinkedImageCount = images.filter((image) => !linkedImageIds.has(image.id)).length
+  const unlinkedImageCount = sourceImages.filter((image) => !linkedImageIds.has(image.id)).length
   const warnings: string[] = []
   if (unreviewedObservationCount > 0) {
     warnings.push(`${unreviewedObservationCount} fältposter är inte kontrollerade.`)
@@ -396,19 +397,19 @@ export async function getTuAnalysisValidation(input: {
   if (unlinkedImageCount > 0) {
     warnings.push(`${unlinkedImageCount} bilder är inte kopplade till någon observation. De analyseras ändå som bildbank.`)
   }
-  if (observations.length === 0 && images.length > 0) {
+  if (observations.length === 0 && sourceImages.length > 0) {
     warnings.push('Det finns bilder men inga fältobservationer. Analysen får begränsad kontext.')
   }
   return {
     observationCount: observations.length,
     unreviewedObservationCount,
-    imageCount: images.length,
+    imageCount: sourceImages.length,
     measurementCount,
     unlinkedImageCount,
     emptyObservationCount,
     warnings,
     canComplete:
-      (observations.length > 0 || images.length > 0)
+      (observations.length > 0 || sourceImages.length > 0)
       && unreviewedObservationCount === 0
       && emptyObservationCount === 0,
   }
@@ -520,11 +521,13 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
   if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) {
     throw new Error('TU_ANALYSIS_TEMPLATE_NOT_SUPPORTED')
   }
-  const imageById = new Map(images.map((image) => [image.id, image]))
+  const sourceImages = images.filter(isTuAnalysisSourceImage)
+  const sourceImageIds = new Set(sourceImages.map((image) => image.id))
+  const imageById = new Map(sourceImages.map((image) => [image.id, image]))
   const chronologicalObservations = sortTuEvidenceChronologically(observations)
   return {
     investigation,
-    images,
+    images: sourceImages,
     snapshot: {
       ruleset: RULESET_KEY,
       reportTemplate: {
@@ -569,8 +572,8 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         riskNote: observation.riskNote,
         suggestedFollowUp: observation.suggestedFollowUp,
         reviewStatus: observation.reviewStatus,
-        imageIds: observation.imageIds,
-        imageCaptions: observation.imageIds.map((id) => ({
+        imageIds: observation.imageIds.filter((id) => sourceImageIds.has(id)),
+        imageCaptions: observation.imageIds.filter((id) => sourceImageIds.has(id)).map((id) => ({
           imageId: id,
           caption: imageById.get(id)?.caption ?? null,
         })),
@@ -587,7 +590,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         })),
         observedAt: observation.observedAt,
       })),
-      images: images.map((image) => ({
+      images: sourceImages.map((image) => ({
         id: image.id,
         sectionKey: image.sectionKey,
         caption: image.caption,
@@ -1047,7 +1050,8 @@ export async function runTuInspectionAnalysis(input: {
 
   try {
     const snapshot = record(claimedRun.input_snapshot)
-    const images = await listTuInvestigationImages({ orgId: input.orgId, inspectionId: input.inspectionId })
+    const images = (await listTuInvestigationImages({ orgId: input.orgId, inspectionId: input.inspectionId }))
+      .filter(isTuAnalysisSourceImage)
     const maxImages = configuredMaxImages()
     const selectedImages = images.slice(0, maxImages)
     const imageAnalyses: ImageAnalysis[] = []
