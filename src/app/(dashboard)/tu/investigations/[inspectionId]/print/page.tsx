@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import TuPrintActions from '@/components/tu/TuPrintActions'
+import TuPrintPreviewToolbar from '@/components/tu/TuPrintPreviewToolbar'
 import TuPrintPagedDocument, {
   type TuPrintHeader,
   type TuPrintImage,
@@ -422,9 +422,8 @@ export default async function TuInvestigationPrintPage({
   return (
     <main className="tu-print-root min-h-screen bg-neutral-100 text-gray-950 print:bg-white">
       {isPdfRender ? null : (
-        <TuPrintActions
+        <TuPrintPreviewToolbar
           backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}`}
-          inspectionId={inspectionId}
           printTitle={printTitle}
         />
       )}

@@ -1,8 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Download, ExternalLink, LockKeyhole, LockOpen, Printer, RefreshCw, Send } from 'lucide-react'
+import { Download, ExternalLink, LockKeyhole, LockOpen, RefreshCw, Send } from 'lucide-react'
 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
 
@@ -109,17 +108,11 @@ function formatFileSize(value: number | null | undefined) {
 }
 
 export default function TuPrintActions({
-  backHref,
   inspectionId,
-  printTitle = '',
-  embedded = false,
   finalizationBlockedReason = null,
   onStatusChange,
 }: {
-  backHref: string
   inspectionId: string
-  printTitle?: string
-  embedded?: boolean
   finalizationBlockedReason?: string | null
   onStatusChange?: (state: { reportLockedAt: string | null }) => void
 }) {
@@ -168,44 +161,6 @@ export default function TuPrintActions({
     }, 4000)
     return () => window.clearInterval(timer)
   }, [loadMeta, meta?.pdfStatus])
-
-  const waitForPrintLayout = useCallback(async () => {
-    const root = document.querySelector('[data-tu-print-pagination-ready]')
-    if (!root || root.getAttribute('data-tu-print-pagination-ready') === '1') return
-
-    await new Promise<void>((resolve) => {
-      let observer: MutationObserver | null = null
-      const timeout = window.setTimeout(() => {
-        observer?.disconnect()
-        resolve()
-      }, 5000)
-      observer = new MutationObserver(() => {
-        if (root.getAttribute('data-tu-print-pagination-ready') !== '1') return
-        window.clearTimeout(timeout)
-        observer?.disconnect()
-        resolve()
-      })
-      observer.observe(root, { attributes: true, attributeFilter: ['data-tu-print-pagination-ready'] })
-    })
-  }, [])
-
-  const printWithTitle = useCallback(() => {
-    void (async () => {
-      await waitForPrintLayout()
-
-      const previousTitle = document.title
-      document.title = printTitle.trim() ? printTitle : '\u200B'
-
-      const restoreTitle = () => {
-        document.title = previousTitle
-        window.removeEventListener('afterprint', restoreTitle)
-      }
-
-      window.addEventListener('afterprint', restoreTitle)
-      window.print()
-      window.setTimeout(restoreTitle, 1000)
-    })()
-  }, [printTitle, waitForPrintLayout])
 
   const runDelivery = async (action: DeliveryAction) => {
     const normalizedRecipient = recipient.trim().toLowerCase()
@@ -349,27 +304,7 @@ export default function TuPrintActions({
       : 'border-slate-200 bg-slate-50 text-slate-700'
 
   return (
-    <div className={embedded ? 'w-full space-y-3 print:hidden' : 'mx-auto w-full max-w-5xl space-y-3 px-4 py-4 print:hidden'}>
-      {!embedded ? (
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href={backHref}
-          className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
-        >
-          <ArrowLeft size={16} aria-hidden />
-          Till utlåtandet
-        </Link>
-        <button
-          type="button"
-          onClick={printWithTitle}
-          className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
-        >
-          <Printer size={16} aria-hidden />
-          Skriv ut / Spara PDF i webbläsaren
-        </button>
-      </div>
-      ) : null}
-
+    <div className="w-full space-y-3 print:hidden">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

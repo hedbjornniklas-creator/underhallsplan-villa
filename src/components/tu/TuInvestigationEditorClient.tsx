@@ -2221,9 +2221,7 @@ export default function TuInvestigationEditorClient({
           />
         ) : evidenceWorkspaceEnabled && workspaceView === 'delivery' ? (
           <TuPrintActions
-            backHref={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`}
             inspectionId={investigation.inspectionId}
-            embedded
             finalizationBlockedReason={finalizationBlockedReason}
             onStatusChange={handleDeliveryStatusChange}
           />
@@ -2245,17 +2243,21 @@ export default function TuInvestigationEditorClient({
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
               >
                 <Printer size={16} aria-hidden />
-                Förhandsgranska rapporten
+                Förhandsgranska utkast
               </Link>
               <button
                 type="button"
                 onClick={() => setWorkspaceView('delivery')}
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
               >
-                Klar med granskningen
+                {locked ? 'Gå vidare till leverans' : 'Gå vidare till fastställande'}
                 <ArrowRight size={16} aria-hidden />
               </button>
-              <span className="text-xs text-gray-500">Nästa steg: fastställ och leverera</span>
+              <span className="text-xs text-gray-500">
+                {locked
+                  ? 'Den fastställda revisionen kan nu skickas till mottagaren.'
+                  : 'Utlåtandet låses först när du väljer Fastställ utlåtandet.'}
+              </span>
             </div>
           </div>
         ) : null}
