@@ -7379,6 +7379,7 @@ export async function saveRenoAppAdminRequirement(input: {
   documentTypeId: string
   isEnabled: boolean
   isRequired?: boolean
+  phase?: 'before_required' | 'before_conditional' | 'during_execution' | 'after_completion' | null
   note?: string | null
   sortOrder?: number | null
 }) {
@@ -7403,6 +7404,12 @@ export async function saveRenoAppAdminRequirement(input: {
 
   const defaultPhase =
     (documentTypeRow as Pick<DocumentTypeRow, 'default_phase'>).default_phase ?? 'before_required'
+  const phase = input.phase === 'before_required'
+    || input.phase === 'before_conditional'
+    || input.phase === 'during_execution'
+    || input.phase === 'after_completion'
+    ? input.phase
+    : defaultPhase
 
   const { data: existingRequirement, error: existingRequirementError } = await admin
     .from('renovation_action_document_requirements')
@@ -7436,7 +7443,7 @@ export async function saveRenoAppAdminRequirement(input: {
     action_type_id: input.actionTypeId,
     document_type_id: input.documentTypeId,
     is_required: input.isRequired !== false,
-    phase: defaultPhase,
+    phase,
     note,
     sort_order: sortOrder,
   }

@@ -62,6 +62,7 @@ export type RenoAppAiFlowChange = {
   requiresExpertReview?: boolean
   risk?: 'low' | 'medium' | 'high' | string | null
   validationStatus?: 'valid' | 'warning' | 'blocked' | string | null
+  applyToken?: string | null
 }
 
 export type RenoAppAiFlowTestScenario = {
@@ -109,6 +110,7 @@ export type RenoAppAiFlowDrawerProps = {
   initialInstruction?: string
   initialMode?: RenoAppAiFlowMode
   onProposal?: (result: RenoAppAiFlowResult) => void
+  onApplied?: (result: { appliedCount: number; snapshotFingerprint?: string | null }) => void | Promise<void>
 }
 
 type DrawerTab = 'summary' | 'changes' | 'sources' | 'test'
@@ -266,6 +268,7 @@ function normalizeChange(value: unknown, index: number): RenoAppAiFlowChange | n
     requiresExpertReview: value.requiresExpertReview === true || value.expertReviewRequired === true,
     risk: optionalString(value, ['risk', 'riskLevel']),
     validationStatus: optionalString(value, ['validationStatus', 'status']),
+    applyToken: optionalString(value, ['applyToken']),
   }
 }
 
@@ -729,6 +732,7 @@ export default function RenoAppAiFlowDrawer({
   initialInstruction = '',
   initialMode,
   onProposal,
+  onApplied,
 }: RenoAppAiFlowDrawerProps) {
   const contextualDefaultMode = initialMode ?? (currentAction ? 'review' : 'create')
   const titleId = useId()
@@ -743,12 +747,17 @@ export default function RenoAppAiFlowDrawer({
   const [progress, setProgress] = useState<FlowAiProgress | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedChangeIds, setSelectedChangeIds] = useState<string[]>([])
+  const [acknowledgeRisk, setAcknowledgeRisk] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [appliedCount, setAppliedCount] = useState<number | null>(null)
 
   const closeDrawer = useCallback(() => {
+    if (applying) return
     abortRef.current?.abort()
     abortRef.current = null
     onClose()
-  }, [onClose])
+  }, [applying, onClose])
 
   useEffect(() => {
     if (!open) return
@@ -783,6 +792,10 @@ export default function RenoAppAiFlowDrawer({
     setProgress(null)
     setNotice(null)
     setError(null)
+    setSelectedChangeIds([])
+    setAcknowledgeRisk(false)
+    setApplying(false)
+    setAppliedCount(null)
   }, [contextualDefaultMode, currentAction?.id, initialInstruction, snapshotFingerprint])
 
   const stopWaiting = useCallback(() => {
@@ -842,6 +855,9 @@ export default function RenoAppAiFlowDrawer({
     setNotice(null)
     setError(null)
     setResult(null)
+    setSelectedChangeIds([])
+    setAcknowledgeRisk(false)
+    setAppliedCount(null)
 
     try {
       const response = await fetch('/api/renoapp/admin/flow-ai', {
@@ -907,9 +923,75 @@ export default function RenoAppAiFlowDrawer({
     }
   }
 
+  const proposal = result?.proposal ?? null
+  const tokenizedChanges = proposal?.changes.filter((change) => (
+    Boolean(change.applyToken) && change.validationStatus !== 'blocked'
+  )) ?? []
+  const selectableChanges = proposal?.canApply === false ? [] : tokenizedChanges
+  const selectedChangeSet = new Set(selectedChangeIds)
+  const selectedChanges = selectableChanges.filter((change) => selectedChangeSet.has(change.id))
+  const selectedHasRisk = selectedChanges.some((change) => (
+    change.risk === 'high'
+    || change.requiresExpertReview
+    || change.operation === 'deactivate'
+    || change.validationStatus === 'warning'
+  ))
+  const proposalHasApplyTokens = tokenizedChanges.length > 0
+  const canApplySelection = selectedChanges.length > 0
+    && proposal?.canApply !== false
+    && !fingerprintMismatch
+    && !loading
+    && !applying
+    && appliedCount === null
+    && (!selectedHasRisk || acknowledgeRisk)
+
+  const toggleChange = (changeId: string) => {
+    setSelectedChangeIds((current) => current.includes(changeId)
+      ? current.filter((id) => id !== changeId)
+      : [...current, changeId])
+  }
+
+  const applySelectedChanges = async () => {
+    if (!canApplySelection) return
+    const confirmed = window.confirm(
+      `Tillämpa ${selectedChanges.length} valda ändringar i flödesbyggaren? Ändringarna sparas direkt men publicerar inte något flöde. Övriga delar av förslaget kräver därefter en ny AI-granskning.`
+    )
+    if (!confirmed) return
+
+    setApplying(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const response = await fetch('/api/renoapp/admin/flow-ai/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          applyTokens: selectedChanges.map((change) => change.applyToken),
+          acknowledgeRisk,
+        }),
+      })
+      const payload = await readResponsePayload(response)
+      if (!response.ok) throw new Error(responsePayloadError(payload, 'Kunde inte tillämpa ändringarna.'))
+      if (!isRecord(payload) || typeof payload.appliedCount !== 'number') {
+        throw new Error('Servern sparade ändringarna men returnerade ett oväntat svar. Ladda om flödesbyggaren.')
+      }
+      const savedCount = payload.appliedCount
+      const updatedFingerprint = typeof payload.snapshotFingerprint === 'string' ? payload.snapshotFingerprint : null
+      setAppliedCount(savedCount)
+      setSelectedChangeIds([])
+      setAcknowledgeRisk(false)
+      setNotice(`${savedCount} ändringar har sparats. Flödesbyggaren laddas om med den nya strukturen.`)
+      await onApplied?.({ appliedCount: savedCount, snapshotFingerprint: updatedFingerprint })
+    } catch (applyError) {
+      setError(errorMessage(applyError, 'Kunde inte tillämpa ändringarna.'))
+    } finally {
+      setApplying(false)
+    }
+  }
+
   if (!open) return null
 
-  const proposal = result?.proposal ?? null
   const modePlaceholder = mode === 'create'
     ? 'Exempel: Skapa ett komplett flöde för installation av hiss i lägenhet.'
     : mode === 'extend'
@@ -947,16 +1029,17 @@ export default function RenoAppAiFlowDrawer({
             </div>
             <button
               type="button"
+              disabled={applying}
               onClick={closeDrawer}
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-violet-200"
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-stone-300 bg-white text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Stäng AI-assistenten"
             >
               <X size={18} aria-hidden />
             </button>
           </div>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-            <ShieldCheck size={14} aria-hidden />
-            Förslag – inga ändringar har sparats
+          <div className={`mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${appliedCount !== null ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+            {appliedCount !== null ? <CheckCircle2 size={14} aria-hidden /> : <ShieldCheck size={14} aria-hidden />}
+            {appliedCount !== null ? `${appliedCount} ändringar sparade` : 'Förslag – inga ändringar har sparats'}
           </div>
         </header>
 
@@ -978,7 +1061,7 @@ export default function RenoAppAiFlowDrawer({
                       <button
                         key={option.id}
                         type="button"
-                        disabled={disabled || loading}
+                        disabled={disabled || loading || applying}
                         onClick={() => setMode(option.id)}
                         className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${mode === option.id ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'} disabled:cursor-not-allowed disabled:opacity-40`}
                         aria-pressed={mode === option.id}
@@ -999,7 +1082,7 @@ export default function RenoAppAiFlowDrawer({
                   id={`${titleId}-instruction`}
                   value={instruction}
                   onChange={(event) => setInstruction(event.target.value)}
-                  disabled={loading}
+                  disabled={loading || applying}
                   rows={4}
                   placeholder={modePlaceholder}
                   className="mt-2 w-full resize-y rounded-md border border-stone-300 bg-white px-3 py-3 text-sm leading-6 text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-stone-100"
@@ -1012,7 +1095,7 @@ export default function RenoAppAiFlowDrawer({
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="submit"
-                  disabled={loading || instruction.trim().length < 3}
+                  disabled={loading || applying || instruction.trim().length < 3}
                   className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:bg-stone-300"
                 >
                   {loading ? <Loader2 size={17} className="animate-spin" aria-hidden /> : <Sparkles size={17} aria-hidden />}
@@ -1131,6 +1214,17 @@ export default function RenoAppAiFlowDrawer({
                       </div>
                     </div>
 
+                    {proposal.changes.length > 0 && appliedCount === null ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('changes')}
+                        className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus:outline-none focus:ring-2 focus:ring-violet-200"
+                      >
+                        Granska och välj ändringar
+                        <ArrowRight size={16} aria-hidden />
+                      </button>
+                    ) : null}
+
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                       {([
                         ['add', 'Lägg till'],
@@ -1196,6 +1290,51 @@ export default function RenoAppAiFlowDrawer({
                     aria-labelledby={`${tabPrefix}-changes-tab`}
                     className="space-y-3"
                   >
+                    {proposal.changes.length > 0 && appliedCount === null ? (
+                      <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-stone-950">
+                              {selectedChanges.length} av {selectableChanges.length} valbara ändringar valda
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-stone-600">Markera bara de ändringar du har granskat. Blockerade ändringar kan inte sparas.</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={!proposalHasApplyTokens || proposal.canApply === false || applying}
+                              onClick={() => setSelectedChangeIds(selectableChanges.map((change) => change.id))}
+                              className="rounded-md border border-violet-300 bg-white px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              Välj alla valbara
+                            </button>
+                            <button
+                              type="button"
+                              disabled={selectedChangeIds.length === 0 || applying}
+                              onClick={() => setSelectedChangeIds([])}
+                              className="rounded-md border border-stone-300 bg-white px-3 py-2 text-xs font-semibold text-stone-700 hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              Avmarkera alla
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {proposal.changes.length > 0 && !proposalHasApplyTokens && appliedCount === null ? (
+                      <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-5 text-amber-900">
+                        <RefreshCw size={17} className="mt-0.5 shrink-0" aria-hidden />
+                        <span>Detta förslag skapades innan sparfunktionen blev tillgänglig. Skapa ett nytt förslag för att kunna välja och tillämpa ändringar.</span>
+                      </div>
+                    ) : null}
+
+                    {proposal.canApply === false ? (
+                      <div className="flex gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-5 text-rose-800">
+                        <CircleOff size={17} className="mt-0.5 shrink-0" aria-hidden />
+                        <span>Förslaget innehåller blockerande valideringsfel och kan inte tillämpas. Justera instruktionen och skapa ett nytt förslag.</span>
+                      </div>
+                    ) : null}
+
                     {proposal.changes.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-stone-300 bg-stone-50 px-4 py-8 text-center text-sm text-stone-600">
                         AI:n föreslår inga strukturella ändringar.
@@ -1204,10 +1343,21 @@ export default function RenoAppAiFlowDrawer({
                       const linkedSources = change.sourceIds
                         .map((sourceId) => sourceMap.get(sourceId))
                         .filter((source): source is RenoAppAiFlowSource => Boolean(source))
+                      const selectable = Boolean(change.applyToken) && change.validationStatus !== 'blocked' && proposal.canApply !== false && appliedCount === null
+                      const selected = selectedChangeSet.has(change.id)
                       return (
-                        <article key={change.id} className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+                        <article key={change.id} className={`rounded-xl border bg-white p-4 shadow-sm ${selected ? 'border-violet-400 ring-2 ring-violet-100' : 'border-stone-200'}`}>
                           <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0">
+                            <div className="flex min-w-0 flex-1 items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={!selectable || applying}
+                                onChange={() => toggleChange(change.id)}
+                                aria-label={`Välj ändringen ${change.title}`}
+                                className="mt-1 size-4 shrink-0 rounded border-stone-300 text-violet-700 focus:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+                              />
+                              <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${operationTone(change.operation)}`}>
                                   <OperationIcon operation={change.operation} />
@@ -1223,6 +1373,7 @@ export default function RenoAppAiFlowDrawer({
                                   {[change.path, change.key].filter(Boolean).join(' · ')}
                                 </p>
                               ) : null}
+                              </div>
                             </div>
                             <div className="flex flex-wrap justify-end gap-2">
                               {change.risk ? (
@@ -1400,21 +1551,59 @@ export default function RenoAppAiFlowDrawer({
         </div>
 
         <footer className="shrink-0 border-t border-stone-200 bg-white px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
+          {proposal && selectedHasRisk && appliedCount === null ? (
+            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-5 text-amber-950">
+              <input
+                type="checkbox"
+                checked={acknowledgeRisk}
+                disabled={applying}
+                onChange={(event) => setAcknowledgeRisk(event.target.checked)}
+                className="mt-0.5 size-4 shrink-0 rounded border-amber-400 text-violet-700 focus:ring-violet-500"
+              />
+              <span>
+                Jag har granskat riskmarkeringarna, eventuella inaktiveringar och behovet av sakkunnig kontroll för de valda ändringarna.
+              </span>
+            </label>
+          ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex max-w-xl items-start gap-2 text-xs leading-5 text-stone-600">
-              <ShieldCheck size={16} className="mt-0.5 shrink-0 text-amber-700" aria-hidden />
+              {appliedCount !== null
+                ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-700" aria-hidden />
+                : <ShieldCheck size={16} className="mt-0.5 shrink-0 text-amber-700" aria-hidden />}
               <p>
-                <span className="font-semibold text-stone-900">Förslag – inga ändringar har sparats.</span>{' '}
-                Kontrollera juridik, källor och föreningens egna regler innan ett flöde senare tillämpas eller publiceras.
+                <span className="font-semibold text-stone-900">
+                  {appliedCount !== null ? `${appliedCount} ändringar har sparats.` : 'Förslag – inga ändringar har sparats.'}
+                </span>{' '}
+                {appliedCount !== null
+                  ? 'Kontrollera det uppdaterade flödet innan det används eller publiceras.'
+                  : 'Kontrollera juridik, källor och föreningens egna regler innan flödet tillämpas eller publiceras.'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={closeDrawer}
-              className="inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-violet-200"
-            >
-              Stäng
-            </button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {proposal && proposalHasApplyTokens && appliedCount === null ? (
+                <button
+                  type="button"
+                  disabled={!canApplySelection}
+                  onClick={() => void applySelectedChanges()}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:bg-stone-300"
+                >
+                  {applying ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <CheckCircle2 size={16} aria-hidden />}
+                  {applying
+                    ? 'Sparar…'
+                    : selectedChanges.length > 0
+                      ? `Tillämpa ${selectedChanges.length} ${selectedChanges.length === 1 ? 'ändring' : 'ändringar'}`
+                      : 'Välj ändringar'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={applying}
+                onClick={closeDrawer}
+                className="inline-flex h-10 items-center justify-center rounded-md border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Stäng
+              </button>
+            </div>
           </div>
         </footer>
       </section>

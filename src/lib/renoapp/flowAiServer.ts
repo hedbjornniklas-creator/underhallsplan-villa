@@ -21,6 +21,7 @@ import {
   stableStringifyFlowAiSnapshot,
   validateFlowAiProposal,
   type FlowAiCandidateProposal,
+  type FlowAiChange,
   type FlowAiCompletedResponse,
   type FlowAiExecutionConfig,
   type FlowAiGenerationConfig,
@@ -53,6 +54,9 @@ const PROVIDER_CREATE_TIMEOUT_MS = 30_000
 const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
 const PROVIDER_CANCEL_TIMEOUT_MS = 10_000
 const POLL_AFTER_MS = 2_000
+const FLOW_AI_APPLY_TOKEN_APP = 'renoapp_flow_ai_apply'
+const FLOW_AI_APPLY_TOKEN_SCHEMA = '1'
+const FLOW_AI_APPLY_TOKEN_TTL_MS = 2 * 60 * 60 * 1_000
 
 type JsonRecord = Record<string, unknown>
 
@@ -145,6 +149,91 @@ function metadataSignature(metadata: FlowAiUnsignedJobMetadata, secret: string) 
   return createHmac('sha256', secret)
     .update(stableStringifyFlowAiSnapshot(metadata))
     .digest('hex')
+}
+
+type FlowAiApplyTokenPayload = {
+  app: typeof FLOW_AI_APPLY_TOKEN_APP
+  schema: typeof FLOW_AI_APPLY_TOKEN_SCHEMA
+  admin_user_hash: string
+  snapshot_fingerprint: string
+  response_id: string
+  proposal_can_apply: boolean
+  issued_at: string
+  expires_at: string
+  change: FlowAiChange
+}
+
+function applyTokenSignature(encodedPayload: string, secret: string) {
+  return createHmac('sha256', secret).update(encodedPayload).digest('hex')
+}
+
+function createFlowAiApplyToken(input: {
+  change: FlowAiChange
+  proposalCanApply: boolean
+  snapshotFingerprint: string
+  responseId: string
+  adminUserId: string
+  apiKey: string
+  issuedAt: string
+}) {
+  const issuedAtMs = Date.parse(input.issuedAt)
+  const payload: FlowAiApplyTokenPayload = {
+    app: FLOW_AI_APPLY_TOKEN_APP,
+    schema: FLOW_AI_APPLY_TOKEN_SCHEMA,
+    admin_user_hash: sha256(input.adminUserId),
+    snapshot_fingerprint: input.snapshotFingerprint,
+    response_id: input.responseId,
+    proposal_can_apply: input.proposalCanApply,
+    issued_at: input.issuedAt,
+    expires_at: new Date(issuedAtMs + FLOW_AI_APPLY_TOKEN_TTL_MS).toISOString(),
+    change: input.change,
+  }
+  const encodedPayload = Buffer.from(stableStringifyFlowAiSnapshot(payload), 'utf8').toString('base64url')
+  return `${encodedPayload}.${applyTokenSignature(encodedPayload, metadataSecret(input.apiKey))}`
+}
+
+export function verifyFlowAiApplyToken(input: {
+  token: unknown
+  adminUserId: string
+  apiKey: string
+  now?: number
+}) {
+  const token = cleanText(input.token)
+  if (token.length < 80 || token.length > 20_000) {
+    throw new FlowAiServerError('FLOW_AI_APPLY_TOKEN_INVALID', 403)
+  }
+  const [encodedPayload, signature, ...extra] = token.split('.')
+  const expectedSignature = applyTokenSignature(encodedPayload ?? '', metadataSecret(input.apiKey))
+  if (extra.length > 0 || !encodedPayload || !signature || !safeSignatureEqual(signature, expectedSignature)) {
+    throw new FlowAiServerError('FLOW_AI_APPLY_TOKEN_INVALID', 403)
+  }
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'))
+  } catch {
+    throw new FlowAiServerError('FLOW_AI_APPLY_TOKEN_INVALID', 403)
+  }
+  if (!isRecord(payload) || !isRecord(payload.change)) {
+    throw new FlowAiServerError('FLOW_AI_APPLY_TOKEN_INVALID', 403)
+  }
+  const expiresAt = cleanText(payload.expires_at)
+  if (
+    payload.app !== FLOW_AI_APPLY_TOKEN_APP
+    || payload.schema !== FLOW_AI_APPLY_TOKEN_SCHEMA
+    || payload.admin_user_hash !== sha256(input.adminUserId)
+    || !/^sha256:[a-f0-9]{64}$/u.test(cleanText(payload.snapshot_fingerprint))
+    || !/^resp_[A-Za-z0-9_-]{8,200}$/u.test(cleanText(payload.response_id))
+    || typeof payload.proposal_can_apply !== 'boolean'
+    || !Number.isFinite(Date.parse(cleanText(payload.issued_at)))
+    || !Number.isFinite(Date.parse(expiresAt))
+  ) {
+    throw new FlowAiServerError('FLOW_AI_APPLY_TOKEN_INVALID', 403)
+  }
+  if ((input.now ?? Date.now()) > Date.parse(expiresAt)) {
+    throw new FlowAiServerError('FLOW_AI_APPLY_TOKEN_EXPIRED', 409)
+  }
+  return payload as unknown as FlowAiApplyTokenPayload
 }
 
 function safeSignatureEqual(left: string, right: string) {
@@ -891,10 +980,25 @@ export async function pollRenoAppFlowAiProposal(responseIdValue: unknown): Promi
     requestedMode: metadata.mode,
     targetActionKey: targetAction ? cleanText(targetAction.key) : null,
   })
+  const proposalWithApplyTokens = {
+    ...proposal,
+    changes: proposal.changes.map((change) => ({
+      ...change,
+      applyToken: createFlowAiApplyToken({
+        change,
+        proposalCanApply: proposal.canApply,
+        snapshotFingerprint: currentFingerprint,
+        responseId: envelope.responseId,
+        adminUserId: adminContext.userId,
+        apiKey,
+        issuedAt: generatedAt,
+      }),
+    })),
+  }
   const completed: FlowAiCompletedResponse = {
     ...envelope,
     status: 'completed',
-    proposal,
+    proposal: proposalWithApplyTokens,
     snapshotFingerprint: currentFingerprint,
     generatedAt,
   }

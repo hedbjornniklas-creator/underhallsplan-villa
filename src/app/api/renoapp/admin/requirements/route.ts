@@ -28,6 +28,12 @@ export async function POST(request: Request) {
       documentTypeId: typeof body.documentTypeId === 'string' ? body.documentTypeId : '',
       isEnabled: Boolean(body.isEnabled),
       isRequired: typeof body.isRequired === 'boolean' ? body.isRequired : true,
+      phase: body.phase === 'before_required'
+        || body.phase === 'before_conditional'
+        || body.phase === 'during_execution'
+        || body.phase === 'after_completion'
+        ? body.phase
+        : null,
       note: typeof body.note === 'string' ? body.note : null,
       sortOrder: typeof body.sortOrder === 'number' ? body.sortOrder : Number(body.sortOrder ?? 100),
     })

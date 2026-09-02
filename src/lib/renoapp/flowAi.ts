@@ -184,6 +184,7 @@ export type FlowAiChange = {
   sourceIds: string[]
   requiresExpertReview: boolean
   validationStatus: FlowAiChangeValidationStatus
+  applyToken?: string
 }
 
 export type FlowAiTestScenarioAnswer = {

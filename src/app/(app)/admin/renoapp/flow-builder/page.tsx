@@ -2694,6 +2694,9 @@ export default function RenoAppFlowBuilderPage() {
         <RenoAppAiFlowDrawer
           currentAction={selectedAction}
           onClose={() => setAiDrawerOpen(false)}
+          onApplied={async () => {
+            await loadData(selectedActionTypeId)
+          }}
         />
       ) : null}
 
