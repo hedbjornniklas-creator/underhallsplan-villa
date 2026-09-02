@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { buildFlowAiDeterministicDiff, fingerprintFlowAiSnapshot, normalizeFlowAiMode, normalizeFlowAiSnapshot, stableStringifyFlowAiSnapshot, validateFlowAiProposal, type FlowAiCandidateChange, type FlowAiSnapshot } from '../src/lib/renoapp/flowAi.ts'
+import { buildFlowAiDeterministicDiff, fingerprintFlowAiSnapshot, normalizeFlowAiJobMetadata, normalizeFlowAiMode, normalizeFlowAiProviderStatus, normalizeFlowAiResponseId, normalizeFlowAiSnapshot, stableStringifyFlowAiSnapshot, validateFlowAiProposal, type FlowAiCandidateChange, type FlowAiSnapshot } from '../src/lib/renoapp/flowAi.ts'
 
 function makeSnapshot(overrides: Partial<FlowAiSnapshot> = {}): FlowAiSnapshot {
   return {
@@ -39,6 +39,89 @@ test('serializes equivalent flow snapshots deterministically', async () => {
   assert.equal(stableStringifyFlowAiSnapshot(first), stableStringifyFlowAiSnapshot(second))
   assert.equal(await fingerprintFlowAiSnapshot(first), await fingerprintFlowAiSnapshot(second))
   assert.match(await fingerprintFlowAiSnapshot(first), /^sha256:[a-f0-9]{64}$/)
+})
+
+test('changes the optimistic-lock fingerprint when the canonical flow changes', async () => {
+  const before = makeSnapshot({
+    actionTypes: [{ id: 'action-1', key: 'electrical', label: 'El' }],
+  })
+  const after = makeSnapshot({
+    actionTypes: [{ id: 'action-1', key: 'electrical', label: 'Arbete med el-anläggning' }],
+  })
+
+  assert.notEqual(
+    await fingerprintFlowAiSnapshot(before),
+    await fingerprintFlowAiSnapshot(after)
+  )
+})
+
+test('accepts only canonical OpenAI response ids', () => {
+  assert.equal(normalizeFlowAiResponseId('resp_1234abcd'), 'resp_1234abcd')
+  assert.equal(normalizeFlowAiResponseId('resp_job-1234_abcd'), 'resp_job-1234_abcd')
+
+  for (const value of [
+    null,
+    '',
+    'resp_short',
+    'response_1234abcd',
+    'resp_1234abcd/../../secrets',
+    'resp_1234abcd?include=all',
+    `resp_${'a'.repeat(201)}`,
+    'resp_åäö12345678',
+  ]) {
+    assert.throws(() => normalizeFlowAiResponseId(value), /FLOW_AI_RESPONSE_ID_INVALID/)
+  }
+})
+
+test('recognizes every provider terminal status and rejects unknown states', () => {
+  const pending = ['queued', 'in_progress'] as const
+  const terminal = ['completed', 'failed', 'incomplete', 'cancelled'] as const
+
+  for (const status of [...pending, ...terminal]) {
+    assert.equal(normalizeFlowAiProviderStatus(status), status)
+  }
+  for (const status of ['processing', 'canceled', 'expired', 'requires_action', null]) {
+    assert.throws(() => normalizeFlowAiProviderStatus(status), /FLOW_AI_PROVIDER_STATUS_INVALID/)
+  }
+})
+
+test('normalizes complete signed job metadata and rejects malformed bindings', () => {
+  const hash = 'a'.repeat(64)
+  const metadata = {
+    app: 'renoapp_flow_ai',
+    schema: '1',
+    snapshot_fingerprint: `sha256:${'b'.repeat(64)}`,
+    mode: 'review',
+    target_action_id: 'action-1',
+    target_action_key: 'electrical',
+    admin_user_hash: hash,
+    domains_hash: hash,
+    instruction_hash: hash,
+    started_at: '2026-09-02T12:00:00.000Z',
+    nonce: 'nonce-1',
+    signature: hash,
+  }
+
+  assert.deepEqual(normalizeFlowAiJobMetadata(metadata), metadata)
+
+  for (const invalidMetadata of [
+    null,
+    { ...metadata, app: 'another_app' },
+    { ...metadata, schema: '2' },
+    { ...metadata, snapshot_fingerprint: hash },
+    { ...metadata, mode: 'processing' },
+    { ...metadata, target_action_id: '' },
+    { ...metadata, mode: 'create', target_action_id: 'action-1', target_action_key: 'electrical' },
+    { ...metadata, mode: 'review', target_action_id: '-', target_action_key: '-' },
+    { ...metadata, admin_user_hash: 'not-a-hash' },
+    { ...metadata, started_at: 'not-a-date' },
+    { ...metadata, signature: '0'.repeat(63) },
+  ]) {
+    assert.throws(
+      () => normalizeFlowAiJobMetadata(invalidMetadata),
+      /FLOW_AI_RESPONSE_METADATA_INVALID/
+    )
+  }
 })
 
 test('rejects incomplete snapshots before they reach the model', () => {

@@ -1,18 +1,26 @@
 import 'server-only'
 
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import {
   FLOW_AI_DEFAULT_ALLOWED_SOURCE_DOMAINS,
   FLOW_AI_SNAPSHOT_SCHEMA_VERSION,
   fingerprintFlowAiSnapshot,
   normalizeFlowAiMode,
+  normalizeFlowAiJobMetadata,
+  normalizeFlowAiProviderStatus,
+  normalizeFlowAiResponseId,
   normalizeFlowAiSnapshot,
   stableStringifyFlowAiSnapshot,
   validateFlowAiProposal,
   type FlowAiCandidateProposal,
+  type FlowAiCompletedResponse,
+  type FlowAiJobMetadataFields,
   type FlowAiMode,
+  type FlowAiPollResponse,
+  type FlowAiProviderStatus,
   type FlowAiRequest,
-  type FlowAiResponse,
   type FlowAiSnapshot,
+  type FlowAiStartResponse,
 } from '@/lib/renoapp/flowAi'
 import {
   listRenoAppAdminActionTypeQuestionConfig,
@@ -24,16 +32,29 @@ import {
   listRenoAppAdminRequirementConfig,
   listRenoAppAdminReviewFlagLinks,
   listRenoAppAdminReviewFlags,
+  requireRenoAppViewerContext,
 } from '@/lib/renoapp/server'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const RENOAPP_FLOW_AI_MODEL = process.env.OPENAI_RENOAPP_FLOW_MODEL?.trim() || 'gpt-5.6'
 const MAX_INSTRUCTION_LENGTH = 4_000
 const MAX_SNAPSHOT_LENGTH = 2_000_000
+const FLOW_AI_METADATA_APP = 'renoapp_flow_ai'
+const FLOW_AI_METADATA_SCHEMA = '1'
+const PROVIDER_CREATE_TIMEOUT_MS = 30_000
+const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
+const POLL_AFTER_MS = 2_000
 
 type JsonRecord = Record<string, unknown>
 
 type OpenAiResponse = {
+  id?: string
+  status?: string
+  model?: string
+  created_at?: number
+  metadata?: unknown
+  error?: unknown
+  incomplete_details?: unknown
   output_text?: string
   output?: Array<{
     type?: string
@@ -45,6 +66,9 @@ type OpenAiResponse = {
     }>
   }>
 }
+
+export type FlowAiJobMetadata = FlowAiJobMetadataFields
+type FlowAiUnsignedJobMetadata = Omit<FlowAiJobMetadataFields, 'signature'>
 
 export class FlowAiServerError extends Error {
   readonly status: number
@@ -72,6 +96,100 @@ function configuredAllowedDomains() {
     .map((domain) => domain.trim().toLocaleLowerCase('en-US').replace(/^\.+/u, ''))
     .filter(Boolean)
   return [...new Set([...FLOW_AI_DEFAULT_ALLOWED_SOURCE_DOMAINS, ...extraDomains])]
+}
+
+async function requireFlowAiAdmin() {
+  const context = await requireRenoAppViewerContext()
+  if (!context.isInternalAdmin) throw new Error('ADMIN_REQUIRED')
+  return context
+}
+
+function sha256(value: string) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function metadataSecret(apiKey: string) {
+  return process.env.RENOAPP_FLOW_AI_METADATA_SECRET?.trim() || apiKey
+}
+
+function metadataSignature(metadata: FlowAiUnsignedJobMetadata, secret: string) {
+  return createHmac('sha256', secret)
+    .update(stableStringifyFlowAiSnapshot(metadata))
+    .digest('hex')
+}
+
+function safeSignatureEqual(left: string, right: string) {
+  if (!/^[a-f0-9]{64}$/u.test(left) || !/^[a-f0-9]{64}$/u.test(right)) return false
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'))
+}
+
+export function createFlowAiJobMetadata(input: {
+  snapshotFingerprint: string
+  mode: FlowAiMode
+  targetAction: { id: string; key: string } | null
+  adminUserId: string
+  allowedDomains: string[]
+  instruction: string
+  apiKey: string
+  startedAt?: string
+  nonce?: string
+}): FlowAiJobMetadata {
+  const unsigned: FlowAiUnsignedJobMetadata = {
+    app: FLOW_AI_METADATA_APP,
+    schema: FLOW_AI_METADATA_SCHEMA,
+    snapshot_fingerprint: input.snapshotFingerprint,
+    mode: input.mode,
+    target_action_id: input.targetAction?.id ?? '-',
+    target_action_key: input.targetAction?.key ?? '-',
+    admin_user_hash: sha256(input.adminUserId),
+    domains_hash: sha256([...input.allowedDomains].sort().join('\n')),
+    instruction_hash: sha256(input.instruction),
+    started_at: input.startedAt ?? new Date().toISOString(),
+    nonce: input.nonce ?? randomUUID(),
+  }
+  return {
+    ...unsigned,
+    signature: metadataSignature(unsigned, metadataSecret(input.apiKey)),
+  }
+}
+
+export function verifyFlowAiJobMetadata(input: {
+  value: unknown
+  adminUserId: string
+  allowedDomains: string[]
+  apiKey: string
+}): FlowAiJobMetadata {
+  let metadata: FlowAiJobMetadataFields
+  try {
+    metadata = normalizeFlowAiJobMetadata(input.value)
+  } catch {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_METADATA_INVALID', 403)
+  }
+  const { signature, ...unsigned } = metadata
+  const expectedSignature = metadataSignature(unsigned, metadataSecret(input.apiKey))
+  const metadataIsWellFormed =
+    unsigned.app === FLOW_AI_METADATA_APP
+    && unsigned.schema === FLOW_AI_METADATA_SCHEMA
+  if (!metadataIsWellFormed || !safeSignatureEqual(signature, expectedSignature)) {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_METADATA_INVALID', 403)
+  }
+  if (unsigned.admin_user_hash !== sha256(input.adminUserId)) {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_OWNER_MISMATCH', 403)
+  }
+  const currentDomainsHash = sha256([...input.allowedDomains].sort().join('\n'))
+  if (unsigned.domains_hash !== currentDomainsHash) {
+    throw new FlowAiServerError('FLOW_AI_CONFIGURATION_CHANGED', 409)
+  }
+  if (
+    (unsigned.mode === 'create' && (unsigned.target_action_id !== '-' || unsigned.target_action_key !== '-'))
+    || (
+      (unsigned.mode === 'review' || unsigned.mode === 'extend')
+      && (unsigned.target_action_id === '-' || unsigned.target_action_key === '-')
+    )
+  ) {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_METADATA_INVALID', 403)
+  }
+  return { ...unsigned, signature }
 }
 
 export async function buildRenoAppFlowAiSnapshot(): Promise<FlowAiSnapshot> {
@@ -321,13 +439,14 @@ function aiInstructions(input: {
   ].join('\n')
 }
 
-async function requestOpenAiProposal(input: {
+async function startOpenAiProposal(input: {
   apiKey: string
   instruction: string
   mode: FlowAiMode
   targetAction: { id: string; key: string; label: string } | null
   snapshot: FlowAiSnapshot
   allowedDomains: string[]
+  metadata: FlowAiJobMetadata
 }) {
   const modelInput = {
     task: {
@@ -352,10 +471,12 @@ async function requestOpenAiProposal(input: {
         Authorization: `Bearer ${input.apiKey}`,
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(PROVIDER_CREATE_TIMEOUT_MS),
       body: JSON.stringify({
         model: RENOAPP_FLOW_AI_MODEL,
+        background: true,
         store: false,
+        metadata: input.metadata,
         reasoning: { effort: 'high' },
         instructions: aiInstructions({
           mode: input.mode,
@@ -402,6 +523,84 @@ async function requestOpenAiProposal(input: {
   return await response.json() as OpenAiResponse
 }
 
+async function retrieveOpenAiProposal(input: { apiKey: string; responseId: string }) {
+  const url = new URL(`${OPENAI_RESPONSES_URL}/${encodeURIComponent(input.responseId)}`)
+  // The retrieve endpoint does not automatically inherit expanded include fields.
+  url.searchParams.append('include[]', 'web_search_call.action.sources')
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${input.apiKey}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROVIDER_RETRIEVE_TIMEOUT_MS),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new FlowAiServerError('OPENAI_RETRIEVE_TIMEOUT', 504)
+    }
+    throw new FlowAiServerError('OPENAI_RETRIEVE_FAILED', 502)
+  }
+  if (!response.ok) {
+    const detail = await response.text()
+    console.error('[renoapp.flow-ai] OpenAI retrieve failed', {
+      status: response.status,
+      detail: detail.slice(0, 1_000),
+    })
+    if (response.status === 404) throw new FlowAiServerError('OPENAI_RESPONSE_NOT_FOUND', 404)
+    if (response.status === 429) throw new FlowAiServerError('OPENAI_RATE_LIMITED', 429)
+    throw new FlowAiServerError('OPENAI_RETRIEVE_FAILED', 502, { upstreamStatus: response.status })
+  }
+  return await response.json() as OpenAiResponse
+}
+
+function providerEnvelope(payload: OpenAiResponse) {
+  let responseId: string
+  let status: FlowAiProviderStatus
+  try {
+    responseId = normalizeFlowAiResponseId(payload.id)
+    status = normalizeFlowAiProviderStatus(payload.status)
+  } catch {
+    throw new FlowAiServerError('OPENAI_INVALID_RESPONSE', 502)
+  }
+  const providerCreatedAt = Number.isFinite(payload.created_at)
+    ? new Date(Number(payload.created_at) * 1_000)
+    : null
+  const createdAt = providerCreatedAt && Number.isFinite(providerCreatedAt.getTime())
+    ? providerCreatedAt.toISOString()
+    : new Date().toISOString()
+  return {
+    responseId,
+    status,
+    createdAt,
+    model: cleanText(payload.model) || RENOAPP_FLOW_AI_MODEL,
+  }
+}
+
+function terminalProviderError(payload: OpenAiResponse, status: 'failed' | 'incomplete' | 'cancelled') {
+  if (status === 'cancelled') {
+    return { code: 'OPENAI_RESPONSE_CANCELLED', message: 'AI-körningen avbröts.' }
+  }
+  if (status === 'incomplete') {
+    const reason = isRecord(payload.incomplete_details)
+      ? cleanText(payload.incomplete_details.reason).slice(0, 80)
+      : ''
+    return {
+      code: 'OPENAI_RESPONSE_INCOMPLETE',
+      message: reason
+        ? `AI-svaret blev ofullständigt (${reason}). Starta en ny granskning.`
+        : 'AI-svaret blev ofullständigt. Starta en ny granskning.',
+    }
+  }
+  const providerCode = isRecord(payload.error) ? cleanText(payload.error.code).slice(0, 80) : ''
+  return {
+    code: 'OPENAI_RESPONSE_FAILED',
+    message: providerCode
+      ? `AI-körningen misslyckades hos leverantören (${providerCode}).`
+      : 'AI-körningen misslyckades hos leverantören.',
+  }
+}
+
 function parseRequest(value: unknown): FlowAiRequest {
   if (!isRecord(value)) throw new FlowAiServerError('FLOW_AI_REQUEST_INVALID', 400)
   const instruction = cleanText(value.instruction)
@@ -423,9 +622,8 @@ function parseRequest(value: unknown): FlowAiRequest {
   return { instruction, mode, actionTypeId, snapshot, snapshotFingerprint }
 }
 
-export async function generateRenoAppFlowAiProposal(value: unknown): Promise<FlowAiResponse> {
-  // Authenticate and construct the only snapshot that may be sent to the model
-  // before inspecting any optional client snapshot.
+export async function startRenoAppFlowAiProposal(value: unknown): Promise<FlowAiStartResponse> {
+  const adminContext = await requireFlowAiAdmin()
   const snapshot = await buildRenoAppFlowAiSnapshot()
   const snapshotFingerprint = await fingerprintFlowAiSnapshot(snapshot)
   if (stableStringifyFlowAiSnapshot(snapshot).length > MAX_SNAPSHOT_LENGTH) {
@@ -476,31 +674,137 @@ export async function generateRenoAppFlowAiProposal(value: unknown): Promise<Flo
   if (!apiKey) throw new FlowAiServerError('OPENAI_API_KEY_MISSING', 503)
 
   const allowedDomains = configuredAllowedDomains()
-  const generatedAt = new Date().toISOString()
-  const openAiPayload = await requestOpenAiProposal({
+  const metadata = createFlowAiJobMetadata({
+    snapshotFingerprint,
+    mode: request.mode ?? 'create',
+    targetAction,
+    adminUserId: adminContext.userId,
+    allowedDomains,
+    instruction: request.instruction,
+    apiKey,
+  })
+  const openAiPayload = await startOpenAiProposal({
     apiKey,
     instruction: request.instruction,
     mode: request.mode ?? 'create',
     targetAction,
     snapshot,
     allowedDomains,
+    metadata,
   })
+  const envelope = providerEnvelope(openAiPayload)
+  if (envelope.responseId !== cleanText(openAiPayload.id)) {
+    throw new FlowAiServerError('OPENAI_INVALID_RESPONSE', 502)
+  }
+  const returnedMetadata = verifyFlowAiJobMetadata({
+    value: openAiPayload.metadata,
+    adminUserId: adminContext.userId,
+    allowedDomains,
+    apiKey,
+  })
+  if (returnedMetadata.snapshot_fingerprint !== snapshotFingerprint) {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_METADATA_INVALID', 403)
+  }
+  if (envelope.status === 'failed' || envelope.status === 'incomplete' || envelope.status === 'cancelled') {
+    const terminal = terminalProviderError(openAiPayload, envelope.status)
+    throw new FlowAiServerError(
+      terminal.code,
+      envelope.status === 'cancelled' ? 409 : 502,
+      { responseId: envelope.responseId, providerStatus: envelope.status }
+    )
+  }
+
+  return {
+    ...envelope,
+    snapshotFingerprint,
+    pollAfterMs: envelope.status === 'queued' || envelope.status === 'in_progress' ? POLL_AFTER_MS : 0,
+  }
+}
+
+export async function pollRenoAppFlowAiProposal(responseIdValue: unknown): Promise<FlowAiPollResponse> {
+  // Authenticate before validating or retrieving a provider response id so the
+  // endpoint cannot be used to probe response identifiers anonymously.
+  const adminContext = await requireFlowAiAdmin()
+  let responseId: string
+  try {
+    responseId = normalizeFlowAiResponseId(responseIdValue)
+  } catch {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_ID_INVALID', 400)
+  }
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) throw new FlowAiServerError('OPENAI_API_KEY_MISSING', 503)
+  const allowedDomains = configuredAllowedDomains()
+  const openAiPayload = await retrieveOpenAiProposal({ apiKey, responseId })
+  const envelope = providerEnvelope(openAiPayload)
+  if (envelope.responseId !== responseId) {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_ID_MISMATCH', 403)
+  }
+  const metadata = verifyFlowAiJobMetadata({
+    value: openAiPayload.metadata,
+    adminUserId: adminContext.userId,
+    allowedDomains,
+    apiKey,
+  })
+
+  if (envelope.status === 'queued' || envelope.status === 'in_progress') {
+    return {
+      ...envelope,
+      status: envelope.status,
+      snapshotFingerprint: metadata.snapshot_fingerprint,
+      pollAfterMs: POLL_AFTER_MS,
+      progressMessage: envelope.status === 'queued'
+        ? 'AI-granskningen väntar på att starta.'
+        : 'AI:n granskar flödet och kontrollerar källor.',
+    }
+  }
+  if (envelope.status === 'failed' || envelope.status === 'incomplete' || envelope.status === 'cancelled') {
+    return {
+      ...envelope,
+      status: envelope.status,
+      snapshotFingerprint: metadata.snapshot_fingerprint,
+      error: terminalProviderError(openAiPayload, envelope.status),
+    }
+  }
+
+  // A full snapshot is intentionally rebuilt only for a completed response.
+  // Polls made while a run is queued or processing stay inexpensive.
+  const snapshot = await buildRenoAppFlowAiSnapshot()
+  const currentFingerprint = await fingerprintFlowAiSnapshot(snapshot)
+  if (currentFingerprint !== metadata.snapshot_fingerprint) {
+    throw new FlowAiServerError('FLOW_AI_SNAPSHOT_STALE', 409, {
+      snapshotFingerprint: currentFingerprint,
+      jobSnapshotFingerprint: metadata.snapshot_fingerprint,
+    })
+  }
+  const targetAction = metadata.target_action_id === '-'
+    ? null
+    : snapshot.actionTypes
+      .filter(isRecord)
+      .find((item) => cleanText(item.id) === metadata.target_action_id) ?? null
+  if (
+    (metadata.mode === 'review' || metadata.mode === 'extend')
+    && (!targetAction || cleanText(targetAction.key) !== metadata.target_action_key)
+  ) {
+    throw new FlowAiServerError('FLOW_AI_RESPONSE_METADATA_INVALID', 403)
+  }
+
+  const generatedAt = new Date().toISOString()
   const rawProposal = parseOpenAiProposal(openAiPayload) as FlowAiCandidateProposal
-  const retrievedSourceUrls = extractOpenAiWebSourceUrls(openAiPayload)
   const proposal = validateFlowAiProposal({
     rawProposal,
     snapshot,
-    retrievedSourceUrls,
+    retrievedSourceUrls: extractOpenAiWebSourceUrls(openAiPayload),
     allowedSourceDomains: allowedDomains,
     retrievedAt: generatedAt,
-    requestedMode: request.mode ?? 'create',
-    targetActionKey: targetAction?.key ?? null,
+    requestedMode: metadata.mode,
+    targetActionKey: targetAction ? cleanText(targetAction.key) : null,
   })
-
-  return {
+  const completed: FlowAiCompletedResponse = {
+    ...envelope,
+    status: 'completed',
     proposal,
-    snapshotFingerprint,
+    snapshotFingerprint: currentFingerprint,
     generatedAt,
-    model: RENOAPP_FLOW_AI_MODEL,
   }
+  return completed
 }

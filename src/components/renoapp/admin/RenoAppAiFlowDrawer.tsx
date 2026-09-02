@@ -114,6 +114,26 @@ export type RenoAppAiFlowDrawerProps = {
 type DrawerTab = 'summary' | 'changes' | 'sources' | 'test'
 type JsonRecord = Record<string, unknown>
 
+type FlowAiProgress = {
+  status: string
+  message: string
+  responseId?: string
+  pollCount: number
+}
+
+type FlowAiPendingTicket = {
+  responseId: string
+  mode: RenoAppAiFlowMode
+  snapshotFingerprint: string
+  status: string
+  message: string
+  pollAfterMs: number
+}
+
+const FLOW_AI_POLL_INTERVAL_MS = 2000
+const FLOW_AI_MAX_RETRY_DELAY_MS = 5 * 60 * 1000
+const FLOW_AI_TRANSIENT_POLL_STATUSES = new Set([429, 502, 503, 504])
+
 const TABS: Array<{ id: DrawerTab; label: string }> = [
   { id: 'summary', label: 'Sammanfattning' },
   { id: 'changes', label: 'Ändringar' },
@@ -341,8 +361,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message.trim() ? error.message : fallback
 }
 
-async function responseError(response: Response, fallback: string) {
-  const payload = await response.json().catch(() => null) as unknown
+function responsePayloadError(payload: unknown, fallback: string) {
   if (isRecord(payload)) {
     if (typeof payload.error === 'string' && payload.error.trim()) return payload.error.trim()
     if (isRecord(payload.error)) {
@@ -353,6 +372,234 @@ async function responseError(response: Response, fallback: string) {
     if (message) return message
   }
   return fallback
+}
+
+async function readResponsePayload(response: Response) {
+  return response.json().catch(() => null) as Promise<unknown>
+}
+
+function nestedResponseRecord(payload: unknown) {
+  if (!isRecord(payload)) return null
+  if (isRecord(payload.result)) {
+    return isRecord(payload.result.data) ? payload.result.data : payload.result
+  }
+  return isRecord(payload.data) ? payload.data : payload
+}
+
+function hasProposalPayload(payload: unknown) {
+  if (!isRecord(payload)) return false
+  const nested = nestedResponseRecord(payload)
+  if (isRecord(payload.proposal) || isRecord(nested?.proposal)) return true
+  return Boolean(
+    nested
+    && typeof nested.summary === 'string'
+    && (Array.isArray(nested.changes) || Array.isArray(nested.sources) || Array.isArray(nested.testScenarios))
+  )
+}
+
+function pendingStatus(payload: unknown) {
+  if (!isRecord(payload)) return ''
+  const nested = nestedResponseRecord(payload)
+  return firstString(payload, ['status', 'state']) || (nested ? firstString(nested, ['status', 'state']) : '')
+}
+
+function numericResponseValue(payload: unknown, keys: string[]) {
+  if (!isRecord(payload)) return null
+  const nested = nestedResponseRecord(payload)
+  for (const record of nested && nested !== payload ? [payload, nested] : [payload]) {
+    for (const key of keys) {
+      const value = record[key]
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value)
+        if (Number.isFinite(parsed) && parsed >= 0) return parsed
+      }
+    }
+  }
+  return null
+}
+
+function retryAfterHeaderMs(response: Response) {
+  const value = response.headers.get('Retry-After')?.trim()
+  if (!value) return null
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return Math.max(0, date.getTime() - Date.now())
+}
+
+function suggestedPollDelayMs(response: Response, payload: unknown, fallback = FLOW_AI_POLL_INTERVAL_MS) {
+  const retryAfter = retryAfterHeaderMs(response)
+  const pollAfter = numericResponseValue(payload, ['pollAfterMs'])
+  const suggested = retryAfter ?? pollAfter ?? fallback
+  return Math.min(FLOW_AI_MAX_RETRY_DELAY_MS, Math.max(500, suggested))
+}
+
+function progressMessageForStatus(status: string, payload: unknown, pollCount: number) {
+  const nested = nestedResponseRecord(payload)
+  const explicit = nested
+    ? firstString(nested, ['progressMessage', 'statusMessage', 'message'])
+    : ''
+  if (explicit) return explicit
+
+  const normalized = status.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
+  if (normalized === 'queued' || normalized === 'pending') {
+    return 'Analysen står i kö och startar så snart AI-tjänsten är redo.'
+  }
+  if (normalized === 'validating' || normalized === 'finalizing') {
+    return 'Kontrollerar ändringsförslaget, källorna och testfallen.'
+  }
+  if (normalized === 'searching' || normalized === 'researching') {
+    return 'Söker källstöd och jämför regelverk med det valda flödet.'
+  }
+  if (normalized === 'processing' || normalized === 'in_progress' || normalized === 'running') {
+    return pollCount > 2
+      ? 'AI:n arbetar fortfarande med analysen. Omfattande källkontroller kan ta flera minuter.'
+      : 'AI:n analyserar flödet och bygger ett granskningsbart förslag.'
+  }
+  return pollCount > 0
+    ? 'Analysen pågår. Kontrollerar om förslaget är klart…'
+    : 'Förbereder flödet och startar AI-analysen…'
+}
+
+function progressStatusLabel(status: string) {
+  const normalized = status.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
+  if (normalized === 'retrying') return 'Återansluter'
+  if (normalized === 'queued' || normalized === 'pending') return 'Väntar i kö'
+  if (normalized === 'validating' || normalized === 'finalizing') return 'Validerar förslag'
+  if (normalized === 'searching' || normalized === 'researching') return 'Kontrollerar källor'
+  if (normalized === 'processing' || normalized === 'in_progress' || normalized === 'running') return 'Analys pågår'
+  return 'Startar analys'
+}
+
+function isTerminalFailureStatus(status: string) {
+  const normalized = status.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
+  return normalized === 'failed'
+    || normalized === 'cancelled'
+    || normalized === 'canceled'
+    || normalized === 'expired'
+    || normalized === 'incomplete'
+}
+
+function pendingTicket(
+  payload: unknown,
+  fallbackMode: RenoAppAiFlowMode,
+  fallbackFingerprint: string
+): FlowAiPendingTicket | null {
+  if (!isRecord(payload)) return null
+  const nested = nestedResponseRecord(payload) ?? payload
+  const responseId = firstString(payload, ['responseId', 'id'])
+    || firstString(nested, ['responseId', 'id'])
+  if (!responseId) return null
+  const status = pendingStatus(payload) || 'queued'
+  return {
+    responseId,
+    mode: normalizeMode(payload.mode ?? nested.mode, fallbackMode),
+    snapshotFingerprint: firstString(payload, ['snapshotFingerprint', 'fingerprint'])
+      || firstString(nested, ['snapshotFingerprint', 'fingerprint'])
+      || fallbackFingerprint,
+    status,
+    message: progressMessageForStatus(status, payload, 0),
+    pollAfterMs: numericResponseValue(payload, ['pollAfterMs']) ?? FLOW_AI_POLL_INTERVAL_MS,
+  }
+}
+
+function abortableDelay(milliseconds: number, signal: AbortSignal) {
+  if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'))
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, milliseconds)
+    const onAbort = () => {
+      window.clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+async function pollForProposal({
+  ticket,
+  actionTypeId,
+  signal,
+  onProgress,
+}: {
+  ticket: FlowAiPendingTicket
+  actionTypeId: string | null
+  signal: AbortSignal
+  onProgress: (progress: FlowAiProgress) => void
+}) {
+  let pollCount = 0
+  let transientFailureCount = 0
+  let nextPollDelayMs = Math.min(
+    FLOW_AI_MAX_RETRY_DELAY_MS,
+    Math.max(500, ticket.pollAfterMs)
+  )
+
+  while (!signal.aborted) {
+    await abortableDelay(nextPollDelayMs, signal)
+    pollCount += 1
+
+    const search = new URLSearchParams({
+      responseId: ticket.responseId,
+      mode: ticket.mode,
+      snapshotFingerprint: ticket.snapshotFingerprint,
+    })
+    if (actionTypeId) search.set('actionTypeId', actionTypeId)
+
+    const response = await fetch(`/api/renoapp/admin/flow-ai?${search.toString()}`, {
+      method: 'GET',
+      cache: 'no-store',
+      signal,
+    })
+    const payload = await readResponsePayload(response)
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+
+    if (response.ok && hasProposalPayload(payload)) return normalizeResult(payload, ticket.mode)
+
+    const status = pendingStatus(payload) || (response.status === 202 ? 'processing' : '')
+    if (isTerminalFailureStatus(status)) {
+      throw new Error(responsePayloadError(payload, 'AI-analysen avslutades utan något förslag.'))
+    }
+    if (FLOW_AI_TRANSIENT_POLL_STATUSES.has(response.status)) {
+      transientFailureCount += 1
+      const exponentialDelay = Math.min(
+        30_000,
+        FLOW_AI_POLL_INTERVAL_MS * (2 ** Math.min(transientFailureCount - 1, 4))
+      )
+      nextPollDelayMs = Math.min(
+        FLOW_AI_MAX_RETRY_DELAY_MS,
+        Math.max(exponentialDelay, suggestedPollDelayMs(response, payload))
+      )
+      onProgress({
+        status: 'retrying',
+        message: `Statuskontrollen svarade tillfälligt inte (${response.status}). Körningen finns kvar och vi försöker igen om cirka ${Math.ceil(nextPollDelayMs / 1000)} sekunder.`,
+        responseId: ticket.responseId,
+        pollCount,
+      })
+      continue
+    }
+    if (!response.ok && response.status !== 202) {
+      throw new Error(responsePayloadError(payload, 'Kunde inte hämta status för AI-analysen.'))
+    }
+    if (response.status === 200 && status.toLowerCase() === 'completed') {
+      throw new Error('AI-analysen slutfördes men något förslag kunde inte hämtas.')
+    }
+
+    transientFailureCount = 0
+    nextPollDelayMs = suggestedPollDelayMs(response, payload)
+    onProgress({
+      status: status || 'processing',
+      message: progressMessageForStatus(status, payload, pollCount),
+      responseId: ticket.responseId,
+      pollCount,
+    })
+  }
+
+  throw new DOMException('Aborted', 'AbortError')
 }
 
 function operationLabel(operation: RenoAppAiFlowChangeOperation) {
@@ -488,6 +735,8 @@ export default function RenoAppAiFlowDrawer({
   const [activeTab, setActiveTab] = useState<DrawerTab>('summary')
   const [result, setResult] = useState<RenoAppAiFlowResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState<FlowAiProgress | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const closeDrawer = useCallback(() => {
@@ -510,18 +759,35 @@ export default function RenoAppAiFlowDrawer({
       window.clearTimeout(focusTimer)
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
-      abortRef.current?.abort()
+      const activeController = abortRef.current
+      abortRef.current = null
+      activeController?.abort()
       previousFocus?.focus()
     }
   }, [closeDrawer, open])
 
   useEffect(() => {
+    const activeController = abortRef.current
+    abortRef.current = null
+    activeController?.abort()
     setInstruction(initialInstruction)
     setMode(contextualDefaultMode)
     setActiveTab('summary')
     setResult(null)
+    setLoading(false)
+    setProgress(null)
+    setNotice(null)
     setError(null)
   }, [contextualDefaultMode, currentAction?.id, initialInstruction, snapshotFingerprint])
+
+  const stopWaiting = useCallback(() => {
+    const activeController = abortRef.current
+    abortRef.current = null
+    activeController?.abort()
+    setLoading(false)
+    setProgress(null)
+    setNotice('Du slutade vänta på resultatet. AI-körningen kan fortsätta en kort stund, men inga flödesändringar sparas.')
+  }, [])
 
   const changesByOperation = useMemo(() => {
     const counts: Record<RenoAppAiFlowChangeOperation, number> = {
@@ -557,10 +823,18 @@ export default function RenoAppAiFlowDrawer({
       return
     }
 
-    abortRef.current?.abort()
+    const previousController = abortRef.current
+    abortRef.current = null
+    previousController?.abort()
     const controller = new AbortController()
     abortRef.current = controller
     setLoading(true)
+    setProgress({
+      status: 'starting',
+      message: 'Förbereder flödet och startar AI-analysen…',
+      pollCount: 0,
+    })
+    setNotice(null)
     setError(null)
     setResult(null)
 
@@ -578,21 +852,52 @@ export default function RenoAppAiFlowDrawer({
           snapshotFingerprint,
         }),
       })
-      if (!response.ok) {
-        throw new Error(await responseError(response, 'Kunde inte skapa AI-förslaget.'))
+      const payload = await readResponsePayload(response)
+      if (controller.signal.aborted) return
+      if (!response.ok && response.status !== 202) {
+        throw new Error(responsePayloadError(payload, 'Kunde inte skapa AI-förslaget.'))
       }
 
-      const parsed = normalizeResult(await response.json() as unknown, mode)
+      let parsed: RenoAppAiFlowResult
+      if (hasProposalPayload(payload)) {
+        parsed = normalizeResult(payload, mode)
+      } else {
+        const status = pendingStatus(payload)
+        if (isTerminalFailureStatus(status)) {
+          throw new Error(responsePayloadError(payload, 'AI-analysen avslutades utan något förslag.'))
+        }
+        const ticket = pendingTicket(payload, mode, snapshotFingerprint)
+        if (!ticket) {
+          throw new Error('AI-tjänsten startade ingen spårbar analys. Försök igen.')
+        }
+        setProgress({
+          status: ticket.status,
+          message: ticket.message,
+          responseId: ticket.responseId,
+          pollCount: 0,
+        })
+        parsed = await pollForProposal({
+          ticket,
+          actionTypeId: mode === 'create' ? null : currentAction?.id ?? null,
+          signal: controller.signal,
+          onProgress: setProgress,
+        })
+      }
+
+      if (controller.signal.aborted) return
       setResult(parsed)
+      setProgress(null)
       setActiveTab('summary')
       onProposal?.(parsed)
     } catch (submitError) {
       if (submitError instanceof DOMException && submitError.name === 'AbortError') return
+      setProgress(null)
       setError(errorMessage(submitError, 'Kunde inte skapa AI-förslaget. Försök igen.'))
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null
         setLoading(false)
+        setProgress(null)
       }
     }
   }
@@ -723,16 +1028,36 @@ export default function RenoAppAiFlowDrawer({
               </div>
             ) : null}
 
+            {notice ? (
+              <div role="status" className="flex gap-2 rounded-md border border-stone-200 bg-stone-50 px-3 py-3 text-sm leading-5 text-stone-700">
+                <ShieldCheck size={17} className="mt-0.5 shrink-0 text-stone-500" aria-hidden />
+                <span>{notice}</span>
+              </div>
+            ) : null}
+
             {loading ? (
               <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-5" aria-live="polite">
                 <div className="flex items-start gap-3">
                   <Loader2 size={20} className="mt-0.5 shrink-0 animate-spin text-violet-700" aria-hidden />
-                  <div>
-                    <h3 className="font-semibold text-stone-950">Analyserar flödet och källstödet</h3>
-                    <p className="mt-1 text-sm leading-6 text-stone-700">
-                      AI:n jämför strukturen, identifierar möjliga luckor och bygger ett granskningsbart ändringsförslag.
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-violet-700">
+                      {progressStatusLabel(progress?.status ?? 'starting')}
                     </p>
-                    <p className="mt-2 text-xs text-stone-500">Du kan stänga panelen medan analysen pågår.</p>
+                    <h3 className="mt-1 font-semibold text-stone-950">Tar fram ett källstyrt flödesförslag</h3>
+                    <p className="mt-1 text-sm leading-6 text-stone-700">
+                      {progress?.message ?? 'Förbereder flödet och startar AI-analysen…'}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-stone-600">
+                      Håll panelen öppen för att få resultatet. Om du slutar vänta eller stänger visas inte den pågående analysen här.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={stopWaiting}
+                      className="mt-3 inline-flex h-9 items-center gap-2 rounded-md border border-violet-300 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-200"
+                    >
+                      <X size={14} aria-hidden />
+                      Sluta vänta
+                    </button>
                   </div>
                 </div>
               </div>

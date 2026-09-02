@@ -25,6 +25,31 @@ export const FLOW_AI_DEFAULT_ALLOWED_SOURCE_DOMAINS = [
 ] as const
 
 export type FlowAiMode = 'create' | 'review' | 'extend'
+export type FlowAiProviderStatus =
+  | 'queued'
+  | 'in_progress'
+  | 'completed'
+  | 'failed'
+  | 'incomplete'
+  | 'cancelled'
+
+export const FLOW_AI_JOB_METADATA_APP = 'renoapp_flow_ai' as const
+export const FLOW_AI_JOB_METADATA_SCHEMA = '1' as const
+
+export type FlowAiJobMetadataFields = {
+  app: string
+  schema: string
+  snapshot_fingerprint: string
+  mode: FlowAiMode
+  target_action_id: string
+  target_action_key: string
+  admin_user_hash: string
+  domains_hash: string
+  instruction_hash: string
+  started_at: string
+  nonce: string
+  signature: string
+}
 
 export type FlowAiEntityType =
   | 'action_type'
@@ -174,6 +199,43 @@ export type FlowAiResponse = {
   generatedAt: string
   model: string
 }
+
+export type FlowAiJobSummary = {
+  responseId: string
+  status: FlowAiProviderStatus
+  snapshotFingerprint: string
+  createdAt: string
+  model: string
+}
+
+export type FlowAiStartResponse = FlowAiJobSummary & {
+  pollAfterMs: number
+}
+
+export type FlowAiPendingResponse = FlowAiJobSummary & {
+  status: 'queued' | 'in_progress'
+  pollAfterMs: number
+  progressMessage: string
+}
+
+export type FlowAiCompletedResponse = FlowAiResponse & {
+  responseId: string
+  status: 'completed'
+  createdAt: string
+}
+
+export type FlowAiTerminalErrorResponse = FlowAiJobSummary & {
+  status: 'failed' | 'incomplete' | 'cancelled'
+  error: {
+    code: string
+    message: string
+  }
+}
+
+export type FlowAiPollResponse =
+  | FlowAiPendingResponse
+  | FlowAiCompletedResponse
+  | FlowAiTerminalErrorResponse
 
 type JsonRecord = Record<string, unknown>
 
@@ -382,6 +444,70 @@ export function normalizeFlowAiMode(value: unknown, instruction = '', actionType
     return 'create'
   }
   return actionTypeId ? 'extend' : 'create'
+}
+
+export function normalizeFlowAiProviderStatus(value: unknown): FlowAiProviderStatus {
+  if (
+    value === 'queued'
+    || value === 'in_progress'
+    || value === 'completed'
+    || value === 'failed'
+    || value === 'incomplete'
+    || value === 'cancelled'
+  ) return value
+  throw new Error('FLOW_AI_PROVIDER_STATUS_INVALID')
+}
+
+export function normalizeFlowAiResponseId(value: unknown) {
+  const responseId = cleanText(value)
+  if (!/^resp_[A-Za-z0-9_-]{8,200}$/u.test(responseId)) {
+    throw new Error('FLOW_AI_RESPONSE_ID_INVALID')
+  }
+  return responseId
+}
+
+/** Parse the provider metadata shape. Authenticity is verified server-side with HMAC. */
+export function normalizeFlowAiJobMetadata(value: unknown): FlowAiJobMetadataFields {
+  if (!isRecord(value)) throw new Error('FLOW_AI_RESPONSE_METADATA_INVALID')
+  const metadata: FlowAiJobMetadataFields = {
+    app: cleanText(value.app),
+    schema: cleanText(value.schema),
+    snapshot_fingerprint: cleanText(value.snapshot_fingerprint),
+    mode: cleanText(value.mode) as FlowAiMode,
+    target_action_id: cleanText(value.target_action_id),
+    target_action_key: cleanText(value.target_action_key),
+    admin_user_hash: cleanText(value.admin_user_hash),
+    domains_hash: cleanText(value.domains_hash),
+    instruction_hash: cleanText(value.instruction_hash),
+    started_at: cleanText(value.started_at),
+    nonce: cleanText(value.nonce),
+    signature: cleanText(value.signature),
+  }
+  if (
+    metadata.app !== FLOW_AI_JOB_METADATA_APP
+    || metadata.schema !== FLOW_AI_JOB_METADATA_SCHEMA
+    || !/^sha256:[a-f0-9]{64}$/u.test(metadata.snapshot_fingerprint)
+    || !(['create', 'review', 'extend'] as const).includes(metadata.mode)
+    || !metadata.target_action_id
+    || !metadata.target_action_key
+    || !/^[a-f0-9]{64}$/u.test(metadata.admin_user_hash)
+    || !/^[a-f0-9]{64}$/u.test(metadata.domains_hash)
+    || !/^[a-f0-9]{64}$/u.test(metadata.instruction_hash)
+    || !Number.isFinite(Date.parse(metadata.started_at))
+    || !metadata.nonce
+    || !/^[a-f0-9]{64}$/u.test(metadata.signature)
+    || (
+      metadata.mode === 'create'
+      && (metadata.target_action_id !== '-' || metadata.target_action_key !== '-')
+    )
+    || (
+      (metadata.mode === 'review' || metadata.mode === 'extend')
+      && (metadata.target_action_id === '-' || metadata.target_action_key === '-')
+    )
+  ) {
+    throw new Error('FLOW_AI_RESPONSE_METADATA_INVALID')
+  }
+  return metadata
 }
 
 function normalizeSemanticKey(value: unknown) {
