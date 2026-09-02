@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { CheckCircle2, MessageSquarePlus, Send } from 'lucide-react'
 
 type Requirement = {
   id: string
@@ -709,6 +710,12 @@ export default function RenoAppApplyPage() {
     label: string
     description: string
   } | null>(null)
+  const [missingActionTypeOpen, setMissingActionTypeOpen] = useState(false)
+  const [missingActionTypeText, setMissingActionTypeText] = useState('')
+  const [missingActionTypeWebsite, setMissingActionTypeWebsite] = useState('')
+  const [missingActionTypeSending, setMissingActionTypeSending] = useState(false)
+  const [missingActionTypeError, setMissingActionTypeError] = useState<string | null>(null)
+  const [missingActionTypeSent, setMissingActionTypeSent] = useState(false)
   const lastSavedDraftFingerprintRef = useRef('')
   const autosaveDraftRef = useRef<(fingerprint: string) => void>(() => {})
 
@@ -1249,6 +1256,45 @@ export default function RenoAppApplyPage() {
     return () => window.clearTimeout(timeoutId)
   }, [activeDraftToken, autosaveEligible, autosaving, config, draftFingerprint, isNeedInfoCase, savingDraft, submitting])
 
+  const submitMissingActionType = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const message = missingActionTypeText.trim()
+    if (message.length < 5) {
+      setMissingActionTypeError('Beskriv vilken renoveringstyp du saknar.')
+      return
+    }
+
+    setMissingActionTypeSending(true)
+    setMissingActionTypeError(null)
+
+    try {
+      const response = await fetch('/api/renoapp/public/action-type-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brfSlug: slug,
+          message,
+          reporterName: form.applicantName,
+          reporterEmail: form.applicantEmail,
+          website: missingActionTypeWebsite,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Förslaget kunde inte skickas.')
+      }
+
+      setMissingActionTypeText('')
+      setMissingActionTypeSent(true)
+    } catch (feedbackError) {
+      setMissingActionTypeError(
+        feedbackError instanceof Error ? feedbackError.message : 'Förslaget kunde inte skickas.'
+      )
+    } finally {
+      setMissingActionTypeSending(false)
+    }
+  }
+
   const renderStepContent = (stepId: number) => {
     if (stepId === 1) {
       return (
@@ -1393,6 +1439,78 @@ export default function RenoAppApplyPage() {
               </div>
             </div>
           ))}
+
+          <div className="border-t border-stone-200 pt-5">
+            <button
+              type="button"
+              onClick={() => {
+                setMissingActionTypeOpen((current) => !current)
+                setMissingActionTypeError(null)
+              }}
+              aria-expanded={missingActionTypeOpen}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-stone-800 transition hover:text-stone-950"
+            >
+              <MessageSquarePlus size={18} aria-hidden="true" />
+              Saknar du en renoveringstyp?
+            </button>
+
+            {missingActionTypeOpen ? (
+              <form onSubmit={submitMissingActionType} className="mt-4 max-w-2xl border-l-2 border-stone-300 pl-4">
+                {missingActionTypeSent ? (
+                  <div className="flex items-start gap-3 text-sm text-emerald-800" role="status">
+                    <CheckCircle2 size={19} className="mt-0.5 shrink-0" aria-hidden="true" />
+                    <div>
+                      <p className="font-semibold">Förslaget är skickat.</p>
+                      <p className="mt-1 text-emerald-700">Systemadministratören har fått ditt meddelande.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <label htmlFor="missing-action-type" className="block text-sm font-semibold text-stone-900">
+                      Vilken typ av renovering saknas?
+                    </label>
+                    <textarea
+                      id="missing-action-type"
+                      value={missingActionTypeText}
+                      onChange={(event) => {
+                        setMissingActionTypeText(event.target.value)
+                        setMissingActionTypeError(null)
+                      }}
+                      rows={4}
+                      maxLength={1000}
+                      className="mt-2 min-h-28 w-full rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-500"
+                      placeholder="Beskriv renoveringen du vill kunna välja."
+                    />
+                    <input
+                      type="text"
+                      value={missingActionTypeWebsite}
+                      onChange={(event) => setMissingActionTypeWebsite(event.target.value)}
+                      tabIndex={-1}
+                      autoComplete="off"
+                      aria-hidden="true"
+                      className="absolute h-px w-px overflow-hidden opacity-0"
+                    />
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-xs text-stone-500">{missingActionTypeText.length}/1000</span>
+                      <button
+                        type="submit"
+                        disabled={missingActionTypeSending || missingActionTypeText.trim().length < 5}
+                        className="inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Send size={16} aria-hidden="true" />
+                        {missingActionTypeSending ? 'Skickar...' : 'Skicka förslag'}
+                      </button>
+                    </div>
+                    {missingActionTypeError ? (
+                      <p className="mt-3 text-sm text-rose-700" role="alert">
+                        {missingActionTypeError}
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </form>
+            ) : null}
+          </div>
 
           {selectedActions.length > 0 ? (
             <div className="rounded-2xl border-0 bg-transparent p-0 md:rounded-3xl md:border md:border-stone-200 md:bg-white md:p-5">
