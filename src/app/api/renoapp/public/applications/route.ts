@@ -93,7 +93,13 @@ export async function POST(request: Request) {
       return jsonError('Utkastslanken ar inte langre giltig.', 409)
     }
     if (message === 'CASE_LOCKED') {
-      return jsonError('Ärendet är låst för ändringar efter beslut.', 409)
+      return jsonError('Ansökan är inskickad och låst för ändringar.', 409)
+    }
+    if (message === 'COMPLETION_BASE_FIELDS_LOCKED') {
+      return jsonError('Grundansökan är låst. Endast begärda kompletteringar kan ändras.', 409)
+    }
+    if (message === 'COMPLETION_SUBMIT_REQUIRED') {
+      return jsonError('Kompletteringen måste skickas in från kompletteringsvyn.', 409)
     }
     if (message === 'APPLICANT_NAME_REQUIRED') return jsonError('Ange namn.', 400)
     if (message === 'APPLICANT_EMAIL_REQUIRED') return jsonError('Ange e-postadress.', 400)

@@ -181,6 +181,32 @@ type DraftResponse = {
     uploadedAt: string
     note: string | null
   }>
+  completionRequest: {
+    requestedDocuments: Array<{
+      documentTypeId: string
+      label: string
+      description: string | null
+      note: string | null
+    }>
+    requestedParticipants: Array<{
+      participantRoleId: string
+      key: string
+      label: string
+      description: string | null
+      reviewGuidance: string | null
+      roleKind: 'contractor' | 'consultant'
+      verificationInstructions: string | null
+      verificationUrl: string | null
+      insuranceRequired: boolean
+      requiresCompanyName: boolean
+      requiresOrgNumber: boolean
+      requiresContactName: boolean
+      requiresEmail: boolean
+      requiresPhone: boolean
+      requiresCertification: boolean
+      note: string | null
+    }>
+  }
   messages: Array<{
     id: string
     type: 'request_for_info' | 'applicant_reply' | 'document_uploaded' | 'decision' | 'status_change'
@@ -255,11 +281,11 @@ const STEP_ITEMS = [
 
 const VISIBLE_STEP_ITEMS = STEP_ITEMS.filter((item) => item.id !== 3 && item.id !== 4)
 
-function getNextVisibleStepId(currentStep: number | null) {
-  if (currentStep == null) return VISIBLE_STEP_ITEMS[0]?.id ?? 1
+function getNextVisibleStepId(currentStep: number | null, items = VISIBLE_STEP_ITEMS) {
+  if (currentStep == null) return items[0]?.id ?? 1
 
-  const currentIndex = VISIBLE_STEP_ITEMS.findIndex((item) => item.id === currentStep)
-  const nextStep = VISIBLE_STEP_ITEMS[currentIndex + 1]
+  const currentIndex = items.findIndex((item) => item.id === currentStep)
+  const nextStep = items[currentIndex + 1]
   return nextStep?.id ?? currentStep
 }
 
@@ -746,6 +772,15 @@ export default function RenoAppApplyPage() {
         setDraftInfo(payload)
         setUploadedDocuments(payload.documents ?? [])
         setReplyMessage('')
+        if (payload.case.status === 'need_info') {
+          setStep(
+            payload.completionRequest?.requestedDocuments.length > 0
+              ? 3
+              : payload.completionRequest?.requestedParticipants.length > 0
+                ? 4
+                : 5
+          )
+        }
         const nextForm = {
           applicantName: payload.form.applicantName,
           applicantEmail: payload.form.applicantEmail,
@@ -783,8 +818,15 @@ export default function RenoAppApplyPage() {
     [config, form.actionTypeKeys]
   )
   const isNeedInfoCase = draftInfo?.case.status === 'need_info'
+  const isReadOnlyCase = Boolean(
+    draftInfo && draftInfo.case.status !== 'draft' && draftInfo.case.status !== 'need_info'
+  )
   const caseMessages = useMemo(
     () => (draftInfo?.messages ?? []).filter((message) => message.type !== 'document_uploaded'),
+    [draftInfo?.messages]
+  )
+  const latestCompletionRequestMessage = useMemo(
+    () => (draftInfo?.messages ?? []).find((message) => message.type === 'request_for_info')?.message ?? null,
     [draftInfo?.messages]
   )
 
@@ -809,6 +851,55 @@ export default function RenoAppApplyPage() {
     () => mergedRequirements.filter(isBeforePhaseRequirement),
     [mergedRequirements]
   )
+  const completionRequirements = useMemo<Requirement[]>(
+    () =>
+      (draftInfo?.completionRequest?.requestedDocuments ?? []).map((item, index) => ({
+        id: `requested-document:${item.documentTypeId}`,
+        documentTypeId: item.documentTypeId,
+        documentKey: item.documentTypeId,
+        documentLabel: item.label,
+        documentDescription: item.description,
+        isRequired: true,
+        phase: 'before_required',
+        note: item.note,
+        sortOrder: index,
+      })),
+    [draftInfo?.completionRequest?.requestedDocuments]
+  )
+  const completionParticipantRoles = useMemo<ParticipantRole[]>(
+    () =>
+      (draftInfo?.completionRequest?.requestedParticipants ?? []).map((item, index) => ({
+        id: item.participantRoleId,
+        key: item.key,
+        label: item.label,
+        description: item.description,
+        roleKind: item.roleKind,
+        verificationInstructions: item.verificationInstructions,
+        verificationUrl: item.verificationUrl,
+        insuranceRequired: item.insuranceRequired,
+        requiresCompanyName: item.requiresCompanyName,
+        requiresOrgNumber: item.requiresOrgNumber,
+        requiresContactName: item.requiresContactName,
+        requiresEmail: item.requiresEmail,
+        requiresPhone: item.requiresPhone,
+        requiresCertification: item.requiresCertification,
+        isRequired: true,
+        sortOrder: index,
+      })),
+    [draftInfo?.completionRequest?.requestedParticipants]
+  )
+  const requirementsForCurrentFlow = isNeedInfoCase ? completionRequirements : beforePhaseRequirements
+  const participantRolesForCurrentFlow = isNeedInfoCase ? completionParticipantRoles : mergedParticipantRoles
+  const flowStepItems = useMemo(() => {
+    if (!isNeedInfoCase) return VISIBLE_STEP_ITEMS
+
+    return STEP_ITEMS.filter(
+      (item) =>
+        (item.id === 3 && completionRequirements.length > 0) ||
+        (item.id === 4 && completionParticipantRoles.length > 0) ||
+        item.id === 5
+    )
+  }, [completionParticipantRoles.length, completionRequirements.length, isNeedInfoCase])
   const filledParticipantEntryCount = useMemo(
     () =>
       normalizeParticipantEntries(form.participantEntries).filter((entry) =>
@@ -844,7 +935,9 @@ export default function RenoAppApplyPage() {
               .join(', ')
           : 'Inga renoveringar valda ännu.',
       3:
-        selectedActions.length === 0
+        isNeedInfoCase
+          ? `${requirementsForCurrentFlow.length} begärda handlingar.`
+          : selectedActions.length === 0
           ? 'Välj först vad du vill renovera.'
           : beforePhaseRequirements.length > 0
           ? `${requirementGroups.beforeRequired.length} obligatoriska underlag, ${
@@ -852,8 +945,8 @@ export default function RenoAppApplyPage() {
             } övriga underlag.`
           : 'Inga underlag behöver bifogas utifrån dina nuvarande val.',
       4:
-        mergedParticipantRoles.length > 0
-          ? `${filledParticipantEntryCount} av ${mergedParticipantRoles.length} roller ifyllda.`
+        participantRolesForCurrentFlow.length > 0
+          ? `${filledParticipantEntryCount} av ${participantRolesForCurrentFlow.length} roller ifyllda.`
           : 'Inga entreprenörer eller konsulter behövs ännu.',
       5:
         submitResult?.caseNumber
@@ -865,8 +958,10 @@ export default function RenoAppApplyPage() {
       form.applicantEmail,
       form.applicantName,
       filledParticipantEntryCount,
-      mergedParticipantRoles.length,
+      isNeedInfoCase,
+      participantRolesForCurrentFlow.length,
       requirementGroups.beforeRequired.length,
+      requirementsForCurrentFlow.length,
       selectedActions,
       submitResult?.caseNumber,
     ]
@@ -1136,7 +1231,15 @@ export default function RenoAppApplyPage() {
   }
 
   useEffect(() => {
-    if (!config || !activeDraftToken || !autosaveEligible || submitting || savingDraft || autosaving) return
+    if (
+      !config ||
+      !activeDraftToken ||
+      !autosaveEligible ||
+      isNeedInfoCase ||
+      submitting ||
+      savingDraft ||
+      autosaving
+    ) return
     if (draftFingerprint === lastSavedDraftFingerprintRef.current) return
 
     const timeoutId = window.setTimeout(() => {
@@ -1144,7 +1247,7 @@ export default function RenoAppApplyPage() {
     }, 1200)
 
     return () => window.clearTimeout(timeoutId)
-  }, [activeDraftToken, autosaveEligible, autosaving, config, draftFingerprint, savingDraft, submitting])
+  }, [activeDraftToken, autosaveEligible, autosaving, config, draftFingerprint, isNeedInfoCase, savingDraft, submitting])
 
   const renderStepContent = (stepId: number) => {
     if (stepId === 1) {
@@ -1379,25 +1482,26 @@ export default function RenoAppApplyPage() {
       return (
         <div className="grid gap-4">
           <p className="max-w-4xl text-sm leading-7 text-stone-700">
-            Här ser du vad som normalt behöver bifogas utifrån de renoveringstyper du valt. Om något saknas nu kan du
-            ändå spara utkastet och komplettera senare.
+            {isNeedInfoCase
+              ? 'Ladda upp de handlingar som styrelsen har begärt. Befintliga handlingar ligger kvar i ärendet.'
+              : 'Här ser du vad som normalt behöver bifogas utifrån de renoveringstyper du valt. Om något saknas nu kan du ändå spara utkastet och komplettera senare.'}
           </p>
-          {!activeDraftToken && beforePhaseRequirements.length > 0 ? (
+          {!activeDraftToken && requirementsForCurrentFlow.length > 0 ? (
             <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               Fyll först i lägenhet och kontakt så att utkastet kan skapas innan du laddar upp dokument.
             </div>
           ) : null}
-          {selectedActions.length === 0 ? (
+          {!isNeedInfoCase && selectedActions.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
               Välj först minst en renoveringstyp i steg 2.
             </div>
-          ) : beforePhaseRequirements.length === 0 ? (
+          ) : requirementsForCurrentFlow.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
               Inga underlag behöver bifogas utifrån dina nuvarande val.
             </div>
           ) : (
             <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white">
-              {beforePhaseRequirements.map((requirement, index) => {
+              {requirementsForCurrentFlow.map((requirement, index) => {
                 const requirementDocuments = uploadedDocuments.filter(
                   (item) => item.documentTypeId === requirement.documentTypeId
                 )
@@ -1477,13 +1581,13 @@ export default function RenoAppApplyPage() {
     if (stepId === 4) {
       return (
         <div className="grid gap-4">
-          {mergedParticipantRoles.length === 0 ? (
+          {participantRolesForCurrentFlow.length === 0 ? (
             <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
               Inga entreprenörer eller konsulter behöver anges utifrån dina nuvarande val.
             </div>
           ) : null}
 
-          {mergedParticipantRoles.map((participantRole) => {
+          {participantRolesForCurrentFlow.map((participantRole) => {
             const entry = getParticipantEntry(participantRole.id)
             const insuranceDocuments = uploadedDocuments.filter(
               (item) =>
@@ -1817,12 +1921,22 @@ export default function RenoAppApplyPage() {
         {draftInfo ? (
           <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
             <p className="font-semibold">
-              {isNeedInfoCase ? 'Styrelsen har begärt komplettering i ditt ärende.' : 'Du arbetar i ett sparat ärende.'}
+              {isNeedInfoCase
+                ? 'Styrelsen har begärt komplettering i ditt ärende.'
+                : isReadOnlyCase
+                  ? 'Ansökan är inskickad och låst för ändringar.'
+                  : 'Du arbetar i ett sparat ärende.'}
             </p>
             <p className="mt-2">
               Ärendenummer {draftInfo.case.caseNumber} har status {formatCaseStatus(draftInfo.case.status)} och uppdaterades senast{' '}
               {formatDateTime(draftInfo.case.updatedAt)}.
             </p>
+            {isNeedInfoCase && latestCompletionRequestMessage ? (
+              <div className="mt-4 border-t border-amber-200 pt-4">
+                <p className="font-semibold text-amber-950">Styrelsens begäran</p>
+                <p className="mt-2 whitespace-pre-wrap leading-7">{latestCompletionRequestMessage}</p>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1854,19 +1968,34 @@ export default function RenoAppApplyPage() {
           </div>
         ) : null}
 
-        <div className="mt-4 rounded-2xl border border-stone-200 bg-white/80 p-4 md:mt-6 md:rounded-3xl md:p-5">
+        {isReadOnlyCase ? (
+          <div className="mt-4 rounded-2xl border border-stone-200 bg-white/80 p-4 md:mt-6 md:rounded-3xl md:p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Inskickad ansökan</p>
+            <h2 className="mt-2 text-2xl font-semibold text-stone-900">Styrelsen handlägger ärendet</h2>
+            <p className="mt-2 text-sm leading-7 text-stone-600">
+              Grundansökan kan inte ändras efter inskickning. Om styrelsen behöver mer information skickas en ny
+              kompletteringsbegäran till den här adressen.
+            </p>
+            <div className="mt-6">{renderStepContent(5)}</div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-stone-200 bg-white/80 p-4 md:mt-6 md:rounded-3xl md:p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökan steg för steg</p>
-              <h2 className="mt-2 text-2xl font-semibold text-stone-900">Fyll ett steg i taget</h2>
+              <h2 className="mt-2 text-2xl font-semibold text-stone-900">
+                {isNeedInfoCase ? 'Komplettera det styrelsen har begärt' : 'Fyll ett steg i taget'}
+              </h2>
               <p className="mt-2 text-sm text-stone-600">
-                Varje steg öppnas direkt under sin egen rad. Du kan alltid öppna ett tidigare steg igen och ändra något.
+                {isNeedInfoCase
+                  ? 'Grundansökan är låst. Lägg till efterfrågade handlingar eller uppgifter och skicka sedan kompletteringen.'
+                  : 'Varje steg öppnas direkt under sin egen rad. Du kan alltid öppna ett tidigare steg igen och ändra något.'}
               </p>
             </div>
           </div>
 
           <div className="mt-4 space-y-2 md:mt-6 md:space-y-3">
-            {VISIBLE_STEP_ITEMS.map((item, visibleIndex) => {
+            {flowStepItems.map((item, visibleIndex) => {
               const isOpen = step === item.id
 
               return (
@@ -1915,7 +2044,7 @@ export default function RenoAppApplyPage() {
             </div>
           ) : null}
 
-          {autosaveEligible && !submitResult ? (
+          {autosaveEligible && !isNeedInfoCase && !submitResult ? (
             <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
               {autosaving
                 ? 'Autosparar utkast...'
@@ -1929,7 +2058,7 @@ export default function RenoAppApplyPage() {
             {step !== 5 ? (
               <button
                 type="button"
-                onClick={() => setStep((current) => getNextVisibleStepId(current))}
+                onClick={() => setStep((current) => getNextVisibleStepId(current, flowStepItems))}
                 className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
               >
                 Nästa steg
@@ -1954,15 +2083,18 @@ export default function RenoAppApplyPage() {
                 {savingDraft ? 'Sparar...' : 'Spara och fortsätt senare'}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={clearForm}
-              className="rounded-full border border-rose-300 px-5 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
-            >
-              Rensa formulär
-            </button>
+            {!isNeedInfoCase ? (
+              <button
+                type="button"
+                onClick={clearForm}
+                className="rounded-full border border-rose-300 px-5 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+              >
+                Rensa formulär
+              </button>
+            ) : null}
           </div>
-        </div>
+          </div>
+        )}
       </section>
       {actionDescriptionModal ? (
         <div

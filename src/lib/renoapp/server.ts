@@ -888,6 +888,32 @@ export type RenoAppPublicApplicationDraft = {
     uploadedAt: string
     note: string | null
   }>
+  completionRequest: {
+    requestedDocuments: Array<{
+      documentTypeId: string
+      label: string
+      description: string | null
+      note: string | null
+    }>
+    requestedParticipants: Array<{
+      participantRoleId: string
+      key: string
+      label: string
+      description: string | null
+      reviewGuidance: string | null
+      roleKind: 'contractor' | 'consultant'
+      verificationInstructions: string | null
+      verificationUrl: string | null
+      insuranceRequired: boolean
+      requiresCompanyName: boolean
+      requiresOrgNumber: boolean
+      requiresContactName: boolean
+      requiresEmail: boolean
+      requiresPhone: boolean
+      requiresCertification: boolean
+      note: string | null
+    }>
+  }
   messages: RenoAppCaseMessage[]
 }
 
@@ -3822,7 +3848,22 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
 
   const caseRow = caseData as Record<string, unknown>
   const brfId = String(caseRow.brf_id ?? '')
-  const [brfResult, contactResult, unitResult, actionTypeRows, actionTypes, documentsResult, answerRows, participantRows, questionRows, optionRows, messages] = await Promise.all([
+  const [
+    brfResult,
+    contactResult,
+    unitResult,
+    actionTypeRows,
+    actionTypes,
+    documentsResult,
+    answerRows,
+    participantRows,
+    questionRows,
+    optionRows,
+    messages,
+    requirementDecisionsResult,
+    documentTypesResult,
+    participantRolesResult,
+  ] = await Promise.all([
     admin.from('brf_associations').select('id,name,slug').eq('id', brfId).maybeSingle(),
     caseRow.applicant_contact_id
       ? admin.from('contacts').select('id,name,email,phone').eq('id', String(caseRow.applicant_contact_id)).maybeSingle()
@@ -3846,6 +3887,20 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     admin.from('renoapp_apply_questions').select('id,key').order('sort_order', { ascending: true }),
     admin.from('renoapp_apply_question_options').select('id,question_id,key').order('sort_order', { ascending: true }),
     listCaseMessages(admin, String(caseRow.id ?? '')),
+    admin
+      .from('renoapp_case_requirement_decisions')
+      .select('id,case_id,document_type_id,participant_role_id,decision,note,decided_at')
+      .eq('case_id', String(caseRow.id ?? '')),
+    admin
+      .from('renovation_document_types')
+      .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
+      .order('sort_order', { ascending: true }),
+    admin
+      .from('renoapp_participant_roles')
+      .select(
+        'id,key,label,description,review_guidance,role_kind,verification_instructions,verification_url,insurance_required,requires_company_name,requires_org_number,requires_contact_name,requires_email,requires_phone,requires_certification,sort_order,is_active'
+      )
+      .order('sort_order', { ascending: true }),
   ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
@@ -3855,6 +3910,15 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
   if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte lasa dokument.')
   if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa frÃ¥gor.')
   if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte lasa svarsalternativ.')
+  if (requirementDecisionsResult.error) {
+    throw new Error(requirementDecisionsResult.error.message ?? 'Kunde inte läsa begärda kompletteringar.')
+  }
+  if (documentTypesResult.error) {
+    throw new Error(documentTypesResult.error.message ?? 'Kunde inte läsa dokumenttyper.')
+  }
+  if (participantRolesResult.error) {
+    throw new Error(participantRolesResult.error.message ?? 'Kunde inte läsa deltagarroller.')
+  }
 
   const actionTypeIdSet = new Set(
     actionTypeRows
@@ -3885,6 +3949,18 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       return acc
     },
     {} as Record<string, string[]>
+  )
+  const requestedDecisions = ((requirementDecisionsResult.data ?? []) as CaseRequirementDecisionRow[]).filter(
+    (decision) => decision.decision === 'requested'
+  )
+  const documentTypeById = new Map(
+    ((documentTypesResult.data ?? []) as DocumentTypeRow[]).map((documentType) => [documentType.id, documentType])
+  )
+  const participantRoleById = new Map(
+    ((participantRolesResult.data ?? []) as ParticipantRoleRow[]).map((participantRole) => [
+      participantRole.id,
+      participantRole,
+    ])
   )
 
   return {
@@ -3943,8 +4019,89 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       uploadedAt: String(row.uploaded_at ?? ''),
       note: (row.note as string | null | undefined) ?? null,
     })),
+    completionRequest: {
+      requestedDocuments: requestedDecisions.flatMap((decision) => {
+        if (!decision.document_type_id) return []
+        const documentType = documentTypeById.get(decision.document_type_id)
+        if (!documentType) return []
+
+        return [
+          {
+            documentTypeId: documentType.id,
+            label: documentType.label,
+            description: documentType.description,
+            note: decision.note,
+          },
+        ]
+      }),
+      requestedParticipants: requestedDecisions.flatMap((decision) => {
+        if (!decision.participant_role_id) return []
+        const participantRole = participantRoleById.get(decision.participant_role_id)
+        if (!participantRole) return []
+
+        return [
+          {
+            participantRoleId: participantRole.id,
+            key: participantRole.key,
+            label: participantRole.label,
+            description: participantRole.description,
+            reviewGuidance: participantRole.review_guidance,
+            roleKind: participantRole.role_kind,
+            verificationInstructions: participantRole.verification_instructions,
+            verificationUrl: participantRole.verification_url,
+            insuranceRequired: participantRole.insurance_required,
+            requiresCompanyName: participantRole.requires_company_name,
+            requiresOrgNumber: participantRole.requires_org_number,
+            requiresContactName: participantRole.requires_contact_name,
+            requiresEmail: participantRole.requires_email,
+            requiresPhone: participantRole.requires_phone,
+            requiresCertification: participantRole.requires_certification,
+            note: decision.note,
+          },
+        ]
+      }),
+    },
     messages,
   }
+}
+
+function canonicalStringSet(values: string[]) {
+  return JSON.stringify(Array.from(new Set(values)).sort((left, right) => left.localeCompare(right, 'sv')))
+}
+
+function canonicalQuestionAnswers(value: Record<string, string[]>) {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => Boolean(key))
+        .sort(([left], [right]) => left.localeCompare(right, 'sv'))
+        .map(([key, values]) => [key, Array.from(new Set(values)).sort((left, right) => left.localeCompare(right, 'sv'))])
+    )
+  )
+}
+
+function canonicalParticipantEntry(value: {
+  participantRoleId: string
+  companyName: string
+  orgNumber: string
+  contactName: string
+  email: string
+  phone: string
+  certificationReference: string
+  hasVerifiedAuthorization: boolean
+  acceptsResponsibility: boolean
+}) {
+  return JSON.stringify({
+    participantRoleId: normalizeText(value.participantRoleId) ?? '',
+    companyName: normalizeText(value.companyName) ?? '',
+    orgNumber: normalizeText(value.orgNumber) ?? '',
+    contactName: normalizeText(value.contactName) ?? '',
+    email: normalizeEmail(value.email) ?? '',
+    phone: normalizeText(value.phone) ?? '',
+    certificationReference: normalizeText(value.certificationReference) ?? '',
+    hasVerifiedAuthorization: value.hasVerifiedAuthorization === true,
+    acceptsResponsibility: value.acceptsResponsibility === true,
+  })
 }
 
 export async function upsertPublicApplication(
@@ -4105,9 +4262,68 @@ export async function upsertPublicApplication(
     }
   }
 
-  const lockedStatuses = new Set(['approved', 'rejected'])
-  if (existingCase && lockedStatuses.has(String(existingCase.status ?? ''))) {
+  const existingStatus = String(existingCase?.status ?? '')
+  if (existingCase && existingStatus !== 'draft' && existingStatus !== 'need_info') {
     throw new Error('CASE_LOCKED')
+  }
+
+  const isCompletionCase = existingStatus === 'need_info'
+  const requestedCompletionParticipantRoleIds = new Set<string>()
+
+  if (isCompletionCase) {
+    if (mode !== 'submit' || !input.draftToken) {
+      throw new Error('COMPLETION_SUBMIT_REQUIRED')
+    }
+
+    const originalDraft = await getPublicApplicationDraftByToken(input.draftToken)
+    if (!originalDraft || originalDraft.case.id !== draftCaseId) {
+      throw new Error('DRAFT_LINK_INVALID')
+    }
+
+    for (const participant of originalDraft.completionRequest.requestedParticipants) {
+      requestedCompletionParticipantRoleIds.add(participant.participantRoleId)
+    }
+
+    const originalForm = originalDraft.form
+    const foundationChanged =
+      applicantName !== normalizeText(originalForm.applicantName) ||
+      applicantEmail !== normalizeEmail(originalForm.applicantEmail) ||
+      applicantPhone !== normalizeText(originalForm.applicantPhone) ||
+      unitNumberInternal !== normalizeText(originalForm.unitNumberInternal) ||
+      unitNumberSkatteverket !== normalizeText(originalForm.unitNumberSkatteverket) ||
+      description !== normalizeText(originalForm.description) ||
+      contractorName !== normalizeText(originalForm.contractorName) ||
+      contractorOrgNumber !== normalizeText(originalForm.contractorOrgNumber) ||
+      contractorEmail !== normalizeEmail(originalForm.contractorEmail) ||
+      contractorPhone !== normalizeText(originalForm.contractorPhone) ||
+      contractorHasRequiredCertification !== originalForm.contractorHasRequiredCertification ||
+      canonicalStringSet(actionTypeKeys) !== canonicalStringSet(originalForm.actionTypeKeys) ||
+      canonicalQuestionAnswers(questionAnswersInput) !== canonicalQuestionAnswers(originalForm.questionAnswers)
+
+    if (foundationChanged) {
+      throw new Error('COMPLETION_BASE_FIELDS_LOCKED')
+    }
+
+    const originalParticipantByRoleId = new Map(
+      originalForm.participantEntries.map((entry) => [entry.participantRoleId, entry] as const)
+    )
+    const submittedParticipantByRoleId = new Map(
+      participantEntriesInput.map((entry) => [entry.participantRoleId, entry] as const)
+    )
+    const participantRoleIds = new Set([
+      ...originalParticipantByRoleId.keys(),
+      ...submittedParticipantByRoleId.keys(),
+    ])
+
+    for (const participantRoleId of participantRoleIds) {
+      if (requestedCompletionParticipantRoleIds.has(participantRoleId)) continue
+
+      const originalEntry = originalParticipantByRoleId.get(participantRoleId)
+      const submittedEntry = submittedParticipantByRoleId.get(participantRoleId)
+      if (!originalEntry || !submittedEntry || canonicalParticipantEntry(originalEntry) !== canonicalParticipantEntry(submittedEntry)) {
+        throw new Error('COMPLETION_BASE_FIELDS_LOCKED')
+      }
+    }
   }
 
   const contact = await upsertPublicApplicationContact({
@@ -4135,7 +4351,6 @@ export async function upsertPublicApplication(
   const derivedChecks = deriveChecksFromActionTypes(selectedActionTypes)
   const riskLevel = computeRiskLevelFromActionTypes(selectedActionTypes)
   const title = buildPublicCaseTitle(selectedActionTypes)
-  const existingStatus = String(existingCase?.status ?? '')
   const nextStatus =
     mode === 'draft'
       ? existingStatus && existingStatus !== 'draft'
@@ -4194,6 +4409,15 @@ export async function upsertPublicApplication(
     if (checksError) {
       throw new Error(checksError.message ?? 'Kunde inte spara teknisk pÃ¥verkan.')
     }
+  } else if (isCompletionCase) {
+    const { error: updateCaseError } = await admin
+      .from('renovation_cases')
+      .update({ status: nextStatus })
+      .eq('id', caseId)
+
+    if (updateCaseError) {
+      throw new Error(updateCaseError.message ?? 'Kunde inte uppdatera kompletteringen.')
+    }
   } else {
     const { error: updateCaseError } = await admin
       .from('renovation_cases')
@@ -4235,64 +4459,83 @@ export async function upsertPublicApplication(
     }
   }
 
-  await replaceCaseActionTypes(
-    admin,
-    caseId,
-    selectedActionTypes.map((item) => item.id)
-  )
+  if (!isCompletionCase) {
+    await replaceCaseActionTypes(
+      admin,
+      caseId,
+      selectedActionTypes.map((item) => item.id)
+    )
 
-  const optionIdByQuestionAndKey = new Map<string, string>()
-  for (const question of applicableQuestions) {
-    for (const option of question.options) {
-      optionIdByQuestionAndKey.set(`${question.id}:${option.key}`, option.id)
+    const optionIdByQuestionAndKey = new Map<string, string>()
+    for (const question of applicableQuestions) {
+      for (const option of question.options) {
+        optionIdByQuestionAndKey.set(`${question.id}:${option.key}`, option.id)
+      }
     }
-  }
 
-  const { error: deleteAnswerError } = await admin
-    .from('renoapp_case_question_answers')
-    .delete()
-    .eq('case_id', caseId)
-
-  if (deleteAnswerError) {
-    throw new Error(deleteAnswerError.message ?? 'Kunde inte uppdatera frÃ¥gesvar.')
-  }
-
-  const answerRowsToInsert = applicableQuestions.flatMap((question) => {
-    const selectedOptionKeys = questionAnswersInput[question.key] ?? []
-    const normalizedSelectedKeys =
-      question.responseType === 'multi_select' ? selectedOptionKeys : selectedOptionKeys.slice(0, 1)
-
-    return normalizedSelectedKeys
-      .map((optionKey) => optionIdByQuestionAndKey.get(`${question.id}:${optionKey}`))
-      .filter((optionId): optionId is string => Boolean(optionId))
-      .map((optionId) => ({
-        case_id: caseId,
-        question_id: question.id,
-        option_id: optionId,
-      }))
-  })
-
-  if (answerRowsToInsert.length > 0) {
-    const { error: insertAnswerError } = await admin
+    const { error: deleteAnswerError } = await admin
       .from('renoapp_case_question_answers')
-      .insert(answerRowsToInsert)
+      .delete()
+      .eq('case_id', caseId)
 
-    if (insertAnswerError) {
-      throw new Error(insertAnswerError.message ?? 'Kunde inte spara frÃ¥gesvar.')
+    if (deleteAnswerError) {
+      throw new Error(deleteAnswerError.message ?? 'Kunde inte uppdatera frÃ¥gesvar.')
+    }
+
+    const answerRowsToInsert = applicableQuestions.flatMap((question) => {
+      const selectedOptionKeys = questionAnswersInput[question.key] ?? []
+      const normalizedSelectedKeys =
+        question.responseType === 'multi_select' ? selectedOptionKeys : selectedOptionKeys.slice(0, 1)
+
+      return normalizedSelectedKeys
+        .map((optionKey) => optionIdByQuestionAndKey.get(`${question.id}:${optionKey}`))
+        .filter((optionId): optionId is string => Boolean(optionId))
+        .map((optionId) => ({
+          case_id: caseId,
+          question_id: question.id,
+          option_id: optionId,
+        }))
+    })
+
+    if (answerRowsToInsert.length > 0) {
+      const { error: insertAnswerError } = await admin
+        .from('renoapp_case_question_answers')
+        .insert(answerRowsToInsert)
+
+      if (insertAnswerError) {
+        throw new Error(insertAnswerError.message ?? 'Kunde inte spara frÃ¥gesvar.')
+      }
     }
   }
 
   const applicantEmailValue = applicantEmail ?? null
-  const { error: deleteParticipantError } = await admin
-    .from('renoapp_case_participants')
-    .delete()
-    .eq('case_id', caseId)
+  if (isCompletionCase) {
+    if (requestedCompletionParticipantRoleIds.size > 0) {
+      const { error: deleteParticipantError } = await admin
+        .from('renoapp_case_participants')
+        .delete()
+        .eq('case_id', caseId)
+        .in('participant_role_id', Array.from(requestedCompletionParticipantRoleIds))
 
-  if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
+      if (deleteParticipantError) {
+        throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera begärda deltagaruppgifter.')
+      }
+    }
+  } else {
+    const { error: deleteParticipantError } = await admin
+      .from('renoapp_case_participants')
+      .delete()
+      .eq('case_id', caseId)
+
+    if (deleteParticipantError) {
+      throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
+    }
   }
 
   const participantRowsToInsert = participantEntriesInput
+    .filter(
+      (item) => !isCompletionCase || requestedCompletionParticipantRoleIds.has(item.participantRoleId)
+    )
     .filter((item) =>
       Boolean(
         item.companyName ||

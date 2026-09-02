@@ -50,8 +50,8 @@ async function getWritableAccess(token: string) {
   if (access.state !== 'open') {
     return { error: jsonError('Länken är inte längre aktiv.', 409), access: null }
   }
-  if (access.case.status === 'approved' || access.case.status === 'rejected') {
-    return { error: jsonError('Ärendet är låst för ändringar efter beslut.', 409), access: null }
+  if (access.case.status !== 'draft' && access.case.status !== 'need_info') {
+    return { error: jsonError('Ansökan är inskickad och låst för ändringar.', 409), access: null }
   }
   if (!access.access.allowedActions.includes('upload_documents')) {
     return { error: jsonError('Länken saknar rätt att ladda upp dokument.', 403), access: null }
@@ -87,6 +87,30 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const admin = createSupabaseAdminClient()
+    if (access.case.status === 'need_info') {
+      if (!documentTypeId && !participantRoleId) {
+        return jsonError('Välj den komplettering som dokumentet hör till.', 400)
+      }
+
+      let requestedTargetQuery = admin
+        .from('renoapp_case_requirement_decisions')
+        .select('id')
+        .eq('case_id', access.case.id)
+        .eq('decision', 'requested')
+
+      requestedTargetQuery = documentTypeId
+        ? requestedTargetQuery.eq('document_type_id', documentTypeId)
+        : requestedTargetQuery.eq('participant_role_id', participantRoleId)
+
+      const { data: requestedTarget, error: requestedTargetError } = await requestedTargetQuery.maybeSingle()
+      if (requestedTargetError) {
+        throw new Error(requestedTargetError.message ?? 'Kunde inte kontrollera begärd komplettering.')
+      }
+      if (!requestedTarget) {
+        return jsonError('Styrelsen har inte begärt den här kompletteringen.', 403)
+      }
+    }
+
     const ext = resolveFileExtension(fileEntry)
     const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`
     const filePath = `${access.case.id}/documents/${fileName}`
@@ -163,7 +187,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     const admin = createSupabaseAdminClient()
     const { data: documentRow, error: documentError } = await admin
       .from('renovation_case_documents')
-      .select('id,case_id,storage_bucket,file_path')
+      .select('id,case_id,document_type_id,participant_role_id,uploaded_at,storage_bucket,file_path')
       .eq('id', documentId)
       .eq('case_id', access.case.id)
       .maybeSingle()
@@ -173,6 +197,33 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
     if (!documentRow) {
       return jsonError('Dokumentet hittades inte.', 404)
+    }
+
+    if (access.case.status === 'need_info') {
+      const documentTypeId = String(documentRow.document_type_id ?? '').trim()
+      const participantRoleId = String(documentRow.participant_role_id ?? '').trim()
+      let requestedTargetQuery = admin
+        .from('renoapp_case_requirement_decisions')
+        .select('id,decided_at')
+        .eq('case_id', access.case.id)
+        .eq('decision', 'requested')
+        .order('decided_at', { ascending: false })
+        .limit(1)
+
+      requestedTargetQuery = documentTypeId
+        ? requestedTargetQuery.eq('document_type_id', documentTypeId)
+        : requestedTargetQuery.eq('participant_role_id', participantRoleId)
+
+      const { data: requestedTarget, error: requestedTargetError } = await requestedTargetQuery.maybeSingle()
+      if (requestedTargetError) {
+        throw new Error(requestedTargetError.message ?? 'Kunde inte kontrollera begärd komplettering.')
+      }
+
+      const uploadedAt = new Date(String(documentRow.uploaded_at ?? '')).getTime()
+      const requestedAt = new Date(String(requestedTarget?.decided_at ?? '')).getTime()
+      if (!requestedTarget || !Number.isFinite(uploadedAt) || !Number.isFinite(requestedAt) || uploadedAt < requestedAt) {
+        return jsonError('Tidigare inskickade handlingar kan inte raderas under kompletteringen.', 409)
+      }
     }
 
     const bucket = String(documentRow.storage_bucket ?? '')
