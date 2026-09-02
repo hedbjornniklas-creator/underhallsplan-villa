@@ -35,7 +35,7 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     const brfId = String(caseRow.brf_id ?? '')
-    if (viewer.accessibleBrfIds && !viewer.accessibleBrfIds.includes(brfId)) {
+    if (viewer.authorizedBrfIds && !viewer.authorizedBrfIds.includes(brfId)) {
       return notFoundResponse()
     }
 

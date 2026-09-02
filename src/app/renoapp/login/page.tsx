@@ -23,6 +23,17 @@ function isRecoveryContext() {
   )
 }
 
+function getSafeReturnPath() {
+  if (typeof window === 'undefined') return '/renoapp/app'
+
+  const value = new URLSearchParams(window.location.search).get('next')
+  if (value === '/renoapp/app' || value?.startsWith('/renoapp/app/')) {
+    return value
+  }
+
+  return '/renoapp/app'
+}
+
 export default function RenoAppLoginPage() {
   const router = useRouter()
   const authRedirectTo =
@@ -37,7 +48,7 @@ export default function RenoAppLoginPage() {
     }
 
     supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (data.session) router.replace('/renoapp/app')
+      if (data.session) router.replace(getSafeReturnPath())
     })
 
     const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
@@ -47,7 +58,7 @@ export default function RenoAppLoginPage() {
       }
 
       if (session) {
-        router.replace('/renoapp/app')
+        router.replace(getSafeReturnPath())
       }
     })
 

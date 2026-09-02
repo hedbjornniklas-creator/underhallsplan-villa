@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { redirect } from 'next/navigation'
 import { requireModuleAccess } from '@/lib/access/server'
+import RenoAppLoginRedirect from '@/components/renoapp/RenoAppLoginRedirect'
 
 export default async function RenoAppAppLayout({ children }: { children: ReactNode }) {
   try {
@@ -10,7 +10,7 @@ export default async function RenoAppAppLayout({ children }: { children: ReactNo
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-      redirect('/renoapp/login')
+      return <RenoAppLoginRedirect />
     }
 
     return (

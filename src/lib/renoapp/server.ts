@@ -1169,6 +1169,7 @@ export type RenoAppViewerContext = {
     role: 'board' | 'admin'
   }>
   activeBrfId: string | null
+  authorizedBrfIds: string[] | null
   accessibleBrfIds: string[] | null
 }
 
@@ -4698,6 +4699,7 @@ export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContex
     isInternalAdmin: accessContext.identity.isLegacyAdmin,
     brfs,
     activeBrfId,
+    authorizedBrfIds: accessContext.identity.isLegacyAdmin ? null : brfs.map((item) => item.id),
     accessibleBrfIds: activeBrfId ? [activeBrfId] : brfs.length > 0 ? brfs.map((item) => item.id) : null,
   }
 }
@@ -5403,16 +5405,68 @@ async function listRenoAppNotificationRecipients(input: {
     return []
   }
 
-  const { data: profileRows, error: profileError } = await input.admin
-    .from('profiles')
-    .select('id,full_name,email')
-    .in('id', profileIds)
+  const [profilesResult, assignmentsResult] = await Promise.all([
+    input.admin.from('profiles').select('id,full_name,email,is_admin').in('id', profileIds),
+    input.admin
+      .from('platform_access_assignments')
+      .select('profile_id,scope_type,scope_id,expires_at,platform_products(key),platform_modules(key)')
+      .in('profile_id', profileIds)
+      .eq('is_active', true),
+  ])
 
-  if (profileError) {
-    throw new Error(profileError.message ?? 'Kunde inte lÃ¤sa profiler fÃ¶r notifiering.')
+  if (profilesResult.error) {
+    throw new Error(profilesResult.error.message ?? 'Kunde inte lÃ¤sa profiler fÃ¶r notifiering.')
   }
 
-  return ((profileRows ?? []) as Array<Record<string, unknown>>)
+  const normalizedAssignmentsByProfile = new Map<string, Array<Record<string, unknown>>>()
+  const canVerifyNormalizedAccess = !assignmentsResult.error
+  const now = Date.now()
+
+  if (canVerifyNormalizedAccess) {
+    for (const row of (assignmentsResult.data ?? []) as Array<Record<string, unknown>>) {
+      const productRelation = Array.isArray(row.platform_products)
+        ? row.platform_products[0]
+        : row.platform_products
+      const productKey =
+        productRelation && typeof productRelation === 'object' && 'key' in productRelation
+          ? String(productRelation.key ?? '')
+          : ''
+      if (productKey !== 'renoapp') continue
+
+      const expiresAt = typeof row.expires_at === 'string' ? row.expires_at : null
+      if (expiresAt && new Date(expiresAt).getTime() < now) continue
+
+      const profileId = String(row.profile_id ?? '')
+      if (!profileId) continue
+      const bucket = normalizedAssignmentsByProfile.get(profileId) ?? []
+      bucket.push(row)
+      normalizedAssignmentsByProfile.set(profileId, bucket)
+    }
+  }
+
+  return ((profilesResult.data ?? []) as Array<Record<string, unknown>>)
+    .filter((row) => {
+      if (row.is_admin === true || !canVerifyNormalizedAccess) return true
+
+      const assignments = normalizedAssignmentsByProfile.get(String(row.id ?? '')) ?? []
+      if (assignments.length === 0) return true
+
+      return assignments.some((assignment) => {
+        const moduleRelation = Array.isArray(assignment.platform_modules)
+          ? assignment.platform_modules[0]
+          : assignment.platform_modules
+        const moduleKey =
+          moduleRelation && typeof moduleRelation === 'object' && 'key' in moduleRelation
+            ? String(moduleRelation.key ?? '')
+            : ''
+
+        return (
+          moduleKey === 'board_portal' &&
+          assignment.scope_type === 'brf' &&
+          assignment.scope_id === input.brfId
+        )
+      })
+    })
     .map((row) => ({
       email: normalizeEmail(row.email),
       fullName: (row.full_name as string | null | undefined) ?? null,
@@ -7739,7 +7793,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   }
 
   const caseRow = caseData as CaseRow
-  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(caseRow.brf_id)) {
+  if (context.authorizedBrfIds && !context.authorizedBrfIds.includes(caseRow.brf_id)) {
     throw new Error('CASE_NOT_FOUND')
   }
 
@@ -8085,7 +8139,7 @@ export async function saveRenoAppCaseRequirementDecision(
   }
 
   const brfId = String(caseData.brf_id ?? '')
-  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(brfId)) {
+  if (context.authorizedBrfIds && !context.authorizedBrfIds.includes(brfId)) {
     throw new Error('CASE_NOT_FOUND')
   }
 
@@ -8190,7 +8244,7 @@ export async function updateRenoAppCaseStatus(
 
   const brfId = String(caseData.brf_id ?? '')
   const currentStatus = String(caseData.status ?? '')
-  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(brfId)) {
+  if (context.authorizedBrfIds && !context.authorizedBrfIds.includes(brfId)) {
     throw new Error('CASE_NOT_FOUND')
   }
 
