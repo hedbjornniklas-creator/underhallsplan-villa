@@ -2133,7 +2133,7 @@ export default function TuInvestigationEditorClient({
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 md:px-6">
         <header className="space-y-4 border-b border-violet-100 pb-4">
           <Link
-            href="/tu"
+              href="/tu/investigations"
             className="inline-flex items-center gap-2 text-sm font-medium text-violet-800 hover:text-violet-950"
           >
             <ArrowLeft size={16} aria-hidden />
