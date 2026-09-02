@@ -2239,6 +2239,8 @@ export default function TuInvestigationEditorClient({
               finalizationBlockedReason={finalizationBlockedReason}
               stageLabel={aiWorkflowEnabled ? 'Steg 5' : 'Leverans'}
               onStatusChange={handleDeliveryStatusChange}
+              onOpenEvidence={aiWorkflowEnabled ? () => setWorkspaceView('evidence') : undefined}
+              onOpenReport={() => setWorkspaceView('report')}
             />
           </div>
         ) : (

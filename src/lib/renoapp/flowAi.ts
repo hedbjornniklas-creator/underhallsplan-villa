@@ -34,7 +34,33 @@ export type FlowAiProviderStatus =
   | 'cancelled'
 
 export const FLOW_AI_JOB_METADATA_APP = 'renoapp_flow_ai' as const
-export const FLOW_AI_JOB_METADATA_SCHEMA = '1' as const
+export const FLOW_AI_JOB_METADATA_SCHEMA = '2' as const
+export const FLOW_AI_DEFAULT_MAX_OUTPUT_TOKENS = 64_000
+export const FLOW_AI_MIN_MAX_OUTPUT_TOKENS = 16_000
+export const FLOW_AI_MAX_MAX_OUTPUT_TOKENS = 128_000
+export const FLOW_AI_DEFAULT_REASONING_EFFORT = 'medium' as const
+export const FLOW_AI_MAX_PROPOSED_CHANGES = 64
+export const FLOW_AI_MAX_PROPOSED_SOURCES = 16
+export const FLOW_AI_MAX_TEST_SCENARIOS = 6
+
+export type FlowAiReasoningEffort = 'low' | 'medium' | 'high'
+export type FlowAiIncompleteReason = 'max_output_tokens' | 'content_filter' | 'unknown'
+
+export type FlowAiGenerationConfig = {
+  maxOutputTokens: number
+  reasoningEffort: FlowAiReasoningEffort
+}
+
+export type FlowAiTokenUsage = {
+  inputTokens: number | null
+  outputTokens: number | null
+  reasoningTokens: number | null
+  totalTokens: number | null
+}
+
+export type FlowAiTerminalDiagnostics = FlowAiTokenUsage & FlowAiGenerationConfig & {
+  reason: FlowAiIncompleteReason
+}
 
 export type FlowAiJobMetadataFields = {
   app: string
@@ -46,6 +72,8 @@ export type FlowAiJobMetadataFields = {
   admin_user_hash: string
   domains_hash: string
   instruction_hash: string
+  max_output_tokens: string
+  reasoning_effort: FlowAiReasoningEffort
   started_at: string
   nonce: string
   signature: string
@@ -229,6 +257,7 @@ export type FlowAiTerminalErrorResponse = FlowAiJobSummary & {
   error: {
     code: string
     message: string
+    diagnostics: FlowAiTerminalDiagnostics
   }
 }
 
@@ -458,6 +487,100 @@ export function normalizeFlowAiProviderStatus(value: unknown): FlowAiProviderSta
   throw new Error('FLOW_AI_PROVIDER_STATUS_INVALID')
 }
 
+export function resolveFlowAiGenerationConfig(input: {
+  maxOutputTokens?: unknown
+  reasoningEffort?: unknown
+} = {}): FlowAiGenerationConfig {
+  const budgetText = typeof input.maxOutputTokens === 'string' ? input.maxOutputTokens.trim() : ''
+  const parsedBudget = typeof input.maxOutputTokens === 'number'
+    ? input.maxOutputTokens
+    : /^\d+$/u.test(budgetText)
+      ? Number(budgetText)
+      : Number.NaN
+  const maxOutputTokens = Number.isSafeInteger(parsedBudget)
+    && parsedBudget >= FLOW_AI_MIN_MAX_OUTPUT_TOKENS
+    && parsedBudget <= FLOW_AI_MAX_MAX_OUTPUT_TOKENS
+    ? parsedBudget
+    : FLOW_AI_DEFAULT_MAX_OUTPUT_TOKENS
+  const reasoningEffort = input.reasoningEffort === 'low'
+    || input.reasoningEffort === 'medium'
+    || input.reasoningEffort === 'high'
+    ? input.reasoningEffort
+    : FLOW_AI_DEFAULT_REASONING_EFFORT
+  return { maxOutputTokens, reasoningEffort }
+}
+
+export function normalizeFlowAiIncompleteReason(value: unknown): FlowAiIncompleteReason {
+  if (value === 'max_output_tokens' || value === 'content_filter') return value
+  return 'unknown'
+}
+
+function safeTokenCount(value: unknown) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null
+}
+
+export function normalizeFlowAiTokenUsage(value: unknown): FlowAiTokenUsage {
+  const usage = isRecord(value) ? value : {}
+  const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {}
+  return {
+    inputTokens: safeTokenCount(usage.input_tokens),
+    outputTokens: safeTokenCount(usage.output_tokens),
+    reasoningTokens: safeTokenCount(outputDetails.reasoning_tokens),
+    totalTokens: safeTokenCount(usage.total_tokens),
+  }
+}
+
+export function buildFlowAiTerminalError(input: {
+  status: 'failed' | 'incomplete' | 'cancelled'
+  incompleteReason?: unknown
+  usage?: unknown
+  generationConfig: FlowAiGenerationConfig
+}): FlowAiTerminalErrorResponse['error'] {
+  const reason = input.status === 'incomplete'
+    ? normalizeFlowAiIncompleteReason(input.incompleteReason)
+    : 'unknown'
+  const diagnostics: FlowAiTerminalDiagnostics = {
+    ...normalizeFlowAiTokenUsage(input.usage),
+    ...input.generationConfig,
+    reason,
+  }
+  if (input.status === 'cancelled') {
+    return {
+      code: 'OPENAI_RESPONSE_CANCELLED',
+      message: 'AI-körningen avbröts.',
+      diagnostics,
+    }
+  }
+  if (input.status === 'failed') {
+    return {
+      code: 'OPENAI_RESPONSE_FAILED',
+      message: 'AI-körningen misslyckades hos leverantören.',
+      diagnostics,
+    }
+  }
+  if (reason === 'max_output_tokens') {
+    return {
+      code: 'OPENAI_RESPONSE_INCOMPLETE',
+      message: 'AI:n nådde körningens tokenbudget innan det strukturerade förslaget blev klart. Försök med en mer avgränsad instruktion eller kontakta systemadministratören.',
+      diagnostics,
+    }
+  }
+  if (reason === 'content_filter') {
+    return {
+      code: 'OPENAI_RESPONSE_INCOMPLETE',
+      message: 'AI-svaret stoppades av innehållskontrollen. Formulera om instruktionen och försök igen.',
+      diagnostics,
+    }
+  }
+  return {
+    code: 'OPENAI_RESPONSE_INCOMPLETE',
+    message: 'AI-svaret blev ofullständigt. Starta en ny, mer avgränsad granskning.',
+    diagnostics,
+  }
+}
+
 export function normalizeFlowAiResponseId(value: unknown) {
   const responseId = cleanText(value)
   if (!/^resp_[A-Za-z0-9_-]{8,200}$/u.test(responseId)) {
@@ -479,6 +602,8 @@ export function normalizeFlowAiJobMetadata(value: unknown): FlowAiJobMetadataFie
     admin_user_hash: cleanText(value.admin_user_hash),
     domains_hash: cleanText(value.domains_hash),
     instruction_hash: cleanText(value.instruction_hash),
+    max_output_tokens: cleanText(value.max_output_tokens),
+    reasoning_effort: cleanText(value.reasoning_effort) as FlowAiReasoningEffort,
     started_at: cleanText(value.started_at),
     nonce: cleanText(value.nonce),
     signature: cleanText(value.signature),
@@ -493,6 +618,10 @@ export function normalizeFlowAiJobMetadata(value: unknown): FlowAiJobMetadataFie
     || !/^[a-f0-9]{64}$/u.test(metadata.admin_user_hash)
     || !/^[a-f0-9]{64}$/u.test(metadata.domains_hash)
     || !/^[a-f0-9]{64}$/u.test(metadata.instruction_hash)
+    || !/^\d{5,6}$/u.test(metadata.max_output_tokens)
+    || Number(metadata.max_output_tokens) < FLOW_AI_MIN_MAX_OUTPUT_TOKENS
+    || Number(metadata.max_output_tokens) > FLOW_AI_MAX_MAX_OUTPUT_TOKENS
+    || !(['low', 'medium', 'high'] as const).includes(metadata.reasoning_effort)
     || !Number.isFinite(Date.parse(metadata.started_at))
     || !metadata.nonce
     || !/^[a-f0-9]{64}$/u.test(metadata.signature)
@@ -995,7 +1124,7 @@ function hostnameAllowed(urlValue: string, allowedDomains: readonly string[]) {
 function parseCandidateProposal(value: unknown): FlowAiCandidateProposal {
   if (!isRecord(value)) throw new Error('FLOW_AI_INVALID_RESPONSE')
   const mode = normalizeFlowAiMode(value.mode)
-  const candidateChanges = records(value.candidateChanges).map((item): FlowAiCandidateChange => ({
+  const candidateChanges = records(value.candidateChanges).slice(0, FLOW_AI_MAX_PROPOSED_CHANGES).map((item): FlowAiCandidateChange => ({
     changeId: cleanText(item.changeId),
     requestedOperation:
       item.requestedOperation === 'update' || item.requestedOperation === 'deactivate'
@@ -1011,7 +1140,7 @@ function parseCandidateProposal(value: unknown): FlowAiCandidateProposal {
     sourceIds: cleanStringArray(item.sourceIds),
     requiresExpertReview: item.requiresExpertReview === true,
   }))
-  const sources = records(value.sources).map((item): FlowAiCandidateSource => ({
+  const sources = records(value.sources).slice(0, FLOW_AI_MAX_PROPOSED_SOURCES).map((item): FlowAiCandidateSource => ({
     sourceId: cleanText(item.sourceId),
     title: cleanText(item.title),
     publisher: cleanText(item.publisher),
@@ -1021,7 +1150,7 @@ function parseCandidateProposal(value: unknown): FlowAiCandidateProposal {
     effectiveDate: cleanOptionalText(item.effectiveDate),
     claim: cleanText(item.claim),
   }))
-  const testScenarios = records(value.testScenarios).map((item): FlowAiTestScenario => ({
+  const testScenarios = records(value.testScenarios).slice(0, FLOW_AI_MAX_TEST_SCENARIOS).map((item): FlowAiTestScenario => ({
     scenarioId: cleanText(item.scenarioId),
     title: cleanText(item.title),
     description: cleanText(item.description),
@@ -1036,7 +1165,7 @@ function parseCandidateProposal(value: unknown): FlowAiCandidateProposal {
   return {
     mode,
     summary: cleanText(value.summary),
-    warnings: cleanStringArray(value.warnings),
+    warnings: cleanStringArray(value.warnings).slice(0, 20),
     candidateChanges,
     sources,
     testScenarios,

@@ -49,6 +49,20 @@ function defaultStatus(code: string) {
   return 500
 }
 
+function publicErrorMessage(code: string, details?: Record<string, unknown>) {
+  const diagnostics = details?.diagnostics
+  const reason = diagnostics && typeof diagnostics === 'object' && !Array.isArray(diagnostics)
+    ? (diagnostics as Record<string, unknown>).reason
+    : null
+  if (code === 'OPENAI_RESPONSE_INCOMPLETE' && reason === 'max_output_tokens') {
+    return 'AI:n nådde körningens tokenbudget innan förslaget blev klart. Försök med en mer avgränsad instruktion.'
+  }
+  if (code === 'OPENAI_RESPONSE_INCOMPLETE' && reason === 'content_filter') {
+    return 'AI-svaret stoppades av innehållskontrollen. Formulera om instruktionen och försök igen.'
+  }
+  return ERROR_MESSAGES[code] ?? 'Kunde inte behandla AI-körningen.'
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null)
@@ -69,7 +83,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(
       {
-        error: ERROR_MESSAGES[code] ?? 'Kunde inte skapa AI-förslaget.',
+        error: publicErrorMessage(code, details),
         code,
         ...(details ?? {}),
       },
@@ -110,7 +124,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(
       {
-        error: ERROR_MESSAGES[code] ?? 'Kunde inte läsa AI-körningen.',
+        error: publicErrorMessage(code, details),
         code,
         ...(details ?? {}),
       },

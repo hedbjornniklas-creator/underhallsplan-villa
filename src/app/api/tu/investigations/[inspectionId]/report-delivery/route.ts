@@ -20,7 +20,7 @@ import {
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
-import { evaluateTuReportQuality } from '@/lib/tu/reportQuality'
+import { evaluateTuReportImprovements, evaluateTuReportQuality } from '@/lib/tu/reportQuality'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -784,6 +784,32 @@ async function getReportQualityIssues(
   })
 }
 
+async function getReportImprovementReview(
+  investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
+) {
+  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) return null
+  const [observations, appendixImages] = await Promise.all([
+    listTuObservations({
+      orgId: investigation.orgId,
+      inspectionId: investigation.inspectionId,
+    }),
+    listTuInvestigationImages({
+      orgId: investigation.orgId,
+      inspectionId: investigation.inspectionId,
+      sectionKey: 'appendix',
+    }),
+  ])
+  const reportText = investigation.reportDraft.sections
+    .flatMap((section) => [
+      section.title,
+      section.text,
+      ...(section.subsections?.flatMap((subsection) => [subsection.title, subsection.text]) ?? []),
+    ])
+    .join('\n\n')
+  const qualityIssues = evaluateTuReportQuality({ reportText, observations, appendixImages })
+  return evaluateTuReportImprovements({ reportText, observations, appendixImages, qualityIssues })
+}
+
 async function getFinalizationBlocker(
   admin: AdminClient,
   investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
@@ -832,13 +858,14 @@ export async function GET(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
-    const [history, unlockHistory, activeLink, deliveryDocuments, revision, qualityIssues] = await Promise.all([
+    const [history, unlockHistory, activeLink, deliveryDocuments, revision, qualityIssues, improvementReview] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
       getUnlockHistory(admin, org.orgId, inspectionId),
       getLatestReportLink(admin, inspectionId),
       listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
       getCurrentTuRevision(admin, org.orgId, inspectionId),
       getReportQualityIssues(investigation),
+      getReportImprovementReview(investigation),
     ])
     const ordererEmail = resolveDefaultRecipient(investigation)
     const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
@@ -863,6 +890,7 @@ export async function GET(
       revisionFinalizedAt: revision?.finalized_at ?? null,
       revisionPublishedAt: revision?.published_at ?? null,
       qualityIssues,
+      improvementReview,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'

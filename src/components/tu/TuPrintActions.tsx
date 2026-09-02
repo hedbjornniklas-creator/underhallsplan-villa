@@ -54,6 +54,21 @@ type DeliveryResponse = {
     severity: 'blocker' | 'warning'
     message: string
   }>
+  improvementReview?: {
+    disclaimer: string
+    categories: Array<{
+      id: string
+      label: string
+      score: 1 | 2 | 3 | 4 | 5
+      summary: string
+      suggestions: Array<{
+        id: string
+        message: string
+        destination: 'evidence' | 'report'
+        requiredBeforeFinalization: boolean
+      }>
+    }>
+  } | null
 }
 
 function isValidEmail(value: string) {
@@ -112,11 +127,15 @@ export default function TuPrintActions({
   finalizationBlockedReason = null,
   stageLabel = 'Steg 5',
   onStatusChange,
+  onOpenEvidence,
+  onOpenReport,
 }: {
   inspectionId: string
   finalizationBlockedReason?: string | null
   stageLabel?: string
   onStatusChange?: (state: { reportLockedAt: string | null }) => void
+  onOpenEvidence?: () => void
+  onOpenReport?: () => void
 }) {
   const [meta, setMeta] = useState<DeliveryResponse | null>(null)
   const [recipient, setRecipient] = useState('')
@@ -351,7 +370,7 @@ export default function TuPrintActions({
           </p>
         ) : null}
 
-        {!locked && meta?.qualityIssues?.length ? (
+        {!locked && !meta?.improvementReview && meta?.qualityIssues?.length ? (
           <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
             <h3 className="text-sm font-semibold text-amber-950">Teknisk slutkontroll</h3>
             <ul className="mt-2 space-y-1.5 text-sm leading-5 text-amber-950">
@@ -368,6 +387,94 @@ export default function TuPrintActions({
                 </li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        {!locked && meta?.improvementReview ? (
+          <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50/30 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-950">Förbättringskontroll</h3>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-600">
+                  {meta.improvementReview.disclaimer}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadMeta()}
+                disabled={loading}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:text-gray-400"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden />
+                Uppdatera kontrollen
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {meta.improvementReview.categories.map((category) => (
+                <article key={category.id} className="rounded-md border border-violet-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-semibold text-gray-950">{category.label}</h4>
+                    <span
+                      className="inline-flex min-w-12 items-center justify-center rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-900"
+                      aria-label={`${category.score} av 5`}
+                    >
+                      {category.score}/5
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm leading-5 text-gray-600">{category.summary}</p>
+                  {category.suggestions.length > 0 ? (
+                    <ul className="mt-3 space-y-2 border-t border-gray-100 pt-3 text-sm leading-5 text-gray-800">
+                      {category.suggestions.map((suggestion) => (
+                        <li key={suggestion.id} className="flex items-start gap-2">
+                          <span
+                            className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${suggestion.requiredBeforeFinalization ? 'bg-rose-600' : 'bg-amber-500'}`}
+                            aria-hidden
+                          />
+                          <span>
+                            {suggestion.message}
+                            {suggestion.requiredBeforeFinalization ? (
+                              <strong className="ml-1 font-semibold text-rose-700">
+                                Behöver rättas före fastställande.
+                              </strong>
+                            ) : null}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 border-t border-gray-100 pt-3 text-xs font-medium text-emerald-700">
+                      Inget konkret förbättringsförslag i denna kontroll.
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+            {meta.improvementReview.categories.some((category) => category.suggestions.length > 0) ? (
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-violet-100 pt-4">
+                {meta.improvementReview.categories.some((category) =>
+                  category.suggestions.some((suggestion) => suggestion.destination === 'evidence')
+                ) && onOpenEvidence ? (
+                  <button
+                    type="button"
+                    onClick={onOpenEvidence}
+                    className="inline-flex h-9 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
+                  >
+                    Komplettera underlaget
+                  </button>
+                ) : null}
+                {meta.improvementReview.categories.some((category) =>
+                  category.suggestions.some((suggestion) => suggestion.destination === 'report')
+                ) && onOpenReport ? (
+                  <button
+                    type="button"
+                    onClick={onOpenReport}
+                    className="inline-flex h-9 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
+                  >
+                    Justera utlåtandet
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

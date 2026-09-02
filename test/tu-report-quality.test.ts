@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { evaluateTuReportQuality } from '../src/lib/tu/reportQuality.ts'
+import {
+  evaluateTuReportImprovements,
+  evaluateTuReportQuality,
+} from '../src/lib/tu/reportQuality.ts'
 import type { TuObservation } from '../src/lib/tu/evidence.ts'
 
 function observation(overrides: Partial<TuObservation> = {}): TuObservation {
@@ -89,4 +92,39 @@ test('blocks an audit-style list of missing measurement metadata', () => {
     appendixImages: [],
   })
   assert.ok(issues.some((issue) => issue.id === 'measurement-audit-language-in-report'))
+})
+
+test('treats missing measurements as a neutral review question', () => {
+  const source = observation({
+    sourceType: 'typed',
+    noteText: 'En missfärgning noterades i innertaket.',
+    measurements: [],
+  })
+  const review = evaluateTuReportImprovements({
+    reportText: 'Uppdraget omfattar missfärgningen och är avgränsat till lokalt åtkomliga delar.',
+    observations: [source],
+    appendixImages: [{ id: 'image-1', caption: 'Missfärgning i sovrummets innertak.' }],
+    qualityIssues: [],
+  })
+  const measurements = review.categories.find((category) => category.id === 'measurements')
+  assert.equal(measurements?.score, 3)
+  assert.match(measurements?.summary ?? '', /kan vara korrekt/i)
+  assert.ok(measurements?.suggestions.every((suggestion) => !suggestion.requiredBeforeFinalization))
+})
+
+test('marks an existing quality blocker as required before finalization', () => {
+  const qualityIssues = evaluateTuReportQuality({
+    reportText: 'Den registrerade uppdragsbeskrivningen anger vad som ska kontrolleras.',
+    observations: [],
+    appendixImages: [],
+  })
+  const review = evaluateTuReportImprovements({
+    reportText: 'Den registrerade uppdragsbeskrivningen anger vad som ska kontrolleras.',
+    observations: [],
+    appendixImages: [],
+    qualityIssues,
+  })
+  const reportText = review.categories.find((category) => category.id === 'report_text')
+  assert.ok(reportText?.suggestions.some((suggestion) => suggestion.requiredBeforeFinalization))
+  assert.match(review.disclaimer, /bedömer inte juridisk hållbarhet/i)
 })
