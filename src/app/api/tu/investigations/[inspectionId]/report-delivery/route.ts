@@ -20,7 +20,11 @@ import {
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
-import { evaluateTuReportImprovements, evaluateTuReportQuality } from '@/lib/tu/reportQuality'
+import {
+  evaluateTuReportImprovements,
+  evaluateTuReportQuality,
+  isTuSystemGeneratedReportSection,
+} from '@/lib/tu/reportQuality'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -829,6 +833,7 @@ async function getFinalizationBlocker(
   }
 
   const missingSections = investigation.reportDraft.sections.filter((section) => {
+    if (isTuSystemGeneratedReportSection(section.key)) return false
     if (!section.isRequired) return false
     return !section.text.trim() && !section.subsections?.some((subsection) => subsection.text.trim())
   })

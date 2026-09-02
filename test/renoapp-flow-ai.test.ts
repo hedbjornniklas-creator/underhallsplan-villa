@@ -3,11 +3,15 @@ import test from 'node:test'
 import {
   FLOW_AI_DEFAULT_MAX_OUTPUT_TOKENS,
   FLOW_AI_DEFAULT_REASONING_EFFORT,
+  FLOW_AI_DEFAULT_MAX_BACKGROUND_JOB_AGE_MS,
+  FLOW_AI_DEFAULT_SERVICE_TIER,
+  FLOW_AI_MAX_MAX_BACKGROUND_JOB_AGE_MS,
   FLOW_AI_MAX_MAX_OUTPUT_TOKENS,
   FLOW_AI_MAX_PROPOSED_CHANGES,
   FLOW_AI_MAX_PROPOSED_SOURCES,
   FLOW_AI_MAX_TEST_SCENARIOS,
   FLOW_AI_MIN_MAX_OUTPUT_TOKENS,
+  FLOW_AI_MIN_MAX_BACKGROUND_JOB_AGE_MS,
   buildFlowAiDeterministicDiff,
   buildFlowAiTerminalError,
   fingerprintFlowAiSnapshot,
@@ -19,6 +23,7 @@ import {
   normalizeFlowAiSnapshot,
   normalizeFlowAiTokenUsage,
   resolveFlowAiGenerationConfig,
+  resolveFlowAiExecutionConfig,
   stableStringifyFlowAiSnapshot,
   validateFlowAiProposal,
   type FlowAiCandidateChange,
@@ -150,6 +155,27 @@ test('resolves only bounded output-token budgets and allowlisted reasoning effor
       reasoningEffort: FLOW_AI_DEFAULT_REASONING_EFFORT,
     })
   }
+})
+
+test('uses standard capacity and bounds the background polling lifetime', () => {
+  assert.deepEqual(resolveFlowAiExecutionConfig(), {
+    serviceTier: FLOW_AI_DEFAULT_SERVICE_TIER,
+    maxBackgroundJobAgeMs: FLOW_AI_DEFAULT_MAX_BACKGROUND_JOB_AGE_MS,
+  })
+  assert.deepEqual(resolveFlowAiExecutionConfig({
+    serviceTier: 'priority',
+    maxBackgroundJobAgeMs: String(FLOW_AI_MIN_MAX_BACKGROUND_JOB_AGE_MS),
+  }), {
+    serviceTier: 'priority',
+    maxBackgroundJobAgeMs: FLOW_AI_MIN_MAX_BACKGROUND_JOB_AGE_MS,
+  })
+  assert.deepEqual(resolveFlowAiExecutionConfig({
+    serviceTier: 'flex',
+    maxBackgroundJobAgeMs: FLOW_AI_MAX_MAX_BACKGROUND_JOB_AGE_MS + 1,
+  }), {
+    serviceTier: FLOW_AI_DEFAULT_SERVICE_TIER,
+    maxBackgroundJobAgeMs: FLOW_AI_DEFAULT_MAX_BACKGROUND_JOB_AGE_MS,
+  })
 })
 
 test('allowlists incomplete reasons and strips provider-controlled diagnostic text', () => {

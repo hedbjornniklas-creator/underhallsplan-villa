@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Download, ExternalLink, LockKeyhole, LockOpen, RefreshCw, Send } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download, ExternalLink, LockKeyhole, LockOpen, RefreshCw, Send } from 'lucide-react'
+import { useToast } from '@/components/ui/AppToastProvider'
 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
 
@@ -56,10 +57,14 @@ type DeliveryResponse = {
   }>
   improvementReview?: {
     disclaimer: string
+    overallScore: number
+    totalSuggestions: number
     categories: Array<{
       id: string
       label: string
-      score: 1 | 2 | 3 | 4 | 5
+      score: 1 | 2 | 3 | 4 | 5 | null
+      weight: number
+      applicable: boolean
       summary: string
       suggestions: Array<{
         id: string
@@ -146,12 +151,19 @@ export default function TuPrintActions({
   const [unlockOpen, setUnlockOpen] = useState(false)
   const [unlockReason, setUnlockReason] = useState('')
   const [unlockBusy, setUnlockBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
+  const [improvementOpen, setImprovementOpen] = useState(false)
+  const { error: showErrorToast } = useToast()
+
+  const showDeliveryError = useCallback((value: unknown, fallback: string) => {
+    showErrorToast(value, fallback, {
+      appearance: 'dark',
+      dedupeKey: 'tu-report-delivery-error',
+    })
+  }, [showErrorToast])
 
   const loadMeta = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true)
-    if (!options?.silent) setError(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
         cache: 'no-store',
@@ -165,11 +177,11 @@ export default function TuPrintActions({
       setRecipient((current) => current.trim() || payload.defaultRecipientEmail || '')
       onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? null })
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta leveransstatus.')
+      showDeliveryError(loadError, 'Kunde inte hämta leveransstatus.')
     } finally {
       if (!options?.silent) setLoading(false)
     }
-  }, [inspectionId, onStatusChange])
+  }, [inspectionId, onStatusChange, showDeliveryError])
 
   useEffect(() => {
     void loadMeta()
@@ -186,13 +198,12 @@ export default function TuPrintActions({
   const runDelivery = async (action: DeliveryAction) => {
     const normalizedRecipient = recipient.trim().toLowerCase()
     if (action !== 'lock_only' && !isValidEmail(normalizedRecipient)) {
-      setError('Ange en giltig huvudmottagare.')
+      showDeliveryError('Ange en giltig huvudmottagare.', 'Ange en giltig huvudmottagare.')
       setResult(null)
       return
     }
 
     setBusyAction(action)
-    setError(null)
     setResult(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
@@ -225,7 +236,7 @@ export default function TuPrintActions({
       }
       onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? null })
     } catch (deliveryError) {
-      setError(deliveryError instanceof Error ? deliveryError.message : 'Kunde inte hantera utlåtandet.')
+      showDeliveryError(deliveryError, 'Kunde inte hantera utlåtandet.')
     } finally {
       setBusyAction(null)
     }
@@ -234,13 +245,12 @@ export default function TuPrintActions({
   const runUnlock = async () => {
     const reason = unlockReason.trim()
     if (reason.length < 10) {
-      setError('Ange en anledning pÃ¥ minst 10 tecken.')
+      showDeliveryError('Ange en anledning på minst 10 tecken.', 'Ange en anledning på minst 10 tecken.')
       setResult(null)
       return
     }
 
     setUnlockBusy(true)
-    setError(null)
     setResult(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/unlock`, {
@@ -249,7 +259,7 @@ export default function TuPrintActions({
         body: JSON.stringify({ reason }),
       })
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte lÃ¥sa upp utlÃ¥tandet.')
+      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte låsa upp utlåtandet.')
 
       setMeta((current) =>
         current
@@ -267,7 +277,7 @@ export default function TuPrintActions({
       await loadMeta({ silent: true })
       onStatusChange?.({ reportLockedAt: null })
     } catch (unlockError) {
-      setError(unlockError instanceof Error ? unlockError.message : 'Kunde inte lÃ¥sa upp utlÃ¥tandet.')
+      showDeliveryError(unlockError, 'Kunde inte låsa upp utlåtandet.')
     } finally {
       setUnlockBusy(false)
     }
@@ -275,7 +285,6 @@ export default function TuPrintActions({
 
   const runRegeneratePdf = async () => {
     setRegeneratingPdf(true)
-    setError(null)
     setResult(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
@@ -293,7 +302,7 @@ export default function TuPrintActions({
       setResult('PDF-genereringen har startats om. Statusen uppdateras automatiskt.')
       onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? meta?.reportLockedAt ?? null })
     } catch (pdfError) {
-      setError(pdfError instanceof Error ? pdfError.message : 'Kunde inte starta om PDF-genereringen.')
+      showDeliveryError(pdfError, 'Kunde inte starta om PDF-genereringen.')
     } finally {
       setRegeneratingPdf(false)
     }
@@ -315,12 +324,8 @@ export default function TuPrintActions({
   const unlockEvents = meta?.activityLog?.filter((item) => item.type === 'report_unlocked') ?? []
   const statusText = loading
     ? 'Hämtar leveransstatus...'
-    : error
-      ? error
-      : result ?? pdfStatusMessage(meta)
-  const statusClassName = error
-    ? 'border-rose-200 bg-rose-50 text-rose-800'
-    : result
+    : result ?? pdfStatusMessage(meta)
+  const statusClassName = result
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : 'border-slate-200 bg-slate-50 text-slate-700'
 
@@ -364,6 +369,31 @@ export default function TuPrintActions({
           </div>
         </div>
 
+        <div className="mt-4 grid overflow-hidden rounded-lg border border-slate-200 sm:grid-cols-2">
+          <div className={`flex items-start gap-3 p-3 ${locked ? 'bg-emerald-50' : 'bg-violet-50'}`}>
+            <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${locked ? 'bg-emerald-700 text-white' : 'bg-violet-700 text-white'}`}>
+              {locked ? '✓' : '1'}
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-gray-950">Fastställ version</p>
+              <p className="mt-0.5 text-xs leading-5 text-gray-600">
+                {locked ? 'En oföränderlig revision är skapad.' : 'Lås rapporten och skapa den version som ska skickas.'}
+              </p>
+            </div>
+          </div>
+          <div className={`flex items-start gap-3 border-t border-slate-200 p-3 sm:border-l sm:border-t-0 ${locked ? 'bg-violet-50' : 'bg-slate-50'}`}>
+            <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${locked ? 'bg-violet-700 text-white' : 'border border-slate-300 bg-white text-slate-400'}`}>
+              2
+            </span>
+            <div>
+              <p className={`text-sm font-semibold ${locked ? 'text-gray-950' : 'text-slate-500'}`}>Välj mottagare och skicka</p>
+              <p className="mt-0.5 text-xs leading-5 text-gray-600">
+                {locked ? 'Ange mottagare och skicka den fastställda revisionen.' : 'Blir tillgängligt direkt efter fastställandet.'}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {!locked && finalizationBlockedReason ? (
           <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
             Innan utlåtandet kan fastställas: {finalizationBlockedReason}
@@ -390,88 +420,121 @@ export default function TuPrintActions({
           </div>
         ) : null}
 
-        {!locked && meta?.improvementReview ? (
-          <div className="mt-4 rounded-lg border border-violet-200 bg-violet-50/30 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-950">Förbättringskontroll</h3>
-                <p className="mt-1 max-w-3xl text-xs leading-5 text-gray-600">
-                  {meta.improvementReview.disclaimer}
-                </p>
+        {meta?.improvementReview ? (
+          <div className="mt-4 overflow-hidden rounded-lg border border-violet-200 bg-white">
+            <button
+              type="button"
+              onClick={() => setImprovementOpen((current) => !current)}
+              aria-expanded={improvementOpen}
+              className="flex w-full items-center gap-4 p-4 text-left transition hover:bg-violet-50/50"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h3 className="text-sm font-semibold text-gray-950">Förbättringskontroll</h3>
+                  <span className="text-lg font-bold text-violet-900">
+                    {meta.improvementReview.overallScore.toLocaleString('sv-SE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}/5
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {meta.improvementReview.totalSuggestions} förbättringsförslag
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-violet-100" aria-hidden>
+                  <div
+                    className="h-full rounded-full bg-violet-700 transition-[width]"
+                    style={{ width: `${Math.max(0, Math.min(100, meta.improvementReview.overallScore * 20))}%` }}
+                  />
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => void loadMeta()}
-                disabled={loading}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:text-gray-400"
-              >
-                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden />
-                Uppdatera kontrollen
-              </button>
-            </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {meta.improvementReview.categories.map((category) => (
-                <article key={category.id} className="rounded-md border border-violet-100 bg-white p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold text-gray-950">{category.label}</h4>
-                    <span
-                      className="inline-flex min-w-12 items-center justify-center rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-900"
-                      aria-label={`${category.score} av 5`}
-                    >
-                      {category.score}/5
-                    </span>
+              {improvementOpen ? <ChevronUp size={18} className="shrink-0 text-violet-700" aria-hidden /> : <ChevronDown size={18} className="shrink-0 text-violet-700" aria-hidden />}
+            </button>
+
+            {improvementOpen ? (
+              <div className="border-t border-violet-100 bg-violet-50/30 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <p className="max-w-3xl text-xs leading-5 text-gray-600">
+                    {meta.improvementReview.disclaimer}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void loadMeta()}
+                    disabled={loading}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:text-gray-400"
+                  >
+                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden />
+                    Uppdatera kontrollen
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {meta.improvementReview.categories.map((category) => (
+                    <article key={category.id} className="rounded-md border border-violet-100 bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-semibold text-gray-950">{category.label}</h4>
+                        <span
+                          className="inline-flex min-w-12 items-center justify-center rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-900"
+                          aria-label={category.applicable && category.score !== null ? `${category.score} av 5` : 'Inte tillämplig'}
+                        >
+                          {category.applicable && category.score !== null ? `${category.score}/5` : 'Ej tillämplig'}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100" aria-hidden>
+                        <div
+                          className="h-full rounded-full bg-violet-600"
+                          style={{ width: `${category.applicable && category.score !== null ? category.score * 20 : 0}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-sm leading-5 text-gray-600">{category.summary}</p>
+                      {category.suggestions.length > 0 ? (
+                        <ul className="mt-3 space-y-2 border-t border-gray-100 pt-3 text-sm leading-5 text-gray-800">
+                          {category.suggestions.map((suggestion) => (
+                            <li key={suggestion.id} className="flex items-start gap-2">
+                              <span
+                                className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${suggestion.requiredBeforeFinalization ? 'bg-rose-600' : 'bg-amber-500'}`}
+                                aria-hidden
+                              />
+                              <span>
+                                {suggestion.message}
+                                {suggestion.requiredBeforeFinalization ? (
+                                  <strong className="ml-1 font-semibold text-rose-700">
+                                    Behöver rättas före fastställande.
+                                  </strong>
+                                ) : null}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-3 border-t border-gray-100 pt-3 text-xs font-medium text-emerald-700">
+                          Inget konkret förbättringsförslag i denna kontroll.
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                </div>
+                {meta.improvementReview.categories.some((category) => category.suggestions.length > 0) ? (
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-violet-100 pt-4">
+                    {meta.improvementReview.categories.some((category) =>
+                      category.suggestions.some((suggestion) => suggestion.destination === 'evidence')
+                    ) && onOpenEvidence ? (
+                      <button
+                        type="button"
+                        onClick={onOpenEvidence}
+                        className="inline-flex h-9 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
+                      >
+                        Komplettera underlaget
+                      </button>
+                    ) : null}
+                    {meta.improvementReview.categories.some((category) =>
+                      category.suggestions.some((suggestion) => suggestion.destination === 'report')
+                    ) && onOpenReport ? (
+                      <button
+                        type="button"
+                        onClick={onOpenReport}
+                        className="inline-flex h-9 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
+                      >
+                        Justera utlåtandet
+                      </button>
+                    ) : null}
                   </div>
-                  <p className="mt-2 text-sm leading-5 text-gray-600">{category.summary}</p>
-                  {category.suggestions.length > 0 ? (
-                    <ul className="mt-3 space-y-2 border-t border-gray-100 pt-3 text-sm leading-5 text-gray-800">
-                      {category.suggestions.map((suggestion) => (
-                        <li key={suggestion.id} className="flex items-start gap-2">
-                          <span
-                            className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${suggestion.requiredBeforeFinalization ? 'bg-rose-600' : 'bg-amber-500'}`}
-                            aria-hidden
-                          />
-                          <span>
-                            {suggestion.message}
-                            {suggestion.requiredBeforeFinalization ? (
-                              <strong className="ml-1 font-semibold text-rose-700">
-                                Behöver rättas före fastställande.
-                              </strong>
-                            ) : null}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 border-t border-gray-100 pt-3 text-xs font-medium text-emerald-700">
-                      Inget konkret förbättringsförslag i denna kontroll.
-                    </p>
-                  )}
-                </article>
-              ))}
-            </div>
-            {meta.improvementReview.categories.some((category) => category.suggestions.length > 0) ? (
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-violet-100 pt-4">
-                {meta.improvementReview.categories.some((category) =>
-                  category.suggestions.some((suggestion) => suggestion.destination === 'evidence')
-                ) && onOpenEvidence ? (
-                  <button
-                    type="button"
-                    onClick={onOpenEvidence}
-                    className="inline-flex h-9 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
-                  >
-                    Komplettera underlaget
-                  </button>
-                ) : null}
-                {meta.improvementReview.categories.some((category) =>
-                  category.suggestions.some((suggestion) => suggestion.destination === 'report')
-                ) && onOpenReport ? (
-                  <button
-                    type="button"
-                    onClick={onOpenReport}
-                    className="inline-flex h-9 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50"
-                  >
-                    Justera utlåtandet
-                  </button>
                 ) : null}
               </div>
             ) : null}
@@ -565,7 +628,7 @@ export default function TuPrintActions({
               className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {busyAction === 'send_and_lock' ? <RefreshCw size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
-              {busyAction === 'send_and_lock' ? 'Skickar revisionen...' : 'Skicka fastställd revision'}
+              {busyAction === 'send_and_lock' ? 'Skickar utlåtandet...' : 'Skicka utlåtandet'}
             </button>
           ) : (
             <button

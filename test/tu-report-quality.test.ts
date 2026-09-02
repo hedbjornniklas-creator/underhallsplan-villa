@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import {
-  evaluateTuReportImprovements,
-  evaluateTuReportQuality,
-} from '../src/lib/tu/reportQuality.ts'
+import { evaluateTuReportImprovements, evaluateTuReportQuality, isTuSystemGeneratedReportSection } from '../src/lib/tu/reportQuality.ts'
 import type { TuObservation } from '../src/lib/tu/evidence.ts'
 
 function observation(overrides: Partial<TuObservation> = {}): TuObservation {
@@ -107,7 +104,8 @@ test('treats missing measurements as a neutral review question', () => {
     qualityIssues: [],
   })
   const measurements = review.categories.find((category) => category.id === 'measurements')
-  assert.equal(measurements?.score, 3)
+  assert.equal(measurements?.score, null)
+  assert.equal(measurements?.applicable, false)
   assert.match(measurements?.summary ?? '', /kan vara korrekt/i)
   assert.ok(measurements?.suggestions.every((suggestion) => !suggestion.requiredBeforeFinalization))
 })
@@ -127,4 +125,10 @@ test('marks an existing quality blocker as required before finalization', () => 
   const reportText = review.categories.find((category) => category.id === 'report_text')
   assert.ok(reportText?.suggestions.some((suggestion) => suggestion.requiredBeforeFinalization))
   assert.match(review.disclaimer, /bedömer inte juridisk hållbarhet/i)
+})
+
+test('does not require editable text in system-generated report sections', () => {
+  assert.equal(isTuSystemGeneratedReportSection('signature'), true)
+  assert.equal(isTuSystemGeneratedReportSection('assignment_parties'), true)
+  assert.equal(isTuSystemGeneratedReportSection('technical_assessment'), false)
 })

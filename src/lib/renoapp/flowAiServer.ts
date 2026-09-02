@@ -16,11 +16,13 @@ import {
   normalizeFlowAiProviderStatus,
   normalizeFlowAiResponseId,
   normalizeFlowAiSnapshot,
+  resolveFlowAiExecutionConfig,
   resolveFlowAiGenerationConfig,
   stableStringifyFlowAiSnapshot,
   validateFlowAiProposal,
   type FlowAiCandidateProposal,
   type FlowAiCompletedResponse,
+  type FlowAiExecutionConfig,
   type FlowAiGenerationConfig,
   type FlowAiJobMetadataFields,
   type FlowAiMode,
@@ -49,6 +51,7 @@ const MAX_INSTRUCTION_LENGTH = 4_000
 const MAX_SNAPSHOT_LENGTH = 2_000_000
 const PROVIDER_CREATE_TIMEOUT_MS = 30_000
 const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
+const PROVIDER_CANCEL_TIMEOUT_MS = 10_000
 const POLL_AFTER_MS = 2_000
 
 type JsonRecord = Record<string, unknown>
@@ -114,6 +117,13 @@ function configuredGenerationConfig() {
   return resolveFlowAiGenerationConfig({
     maxOutputTokens: process.env.OPENAI_RENOAPP_FLOW_MAX_OUTPUT_TOKENS,
     reasoningEffort: process.env.OPENAI_RENOAPP_FLOW_REASONING_EFFORT,
+  })
+}
+
+function configuredExecutionConfig() {
+  return resolveFlowAiExecutionConfig({
+    serviceTier: process.env.OPENAI_RENOAPP_FLOW_SERVICE_TIER,
+    maxBackgroundJobAgeMs: process.env.OPENAI_RENOAPP_FLOW_MAX_JOB_AGE_MS,
   })
 }
 
@@ -475,6 +485,7 @@ async function startOpenAiProposal(input: {
   allowedDomains: string[]
   metadata: FlowAiJobMetadata
   generationConfig: FlowAiGenerationConfig
+  executionConfig: FlowAiExecutionConfig
 }) {
   const modelInput = {
     task: {
@@ -508,6 +519,7 @@ async function startOpenAiProposal(input: {
       signal: AbortSignal.timeout(PROVIDER_CREATE_TIMEOUT_MS),
       body: JSON.stringify({
         model: RENOAPP_FLOW_AI_MODEL,
+        service_tier: input.executionConfig.serviceTier,
         background: true,
         store: false,
         metadata: input.metadata,
@@ -556,6 +568,30 @@ async function startOpenAiProposal(input: {
   }
 
   return await response.json() as OpenAiResponse
+}
+
+async function cancelOpenAiProposal(input: { apiKey: string; responseId: string }) {
+  try {
+    const response = await fetch(
+      `${OPENAI_RESPONSES_URL}/${encodeURIComponent(input.responseId)}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(PROVIDER_CANCEL_TIMEOUT_MS),
+      }
+    )
+    if (!response.ok) {
+      console.error('[renoapp.flow-ai] OpenAI cancel failed', {
+        status: response.status,
+        requestId: safeProviderRequestId(response),
+      })
+    }
+  } catch {
+    // Best effort only: the client must stop polling even if provider cancellation fails.
+  }
 }
 
 async function retrieveOpenAiProposal(input: { apiKey: string; responseId: string }) {
@@ -707,6 +743,7 @@ export async function startRenoAppFlowAiProposal(value: unknown): Promise<FlowAi
 
   const allowedDomains = configuredAllowedDomains()
   const generationConfig = configuredGenerationConfig()
+  const executionConfig = configuredExecutionConfig()
   const metadata = createFlowAiJobMetadata({
     snapshotFingerprint,
     mode: request.mode ?? 'create',
@@ -726,6 +763,7 @@ export async function startRenoAppFlowAiProposal(value: unknown): Promise<FlowAi
     allowedDomains,
     metadata,
     generationConfig,
+    executionConfig,
   })
   const envelope = providerEnvelope(openAiPayload)
   if (envelope.responseId !== cleanText(openAiPayload.id)) {
@@ -785,14 +823,29 @@ export async function pollRenoAppFlowAiProposal(responseIdValue: unknown): Promi
     apiKey,
   })
 
+  const executionConfig = configuredExecutionConfig()
+  const jobAgeMs = Math.max(0, Date.now() - Date.parse(metadata.started_at))
+
   if (envelope.status === 'queued' || envelope.status === 'in_progress') {
+    if (jobAgeMs >= executionConfig.maxBackgroundJobAgeMs) {
+      await cancelOpenAiProposal({ apiKey, responseId })
+      throw new FlowAiServerError('OPENAI_RESPONSE_DEADLINE_EXCEEDED', 504, {
+        status: 'failed',
+        responseId,
+        providerStatus: envelope.status,
+        elapsedMs: jobAgeMs,
+      })
+    }
+    const elapsedMinutes = Math.floor(jobAgeMs / 60_000)
     return {
       ...envelope,
       status: envelope.status,
       snapshotFingerprint: metadata.snapshot_fingerprint,
       pollAfterMs: POLL_AFTER_MS,
       progressMessage: envelope.status === 'queued'
-        ? 'AI-granskningen väntar på att starta.'
+        ? elapsedMinutes > 0
+          ? `AI-granskningen har väntat i OpenAI-kön i cirka ${elapsedMinutes} min. Status kontrolleras automatiskt.`
+          : 'AI-granskningen väntar kort i OpenAI-kön. Status kontrolleras automatiskt.'
         : 'AI:n granskar flödet och kontrollerar källor.',
     }
   }

@@ -40,6 +40,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   OPENAI_RESPONSE_FAILED: 'AI-körningen misslyckades hos leverantören.',
   OPENAI_RESPONSE_INCOMPLETE: 'AI-svaret blev ofullständigt. Starta en ny granskning.',
   OPENAI_RESPONSE_CANCELLED: 'AI-körningen avbröts.',
+  OPENAI_RESPONSE_DEADLINE_EXCEEDED: 'AI-körningen hann inte bli klar inom åtta minuter och avbröts. Försök igen.',
   OPENAI_RATE_LIMITED: 'AI-tjänsten är tillfälligt belastad. Försök igen om en stund.',
 }
 

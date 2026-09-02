@@ -16,13 +16,17 @@ export type TuReportImprovementSuggestion = {
 export type TuReportImprovementCategory = {
   id: 'field_evidence' | 'measurements' | 'images' | 'report_text' | 'scope'
   label: string
-  score: 1 | 2 | 3 | 4 | 5
+  score: 1 | 2 | 3 | 4 | 5 | null
+  weight: number
+  applicable: boolean
   summary: string
   suggestions: TuReportImprovementSuggestion[]
 }
 
 export type TuReportImprovementReview = {
   disclaimer: string
+  overallScore: number
+  totalSuggestions: number
   categories: TuReportImprovementCategory[]
 }
 
@@ -33,6 +37,10 @@ type ReportImage = {
 
 function clean(value: string | null | undefined) {
   return value?.trim() ?? ''
+}
+
+export function isTuSystemGeneratedReportSection(sectionKey: string) {
+  return sectionKey === 'assignment_parties' || sectionKey === 'signature'
 }
 
 function isGenericCaption(value: string | null | undefined) {
@@ -156,13 +164,13 @@ export function evaluateTuReportImprovements(input: {
   const imageScore = input.appendixImages.length === 0 ? 2 : boundedScore(5 - (genericCaptionCount > 0 ? 2 : 0))
   const reportScore = boundedScore(5 - blockerCount * 2 - warningCount)
 
-  return {
-    disclaimer: 'Kontrollen visar möjliga förbättringar i underlag och presentation. Den bedömer inte juridisk hållbarhet, ansvar eller sannolik utgång i en tvist.',
-    categories: [
+  const categories: TuReportImprovementCategory[] = [
       {
         id: 'field_evidence',
         label: 'Fältunderlag',
         score: fieldScore,
+        weight: 25,
+        applicable: true,
         summary: observations.length > 0
           ? `${reviewedCount} av ${observations.length} observationer är granskade.`
           : 'Inga observationer hittades i fältunderlaget.',
@@ -171,7 +179,9 @@ export function evaluateTuReportImprovements(input: {
       {
         id: 'measurements',
         label: 'Mätuppgifter',
-        score: measurementScore,
+        score: measurements.length > 0 ? measurementScore : null,
+        weight: 15,
+        applicable: measurements.length > 0,
         summary: measurements.length > 0
           ? `${measurements.length} mätning${measurements.length === 1 ? '' : 'ar'} finns registrerad${measurements.length === 1 ? '' : 'e'}.`
           : 'Ingen instrumentmätning finns registrerad. Det kan vara korrekt för uppdraget.',
@@ -181,6 +191,8 @@ export function evaluateTuReportImprovements(input: {
         id: 'images',
         label: 'Bilddokumentation',
         score: imageScore,
+        weight: 15,
+        applicable: true,
         summary: `${input.appendixImages.length} bild${input.appendixImages.length === 1 ? '' : 'er'} är vald${input.appendixImages.length === 1 ? '' : 'a'} till bilagan.`,
         suggestions: imageSuggestions,
       },
@@ -188,6 +200,8 @@ export function evaluateTuReportImprovements(input: {
         id: 'report_text',
         label: 'Rapporttext',
         score: reportScore,
+        weight: 25,
+        applicable: true,
         summary: input.qualityIssues.length === 0
           ? 'Inga kända text- eller underlagsvarningar hittades.'
           : `${input.qualityIssues.length} punkt${input.qualityIssues.length === 1 ? '' : 'er'} kan behöva kontrolleras.`,
@@ -197,12 +211,26 @@ export function evaluateTuReportImprovements(input: {
         id: 'scope',
         label: 'Uppdrag och avgränsning',
         score: scopeIsExplicit ? 5 : 3,
+        weight: 20,
+        applicable: true,
         summary: scopeIsExplicit
           ? 'Uppdrag och avgränsning framgår i rapporttexten.'
           : 'Kontrollen hittade inte både en tydlig uppdragsfråga och en avgränsning.',
         suggestions: scopeSuggestions,
       },
-    ],
+    ]
+  const applicableWeight = categories.reduce((sum, category) => (
+    category.applicable && category.score !== null ? sum + category.weight : sum
+  ), 0)
+  const weightedScore = categories.reduce((sum, category) => (
+    category.applicable && category.score !== null ? sum + category.score * category.weight : sum
+  ), 0)
+
+  return {
+    disclaimer: 'Kontrollen visar möjliga förbättringar i underlag och presentation. Den bedömer inte juridisk hållbarhet, ansvar eller sannolik utgång i en tvist.',
+    overallScore: applicableWeight > 0 ? Math.round((weightedScore / applicableWeight) * 10) / 10 : 0,
+    totalSuggestions: categories.reduce((sum, category) => sum + category.suggestions.length, 0),
+    categories,
   }
 }
 

@@ -39,16 +39,26 @@ export const FLOW_AI_DEFAULT_MAX_OUTPUT_TOKENS = 64_000
 export const FLOW_AI_MIN_MAX_OUTPUT_TOKENS = 16_000
 export const FLOW_AI_MAX_MAX_OUTPUT_TOKENS = 128_000
 export const FLOW_AI_DEFAULT_REASONING_EFFORT = 'medium' as const
+export const FLOW_AI_DEFAULT_SERVICE_TIER = 'default' as const
+export const FLOW_AI_DEFAULT_MAX_BACKGROUND_JOB_AGE_MS = 8 * 60 * 1_000
+export const FLOW_AI_MIN_MAX_BACKGROUND_JOB_AGE_MS = 60 * 1_000
+export const FLOW_AI_MAX_MAX_BACKGROUND_JOB_AGE_MS = 9 * 60 * 1_000
 export const FLOW_AI_MAX_PROPOSED_CHANGES = 64
 export const FLOW_AI_MAX_PROPOSED_SOURCES = 16
 export const FLOW_AI_MAX_TEST_SCENARIOS = 6
 
 export type FlowAiReasoningEffort = 'low' | 'medium' | 'high'
+export type FlowAiServiceTier = 'default' | 'priority'
 export type FlowAiIncompleteReason = 'max_output_tokens' | 'content_filter' | 'unknown'
 
 export type FlowAiGenerationConfig = {
   maxOutputTokens: number
   reasoningEffort: FlowAiReasoningEffort
+}
+
+export type FlowAiExecutionConfig = {
+  serviceTier: FlowAiServiceTier
+  maxBackgroundJobAgeMs: number
 }
 
 export type FlowAiTokenUsage = {
@@ -508,6 +518,29 @@ export function resolveFlowAiGenerationConfig(input: {
     ? input.reasoningEffort
     : FLOW_AI_DEFAULT_REASONING_EFFORT
   return { maxOutputTokens, reasoningEffort }
+}
+
+export function resolveFlowAiExecutionConfig(input: {
+  serviceTier?: unknown
+  maxBackgroundJobAgeMs?: unknown
+} = {}): FlowAiExecutionConfig {
+  const ageText = typeof input.maxBackgroundJobAgeMs === 'string'
+    ? input.maxBackgroundJobAgeMs.trim()
+    : ''
+  const parsedAge = typeof input.maxBackgroundJobAgeMs === 'number'
+    ? input.maxBackgroundJobAgeMs
+    : /^\d+$/u.test(ageText)
+      ? Number(ageText)
+      : Number.NaN
+  const maxBackgroundJobAgeMs = Number.isSafeInteger(parsedAge)
+    && parsedAge >= FLOW_AI_MIN_MAX_BACKGROUND_JOB_AGE_MS
+    && parsedAge <= FLOW_AI_MAX_MAX_BACKGROUND_JOB_AGE_MS
+    ? parsedAge
+    : FLOW_AI_DEFAULT_MAX_BACKGROUND_JOB_AGE_MS
+  const serviceTier = input.serviceTier === 'priority'
+    ? 'priority'
+    : FLOW_AI_DEFAULT_SERVICE_TIER
+  return { serviceTier, maxBackgroundJobAgeMs }
 }
 
 export function normalizeFlowAiIncompleteReason(value: unknown): FlowAiIncompleteReason {

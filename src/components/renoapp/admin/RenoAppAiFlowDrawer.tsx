@@ -131,7 +131,8 @@ type FlowAiPendingTicket = {
 }
 
 const FLOW_AI_POLL_INTERVAL_MS = 2000
-const FLOW_AI_MAX_RETRY_DELAY_MS = 5 * 60 * 1000
+const FLOW_AI_MAX_RETRY_DELAY_MS = 15 * 1000
+const FLOW_AI_MAX_TOTAL_WAIT_MS = 9 * 60 * 1000
 const FLOW_AI_TRANSIENT_POLL_STATUSES = new Set([429, 502, 503, 504])
 
 const TABS: Array<{ id: DrawerTab; label: string }> = [
@@ -445,7 +446,7 @@ function progressMessageForStatus(status: string, payload: unknown, pollCount: n
 
   const normalized = status.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
   if (normalized === 'queued' || normalized === 'pending') {
-    return 'Analysen står i kö och startar så snart AI-tjänsten är redo.'
+    return 'Analysen väntar kort i OpenAI-kön. Status kontrolleras automatiskt.'
   }
   if (normalized === 'validating' || normalized === 'finalizing') {
     return 'Kontrollerar ändringsförslaget, källorna och testfallen.'
@@ -534,12 +535,16 @@ async function pollForProposal({
 }) {
   let pollCount = 0
   let transientFailureCount = 0
+  const pollingStartedAt = Date.now()
   let nextPollDelayMs = Math.min(
     FLOW_AI_MAX_RETRY_DELAY_MS,
     Math.max(500, ticket.pollAfterMs)
   )
 
   while (!signal.aborted) {
+    if (Date.now() - pollingStartedAt >= FLOW_AI_MAX_TOTAL_WAIT_MS) {
+      throw new Error('AI-körningen har tagit för lång tid och statuskontrollen stoppades. Starta en ny granskning.')
+    }
     await abortableDelay(nextPollDelayMs, signal)
     pollCount += 1
 
