@@ -14,8 +14,8 @@ import { buildTuReportSnapshot } from '@/lib/tu/reportDraftServer'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_REPORT_REVIEW_MODEL = process.env.OPENAI_TU_REPORT_MODEL?.trim() || 'gpt-5.6'
-const RULESET_KEY = 'tu_report_review_v1'
-const RULESET_VERSION = 1
+const RULESET_KEY = 'tu_report_review_v2'
+const RULESET_VERSION = 2
 
 type JsonRecord = Record<string, unknown>
 
@@ -190,13 +190,19 @@ async function generateReview(input: { apiKey: string; snapshot: JsonRecord }) {
         'Du reviderar ett svenskt tekniskt utlåtande efter en uttrycklig instruktion från ansvarig besiktningsman.',
         'Instruktionen är ett auktoritativt granskningsbeslut men ändrar inte det ursprungliga fältunderlaget.',
         'Ställ inga frågor. Om underlaget inte räcker ska du använda en saklig reservation eller lämna en varning.',
+        'Befintlig rapporttext, inklusive besiktningsmannens manuella ändringar, är utgångspunkt och ska bevaras där instruktionen eller följdverkningarna inte kräver något annat.',
         'Läs alltid samtliga rapportdelar och kontrollera följdverkningar, motsägelser, terminologi, slutsatser, rekommendationer och upprepningar.',
         'Ändra endast de rapportdelar som faktiskt påverkas. Returnera inga oförändrade rapportdelar.',
         'Vid en sektionsinstruktion måste målsektionen ingå bland affectedSections.',
         'Vid en terminologiändring ska samma olämpliga uttryck kontrolleras i hela utlåtandet.',
         'Vid en ändrad teknisk bedömning ska även sammanfattning, riskbedömning, slutsats och rekommendation kontrolleras där de finns.',
-        'Använd endast fältunderlag, godkänd analys, registrerade uppgifter och reviewInstruction i JSON-underlaget.',
+        'Använd endast fältunderlag, godkänd analys, sakuppgifter och reviewInstruction i JSON-underlaget.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
+        'Skriv som ansvarig besiktningsman, inte som ett system eller en extern granskare av underlaget.',
+        'Interna id:n, fältnamn, transkriberingar, fältanteckningar, AI-analyser och granskningsprocessen får aldrig omnämnas i rapporttexten.',
+        'Egna fotografier är dokumentation av iakttagelser och ska inte beskrivas som externt bildmaterial eller underlag.',
+        'Räkna inte upp saknade mätfält i rapporttexten. Utelämna i stället ett mätpåstående som saknar tillräckligt stöd och lämna vid behov en intern varning.',
+        'Kontrollera att den reviderade texten fortfarande håller sig till uppdragets huvudfråga och ta bort sidospår som instruktionen gör irrelevanta.',
         'Varje stycke måste ange minst en verklig källa via sourceAnalysisItemIds, sourceObservationIds eller sourceFieldKeys.',
         'Granskarens instruktion finns som en sourceField och får användas som källa för granskarens aktuella bedömning eller språkbeslut.',
         'Skriv inte rubriken i texten. Skriv sakligt, sammanhållet och proportionerligt på svenska utan utfyllnad.',

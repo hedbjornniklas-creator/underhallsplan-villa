@@ -13,6 +13,11 @@ import {
   type TuGeneratedGroundedSection,
   type TuGroundingStatus,
 } from '@/lib/tu/grounding'
+import {
+  buildTuReportWriterSnapshot,
+  parseTuReportEditorialPlan,
+  type TuReportEditorialPlan,
+} from '@/lib/tu/reportEditorial'
 import { validateTuReportSections } from '@/lib/tu/reportGroundingServer'
 import type {
   TuWholeReportDraftRun,
@@ -25,8 +30,8 @@ const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
   || 'gpt-5.6'
-const RULESET_KEY = 'tu_moisture_report_v2'
-const RULESET_VERSION = 3
+const RULESET_KEY = 'tu_moisture_report_v3'
+const RULESET_VERSION = 4
 const STALE_RUN_MINUTES = 12
 const NON_EDITABLE_SECTION_KEYS = new Set(['assignment_parties', 'signature'])
 
@@ -316,6 +321,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
       title: section.title,
       currentText: section.text,
       aiInstruction: section.aiInstruction ?? null,
+      isRequired: section.isRequired === true,
       order: index + 1,
     }))
   if (sections.length === 0) throw new Error('TU_REPORT_DRAFT_NO_SECTIONS')
@@ -327,12 +333,12 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   }
   addSourceField('assignment.title', 'Uppdragets titel', investigation.title)
   addSourceField('assignment.assignmentNumber', 'Arbetsnummer', investigation.assignmentNumber)
-  addSourceField('assignment.scopeDescription', 'Registrerad omfattning', investigation.scopeDescription)
+  addSourceField('assignment.scopeDescription', 'Uppdragets omfattning', investigation.scopeDescription)
   addSourceField('assignment.inspectionDate', 'Besiktningsdatum', investigation.date)
   addSourceField('assignment.inspectionTime', 'Besiktningstid', investigation.inspectionTime)
-  addSourceField('assignment.background', 'Registrerad bakgrund', investigation.background)
-  addSourceField('assignment.basis', 'Registrerat underlag', investigation.basis)
-  addSourceField('assignment.accessibility', 'Registrerad åtkomlighet', investigation.accessibility)
+  addSourceField('assignment.background', 'Bakgrund', investigation.background)
+  addSourceField('assignment.basis', 'Underlag', investigation.basis)
+  addSourceField('assignment.accessibility', 'Åtkomlighet', investigation.accessibility)
   addSourceField('object.objectType', 'Objekttyp', investigation.objectType)
   addSourceField('object.address', 'Objektadress', investigation.propertyAddress)
   addSourceField('object.city', 'Ort', investigation.propertyCity)
@@ -590,6 +596,99 @@ function parseGeneratedReport(payload: OpenAiResponse): GeneratedReport {
   }
 }
 
+async function createEditorialPlan(input: {
+  apiKey: string
+  snapshot: JsonRecord
+}): Promise<TuReportEditorialPlan> {
+  const response = await fetch(OPENAI_RESPONSES_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: TU_REPORT_MODEL,
+      store: false,
+      reasoning: { effort: 'high' },
+      instructions: [
+        'Du är redaktör för ett svenskt tekniskt utlåtande och planerar innehållet innan någon rapporttext skrivs.',
+        'Identifiera uppdragets huvudsakliga tekniska fråga och avgränsa rapporten till det som behövs för att besvara den.',
+        'Välj endast källor som behövs för uppdraget, genomförandet, avgörande iakttagelser, den samlade tekniska bedömningen eller en proportionerlig rekommendation.',
+        'En uppgift kan vara korrekt men ändå sakna betydelse för den aktuella frågan. Sådana sidospår ska inte väljas.',
+        'Den godkända current_assessment och godkända konfliktlösningar styr vilka slutsatser och benämningar som är aktuella.',
+        'Besiktningsmannens observationer och egna bilder är dokumentation av den genomförda undersökningen, inte externt bildmaterial.',
+        'Systemfält och deras etiketter är intern metadata. Välj ett fältvärde endast när själva sakuppgiften behövs i rapporten.',
+        'Bristande metadata om en mätning är i första hand en intern granskningsvarning. Välj inte en uppräkning av saknade fält som rapportinnehåll.',
+        'Om en faktisk begränsning påverkar möjligheten att besvara huvudfrågan får begränsningen väljas, men den ska beskrivas proportionerligt och utan intern kontrolljargong.',
+        'Placera varje sakuppgift i en primär rapportdel. Undvik att planera samma resonemang i flera delar.',
+        'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
+        'En rapportdel med isRequired true ska planeras med relevant källstöd när sådant finns. Om stöd verkligen saknas ska den utelämnas och få en tydlig internalWarning.',
+        'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Använd endast id:n och field keys som finns i JSON-underlaget.',
+        'internalWarnings är för besiktningsmannens granskning och ska aldrig bli rapporttext.',
+      ].join('\n'),
+      input: JSON.stringify(input.snapshot, null, 2),
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'tu_report_editorial_plan',
+          strict: true,
+          schema: {
+            type: 'object',
+            properties: {
+              focus: { type: 'string' },
+              scopeBoundary: { type: 'string' },
+              internalWarnings: { type: 'array', items: { type: 'string' } },
+              sections: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    sectionId: { type: 'string' },
+                    include: { type: 'boolean' },
+                    purpose: { type: 'string' },
+                    selectedAnalysisItemIds: { type: 'array', items: { type: 'string' } },
+                    selectedObservationIds: { type: 'array', items: { type: 'string' } },
+                    selectedFieldKeys: { type: 'array', items: { type: 'string' } },
+                    internalWarnings: { type: 'array', items: { type: 'string' } },
+                  },
+                  required: [
+                    'sectionId',
+                    'include',
+                    'purpose',
+                    'selectedAnalysisItemIds',
+                    'selectedObservationIds',
+                    'selectedFieldKeys',
+                    'internalWarnings',
+                  ],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ['focus', 'scopeBoundary', 'internalWarnings', 'sections'],
+            additionalProperties: false,
+          },
+        },
+      },
+      max_output_tokens: 9000,
+    }),
+  })
+  if (!response.ok) {
+    const detail = await response.text()
+    console.error('[tu.report-draft] OpenAI editorial planning failed', {
+      status: response.status,
+      detail: detail.slice(0, 800),
+    })
+    throw new Error(`OPENAI_REQUEST_FAILED:${response.status}`)
+  }
+  const payload = await response.json() as OpenAiResponse
+  const text = responseText(payload)
+  if (!text) throw new Error('OPENAI_EMPTY_RESPONSE')
+  return parseTuReportEditorialPlan({
+    value: JSON.parse(text),
+    snapshot: input.snapshot,
+  })
+}
+
 async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
   const response = await fetch(OPENAI_RESPONSES_URL, {
     method: 'POST',
@@ -602,31 +701,25 @@ async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
       store: false,
       reasoning: { effort: 'high' },
       instructions: [
-        'Du skriver ett komplett, sammanhållet och granskningsbart utkast till en svensk fuktskadeutredning.',
-        'Bearbeta samtliga angivna rapportdelar i en gemensam disposition så att resonemanget hänger ihop och onödiga upprepningar undviks.',
-        'Använd endast uppgifter i JSON-underlaget. Hitta aldrig på observationer, mätvärden, datum, orsaker, ansvar eller utförda kontroller.',
-        'Fältposterna är kronologiska. En godkänd current_assessment och godkända resolvedConflicts styr hur äldre preliminära uppgifter får användas.',
-        'En senare uppgift är inte automatiskt sannare. Bevara den godkända konfliktlösningen och återanvänd inte en benämning som den aktuella bedömningen har ersatt.',
-        'Rapportmallens titel och aiInstruction beskriver önskad struktur men är aldrig en faktakälla.',
-        'Skriv aldrig fuktfläck när fukt inte har verifierats. Använd fläck eller missfärgning enligt den aktuella bedömningen.',
-        'Skriv aldrig att en konstruktion saknar fukt när källan endast säger att inga fuktindikationer noterats i kontrollerade delar.',
-        'Skilj mellan indikativ mätning och kvantitativ mätning. Ett indikativt utslag får inte beskrivas som en uppmätt fukthalt.',
-        'Skriv inte normalt, förhöjt, acceptabelt eller inga förhöjda fuktvärden om underlaget saknar relevant mätvärde, enhet, metod, instrument och dokumenterad jämförelsegrund.',
-        'Ett enskilt mätvärde gäller endast den angivna mätpunkten och tidpunkten. Generalisera inte resultatet till hela konstruktionen eller byggnaden.',
-        'Hitta inte på uppdragets omfattning, avgränsning, åtkomlighet, instrument, mätmetod eller kontrollresultat för att fylla en rapportdel.',
-        'Beskriv inte ett utförande som felaktigt, otillåtet eller inte fackmässigt utan dokumenterad iakttagelse och angiven bedömningsgrund. Beskriv annars förhållandet neutralt och ange vad som inte har verifierats.',
-        'Skilj tydligt mellan verifierade iakttagelser, uppgifter från part, tekniska bedömningar, hypoteser och sådant som inte kunnat fastställas.',
-        'Formulera osäkerheter och begränsningar uttryckligen. Utse inte juridiskt ansvarig part och lämna inga juridiska slutsatser.',
-        'Fakta redovisas primärt i en rapportdel. En sammanfattning får återge slutsatser kort men inte kopiera hela stycken.',
-        'Iakttagelser beskriver vad som konstaterats. Teknisk bedömning förklarar betydelsen. Rekommendationer beskriver nästa kontroll eller åtgärdsinriktning.',
-        'Bevara relevanta befintliga texter men redigera dem till en konsekvent helhet och ta bort dubbleringar.',
-        'Befintlig currentText är redaktionellt utkast och inte en faktakälla. Den får bara bevaras när samma uppgift stöds av en angiven analys-, observations- eller fältkälla.',
-        'Följ varje rapportsdels aiInstruction. Skriv inte rubriken i texten eftersom gränssnittet lägger till den.',
-        'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Om verifierbart underlag saknas ska paragraphs vara en tom array.',
+        'Du skriver ansvarig besiktningsmans svenska tekniska utlåtande utifrån ett redan redaktionellt gallrat underlag.',
+        'Skriv som den besiktningsman som har utfört undersökningen, inte som ett system eller en extern granskare av källmaterial.',
+        'Rapporten ska besvara editorialFocus och hålla sig inom scopeBoundary. Använd endast selectedSources i respektive rapportdel.',
+        'Interna id:n, fältnamn, etiketter, transkriberingar, fältanteckningar, AI-analyser och granskningsprocessen får aldrig omnämnas i rapporttexten.',
+        'Egna fotografier är dokumentation av iakttagelser. Beskriv sakförhållandet direkt och kalla dem inte bildmaterial eller underlag.',
+        'Skilj sakligt mellan egna iakttagelser, uttryckligt angivna partsuppgifter och tekniska bedömningar utan att beskriva den interna datakällan.',
+        'Följ den godkända aktuella bedömningen och återinför inte en preliminär benämning eller slutsats som senare har ersatts.',
+        'Utelämna osäkra mätpåståenden när mätunderlaget inte räcker. Räkna inte upp vilka metadatafält som saknas i rapporten.',
+        'Ta bara med begränsningar som har faktisk betydelse för slutsatsen och formulera dem i besiktningsmannens direkta fackspråk.',
+        'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
+        'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
+        'Bevara relevanta manuella texter när de stöds av de valda källorna, men redigera helheten till konsekvent språk och disposition.',
+        'Skriv endast rapportdelar där include är true. För övriga sectionId ska paragraphs vara en tom array.',
+        'Följ varje rapportsdels aiInstruction och editorialPurpose. Skriv inte rubriken i texten.',
+        'Returnera varje sectionId exakt en gång och i samma ordning som underlaget.',
         'Varje stycke måste ange minst en verklig källa via sourceAnalysisItemIds, sourceObservationIds eller sourceFieldKeys.',
-        'sourceAnalysisItemIds och sourceObservationIds får bara innehålla id:n som finns i underlaget. sourceFieldKeys får bara innehålla key från sourceFields.',
+        'Käll-id:n får bara hämtas från selectedSources i den aktuella rapportdelen.',
         'Ett stycke utan källor får inte skapas. Skriv i stället en varning på rapportdelen och lämna paragraphs tom.',
-        'Skriv sakligt, precist och proportionerligt på svenska. Textens omfattning ska motiveras av underlaget, inte av utfyllnad.',
+        'Skriv koncist, precist och proportionerligt. Textens omfattning ska styras av huvudfrågan och underlaget, inte av antalet tillgängliga fakta.',
       ].join('\n'),
       input: JSON.stringify(input.snapshot, null, 2),
       text: {
@@ -757,9 +850,12 @@ export async function runTuWholeReportDraft(input: {
     await admin.from('tu_ai_runs').update({
       attempt_count: (run.attempt_count ?? 0) + 1,
     }).eq('id', input.runId)
-    await updateProgress('synthesizing', 'Skriver alla rapportdelar som en sammanhållen helhet.')
     const snapshot = record(run.input_snapshot)
-    const generated = await generateReport({ apiKey, snapshot })
+    await updateProgress('synthesizing', 'Väljer relevant material utifrån uppdragets huvudfråga.')
+    const editorialPlan = await createEditorialPlan({ apiKey, snapshot })
+    const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan: editorialPlan })
+    await updateProgress('synthesizing', 'Skriver rapporten i besiktningsmannens röst.')
+    const generated = await generateReport({ apiKey, snapshot: writerSnapshot })
     const expectedSections = Array.isArray(snapshot.sections) ? snapshot.sections.map(record) : []
     const expectedIds = expectedSections.map((section) => cleanText(section.id)).filter(Boolean)
     const generatedIds = generated.sections.map((section) => section.sectionId)
@@ -827,11 +923,22 @@ export async function runTuWholeReportDraft(input: {
         ? `${needsSourceSectionCount} rapportdelar lämnades tomma eftersom verifierbart underlag saknas.`
         : '',
     ].filter(Boolean)
+    const editorialWarnings = [
+      ...editorialPlan.internalWarnings,
+      ...editorialPlan.sections.flatMap((section) => section.internalWarnings),
+    ]
     const { error: completeError } = await admin.from('tu_ai_runs').update({
       status: 'completed',
       output_payload: {
         overview: generated.overview,
-        warnings: [...new Set([...generated.warnings, ...groundingWarnings])],
+        warnings: [...new Set([
+          ...editorialWarnings,
+          ...generated.warnings,
+          ...groundingWarnings,
+        ])],
+        editorialFocus: editorialPlan.focus,
+        scopeBoundary: editorialPlan.scopeBoundary,
+        editorialPlan,
         sectionCount: rows.length,
         blockedSectionCount,
         needsSourceSectionCount,

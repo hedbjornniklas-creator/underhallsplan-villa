@@ -72,3 +72,21 @@ test('warns about generic appendix captions', () => {
   })
   assert.ok(issues.some((issue) => issue.id === 'appendix-caption-missing'))
 })
+
+test('blocks internal source language in the customer report', () => {
+  const issues = evaluateTuReportQuality({
+    reportText: 'Den registrerade uppdragsbeskrivningen anger att fläcken ska undersökas.',
+    observations: [],
+    appendixImages: [],
+  })
+  assert.ok(issues.some((issue) => issue.id === 'internal-source-language-in-report'))
+})
+
+test('blocks an audit-style list of missing measurement metadata', () => {
+  const issues = evaluateTuReportQuality({
+    reportText: 'För kontrollen redovisas inte instrument, mätmetod, enhet eller jämförelsegrund.',
+    observations: [],
+    appendixImages: [],
+  })
+  assert.ok(issues.some((issue) => issue.id === 'measurement-audit-language-in-report'))
+})

@@ -88,6 +88,24 @@ export function evaluateTuReportQuality(input: {
     })
   }
 
+  const internalProcessVoice = /(?:den|det|de)\s+registrerad(?:e|a)?\s+(?:uppdragsbeskrivningen|omfattningen|bakgrunden|underlaget)|fältanteckning(?:en|arna)?|transkribering(?:en|arna)?|AI[- ]analys(?:en)?/i
+  if (internalProcessVoice.test(input.reportText)) {
+    issues.push({
+      id: 'internal-source-language-in-report',
+      severity: 'blocker',
+      message: 'Utlåtandet hänvisar till interna fält, anteckningar eller AI-processen. Formulera texten i besiktningsmannens egen röst.',
+    })
+  }
+
+  const missingMeasurementAudit = /(?:saknas|redovisas inte|har inte redovisats)[^.]{0,140}(?:instrument|mätmetod|enhet|numeriskt mätvärde|jämförelsegrund)|(?:instrument|mätmetod|enhet|numeriskt mätvärde|jämförelsegrund)[^.]{0,140}(?:saknas|redovisas inte|har inte redovisats)/i
+  if (missingMeasurementAudit.test(input.reportText)) {
+    issues.push({
+      id: 'measurement-audit-language-in-report',
+      severity: 'blocker',
+      message: 'Utlåtandet räknar upp saknade mätuppgifter. Utelämna det osäkra mätpåståendet eller beskriv endast en relevant undersökningsbegränsning.',
+    })
+  }
+
   const genericCaptionCount = input.appendixImages.filter((image) => isGenericCaption(image.caption)).length
   if (genericCaptionCount > 0) {
     issues.push({

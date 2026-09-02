@@ -583,18 +583,25 @@ function RowsBlock({
 
 function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
   return (
-    <dl className="grid grid-cols-[38mm_minmax(0,1fr)] gap-x-5 gap-y-1">
-      {rows.map((row) => (
-        <div key={row.label} className="contents">
-          <dt className="text-[13px] font-semibold leading-5 text-gray-950">{row.label}</dt>
-          <dd
-            className="min-w-0 whitespace-pre-wrap text-[13px] leading-5 text-gray-950"
-            style={PRINT_META_VALUE_STYLE}
-          >
-            {row.value}
-          </dd>
-        </div>
-      ))}
+    <dl className="grid grid-cols-[32mm_minmax(0,1fr)] gap-x-3 gap-y-[2px]">
+      {rows.map((row) => {
+        const compactValue = row.value.includes('@') || row.value.length > 34
+        return (
+          <div key={row.label} className="contents">
+            <dt className="text-[12px] font-semibold leading-4 text-gray-950">{row.label}</dt>
+            <dd
+              className={
+                compactValue
+                  ? 'min-w-0 whitespace-pre-wrap text-[10.5px] leading-[15px] text-gray-950'
+                  : 'min-w-0 whitespace-pre-wrap text-[12px] leading-4 text-gray-950'
+              }
+              style={PRINT_META_VALUE_STYLE}
+            >
+              {row.value}
+            </dd>
+          </div>
+        )
+      })}
     </dl>
   )
 }
@@ -608,12 +615,12 @@ function PartiesBlock({
 }) {
   return (
     <section className="tu-report-block tu-report-parties-block" style={{ marginBottom: mm(SECTION_GAP_MM) }}>
-      <h2 className="mb-6 text-[15px] font-semibold leading-tight text-violet-950">
+      <h2 className="mb-3 text-[15px] font-semibold leading-tight text-violet-950">
         {numberLabel}. Uppdragsgivare och besiktningsman
       </h2>
       <div className="grid gap-x-5" style={{ gridTemplateColumns: '0.86fr 1px 1.14fr' }}>
         <PartyRows rows={parties.leftRows} />
-        <div className="min-h-[33mm] bg-[#2f6ea3]" />
+        <div className="min-h-[27mm] self-stretch bg-[#2f6ea3]" />
         <PartyRows rows={parties.rightRows} />
       </div>
     </section>
@@ -701,12 +708,12 @@ function SignatureBlock({ signature }: { signature: TuPrintSignature }) {
 
   return (
     <section
-      className="tu-report-block tu-report-signature-block border-t border-violet-200 pt-5"
-      style={{ marginTop: mm(4), marginBottom: mm(SECTION_GAP_MM) }}
+      className="tu-report-block tu-report-signature-block border-t border-violet-200 pt-3"
+      style={{ marginTop: mm(2), marginBottom: mm(BLOCK_GAP_MM) }}
     >
-      <div className="w-[72mm]">
+      <div className="flex items-start gap-4">
         {signature.avatarUrl ? (
-          <div className="mb-2 h-[26mm] w-[26mm] overflow-hidden bg-white">
+          <div className="h-[20mm] w-[20mm] shrink-0 overflow-hidden bg-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={signature.avatarUrl}
@@ -715,32 +722,33 @@ function SignatureBlock({ signature }: { signature: TuPrintSignature }) {
             />
           </div>
         ) : null}
-
-        <div className="text-[13px] font-semibold leading-5 text-gray-950">
-          {signature.locationAndDate}
-        </div>
-
-        {signature.signatureUrl ? (
-          <div className="mt-3 flex h-[16mm] w-[42mm] items-center overflow-hidden bg-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={signature.signatureUrl}
-              alt={`Underskrift ${signature.inspectorName}`}
-              className="max-h-full max-w-full object-contain"
-            />
+        <div className="min-w-0 w-[72mm]">
+          <div className="text-[12px] font-semibold leading-4 text-gray-950">
+            {signature.locationAndDate}
           </div>
-        ) : null}
 
-        <div className="mt-2 text-[13px] font-semibold leading-5 text-gray-950">
-          {signature.inspectorName}
-        </div>
-        {hasCredentials ? (
-          <div className="mt-0.5 space-y-0.5 text-[12px] leading-5 text-gray-950">
-            {signature.credentialLines.map((line) => (
-              <div key={line}>{line}</div>
-            ))}
+          {signature.signatureUrl ? (
+            <div className="mt-1.5 flex h-[12mm] w-[38mm] items-center overflow-hidden bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={signature.signatureUrl}
+                alt={`Underskrift ${signature.inspectorName}`}
+                className="max-h-full max-w-full object-contain"
+              />
+            </div>
+          ) : null}
+
+          <div className="mt-1 text-[12px] font-semibold leading-4 text-gray-950">
+            {signature.inspectorName}
           </div>
-        ) : null}
+          {hasCredentials ? (
+            <div className="mt-0.5 space-y-0.5 text-[11px] leading-4 text-gray-950">
+              {signature.credentialLines.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
     </section>
   )
