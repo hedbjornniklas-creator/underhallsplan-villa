@@ -1,3 +1,5 @@
+import type { TuReportAuthoringMode } from '@/lib/tu/authoring'
+
 export type TuReportTemplateSectionOption = {
   id?: string
   templateSectionKey: string
@@ -19,6 +21,7 @@ export type TuReportTemplateOption = {
   description?: string | null
   documentTitle: string
   projectType: string
+  authoringMode: TuReportAuthoringMode
   version: number
   sortOrder: number
   isActive: boolean
@@ -33,6 +36,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     description: 'Standardmall för tekniska utredningar med full struktur.',
     documentTitle: 'Teknisk utredning',
     projectType: 'Fördjupad teknisk utredning',
+    authoringMode: 'standard',
     version: 1,
     sortOrder: 100,
     isActive: true,
@@ -136,6 +140,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     description: 'Mall för tekniskt statusutlåtande med sammanhållen statusbedömning.',
     documentTitle: 'Tekniskt statusutlåtande',
     projectType: 'Fastighetsbesiktning',
+    authoringMode: 'standard',
     version: 1,
     sortOrder: 200,
     isActive: true,
@@ -209,6 +214,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     description: 'Kortare mall för avgränsade tekniska bedömningar.',
     documentTitle: 'Kort tekniskt utlåtande',
     projectType: 'Kort tekniskt utlåtande',
+    authoringMode: 'standard',
     version: 1,
     sortOrder: 300,
     isActive: true,
@@ -262,6 +268,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     description: 'Fuktskadeutredning med fokuserat besiktningsunderlag, redaktionellt relevansurval och granskat AI-förslag.',
     documentTitle: 'Fuktskadeutredning',
     projectType: 'Fuktskadeutredning',
+    authoringMode: 'ai_assisted',
     version: 2,
     sortOrder: 150,
     isActive: true,

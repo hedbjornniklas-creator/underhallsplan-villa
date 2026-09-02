@@ -16,7 +16,8 @@ import {
   type TuAnalysisValidation,
   type TuAnalysisWorkflow,
 } from '@/lib/tu/analysis'
-import { isTuAnalysisSourceImage, TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
+import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
 import {
@@ -29,8 +30,8 @@ const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_ANALYSIS_MODEL =
   process.env.OPENAI_TU_ANALYSIS_MODEL?.trim()
   || 'gpt-5.6'
-const RULESET_KEY = 'tu_moisture_inspection_v2'
-const RULESET_VERSION = 4
+const RULESET_KEY = 'tu_ai_assisted_inspection_v1'
+const RULESET_VERSION = 1
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
@@ -518,7 +519,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
   ])
   if (!investigation) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
-  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) {
+  if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) {
     throw new Error('TU_ANALYSIS_TEMPLATE_NOT_SUPPORTED')
   }
   const sourceImages = images.filter(isTuAnalysisSourceImage)
@@ -534,6 +535,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         key: investigation.reportTemplateKey,
         title: investigation.reportTemplateTitle,
         version: investigation.reportTemplateVersion,
+        authoringMode: investigation.reportAuthoringMode,
       },
       assignment: {
         title: investigation.title,
@@ -770,9 +772,9 @@ async function analyzeImageBatch(input: {
   }
   const parsed = await structuredOpenAiRequest({
     apiKey: input.apiKey,
-    instructions: 'Du är ett visuellt dokumentationsstöd för en svensk fuktskadeutredning. Du beskriver synliga fakta, inte diagnoser.',
+    instructions: 'Du är ett visuellt dokumentationsstöd för en svensk teknisk utredning. Du beskriver synliga fakta, inte diagnoser.',
     content: [{ role: 'user', content }],
-    schemaName: 'tu_moisture_image_analysis',
+    schemaName: 'tu_inspection_image_analysis',
     schema: {
       type: 'object',
       properties: {
@@ -867,7 +869,7 @@ async function synthesizeInspection(input: {
   const parsed = await structuredOpenAiRequest({
     apiKey: input.apiKey,
     instructions: [
-      'Du analyserar ett samlat besiktningsunderlag för en svensk fuktskadeutredning.',
+      'Du analyserar ett samlat besiktningsunderlag för en svensk teknisk utredning. Rapportmallens titel, projekttyp och sektionsinstruktioner anger utredningens fackliga inriktning.',
       'AI-resultatet är ett granskningsunderlag, aldrig ett färdigt utlåtande.',
       'Använd endast fakta och käll-id i underlaget. Hitta inte på mätvärden, datum, händelser, orsaker eller ansvar.',
       'Identifiera först uppdragets huvudsakliga tekniska fråga. Bedöm därefter all information i relation till den frågan, inte som fristående poster.',
@@ -878,9 +880,9 @@ async function synthesizeInspection(input: {
       'En senare uppgift är inte automatiskt sannare. Väg källa, kontrollmetod, mätresultat, åtkomlighet och om den senare uppgiften uttryckligen korrigerar eller ersätter en tidigare preliminär uppfattning.',
       'Skapa evidence_conflict när två uppgifter om samma plats och förhållande inte kan användas samtidigt utan förklaring. Ange tidigare källor i earlierSourceObservationIds och senare källor i laterSourceObservationIds.',
       'Skapa current_assessment för den nu gällande samlade bedömningen. Den ska beskriva både slutsats och kontrollens begränsning och länka till samtliga avgörande källor.',
-      'Använd neutral terminologi tills ett förhållande är verifierat. Skriv fläck eller missfärgning, inte fuktfläck, när fukt inte har konstaterats.',
-      'Skriv aldrig att en konstruktion saknar fukt när underlaget endast visar att inga fuktindikationer noterats i en begränsad kontrollerad del.',
-      'Skilj mellan indikativ mätning och kvantitativ mätning. Ett indikativt utslag är inte en uppmätt fukthalt.',
+      'Använd neutral terminologi tills ett förhållande är verifierat. Vid fuktfrågor ska fläck eller missfärgning användas i stället för fuktfläck när fukt inte har konstaterats.',
+      'Vid fuktkontroller får du inte skriva att en konstruktion saknar fukt när underlaget endast visar att inga fuktindikationer noterats i en begränsad kontrollerad del.',
+      'Vid fuktmätning ska du skilja mellan indikativ mätning och kvantitativ mätning. Ett indikativt utslag är inte en uppmätt fukthalt.',
       'Klassificera inte ett resultat som normalt, förhöjt, acceptabelt eller utan avvikelse om relevant enhet, metod, instrument och jämförelsegrund saknas.',
       'Avgränsa varje mätresultat till den dokumenterade mätpunkten och tidpunkten. Generalisera inte till hela konstruktionen.',
       'Rubriken, rapportmallen och uppdragstypen är kontext, inte teknisk bevisning.',
@@ -900,7 +902,7 @@ async function synthesizeInspection(input: {
       inspection: input.snapshot,
       imageAnalyses: input.imageAnalyses,
     }),
-    schemaName: 'tu_moisture_inspection_analysis',
+    schemaName: 'tu_inspection_analysis',
     schema: {
       type: 'object',
       properties: {

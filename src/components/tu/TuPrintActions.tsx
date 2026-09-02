@@ -110,10 +110,12 @@ function formatFileSize(value: number | null | undefined) {
 export default function TuPrintActions({
   inspectionId,
   finalizationBlockedReason = null,
+  stageLabel = 'Steg 5',
   onStatusChange,
 }: {
   inspectionId: string
   finalizationBlockedReason?: string | null
+  stageLabel?: string
   onStatusChange?: (state: { reportLockedAt: string | null }) => void
 }) {
   const [meta, setMeta] = useState<DeliveryResponse | null>(null)
@@ -309,7 +311,7 @@ export default function TuPrintActions({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-violet-700">
-              Steg 5
+              {stageLabel}
             </p>
             <h2 className="mt-1 text-xl font-semibold text-gray-950">Fastställ och leverera</h2>
             <p className="mt-1 text-sm leading-6 text-gray-600">

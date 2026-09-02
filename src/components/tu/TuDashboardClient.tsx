@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import PendingLink from '@/components/ui/PendingLink'
+import { tuReportAuthoringModeLabel } from '@/lib/tu/authoring'
 import type {
   TuAssignmentListItem,
   TuInspectionSummary,
@@ -1513,6 +1514,10 @@ function TemplateSelect({
           </p>
           <p>
             <span className="font-semibold text-slate-800">Projekttyp:</span> {selectedTemplate.projectType}
+          </p>
+          <p>
+            <span className="font-semibold text-slate-800">Arbetssätt:</span>{' '}
+            {tuReportAuthoringModeLabel(selectedTemplate.authoringMode)}
           </p>
           {selectedTemplate.description ? <p>{selectedTemplate.description}</p> : null}
         </div>

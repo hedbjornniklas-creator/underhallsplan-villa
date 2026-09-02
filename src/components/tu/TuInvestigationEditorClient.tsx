@@ -14,7 +14,7 @@ import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueue'
 import { useTuWorkflowState } from '@/hooks/useTuWorkflowState'
 import { supabase } from '@/lib/supabaseClient'
-import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type { TuWorkspaceView } from '@/lib/tu/workflow'
 import type {
@@ -784,18 +784,20 @@ export default function TuInvestigationEditorClient({
   const [reportReviewTarget, setReportReviewTarget] = useState<
     { id: string; title: string } | null | undefined
   >(undefined)
-  const evidenceWorkspaceEnabled =
-    initialInvestigation.reportTemplateKey === TU_MOISTURE_DAMAGE_TEMPLATE_KEY
+  const aiWorkflowEnabled = usesTuAiAssistedWorkflow(
+    initialInvestigation.reportAuthoringMode,
+    initialInvestigation.reportTemplateKey
+  )
   const locked = Boolean(investigation.reportLockedAt)
   const [workspaceView, setWorkspaceView] = useState<TuWorkspaceView>(
-    evidenceWorkspaceEnabled ? 'field' : 'report'
+    aiWorkflowEnabled ? 'field' : 'report'
   )
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
     setImages((current) => upsertImages(current, [image]))
   }, [])
   const fieldQueue = useTuFieldQueue({
     inspectionId: initialInvestigation.inspectionId,
-    enabled: evidenceWorkspaceEnabled,
+    enabled: aiWorkflowEnabled,
     locked,
     onImageUploaded: handleFieldImageUploaded,
   })
@@ -1359,7 +1361,7 @@ export default function TuInvestigationEditorClient({
   ).length
   const workflowState = useTuWorkflowState({
     inspectionId: investigation.inspectionId,
-    enabled: evidenceWorkspaceEnabled,
+    enabled: aiWorkflowEnabled,
     refreshToken: fieldQueue.completedRevision,
     queue: {
       total: fieldQueue.counts.total,
@@ -1370,6 +1372,7 @@ export default function TuInvestigationEditorClient({
   })
   const refreshWorkflowState = workflowState.refresh
   const finalizationBlockedReason = useMemo(() => {
+    if (!aiWorkflowEnabled) return null
     const assessmentStep = workflowState.steps.find((step) => step.id === 'assessment')
     const reportStep = workflowState.steps.find((step) => step.id === 'report')
     if (assessmentStep?.status !== 'complete') {
@@ -1379,7 +1382,7 @@ export default function TuInvestigationEditorClient({
       return reportStep?.statusText ?? 'Utlåtandet måste slutgranskas.'
     }
     return null
-  }, [workflowState.steps])
+  }, [aiWorkflowEnabled, workflowState.steps])
   const handleDeliveryStatusChange = useCallback(({ reportLockedAt }: { reportLockedAt: string | null }) => {
     setInvestigation((current) => (
       current.reportLockedAt === reportLockedAt ? current : { ...current, reportLockedAt }
@@ -2164,8 +2167,8 @@ export default function TuInvestigationEditorClient({
           </div>
         ) : null}
 
-        <div className={evidenceWorkspaceEnabled ? 'grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]' : ''}>
-          {evidenceWorkspaceEnabled ? (
+        <div className={aiWorkflowEnabled ? 'grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]' : ''}>
+          {aiWorkflowEnabled ? (
             <TuWorkflowRail
               steps={workflowState.steps}
               current={workspaceView}
@@ -2174,13 +2177,13 @@ export default function TuInvestigationEditorClient({
             />
           ) : null}
           <div className="flex min-w-0 flex-col gap-5">
-          {workflowState.error && evidenceWorkspaceEnabled ? (
+          {workflowState.error && aiWorkflowEnabled ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               Statusen kunde inte uppdateras. Arbetsytan går fortfarande att använda.
             </div>
           ) : null}
 
-        {evidenceWorkspaceEnabled && workspaceView === 'field' ? (
+        {aiWorkflowEnabled && workspaceView === 'field' ? (
           <TuFieldLogWorkspace
             inspectionId={investigation.inspectionId}
             locked={locked}
@@ -2189,7 +2192,7 @@ export default function TuInvestigationEditorClient({
             onPreviewImage={setPreviewImageId}
             onOpenEvidence={() => setWorkspaceView('evidence')}
           />
-        ) : evidenceWorkspaceEnabled && workspaceView === 'evidence' ? (
+        ) : aiWorkflowEnabled && workspaceView === 'evidence' ? (
           <TuEvidenceWorkspace
             inspectionId={investigation.inspectionId}
             refreshToken={fieldQueue.completedRevision}
@@ -2205,7 +2208,7 @@ export default function TuInvestigationEditorClient({
             onOpenReport={openReportWorkspace}
             onOpenAnalysis={() => setWorkspaceView('assessment')}
           />
-        ) : evidenceWorkspaceEnabled && workspaceView === 'assessment' ? (
+        ) : aiWorkflowEnabled && workspaceView === 'assessment' ? (
           <TuAnalysisWorkspace
             inspectionId={investigation.inspectionId}
             refreshToken={fieldQueue.completedRevision}
@@ -2219,50 +2222,63 @@ export default function TuInvestigationEditorClient({
             onApplyReportDraft={applyWholeReportDraft}
             onOpenReport={() => openReportWorkspace()}
           />
-        ) : evidenceWorkspaceEnabled && workspaceView === 'delivery' ? (
-          <TuPrintActions
-            inspectionId={investigation.inspectionId}
-            finalizationBlockedReason={finalizationBlockedReason}
-            onStatusChange={handleDeliveryStatusChange}
-          />
+        ) : workspaceView === 'delivery' ? (
+          <div className="space-y-3">
+            {!aiWorkflowEnabled ? (
+              <button
+                type="button"
+                onClick={() => setWorkspaceView('report')}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
+              >
+                <ArrowLeft size={16} aria-hidden />
+                Till granskningen
+              </button>
+            ) : null}
+            <TuPrintActions
+              inspectionId={investigation.inspectionId}
+              finalizationBlockedReason={finalizationBlockedReason}
+              stageLabel={aiWorkflowEnabled ? 'Steg 5' : 'Leverans'}
+              onStatusChange={handleDeliveryStatusChange}
+            />
+          </div>
         ) : (
           <>
 
-        {evidenceWorkspaceEnabled ? (
-          <div className="flex flex-col gap-4 rounded-lg border border-violet-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase text-violet-700">Steg 4</p>
-              <h2 className="mt-1 text-xl font-semibold text-gray-950">Granska utlåtandet</h2>
-              <p className="mt-1 max-w-2xl text-sm text-gray-600">
-                Läs rapportdelarna och justera det som behövs. Förhandsgranska därefter rapporten innan du går vidare.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:items-end">
-              <Link
-                href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
-              >
-                <Printer size={16} aria-hidden />
-                Förhandsgranska utkast
-              </Link>
-              <button
-                type="button"
-                onClick={() => setWorkspaceView('delivery')}
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
-              >
-                {locked ? 'Gå vidare till leverans' : 'Gå vidare till fastställande'}
-                <ArrowRight size={16} aria-hidden />
-              </button>
-              <span className="text-xs text-gray-500">
-                {locked
-                  ? 'Den fastställda revisionen kan nu skickas till mottagaren.'
-                  : 'Utlåtandet låses först när du väljer Fastställ utlåtandet.'}
-              </span>
-            </div>
+        <div className="flex flex-col gap-4 rounded-lg border border-violet-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase text-violet-700">
+              {aiWorkflowEnabled ? 'Steg 4' : 'Slutgranskning'}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-gray-950">Granska utlåtandet</h2>
+            <p className="mt-1 max-w-2xl text-sm text-gray-600">
+              Läs rapportdelarna och justera det som behövs. Förhandsgranska därefter rapporten innan du går vidare.
+            </p>
           </div>
-        ) : null}
+          <div className="flex flex-col gap-2 sm:items-end">
+            <Link
+              href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
+            >
+              <Printer size={16} aria-hidden />
+              Förhandsgranska utkast
+            </Link>
+            <button
+              type="button"
+              onClick={() => setWorkspaceView('delivery')}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+            >
+              {locked ? 'Gå vidare till leverans' : 'Gå vidare till fastställande'}
+              <ArrowRight size={16} aria-hidden />
+            </button>
+            <span className="text-xs text-gray-500">
+              {locked
+                ? 'Den fastställda revisionen kan nu skickas till mottagaren.'
+                : 'Utlåtandet låses först när du väljer Fastställ utlåtandet.'}
+            </span>
+          </div>
+        </div>
 
-        {!evidenceWorkspaceEnabled ? (
+        {!aiWorkflowEnabled ? (
         <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -3260,7 +3276,7 @@ export default function TuInvestigationEditorClient({
                   Läs varje rapportdel. Du kan redigera texten direkt eller be AI att justera en del eller hela utlåtandet.
                 </p>
               </div>
-              {evidenceWorkspaceEnabled ? (
+              {aiWorkflowEnabled ? (
                 <button
                   type="button"
                   onClick={() => setReportReviewTarget(null)}
@@ -3328,18 +3344,18 @@ export default function TuInvestigationEditorClient({
                       <button
                         type="button"
                         onClick={() => {
-                          if (evidenceWorkspaceEnabled) {
+                          if (aiWorkflowEnabled) {
                             setReportReviewTarget({ id: sectionId, title: section.title })
                             return
                           }
                           void requestAiSuggestions({ sectionKey: section.key })
                         }}
                         disabled={locked || aiBusy}
-                        title={evidenceWorkspaceEnabled ? 'Ge AI en instruktion för rapportdelen' : 'Skapa AI-förslag för sektionen'}
+                        title={aiWorkflowEnabled ? 'Ge AI en instruktion för rapportdelen' : 'Skapa AI-förslag för sektionen'}
                         className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
                       >
-                        {evidenceWorkspaceEnabled ? <MessageSquareText size={15} aria-hidden /> : <Sparkles size={15} aria-hidden />}
-                        {evidenceWorkspaceEnabled ? 'Justera med AI' : 'AI'}
+                        {aiWorkflowEnabled ? <MessageSquareText size={15} aria-hidden /> : <Sparkles size={15} aria-hidden />}
+                        {aiWorkflowEnabled ? 'Justera med AI' : 'AI'}
                       </button>
                     ) : null}
                     <button

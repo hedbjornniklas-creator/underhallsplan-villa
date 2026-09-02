@@ -6,7 +6,8 @@ import {
   isTuAnalysisProgressStage,
   isTuAnalysisRunStatus,
 } from '@/lib/tu/analysis'
-import { isTuAnalysisSourceImage, TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
+import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import {
   sortTuEvidenceChronologically,
@@ -30,8 +31,8 @@ const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
   || 'gpt-5.6'
-const RULESET_KEY = 'tu_moisture_report_v3'
-const RULESET_VERSION = 4
+const RULESET_KEY = 'tu_ai_assisted_report_v1'
+const RULESET_VERSION = 1
 const STALE_RUN_MINUTES = 12
 const NON_EDITABLE_SECTION_KEYS = new Set(['assignment_parties', 'signature'])
 
@@ -307,7 +308,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   ])
   if (!investigation) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
-  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) {
+  if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) {
     throw new Error('TU_REPORT_DRAFT_TEMPLATE_NOT_SUPPORTED')
   }
   const sourceImages = images.filter(isTuAnalysisSourceImage)
@@ -466,6 +467,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
         key: investigation.reportTemplateKey,
         title: investigation.reportTemplateTitle,
         version: investigation.reportTemplateVersion,
+        authoringMode: investigation.reportAuthoringMode,
       },
       assignment: {
         title: investigation.title,

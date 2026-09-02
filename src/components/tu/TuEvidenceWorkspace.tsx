@@ -1828,7 +1828,7 @@ export default function TuEvidenceWorkspace({
                       value={measurementForm.measurementType}
                       onChange={(event) => setMeasurementForm((current) => ({ ...current, measurementType: event.target.value }))}
                       disabled={locked}
-                      placeholder="Typ, t.ex. fuktindikering"
+                      placeholder="Typ, t.ex. fuktindikering eller temperatur"
                       className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                     />
                     <input

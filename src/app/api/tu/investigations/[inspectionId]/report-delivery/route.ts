@@ -17,6 +17,7 @@ import {
   createTuReportSnapshotPayloadV1,
   type TuReportDeliveryDocument,
 } from '@/lib/tu/reportSnapshot'
+import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { evaluateTuReportQuality } from '@/lib/tu/reportQuality'
@@ -787,7 +788,7 @@ async function getFinalizationBlocker(
   admin: AdminClient,
   investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
 ) {
-  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) return null
+  if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) return null
 
   const { data, error } = await admin
     .from('tu_analysis_workflows')

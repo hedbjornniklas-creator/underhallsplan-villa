@@ -241,8 +241,10 @@ export async function POST(
     }
 
     const inputSnapshot = {
-      ruleset: 'tu_moisture_v1',
+      ruleset: 'tu_ai_assisted_section_v1',
       reportTemplateKey: investigation.reportTemplateKey,
+      reportTemplateTitle: investigation.reportTemplateTitle,
+      reportAuthoringMode: investigation.reportAuthoringMode,
       targetSection: {
         id: section.id,
         key: section.key,
@@ -277,7 +279,7 @@ export async function POST(
         operation: 'section_draft',
         status: 'processing',
         model: TU_AI_MODEL,
-        ruleset_key: 'tu_moisture_v1',
+        ruleset_key: 'tu_ai_assisted_section_v1',
         ruleset_version: 1,
         target_section_id: section.id,
         input_snapshot: inputSnapshot,
@@ -299,7 +301,7 @@ export async function POST(
       body: JSON.stringify({
         model: TU_AI_MODEL,
         instructions: [
-          'Du skriver ett granskningsbart textförslag till en svensk fuktskadeutredning.',
+          'Du skriver ett granskningsbart textförslag till en svensk teknisk utredning. Rapportmallen och sektionens instruktion anger utredningens fackliga inriktning.',
           'Använd endast fakta i JSON-underlaget. Hitta aldrig på observationer, mätvärden, datum, orsaker, ansvar eller åtgärder.',
           'En kontrollerad fältpost betyder att källmaterialet är korrekt återgivet, inte att varje teknisk slutsats i fritexten är bekräftad.',
           'Skilj verifierade fakta från sannolika tekniska bedömningar och från sådant som inte har kunnat fastställas.',
@@ -315,7 +317,7 @@ export async function POST(
         text: {
           format: {
             type: 'json_schema',
-            name: 'tu_moisture_section_draft',
+            name: 'tu_inspection_section_draft',
             strict: true,
             schema: {
               type: 'object',

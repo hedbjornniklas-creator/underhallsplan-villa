@@ -905,6 +905,12 @@ export type RenoAppAdminActionType = {
     | 'safe_water'
     | 'bkr_or_gvk'
     | 'structural_engineer'
+  impliesStructure: boolean
+  impliesPlumbing: boolean
+  impliesVentilation: boolean
+  impliesElectrical: boolean
+  impliesWetRoom: boolean
+  impliesSurfaceOnly: boolean
   sortOrder: number
   isActive: boolean
   requirementCount: number
@@ -5777,7 +5783,7 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
   const [actionTypeRows, requirementRows, questionRows, participantRoleRows] = await Promise.all([
     admin
       .from('renovation_action_types')
-      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin.from('renovation_action_document_requirements').select('action_type_id,document_type_id').is('brf_id', null),
     admin.from('renoapp_action_type_questions').select('action_type_id,question_id').eq('is_active', true),
@@ -5835,6 +5841,12 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
     description: item.description ?? null,
     riskLevel: item.risk_level,
     contractorRequirement: item.contractor_requirement,
+    impliesStructure: item.implies_structure,
+    impliesPlumbing: item.implies_plumbing,
+    impliesVentilation: item.implies_ventilation,
+    impliesElectrical: item.implies_electrical,
+    impliesWetRoom: item.implies_wet_room,
+    impliesSurfaceOnly: item.implies_surface_only,
     sortOrder: item.sort_order,
     isActive: item.is_active,
     requirementCount: requirementCountByActionTypeId.get(item.id) ?? 0,
@@ -6357,7 +6369,7 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
   const [actionTypeRows, participantRoleRows, linkRows] = await Promise.all([
     admin
       .from('renovation_action_types')
-      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renoapp_participant_roles')
@@ -6386,6 +6398,12 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
     description: row.description ?? null,
     riskLevel: row.risk_level,
     contractorRequirement: row.contractor_requirement,
+    impliesStructure: row.implies_structure,
+    impliesPlumbing: row.implies_plumbing,
+    impliesVentilation: row.implies_ventilation,
+    impliesElectrical: row.implies_electrical,
+    impliesWetRoom: row.implies_wet_room,
+    impliesSurfaceOnly: row.implies_surface_only,
     sortOrder: row.sort_order,
     isActive: row.is_active,
     requirementCount: 0,
@@ -7159,6 +7177,12 @@ export async function saveRenoAppAdminActionType(input: {
     | 'safe_water'
     | 'bkr_or_gvk'
     | 'structural_engineer'
+  impliesStructure?: boolean
+  impliesPlumbing?: boolean
+  impliesVentilation?: boolean
+  impliesElectrical?: boolean
+  impliesWetRoom?: boolean
+  impliesSurfaceOnly?: boolean
   sortOrder?: number | null
   isActive?: boolean
 }): Promise<RenoAppAdminActionType> {
@@ -7169,14 +7193,16 @@ export async function saveRenoAppAdminActionType(input: {
   const key = normalizeText(input.key)?.toLowerCase() ?? null
   const label = normalizeText(input.label)
   const description = normalizeText(input.description)
-  const categoryId = normalizeText(input.categoryId)
-  const riskLevel = input.riskLevel === 'low' || input.riskLevel === 'high' ? input.riskLevel : 'medium'
-  const contractorRequirement =
-    input.contractorRequirement && input.contractorRequirement !== 'none'
-      ? input.contractorRequirement
-      : 'none'
-  const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0 ? Number(input.sortOrder) : 100
-  const isActive = input.isActive !== false
+  const categoryId = input.categoryId === undefined ? undefined : normalizeText(input.categoryId)
+  const riskLevel =
+    input.riskLevel === 'low' || input.riskLevel === 'medium' || input.riskLevel === 'high'
+      ? input.riskLevel
+      : undefined
+  const contractorRequirement = input.contractorRequirement
+  const sortOrder = Number.isFinite(input.sortOrder) && Number(input.sortOrder) > 0
+    ? Number(input.sortOrder)
+    : undefined
+  const isActive = typeof input.isActive === 'boolean' ? input.isActive : undefined
 
   if (!isUpdate) {
     assertRequiredText(key, 'ACTION_TYPE_KEY_REQUIRED')
@@ -7184,13 +7210,21 @@ export async function saveRenoAppAdminActionType(input: {
   assertRequiredText(label, 'ACTION_TYPE_LABEL_REQUIRED')
 
   const payload = {
-    category_id: categoryId,
     label,
     description,
-    risk_level: riskLevel,
-    contractor_requirement: contractorRequirement,
-    sort_order: sortOrder,
-    is_active: isActive,
+    ...(sortOrder !== undefined ? { sort_order: sortOrder } : {}),
+    ...(isActive !== undefined ? { is_active: isActive } : {}),
+    ...(categoryId !== undefined ? { category_id: categoryId } : {}),
+    ...(riskLevel !== undefined ? { risk_level: riskLevel } : {}),
+    ...(contractorRequirement !== undefined
+      ? { contractor_requirement: contractorRequirement }
+      : {}),
+    ...(input.impliesStructure !== undefined ? { implies_structure: input.impliesStructure } : {}),
+    ...(input.impliesPlumbing !== undefined ? { implies_plumbing: input.impliesPlumbing } : {}),
+    ...(input.impliesVentilation !== undefined ? { implies_ventilation: input.impliesVentilation } : {}),
+    ...(input.impliesElectrical !== undefined ? { implies_electrical: input.impliesElectrical } : {}),
+    ...(input.impliesWetRoom !== undefined ? { implies_wet_room: input.impliesWetRoom } : {}),
+    ...(input.impliesSurfaceOnly !== undefined ? { implies_surface_only: input.impliesSurfaceOnly } : {}),
   }
 
   const query = input.id
@@ -7198,10 +7232,21 @@ export async function saveRenoAppAdminActionType(input: {
     : admin.from('renovation_action_types').insert({
         ...payload,
         key,
+        category_id: categoryId ?? null,
+        risk_level: riskLevel ?? 'medium',
+        contractor_requirement: contractorRequirement ?? 'none',
+        sort_order: sortOrder ?? 100,
+        is_active: isActive ?? true,
+        implies_structure: input.impliesStructure ?? false,
+        implies_plumbing: input.impliesPlumbing ?? false,
+        implies_ventilation: input.impliesVentilation ?? false,
+        implies_electrical: input.impliesElectrical ?? false,
+        implies_wet_room: input.impliesWetRoom ?? false,
+        implies_surface_only: input.impliesSurfaceOnly ?? false,
       })
 
   const { data, error } = await query
-    .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+    .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
     .single()
 
   if (error || !data) {
@@ -7217,6 +7262,12 @@ export async function saveRenoAppAdminActionType(input: {
     description: row.description ?? null,
     riskLevel: row.risk_level,
     contractorRequirement: row.contractor_requirement,
+    impliesStructure: row.implies_structure,
+    impliesPlumbing: row.implies_plumbing,
+    impliesVentilation: row.implies_ventilation,
+    impliesElectrical: row.implies_electrical,
+    impliesWetRoom: row.implies_wet_room,
+    impliesSurfaceOnly: row.implies_surface_only,
     sortOrder: row.sort_order,
     isActive: row.is_active,
     requirementCount: 0,
@@ -7246,7 +7297,7 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
   const [actionTypeRows, documentTypeRows, requirementRows] = await Promise.all([
     admin
       .from('renovation_action_types')
-      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renovation_document_types')
@@ -7290,6 +7341,18 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
         riskLevel: actionTypes.find((actionType) => actionType.id === item.id)?.risk_level ?? 'low',
         contractorRequirement:
           actionTypes.find((actionType) => actionType.id === item.id)?.contractor_requirement ?? 'none',
+        impliesStructure:
+          actionTypes.find((actionType) => actionType.id === item.id)?.implies_structure ?? false,
+        impliesPlumbing:
+          actionTypes.find((actionType) => actionType.id === item.id)?.implies_plumbing ?? false,
+        impliesVentilation:
+          actionTypes.find((actionType) => actionType.id === item.id)?.implies_ventilation ?? false,
+        impliesElectrical:
+          actionTypes.find((actionType) => actionType.id === item.id)?.implies_electrical ?? false,
+        impliesWetRoom:
+          actionTypes.find((actionType) => actionType.id === item.id)?.implies_wet_room ?? false,
+        impliesSurfaceOnly:
+          actionTypes.find((actionType) => actionType.id === item.id)?.implies_surface_only ?? false,
         sortOrder: item.sortOrder,
         isActive: actionTypes.find((actionType) => actionType.id === item.id)?.is_active ?? true,
         requirementCount: item.requirements.length,

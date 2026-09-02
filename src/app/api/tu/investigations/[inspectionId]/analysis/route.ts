@@ -11,7 +11,7 @@ import {
   isTuAnalysisReviewStatus,
   type TuAnalysisResponse,
 } from '@/lib/tu/analysis'
-import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
+import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
@@ -42,7 +42,7 @@ function mapError(error: unknown) {
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_ANALYSIS_TEMPLATE_NOT_SUPPORTED') {
-    return jsonError('Helhetsanalysen är ännu bara aktiverad för fuktskadeutredningar.', 409)
+    return jsonError('Helhetsanalysen är inte aktiverad för den här utredningens arbetssätt.', 409)
   }
   if (normalized.includes('tu_analysis_') || normalized.includes('tu_ai_analysis_items') || normalized.includes('42p01')) {
     return jsonError('Analysarbetsflödet är inte aktiverat i databasen ännu.', 409)
@@ -61,7 +61,7 @@ async function requireInvestigation(inspectionId: string) {
     inspectorProfileId: orgContext.userId,
   })
   if (!investigation) throw new Error('TU_INVESTIGATION_NOT_FOUND')
-  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) {
+  if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) {
     throw new Error('TU_ANALYSIS_TEMPLATE_NOT_SUPPORTED')
   }
   return { orgContext, investigation }

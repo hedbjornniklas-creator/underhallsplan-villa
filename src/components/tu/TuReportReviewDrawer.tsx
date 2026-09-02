@@ -131,7 +131,7 @@ export default function TuReportReviewDrawer({
   const sectionChangeCount = current?.sections.length ?? 0
   const targetLabel = target ? target.title : 'hela utlåtandet'
   const exampleText = target
-    ? 'Exempel: Skriv ”fläck” i stället för ”fuktfläck”. Min bedömning är att detta inte är ett fel.'
+    ? 'Exempel: Skriv mer direkt och ta bort uppgifter som inte behövs för slutsatsen.'
     : 'Exempel: Använd ”fläck” i hela utlåtandet och kontrollera att bedömningen och rekommendationerna fortfarande hänger ihop.'
 
   const submitInstruction = async () => {

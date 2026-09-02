@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  tuReportAuthoringModeLabel,
+  type TuReportAuthoringMode,
+} from '@/lib/tu/authoring'
 import { TU_STANDARD_REPORT_TEMPLATES } from '@/lib/tu/reportTemplates'
 
 type TemplateRow = {
@@ -12,6 +16,7 @@ type TemplateRow = {
   description: string | null
   document_title: string
   project_type: string
+  authoring_mode: TuReportAuthoringMode
   version: number
   sort_order: number
   is_active: boolean
@@ -46,6 +51,7 @@ type TemplateDraft = {
   description: string
   document_title: string
   project_type: string
+  authoring_mode: TuReportAuthoringMode
   version: number
   sort_order: number
   is_active: boolean
@@ -95,7 +101,7 @@ type SettingsClient = {
 }
 
 const TEMPLATE_COLUMNS =
-  'id,key,title,description,document_title,project_type,version,sort_order,is_active,is_system'
+  'id,key,title,description,document_title,project_type,authoring_mode,version,sort_order,is_active,is_system'
 
 const SECTION_COLUMNS =
   'id,template_id,template_section_key,section_type_key,title_override,default_content,ai_instruction,sort_order,is_required,include_in_toc,allow_delete'
@@ -106,6 +112,7 @@ const EMPTY_TEMPLATE_DRAFT: TemplateDraft = {
   description: '',
   document_title: '',
   project_type: '',
+  authoring_mode: 'standard',
   version: 1,
   sort_order: 100,
   is_active: true,
@@ -142,6 +149,7 @@ function templatePayload(draft: TemplateDraft) {
     description: draft.description.trim() || null,
     document_title: draft.document_title.trim(),
     project_type: draft.project_type.trim(),
+    authoring_mode: draft.authoring_mode,
     version: Number.isFinite(draft.version) && draft.version > 0 ? draft.version : 1,
     sort_order: Number.isFinite(draft.sort_order) ? draft.sort_order : 100,
     is_active: draft.is_active,
@@ -172,6 +180,7 @@ function templateToDraft(template: TemplateRow): TemplateDraft {
     description: template.description ?? '',
     document_title: template.document_title,
     project_type: template.project_type,
+    authoring_mode: template.authoring_mode,
     version: template.version,
     sort_order: template.sort_order,
     is_active: template.is_active,
@@ -181,6 +190,57 @@ function templateToDraft(template: TemplateRow): TemplateDraft {
 
 function sortTemplates(left: TemplateRow, right: TemplateRow) {
   return left.sort_order - right.sort_order || left.title.localeCompare(right.title, 'sv')
+}
+
+function AuthoringModeControl({
+  value,
+  onChange,
+  name,
+}: {
+  value: TuReportAuthoringMode
+  onChange: (value: TuReportAuthoringMode) => void
+  name: string
+}) {
+  return (
+    <fieldset className="md:col-span-2">
+      <legend className="mb-1 text-sm text-gray-600">Arbetssätt</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(['standard', 'ai_assisted'] as const).map((mode) => {
+          const selected = value === mode
+          return (
+            <label
+              key={mode}
+              className={`cursor-pointer rounded-md border p-3 transition ${
+                selected
+                  ? 'border-emerald-400 bg-emerald-50 text-emerald-950'
+                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={mode}
+                checked={selected}
+                onChange={() => onChange(mode)}
+                className="sr-only"
+              />
+              <span className="block text-sm font-semibold">
+                {tuReportAuthoringModeLabel(mode)}
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-gray-600">
+                {mode === 'ai_assisted'
+                  ? 'Fältlogg, samlad analys och AI-skapat rapportförslag.'
+                  : 'Rapportdelarna skrivs och redigeras direkt.'}
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      <p className="mt-1.5 text-xs leading-5 text-gray-500">
+        Ändringen gäller nya utredningar. Befintliga utredningar behåller arbetssättet de skapades med.
+      </p>
+    </fieldset>
+  )
 }
 
 export default function TuReportTemplatesAdminPanel() {
@@ -295,6 +355,7 @@ export default function TuReportTemplatesAdminPanel() {
       description: template.description ?? null,
       document_title: template.documentTitle,
       project_type: template.projectType,
+      authoring_mode: template.authoringMode,
       version: template.version,
       sort_order: template.sortOrder,
       is_active: template.isActive,
@@ -755,6 +816,15 @@ export default function TuReportTemplatesAdminPanel() {
                 className="w-full rounded border border-gray-300 px-2 py-1.5"
               />
             </label>
+            <AuthoringModeControl
+              value={templateDraft.authoring_mode}
+              name="tu-template-authoring-mode-hidden"
+              onChange={(authoringMode) =>
+                setTemplateDraft((current) => (
+                  current ? { ...current, authoring_mode: authoringMode } : current
+                ))
+              }
+            />
             <label className="text-sm md:col-span-2">
               <div className="mb-1 text-gray-600">Beskrivning</div>
               <textarea
@@ -815,13 +885,14 @@ export default function TuReportTemplatesAdminPanel() {
           <table className="w-full table-fixed border-separate border-spacing-y-2 p-2 text-[12px]">
             <thead>
               <tr className="text-left text-[10px] uppercase text-gray-400">
-                <th className="px-3 py-1 w-[24%]">Mall</th>
-                <th className="px-3 py-1 w-[18%]">Dokument</th>
-                <th className="px-3 py-1 w-[18%]">Projekttyp</th>
-                <th className="px-3 py-1 w-[10%]">Sektioner</th>
-                <th className="px-3 py-1 w-[8%]">Sort</th>
-                <th className="px-3 py-1 w-[8%]">Status</th>
-                <th className="px-3 py-1 w-[14%] text-center">Åtgärder</th>
+                <th className="w-[20%] px-3 py-1">Mall</th>
+                <th className="w-[15%] px-3 py-1">Dokument</th>
+                <th className="w-[15%] px-3 py-1">Projekttyp</th>
+                <th className="w-[15%] px-3 py-1">Arbetssätt</th>
+                <th className="w-[8%] px-3 py-1">Sektioner</th>
+                <th className="w-[7%] px-3 py-1">Sort</th>
+                <th className="w-[8%] px-3 py-1">Status</th>
+                <th className="w-[12%] px-3 py-1 text-center">Åtgärder</th>
               </tr>
             </thead>
             <tbody>
@@ -847,6 +918,9 @@ export default function TuReportTemplatesAdminPanel() {
                     </td>
                     <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                       <div className="truncate">{template.project_type}</div>
+                    </td>
+                    <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
+                      <div className="truncate">{tuReportAuthoringModeLabel(template.authoring_mode)}</div>
                     </td>
                     <td className="border-y border-gray-200 bg-white px-3 py-2 transition-colors group-hover:bg-blue-50 group-hover:shadow-sm">
                       {sectionCount}
@@ -891,14 +965,14 @@ export default function TuReportTemplatesAdminPanel() {
               })}
               {!loading && filteredTemplates.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-5 text-gray-500" colSpan={7}>
+                  <td className="px-3 py-5 text-gray-500" colSpan={8}>
                     Inga mallar.
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td className="px-3 py-5 text-gray-500" colSpan={7}>
+                  <td className="px-3 py-5 text-gray-500" colSpan={8}>
                     Laddar...
                   </td>
                 </tr>
@@ -1012,6 +1086,15 @@ export default function TuReportTemplatesAdminPanel() {
                     className="w-full rounded border border-gray-300 px-2 py-1.5"
                   />
                 </label>
+                <AuthoringModeControl
+                  value={templateDraft.authoring_mode}
+                  name="tu-template-authoring-mode-drawer"
+                  onChange={(authoringMode) =>
+                    setTemplateDraft((current) => (
+                      current ? { ...current, authoring_mode: authoringMode } : current
+                    ))
+                  }
+                />
                 <label className="text-sm md:col-span-2">
                   <div className="mb-1 text-gray-600">Beskrivning</div>
                   <textarea

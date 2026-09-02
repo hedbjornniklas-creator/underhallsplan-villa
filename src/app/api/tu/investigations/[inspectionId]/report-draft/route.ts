@@ -44,7 +44,7 @@ function mapError(error: unknown) {
   if (message === 'TU_ANALYSIS_NOT_APPROVED') return jsonError('Godkänn helhetsanalysen innan rapportutkastet skapas.', 409)
   if (message === 'TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS') return jsonError('Analysen saknar godkända underlag för utlåtandet.', 409)
   if (message === 'TU_REPORT_DRAFT_TEMPLATE_NOT_SUPPORTED') {
-    return jsonError('Sammanhållet rapportutkast är ännu bara aktiverat för fuktskadeutredningar.', 409)
+    return jsonError('Sammanhållet rapportutkast är inte aktiverat för den här utredningens arbetssätt.', 409)
   }
   if (message === 'TU_REPORT_DRAFT_NO_SECTIONS') return jsonError('Utlåtandet saknar redigerbara rapportdelar.', 409)
   if (message === 'OPENAI_EMPTY_RESPONSE' || message === 'OPENAI_INCOMPLETE_REPORT_DRAFT') {
