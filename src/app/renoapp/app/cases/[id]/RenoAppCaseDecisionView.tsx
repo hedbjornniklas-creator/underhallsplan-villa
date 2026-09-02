@@ -884,23 +884,36 @@ function BoardDecisionPanel({
         </div>
       ) : (
         <form onSubmit={onSubmit} className="mt-6 grid gap-5">
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {STATUS_ACTIONS.map((status) => (
-              <button
-                key={status}
-                type="button"
-                onClick={() => onStatusChange(status)}
-                className={cx(
-                  'rounded-full border px-4 py-2 text-sm font-semibold transition',
-                  selectedStatus === status
-                    ? 'border-stone-900 bg-stone-900 text-white'
-                    : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-                )}
-              >
-                {getBoardStatusOptionLabel(status)}
-              </button>
-            ))}
-          </div>
+          <fieldset>
+            <legend className="text-sm font-semibold text-stone-950">Välj beslut</legend>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {STATUS_ACTIONS.map((status) => {
+                const isSelected = selectedStatus === status
+
+                return (
+                  <label
+                    key={status}
+                    className={cx(
+                      'flex min-h-12 cursor-pointer items-center gap-3 rounded-[10px] border px-4 py-3 text-sm font-semibold transition',
+                      isSelected
+                        ? 'border-stone-900 bg-stone-50 text-stone-950 ring-1 ring-stone-900'
+                        : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-50'
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="board-decision"
+                      value={status}
+                      checked={isSelected}
+                      onChange={() => onStatusChange(status)}
+                      className="h-4 w-4 shrink-0 accent-stone-900"
+                    />
+                    <span>{getBoardStatusOptionLabel(status)}</span>
+                  </label>
+                )
+              })}
+            </div>
+          </fieldset>
 
           {selectedStatus === 'need_info' ? (
             <label className="grid gap-2 text-sm text-stone-700">
@@ -1003,13 +1016,15 @@ function BoardDecisionPanel({
           {actionError ? <p className="text-sm text-rose-700">{actionError}</p> : null}
           {actionSuccess ? <p className="text-sm text-emerald-700">{actionSuccess}</p> : null}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="justify-self-start rounded-full border border-stone-900 bg-stone-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting ? 'Sparar...' : getBoardActionSubmitLabel(selectedStatus)}
-          </button>
+          <div className="flex justify-end border-t border-stone-200 pt-5">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-full border border-stone-900 bg-stone-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting ? 'Sparar...' : getBoardActionSubmitLabel(selectedStatus)}
+            </button>
+          </div>
         </form>
       )}
     </Card>
