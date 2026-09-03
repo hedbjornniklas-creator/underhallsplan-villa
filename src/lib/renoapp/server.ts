@@ -1418,6 +1418,13 @@ export type RenoAppCaseDetail = {
     category: 'document' | 'participant'
     label: string
     reviewGuidance: string | null
+    suggestionSources: Array<{
+      id: string
+      type: 'action_type' | 'question_answer'
+      actionTypeLabel: string | null
+      questionLabel: string | null
+      answerLabel: string | null
+    }>
     checked: boolean
     documentId: string | null
     requirementDecision: 'requested' | 'not_requested' | null
@@ -2667,6 +2674,7 @@ function buildCaseUnderlagItems(params: {
 
   const isAcceptedDocument = (status: string) => status !== 'missing' && status !== 'rejected'
   const selectedActionTypeIds = new Set(selectedActionTypes.map((item) => item.id))
+  const actionTypeById = new Map(selectedActionTypes.map((item) => [item.id, item]))
   const documentTypeById = new Map(documentTypes.map((item) => [item.id, item]))
   const participantRoleById = new Map(participantRoles.map((item) => [item.id, item]))
   const questionById = new Map(questionConfig.questions.map((item) => [item.id, item]))
@@ -2738,7 +2746,8 @@ function buildCaseUnderlagItems(params: {
     documentId: string | null = null,
     summary: string[] = [],
     details: RenoAppCaseDetail['underlag'][number]['details'] = null,
-    reviewGuidance: string | null = null
+    reviewGuidance: string | null = null,
+    suggestionSource: RenoAppCaseDetail['underlag'][number]['suggestionSources'][number] | null = null
   ) => {
     const existing = itemMap.get(key)
     if (!existing) {
@@ -2747,6 +2756,7 @@ function buildCaseUnderlagItems(params: {
         category,
         label,
         reviewGuidance,
+        suggestionSources: suggestionSource ? [suggestionSource] : [],
         checked,
         documentId,
         requirementDecision: decisionByTargetKey.get(key) ?? null,
@@ -2759,6 +2769,9 @@ function buildCaseUnderlagItems(params: {
 
     existing.label = existing.label || label
     existing.reviewGuidance = existing.reviewGuidance ?? reviewGuidance
+    if (suggestionSource && !existing.suggestionSources.some((source) => source.id === suggestionSource.id)) {
+      existing.suggestionSources.push(suggestionSource)
+    }
     existing.checked = existing.checked || checked
     existing.documentId = existing.documentId ?? documentId
     existing.summary = existing.summary.length > 0 ? existing.summary : summary
@@ -2768,6 +2781,7 @@ function buildCaseUnderlagItems(params: {
 
   for (const requirement of requirements) {
     if (!selectedActionTypeIds.has(requirement.action_type_id)) continue
+    const actionType = actionTypeById.get(requirement.action_type_id)
     const documentType = documentTypeById.get(requirement.document_type_id)
     const document = latestDocumentByTypeId.get(requirement.document_type_id)
     addItem(
@@ -2779,7 +2793,14 @@ function buildCaseUnderlagItems(params: {
       document?.id ?? null,
       [],
       null,
-      documentType?.review_guidance ?? null
+      documentType?.review_guidance ?? null,
+      {
+        id: `action_type:${requirement.action_type_id}`,
+        type: 'action_type',
+        actionTypeLabel: actionType?.label ?? null,
+        questionLabel: null,
+        answerLabel: null,
+      }
     )
   }
 
@@ -2803,7 +2824,14 @@ function buildCaseUnderlagItems(params: {
             document?.id ?? null,
             [],
             null,
-            documentType?.review_guidance ?? null
+            documentType?.review_guidance ?? null,
+            {
+              id: `question_answer:${question.id}:${option.id}`,
+              type: 'question_answer',
+              actionTypeLabel: null,
+              questionLabel: question.label,
+              answerLabel: option.label,
+            }
           )
         }
 
@@ -2872,7 +2900,14 @@ function buildCaseUnderlagItems(params: {
                   acceptsResponsibility: participant.accepts_responsibility === true,
                 }
               : null,
-            participantRole.reviewGuidance ?? null
+            participantRole.reviewGuidance ?? null,
+            {
+              id: `question_answer:${question.id}:${option.id}`,
+              type: 'question_answer',
+              actionTypeLabel: null,
+              questionLabel: question.label,
+              answerLabel: option.label,
+            }
           )
         }
       }
@@ -2881,6 +2916,7 @@ function buildCaseUnderlagItems(params: {
 
   for (const link of actionTypeParticipantRoles) {
     if (!selectedActionTypeIds.has(link.action_type_id) || !link.is_active || !link.is_required) continue
+    const actionType = actionTypeById.get(link.action_type_id)
     const role = participantRoleById.get(link.participant_role_id)
     if (!role) continue
 
@@ -2926,7 +2962,14 @@ function buildCaseUnderlagItems(params: {
             acceptsResponsibility: participant.accepts_responsibility === true,
           }
         : null,
-      role.review_guidance ?? null
+      role.review_guidance ?? null,
+      {
+        id: `action_type:${link.action_type_id}`,
+        type: 'action_type',
+        actionTypeLabel: actionType?.label ?? null,
+        questionLabel: null,
+        answerLabel: null,
+      }
     )
   }
 

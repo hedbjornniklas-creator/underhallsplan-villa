@@ -1545,29 +1545,38 @@ export default function RenoAppApplyPage() {
                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
                           {question.options.map((option) => {
                             const selected = selectedValues.includes(option.key)
+                            const isMultiSelect = question.responseType === 'multi_select'
                             return (
-                              <button
+                              <label
                                 key={option.id}
-                                type="button"
-                                onClick={() =>
-                                  updateQuestionAnswer(
-                                    question.key,
-                                    question.responseType === 'multi_select'
-                                      ? toggleMultiSelectValue(selectedValues, option.key)
-                                      : [option.key]
-                                  )
-                                }
-                                className={`rounded-xl border px-3 py-2.5 text-left transition md:rounded-2xl md:px-4 md:py-3 ${
+                                className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition md:rounded-2xl md:px-4 md:py-3 ${
                                   selected
-                                    ? 'border-emerald-600 bg-emerald-50'
-                                    : 'border-stone-200 bg-white hover:border-stone-300'
+                                    ? 'border-stone-900 bg-stone-50 text-stone-950 ring-1 ring-stone-900'
+                                    : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-50'
                                 }`}
                               >
-                                <p className="font-medium text-stone-900">{option.label}</p>
-                                {option.description ? (
-                                  <p className="mt-1 text-sm leading-6 text-stone-700">{option.description}</p>
-                                ) : null}
-                              </button>
+                                <input
+                                  type={isMultiSelect ? 'checkbox' : 'radio'}
+                                  name={`application-question-${question.id}`}
+                                  value={option.key}
+                                  checked={selected}
+                                  onChange={() =>
+                                    updateQuestionAnswer(
+                                      question.key,
+                                      isMultiSelect
+                                        ? toggleMultiSelectValue(selectedValues, option.key)
+                                        : [option.key]
+                                    )
+                                  }
+                                  className="mt-0.5 h-4 w-4 shrink-0 accent-stone-900"
+                                />
+                                <span className="min-w-0">
+                                  <span className="block font-medium text-stone-900">{option.label}</span>
+                                  {option.description ? (
+                                    <span className="mt-1 block text-sm leading-6 text-stone-700">{option.description}</span>
+                                  ) : null}
+                                </span>
+                              </label>
                             )
                           })}
                         </div>

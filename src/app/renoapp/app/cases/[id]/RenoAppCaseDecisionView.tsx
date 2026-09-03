@@ -72,6 +72,13 @@ export type RenoAppCaseDetail = {
     category: 'document' | 'participant'
     label: string
     reviewGuidance: string | null
+    suggestionSources: Array<{
+      id: string
+      type: 'action_type' | 'question_answer'
+      actionTypeLabel: string | null
+      questionLabel: string | null
+      answerLabel: string | null
+    }>
     checked: boolean
     documentId: string | null
     requirementDecision: RequirementDecision | null
@@ -251,6 +258,55 @@ function getDocumentStatusLabel(row: UnderlagItem) {
 
 function getParticipantStatusLabel(row: UnderlagItem) {
   return row.checked ? 'Uppgifter inlämnade' : 'Ej angiven'
+}
+
+function getSuggestionSourceText(source: UnderlagItem['suggestionSources'][number]) {
+  if (source.type === 'question_answer') {
+    const question = displayText(source.questionLabel, '')
+    const answer = displayText(source.answerLabel, '')
+    if (question && answer) {
+      return `Sökanden har svarat ”${answer}” på frågan ”${question}”.`
+    }
+  }
+
+  if (source.type === 'action_type') {
+    const actionType = displayText(source.actionTypeLabel, '')
+    if (actionType) {
+      return `Ansökan omfattar renoveringstypen ”${actionType}”.`
+    }
+  }
+
+  return null
+}
+
+function SuggestionReason({ sources }: { sources: UnderlagItem['suggestionSources'] }) {
+  const reasons = sources
+    .map((source) => ({ id: source.id, text: getSuggestionSourceText(source) }))
+    .filter((reason): reason is { id: string; text: string } => Boolean(reason.text))
+
+  if (reasons.length === 0) return null
+
+  return (
+    <div className="mt-2 border-l-2 border-sky-300 pl-3 text-sm leading-5 text-stone-600">
+      <p className="text-xs font-semibold text-stone-700">Grund för förslaget</p>
+      <p className="mt-0.5">{reasons[0].text}</p>
+      {reasons.length > 1 ? (
+        <details className="mt-1.5">
+          <summary className="w-fit cursor-pointer text-xs font-semibold text-sky-800 underline-offset-4 hover:underline">
+            Visa alla orsaker ({reasons.length})
+          </summary>
+          <ul className="mt-2 grid gap-1.5 border-t border-stone-200 pt-2">
+            {reasons.map((reason) => (
+              <li key={reason.id} className="flex gap-2">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden="true" />
+                <span>{reason.text}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </div>
+  )
 }
 
 function getParticipantDisplayLabel(label: string) {
@@ -558,6 +614,7 @@ function DocumentsPanel({
               <div className="min-w-0">
                 <p className="font-semibold text-stone-950">{displayText(row.label)}</p>
                 {document?.fileName ? <p className="mt-1 truncate text-sm text-stone-500">{displayText(document.fileName)}</p> : null}
+                <SuggestionReason sources={row.suggestionSources ?? []} />
               </div>
               <p className="text-sm text-stone-700">{getDocumentStatusLabel(row)}</p>
               <RequirementDecisionButtons
@@ -715,6 +772,7 @@ function ConsultantsPanel({
                   <div className="min-w-0">
                     <p className="font-semibold text-stone-950">{getParticipantDisplayLabel(row.label)}</p>
                     <p className="mt-1 text-sm text-stone-500">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
+                    <SuggestionReason sources={row.suggestionSources ?? []} />
                   </div>
                   <p className="text-sm text-stone-700">{getParticipantStatusLabel(row)}</p>
                   <RequirementDecisionButtons
