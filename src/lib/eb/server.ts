@@ -335,7 +335,7 @@ export type EbReportSectionSource =
 
 export type EbReportSectionContentMode = 'editable' | 'mixed' | 'structured'
 
-export const EB_REPORT_DRAFT_SCHEMA_VERSION = 1 as const
+export const EB_REPORT_DRAFT_SCHEMA_VERSION = 2 as const
 export const EB_REPORT_TEMPLATE_KEY = 'eb_default'
 export const EB_REPORT_TEMPLATE_TITLE = 'EB-utlåtande'
 export const EB_REPORT_TEMPLATE_VERSION = 2
@@ -378,6 +378,14 @@ export type EbReportDraftSection = {
   text: string
   updatedAt: string | null
   contentMode: EbReportSectionContentMode
+}
+
+export type EbReportNoteHeading = {
+  id: string
+  title: string
+  beforeNoteId: string | null
+  sortOrder: number
+  updatedAt: string | null
 }
 
 function mergeEbStructuredReportSection(
@@ -514,13 +522,14 @@ export type EbReportSourceSnapshot = {
 }
 
 export type EbReportDraft = {
-  schemaVersion: 1
+  schemaVersion: 2
   templateKey: string
   templateTitle: string
   templateVersion: number
   initializedAt: string | null
   sourceSnapshot: EbReportSourceSnapshot | null
   sections: EbReportDraftSection[]
+  noteHeadings: EbReportNoteHeading[]
   updatedAt: string | null
 }
 
@@ -584,7 +593,9 @@ export type SaveEbReportDraftInput = {
   requestedByUserId: string
   projectId: string
   inspectionId: string
-  sections: EbReportDraftSection[]
+  sections?: EbReportDraftSection[]
+  noteHeadings?: EbReportNoteHeading[]
+  expectedUpdatedAt?: string | null
 }
 
 export type SaveEbInspectionDocumentsInput = {
@@ -3155,7 +3166,7 @@ export async function getEbInspectionReport(input: {
   requestedByUserId: string
   projectId: string
   inspectionId: string
-}): Promise<EbInspectionReport> {
+}, conflictRetryCount = 0): Promise<EbInspectionReport> {
   const liveRound = await getEbInspectionRound(input)
   const [participants, storedDraft, inspectionDocuments] = await Promise.all([
     listParticipantsForInspection(input),
@@ -3236,10 +3247,25 @@ export async function getEbInspectionReport(input: {
 
   let resolvedReportDraft = reportDraft
   if ((needsInitializationWrite || needsProjectSnapshotRefreshWrite) && !liveRound.inspection.reportLockedAt) {
-    resolvedReportDraft = await writeEbReportDraft(input, {
-      ...reportDraft,
-      updatedAt: reportDraft.updatedAt ?? sourceSnapshot.capturedAt ?? initializedAt,
-    })
+    try {
+      resolvedReportDraft = await writeEbReportDraft(
+        input,
+        {
+          ...reportDraft,
+          updatedAt: nextEbReportDraftUpdatedAt(storedDraft.updatedAt),
+        },
+        { expectedUpdatedAt: storedDraft.updatedAt }
+      )
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'EB_REPORT_DRAFT_CONFLICT' &&
+        conflictRetryCount < 2
+      ) {
+        return getEbInspectionReport(input, conflictRetryCount + 1)
+      }
+      throw error
+    }
   }
 
   return {
@@ -3364,6 +3390,7 @@ async function fetchEbReportDraft(input: {
       : null
   return {
     ...draft,
+    updatedAt: row ? row.report_draft_updated_at ?? null : draft.updatedAt,
     initializedAt: draft.initializedAt ?? row?.report_draft_initialized_at ?? null,
     templateKey:
       normalizeText(rawDraft?.templateKey) ??
@@ -3382,7 +3409,8 @@ async function fetchEbReportDraft(input: {
 
 async function writeEbReportDraft(
   input: { orgId: string; projectId: string; inspectionId: string },
-  draft: EbReportDraft
+  draft: EbReportDraft,
+  options?: { expectedUpdatedAt?: string | null }
 ) {
   const admin = createSupabaseAdminClient()
   const updatedAt = draft.updatedAt ?? new Date().toISOString()
@@ -3399,29 +3427,50 @@ async function writeEbReportDraft(
     report_draft: reportDraft,
     report_draft_updated_at: updatedAt,
   }
+  const hasExpectedUpdatedAt = Boolean(
+    options && Object.prototype.hasOwnProperty.call(options, 'expectedUpdatedAt')
+  )
+  const expectedUpdatedAt = options?.expectedUpdatedAt ?? null
 
-  let { error } = await admin
-    .from('eb_inspection_details')
-    .update(metadataPayload)
-    .eq('org_id', input.orgId)
-    .eq('eb_project_id', input.projectId)
-    .eq('inspection_id', input.inspectionId)
-
-  if (error && isMissingColumnError(error)) {
-    const fallback = await admin
+  const updateDraft = async (payload: typeof metadataPayload | typeof basePayload) => {
+    let query = admin
       .from('eb_inspection_details')
-      .update(basePayload)
+      .update(payload)
       .eq('org_id', input.orgId)
       .eq('eb_project_id', input.projectId)
       .eq('inspection_id', input.inspectionId)
+    if (hasExpectedUpdatedAt) {
+      query = expectedUpdatedAt
+        ? query.eq('report_draft_updated_at', expectedUpdatedAt)
+        : query.is('report_draft_updated_at', null)
+    }
+    return query.select('inspection_id').maybeSingle()
+  }
+
+  let { data, error } = await updateDraft(metadataPayload)
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await updateDraft(basePayload)
+    data = fallback.data
     error = fallback.error
   }
 
   if (error) {
     throw new Error(error.message ?? 'Kunde inte spara utlåtandeutkast.')
   }
+  if (!data) {
+    throw new Error(hasExpectedUpdatedAt ? 'EB_REPORT_DRAFT_CONFLICT' : 'EB_INSPECTION_NOT_FOUND')
+  }
 
   return reportDraft
+}
+
+function nextEbReportDraftUpdatedAt(previousUpdatedAt: string | null | undefined) {
+  const previousTime = previousUpdatedAt ? Date.parse(previousUpdatedAt) : Number.NaN
+  const nextTime = Number.isFinite(previousTime)
+    ? Math.max(Date.now(), previousTime + 1)
+    : Date.now()
+  return new Date(nextTime).toISOString()
 }
 
 function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbReportDraft {
@@ -3434,6 +3483,7 @@ function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbRep
       initializedAt: null,
       sourceSnapshot: null,
       sections: [],
+      noteHeadings: [],
       updatedAt,
     }
   }
@@ -3441,6 +3491,7 @@ function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbRep
   const rawSections = Array.isArray((value as { sections?: unknown }).sections)
     ? (value as { sections: unknown[] }).sections
     : []
+  const rawNoteHeadings = (value as { noteHeadings?: unknown }).noteHeadings
 
   return {
     schemaVersion: EB_REPORT_DRAFT_SCHEMA_VERSION,
@@ -3459,7 +3510,97 @@ function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbRep
       ? (value as { updatedAt: string }).updatedAt
       : updatedAt,
     sections: rawSections.map(normalizeEbReportDraftSection).filter(Boolean) as EbReportDraftSection[],
+    noteHeadings: normalizeEbReportNoteHeadings(rawNoteHeadings),
   }
+}
+
+function normalizeEbReportNoteHeading(
+  value: unknown,
+  index: number
+): EbReportNoteHeading | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<EbReportNoteHeading>
+  const id = typeof raw.id === 'string' ? normalizeText(raw.id) : null
+  const title = typeof raw.title === 'string' ? normalizeText(raw.title) : null
+  if (!id || !title || id.length > 100 || title.length > 160) return null
+  if (raw.beforeNoteId !== null && raw.beforeNoteId !== undefined && typeof raw.beforeNoteId !== 'string') {
+    return null
+  }
+  if (
+    raw.sortOrder !== null &&
+    raw.sortOrder !== undefined &&
+    (typeof raw.sortOrder !== 'number' || !Number.isFinite(raw.sortOrder))
+  ) {
+    return null
+  }
+
+  const requestedSortOrder = raw.sortOrder
+  return {
+    id,
+    title,
+    beforeNoteId:
+      typeof raw.beforeNoteId === 'string' ? normalizeText(raw.beforeNoteId) : null,
+    sortOrder: typeof requestedSortOrder === 'number'
+      ? requestedSortOrder
+      : (index + 1) * 100,
+    updatedAt: typeof raw.updatedAt === 'string' ? normalizeText(raw.updatedAt) : null,
+  }
+}
+
+function normalizeEbReportNoteHeadings(value: unknown): EbReportNoteHeading[] {
+  if (!Array.isArray(value)) return []
+  const seenIds = new Set<string>()
+  const headings: EbReportNoteHeading[] = []
+
+  value.forEach((item, index) => {
+    const heading = normalizeEbReportNoteHeading(item, index)
+    if (!heading || seenIds.has(heading.id)) return
+    seenIds.add(heading.id)
+    headings.push(heading)
+  })
+
+  return headings.sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+    return left.id.localeCompare(right.id)
+  })
+}
+
+function reconcileEbReportNoteHeadings(
+  headings: EbReportNoteHeading[],
+  notes: EbNote[]
+): EbReportNoteHeading[] {
+  const noteIds = new Set(notes.map((note) => note.id))
+  return headings.map((heading) =>
+    heading.beforeNoteId && !noteIds.has(heading.beforeNoteId)
+      ? { ...heading, beforeNoteId: null }
+      : heading
+  )
+}
+
+function reconcileEbReportNoteHeadingsAfterDeletion(
+  headings: EbReportNoteHeading[],
+  orderedNoteIds: string[],
+  deletedNoteId: string,
+  updatedAt: string,
+  followingNoteIds: string[] = []
+) {
+  const sortedHeadings = normalizeEbReportNoteHeadings(headings)
+  const noteIdSet = new Set(orderedNoteIds)
+  const deletedNoteIndex = orderedNoteIds.indexOf(deletedNoteId)
+  const remainingNoteIds = orderedNoteIds.filter((noteId) => noteId !== deletedNoteId)
+  const nextNoteId =
+    deletedNoteIndex >= 0
+      ? remainingNoteIds[deletedNoteIndex] ?? null
+      : followingNoteIds.find((noteId) => noteIdSet.has(noteId)) ?? null
+
+  // Flytta bara rubriker som hörde till den raderade noteringen. Övriga
+  // ankare måste lämnas orörda eftersom en notering kan ha skapats parallellt.
+  return sortedHeadings.map((heading, index) => ({
+    ...heading,
+    beforeNoteId: heading.beforeNoteId === deletedNoteId ? nextNoteId : heading.beforeNoteId,
+    updatedAt: heading.beforeNoteId === deletedNoteId ? updatedAt : heading.updatedAt,
+    sortOrder: (index + 1) * 100,
+  }))
 }
 
 function normalizeEbReportDraftSection(value: unknown): EbReportDraftSection | null {
@@ -4650,6 +4791,37 @@ export async function deleteEbNote(input: DeleteEbNoteInput) {
   await assertEbInspectionEditable(input)
   await getEbInspectionRoundBase(input)
   const admin = createSupabaseAdminClient()
+  const readOrderedNoteIds = async () => {
+    const notesResult = await admin
+      .from('eb_notes')
+      .select('id,note_number,sort_order,created_at')
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.projectId)
+      .eq('inspection_id', input.inspectionId)
+    if (notesResult.error) {
+      throw new Error(notesResult.error.message ?? 'Kunde inte läsa EB-noteringarnas ordning.')
+    }
+    return (
+      (notesResult.data ?? []) as Array<
+        Pick<EbNoteRow, 'id' | 'note_number' | 'sort_order' | 'created_at'>
+      >
+    )
+      .sort((left, right) => {
+        const leftSort = left.sort_order ?? (left.note_number ?? 0) * 100
+        const rightSort = right.sort_order ?? (right.note_number ?? 0) * 100
+        if (leftSort !== rightSort) return leftSort - rightSort
+        if ((left.note_number ?? 0) !== (right.note_number ?? 0)) {
+          return (left.note_number ?? 0) - (right.note_number ?? 0)
+        }
+        return String(left.created_at ?? '').localeCompare(String(right.created_at ?? ''))
+      })
+      .map((row) => row.id)
+  }
+  const orderedNoteIds = await readOrderedNoteIds()
+  const deletedNoteIndex = orderedNoteIds.indexOf(input.noteId)
+  const followingNoteIds =
+    deletedNoteIndex >= 0 ? orderedNoteIds.slice(deletedNoteIndex + 1) : []
+
   const { error: imageDetachError } = await admin
     .from('inspection_images')
     .update({ eb_note_id: null })
@@ -4669,11 +4841,53 @@ export async function deleteEbNote(input: DeleteEbNoteInput) {
     .eq('inspection_id', input.inspectionId)
     .eq('id', input.noteId)
 
-  if (error) {
-    throw new Error(error.message ?? 'Kunde inte radera EB-notering.')
-  }
-  if (count === 0) {
+  if (error || count === 0) {
+    if (error) throw new Error(error.message ?? 'Kunde inte radera EB-notering.')
     throw new Error('EB_NOTE_NOT_FOUND')
+  }
+
+  try {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const [latestDraft, currentOrderedNoteIds] = await Promise.all([
+        fetchEbReportDraft(input),
+        readOrderedNoteIds(),
+      ])
+      const updatedAt = nextEbReportDraftUpdatedAt(latestDraft.updatedAt)
+      try {
+        return await writeEbReportDraft(
+          input,
+          {
+            ...latestDraft,
+            noteHeadings: reconcileEbReportNoteHeadingsAfterDeletion(
+              latestDraft.noteHeadings,
+              currentOrderedNoteIds,
+              input.noteId,
+              updatedAt,
+              followingNoteIds
+            ),
+            updatedAt,
+          },
+          { expectedUpdatedAt: latestDraft.updatedAt }
+        )
+      } catch (reconcileError) {
+        if (
+          reconcileError instanceof Error &&
+          reconcileError.message === 'EB_REPORT_DRAFT_CONFLICT' &&
+          attempt < 5
+        ) {
+          continue
+        }
+        throw reconcileError
+      }
+    }
+  } catch (reconcileError) {
+    console.error('[eb.delete-note] could not verify report headings after delete', {
+      projectId: input.projectId,
+      inspectionId: input.inspectionId,
+      noteId: input.noteId,
+      error: reconcileError instanceof Error ? reconcileError.message : reconcileError,
+    })
+    throw new Error('EB_NOTE_DELETED_REPORT_DRAFT_SYNC_FAILED')
   }
 }
 
@@ -5856,23 +6070,56 @@ function buildEbReportDraft(input: {
     sections: templateAlreadyCopied
       ? copiedTemplateSections
       : [...initializedSections, ...additionalStoredSections],
+    noteHeadings: reconcileEbReportNoteHeadings(storedDraft.noteHeadings, round.notes),
   }
 }
 
-export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<EbReportDraft> {
+export async function saveEbReportDraft(
+  input: SaveEbReportDraftInput,
+  conflictRetryCount = 0
+): Promise<EbReportDraft> {
   await assertEbInspectionEditable(input)
-  const now = new Date().toISOString()
-  const requestedSections = input.sections
+  let now = new Date().toISOString()
+  const hasSectionsPayload = Array.isArray(input.sections)
+  const hasNoteHeadingsPayload = Array.isArray(input.noteHeadings)
+  const hasExpectedUpdatedAt = Object.prototype.hasOwnProperty.call(
+    input,
+    'expectedUpdatedAt'
+  )
+  if (!hasSectionsPayload && !hasNoteHeadingsPayload) {
+    throw new Error('EB_REPORT_DRAFT_EMPTY')
+  }
+  if (hasNoteHeadingsPayload && !hasExpectedUpdatedAt) {
+    throw new Error('EB_REPORT_DRAFT_VERSION_REQUIRED')
+  }
+
+  const requestedSections = (input.sections ?? [])
     .map(normalizeEbReportDraftSection)
     .filter((section): section is EbReportDraftSection => Boolean(section))
     .map((section) => ({ ...section, updatedAt: now }))
-
-  if (requestedSections.length === 0) {
+  if (requestedSections.length === 0 && !hasNoteHeadingsPayload) {
     throw new Error('EB_REPORT_DRAFT_EMPTY')
+  }
+  if ((input.sections?.length ?? 0) > 0 && requestedSections.length === 0) {
+    throw new Error('EB_REPORT_DRAFT_EMPTY')
+  }
+
+  const requestedNoteHeadings = hasNoteHeadingsPayload
+    ? normalizeEbReportNoteHeadings(input.noteHeadings)
+    : null
+  if (
+    requestedNoteHeadings &&
+    requestedNoteHeadings.length !== (input.noteHeadings?.length ?? 0)
+  ) {
+    throw new Error('EB_REPORT_NOTE_HEADINGS_INVALID')
   }
 
   const report = await getEbInspectionReport(input)
   const baseDraft = report.reportDraft
+  if (hasExpectedUpdatedAt && baseDraft.updatedAt !== (input.expectedUpdatedAt ?? null)) {
+    throw new Error('EB_REPORT_DRAFT_CONFLICT')
+  }
+  now = nextEbReportDraftUpdatedAt(baseDraft.updatedAt)
   const sectionsByKey = new Map(baseDraft.sections.map((section) => [section.key, section]))
   const sanitizedSections = requestedSections.filter((section) => {
     const existing = sectionsByKey.get(section.key)
@@ -5881,8 +6128,19 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
         (existing.contentMode !== 'structured' || section.relevanceOverridden === true)
     )
   })
-  if (sanitizedSections.length === 0) {
+  if (requestedSections.length > 0 && sanitizedSections.length === 0) {
     throw new Error('EB_REPORT_DRAFT_EMPTY')
+  }
+
+  if (requestedNoteHeadings) {
+    const noteIds = new Set(report.notes.map((note) => note.id))
+    if (
+      requestedNoteHeadings.some(
+        (heading) => heading.beforeNoteId && !noteIds.has(heading.beforeNoteId)
+      )
+    ) {
+      throw new Error('EB_REPORT_NOTE_HEADING_ANCHOR_INVALID')
+    }
   }
 
   for (const requested of sanitizedSections) {
@@ -5938,9 +6196,27 @@ export async function saveEbReportDraft(input: SaveEbReportDraftInput): Promise<
     ...baseDraft,
     updatedAt: now,
     sections: baseDraft.sections.map((section) => sectionsByKey.get(section.key) ?? section),
+    noteHeadings: requestedNoteHeadings
+      ? requestedNoteHeadings.map((heading) => ({ ...heading, updatedAt: now }))
+      : baseDraft.noteHeadings,
   }
 
-  return writeEbReportDraft(input, savedDraft)
+  try {
+    return await writeEbReportDraft(input, savedDraft, {
+      expectedUpdatedAt: baseDraft.updatedAt,
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'EB_REPORT_DRAFT_CONFLICT' &&
+      conflictRetryCount < 2 &&
+      !hasExpectedUpdatedAt &&
+      !hasNoteHeadingsPayload
+    ) {
+      return saveEbReportDraft(input, conflictRetryCount + 1)
+    }
+    throw error
+  }
 }
 
 export async function refreshEbReportProjectSource(
@@ -5954,7 +6230,7 @@ export async function refreshEbReportProjectSource(
   const currentSnapshot = currentReport.reportDraft.sourceSnapshot
   if (!currentSnapshot) throw new Error('EB_REPORT_DRAFT_NOT_INITIALIZED')
 
-  const now = new Date().toISOString()
+  const now = nextEbReportDraftUpdatedAt(currentReport.reportDraft.updatedAt)
   const sourceSnapshot: EbReportSourceSnapshot = {
     ...currentSnapshot,
     capturedAt: now,
@@ -5984,7 +6260,9 @@ export async function refreshEbReportProjectSource(
     },
   })
 
-  await writeEbReportDraft(input, refreshedDraft)
+  await writeEbReportDraft(input, refreshedDraft, {
+    expectedUpdatedAt: currentReport.reportDraft.updatedAt,
+  })
   return getEbInspectionReport(input)
 }
 
@@ -6005,7 +6283,7 @@ export async function refreshEbReportInspectorSource(
     project: liveRound.project,
     inspection: liveRound.inspection,
   })
-  const now = new Date().toISOString()
+  const now = nextEbReportDraftUpdatedAt(currentReport.reportDraft.updatedAt)
   const sourceSnapshot: EbReportSourceSnapshot = {
     ...currentSnapshot,
     capturedAt: now,
@@ -6031,7 +6309,9 @@ export async function refreshEbReportInspectorSource(
     },
   })
 
-  await writeEbReportDraft(input, refreshedDraft)
+  await writeEbReportDraft(input, refreshedDraft, {
+    expectedUpdatedAt: currentReport.reportDraft.updatedAt,
+  })
   return getEbInspectionReport(input)
 }
 
@@ -6045,7 +6325,7 @@ export async function resetEbReportDraftSection(input: Omit<SaveEbReportDraftInp
     throw new Error('EB_REPORT_SECTION_NOT_EDITABLE')
   }
 
-  const now = new Date().toISOString()
+  const now = nextEbReportDraftUpdatedAt(report.reportDraft.updatedAt)
   const draftWithoutSection: EbReportDraft = {
     ...report.reportDraft,
     sections: report.reportDraft.sections.filter((section) => section.key !== input.sectionKey),
@@ -6072,7 +6352,9 @@ export async function resetEbReportDraftSection(input: Omit<SaveEbReportDraftInp
       section.key === input.sectionKey ? { ...defaultSection, updatedAt: now } : section
     ),
   }
-  return writeEbReportDraft(input, savedDraft)
+  return writeEbReportDraft(input, savedDraft, {
+    expectedUpdatedAt: report.reportDraft.updatedAt,
+  })
 }
 
 async function listParticipantsForInspection(input: {

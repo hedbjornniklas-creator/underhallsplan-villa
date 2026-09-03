@@ -57,6 +57,12 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'EB_NOTE_NOT_FOUND') return jsonError('Noteringen hittades inte.', 404)
+  if (message === 'EB_NOTE_DELETED_REPORT_DRAFT_SYNC_FAILED') {
+    return jsonError('Noteringen raderades, men vyn kunde inte synkroniseras. Ladda om sidan.', 409)
+  }
+  if (message === 'EB_REPORT_DRAFT_CONFLICT') {
+    return jsonError('Utlåtandet ändrades samtidigt i en annan vy. Försök igen.', 409)
+  }
   if (message === 'EB_DISCIPLINE_REQUIRED') return jsonError('Välj fack innan noteringen sparas.', 400)
   if (message === 'EB_NOTE_TEXT_REQUIRED') return jsonError('Skriv en noteringstext.', 400)
   if (message === 'EB_REMEDIATION_ASSIGNEE_NOT_FOUND') {
@@ -111,14 +117,14 @@ export async function DELETE(
   try {
     const { projectId, inspectionId, noteId } = await context.params
     const org = await requireEbContext()
-    await deleteEbNote({
+    const reportDraft = await deleteEbNote({
       orgId: org.orgId,
       projectId,
       inspectionId,
       noteId,
     })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, reportDraft })
   } catch (error) {
     return mapError(error, 'Kunde inte radera notering.')
   }

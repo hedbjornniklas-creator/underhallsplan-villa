@@ -5,6 +5,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -27,6 +28,7 @@ import {
   FileText,
   Grid2X2,
   Grid3X3,
+  Heading2,
   Image as ImageIcon,
   Loader2,
   Pencil,
@@ -62,6 +64,7 @@ import type {
   EbProjectAttachment,
   EbProjectListItem,
   EbReportDraftSection,
+  EbReportNoteHeading,
   EbReportSectionStatus,
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
@@ -143,7 +146,10 @@ type ParticipantsAutosavePayload = {
 }
 type DocumentsAutosavePayload = { documents: EbInspectionDocument[] }
 type CheckpointsAutosavePayload = { checkpoints: EbInspectionCheckpoint[] }
-type ReportDraftAutosavePayload = { sections: EbReportDraftSection[] }
+type ReportDraftAutosavePayload = {
+  sections?: EbReportDraftSection[]
+  noteHeadings?: EbReportNoteHeading[]
+}
 
 type ReviewAutosavePayload =
   | ({ kind: 'inspection' } & InspectionAutosavePayload)
@@ -161,6 +167,11 @@ type ReviewAutosaveResult =
 
 type DeleteResponse = {
   ok?: boolean
+  reportDraft?: {
+    sections?: EbReportDraftSection[]
+    noteHeadings?: EbReportNoteHeading[]
+    updatedAt?: string | null
+  }
   error?: string
 }
 
@@ -216,6 +227,8 @@ type ReportDraftResponse = {
   report?: EbInspectionReport
   reportDraft?: {
     sections?: EbReportDraftSection[]
+    noteHeadings?: EbReportNoteHeading[]
+    updatedAt?: string | null
   }
   error?: string
 }
@@ -582,12 +595,15 @@ function mergeReportDraftAutosavePayload(
   next: ReportDraftAutosavePayload
 ) {
   const sectionsByKey = new Map(
-    previous.sections.map((section) => [section.key, section])
+    (previous.sections ?? []).map((section) => [section.key, section])
   )
-  for (const section of next.sections) {
+  for (const section of next.sections ?? []) {
     sectionsByKey.set(section.key, section)
   }
-  return { sections: Array.from(sectionsByKey.values()) }
+  return {
+    ...(sectionsByKey.size > 0 ? { sections: Array.from(sectionsByKey.values()) } : {}),
+    noteHeadings: next.noteHeadings ?? previous.noteHeadings,
+  }
 }
 
 function participantsFingerprint(subject: string, body: string, participants: EditableParticipant[]) {
@@ -621,6 +637,137 @@ function sortImages(images: EbNoteImage[]) {
     }
     return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
   })
+}
+
+function sortNoteHeadings(headings: EbReportNoteHeading[]) {
+  return [...headings].sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+    return left.id.localeCompare(right.id)
+  })
+}
+
+function noteHeadingsFingerprint(headings: EbReportNoteHeading[]) {
+  return JSON.stringify(
+    sortNoteHeadings(headings).map(({ id, title, beforeNoteId, sortOrder }) => ({
+      id,
+      title,
+      beforeNoteId,
+      sortOrder,
+    }))
+  )
+}
+
+function noteHeadingAnchorIndex(heading: EbReportNoteHeading, notes: EbNote[]) {
+  if (!heading.beforeNoteId) return notes.length
+  const index = notes.findIndex((note) => note.id === heading.beforeNoteId)
+  return index >= 0 ? index : notes.length
+}
+
+function createReportNoteHeading(beforeNoteId: string | null, headings: EbReportNoteHeading[]) {
+  const now = new Date().toISOString()
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `heading-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  return {
+    id,
+    title: 'Ny rubrik',
+    beforeNoteId,
+    sortOrder: headings.reduce((max, heading) => Math.max(max, heading.sortOrder), 0) + 100,
+    updatedAt: now,
+  } satisfies EbReportNoteHeading
+}
+
+function flattenNoteHeadingBuckets(buckets: EbReportNoteHeading[][], notes: EbNote[]) {
+  let order = 0
+  return buckets.flatMap((bucket, anchorIndex) =>
+    bucket.map((heading) => ({
+      ...heading,
+      beforeNoteId: anchorIndex < notes.length ? notes[anchorIndex].id : null,
+      sortOrder: (++order) * 100,
+    }))
+  )
+}
+
+function normalizeNoteHeadingOrder(headings: EbReportNoteHeading[], notes: EbNote[]) {
+  const buckets = Array.from({ length: notes.length + 1 }, () => [] as EbReportNoteHeading[])
+  for (const heading of sortNoteHeadings(headings)) {
+    buckets[noteHeadingAnchorIndex(heading, notes)].push(heading)
+  }
+  return flattenNoteHeadingBuckets(buckets, notes)
+}
+
+function moveNoteHeadingInOrder(
+  headings: EbReportNoteHeading[],
+  notes: EbNote[],
+  headingId: string,
+  direction: 'up' | 'down'
+) {
+  const buckets = Array.from({ length: notes.length + 1 }, () => [] as EbReportNoteHeading[])
+  for (const heading of sortNoteHeadings(headings)) {
+    buckets[noteHeadingAnchorIndex(heading, notes)].push(heading)
+  }
+
+  const bucketIndex = buckets.findIndex((bucket) =>
+    bucket.some((heading) => heading.id === headingId)
+  )
+  if (bucketIndex < 0) return null
+  const headingIndex = buckets[bucketIndex].findIndex((heading) => heading.id === headingId)
+  const [heading] = buckets[bucketIndex].splice(headingIndex, 1)
+  if (!heading) return null
+
+  if (direction === 'up') {
+    if (headingIndex > 0) {
+      buckets[bucketIndex].splice(headingIndex - 1, 0, heading)
+    } else if (bucketIndex > 0) {
+      buckets[bucketIndex - 1].push(heading)
+    } else {
+      buckets[bucketIndex].unshift(heading)
+      return null
+    }
+  } else if (headingIndex < buckets[bucketIndex].length) {
+    buckets[bucketIndex].splice(headingIndex + 1, 0, heading)
+  } else if (bucketIndex < notes.length) {
+    buckets[bucketIndex + 1].unshift(heading)
+  } else {
+    buckets[bucketIndex].push(heading)
+    return null
+  }
+
+  return flattenNoteHeadingBuckets(buckets, notes)
+}
+
+function noteHeadingMoveAvailability(
+  heading: EbReportNoteHeading,
+  headings: EbReportNoteHeading[],
+  notes: EbNote[]
+) {
+  const anchorIndex = noteHeadingAnchorIndex(heading, notes)
+  const bucket = sortNoteHeadings(
+    headings.filter((item) => noteHeadingAnchorIndex(item, notes) === anchorIndex)
+  )
+  const headingIndex = bucket.findIndex((item) => item.id === heading.id)
+  return {
+    canMoveUp: headingIndex > 0 || anchorIndex > 0,
+    canMoveDown: headingIndex >= 0 && (headingIndex < bucket.length - 1 || anchorIndex < notes.length),
+  }
+}
+
+function reconcileNoteHeadingsAfterDeletedNote(
+  headings: EbReportNoteHeading[],
+  notes: EbNote[],
+  deletedNoteId: string
+) {
+  const deletedNoteIndex = notes.findIndex((note) => note.id === deletedNoteId)
+  if (deletedNoteIndex < 0) return sortNoteHeadings(headings)
+  const remainingNotes = notes.filter((note) => note.id !== deletedNoteId)
+  const nextNoteId = remainingNotes[deletedNoteIndex]?.id ?? null
+  return sortNoteHeadings(headings).map((heading, index) => ({
+    ...heading,
+    beforeNoteId:
+      heading.beforeNoteId === deletedNoteId ? nextNoteId : heading.beforeNoteId,
+    sortOrder: (index + 1) * 100,
+  }))
 }
 
 function proxiedImageSrc(url: string | null | undefined, max = 420, quality = 68) {
@@ -1637,6 +1784,119 @@ function QueuedImagePreview({
   )
 }
 
+function ReportNoteHeadingRow({
+  heading,
+  allHeadings,
+  inspectionId,
+  notes,
+  displayNumberByNoteId,
+  disabled,
+  onTitleChange,
+  onTitleSave,
+  onAnchorChange,
+  onMove,
+  onDelete,
+}: {
+  heading: EbReportNoteHeading
+  allHeadings: EbReportNoteHeading[]
+  inspectionId: string
+  notes: EbNote[]
+  displayNumberByNoteId: Map<string, number>
+  disabled: boolean
+  onTitleChange: (headingId: string, title: string) => void
+  onTitleSave: (headingId: string, title: string) => void | Promise<void>
+  onAnchorChange: (headingId: string, beforeNoteId: string | null) => void
+  onMove: (heading: EbReportNoteHeading, direction: 'up' | 'down') => void
+  onDelete: (heading: EbReportNoteHeading) => void
+}) {
+  const { canMoveUp, canMoveDown } = noteHeadingMoveAvailability(
+    heading,
+    allHeadings,
+    notes
+  )
+
+  return (
+    <div className="grid grid-cols-[minmax(16rem,1fr)_minmax(18rem,1.25fr)_5rem_3rem] items-center gap-3 border-y border-emerald-200 bg-emerald-50/80 px-3 py-2">
+      <label className="flex min-w-0 items-center gap-2">
+        <Heading2 size={17} className="shrink-0 text-emerald-700" />
+        <span className="sr-only">Rubriktext</span>
+        <DebouncedTextarea
+          value={heading.title}
+          draftKey={`eb:${inspectionId}:report-note-heading:${heading.id}`}
+          rows={1}
+          maxLength={160}
+          disabled={disabled}
+          onValueChange={(title) => onTitleChange(heading.id, title)}
+          onSave={(title) => onTitleSave(heading.id, title)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+          }}
+          className="h-9 min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-sm font-semibold leading-5 text-gray-950 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-50"
+          aria-label="Rubriktext"
+        />
+      </label>
+      <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-gray-600">
+        <span className="shrink-0">Placering</span>
+        <select
+          value={heading.beforeNoteId ?? ''}
+          disabled={disabled}
+          onChange={(event) => onAnchorChange(heading.id, event.target.value || null)}
+          className="min-w-0 flex-1 rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-sm text-gray-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-50"
+          aria-label={`Placering för rubriken ${heading.title}`}
+        >
+          {notes.map((note) => {
+            const place = [note.room, note.location, note.placeDetail].filter(Boolean).join(' · ')
+            return (
+              <option key={note.id} value={note.id}>
+                Före notering {displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? '-'}
+                {place ? ` – ${place}` : ''}
+              </option>
+            )
+          })}
+          <option value="">Efter sista noteringen</option>
+        </select>
+      </label>
+      <div className="flex justify-start gap-1">
+        <button
+          type="button"
+          onClick={() => onMove(heading, 'up')}
+          disabled={disabled || !canMoveUp}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+          aria-label="Flytta rubriken uppåt"
+          title="Flytta rubriken uppåt"
+        >
+          <ChevronUp size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onMove(heading, 'down')}
+          disabled={disabled || !canMoveDown}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+          aria-label="Flytta rubriken nedåt"
+          title="Flytta rubriken nedåt"
+        >
+          <ChevronDown size={16} />
+        </button>
+      </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => onDelete(heading)}
+          disabled={disabled}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
+          aria-label={`Ta bort rubriken ${heading.title}`}
+          title="Ta bort rubrik"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function EbInspectionRoundClient({
   initialRound,
   initialDisciplineId,
@@ -1673,6 +1933,7 @@ export default function EbInspectionRoundClient({
   const [saving, setSaving] = useState(false)
   const [uploadingCheckpointImageId, setUploadingCheckpointImageId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const deletingNoteRef = useRef(false)
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
   const [orderSaving, setOrderSaving] = useState(false)
   const [movingImageId, setMovingImageId] = useState<string | null>(null)
@@ -1706,6 +1967,13 @@ export default function EbInspectionRoundClient({
     initialRound.reportDraft.sections
   )
   const reportSectionsRef = useRef(reportSections)
+  const [noteHeadings, setNoteHeadings] = useState<EbReportNoteHeading[]>(
+    initialRound.reportDraft.noteHeadings ?? []
+  )
+  const noteHeadingsRef = useRef(noteHeadings)
+  const reportDraftUpdatedAtRef = useRef<string | null>(
+    initialRound.reportDraft.updatedAt ?? null
+  )
   const [inspectionSaving, setInspectionSaving] = useState(false)
   const [participantsSaving, setParticipantsSaving] = useState(false)
   const [documentsSaving, setDocumentsSaving] = useState(false)
@@ -1988,6 +2256,10 @@ export default function EbInspectionRoundClient({
   }, [reportSections])
 
   useEffect(() => {
+    noteHeadingsRef.current = noteHeadings
+  }, [noteHeadings])
+
+  useEffect(() => {
     inspectionFormRef.current = inspectionForm
   }, [inspectionForm])
 
@@ -2249,7 +2521,7 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (reportDraftSaving) return
+    if (reportDraftSaving || deletingNoteRef.current) return
 
     try {
       setReviewMessage(null)
@@ -2257,6 +2529,7 @@ export default function EbInspectionRoundClient({
       await enqueueReportDraftAutosave({
         kind: 'reportDraft',
         sections: reportSectionsRef.current,
+        noteHeadings: noteHeadingsRef.current,
       })
       setReviewMessage('Utlåtandetexterna är sparade.')
     } catch {
@@ -2269,7 +2542,7 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (refreshingReportSource || reportDraftSaving) return
+    if (refreshingReportSource || reportDraftSaving || deletingNoteRef.current) return
 
     setRefreshingReportSource(source)
     setReviewMessage(null)
@@ -2291,6 +2564,9 @@ export default function EbInspectionRoundClient({
       setRound(body.report)
       reportSectionsRef.current = body.report.reportDraft.sections
       setReportSections(body.report.reportDraft.sections)
+      noteHeadingsRef.current = body.report.reportDraft.noteHeadings ?? []
+      setNoteHeadings(body.report.reportDraft.noteHeadings ?? [])
+      reportDraftUpdatedAtRef.current = body.report.reportDraft.updatedAt ?? null
       setReviewMessage(
         source === 'project'
           ? 'Grunduppgifterna från entreprenaden är uppdaterade.'
@@ -2313,7 +2589,7 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (resettingReportSectionKey || reportDraftSaving) return
+    if (resettingReportSectionKey || reportDraftSaving || deletingNoteRef.current) return
     const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
     if (!section || section.contentMode === 'structured') return
     if (!window.confirm(`Återställ standardtexten för "${section.title}"?`)) return
@@ -2333,6 +2609,10 @@ export default function EbInspectionRoundClient({
       }
       reportSectionsRef.current = sections
       setReportSections(sections)
+      if (body.reportDraft?.noteHeadings) {
+        replaceNoteHeadings(body.reportDraft.noteHeadings)
+      }
+      reportDraftUpdatedAtRef.current = body.reportDraft?.updatedAt ?? null
       setReviewMessage(`Standardtexten för ${section.title} är återställd.`)
     } catch (error) {
       showError(error, 'Kunde inte återställa standardtexten.')
@@ -2444,11 +2724,18 @@ export default function EbInspectionRoundClient({
         const response = await fetch(reportDraftPath, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sections: payload.sections }),
+          body: JSON.stringify({
+            ...(payload.sections ? { sections: payload.sections } : {}),
+            ...(payload.noteHeadings ? { noteHeadings: payload.noteHeadings } : {}),
+            expectedUpdatedAt: reportDraftUpdatedAtRef.current,
+          }),
         })
         const body = (await response.json().catch(() => ({}))) as ReportDraftResponse
         if (!response.ok) {
           throw new Error(body.error ?? 'Kunde inte autospara utlåtandetexterna.')
+        }
+        if (body.reportDraft) {
+          reportDraftUpdatedAtRef.current = body.reportDraft.updatedAt ?? null
         }
         return { kind: 'reportDraft', payload: body }
       } finally {
@@ -2500,6 +2787,27 @@ export default function EbInspectionRoundClient({
 
     if (result.kind === 'checkpoints' && payload.kind === 'checkpoints') {
       lastAutosavedCheckpointsRef.current = checkpointsFingerprint(payload.checkpoints)
+      return
+    }
+
+    if (result.kind === 'reportDraft' && payload.kind === 'reportDraft') {
+      const savedDraft = result.payload.reportDraft
+      if (savedDraft) {
+        reportDraftUpdatedAtRef.current = savedDraft.updatedAt ?? null
+      }
+      if (payload.sections && savedDraft?.sections) {
+        reportSectionsRef.current = savedDraft.sections
+        setReportSections(savedDraft.sections)
+      }
+      if (
+        payload.noteHeadings &&
+        savedDraft?.noteHeadings &&
+        noteHeadingsFingerprint(noteHeadingsRef.current) ===
+          noteHeadingsFingerprint(payload.noteHeadings)
+      ) {
+        noteHeadingsRef.current = savedDraft.noteHeadings
+        setNoteHeadings(savedDraft.noteHeadings)
+      }
     }
   }
 
@@ -2765,7 +3073,7 @@ export default function EbInspectionRoundClient({
 
   const handleReportSectionChange = useCallback(
     (nextSection: EbReportDraftSection) => {
-      if (isLocked) return
+      if (isLocked || deletingNoteRef.current) return
       const currentSection = reportSectionsRef.current.find(
         (section) => section.key === nextSection.key
       )
@@ -2801,6 +3109,9 @@ export default function EbInspectionRoundClient({
   const handleReportSectionTextSave = useCallback(
     async (sectionKey: string, text: string) => {
       if (isLocked) throw new Error(lockedMessage)
+      if (deletingNoteRef.current) {
+        throw new Error('Vänta tills noteringen har raderats.')
+      }
       const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
       if (!section) throw new Error('Utlåtandesektionen hittades inte.')
       if (section.contentMode === 'structured') {
@@ -2823,6 +3134,122 @@ export default function EbInspectionRoundClient({
       resetReportDraftAutosaveError,
     ]
   )
+
+  const replaceNoteHeadings = useCallback((nextHeadings: EbReportNoteHeading[]) => {
+    const sorted = sortNoteHeadings(nextHeadings)
+    noteHeadingsRef.current = sorted
+    setNoteHeadings(sorted)
+    return sorted
+  }, [])
+
+  const persistNoteHeadings = useCallback(
+    (nextHeadings: EbReportNoteHeading[]) => {
+      if (isLocked) {
+        showError(lockedMessage)
+        return
+      }
+      if (deletingNoteRef.current) return
+      const sorted = replaceNoteHeadings(nextHeadings)
+      resetReportDraftAutosaveError()
+      void enqueueReportDraftAutosave({
+        kind: 'reportDraft',
+        noteHeadings: sorted,
+      }).catch(() => undefined)
+    },
+    [
+      enqueueReportDraftAutosave,
+      isLocked,
+      lockedMessage,
+      replaceNoteHeadings,
+      resetReportDraftAutosaveError,
+      showError,
+    ]
+  )
+
+  const handleAddNoteHeading = () => {
+    if (isLocked) {
+      showError(lockedMessage)
+      return
+    }
+    if (deletingNoteRef.current) return
+    const firstVisibleNote = filteredNotes[0] ?? orderedNotes[0] ?? null
+    const nextHeading = createReportNoteHeading(firstVisibleNote?.id ?? null, noteHeadingsRef.current)
+    persistNoteHeadings([...noteHeadingsRef.current, nextHeading])
+  }
+
+  const handleNoteHeadingTitleChange = (headingId: string, title: string) => {
+    if (isLocked || deletingNoteRef.current) return
+    replaceNoteHeadings(
+      noteHeadingsRef.current.map((heading) =>
+        heading.id === headingId ? { ...heading, title } : heading
+      )
+    )
+  }
+
+  const handleNoteHeadingTitleSave = async (headingId: string, title: string) => {
+    if (isLocked) throw new Error(lockedMessage)
+    if (deletingNoteRef.current) throw new Error('Vänta tills noteringen har raderats.')
+    const now = new Date().toISOString()
+    const nextHeadings = replaceNoteHeadings(
+      noteHeadingsRef.current.map((heading) =>
+        heading.id === headingId
+          ? { ...heading, title: title.trim() || 'Ny rubrik', updatedAt: now }
+          : heading
+      )
+    )
+    resetReportDraftAutosaveError()
+    await enqueueReportDraftAutosave({
+      kind: 'reportDraft',
+      noteHeadings: nextHeadings,
+    })
+  }
+
+  const handleNoteHeadingAnchorChange = (headingId: string, beforeNoteId: string | null) => {
+    if (isLocked || deletingNoteRef.current) return
+    const now = new Date().toISOString()
+    const currentHeading = noteHeadingsRef.current.find((heading) => heading.id === headingId)
+    if (!currentHeading) return
+    const remainingHeadings = noteHeadingsRef.current.filter((heading) => heading.id !== headingId)
+    const appendSortOrder =
+      remainingHeadings.reduce((max, heading) => Math.max(max, heading.sortOrder), 0) + 100
+    persistNoteHeadings(
+      normalizeNoteHeadingOrder(
+        [
+          ...remainingHeadings,
+          {
+            ...currentHeading,
+            beforeNoteId,
+            sortOrder: appendSortOrder,
+            updatedAt: now,
+          },
+        ],
+        orderedNotes
+      )
+    )
+  }
+
+  const handleMoveNoteHeading = (heading: EbReportNoteHeading, direction: 'up' | 'down') => {
+    if (isLocked || deletingNoteRef.current) return
+    const movedHeadings = moveNoteHeadingInOrder(
+      noteHeadingsRef.current,
+      orderedNotes,
+      heading.id,
+      direction
+    )
+    if (!movedHeadings) return
+    const now = new Date().toISOString()
+    persistNoteHeadings(
+      movedHeadings.map((item) =>
+        item.id === heading.id ? { ...item, updatedAt: now } : item
+      )
+    )
+  }
+
+  const handleDeleteNoteHeading = (heading: EbReportNoteHeading) => {
+    if (isLocked) return
+    if (!window.confirm(`Ta bort rubriken "${heading.title.trim() || 'Ny rubrik'}"?`)) return
+    persistNoteHeadings(noteHeadingsRef.current.filter((item) => item.id !== heading.id))
+  }
 
   const resetForm = () => {
     setEditingNote(null)
@@ -3772,16 +4199,34 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (deletingId) return
+    if (deletingId || deletingNoteRef.current) return
     const confirmed = window.confirm(`Radera ${round.project.notePrefix} ${note.noteNumber}?`)
     if (!confirmed) return
 
     try {
+      deletingNoteRef.current = true
       setDeletingId(note.id)
+      const headingsBeforeDelete = noteHeadingsRef.current
+      resetReportDraftAutosaveError()
+      await enqueueReportDraftAutosave({
+        kind: 'reportDraft',
+        sections: reportSectionsRef.current,
+        noteHeadings: headingsBeforeDelete,
+      })
       const response = await fetch(`${notesBasePath}/${note.id}`, { method: 'DELETE' })
       const payload = (await response.json().catch(() => ({}))) as DeleteResponse
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error ?? 'Kunde inte radera noteringen.')
+      }
+      if (payload.reportDraft) {
+        if (payload.reportDraft.sections) {
+          reportSectionsRef.current = payload.reportDraft.sections
+          setReportSections(payload.reportDraft.sections)
+        }
+        if (payload.reportDraft.noteHeadings) {
+          replaceNoteHeadings(payload.reportDraft.noteHeadings)
+        }
+        reportDraftUpdatedAtRef.current = payload.reportDraft.updatedAt ?? null
       }
       clearPendingNoteOrderSave()
       const notes = notesRef.current.filter((item) => item.id !== note.id)
@@ -3794,12 +4239,18 @@ export default function EbInspectionRoundClient({
           image.noteId === note.id ? { ...image, noteId: null } : image
         ),
       }))
+      if (!payload.reportDraft?.noteHeadings) {
+        replaceNoteHeadings(
+          reconcileNoteHeadingsAfterDeletedNote(noteHeadingsRef.current, orderedNotes, note.id)
+        )
+      }
       if (editingNote?.id === note.id) {
         resetForm()
       }
     } catch (deleteError) {
       showError(deleteError, 'Kunde inte radera noteringen.')
     } finally {
+      deletingNoteRef.current = false
       setDeletingId(null)
     }
   }
@@ -4653,7 +5104,7 @@ export default function EbInspectionRoundClient({
                 <button
                   type="button"
                   onClick={() => void saveReportDraft()}
-                  disabled={isLocked || reportDraftSaving}
+                  disabled={isLocked || reportDraftSaving || Boolean(deletingId)}
                   className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   {reportDraftSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -4672,7 +5123,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={() => void refreshReportSource('project')}
-                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving}
+                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving || Boolean(deletingId)}
                     className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <RefreshCw
@@ -4684,7 +5135,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={() => void refreshReportSource('inspector')}
-                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving}
+                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving || Boolean(deletingId)}
                     className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <RefreshCw
@@ -4698,7 +5149,7 @@ export default function EbInspectionRoundClient({
               <ReportDraftSectionsEditor
                 sections={visibleReportSections}
                 inspectionId={round.inspection.inspectionId}
-                disabled={isLocked || Boolean(resettingReportSectionKey)}
+                disabled={isLocked || Boolean(resettingReportSectionKey) || Boolean(deletingId)}
                 resettingSectionKey={resettingReportSectionKey}
                 onSectionChange={handleReportSectionChange}
                 onSectionTextSave={handleReportSectionTextSave}
@@ -4708,7 +5159,7 @@ export default function EbInspectionRoundClient({
 
             <ReviewSection
               title="Noteringar"
-              description="Ordningen här styr ordningen i utlåtandet."
+              description="Ordningen här styr ordningen i utlåtandet. Lägg in fria rubriker för exempelvis plan, rum eller en egen gruppering."
             >
               <div className="overflow-x-auto rounded-md border border-emerald-100 bg-white/70 px-2 py-2">
             <div className="flex min-w-max gap-2">
@@ -4783,7 +5234,7 @@ export default function EbInspectionRoundClient({
                   </h2>
                   <p className="text-xs text-gray-600">{activeDiscipline?.littera ?? 'Samtliga fack'}</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   {orderSaving ? (
                     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
                       <Loader2 size={13} className="animate-spin" />
@@ -4791,6 +5242,15 @@ export default function EbInspectionRoundClient({
                     </span>
                   ) : null}
                   <span className="text-xs font-medium text-gray-500">{filteredNotes.length} st</span>
+                  <button
+                    type="button"
+                    onClick={handleAddNoteHeading}
+                    disabled={isLocked || saving || Boolean(deletingId) || filteredNotes.length === 0}
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Heading2 size={14} />
+                    Ny grupprubrik
+                  </button>
                   <button
                     type="button"
                     onClick={handleNewNote}
@@ -4803,7 +5263,8 @@ export default function EbInspectionRoundClient({
                 </div>
               </div>
 
-              {filteredNotes.length === 0 ? (
+              {filteredNotes.length === 0 &&
+              !(activeDisciplineId === null && noteHeadings.length > 0) ? (
                 <div className="px-4 py-10 text-center text-sm text-gray-600">Inga noteringar.</div>
               ) : (
                 <div className="divide-y divide-emerald-100">
@@ -4814,8 +5275,26 @@ export default function EbInspectionRoundClient({
                     const queuedNoteImages = queuedImagesByNoteId.get(note.id) ?? []
                     const savedNoteImages = imagesByNoteId.get(note.id) ?? []
                     return (
+                      <Fragment key={note.id}>
+                        {sortNoteHeadings(
+                          noteHeadings.filter((heading) => heading.beforeNoteId === note.id)
+                        ).map((heading) => (
+                          <ReportNoteHeadingRow
+                            key={heading.id}
+                            heading={heading}
+                            allHeadings={noteHeadings}
+                            inspectionId={round.inspection.inspectionId}
+                            notes={orderedNotes}
+                            displayNumberByNoteId={displayNumberByNoteId}
+                            disabled={isLocked || Boolean(deletingId)}
+                            onTitleChange={handleNoteHeadingTitleChange}
+                            onTitleSave={handleNoteHeadingTitleSave}
+                            onAnchorChange={handleNoteHeadingAnchorChange}
+                            onMove={handleMoveNoteHeading}
+                            onDelete={handleDeleteNoteHeading}
+                          />
+                        ))}
                       <article
-                        key={note.id}
                         role="button"
                         tabIndex={0}
                         onClick={() => handleEdit(note)}
@@ -4930,8 +5409,29 @@ export default function EbInspectionRoundClient({
                           </button>
                       </div>
                     </article>
+                      </Fragment>
                     )
                   })}
+                  {activeDisciplineId === null
+                    ? sortNoteHeadings(
+                        noteHeadings.filter((heading) => heading.beforeNoteId === null)
+                      ).map((heading) => (
+                        <ReportNoteHeadingRow
+                          key={heading.id}
+                          heading={heading}
+                          allHeadings={noteHeadings}
+                          inspectionId={round.inspection.inspectionId}
+                          notes={orderedNotes}
+                          displayNumberByNoteId={displayNumberByNoteId}
+                          disabled={isLocked || Boolean(deletingId)}
+                          onTitleChange={handleNoteHeadingTitleChange}
+                          onTitleSave={handleNoteHeadingTitleSave}
+                          onAnchorChange={handleNoteHeadingAnchorChange}
+                          onMove={handleMoveNoteHeading}
+                          onDelete={handleDeleteNoteHeading}
+                        />
+                      ))
+                    : null}
                 </div>
               )}
             </section>

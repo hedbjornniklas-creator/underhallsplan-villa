@@ -265,18 +265,19 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   .eb-print-paged-document .eb-report-photo-figure {
     display: grid !important;
-    height: 64mm !important;
-    max-height: 64mm !important;
+    height: auto !important;
+    max-height: none !important;
     margin: 0 !important;
-    overflow: hidden !important;
-    grid-template-rows: auto minmax(0, 1fr) !important;
+    overflow: visible !important;
+    align-self: start !important;
+    grid-template-rows: auto 48mm !important;
     gap: 1mm !important;
   }
 
   .eb-print-paged-document .eb-report-photo-figure figcaption {
     display: block !important;
-    max-height: 15mm !important;
-    overflow: hidden !important;
+    max-height: none !important;
+    overflow: visible !important;
     font-size: 9pt !important;
     line-height: 1.15 !important;
   }

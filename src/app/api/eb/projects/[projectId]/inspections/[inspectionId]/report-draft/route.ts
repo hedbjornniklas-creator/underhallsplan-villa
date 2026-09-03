@@ -7,6 +7,7 @@ import {
   refreshEbReportProjectSource,
   resetEbReportDraftSection,
   saveEbReportDraft,
+  type EbReportNoteHeading,
   type EbReportDraftSection,
 } from '@/lib/eb/server'
 
@@ -37,7 +38,21 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
   if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
-  if (message === 'EB_REPORT_DRAFT_EMPTY') return jsonError('Inga giltiga utlåtandesektioner skickades.', 400)
+  if (message === 'EB_REPORT_DRAFT_EMPTY') {
+    return jsonError('Inga giltiga ändringar för utlåtandeutkastet skickades.', 400)
+  }
+  if (message === 'EB_REPORT_NOTE_HEADINGS_INVALID') {
+    return jsonError('En eller flera noteringsrubriker är ogiltiga.', 400)
+  }
+  if (message === 'EB_REPORT_NOTE_HEADING_ANCHOR_INVALID') {
+    return jsonError('En noteringsrubrik hänvisar till en notering som inte finns.', 400)
+  }
+  if (message === 'EB_REPORT_DRAFT_VERSION_REQUIRED') {
+    return jsonError('Utlåtandet behöver läsas in på nytt innan rubriker kan sparas.', 409)
+  }
+  if (message === 'EB_REPORT_DRAFT_CONFLICT') {
+    return jsonError('Utlåtandet ändrades samtidigt i en annan vy. Ladda om sidan innan du fortsätter.', 409)
+  }
   if (message === 'EB_REPORT_SECTION_NOT_EDITABLE') {
     return jsonError('Den automatiska sektionen kan inte återställas manuellt.', 400)
   }
@@ -72,14 +87,38 @@ export async function PATCH(
   try {
     const { projectId, inspectionId } = await context.params
     const org = await requireEbContext()
-    const body = (await request.json().catch(() => ({}))) as { sections?: unknown }
-    const sections = Array.isArray(body.sections) ? (body.sections as EbReportDraftSection[]) : []
+    const body = (await request.json().catch(() => ({}))) as {
+      sections?: unknown
+      noteHeadings?: unknown
+      expectedUpdatedAt?: unknown
+    }
+    const sections = Array.isArray(body.sections)
+      ? (body.sections as EbReportDraftSection[])
+      : undefined
+    const noteHeadings = Array.isArray(body.noteHeadings)
+      ? (body.noteHeadings as EbReportNoteHeading[])
+      : undefined
+    const hasExpectedUpdatedAt = Object.prototype.hasOwnProperty.call(
+      body,
+      'expectedUpdatedAt'
+    )
+    if (
+      hasExpectedUpdatedAt &&
+      body.expectedUpdatedAt !== null &&
+      typeof body.expectedUpdatedAt !== 'string'
+    ) {
+      return jsonError('Ogiltig versionsinformation för utlåtandet.', 400)
+    }
     const reportDraft = await saveEbReportDraft({
       orgId: org.orgId,
       requestedByUserId: org.userId,
       projectId,
       inspectionId,
       sections,
+      noteHeadings,
+      ...(hasExpectedUpdatedAt
+        ? { expectedUpdatedAt: body.expectedUpdatedAt as string | null }
+        : {}),
     })
 
     return NextResponse.json({ reportDraft })
