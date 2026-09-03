@@ -151,21 +151,42 @@ function getStatusSortRank(status: CaseItem['status']) {
 function getStatusRowClass(status: CaseItem['status']) {
   switch (getStatusBucket(status)) {
     case 'draft':
-      return 'bg-[#FEFEFE] text-black hover:bg-[#FBFBFC] focus-visible:bg-[#FBFBFC]'
+      return 'bg-stone-50 text-black hover:bg-stone-100 focus-visible:bg-stone-100'
     case 'new_application':
-      return 'bg-[#FAFAFF] text-black hover:bg-[#F2F1FF] focus-visible:bg-[#F2F1FF]'
+      return 'bg-indigo-50 text-black hover:bg-indigo-100 focus-visible:bg-indigo-100'
     case 'review':
-      return 'bg-[#FAFCFF] text-black hover:bg-[#F3F7FD] focus-visible:bg-[#F3F7FD]'
+      return 'bg-sky-50 text-black hover:bg-sky-100 focus-visible:bg-sky-100'
     case 'need_info':
-      return 'bg-[#FFFDF5] text-black hover:bg-[#FFF9EC] focus-visible:bg-[#FFF9EC]'
+      return 'bg-amber-50 text-black hover:bg-amber-100 focus-visible:bg-amber-100'
     case 'approved':
-      return 'bg-[#F8FDF9] text-black hover:bg-[#F0FAF2] focus-visible:bg-[#F0FAF2]'
+      return 'bg-emerald-50 text-black hover:bg-emerald-100 focus-visible:bg-emerald-100'
     case 'conditional':
-      return 'bg-[#FFFAF5] text-black hover:bg-[#FFF3EA] focus-visible:bg-[#FFF3EA]'
+      return 'bg-orange-50 text-black hover:bg-orange-100 focus-visible:bg-orange-100'
     case 'rejected':
-      return 'bg-[#FFF8F8] text-black hover:bg-[#FFF0F0] focus-visible:bg-[#FFF0F0]'
+      return 'bg-rose-50 text-black hover:bg-rose-100 focus-visible:bg-rose-100'
     default:
       return 'bg-white text-black hover:bg-stone-50 focus-visible:bg-stone-50'
+  }
+}
+
+function getStatusBadgeClass(status: CaseItem['status']) {
+  switch (getStatusBucket(status)) {
+    case 'draft':
+      return 'border-stone-300 bg-stone-100 text-stone-800'
+    case 'new_application':
+      return 'border-indigo-300 bg-indigo-100 text-indigo-950'
+    case 'review':
+      return 'border-sky-300 bg-sky-100 text-sky-950'
+    case 'need_info':
+      return 'border-amber-300 bg-amber-100 text-amber-950'
+    case 'approved':
+      return 'border-emerald-300 bg-emerald-100 text-emerald-950'
+    case 'conditional':
+      return 'border-orange-300 bg-orange-100 text-orange-950'
+    case 'rejected':
+      return 'border-rose-300 bg-rose-100 text-rose-950'
+    default:
+      return 'border-stone-300 bg-stone-100 text-stone-800'
   }
 }
 
@@ -616,7 +637,15 @@ export default function RenoAppCasesPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3">{getActionLabel(item)}</td>
-                    <td className="px-4 py-3">{getStatusLabel(item.status)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
+                          item.status
+                        )}`}
+                      >
+                        {getStatusLabel(item.status)}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">{formatDate(item.submittedAt)}</td>
                     <td className="px-4 py-3">{item.applicant.name ?? '-'}</td>
                   </tr>

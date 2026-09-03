@@ -3388,7 +3388,8 @@ export async function createPublicApplication(
           `<p>Hej ${applicantName},</p>`,
           `<p>Vi har tagit emot din renoveringsansökan för <strong>${brf.name}</strong>.</p>`,
           `<p>Ärendenummer: <strong>${caseNumber}</strong></p>`,
-          `<p>Öppna och komplettera ditt ärende via länken nedan:</p>`,
+          `<p>Styrelsen handlägger nu ärendet. Om mer information behövs får du ett meddelande via e-post.</p>`,
+          `<p>Du kan öppna ärendet via länken nedan för att se status och kommunikation:</p>`,
           `<p><a href="${resumeUrl}">${resumeUrl}</a></p>`,
           `<p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>`,
         ].join(''),
@@ -3397,7 +3398,8 @@ export async function createPublicApplication(
           ``,
           `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
           `Ärendenummer: ${caseNumber}`,
-          `Öppna och komplettera ditt ärende här: ${resumeUrl}`,
+          `Styrelsen handlägger nu ärendet. Om mer information behövs får du ett meddelande via e-post.`,
+          `Öppna ärendet här för att se status och kommunikation: ${resumeUrl}`,
           `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
         ].join('\n'),
       })
@@ -4732,7 +4734,8 @@ export async function upsertPublicApplication(
                     )}.</p>`
                   : ''
               }
-              <p>Öppna och komplettera ditt ärende via länken nedan:</p>
+              <p>Styrelsen handlägger nu ärendet. Om mer information behövs får du ett meddelande via e-post.</p>
+              <p>Du kan öppna ärendet via länken nedan för att se status och kommunikation:</p>
               <p><a href="${resumeUrl}">${resumeUrl}</a></p>
             `,
           }),
@@ -4740,7 +4743,8 @@ export async function upsertPublicApplication(
             `Hej ${applicantDisplayName},`,
             `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
             `Ärendenummer: ${caseNumber}`,
-            `Öppna ärendet här: ${resumeUrl}`,
+            'Styrelsen handlägger nu ärendet. Om mer information behövs får du ett meddelande via e-post.',
+            `Öppna ärendet här för att se status och kommunikation: ${resumeUrl}`,
           ].join('\n'),
         })
         emailSent = true
