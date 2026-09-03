@@ -168,9 +168,14 @@ function defaultUnderlyingContract(project: EbProjectListItem, type: EbAssignmen
   const value = text(project.standardAgreement)
   const normalized = value.toLowerCase().replace(/\s+/g, '')
   if (type === 'consumer') {
-    return normalized.includes('abs18') || normalized.includes('hantverkar') || normalized.includes('hf17')
-      ? value
-      : ''
+    if (normalized.includes('abs18')) return 'ABS 18'
+    if (normalized.includes('hantverkar') || normalized.includes('hf17')) {
+      return 'Hantverkarformuläret 17'
+    }
+    if (normalized.includes('konsumententreprenad') || normalized.includes('offert')) {
+      return 'Konsumententreprenad – godkänd offert eller annat avtal'
+    }
+    return ''
   }
   return normalized.includes('ab04') || normalized.includes('abt06') ? value : ''
 }

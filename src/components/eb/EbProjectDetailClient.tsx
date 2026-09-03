@@ -2,12 +2,15 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
   CalendarDays,
+  CheckCircle2,
+  CircleDashed,
   ClipboardCheck,
+  Clock3,
   Download,
   FileCheck2,
   FileText,
@@ -237,9 +240,20 @@ function formatTime(value: string | null) {
   return value.slice(0, 5)
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString('sv-SE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
+
 function getStatusLabel(status: string | null) {
   const normalized = String(status ?? '').trim().toLowerCase()
   if (normalized === 'draft') return 'Utkast'
+  if (normalized === 'ongoing') return 'Pågående'
   if (normalized === 'completed') return 'Klar'
   if (normalized === 'archived') return 'Arkiverad'
   return status ?? 'Pågående'
@@ -270,26 +284,210 @@ function inspectionScheduleHasPassed(
   return hours * 60 + minutes < now.getHours() * 60 + now.getMinutes()
 }
 
-function getPdfStatusLabel(inspection: EbInspectionSummary) {
-  if (inspection.reportPdfDownloadUrl) return 'PDF sparad'
-  if (inspection.reportPdfStatus === 'pending' || inspection.reportPdfStatus === 'processing') {
-    return 'PDF skapas'
-  }
-  if (inspection.reportPdfStatus === 'failed') return 'PDF misslyckades'
-  return 'Ingen sparad PDF'
+type InspectionStatusTone = 'success' | 'info' | 'warning' | 'danger' | 'neutral'
+
+type InspectionPreparationStatus = {
+  label: string
+  detail: string
+  tone: InspectionStatusTone
+  actionLabel: string
 }
 
-function getPdfStatusClassName(inspection: EbInspectionSummary) {
-  if (inspection.reportPdfDownloadUrl) {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+const INSPECTION_STATUS_TONE_CLASSES: Record<
+  InspectionStatusTone,
+  { icon: string; badge: string }
+> = {
+  success: {
+    icon: 'bg-emerald-100 text-emerald-700',
+    badge: 'bg-emerald-100 text-emerald-800',
+  },
+  info: {
+    icon: 'bg-blue-100 text-blue-700',
+    badge: 'bg-blue-100 text-blue-800',
+  },
+  warning: {
+    icon: 'bg-amber-100 text-amber-700',
+    badge: 'bg-amber-100 text-amber-900',
+  },
+  danger: {
+    icon: 'bg-rose-100 text-rose-700',
+    badge: 'bg-rose-100 text-rose-800',
+  },
+  neutral: {
+    icon: 'bg-gray-100 text-gray-600',
+    badge: 'bg-gray-100 text-gray-700',
+  },
+}
+
+function getAssignmentPreparationStatus(
+  confirmation: EbAssignmentConfirmationSummary | null
+): InspectionPreparationStatus {
+  if (!confirmation) {
+    return {
+      label: 'Inte skapad',
+      detail: 'Ingen uppdragsbekräftelse har skapats.',
+      tone: 'neutral',
+      actionLabel: 'Skapa',
+    }
+  }
+
+  const version = `Version ${confirmation.versionNo}`
+  const recipient = confirmation.customerEmail ? ` till ${confirmation.customerEmail}` : ''
+
+  if (confirmation.status === 'expired') {
+    return {
+      label: 'Utgången',
+      detail: `${version} · Skapa och skicka en ny version.`,
+      tone: 'warning',
+      actionLabel: 'Öppna',
+    }
+  }
+
+  if (confirmation.status === 'cancelled') {
+    return {
+      label: 'Ersatt eller avbruten',
+      detail: `${version} · Bekräftelsen kan inte längre godkännas.`,
+      tone: 'danger',
+      actionLabel: 'Öppna',
+    }
+  }
+
+  if (
+    confirmation.acceptedAt ||
+    confirmation.status === 'ordered' ||
+    confirmation.status === 'booked' ||
+    confirmation.status === 'completed'
+  ) {
+    return {
+      label: 'Godkänd',
+      detail: confirmation.acceptedAt
+        ? `${version} · Godkänd ${formatDateTime(confirmation.acceptedAt)}`
+        : `${version} · Godkänd av beställaren`,
+      tone: 'success',
+      actionLabel: 'Visa',
+    }
+  }
+
+  if (confirmation.status === 'sent' || confirmation.lastSentAt) {
+    return {
+      label: 'Inväntar godkännande',
+      detail: confirmation.lastSentAt
+        ? `${version} · Skickad ${formatDateTime(confirmation.lastSentAt)}${recipient}`
+        : `${version} · Skickad${recipient}`,
+      tone: 'info',
+      actionLabel: 'Visa',
+    }
+  }
+
+  return {
+    label: 'Utkast – inte skickad',
+    detail: `${version} · Beställaren har ännu inte fått den.`,
+    tone: 'warning',
+    actionLabel: 'Fortsätt',
+  }
+}
+
+function getInvitationPreparationStatus(
+  inspection: EbInspectionSummary
+): InspectionPreparationStatus {
+  if (inspection.invitationSentAt) {
+    return {
+      label: 'Skickad',
+      detail: `Skickad via e-post ${formatDateTime(inspection.invitationSentAt)}`,
+      tone: 'success',
+      actionLabel: 'Visa / skicka igen',
+    }
+  }
+
+  if (inspection.invitationDate) {
+    return {
+      label: 'Registrerad som kallad',
+      detail: `Kallad ${formatDate(inspection.invitationDate)}${
+        inspection.invitationMethod ? ` via ${inspection.invitationMethod}` : ''
+      }`,
+      tone: 'info',
+      actionLabel: 'Visa / uppdatera',
+    }
+  }
+
+  return {
+    label: 'Ej skickad',
+    detail: 'Ingen kallelse har skickats för besiktningen.',
+    tone: 'warning',
+    actionLabel: 'Skapa och skicka',
+  }
+}
+
+function getReportStatus(inspection: EbInspectionSummary) {
+  if (inspection.reportPdfStatus === 'failed') {
+    return {
+      label: 'PDF kunde inte skapas',
+      className: 'bg-rose-100 text-rose-800',
+    }
   }
   if (inspection.reportPdfStatus === 'pending' || inspection.reportPdfStatus === 'processing') {
-    return 'border-amber-200 bg-amber-50 text-amber-800'
+    return {
+      label: 'PDF skapas',
+      className: 'bg-amber-100 text-amber-900',
+    }
   }
-  if (inspection.reportPdfStatus === 'failed') {
-    return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (inspection.reportPdfDownloadUrl) {
+    return {
+      label: 'PDF sparad',
+      className: 'bg-emerald-100 text-emerald-800',
+    }
   }
-  return 'border-gray-200 bg-gray-50 text-gray-600'
+  if (inspection.reportLockedAt) {
+    return {
+      label: 'Utlåtande låst',
+      className: 'bg-blue-100 text-blue-800',
+    }
+  }
+  return {
+    label: 'Utlåtande i utkast',
+    className: 'bg-gray-100 text-gray-700',
+  }
+}
+
+function InspectionPreparationCard({
+  title,
+  icon: Icon,
+  status,
+  disabled,
+  onClick,
+}: {
+  title: string
+  icon: typeof FileCheck2
+  status: InspectionPreparationStatus
+  disabled: boolean
+  onClick: () => void
+}) {
+  const toneClasses = INSPECTION_STATUS_TONE_CLASSES[status.tone]
+
+  return (
+    <div className="flex min-w-0 flex-col justify-between gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${toneClasses.icon}`}>
+          <Icon size={17} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-950">{title}</p>
+          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${toneClasses.badge}`}>
+            {status.label}
+          </span>
+          <p className="mt-1.5 break-words text-xs leading-5 text-gray-600">{status.detail}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className="inline-flex w-full items-center justify-center rounded-md border border-emerald-200 bg-emerald-50/50 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {status.actionLabel}
+      </button>
+    </div>
+  )
 }
 
 function inputClassName() {
@@ -2306,6 +2504,24 @@ export default function EbProjectDetailClient({
       ?.inspectionId ?? null
 
   useEffect(() => {
+    setCurrentProject(project)
+  }, [project])
+
+  useEffect(() => {
+    setAssignmentConfirmationByInspection(
+      Object.fromEntries(
+        assignmentConfirmations.map((confirmation) => [confirmation.inspectionId, confirmation])
+      )
+    )
+  }, [assignmentConfirmations])
+
+  useEffect(() => {
+    const refreshStatus = () => router.refresh()
+    window.addEventListener('focus', refreshStatus)
+    return () => window.removeEventListener('focus', refreshStatus)
+  }, [router])
+
+  useEffect(() => {
     if (!processingPdfInspectionId) return
 
     let cancelled = false
@@ -2368,12 +2584,12 @@ export default function EbProjectDetailClient({
     router.refresh()
   }
 
-  const handleAssignmentConfirmationUpdated = (summary: EbAssignmentConfirmationSummary) => {
+  const handleAssignmentConfirmationUpdated = useCallback((summary: EbAssignmentConfirmationSummary) => {
     setAssignmentConfirmationByInspection((current) => ({
       ...current,
       [summary.inspectionId]: summary,
     }))
-  }
+  }, [])
 
   const handleInspectionNavigation = (event: MouseEvent<HTMLAnchorElement>, key: string) => {
     if (pendingNavigationKey) {
@@ -2629,7 +2845,9 @@ export default function EbProjectDetailClient({
                     const navigationInProgress = Boolean(pendingNavigationKey)
                     const assignmentConfirmation =
                       assignmentConfirmationByInspection[inspection.inspectionId] ?? null
-                    const assignmentAccepted = Boolean(assignmentConfirmation?.acceptedAt)
+                    const assignmentStatus = getAssignmentPreparationStatus(assignmentConfirmation)
+                    const invitationStatus = getInvitationPreparationStatus(inspection)
+                    const reportStatus = getReportStatus(inspection)
                     const inspectionInvoiceAddressLine = [
                       inspection.invoiceAddress,
                       [inspection.invoicePostalCode, inspection.invoiceCity].filter(Boolean).join(' '),
@@ -2639,7 +2857,7 @@ export default function EbProjectDetailClient({
 
                     return (
                       <article key={inspection.inspectionId} className="p-4">
-                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="grid gap-5 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.55fr)] xl:items-start">
                           <div className="flex min-w-0 items-start gap-3">
                             <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
                               <ClipboardCheck size={18} />
@@ -2649,95 +2867,99 @@ export default function EbProjectDetailClient({
                                 <h3 className="truncate text-base font-semibold text-gray-950">
                                   {inspectionTitle(inspection)}
                                 </h3>
-                                <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                                  {inspection.variant}
-                                </span>
-                                <span className="inline-flex rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
-                                  {getStatusLabel(inspection.status)}
-                                </span>
-                                <span
-                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                                    isLocked
-                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                      : 'border-amber-200 bg-amber-50 text-amber-800'
-                                  }`}
-                                >
-                                  {isLocked ? 'Låst' : 'Utkast'}
-                                </span>
-                                <span
-                                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${getPdfStatusClassName(inspection)}`}
-                                  title={inspection.reportPdfStatus === 'failed' ? 'Den sparade PDF-filen kunde inte skapas.' : undefined}
-                                >
-                                  {inspection.reportPdfStatus === 'processing' ? (
-                                    <Loader2 size={12} className="animate-spin" />
-                                  ) : null}
-                                  {getPdfStatusLabel(inspection)}
-                                </span>
-                                <span
-                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                                    assignmentAccepted
-                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                      : assignmentConfirmation
-                                        ? 'border-blue-200 bg-blue-50 text-blue-800'
-                                        : 'border-gray-200 bg-gray-50 text-gray-600'
-                                  }`}
-                                >
-                                  {assignmentAccepted
-                                    ? 'Uppdrag godkänt'
-                                    : assignmentConfirmation
-                                      ? 'Uppdrag skickat/utkast'
-                                      : 'Uppdrag saknas'}
+                                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600">
+                                  <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                                  Besiktning: {getStatusLabel(inspection.status)}
                                 </span>
                               </div>
-                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
-                                <span className="inline-flex items-center gap-1.5">
-                                  <CalendarDays size={14} className="text-emerald-700" />
-                                  {formatDate(inspection.date)}
-                                  {inspection.inspectionTime ? ` ${formatTime(inspection.inspectionTime)}` : ''}
-                                </span>
-                                <span>Koppling: {parentInspection?.variantLabel ?? 'Grundbesiktning'}</span>
-                                <span>
-                                  Kallelse: {inspection.invitationSentAt ? formatDate(inspection.invitationSentAt) : 'Ej skickad'}
-                                </span>
+                              <div className="mt-3 flex items-start gap-2 text-sm text-gray-700">
+                                <CalendarDays size={16} className="mt-0.5 shrink-0 text-emerald-700" />
+                                <div>
+                                  <p className="text-xs font-medium text-gray-500">Datum och tid</p>
+                                  <p className="font-semibold text-gray-900">
+                                    {formatDate(inspection.date)}
+                                    {inspection.inspectionTime ? ` kl. ${formatTime(inspection.inspectionTime)}` : ''}
+                                  </p>
+                                </div>
                               </div>
-                              <div className="mt-2 rounded-md border border-gray-100 bg-gray-50/70 px-2.5 py-2 text-xs text-gray-600">
+                              <p className="mt-2 text-xs text-gray-600">
+                                {parentInspection
+                                  ? `Följer på: ${parentInspection.variantLabel}`
+                                  : 'Grundbesiktning'}
+                              </p>
+                              <div className="mt-3 rounded-md border border-gray-100 bg-gray-50/70 px-2.5 py-2 text-xs leading-5 text-gray-600">
                                 <span className="font-semibold text-gray-800">Fakturering:</span>{' '}
                                 {inspection.invoiceName || 'Mottagare ej satt'}
                                 {inspection.invoiceReference ? ` · Ref. ${inspection.invoiceReference}` : ''}
                                 {inspection.invoiceEmail ? ` · ${inspection.invoiceEmail}` : ''}
                                 {inspectionInvoiceAddressLine ? ` · ${inspectionInvoiceAddressLine}` : ''}
                               </div>
-                              {inspection.reportPdfStatus === 'failed' ? (
-                                <p className="mt-2 text-xs font-medium text-rose-700">
-                                  Den sparade PDF-filen kunde inte skapas.
-                                </p>
-                              ) : null}
                             </div>
                           </div>
 
-                          <div className="w-full space-y-3 xl:max-w-[52rem]">
-                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
-                              Arbetsflöde
-                            </p>
-                            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-                              <button
-                                type="button"
-                                onClick={() => setAssignmentInspection(inspection)}
-                                disabled={navigationInProgress}
-                                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <FileCheck2 size={16} />
-                                Uppdragsbekräftelse
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setInvitationInspection(inspection)}
-                                disabled={navigationInProgress}
-                                className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                <Send size={16} />
-                                Kallelse
-                              </button>
+                          <div className="min-w-0 space-y-4">
+                            <section aria-labelledby={`preparation-${inspection.inspectionId}`}>
+                              <div className="mb-2">
+                                <p
+                                  id={`preparation-${inspection.inspectionId}`}
+                                  className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-600"
+                                >
+                                  Före besiktningen
+                                </p>
+                                <p className="mt-0.5 text-xs text-gray-500">
+                                  Status för uppdragsbekräftelse och kallelse.
+                                </p>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <InspectionPreparationCard
+                                  title="Uppdragsbekräftelse"
+                                  icon={
+                                    assignmentStatus.tone === 'success'
+                                      ? CheckCircle2
+                                      : assignmentStatus.tone === 'info'
+                                        ? Clock3
+                                        : assignmentStatus.tone === 'neutral'
+                                          ? CircleDashed
+                                          : FileCheck2
+                                  }
+                                  status={assignmentStatus}
+                                  disabled={navigationInProgress}
+                                  onClick={() => setAssignmentInspection(inspection)}
+                                />
+                                <InspectionPreparationCard
+                                  title="Kallelse"
+                                  icon={inspection.invitationSentAt ? CheckCircle2 : Send}
+                                  status={invitationStatus}
+                                  disabled={navigationInProgress}
+                                  onClick={() => setInvitationInspection(inspection)}
+                                />
+                              </div>
+                            </section>
+
+                            <section
+                              aria-labelledby={`workflow-${inspection.inspectionId}`}
+                              className="border-t border-gray-100 pt-4"
+                            >
+                              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                                <div>
+                                  <p
+                                    id={`workflow-${inspection.inspectionId}`}
+                                    className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-600"
+                                  >
+                                    Arbeta med besiktningen
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-gray-500">
+                                    Runda, granska och färdigställ utlåtandet.
+                                  </p>
+                                </div>
+                                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${reportStatus.className}`}>
+                                  {inspection.reportPdfStatus === 'pending' || inspection.reportPdfStatus === 'processing' ? (
+                                    <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                                  ) : null}
+                                  {reportStatus.label}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                               <PendingLink
                                 href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/round`}
                                 onClick={(event) => handleInspectionNavigation(event, roundNavigationKey)}
@@ -2771,10 +2993,7 @@ export default function EbProjectDetailClient({
                               >
                                 Utlåtande
                               </PendingLink>
-                            </div>
-
-                            <div className="flex justify-end">
-                              <details className="group relative">
+                                <details className="group relative sm:ml-auto">
                                 <summary className="inline-flex cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 [&::-webkit-details-marker]:hidden">
                                   <MoreHorizontal size={17} />
                                   Hantera
@@ -2862,7 +3081,13 @@ export default function EbProjectDetailClient({
                                   </button>
                                 </div>
                               </details>
-                            </div>
+                              </div>
+                              {inspection.reportPdfStatus === 'failed' ? (
+                                <p className="mt-2 text-xs font-medium text-rose-700">
+                                  Den sparade PDF-filen kunde inte skapas. Försök igen via Hantera.
+                                </p>
+                              ) : null}
+                            </section>
                           </div>
                         </div>
                       </article>

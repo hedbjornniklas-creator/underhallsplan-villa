@@ -203,7 +203,7 @@ function formatStatusLabel(status: string) {
   if (status === 'new_application' || status === 'submitted') return 'Ny ansökan'
   if (status === 'ready_for_review') return 'Klar för granskning'
   if (status === 'need_info') return 'Begär komplettering'
-  if (status === 'review') return 'Under granskning'
+  if (status === 'review') return 'Att granska'
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Godkänd med villkor'
   if (status === 'approved_with_conditions') return 'Godkänd med villkor'
@@ -213,12 +213,12 @@ function formatStatusLabel(status: string) {
 
 function getStatusBadgeClass(status: string) {
   if (status === 'draft') return 'border-stone-200 bg-stone-100 text-stone-700'
-  if (status === 'new_application' || status === 'submitted') return 'border-indigo-200 bg-indigo-100 text-indigo-800'
+  if (status === 'new_application' || status === 'submitted') return 'border-violet-300 bg-violet-100 text-violet-950'
   if (status === 'need_info') return 'border-amber-200 bg-amber-100 text-amber-900'
-  if (status === 'ready_for_review' || status === 'review') return 'border-sky-200 bg-sky-100 text-sky-800'
+  if (status === 'ready_for_review' || status === 'review') return 'border-cyan-300 bg-cyan-100 text-cyan-950'
   if (status === 'approved') return 'border-emerald-200 bg-emerald-100 text-emerald-800'
   if (status === 'conditional' || status === 'approved_with_conditions') {
-    return 'border-lime-200 bg-lime-100 text-lime-900'
+    return 'border-orange-300 bg-orange-100 text-orange-950'
   }
   if (status === 'rejected') return 'border-rose-200 bg-rose-100 text-rose-800'
   return 'border-stone-200 bg-stone-100 text-stone-700'

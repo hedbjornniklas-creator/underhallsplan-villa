@@ -302,7 +302,7 @@ function formatCaseStatus(status: string) {
   if (status === 'new_application') return 'Ny ansökan'
   if (status === 'submitted') return 'Inskickad'
   if (status === 'need_info') return 'Komplettering krävs'
-  if (status === 'review') return 'Under granskning'
+  if (status === 'review') return 'Att granska'
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Villkorad'
   if (status === 'rejected') return 'Avslagen'
@@ -704,6 +704,7 @@ export default function RenoAppApplyPage() {
   const [lastAutosavedAt, setLastAutosavedAt] = useState<string | null>(null)
   const [uploadingTargetId, setUploadingTargetId] = useState<string | null>(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
+  const [participantConfirmationErrorRoleIds, setParticipantConfirmationErrorRoleIds] = useState<string[]>([])
   const [showCaseMessages, setShowCaseMessages] = useState(false)
   const [openVerificationInstructionIds, setOpenVerificationInstructionIds] = useState<string[]>([])
   const [actionDescriptionModal, setActionDescriptionModal] = useState<{
@@ -986,11 +987,21 @@ export default function RenoAppApplyPage() {
     participantRoleId: string,
     patch: Partial<Omit<ParticipantEntry, 'participantRoleId'>>
   ) => {
+    const nextEntry = {
+      ...getParticipantEntry(participantRoleId),
+      ...patch,
+      participantRoleId,
+    }
+
+    if (nextEntry.hasVerifiedAuthorization && nextEntry.acceptsResponsibility) {
+      setParticipantConfirmationErrorRoleIds((current) => current.filter((id) => id !== participantRoleId))
+    }
+
     setForm((current) => {
       const existing =
         current.participantEntries.find((entry) => entry.participantRoleId === participantRoleId) ??
         emptyParticipantEntry(participantRoleId)
-      const nextEntry = {
+      const updatedEntry = {
         ...existing,
         ...patch,
         participantRoleId,
@@ -1000,7 +1011,7 @@ export default function RenoAppApplyPage() {
         ...current,
         participantEntries: [
           ...current.participantEntries.filter((entry) => entry.participantRoleId !== participantRoleId),
-          nextEntry,
+          updatedEntry,
         ],
       }
     })
@@ -1129,6 +1140,24 @@ export default function RenoAppApplyPage() {
     mode: 'draft' | 'submit',
     options?: { silent?: boolean; fingerprint?: string }
   ) => {
+    if (mode === 'submit') {
+      const rolesMissingConfirmations = participantRolesForCurrentFlow.filter((participantRole) => {
+        const entry = getParticipantEntry(participantRole.id)
+        return !entry.hasVerifiedAuthorization || !entry.acceptsResponsibility
+      })
+
+      if (rolesMissingConfirmations.length > 0) {
+        setParticipantConfirmationErrorRoleIds(rolesMissingConfirmations.map((participantRole) => participantRole.id))
+        setStep(4)
+        setError(
+          `Bekräfta företagets behörighet och att uppgifterna är korrekta för: ${rolesMissingConfirmations
+            .map((participantRole) => participantRole.label)
+            .join(', ')}.`
+        )
+        return
+      }
+    }
+
     const isSilentDraft = mode === 'draft' && options?.silent === true
 
     if (mode === 'draft' && !isSilentDraft) {
@@ -1716,6 +1745,7 @@ export default function RenoAppApplyPage() {
 
           {participantRolesForCurrentFlow.map((participantRole) => {
             const entry = getParticipantEntry(participantRole.id)
+            const hasConfirmationError = participantConfirmationErrorRoleIds.includes(participantRole.id)
             const insuranceDocuments = uploadedDocuments.filter(
               (item) =>
                 item.participantRoleId === participantRole.id && item.documentScope === 'participant_insurance'
@@ -1728,7 +1758,12 @@ export default function RenoAppApplyPage() {
             )
 
             return (
-              <div key={participantRole.id} className="rounded-3xl border border-stone-200 bg-white p-5">
+              <div
+                key={participantRole.id}
+                className={`rounded-3xl border bg-white p-5 ${
+                  hasConfirmationError ? 'border-rose-300' : 'border-stone-200'
+                }`}
+              >
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-stone-900">
@@ -1950,6 +1985,11 @@ export default function RenoAppApplyPage() {
                     <span>Jag förstår att jag ansvarar för att uppgifterna är korrekta.</span>
                   </label>
                 </div>
+                {hasConfirmationError ? (
+                  <p className="mt-3 text-sm font-medium text-rose-800" role="alert">
+                    Bekräfta båda rutorna innan ansökan kan skickas in.
+                  </p>
+                ) : null}
               </div>
             )
           })}

@@ -166,6 +166,7 @@ type DeleteResponse = {
 
 type ImageResponse = {
   image?: EbNoteImage
+  imageAvailableInBank?: boolean
   ok?: boolean
   error?: string
 }
@@ -300,6 +301,10 @@ function navigationIconLinkClassName(busy: boolean) {
 
 function isImageFile(file: File) {
   return file.type.startsWith('image/') || /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(file.name)
+}
+
+function dataTransferHasFiles(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.types).some((type) => type.toLowerCase() === 'files')
 }
 
 function formatDate(value: string | null) {
@@ -637,40 +642,15 @@ function projectAttachmentPreviewSrc(attachment: EbProjectAttachment) {
   return attachment.signedThumbnailUrl ?? proxiedImageSrc(attachment.signedUrl) ?? attachment.signedUrl
 }
 
-function dragFileName(value: string | null | undefined, fallback: string) {
-  const pathName = value?.split(/[\\/]/).pop()?.split('?')[0]?.trim()
-  const decodedName = (() => {
-    try {
-      return decodeURIComponent(pathName || '')
-    } catch {
-      return pathName || ''
-    }
-  })()
-  return (decodedName || fallback).replace(/[\\/:*?"<>|]/g, '-').slice(0, 180)
-}
-
 function setImageDragData(
   dataTransfer: DataTransfer,
   options: {
     internalType: string
     internalId: string
-    imageUrl: string | null | undefined
-    fileName: string
-    contentType?: string | null
-    effectAllowed: 'copy' | 'copyMove'
+    effectAllowed: 'copy'
   }
 ) {
   dataTransfer.setData(options.internalType, options.internalId)
-
-  const sourceUrl = options.imageUrl?.trim()
-  if (sourceUrl) {
-    const absoluteUrl = new URL(sourceUrl, window.location.href).toString()
-    const contentType = options.contentType?.trim() || 'image/jpeg'
-    dataTransfer.setData('text/uri-list', absoluteUrl)
-    dataTransfer.setData('text/plain', absoluteUrl)
-    dataTransfer.setData('DownloadURL', `${contentType}:${options.fileName}:${absoluteUrl}`)
-  }
-
   dataTransfer.effectAllowed = options.effectAllowed
 }
 
@@ -686,6 +666,7 @@ function ImageBankThumbnail({
       <img
         src={src}
         alt={alt}
+        draggable={false}
         loading="lazy"
         decoding="async"
         className="aspect-square w-full object-cover"
@@ -726,7 +707,7 @@ function ProjectAttachmentImageCard({
   onDelete: () => void
   onDragEnd: () => void
 }) {
-  const canDrag = !isLocked && !isCopying && !isDeleting
+  const canDrag = !isLocked && !actionDisabled && !isCopying && !isDeleting
 
   return (
     <div className="relative overflow-hidden rounded-md border border-emerald-100 bg-white transition hover:border-emerald-300">
@@ -737,9 +718,6 @@ function ProjectAttachmentImageCard({
           setImageDragData(event.dataTransfer, {
             internalType: EB_PROJECT_ATTACHMENT_DRAG_TYPE,
             internalId: attachment.id,
-            imageUrl: attachment.signedUrl,
-            fileName: dragFileName(attachment.fileName ?? attachment.filePath, 'entreprenadbild.jpg'),
-            contentType: attachment.contentType,
             effectAllowed: 'copy',
           })
         }}
@@ -816,9 +794,7 @@ function InspectionImageBankCard({
           setImageDragData(event.dataTransfer, {
             internalType: EB_INSPECTION_IMAGE_DRAG_TYPE,
             internalId: image.id,
-            imageUrl: image.publicUrl,
-            fileName: dragFileName(image.filePath, 'besiktningsbild.jpg'),
-            effectAllowed: 'copyMove',
+            effectAllowed: 'copy',
           })
         }}
         onDragEnd={onDragEnd}
@@ -1675,6 +1651,7 @@ export default function EbInspectionRoundClient({
   const checkpointImageInputRef = useRef<HTMLInputElement | null>(null)
   const checkpointImageTargetRef = useRef<string | null>(null)
   const imageBankInputRef = useRef<HTMLInputElement | null>(null)
+  const inspectionImageBankInputRef = useRef<HTMLInputElement | null>(null)
   const notesRef = useRef(initialRound.notes)
   const lastSavedNotesRef = useRef(initialRound.notes)
   const orderSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1704,7 +1681,9 @@ export default function EbInspectionRoundClient({
     () => new Set()
   )
   const [uploadingProjectImages, setUploadingProjectImages] = useState(false)
+  const [uploadingInspectionImages, setUploadingInspectionImages] = useState(false)
   const [imageBankDragOver, setImageBankDragOver] = useState(false)
+  const [inspectionImageBankDragOver, setInspectionImageBankDragOver] = useState(false)
   const [bankImageDropTarget, setBankImageDropTarget] = useState<string | null>(null)
   const [previewImageKey, setPreviewImageKey] = useState<string | null>(null)
   const [showLinkedImages, setShowLinkedImages] = useState(false)
@@ -1735,11 +1714,13 @@ export default function EbInspectionRoundClient({
   const [refreshingReportSource, setRefreshingReportSource] = useState<'project' | 'inspector' | null>(null)
   const [resettingReportSectionKey, setResettingReportSectionKey] = useState<string | null>(null)
   const [reviewMessage, setReviewMessage] = useState<string | null>(null)
+  const [showReviewAutosaveSaved, setShowReviewAutosaveSaved] = useState(false)
   const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const inspectionAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const participantsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const documentsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const checkpointsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const shownReviewAutosaveTimestampRef = useRef<number | null>(null)
   const pendingProjectAttachmentCopiesRef = useRef(new Set<string>())
   const noteSavePromiseRef = useRef<Promise<EbNote | null> | null>(null)
   const checkpointNotePromisesRef = useRef(new Map<string, Promise<EbNote>>())
@@ -1777,7 +1758,13 @@ export default function EbInspectionRoundClient({
     setRound((current) => ({
       ...current,
       images: sortImages([
-        ...current.images.filter((item) => !(item.id === image.id && item.noteId === image.noteId)),
+        ...current.images.filter(
+          (item) =>
+            !(
+              item.id === image.id &&
+              (item.noteId === image.noteId || (Boolean(image.noteId) && !item.noteId))
+            )
+        ),
         {
           ...image,
           sourceAttachmentId:
@@ -1845,25 +1832,30 @@ export default function EbInspectionRoundClient({
       ),
     [round.projectAttachments]
   )
-  const queuedProjectAttachmentIds = useMemo(
+  const activeQueuedProjectAttachmentIds = useMemo(
     () =>
       new Set(
         imageUploadQueue.items
+          .filter((item) => item.status === 'queued' || item.status === 'uploading')
           .map((item) => item.sourceAttachmentId)
           .filter((id): id is string => Boolean(id))
       ),
     [imageUploadQueue.items]
   )
   const availableProjectImageAttachments = useMemo(
-    () =>
-      projectImageAttachments.filter(
-        (attachment) => !queuedProjectAttachmentIds.has(attachment.id)
-      ),
-    [projectImageAttachments, queuedProjectAttachmentIds]
+    () => projectImageAttachments,
+    [projectImageAttachments]
   )
   const checkpointGroups = useMemo(() => groupedCheckpoints(checkpoints), [checkpoints])
   const imageBankImages = useMemo(
-    () => allImages.filter((image) => showLinkedImages || !image.noteId),
+    () => {
+      const uniqueImages = new Map<string, EbNoteImage>()
+      for (const image of allImages) {
+        if (!showLinkedImages && image.noteId) continue
+        if (!uniqueImages.has(image.id)) uniqueImages.set(image.id, image)
+      }
+      return Array.from(uniqueImages.values())
+    },
     [allImages, showLinkedImages]
   )
   const checkpointImageBankTarget = useMemo(
@@ -2597,6 +2589,29 @@ export default function EbInspectionRoundClient({
     if (!latest || value.getTime() > latest.getTime()) return value
     return latest
   }, null)
+  const reviewAutosaveLastSavedTimestamp = reviewAutosaveLastSavedAt?.getTime() ?? null
+
+  useEffect(() => {
+    if (reviewAutosaveStatus === 'error') {
+      shownReviewAutosaveTimestampRef.current = reviewAutosaveLastSavedTimestamp
+      setShowReviewAutosaveSaved(false)
+      return
+    }
+
+    if (
+      reviewAutosaveStatus !== 'idle' ||
+      reviewAutosaveLastSavedTimestamp === null ||
+      reviewAutosaveLastSavedTimestamp === shownReviewAutosaveTimestampRef.current
+    ) {
+      setShowReviewAutosaveSaved(false)
+      return
+    }
+
+    shownReviewAutosaveTimestampRef.current = reviewAutosaveLastSavedTimestamp
+    setShowReviewAutosaveSaved(true)
+    const timer = window.setTimeout(() => setShowReviewAutosaveSaved(false), 1800)
+    return () => window.clearTimeout(timer)
+  }, [reviewAutosaveLastSavedTimestamp, reviewAutosaveStatus])
 
   useEffect(() => {
     if (inspectionAutosaveTimerRef.current) {
@@ -2873,7 +2888,13 @@ export default function EbInspectionRoundClient({
     setRound((current) => ({
       ...current,
       images: sortImages([
-        ...current.images.filter((item) => !(item.id === image.id && item.noteId === image.noteId)),
+        ...current.images.filter(
+          (item) =>
+            !(
+              item.id === image.id &&
+              (item.noteId === image.noteId || (Boolean(image.noteId) && !item.noteId))
+            )
+        ),
         {
           ...image,
           sourceAttachmentId:
@@ -3078,9 +3099,27 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (saving) return
-    const imageFiles = files.filter(isImageFile)
-    if (imageFiles.length === 0) return
+    if (saving) {
+      showError('Vänta tills noteringen har sparats och försök sedan igen.')
+      return
+    }
+    if (!targetNote && !editingNote && !form.noteText.trim()) {
+      showError('Skriv noteringstexten innan du lägger till bilder.')
+      return
+    }
+    if (!targetNote && !editingNote && !(activeDisciplineId ?? round.disciplines[0]?.id)) {
+      showError('Välj fack innan du lägger till bilder.')
+      return
+    }
+    const allImageFiles = files.filter(isImageFile)
+    const imageFiles = allImageFiles.slice(0, IMAGE_BANK_MAX_BATCH_FILES)
+    if (imageFiles.length === 0) {
+      showError('Välj en eller flera bildfiler.')
+      return
+    }
+    if (allImageFiles.length > IMAGE_BANK_MAX_BATCH_FILES) {
+      showError(`Max ${IMAGE_BANK_MAX_BATCH_FILES} bilder kan läggas till åt gången.`)
+    }
 
     try {
       const note = targetNote ?? editingNote ?? (await saveCurrentNote())
@@ -3102,7 +3141,10 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (uploadingProjectImages) return
+    if (uploadingProjectImages) {
+      showError('En uppladdning till entreprenadbilder pågår redan.')
+      return
+    }
 
     const imageFiles = files.filter(isImageFile).slice(0, IMAGE_BANK_MAX_BATCH_FILES)
     if (imageFiles.length === 0) {
@@ -3147,16 +3189,71 @@ export default function EbInspectionRoundClient({
     await uploadFilesToProjectImageBank(files)
   }
 
+  const uploadFilesToInspectionImageBank = async (files: File[]) => {
+    if (isLocked) {
+      showError(lockedMessage)
+      return
+    }
+    if (uploadingInspectionImages) {
+      showError('En uppladdning till besiktningsbilder pågår redan.')
+      return
+    }
+
+    const allImageFiles = files.filter(isImageFile)
+    const imageFiles = allImageFiles.slice(0, IMAGE_BANK_MAX_BATCH_FILES)
+    if (imageFiles.length === 0) {
+      showError('Välj en eller flera bildfiler.')
+      return
+    }
+    if (allImageFiles.length > IMAGE_BANK_MAX_BATCH_FILES) {
+      showError(`Max ${IMAGE_BANK_MAX_BATCH_FILES} bilder kan laddas upp åt gången.`)
+    }
+
+    try {
+      setUploadingInspectionImages(true)
+      for (const file of imageFiles) {
+        const { uploadFile, thumbnailFile } = await prepareImageFilesForUpload(file)
+        const formData = new FormData()
+        formData.append('file', uploadFile)
+        if (thumbnailFile) formData.append('thumbnail', thumbnailFile)
+
+        const response = await fetch(`${inspectionBasePath}/images`, {
+          method: 'POST',
+          body: formData,
+        })
+        const payload = (await response.json().catch(() => ({}))) as ImageResponse
+        if (!response.ok || !payload.image) {
+          throw new Error(payload.error ?? 'Kunde inte ladda upp besiktningsbilden.')
+        }
+        updateImageInState({ ...payload.image, noteId: null })
+      }
+    } catch (uploadError) {
+      showError(uploadError, 'Kunde inte ladda upp bild till besiktningsbilder.')
+    } finally {
+      setUploadingInspectionImages(false)
+      setInspectionImageBankDragOver(false)
+    }
+  }
+
+  const handleInspectionImageBankFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files ?? [])
+    event.currentTarget.value = ''
+    await uploadFilesToInspectionImageBank(files)
+  }
+
   const canDropProjectImages = (event: DragEvent<HTMLElement>) =>
     !isLocked &&
     !uploadingProjectImages &&
-    Array.from(event.dataTransfer.types).includes('Files') &&
-    Array.from(event.dataTransfer.items).some((item) => item.kind === 'file')
+    dataTransferHasFiles(event.dataTransfer)
 
   const handleImageBankDragOver = (event: DragEvent<HTMLElement>) => {
-    if (!canDropProjectImages(event)) return
+    if (!dataTransferHasFiles(event.dataTransfer)) return
     event.preventDefault()
     event.stopPropagation()
+    if (!canDropProjectImages(event)) {
+      event.dataTransfer.dropEffect = 'none'
+      return
+    }
     event.dataTransfer.dropEffect = 'copy'
     setImageBankDragOver(true)
   }
@@ -3167,10 +3264,47 @@ export default function EbInspectionRoundClient({
   }
 
   const handleImageBankDrop = async (event: DragEvent<HTMLElement>) => {
-    if (!canDropProjectImages(event)) return
+    if (!dataTransferHasFiles(event.dataTransfer)) return
     event.preventDefault()
     event.stopPropagation()
+    if (!canDropProjectImages(event)) {
+      if (isLocked) showError(lockedMessage)
+      return
+    }
     await uploadFilesToProjectImageBank(Array.from(event.dataTransfer.files))
+  }
+
+  const canDropInspectionImages = (event: DragEvent<HTMLElement>) =>
+    !isLocked &&
+    !uploadingInspectionImages &&
+    dataTransferHasFiles(event.dataTransfer)
+
+  const handleInspectionImageBankDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!dataTransferHasFiles(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (!canDropInspectionImages(event)) {
+      event.dataTransfer.dropEffect = 'none'
+      return
+    }
+    event.dataTransfer.dropEffect = 'copy'
+    setInspectionImageBankDragOver(true)
+  }
+
+  const handleInspectionImageBankDragLeave = (event: DragEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setInspectionImageBankDragOver(false)
+  }
+
+  const handleInspectionImageBankDrop = async (event: DragEvent<HTMLElement>) => {
+    if (!dataTransferHasFiles(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (!canDropInspectionImages(event)) {
+      if (isLocked) showError(lockedMessage)
+      return
+    }
+    await uploadFilesToInspectionImageBank(Array.from(event.dataTransfer.files))
   }
 
   const handleNoteRowImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -3334,6 +3468,14 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
+    if (!targetNote && !editingNote && !form.noteText.trim()) {
+      showError('Skriv noteringstexten innan du lägger till en entreprenadbild.')
+      return
+    }
+    if (!targetNote && !editingNote && !(activeDisciplineId ?? round.disciplines[0]?.id)) {
+      showError('Välj fack innan du lägger till en entreprenadbild.')
+      return
+    }
     if (pendingProjectAttachmentCopiesRef.current.has(attachment.id)) return
     pendingProjectAttachmentCopiesRef.current.add(attachment.id)
     setPendingProjectAttachmentCopyIds((current) => new Set(current).add(attachment.id))
@@ -3341,9 +3483,38 @@ export default function EbInspectionRoundClient({
     try {
       const note = targetNote ?? editingNote ?? (await saveCurrentNote())
       if (!note) return
-      await imageUploadQueue.enqueueProjectAttachment(note.id, attachment)
+
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        await imageUploadQueue.enqueueProjectAttachment(note.id, attachment)
+        return
+      }
+
+      let response: Response
+      try {
+        response = await fetch(`${notesBasePath}/${note.id}/images`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attachmentId: attachment.id, action: 'copyAttachment' }),
+        })
+      } catch {
+        await imageUploadQueue.enqueueProjectAttachment(note.id, attachment)
+        return
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as ImageResponse
+      if (!response.ok || !payload.image) {
+        throw new Error(payload.error ?? 'Kunde inte lägga till entreprenadbilden.')
+      }
+      updateImageInState(payload.image)
+      const staleFailedItems = imageUploadQueue.items.filter(
+        (item) =>
+          item.noteId === note.id &&
+          item.sourceAttachmentId === attachment.id &&
+          item.status === 'failed'
+      )
+      await Promise.all(staleFailedItems.map((item) => imageUploadQueue.discardItem(item.id)))
     } catch (copyError) {
-      showError(copyError, 'Kunde inte lägga entreprenadbilden i uppladdningskön.')
+      showError(copyError, 'Kunde inte lägga till entreprenadbilden.')
     } finally {
       pendingProjectAttachmentCopiesRef.current.delete(attachment.id)
       setPendingProjectAttachmentCopyIds((current) => {
@@ -3379,7 +3550,7 @@ export default function EbInspectionRoundClient({
     }
     if (
       deletingProjectAttachmentId ||
-      queuedProjectAttachmentIds.has(attachment.id) ||
+      activeQueuedProjectAttachmentIds.has(attachment.id) ||
       uploadingProjectImages
     ) return
 
@@ -3390,6 +3561,10 @@ export default function EbInspectionRoundClient({
 
     try {
       setDeletingProjectAttachmentId(attachment.id)
+      const failedCopies = imageUploadQueue.items.filter(
+        (item) => item.sourceAttachmentId === attachment.id && item.status === 'failed'
+      )
+      await Promise.all(failedCopies.map((item) => imageUploadQueue.discardItem(item.id)))
       const response = await fetch(`/api/eb/projects/${round.project.id}/attachments/${attachment.id}`, {
         method: 'DELETE',
       })
@@ -3426,10 +3601,20 @@ export default function EbInspectionRoundClient({
       if (!response.ok || !payload.image) {
         throw new Error(payload.error ?? 'Kunde inte koppla loss bilden.')
       }
-      setRound((current) => ({
-        ...current,
-        images: current.images.filter((item) => !(item.id === image.id && item.noteId === editingNote.id)),
-      }))
+      setRound((current) => {
+        const remainingImages = current.images.filter(
+          (item) => !(item.id === image.id && item.noteId === editingNote.id)
+        )
+        return {
+          ...current,
+          images: payload.imageAvailableInBank
+            ? sortImages([
+                ...remainingImages.filter((item) => !(item.id === image.id && !item.noteId)),
+                { ...payload.image!, noteId: null },
+              ])
+            : remainingImages,
+        }
+      })
     } catch (deleteError) {
       showError(deleteError, 'Kunde inte koppla loss bilden.')
     } finally {
@@ -3498,23 +3683,26 @@ export default function EbInspectionRoundClient({
     }
   }
 
-  const canDropBankImage = (event: DragEvent<HTMLElement>) => {
+  const hasBankImageDropData = (event: DragEvent<HTMLElement>) => {
     const types = Array.from(event.dataTransfer.types)
     return (
-      !isLocked &&
-      (types.includes(EB_INSPECTION_IMAGE_DRAG_TYPE) || types.includes(EB_PROJECT_ATTACHMENT_DRAG_TYPE))
+      dataTransferHasFiles(event.dataTransfer) ||
+      types.includes(EB_INSPECTION_IMAGE_DRAG_TYPE) ||
+      types.includes(EB_PROJECT_ATTACHMENT_DRAG_TYPE)
     )
   }
 
+  const canDropBankImage = (event: DragEvent<HTMLElement>) => !isLocked && hasBankImageDropData(event)
+
   const handleBankImageDragOver = (event: DragEvent<HTMLElement>, targetKey: string) => {
-    if (!canDropBankImage(event)) return
+    if (!hasBankImageDropData(event)) return
     event.preventDefault()
     event.stopPropagation()
-    event.dataTransfer.dropEffect = Array.from(event.dataTransfer.types).includes(
-      EB_PROJECT_ATTACHMENT_DRAG_TYPE
-    )
-      ? 'copy'
-      : 'move'
+    if (!canDropBankImage(event)) {
+      event.dataTransfer.dropEffect = 'none'
+      return
+    }
+    event.dataTransfer.dropEffect = 'copy'
     setBankImageDropTarget(targetKey)
   }
 
@@ -3524,10 +3712,19 @@ export default function EbInspectionRoundClient({
   }
 
   const handleBankImageDropOnNote = async (event: DragEvent<HTMLElement>, targetNote?: EbNote) => {
-    if (!canDropBankImage(event)) return
+    if (!hasBankImageDropData(event)) return
     event.preventDefault()
     event.stopPropagation()
     setBankImageDropTarget(null)
+    if (!canDropBankImage(event)) {
+      showError(lockedMessage)
+      return
+    }
+
+    if (dataTransferHasFiles(event.dataTransfer)) {
+      await queueImagesForNote(Array.from(event.dataTransfer.files), targetNote)
+      return
+    }
 
     const attachmentId = event.dataTransfer.getData(EB_PROJECT_ATTACHMENT_DRAG_TYPE)
     if (attachmentId) {
@@ -3544,10 +3741,19 @@ export default function EbInspectionRoundClient({
     event: DragEvent<HTMLElement>,
     checkpoint: EbInspectionCheckpoint
   ) => {
-    if (!canDropBankImage(event)) return
+    if (!hasBankImageDropData(event)) return
     event.preventDefault()
     event.stopPropagation()
     setBankImageDropTarget(null)
+    if (!canDropBankImage(event)) {
+      showError(lockedMessage)
+      return
+    }
+
+    if (dataTransferHasFiles(event.dataTransfer)) {
+      await queueCheckpointImages(Array.from(event.dataTransfer.files), checkpoint)
+      return
+    }
 
     const attachmentId = event.dataTransfer.getData(EB_PROJECT_ATTACHMENT_DRAG_TYPE)
     if (attachmentId) {
@@ -3658,6 +3864,14 @@ export default function EbInspectionRoundClient({
           onChange={(event) => void handleImageBankFilesSelected(event)}
           className="hidden"
         />
+        <input
+          ref={inspectionImageBankInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(event) => void handleInspectionImageBankFilesSelected(event)}
+          className="hidden"
+        />
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -3732,33 +3946,23 @@ export default function EbInspectionRoundClient({
             </p>
           ) : null}
 
-          {reviewAutosaveStatus === 'saving' ? (
-            <p className="mt-4 inline-flex items-center gap-2 rounded-md border border-emerald-100 bg-white/90 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm">
-              <Loader2 size={15} className="animate-spin" />
-              Autosparar
-            </p>
-          ) : reviewAutosaveStatus === 'error' ? (
-            <p className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 shadow-sm">
-              {reviewAutosaveError ?? 'Autospar misslyckades'}
-            </p>
-          ) : null}
-
-          {reviewAutosaveStatus !== 'idle' || reviewAutosaveLastSavedAt || resettingReportSectionKey ? (
+          {reviewAutosaveStatus !== 'idle' || showReviewAutosaveSaved || resettingReportSectionKey ? (
             <div
-              className={`fixed bottom-4 right-4 z-[210] inline-flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold shadow-xl ${
+              className={`pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[210] inline-flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold shadow-xl ${
                 reviewAutosaveStatus === 'error'
                   ? 'border-rose-200 bg-rose-50 text-rose-800'
                   : 'border-emerald-200 bg-white text-emerald-800'
               }`}
               role="status"
               aria-live="polite"
+              aria-atomic="true"
             >
               {reviewAutosaveStatus === 'saving' || resettingReportSectionKey ? (
-                <Loader2 size={15} className="animate-spin" />
+                <Loader2 size={15} className="animate-spin" aria-hidden="true" />
               ) : reviewAutosaveStatus === 'error' ? (
-                <X size={15} />
+                <X size={15} aria-hidden="true" />
               ) : (
-                <CheckCircle2 size={15} />
+                <CheckCircle2 size={15} aria-hidden="true" />
               )}
               {resettingReportSectionKey
                 ? 'Återställer standardtext...'
@@ -3766,10 +3970,7 @@ export default function EbInspectionRoundClient({
                   ? 'Autosparar...'
                   : reviewAutosaveStatus === 'error'
                     ? reviewAutosaveError ?? 'Autospar misslyckades'
-                    : `Sparat ${reviewAutosaveLastSavedAt?.toLocaleTimeString('sv-SE', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      }) ?? ''}`}
+                    : 'Sparat'}
             </div>
           ) : null}
 
@@ -4759,15 +4960,6 @@ export default function EbInspectionRoundClient({
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => imageBankInputRef.current?.click()}
-                    disabled={isLocked || uploadingProjectImages}
-                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {uploadingProjectImages ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
-                    Till bildbank
-                  </button>
-                  <button
-                    type="button"
                     onClick={uploadNewCheckpointBankImage}
                     disabled={isLocked}
                     className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
@@ -4777,7 +4969,7 @@ export default function EbInspectionRoundClient({
                     ) : (
                       <Camera size={16} />
                     )}
-                    Ladda upp
+                    Till kontrollpunkten
                   </button>
                   <button
                     type="button"
@@ -4808,23 +5000,34 @@ export default function EbInspectionRoundClient({
                       <p className="text-xs text-gray-600">
                         {imageBankDragOver
                           ? 'Släpp bilder här för att lägga dem i bildbanken.'
-                          : `Dra in bilder här eller välj "Till bildbank". Upp till ${IMAGE_BANK_MAX_BATCH_FILES} bilder åt gången.`}
+                          : `Dra bilder från datorn hit. Upp till ${IMAGE_BANK_MAX_BATCH_FILES} bilder åt gången.`}
                       </p>
                     </div>
-                    <span className="text-xs font-medium text-gray-500">{availableProjectImageAttachments.length} st</span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500">{availableProjectImageAttachments.length} st</span>
+                      <button
+                        type="button"
+                        onClick={() => imageBankInputRef.current?.click()}
+                        disabled={isLocked || uploadingProjectImages}
+                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {uploadingProjectImages ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                        Från datorn
+                      </button>
+                    </div>
                   </div>
                   {availableProjectImageAttachments.length === 0 ? (
                     <p className="mt-2 rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-6 text-center text-sm text-gray-600">
-                      Det finns inga okopplade entreprenadbilder.
+                      Det finns inga entreprenadbilder.
                     </p>
                   ) : (
                     <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                       {availableProjectImageAttachments.map((attachment) => {
                         const title = projectAttachmentTitle(attachment)
                         const imageUrl = projectAttachmentPreviewSrc(attachment)
-                        const isCopying =
-                          pendingProjectAttachmentCopyIds.has(attachment.id) ||
-                          queuedProjectAttachmentIds.has(attachment.id)
+                          const isCopying =
+                            pendingProjectAttachmentCopyIds.has(attachment.id) ||
+                            activeQueuedProjectAttachmentIds.has(attachment.id)
 
                         return (
                           <ProjectAttachmentImageCard
@@ -4847,33 +5050,62 @@ export default function EbInspectionRoundClient({
                   )}
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-gray-950">Okopplade besiktningsbilder</h3>
-                  <span className="text-xs font-medium text-gray-500">{checkpointImageBankImages.length} st</span>
-                </div>
-
-                {checkpointImageBankImages.length === 0 ? (
-                  <p className="mt-2 rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
-                    Det finns inga okopplade besiktningsbilder. Ladda upp en ny bild till punkten eller välj en entreprenadbild ovan.
-                  </p>
-                ) : (
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                    {checkpointImageBankImages.map((image) => (
-                      <InspectionImageBankCard
-                        key={image.id}
-                        image={image}
-                        imageUrl={imagePreviewSrc(image)}
-                        referenceLabel="Okopplad"
-                        linkedToCurrent={false}
-                        isLocked={isLocked}
-                        isMoving={movingImageId === image.id}
-                        onPreview={() => setPreviewImageKey(`inspection:${image.id}`)}
-                        onAttach={() => void attachBankImageToCheckpoint(image)}
-                        onDragEnd={() => setBankImageDropTarget(null)}
-                      />
-                    ))}
+                <div
+                  className={`rounded-md border border-dashed p-3 transition ${
+                    inspectionImageBankDragOver
+                      ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100'
+                      : 'border-transparent bg-transparent'
+                  }`}
+                  onDragOver={handleInspectionImageBankDragOver}
+                  onDragLeave={handleInspectionImageBankDragLeave}
+                  onDrop={(event) => void handleInspectionImageBankDrop(event)}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-950">Okopplade besiktningsbilder</h3>
+                      <p className="text-xs text-gray-600">
+                        {inspectionImageBankDragOver
+                          ? 'Släpp bilder här för att spara dem till besiktningen.'
+                          : 'Dra bilder från datorn hit eller välj dem med knappen.'}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500">{checkpointImageBankImages.length} st</span>
+                      <button
+                        type="button"
+                        onClick={() => inspectionImageBankInputRef.current?.click()}
+                        disabled={isLocked || uploadingInspectionImages}
+                        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {uploadingInspectionImages ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                        Från datorn
+                      </button>
+                    </div>
                   </div>
-                )}
+
+                  {checkpointImageBankImages.length === 0 ? (
+                    <p className="mt-2 rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
+                      Det finns inga okopplade besiktningsbilder. Lägg till en bild här eller välj en entreprenadbild ovan.
+                    </p>
+                  ) : (
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+                      {checkpointImageBankImages.map((image) => (
+                        <InspectionImageBankCard
+                          key={image.id}
+                          image={image}
+                          imageUrl={imagePreviewSrc(image)}
+                          referenceLabel="Okopplad"
+                          linkedToCurrent={false}
+                          isLocked={isLocked}
+                          isMoving={movingImageId === image.id}
+                          onPreview={() => setPreviewImageKey(`inspection:${image.id}`)}
+                          onAttach={() => void attachBankImageToCheckpoint(image)}
+                          onDragEnd={() => setBankImageDropTarget(null)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
           </div>
@@ -5070,11 +5302,12 @@ export default function EbInspectionRoundClient({
                         type="button"
                         onClick={() => galleryInputRef.current?.click()}
                         disabled={isLocked || (!editingNote && !form.noteText.trim())}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        aria-label="Bild"
-                        title="Bild"
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Välj bilder från datorn"
+                        title="Välj bilder från datorn"
                       >
-                        <ImageIcon size={18} />
+                        <ImageIcon size={16} />
+                        Från datorn
                       </button>
                     </div>
                   </div>
@@ -5130,9 +5363,14 @@ export default function EbInspectionRoundClient({
                       </div>
                     </div>
                   ) : (
-                    <p className="rounded-md bg-emerald-50 px-3 py-4 text-sm text-gray-600">
-                      Dra in bilder från bildbanken eller lägg till en ny bild.
-                    </p>
+                    <div className="rounded-md bg-emerald-50 px-3 py-4 text-sm text-gray-600">
+                      <p>Dra bilder från datorn eller bildbanken hit, eller välj ”Från datorn”.</p>
+                      {!editingNote && !form.noteText.trim() ? (
+                        <p className="mt-1 font-medium text-emerald-800">
+                          Skriv noteringstexten först så att bilderna kan kopplas till rätt notering.
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                 </section>
 
@@ -5304,14 +5542,6 @@ export default function EbInspectionRoundClient({
                         <div className="flex shrink-0 flex-col gap-2">
                           <button
                             type="button"
-                            onClick={() => imageBankInputRef.current?.click()}
-                            disabled={isLocked || uploadingProjectImages}
-                            className="rounded-md border border-emerald-200 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {uploadingProjectImages ? 'Laddar upp...' : 'Till bildbank'}
-                          </button>
-                          <button
-                            type="button"
                             onClick={() => setShowLinkedImages((current) => !current)}
                             className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${
                               showLinkedImages
@@ -5362,14 +5592,25 @@ export default function EbInspectionRoundClient({
                             <p className="text-xs text-gray-600">
                               {imageBankDragOver
                                 ? 'Släpp bilder här.'
-                                : `Dra in bilder här eller välj "Till bildbank". Upp till ${IMAGE_BANK_MAX_BATCH_FILES} bilder åt gången.`}
+                                : `Dra bilder från datorn hit. Upp till ${IMAGE_BANK_MAX_BATCH_FILES} bilder åt gången.`}
                             </p>
                           </div>
-                          <span className="text-xs font-medium text-gray-500">{availableProjectImageAttachments.length} st</span>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-xs font-medium text-gray-500">{availableProjectImageAttachments.length} st</span>
+                            <button
+                              type="button"
+                              onClick={() => imageBankInputRef.current?.click()}
+                              disabled={isLocked || uploadingProjectImages}
+                              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {uploadingProjectImages ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                              Från datorn
+                            </button>
+                          </div>
                         </div>
                         {availableProjectImageAttachments.length === 0 ? (
                           <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-6 text-center text-sm text-gray-600">
-                            Inga okopplade entreprenadbilder.
+                            Inga entreprenadbilder.
                           </p>
                         ) : (
                           <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
@@ -5378,7 +5619,7 @@ export default function EbInspectionRoundClient({
                               const imageUrl = projectAttachmentPreviewSrc(attachment)
                               const isCopying =
                                 pendingProjectAttachmentCopyIds.has(attachment.id) ||
-                                queuedProjectAttachmentIds.has(attachment.id)
+                                activeQueuedProjectAttachmentIds.has(attachment.id)
 
                               return (
                                 <ProjectAttachmentImageCard
@@ -5389,7 +5630,7 @@ export default function EbInspectionRoundClient({
                                   isLocked={isLocked}
                                   isCopying={isCopying}
                                   isDeleting={deletingProjectAttachmentId === attachment.id}
-                                  actionDisabled={false}
+                                  actionDisabled={!editingNote && !form.noteText.trim()}
                                   onPreview={() => setPreviewImageKey(`project:${attachment.id}`)}
                                   onAdd={() => void copyProjectAttachmentToNote(attachment)}
                                   onDelete={() => void deleteProjectAttachmentFromBank(attachment)}
@@ -5401,41 +5642,77 @@ export default function EbInspectionRoundClient({
                         )}
                       </div>
 
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                          Besiktningsbilder
-                        </h3>
-                        <span className="text-xs font-medium text-gray-500">{imageBankImages.length} st</span>
-                      </div>
-                      {imageBankImages.length === 0 ? (
-                        <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
-                          Inga okopplade besiktningsbilder.
-                        </p>
-                      ) : (
-                        <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
-                          {imageBankImages.map((image) => {
-                            const note = image.noteId ? round.notes.find((item) => item.id === image.noteId) ?? null : null
-                            const linkedToCurrent = editingNote?.id === image.noteId
-                            const referenceLabel = note
-                              ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}`.trim()
-                              : 'Okopplad'
-                            return (
-                              <InspectionImageBankCard
-                                key={image.id}
-                                image={image}
-                                imageUrl={imagePreviewSrc(image)}
-                                referenceLabel={referenceLabel}
-                                linkedToCurrent={linkedToCurrent}
-                                isLocked={isLocked}
-                                isMoving={movingImageId === image.id}
-                                onPreview={() => setPreviewImageKey(`inspection:${image.id}`)}
-                                onAttach={!image.noteId ? () => void attachImage(image.id) : undefined}
-                                onDragEnd={() => setBankImageDropTarget(null)}
-                              />
-                            )
-                          })}
+                      <div
+                        className={`rounded-md border border-dashed p-2 transition ${
+                          inspectionImageBankDragOver
+                            ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100'
+                            : 'border-transparent bg-transparent'
+                        }`}
+                        onDragOver={handleInspectionImageBankDragOver}
+                        onDragLeave={handleInspectionImageBankDragLeave}
+                        onDrop={(event) => void handleInspectionImageBankDrop(event)}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                              Besiktningsbilder
+                            </h3>
+                            <p className="text-xs text-gray-600">
+                              {inspectionImageBankDragOver
+                                ? 'Släpp bilder här.'
+                                : 'Dra bilder från datorn hit eller välj dem med knappen.'}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-xs font-medium text-gray-500">{imageBankImages.length} st</span>
+                            <button
+                              type="button"
+                              onClick={() => inspectionImageBankInputRef.current?.click()}
+                              disabled={isLocked || uploadingInspectionImages}
+                              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {uploadingInspectionImages ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                              Från datorn
+                            </button>
+                          </div>
                         </div>
-                      )}
+                        {imageBankImages.length === 0 ? (
+                          <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-8 text-center text-sm text-gray-600">
+                            Inga okopplade besiktningsbilder.
+                          </p>
+                        ) : (
+                          <div className={imageViewCount === 1 ? 'grid grid-cols-1 gap-2' : imageViewCount === 4 ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 gap-2'}>
+                            {imageBankImages.map((image) => {
+                              const note = image.noteId ? round.notes.find((item) => item.id === image.noteId) ?? null : null
+                              const linkedToCurrent = Boolean(
+                                editingNote &&
+                                  imagesByNoteId.get(editingNote.id)?.some((linkedImage) => linkedImage.id === image.id)
+                              )
+                              const referenceLabel = note
+                                ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}`.trim()
+                                : 'Okopplad'
+                              return (
+                                <InspectionImageBankCard
+                                  key={`${image.id}:${image.noteId ?? 'unlinked'}`}
+                                  image={image}
+                                  imageUrl={imagePreviewSrc(image)}
+                                  referenceLabel={referenceLabel}
+                                  linkedToCurrent={linkedToCurrent}
+                                  isLocked={isLocked}
+                                  isMoving={movingImageId === image.id}
+                                  onPreview={() => setPreviewImageKey(`inspection:${image.id}`)}
+                                  onAttach={
+                                    !linkedToCurrent && Boolean(editingNote || form.noteText.trim())
+                                      ? () => void attachImage(image.id)
+                                      : undefined
+                                  }
+                                  onDragEnd={() => setBankImageDropTarget(null)}
+                                />
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </section>
                 </div>

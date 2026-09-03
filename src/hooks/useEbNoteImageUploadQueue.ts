@@ -76,6 +76,7 @@ export function useEbNoteImageUploadQueue({
   const [items, setItems] = useState<EbNoteImageUploadItem[]>([])
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
   const [queueError, setQueueError] = useState<string | null>(null)
+  const [processorRevision, setProcessorRevision] = useState(0)
   const processorRunningRef = useRef(false)
   const mountedRef = useRef(true)
   const previewUrlsRef = useRef<Record<string, string>>({})
@@ -230,6 +231,7 @@ export function useEbNoteImageUploadQueue({
     } finally {
       processorRunningRef.current = false
       await syncItems().catch(() => undefined)
+      if (mountedRef.current) setProcessorRevision((current) => current + 1)
     }
   }, [enabled, inspectionId, locked, processItem, syncItems])
 
@@ -407,7 +409,7 @@ export function useEbNoteImageUploadQueue({
   useEffect(() => {
     if (!enabled || locked || !items.some((item) => item.status === 'queued')) return
     void processQueue()
-  }, [enabled, items, locked, processQueue, queueSignal])
+  }, [enabled, items, locked, processQueue, processorRevision, queueSignal])
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return

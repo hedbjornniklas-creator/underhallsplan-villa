@@ -16,7 +16,12 @@ import {
   isBaseAssignmentAddonKey,
   isCustomerSelectableAddonKey,
 } from '@/lib/assignments/addons'
+import {
+  buildAcceptedAssignmentConfirmationFilename,
+  renderAcceptedAssignmentConfirmationPdf,
+} from '@/lib/assignments/acceptedConfirmationPdf'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
+import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 export type AssignmentStatus =
   | 'draft'
@@ -1252,15 +1257,78 @@ export async function sendAssignmentAcceptedNotice(input: {
   orgName: string | null
   requestedByUserId?: string | null
   responsibleEmail: string | null
+  acceptancePayload: Record<string, unknown>
 }): Promise<void> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   if (!input.assignment.accepted_at) {
     throw new Error('ASSIGNMENT_NOT_ACCEPTED')
   }
 
+  const termsRole = getTermsRoleForAssignment(input.assignment)
+  if (!termsRole) {
+    throw new Error('ORDERER_ROLE_REQUIRED')
+  }
+
+  const terms = getAssignmentTermsDocument(termsRole)
+  const acceptedTermsHash = input.assignment.terms_document_hash?.trim().toLowerCase() ?? ''
+  if (
+    input.assignment.terms_version !== terms.version ||
+    acceptedTermsHash !== terms.documentHash
+  ) {
+    throw new Error('ASSIGNMENT_TERMS_SNAPSHOT_MISMATCH')
+  }
+
+  const [addonOrders, inspectorResult, organizationResult] = await Promise.all([
+    listAssignmentAddonOrders({
+      orgId: input.assignment.org_id,
+      assignmentId: input.assignment.id,
+    }),
+    admin
+      .from('profiles')
+      .select(
+        'full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city'
+      )
+      .eq('id', input.assignment.responsible_profile_id)
+      .maybeSingle(),
+    admin
+      .from('organizations')
+      .select('name')
+      .eq('id', input.assignment.org_id)
+      .maybeSingle(),
+  ])
+
+  if (inspectorResult.error) {
+    throw new Error(inspectorResult.error.message ?? 'Kunde inte hämta besiktningsmannen.')
+  }
+
+  const inspectorProfile = inspectorResult.data as
+    | {
+        full_name: string | null
+        email: string | null
+        phone: string | null
+        company_name: string | null
+        company_orgno: string | null
+        company_address: string | null
+        company_postal_code: string | null
+        company_city: string | null
+      }
+    | null
+  const { summary: certificationSummary } = await resolveInspectorCertificationSummary(
+    admin,
+    {
+      profileId: input.assignment.responsible_profile_id,
+      orgId: input.assignment.org_id,
+    }
+  )
+  const resolvedOrgName =
+    input.orgName ??
+    (organizationResult.data as { name?: string | null } | null)?.name ??
+    inspectorProfile?.company_name ??
+    null
+
   const { subject, html, text } = buildAssignmentAcceptedNoticeEmail({
     assignment: input.assignment,
-    orgName: input.orgName,
+    orgName: resolvedOrgName,
     acceptedAt: input.assignment.accepted_at,
   })
 
@@ -1288,6 +1356,43 @@ export async function sendAssignmentAcceptedNotice(input: {
   }
 
   try {
+    const pdfBuffer = await renderAcceptedAssignmentConfirmationPdf({
+      assignment: input.assignment,
+      issuerName: resolvedOrgName,
+      acceptancePayload: input.acceptancePayload,
+      terms,
+      addonOrders: addonOrders.map((row) => ({
+        name: row.addon_name_snapshot,
+        priceAmount: row.price_amount_snapshot,
+        currency: row.currency_snapshot,
+      })),
+      inspector: inspectorProfile
+        ? {
+            fullName: inspectorProfile.full_name,
+            email: inspectorProfile.email,
+            phone: inspectorProfile.phone,
+            companyName: inspectorProfile.company_name,
+            companyOrgNo: inspectorProfile.company_orgno,
+            companyAddress: inspectorProfile.company_address,
+            companyPostalCode: inspectorProfile.company_postal_code,
+            companyCity: inspectorProfile.company_city,
+            sbrGroup: certificationSummary.sbr_group,
+            sbrStatus: certificationSummary.sbr_status,
+            membershipNumber: certificationSummary.membership_number,
+            certificationNumber: certificationSummary.certification_number,
+            certifications: certificationSummary.all_selected_items.map((item) => ({
+              name: item.name,
+              number: item.number_value,
+              validTo: item.valid_to,
+            })),
+          }
+        : null,
+    })
+    const attachmentFilename = buildAcceptedAssignmentConfirmationFilename({
+      assignmentType: input.assignment.assignment_type,
+      assignmentId: input.assignment.id,
+      acceptedAt: input.assignment.accepted_at,
+    })
     const sendResult = await sendAssignmentEmail({
       to: input.assignment.customer_email,
       from: fromAddress,
@@ -1295,6 +1400,13 @@ export async function sendAssignmentAcceptedNotice(input: {
       subject,
       html,
       text,
+      attachments: [
+        {
+          filename: attachmentFilename,
+          contentBase64: pdfBuffer.toString('base64'),
+          contentType: 'application/pdf',
+        },
+      ],
     })
 
     await admin

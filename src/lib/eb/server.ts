@@ -2774,12 +2774,14 @@ async function listEbNoteImagesWithoutSourceAttachment(input: { inspectionId: st
 
   const linkedImages: EbNoteImage[] = []
   const linkedKeys = new Set<string>()
+  const linkedImageIds = new Set<string>()
   for (const link of (linkResult.data ?? []) as EbNoteImageLinkRow[]) {
     const image = mappedById.get(link.inspection_image_id)
     if (!image) continue
     const key = `${link.eb_note_id}:${link.inspection_image_id}`
     if (linkedKeys.has(key)) continue
     linkedKeys.add(key)
+    linkedImageIds.add(image.id)
     linkedImages.push({
       ...image,
       noteId: link.eb_note_id,
@@ -2788,9 +2790,8 @@ async function listEbNoteImagesWithoutSourceAttachment(input: { inspectionId: st
   }
 
   for (const image of mappedById.values()) {
-    if (image.noteId && !linkedKeys.has(`${image.noteId}:${image.id}`)) {
-      linkedImages.push(image)
-    }
+    if (linkedImageIds.has(image.id)) continue
+    linkedImages.push({ ...image, noteId: null })
   }
 
   return linkedImages
@@ -2834,12 +2835,14 @@ async function listEbNoteImages(input: { inspectionId: string }) {
 
   const linkedImages: EbNoteImage[] = []
   const linkedKeys = new Set<string>()
+  const linkedImageIds = new Set<string>()
   for (const link of (linkResult.data ?? []) as EbNoteImageLinkRow[]) {
     const image = mappedById.get(link.inspection_image_id)
     if (!image) continue
     const key = `${link.eb_note_id}:${link.inspection_image_id}`
     if (linkedKeys.has(key)) continue
     linkedKeys.add(key)
+    linkedImageIds.add(image.id)
     linkedImages.push({
       ...image,
       noteId: link.eb_note_id,
@@ -2848,9 +2851,8 @@ async function listEbNoteImages(input: { inspectionId: string }) {
   }
 
   for (const image of mappedById.values()) {
-    if (image.noteId && !linkedKeys.has(`${image.noteId}:${image.id}`)) {
-      linkedImages.push(image)
-    }
+    if (linkedImageIds.has(image.id)) continue
+    linkedImages.push({ ...image, noteId: null })
   }
 
   return linkedImages

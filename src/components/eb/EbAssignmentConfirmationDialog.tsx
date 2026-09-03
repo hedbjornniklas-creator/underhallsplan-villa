@@ -28,7 +28,12 @@ const inputClass =
   'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600'
 
 const BUSINESS_CONTRACTS = ['AB 04', 'ABT 06']
-const CONSUMER_CONTRACTS = ['ABS 18', 'Hantverkarformuläret 17']
+const CONSUMER_OFFER_CONTRACT = 'Konsumententreprenad – godkänd offert eller annat avtal'
+const CONSUMER_CONTRACTS = [
+  'ABS 18',
+  'Hantverkarformuläret 17',
+  CONSUMER_OFFER_CONTRACT,
+]
 
 function statusLabel(status: EbAssignmentConfirmationForm['status']) {
   if (status === 'not_created') return 'Inte skapad'
@@ -118,7 +123,11 @@ export default function EbAssignmentConfirmationDialog({
         if (!response.ok || !result.confirmation) {
           throw new Error(result.error ?? 'Kunde inte hämta uppdragsbekräftelsen.')
         }
-        if (!cancelled) setForm(result.confirmation)
+        if (!cancelled) {
+          setForm(result.confirmation)
+          const summary = toSummary(result.confirmation)
+          if (summary) onUpdated({ ...summary, inspectionId: inspection.inspectionId })
+        }
       } catch (error) {
         if (!cancelled) showError(error, 'Kunde inte hämta uppdragsbekräftelsen.')
       } finally {
@@ -129,9 +138,11 @@ export default function EbAssignmentConfirmationDialog({
     return () => {
       cancelled = true
     }
-  }, [endpoint, inspection, open, showError])
+  }, [endpoint, inspection, onUpdated, open, showError])
 
   const editable = form?.status === 'draft' || form?.status === 'not_created'
+  const canReissue =
+    form?.status === 'sent' || form?.status === 'ordered' || form?.status === 'booked'
   const priceLabel = form?.details.pricingModel === 'hourly' ? 'Timpris' : 'Fast pris'
   const previewFacts = useMemo(() => {
     if (!form || !inspection) return []
@@ -277,7 +288,9 @@ export default function EbAssignmentConfirmationDialog({
               {message ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div> : null}
               {!editable ? (
                 <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-                  Den här versionen är låst. Skapa en ny version om uppgifterna behöver ändras.
+                  {canReissue
+                    ? 'Den här versionen är låst. Skapa en ny version om uppgifterna behöver ändras.'
+                    : 'Den här versionen är låst och kan inte längre ändras.'}
                 </div>
               ) : null}
 
@@ -413,12 +426,12 @@ export default function EbAssignmentConfirmationDialog({
                       {busy === 'send' ? 'Skickar...' : 'Skicka för godkännande'}
                     </button>
                   </>
-                ) : (
+                ) : canReissue ? (
                   <button type="button" onClick={() => void reissue()} disabled={Boolean(busy)} aria-busy={busy === 'reissue'} className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:bg-emerald-300">
                     {busy === 'reissue' ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
                     {busy === 'reissue' ? 'Skapar version...' : 'Skapa ny version'}
                   </button>
-                )}
+                ) : null}
               </footer>
             </div>
           )}

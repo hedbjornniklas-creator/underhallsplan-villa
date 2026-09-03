@@ -744,6 +744,10 @@ export function buildAssignmentAcceptedNoticeEmail(
                 <p style="margin:0 0 10px;font-size:14px;line-height:1.55;">
                   Besiktningsmannen går nu igenom beställningen och bekräftar uppdraget.
                 </p>
+                <p style="margin:0 0 10px;font-size:14px;line-height:1.55;">
+                  En komplett kopia av den godkända uppdragsbekräftelsen och tillhörande villkor
+                  finns bifogad som PDF.
+                </p>
                 <p style="margin:0;font-size:13px;color:#4b5563;">Mottagen: ${escapeHtml(acceptedAt)}</p>
               </td>
             </tr>
@@ -759,6 +763,7 @@ export function buildAssignmentAcceptedNoticeEmail(
     `Hej ${customerName},\n\n` +
     `Vi har mottagit er godkända uppdragsbekräftelse för ${assignmentType}.\n` +
     `Besiktningsmannen går nu igenom beställningen och bekräftar uppdraget.\n\n` +
+    `En komplett kopia av den godkända uppdragsbekräftelsen och tillhörande villkor finns bifogad som PDF.\n\n` +
     `Mottagen: ${acceptedAt}`
 
   return { subject, html, text }

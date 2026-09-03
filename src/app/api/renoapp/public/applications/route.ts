@@ -111,6 +111,9 @@ export async function POST(request: Request) {
     if (message === 'DESCRIPTION_REQUIRED') return jsonError('Beskriv atgarden.', 400)
     if (message === 'ACTION_TYPE_REQUIRED') return jsonError('Valj minst en renoveringstyp.', 400)
     if (message === 'QUESTION_REQUIRED') return jsonError('Besvara alla obligatoriska fragor.', 400)
+    if (message === 'PARTICIPANT_CONFIRMATION_REQUIRED') {
+      return jsonError('Bekräfta företagets behörighet och att uppgifterna är korrekta innan ansökan skickas in.', 400)
+    }
     return jsonError(message || 'Kunde inte skapa RenoApp-arende.', 500)
   }
 }

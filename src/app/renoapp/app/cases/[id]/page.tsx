@@ -2,11 +2,30 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import RenoAppCaseDecisionView, {
   type RenoAppCaseDetail,
   type RenoAppCaseStatusAction,
 } from './RenoAppCaseDecisionView'
+
+type RequirementDecisionUpdate = {
+  targetKey: string
+  targetType: 'document' | 'participant'
+  targetId: string
+  decision: 'requested' | 'not_requested'
+}
+
+function mergeRequirementDecisionUpdates(
+  previous: RequirementDecisionUpdate[],
+  next: RequirementDecisionUpdate[]
+) {
+  const updates = new Map(previous.map((update) => [update.targetKey, update]))
+  for (const update of next) {
+    updates.set(update.targetKey, update)
+  }
+  return Array.from(updates.values())
+}
 
 function getFlowStepClass(active: boolean, tone: 'blue' | 'amber' | 'violet' | 'emerald' | 'rose' | 'stone') {
   if (active) {
@@ -100,6 +119,52 @@ export default function RenoAppCaseDetailPage() {
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
   const [decisionConfirmed, setDecisionConfirmed] = useState(false)
+
+  const saveRequirementDecisionBatch = useCallback(
+    async (updates: RequirementDecisionUpdate[]) => {
+      let savedItem: RenoAppCaseDetail | null = null
+
+      for (const update of updates) {
+        const response = await fetch(`/api/renoapp/app/cases/${caseId}/requirement-decisions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            targetType: update.targetType,
+            targetId: update.targetId,
+            decision: update.decision,
+          }),
+        })
+        const payload = (await response.json().catch(() => ({}))) as { item?: RenoAppCaseDetail; error?: string }
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Kunde inte spara kompletteringsval.')
+        }
+
+        savedItem = payload.item ?? savedItem
+      }
+
+      if (!savedItem) {
+        throw new Error('Kunde inte spara kompletteringsval.')
+      }
+
+      return savedItem
+    },
+    [caseId]
+  )
+
+  const requirementDecisionAutosave = useAutosaveQueue<RequirementDecisionUpdate[], RenoAppCaseDetail>({
+    save: saveRequirementDecisionBatch,
+    mergePayload: mergeRequirementDecisionUpdates,
+    onSaved: (savedItem) => {
+      setItem(savedItem)
+      setActionSuccess('Kompletteringsvalen sparades.')
+    },
+    onError: (saveError) => {
+      setActionError(saveError instanceof Error ? saveError.message : 'Kunde inte spara kompletteringsval.')
+    },
+  })
 
   useEffect(() => {
     let active = true
@@ -220,7 +285,7 @@ export default function RenoAppCaseDetailPage() {
     }
   }
 
-  const handleRequirementDecisionChange = async (
+  const handleRequirementDecisionChange = (
     row: RenoAppCaseDetail['underlag'][number],
     decision: 'requested' | 'not_requested'
   ) => {
@@ -230,7 +295,6 @@ export default function RenoAppCaseDetailPage() {
     }
 
     const targetId = row.id.includes(':') ? row.id.split(':').slice(1).join(':') : row.id
-    const previousItem = item
     setActionError(null)
     setActionSuccess(null)
     setItem((current) =>
@@ -249,30 +313,14 @@ export default function RenoAppCaseDetailPage() {
         : current
     )
 
-    try {
-      const response = await fetch(`/api/renoapp/app/cases/${caseId}/requirement-decisions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          targetType: row.category,
-          targetId,
-          decision,
-        }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as { item?: RenoAppCaseDetail; error?: string }
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Kunde inte spara kompletteringsval.')
-      }
-
-      setItem(payload.item ?? null)
-      setActionSuccess('Kompletteringsvalet sparades.')
-    } catch (submitError) {
-      setItem(previousItem)
-      setActionError(submitError instanceof Error ? submitError.message : 'Kunde inte spara kompletteringsval.')
-    }
+    void requirementDecisionAutosave.enqueue([
+      {
+        targetKey: row.id,
+        targetType: row.category,
+        targetId,
+        decision,
+      },
+    ]).catch(() => undefined)
   }
 
   if (loading) {

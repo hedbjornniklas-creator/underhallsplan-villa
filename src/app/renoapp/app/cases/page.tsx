@@ -48,7 +48,7 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
   { key: 'draft', label: 'Utkast' },
   { key: 'new_application', label: 'Ny ansökan' },
-  { key: 'review', label: 'Under granskning' },
+  { key: 'review', label: 'Att granska' },
   { key: 'need_info', label: 'Komplettering begärd' },
   { key: 'approved', label: 'Godkänd' },
   { key: 'conditional', label: 'Godkänd med villkor' },
@@ -70,7 +70,7 @@ const STATUS_HELP_ITEMS = [
   },
   {
     key: 'review',
-    label: 'Under granskning',
+    label: 'Att granska',
     meaning: 'Ansökan är inskickad och väntar på styrelsens handläggning.',
     action: 'Öppna ärendet, granska underlag och fatta beslut eller begär komplettering om något saknas.',
   },
@@ -109,7 +109,7 @@ function formatDate(value: string) {
 function getStatusLabel(status: string) {
   if (status === 'draft') return 'Utkast'
   if (status === 'new_application' || status === 'submitted') return 'Ny ansökan'
-  if (status === 'review') return 'Under granskning'
+  if (status === 'review') return 'Att granska'
   if (status === 'need_info') return 'Komplettering begärd'
   if (status === 'approved') return 'Godkänd'
   if (status === 'conditional') return 'Godkänd med villkor'
@@ -153,9 +153,9 @@ function getStatusRowClass(status: CaseItem['status']) {
     case 'draft':
       return 'bg-stone-50 text-black hover:bg-stone-100 focus-visible:bg-stone-100'
     case 'new_application':
-      return 'bg-indigo-50 text-black hover:bg-indigo-100 focus-visible:bg-indigo-100'
+      return 'bg-violet-50 text-black hover:bg-violet-100 focus-visible:bg-violet-100'
     case 'review':
-      return 'bg-sky-50 text-black hover:bg-sky-100 focus-visible:bg-sky-100'
+      return 'bg-cyan-50 text-black hover:bg-cyan-100 focus-visible:bg-cyan-100'
     case 'need_info':
       return 'bg-amber-50 text-black hover:bg-amber-100 focus-visible:bg-amber-100'
     case 'approved':
@@ -174,9 +174,9 @@ function getStatusBadgeClass(status: CaseItem['status']) {
     case 'draft':
       return 'border-stone-300 bg-stone-100 text-stone-800'
     case 'new_application':
-      return 'border-indigo-300 bg-indigo-100 text-indigo-950'
+      return 'border-violet-300 bg-violet-100 text-violet-950'
     case 'review':
-      return 'border-sky-300 bg-sky-100 text-sky-950'
+      return 'border-cyan-300 bg-cyan-100 text-cyan-950'
     case 'need_info':
       return 'border-amber-300 bg-amber-100 text-amber-950'
     case 'approved':
@@ -208,17 +208,17 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
       }
     case 'new_application':
       return {
-        inactive: 'border-[#D8D4FA] bg-[#FAFAFF] text-[#514A92] hover:bg-[#F2F1FF]',
-        active: 'border-[#AAA2E8] bg-[#EFEEFF] text-[#463F83]',
-        countInactive: 'bg-[#F0EEFF] text-[#514A92]',
-        countActive: 'bg-white/20 text-white',
+        inactive: 'border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100',
+        active: 'border-violet-400 bg-violet-100 text-violet-950',
+        countInactive: 'bg-violet-100 text-violet-900',
+        countActive: 'bg-violet-200 text-violet-950',
       }
     case 'review':
       return {
-        inactive: 'border-[#D7E4F8] bg-[#FAFCFF] text-[#4B6296] hover:bg-[#F3F7FD]',
-        active: 'border-[#8FA6D8] bg-[#EEF3FC] text-[#3E568B]',
-        countInactive: 'bg-[#F0F5FD] text-[#4B6296]',
-        countActive: 'bg-white/20 text-white',
+        inactive: 'border-cyan-200 bg-cyan-50 text-cyan-900 hover:bg-cyan-100',
+        active: 'border-cyan-400 bg-cyan-100 text-cyan-950',
+        countInactive: 'bg-cyan-100 text-cyan-900',
+        countActive: 'bg-cyan-200 text-cyan-950',
       }
     case 'need_info':
       return {

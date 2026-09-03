@@ -461,8 +461,12 @@ export default function AssignmentAcceptPage() {
           apartmentNumber: form.apartmentNumber,
           apartmentHolderName: form.apartmentHolderName,
           scopeDescription: form.scopeDescription,
-          preferredDate: form.preferredDate,
-          preferredTime: form.preferredTime,
+          ...(isEbAssignment
+            ? {}
+            : {
+                preferredDate: form.preferredDate,
+                preferredTime: form.preferredTime,
+              }),
           selectedAddonServiceIds: form.selectedAddonServiceIds,
           termsAccepted: form.termsAccepted,
           consumerWithdrawalAcknowledged: form.consumerWithdrawalAcknowledged,
@@ -733,11 +737,11 @@ export default function AssignmentAcceptPage() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-3">
                       <Field
-                        label="Datum *"
+                        label={isEbAssignment ? 'Fastställt datum' : 'Datum *'}
                         type="date"
                         value={form.preferredDate}
                         onChange={(value) => updateField('preferredDate', value)}
-                        disabled={!canSubmit}
+                        disabled={!canSubmit || isEbAssignment}
                       />
                       <div className="space-y-2 pt-5">
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-700">Kostnad</p>
@@ -745,7 +749,9 @@ export default function AssignmentAcceptPage() {
                           label={
                             isEbAssignment && ebDetails?.pricingModel === 'hourly'
                               ? 'Timpris (SEK) *'
-                              : 'Pris (SEK) *'
+                              : isEbAssignment
+                                ? 'Fast pris (SEK) *'
+                                : 'Pris (SEK) *'
                           }
                           type="number"
                           step="0.01"
@@ -757,13 +763,18 @@ export default function AssignmentAcceptPage() {
                       </div>
                     </div>
                     <Field
-                      label="Tid *"
+                      label={isEbAssignment ? 'Fastställd tid' : 'Tid *'}
                       type="time"
                       value={form.preferredTime}
                       onChange={(value) => updateField('preferredTime', value)}
-                      disabled={!canSubmit}
+                      disabled={!canSubmit || isEbAssignment}
                     />
                   </div>
+                  {isEbAssignment ? (
+                    <p className="text-xs text-gray-600">
+                      Datum och tid är fastställda av besiktningsföretaget. Kontakta oss om tiden behöver ändras.
+                    </p>
+                  ) : null}
                 </SectionCard>
               </div>
 
@@ -792,10 +803,12 @@ export default function AssignmentAcceptPage() {
                           : String(ebDetails.travelTerms ?? 'Debiteras separat')
                       }
                     />
-                    <AssignmentFact
-                      label="Budget"
-                      value={formatOptionalMoney(ebDetails.budgetAmount, data.assignment.currency)}
-                    />
+                    {hasPositiveMoney(ebDetails.budgetAmount) ? (
+                      <AssignmentFact
+                        label="Budget/takpris"
+                        value={formatOptionalMoney(ebDetails.budgetAmount, data.assignment.currency)}
+                      />
+                    ) : null}
                     <AssignmentFact
                       label="Biträdande besiktningsman"
                       value={formatOptionalMoney(ebDetails.assistantHourlyRate, data.assignment.currency)}
@@ -1013,9 +1026,20 @@ export default function AssignmentAcceptPage() {
 }
 
 function formatOptionalMoney(value: unknown, currency: string) {
-  const amount = typeof value === 'number' ? value : Number(String(value ?? '').replace(',', '.'))
-  if (!Number.isFinite(amount) || amount < 0) return 'Ej angivet'
+  const amount = optionalMoneyAmount(value)
+  if (amount === null) return 'Ej angivet'
   return `${amount.toLocaleString('sv-SE', { maximumFractionDigits: 2 })} ${currency || 'SEK'}`
+}
+
+function hasPositiveMoney(value: unknown) {
+  const amount = optionalMoneyAmount(value)
+  return amount !== null && amount > 0
+}
+
+function optionalMoneyAmount(value: unknown) {
+  if (value === null || value === undefined || value === '') return null
+  const amount = typeof value === 'number' ? value : Number(String(value).replace(',', '.'))
+  return Number.isFinite(amount) && amount >= 0 ? amount : null
 }
 
 function AssignmentFact({ label, value }: { label: string; value: string }) {

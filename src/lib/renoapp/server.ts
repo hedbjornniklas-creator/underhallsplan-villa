@@ -4371,6 +4371,59 @@ export async function upsertPublicApplication(
     }
   }
 
+  if (mode === 'submit') {
+    const participantRoleIdsRequiringConfirmation = new Set<string>()
+
+    if (isCompletionCase) {
+      for (const participantRoleId of requestedCompletionParticipantRoleIds) {
+        participantRoleIdsRequiringConfirmation.add(participantRoleId)
+      }
+    } else {
+      if (selectedActionTypes.length > 0) {
+        const { data: actionParticipantRoles, error: actionParticipantRolesError } = await admin
+          .from('renoapp_action_type_participant_roles')
+          .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
+          .in(
+            'action_type_id',
+            selectedActionTypes.map((actionType) => actionType.id)
+          )
+          .eq('is_active', true)
+
+        if (actionParticipantRolesError) {
+          throw new Error(actionParticipantRolesError.message ?? 'Kunde inte läsa medverkandekrav.')
+        }
+
+        for (const participantRole of (actionParticipantRoles ?? []) as ActionTypeParticipantRoleRow[]) {
+          participantRoleIdsRequiringConfirmation.add(participantRole.participant_role_id)
+        }
+      }
+
+      for (const question of applicableQuestions) {
+        const selectedOptionKeys = questionAnswersInput[question.key] ?? []
+        for (const option of question.options) {
+          if (!selectedOptionKeys.includes(option.key)) continue
+          for (const trigger of option.triggers) {
+            if (trigger.triggerType === 'participant_role' && trigger.participantRoleId) {
+              participantRoleIdsRequiringConfirmation.add(trigger.participantRoleId)
+            }
+          }
+        }
+      }
+    }
+
+    const participantEntryByRoleId = new Map(
+      participantEntriesInput.map((entry) => [entry.participantRoleId, entry] as const)
+    )
+    const hasUnconfirmedParticipant = Array.from(participantRoleIdsRequiringConfirmation).some((participantRoleId) => {
+      const entry = participantEntryByRoleId.get(participantRoleId)
+      return !entry?.hasVerifiedAuthorization || !entry.acceptsResponsibility
+    })
+
+    if (hasUnconfirmedParticipant) {
+      throw new Error('PARTICIPANT_CONFIRMATION_REQUIRED')
+    }
+  }
+
   const contact = await upsertPublicApplicationContact({
     admin,
     existingContactId: (existingCase?.applicant_contact_id as string | null | undefined) ?? null,

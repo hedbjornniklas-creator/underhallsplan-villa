@@ -395,14 +395,28 @@ export async function POST(
       return jsonError('Ange en giltig e-postadress.', 400)
     }
 
-    const preferredDate = typeof body.preferredDate === 'string' ? body.preferredDate.trim() : ''
+    const preferredDate = isEbAssignment
+      ? assignment.preferred_date?.trim() ?? ''
+      : typeof body.preferredDate === 'string'
+        ? body.preferredDate.trim()
+        : ''
     if (!DATE_REGEX.test(preferredDate)) {
-      return jsonError('Ange ett giltigt datum.', 400)
+      return jsonError(
+        isEbAssignment ? 'Besiktningsföretaget behöver ange ett giltigt datum.' : 'Ange ett giltigt datum.',
+        400
+      )
     }
 
-    const preferredTime = typeof body.preferredTime === 'string' ? body.preferredTime.trim() : ''
+    const preferredTime = isEbAssignment
+      ? assignment.preferred_time?.trim() ?? ''
+      : typeof body.preferredTime === 'string'
+        ? body.preferredTime.trim()
+        : ''
     if (!TIME_REGEX.test(preferredTime)) {
-      return jsonError('Ange en giltig tid.', 400)
+      return jsonError(
+        isEbAssignment ? 'Besiktningsföretaget behöver ange en giltig tid.' : 'Ange en giltig tid.',
+        400
+      )
     }
 
     const isConsumerEbAssignment = termsRole === 'construction_consumer'
@@ -588,6 +602,7 @@ export async function POST(
           orgName: null,
           requestedByUserId: updatedAssignment.responsible_profile_id,
           responsibleEmail: responsibleProfile?.email ?? null,
+          acceptancePayload: payload,
         })
         confirmationEmailSent = true
       }
