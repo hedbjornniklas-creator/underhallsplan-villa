@@ -3,7 +3,11 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportShareEmail } from '@/lib/inspections/reportEmailTemplates'
-import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
+import {
+  getEbInspectionReportFromSnapshot,
+  isEbReportSnapshotPayloadV1,
+  type EbReportDeliveryDocument,
+} from '@/lib/eb/reportSnapshot'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import {
   getTuSnapshotEmailMeta,
@@ -80,7 +84,9 @@ const sanitizeFilenamePart = (value: string | null | undefined) => {
   return raw.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim()
 }
 
-const buildDocumentFileName = (document: TuReportDeliveryDocument) => {
+type PublicReportDeliveryDocument = TuReportDeliveryDocument | EbReportDeliveryDocument
+
+const buildDocumentFileName = (document: PublicReportDeliveryDocument) => {
   const fromTitle = sanitizeFilenamePart(document.title)
   const fromFileName = sanitizeFilenamePart(document.fileName)
   return fromTitle || fromFileName || 'Underlag'
@@ -266,7 +272,7 @@ async function createSignedPdfUrl(
 
 async function createSignedDocumentUrl(
   admin: ReturnType<typeof createSupabaseAdminClient>,
-  document: TuReportDeliveryDocument,
+  document: PublicReportDeliveryDocument,
   asAttachment: boolean,
   linkId: string
 ) {
@@ -490,8 +496,11 @@ export async function GET(
     if (requestedDocumentId) {
       const snapshotPayload = (data as Record<string, unknown>).snapshot_payload
       const tuSnapshot = isTuReportSnapshotPayloadV1(snapshotPayload) ? snapshotPayload : null
+      const ebSnapshot = isEbReportSnapshotPayloadV1(snapshotPayload) ? snapshotPayload : null
       const document =
-        tuSnapshot?.deliveryDocuments?.find((item) => item.id === requestedDocumentId) ?? null
+        tuSnapshot?.deliveryDocuments?.find((item) => item.id === requestedDocumentId) ??
+        ebSnapshot?.deliveryDocuments?.find((item) => item.id === requestedDocumentId) ??
+        null
 
       if (!document) {
         return notFoundResponse()

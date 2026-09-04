@@ -1,11 +1,23 @@
 import type { EbInspectionReport, EbReportProjectSnapshot } from '@/lib/eb/server'
 
+export type EbReportDeliveryDocument = {
+  id: string
+  storageBucket: string
+  filePath: string
+  fileName: string | null
+  title: string | null
+  contentType: string | null
+  fileSizeBytes: number | null
+  createdAt: string | null
+}
+
 export type EbReportSnapshotPayloadV1 = {
   schema: 'eb_report_snapshot_v1'
   module: 'EB'
   inspectionId: string
   createdAt: string
   report: EbInspectionReport
+  deliveryDocuments?: EbReportDeliveryDocument[]
   meta: {
     projectId: string
     reportDate: string | null
@@ -57,6 +69,23 @@ function sanitizeEbProjectForDelivery<T extends EbReportProjectSnapshot>(project
 export function createEbReportSnapshotPayloadV1(
   report: EbInspectionReport
 ): EbReportSnapshotPayloadV1 {
+  const deliveryDocuments = report.projectAttachments
+    .filter(
+      (attachment) =>
+        attachment.attachmentType === 'document' &&
+        (attachment.includeInReport ||
+          attachment.agreementLinks.some((link) => link.includeInReport))
+    )
+    .map((attachment) => ({
+      id: attachment.id,
+      storageBucket: attachment.storageBucket,
+      filePath: attachment.filePath,
+      fileName: attachment.fileName,
+      title: attachment.title,
+      contentType: attachment.contentType,
+      fileSizeBytes: attachment.fileSizeBytes,
+      createdAt: attachment.createdAt,
+    }))
   const snapshotReport: EbInspectionReport = {
     ...report,
     project: {
@@ -81,6 +110,7 @@ export function createEbReportSnapshotPayloadV1(
     inspectionId: report.inspection.inspectionId,
     createdAt: new Date().toISOString(),
     report: snapshotReport,
+    deliveryDocuments,
     meta: {
       projectId: report.project.id,
       reportDate: report.inspection.reportDistributionDate,

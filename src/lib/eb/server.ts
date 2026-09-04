@@ -118,6 +118,8 @@ export type EbInspectionSummary = {
   reportPdfError: string | null
   reportPdfDownloadUrl: string | null
   reportPdfCreatedAt: string | null
+  reportDeliveryStatus: 'not_sent' | 'sent' | 'failed'
+  reportLastSentAt: string | null
   createdAt: string | null
 }
 
@@ -778,6 +780,18 @@ type EbReportLinkRow = {
   created_at: string | null
   pdf_status: string | null
   pdf_error: string | null
+}
+
+type EbReportDeliveryRow = {
+  inspection_id: string
+  status: string | null
+  sent_at: string | null
+  created_at: string | null
+}
+
+type EbReportDeliverySummary = {
+  status: 'not_sent' | 'sent' | 'failed'
+  lastSentAt: string | null
 }
 
 type EbDisciplineSettingRow = {
@@ -1669,7 +1683,8 @@ function mapInspectionSummary(
   detail: EbInspectionDetailRow,
   inspection: InspectionRow | undefined,
   project: EbProjectRow,
-  reportLink?: EbReportLinkRow
+  reportLink?: EbReportLinkRow,
+  reportDelivery?: EbReportDeliverySummary
 ): EbInspectionSummary {
   const variant = toVariant(detail.inspection_variant)
   const reportPdfStatus = reportLink ? normalizeEbReportPdfStatus(reportLink.pdf_status) : null
@@ -1731,6 +1746,8 @@ function mapInspectionSummary(
     reportPdfError: reportLink?.pdf_error ?? null,
     reportPdfDownloadUrl: getEbReportPdfDownloadUrl(detail.inspection_id, reportLink),
     reportPdfCreatedAt: reportLink?.created_at ?? null,
+    reportDeliveryStatus: reportDelivery?.status ?? 'not_sent',
+    reportLastSentAt: reportDelivery?.lastSentAt ?? null,
     createdAt: inspection?.created_at ?? detail.created_at ?? null,
   }
 }
@@ -1739,7 +1756,8 @@ function mapProject(
   project: EbProjectRow,
   detailsByProjectId: Map<string, EbInspectionDetailRow[]>,
   inspectionsById: Map<string, InspectionRow>,
-  reportLinksByInspectionId: Map<string, EbReportLinkRow>
+  reportLinksByInspectionId: Map<string, EbReportLinkRow>,
+  reportDeliveriesByInspectionId: Map<string, EbReportDeliverySummary>
 ): EbProjectListItem {
   const inspections = (detailsByProjectId.get(project.id) ?? [])
     .map((detail) =>
@@ -1747,7 +1765,8 @@ function mapProject(
         detail,
         inspectionsById.get(detail.inspection_id),
         project,
-        reportLinksByInspectionId.get(detail.inspection_id)
+        reportLinksByInspectionId.get(detail.inspection_id),
+        reportDeliveriesByInspectionId.get(detail.inspection_id)
       )
     )
     .sort((left, right) => {
@@ -1993,6 +2012,50 @@ async function fetchLatestReportLinksByInspectionIds(inspectionIds: string[]) {
   return linksByInspectionId
 }
 
+async function fetchReportDeliveriesByInspectionIds(
+  inspectionIds: string[],
+  reportLinksByInspectionId: Map<string, EbReportLinkRow>
+) {
+  if (inspectionIds.length === 0) return new Map<string, EbReportDeliverySummary>()
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('outbound_messages')
+    .select('inspection_id,status,sent_at,created_at')
+    .in('inspection_id', inspectionIds)
+    .eq('template_key', 'eb_report_delivery')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    throw new Error(error.message ?? 'Kunde inte hämta leveransstatus för EB-utlåtanden.')
+  }
+
+  const rowsByInspectionId = new Map<string, EbReportDeliveryRow[]>()
+  for (const row of (data ?? []) as EbReportDeliveryRow[]) {
+    const rows = rowsByInspectionId.get(row.inspection_id) ?? []
+    rows.push(row)
+    rowsByInspectionId.set(row.inspection_id, rows)
+  }
+
+  const deliveries = new Map<string, EbReportDeliverySummary>()
+  for (const inspectionId of inspectionIds) {
+    const activeLinkCreatedAt = reportLinksByInspectionId.get(inspectionId)?.created_at
+    const activeLinkTimestamp = activeLinkCreatedAt ? Date.parse(activeLinkCreatedAt) : Number.NaN
+    const currentRows = (rowsByInspectionId.get(inspectionId) ?? []).filter((row) => {
+      if (!Number.isFinite(activeLinkTimestamp)) return false
+      const rowTimestamp = row.created_at ? Date.parse(row.created_at) : Number.NaN
+      return Number.isFinite(rowTimestamp) && rowTimestamp >= activeLinkTimestamp
+    })
+    const sentRow = currentRows.find((row) => row.status === 'sent')
+    deliveries.set(inspectionId, {
+      status: sentRow ? 'sent' : currentRows.some((row) => row.status === 'failed') ? 'failed' : 'not_sent',
+      lastSentAt: sentRow?.sent_at ?? null,
+    })
+  }
+
+  return deliveries
+}
+
 async function buildProjectItems(projectRows: EbProjectRow[]) {
   const projectIds = projectRows.map((project) => project.id)
   const details = await fetchDetailsForProjects(projectRows[0]?.org_id ?? '', projectIds)
@@ -2001,6 +2064,10 @@ async function buildProjectItems(projectRows: EbProjectRow[]) {
     fetchInspectionsByIds(inspectionIds),
     fetchLatestReportLinksByInspectionIds(inspectionIds),
   ])
+  const reportDeliveriesByInspectionId = await fetchReportDeliveriesByInspectionIds(
+    inspectionIds,
+    reportLinksByInspectionId
+  )
   const detailsByProjectId = new Map<string, EbInspectionDetailRow[]>()
 
   for (const detail of details) {
@@ -2010,7 +2077,13 @@ async function buildProjectItems(projectRows: EbProjectRow[]) {
   }
 
   return projectRows.map((project) =>
-    mapProject(project, detailsByProjectId, inspectionsById, reportLinksByInspectionId)
+    mapProject(
+      project,
+      detailsByProjectId,
+      inspectionsById,
+      reportLinksByInspectionId,
+      reportDeliveriesByInspectionId
+    )
   )
 }
 

@@ -9,8 +9,12 @@ import {
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
 import ReportShareButton from '@/components/report/ReportShareButton'
 import EbInspectionReportView from '@/components/eb/EbInspectionReportView'
+import EbPublicReportSnapshotView from '@/components/eb/EbPublicReportSnapshotView'
 import { EbToastProvider } from '@/components/eb/EbToastProvider'
-import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
+import {
+  getEbInspectionReportFromSnapshot,
+  isEbReportSnapshotPayloadV1,
+} from '@/lib/eb/reportSnapshot'
 import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
 import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotView'
 import {
@@ -96,6 +100,9 @@ export default async function PublicReportPage({
   const snapshot: ReportSnapshotPayloadV1 | null = isReportSnapshotPayloadV1(data.snapshot_payload)
     ? data.snapshot_payload
     : null
+  const ebSnapshot = isEbReportSnapshotPayloadV1(data.snapshot_payload)
+    ? data.snapshot_payload
+    : null
   const ebReport = getEbInspectionReportFromSnapshot(data.snapshot_payload)
 
   const pdfBase64 = String((data as Record<string, unknown>).pdf_base64 ?? '').trim()
@@ -113,36 +120,35 @@ export default async function PublicReportPage({
   const shareUrl = `/rapport/${encodeURIComponent(normalizedToken)}`
 
   if (ebReport) {
-    const publicActions = isPdfRender ? null : (
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <ReportShareButton shareEndpoint={shareEndpoint} shareUrl={shareUrl} />
-        {pdfDownloadUrl ? (
-          <Link
-            href={pdfDownloadUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
-          >
-            Ladda ner PDF
-          </Link>
-        ) : (
-          <span className="text-sm font-medium text-gray-600">
-            {pdfStatus === 'failed'
-              ? `PDF-generering misslyckades${pdfError ? `: ${pdfError}` : '.'}`
-              : 'PDF genereras i bakgrunden.'}
-          </span>
-        )}
-      </div>
-    )
+    if (isPdfRender) {
+      return (
+        <EbToastProvider>
+          <EbInspectionReportView report={ebReport} showInternalActions={false} />
+        </EbToastProvider>
+      )
+    }
+
+    const deliveryDocuments = (ebSnapshot?.deliveryDocuments ?? []).map((document) => ({
+      id: document.id,
+      title: document.title,
+      fileName: document.fileName,
+      contentType: document.contentType,
+      fileSizeBytes: document.fileSizeBytes,
+      createdAt: document.createdAt,
+      downloadUrl: `/api/reports/public/${encodeURIComponent(normalizedToken)}?documentId=${encodeURIComponent(document.id)}&download=1`,
+    }))
 
     return (
-      <EbToastProvider>
-        <EbInspectionReportView
-          report={ebReport}
-          showInternalActions={false}
-          publicActions={publicActions}
-        />
-      </EbToastProvider>
+      <EbPublicReportSnapshotView
+        report={ebReport}
+        publishedAt={ebSnapshot?.createdAt ?? null}
+        pdfDownloadUrl={pdfDownloadUrl}
+        pdfStatus={pdfStatus}
+        pdfError={pdfError}
+        shareEndpoint={shareEndpoint}
+        shareUrl={shareUrl}
+        deliveryDocuments={deliveryDocuments}
+      />
     )
   }
 

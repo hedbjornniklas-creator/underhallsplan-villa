@@ -11,11 +11,9 @@ import {
   CircleDashed,
   ClipboardCheck,
   Clock3,
-  Download,
   FileCheck2,
   FileText,
   ListChecks,
-  Lock,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -23,7 +21,6 @@ import {
   Send,
   Smartphone,
   Trash2,
-  Unlock,
   UserPlus,
   X,
 } from 'lucide-react'
@@ -32,6 +29,7 @@ import PendingLink from '@/components/ui/PendingLink'
 import EbAgreementDocumentField from '@/components/eb/EbAgreementDocumentField'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
 import EbAssignmentConfirmationDialog from '@/components/eb/EbAssignmentConfirmationDialog'
+import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import EbProjectForm, {
   buildEbProjectForm,
@@ -125,12 +123,6 @@ type ReportDeliveryResponse = {
   project?: EbProjectListItem
   downloadUrl?: string | null
   pdfStatus?: string | null
-  error?: string
-}
-
-type UnlockInspectionResponse = {
-  ok?: boolean
-  project?: EbProjectListItem
   error?: string
 }
 
@@ -431,27 +423,45 @@ function getInvitationPreparationStatus(
 }
 
 function getReportStatus(inspection: EbInspectionSummary) {
+  if (!inspection.reportLockedAt && inspection.reportDeliveryStatus === 'sent') {
+    return {
+      label: 'Upplåst · tidigare version skickad',
+      className: 'bg-amber-100 text-amber-900',
+    }
+  }
+  if (inspection.reportDeliveryStatus === 'sent') {
+    return {
+      label: 'Utlåtande skickat',
+      className: 'bg-emerald-100 text-emerald-800',
+    }
+  }
+  if (inspection.reportDeliveryStatus === 'failed') {
+    return {
+      label: 'Utskick misslyckades',
+      className: 'bg-rose-100 text-rose-800',
+    }
+  }
   if (inspection.reportPdfStatus === 'failed') {
     return {
-      label: 'PDF kunde inte skapas',
+      label: 'Fastställt · PDF-fel',
       className: 'bg-rose-100 text-rose-800',
     }
   }
   if (inspection.reportPdfStatus === 'pending' || inspection.reportPdfStatus === 'processing') {
     return {
-      label: 'PDF skapas',
+      label: 'Fastställt · PDF skapas',
       className: 'bg-amber-100 text-amber-900',
     }
   }
   if (inspection.reportPdfDownloadUrl) {
     return {
-      label: 'PDF sparad',
-      className: 'bg-emerald-100 text-emerald-800',
+      label: 'Fastställt · inte skickat',
+      className: 'bg-blue-100 text-blue-800',
     }
   }
   if (inspection.reportLockedAt) {
     return {
-      label: 'Utlåtande låst',
+      label: 'Fastställt · inte skickat',
       className: 'bg-blue-100 text-blue-800',
     }
   }
@@ -2823,6 +2833,7 @@ export default function EbProjectDetailClient({
   const [detailsInspection, setDetailsInspection] = useState<EbInspectionSummary | null>(null)
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const [assignmentInspection, setAssignmentInspection] = useState<EbInspectionSummary | null>(null)
+  const [deliveryInspection, setDeliveryInspection] = useState<EbInspectionSummary | null>(null)
   const [assignmentConfirmationByInspection, setAssignmentConfirmationByInspection] = useState<
     Record<string, EbAssignmentConfirmationSummary>
   >(() =>
@@ -2830,7 +2841,6 @@ export default function EbProjectDetailClient({
       assignmentConfirmations.map((confirmation) => [confirmation.inspectionId, confirmation])
     )
   )
-  const [reportActionInspectionId, setReportActionInspectionId] = useState<string | null>(null)
   const [deletingInspectionId, setDeletingInspectionId] = useState<string | null>(null)
   const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
   const processingPdfInspectionId =
@@ -2917,10 +2927,14 @@ export default function EbProjectDetailClient({
     router.refresh()
   }
 
-  const handleUpdated = (updatedProject: EbProjectListItem) => {
+  const handleUpdated = useCallback((updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
     router.refresh()
-  }
+  }, [router])
+
+  const handleDeliveryProjectUpdated = useCallback((updatedProject: EbProjectListItem) => {
+    setCurrentProject(updatedProject)
+  }, [])
 
   const handleAssignmentConfirmationUpdated = useCallback((summary: EbAssignmentConfirmationSummary) => {
     setAssignmentConfirmationByInspection((current) => ({
@@ -2937,66 +2951,8 @@ export default function EbProjectDetailClient({
     setPendingNavigationKey(key)
   }
 
-  const handleLockInspection = async (inspection: EbInspectionSummary) => {
-    if (reportActionInspectionId || deletingInspectionId) return
-
-    try {
-      setReportActionInspectionId(inspection.inspectionId)
-
-      const response = await fetch(
-        `/api/eb/projects/${currentProject.id}/inspections/${inspection.inspectionId}/report-delivery`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'lock_only' }),
-        }
-      )
-      const payload = (await response.json().catch(() => ({}))) as ReportDeliveryResponse
-      if (!response.ok || !payload.project) {
-        throw new Error(payload.error ?? 'Kunde inte låsa utlåtandet.')
-      }
-
-      setCurrentProject(payload.project)
-      router.refresh()
-    } catch (error) {
-      showError(error, 'Kunde inte låsa utlåtandet.')
-    } finally {
-      setReportActionInspectionId(null)
-    }
-  }
-
-  const handleUnlockInspection = async (inspection: EbInspectionSummary) => {
-    if (reportActionInspectionId || deletingInspectionId) return
-    const reason = window.prompt('Ange anledning till upplåsning, minst 10 tecken:')
-    if (!reason) return
-
-    try {
-      setReportActionInspectionId(inspection.inspectionId)
-
-      const response = await fetch(
-        `/api/eb/projects/${currentProject.id}/inspections/${inspection.inspectionId}/unlock`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason }),
-        }
-      )
-      const payload = (await response.json().catch(() => ({}))) as UnlockInspectionResponse
-      if (!response.ok || !payload.project) {
-        throw new Error(payload.error ?? 'Kunde inte låsa upp utlåtandet.')
-      }
-
-      setCurrentProject(payload.project)
-      router.refresh()
-    } catch (error) {
-      showError(error, 'Kunde inte låsa upp utlåtandet.')
-    } finally {
-      setReportActionInspectionId(null)
-    }
-  }
-
   const handleDeleteInspection = async (inspection: EbInspectionSummary) => {
-    if (reportActionInspectionId || deletingInspectionId) return
+    if (deletingInspectionId) return
     if (inspection.reportLockedAt) {
       showError('Låsta besiktningar kan inte raderas. Lås upp besiktningen först.')
       return
@@ -3169,9 +3125,8 @@ export default function EbProjectDetailClient({
                       ? currentProject.inspections.find((item) => item.inspectionId === inspection.parentInspectionId)
                       : null
                     const isLocked = Boolean(inspection.reportLockedAt)
-                    const isWorking = reportActionInspectionId === inspection.inspectionId
                     const isDeleting = deletingInspectionId === inspection.inspectionId
-                    const actionInProgress = Boolean(reportActionInspectionId || deletingInspectionId)
+                    const actionInProgress = Boolean(deletingInspectionId)
                     const roundNavigationKey = `${inspection.inspectionId}:round`
                     const reviewNavigationKey = `${inspection.inspectionId}:perform`
                     const reportNavigationKey = `${inspection.inspectionId}:report`
@@ -3365,43 +3320,15 @@ export default function EbProjectDetailClient({
                                   <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">
                                     Utlåtande
                                   </p>
-                                  {inspection.reportPdfDownloadUrl ? (
-                                    <Link
-                                      href={inspection.reportPdfDownloadUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className={inspectionMenuItemClassName()}
-                                    >
-                                      <Download size={16} />
-                                      Öppna sparad PDF
-                                    </Link>
-                                  ) : (
-                                    <span className={inspectionMenuItemClassName({ disabled: true })}>
-                                      <Download size={16} />
-                                      Ingen sparad PDF
-                                    </span>
-                                  )}
-                                  {isLocked ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleUnlockInspection(inspection)}
-                                      disabled={actionInProgress}
-                                      className={inspectionMenuItemClassName({ disabled: actionInProgress })}
-                                    >
-                                      {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Unlock size={16} />}
-                                      {isWorking ? 'Låser upp...' : 'Lås upp utlåtandet'}
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleLockInspection(inspection)}
-                                      disabled={actionInProgress}
-                                      className={inspectionMenuItemClassName({ disabled: actionInProgress })}
-                                    >
-                                      {isWorking ? <Loader2 size={16} className="animate-spin" /> : <Lock size={16} />}
-                                      {isWorking ? 'Låser och skapar PDF...' : 'Lås och spara PDF'}
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeliveryInspection(inspection)}
+                                    disabled={actionInProgress}
+                                    className={inspectionMenuItemClassName({ disabled: actionInProgress })}
+                                  >
+                                    <Send size={16} />
+                                    {isLocked ? 'Leverera och visa status' : 'Fastställ och leverera'}
+                                  </button>
 
                                   <div className="my-1 border-t border-gray-100" />
                                   <button
@@ -3490,6 +3417,14 @@ export default function EbProjectDetailClient({
           inspection={assignmentInspection}
           onClose={() => setAssignmentInspection(null)}
           onUpdated={handleAssignmentConfirmationUpdated}
+        />
+        <EbReportDeliveryDialog
+          open={Boolean(deliveryInspection)}
+          projectId={currentProject.id}
+          inspection={deliveryInspection}
+          onClose={() => setDeliveryInspection(null)}
+          onProjectUpdated={handleDeliveryProjectUpdated}
+          onChanged={() => router.refresh()}
         />
       </main>
     </Protected>
