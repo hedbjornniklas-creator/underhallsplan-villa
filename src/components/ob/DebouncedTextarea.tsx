@@ -69,6 +69,8 @@ export default function DebouncedTextarea({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draftRef = useRef(value)
   const isDirtyRef = useRef(false)
+  const draftVersionRef = useRef(0)
+  const inFlightDraftVersionsRef = useRef(new Set<number>())
   const saveVersionRef = useRef(0)
   const latestValueRef = useRef(value)
 
@@ -128,7 +130,10 @@ export default function DebouncedTextarea({
     }
   }
 
-  const saveNow = async (nextValue: string) => {
+  const saveNow = async (
+    nextValue: string,
+    draftVersion = draftVersionRef.current
+  ) => {
     clearTimer()
     if (disabled || readOnly) return
     if (!isDirtyRef.current && nextValue === latestValueRef.current) {
@@ -136,8 +141,10 @@ export default function DebouncedTextarea({
       markDirty(false)
       return
     }
+    if (inFlightDraftVersionsRef.current.has(draftVersion)) return
 
     writeStoredDraft(draftKey, nextValue)
+    inFlightDraftVersionsRef.current.add(draftVersion)
     const version = saveVersionRef.current + 1
     saveVersionRef.current = version
     setIsSaving(true)
@@ -151,6 +158,7 @@ export default function DebouncedTextarea({
       writeStoredDraft(draftKey, nextValue)
       markDirty(true)
     } finally {
+      inFlightDraftVersionsRef.current.delete(draftVersion)
       if (saveVersionRef.current === version) setIsSaving(false)
     }
   }
@@ -159,10 +167,11 @@ export default function DebouncedTextarea({
     clearTimer()
     if (disabled || readOnly) return
     if (!isDirtyRef.current && nextValue === latestValueRef.current) return
+    const draftVersion = draftVersionRef.current
     writeStoredDraft(draftKey, nextValue)
     timerRef.current = setTimeout(() => {
       timerRef.current = null
-      void saveNow(nextValue)
+      void saveNow(nextValue, draftVersion)
     }, debounceMs)
   }
 
@@ -188,6 +197,7 @@ export default function DebouncedTextarea({
       }}
       onChange={event => {
         const nextValue = event.target.value
+        draftVersionRef.current += 1
         draftRef.current = nextValue
         markDirty(true)
         setDraft(nextValue)

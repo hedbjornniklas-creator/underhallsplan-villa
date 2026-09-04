@@ -428,7 +428,7 @@ function mergeEbStructuredReportSection(
 
   return {
     ...current,
-    title: existing.title,
+    title: current.title,
     sbrPoint: existing.sbrPoint,
     source: existing.source,
     contentMode: current.contentMode,
@@ -3462,7 +3462,7 @@ export async function getEbInspectionReport(input: {
       inspection: liveRound.inspection,
     })
   const initializedAt = storedDraft.initializedAt ?? new Date().toISOString()
-  let sourceSnapshot =
+  const sourceSnapshot =
     storedDraft.sourceSnapshot ??
     createEbReportSourceSnapshot({
       project: liveRound.project,
@@ -3478,24 +3478,6 @@ export async function getEbInspectionReport(input: {
       },
       capturedAt: initializedAt,
     })
-  const projectSnapshotIsStale = Boolean(
-    storedDraft.sourceSnapshot &&
-      !liveRound.inspection.reportLockedAt &&
-      isLaterTimestamp(liveRound.project.updatedAt, storedDraft.sourceSnapshot.capturedAt)
-  )
-  if (projectSnapshotIsStale) {
-    const capturedAt = new Date().toISOString()
-    sourceSnapshot = {
-      ...sourceSnapshot,
-      capturedAt,
-      project: createEbReportSourceSnapshot({
-        project: liveRound.project,
-        inspectorText: sourceSnapshot.inspectorText,
-        branding: sourceSnapshot.branding,
-        capturedAt,
-      }).project,
-    }
-  }
   const project = applyEbReportProjectSnapshot(liveRound.project, sourceSnapshot.project)
   const round: EbInspectionRound = { ...liveRound, project }
   const resolvedParticipants = enrichParticipantsForReport(project, participants)
@@ -3507,7 +3489,7 @@ export async function getEbInspectionReport(input: {
     templateVersion: storedDraft.templateVersion || EB_REPORT_TEMPLATE_VERSION,
     initializedAt,
     sourceSnapshot,
-    updatedAt: projectSnapshotIsStale ? sourceSnapshot.capturedAt : storedDraft.updatedAt,
+    updatedAt: storedDraft.updatedAt,
   }
   const reportDraft = buildEbReportDraft({
     round,
@@ -3523,10 +3505,8 @@ export async function getEbInspectionReport(input: {
     !storedDraft.initializedAt ||
     !storedDraft.sourceSnapshot ||
     storedSectionKeys.size === 0
-  const needsProjectSnapshotRefreshWrite = projectSnapshotIsStale
-
   let resolvedReportDraft = reportDraft
-  if ((needsInitializationWrite || needsProjectSnapshotRefreshWrite) && !liveRound.inspection.reportLockedAt) {
+  if (needsInitializationWrite && !liveRound.inspection.reportLockedAt) {
     try {
       resolvedReportDraft = await writeEbReportDraft(
         input,
@@ -3587,12 +3567,20 @@ function applyEbReportProjectSnapshot(
   }
 }
 
-function isLaterTimestamp(value: string | null | undefined, reference: string | null | undefined) {
+function isSameTimestamp(
+  value: string | null | undefined,
+  reference: string | null | undefined
+) {
+  if (value === reference) return true
   if (!value || !reference) return false
+
+  // PostgreSQL/PostgREST can return the same timestamptz with a different
+  // offset notation (for example `+00:00` instead of `Z`). The value is the
+  // report draft's optimistic-lock token, so compare the instant rather than
+  // its string representation before declaring a concurrent edit.
   const valueTime = Date.parse(value)
   const referenceTime = Date.parse(reference)
-  if (!Number.isFinite(valueTime) || !Number.isFinite(referenceTime)) return false
-  return valueTime > referenceTime
+  return Number.isFinite(valueTime) && Number.isFinite(referenceTime) && valueTime === referenceTime
 }
 
 function applyEbReportDateToBranding(
@@ -6009,7 +5997,7 @@ function buildEbReportDraft(input: {
     },
     {
       key: 'contract_parties',
-      title: 'Avtalade arbeten och parter',
+      title: 'Entreprenaden samt parter',
       sbrPoint: '4',
       source: 'project',
       status: 'complete',
@@ -6485,7 +6473,7 @@ export async function saveEbReportDraft(
 
   const report = await getEbInspectionReport(input)
   const baseDraft = report.reportDraft
-  if (hasExpectedUpdatedAt && baseDraft.updatedAt !== (input.expectedUpdatedAt ?? null)) {
+  if (hasExpectedUpdatedAt && !isSameTimestamp(baseDraft.updatedAt, input.expectedUpdatedAt)) {
     throw new Error('EB_REPORT_DRAFT_CONFLICT')
   }
   now = nextEbReportDraftUpdatedAt(baseDraft.updatedAt)

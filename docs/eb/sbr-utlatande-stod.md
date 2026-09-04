@@ -19,23 +19,25 @@ EB-utlåtandet ska följa en fast rubrikhierarki så att digital vy och PDF får
 
 | Nivå | Användning | Form |
 |---|---|---|
-| Dokumenttitel | Huvudrubriken efter objektinformationen | Versaler, vänsterställd, 16 pt, fet. Exakt text: `UTLÅTANDE ÖVER SLUTBESIKTNING`. |
+| Öppningsuppgifter | Försättets objektuppgifter | Etikettlösa rader i ordningen fastighetsbeteckning, adress/ort, beställare, entreprenad och standardavtal. 20 pt, fet, svart; fastighetsbeteckningen skrivs med versaler. |
+| Dokumenttitel | Huvudrubriken efter öppningsuppgifterna | Versaler, vänsterställd, 20 pt, fet, svart, med luft före. Exakt text: `UTLÅTANDE ÖVER SLUTBESIKTNING`. |
 | Huvudavsnitt | Formella utlåtandepunkter från `report_draft.sections` | 12 pt, fet. Synlig rubrik skrivs utan numrering. SBR-punkt får bara användas internt för spårbarhet. |
 | Bilagerubrik | Noteringsbilaga och fotobilaga | Versaler, 13 pt, fet. Exempel: `BILAGA 1 TILL UTLÅTANDE ÖVER SLUTBESIKTNING`. |
 | Tabellrubrik | Kolumner i noteringsbilagan | Kort SBR-lik text: `Bet.`, `Nr`, `Del/Rum`, `Fel`, `Avhjälpt/sign`. |
-| Fältetikett | Objektinformation och metadata | Fet etikett till vänster, värde till höger. |
+| Fältetikett | Övrig strukturerad information | Fet etikett till vänster, värde till höger. |
 
 Regel i kod: rubrikklasser för EB-utlåtandet ska ligga samlade i rapportkomponenten som namngivna konstanter. Nya rubriker ska använda dessa nivåer i stället för egna Tailwind-klasser direkt i JSX.
 
 Första synliga avsnitt i färdigt utlåtande ska vara:
 
-1. `Besiktningens omfattning`
-2. `Tid för besiktningen`
-3. `Avtalade arbeten och parter`
+1. `Typ av besiktning`
+2. `Besiktningens omfattning`
+3. `Tid för besiktningen`
+4. `Entreprenaden samt parter`
 
-`Typ av besiktning` sparas i utkastet för spårbarhet men skrivs inte ut som egen rubrik, eftersom dokumenttiteln redan anger slutbesiktning.
+`Typ av besiktning` är en fältstyrd SBR-punkt och skrivs ut med den valda besiktningstypen och dess löpnummer, även om dokumenttiteln också anger typen.
 
-`Avtalade arbeten och parter` ska byggas från strukturerade entreprenadfält och visas med denna fasta struktur. Vokabulären styrs av avtalstyp: HF 17 använder `Hantverkare /(Näringsidkare)`, medan ABS 18 och övriga entreprenadavtal använder `Entreprenör`.
+`Entreprenaden samt parter` ska byggas från strukturerade entreprenadfält och visas med denna fasta struktur. Vokabulären styrs av avtalstyp: HF 17 använder `Hantverkare /(Näringsidkare)`, medan ABS 18 och övriga entreprenadavtal använder `Entreprenör`.
 
 ```text
 Avtalsform: Enligt Hantverkarformuläret HF 17 för konsumenttjänster
@@ -175,6 +177,8 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 
 När arbetsversionen skapas kopieras mallens standardtexter till `report_draft`. Den kopierade texten är därefter utlåtandets egen text och ändras inte när mallen ändras.
 
+Arbetsversionens projekt- och profilsnapshot ändras inte heller automatiskt vid läsning eller autosparning. Om entreprenads- eller profiluppgifter har ändrats väljer besiktningsmannen uttryckligen `Hämta från entreprenaden` eller `Hämta besiktningsman` i Granska. Det gör att en pågående textredigering aldrig får en ny version enbart för att utlåtandet laddas eller läses in.
+
 Sektionerna har tre innehållslägen:
 
 - `editable`: hela texten redigeras i Granska.
@@ -188,7 +192,7 @@ Sektionerna har tre innehållslägen:
 | Typ av besiktning (1) | Ja | `inspections`, `eb_inspection_details`, `report_draft.inspection_type` |
 | Besiktningens omfattning (2) | Ja, redigerbart | `report_draft.scope`, standardtext. Entreprenadbeskrivning visas i sidhuvudet från `eb_projects.object_description`. |
 | Tid för besiktningen (3) | Ja | `inspections.date`, `inspections.inspection_time`, `report_draft.inspection_time` |
-| Avtalade arbeten och parter (4) | Ja | `eb_projects`, `report_draft.contract_parties` |
+| Entreprenaden samt parter (4) | Ja | `eb_projects`, `report_draft.contract_parties` |
 | Besiktningsman (5) | Redigerbart utkast | `report_draft.inspectors` |
 | Närvarande (6) | Delvis strukturerat | `eb_participants`, `report_draft.participants` |
 | Sättet för kallelse (7) | Delvis strukturerat | `eb_inspection_details.invitation_sent_at`, `report_draft.summons` |

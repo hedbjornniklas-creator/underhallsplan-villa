@@ -2811,9 +2811,8 @@ export default function EbInspectionRoundClient({
     }
   }
 
-  const handleReviewAutosaveError = (autosaveError: unknown) => {
+  const handleReviewAutosaveError = () => {
     setReviewMessage(null)
-    showError(autosaveError, 'Kunde inte autospara.')
   }
 
   const inspectionAutosave = useAutosaveQueue<ReviewAutosavePayload, ReviewAutosaveResult>({

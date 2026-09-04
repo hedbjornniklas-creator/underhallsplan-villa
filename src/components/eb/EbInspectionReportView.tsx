@@ -166,7 +166,8 @@ const REPORT_DOCUMENT_TITLES: Record<EbInspectionReport['inspection']['variant']
   SAB: 'UTLÅTANDE ÖVER SÄRSKILD BESIKTNING',
 }
 const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
-const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[16pt] font-bold uppercase leading-tight text-[#2f7d55]'
+const REPORT_OPENING_METADATA_CLASS_NAME = 'text-[20pt] font-bold leading-[1.22] tracking-[-0.01em] text-black'
+const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[20pt] font-bold uppercase leading-[1.15] tracking-[-0.01em] text-black'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
 const EB_PAGE_WIDTH_MM = 210
@@ -1304,49 +1305,42 @@ function isTestingDocumentationSection(section: EbInspectionReport['reportDraft'
   )
 }
 
-function ReportTitle({ report }: { report: EbInspectionReport }) {
-  return (
-    <header className="mb-6 text-left">
-      <h1 className={REPORT_TITLE_HEADING_CLASS_NAME}>{reportDocumentTitle(report)}</h1>
-    </header>
-  )
-}
-
-function ObjectInformationReport({ report }: { report: EbInspectionReport }) {
-  const propertyAndMunicipality = [
-    report.project.propertyDesignation?.trim(),
-    report.project.municipality?.trim(),
-  ]
+function ReportOpening({ report }: { report: EbInspectionReport }) {
+  const objectIdentity = (
+    report.project.propertyDesignation?.trim() ||
+    report.project.brfApartmentNumber?.trim() ||
+    report.project.title.trim()
+  ).toLocaleUpperCase('sv-SE')
+  const addressAndCity = [report.project.address?.trim(), report.project.city?.trim()]
     .filter(Boolean)
     .join(', ')
-  const rows = [
-    propertyAndMunicipality
-      ? { label: 'Fastighetsbeteckning och kommun', value: propertyAndMunicipality }
-      : null,
-    report.project.brfApartmentNumber?.trim()
-      ? { label: 'BRF och lägenhetsnummer', value: report.project.brfApartmentNumber.trim() }
-      : null,
-    {
-      label: 'Kontraktsnamn',
-      value: report.project.contractName?.trim() || report.project.title.trim(),
-    },
-    report.project.objectDescription?.trim()
-      ? { label: 'Entreprenad eller kontraktsdel', value: report.project.objectDescription.trim() }
-      : null,
-  ].filter((row): row is { label: string; value: string } => Boolean(row?.value))
-
-  if (rows.length === 0) return null
+  const projectDescription =
+    report.project.objectDescription?.trim() ||
+    report.project.contractName?.trim() ||
+    report.project.title.trim()
+  const agreement = report.project.standardAgreement?.trim() || report.project.contractForm?.trim()
+  const lines = [
+    objectIdentity,
+    addressAndCity,
+    report.project.clientName?.trim(),
+    projectDescription,
+    agreement,
+  ].filter((line): line is string => Boolean(line))
 
   return (
-    <section className="eb-report-section mb-5 break-inside-avoid text-[10.5pt] leading-[1.35] text-black">
-      <dl className="grid gap-y-1.5">
-        {rows.map((row) => (
-          <div key={row.label} className="grid grid-cols-[48mm_1fr] gap-x-4">
-            <dt className="font-semibold">{row.label}:</dt>
-            <dd className="whitespace-pre-wrap">{row.value}</dd>
-          </div>
-        ))}
-      </dl>
+    <section className="eb-report-section break-inside-avoid text-left text-black">
+      {lines.length > 0 ? (
+        <div className={REPORT_OPENING_METADATA_CLASS_NAME}>
+          {lines.map((line, index) => (
+            <p key={`${index}-${line}`} className="whitespace-pre-wrap">
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      <h1 className={`${REPORT_TITLE_HEADING_CLASS_NAME} ${lines.length > 0 ? 'mt-[11mm]' : ''}`}>
+        {reportDocumentTitle(report)}
+      </h1>
     </section>
   )
 }
@@ -2097,6 +2091,24 @@ export default function EbInspectionReportView({
     () => printableSections.find((section) => section.key === 'scope') ?? null,
     [printableSections]
   )
+  const inspectionTypeSection = useMemo(
+    () =>
+      report.reportDraft.sections.find(
+        (section) =>
+          section.key === 'inspection_type' &&
+          section.isRelevant &&
+          isEbReportSectionApplicable({
+            sectionKey: section.key,
+            inspectionVariant: report.inspection.variant,
+            projectTemplateKey: report.project.projectTemplateKey,
+          })
+      ) ?? null,
+    [
+      report.inspection.variant,
+      report.project.projectTemplateKey,
+      report.reportDraft.sections,
+    ]
+  )
   const reportSections = useMemo(
     () => printableSections.filter((section) => section.key !== 'scope'),
     [printableSections]
@@ -2134,14 +2146,21 @@ export default function EbInspectionReportView({
   const reportBlocks = useMemo<EbPrintableBlock[]>(() => {
     const blocks: EbPrintableBlock[] = [
       {
-        id: 'object-information',
-        node: <ObjectInformationReport report={report} />,
-      },
-      {
-        id: 'report-title',
-        node: <ReportTitle report={report} />,
+        id: 'report-opening',
+        node: <ReportOpening report={report} />,
       },
     ]
+
+    if (inspectionTypeSection) {
+      blocks.push({
+        id: `section-${inspectionTypeSection.key}`,
+        node: (
+          <ReportSection title={inspectionTypeSection.title}>
+            <ReportText text={inspectionTypeSection.text} />
+          </ReportSection>
+        ),
+      })
+    }
 
     if (scopeSection) {
       blocks.push({
@@ -2429,6 +2448,7 @@ export default function EbInspectionReportView({
     displayNumberByNoteId,
     drainageReport,
     imagesByNoteId,
+    inspectionTypeSection,
     inspectorSignature,
     noteHeadingsByNoteId,
     notes,
