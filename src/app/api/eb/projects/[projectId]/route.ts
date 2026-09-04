@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import {
+  refreshEbProjectReportSources,
   updateEbProject,
   type EbDrainageInspectionStage,
   type EbDrainageSystem,
@@ -59,7 +60,7 @@ export async function PATCH(
       return jsonError('Ange projektnamn.', 400)
     }
 
-    const project = await updateEbProject({
+    const updateResult = await updateEbProject({
       orgId: org.orgId,
       projectId,
       title,
@@ -114,7 +115,17 @@ export async function PATCH(
       ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }),
     })
 
-    return NextResponse.json({ project })
+    // Field-controlled report data follows the project for active workspaces.
+    // A locked report remains an immutable revision and is deliberately skipped.
+    const reportSourceRefresh = updateResult.reportSourceChanged
+      ? await refreshEbProjectReportSources({
+          orgId: org.orgId,
+          requestedByUserId: org.userId,
+          project: updateResult.project,
+        })
+      : undefined
+
+    return NextResponse.json({ project: updateResult.project, reportSourceRefresh })
   } catch (error) {
     return mapError(error, 'Kunde inte uppdatera EB-projekt.')
   }

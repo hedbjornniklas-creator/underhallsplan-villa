@@ -79,6 +79,9 @@ const REPORT_DOCUMENT_TITLES: Record<EbInspectionReport['inspection']['variant']
   SAB: 'Utlåtande över särskild besiktning',
 }
 
+const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
+  'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
+
 const INTEGRATED_SECTION_KEYS = new Set([
   'marker_legend',
   'deduction',
@@ -280,6 +283,49 @@ function isParticipantFor(
   return role.includes('entrepren') || role.includes('hantverk') || role.includes('näringsidk')
 }
 
+function markerExplanation(marker: EbInspectionReport['markers'][number]) {
+  const explanations: Record<string, string> = {
+    E: 'Besiktningsmannen bedömer entreprenören ansvarig för felet.',
+    B: 'Besiktningsmannen bedömer inte entreprenören ansvarig. Avhjälpande kräver en särskild överenskommelse eller beställning.',
+    S: 'Förhållandet ska klarläggas genom en särskild utredning innan slutlig bedömning görs.',
+    U: 'Noteringen har utgått och redovisas inte längre som ett kvarstående fel.',
+    N: 'En uppskattad nedsättning av avtalat pris kan vara aktuell för felet.',
+    A: 'En anmärkning eller upplysning som inte har bedömts som ett entreprenadfel.',
+  }
+  return explanations[marker.key] ?? marker.label
+}
+
+function deductionAmountText(value: string | null) {
+  const amount = value?.trim()
+  if (!amount) return 'Ej angivet'
+  return /(\bkr\b|kron)/i.test(amount) ? amount : `${amount} kronor`
+}
+
+function parseDeductionNumber(value: string | null) {
+  const normalized = value
+    ?.replace(/\s/g, '')
+    .replace(/kr(?:onor)?/gi, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim()
+  if (!normalized) return null
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function deductionSummaryAmountText(notes: EbNote[]) {
+  const amounts = notes
+    .map((note) => note.deductionAmount)
+    .filter((amount): amount is string => Boolean(amount?.trim()))
+  if (amounts.length === 0) return 'Ej angivet'
+
+  const parsed = amounts.map(parseDeductionNumber)
+  if (parsed.every((value): value is number => value !== null)) {
+    return `${parsed.reduce((total, value) => total + value, 0).toLocaleString('sv-SE')} kronor`
+  }
+  return amounts.map(deductionAmountText).join(', ')
+}
+
 function SectionShell({
   section,
   children,
@@ -415,6 +461,44 @@ function Participants({ report, section }: { report: EbInspectionReport; section
   )
 }
 
+function DistributionList({ report }: { report: EbInspectionReport }) {
+  const recipients = report.participants.filter((participant) => participant.receivesReport)
+  const distributionDate = report.inspection.reportDistributionDate?.trim() || 'datum ej angivet'
+
+  return (
+    <div className="space-y-5">
+      <p className="text-base leading-7 text-slate-800">
+        Undertecknat utlåtande har {distributionDate} sänts per e-post till parterna och övriga
+        enligt nedan.
+      </p>
+      {recipients.length > 0 ? (
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+            <thead className="bg-emerald-800 text-white">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Företag</th>
+                <th className="px-4 py-3 font-semibold">Namn</th>
+                <th className="px-4 py-3 font-semibold">E-post</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {recipients.map((recipient, index) => (
+                <tr key={recipient.id ?? `${recipient.email}-${index}`}>
+                  <td className="px-4 py-3 text-slate-700">{recipient.companyName?.trim() || '–'}</td>
+                  <td className="px-4 py-3 text-slate-700">{recipient.personName?.trim() || '–'}</td>
+                  <td className="px-4 py-3 text-slate-700">{recipient.email?.trim() || '–'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-600">Mottagare av utlåtandet har inte angetts.</p>
+      )}
+    </div>
+  )
+}
+
 function TestingDocumentation({
   report,
   section,
@@ -425,10 +509,14 @@ function TestingDocumentation({
   const documents = [...report.inspectionDocuments]
     .filter((document) => document.status === 'present')
     .sort((left, right) => left.sortOrder - right.sortOrder)
-  const prose = normalizeText(section.text)
+  const proseBlocks = normalizeText(section.text)
     .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
     .filter((block) => {
+      if (section.contentMode === 'mixed') return true
       const lines = printableLines(block)
+      if (normalizeText(block).startsWith('Inga dokument har markerats')) return false
       return !(
         lines.length > 0 &&
         lines.every(
@@ -438,11 +526,18 @@ function TestingDocumentation({
         )
       )
     })
-    .join('\n\n')
+  const beforeList =
+    section.contentMode === 'mixed'
+      ? proseBlocks.slice(0, 2)
+      : proseBlocks.filter((block) => !normalizeText(block).startsWith('Där avtalad dokumentation'))
+  const afterList =
+    section.contentMode === 'mixed'
+      ? proseBlocks.slice(2)
+      : proseBlocks.filter((block) => normalizeText(block).startsWith('Där avtalad dokumentation'))
 
   return (
     <div className="space-y-5">
-      <ReadableText text={prose} />
+      <ReadableText text={beforeList.join('\n\n')} />
       <div>
         <h3 className="text-sm font-semibold text-slate-950">Redovisad dokumentation</h3>
         {documents.length > 0 ? (
@@ -463,6 +558,7 @@ function TestingDocumentation({
           <p className="mt-2 text-sm text-slate-600">Inga dokument har markerats som redovisade.</p>
         )}
       </div>
+      <ReadableText text={afterList.join('\n\n')} />
     </div>
   )
 }
@@ -557,6 +653,8 @@ function DefectsAndNotes({
   const markers = [...report.markers]
     .filter((marker) => usedMarkerKeys.has(marker.key))
     .sort((left, right) => left.sortOrder - right.sortOrder)
+  const deductionNotes = visibleNotes.filter((note) => note.markerKey === 'N')
+  const displayNumberByNoteId = new Map(visibleNotes.map((note, index) => [note.id, index + 1]))
 
   return (
     <div className="space-y-6">
@@ -565,20 +663,45 @@ function DefectsAndNotes({
       {markerSection?.isRelevant !== false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
           <h3 className="text-base font-semibold text-slate-950">Så läses noteringarna</h3>
-          <div className="mt-3">
-            <ReadableText text={markerSection?.text ?? ''} />
-          </div>
-          {markers.length > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {markers.map((marker) => (
-                <span key={marker.key} className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-sm text-slate-700">
-                  <strong className="text-emerald-800">{marker.key}</strong> · {marker.label}
-                </span>
-              ))}
+          {markerSection?.contentMode === 'mixed' ? (
+            <div className="mt-3">
+              <ReadableText text={markerSection.text} />
             </div>
+          ) : (
+            <p className="mt-3 text-sm leading-6 text-slate-700">
+              Beteckningen visar besiktningsmannens bedömning av respektive notering.
+            </p>
+          )}
+          {markers.length > 0 ? (
+            <dl className="mt-4 grid gap-3 md:grid-cols-2">
+              {markers.map((marker) => (
+                <div key={marker.key} className="rounded-xl border border-slate-200 bg-white p-3">
+                  <dt className="font-semibold text-emerald-800">{marker.key} · {marker.label}</dt>
+                  <dd className="mt-1 text-sm leading-6 text-slate-700">{markerExplanation(marker)}</dd>
+                </div>
+              ))}
+            </dl>
           ) : null}
         </div>
       ) : null}
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <h3 className="text-base font-semibold text-slate-950">Övriga förklaringar</h3>
+        <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
+          <p className="whitespace-pre-wrap">
+            {report.inspection.defectNumberingExplanation?.trim() || DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION}
+          </p>
+          <p>
+            Lokal, byggdel eller installationsdel utan fel redovisas{' '}
+            {report.inspection.defectNoErrorPartsPolicy === 'listed_with_dash' ? 'med ---' : 'inte'} och
+            gäller eventuell förekomst av allmänna fel.
+          </p>
+          <p>
+            Fel kompletterat med texten ”Avhjälps ej” innebär att parterna enats om att avhjälpande
+            inte ska ske, men att beställaren förbehåller sig rätt till kostnadsreglering.
+          </p>
+        </div>
+      </div>
 
       <div className="space-y-4">
         {visibleNotes.map((note, index) => {
@@ -616,11 +739,6 @@ function DefectsAndNotes({
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">Notering</p>
                     <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-slate-950">{note.noteText || '–'}</p>
-                    {note.deductionAmount ? (
-                      <p className="mt-3 text-sm font-semibold text-slate-700">
-                        Uppskattad nedsättning: {note.deductionAmount}
-                      </p>
-                    ) : null}
                   </div>
                 </div>
               </article>
@@ -637,14 +755,75 @@ function DefectsAndNotes({
         ) : null}
       </div>
 
-      {deductionSection?.isRelevant ? (
+      {deductionSection?.isRelevant !== false && deductionNotes.length > 0 ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
-          <h3 className="font-semibold text-amber-950">Nedsättning</h3>
-          <div className="mt-2">
-            <ReadableText text={deductionSection.text} />
-          </div>
+          <h3 className="font-semibold text-amber-950">Uppskattad nedsättning</h3>
+          <p className="mt-2 text-sm leading-6 text-amber-950">
+            Om nedsättning av avtalat pris är tillämplig anges uppskattat belopp för berörda fel.
+          </p>
+          <dl className="mt-3 divide-y divide-amber-200 rounded-lg border border-amber-200 bg-white/70">
+            {deductionNotes.map((note) => (
+              <div key={note.id} className="grid grid-cols-[1fr_auto] gap-4 px-3 py-2 text-sm">
+                <dt>{report.project.notePrefix} {displayNumberByNoteId.get(note.id) ?? '–'}</dt>
+                <dd className="font-semibold">{deductionAmountText(note.deductionAmount)}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 text-sm font-semibold leading-6 text-amber-950">
+            Bedömd kostnad för avhjälpande: {deductionSummaryAmountText(deductionNotes)}.
+          </p>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function ApprovalDecision({ report }: { report: EbInspectionReport }) {
+  const status = report.inspection.approvalStatus
+  if (!status) return null
+
+  const isApproved = status === 'approved'
+  const isPartlyApproved = status === 'partly_approved'
+  const decisionLabel = isApproved
+    ? 'Arbetena godkänns'
+    : isPartlyApproved
+      ? 'Arbetena godkänns delvis'
+      : 'Arbetena godkänns inte'
+  const reasonLines = normalizeText(report.inspection.approvalNote)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const tone = isApproved
+    ? 'border-emerald-500 bg-emerald-50 text-emerald-950'
+    : isPartlyApproved
+      ? 'border-amber-500 bg-amber-50 text-amber-950'
+      : 'border-rose-600 bg-rose-50 text-rose-950'
+
+  return (
+    <div className={`rounded-r-xl border-l-4 p-5 ${tone}`}>
+      <p className="text-xl font-semibold">
+        {decisionLabel}
+        {isApproved && report.inspection.date ? ` ${report.inspection.date}` : ''}.
+      </p>
+      {isApproved ? (
+        <p className="mt-3 text-sm leading-6">
+          Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-3 text-sm leading-6">
+          <p>Noterade fel anses sammantaget inte vara av mindre betydelse.</p>
+          {reasonLines.length > 0 ? (
+            <div>
+              <p className="font-semibold">Följande skäl utgör hinder för godkännande:</p>
+              <ul className="mt-1 list-disc space-y-1 pl-6">
+                {reasonLines.map((line, index) => (
+                  <li key={`${line}-${index}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }
@@ -667,6 +846,7 @@ function SectionContent({
   if (section.key === 'testing_documentation') {
     return <TestingDocumentation report={report} section={section} />
   }
+  if (section.key === 'distribution_list') return <DistributionList report={report} />
   if (section.key === 'drainage_checklist') {
     return <DrainageChecklist report={report} section={section} />
   }
@@ -681,37 +861,41 @@ function SectionContent({
       />
     )
   }
+  if (section.key === 'approval_decision') return <ApprovalDecision report={report} />
 
-  const warrantySection =
-    section.key === 'reclamation_notice'
-      ? report.reportDraft.sections.find((candidate) => candidate.key === 'warranty_end' && candidate.isRelevant)
+  const continuedInspection =
+    section.key === 'continued_final_inspection' && section.contentMode === 'mixed'
+      ? {
+          date: report.inspection.continuedFinalInspectionDate?.trim() || null,
+          time: report.inspection.continuedFinalInspectionTime?.trim().slice(0, 5) || null,
+        }
       : null
-  const continuedInspection = section.key === 'continued_final_inspection'
-    ? compact([
-        report.inspection.continuedFinalInspectionDate,
-        report.inspection.continuedFinalInspectionTime?.slice(0, 5),
-      ], ' kl. ')
-    : null
-  const warrantyScope = section.key === 'reclamation_notice' && report.inspection.warrantyEndDate && report.inspection.warrantyScope
-    ? `${report.inspection.warrantyEndDate} för ${report.inspection.warrantyScope}`
-    : null
+  const reclamationWarranty =
+    section.key === 'reclamation_notice' && section.contentMode === 'mixed'
+      ? {
+          date: report.inspection.warrantyEndDate?.trim() || null,
+          scope: report.inspection.warrantyScope?.trim() || null,
+        }
+      : null
 
   return (
     <div className="space-y-5">
       <ReadableText text={section.text} />
-      {continuedInspection ? (
+      {continuedInspection && (continuedInspection.date || continuedInspection.time) ? (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-800">
-          Enligt överenskommelse verkställs ny slutbesiktning {continuedInspection}.
+          Enligt överenskommelse verkställs ny slutbesiktning{' '}
+          {continuedInspection.date || 'Klicka här - ange datum'}, kl{' '}
+          {continuedInspection.time || '??:??'}.
         </p>
       ) : null}
-      {warrantySection ? (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <h3 className="font-semibold text-slate-950">Garantitid</h3>
-          <div className="mt-2">
-            <ReadableText text={warrantySection.text} />
-          </div>
-          {warrantyScope ? <p className="mt-2 text-sm leading-6 text-slate-700">{warrantyScope}</p> : null}
-        </div>
+      {reclamationWarranty ? (
+        reclamationWarranty.date && reclamationWarranty.scope ? (
+          <ul className="list-disc pl-6 text-sm leading-6 text-slate-800">
+            <li>{reclamationWarranty.date} för {reclamationWarranty.scope}</li>
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-600">–</p>
+        )
       ) : null}
     </div>
   )

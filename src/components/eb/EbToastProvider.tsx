@@ -21,5 +21,22 @@ export function useEbToast() {
     [toast]
   )
 
-  return useMemo(() => ({ showError }), [showError])
+  const showSuccess = useCallback(
+    (message: unknown, options?: Parameters<typeof toast.success>[1]) => {
+      toast.success(message, options)
+    },
+    [toast]
+  )
+
+  const showWarning = useCallback(
+    (message: unknown, options?: Parameters<typeof toast.warning>[1]) => {
+      toast.warning(message, options)
+    },
+    [toast]
+  )
+
+  return useMemo(
+    () => ({ showError, showSuccess, showWarning }),
+    [showError, showSuccess, showWarning]
+  )
 }

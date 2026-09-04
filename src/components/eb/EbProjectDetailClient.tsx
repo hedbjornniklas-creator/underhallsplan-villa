@@ -51,6 +51,7 @@ import type {
   EbInvitationParticipant,
   EbPreviousInspectionItem,
   EbProjectListItem,
+  EbProjectReportSourceRefreshResult,
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import type { EbAssignmentConfirmationSummary } from '@/lib/eb/assignmentConfirmationTypes'
@@ -93,6 +94,7 @@ type DeleteInspectionResponse = {
 
 type UpdateProjectResponse = {
   project?: EbProjectListItem
+  reportSourceRefresh?: EbProjectReportSourceRefreshResult
   error?: string
 }
 
@@ -101,6 +103,7 @@ type AgreementAttachmentsResponse = {
   documents?: EbProjectAttachment[]
   available?: boolean
   project?: EbProjectListItem
+  reportSourceRefresh?: EbProjectReportSourceRefreshResult
   error?: string
 }
 
@@ -2087,7 +2090,7 @@ function EditProjectDialog({
   onUpdated: (project: EbProjectListItem) => void
   onAttachmentsChange: (attachments: EbProjectAttachment[]) => void
 }) {
-  const { showError } = useEbToast()
+  const { showError, showSuccess, showWarning } = useEbToast()
   const [form, setForm] = useState<EbProjectFormState>(() => buildEbProjectForm(project))
   const [submitting, setSubmitting] = useState(false)
   const [agreementAttachmentLinks, setAgreementAttachmentLinks] = useState<
@@ -2271,10 +2274,16 @@ function EditProjectDialog({
   }
 
   const handleClose = () => {
-    if (
-      unsavedAgreementAttachmentTitleDrafts.length > 0 &&
-      !window.confirm('Du har osparade PDF-namn. Vill du stänga utan att spara dem?')
-    ) {
+    const hasUnsavedChanges = dirtyRef.current || agreementAttachmentLinksTouchedRef.current
+    const closeWarning =
+      unsavedAgreementAttachmentTitleDrafts.length > 0
+        ? hasUnsavedChanges
+          ? 'Du har osparade PDF-namn och ändringar. Vill du stänga utan att spara dem?'
+          : 'Du har osparade PDF-namn. Vill du stänga utan att spara dem?'
+        : hasUnsavedChanges
+          ? 'Du har osparade ändringar, inklusive eventuella avtalskopplingar. Vill du stänga utan att spara dem?'
+          : null
+    if (closeWarning && !window.confirm(closeWarning)) {
       return
     }
     dirtyRef.current = false
@@ -2316,6 +2325,7 @@ function EditProjectDialog({
       }
 
       let savedProject = payload.project
+      let reportSourceRefresh = payload.reportSourceRefresh
 
       if (agreementLinksWereTouched) {
         const validAgreementKeys = new Set([
@@ -2356,6 +2366,7 @@ function EditProjectDialog({
         }
 
         savedProject = agreementPayload.project ?? savedProject
+        reportSourceRefresh = agreementPayload.reportSourceRefresh ?? reportSourceRefresh
       }
 
       dirtyRef.current = false
@@ -2363,6 +2374,21 @@ function EditProjectDialog({
       openProjectUpdatedAtRef.current = savedProject.updatedAt
       setForm(buildEbProjectForm(savedProject))
       onUpdated(savedProject)
+      if (reportSourceRefresh?.refreshedInspectionIds.length) {
+        const count = reportSourceRefresh.refreshedInspectionIds.length
+        showSuccess(
+          count === 1
+            ? 'Utlåtandet är uppdaterat med entreprenadens nya grunduppgifter.'
+            : 'Utlåtandena är uppdaterade med entreprenadens nya grunduppgifter.',
+          { dedupeKey: 'eb-project-report-source-refresh' }
+        )
+      }
+      if (reportSourceRefresh?.failedInspectionIds.length) {
+        showWarning(
+          'Entreprenaden är sparad, men en öppen granskningsvy kunde inte uppdateras automatiskt. Öppna Granska och välj Uppdatera grunduppgifter.',
+          { durationMs: 9000, dedupeKey: 'eb-project-report-source-refresh-warning' }
+        )
+      }
       onClose()
     } catch (submitError) {
       showError(submitError, 'Kunde inte uppdatera entreprenaden.')

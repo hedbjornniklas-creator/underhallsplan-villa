@@ -51,7 +51,9 @@ function sanitizeEbProjectForDelivery<T extends EbReportProjectSnapshot>(project
   return {
     ...project,
     clientEmail: null,
+    clientPhone: null,
     contractorEmail: null,
+    contractorPhone: null,
     invoiceRecipientMatchesClient: true,
     invoiceName: null,
     invoiceOrgNo: null,
@@ -64,6 +66,71 @@ function sanitizeEbProjectForDelivery<T extends EbReportProjectSnapshot>(project
     invoiceCity: null,
     agreementItems: [],
   } as T
+}
+
+function sanitizeEbInspectionForDelivery(
+  inspection: EbInspectionReport['inspection']
+): EbInspectionReport['inspection'] {
+  return {
+    ...inspection,
+    invoiceRecipientMatchesClient: true,
+    invoiceName: null,
+    invoiceOrgNo: null,
+    invoiceReference: null,
+    invoiceEmailMatchesClient: true,
+    invoiceEmail: null,
+    invoiceAddressMatchesClient: true,
+    invoiceAddress: null,
+    invoicePostalCode: null,
+    invoiceCity: null,
+  }
+}
+
+/**
+ * Keep only the contact data that is part of the signed report itself. This is
+ * also applied when old snapshots are opened so internal billing/contact data
+ * is never serialized into the public report page.
+ */
+export function sanitizeEbReportForPublicDelivery(
+  report: EbInspectionReport
+): EbInspectionReport {
+  const inspection = sanitizeEbInspectionForDelivery(report.inspection)
+  const project = sanitizeEbProjectForDelivery(report.project)
+  const participants = report.participants.map((participant) => ({
+    ...participant,
+    email: participant.receivesReport ? participant.email : null,
+    phone: null,
+  }))
+
+  return {
+    ...report,
+    inspection,
+    project: {
+      ...project,
+      inspections: report.project.inspections.map(sanitizeEbInspectionForDelivery),
+    },
+    participants,
+    remediationAssignees: [],
+    reportDraft: {
+      ...report.reportDraft,
+      sections: report.reportDraft.sections.map((section) =>
+        section.key === 'distribution_list'
+          ? {
+              ...section,
+              text: '',
+            }
+          : section
+      ),
+      sourceSnapshot: report.reportDraft.sourceSnapshot
+        ? {
+            ...report.reportDraft.sourceSnapshot,
+            project: sanitizeEbProjectForDelivery(report.reportDraft.sourceSnapshot.project),
+          }
+        : null,
+    },
+    projectAttachments: [],
+    suggestions: [],
+  }
 }
 
 export function createEbReportSnapshotPayloadV1(
@@ -86,23 +153,13 @@ export function createEbReportSnapshotPayloadV1(
       fileSizeBytes: attachment.fileSizeBytes,
       createdAt: attachment.createdAt,
     }))
+  const sanitizedReport = sanitizeEbReportForPublicDelivery(report)
   const snapshotReport: EbInspectionReport = {
-    ...report,
+    ...sanitizedReport,
     project: {
-      ...sanitizeEbProjectForDelivery(report.project),
-      inspections: [report.inspection],
+      ...sanitizedReport.project,
+      inspections: [sanitizedReport.inspection],
     },
-    reportDraft: {
-      ...report.reportDraft,
-      sourceSnapshot: report.reportDraft.sourceSnapshot
-        ? {
-            ...report.reportDraft.sourceSnapshot,
-            project: sanitizeEbProjectForDelivery(report.reportDraft.sourceSnapshot.project),
-          }
-        : null,
-    },
-    projectAttachments: [],
-    suggestions: [],
   }
   const payload: EbReportSnapshotPayloadV1 = {
     schema: 'eb_report_snapshot_v1',

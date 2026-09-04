@@ -20,6 +20,7 @@ type ReportLinkRow = {
   created_at: string | null
   snapshot_payload: unknown
   pdf_status: string | null
+  pdf_error: string | null
   pdf_base64: string | null
   pdf_storage_bucket: string | null
   pdf_storage_path: string | null
@@ -63,7 +64,7 @@ export default async function EbInspectionDigitalReportPage({
     const { data, error } = await admin
       .from('inspection_report_links')
       .select(
-        'created_at,snapshot_payload,pdf_status,pdf_base64,pdf_storage_bucket,pdf_storage_path'
+        'created_at,snapshot_payload,pdf_status,pdf_error,pdf_base64,pdf_storage_bucket,pdf_storage_path'
       )
       .eq('org_id', context.orgId)
       .eq('inspection_id', inspectionId)
@@ -133,7 +134,7 @@ export default async function EbInspectionDigitalReportPage({
         publishedAt={snapshot?.createdAt ?? row.created_at}
         pdfDownloadUrl={pdfDownloadUrl}
         pdfStatus={pdfStatus}
-        pdfError={null}
+        pdfError={row.pdf_error}
         shareEndpoint={null}
         shareUrl={null}
         deliveryDocuments={deliveryDocuments}

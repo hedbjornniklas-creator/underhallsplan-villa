@@ -560,9 +560,21 @@ export type EbReportDraft = {
   templateVersion: number
   initializedAt: string | null
   sourceSnapshot: EbReportSourceSnapshot | null
+  /**
+   * The revision that preceded an uninterrupted sequence of automatic
+   * project-source refreshes. It is intentionally cleared by every ordinary
+   * editor save, so a stale editor can only be rebased across that sequence.
+   */
+  projectSourceRefreshBaseUpdatedAt: string | null
   sections: EbReportDraftSection[]
   noteHeadings: EbReportNoteHeading[]
   updatedAt: string | null
+}
+
+export type EbProjectReportSourceRefreshResult = {
+  refreshedInspectionIds: string[]
+  skippedInspectionIds: string[]
+  failedInspectionIds: string[]
 }
 
 export type EbInspectionReport = EbInspectionRound & {
@@ -1072,6 +1084,11 @@ export type UpdateEbProjectInput = Omit<
   projectId: string
   notePrefix?: string | null
   expectedUpdatedAt?: string | null
+}
+
+export type UpdateEbProjectResult = {
+  project: EbProjectListItem
+  reportSourceChanged: boolean
 }
 
 export type CreateEbInspectionInput = {
@@ -3520,10 +3537,12 @@ export async function getEbInspectionReport(input: {
   projectId: string
   inspectionId: string
 }, conflictRetryCount = 0): Promise<EbInspectionReport> {
-  const liveRound = await getEbInspectionRound(input)
-  const [participants, storedDraft, inspectionDocuments] = await Promise.all([
+  // Read the persisted source first, then the live project. This makes an
+  // intervening project save resolve forward to the newest project data.
+  const storedDraft = await fetchEbReportDraft(input)
+  const [liveRound, participants, inspectionDocuments] = await Promise.all([
+    getEbInspectionRound(input),
     listParticipantsForInspection(input),
-    fetchEbReportDraft(input),
     listEbInspectionDocuments(input),
   ])
   const inspectorSource = storedDraft.sourceSnapshot
@@ -3551,7 +3570,29 @@ export async function getEbInspectionReport(input: {
       },
       capturedAt: initializedAt,
     })
-  const project = applyEbReportProjectSnapshot(liveRound.project, sourceSnapshot.project)
+  // Project fields are the source of truth while the statement is an active
+  // work version. A finalized report keeps its own frozen source snapshot.
+  const projectSourceNeedsRefresh =
+    Boolean(storedDraft.sourceSnapshot) &&
+    !liveRound.inspection.reportLockedAt &&
+    hasEbReportProjectSourceChanged(sourceSnapshot.project, liveRound.project)
+  const sourceRefreshAt = nextEbReportDraftUpdatedAt(storedDraft.updatedAt)
+  const projectSourceRefreshBaseUpdatedAt = projectSourceNeedsRefresh
+    ? storedDraft.projectSourceRefreshBaseUpdatedAt ?? storedDraft.updatedAt
+    : storedDraft.projectSourceRefreshBaseUpdatedAt
+  const resolvedSourceSnapshot: EbReportSourceSnapshot = projectSourceNeedsRefresh
+    ? {
+        ...sourceSnapshot,
+        capturedAt: sourceRefreshAt,
+        project: createEbReportSourceSnapshot({
+          project: liveRound.project,
+          inspectorText: sourceSnapshot.inspectorText,
+          branding: sourceSnapshot.branding,
+          capturedAt: sourceRefreshAt,
+        }).project,
+      }
+    : sourceSnapshot
+  const project = applyEbReportProjectSnapshot(liveRound.project, resolvedSourceSnapshot.project)
   const round: EbInspectionRound = { ...liveRound, project }
   const resolvedParticipants = enrichParticipantsForReport(project, participants)
   const initializedDraft: EbReportDraft = {
@@ -3561,7 +3602,8 @@ export async function getEbInspectionReport(input: {
     templateTitle: storedDraft.templateTitle || EB_REPORT_TEMPLATE_TITLE,
     templateVersion: storedDraft.templateVersion || EB_REPORT_TEMPLATE_VERSION,
     initializedAt,
-    sourceSnapshot,
+    sourceSnapshot: resolvedSourceSnapshot,
+    projectSourceRefreshBaseUpdatedAt,
     updatedAt: storedDraft.updatedAt,
   }
   const reportDraft = buildEbReportDraft({
@@ -3569,7 +3611,7 @@ export async function getEbInspectionReport(input: {
     participants: resolvedParticipants,
     attachments: round.projectAttachments,
     inspectionDocuments,
-    inspectorText: sourceSnapshot.inspectorText,
+    inspectorText: resolvedSourceSnapshot.inspectorText,
     storedDraft: initializedDraft,
   })
 
@@ -3578,16 +3620,22 @@ export async function getEbInspectionReport(input: {
     !storedDraft.initializedAt ||
     !storedDraft.sourceSnapshot ||
     storedSectionKeys.size === 0
+  const needsDraftWrite = needsInitializationWrite || projectSourceNeedsRefresh
   let resolvedReportDraft = reportDraft
-  if (needsInitializationWrite && !liveRound.inspection.reportLockedAt) {
+  if (needsDraftWrite && !liveRound.inspection.reportLockedAt) {
     try {
       resolvedReportDraft = await writeEbReportDraft(
         input,
         {
           ...reportDraft,
-          updatedAt: nextEbReportDraftUpdatedAt(storedDraft.updatedAt),
+          updatedAt: projectSourceNeedsRefresh
+            ? sourceRefreshAt
+            : nextEbReportDraftUpdatedAt(storedDraft.updatedAt),
         },
-        { expectedUpdatedAt: storedDraft.updatedAt }
+        {
+          expectedUpdatedAt: storedDraft.updatedAt,
+          ...(projectSourceNeedsRefresh ? { preserveProjectSourceRefreshBase: true } : {}),
+        }
       )
     } catch (error) {
       if (
@@ -3606,7 +3654,7 @@ export async function getEbInspectionReport(input: {
     participants: resolvedParticipants,
     inspectionDocuments,
     branding: applyEbReportDateToBranding(
-      sourceSnapshot.branding,
+      resolvedSourceSnapshot.branding,
       round.inspection.reportDistributionDate ?? round.inspection.date
     ),
     reportDraft: resolvedReportDraft,
@@ -3627,6 +3675,59 @@ function createEbReportSourceSnapshot(input: {
     inspectorText: input.inspectorText,
     branding: input.branding,
   }
+}
+
+function ebReportProjectSourceFingerprint(project: EbReportProjectSnapshot | EbProjectListItem) {
+  return JSON.stringify({
+    projectTemplateKey: project.projectTemplateKey,
+    drainageSystem: project.drainageSystem,
+    drainageInspectionStage: project.drainageInspectionStage,
+    drainageGuidanceVersion: project.drainageGuidanceVersion,
+    title: project.title,
+    contractName: project.contractName,
+    objectDescription: project.objectDescription,
+    propertyDesignation: project.propertyDesignation,
+    brfApartmentNumber: project.brfApartmentNumber,
+    address: project.address,
+    postalCode: project.postalCode,
+    city: project.city,
+    municipality: project.municipality,
+    standardAgreement: project.standardAgreement,
+    contractForm: project.contractForm,
+    procurementForm: project.procurementForm,
+    contractDate: project.contractDate,
+    agreementNote: project.agreementNote,
+    notePrefix: project.notePrefix,
+    clientName: project.clientName,
+    clientOrgNo: project.clientOrgNo,
+    clientAddressMatchesObject: project.clientAddressMatchesObject,
+    clientAddress: project.clientAddress,
+    clientPostalCode: project.clientPostalCode,
+    clientCity: project.clientCity,
+    clientIsPropertyOwner: project.clientIsPropertyOwner,
+    propertyOwnerName: project.propertyOwnerName,
+    contractorName: project.contractorName,
+    contractorOrgNo: project.contractorOrgNo,
+    contractorAddress: project.contractorAddress,
+    contractorPostalCode: project.contractorPostalCode,
+    contractorCity: project.contractorCity,
+    agreementItems: (Array.isArray(project.agreementItems) ? project.agreementItems : []).map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      documentDate: item.documentDate,
+      note: item.note,
+      includeInReport: item.includeInReport,
+      sortOrder: item.sortOrder,
+    })),
+  })
+}
+
+function hasEbReportProjectSourceChanged(
+  sourceProject: EbReportProjectSnapshot | EbProjectListItem,
+  liveProject: EbProjectListItem
+) {
+  return ebReportProjectSourceFingerprint(sourceProject) !== ebReportProjectSourceFingerprint(liveProject)
 }
 
 function applyEbReportProjectSnapshot(
@@ -3654,6 +3755,19 @@ function isSameTimestamp(
   const valueTime = Date.parse(value)
   const referenceTime = Date.parse(reference)
   return Number.isFinite(valueTime) && Number.isFinite(referenceTime) && valueTime === referenceTime
+}
+
+function canRebaseEbReportDraftAcrossSourceRefresh(
+  draft: EbReportDraft,
+  expectedUpdatedAt: string | null | undefined
+) {
+  if (!expectedUpdatedAt) return false
+
+  // The lineage marker is set only by project-source refreshes and cleared by
+  // every ordinary editor write. Rebase only when the editor's
+  // version is exactly the revision that preceded that uninterrupted source
+  // refresh sequence; this cannot hide another editor's change.
+  return isSameTimestamp(draft.projectSourceRefreshBaseUpdatedAt, expectedUpdatedAt)
 }
 
 function applyEbReportDateToBranding(
@@ -3751,11 +3865,20 @@ async function fetchEbReportDraft(input: {
 async function writeEbReportDraft(
   input: { orgId: string; projectId: string; inspectionId: string },
   draft: EbReportDraft,
-  options?: { expectedUpdatedAt?: string | null }
+  options?: {
+    expectedUpdatedAt?: string | null
+    preserveProjectSourceRefreshBase?: boolean
+  }
 ) {
   const admin = createSupabaseAdminClient()
   const updatedAt = draft.updatedAt ?? new Date().toISOString()
-  const reportDraft = { ...draft, updatedAt }
+  const reportDraft: EbReportDraft = {
+    ...draft,
+    projectSourceRefreshBaseUpdatedAt: options?.preserveProjectSourceRefreshBase
+      ? draft.projectSourceRefreshBaseUpdatedAt
+      : null,
+    updatedAt,
+  }
   const metadataPayload = {
     report_draft: reportDraft,
     report_draft_updated_at: updatedAt,
@@ -3780,6 +3903,7 @@ async function writeEbReportDraft(
       .eq('org_id', input.orgId)
       .eq('eb_project_id', input.projectId)
       .eq('inspection_id', input.inspectionId)
+      .is('report_locked_at', null)
     if (hasExpectedUpdatedAt) {
       query = expectedUpdatedAt
         ? query.eq('report_draft_updated_at', expectedUpdatedAt)
@@ -3823,6 +3947,7 @@ function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbRep
       templateVersion: EB_REPORT_TEMPLATE_VERSION,
       initializedAt: null,
       sourceSnapshot: null,
+      projectSourceRefreshBaseUpdatedAt: null,
       sections: [],
       noteHeadings: [],
       updatedAt,
@@ -3846,6 +3971,10 @@ function normalizeEbReportDraft(value: unknown, updatedAt: string | null): EbRep
     initializedAt: normalizeText((value as { initializedAt?: string | null }).initializedAt),
     sourceSnapshot: normalizeEbReportSourceSnapshot(
       (value as { sourceSnapshot?: unknown }).sourceSnapshot
+    ),
+    projectSourceRefreshBaseUpdatedAt: normalizeText(
+      (value as { projectSourceRefreshBaseUpdatedAt?: string | null })
+        .projectSourceRefreshBaseUpdatedAt
     ),
     updatedAt: typeof (value as { updatedAt?: unknown }).updatedAt === 'string'
       ? (value as { updatedAt: string }).updatedAt
@@ -4278,7 +4407,7 @@ export async function createEbProject(
   }
 }
 
-export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbProjectListItem> {
+export async function updateEbProject(input: UpdateEbProjectInput): Promise<UpdateEbProjectResult> {
   const hasExpectedUpdatedAt = Object.prototype.hasOwnProperty.call(input, 'expectedUpdatedAt')
   const expectedUpdatedAt = input.expectedUpdatedAt ?? null
   const existing = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
@@ -4458,7 +4587,10 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
     throw new Error('EB_PROJECT_NOT_FOUND')
   }
 
-  return updated
+  return {
+    project: updated,
+    reportSourceChanged: hasEbReportProjectSourceChanged(existing, updated),
+  }
 }
 
 async function resolveProjectPropertyId(project: EbProjectListItem) {
@@ -6496,6 +6628,7 @@ function buildEbReportDraft(input: {
     templateVersion: storedDraft.templateVersion,
     initializedAt: storedDraft.initializedAt,
     sourceSnapshot: storedDraft.sourceSnapshot,
+    projectSourceRefreshBaseUpdatedAt: storedDraft.projectSourceRefreshBaseUpdatedAt,
     updatedAt: storedDraft.updatedAt,
     sections: templateAlreadyCopied
       ? copiedTemplateSections
@@ -6546,7 +6679,15 @@ export async function saveEbReportDraft(
 
   const report = await getEbInspectionReport(input)
   const baseDraft = report.reportDraft
-  if (hasExpectedUpdatedAt && !isSameTimestamp(baseDraft.updatedAt, input.expectedUpdatedAt)) {
+  const canRebaseAcrossSourceRefresh = canRebaseEbReportDraftAcrossSourceRefresh(
+    baseDraft,
+    input.expectedUpdatedAt
+  )
+  if (
+    hasExpectedUpdatedAt &&
+    !isSameTimestamp(baseDraft.updatedAt, input.expectedUpdatedAt) &&
+    !canRebaseAcrossSourceRefresh
+  ) {
     throw new Error('EB_REPORT_DRAFT_CONFLICT')
   }
   now = nextEbReportDraftUpdatedAt(baseDraft.updatedAt)
@@ -6639,38 +6780,57 @@ export async function saveEbReportDraft(
     if (
       error instanceof Error &&
       error.message === 'EB_REPORT_DRAFT_CONFLICT' &&
-      conflictRetryCount < 2 &&
-      !hasExpectedUpdatedAt &&
-      !hasNoteHeadingsPayload
+      conflictRetryCount < 2
     ) {
+      // A project-source refresh can win the write race after the version was
+      // checked above. Retry once so the rebase check against the fresh draft
+      // can distinguish that safe case from an ordinary editor conflict.
       return saveEbReportDraft(input, conflictRetryCount + 1)
     }
     throw error
   }
 }
 
+type EbReportProjectSourceRefreshOptions = {
+  /**
+   * Rebuild structured report content even if the project-field snapshot has
+   * not changed. Agreement document links live outside the project snapshot,
+   * so they need this path after a link is saved.
+   */
+  forceContentRefresh?: boolean
+}
+
 export async function refreshEbReportProjectSource(
-  input: Omit<SaveEbReportDraftInput, 'sections'>
+  input: Omit<SaveEbReportDraftInput, 'sections'>,
+  options: EbReportProjectSourceRefreshOptions = {},
+  conflictRetryCount = 0
 ): Promise<EbInspectionReport> {
   await assertEbInspectionEditable(input)
-  const [currentReport, liveRound] = await Promise.all([
-    getEbInspectionReport(input),
-    getEbInspectionRound(input),
-  ])
+  const currentReport = await getEbInspectionReport(input)
+  const liveRound = await getEbInspectionRound(input)
   const currentSnapshot = currentReport.reportDraft.sourceSnapshot
   if (!currentSnapshot) throw new Error('EB_REPORT_DRAFT_NOT_INITIALIZED')
+  const projectSourceChanged = hasEbReportProjectSourceChanged(
+    currentSnapshot.project,
+    liveRound.project
+  )
+  if (!projectSourceChanged && !options.forceContentRefresh) {
+    return currentReport
+  }
 
   const now = nextEbReportDraftUpdatedAt(currentReport.reportDraft.updatedAt)
-  const sourceSnapshot: EbReportSourceSnapshot = {
-    ...currentSnapshot,
-    capturedAt: now,
-    project: createEbReportSourceSnapshot({
-      project: liveRound.project,
-      inspectorText: currentSnapshot.inspectorText,
-      branding: currentSnapshot.branding,
-      capturedAt: now,
-    }).project,
-  }
+  const sourceSnapshot: EbReportSourceSnapshot = projectSourceChanged
+    ? {
+        ...currentSnapshot,
+        capturedAt: now,
+        project: createEbReportSourceSnapshot({
+          project: liveRound.project,
+          inspectorText: currentSnapshot.inspectorText,
+          branding: currentSnapshot.branding,
+          capturedAt: now,
+        }).project,
+      }
+    : currentSnapshot
   const project = applyEbReportProjectSnapshot(liveRound.project, sourceSnapshot.project)
   const round: EbInspectionRound = { ...liveRound, project }
   const [participants, inspectionDocuments] = await Promise.all([
@@ -6686,14 +6846,90 @@ export async function refreshEbReportProjectSource(
     storedDraft: {
       ...currentReport.reportDraft,
       sourceSnapshot,
+      projectSourceRefreshBaseUpdatedAt:
+        currentReport.reportDraft.projectSourceRefreshBaseUpdatedAt ??
+        currentReport.reportDraft.updatedAt,
       updatedAt: now,
     },
   })
 
-  await writeEbReportDraft(input, refreshedDraft, {
-    expectedUpdatedAt: currentReport.reportDraft.updatedAt,
-  })
+  try {
+    await writeEbReportDraft(input, refreshedDraft, {
+      expectedUpdatedAt: currentReport.reportDraft.updatedAt,
+      preserveProjectSourceRefreshBase: true,
+    })
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'EB_REPORT_DRAFT_CONFLICT' &&
+      conflictRetryCount < 2
+    ) {
+      return refreshEbReportProjectSource(input, options, conflictRetryCount + 1)
+    }
+    throw error
+  }
   return getEbInspectionReport(input)
+}
+
+/**
+ * A project edit is the authoritative source for field-controlled report
+ * content (for example agreement form and parties). Update existing, unlocked
+ * report drafts immediately, but never create a draft merely because the
+ * project was edited and never mutate a locked report revision.
+ */
+export async function refreshEbProjectReportSources(input: {
+  orgId: string
+  requestedByUserId: string
+  project: EbProjectListItem
+}, options: EbReportProjectSourceRefreshOptions = {}): Promise<EbProjectReportSourceRefreshResult> {
+  const result: EbProjectReportSourceRefreshResult = {
+    refreshedInspectionIds: [],
+    skippedInspectionIds: [],
+    failedInspectionIds: [],
+  }
+
+  const candidates = input.project.inspections.filter((inspection) => !inspection.reportLockedAt)
+  const outcomes = await Promise.all(
+    candidates.map(async (inspection) => {
+      try {
+        const draft = await fetchEbReportDraft({
+          orgId: input.orgId,
+          projectId: input.project.id,
+          inspectionId: inspection.inspectionId,
+        })
+        // No report workspace has been opened yet, or it already reflects the
+        // just-saved project. In both cases there is nothing to write.
+        const projectSourceChanged =
+          draft.sourceSnapshot &&
+          hasEbReportProjectSourceChanged(draft.sourceSnapshot.project, input.project)
+        if (!draft.initializedAt || !draft.sourceSnapshot || (!projectSourceChanged && !options.forceContentRefresh)) {
+          return { inspectionId: inspection.inspectionId, outcome: 'skipped' as const }
+        }
+
+        await refreshEbReportProjectSource({
+          orgId: input.orgId,
+          requestedByUserId: input.requestedByUserId,
+          projectId: input.project.id,
+          inspectionId: inspection.inspectionId,
+        }, options)
+        return { inspectionId: inspection.inspectionId, outcome: 'refreshed' as const }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : ''
+        if (message === 'EB_REPORT_LOCKED') {
+          return { inspectionId: inspection.inspectionId, outcome: 'skipped' as const }
+        }
+        return { inspectionId: inspection.inspectionId, outcome: 'failed' as const }
+      }
+    })
+  )
+
+  outcomes.forEach(({ inspectionId, outcome }) => {
+    if (outcome === 'refreshed') result.refreshedInspectionIds.push(inspectionId)
+    if (outcome === 'skipped') result.skippedInspectionIds.push(inspectionId)
+    if (outcome === 'failed') result.failedInspectionIds.push(inspectionId)
+  })
+
+  return result
 }
 
 export async function refreshEbReportInspectorSource(

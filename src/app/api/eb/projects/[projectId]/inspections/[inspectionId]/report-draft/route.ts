@@ -146,7 +146,7 @@ export async function POST(
     }
 
     if (body.action === 'refresh_project') {
-      const report = await refreshEbReportProjectSource(commonInput)
+      const report = await refreshEbReportProjectSource(commonInput, { forceContentRefresh: true })
       return NextResponse.json({ report })
     }
 

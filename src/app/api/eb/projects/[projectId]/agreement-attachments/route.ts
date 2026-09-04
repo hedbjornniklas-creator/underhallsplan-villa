@@ -6,6 +6,7 @@ import {
   isEbProjectAgreementAttachmentLinksAvailable,
   listEbProjectAgreementAttachmentLinks,
   listEbProjectAttachments,
+  refreshEbProjectReportSources,
   replaceEbProjectAgreementAttachmentLinks,
   type EbProjectAgreementAttachmentLinkInput,
 } from '@/lib/eb/server'
@@ -115,13 +116,25 @@ export async function PUT(
       expectedUpdatedAt,
     })
 
-    const [attachments, project] = await Promise.all([
-      loadAgreementAttachments({ orgId: org.orgId, projectId }),
-      getEbProjectById({ orgId: org.orgId, projectId }),
-    ])
+    const project = await getEbProjectById({ orgId: org.orgId, projectId })
     if (!project) throw new Error('EB_PROJECT_NOT_FOUND')
 
-    return NextResponse.json({ ...attachments, project })
+    const [attachments, reportSourceRefresh] = await Promise.all([
+      loadAgreementAttachments({ orgId: org.orgId, projectId }),
+      // Attachment links are persisted separately from project fields. Rebuild
+      // active report workspaces so SBR 10 and the delivery snapshot use the
+      // newly linked agreement documents immediately.
+      refreshEbProjectReportSources(
+        {
+          orgId: org.orgId,
+          requestedByUserId: org.userId,
+          project,
+        },
+        { forceContentRefresh: true }
+      ),
+    ])
+
+    return NextResponse.json({ ...attachments, project, reportSourceRefresh })
   } catch (error) {
     return mapError(error, 'Kunde inte spara avtalsfiler.')
   }

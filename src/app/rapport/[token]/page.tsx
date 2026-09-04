@@ -14,6 +14,7 @@ import { EbToastProvider } from '@/components/eb/EbToastProvider'
 import {
   getEbInspectionReportFromSnapshot,
   isEbReportSnapshotPayloadV1,
+  sanitizeEbReportForPublicDelivery,
 } from '@/lib/eb/reportSnapshot'
 import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
 import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotView'
@@ -103,7 +104,10 @@ export default async function PublicReportPage({
   const ebSnapshot = isEbReportSnapshotPayloadV1(data.snapshot_payload)
     ? data.snapshot_payload
     : null
-  const ebReport = getEbInspectionReportFromSnapshot(data.snapshot_payload)
+  const ebReportSnapshot = getEbInspectionReportFromSnapshot(data.snapshot_payload)
+  const ebReport = ebReportSnapshot
+    ? sanitizeEbReportForPublicDelivery(ebReportSnapshot)
+    : null
 
   const pdfBase64 = String((data as Record<string, unknown>).pdf_base64 ?? '').trim()
   const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()

@@ -140,13 +140,17 @@ export default function EbAgreementDocumentField({
     updateSelection([...attachmentIds, attachment.id])
     onAttachmentSelected?.(attachment)
     setPreviewAttachmentId(attachment.id)
-    setStatusMessage(`${attachmentTitle(attachment)} är kopplad till ${label.toLocaleLowerCase('sv-SE')}.`)
+    setStatusMessage(
+      `${attachmentTitle(attachment)} är vald för ${label.toLocaleLowerCase('sv-SE')}. Spara ändringarna för att koppla handlingen.`
+    )
   }
 
   const removeAttachment = (attachment: EbProjectAttachment) => {
     updateSelection(attachmentIds.filter((attachmentId) => attachmentId !== attachment.id))
     if (previewAttachmentId === attachment.id) setPreviewAttachmentId(null)
-    setStatusMessage(`${attachmentTitle(attachment)} är inte längre kopplad till ${label.toLocaleLowerCase('sv-SE')}.`)
+    setStatusMessage(
+      `${attachmentTitle(attachment)} tas bort från ${label.toLocaleLowerCase('sv-SE')} när ändringarna sparas.`
+    )
   }
 
   const uploadFile = async (file: File | null) => {
@@ -185,7 +189,9 @@ export default function EbAgreementDocumentField({
       updateSelection([...attachmentIds, uploadedAttachment.id])
       onAttachmentSelected?.(uploadedAttachment)
       setPreviewAttachmentId(uploadedAttachment.id)
-      setStatusMessage(`${attachmentTitle(uploadedAttachment)} är uppladdad och kopplad.`)
+      setStatusMessage(
+        `${attachmentTitle(uploadedAttachment)} är uppladdad. Spara ändringarna för att koppla den till avtalet.`
+      )
     } catch (error) {
       setStatusMessage('Uppladdningen misslyckades.')
       showError(error, 'Kunde inte lägga till avtalsfilen.')
@@ -329,13 +335,13 @@ export default function EbAgreementDocumentField({
               <h4 className="text-sm font-semibold text-gray-950">{label}</h4>
               {description ? <p className="mt-1 text-xs text-gray-600">{description}</p> : null}
             </div>
-            <span className="text-xs text-gray-500">{selectedAttachments.length} kopplad{selectedAttachments.length === 1 ? '' : 'e'}</span>
+            <span className="text-xs text-gray-500">{selectedAttachments.length} vald{selectedAttachments.length === 1 ? '' : 'a'} handling{selectedAttachments.length === 1 ? '' : 'ar'}</span>
           </div>
 
           <div className="mt-3 space-y-2">
             {selectedAttachments.length === 0 ? (
               <p className="rounded-md border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
-                Ingen handling är kopplad.
+                Ingen handling är vald.
               </p>
             ) : (
               selectedAttachments.map((attachment) => (

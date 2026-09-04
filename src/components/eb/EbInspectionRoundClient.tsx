@@ -5112,12 +5112,17 @@ export default function EbInspectionRoundClient({
               }
             >
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-2">
-                <span className="text-xs font-semibold text-emerald-900">
-                  Arbetsversion skapad{' '}
-                  {round.reportDraft.initializedAt
-                    ? new Date(round.reportDraft.initializedAt).toLocaleString('sv-SE')
-                    : 'vid första öppningen'}
-                </span>
+                <div>
+                  <span className="text-xs font-semibold text-emerald-900">
+                    Arbetsversion skapad{' '}
+                    {round.reportDraft.initializedAt
+                      ? new Date(round.reportDraft.initializedAt).toLocaleString('sv-SE')
+                      : 'vid första öppningen'}
+                  </span>
+                  <p className="mt-0.5 text-xs text-emerald-800">
+                    Avtal, parter och övriga grunduppgifter synkas när entreprenaden sparas.
+                  </p>
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -5129,7 +5134,7 @@ export default function EbInspectionRoundClient({
                       size={15}
                       className={refreshingReportSource === 'project' ? 'animate-spin' : undefined}
                     />
-                    Hämta från entreprenaden
+                    Uppdatera grunduppgifter
                   </button>
                   <button
                     type="button"
