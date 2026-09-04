@@ -20,6 +20,7 @@ export type EbAfterInspectionRequestedBy = 'client' | 'contractor'
 export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_applicable'
 export type EbInspectionDocumentStatus = 'present' | 'missing' | 'na'
 export type EbProjectAgreementItemKind = 'change_order' | 'other'
+export const EB_STANDARD_AGREEMENT_KEY = 'standard'
 export type EbDefectNoErrorPartsPolicy = 'not_listed' | 'listed_with_dash'
 export type EbReportPdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 export type EbProjectTemplateKey = 'drainage_foundation'
@@ -266,6 +267,12 @@ export type EbNoteSuggestion = {
 
 export type EbAttachmentType = 'document' | 'image'
 
+export type EbProjectAgreementAttachmentReference = {
+  agreementKey: string
+  includeInReport: boolean
+  sortOrder: number
+}
+
 export type EbProjectAttachment = {
   id: string
   projectId: string
@@ -285,6 +292,29 @@ export type EbProjectAttachment = {
   signedThumbnailUrl: string | null
   uploadedBy: string | null
   createdAt: string | null
+  /**
+   * Agreement rows that reference this document. This is intentionally
+   * independent of includeInReport, which remains a property of each link.
+   */
+  agreementLinks: EbProjectAgreementAttachmentReference[]
+}
+
+export type EbProjectAgreementAttachmentLink = {
+  id: string
+  projectId: string
+  agreementKey: string
+  attachmentId: string
+  includeInReport: boolean
+  sortOrder: number
+  createdAt: string | null
+  attachment: EbProjectAttachment
+}
+
+export type EbProjectAgreementAttachmentLinkInput = {
+  agreementKey: string
+  attachmentId: string
+  includeInReport?: boolean
+  sortOrder?: number
 }
 
 export type EbInspectionCheckpoint = {
@@ -877,6 +907,16 @@ type EbProjectAttachmentRow = {
   created_at: string | null
 }
 
+type EbProjectAgreementAttachmentLinkRow = {
+  id: string
+  eb_project_id: string
+  agreement_key: string
+  attachment_id: string
+  include_in_report: boolean | null
+  sort_order: number | null
+  created_at: string | null
+}
+
 type EbTemplateCheckpointRow = {
   id: string
   template_key: string
@@ -1017,6 +1057,7 @@ export type UpdateEbProjectInput = Omit<
 > & {
   projectId: string
   notePrefix?: string | null
+  expectedUpdatedAt?: string | null
 }
 
 export type CreateEbInspectionInput = {
@@ -1439,8 +1480,14 @@ function normalizeAgreementItems(value: unknown): EbProjectAgreementItem[] {
 
       if (!title && !note && !documentDate) return null
 
+      const requestedId = normalizeText(typeof record.id === 'string' ? record.id : null)
+
       return {
-        id: normalizeText(typeof record.id === 'string' ? record.id : null) ?? `${kind}_${index + 1}`,
+        // `standard` belongs exclusively to the main agreement. A legacy or
+        // malformed JSON row must not be able to share that document key.
+        id: requestedId && requestedId !== EB_STANDARD_AGREEMENT_KEY
+          ? requestedId
+          : `${kind}_${index + 1}`,
         kind,
         title: title ?? '',
         documentDate,
@@ -1987,6 +2034,128 @@ function toAttachmentType(value: string | null | undefined): EbAttachmentType {
   return value === 'image' ? 'image' : 'document'
 }
 
+function normalizeAgreementAttachmentKey(value: unknown) {
+  return normalizeText(typeof value === 'string' ? value : null)
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_POSTGRES_INTEGER = 2_147_483_647
+
+function normalizeAgreementAttachmentLinkInputs(
+  value: readonly EbProjectAgreementAttachmentLinkInput[]
+): Array<Required<EbProjectAgreementAttachmentLinkInput>> {
+  const linksByPair = new Map<string, Required<EbProjectAgreementAttachmentLinkInput>>()
+
+  value.forEach((link, index) => {
+    const agreementKey = normalizeAgreementAttachmentKey(link?.agreementKey)
+    const attachmentId = normalizeText(typeof link?.attachmentId === 'string' ? link.attachmentId : null)
+    if (!agreementKey || !attachmentId || !UUID_PATTERN.test(attachmentId)) {
+      throw new Error('EB_AGREEMENT_ATTACHMENT_INVALID')
+    }
+
+    const requestedSortOrder = typeof link?.sortOrder === 'number' && Number.isFinite(link.sortOrder)
+      ? Math.round(link.sortOrder)
+      : null
+    if (
+      requestedSortOrder !== null &&
+      (requestedSortOrder < 0 || requestedSortOrder > MAX_POSTGRES_INTEGER)
+    ) {
+      throw new Error('EB_AGREEMENT_ATTACHMENT_INVALID')
+    }
+    const sortOrder = requestedSortOrder ?? (index + 1) * 100
+    const normalized = {
+      agreementKey,
+      attachmentId,
+      includeInReport: typeof link?.includeInReport === 'boolean' ? link.includeInReport : true,
+      sortOrder,
+    }
+
+    // Full-replacement requests are idempotent even if a client happens to
+    // submit the same file twice for one agreement row.
+    linksByPair.set(`${agreementKey}\u0000${attachmentId}`, normalized)
+  })
+
+  return Array.from(linksByPair.values())
+}
+
+async function listEbProjectAgreementAttachmentLinkRows(input: {
+  orgId: string
+  projectId: string
+}): Promise<EbProjectAgreementAttachmentLinkRow[] | null> {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('eb_project_agreement_attachment_links')
+    .select('id,eb_project_id,agreement_key,attachment_id,include_in_report,sort_order,created_at')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .order('agreement_key', { ascending: true })
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    // The code remains compatible while a deployment is waiting for its SQL
+    // migration. Reads simply expose no agreement links until then.
+    if (isMissingRelationError(error)) return null
+    throw new Error(error.message ?? 'Kunde inte hämta avtalskopplingar.')
+  }
+
+  return (data ?? []) as EbProjectAgreementAttachmentLinkRow[]
+}
+
+/**
+ * Lets the client keep agreement upload controls unavailable until the
+ * relation table from the accompanying migration exists. Treating a missing
+ * table as an empty list would otherwise allow an orphaned PDF upload.
+ */
+export async function isEbProjectAgreementAttachmentLinksAvailable(input: {
+  orgId: string
+  projectId: string
+}) {
+  if ((await listEbProjectAgreementAttachmentLinkRows(input)) === null) return false
+
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.rpc('eb_project_agreement_attachment_links_available')
+  if (error) {
+    const errorText = [error.code, error.message, error.details].filter(Boolean).join(' ').toLowerCase()
+    if (errorText.includes('pgrst202') || errorText.includes('could not find the function')) {
+      return false
+    }
+    throw new Error(error.message ?? 'Kunde inte kontrollera avtalsfilernas databasstöd.')
+  }
+
+  return data === true
+}
+
+function agreementAttachmentReferenceFromRow(
+  row: EbProjectAgreementAttachmentLinkRow
+): EbProjectAgreementAttachmentReference {
+  return {
+    agreementKey: row.agreement_key,
+    includeInReport: row.include_in_report !== false,
+    sortOrder: row.sort_order ?? 100,
+  }
+}
+
+function decorateProjectAttachmentsWithAgreementLinks(
+  attachments: EbProjectAttachment[],
+  links: EbProjectAgreementAttachmentLinkRow[] | null
+) {
+  if (!links || links.length === 0) return attachments
+
+  const linksByAttachmentId = new Map<string, EbProjectAgreementAttachmentReference[]>()
+  for (const link of links) {
+    const references = linksByAttachmentId.get(link.attachment_id) ?? []
+    references.push(agreementAttachmentReferenceFromRow(link))
+    linksByAttachmentId.set(link.attachment_id, references)
+  }
+
+  return attachments.map((attachment) => {
+    if (attachment.attachmentType !== 'document') return attachment
+    const agreementLinks = linksByAttachmentId.get(attachment.id) ?? []
+    return agreementLinks.length > 0 ? { ...attachment, agreementLinks } : attachment
+  })
+}
+
 async function mapProjectAttachment(row: EbProjectAttachmentRow): Promise<EbProjectAttachment> {
   const admin = createSupabaseAdminClient()
   const storageBucket = row.storage_bucket ?? EB_PROJECT_ATTACHMENTS_BUCKET
@@ -2032,6 +2201,7 @@ async function mapProjectAttachment(row: EbProjectAttachmentRow): Promise<EbProj
     signedThumbnailUrl,
     uploadedBy: row.uploaded_by ?? null,
     createdAt: row.created_at ?? null,
+    agreementLinks: [],
   }
 }
 
@@ -2068,12 +2238,122 @@ export async function listEbProjectAttachments(input: {
       if (fallback.error) {
         throw new Error(fallback.error.message ?? 'Kunde inte hämta EB-bilagor.')
       }
-      return Promise.all(((fallback.data ?? []) as EbProjectAttachmentRow[]).map(mapProjectAttachment))
+      const rows = (fallback.data ?? []) as EbProjectAttachmentRow[]
+      const [attachments, agreementLinks] = await Promise.all([
+        Promise.all(rows.map(mapProjectAttachment)),
+        listEbProjectAgreementAttachmentLinkRows(input),
+      ])
+      return decorateProjectAttachmentsWithAgreementLinks(attachments, agreementLinks)
     }
     throw new Error(error.message ?? 'Kunde inte hämta EB-bilagor.')
   }
 
-  return Promise.all(((data ?? []) as EbProjectAttachmentRow[]).map(mapProjectAttachment))
+  const rows = (data ?? []) as EbProjectAttachmentRow[]
+  const [attachments, agreementLinks] = await Promise.all([
+    Promise.all(rows.map(mapProjectAttachment)),
+    listEbProjectAgreementAttachmentLinkRows(input),
+  ])
+  return decorateProjectAttachmentsWithAgreementLinks(attachments, agreementLinks)
+}
+
+export async function listEbProjectAgreementAttachmentLinks(input: {
+  orgId: string
+  projectId: string
+}): Promise<EbProjectAgreementAttachmentLink[]> {
+  const project = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
+  if (!project) {
+    throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+
+  const [attachments, rows] = await Promise.all([
+    listEbProjectAttachments(input),
+    listEbProjectAgreementAttachmentLinkRows(input),
+  ])
+  if (!rows || rows.length === 0) return []
+
+  const attachmentsById = new Map(
+    attachments
+      .filter((attachment) => attachment.attachmentType === 'document')
+      .map((attachment) => [attachment.id, attachment])
+  )
+
+  return rows
+    .map((row) => {
+      const attachment = attachmentsById.get(row.attachment_id)
+      if (!attachment) return null
+      return {
+        id: row.id,
+        projectId: row.eb_project_id,
+        agreementKey: row.agreement_key,
+        attachmentId: row.attachment_id,
+        includeInReport: row.include_in_report !== false,
+        sortOrder: row.sort_order ?? 100,
+        createdAt: row.created_at ?? null,
+        attachment,
+      }
+    })
+    .filter((link): link is EbProjectAgreementAttachmentLink => Boolean(link))
+}
+
+async function pruneInvalidEbProjectAgreementAttachmentLinks(input: {
+  orgId: string
+  projectId: string
+  validAgreementKeys: ReadonlySet<string>
+}) {
+  const currentRows = await listEbProjectAgreementAttachmentLinkRows(input)
+  if (!currentRows) return
+
+  const staleIds = currentRows
+    .filter((row) => !input.validAgreementKeys.has(row.agreement_key))
+    .map((row) => row.id)
+  if (staleIds.length === 0) return
+
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin
+    .from('eb_project_agreement_attachment_links')
+    .delete()
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .in('id', staleIds)
+
+  if (error) {
+    if (isMissingRelationError(error)) return
+    throw new Error(error.message ?? 'Kunde inte rensa inaktuella avtalskopplingar.')
+  }
+}
+
+export async function replaceEbProjectAgreementAttachmentLinks(input: {
+  orgId: string
+  projectId: string
+  links: readonly EbProjectAgreementAttachmentLinkInput[]
+  expectedUpdatedAt: string | null
+}): Promise<EbProjectAgreementAttachmentLink[]> {
+  const links = normalizeAgreementAttachmentLinkInputs(input.links)
+  if (!(await isEbProjectAgreementAttachmentLinksAvailable(input))) {
+    throw new Error('EB_AGREEMENT_ATTACHMENT_LINKS_UNAVAILABLE')
+  }
+
+  const admin = createSupabaseAdminClient()
+  const { error } = await admin.rpc('replace_eb_project_agreement_attachment_links', {
+    p_org_id: input.orgId,
+    p_project_id: input.projectId,
+    p_expected_updated_at: input.expectedUpdatedAt,
+    p_links: links,
+  })
+
+  if (error) {
+    const errorText = [error.code, error.message, error.details].filter(Boolean).join(' ').toLowerCase()
+    if (
+      isMissingRelationError(error) ||
+      errorText.includes('pgrst202') ||
+      errorText.includes('could not find the function')
+    ) {
+      throw new Error('EB_AGREEMENT_ATTACHMENT_LINKS_UNAVAILABLE')
+    }
+    throw new Error(error.message ?? 'Kunde inte spara avtalskopplingar.')
+  }
+
+  return listEbProjectAgreementAttachmentLinks(input)
 }
 
 function parseApplicableModules(value: string | null | undefined) {
@@ -3938,9 +4218,14 @@ export async function createEbProject(
 }
 
 export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbProjectListItem> {
+  const hasExpectedUpdatedAt = Object.prototype.hasOwnProperty.call(input, 'expectedUpdatedAt')
+  const expectedUpdatedAt = input.expectedUpdatedAt ?? null
   const existing = await getEbProjectById({ orgId: input.orgId, projectId: input.projectId })
   if (!existing) {
     throw new Error('EB_PROJECT_NOT_FOUND')
+  }
+  if (hasExpectedUpdatedAt && existing.updatedAt !== expectedUpdatedAt) {
+    throw new Error('EB_PROJECT_CONFLICT')
   }
 
   const admin = createSupabaseAdminClient()
@@ -4006,7 +4291,7 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
     : null
   const agreementItems = normalizeAgreementItems(input.agreementItems)
 
-  const { error } = await admin
+  let projectUpdate = admin
     .from('eb_projects')
     .update({
       project_template_key: projectTemplateKey,
@@ -4060,9 +4345,32 @@ export async function updateEbProject(input: UpdateEbProjectInput): Promise<EbPr
     .eq('org_id', input.orgId)
     .eq('id', input.projectId)
 
+  if (hasExpectedUpdatedAt) {
+    projectUpdate = expectedUpdatedAt
+      ? projectUpdate.eq('updated_at', expectedUpdatedAt)
+      : projectUpdate.is('updated_at', null)
+  }
+
+  const { data: updatedProject, error } = await projectUpdate.select('id').maybeSingle()
+
   if (error) {
     throw new Error(error.message ?? 'Kunde inte uppdatera EB-projekt.')
   }
+  if (!updatedProject) {
+    throw new Error(hasExpectedUpdatedAt ? 'EB_PROJECT_CONFLICT' : 'EB_PROJECT_NOT_FOUND')
+  }
+
+  // agreement_items live in JSON, so the database cannot cascade links when a
+  // row is removed. Keep the separate document links aligned after every
+  // project update while treating an unapplied migration as an empty feature.
+  await pruneInvalidEbProjectAgreementAttachmentLinks({
+    orgId: input.orgId,
+    projectId: input.projectId,
+    validAgreementKeys: new Set([
+      EB_STANDARD_AGREEMENT_KEY,
+      ...agreementItems.map((item) => item.id),
+    ]),
+  })
 
   if (existing.propertyId) {
     const { error: propertyError } = await admin
@@ -5478,21 +5786,73 @@ function ebAgreementOtherLine(item: EbProjectAgreementItem) {
   return `• ${sentenceWithPeriod([title, note].filter(Boolean).join(' - ') + dateText)}`
 }
 
-function ebContractDocumentsReportText(round: EbInspectionRound) {
+function ebAgreementAttachmentRows(
+  attachments: EbProjectAttachment[],
+  agreementKey: string
+) {
+  return attachments
+    .filter((attachment) => attachment.attachmentType === 'document')
+    .map((attachment) => ({
+      attachment,
+      link: attachment.agreementLinks.find(
+        (link) => link.agreementKey === agreementKey && link.includeInReport
+      ),
+    }))
+    .filter((item): item is { attachment: EbProjectAttachment; link: EbProjectAgreementAttachmentReference } => Boolean(item.link))
+    .sort((left, right) => {
+      const sortOrder = left.link.sortOrder - right.link.sortOrder
+      if (sortOrder !== 0) return sortOrder
+      return String(left.attachment.createdAt ?? '').localeCompare(String(right.attachment.createdAt ?? ''))
+    })
+    .map(({ attachment }) => `• ${ebAttachmentReportRow(attachment)}`)
+}
+
+function ebAgreementAttachmentText(attachments: EbProjectAttachment[], agreementKey: string) {
+  const rows = ebAgreementAttachmentRows(attachments, agreementKey)
+  return rows.length > 0 ? rows.join('\n') : null
+}
+
+function isAgreementAttachmentIncludedInReport(
+  round: EbInspectionRound,
+  attachment: EbProjectAttachment
+) {
+  return attachment.agreementLinks.some((link) => {
+    if (!link.includeInReport) return false
+    if (link.agreementKey === EB_STANDARD_AGREEMENT_KEY) return true
+    return round.project.agreementItems.some(
+      (item) => item.id === link.agreementKey && item.includeInReport
+    )
+  })
+}
+
+function ebContractDocumentsReportText(round: EbInspectionRound, attachments: EbProjectAttachment[]) {
   const reportItems = round.project.agreementItems.filter((item) => item.includeInReport)
   const changeOrders = reportItems.filter((item) => item.kind === 'change_order')
   const otherAgreementItems = reportItems.filter((item) => item.kind === 'other')
-  const otherRows = otherAgreementItems.map(ebAgreementOtherLine)
+  const mainAgreementAttachments = ebAgreementAttachmentText(attachments, EB_STANDARD_AGREEMENT_KEY)
+  const changeOrderRows = changeOrders.map((item) =>
+    [ebAgreementChangeOrderLine(item), ebAgreementAttachmentText(attachments, item.id)]
+      .filter((value): value is string => Boolean(value))
+      .join('\n')
+  )
+  const otherRows = otherAgreementItems.map((item) =>
+    [ebAgreementOtherLine(item), ebAgreementAttachmentText(attachments, item.id)]
+      .filter((value): value is string => Boolean(value))
+      .join('\n')
+  )
 
   const agreementNote = normalizeText(round.project.agreementNote)
 
   return [
     ebAgreementScopeLine(round),
     agreementNote ? `Kommentar: ${agreementNote}` : null,
+    mainAgreementAttachments
+      ? ['Avtalshandlingar som utgjort underlag:', mainAgreementAttachments].join('\n')
+      : null,
     [
       'Därutöver har skriftligt avtalats om ändringar och tilläggsarbeten enligt följande:',
-      changeOrders.length > 0
-        ? changeOrders.map(ebAgreementChangeOrderLine).join('\n')
+      changeOrderRows.length > 0
+        ? changeOrderRows.join('\n')
         : 'Inga ÄTA-handlingar är registrerade.',
     ].join('\n'),
     [
@@ -5582,8 +5942,16 @@ function buildEbReportDraft(input: {
   const reportRecipientRows =
     participants.filter((participant) => participant.receivesReport).map(reportParticipantRow)
   const conflictOfInterestRelevant = round.inspection.inspectorAppointedBy === 'parties_jointly'
-  const includedAttachments = attachments.filter((attachment) => attachment.includeInReport)
-  const contractDocuments = ebContractDocumentsReportText(round)
+  // A document shown under Avtal belongs there, not in the generic appendix
+  // list. If its agreement row is excluded from the statement it remains in
+  // the appendix instead, so a user cannot accidentally make it disappear.
+  const includedAttachments = attachments.filter(
+    (attachment) => attachment.includeInReport && !isAgreementAttachmentIncludedInReport(round, attachment)
+  )
+  const includedAgreementAttachments = attachments.some((attachment) =>
+    isAgreementAttachmentIncludedInReport(round, attachment)
+  )
+  const contractDocuments = ebContractDocumentsReportText(round, attachments)
   const includedAgreementItems = round.project.agreementItems.filter((item) => item.includeInReport)
   const testingDocumentationText = ebStandardText('EB_REPORT_TESTING_DOCUMENTATION')
   const hasReviewedDocuments = inspectionDocuments.some((document) => document.status === 'present')
@@ -5726,6 +6094,7 @@ function buildEbReportDraft(input: {
       status:
         round.project.contractDate ||
         includedAgreementItems.length > 0 ||
+        includedAgreementAttachments ||
         normalizeText(round.project.agreementNote)
         ? 'complete'
         : 'draft',

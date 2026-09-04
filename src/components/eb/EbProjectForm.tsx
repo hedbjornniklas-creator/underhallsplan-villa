@@ -137,6 +137,13 @@ const DRAINAGE_STAGE_OPTIONS = [
 
 type EbProjectFormTab = 'object' | 'agreement' | 'contractors'
 
+export type EbAgreementDocumentFieldRenderer = (input: {
+  agreementKey: string
+  label: string
+  description: string
+  agreementItem?: EbProjectAgreementItem
+}) => ReactNode
+
 function createAgreementItem(kind: EbProjectAgreementItemKind, sortOrder: number): EbProjectAgreementItem {
   const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -267,10 +274,12 @@ export default function EbProjectForm({
   form,
   onChange,
   showNotePrefix,
+  renderAgreementDocumentField,
 }: {
   form: EbProjectFormState
   onChange: <K extends keyof EbProjectFormState>(field: K, value: EbProjectFormState[K]) => void
   showNotePrefix?: boolean
+  renderAgreementDocumentField?: EbAgreementDocumentFieldRenderer
 }) {
   const [activeTab, setActiveTab] = useState<EbProjectFormTab>('object')
   const vocabulary = resolveEbAgreementVocabulary(form.standardAgreement)
@@ -393,6 +402,12 @@ export default function EbProjectForm({
               />
             </EbProjectFieldLabel>
           </div>
+          {renderAgreementDocumentField?.({
+            agreementKey: item.id,
+            label: kind === 'change_order' ? 'ÄTA-dokument' : 'Dokument för överenskommelsen',
+            description: 'Koppla en eller flera handlingar som hör till denna rad.',
+            agreementItem: item,
+          })}
         </div>
       ))}
 
@@ -843,6 +858,18 @@ export default function EbProjectForm({
               Visas direkt efter den inledande avtalstexten i utlåtandet.
             </p>
           </div>
+
+          {renderAgreementDocumentField ? (
+            renderAgreementDocumentField({
+              agreementKey: 'standard',
+              label: 'Avtalsdokument',
+              description: 'Ladda upp avtalet som PDF eller välj en handling som redan finns i entreprenaden.',
+            })
+          ) : (
+            <p className="mt-4 rounded-md border border-dashed border-emerald-200 bg-emerald-50/35 px-3 py-2 text-xs text-gray-600">
+              Spara entreprenaden först för att kunna lägga till avtalsfiler.
+            </p>
+          )}
 
           <div className="mt-6 space-y-6">
             <section>

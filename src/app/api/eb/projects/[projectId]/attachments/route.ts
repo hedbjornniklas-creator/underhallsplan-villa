@@ -264,12 +264,31 @@ export async function POST(
       throw new Error(insertError.message ?? 'Kunde inte spara bilaga.')
     }
 
-    const attachments = await listEbProjectAttachments({
-      orgId: org.orgId,
-      projectId,
-    })
+    // The attachment is now a committed database record. Do not remove its
+    // storage object in the generic catch block if a later response step
+    // fails; a reload is safer than a visible record with a missing file.
+    uploadedPath = null
+    uploadedThumbnailPath = null
 
-    return NextResponse.json({ attachments }, { status: 201 })
+    const { data: touchedProject, error: touchError } = await admin
+      .from('eb_projects')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('org_id', org.orgId)
+      .eq('id', projectId)
+      .select('id')
+      .maybeSingle()
+    if (touchError) {
+      throw new Error(touchError.message ?? 'Kunde inte uppdatera entreprenadens ändringstid.')
+    }
+    if (!touchedProject) throw new Error('EB_PROJECT_NOT_FOUND')
+
+    const [attachments, updatedProject] = await Promise.all([
+      listEbProjectAttachments({ orgId: org.orgId, projectId }),
+      getEbProjectById({ orgId: org.orgId, projectId }),
+    ])
+    if (!updatedProject) throw new Error('EB_PROJECT_NOT_FOUND')
+
+    return NextResponse.json({ attachments, project: updatedProject }, { status: 201 })
   } catch (error) {
     if (uploadedPath) {
       await createSupabaseAdminClient().storage.from(EB_PROJECT_ATTACHMENTS_BUCKET).remove([uploadedPath])

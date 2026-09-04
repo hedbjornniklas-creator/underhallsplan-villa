@@ -44,7 +44,42 @@ function mapError(error: unknown, fallback: string) {
   }
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
   if (message === 'EB_ATTACHMENT_NOT_FOUND') return jsonError('Bilagan hittades inte.', 404)
+  if (message === 'EB_ATTACHMENT_INVALID_INPUT') return jsonError('Ogiltiga bilageuppgifter.', 400)
+  if (message === 'EB_ATTACHMENT_NO_CHANGES') return jsonError('Inga bilageuppgifter att spara.', 400)
+  if (message === 'EB_ATTACHMENT_LINKED_TO_AGREEMENT') {
+    return jsonError('Handlingen är kopplad till ett avtal. Ta bort avtalskopplingen först.', 409)
+  }
   return jsonError(fallback, 500)
+}
+
+async function assertAttachmentIsNotLinkedToAgreement(input: {
+  admin: ReturnType<typeof createSupabaseAdminClient>
+  orgId: string
+  projectId: string
+  attachmentId: string
+}) {
+  const { data, error } = await input.admin
+    .from('eb_project_agreement_attachment_links')
+    .select('id')
+    .eq('org_id', input.orgId)
+    .eq('eb_project_id', input.projectId)
+    .eq('attachment_id', input.attachmentId)
+    .limit(1)
+
+  if (error) {
+    const text = [error.code, error.message, error.details].filter(Boolean).join(' ').toLowerCase()
+    const relationMissing = text.includes('42p01') ||
+      text.includes('relation') && text.includes('does not exist') ||
+      text.includes('schema cache') && text.includes('table')
+    // The relationship table is introduced by a separate migration. Existing
+    // installations retain the old delete behavior until it has been applied.
+    if (relationMissing) return
+    throw new Error(error.message ?? 'Kunde inte kontrollera avtalskopplingar.')
+  }
+
+  if ((data ?? []).length > 0) {
+    throw new Error('EB_ATTACHMENT_LINKED_TO_AGREEMENT')
+  }
 }
 
 export async function PATCH(
@@ -58,7 +93,17 @@ export async function PATCH(
     if (!project) throw new Error('EB_PROJECT_NOT_FOUND')
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-    const includeInReport = toBoolean(body.includeInReport)
+    const hasField = (field: string) => Object.prototype.hasOwnProperty.call(body, field)
+    const includeInReport = hasField('includeInReport') ? toBoolean(body.includeInReport) : undefined
+    if (includeInReport === null) throw new Error('EB_ATTACHMENT_INVALID_INPUT')
+    const updates: Record<string, string | boolean | null> = {}
+    if (hasField('title')) updates.title = toText(body.title) || null
+    if (includeInReport !== undefined) updates.include_in_report = includeInReport
+    if (hasField('littera')) updates.littera = toText(body.littera) || null
+    if (hasField('documentDate')) updates.document_date = toText(body.documentDate) || null
+    if (hasField('documentNumber')) updates.document_number = toText(body.documentNumber) || null
+    if (hasField('documentNote')) updates.document_note = toText(body.documentNote) || null
+    if (Object.keys(updates).length === 0) throw new Error('EB_ATTACHMENT_NO_CHANGES')
     const admin = createSupabaseAdminClient()
 
     const { data: attachment, error: fetchError } = await admin
@@ -78,14 +123,7 @@ export async function PATCH(
 
     const { error: updateError } = await admin
       .from('eb_project_attachments')
-      .update({
-        title: toText(body.title) || null,
-        include_in_report: includeInReport ?? true,
-        littera: toText(body.littera) || null,
-        document_date: toText(body.documentDate) || null,
-        document_number: toText(body.documentNumber) || null,
-        document_note: toText(body.documentNote) || null,
-      })
+      .update(updates)
       .eq('org_id', org.orgId)
       .eq('eb_project_id', projectId)
       .eq('id', attachmentId)
@@ -94,12 +132,25 @@ export async function PATCH(
       throw new Error(updateError.message ?? 'Kunde inte spara bilageuppgifter.')
     }
 
-    const attachments = await listEbProjectAttachments({
-      orgId: org.orgId,
-      projectId,
-    })
+    const { data: touchedProject, error: touchError } = await admin
+      .from('eb_projects')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('org_id', org.orgId)
+      .eq('id', projectId)
+      .select('id')
+      .maybeSingle()
+    if (touchError) {
+      throw new Error(touchError.message ?? 'Kunde inte uppdatera entreprenadens ändringstid.')
+    }
+    if (!touchedProject) throw new Error('EB_PROJECT_NOT_FOUND')
 
-    return NextResponse.json({ attachments })
+    const [attachments, updatedProject] = await Promise.all([
+      listEbProjectAttachments({ orgId: org.orgId, projectId }),
+      getEbProjectById({ orgId: org.orgId, projectId }),
+    ])
+    if (!updatedProject) throw new Error('EB_PROJECT_NOT_FOUND')
+
+    return NextResponse.json({ attachments, project: updatedProject })
   } catch (error) {
     return mapError(error, 'Kunde inte spara bilageuppgifter.')
   }
@@ -131,16 +182,15 @@ export async function DELETE(
       throw new Error('EB_ATTACHMENT_NOT_FOUND')
     }
 
-    const storageBucket = String(attachment.storage_bucket ?? EB_PROJECT_ATTACHMENTS_BUCKET).trim()
-    const filePaths = [attachment.file_path, attachment.thumbnail_file_path]
-      .map((path) => String(path ?? '').trim())
-      .filter(Boolean)
-    if (filePaths.length > 0) {
-      const { error: removeError } = await admin.storage.from(storageBucket).remove(filePaths)
-      if (removeError) {
-        throw new Error(removeError.message ?? 'Kunde inte ta bort filen.')
-      }
-    }
+    // Do not silently delete a file that is visible under Avtal. The database
+    // has the same RESTRICT rule, so this precheck is only a friendly early
+    // response rather than the sole protection against a concurrent link.
+    await assertAttachmentIsNotLinkedToAgreement({
+      admin,
+      orgId: org.orgId,
+      projectId,
+      attachmentId,
+    })
 
     const { error: deleteError } = await admin
       .from('eb_project_attachments')
@@ -150,15 +200,45 @@ export async function DELETE(
       .eq('id', attachmentId)
 
     if (deleteError) {
+      const errorText = [deleteError.code, deleteError.message, deleteError.details]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      if (errorText.includes('23503') && errorText.includes('agreement_attachment')) {
+        throw new Error('EB_ATTACHMENT_LINKED_TO_AGREEMENT')
+      }
       throw new Error(deleteError.message ?? 'Kunde inte ta bort bilaga.')
     }
 
-    const attachments = await listEbProjectAttachments({
-      orgId: org.orgId,
-      projectId,
-    })
+    // Delete the database record first. If storage cleanup ever fails, an
+    // orphaned object is safer than a visible attachment whose PDF is gone.
+    const storageBucket = String(attachment.storage_bucket ?? EB_PROJECT_ATTACHMENTS_BUCKET).trim()
+    const filePaths = [attachment.file_path, attachment.thumbnail_file_path]
+      .map((path) => String(path ?? '').trim())
+      .filter(Boolean)
+    const storageCleanupWarning = filePaths.length > 0
+      ? Boolean((await admin.storage.from(storageBucket).remove(filePaths)).error)
+      : false
 
-    return NextResponse.json({ attachments })
+    const { data: touchedProject, error: touchError } = await admin
+      .from('eb_projects')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('org_id', org.orgId)
+      .eq('id', projectId)
+      .select('id')
+      .maybeSingle()
+    if (touchError) {
+      throw new Error(touchError.message ?? 'Kunde inte uppdatera entreprenadens ändringstid.')
+    }
+    if (!touchedProject) throw new Error('EB_PROJECT_NOT_FOUND')
+
+    const [attachments, updatedProject] = await Promise.all([
+      listEbProjectAttachments({ orgId: org.orgId, projectId }),
+      getEbProjectById({ orgId: org.orgId, projectId }),
+    ])
+    if (!updatedProject) throw new Error('EB_PROJECT_NOT_FOUND')
+
+    return NextResponse.json({ attachments, project: updatedProject, storageCleanupWarning })
   } catch (error) {
     return mapError(error, 'Kunde inte ta bort bilaga.')
   }

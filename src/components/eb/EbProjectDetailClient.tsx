@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import PendingLink from '@/components/ui/PendingLink'
+import EbAgreementDocumentField from '@/components/eb/EbAgreementDocumentField'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
 import EbAssignmentConfirmationDialog from '@/components/eb/EbAssignmentConfirmationDialog'
 import { useEbToast } from '@/components/eb/EbToastProvider'
@@ -42,6 +43,8 @@ import {
   isEbPreliminaryInspection,
 } from '@/lib/eb/reportSectionRules'
 import type {
+  EbProjectAgreementAttachmentLink,
+  EbProjectAgreementAttachmentLinkInput,
   EbProjectAttachment,
   EbInspectionDocument,
   EbInspectionSummary,
@@ -56,6 +59,7 @@ import type { EbAssignmentConfirmationSummary } from '@/lib/eb/assignmentConfirm
 
 const DEFAULT_EB_DEFECT_NUMBERING_EXPLANATION =
   'Fönster, dörrar, väggar etc numreras från vänster till höger. Vägg 1 = vägg till vänster om entrévägg. Vägg 2 = nästa vägg till höger om vägg 1 osv.'
+const STANDARD_AGREEMENT_ATTACHMENT_KEY = 'standard'
 
 type EbProjectDetailClientProps = {
   project: EbProjectListItem
@@ -90,6 +94,14 @@ type DeleteInspectionResponse = {
 }
 
 type UpdateProjectResponse = {
+  project?: EbProjectListItem
+  error?: string
+}
+
+type AgreementAttachmentsResponse = {
+  links?: EbProjectAgreementAttachmentLink[]
+  documents?: EbProjectAttachment[]
+  available?: boolean
   project?: EbProjectListItem
   error?: string
 }
@@ -2037,35 +2049,244 @@ function InspectionDetailsDialog({
   )
 }
 
+function agreementAttachmentLinksFromAttachments(
+  attachments: EbProjectAttachment[]
+): EbProjectAgreementAttachmentLinkInput[] {
+  return attachments.flatMap((attachment) =>
+    attachment.agreementLinks.map((link) => ({
+      agreementKey: link.agreementKey,
+      attachmentId: attachment.id,
+      includeInReport: link.includeInReport,
+      sortOrder: link.sortOrder,
+    }))
+  )
+}
+
 function EditProjectDialog({
   open,
   project,
+  attachments,
   onClose,
   onUpdated,
+  onAttachmentsChange,
 }: {
   open: boolean
   project: EbProjectListItem
+  attachments: EbProjectAttachment[]
   onClose: () => void
   onUpdated: (project: EbProjectListItem) => void
+  onAttachmentsChange: (attachments: EbProjectAttachment[]) => void
 }) {
   const { showError } = useEbToast()
   const [form, setForm] = useState<EbProjectFormState>(() => buildEbProjectForm(project))
   const [submitting, setSubmitting] = useState(false)
+  const [agreementAttachmentLinks, setAgreementAttachmentLinks] = useState<
+    EbProjectAgreementAttachmentLinkInput[]
+  >(() => agreementAttachmentLinksFromAttachments(attachments))
+  const [agreementAttachmentsLoading, setAgreementAttachmentsLoading] = useState(false)
+  const [agreementAttachmentsAvailable, setAgreementAttachmentsAvailable] = useState<boolean | null>(null)
+  const [savingAgreementAttachmentTitleOperations, setSavingAgreementAttachmentTitleOperations] = useState<string[]>([])
+  const [unsavedAgreementAttachmentTitleDrafts, setUnsavedAgreementAttachmentTitleDrafts] = useState<string[]>([])
+  const dirtyRef = useRef(false)
+  const agreementAttachmentLinksTouchedRef = useRef(false)
+  const openProjectIdRef = useRef<string | null>(null)
+  const openProjectUpdatedAtRef = useRef<string | null>(project.updatedAt)
+  const attachmentsRef = useRef(attachments)
+
+  useEffect(() => {
+    attachmentsRef.current = attachments
+  }, [attachments])
+
+  useEffect(() => {
+    if (!open) {
+      dirtyRef.current = false
+      agreementAttachmentLinksTouchedRef.current = false
+      openProjectIdRef.current = null
+      openProjectUpdatedAtRef.current = null
+      setAgreementAttachmentsAvailable(null)
+      setSavingAgreementAttachmentTitleOperations([])
+      setUnsavedAgreementAttachmentTitleDrafts([])
+      return
+    }
+
+    const openedForAnotherProject = openProjectIdRef.current !== project.id
+
+    // Refreshes can replace the project prop while this dialog is open (for
+    // example when the window regains focus or a PDF status is polled). Keep
+    // locally edited data in that case; otherwise a complete PATCH can write
+    // those lost values back as empty fields.
+    if (openedForAnotherProject || !dirtyRef.current) {
+      setForm(buildEbProjectForm(project))
+      setAgreementAttachmentLinks(agreementAttachmentLinksFromAttachments(attachments))
+      dirtyRef.current = false
+      agreementAttachmentLinksTouchedRef.current = false
+      openProjectIdRef.current = project.id
+      openProjectUpdatedAtRef.current = project.updatedAt
+      if (openedForAnotherProject) setAgreementAttachmentsAvailable(null)
+    }
+  }, [attachments, open, project])
 
   useEffect(() => {
     if (!open) return
-    setForm(buildEbProjectForm(project))
-  }, [open, project])
+
+    let cancelled = false
+    const loadAgreementAttachments = async () => {
+      try {
+        setAgreementAttachmentsLoading(true)
+        const response = await fetch(`/api/eb/projects/${project.id}/agreement-attachments`, {
+          cache: 'no-store',
+        })
+        const payload = (await response.json().catch(() => ({}))) as AgreementAttachmentsResponse
+        if (!response.ok || !payload.links) {
+          throw new Error(payload.error ?? 'Kunde inte hämta avtalsfiler.')
+        }
+        if (cancelled) return
+
+        // A fresh document list is required when the dialog opens from a
+        // page that was rendered before a PDF was uploaded elsewhere.
+        if (payload.documents) {
+          onAttachmentsChange([
+            ...attachmentsRef.current.filter((attachment) => attachment.attachmentType === 'image'),
+            ...payload.documents,
+          ])
+        }
+        setAgreementAttachmentsAvailable(payload.available === true)
+
+        if (!agreementAttachmentLinksTouchedRef.current) {
+          setAgreementAttachmentLinks(
+            payload.links.map((link) => ({
+              agreementKey: link.agreementKey,
+              attachmentId: link.attachmentId,
+              includeInReport: link.includeInReport,
+              sortOrder: link.sortOrder,
+            }))
+          )
+        }
+      } catch (error) {
+        if (!cancelled) {
+          showError(error, 'Kunde inte hämta avtalsfiler.')
+        }
+      } finally {
+        if (!cancelled) setAgreementAttachmentsLoading(false)
+      }
+    }
+
+    void loadAgreementAttachments()
+    return () => {
+      cancelled = true
+    }
+  }, [onAttachmentsChange, open, project.id, showError])
 
   if (!open) return null
 
   const updateField = <K extends keyof EbProjectFormState>(field: K, value: EbProjectFormState[K]) => {
+    dirtyRef.current = true
     setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const updateAgreementAttachmentIds = (agreementKey: string, attachmentIds: string[]) => {
+    dirtyRef.current = true
+    agreementAttachmentLinksTouchedRef.current = true
+    setAgreementAttachmentLinks((current) => {
+      const currentLinks = current.filter((link) => link.agreementKey === agreementKey)
+      const currentByAttachmentId = new Map(currentLinks.map((link) => [link.attachmentId, link]))
+      const otherLinks = current.filter((link) => link.agreementKey !== agreementKey)
+      const nextLinks = [...new Set(attachmentIds.filter(Boolean))].map((attachmentId, index) => {
+        const existing = currentByAttachmentId.get(attachmentId)
+        return {
+          agreementKey,
+          attachmentId,
+          includeInReport: existing?.includeInReport ?? true,
+          sortOrder: existing?.sortOrder ?? (index + 1) * 100,
+        }
+      })
+      return [...otherLinks, ...nextLinks]
+    })
+  }
+
+  const handleAgreementAttachmentsChange = (nextAttachments: EbProjectAttachment[]) => {
+    onAttachmentsChange(nextAttachments)
+  }
+
+  const handleAttachmentProjectUpdated = (updatedProject: EbProjectListItem) => {
+    if (!updatedProject.updatedAt) return false
+    const currentUpdatedAt = openProjectUpdatedAtRef.current
+    const currentTimestamp = currentUpdatedAt ? Date.parse(currentUpdatedAt) : Number.NaN
+    const incomingTimestamp = Date.parse(updatedProject.updatedAt)
+    // Date.parse compares only milliseconds. The API emits timestamps in one
+    // UTC format, so a lexical tiebreaker retains PostgreSQL microseconds.
+    const incomingIsCurrent =
+      !currentUpdatedAt ||
+      Number.isNaN(currentTimestamp) ||
+      Number.isNaN(incomingTimestamp) ||
+      incomingTimestamp > currentTimestamp ||
+      (incomingTimestamp === currentTimestamp && updatedProject.updatedAt >= currentUpdatedAt)
+    if (!incomingIsCurrent) return false
+
+    openProjectUpdatedAtRef.current = updatedProject.updatedAt
+    onUpdated(updatedProject)
+    return true
+  }
+
+  const handleAgreementAttachmentTitleSaving = (operationKey: string, saving: boolean) => {
+    setSavingAgreementAttachmentTitleOperations((current) => {
+      if (saving) return current.includes(operationKey) ? current : [...current, operationKey]
+      const next = current.filter((currentOperationKey) => currentOperationKey !== operationKey)
+      return next.length === current.length ? current : next
+    })
+  }
+
+  const handleAgreementAttachmentTitleDraftChange = (draftKey: string, dirty: boolean) => {
+    setUnsavedAgreementAttachmentTitleDrafts((current) => {
+      if (dirty) return current.includes(draftKey) ? current : [...current, draftKey]
+      const next = current.filter((currentDraftKey) => currentDraftKey !== draftKey)
+      return next.length === current.length ? current : next
+    })
+  }
+
+  const seedAgreementItemTitleFromAttachment = (
+    agreementItemId: string | undefined,
+    attachment: EbProjectAttachment
+  ) => {
+    if (!agreementItemId) return
+    const title = attachment.title || attachment.fileName || 'Handling'
+    setForm((current) => ({
+      ...current,
+      agreementItems: current.agreementItems.map((item) =>
+        item.id === agreementItemId && !item.title.trim()
+          ? { ...item, title }
+          : item
+      ),
+    }))
+  }
+
+  const handleClose = () => {
+    if (
+      unsavedAgreementAttachmentTitleDrafts.length > 0 &&
+      !window.confirm('Du har osparade PDF-namn. Vill du stänga utan att spara dem?')
+    ) {
+      return
+    }
+    dirtyRef.current = false
+    agreementAttachmentLinksTouchedRef.current = false
+    openProjectIdRef.current = null
+    openProjectUpdatedAtRef.current = null
+    setSavingAgreementAttachmentTitleOperations([])
+    setUnsavedAgreementAttachmentTitleDrafts([])
+    setForm(buildEbProjectForm(project))
+    setAgreementAttachmentLinks(agreementAttachmentLinksFromAttachments(attachments))
+    onClose()
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (submitting) return
+    if (submitting || savingAgreementAttachmentTitleOperations.length > 0) return
+    if (unsavedAgreementAttachmentTitleDrafts.length > 0) {
+      showError(new Error('Spara PDF-namnet innan du sparar resten av entreprenaden.'), 'PDF-namnet är inte sparat.')
+      return
+    }
+
+    const agreementLinksWereTouched = agreementAttachmentLinksTouchedRef.current
 
     try {
       setSubmitting(true)
@@ -2073,7 +2294,10 @@ function EditProjectDialog({
       const response = await fetch(`/api/eb/projects/${project.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ebProjectFormToPayload(form)),
+        body: JSON.stringify({
+          ...ebProjectFormToPayload(form),
+          expectedUpdatedAt: openProjectUpdatedAtRef.current,
+        }),
       })
       const payload = (await response.json().catch(() => ({}))) as UpdateProjectResponse
 
@@ -2081,7 +2305,54 @@ function EditProjectDialog({
         throw new Error(payload.error ?? 'Kunde inte uppdatera entreprenaden.')
       }
 
-      onUpdated(payload.project)
+      let savedProject = payload.project
+
+      if (agreementLinksWereTouched) {
+        const validAgreementKeys = new Set([
+          STANDARD_AGREEMENT_ATTACHMENT_KEY,
+          ...payload.project.agreementItems.map((item) => item.id),
+        ])
+        const linksToSave = agreementAttachmentLinks.filter((link) =>
+          validAgreementKeys.has(link.agreementKey)
+        )
+        const agreementResponse = await fetch(`/api/eb/projects/${project.id}/agreement-attachments`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            links: linksToSave,
+            expectedUpdatedAt: payload.project.updatedAt,
+          }),
+        })
+        const agreementPayload = (await agreementResponse.json().catch(() => ({}))) as AgreementAttachmentsResponse
+        if (!agreementResponse.ok || !agreementPayload.links) {
+          // The project data is already saved. Keep the dialog open with its
+          // current draft so a transient link error can be retried safely.
+          dirtyRef.current = true
+          agreementAttachmentLinksTouchedRef.current = true
+          openProjectUpdatedAtRef.current = payload.project.updatedAt
+          setForm(buildEbProjectForm(payload.project))
+          onUpdated(payload.project)
+          throw new Error(
+            agreementPayload.error ??
+              'Entreprenadens uppgifter sparades, men avtalsfilerna kunde inte kopplas. Försök spara igen.'
+          )
+        }
+
+        if (agreementPayload.documents) {
+          onAttachmentsChange([
+            ...attachmentsRef.current.filter((attachment) => attachment.attachmentType === 'image'),
+            ...agreementPayload.documents,
+          ])
+        }
+
+        savedProject = agreementPayload.project ?? savedProject
+      }
+
+      dirtyRef.current = false
+      agreementAttachmentLinksTouchedRef.current = false
+      openProjectUpdatedAtRef.current = savedProject.updatedAt
+      setForm(buildEbProjectForm(savedProject))
+      onUpdated(savedProject)
       onClose()
     } catch (submitError) {
       showError(submitError, 'Kunde inte uppdatera entreprenaden.')
@@ -2092,7 +2363,7 @@ function EditProjectDialog({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
+      <div className="flex max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">EB</p>
@@ -2100,8 +2371,8 @@ function EditProjectDialog({
           </div>
           <button
             type="button"
-            onClick={onClose}
-            disabled={submitting}
+            onClick={handleClose}
+            disabled={submitting || savingAgreementAttachmentTitleOperations.length > 0}
             aria-label="Stäng"
             title="Stäng"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2111,24 +2382,86 @@ function EditProjectDialog({
         </div>
 
         <form onSubmit={(event) => void handleSubmit(event)} className="overflow-auto p-4">
-          <EbProjectForm form={form} onChange={updateField} showNotePrefix />
+          <EbProjectForm
+            form={form}
+            onChange={updateField}
+            showNotePrefix
+            renderAgreementDocumentField={({ agreementKey, label, description, agreementItem }) => {
+              const attachmentIds = agreementAttachmentLinks
+                .filter((link) => link.agreementKey === agreementKey)
+                .sort((left, right) => (left.sortOrder ?? 100) - (right.sortOrder ?? 100))
+                .map((link) => link.attachmentId)
+
+              if (agreementAttachmentsAvailable !== true) {
+                return (
+                  <p className="mt-4 rounded-md border border-dashed border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    {agreementAttachmentsAvailable === false
+                      ? 'Avtalsfiler aktiveras när den senaste EB-databasuppdateringen är körd.'
+                      : 'Läser möjligheten att koppla avtalsfiler…'}
+                  </p>
+                )
+              }
+
+              return (
+                <EbAgreementDocumentField
+                  key={agreementKey}
+                  projectId={project.id}
+                  attachments={attachments}
+                  attachmentIds={attachmentIds}
+                  label={label}
+                  description={description}
+                  titleStateScope={agreementKey}
+                  titleEditingDisabled={savingAgreementAttachmentTitleOperations.length > 0}
+                  onAttachmentIdsChange={(nextAttachmentIds) =>
+                    updateAgreementAttachmentIds(agreementKey, nextAttachmentIds)
+                  }
+                  onAttachmentSelected={(attachment) =>
+                    seedAgreementItemTitleFromAttachment(agreementItem?.id, attachment)
+                  }
+                  onAttachmentsChange={handleAgreementAttachmentsChange}
+                  onProjectUpdated={handleAttachmentProjectUpdated}
+                  onTitleSavingChange={handleAgreementAttachmentTitleSaving}
+                  onTitleDraftChange={handleAgreementAttachmentTitleDraftChange}
+                />
+              )
+            }}
+          />
+
+          {agreementAttachmentsLoading ? (
+            <p className="mt-3 flex items-center gap-2 text-xs text-gray-600">
+              <Loader2 size={14} className="animate-spin" />
+              Läser avtalsfiler…
+            </p>
+          ) : null}
+
+          {unsavedAgreementAttachmentTitleDrafts.length > 0 ? (
+            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Spara det ändrade PDF-namnet innan du sparar resten av entreprenaden.
+            </p>
+          ) : null}
 
           <div className="mt-5 flex justify-end gap-2 border-t border-emerald-100 pt-4">
             <button
               type="button"
-              onClick={onClose}
-              disabled={submitting}
+              onClick={handleClose}
+              disabled={submitting || savingAgreementAttachmentTitleOperations.length > 0}
               className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Avbryt
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || savingAgreementAttachmentTitleOperations.length > 0 || unsavedAgreementAttachmentTitleDrafts.length > 0}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
-              {submitting ? 'Sparar...' : 'Spara ändringar'}
+              {submitting || savingAgreementAttachmentTitleOperations.length > 0 ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
+              {submitting
+                ? 'Sparar...'
+                : savingAgreementAttachmentTitleOperations.length > 0
+                  ? 'Sparar PDF-namn...'
+                  : unsavedAgreementAttachmentTitleDrafts.length > 0
+                    ? 'Spara PDF-namn först'
+                    : 'Spara ändringar'}
             </button>
           </div>
         </form>
@@ -2484,6 +2817,7 @@ export default function EbProjectDetailClient({
   const router = useRouter()
   const { showError } = useEbToast()
   const [currentProject, setCurrentProject] = useState(project)
+  const [currentAttachments, setCurrentAttachments] = useState(attachments)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [detailsInspection, setDetailsInspection] = useState<EbInspectionSummary | null>(null)
@@ -2506,6 +2840,10 @@ export default function EbProjectDetailClient({
   useEffect(() => {
     setCurrentProject(project)
   }, [project])
+
+  useEffect(() => {
+    setCurrentAttachments(attachments)
+  }, [attachments])
 
   useEffect(() => {
     setAssignmentConfirmationByInspection(
@@ -3099,7 +3437,12 @@ export default function EbProjectDetailClient({
           </div>
 
           <section className="mt-4 rounded-lg border border-emerald-100 bg-white/90 p-4 shadow-sm">
-            <EbProjectAttachmentsPanel projectId={currentProject.id} initialAttachments={attachments} />
+            <EbProjectAttachmentsPanel
+              projectId={currentProject.id}
+              initialAttachments={currentAttachments}
+              onAttachmentsChange={setCurrentAttachments}
+              onProjectUpdated={handleUpdated}
+            />
           </section>
         </div>
 
@@ -3112,8 +3455,10 @@ export default function EbProjectDetailClient({
         <EditProjectDialog
           open={editDialogOpen}
           project={currentProject}
+          attachments={currentAttachments}
           onClose={() => setEditDialogOpen(false)}
           onUpdated={handleUpdated}
+          onAttachmentsChange={setCurrentAttachments}
         />
         <InspectionDetailsDialog
           open={Boolean(detailsInspection)}

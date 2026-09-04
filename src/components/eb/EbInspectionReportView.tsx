@@ -1471,15 +1471,6 @@ function photoReferenceLabel(note: EbNote, checkpointNumber: number | undefined,
   return note.noteNumber ? `Notering ${note.noteNumber}` : 'Notering'
 }
 
-type PhotoAppendixGroup = {
-  noteId: string
-  referenceLabel: string
-  location: string
-  noteText: string
-  headingsBefore: EbReportNoteHeading[]
-  images: EbNoteImage[]
-}
-
 const REPORT_TEXT_CHUNK_MAX_LENGTH = 800
 const REPORT_TEXT_CHUNK_MAX_LINES = 16
 
@@ -1526,96 +1517,81 @@ function splitReportTextForPage(value: string) {
   return chunks
 }
 
-function PhotoAppendixContextBlock({
-  group,
-  headings,
-  noteText,
-  continuationIndex,
-  noteTextContinuation,
-  showTitle = false,
-}: {
-  group: PhotoAppendixGroup
-  headings: EbReportNoteHeading[]
+type PhotoAppendixPhoto = {
+  id: string
+  referenceLabel: string
+  location: string
   noteText: string
-  continuationIndex: number
-  noteTextContinuation: boolean
-  showTitle?: boolean
-}) {
-  const isContinuation = continuationIndex > 0
-  return (
-    <section className="eb-report-section">
-      {showTitle ? (
-        <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>BILAGA 1 – FOTOBILAGA</h2>
-      ) : null}
-      {headings.map((heading) => (
-        <h3
-          key={heading.id}
-          className="mb-2 border-y border-[#8bb6a0] bg-[#eaf4ee] px-2 py-1.5 text-[11pt] font-bold leading-tight text-black"
-        >
-          {heading.title}
-        </h3>
-      ))}
-      <div className="break-inside-avoid text-[9pt] leading-tight text-black">
-        <p className="font-bold">
-          {group.referenceLabel}{isContinuation ? ` (forts. ${continuationIndex + 1})` : ''}
-        </p>
-        {!isContinuation && group.location !== '-' ? <p>Del/Rum: {group.location}</p> : null}
-        {noteText ? (
-          <p className="whitespace-pre-wrap break-words">
-            {noteTextContinuation ? 'Notering, fortsättning: ' : 'Notering: '}
-            {noteText}
-          </p>
-        ) : null}
-      </div>
-    </section>
-  )
+  image: EbNoteImage
+  imageNumber: number
+  totalImages: number
 }
 
-function PhotoAppendixImagesBlock({
-  group,
-  images,
-  imageOffset,
+type PhotoAppendixSection = {
+  id: string
+  headings: EbReportNoteHeading[]
+  photos: PhotoAppendixPhoto[]
+}
+
+function PhotoAppendixSectionBlock({
+  section,
+  photos,
+  showTitle = false,
+  showHeadings = false,
   onImageError,
 }: {
-  group: PhotoAppendixGroup
-  images: EbNoteImage[]
-  imageOffset: number
+  section: PhotoAppendixSection
+  photos: PhotoAppendixPhoto[]
+  showTitle?: boolean
+  showHeadings?: boolean
   onImageError: (message: string) => void
 }) {
-  const totalImages = group.images.length
   return (
     <section className="eb-report-section">
-      <div className="mb-2 break-inside-avoid text-[9pt] leading-tight text-black">
-        <p className="font-bold">{group.referenceLabel} – bilder</p>
-        {group.location !== '-' ? <p>Del/Rum: {group.location}</p> : null}
-      </div>
+      {showTitle ? <h2 className={REPORT_APPENDIX_HEADING_CLASS_NAME}>BILAGA 1 – FOTOBILAGA</h2> : null}
+      {showHeadings
+        ? section.headings.map((heading) => (
+            <h3
+              key={heading.id}
+              className="mb-2 border-y border-[#8bb6a0] bg-[#eaf4ee] px-2 py-1.5 text-[11pt] font-bold leading-tight text-black"
+            >
+              {heading.title}
+            </h3>
+          ))
+        : null}
       <div className="eb-report-photo-grid grid grid-cols-2 gap-x-6 gap-y-5">
-        {images.map((image, index) => {
-          const imageNumber = imageOffset + index + 1
-          const imageLabel = image.label?.trim()
+        {photos.map((photo) => {
+          const imageLabel = photo.image.label?.trim()
           return (
             <figure
-              key={`${image.id}-${group.noteId}-${imageNumber}`}
-              className="eb-report-photo-figure grid break-inside-avoid grid-rows-[auto_48mm] gap-1"
+              key={photo.id}
+              className="eb-report-photo-figure grid break-inside-avoid grid-rows-[auto_64mm] gap-1"
             >
               <figcaption className="break-words text-[9pt] leading-tight text-black">
-                <p className="font-bold">Bild {imageNumber} av {totalImages}</p>
+                <p className="font-bold">
+                  {photo.referenceLabel}
+                  {photo.location !== '-' ? ` · ${photo.location}` : ''}
+                </p>
+                <p>Bild {photo.imageNumber} av {photo.totalImages}</p>
                 {imageLabel ? (
                   <p className="whitespace-pre-wrap break-words">{imageLabel}</p>
                 ) : null}
+                {photo.imageNumber === 1 && photo.noteText ? (
+                  <p className="whitespace-pre-wrap break-words">Notering: {photo.noteText}</p>
+                ) : null}
               </figcaption>
               <img
-                src={reportImageSrc(image)}
-                alt={`Bild ${imageNumber} av ${totalImages} till ${group.referenceLabel.toLocaleLowerCase('sv-SE')}`}
+                src={reportImageSrc(photo.image)}
+                alt={`Bild ${photo.imageNumber} av ${photo.totalImages} till ${photo.referenceLabel.toLocaleLowerCase('sv-SE')}`}
                 data-eb-print-measure-image="true"
                 onError={(event) => {
                   event.currentTarget.dataset.ebImageFailed = 'true'
                   onImageError(
-                    `${group.referenceLabel}, bild ${imageNumber}: bilden kunde inte läsas in.`
+                    `${photo.referenceLabel}, bild ${photo.imageNumber}: bilden kunde inte läsas in.`
                   )
                 }}
                 className="eb-report-photo-image h-full w-full object-contain"
-                style={{ objectPosition: 'left center' }}
+                style={{ objectPosition: 'center center' }}
               />
             </figure>
           )
@@ -1762,9 +1738,22 @@ function EbPageHeader({
   photoAppendix: boolean
 }) {
   const propertyDesignation = report.project.propertyDesignation?.trim()
+  const municipality = report.project.municipality?.trim()
   const brfApartmentNumber = report.project.brfApartmentNumber?.trim()
-  const objectIdentifier = propertyDesignation || brfApartmentNumber || '-'
-  const objectIdentifierLabel = propertyDesignation ? 'Fastighetsbeteckning' : 'Objekt'
+  const primaryObjectIdentifier = propertyDesignation || brfApartmentNumber
+  const objectIdentifier = detailLine([primaryObjectIdentifier, municipality])
+  const objectIdentifierLabel =
+    primaryObjectIdentifier && municipality
+      ? propertyDesignation
+        ? 'Fastighetsbeteckning / kommun'
+        : 'Objekt / kommun'
+      : propertyDesignation
+        ? 'Fastighetsbeteckning'
+        : brfApartmentNumber
+          ? 'Objekt'
+          : municipality
+            ? 'Kommun'
+            : 'Objekt'
   const pageValue = `${pageNumber} (${totalPages})`
   const documentLabel = photoAppendix ? 'Bilaga 1 till utlåtande' : 'Dokument'
   const documentValue = photoAppendix
@@ -2352,8 +2341,9 @@ export default function EbInspectionReportView({
       })
     }
 
-    const photoGroups: PhotoAppendixGroup[] = []
+    const photoSections: PhotoAppendixSection[] = []
     let pendingPhotoHeadings: EbReportNoteHeading[] = []
+    let activePhotoSection: PhotoAppendixSection | null = null
     for (const note of notes) {
       const checkpointNumber = checkpointNumberByNote.get(note.id)
       if (drainageReport && !checkpointNumber) continue
@@ -2369,18 +2359,32 @@ export default function EbInspectionReportView({
       const images = imagesByNoteId.get(note.id) ?? []
       if (images.length === 0) continue
 
-      photoGroups.push({
-        noteId: note.id,
-        referenceLabel,
-        location: noteLocationLine(note),
-        noteText: note.noteText?.trim() ?? '',
-        headingsBefore: pendingPhotoHeadings,
-        images,
+      if (!activePhotoSection || pendingPhotoHeadings.length > 0) {
+        activePhotoSection = {
+          id: `${note.id}-${photoSections.length + 1}`,
+          headings: pendingPhotoHeadings,
+          photos: [],
+        }
+        photoSections.push(activePhotoSection)
+        pendingPhotoHeadings = []
+      }
+
+      const location = noteLocationLine(note)
+      const noteText = note.noteText?.trim() ?? ''
+      images.forEach((image, imageIndex) => {
+        activePhotoSection?.photos.push({
+          id: `${note.id}-${image.id}-${imageIndex + 1}`,
+          referenceLabel,
+          location,
+          noteText,
+          image,
+          imageNumber: imageIndex + 1,
+          totalImages: images.length,
+        })
       })
-      pendingPhotoHeadings = []
     }
 
-    const hasPhotoAppendix = photoGroups.length > 0
+    const hasPhotoAppendix = photoSections.some((section) => section.photos.length > 0)
 
     if (inspectorSignature) {
       blocks.push({
@@ -2396,73 +2400,26 @@ export default function EbInspectionReportView({
     }
 
     let isFirstPhotoBlock = true
-    for (const group of photoGroups) {
-      const contextChunks = splitReportTextForPage(group.noteText)
-      const headingChunks = chunkArray(group.headingsBefore, 4)
-      const contextParts: Array<{
-        headings: EbReportNoteHeading[]
-        noteText: string
-        noteTextContinuation: boolean
-      }> = []
-      if (headingChunks.length > 0) {
-        headingChunks.slice(0, -1).forEach((headings) => {
-          contextParts.push({ headings, noteText: '', noteTextContinuation: false })
-        })
-        contextParts.push({
-          headings: headingChunks[headingChunks.length - 1],
-          noteText: contextChunks[0] ?? '',
-          noteTextContinuation: false,
-        })
-        contextChunks.slice(1).forEach((noteText) => {
-          contextParts.push({ headings: [], noteText, noteTextContinuation: true })
-        })
-      } else if (contextChunks.length > 0) {
-        contextChunks.forEach((noteText, textIndex) =>
-          contextParts.push({
-            headings: [],
-            noteText,
-            noteTextContinuation: textIndex > 0,
-          })
-        )
-      } else {
-        contextParts.push({ headings: [], noteText: '', noteTextContinuation: false })
-      }
-
-      contextParts.forEach(({ headings, noteText, noteTextContinuation }, contextIndex) => {
+    for (const section of photoSections) {
+      chunkArray(section.photos, 4).forEach((photos, sectionChunkIndex) => {
         const showTitle = isFirstPhotoBlock
         blocks.push({
-          id: `photo-context-${group.noteId}-${contextIndex}`,
+          id: `photo-section-${section.id}-${sectionChunkIndex}`,
           pageKind: 'photo-appendix',
-          startsNewPage: isFirstPhotoBlock,
-          keepWithNext: contextIndex === contextParts.length - 1,
-          spacingAfterMm: 2,
-          node: (
-            <PhotoAppendixContextBlock
-              group={group}
-              headings={headings}
-              noteText={noteText}
-              continuationIndex={contextIndex}
-              noteTextContinuation={noteTextContinuation}
+          startsNewPage: showTitle,
+          repeatHeaderKey: section.headings.length > 0 ? `photo-section-${section.id}` : undefined,
+          spacingAfterMm: 4,
+          render: ({ showRepeatHeader }) => (
+            <PhotoAppendixSectionBlock
+              section={section}
+              photos={photos}
               showTitle={showTitle}
-            />
-          ),
-        })
-        isFirstPhotoBlock = false
-      })
-      chunkArray(group.images, 2).forEach((images, groupChunkIndex) => {
-        blocks.push({
-          id: `photo-${group.noteId}-${groupChunkIndex}`,
-          pageKind: 'photo-appendix',
-          spacingAfterMm: 3,
-          node: (
-            <PhotoAppendixImagesBlock
-              group={group}
-              images={images}
-              imageOffset={groupChunkIndex * 2}
+              showHeadings={sectionChunkIndex === 0 || showRepeatHeader}
               onImageError={showError}
             />
           ),
         })
+        isFirstPhotoBlock = false
       })
     }
 

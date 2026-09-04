@@ -1,17 +1,20 @@
 'use client'
 
-import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { ExternalLink, FileText, Image as ImageIcon, Loader2, Save, Trash2, Upload } from 'lucide-react'
 import { useEbToast } from '@/components/eb/EbToastProvider'
-import type { EbAttachmentType, EbProjectAttachment } from '@/lib/eb/server'
+import type { EbAttachmentType, EbProjectAttachment, EbProjectListItem } from '@/lib/eb/server'
 
 type EbProjectAttachmentsPanelProps = {
   projectId: string
   initialAttachments: EbProjectAttachment[]
+  onAttachmentsChange?: (attachments: EbProjectAttachment[]) => void
+  onProjectUpdated?: (project: EbProjectListItem) => void
 }
 
 type AttachmentsResponse = {
   attachments?: EbProjectAttachment[]
+  project?: EbProjectListItem
   error?: string
 }
 
@@ -277,6 +280,8 @@ function AttachmentDropZone({
 export default function EbProjectAttachmentsPanel({
   projectId,
   initialAttachments,
+  onAttachmentsChange,
+  onProjectUpdated,
 }: EbProjectAttachmentsPanelProps) {
   const { showError } = useEbToast()
   const [attachments, setAttachments] = useState(initialAttachments)
@@ -293,9 +298,22 @@ export default function EbProjectAttachmentsPanel({
   const documents = attachments.filter((attachment) => attachment.attachmentType === 'document')
   const images = attachments.filter((attachment) => attachment.attachmentType === 'image')
 
+  useEffect(() => {
+    setAttachments(initialAttachments)
+    setAttachmentEdits((current) =>
+      Object.fromEntries(
+        initialAttachments.map((attachment) => [
+          attachment.id,
+          current[attachment.id] ?? buildAttachmentEditState(attachment),
+        ])
+      )
+    )
+  }, [initialAttachments])
+
   const replaceAttachments = (nextAttachments: EbProjectAttachment[]) => {
     setAttachments(nextAttachments)
     setAttachmentEdits(buildAttachmentEditMap(nextAttachments))
+    onAttachmentsChange?.(nextAttachments)
   }
 
   const updateAttachmentEdit = <K extends keyof AttachmentEditState>(
@@ -345,6 +363,7 @@ export default function EbProjectAttachmentsPanel({
         }
 
         replaceAttachments(payload.attachments)
+        if (payload.project) onProjectUpdated?.(payload.project)
       }
     } catch (uploadError) {
       showError(uploadError, 'Kunde inte ladda upp bilaga.')
@@ -377,6 +396,7 @@ export default function EbProjectAttachmentsPanel({
       }
 
       replaceAttachments(payload.attachments)
+      if (payload.project) onProjectUpdated?.(payload.project)
     } catch (saveError) {
       showError(saveError, 'Kunde inte spara bilageuppgifter.')
     } finally {
@@ -403,6 +423,7 @@ export default function EbProjectAttachmentsPanel({
       }
 
       replaceAttachments(payload.attachments)
+      if (payload.project) onProjectUpdated?.(payload.project)
     } catch (deleteError) {
       showError(deleteError, 'Kunde inte ta bort bilaga.')
     } finally {
@@ -515,12 +536,17 @@ export default function EbProjectAttachmentsPanel({
                             className={metadataInputClassName()}
                           />
                         </label>
-                        <p className="truncate text-xs text-gray-600">
-                          {[attachment.fileName, formatFileSize(attachment.fileSizeBytes), formatDate(attachment.createdAt)]
-                            .filter(Boolean)
-                            .join(' - ')}
-                        </p>
-                      </div>
+                          <p className="truncate text-xs text-gray-600">
+                            {[attachment.fileName, formatFileSize(attachment.fileSizeBytes), formatDate(attachment.createdAt)]
+                              .filter(Boolean)
+                              .join(' - ')}
+                          </p>
+                          {attachment.agreementLinks.length > 0 ? (
+                            <p className="mt-1 text-xs font-medium text-emerald-800">
+                              Används i Avtal. Ta bort avtalskopplingen innan filen raderas.
+                            </p>
+                          ) : null}
+                        </div>
                       <div className="flex shrink-0 flex-col gap-2">
                         {attachment.signedUrl ? (
                           <a

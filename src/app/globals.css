@@ -270,7 +270,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     margin: 0 !important;
     overflow: visible !important;
     align-self: start !important;
-    grid-template-rows: auto 48mm !important;
+    grid-template-rows: auto 64mm !important;
     gap: 1mm !important;
   }
 
@@ -284,11 +284,11 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   .eb-print-paged-document img.eb-report-photo-image {
     width: 100% !important;
-    height: 48mm !important;
+    height: 64mm !important;
     max-width: 100% !important;
-    max-height: 48mm !important;
+    max-height: 64mm !important;
     object-fit: contain !important;
-    object-position: left center !important;
+    object-position: center center !important;
   }
 
   .eb-print-paged-document img.eb-report-footer-logo {

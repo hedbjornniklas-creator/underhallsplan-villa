@@ -37,6 +37,9 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
   if (message === 'EB_PROJECT_NOT_FOUND') return jsonError('Entreprenaden hittades inte.', 404)
+  if (message === 'EB_PROJECT_CONFLICT') {
+    return jsonError('Entreprenaden har ändrats. Ladda om sidan och försök igen.', 409)
+  }
   return jsonError(fallback, 500)
 }
 
@@ -49,6 +52,8 @@ export async function PATCH(
     const org = await requireEbContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const title = toText(body.title)
+    const hasExpectedUpdatedAt = Object.prototype.hasOwnProperty.call(body, 'expectedUpdatedAt')
+    const expectedUpdatedAt = hasExpectedUpdatedAt ? toText(body.expectedUpdatedAt) || null : undefined
 
     if (!title) {
       return jsonError('Ange projektnamn.', 400)
@@ -106,6 +111,7 @@ export async function PATCH(
       invoicePostalCode: toText(body.invoicePostalCode) || null,
       invoiceCity: toText(body.invoiceCity) || null,
       agreementItems: Array.isArray(body.agreementItems) ? body.agreementItems : [],
+      ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }),
     })
 
     return NextResponse.json({ project })
