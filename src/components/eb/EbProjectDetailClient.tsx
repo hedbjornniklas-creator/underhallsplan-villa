@@ -2089,7 +2089,7 @@ function EditProjectDialog({
   const [unsavedAgreementAttachmentTitleDrafts, setUnsavedAgreementAttachmentTitleDrafts] = useState<string[]>([])
   const dirtyRef = useRef(false)
   const agreementAttachmentLinksTouchedRef = useRef(false)
-  const openProjectIdRef = useRef<string | null>(null)
+  const initializedForOpenRef = useRef(false)
   const openProjectUpdatedAtRef = useRef<string | null>(project.updatedAt)
   const attachmentsRef = useRef(attachments)
 
@@ -2101,7 +2101,7 @@ function EditProjectDialog({
     if (!open) {
       dirtyRef.current = false
       agreementAttachmentLinksTouchedRef.current = false
-      openProjectIdRef.current = null
+      initializedForOpenRef.current = false
       openProjectUpdatedAtRef.current = null
       setAgreementAttachmentsAvailable(null)
       setSavingAgreementAttachmentTitleOperations([])
@@ -2109,20 +2109,20 @@ function EditProjectDialog({
       return
     }
 
-    const openedForAnotherProject = openProjectIdRef.current !== project.id
+    if (!initializedForOpenRef.current) {
+      initializedForOpenRef.current = true
 
-    // Refreshes can replace the project prop while this dialog is open (for
-    // example when the window regains focus or a PDF status is polled). Keep
-    // locally edited data in that case; otherwise a complete PATCH can write
-    // those lost values back as empty fields.
-    if (openedForAnotherProject || !dirtyRef.current) {
-      setForm(buildEbProjectForm(project))
-      setAgreementAttachmentLinks(agreementAttachmentLinksFromAttachments(attachments))
-      dirtyRef.current = false
-      agreementAttachmentLinksTouchedRef.current = false
-      openProjectIdRef.current = project.id
+      // A passive effect can run after a fast first field change. Never let
+      // that initial synchronization overwrite the value the user just typed.
+      if (!dirtyRef.current) {
+        setForm(buildEbProjectForm(project))
+        setAgreementAttachmentLinks(agreementAttachmentLinksFromAttachments(attachments))
+      }
+
+      // Project and attachment props can change while the modal is open (for
+      // example while a PDF is being processed). They must not reset this form
+      // after the opening synchronization has completed.
       openProjectUpdatedAtRef.current = project.updatedAt
-      if (openedForAnotherProject) setAgreementAttachmentsAvailable(null)
     }
   }, [attachments, open, project])
 
@@ -2269,7 +2269,7 @@ function EditProjectDialog({
     }
     dirtyRef.current = false
     agreementAttachmentLinksTouchedRef.current = false
-    openProjectIdRef.current = null
+    initializedForOpenRef.current = false
     openProjectUpdatedAtRef.current = null
     setSavingAgreementAttachmentTitleOperations([])
     setUnsavedAgreementAttachmentTitleDrafts([])
