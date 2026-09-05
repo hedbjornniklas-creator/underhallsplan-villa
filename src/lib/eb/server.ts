@@ -2568,10 +2568,17 @@ function ebMissingDocumentNoteText(
   document: ReturnType<typeof normalizeInspectionDocumentInput>
 ) {
   const baseText = isHandoverDocumentResultLabel(documentType.result_label)
-    ? `Avtalad dokumentation saknas: ${documentType.label} har inte överlämnats.`
-    : `Avtalad dokumentation saknas: ${documentType.label} har inte redovisats.`
+    ? `${documentType.label} har inte överlämnats vid besiktningen.`
+    : `${documentType.label} har inte redovisats vid besiktningen.`
 
   return document.note ? `${baseText} Kommentar: ${document.note}` : baseText
+}
+
+function normalizeLegacyMissingDocumentNoteText(value: string) {
+  return value.replace(
+    /^Avtalad dokumentation saknas:\s*(.+?) har inte (redovisats|överlämnats)\.(.*)$/,
+    '$1 har inte $2 vid besiktningen.$3'
+  )
 }
 
 async function syncMissingDocumentNotes(input: {
@@ -2835,7 +2842,7 @@ function mapNote(
     placeDetail: row.place_detail ?? null,
     markerKey: row.marker_key ?? null,
     statusKey,
-    noteText: row.note_text ?? '',
+    noteText: normalizeLegacyMissingDocumentNoteText(row.note_text ?? ''),
     remediationAssigneeId: row.remediation_assignee_id ?? null,
     remediationAssigneeName: row.trade_group ?? row.responsible_party ?? null,
     responsibleParty: row.responsible_party ?? null,
