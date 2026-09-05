@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { Mail } from 'lucide-react'
 import Protected from '@/components/Protected'
 
 type RequestItem = {
@@ -15,6 +16,7 @@ type RequestItem = {
   message: string | null
   status: 'pending' | 'approved' | 'rejected'
   reviewNote: string | null
+  externalMessage: string | null
   reviewedAt: string | null
   approvedBrfId: string | null
   createdAt: string
@@ -43,6 +45,7 @@ type ReviewResult = {
 
 type DraftState = {
   reviewNote: string
+  externalMessage: string
 }
 
 type StatusFilter = 'pending' | 'approved' | 'rejected' | 'all'
@@ -93,6 +96,7 @@ export default function RenoAppAdminBrfRequestsPage() {
               if (!nextDrafts[item.id]) {
                 nextDrafts[item.id] = {
                   reviewNote: item.reviewNote ?? '',
+                  externalMessage: item.externalMessage ?? '',
                 }
               }
             }
@@ -122,11 +126,11 @@ export default function RenoAppAdminBrfRequestsPage() {
   const updateDraft = (id: string, reviewNote: string) => {
     setDrafts((current) => ({
       ...current,
-      [id]: { reviewNote },
+      [id]: { ...current[id], reviewNote },
     }))
   }
 
-  const handleAction = async (id: string, action: 'approve' | 'reject') => {
+  const handleAction = async (id: string, action: 'approve' | 'reject' | 'resend_decision') => {
     const reviewNote = drafts[id]?.reviewNote?.trim() ?? ''
 
     setSubmittingId(id)
@@ -139,6 +143,7 @@ export default function RenoAppAdminBrfRequestsPage() {
         body: JSON.stringify({
           action,
           reviewNote,
+          externalMessage: drafts[id]?.externalMessage ?? '',
         }),
       })
       const payload = (await response.json().catch(() => ({}))) as ReviewResult & { error?: string }
@@ -268,7 +273,7 @@ export default function RenoAppAdminBrfRequestsPage() {
                                 <button
                                   type="button"
                                   onClick={() => void handleAction(item.id, 'approve')}
-                                  disabled={submittingId === item.id}
+                                  disabled={submittingId !== null}
                                   className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {submittingId === item.id ? 'Sparar...' : 'Godkänn'}
@@ -276,7 +281,7 @@ export default function RenoAppAdminBrfRequestsPage() {
                                 <button
                                   type="button"
                                   onClick={() => void handleAction(item.id, 'reject')}
-                                  disabled={submittingId === item.id}
+                                  disabled={submittingId !== null}
                                   className="rounded-full border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Avslå
@@ -317,18 +322,24 @@ export default function RenoAppAdminBrfRequestsPage() {
 
                             <div className="rounded-2xl border border-stone-200 bg-white p-4">
                               <label className="block text-sm font-semibold text-stone-900">
-                                Kommentar
+                                Intern anteckning · endast HusHub
                                 <textarea
+                                  disabled={item.status !== 'pending' || submittingId !== null}
                                   value={reviewNote}
                                   onChange={(event) => updateDraft(item.id, event.target.value)}
                                   className="mt-3 min-h-[120px] w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-                                  placeholder="Valfri intern anteckning eller kommentar"
+                                  placeholder="Intern anteckning"
                                 />
                               </label>
-                              <p className="mt-3 text-xs leading-6 text-stone-500">
-                                Godkännande skickar en kombinerad aktiveringslänk till samma e-postadress. Rollen sätts
-                                alltid till styrelsemedlem i MVP.
-                              </p>
+                              <label className="mt-4 block text-sm font-semibold text-stone-900">
+                                Meddelande till föreningen · skickas med beslutet
+                                <textarea
+                                  disabled={item.status !== 'pending' || submittingId !== null}
+                                  value={drafts[item.id]?.externalMessage ?? ''}
+                                  onChange={event => setDrafts(current => ({ ...current, [item.id]: { ...current[item.id], externalMessage: event.target.value } }))}
+                                  className="mt-2 min-h-[100px] w-full rounded-md border border-stone-300 px-3 py-2 text-sm"
+                                />
+                              </label>
                             </div>
                           </div>
 
@@ -342,9 +353,10 @@ export default function RenoAppAdminBrfRequestsPage() {
                               </p>
                               {item.approvedBrfId ? (
                                 <p className="mt-1">
-                                  <strong>Skapad BRF:</strong> {item.approvedBrfId}
+                                  <Link href={`/admin/renoapp/brf/${item.approvedBrfId}`} className="font-semibold text-emerald-800 underline">Öppna föreningens administration</Link>
                                 </p>
                               ) : null}
+                              {item.status === 'rejected' && <button type="button" disabled={submittingId !== null} onClick={() => void handleAction(item.id, 'resend_decision')} className="mt-3 inline-flex items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-2 text-sm font-medium disabled:opacity-50"><Mail size={16} />Skicka avslagsmejl igen</button>}
                             </div>
                           ) : null}
 

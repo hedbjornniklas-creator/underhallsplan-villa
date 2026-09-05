@@ -728,7 +728,8 @@ export default function RenoAppApplyPage() {
       setError(null)
 
       try {
-        const response = await fetch(`/api/renoapp/brf/${slug}/public`, { cache: 'no-store' })
+        const query = initialDraftToken ? `?draft=${encodeURIComponent(initialDraftToken)}` : ''
+        const response = await fetch(`/api/renoapp/brf/${slug}/public${query}`, { cache: 'no-store' })
         const payload = (await response.json().catch(() => ({}))) as PublicConfigResponse & { error?: string }
 
         if (!response.ok) {
@@ -752,7 +753,7 @@ export default function RenoAppApplyPage() {
     return () => {
       active = false
     }
-  }, [slug])
+  }, [slug, initialDraftToken])
 
   useEffect(() => {
     let active = true

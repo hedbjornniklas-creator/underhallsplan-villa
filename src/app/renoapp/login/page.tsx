@@ -8,6 +8,7 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { ArrowLeft, FileCheck2, MessagesSquare, ShieldCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import PasswordAuthPanel from '@/components/auth/PasswordAuthPanel'
+import { getRenoAppReturnPath } from '@/lib/renoapp/brfLifecycle'
 
 function isRecoveryContext() {
   if (typeof window === 'undefined') return false
@@ -27,11 +28,7 @@ function getSafeReturnPath() {
   if (typeof window === 'undefined') return '/renoapp/app'
 
   const value = new URLSearchParams(window.location.search).get('next')
-  if (value === '/renoapp/app' || value?.startsWith('/renoapp/app/')) {
-    return value
-  }
-
-  return '/renoapp/app'
+  return getRenoAppReturnPath(value)
 }
 
 export default function RenoAppLoginPage() {

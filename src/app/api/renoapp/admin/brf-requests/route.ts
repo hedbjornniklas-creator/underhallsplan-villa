@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { listBrfRequests } from '@/lib/renoapp/onboarding'
+import { brfApiError } from '@/lib/renoapp/brfApiError'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,6 +18,6 @@ export async function GET() {
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'PROFILE_NOT_FOUND') return jsonError('Ingen profil hittades för användaren.', 403)
     if (message === 'ADMIN_REQUIRED') return jsonError('Adminbehörighet krävs.', 403)
-    return jsonError(message || 'Kunde inte läsa BRF-intresseanmälningar.', 500)
+    return brfApiError(error)
   }
 }

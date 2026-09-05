@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { requireRenoAppViewerContext } from '@/lib/renoapp/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,12 +11,14 @@ function jsonError(message: string, status: number) {
 
 export async function POST(request: Request) {
   try {
+    const context = await requireRenoAppViewerContext()
     const body = (await request.json().catch(() => ({}))) as { brfId?: unknown }
     const brfId = typeof body.brfId === 'string' ? body.brfId.trim() : ''
 
     if (!brfId) {
       return jsonError('BRF saknas.', 400)
     }
+    if (!context.brfs.some(brf => brf.id === brfId)) return jsonError('Du saknar åtkomst till föreningen.', 403)
 
     const cookieStore = await cookies()
     cookieStore.set('renoapp_active_brf_id', brfId, {
@@ -27,6 +30,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, brfId })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
+    if (message === 'UNAUTHORIZED') return jsonError('Logga in för att fortsätta.', 401)
+    if (message === 'RENOAPP_MEMBERSHIP_REQUIRED') return jsonError('Du saknar åtkomst till föreningen.', 403)
     return jsonError(message || 'Kunde inte spara vald BRF.', 500)
   }
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { getBrfVisibilityLabel } from '@/lib/renoapp/brfLifecycle'
 import { useEffect, useMemo, useState } from 'react'
 import { ExternalLink, Plus, RotateCw } from 'lucide-react'
 
@@ -27,6 +28,7 @@ type BrfItem = {
   caseCount: number
   memberCount: number
   pendingInviteCount: number
+  followUpInviteCount: number
 }
 
 type ListResponse = {
@@ -44,8 +46,8 @@ const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
 
 const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
-  { key: 'completed', label: 'Aktiverade' },
-  { key: 'pending', label: 'Ej klara' },
+  { key: 'completed', label: 'Aktiva BRF:er' },
+  { key: 'pending', label: 'Väntar på aktivering' },
   { key: 'listed', label: 'Publik lista' },
   { key: 'direct_link', label: 'Direktlänk' },
 ]
@@ -64,16 +66,11 @@ function getAddress(item: BrfItem) {
 
 function getStatusFilter(item: BrfItem): Exclude<StatusFilter, 'all'> {
   if (!item.onboardingCompletedAt) return 'pending'
-  if (item.isPublicApplyListed) return 'listed'
-  if (item.isPublicApplyEnabled) return 'direct_link'
   return 'completed'
 }
 
 function getStatusLabel(item: BrfItem) {
-  if (!item.onboardingCompletedAt) return 'Ej slutförd'
-  if (item.isPublicApplyListed) return 'Publik lista'
-  if (item.isPublicApplyEnabled) return 'Direktlänk'
-  return 'Aktiverad'
+  return item.onboardingCompletedAt ? 'Aktiv BRF' : 'Väntar på aktivering'
 }
 
 function getStatusRank(item: BrfItem) {
@@ -87,9 +84,7 @@ function getStatusRank(item: BrfItem) {
 function getStatusRowClass(item: BrfItem) {
   const status = getStatusFilter(item)
   if (status === 'pending') return 'bg-[#FEF3C7] text-[#111827] hover:bg-[#FDE68A]'
-  if (status === 'listed') return 'bg-[#DCFCE7] text-[#111827] hover:bg-[#BBF7D0]'
-  if (status === 'direct_link') return 'bg-[#DBEAFE] text-[#111827] hover:bg-[#BFDBFE]'
-  return 'bg-[#F9FAFB] text-[#111827] hover:bg-[#F3F4F6]'
+  return 'bg-emerald-50 text-slate-950 hover:bg-emerald-100'
 }
 
 function getStatusTabClass(key: StatusFilter, active: boolean) {
@@ -156,6 +151,7 @@ export default function RenoAppAdminBrfPage() {
 
     for (const item of items) {
       counts[getStatusFilter(item)] += 1
+      if (item.isPublicApplyEnabled) counts[item.isPublicApplyListed ? 'listed' : 'direct_link'] += 1
     }
 
     return counts
@@ -164,7 +160,9 @@ export default function RenoAppAdminBrfPage() {
   const filteredAndSorted = useMemo(() => {
     const q = search.trim().toLowerCase()
     const filtered = items.filter((item) => {
-      if (statusFilter !== 'all' && getStatusFilter(item) !== statusFilter) return false
+      if (statusFilter === 'listed' && !(item.isPublicApplyEnabled && item.isPublicApplyListed)) return false
+      if (statusFilter === 'direct_link' && !(item.isPublicApplyEnabled && !item.isPublicApplyListed)) return false
+      if ((statusFilter === 'completed' || statusFilter === 'pending') && getStatusFilter(item) !== statusFilter) return false
       if (!q) return true
 
       const searchable = [
@@ -389,7 +387,7 @@ export default function RenoAppAdminBrfPage() {
                   {pagedRows.map((item) => (
                     <tr key={item.id} className={`border-b last:border-b-0 ${getStatusRowClass(item)}`}>
                       <td className="px-3 py-2 align-middle">
-                        <div className="font-medium">{item.name}</div>
+                        <Link href={`/admin/renoapp/brf/${item.id}`} className="font-medium underline-offset-4 hover:underline">{item.name}</Link>
                         <div className="mt-0.5 text-xs text-gray-700">{[item.orgNumber, getAddress(item)].filter(Boolean).join(' · ')}</div>
                       </td>
                       <td className="px-3 py-2 align-middle">
@@ -401,10 +399,12 @@ export default function RenoAppAdminBrfPage() {
                           <span className="font-medium">{getStatusLabel(item)}</span>
                           {item.pendingInviteCount > 0 ? (
                             <span className="rounded-full bg-white/75 px-2 py-0.5 text-[10px] font-semibold text-gray-800">
-                              {item.pendingInviteCount} invite
+                              {item.pendingInviteCount} väntar på accept
                             </span>
                           ) : null}
                         </div>
+                        <div className="mt-1 text-xs text-slate-600">{getBrfVisibilityLabel(item)}</div>
+                        {item.followUpInviteCount > 0 && <Link href={`/admin/renoapp/brf/${item.id}`} className="mt-1 block text-xs font-semibold text-red-800 underline">{item.followUpInviteCount} inbjudningar att följa upp</Link>}
                       </td>
                       <td className="px-3 py-2 text-right align-middle whitespace-nowrap">{item.memberCount}</td>
                       <td className="px-3 py-2 text-right align-middle whitespace-nowrap">{item.caseCount}</td>

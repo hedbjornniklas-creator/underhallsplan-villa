@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { acceptBrfInvite } from '@/lib/renoapp/onboarding'
+import { brfApiError } from '@/lib/renoapp/brfApiError'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -116,6 +117,6 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'INVITE_EMAIL_MISMATCH') {
       return jsonError('Du är inloggad med fel e-postadress för den här inviten.', 409)
     }
-    return jsonError(message || 'Kunde inte acceptera invite.', 500)
+    return brfApiError(error)
   }
 }

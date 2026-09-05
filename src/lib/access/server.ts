@@ -125,6 +125,7 @@ export type PlatformAccessAssignment = {
 export type PlatformAccessContext = {
   identity: PlatformIdentity
   assignments: PlatformAccessAssignment[]
+  normalizedAccessAvailable: boolean
 }
 
 export type PlatformEntryProduct = {
@@ -220,7 +221,7 @@ async function requireAuthenticatedIdentity(): Promise<PlatformIdentity> {
   }
 }
 
-async function loadNormalizedAssignments(profileId: string): Promise<PlatformAccessAssignment[]> {
+async function loadNormalizedAssignments(profileId: string): Promise<PlatformAccessAssignment[] | null> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
   try {
@@ -278,7 +279,7 @@ async function loadNormalizedAssignments(profileId: string): Promise<PlatformAcc
       .filter((item): item is PlatformAccessAssignment => Boolean(item))
   } catch (error) {
     if (isPlatformSchemaMissing(error)) {
-      return []
+      return null
     }
     throw error
   }
@@ -388,6 +389,7 @@ async function hasProductAccessInContext(context: PlatformAccessContext, product
     return true
   }
 
+  if (productKey === 'renoapp' && context.normalizedAccessAvailable && !context.identity.isLegacyAdmin) return false
   return hasLegacyAccess(context.identity, { productKey })
 }
 
@@ -397,7 +399,8 @@ export async function getCurrentUserPlatformAccessContext(): Promise<PlatformAcc
 
   return {
     identity,
-    assignments,
+    assignments: assignments ?? [],
+    normalizedAccessAvailable: assignments !== null,
   }
 }
 
@@ -411,6 +414,7 @@ export async function hasCurrentUserAccess<TProduct extends PlatformProductKey>(
     return hasMatchingNormalizedAccess(productAssignments, input)
   }
 
+  if (input.productKey === 'renoapp' && context.normalizedAccessAvailable && !context.identity.isLegacyAdmin) return false
   return hasLegacyAccess(context.identity, input)
 }
 

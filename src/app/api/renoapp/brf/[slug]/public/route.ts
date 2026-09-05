@@ -14,10 +14,10 @@ type RouteContext = {
   }>
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { slug } = await context.params
-    const config = await getRenoAppPublicGuideConfig(slug)
+    const config = await getRenoAppPublicGuideConfig(slug, new URL(request.url).searchParams.get('draft'))
 
     if (!config) {
       return jsonError('BRF hittades inte eller har inte publik ansökan aktiverad.', 404)

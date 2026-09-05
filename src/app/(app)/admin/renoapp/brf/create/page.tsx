@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import Protected from '@/components/Protected'
 
 type CreateResult = {
@@ -16,11 +17,12 @@ type CreateResult = {
     inviteUrl: string
     emailSent: boolean
     emailError: string | null
-  }
+  } | null
 }
 
 export default function RenoAppAdminCreateBrfPage() {
   const [name, setName] = useState('')
+  const [creationKey, setCreationKey] = useState(() => crypto.randomUUID())
   const [orgNumber, setOrgNumber] = useState('')
   const [address, setAddress] = useState('')
   const [email, setEmail] = useState('')
@@ -39,6 +41,7 @@ export default function RenoAppAdminCreateBrfPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          creationKey,
           name,
           orgNumber,
           address,
@@ -52,6 +55,7 @@ export default function RenoAppAdminCreateBrfPage() {
       }
 
       setResult(payload)
+      setCreationKey(crypto.randomUUID())
       setName('')
       setOrgNumber('')
       setAddress('')
@@ -88,6 +92,7 @@ export default function RenoAppAdminCreateBrfPage() {
               onChange={(event) => setOrgNumber(event.target.value)}
               className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
               placeholder="Organisationsnummer"
+              required
             />
             <input
               value={address}
@@ -112,14 +117,11 @@ export default function RenoAppAdminCreateBrfPage() {
             {result ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                 <p className="font-semibold">{result.brf.name} skapades.</p>
-                <p className="mt-1">Slug: {result.brf.slug}</p>
-                <p className="mt-1 break-all">Länk: {result.invite.inviteUrl}</p>
+                <Link href={`/admin/renoapp/brf/${result.brf.id}`} className="mt-2 inline-flex font-semibold underline">Öppna föreningens administration</Link>
                 <p className="mt-1">
-                  {result.invite.emailSent
-                    ? 'Det kombinerade invite-mejlet skickades.'
-                    : 'Invite skapad utan mejlutskick.'}
+                  {result.invite?.emailSent ? 'Aktiveringslänken skickades.' : result.invite ? 'Inbjudan sparades, men mejlet kunde inte skickas.' : 'Föreningen har redan skapats. Kontrollera inbjudan i administrationen.'}
                 </p>
-                {result.invite.emailError ? <p className="mt-1 text-amber-900">{result.invite.emailError}</p> : null}
+                {result.invite?.emailError ? <p className="mt-1 text-amber-900">Öppna föreningens administration för att skicka en ny länk.</p> : null}
               </div>
             ) : null}
 

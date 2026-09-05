@@ -221,6 +221,8 @@ export default function RenoAppInvitePage() {
   const [signingOut, setSigningOut] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [requiresManualLogin, setRequiresManualLogin] = useState(false)
+  const [completionWarnings, setCompletionWarnings] = useState<string[]>([])
+  const loginHref = `/renoapp/login?next=${encodeURIComponent(`/renoapp/invite/${token}`)}`
 
   useEffect(() => {
     let active = true
@@ -244,6 +246,19 @@ export default function RenoAppInvitePage() {
           setAdditionalUsers([])
           setTermsAccepted(false)
           setPassword('')
+          try {
+            const saved = JSON.parse(sessionStorage.getItem(`renoapp-invite-form:${token}`) ?? 'null')
+            if (data.state === 'open' && saved?.email === data.invite.email && Date.now() - saved.savedAt < 30 * 60 * 1000) {
+              const restored = toFormState(data)
+              for (const key of Object.keys(EMPTY_FORM) as Array<keyof FormState>) {
+                if (key !== 'publicApplyMode' && typeof saved.form?.[key] === 'string') restored[key] = saved.form[key]
+              }
+              if (saved.form?.publicApplyMode === 'listed' || saved.form?.publicApplyMode === 'direct_link') restored.publicApplyMode = saved.form.publicApplyMode
+              setForm(restored)
+              if (typeof saved.inviteUserName === 'string') setInviteUserName(saved.inviteUserName)
+              if (Array.isArray(saved.additionalUsers)) setAdditionalUsers(saved.additionalUsers.slice(0, MAX_ADDITIONAL_USERS).filter((row: UserState) => typeof row?.name === 'string' && typeof row?.email === 'string'))
+            } else sessionStorage.removeItem(`renoapp-invite-form:${token}`)
+          } catch { /* Storage may be unavailable in private browsing. */ }
         }
       } catch (fetchError) {
         if (active) {
@@ -337,6 +352,7 @@ export default function RenoAppInvitePage() {
         signInEmail?: string
         error?: string
         mode?: InvitePreview['mode']
+        additionalInviteWarnings?: string[]
       }
 
       if (!response.ok) {
@@ -351,6 +367,8 @@ export default function RenoAppInvitePage() {
         throw new Error(message)
       }
 
+      try { sessionStorage.removeItem(`renoapp-invite-form:${token}`) } catch {}
+      setPayload(current => current ? { ...current, state: 'accepted' } : current)
       if (result.createdUser && result.signInEmail) {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email: result.signInEmail,
@@ -358,11 +376,16 @@ export default function RenoAppInvitePage() {
         })
 
         if (signInError) {
-          throw new Error('Kontot skapades, men automatisk inloggning misslyckades. Logga in manuellt.')
+          setCompletionWarnings(['Kontot och anslutningen är klara, men automatisk inloggning misslyckades. Välj Öppna RenoApp för att logga in.', ...(result.additionalInviteWarnings ?? [])])
+          setPassword('')
+          return
         }
       }
 
-      router.replace('/renoapp/app')
+      setPassword('')
+      if (result.additionalInviteWarnings?.length) {
+        setCompletionWarnings(result.additionalInviteWarnings)
+      } else await openBrf().catch(() => setCompletionWarnings(['Anslutningen är klar, men föreningen kunde inte öppnas. Försök igen med Öppna RenoApp.']))
     } catch (submitError) {
       setActionError(
         submitError instanceof Error
@@ -374,6 +397,28 @@ export default function RenoAppInvitePage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const saveBeforeLogin = () => {
+    try {
+      sessionStorage.setItem(`renoapp-invite-form:${token}`, JSON.stringify({
+        form, inviteUserName, additionalUsers, email: payload?.invite.email, savedAt: Date.now(),
+      }))
+    } catch {}
+  }
+
+  const openBrf = async () => {
+    if (!payload) return
+    const response = await fetch('/api/renoapp/app/active-brf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brfId: payload.brf.id }),
+    })
+    if (response.status === 401) { router.replace(loginHref); return }
+    if (!response.ok) {
+      setCompletionWarnings(['Ditt konto har inte åtkomst till föreningen. Kontakta HusHub för hjälp.'])
+      return
+    }
+    router.replace('/renoapp/app')
+    router.refresh()
   }
 
   if (loading) {
@@ -431,20 +476,20 @@ export default function RenoAppInvitePage() {
         <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.96))] p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] md:p-8">
           {payload.state === 'accepted' ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-800">
-              <p className="font-semibold">Inviten har redan accepterats.</p>
+              <p className="font-semibold">Inbjudan har accepterats.</p>
               <p className="mt-1">
-                {isOnboardingInvite
-                  ? 'BRF-anslutningen är redan slutförd. Fortsätt till arbetsytan för att börja använda RenoApp.'
-                  : 'Kontot är redan kopplat till BRF:en. Fortsätt till RenoApp för att börja arbeta.'}
+                Öppna RenoApp för att fortsätta med ditt konto.
               </p>
               <div className="mt-4">
-                <Link
-                  href="/renoapp/app"
+                <button
+                  type="button"
+                  onClick={() => void openBrf().catch(() => setCompletionWarnings(['Kunde inte öppna föreningen. Försök igen.']))}
                   className="inline-flex rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700"
                 >
                   Öppna RenoApp
-                </Link>
+                </button>
               </div>
+              {completionWarnings.length > 0 && <div role="status" className="mt-4 text-amber-950"><ul className="list-disc pl-5">{completionWarnings.map(message => <li key={message}>{message}</li>)}</ul></div>}
             </div>
           ) : payload.state === 'expired' || payload.state === 'revoked' ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
@@ -472,6 +517,7 @@ export default function RenoAppInvitePage() {
                 </h2>
                 {needsPassword ? (
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <p className="text-sm text-stone-700 md:col-span-2">Har du redan ett konto? <Link href={loginHref} onClick={saveBeforeLogin} className="font-semibold underline">Logga in</Link></p>
                     <InputField
                       label="Namn"
                       required
@@ -762,7 +808,8 @@ export default function RenoAppInvitePage() {
                 </button>
                 {requiresManualLogin ? (
                   <Link
-                    href="/renoapp/login"
+                    href={loginHref}
+                    onClick={saveBeforeLogin}
                     className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
                   >
                     Logga in med rätt konto

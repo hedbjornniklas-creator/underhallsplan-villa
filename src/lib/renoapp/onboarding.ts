@@ -3,6 +3,8 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { RENOAPP_BRF_TERMS_VERSION } from '@/lib/renoapp/brfTerms'
+import { requireBrfAdminContext } from '@/lib/renoapp/brfAdminAccess'
+import { normalizeBrfOrgNumber } from '@/lib/renoapp/brfLifecycle'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
@@ -48,6 +50,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
 }
 
 type SupabaseAdminClient = {
+  rpc: (name: string, args: Record<string, unknown>) => SupabaseResponse<Record<string, unknown>>
   from: (table: string) => QueryBuilder
   auth: {
     admin: {
@@ -93,6 +96,7 @@ type BrfRequestRow = {
   message: string | null
   status: 'pending' | 'approved' | 'rejected'
   review_note: string | null
+  external_message: string | null
   reviewed_at: string | null
   approved_brf_id: string | null
   created_at: string
@@ -171,12 +175,14 @@ export type BrfRequestListItem = {
   message: string | null
   status: 'pending' | 'approved' | 'rejected'
   reviewNote: string | null
+  externalMessage: string | null
   reviewedAt: string | null
   approvedBrfId: string | null
   createdAt: string
 }
 
 export type AdminCreateBrfInput = {
+  creationKey: string
   name: string
   orgNumber?: string | null
   address?: string | null
@@ -190,18 +196,20 @@ export type AdminCreateBrfResult = {
     slug: string
   }
   invite: {
+    id: string
     email: string
     role: 'board'
     expiresAt: string
     inviteUrl: string
     emailSent: boolean
     emailError: string | null
-  }
+  } | null
 }
 
 export type ReviewBrfRequestInput = {
   action: 'approve' | 'reject'
   reviewNote?: string | null
+  externalMessage?: string | null
 }
 
 export type ReviewBrfRequestResult = {
@@ -289,6 +297,8 @@ export type AcceptBrfInviteInput = {
 }
 
 export type AcceptBrfInviteResult = {
+  brfId: string
+  additionalInviteWarnings: string[]
   accepted: true
   signedInViaExistingSession: boolean
   createdUser: boolean
@@ -416,63 +426,9 @@ function slugify(value: string) {
 }
 
 async function requireInternalAdminContext(): Promise<InternalAdminContext> {
-  const userClient = createSupabaseServerClient()
-  const {
-    data: { user },
-    error: userError,
-  } = await userClient.auth.getUser()
-
-  if (userError || !user) {
-    throw new Error('UNAUTHORIZED')
-  }
-
-  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const { data: profileData, error: profileError } = await admin
-    .from('profiles')
-    .select('id,email,full_name,is_admin')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profileError || !profileData) {
-    throw new Error(profileError?.message ?? 'PROFILE_NOT_FOUND')
-  }
-
-  if (!profileData.is_admin) {
-    throw new Error('ADMIN_REQUIRED')
-  }
-
-  return {
-    userId: user.id,
-    profile: {
-      id: String(profileData.id ?? user.id),
-      email: (profileData.email as string | null | undefined) ?? null,
-      full_name: (profileData.full_name as string | null | undefined) ?? null,
-      is_admin: Boolean(profileData.is_admin),
-    },
-  }
+  return requireBrfAdminContext()
 }
 
-async function createUniqueBrfSlug(admin: SupabaseAdminClient, name: string) {
-  const base = slugify(name)
-  const slugBase = base.length > 0 ? base : 'brf'
-
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const candidate = attempt === 0 ? slugBase : `${slugBase}-${attempt + 1}`
-    const { data, error } = await admin
-      .from('brf_associations')
-      .select('id')
-      .eq('slug', candidate)
-      .maybeSingle()
-
-    if (error) {
-      throw new Error(error.message ?? 'Kunde inte generera unik BRF-slug.')
-    }
-
-    if (!data) return candidate
-  }
-
-  throw new Error('Kunde inte generera unik BRF-slug.')
-}
 
 type PreparedBrfCompletionInput = {
   name: string
@@ -675,49 +631,6 @@ async function ensureProfile(
   }
 }
 
-async function ensureBrfMember(
-  admin: SupabaseAdminClient,
-  input: {
-    brfId: string
-    profileId: string
-    role: 'board' | 'admin'
-  }
-) {
-  const { data: existingMember, error: existingMemberError } = await admin
-    .from('brf_members')
-    .select('id')
-    .eq('brf_id', input.brfId)
-    .eq('profile_id', input.profileId)
-    .maybeSingle()
-
-  if (existingMemberError) {
-    throw new Error(existingMemberError.message ?? 'Kunde inte läsa BRF-medlemskap.')
-  }
-
-  if (existingMember) {
-    const { error: updateError } = await admin
-      .from('brf_members')
-      .update({ role: input.role, is_active: true, accepted_at: new Date().toISOString() })
-      .eq('id', String(existingMember.id ?? ''))
-
-    if (updateError) {
-      throw new Error(updateError.message ?? 'Kunde inte uppdatera BRF-medlemskap.')
-    }
-    return
-  }
-
-  const { error: insertError } = await admin.from('brf_members').insert({
-    brf_id: input.brfId,
-    profile_id: input.profileId,
-    role: input.role,
-    is_active: true,
-    accepted_at: new Date().toISOString(),
-  })
-
-  if (insertError) {
-    throw new Error(insertError.message ?? 'Kunde inte skapa BRF-medlemskap.')
-  }
-}
 
 async function createInviteRecord(
   admin: SupabaseAdminClient,
@@ -729,28 +642,26 @@ async function createInviteRecord(
     role: 'board' | 'admin'
     createdBy: string
     origin: string
+    existingInvite?: { id: string; token: string; expiresAt: string }
+    replace?: boolean
     approvalContext?: {
       contactName: string | null
-      reviewNote: string | null
+      externalMessage: string | null
     } | null
   }
-): Promise<AdminCreateBrfResult['invite']> {
-  const token = makeToken()
+): Promise<NonNullable<AdminCreateBrfResult['invite']>> {
+  const token = input.existingInvite?.token ?? makeToken()
   const tokenHash = hashToken(token)
-  const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000).toISOString()
-
-  const { error: insertError } = await admin.from('brf_member_invites').insert({
-    brf_id: input.brfId,
-    email: input.email,
-    full_name: normalizeText(input.fullName),
-    role: input.role,
-    token_hash: tokenHash,
-    expires_at: expiresAt,
-    created_by: input.createdBy,
-  })
-
-  if (insertError) {
-    throw new Error(insertError.message ?? 'Kunde inte skapa invite.')
+  const expiresAt = input.existingInvite?.expiresAt ?? new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000).toISOString()
+  let inviteId = input.existingInvite?.id
+  if (!inviteId) {
+    const { data, error } = await admin.rpc('renoapp_issue_brf_invite', {
+      p_actor: input.createdBy, p_brf_id: input.brfId, p_email: input.email,
+      p_full_name: normalizeText(input.fullName), p_token_hash: tokenHash,
+      p_expires_at: expiresAt, p_replace: input.replace === true,
+    })
+    if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa inbjudan.')
+    inviteId = String(data)
   }
 
   const inviteUrl = buildAbsoluteUrl(input.origin, `/renoapp/invite/${token}`)
@@ -761,8 +672,8 @@ async function createInviteRecord(
   if (mailFrom) {
     try {
       const safeBrfName = escapeHtml(input.brfName)
-      const safeReviewNote = input.approvalContext?.reviewNote
-        ? escapeHtml(input.approvalContext.reviewNote)
+      const safeReviewNote = input.approvalContext?.externalMessage
+        ? escapeHtml(input.approvalContext.externalMessage)
         : null
       const recipientName = input.approvalContext?.contactName ?? input.fullName ?? null
       const safeContactName = escapeHtml(recipientName ?? 'er')
@@ -792,7 +703,7 @@ async function createInviteRecord(
             `Er intresseanmälan för ${input.brfName} har godkänts.`,
             `Öppna länken nedan för att aktivera ditt styrelsekonto i RenoApp: ${inviteUrl}`,
             `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
-            input.approvalContext?.reviewNote ? `Kommentar: ${input.approvalContext.reviewNote}` : null,
+            input.approvalContext?.externalMessage ? `Kommentar: ${input.approvalContext.externalMessage}` : null,
             '',
             'Med vänlig hälsning,',
             'RenoApp-teamet på HusHub',
@@ -828,7 +739,15 @@ async function createInviteRecord(
     emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Invite skapades men inget mejl skickades.'
   }
 
+  const { error: deliveryError } = await admin.from('brf_member_invites').update({
+    delivery_status: emailSent ? 'sent' : 'failed',
+    delivery_error: emailError,
+    sent_at: emailSent ? new Date().toISOString() : null,
+  }).eq('id', inviteId)
+  if (deliveryError) throw new Error('Inbjudan skapades, men leveransstatus kunde inte sparas. Kontrollera föreningens inbjudningar.')
+
   return {
+    id: inviteId,
     email: input.email,
     role: 'board',
     expiresAt,
@@ -836,6 +755,20 @@ async function createInviteRecord(
     emailSent,
     emailError,
   }
+}
+
+export async function issueBrfInviteForAuthorizedUser(input: {
+  brfId: string; email: string; fullName: string | null; actorId: string; origin: string; replace?: boolean
+}) {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const email = normalizeEmail(input.email)
+  assertValidEmail(email, 'EMAIL_INVALID')
+  const { data: brf, error } = await admin.from('brf_associations').select('id,name').eq('id', input.brfId).maybeSingle()
+  if (error || !brf) throw new Error(error?.message ?? 'BRF_NOT_FOUND')
+  return createInviteRecord(admin, {
+    brfId: input.brfId, brfName: String(brf.name), email: email as string, fullName: input.fullName,
+    role: 'board', createdBy: input.actorId, origin: input.origin, replace: input.replace,
+  })
 }
 
 async function sendRenoAppEmail(input: {
@@ -962,11 +895,11 @@ async function sendBrfRequestRejectedEmail(input: {
   brfName: string
   contactName: string | null
   contactEmail: string | null
-  reviewNote: string | null
+  externalMessage: string | null
 }) {
   const safeBrfName = escapeHtml(input.brfName)
   const safeContactName = escapeHtml(input.contactName ?? 'er')
-  const safeReviewNote = input.reviewNote ? escapeHtml(input.reviewNote) : null
+  const safeReviewNote = input.externalMessage ? escapeHtml(input.externalMessage) : null
 
   return sendRenoAppEmail({
     to: input.contactEmail,
@@ -981,7 +914,7 @@ async function sendBrfRequestRejectedEmail(input: {
     text: [
       `Hej ${input.contactName ?? 'er'},`,
       `Er intresseanmälan för ${input.brfName} har behandlats, men går inte vidare i nuläget.`,
-      input.reviewNote ? `Kommentar: ${input.reviewNote}` : null,
+      input.externalMessage ? `Kommentar: ${input.externalMessage}` : null,
       'Om ni vill kan ni återkomma med uppdaterade uppgifter längre fram.',
     ]
       .filter(Boolean)
@@ -1001,6 +934,7 @@ function mapRequestRow(row: BrfRequestRow): BrfRequestListItem {
     message: row.message,
     status: row.status,
     reviewNote: row.review_note,
+    externalMessage: row.external_message,
     reviewedAt: row.reviewed_at,
     approvedBrfId: row.approved_brf_id,
     createdAt: row.created_at,
@@ -1011,7 +945,7 @@ export async function createBrfRequest(input: CreateBrfRequestInput): Promise<Cr
   const origin = normalizeText(input.origin)
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const name = normalizeText(input.name)
-  const orgNumber = normalizeText(input.orgNumber)
+  const orgNumber = normalizeText(normalizeBrfOrgNumber(input.orgNumber ?? ''))
   const address = normalizeText(input.address)
   const contactName = normalizeText(input.contactName)
   const contactEmail = normalizeEmail(input.contactEmail)
@@ -1074,7 +1008,7 @@ export async function listBrfRequests(): Promise<BrfRequestListItem[]> {
   const { data, error } = await admin
     .from('brf_requests')
     .select(
-      'id,name,org_number,address,contact_name,contact_email,contact_phone,message,status,review_note,reviewed_at,approved_brf_id,created_at'
+      'id,name,org_number,address,contact_name,contact_email,contact_phone,message,status,review_note,external_message,reviewed_at,approved_brf_id,created_at'
     )
     .order('created_at', { ascending: false })
 
@@ -1085,201 +1019,89 @@ export async function listBrfRequests(): Promise<BrfRequestListItem[]> {
   return ((data ?? []) as BrfRequestRow[]).map(mapRequestRow)
 }
 
-export async function createBrfWithInvite(
-  input: AdminCreateBrfInput,
-  origin: string
-): Promise<AdminCreateBrfResult> {
+export async function createBrfWithInvite(input: AdminCreateBrfInput, origin: string): Promise<AdminCreateBrfResult> {
   const context = await requireInternalAdminContext()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-
   const name = normalizeText(input.name)
-  const orgNumber = normalizeText(input.orgNumber)
-  const address = normalizeText(input.address)
-  const boardEmail = normalizeEmail(input.boardEmail)
-
+  const orgNumber = normalizeText(normalizeBrfOrgNumber(input.orgNumber ?? ''))
+  const email = normalizeEmail(input.boardEmail)
   if (!name) throw new Error('BRF_NAME_REQUIRED')
-  assertValidEmail(boardEmail, 'BOARD_EMAIL_INVALID')
-
-  const slug = await createUniqueBrfSlug(admin, name)
-
-  const { data: brfData, error: brfError } = await admin
-    .from('brf_associations')
-    .insert({
-      name,
-      slug,
-      org_number: orgNumber,
-      address,
-      primary_contact_email: boardEmail,
-      created_by: context.profile.id,
-      is_public_apply_enabled: false,
-    })
-    .select(
-      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at,is_public_apply_enabled,is_public_apply_listed'
-    )
-    .single()
-
-  if (brfError || !brfData) {
-    throw new Error(brfError?.message ?? 'Kunde inte skapa BRF.')
-  }
-
-  const brf = brfData as BrfRow
-  const invite = await createInviteRecord(admin, {
-    brfId: brf.id,
-    brfName: brf.name,
-    email: boardEmail as string,
-    fullName: null,
-    role: 'board',
-    createdBy: context.profile.id,
-    origin,
+  assertValidOrgNumber(orgNumber, 'ORG_NUMBER_INVALID')
+  assertValidEmail(email, 'BOARD_EMAIL_INVALID')
+  if (!/^[0-9a-f-]{36}$/i.test(input.creationKey)) throw new Error('CREATION_KEY_REQUIRED')
+  const token = makeToken()
+  const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3600000).toISOString()
+  const { data, error } = await admin.rpc('renoapp_start_brf_onboarding', {
+    p_actor: context.userId, p_creation_key: input.creationKey,
+    p_input: { name, orgNumber, email, address: normalizeText(input.address), slug: slugify(name) },
+    p_token_hash: hashToken(token), p_expires_at: expiresAt,
   })
-
-  return {
-    brf: {
-      id: brf.id,
-      name: brf.name,
-      slug: brf.slug,
-    },
-    invite,
-  }
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa BRF.')
+  const brf = data.brf as BrfRow
+  const invite = data.reused ? null : await createInviteRecord(admin, {
+    brfId: brf.id, brfName: brf.name, email: email as string, role: 'board',
+    createdBy: context.userId, origin,
+    existingInvite: { id: String(data.inviteId), token, expiresAt },
+  })
+  return { brf: { id: brf.id, name: brf.name, slug: brf.slug }, invite }
 }
 
-export async function reviewBrfRequest(
-  requestId: string,
-  input: ReviewBrfRequestInput,
-  origin: string
-): Promise<ReviewBrfRequestResult> {
+export async function reviewBrfRequest(requestId: string, input: ReviewBrfRequestInput, origin: string): Promise<ReviewBrfRequestResult> {
   const context = await requireInternalAdminContext()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-
-  const reviewNote = normalizeText(input.reviewNote)
-  const { data: requestData, error: requestError } = await admin
-    .from('brf_requests')
-    .select(
-      'id,name,org_number,address,contact_name,contact_email,contact_phone,message,status,review_note,reviewed_at,approved_brf_id,created_at'
-    )
-    .eq('id', requestId)
-    .maybeSingle()
-
-  if (requestError) {
-    throw new Error(requestError.message ?? 'Kunde inte läsa BRF-intresseanmälan.')
-  }
-
-  if (!requestData) {
-    throw new Error('BRF_REQUEST_NOT_FOUND')
-  }
-
-  const requestRow = requestData as BrfRequestRow
-  if (requestRow.status !== 'pending') {
-    throw new Error('BRF_REQUEST_ALREADY_REVIEWED')
-  }
-
-  if (input.action === 'reject') {
-    const { data: rejectedData, error: rejectError } = await admin
-      .from('brf_requests')
-      .update({
-        status: 'rejected',
-        review_note: reviewNote,
-        reviewed_by: context.profile.id,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', requestId)
-      .select(
-        'id,name,org_number,address,contact_name,contact_email,contact_phone,message,status,review_note,reviewed_at,approved_brf_id,created_at'
-      )
-      .single()
-
-    if (rejectError || !rejectedData) {
-      throw new Error(rejectError?.message ?? 'Kunde inte avslå BRF-intresseanmälan.')
-    }
-
-    const decisionEmail = await sendBrfRequestRejectedEmail({
-      origin,
-      brfName: requestRow.name,
-      contactName: requestRow.contact_name,
-      contactEmail: requestRow.contact_email,
-      reviewNote,
-    })
-
-    return {
-      request: mapRequestRow(rejectedData as BrfRequestRow),
-      brf: null,
-      invite: null,
-      decisionEmail,
-    }
-  }
-
-  const boardEmail = normalizeEmail(requestRow.contact_email)
-  assertValidEmail(boardEmail, 'BOARD_EMAIL_INVALID')
-  const slug = await createUniqueBrfSlug(admin, requestRow.name)
-
-  const { data: brfData, error: brfError } = await admin
-    .from('brf_associations')
-    .insert({
-      name: requestRow.name,
-      slug,
-      org_number: requestRow.org_number,
-      address: requestRow.address,
-      primary_contact_name: requestRow.contact_name,
-      primary_contact_email: boardEmail,
-      primary_contact_phone: normalizeText(requestRow.contact_phone),
-      created_by: context.profile.id,
-      is_public_apply_enabled: false,
-    })
-    .select(
-      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,onboarding_comment,onboarding_completed_at,is_public_apply_enabled,is_public_apply_listed'
-    )
-    .single()
-
-  if (brfError || !brfData) {
-    throw new Error(brfError?.message ?? 'Kunde inte skapa BRF från intresseanmälan.')
-  }
-
-  const brf = brfData as BrfRow
-  const invite = await createInviteRecord(admin, {
-    brfId: brf.id,
-    brfName: brf.name,
-    email: boardEmail as string,
-    fullName: requestRow.contact_name,
-    role: 'board',
-    createdBy: context.profile.id,
-    origin,
-    approvalContext: {
-      contactName: requestRow.contact_name,
-      reviewNote,
-    },
+  const { data: request, error: requestError } = await admin.from('brf_requests').select('name').eq('id', requestId).maybeSingle()
+  if (requestError) throw new Error(requestError.message)
+  if (!request) throw new Error('BRF_REQUEST_NOT_FOUND')
+  const token = makeToken()
+  const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3600000).toISOString()
+  const externalMessage = normalizeText(input.externalMessage)
+  const { data, error } = await admin.rpc('renoapp_start_brf_onboarding', {
+    p_actor: context.userId, p_request_id: requestId,
+    p_input: { decision: input.action === 'approve' ? 'approved' : 'rejected',
+      internalNote: normalizeText(input.reviewNote), externalMessage, slug: slugify(String(request.name)) },
+    p_token_hash: hashToken(token), p_expires_at: expiresAt,
   })
-
-  const { data: approvedData, error: approveError } = await admin
-    .from('brf_requests')
-    .update({
-      status: 'approved',
-      review_note: reviewNote,
-      reviewed_by: context.profile.id,
-      reviewed_at: new Date().toISOString(),
-      approved_brf_id: brf.id,
+  if (error || !data) throw new Error(error?.message ?? 'Kunde inte hantera intresseanmälan.')
+  const row = data.request as BrfRequestRow
+  const brf = data.brf as BrfRow | null
+  let invite: AdminCreateBrfResult['invite'] = null
+  let decisionEmail: ReviewBrfRequestResult['decisionEmail'] = null
+  if (!data.reused && brf) {
+    invite = await createInviteRecord(admin, {
+      brfId: brf.id, brfName: brf.name, email: row.contact_email, fullName: row.contact_name,
+      role: 'board', createdBy: context.userId, origin,
+      existingInvite: { id: String(data.inviteId), token, expiresAt },
+      approvalContext: { contactName: row.contact_name, externalMessage },
     })
-    .eq('id', requestId)
-    .select(
-      'id,name,org_number,address,contact_name,contact_email,contact_phone,message,status,review_note,reviewed_at,approved_brf_id,created_at'
-    )
-    .single()
-
-  if (approveError || !approvedData) {
-    throw new Error(approveError?.message ?? 'Kunde inte uppdatera BRF-intresseanmälan.')
+  } else if (!data.reused && row.status === 'rejected') {
+    decisionEmail = await sendBrfRequestRejectedEmail({
+      origin, brfName: row.name, contactName: row.contact_name, contactEmail: row.contact_email, externalMessage,
+    })
+    const { error: eventError } = await admin.from('renoapp_brf_events').insert({
+      request_id: row.id, actor_profile_id: context.userId, kind: 'decision_delivery', details: decisionEmail,
+    })
+    if (eventError) throw new Error('Beslutet sparades men mejlets leveransstatus kunde inte sparas.')
   }
+  return { request: mapRequestRow(row), brf: brf ? { id: brf.id, name: brf.name, slug: brf.slug } : null, invite, decisionEmail }
+}
 
-  const decisionEmail = null
-
-  return {
-    request: mapRequestRow(approvedData as BrfRequestRow),
-    brf: {
-      id: brf.id,
-      name: brf.name,
-      slug: brf.slug,
-    },
-    invite,
-    decisionEmail,
-  }
+export async function resendBrfRequestDecision(requestId: string, origin: string): Promise<ReviewBrfRequestResult> {
+  const context = await requireInternalAdminContext()
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const { data, error } = await admin.from('brf_requests').select('*').eq('id', requestId).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('BRF_REQUEST_NOT_FOUND')
+  const row = data as BrfRequestRow
+  if (row.status !== 'rejected') throw new Error('INVALID_ACTION')
+  const decisionEmail = await sendBrfRequestRejectedEmail({
+    origin, brfName: row.name, contactName: row.contact_name, contactEmail: row.contact_email,
+    externalMessage: row.external_message,
+  })
+  const { error: eventError } = await admin.from('renoapp_brf_events').insert({
+    request_id: row.id, actor_profile_id: context.userId, kind: 'decision_delivery', details: decisionEmail,
+  })
+  if (eventError) throw new Error('Mejlets leveransstatus kunde inte sparas.')
+  return { request: mapRequestRow(row), brf: null, invite: null, decisionEmail }
 }
 
 export async function getBrfInviteByToken(token: string): Promise<RenoAppInvitePreview | null> {
@@ -1329,8 +1151,11 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
         ? 'expired'
         : 'open'
 
+  const visibleBrf: Record<string, unknown> = state === 'open' ? brfData : {
+    id: brfData.id, name: brfData.name, slug: brfData.slug, onboarding_completed_at: brfData.onboarding_completed_at,
+  }
   return {
-    mode: brfData.onboarding_completed_at ? 'member_invite' : 'brf_onboarding',
+    mode: visibleBrf.onboarding_completed_at ? 'member_invite' : 'brf_onboarding',
     state,
     invite: {
       email: invite.email,
@@ -1341,34 +1166,34 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
       revokedAt: invite.revoked_at,
     },
     brf: {
-      id: String(brfData.id ?? ''),
-      name: String(brfData.name ?? ''),
-      slug: String(brfData.slug ?? ''),
-      orgNumber: (brfData.org_number as string | null | undefined) ?? null,
-      propertyDesignation: (brfData.property_designation as string | null | undefined) ?? null,
-      address: (brfData.address as string | null | undefined) ?? null,
-      addressLine2: (brfData.address_line_2 as string | null | undefined) ?? null,
-      postalCode: (brfData.postal_code as string | null | undefined) ?? null,
-      city: (brfData.city as string | null | undefined) ?? null,
-      invoiceAddress: (brfData.invoice_address as string | null | undefined) ?? null,
-      invoiceEmail: (brfData.invoice_email as string | null | undefined) ?? null,
-      invoiceReference: (brfData.invoice_reference as string | null | undefined) ?? null,
-      primaryContactName: (brfData.primary_contact_name as string | null | undefined) ?? null,
-      primaryContactEmail: (brfData.primary_contact_email as string | null | undefined) ?? null,
-      primaryContactPhone: (brfData.primary_contact_phone as string | null | undefined) ?? null,
+      id: String(visibleBrf.id ?? ''),
+      name: String(visibleBrf.name ?? ''),
+      slug: String(visibleBrf.slug ?? ''),
+      orgNumber: (visibleBrf.org_number as string | null | undefined) ?? null,
+      propertyDesignation: (visibleBrf.property_designation as string | null | undefined) ?? null,
+      address: (visibleBrf.address as string | null | undefined) ?? null,
+      addressLine2: (visibleBrf.address_line_2 as string | null | undefined) ?? null,
+      postalCode: (visibleBrf.postal_code as string | null | undefined) ?? null,
+      city: (visibleBrf.city as string | null | undefined) ?? null,
+      invoiceAddress: (visibleBrf.invoice_address as string | null | undefined) ?? null,
+      invoiceEmail: (visibleBrf.invoice_email as string | null | undefined) ?? null,
+      invoiceReference: (visibleBrf.invoice_reference as string | null | undefined) ?? null,
+      primaryContactName: (visibleBrf.primary_contact_name as string | null | undefined) ?? null,
+      primaryContactEmail: (visibleBrf.primary_contact_email as string | null | undefined) ?? null,
+      primaryContactPhone: (visibleBrf.primary_contact_phone as string | null | undefined) ?? null,
       unitCount:
-        typeof brfData.unit_count === 'number'
-          ? brfData.unit_count
-          : brfData.unit_count !== null && brfData.unit_count !== undefined
-            ? Number(brfData.unit_count)
+        typeof visibleBrf.unit_count === 'number'
+          ? visibleBrf.unit_count
+          : visibleBrf.unit_count !== null && visibleBrf.unit_count !== undefined
+            ? Number(visibleBrf.unit_count)
             : null,
-      generalEmail: (brfData.email as string | null | undefined) ?? null,
-      brfPhone: (brfData.phone as string | null | undefined) ?? null,
-      technicalContact: (brfData.technical_contact as string | null | undefined) ?? null,
-      onboardingComment: (brfData.onboarding_comment as string | null | undefined) ?? null,
-      onboardingCompletedAt: (brfData.onboarding_completed_at as string | null | undefined) ?? null,
-      isPublicApplyEnabled: Boolean(brfData.is_public_apply_enabled),
-      isPublicApplyListed: Boolean(brfData.is_public_apply_listed),
+      generalEmail: (visibleBrf.email as string | null | undefined) ?? null,
+      brfPhone: (visibleBrf.phone as string | null | undefined) ?? null,
+      technicalContact: (visibleBrf.technical_contact as string | null | undefined) ?? null,
+      onboardingComment: (visibleBrf.onboarding_comment as string | null | undefined) ?? null,
+      onboardingCompletedAt: (visibleBrf.onboarding_completed_at as string | null | undefined) ?? null,
+      isPublicApplyEnabled: Boolean(visibleBrf.is_public_apply_enabled),
+      isPublicApplyListed: Boolean(visibleBrf.is_public_apply_listed),
     },
     currentUser: {
       email: currentUserEmail,
@@ -1377,307 +1202,70 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
   }
 }
 
-export async function acceptBrfInvite(
-  token: string,
-  input: AcceptBrfInviteInput
-): Promise<AcceptBrfInviteResult> {
+export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput): Promise<AcceptBrfInviteResult> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const tokenHash = hashToken(token)
   const origin = normalizeText(input.origin) ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushub.se'
-
-  const { data: inviteData, error: inviteError } = await admin
-    .from('brf_member_invites')
-    .select('id,brf_id,email,full_name,role,expires_at,accepted_at,revoked_at')
-    .eq('token_hash', tokenHash)
-    .maybeSingle()
-
-  if (inviteError) {
-    throw new Error(inviteError.message ?? 'Kunde inte läsa invite.')
+  const preview = await getBrfInviteByToken(token)
+  if (!preview) throw new Error('INVITE_NOT_FOUND')
+  if (preview.state === 'revoked') throw new Error('INVITE_REVOKED')
+  if (preview.state === 'expired') throw new Error('INVITE_EXPIRED')
+  const { data: { user } } = await createSupabaseServerClient().auth.getUser()
+  if (user && normalizeEmail(user.email) !== normalizeEmail(preview.invite.email)) throw new Error('INVITE_EMAIL_MISMATCH')
+  if (preview.state === 'accepted') {
+    if (!user) throw new Error('EXISTING_USER_LOGIN_REQUIRED')
+    const { error } = await admin.rpc('renoapp_accept_brf_invite', { p_actor: user.id, p_token_hash: tokenHash })
+    if (error) throw new Error(error.message)
+    return { accepted: true, brfId: preview.brf.id, mode: preview.mode, createdUser: false,
+      signInEmail: preview.invite.email, signedInViaExistingSession: true, additionalInvitesCreated: 0, additionalInviteWarnings: [] }
   }
-
-  if (!inviteData) {
-    throw new Error('INVITE_NOT_FOUND')
+  const fullName = normalizeText(input.inviteUserName) ?? normalizeText(preview.invite.fullName)
+  if (!fullName) throw new Error('INVITE_USER_NAME_REQUIRED')
+  let completion: PreparedBrfCompletionInput | null = null
+  if (preview.mode === 'brf_onboarding') {
+    if (input.termsAccepted !== true) throw new Error('TERMS_NOT_ACCEPTED')
+    if (input.termsVersion !== RENOAPP_BRF_TERMS_VERSION) throw new Error('TERMS_VERSION_MISMATCH')
+    completion = prepareBrfCompletionInput(input)
   }
-
-  const invite = inviteData as InviteRow
-  if (invite.accepted_at) throw new Error('INVITE_ALREADY_ACCEPTED')
-  if (invite.revoked_at) throw new Error('INVITE_REVOKED')
-  if (new Date(invite.expires_at).getTime() < Date.now()) throw new Error('INVITE_EXPIRED')
-
-  const inviteEmail = normalizeEmail(invite.email)
-  assertValidEmail(inviteEmail, 'INVITE_EMAIL_INVALID')
-  const inviteUserName = normalizeText(input.inviteUserName) ?? normalizeText(invite.full_name)
-  if (!inviteUserName) throw new Error('INVITE_USER_NAME_REQUIRED')
-  const acceptedAt = new Date().toISOString()
-
-  const userClient = createSupabaseServerClient()
-  const {
-    data: { user },
-  } = await userClient.auth.getUser()
-
-  const { data: brfStateData, error: brfStateError } = await admin
-    .from('brf_associations')
-    .select('onboarding_completed_at,name')
-    .eq('id', invite.brf_id)
-    .maybeSingle()
-
-  if (brfStateError || !brfStateData) {
-    throw new Error(brfStateError?.message ?? 'Kunde inte läsa BRF-status för inviten.')
-  }
-
-  const resolvedInviteMode: AcceptBrfInviteResult['mode'] = brfStateData.onboarding_completed_at
-    ? 'member_invite'
-    : 'brf_onboarding'
-
-  const termsVersion = normalizeText(input.termsVersion)
-  if (resolvedInviteMode === 'brf_onboarding') {
-    if (input.termsAccepted !== true) {
-      throw new Error('TERMS_NOT_ACCEPTED')
-    }
-    if (!termsVersion) {
-      throw new Error('TERMS_VERSION_REQUIRED')
-    }
-    if (termsVersion !== RENOAPP_BRF_TERMS_VERSION) {
-      throw new Error('TERMS_VERSION_MISMATCH')
-    }
-  }
-
-  const persistBrfCompletion = async (acceptedByProfileId: string) => {
-    const { error: updateBrfError } = await admin
-      .from('brf_associations')
-      .update({
-        name: completion.name,
-        org_number: completion.orgNumber,
-        property_designation: completion.propertyDesignation,
-        address: completion.address,
-        address_line_2: completion.addressLine2,
-        postal_code: completion.postalCode,
-        city: completion.city,
-        invoice_address: completion.invoiceAddress,
-        invoice_email: completion.invoiceEmail,
-        invoice_reference: completion.invoiceReference,
-        primary_contact_name: completion.primaryContactName,
-        primary_contact_email: completion.primaryContactEmail,
-        primary_contact_phone: completion.primaryContactPhone,
-        unit_count: completion.unitCount,
-        email: completion.generalEmail,
-        phone: completion.brfPhone ?? completion.primaryContactPhone,
-        technical_contact: completion.technicalContact,
-        onboarding_comment: completion.onboardingComment,
-        is_public_apply_enabled: true,
-        is_public_apply_listed: completion.publicApplyMode === 'listed',
-        onboarding_completed_at: acceptedAt,
-        onboarding_terms_version: termsVersion,
-        onboarding_terms_accepted_at: acceptedAt,
-        onboarding_terms_accepted_by: acceptedByProfileId,
-      })
-      .eq('id', invite.brf_id)
-
-    if (updateBrfError) {
-      throw new Error(updateBrfError.message ?? 'Kunde inte spara BRF-uppgifter.')
-    }
-  }
-
-  const markInviteAccepted = async () => {
-    const { error: updateInviteError } = await admin
-      .from('brf_member_invites')
-      .update({ accepted_at: acceptedAt })
-      .eq('id', invite.id)
-
-    if (updateInviteError) {
-      throw new Error(updateInviteError.message ?? 'Kunde inte markera invite som accepterad.')
-    }
-  }
-
-  const acceptMemberInviteForUser = async (profileId: string, email: string | null, fullName: string) => {
-    await ensureProfile(admin, {
-      userId: profileId,
-      email,
-      fullName,
-    })
-    await ensureBrfMember(admin, {
-      brfId: invite.brf_id,
-      profileId,
-      role: 'board',
-    })
-    await markInviteAccepted()
-  }
-
-  if (resolvedInviteMode === 'member_invite') {
-    if (user) {
-      const currentUserEmail = normalizeEmail(user.email ?? null)
-      if (currentUserEmail !== inviteEmail) {
-        throw new Error('INVITE_EMAIL_MISMATCH')
-      }
-
-      await acceptMemberInviteForUser(
-        user.id,
-        currentUserEmail,
-        normalizeText(typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : inviteUserName) ??
-          inviteUserName
-      )
-
-      return {
-        accepted: true,
-        signedInViaExistingSession: true,
-        createdUser: false,
-        signInEmail: invite.email,
-        additionalInvitesCreated: 0,
-        mode: resolvedInviteMode,
-      }
-    }
-
-    const fullName = inviteUserName
+  const additionalUsers = preview.mode === 'brf_onboarding'
+    ? prepareAdditionalInviteUsers(input.additionalUsers, preview.invite.email) : []
+  let userId = user?.id
+  let createdUser = false
+  if (!userId) {
     const password = String(input.password ?? '')
-
-    if (!fullName) throw new Error('FULL_NAME_REQUIRED')
     if (password.length < MIN_PASSWORD_LENGTH) throw new Error('PASSWORD_TOO_SHORT')
-
-    const createUserResult = await admin.auth.admin.createUser({
-      email: invite.email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName,
-      },
+    const result = await admin.auth.admin.createUser({
+      email: preview.invite.email, password, email_confirm: true, user_metadata: { full_name: fullName },
     })
-
-    if (createUserResult.error) {
-      const message = createUserResult.error.message ?? 'Kunde inte skapa användare.'
-      if (message.toLowerCase().includes('already') || message.toLowerCase().includes('registered')) {
-        throw new Error('EXISTING_USER_LOGIN_REQUIRED')
-      }
-      throw new Error(message)
+    if (result.error) {
+      if (/already|registered/i.test(result.error.message ?? '')) throw new Error('EXISTING_USER_LOGIN_REQUIRED')
+      throw new Error(result.error.message ?? 'Kunde inte skapa användare.')
     }
-
-    const createdUser = createUserResult.data.user
-    if (!createdUser) {
-      throw new Error('Kunde inte skapa användare.')
-    }
-
-    await acceptMemberInviteForUser(
-      createdUser.id,
-      normalizeEmail(createdUser.email ?? invite.email),
-      fullName
-    )
-
-    return {
-      accepted: true,
-      signedInViaExistingSession: false,
-      createdUser: true,
-      signInEmail: invite.email,
-      additionalInvitesCreated: 0,
-      mode: resolvedInviteMode,
-    }
+    if (!result.data.user) throw new Error('Kunde inte skapa användare.')
+    userId = result.data.user.id
+    createdUser = true
   }
-
-  const completion = prepareBrfCompletionInput(input)
-  const additionalUsers = prepareAdditionalInviteUsers(input.additionalUsers, inviteEmail as string)
-
-  if (user) {
-    const currentUserEmail = normalizeEmail(user.email ?? null)
-    if (currentUserEmail !== inviteEmail) {
-      throw new Error('INVITE_EMAIL_MISMATCH')
-    }
-
-    await ensureProfile(admin, {
-      userId: user.id,
-      email: currentUserEmail,
-      fullName: normalizeText(
-        typeof user.user_metadata?.full_name === 'string'
-          ? user.user_metadata.full_name
-          : inviteUserName
-      ),
-    })
-    await ensureBrfMember(admin, {
-      brfId: invite.brf_id,
-      profileId: user.id,
-      role: 'board',
-    })
-    await persistBrfCompletion(user.id)
-    await markInviteAccepted()
-
-    for (const additionalUser of additionalUsers) {
-      await createInviteRecord(admin, {
-        brfId: invite.brf_id,
-        brfName: completion.name,
-        email: additionalUser.email,
-        fullName: additionalUser.fullName,
-        role: 'board',
-        createdBy: user.id,
-        origin,
+  const profileName = normalizeText(typeof user?.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : fullName) ?? fullName
+  await ensureProfile(admin, { userId, email: preview.invite.email, fullName: profileName })
+  const { data: acceptance, error } = await admin.rpc('renoapp_accept_brf_invite', {
+    p_actor: userId, p_token_hash: tokenHash,
+    p_completion: completion ? { ...completion, termsVersion: RENOAPP_BRF_TERMS_VERSION } : null,
+  })
+  if (error) throw new Error(error.message ?? 'Kunde inte acceptera inbjudan.')
+  const additionalInviteWarnings: string[] = []
+  let additionalInvitesCreated = 0
+  if (!acceptance?.reused) for (const additionalUser of additionalUsers) {
+    try {
+      const invite = await createInviteRecord(admin, {
+        brfId: preview.brf.id, brfName: completion?.name ?? preview.brf.name,
+        email: additionalUser.email, fullName: additionalUser.fullName, role: 'board', createdBy: userId, origin,
       })
-    }
-
-    return {
-      accepted: true,
-      signedInViaExistingSession: true,
-      createdUser: false,
-      signInEmail: invite.email,
-      additionalInvitesCreated: additionalUsers.length,
-      mode: resolvedInviteMode,
+      additionalInvitesCreated += 1
+      if (!invite.emailSent) additionalInviteWarnings.push(additionalUser.email + ': mejlet kunde inte skickas.')
+    } catch {
+      additionalInviteWarnings.push(additionalUser.email + ': inbjudan kunde inte skapas.')
     }
   }
-
-  const fullName = inviteUserName
-  const password = String(input.password ?? '')
-
-  if (!fullName) throw new Error('FULL_NAME_REQUIRED')
-  if (password.length < MIN_PASSWORD_LENGTH) throw new Error('PASSWORD_TOO_SHORT')
-
-  const createUserResult = await admin.auth.admin.createUser({
-    email: invite.email,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: fullName,
-    },
-  })
-
-  if (createUserResult.error) {
-    const message = createUserResult.error.message ?? 'Kunde inte skapa användare.'
-    if (message.toLowerCase().includes('already') || message.toLowerCase().includes('registered')) {
-      throw new Error('EXISTING_USER_LOGIN_REQUIRED')
-    }
-    throw new Error(message)
-  }
-
-  const createdUser = createUserResult.data.user
-  if (!createdUser) {
-    throw new Error('Kunde inte skapa användare.')
-  }
-
-  await ensureProfile(admin, {
-    userId: createdUser.id,
-    email: normalizeEmail(createdUser.email ?? invite.email),
-    fullName,
-  })
-  await ensureBrfMember(admin, {
-    brfId: invite.brf_id,
-    profileId: createdUser.id,
-    role: 'board',
-  })
-  await persistBrfCompletion(createdUser.id)
-  await markInviteAccepted()
-
-  for (const additionalUser of additionalUsers) {
-    await createInviteRecord(admin, {
-      brfId: invite.brf_id,
-      brfName: completion.name,
-      email: additionalUser.email,
-      fullName: additionalUser.fullName,
-      role: 'board',
-      createdBy: createdUser.id,
-      origin,
-    })
-  }
-
-  return {
-    accepted: true,
-    signedInViaExistingSession: false,
-    createdUser: true,
-    signInEmail: invite.email,
-    additionalInvitesCreated: additionalUsers.length,
-    mode: resolvedInviteMode,
-  }
+  return { accepted: true, brfId: preview.brf.id, signedInViaExistingSession: Boolean(user), createdUser,
+    signInEmail: preview.invite.email, additionalInvitesCreated, additionalInviteWarnings, mode: preview.mode }
 }

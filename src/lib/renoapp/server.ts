@@ -3,11 +3,12 @@ import { cookies } from 'next/headers'
 import { getCurrentUserPlatformAccessContext, type PlatformAccessAssignment } from '@/lib/access/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { requireBrfAdminContext } from '@/lib/renoapp/brfAdminAccess'
+import { issueBrfInviteForAuthorizedUser } from '@/lib/renoapp/onboarding'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
 const POSTAL_CODE_REGEX = /^\d{3}\s\d{2}$/
-const INVITE_TTL_HOURS = 24 * 7
 
 type BrfAssociationRow = {
   id: string
@@ -1282,6 +1283,7 @@ export type RenoAppAdminBrfListItem = RenoAppEditableBrf & {
   caseCount: number
   memberCount: number
   pendingInviteCount: number
+  followUpInviteCount: number
 }
 
 type UpdateRenoAppBrfInput = {
@@ -1500,6 +1502,7 @@ async function loadNormalizedRenoAppBrfs(
     (assignment) =>
       assignment.productKey === 'renoapp' &&
       (assignment.moduleKey === null || assignment.moduleKey === 'board_portal') &&
+      (assignment.roleKey === 'board_member' || assignment.roleKey === 'renoapp_admin') &&
       assignment.scopeType === 'brf' &&
       Boolean(assignment.scopeId)
   )
@@ -3791,11 +3794,21 @@ async function ensureReusableCaseAccessToken(input: {
   return created.token
 }
 
-export async function getRenoAppPublicGuideConfig(slug: string): Promise<RenoAppPublicBrfConfig | null> {
+async function hasExistingBrfApplicationAccess(admin: SupabaseAdminClient, brfId: string, token?: string | null) {
+  if (!token) return false
+  const { data: link, error } = await admin.from('case_access_links').select('case_id').eq('token_hash', hashToken(token)).is('revoked_at', null).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!link) return false
+  const { data: item, error: caseError } = await admin.from('renovation_cases').select('id').eq('id', link.case_id).eq('brf_id', brfId).maybeSingle()
+  if (caseError) throw new Error(caseError.message)
+  return Boolean(item)
+}
+
+export async function getRenoAppPublicGuideConfig(slug: string, draftToken?: string | null): Promise<RenoAppPublicBrfConfig | null> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const brf = await getPublicBrfBySlug(admin, slug)
 
-  if (!brf || !brf.is_public_apply_enabled) {
+  if (!brf || (!brf.is_public_apply_enabled && !await hasExistingBrfApplicationAccess(admin, brf.id, draftToken))) {
     return null
   }
 
@@ -4156,7 +4169,7 @@ export async function upsertPublicApplication(
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const brf = await getPublicBrfBySlug(admin, input.brfSlug)
 
-  if (!brf || !brf.is_public_apply_enabled) {
+  if (!brf || (!brf.is_public_apply_enabled && !await hasExistingBrfApplicationAccess(admin, brf.id, input.draftToken))) {
     throw new Error('BRF_NOT_FOUND')
   }
 
@@ -4295,6 +4308,7 @@ export async function upsertPublicApplication(
       .from('renovation_cases')
       .select('id,applicant_contact_id,unit_id,case_number,status,submitted_at')
       .eq('id', draftCaseId)
+      .eq('brf_id', brf.id)
       .maybeSingle()
 
     if (caseError) {
@@ -5020,11 +5034,11 @@ export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContex
     is_admin: accessContext.identity.isLegacyAdmin,
   }
   const brfs =
-    normalizedRenoAppAssignments.length > 0
+    accessContext.normalizedAccessAvailable
       ? await loadNormalizedRenoAppBrfs(admin, normalizedRenoAppAssignments)
       : await loadLegacyRenoAppBrfs(admin, accessContext.identity.profileId)
 
-  if (brfs.length === 0 && !accessContext.identity.isLegacyAdmin) {
+  if (brfs.length === 0) {
     throw new Error('RENOAPP_MEMBERSHIP_REQUIRED')
   }
 
@@ -5042,17 +5056,13 @@ export async function requireRenoAppViewerContext(): Promise<RenoAppViewerContex
     isInternalAdmin: accessContext.identity.isLegacyAdmin,
     brfs,
     activeBrfId,
-    authorizedBrfIds: accessContext.identity.isLegacyAdmin ? null : brfs.map((item) => item.id),
-    accessibleBrfIds: activeBrfId ? [activeBrfId] : brfs.length > 0 ? brfs.map((item) => item.id) : null,
+    authorizedBrfIds: brfs.map((item) => item.id),
+    accessibleBrfIds: activeBrfId ? [activeBrfId] : brfs.map((item) => item.id),
   }
 }
 
 async function requireRenoAppAdminProfile() {
-  const context = await requireRenoAppViewerContext()
-  if (!context.isInternalAdmin) {
-    throw new Error('ADMIN_REQUIRED')
-  }
-  return context
+  return requireBrfAdminContext()
 }
 
 function applyBrfScope(query: QueryBuilder, accessibleBrfIds: string[] | null) {
@@ -5906,7 +5916,7 @@ export async function listRenoAppAdminBrfs(): Promise<RenoAppAdminBrfListItem[]>
     brfIds.length > 0
       ? admin
           .from('brf_member_invites')
-          .select('brf_id')
+          .select('brf_id,expires_at,delivery_status')
           .in('brf_id', brfIds)
           .is('accepted_at', null)
           .is('revoked_at', null)
@@ -5922,13 +5932,16 @@ export async function listRenoAppAdminBrfs(): Promise<RenoAppAdminBrfListItem[]>
 
   const memberCountByBrfId = new Map<string, number>()
   const pendingInviteCountByBrfId = new Map<string, number>()
+  const followUpInviteCountByBrfId = new Map<string, number>()
   const caseCountByBrfId = new Map<string, number>()
 
   for (const row of (membersResult.data ?? []) as Array<Record<string, unknown>>) {
     incrementCount(memberCountByBrfId, row.brf_id)
   }
   for (const row of (invitesResult.data ?? []) as Array<Record<string, unknown>>) {
-    incrementCount(pendingInviteCountByBrfId, row.brf_id)
+    const expired = new Date(String(row.expires_at)).getTime() <= Date.now()
+    if (!expired) incrementCount(pendingInviteCountByBrfId, row.brf_id)
+    if (expired || row.delivery_status === 'failed' || row.delivery_status === 'pending') incrementCount(followUpInviteCountByBrfId, row.brf_id)
   }
   for (const row of (casesResult.data ?? []) as Array<Record<string, unknown>>) {
     incrementCount(caseCountByBrfId, row.brf_id)
@@ -5940,6 +5953,7 @@ export async function listRenoAppAdminBrfs(): Promise<RenoAppAdminBrfListItem[]>
     caseCount: caseCountByBrfId.get(row.id) ?? 0,
     memberCount: memberCountByBrfId.get(row.id) ?? 0,
     pendingInviteCount: pendingInviteCountByBrfId.get(row.id) ?? 0,
+    followUpInviteCount: followUpInviteCountByBrfId.get(row.id) ?? 0,
   }))
 }
 
@@ -6006,9 +6020,9 @@ export async function updateEditableRenoAppBrf(input: UpdateRenoAppBrfInput): Pr
     throw new Error('BRF_NOT_FOUND')
   }
 
-  const { data: updatedBrf, error: updateError } = await admin
-    .from('brf_associations')
-    .update({
+  const { data: updatedBrf, error: updateError } = await createSupabaseAdminClient().rpc('renoapp_update_brf', {
+    p_actor: context.userId, p_brf_id: input.brfId,
+    p_changes: {
       name,
       org_number: orgNumber,
       property_designation: propertyDesignation,
@@ -6029,12 +6043,8 @@ export async function updateEditableRenoAppBrf(input: UpdateRenoAppBrfInput): Pr
       apply_intro_text: applyIntroText,
       is_public_apply_enabled: isPublicApplyEnabled,
       is_public_apply_listed: isPublicApplyListed,
-    })
-    .eq('id', input.brfId)
-    .select(
-      'id,name,slug,org_number,address,address_line_2,postal_code,city,email,phone,property_designation,invoice_address,invoice_email,invoice_reference,primary_contact_name,primary_contact_email,primary_contact_phone,unit_count,technical_contact,is_public_apply_enabled,is_public_apply_listed,apply_intro_text,onboarding_completed_at'
-    )
-    .single()
+    },
+  })
 
   if (updateError || !updatedBrf) {
     throw new Error(updateError?.message ?? 'Kunde inte uppdatera BRF.')
@@ -7866,252 +7876,40 @@ export async function saveRenoAppAdminRequirement(input: {
 }
 
 export async function createRenoAppUserInvite(input: {
-  brfId: string
-  fullName: string
-  email: string
-  origin: string
+  brfId: string; fullName: string; email: string; origin: string
 }): Promise<CreateRenoAppUserInviteResult> {
   const context = await requireRenoAppViewerContext()
-  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-
-  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(input.brfId)) {
-    throw new Error('BRF_NOT_FOUND')
-  }
-
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(input.brfId)) throw new Error('BRF_NOT_FOUND')
   const fullName = normalizeText(input.fullName)
-  const email = normalizeEmail(input.email)
-  const origin = normalizeText(input.origin) ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'https://hushub.se'
-
   if (!fullName) throw new Error('FULL_NAME_REQUIRED')
-  assertValidEmail(email, 'EMAIL_INVALID')
-
-  const { data: brfData, error: brfError } = await admin
-    .from('brf_associations')
-    .select('id,name,slug')
-    .eq('id', input.brfId)
-    .maybeSingle()
-
-  if (brfError) {
-    throw new Error(brfError.message ?? 'Kunde inte lÃ¤sa BRF.')
-  }
-  if (!brfData) {
-    throw new Error('BRF_NOT_FOUND')
-  }
-
-  const { data: existingMemberRows, error: existingMemberError } = await admin
-    .from('brf_members')
-    .select('profile_id')
-    .eq('brf_id', input.brfId)
-    .eq('is_active', true)
-
-  if (existingMemberError) {
-    throw new Error(existingMemberError.message ?? 'Kunde inte lÃ¤sa anvÃ¤ndare.')
-  }
-
-  const profileIds = Array.from(
-    new Set(((existingMemberRows ?? []) as Array<Record<string, unknown>>).map((row) => String(row.profile_id ?? '')).filter(Boolean))
-  )
-  const profilesResult =
-    profileIds.length > 0
-      ? await admin.from('profiles').select('id,email').in('id', profileIds)
-      : { data: [], error: null }
-
-  if (profilesResult.error) {
-    throw new Error(profilesResult.error.message ?? 'Kunde inte lÃ¤sa anvÃ¤ndarprofiler.')
-  }
-
-  const activeEmails = new Set(
-    ((profilesResult.data ?? []) as Array<Record<string, unknown>>)
-      .map((row) => normalizeEmail(row.email))
-      .filter((value): value is string => Boolean(value))
-  )
-  if (email && activeEmails.has(email)) {
-    throw new Error('EMAIL_ALREADY_MEMBER')
-  }
-
-  const { data: existingInvite, error: existingInviteError } = await admin
-    .from('brf_member_invites')
-    .select('id')
-    .eq('brf_id', input.brfId)
-    .eq('email', email)
-    .is('accepted_at', null)
-    .is('revoked_at', null)
-    .maybeSingle()
-
-  if (existingInviteError) {
-    throw new Error(existingInviteError.message ?? 'Kunde inte lÃ¤sa befintliga invites.')
-  }
-  if (existingInvite) {
-    throw new Error('EMAIL_ALREADY_INVITED')
-  }
-
-  const token = makeToken()
-  const tokenHash = hashToken(token)
-  const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000).toISOString()
-
-  const { data: inviteData, error: insertError } = await admin
-    .from('brf_member_invites')
-    .insert({
-      brf_id: input.brfId,
-      email,
-      full_name: fullName,
-      role: 'board',
-      token_hash: tokenHash,
-      expires_at: expiresAt,
-      created_by: context.userId,
-    })
-    .select('id')
-    .single()
-
-  if (insertError || !inviteData) {
-    throw new Error(insertError?.message ?? 'Kunde inte skapa invite.')
-  }
-
-  const inviteUrl = buildAbsoluteUrl(origin, `/renoapp/invite/${token}`)
-  const mailFrom = getMailFromAddress()
-  let emailSent = false
-  let emailError: string | null = null
-
-  if (mailFrom) {
-    try {
-  const subject = `Inbjudan till RenoApp för ${String(brfData.name ?? 'er BRF')}`
-      await sendAssignmentEmail({
-        to: email as string,
-        from: mailFrom,
-        subject,
-        html: buildRenoAppEmailHtml({
-          origin,
-          preheader: subject,
-          bodyHtml: `
-            <p>Hej ${escapeHtml(fullName as string)},</p>
-      <p>Du har blivit inbjuden till RenoApp för <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
-      <p>Öppna länken nedan för att aktivera ditt konto:</p>
-            <p><a href="${inviteUrl}">${inviteUrl}</a></p>
-      <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
-          `,
-        }),
-        text: [
-          `Hej ${fullName},`,
-      `Du har blivit inbjuden till RenoApp för ${String(brfData.name ?? 'er BRF')}.`,
-      `Öppna länken för att aktivera ditt konto: ${inviteUrl}`,
-      `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
-      '',
-      'Med vänlig hälsning,',
-      'RenoApp-teamet på HusHub',
-        ].join('\n'),
-      })
-      emailSent = true
-    } catch (error) {
-      emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
-    }
-  } else {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Invite skapades men inget mejl skickades.'
-  }
-
-  return {
-    invite: {
-      id: String(inviteData.id ?? ''),
-      email: email as string,
-      fullName,
-      expiresAt,
-      inviteUrl,
-      emailSent,
-      emailError,
-    },
-  }
+  const invite = await issueBrfInviteForAuthorizedUser({
+    ...input, fullName, actorId: context.userId,
+  })
+  return { invite: { ...invite, fullName } }
 }
 
-export async function revokeRenoAppUserInvite(inviteId: string) {
-  const context = await requireRenoAppViewerContext()
-  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-
-  const { data: inviteData, error: inviteError } = await admin
-    .from('brf_member_invites')
-    .select('id,brf_id,accepted_at,revoked_at')
-    .eq('id', inviteId)
-    .maybeSingle()
-
-  if (inviteError) {
-    throw new Error(inviteError.message ?? 'Kunde inte lÃ¤sa invite.')
-  }
-  if (!inviteData) {
-    throw new Error('INVITE_NOT_FOUND')
-  }
-
-  const brfId = String((inviteData as Record<string, unknown>).brf_id ?? '')
-  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(brfId)) {
-    throw new Error('INVITE_NOT_FOUND')
-  }
-  if ((inviteData as Record<string, unknown>).accepted_at) {
-    throw new Error('INVITE_ALREADY_ACCEPTED')
-  }
-  if ((inviteData as Record<string, unknown>).revoked_at) {
-    throw new Error('INVITE_ALREADY_REVOKED')
-  }
-
-  const { error: updateError } = await admin
-    .from('brf_member_invites')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('id', inviteId)
-
-  if (updateError) {
-    throw new Error(updateError.message ?? 'Kunde inte Ã¥terkalla invite.')
-  }
-
+export async function revokeRenoAppUserInvite(inviteId: string, adminBrfId?: string) {
+  const context = adminBrfId
+    ? { ...await requireBrfAdminContext(), accessibleBrfIds: [adminBrfId] }
+    : await requireRenoAppViewerContext()
+  const admin = createSupabaseAdminClient()
+  const { data: invite, error: readError } = await admin.from('brf_member_invites').select('brf_id').eq('id', inviteId).maybeSingle()
+  if (readError) throw new Error(readError.message)
+  if (!invite || (context.accessibleBrfIds && !context.accessibleBrfIds.includes(invite.brf_id))) throw new Error('INVITE_NOT_FOUND')
+  const { error } = await admin.rpc('renoapp_revoke_brf_invite', { p_actor: context.userId, p_brf_id: invite.brf_id, p_invite_id: inviteId })
+  if (error) throw new Error(error.message)
   return { revoked: true as const }
 }
 
-export async function removeRenoAppUserMember(input: { brfId: string; profileId: string }) {
-  const context = await requireRenoAppViewerContext()
-  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-
-  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(input.brfId)) {
-    throw new Error('BRF_NOT_FOUND')
-  }
-
-  if (input.profileId === context.userId) {
-    throw new Error('CANNOT_REMOVE_SELF')
-  }
-
-  const { data: memberData, error: memberError } = await admin
-    .from('brf_members')
-    .select('id,brf_id,profile_id,is_active')
-    .eq('brf_id', input.brfId)
-    .eq('profile_id', input.profileId)
-    .maybeSingle()
-
-  if (memberError) {
-    throw new Error(memberError.message ?? 'Kunde inte lÃ¤sa BRF-anvÃ¤ndare.')
-  }
-  if (!memberData || !(memberData as Record<string, unknown>).is_active) {
-    throw new Error('MEMBER_NOT_FOUND')
-  }
-
-  const { data: activeMembers, error: activeMembersError } = await admin
-    .from('brf_members')
-    .select('profile_id')
-    .eq('brf_id', input.brfId)
-    .eq('is_active', true)
-
-  if (activeMembersError) {
-    throw new Error(activeMembersError.message ?? 'Kunde inte lÃ¤sa aktiva BRF-anvÃ¤ndare.')
-  }
-
-  const activeCount = ((activeMembers ?? []) as Array<Record<string, unknown>>).length
-  if (activeCount <= 1) {
-    throw new Error('CANNOT_REMOVE_LAST_MEMBER')
-  }
-
-  const { error: updateError } = await admin
-    .from('brf_members')
-    .update({ is_active: false })
-    .eq('brf_id', input.brfId)
-    .eq('profile_id', input.profileId)
-
-  if (updateError) {
-    throw new Error(updateError.message ?? 'Kunde inte ta bort anvÃ¤ndaren.')
-  }
-
+export async function removeRenoAppUserMember(input: { brfId: string; profileId: string }, asAdmin = false) {
+  const context = asAdmin
+    ? { ...await requireBrfAdminContext(), accessibleBrfIds: [input.brfId] }
+    : await requireRenoAppViewerContext()
+  if (context.accessibleBrfIds && !context.accessibleBrfIds.includes(input.brfId)) throw new Error('BRF_NOT_FOUND')
+  const { error } = await createSupabaseAdminClient().rpc('renoapp_remove_brf_member', {
+    p_actor: context.userId, p_brf_id: input.brfId, p_profile_id: input.profileId,
+  })
+  if (error) throw new Error(error.message)
   return { removed: true as const }
 }
 
