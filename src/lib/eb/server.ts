@@ -9,7 +9,11 @@ import {
   isEbPreliminaryInspection,
   isEbReportSectionApplicable,
 } from '@/lib/eb/reportSectionRules'
-import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
+import {
+  EB_PHOTO_APPENDIX_LABEL,
+  normalizeEbTestingDocumentationText,
+} from '@/lib/eb/reportText'
+import { classifyEbAgreement, resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
@@ -455,9 +459,26 @@ function mergeEbMixedReportSection(
   existing: EbReportDraftSection,
   fallbackUpdatedAt: string
 ) {
+  let text = existing.text
+  if (current.key === 'testing_documentation') {
+    text = normalizeEbTestingDocumentationText(text)
+  }
+  if (current.key === 'reclamation_notice') {
+    const currentBlocks = reportTextBlocks(current.text)
+    const existingBlocks = reportTextBlocks(text)
+    const firstBlock = existingBlocks[0] ?? ''
+    const generatedNotice =
+      firstBlock.startsWith('Beställarens reklamationsrätter framgår') ||
+      firstBlock.startsWith('För denna konsumententreprenad gäller') ||
+      firstBlock.startsWith('Reklamationsfrister följer av parternas avtal')
+    if (generatedNotice && currentBlocks[0]) {
+      text = [currentBlocks[0], ...existingBlocks.slice(1)].join('\n\n')
+    }
+  }
+
   return {
     ...mergeEbStructuredReportSection(current, existing, fallbackUpdatedAt),
-    text: existing.text,
+    text,
   }
 }
 
@@ -5969,7 +5990,28 @@ function ebAgreementScopeLine(round: EbInspectionRound) {
     return `Arbetenas omfattning framgår av offert daterad ${dateText}.`
   }
 
+  const agreement = normalizeText(round.project.standardAgreement)
+  if (!agreement || classifyEbAgreement(agreement) === 'unspecified') {
+    return agreement
+      ? `Arbetenas omfattning framgår av parternas skriftliga avtal, ${agreement}, daterat ${dateText}.`
+      : `Arbetenas omfattning framgår av parternas skriftliga avtal daterat ${dateText}.`
+  }
+  if (agreement.toLocaleLowerCase('sv-SE').includes('konsumententreprenad')) {
+    return `Arbetenas omfattning framgår av parternas skriftliga konsumententreprenadavtal daterat ${dateText}.`
+  }
+
   return `Arbetenas omfattning framgår av skriftligt avtal enligt ${agreementReference(round.project.standardAgreement)} undertecknat av parterna ${dateText}.`
+}
+
+function ebReclamationNoticeReportText(round: EbInspectionRound) {
+  const agreementCategory = classifyEbAgreement(round.project.standardAgreement)
+  if (agreementCategory === 'consumer') {
+    return 'För denna konsumententreprenad gäller konsumenttjänstlagens regler om reklamation samt villkoren i det avtal som parterna har ingått. Konsumenten ska reklamera fel till näringsidkaren inom skälig tid efter att felet märkts eller borde ha märkts. En reklamation inom två månader anses alltid ha skett i rätt tid.'
+  }
+  if (agreementCategory === 'commercial') {
+    return `Reklamationsfrister följer av parternas avtal, ${agreementReference(round.project.standardAgreement)}, och tillämplig lagstiftning.`
+  }
+  return 'Reklamationsfrister följer av parternas avtal och tillämplig lagstiftning.'
 }
 
 function ebAgreementChangeOrderLine(item: EbProjectAgreementItem) {
@@ -6156,8 +6198,20 @@ function buildEbReportDraft(input: {
   const testingDocumentationText = ebStandardText('EB_REPORT_TESTING_DOCUMENTATION')
   const hasReviewedDocuments = inspectionDocuments.some((document) => document.status === 'present')
   const hasDocumentRemarks = inspectionDocuments.some((document) => document.status !== 'na')
-  const appendices = includedAttachments.length > 0
-    ? includedAttachments.map(ebAttachmentReportRow).join('\n\n')
+  const photoAppendixNoteIds = new Set(
+    shouldUseEbTemplateCheckpoints(round.project)
+      ? round.checkpoints.map((checkpoint) => checkpoint.noteId).filter((noteId): noteId is string => Boolean(noteId))
+      : round.notes.map((note) => note.id)
+  )
+  const hasPhotoAppendix = round.images.some(
+    (image) => Boolean(image.noteId && photoAppendixNoteIds.has(image.noteId))
+  )
+  const appendixRows = [
+    hasPhotoAppendix ? EB_PHOTO_APPENDIX_LABEL : null,
+    ...includedAttachments.map(ebAttachmentReportRow),
+  ].filter((row): row is string => Boolean(row))
+  const appendices = appendixRows.length > 0
+    ? appendixRows.join('\n\n')
     : ebStandardText('EB_REPORT_APPENDICES')
   const specialInvestigationNotes = round.notes.filter(
     (note) =>
@@ -6330,7 +6384,7 @@ function buildEbReportDraft(input: {
       title: 'Bilagor och littera',
       sbrPoint: null,
       source: 'project',
-      status: includedAttachments.length > 0 ? 'complete' : 'draft',
+      status: appendixRows.length > 0 ? 'complete' : 'draft',
       isRelevant: true,
       text: appendices,
       updatedAt: null,
@@ -6482,7 +6536,7 @@ function buildEbReportDraft(input: {
       source: 'standard_text',
       status: sectionApplicable('reclamation_notice') ? 'complete' : 'not_applicable',
       isRelevant: sectionApplicable('reclamation_notice'),
-      text: ebStandardText('EB_REPORT_RECLAMATION_NOTICE'),
+      text: ebReclamationNoticeReportText(round),
       updatedAt: null,
     },
     {

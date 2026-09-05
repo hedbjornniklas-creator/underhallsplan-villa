@@ -5,6 +5,7 @@
 import Link from 'next/link'
 import {
   CheckCircle2,
+  Camera,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -18,6 +19,11 @@ import {
   isEbDrainageTemplate,
   isEbReportSectionApplicable,
 } from '@/lib/eb/reportSectionRules'
+import {
+  isEbTestingDocumentationConclusion,
+  normalizeEbTestingDocumentationText,
+  withEbPhotoAppendixListing,
+} from '@/lib/eb/reportText'
 import type {
   EbInspectionCheckpoint,
   EbInspectionReport,
@@ -53,6 +59,7 @@ type EbPublicReportSnapshotViewProps = {
 
 type PublicImage = {
   id: string
+  noteId: string
   src: string
   fullSrc: string
   alt: string
@@ -400,7 +407,7 @@ function ContractParties({ report }: { report: EbInspectionReport }) {
               <p className="text-xs font-semibold uppercase tracking-[0.11em] text-emerald-700">
                 {party.label}
               </p>
-              <p className="mt-2 font-semibold text-slate-950">{party.name?.trim() || '–'}</p>
+              <p className="mt-2 font-semibold text-slate-950">{party.name?.trim() || 'Ej angiven'}</p>
               {party.address ? <p className="mt-1 text-sm leading-6 text-slate-700">{party.address}</p> : null}
               {party.orgNo ? <p className="mt-1 text-sm text-slate-600">Org.nr {party.orgNo}</p> : null}
             </div>
@@ -430,7 +437,7 @@ function Participants({ report, section }: { report: EbInspectionReport; section
         (participant) => !isParticipantFor(participant, 'client') && !isParticipantFor(participant, 'contractor')
       ),
     },
-  ]
+  ].filter((group) => group.participants.length > 0)
 
   return (
     <div className="space-y-5">
@@ -451,11 +458,12 @@ function Participants({ report, section }: { report: EbInspectionReport; section
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="mt-3 text-sm text-slate-500">–</p>
-            )}
+            ) : null}
           </div>
         ))}
+        {groups.length === 0 ? (
+          <p className="text-sm text-slate-600">Inga närvarande har angetts.</p>
+        ) : null}
       </div>
     </div>
   )
@@ -463,13 +471,14 @@ function Participants({ report, section }: { report: EbInspectionReport; section
 
 function DistributionList({ report }: { report: EbInspectionReport }) {
   const recipients = report.participants.filter((participant) => participant.receivesReport)
-  const distributionDate = report.inspection.reportDistributionDate?.trim() || 'datum ej angivet'
+  const distributionDate = formatDateTime(report.inspection.reportLastSentAt)
 
   return (
     <div className="space-y-5">
       <p className="text-base leading-7 text-slate-800">
-        Undertecknat utlåtande har {distributionDate} sänts per e-post till parterna och övriga
-        enligt nedan.
+        {distributionDate
+          ? `Undertecknat utlåtande har ${distributionDate} sänts per e-post till parterna och övriga enligt nedan.`
+          : 'Utlåtandet har ännu inte skickats digitalt. Nedan visas avsedda mottagare.'}
       </p>
       {recipients.length > 0 ? (
         <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -484,9 +493,9 @@ function DistributionList({ report }: { report: EbInspectionReport }) {
             <tbody className="divide-y divide-slate-200 bg-white">
               {recipients.map((recipient, index) => (
                 <tr key={recipient.id ?? `${recipient.email}-${index}`}>
-                  <td className="px-4 py-3 text-slate-700">{recipient.companyName?.trim() || '–'}</td>
-                  <td className="px-4 py-3 text-slate-700">{recipient.personName?.trim() || '–'}</td>
-                  <td className="px-4 py-3 text-slate-700">{recipient.email?.trim() || '–'}</td>
+                  <td className="px-4 py-3 text-slate-700">{recipient.companyName?.trim() || ''}</td>
+                  <td className="px-4 py-3 text-slate-700">{recipient.personName?.trim() || ''}</td>
+                  <td className="px-4 py-3 text-slate-700">{recipient.email?.trim() || ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -509,7 +518,7 @@ function TestingDocumentation({
   const documents = [...report.inspectionDocuments]
     .filter((document) => document.status === 'present')
     .sort((left, right) => left.sortOrder - right.sortOrder)
-  const proseBlocks = normalizeText(section.text)
+  const proseBlocks = normalizeText(normalizeEbTestingDocumentationText(section.text))
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean)
@@ -529,11 +538,11 @@ function TestingDocumentation({
   const beforeList =
     section.contentMode === 'mixed'
       ? proseBlocks.slice(0, 2)
-      : proseBlocks.filter((block) => !normalizeText(block).startsWith('Där avtalad dokumentation'))
+      : proseBlocks.filter((block) => !isEbTestingDocumentationConclusion(block))
   const afterList =
     section.contentMode === 'mixed'
       ? proseBlocks.slice(2)
-      : proseBlocks.filter((block) => normalizeText(block).startsWith('Där avtalad dokumentation'))
+      : proseBlocks.filter(isEbTestingDocumentationConclusion)
 
   return (
     <div className="space-y-5">
@@ -654,12 +663,16 @@ function DefectsAndNotes({
   notes,
   headingsByNoteId,
   trailingHeadings,
+  noteImagesByNoteId,
+  onOpenImage,
 }: {
   report: EbInspectionReport
   section: EbReportDraftSection
   notes: EbNote[]
   headingsByNoteId: Map<string, EbReportNoteHeading[]>
   trailingHeadings: EbReportNoteHeading[]
+  noteImagesByNoteId: Map<string, PublicImage[]>
+  onOpenImage: (imageId: string) => void
 }) {
   const markerSection = report.reportDraft.sections.find((candidate) => candidate.key === 'marker_legend')
   const deductionSection = report.reportDraft.sections.find((candidate) => candidate.key === 'deduction')
@@ -723,6 +736,7 @@ function DefectsAndNotes({
         {visibleNotes.map((note, index) => {
           const marker = report.markers.find((candidate) => candidate.key === note.markerKey)
           const location = noteLocation(note)
+          const noteImages = noteImagesByNoteId.get(note.id) ?? []
           return (
             <div key={note.id} className="space-y-3">
               {(headingsByNoteId.get(note.id) ?? []).map((heading) => (
@@ -745,6 +759,18 @@ function DefectsAndNotes({
                     <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
                       {note.statusLabel}
                     </span>
+                  ) : null}
+                  {noteImages.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenImage(noteImages[0].id)}
+                      aria-label={`Visa ${noteImages.length} ${noteImages.length === 1 ? 'bild' : 'bilder'} för notering ${index + 1}`}
+                      aria-haspopup="dialog"
+                      className="ml-auto inline-flex min-h-8 items-center gap-1.5 rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                    >
+                      <Camera size={15} aria-hidden />
+                      {noteImages.length} {noteImages.length === 1 ? 'bild' : 'bilder'}
+                    </button>
                   ) : null}
                 </div>
                 <div className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(150px,0.32fr)_1fr] sm:px-5">
@@ -850,12 +876,18 @@ function SectionContent({
   notes,
   headingsByNoteId,
   trailingHeadings,
+  hasPhotoAppendix,
+  noteImagesByNoteId,
+  onOpenImage,
 }: {
   report: EbInspectionReport
   section: EbReportDraftSection
   notes: EbNote[]
   headingsByNoteId: Map<string, EbReportNoteHeading[]>
   trailingHeadings: EbReportNoteHeading[]
+  hasPhotoAppendix: boolean
+  noteImagesByNoteId: Map<string, PublicImage[]>
+  onOpenImage: (imageId: string) => void
 }) {
   if (section.key === 'contract_parties') return <ContractParties report={report} />
   if (section.key === 'participants') return <Participants report={report} section={section} />
@@ -874,6 +906,8 @@ function SectionContent({
         notes={notes}
         headingsByNoteId={headingsByNoteId}
         trailingHeadings={trailingHeadings}
+        noteImagesByNoteId={noteImagesByNoteId}
+        onOpenImage={onOpenImage}
       />
     )
   }
@@ -893,10 +927,14 @@ function SectionContent({
           scope: report.inspection.warrantyScope?.trim() || null,
         }
       : null
+  const sectionText =
+    section.key === 'appendices'
+      ? withEbPhotoAppendixListing(section.text, hasPhotoAppendix)
+      : section.text
 
   return (
     <div className="space-y-5">
-      <ReadableText text={section.text} />
+      <ReadableText text={sectionText} />
       {continuedInspection && (continuedInspection.date || continuedInspection.time) ? (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-800">
           Enligt överenskommelse verkställs ny slutbesiktning{' '}
@@ -910,7 +948,7 @@ function SectionContent({
             <li>{reclamationWarranty.date} för {reclamationWarranty.scope}</li>
           </ul>
         ) : (
-          <p className="text-sm text-slate-600">–</p>
+          <p className="text-sm text-slate-600">Ingen särskild varugaranti har angetts.</p>
         )
       ) : null}
     </div>
@@ -1298,6 +1336,7 @@ export default function EbPublicReportSnapshotView({
   const imageData = useMemo(() => {
     const groups: PublicImageGroup[] = []
     const allImages: PublicImage[] = []
+    const noteImagesByNoteId = new Map<string, PublicImage[]>()
     const drainage = isEbDrainageTemplate(report.project.projectTemplateKey)
     const displayNumberByNoteId = new Map(notes.map((note, index) => [note.id, index + 1]))
     const imagesByNoteId = new Map<string, EbNoteImage[]>()
@@ -1339,6 +1378,7 @@ export default function EbPublicReportSnapshotView({
       noteImages.forEach((image, imageIndex) => {
         const publicImage: PublicImage = {
           id: `${note.id}-${image.id}-${imageIndex}`,
+          noteId: note.id,
           src: imageProxyUrl(image, 1200, 72),
           fullSrc: imageProxyUrl(image, 2400, 88),
           alt: `${reference}, bild ${imageIndex + 1} av ${noteImages.length}`,
@@ -1350,10 +1390,11 @@ export default function EbPublicReportSnapshotView({
         group.images.push(publicImage)
         allImages.push(publicImage)
       })
+      noteImagesByNoteId.set(note.id, group.images)
       groups.push(group)
     }
 
-    return { groups, images: allImages }
+    return { groups, images: allImages, noteImagesByNoteId }
   }, [checkpointNumberByNoteId, headingsByNoteId, notes, report.images, report.project.projectTemplateKey])
   const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null)
   const signatureSection = report.reportDraft.sections.find((section) => section.key === 'signature_certificate')
@@ -1484,6 +1525,9 @@ export default function EbPublicReportSnapshotView({
                   notes={notes}
                   headingsByNoteId={headingsByNoteId}
                   trailingHeadings={trailingHeadings}
+                  hasPhotoAppendix={imageData.images.length > 0}
+                  noteImagesByNoteId={imageData.noteImagesByNoteId}
+                  onOpenImage={openImage}
                 />
               </SectionShell>
             ))}

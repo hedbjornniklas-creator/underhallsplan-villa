@@ -200,6 +200,10 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     pointer-events: none !important;
   }
 
+  .eb-print-paged-document[data-eb-print-pagination-ready="1"] .eb-print-measure {
+    display: none !important;
+  }
+
   .eb-print-pages {
     display: block !important;
     gap: 0 !important;

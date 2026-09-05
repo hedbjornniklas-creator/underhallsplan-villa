@@ -188,6 +188,50 @@ export function isEbReportSnapshotPayloadV1(value: unknown): value is EbReportSn
   return isRecord(report.project) && isRecord(report.inspection) && isRecord(report.reportDraft)
 }
 
+function stockholmDate(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value.slice(0, 10)
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Stockholm',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed)
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? ''
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+export function withEbReportDeliveryTimestamp(snapshot: unknown, sentAt: string) {
+  if (!isEbReportSnapshotPayloadV1(snapshot)) return snapshot
+
+  const reportDistributionDate = stockholmDate(sentAt)
+  const inspection = {
+    ...snapshot.report.inspection,
+    reportDistributionDate,
+    reportDeliveryStatus: 'sent' as const,
+    reportLastSentAt: sentAt,
+  }
+
+  return {
+    ...snapshot,
+    report: {
+      ...snapshot.report,
+      inspection,
+      project: {
+        ...snapshot.report.project,
+        inspections: snapshot.report.project.inspections.map((item) =>
+          item.inspectionId === inspection.inspectionId ? inspection : item
+        ),
+      },
+    },
+    meta: {
+      ...snapshot.meta,
+      reportDate: reportDistributionDate,
+    },
+  } satisfies EbReportSnapshotPayloadV1
+}
+
 export function getEbInspectionReportFromSnapshot(value: unknown): EbInspectionReport | null {
   if (isEbReportSnapshotPayloadV1(value)) return value.report
   if (!isRecord(value) || value.schemaVersion !== 'eb_v1') return null

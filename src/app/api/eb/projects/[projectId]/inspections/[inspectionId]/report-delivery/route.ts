@@ -7,6 +7,7 @@ import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/
 import {
   createEbReportSnapshotPayloadV1,
   isEbReportSnapshotPayloadV1,
+  withEbReportDeliveryTimestamp,
   type EbReportDeliveryDocument,
 } from '@/lib/eb/reportSnapshot'
 import { getEbInspectionReport, getEbProjectById, type EbProjectListItem } from '@/lib/eb/server'
@@ -427,6 +428,45 @@ async function createReportLink(
 
   if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa rapportlänk.')
   return { linkId: data.id as string, token, tokenHash }
+}
+
+async function recordReportDeliveryMetadata(
+  admin: AdminClient,
+  input: {
+    orgId: string
+    projectId: string
+    inspectionId: string
+    linkId: string
+    snapshotPayload: unknown
+    sentAt: string
+  }
+) {
+  const snapshotPayload = withEbReportDeliveryTimestamp(input.snapshotPayload, input.sentAt)
+  const reportDistributionDate = isEbReportSnapshotPayloadV1(snapshotPayload)
+    ? snapshotPayload.meta.reportDate
+    : input.sentAt.slice(0, 10)
+  const [linkResult, inspectionResult] = await Promise.all([
+    admin
+      .from('inspection_report_links')
+      .update({ snapshot_payload: snapshotPayload })
+      .eq('org_id', input.orgId)
+      .eq('id', input.linkId),
+    admin
+      .from('eb_inspection_details')
+      .update({ report_distribution_date: reportDistributionDate })
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.projectId)
+      .eq('inspection_id', input.inspectionId),
+  ])
+
+  if (linkResult.error) {
+    throw new Error(linkResult.error.message ?? 'Kunde inte registrera leveransen i rapportversionen.')
+  }
+  if (inspectionResult.error) {
+    throw new Error(inspectionResult.error.message ?? 'Kunde inte registrera utlåtandets leveransdatum.')
+  }
+
+  return snapshotPayload
 }
 
 async function createOutboundMessage(
@@ -904,6 +944,7 @@ export async function POST(
 
     const sentRecipients: string[] = []
     const failedRecipients: Array<{ email: string; error: string }> = []
+    let lastSuccessfulSentAt: string | null = null
     if (action !== 'lock_only') {
       const recipients = [
         primaryRecipient as string,
@@ -941,12 +982,14 @@ export async function POST(
             html: emailContent.html,
             text: emailContent.text,
           })
+          const sentAt = new Date().toISOString()
           await updateOutboundMessage(admin, messageId, {
             status: 'sent',
             provider: sendResult.provider,
             provider_message_id: sendResult.providerMessageId,
-            sent_at: new Date().toISOString(),
+            sent_at: sentAt,
           })
+          lastSuccessfulSentAt = sentAt
           sentRecipients.push(recipient)
         } catch (sendError) {
           const message =
@@ -960,6 +1003,17 @@ export async function POST(
           failedRecipients.push({ email: recipient, error: message })
         }
       }
+    }
+
+    if (lastSuccessfulSentAt) {
+      snapshotPayload = await recordReportDeliveryMetadata(admin, {
+        orgId: org.orgId,
+        projectId,
+        inspectionId,
+        linkId: createdLink.linkId,
+        snapshotPayload,
+        sentAt: lastSuccessfulSentAt,
+      })
     }
 
     const keepCreatedLink =

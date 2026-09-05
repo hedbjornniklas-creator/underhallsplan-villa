@@ -69,6 +69,7 @@ type DeliveryMeta = {
   pdfError: string | null
   downloadUrl: string | null
   digitalUrl: string | null
+  publicLink: string | null
   defaultRecipientEmail: string | null
   ordererEmail: string | null
   hasBeenSent: boolean
@@ -85,6 +86,7 @@ function initialMeta(inspection: EbInspectionSummary): DeliveryMeta {
     pdfError: inspection.reportPdfError,
     downloadUrl: inspection.reportPdfDownloadUrl,
     digitalUrl: null,
+    publicLink: null,
     defaultRecipientEmail: null,
     ordererEmail: null,
     hasBeenSent: inspection.reportDeliveryStatus === 'sent',
@@ -108,7 +110,8 @@ function mergeMeta(current: DeliveryMeta, payload: DeliveryResponse): DeliveryMe
     pdfStatus: payload.pdfStatus !== undefined ? payload.pdfStatus : current.pdfStatus,
     pdfError: payload.pdfError !== undefined ? payload.pdfError : current.pdfError,
     downloadUrl: payload.downloadUrl !== undefined ? payload.downloadUrl : current.downloadUrl,
-    digitalUrl: payload.digitalUrl ?? payload.publicLink ?? current.digitalUrl,
+    digitalUrl: payload.digitalUrl !== undefined ? payload.digitalUrl : current.digitalUrl,
+    publicLink: payload.publicLink ?? current.publicLink,
     defaultRecipientEmail:
       payload.defaultRecipientEmail !== undefined
         ? payload.defaultRecipientEmail
@@ -620,15 +623,15 @@ export default function EbReportDeliveryDialog({
                 </button>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {meta.digitalUrl ? (
+                {meta.publicLink || meta.digitalUrl ? (
                   <a
-                    href={meta.digitalUrl}
+                    href={meta.publicLink ?? meta.digitalUrl ?? '#'}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex h-10 items-center gap-2 rounded-md border border-emerald-700 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
                   >
                     <ExternalLink size={15} aria-hidden="true" />
-                    Öppna digitalt utlåtande
+                    {meta.publicLink ? 'Öppna publik version' : 'Öppna intern förhandsvisning'}
                   </a>
                 ) : null}
                 {meta.downloadUrl ? (

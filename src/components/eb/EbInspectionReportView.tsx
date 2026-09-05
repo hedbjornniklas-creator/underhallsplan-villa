@@ -22,6 +22,11 @@ import {
   isEbReportSectionApplicable,
   isEbReportSectionIntegrated,
 } from '@/lib/eb/reportSectionRules'
+import {
+  isEbTestingDocumentationConclusion,
+  normalizeEbTestingDocumentationText,
+  withEbPhotoAppendixListing,
+} from '@/lib/eb/reportText'
 import type {
   EbInspectionDocument,
   EbInspectionCheckpoint,
@@ -136,10 +141,6 @@ function detailLine(parts: Array<string | null | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join(', ') || '-'
 }
 
-function reportValue(value: string | null | undefined) {
-  return value?.trim() || '-'
-}
-
 function reportPrintTitle(report: EbInspectionReport) {
   const reference = reportReference(report)
   if (reference) return `Utlåtande EB ${reference}`
@@ -154,10 +155,6 @@ function reportReference(report: EbInspectionReport) {
   const sequenceNo = Number(report.inspection.sequenceNo)
   if (!dateMatch || !Number.isFinite(sequenceNo) || sequenceNo <= 0) return null
   return `${dateMatch[1]}-${dateMatch[2]}${dateMatch[3]}-${String(sequenceNo).padStart(2, '0')}`
-}
-
-function addressCityLine(postalCode: string | null | undefined, city: string | null | undefined) {
-  return [postalCode?.trim(), city?.trim()].filter(Boolean).join(' ') || '-'
 }
 
 const REPORT_DOCUMENT_TITLES: Record<EbInspectionReport['inspection']['variant'], string> = {
@@ -339,6 +336,20 @@ function PartyLabel({
 function ContractPartiesReport({ report }: { report: EbInspectionReport }) {
   const vocabulary = resolveEbAgreementVocabulary(report.project.standardAgreement)
   const agreedWorks = report.project.objectDescription?.trim()
+  const clientName = report.project.clientName?.trim()
+  const clientAddress = report.project.clientAddress?.trim()
+  const clientPostalCity = [report.project.clientPostalCode?.trim(), report.project.clientCity?.trim()]
+    .filter(Boolean)
+    .join(' ')
+  const contractorName = report.project.contractorName?.trim()
+  const contractorAddress = report.project.contractorAddress?.trim()
+  const contractorPostalCity = [
+    report.project.contractorPostalCode?.trim(),
+    report.project.contractorCity?.trim(),
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const contractorOrgNo = report.project.contractorOrgNo?.trim()
 
   return (
     <div className="text-[10.5pt] leading-[1.35] text-black">
@@ -358,37 +369,45 @@ function ContractPartiesReport({ report }: { report: EbInspectionReport }) {
           <dt>
             <PartyLabel type="client" fallback={vocabulary.clientLabel} />
           </dt>
-          <dd>{reportValue(report.project.clientName)}</dd>
+          <dd>{clientName || 'Ej angiven'}</dd>
         </div>
-        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-          <dt aria-hidden="true" />
-          <dd>{reportValue(report.project.clientAddress)}</dd>
-        </div>
-        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-          <dt aria-hidden="true" />
-          <dd>{addressCityLine(report.project.clientPostalCode, report.project.clientCity)}</dd>
-        </div>
+        {clientAddress ? (
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt aria-hidden="true" />
+            <dd>{clientAddress}</dd>
+          </div>
+        ) : null}
+        {clientPostalCity ? (
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt aria-hidden="true" />
+            <dd>{clientPostalCity}</dd>
+          </div>
+        ) : null}
 
         <div className="grid grid-cols-[62mm_1fr] gap-x-4 pt-1">
           <dt>
             <PartyLabel type="contractor" fallback={vocabulary.contractorLabel} />
           </dt>
-          <dd>{reportValue(report.project.contractorName)}</dd>
+          <dd>{contractorName || 'Ej angiven'}</dd>
         </div>
-        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-          <dt aria-hidden="true" />
-          <dd>{reportValue(report.project.contractorAddress)}</dd>
-        </div>
-        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-          <dt aria-hidden="true" />
-          <dd>{addressCityLine(report.project.contractorPostalCode, report.project.contractorCity)}</dd>
-        </div>
-        <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-          <dt aria-hidden="true" />
-          <dd>
-            Org.nr: {reportValue(report.project.contractorOrgNo)}
-          </dd>
-        </div>
+        {contractorAddress ? (
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt aria-hidden="true" />
+            <dd>{contractorAddress}</dd>
+          </div>
+        ) : null}
+        {contractorPostalCity ? (
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt aria-hidden="true" />
+            <dd>{contractorPostalCity}</dd>
+          </div>
+        ) : null}
+        {contractorOrgNo ? (
+          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
+            <dt aria-hidden="true" />
+            <dd>Org.nr: {contractorOrgNo}</dd>
+          </div>
+        ) : null}
       </dl>
     </div>
   )
@@ -405,10 +424,10 @@ function InspectorReport({
   const valueFor = (label: string) =>
     rows.find((row) => row.label.toLocaleLowerCase('sv-SE') === label.toLocaleLowerCase('sv-SE'))?.value
   const contactRows = [
-    { label: 'Namn', value: valueFor('Besiktningsman') ?? '-' },
-    { label: 'E-post', value: valueFor('E-post') ?? '-' },
-    { label: 'Telefonnummer', value: valueFor('Telefonnummer') ?? valueFor('Telefon') ?? '-' },
-  ]
+    { label: 'Namn', value: valueFor('Besiktningsman') },
+    { label: 'E-post', value: valueFor('E-post') },
+    { label: 'Telefonnummer', value: valueFor('Telefonnummer') ?? valueFor('Telefon') },
+  ].filter((row): row is { label: string; value: string } => Boolean(row.value && row.value !== '-'))
 
   return (
     <ReportSection title={section.title} headingMarker>
@@ -521,6 +540,11 @@ function ParticipantsReport({
       !isParticipantForParty(participant, 'client') &&
       !isParticipantForParty(participant, 'contractor')
   )
+  const participantGroups = [
+    { label: 'för beställaren:', participants: clientParticipants, other: false },
+    { label: contractorRepresentativeLabel(report), participants: contractorParticipants, other: false },
+    { label: 'Övriga närvarande:', participants: otherParticipants, other: true },
+  ].filter((group) => group.participants.length > 0)
 
   return (
     <ReportSection title={section.title} headingMarker>
@@ -532,20 +556,22 @@ function ParticipantsReport({
             <p>Vid besiktningen var parterna representerade av:</p>
           )}
         </div>
-        <dl className="grid gap-y-1">
-          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-            <dt>för beställaren:</dt>
-            <dd className="whitespace-pre-wrap">{participantLines(clientParticipants)}</dd>
-          </div>
-          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-            <dt>{contractorRepresentativeLabel(report)}</dt>
-            <dd className="whitespace-pre-wrap">{participantLines(contractorParticipants)}</dd>
-          </div>
-          <div className="grid grid-cols-[62mm_1fr] gap-x-4">
-            <dt>Övriga närvarande:</dt>
-            <dd className="whitespace-pre-wrap">{otherParticipantLines(otherParticipants)}</dd>
-          </div>
-        </dl>
+        {participantGroups.length > 0 ? (
+          <dl className="grid gap-y-1">
+            {participantGroups.map((group) => (
+              <div key={group.label} className="grid grid-cols-[62mm_1fr] gap-x-4">
+                <dt>{group.label}</dt>
+                <dd className="whitespace-pre-wrap">
+                  {group.other
+                    ? otherParticipantLines(group.participants)
+                    : participantLines(group.participants)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p>Inga närvarande har angetts.</p>
+        )}
       </div>
     </ReportSection>
   )
@@ -630,12 +656,8 @@ function isTestingDocumentationDocumentBlock(block: string) {
   )
 }
 
-function isTestingDocumentationConclusion(block: string) {
-  return normalizeReportText(block).startsWith('Där avtalad dokumentation')
-}
-
 function testingDocumentationBlocks(text: string, filterLegacyDocumentList: boolean) {
-  const proseBlocks = normalizeReportText(text)
+  const proseBlocks = normalizeReportText(normalizeEbTestingDocumentationText(text))
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(
@@ -651,8 +673,8 @@ function testingDocumentationBlocks(text: string, filterLegacyDocumentList: bool
   }
 
   return {
-    beforeList: proseBlocks.filter((block) => !isTestingDocumentationConclusion(block)),
-    afterList: proseBlocks.filter(isTestingDocumentationConclusion),
+    beforeList: proseBlocks.filter((block) => !isEbTestingDocumentationConclusion(block)),
+    afterList: proseBlocks.filter(isEbTestingDocumentationConclusion),
   }
 }
 
@@ -1019,13 +1041,20 @@ function inspectorSignatureForReport(report: EbInspectionReport): EbInspectorSig
 
 function DistributionListReport({ report }: { report: EbInspectionReport }) {
   const recipients = reportRecipients(report)
-  const distributionDate = report.inspection.reportDistributionDate?.trim() || 'Klicka här - ange datum'
+  const sentAt = report.inspection.reportLastSentAt?.trim()
+  const parsedSentAt = sentAt ? new Date(sentAt) : null
+  const distributionDate =
+    parsedSentAt && !Number.isNaN(parsedSentAt.getTime())
+      ? parsedSentAt.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
+      : null
 
   return (
     <ReportSection title="Sändlista">
         <div className="space-y-4 text-[10.5pt] leading-[1.35] text-black">
           <p>
-            Undertecknat utlåtande har {distributionDate} sänts per e-post till parterna och övriga enligt nedan.
+            {distributionDate
+              ? `Undertecknat utlåtande har ${distributionDate} sänts per e-post till parterna och övriga enligt nedan.`
+              : 'Utlåtandet har ännu inte skickats digitalt. Nedan visas avsedda mottagare.'}
           </p>
 
           {recipients.length > 0 ? (
@@ -1040,9 +1069,9 @@ function DistributionListReport({ report }: { report: EbInspectionReport }) {
               <tbody>
                 {recipients.map((recipient, index) => (
                   <tr key={recipient.id ?? `${recipient.email}-${index}`}>
-                    <td className="px-1.5 py-0.5">{recipient.companyName?.trim() || '-'}</td>
-                    <td className="px-1.5 py-0.5">{recipient.personName?.trim() || '-'}</td>
-                    <td className="px-1.5 py-0.5">{recipient.email?.trim() || '-'}</td>
+                    <td className="px-1.5 py-0.5">{recipient.companyName?.trim() || ''}</td>
+                    <td className="px-1.5 py-0.5">{recipient.personName?.trim() || ''}</td>
+                    <td className="px-1.5 py-0.5">{recipient.email?.trim() || ''}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1116,7 +1145,7 @@ function ReclamationNoticeReport({
             <li>{warrantyEndDate} för {warrantyScope}</li>
           </ul>
         ) : (
-          <p>-</p>
+          <p>Ingen särskild varugaranti har angetts.</p>
         )}
       </div>
     </ReportSection>
@@ -2158,6 +2187,15 @@ export default function EbInspectionReportView({
     return grouped
   }, [report.images])
   const checkpointNumberByNote = useMemo(() => checkpointNumberByNoteId(report), [report])
+  const hasPhotoAppendixImages = useMemo(
+    () =>
+      notes.some(
+        (note) =>
+          (!drainageReport || checkpointNumberByNote.has(note.id)) &&
+          (imagesByNoteId.get(note.id)?.length ?? 0) > 0
+      ),
+    [checkpointNumberByNote, drainageReport, imagesByNoteId, notes]
+  )
   const inspectorSignature = useMemo(() => {
     const signatureSection = report.reportDraft.sections.find(
       (section) => section.key === 'signature_certificate'
@@ -2343,6 +2381,19 @@ export default function EbInspectionReportView({
         })
         continue
       }
+      if (section.key === 'appendices') {
+        blocks.push({
+          id: `section-${section.key}`,
+          node: (
+            <ReportSection title={section.title}>
+              <ReportText
+                text={withEbPhotoAppendixListing(section.text, hasPhotoAppendixImages)}
+              />
+            </ReportSection>
+          ),
+        })
+        continue
+      }
       if (section.key === 'continued_final_inspection') {
         blocks.push({
           id: `section-${section.key}`,
@@ -2441,7 +2492,7 @@ export default function EbInspectionReportView({
 
     let isFirstPhotoBlock = true
     for (const section of photoSections) {
-      chunkArray(section.photos, 4).forEach((photos, sectionChunkIndex) => {
+      chunkArray(section.photos, 2).forEach((photos, sectionChunkIndex) => {
         const showTitle = isFirstPhotoBlock
         blocks.push({
           id: `photo-section-${section.id}-${sectionChunkIndex}`,
@@ -2468,6 +2519,7 @@ export default function EbInspectionReportView({
     checkpointNumberByNote,
     displayNumberByNoteId,
     drainageReport,
+    hasPhotoAppendixImages,
     imagesByNoteId,
     inspectionTypeSection,
     inspectorSignature,

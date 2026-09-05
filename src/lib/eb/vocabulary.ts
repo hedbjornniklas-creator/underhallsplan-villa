@@ -8,11 +8,37 @@ export type EbAgreementVocabulary = {
   contractorOrgLabel: string
 }
 
+export type EbAgreementCategory = 'consumer' | 'commercial' | 'offer' | 'unspecified'
+
 function normalizeAgreement(value: string | null | undefined) {
   return String(value ?? '')
     .trim()
     .toLocaleLowerCase('sv-SE')
     .replace(/\s+/g, '')
+}
+
+export function classifyEbAgreement(
+  standardAgreement: string | null | undefined
+): EbAgreementCategory {
+  const normalized = normalizeAgreement(standardAgreement)
+  if (
+    normalized.includes('hf17') ||
+    normalized.includes('hantverkar') ||
+    normalized.includes('konsumententreprenad') ||
+    normalized.includes('abs18') ||
+    normalized.includes('bas18')
+  ) {
+    return 'consumer'
+  }
+  if (
+    normalized.includes('ab04') ||
+    normalized.includes('abt06') ||
+    normalized.includes('abk09')
+  ) {
+    return 'commercial'
+  }
+  if (normalized.includes('offert')) return 'offer'
+  return 'unspecified'
 }
 
 export function resolveEbAgreementVocabulary(standardAgreement: string | null | undefined): EbAgreementVocabulary {
