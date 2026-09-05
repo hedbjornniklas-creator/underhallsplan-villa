@@ -1701,20 +1701,18 @@ function EbHeaderValue({
   label,
   value,
   nowrap = false,
-  valueClassName,
 }: {
   label: string
   value: string
   nowrap?: boolean
-  valueClassName?: string
 }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-1.5 py-0.5">
       <div className="shrink-0 text-[6pt] leading-[1.15] text-black">{label}</div>
       <div
-        className={`min-w-0 overflow-hidden pb-0.5 font-medium text-black ${
+        className={`mt-auto min-w-0 shrink-0 text-[9pt] font-normal leading-[1.1] text-black ${
           nowrap ? 'whitespace-nowrap' : 'break-words'
-        } ${valueClassName ?? ''}`}
+        }`}
       >
         {value || '-'}
       </div>
@@ -1769,8 +1767,6 @@ function EbPageHeader({
         <EbHeaderValue
           label={documentLabel}
           value={documentValue}
-          nowrap
-          valueClassName="text-[9pt] font-semibold leading-[1.05]"
         />
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-emerald-700">
