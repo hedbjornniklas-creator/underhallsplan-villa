@@ -471,6 +471,38 @@ export async function GET(
 
     const tokenHash = hashAssignmentToken(normalizedToken)
     const admin = createSupabaseAdminClient()
+    const requestUrl = new URL(request.url)
+
+    if (requestUrl.searchParams.get('status') === '1') {
+      const { data: statusData, error: statusError } = await admin
+        .from('inspection_report_links')
+        .select('pdf_status,revoked_at')
+        .eq('token_hash', tokenHash)
+        .maybeSingle()
+
+      if (statusError) {
+        console.error('[reports.public.status] lookup failed', {
+          error: statusError.message ?? statusError,
+        })
+        return jsonError('Kunde inte läsa PDF-status.', 500)
+      }
+
+      if (!statusData || statusData.revoked_at) {
+        return notFoundResponse()
+      }
+
+      const status = normalizePdfStatus(statusData.pdf_status)
+      return NextResponse.json(
+        { status },
+        {
+          headers: {
+            'Cache-Control': 'private, no-store, max-age=0',
+            'X-Content-Type-Options': 'nosniff',
+            'X-Robots-Tag': 'noindex, nofollow',
+          },
+        }
+      )
+    }
 
     const { data, error } = await admin
       .from('inspection_report_links')
@@ -489,7 +521,6 @@ export async function GET(
       return notFoundResponse()
     }
 
-    const requestUrl = new URL(request.url)
     const asAttachment = requestUrl.searchParams.get('download') === '1'
     const requestedDocumentId = String(requestUrl.searchParams.get('documentId') ?? '').trim()
 
@@ -606,8 +637,13 @@ export async function GET(
         })
       }
       if (pdfStatus === 'failed') {
-        const suffix = pdfError ? ` (${pdfError})` : ''
-        return new NextResponse(`PDF-generering misslyckades${suffix}.`, { status: 500 })
+        console.error('[reports.public] report PDF generation failed', {
+          linkId: String(data.id),
+          error: pdfError || null,
+        })
+        return new NextResponse('PDF-filen kunde inte skapas. Kontakta avsändaren.', {
+          status: 500,
+        })
       }
       if (hasStorageRef && !hasLegacyPdf) {
         return new NextResponse('Kunde inte skapa säker nedladdningslänk för PDF.', { status: 500 })

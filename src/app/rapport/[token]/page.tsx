@@ -7,16 +7,16 @@ import {
   type ReportSnapshotPayloadV1,
 } from '@/lib/report/reportSnapshotPayload'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
+import ReportSnapshotPrintDocument, {
+  isPrintableReportSnapshot,
+} from '@/components/report/ReportSnapshotPrintDocument'
 import ReportShareButton from '@/components/report/ReportShareButton'
-import EbInspectionReportView from '@/components/eb/EbInspectionReportView'
 import EbPublicReportSnapshotView from '@/components/eb/EbPublicReportSnapshotView'
-import { EbToastProvider } from '@/components/eb/EbToastProvider'
 import {
   getEbInspectionReportFromSnapshot,
   isEbReportSnapshotPayloadV1,
   sanitizeEbReportForPublicDelivery,
 } from '@/lib/eb/reportSnapshot'
-import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
 import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotView'
 import {
   isTuReportSnapshotPayloadV1,
@@ -84,7 +84,7 @@ export default async function PublicReportPage({
   const { data, error } = await admin
     .from('inspection_report_links')
     .select(
-      'id,created_at,revoked_at,snapshot_payload,pdf_status,pdf_error,pdf_base64,pdf_storage_bucket,pdf_storage_path'
+      'id,created_at,revoked_at,snapshot_payload,pdf_status,pdf_base64,pdf_storage_bucket,pdf_storage_path'
     )
     .eq('token_hash', tokenHash)
     .maybeSingle()
@@ -109,6 +109,10 @@ export default async function PublicReportPage({
     ? sanitizeEbReportForPublicDelivery(ebReportSnapshot)
     : null
 
+  if (isPdfRender && isPrintableReportSnapshot(data.snapshot_payload)) {
+    return <ReportSnapshotPrintDocument snapshot={data.snapshot_payload} />
+  }
+
   const pdfBase64 = String((data as Record<string, unknown>).pdf_base64 ?? '').trim()
   const pdfStorageBucket = String((data as Record<string, unknown>).pdf_storage_bucket ?? '').trim()
   const pdfStoragePath = String((data as Record<string, unknown>).pdf_storage_path ?? '').trim()
@@ -116,22 +120,14 @@ export default async function PublicReportPage({
     pdfBase64.length > 0 || (pdfStorageBucket.length > 0 && pdfStoragePath.length > 0)
   const statusFromDb = normalizePdfStatus((data as Record<string, unknown>).pdf_status)
   const pdfStatus = hasStoredPdf ? 'ready' : statusFromDb
-  const pdfError = String((data as Record<string, unknown>).pdf_error ?? '').trim() || null
 
   const pdfInlineUrl = `/api/reports/public/${encodeURIComponent(normalizedToken)}`
-  const pdfDownloadUrl = pdfStatus === 'ready' && hasStoredPdf ? `${pdfInlineUrl}?download=1` : null
+  const pdfDownloadUrl = `${pdfInlineUrl}?download=1`
+  const pdfStatusEndpoint = `${pdfInlineUrl}?status=1`
   const shareEndpoint = `/api/reports/public/${encodeURIComponent(normalizedToken)}`
   const shareUrl = `/rapport/${encodeURIComponent(normalizedToken)}`
 
   if (ebReport) {
-    if (isPdfRender) {
-      return (
-        <EbToastProvider>
-          <EbInspectionReportView report={ebReport} showInternalActions={false} />
-        </EbToastProvider>
-      )
-    }
-
     const deliveryDocuments = (ebSnapshot?.deliveryDocuments ?? []).map((document) => ({
       id: document.id,
       title: document.title,
@@ -148,7 +144,7 @@ export default async function PublicReportPage({
         publishedAt={ebSnapshot?.createdAt ?? null}
         pdfDownloadUrl={pdfDownloadUrl}
         pdfStatus={pdfStatus}
-        pdfError={pdfError}
+        pdfStatusEndpoint={pdfStatusEndpoint}
         shareEndpoint={shareEndpoint}
         shareUrl={shareUrl}
         deliveryDocuments={deliveryDocuments}
@@ -157,27 +153,6 @@ export default async function PublicReportPage({
   }
 
   if (tuSnapshot) {
-    if (isPdfRender) {
-      return (
-        <main className="min-h-screen bg-white text-gray-950">
-          <TuPrintPagedDocument
-            companyLogoUrl={tuSnapshot.report.companyLogoUrl}
-            companyLogoAlt={tuSnapshot.report.companyLogoAlt}
-            header={tuSnapshot.report.header}
-            coverTitle={tuSnapshot.report.coverTitle}
-            coverImage={tuSnapshot.report.coverImage}
-            parties={tuSnapshot.report.parties}
-            metaRows={tuSnapshot.report.metaRows}
-            objectRows={tuSnapshot.report.objectRows}
-            sections={tuSnapshot.report.sections}
-            signature={tuSnapshot.report.signature}
-            appendixImages={tuSnapshot.report.appendixImages}
-            footer={tuSnapshot.report.footer}
-          />
-        </main>
-      )
-    }
-
     const deliveryDocuments = (tuSnapshot.deliveryDocuments ?? []).map((document) => ({
       id: document.id,
       title: document.title,
@@ -192,6 +167,8 @@ export default async function PublicReportPage({
       <TuPublicReportSnapshotView
         snapshot={tuSnapshot}
         pdfDownloadUrl={pdfDownloadUrl}
+        pdfStatus={pdfStatus}
+        pdfStatusEndpoint={pdfStatusEndpoint}
         shareEndpoint={shareEndpoint}
         shareUrl={shareUrl}
         deliveryDocuments={deliveryDocuments}
@@ -219,9 +196,7 @@ export default async function PublicReportPage({
           ) : pdfStatus === 'pending' || pdfStatus === 'processing' ? (
             <p className="text-sm text-amber-700">PDF genereras fortfarande i bakgrunden. Försök igen om en stund.</p>
           ) : pdfStatus === 'failed' ? (
-            <p className="text-sm text-rose-700">
-              PDF-generering misslyckades{pdfError ? `: ${pdfError}` : '.'}
-            </p>
+            <p className="text-sm text-rose-700">PDF-filen kunde inte skapas. Kontakta avsändaren.</p>
           ) : (
             <p className="text-sm text-slate-700">Rapporten är ännu inte tillgänglig som PDF.</p>
           )}
@@ -237,7 +212,7 @@ export default async function PublicReportPage({
       pdfInlineUrl={pdfInlineUrl}
       pdfDownloadUrl={pdfDownloadUrl}
       pdfStatus={pdfStatus}
-      pdfError={pdfError}
+      pdfStatusEndpoint={pdfStatusEndpoint}
       showPdfActions
       shareEndpoint={shareEndpoint}
       shareUrl={shareUrl}

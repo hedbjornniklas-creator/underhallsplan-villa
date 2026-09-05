@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import { Download, FileText } from 'lucide-react'
+import PublicReportPdfDownload, {
+  type PublicReportPdfStatus,
+} from '@/components/report/PublicReportPdfDownload'
 import ReportShareButton from '@/components/report/ReportShareButton'
 
 export type TuPublicDeliveryDocumentLink = {
@@ -24,11 +27,15 @@ export default function TuPublicReportToolbar({
   shareEndpoint,
   shareUrl,
   pdfDownloadUrl,
+  pdfStatus,
+  pdfStatusEndpoint,
   deliveryDocuments = [],
 }: {
   shareEndpoint: string | null
   shareUrl: string | null
   pdfDownloadUrl: string | null
+  pdfStatus?: PublicReportPdfStatus | null
+  pdfStatusEndpoint?: string | null
   deliveryDocuments?: TuPublicDeliveryDocumentLink[]
 }) {
   return (
@@ -44,17 +51,12 @@ export default function TuPublicReportToolbar({
           {shareEndpoint && shareUrl ? (
             <ReportShareButton shareEndpoint={shareEndpoint} shareUrl={shareUrl} />
           ) : null}
-          {pdfDownloadUrl ? (
-            <Link
-              href={pdfDownloadUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
-            >
-              <Download size={16} aria-hidden />
-              Ladda ner PDF
-            </Link>
-          ) : null}
+          <PublicReportPdfDownload
+            downloadUrl={pdfDownloadUrl}
+            initialStatus={pdfStatus}
+            statusEndpoint={pdfStatusEndpoint}
+            tone="violet"
+          />
         </div>
       </div>
 

@@ -2,6 +2,7 @@
 import TuPublicReportToolbar, {
   type TuPublicDeliveryDocumentLink,
 } from '@/components/tu/TuPublicReportToolbar'
+import type { PublicReportPdfStatus } from '@/components/report/PublicReportPdfDownload'
 import type {
   TuPrintImage,
   TuPrintMetaRow,
@@ -228,12 +229,16 @@ export default function TuPublicReportSnapshotView({
   shareEndpoint,
   shareUrl,
   pdfDownloadUrl,
+  pdfStatus = null,
+  pdfStatusEndpoint = null,
   deliveryDocuments = [],
 }: {
   snapshot: TuReportSnapshotPayloadV1
   shareEndpoint: string | null
   shareUrl: string | null
   pdfDownloadUrl: string | null
+  pdfStatus?: PublicReportPdfStatus | null
+  pdfStatusEndpoint?: string | null
   deliveryDocuments?: TuPublicDeliveryDocumentLink[]
 }) {
   const report = snapshot.report
@@ -266,6 +271,8 @@ export default function TuPublicReportSnapshotView({
         shareEndpoint={shareEndpoint}
         shareUrl={shareUrl}
         pdfDownloadUrl={pdfDownloadUrl}
+        pdfStatus={pdfStatus}
+        pdfStatusEndpoint={pdfStatusEndpoint}
         deliveryDocuments={deliveryDocuments}
       />
 

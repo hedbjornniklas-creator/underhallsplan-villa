@@ -72,10 +72,8 @@ export default async function TuInvestigationDigitalReportPage({
       (String(row.pdf_storage_bucket ?? '').trim().length > 0 &&
         String(row.pdf_storage_path ?? '').trim().length > 0)
     const pdfStatus = hasStoredPdf ? 'ready' : normalizePdfStatus(row.pdf_status)
-    const pdfDownloadUrl =
-      pdfStatus === 'ready' && hasStoredPdf
-        ? `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
-        : null
+    const pdfDownloadUrl = `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
+    const pdfStatusEndpoint = `/api/tu/investigations/${encodeURIComponent(inspectionId)}/report-delivery?status=1`
     const deliveryDocuments = (
       await Promise.all(
         (snapshot.deliveryDocuments ?? []).map(async (document) => {
@@ -127,6 +125,8 @@ export default async function TuInvestigationDigitalReportPage({
       <TuPublicReportSnapshotView
         snapshot={snapshot}
         pdfDownloadUrl={pdfDownloadUrl}
+        pdfStatus={pdfStatus}
+        pdfStatusEndpoint={pdfStatusEndpoint}
         shareEndpoint={null}
         shareUrl={`/tu/investigations/${encodeURIComponent(inspectionId)}/digital`}
         deliveryDocuments={deliveryDocuments}

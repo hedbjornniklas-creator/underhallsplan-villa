@@ -1,13 +1,9 @@
 import { NextResponse, after } from 'next/server'
-import { createHash } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
-import {
-  getPdfRenderDiagnostics,
-  renderPreviewPdf,
-} from '@/lib/report/pdfV2/renderPreviewPdf'
+import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
@@ -31,8 +27,6 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 const TEMPLATE_KEY = 'tu_report_delivery'
-const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 60000)
-const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
 type ReportDeliveryPostAction = DeliveryAction | 'regenerate_pdf'
@@ -175,49 +169,6 @@ function parseExtraRecipients(value: unknown, primary: string | null) {
   return recipients
 }
 
-async function ensureReportPdfStorageBucket(admin: AdminClient) {
-  const { error } = await admin.storage.getBucket(REPORT_PDF_STORAGE_BUCKET)
-  if (!error) return
-
-  const { error: createError } = await admin.storage.createBucket(REPORT_PDF_STORAGE_BUCKET, {
-    public: false,
-    fileSizeLimit: 50 * 1024 * 1024,
-    allowedMimeTypes: ['application/pdf'],
-  })
-  if (createError) {
-    throw new Error(
-      `Kunde inte skapa storage bucket för PDF (${REPORT_PDF_STORAGE_BUCKET}): ${createError.message ?? createError}`
-    )
-  }
-}
-
-async function uploadReportPdfToStorage(
-  admin: AdminClient,
-  input: {
-    orgId: string
-    inspectionId: string
-    tokenHash: string
-    pdfBuffer: Buffer
-  }
-) {
-  await ensureReportPdfStorageBucket(admin)
-  const objectPath = `${input.orgId}/${input.inspectionId}/${Date.now()}-${input.tokenHash.slice(0, 16)}.pdf`
-  const { error } = await admin.storage
-    .from(REPORT_PDF_STORAGE_BUCKET)
-    .upload(objectPath, input.pdfBuffer, {
-      contentType: 'application/pdf',
-      cacheControl: '31536000',
-      upsert: false,
-    })
-
-  if (error) throw new Error(`Kunde inte spara PDF i Storage: ${error.message ?? error}`)
-  return {
-    bucket: REPORT_PDF_STORAGE_BUCKET,
-    path: objectPath,
-    sizeBytes: input.pdfBuffer.length,
-  }
-}
-
 async function setPdfJobStatus(
   admin: AdminClient,
   linkId: string,
@@ -241,81 +192,6 @@ async function setPdfJobStatus(
     .is('revoked_at', null)
 
   if (error) throw new Error(error.message ?? 'Kunde inte uppdatera PDF-status för rapportlänk.')
-}
-
-async function runTuReportPdfJobInBackground(input: {
-  linkId: string
-  orgId: string
-  inspectionId: string
-  tokenHash: string
-  previewReportUrl: string
-  cookieHeader: string | null
-}) {
-  const admin = createSupabaseAdminClient()
-
-  try {
-    const { data: link, error: linkError } = await admin
-      .from('inspection_report_links')
-      .select('id,pdf_attempts,revoked_at')
-      .eq('id', input.linkId)
-      .maybeSingle()
-
-    if (linkError) throw new Error(linkError.message ?? 'Kunde inte läsa rapportlänk för PDF-jobb.')
-    if (!link || link.revoked_at) return
-
-    const nextAttempts = Number((link as Record<string, unknown>).pdf_attempts ?? 0) + 1
-    await setPdfJobStatus(admin, input.linkId, {
-      pdf_status: 'processing',
-      pdf_error: null,
-      pdf_attempts: nextAttempts,
-      pdf_started_at: new Date().toISOString(),
-    })
-
-    const rendered = await renderPreviewPdf({
-      url: input.previewReportUrl,
-      cookieHeader: input.cookieHeader,
-      timeoutMs: PDF_RENDER_TIMEOUT_MS,
-      traceId: `tu:${input.inspectionId}:link:${input.linkId}`,
-    })
-    const pdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
-    const pdfSha256 = createHash('sha256').update(pdfBuffer).digest('hex')
-    const storedPdf = await uploadReportPdfToStorage(admin, {
-      orgId: input.orgId,
-      inspectionId: input.inspectionId,
-      tokenHash: input.tokenHash,
-      pdfBuffer,
-    })
-
-    await setPdfJobStatus(admin, input.linkId, {
-      pdf_status: 'ready',
-      pdf_error: null,
-      pdf_generated_at: new Date().toISOString(),
-      pdf_storage_bucket: storedPdf.bucket,
-      pdf_storage_path: storedPdf.path,
-      pdf_size_bytes: storedPdf.sizeBytes,
-      pdf_sha256: pdfSha256,
-      pdf_base64: null,
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel vid PDF-generering.'
-    console.error('[tu.report-delivery.pdf-job] failed', {
-      linkId: input.linkId,
-      inspectionId: input.inspectionId,
-      error: message,
-      diagnostics: getPdfRenderDiagnostics(error),
-    })
-    try {
-      await setPdfJobStatus(admin, input.linkId, {
-        pdf_status: 'failed',
-        pdf_error: message.slice(0, 500),
-      })
-    } catch (updateError) {
-      console.error('[tu.report-delivery.pdf-job] failed to mark failed status', {
-        linkId: input.linkId,
-        error: updateError instanceof Error ? updateError.message : String(updateError),
-      })
-    }
-  }
 }
 
 function buildOrigin(request: Request) {
@@ -849,7 +725,7 @@ async function getFinalizationBlocker(
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ inspectionId: string }> }
 ) {
   try {
@@ -862,6 +738,23 @@ export async function GET(
       inspectorProfileId: org.userId,
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
+
+    if (new URL(request.url).searchParams.get('status') === '1') {
+      const activeLink = await getLatestReportLink(admin, inspectionId)
+      if (!activeLink || activeLink.org_id !== org.orgId) {
+        return jsonError('Det finns inget fastställt TU-utlåtande.', 404)
+      }
+
+      return NextResponse.json(
+        { status: normalizePdfStatus(activeLink.pdf_status) },
+        {
+          headers: {
+            'Cache-Control': 'private, no-store, max-age=0',
+            'X-Content-Type-Options': 'nosniff',
+          },
+        }
+      )
+    }
 
     const [history, unlockHistory, activeLink, deliveryDocuments, revision, qualityIssues, improvementReview] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
@@ -937,11 +830,6 @@ export async function POST(
         return jsonError('Rapportlänken tillhör inte din organisation.', 403)
       }
 
-      const tokenHash = String(latestLink.token_hash ?? '').trim()
-      if (!tokenHash) {
-        return jsonError('Rapportlänken saknar token för PDF-generering.', 500)
-      }
-
       const latestStatus = normalizePdfStatus(latestLink.pdf_status)
       const shouldSchedulePdfJob = latestStatus !== 'pending' && latestStatus !== 'processing'
       if (shouldSchedulePdfJob) {
@@ -958,18 +846,16 @@ export async function POST(
           pdf_base64: null,
         })
 
-        const publicBaseUrl = resolvePublicBaseUrl(request)
-        after(async () => {
-          await runTuReportPdfJobInBackground({
-            linkId: latestLink.id,
-            orgId: org.orgId,
-            inspectionId,
-            tokenHash,
-            previewReportUrl: `${publicBaseUrl}/tu/investigations/${encodeURIComponent(inspectionId)}/digital?pdf=1`,
-            cookieHeader: request.headers.get('cookie'),
-          })
-        })
       }
+
+      const publicBaseUrl = resolvePublicBaseUrl(request)
+      after(async () => {
+        await runInspectionReportPdfBatch({
+          origin: publicBaseUrl,
+          linkId: latestLink.id,
+          limit: 1,
+        })
+      })
 
       const [history, unlockHistory, activeLink, deliveryDocuments] = await Promise.all([
         getDeliveryHistory(admin, inspectionId),
@@ -1087,13 +973,10 @@ export async function POST(
     const publicBaseUrl = resolvePublicBaseUrl(request)
     publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(token)}`
     after(async () => {
-      await runTuReportPdfJobInBackground({
+      await runInspectionReportPdfBatch({
+        origin: publicBaseUrl,
         linkId,
-        orgId: org.orgId,
-        inspectionId,
-        tokenHash,
-        previewReportUrl: `${publicLink}?pdf=1`,
-        cookieHeader: request.headers.get('cookie'),
+        limit: 1,
       })
     })
 

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { NextResponse, after } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
@@ -12,10 +11,7 @@ import {
 } from '@/lib/eb/reportSnapshot'
 import { getEbInspectionReport, getEbProjectById, type EbProjectListItem } from '@/lib/eb/server'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
-import {
-  getPdfRenderDiagnostics,
-  renderPreviewPdf,
-} from '@/lib/report/pdfV2/renderPreviewPdf'
+import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -23,8 +19,6 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 const TEMPLATE_KEY = 'eb_report_delivery'
-const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 60000)
-const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
@@ -164,47 +158,6 @@ function getMailFromAddress() {
   return value
 }
 
-async function ensureReportPdfStorageBucket(admin: AdminClient) {
-  const { error } = await admin.storage.getBucket(REPORT_PDF_STORAGE_BUCKET)
-  if (!error) return
-
-  const { error: createError } = await admin.storage.createBucket(REPORT_PDF_STORAGE_BUCKET, {
-    public: false,
-    fileSizeLimit: 50 * 1024 * 1024,
-    allowedMimeTypes: ['application/pdf'],
-  })
-  if (createError) {
-    throw new Error(`Kunde inte skapa storage bucket för PDF (${REPORT_PDF_STORAGE_BUCKET}).`)
-  }
-}
-
-async function uploadReportPdfToStorage(
-  admin: AdminClient,
-  input: {
-    orgId: string
-    inspectionId: string
-    tokenHash: string
-    pdfBuffer: Buffer
-  }
-) {
-  await ensureReportPdfStorageBucket(admin)
-  const objectPath = `${input.orgId}/${input.inspectionId}/${Date.now()}-${input.tokenHash.slice(0, 16)}.pdf`
-  const { error } = await admin.storage
-    .from(REPORT_PDF_STORAGE_BUCKET)
-    .upload(objectPath, input.pdfBuffer, {
-      contentType: 'application/pdf',
-      cacheControl: '31536000',
-      upsert: false,
-    })
-
-  if (error) throw new Error(`Kunde inte spara PDF i Storage: ${error.message ?? error}`)
-  return {
-    bucket: REPORT_PDF_STORAGE_BUCKET,
-    path: objectPath,
-    sizeBytes: input.pdfBuffer.length,
-  }
-}
-
 async function setPdfJobStatus(
   admin: AdminClient,
   linkId: string,
@@ -228,83 +181,6 @@ async function setPdfJobStatus(
     .is('revoked_at', null)
 
   if (error) throw new Error(error.message ?? 'Kunde inte uppdatera PDF-status för rapportlänk.')
-}
-
-async function runEbReportPdfJobInBackground(input: {
-  linkId: string
-  orgId: string
-  projectId: string
-  inspectionId: string
-  tokenHash: string
-  previewReportUrl: string
-  cookieHeader: string | null
-}) {
-  const admin = createSupabaseAdminClient()
-
-  try {
-    const { data: link, error: linkError } = await admin
-      .from('inspection_report_links')
-      .select('id,pdf_attempts,revoked_at')
-      .eq('id', input.linkId)
-      .maybeSingle()
-
-    if (linkError) throw new Error(linkError.message ?? 'Kunde inte läsa rapportlänk för PDF-jobb.')
-    if (!link || (link as { revoked_at?: string | null }).revoked_at) return
-
-    const nextAttempts = Number((link as Record<string, unknown>).pdf_attempts ?? 0) + 1
-    await setPdfJobStatus(admin, input.linkId, {
-      pdf_status: 'processing',
-      pdf_error: null,
-      pdf_attempts: nextAttempts,
-      pdf_started_at: new Date().toISOString(),
-    })
-
-    const rendered = await renderPreviewPdf({
-      url: input.previewReportUrl,
-      cookieHeader: input.cookieHeader,
-      timeoutMs: PDF_RENDER_TIMEOUT_MS,
-      traceId: `eb:${input.projectId}:${input.inspectionId}:link:${input.linkId}`,
-    })
-    const pdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
-    const pdfSha256 = createHash('sha256').update(pdfBuffer).digest('hex')
-    const storedPdf = await uploadReportPdfToStorage(admin, {
-      orgId: input.orgId,
-      inspectionId: input.inspectionId,
-      tokenHash: input.tokenHash,
-      pdfBuffer,
-    })
-
-    await setPdfJobStatus(admin, input.linkId, {
-      pdf_status: 'ready',
-      pdf_error: null,
-      pdf_generated_at: new Date().toISOString(),
-      pdf_storage_bucket: storedPdf.bucket,
-      pdf_storage_path: storedPdf.path,
-      pdf_size_bytes: storedPdf.sizeBytes,
-      pdf_sha256: pdfSha256,
-      pdf_base64: null,
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel vid PDF-generering.'
-    console.error('[eb.report-delivery.pdf-job] failed', {
-      linkId: input.linkId,
-      projectId: input.projectId,
-      inspectionId: input.inspectionId,
-      error: message,
-      diagnostics: getPdfRenderDiagnostics(error),
-    })
-    try {
-      await setPdfJobStatus(admin, input.linkId, {
-        pdf_status: 'failed',
-        pdf_error: message.slice(0, 500),
-      })
-    } catch (updateError) {
-      console.error('[eb.report-delivery.pdf-job] failed to mark failed status', {
-        linkId: input.linkId,
-        error: updateError instanceof Error ? updateError.message : String(updateError),
-      })
-    }
-  }
 }
 
 async function revokeOlderReportLinks(
@@ -782,7 +658,7 @@ async function loadDeliveryStatus(
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ projectId: string; inspectionId: string }> }
 ) {
   try {
@@ -794,6 +670,19 @@ export async function GET(
       inspectionId,
     })
     if (!status) return jsonError('Besiktningen hittades inte.', 404)
+
+    if (new URL(request.url).searchParams.get('status') === '1') {
+      return NextResponse.json(
+        { status: normalizePdfStatus(status.pdfStatus) },
+        {
+          headers: {
+            'Cache-Control': 'private, no-store, max-age=0',
+            'X-Content-Type-Options': 'nosniff',
+          },
+        }
+      )
+    }
+
     return NextResponse.json(status)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
@@ -831,9 +720,6 @@ export async function POST(
       if (!latestLink) {
         return jsonError('Det finns ingen fastställd rapportversion att generera PDF för.', 400)
       }
-      const tokenHash = normalizeText(latestLink.token_hash)
-      if (!tokenHash) return jsonError('Rapportlänken saknar token för PDF-generering.', 500)
-
       const latestStatus = normalizePdfStatus(latestLink.pdf_status)
       if (latestStatus !== 'pending' && latestStatus !== 'processing') {
         await setPdfJobStatus(admin, latestLink.id, {
@@ -848,19 +734,16 @@ export async function POST(
           pdf_sha256: null,
           pdf_base64: null,
         })
-        const publicBaseUrl = resolvePublicBaseUrl(request)
-        after(async () => {
-          await runEbReportPdfJobInBackground({
-            linkId: latestLink.id,
-            orgId: org.orgId,
-            projectId,
-            inspectionId,
-            tokenHash,
-            previewReportUrl: `${publicBaseUrl}/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/digital?pdf=1`,
-            cookieHeader: request.headers.get('cookie'),
-          })
-        })
       }
+
+      const publicBaseUrl = resolvePublicBaseUrl(request)
+      after(async () => {
+        await runInspectionReportPdfBatch({
+          origin: publicBaseUrl,
+          linkId: latestLink.id,
+          limit: 1,
+        })
+      })
 
       const status = await loadDeliveryStatus(admin, { orgId: org.orgId, projectId, inspectionId })
       if (!status) return jsonError('Besiktningen hittades inte.', 404)
@@ -1022,14 +905,10 @@ export async function POST(
       await revokeReportLink(admin, org.orgId, createdLink.linkId)
     } else {
       after(async () => {
-        await runEbReportPdfJobInBackground({
+        await runInspectionReportPdfBatch({
+          origin: publicBaseUrl,
           linkId: createdLink.linkId,
-          orgId: org.orgId,
-          projectId,
-          inspectionId,
-          tokenHash: createdLink.tokenHash,
-          previewReportUrl: `${publicLink}?pdf=1`,
-          cookieHeader: null,
+          limit: 1,
         })
       })
     }

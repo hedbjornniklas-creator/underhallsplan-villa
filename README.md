@@ -41,6 +41,55 @@ Open `http://localhost:3000`.
 - `docs/UI_FEEDBACK_STANDARD.md`
 - `docs/SUPABASE_SCHEMA.md`
 
+## Report PDF worker deployment
+
+EB, TU and ÖB use the same durable PDF queue. Deploy the application first,
+then apply `docs/db/2026-09-05_01_inspection_report_pdf_job_queue.sql` to
+Supabase. The migration reuses the existing Uppdrag Cron endpoint origin and
+`CRON_SECRET` from Vault when those values are present, and activates the
+one-minute report worker automatically.
+
+If Uppdrag Cron has not been configured, add
+`hushub_report_pdf_endpoint_url` (ending in `/api/cron/reports/pdf`) and
+`hushub_report_pdf_cron_secret` (the same value as the application's
+`CRON_SECRET`) to Supabase Vault. Then call
+`public.configure_inspection_report_pdf_cron()` once and verify
+`public.inspection_report_pdf_cron_configuration_status()`.
+
+`APP_BASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `CRON_SECRET` must be available
+to the server. `REPORT_RENDER_SECRET` is optional; when omitted, the internal,
+short-lived render authorization is derived from the service-role secret.
+`APP_BASE_URL` must use HTTPS in production. Report assets are restricted to
+the application and its configured Supabase origin; any intentional legacy
+asset origin must be added explicitly as an HTTPS origin in the comma-separated
+`REPORT_PDF_ALLOWED_ASSET_ORIGINS` value.
+
+The timeout budget is deliberately bounded below the external dispatcher and
+route limits. `REPORT_PDF_RENDER_TIMEOUT_MS` defaults to 60000 and is clamped
+to 10000-150000 ms. Chromium lookup and launch are clamped to at most 30000 and
+25000 ms respectively, so browser setup plus rendering takes at most 205 seconds;
+the Supabase `pg_net` request expires after 280 seconds and the application
+route after 300 seconds. `REPORT_PDF_STALE_AFTER_MINUTES` defaults to 10 and is
+clamped to 6-1440 minutes, ensuring an active route is not reclaimed early.
+`REPORT_READY_TIMEOUT_MS` (5000-150000 ms) and
+`REPORT_NETWORK_IDLE_TIMEOUT_MS` (1000-15000 ms) run inside the render budget.
+
+Cron execution is asynchronous: a successful `cron.job_run_details` row only
+means that `pg_net` accepted the request. Verify the actual application response
+without exposing endpoint URLs or credentials:
+
+```sql
+select public.inspection_report_pdf_cron_configuration_status();
+```
+
+`latestRequestedHttpOutcome` describes the newest queued request and will often
+be `pending` while it is running. It never hides the previous result:
+`latestCompletedHttpOutcome` and `latestCompletedHttpStatusCode` always describe
+the newest request for which `pg_net` has stored a response. Values
+`timed_out`, `network_error` or `http_error` require checking the remaining
+non-secret status fields and the application logs; `succeeded` together with
+HTTP 200 confirms successful dispatch.
+
 ## Uppdrag v1 deployment
 
 1. Apply `docs/db/2026-08-20_00_platform_access_assignments_rls.sql` to

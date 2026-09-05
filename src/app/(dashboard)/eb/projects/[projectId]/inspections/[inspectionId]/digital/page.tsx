@@ -90,10 +90,8 @@ export default async function EbInspectionDigitalReportPage({
       (String(row.pdf_storage_bucket ?? '').trim().length > 0 &&
         String(row.pdf_storage_path ?? '').trim().length > 0)
     const pdfStatus = hasStoredPdf ? 'ready' : normalizePdfStatus(row.pdf_status)
-    const pdfDownloadUrl =
-      pdfStatus === 'ready' && hasStoredPdf
-        ? `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
-        : null
+    const pdfDownloadUrl = `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
+    const pdfStatusEndpoint = `/api/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/report-delivery?status=1`
 
     if (isPdfRender) {
       return (
@@ -134,6 +132,7 @@ export default async function EbInspectionDigitalReportPage({
         publishedAt={snapshot?.createdAt ?? row.created_at}
         pdfDownloadUrl={pdfDownloadUrl}
         pdfStatus={pdfStatus}
+        pdfStatusEndpoint={pdfStatusEndpoint}
         pdfError={row.pdf_error}
         shareEndpoint={null}
         shareUrl={null}

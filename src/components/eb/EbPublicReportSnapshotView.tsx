@@ -14,6 +14,9 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import PublicReportPdfDownload, {
+  type PublicReportPdfStatus,
+} from '@/components/report/PublicReportPdfDownload'
 import ReportShareButton from '@/components/report/ReportShareButton'
 import {
   isEbDrainageTemplate,
@@ -44,15 +47,14 @@ export type EbPublicDeliveryDocumentLink = {
   downloadUrl: string
 }
 
-type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
-
 type EbPublicReportSnapshotViewProps = {
   report: EbInspectionReport
   publishedAt?: string | null
   shareEndpoint: string | null
   shareUrl: string | null
   pdfDownloadUrl: string | null
-  pdfStatus?: PdfStatus
+  pdfStatus?: PublicReportPdfStatus
+  pdfStatusEndpoint?: string | null
   pdfError?: string | null
   deliveryDocuments?: EbPublicDeliveryDocumentLink[]
 }
@@ -1172,11 +1174,16 @@ function PublicToolbar({
   shareUrl,
   pdfDownloadUrl,
   pdfStatus,
-  pdfError,
+  pdfStatusEndpoint,
   deliveryDocuments,
 }: Pick<
   EbPublicReportSnapshotViewProps,
-  'shareEndpoint' | 'shareUrl' | 'pdfDownloadUrl' | 'pdfStatus' | 'pdfError' | 'deliveryDocuments'
+  | 'shareEndpoint'
+  | 'shareUrl'
+  | 'pdfDownloadUrl'
+  | 'pdfStatus'
+  | 'pdfStatusEndpoint'
+  | 'deliveryDocuments'
 >) {
   return (
     <div className="border-b border-slate-200 bg-white print:hidden">
@@ -1190,23 +1197,12 @@ function PublicToolbar({
             {shareEndpoint && shareUrl ? (
               <ReportShareButton shareEndpoint={shareEndpoint} shareUrl={shareUrl} />
             ) : null}
-            {pdfDownloadUrl ? (
-              <Link
-                href={pdfDownloadUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50"
-              >
-                <Download size={16} aria-hidden />
-                Ladda ner PDF
-              </Link>
-            ) : (
-              <span className="max-w-64 text-right text-xs leading-5 text-slate-500">
-                {pdfStatus === 'failed'
-                  ? `PDF-genereringen misslyckades${pdfError ? `: ${pdfError}` : '.'}`
-                  : 'PDF-filen förbereds och blir snart tillgänglig.'}
-              </span>
-            )}
+            <PublicReportPdfDownload
+              downloadUrl={pdfDownloadUrl}
+              initialStatus={pdfStatus}
+              statusEndpoint={pdfStatusEndpoint}
+              tone="emerald"
+            />
           </div>
         </div>
 
@@ -1281,7 +1277,7 @@ export default function EbPublicReportSnapshotView({
   shareUrl,
   pdfDownloadUrl,
   pdfStatus = 'pending',
-  pdfError = null,
+  pdfStatusEndpoint = null,
   deliveryDocuments = [],
 }: EbPublicReportSnapshotViewProps) {
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
@@ -1436,7 +1432,7 @@ export default function EbPublicReportSnapshotView({
         shareUrl={shareUrl}
         pdfDownloadUrl={pdfDownloadUrl}
         pdfStatus={pdfStatus}
-        pdfError={pdfError}
+        pdfStatusEndpoint={pdfStatusEndpoint}
         deliveryDocuments={deliveryDocuments}
       />
 

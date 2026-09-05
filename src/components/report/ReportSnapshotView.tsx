@@ -1,4 +1,6 @@
-﻿import Link from 'next/link'
+﻿import PublicReportPdfDownload, {
+  type PublicReportPdfStatus,
+} from './PublicReportPdfDownload'
 import type { CSSProperties } from 'react'
 import type { ReportSnapshotPayloadV1 } from '@/lib/report/reportSnapshotPayload'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
@@ -130,7 +132,8 @@ type ReportSnapshotViewProps = {
   subtitle?: string
   pdfInlineUrl?: string | null
   pdfDownloadUrl?: string | null
-  pdfStatus?: 'pending' | 'processing' | 'ready' | 'failed' | null
+  pdfStatus?: PublicReportPdfStatus | null
+  pdfStatusEndpoint?: string | null
   pdfError?: string | null
   showPdfActions?: boolean
   showHeader?: boolean
@@ -333,18 +336,6 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const subtitle =
     props.subtitle ?? `Låst och publicerat: ${formatSnapshotTimestamp(props.snapshot.createdAt)}`
   const showHeader = props.showHeader !== false
-  const showActions =
-    props.showPdfActions !== false &&
-    Boolean(props.pdfDownloadUrl)
-  const showPendingPdfNotice =
-    props.showPdfActions !== false &&
-    !showActions &&
-    (props.pdfStatus === 'pending' || props.pdfStatus === 'processing')
-  const showFailedPdfNotice =
-    props.showPdfActions !== false &&
-    !showActions &&
-    props.pdfStatus === 'failed'
-
   const mock = (props.snapshot.reportData?.mock ?? {}) as Record<string, unknown>
   const exteriorBlocks = getBlockArrayByPath(mock, 'exterior.blocks')
   const interiorBlocks = getBlockArrayByPath(mock, 'interior.blocks')
@@ -448,26 +439,12 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                     shareUrl={props.shareUrl}
                   />
                 ) : null}
-                {showActions ? (
-                  <Link
-                    href={props.pdfDownloadUrl as string}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-                  >
-                    Ladda ner PDF
-                  </Link>
-                ) : null}
-                {showPendingPdfNotice ? (
-                  <p className="max-w-xs text-right text-xs text-amber-700">
-                    PDF genereras fortfarande i bakgrunden.
-                  </p>
-                ) : null}
-                {showFailedPdfNotice ? (
-                  <p className="max-w-xs text-right text-xs text-rose-700">
-                    PDF-generering misslyckades
-                    {props.pdfError ? `: ${props.pdfError}` : '.'}
-                  </p>
+                {props.showPdfActions !== false ? (
+                  <PublicReportPdfDownload
+                    downloadUrl={props.pdfDownloadUrl ?? null}
+                    initialStatus={props.pdfStatus}
+                    statusEndpoint={props.pdfStatusEndpoint}
+                  />
                 ) : null}
               </div>
             </div>

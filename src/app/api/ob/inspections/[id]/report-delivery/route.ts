@@ -1,13 +1,10 @@
 ﻿import { NextResponse, after } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
-import {
-  getPdfRenderDiagnostics,
-  renderPreviewPdf,
-} from '@/lib/report/pdfV2/renderPreviewPdf'
+import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
 import {
   createReportSnapshotPayloadV1,
   type ReportSnapshotPayloadV1,
@@ -19,18 +16,7 @@ import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmai
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
-const PDF_RENDER_TIMEOUT_MS = Number(process.env.REPORT_PDF_RENDER_TIMEOUT_MS ?? 60000)
-const REPORT_PDF_STORAGE_BUCKET = process.env.REPORT_PDF_STORAGE_BUCKET?.trim() || 'inspection-reports'
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
-const PDF_JOB_STALE_AFTER_MS = readPositiveIntegerEnv(
-  'REPORT_PDF_STALE_AFTER_MS',
-  10 * 60 * 1000,
-  60_000
-)
-const PDF_JOB_MAX_ATTEMPTS = readPositiveIntegerEnv('REPORT_PDF_MAX_ATTEMPTS', 2, 1)
-const PDF_JOB_RETRY_DELAY_MS = readPositiveIntegerEnv('REPORT_PDF_RETRY_DELAY_MS', 5_000, 0)
-const PDF_JOB_ALERT_EMAIL =
-  process.env.REPORT_PDF_ALERT_EMAIL?.trim() || 'jn@hedbjorn.se'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type DeliveryStatus = 'pending' | 'sent' | 'failed'
@@ -116,12 +102,6 @@ type TimingLogger = {
 
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
-function readPositiveIntegerEnv(name: string, fallback: number, min: number) {
-  const raw = process.env[name]
-  const parsed = raw == null || raw.trim() === '' ? fallback : Number(raw)
-  if (!Number.isFinite(parsed)) return fallback
-  return Math.max(min, Math.round(parsed))
-}
 type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
 type ReportDeliveryPostAction = DeliveryAction | 'regenerate_pdf'
 
@@ -176,16 +156,6 @@ function normalizePdfStatus(value: unknown): PdfStatus {
   if (normalized === 'ready') return 'ready'
   if (normalized === 'failed') return 'failed'
   return 'pending'
-}
-
-function truncateErrorMessage(input: string, maxLength = 1200) {
-  if (input.length <= maxLength) return input
-  return `${input.slice(0, maxLength - 3)}...`
-}
-
-function sleep(ms: number) {
-  if (ms <= 0) return Promise.resolve()
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function isMissingInspectionLockColumnsError(message: string) {
@@ -370,154 +340,6 @@ function getMailFromAddress() {
   return value
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
-}
-
-function stringifyAlertDiagnostics(diagnostics: Record<string, unknown> | null | undefined) {
-  if (!diagnostics) return null
-  try {
-    const json = JSON.stringify(diagnostics, null, 2)
-    if (json.length <= 20_000) return json
-    return `${json.slice(0, 20_000)}\n... [diagnostik avkortad]`
-  } catch (error) {
-    return `Kunde inte serialisera diagnostik: ${error instanceof Error ? error.message : String(error)}`
-  }
-}
-
-async function sendPdfJobAlert(input: {
-  inspectionId: string
-  linkId: string | null
-  kind: 'failed' | 'stuck'
-  message: string
-  traceId?: string | null
-  diagnostics?: Record<string, unknown> | null
-}) {
-  if (!PDF_JOB_ALERT_EMAIL) return
-
-  const timestamp = new Date().toISOString()
-  const diagnosticsText = stringifyAlertDiagnostics(input.diagnostics)
-  const subject =
-    input.kind === 'stuck'
-      ? `Hushub-larm: PDF-jobb har fastnat (${input.inspectionId})`
-      : `Hushub-larm: PDF-generering misslyckades (${input.inspectionId})`
-  const textParts = [
-    subject,
-    '',
-    `inspection_id: ${input.inspectionId}`,
-    `report_link_id: ${input.linkId ?? '-'}`,
-    `trace_id: ${input.traceId ?? '-'}`,
-    `tidpunkt: ${timestamp}`,
-    '',
-    input.message,
-  ]
-  if (diagnosticsText) {
-    textParts.push('', 'Diagnostik:', diagnosticsText)
-  }
-  const text = textParts.join('\n')
-  const html = `
-    <p><strong>${escapeHtml(subject)}</strong></p>
-    <ul>
-      <li><strong>inspection_id:</strong> ${escapeHtml(input.inspectionId)}</li>
-      <li><strong>report_link_id:</strong> ${escapeHtml(input.linkId ?? '-')}</li>
-      <li><strong>trace_id:</strong> ${escapeHtml(input.traceId ?? '-')}</li>
-      <li><strong>tidpunkt:</strong> ${escapeHtml(timestamp)}</li>
-    </ul>
-    <p>${escapeHtml(input.message)}</p>
-    ${
-      diagnosticsText
-        ? `<p><strong>Diagnostik</strong></p><pre style="white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.4;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;">${escapeHtml(diagnosticsText)}</pre>`
-        : ''
-    }
-  `
-
-  try {
-    await sendAssignmentEmail({
-      to: PDF_JOB_ALERT_EMAIL,
-      from: getMailFromAddress(),
-      subject,
-      html,
-      text,
-    })
-  } catch (error) {
-    console.error('[inspections.report-delivery.pdf-job] failed to send alert email', {
-      inspectionId: input.inspectionId,
-      linkId: input.linkId,
-      error: error instanceof Error ? error.message : String(error),
-    })
-  }
-}
-
-async function ensureReportPdfBucket(admin: AdminClient) {
-  const { error } = await admin.storage.getBucket(REPORT_PDF_STORAGE_BUCKET)
-  if (!error) return
-
-  const message = error.message?.toLowerCase() ?? ''
-  const isMissingBucket =
-    message.includes('not found') ||
-    message.includes('does not exist') ||
-    message.includes('404')
-
-  if (!isMissingBucket) {
-    throw new Error(
-      `Kunde inte verifiera storage bucket för PDF (${REPORT_PDF_STORAGE_BUCKET}): ${error.message ?? error}`
-    )
-  }
-
-  const { error: createError } = await admin.storage.createBucket(REPORT_PDF_STORAGE_BUCKET, {
-    public: false,
-    allowedMimeTypes: ['application/pdf'],
-    fileSizeLimit: '50MB',
-  })
-
-  if (createError) {
-    const createMessage = createError.message?.toLowerCase() ?? ''
-    const alreadyExists =
-      createMessage.includes('already exists') || createMessage.includes('duplicate')
-    if (!alreadyExists) {
-      throw new Error(
-        `Kunde inte skapa storage bucket för PDF (${REPORT_PDF_STORAGE_BUCKET}): ${createError.message ?? createError}`
-      )
-    }
-  }
-}
-
-async function uploadReportPdfToStorage(
-  admin: AdminClient,
-  input: {
-    orgId: string
-    inspectionId: string
-    tokenHash: string
-    pdfBuffer: Buffer
-  }
-) {
-  await ensureReportPdfBucket(admin)
-
-  const objectPath = `${input.orgId}/${input.inspectionId}/${Date.now()}-${input.tokenHash.slice(0, 16)}.pdf`
-  const { error } = await admin.storage
-    .from(REPORT_PDF_STORAGE_BUCKET)
-    .upload(objectPath, input.pdfBuffer, {
-      contentType: 'application/pdf',
-      cacheControl: '31536000',
-      upsert: false,
-    })
-
-  if (error) {
-    throw new Error(`Kunde inte spara PDF i Storage: ${error.message ?? error}`)
-  }
-
-  return {
-    bucket: REPORT_PDF_STORAGE_BUCKET,
-    path: objectPath,
-    sizeBytes: input.pdfBuffer.length,
-  }
-}
-
 async function setPdfJobStatus(
   admin: AdminClient,
   linkId: string,
@@ -559,140 +381,6 @@ async function revokeOlderReportLinks(
 
   if (error) {
     throw new Error(error.message ?? 'Kunde inte spärra äldre rapportlänkar.')
-  }
-}
-
-async function runReportPdfJobInBackground(input: {
-  traceId: string
-  linkId: string
-  orgId: string
-  inspectionId: string
-  propertyId: string
-  tokenHash: string
-  previewReportUrl: string
-  cookieHeader: string | null
-}) {
-  const admin = createSupabaseAdminClient()
-  const timing = createTimingLogger('inspections.report-delivery.pdf-job', input.traceId)
-  let attemptNumber = 0
-  timing.mark('job_start', {
-    linkId: input.linkId,
-    inspectionId: input.inspectionId,
-  })
-
-  try {
-    const { data: link, error: linkError } = await admin
-      .from('inspection_report_links')
-      .select('id,pdf_attempts,revoked_at')
-      .eq('id', input.linkId)
-      .maybeSingle()
-
-    if (linkError) {
-      throw new Error(linkError.message ?? 'Kunde inte läsa rapportlänk för PDF-jobb.')
-    }
-    if (!link || link.revoked_at) {
-      timing.mark('job_aborted_link_missing_or_revoked')
-      return
-    }
-
-    const nextAttempts = Number((link as Record<string, unknown>).pdf_attempts ?? 0) + 1
-    attemptNumber = nextAttempts
-    await setPdfJobStatus(admin, input.linkId, {
-      pdf_status: 'processing',
-      pdf_error: null,
-      pdf_attempts: nextAttempts,
-      pdf_started_at: new Date().toISOString(),
-    })
-    timing.mark('job_marked_processing', { attempts: nextAttempts })
-
-    const rendered = await renderPreviewPdf({
-      url: input.previewReportUrl,
-      cookieHeader: input.cookieHeader,
-      timeoutMs: PDF_RENDER_TIMEOUT_MS,
-      traceId: `${input.traceId}:render`,
-    })
-    const pdfBuffer = Buffer.isBuffer(rendered) ? rendered : Buffer.from(rendered)
-    timing.mark('pdf_rendered', { pdfBytes: pdfBuffer.length })
-
-    const pdfSha256 = createHash('sha256').update(pdfBuffer).digest('hex')
-    const storedPdf = await uploadReportPdfToStorage(admin, {
-      orgId: input.orgId,
-      inspectionId: input.inspectionId,
-      tokenHash: input.tokenHash,
-      pdfBuffer,
-    })
-    timing.mark('pdf_uploaded_to_storage', {
-      bucket: storedPdf.bucket,
-      path: storedPdf.path,
-      sizeBytes: storedPdf.sizeBytes,
-    })
-
-    await setPdfJobStatus(admin, input.linkId, {
-      pdf_status: 'ready',
-      pdf_error: null,
-      pdf_generated_at: new Date().toISOString(),
-      pdf_storage_bucket: storedPdf.bucket,
-      pdf_storage_path: storedPdf.path,
-      pdf_size_bytes: storedPdf.sizeBytes,
-      pdf_sha256: pdfSha256,
-      pdf_base64: null,
-    })
-    timing.mark('job_completed')
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel vid PDF-jobb.'
-    const diagnostics = getPdfRenderDiagnostics(error)
-    console.error('[inspections.report-delivery.pdf-job] failed', {
-      linkId: input.linkId,
-      inspectionId: input.inspectionId,
-      attempt: attemptNumber,
-      maxAttempts: PDF_JOB_MAX_ATTEMPTS,
-      error: message,
-      diagnostics,
-    })
-    if (attemptNumber > 0 && attemptNumber < PDF_JOB_MAX_ATTEMPTS) {
-      const retryMessage = `PDF-generering misslyckades på försök ${attemptNumber} av ${PDF_JOB_MAX_ATTEMPTS}. Nytt försök startas automatiskt. Senaste fel: ${message}`
-      try {
-        await setPdfJobStatus(admin, input.linkId, {
-          pdf_status: 'pending',
-          pdf_error: truncateErrorMessage(retryMessage),
-        })
-      } catch (updateError) {
-        console.error('[inspections.report-delivery.pdf-job] failed to mark retry status', {
-          linkId: input.linkId,
-          error: updateError instanceof Error ? updateError.message : String(updateError),
-        })
-      }
-      timing.mark('job_retry_scheduled', {
-        attempt: attemptNumber,
-        maxAttempts: PDF_JOB_MAX_ATTEMPTS,
-        retryDelayMs: PDF_JOB_RETRY_DELAY_MS,
-        error: message,
-      })
-      await sleep(PDF_JOB_RETRY_DELAY_MS)
-      await runReportPdfJobInBackground(input)
-      return
-    }
-
-    try {
-      await setPdfJobStatus(admin, input.linkId, {
-        pdf_status: 'failed',
-        pdf_error: truncateErrorMessage(message),
-      })
-    } catch (updateError) {
-      console.error('[inspections.report-delivery.pdf-job] failed to mark failed status', {
-        linkId: input.linkId,
-        error: updateError instanceof Error ? updateError.message : String(updateError),
-      })
-    }
-    await sendPdfJobAlert({
-      inspectionId: input.inspectionId,
-      linkId: input.linkId,
-      kind: 'failed',
-      message,
-      traceId: input.traceId,
-      diagnostics,
-    })
-    timing.mark('job_failed', { error: message })
   }
 }
 
@@ -795,47 +483,10 @@ async function getReportPdfState(admin: AdminClient, inspectionId: string): Prom
 
   const hasStoredPdf = Boolean(readyRow)
   const statusFromDb = normalizePdfStatus(latestRow?.pdf_status)
-  let pdfStatus: PdfStatus = hasStoredPdf ? 'ready' : statusFromDb
-  let pdfError = hasStoredPdf
+  const pdfStatus: PdfStatus = hasStoredPdf ? 'ready' : statusFromDb
+  const pdfError = hasStoredPdf
     ? null
     : String(latestRow?.pdf_error ?? '').trim() || null
-
-  if (!hasStoredPdf && latestRow && statusFromDb === 'processing') {
-    const startedAt = toTimestampValue(String(latestRow.pdf_started_at ?? latestRow.created_at ?? ''))
-    const isStale = startedAt > 0 && Date.now() - startedAt > PDF_JOB_STALE_AFTER_MS
-    if (isStale) {
-      const staleMessage = `PDF-jobbet har fastnat i status processing längre än ${Math.round(
-        PDF_JOB_STALE_AFTER_MS / 60000
-      )} minuter. Ingen PDF-fil har lagrats.`
-      const linkId = String(latestRow.id ?? '')
-      const { error: updateError } = await admin
-        .from('inspection_report_links')
-        .update({
-          pdf_status: 'failed',
-          pdf_error: truncateErrorMessage(staleMessage),
-        })
-        .eq('id', linkId)
-        .is('revoked_at', null)
-        .eq('pdf_status', 'processing')
-
-      if (updateError) {
-        console.error('[inspections.report-delivery] failed to mark stale PDF job', {
-          inspectionId,
-          linkId,
-          error: updateError.message ?? updateError,
-        })
-      } else {
-        pdfStatus = 'failed'
-        pdfError = staleMessage
-        await sendPdfJobAlert({
-          inspectionId,
-          linkId,
-          kind: 'stuck',
-          message: staleMessage,
-        })
-      }
-    }
-  }
 
   return {
     hasStoredPdf,
@@ -1171,11 +822,6 @@ export async function POST(
       if (latestLink.org_id !== org.orgId) {
         return jsonError('Rapportlänken tillhör inte din organisation.', 403)
       }
-      const tokenHash = String(latestLink.token_hash ?? '').trim()
-      if (!tokenHash) {
-        return jsonError('Rapportlänken saknar token för PDF-generering.', 500)
-      }
-
       const latestStatus = normalizePdfStatus(latestLink.pdf_status)
       const shouldSchedulePdfJob = latestStatus !== 'pending' && latestStatus !== 'processing'
       if (shouldSchedulePdfJob) {
@@ -1193,25 +839,18 @@ export async function POST(
         })
       }
 
-      if (shouldSchedulePdfJob) {
-        const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
-        const requestCookieHeader = request.headers.get('cookie')
-        after(async () => {
-          await runReportPdfJobInBackground({
-            traceId: `${traceId}:pdf-regenerate:${latestLink.id}`,
-            linkId: latestLink.id,
-            orgId: org.orgId,
-            inspectionId: id,
-            propertyId,
-            tokenHash,
-            previewReportUrl,
-            cookieHeader: requestCookieHeader,
-          })
+      const publicBaseUrl = resolvePublicBaseUrl(request)
+      after(async () => {
+        await runInspectionReportPdfBatch({
+          origin: publicBaseUrl,
+          linkId: latestLink.id,
+          limit: 1,
         })
-        timing.mark('pdf_regeneration_scheduled', { linkId: latestLink.id })
-      } else {
-        timing.mark('pdf_regeneration_already_running', { linkId: latestLink.id })
-      }
+      })
+      timing.mark(
+        shouldSchedulePdfJob ? 'pdf_regeneration_scheduled' : 'pdf_regeneration_claim_requested',
+        { linkId: latestLink.id }
+      )
 
       const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
       const pdfState = await getReportPdfState(admin, id)
@@ -1360,8 +999,6 @@ export async function POST(
     await revokeOlderReportLinks(admin, id, linkData.id)
     timing.mark('older_report_links_revoked')
 
-    const previewReportUrl = `${resolvePublicBaseUrl(request)}/utlatande/${propertyId}/${id}?embed=1&pdf=1`
-    const requestCookieHeader = request.headers.get('cookie')
     const linkUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
     const fromAddress = getMailFromAddress()
     const responsibleProfile = await getProfileContact(
@@ -1457,15 +1094,10 @@ export async function POST(
     }
 
     after(async () => {
-      await runReportPdfJobInBackground({
-        traceId: `${traceId}:link:${linkData.id}`,
+      await runInspectionReportPdfBatch({
+        origin: resolvePublicBaseUrl(request),
         linkId: linkData.id,
-        orgId: org.orgId,
-        inspectionId: id,
-        propertyId,
-        tokenHash,
-        previewReportUrl,
-        cookieHeader: requestCookieHeader,
+        limit: 1,
       })
     })
     timing.mark('pdf_job_scheduled', { linkId: linkData.id })

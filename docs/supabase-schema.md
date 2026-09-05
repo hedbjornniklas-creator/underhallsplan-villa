@@ -19,6 +19,49 @@ All databaskod ska följa detta schema.
 Relationer:
 - En property kan ha flera inspections
 
+## Tabell: inspection_report_links
+- id (uuid)
+- org_id (uuid → organizations.id)
+- inspection_id (uuid → inspections.id)
+- assignment_id (uuid → assignments.id, nullable)
+- token_hash (text, unik; endast hash av den publika länktoken lagras)
+- delivery_mode (text: link_pdf eller link_only)
+- snapshot_schema_version (text, nullable)
+- snapshot_payload (jsonb, fryst utlåtande för ÖB, TU eller EB)
+- pdf_base64 (text, nullable; äldre lagringsformat)
+- pdf_sha256 (text, nullable)
+- pdf_storage_bucket (text, nullable)
+- pdf_storage_path (text, nullable)
+- pdf_size_bytes (bigint, nullable)
+- pdf_status (text: pending, processing, ready eller failed)
+- pdf_error (text, nullable)
+- pdf_attempts (int)
+- pdf_max_attempts (int, standard 3)
+- pdf_started_at (timestamp, nullable)
+- pdf_generated_at (timestamp, nullable)
+- pdf_next_attempt_at (timestamp, nullable)
+- pdf_locked_at (timestamp, nullable)
+- pdf_locked_by (text, nullable)
+- created_by (uuid → profiles.id, nullable)
+- created_at (timestamp)
+- revoked_at (timestamp, nullable)
+
+PDF-kön är gemensam för ÖB, TU och EB. Service-role-arbetaren reserverar och
+slutför jobb atomiskt via `claim_inspection_report_pdf_jobs` och
+`finish_inspection_report_pdf_job`. Supabase Cron anropar den skyddade
+applikationsrutten varje minut; misslyckade eller avbrutna jobb återköas med
+begränsad backoff och högst tre försök. Ett aktivt jobb betraktas tidigast som
+inaktuellt efter sex minuter (standard tio), vilket ligger över den fem minuter
+långa maximala applikationskörningen.
+
+## Tabell: inspection_report_pdf_cron_requests
+- request_id (bigint, primärnyckel; pg_net-anropets id)
+- requested_at (timestamp)
+
+Tabellen innehåller inga URL:er, headers eller hemligheter. Den används av
+`inspection_report_pdf_cron_configuration_status()` för att koppla senaste
+schemalagda anrop till dess HTTP-status i `net._http_response`.
+
 ## Tabell: inspection_control_items
 - id (uuid)
 - inspection_id (uuid -> inspections.id)

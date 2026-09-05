@@ -1,16 +1,53 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { lookup } from 'node:dns/promises'
+import { BlockList, isIP } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import chromium from '@sparticuz/chromium'
 import puppeteer, { type Page } from 'puppeteer-core'
 
-const DEFAULT_TIMEOUT_MS = 60000
+export const REPORT_PDF_RENDER_TIMEOUT_MAX_MS = 150_000
+
+function readBoundedTimeoutEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number
+) {
+  const raw = process.env[name]?.trim()
+  const parsed = raw ? Number(raw) : fallback
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.round(parsed)))
+}
+
+const DEFAULT_TIMEOUT_MS = 60_000
 const BROWSER_ARGS = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
 const REPORT_TIMING_LOGS = process.env.REPORT_TIMING_LOGS !== '0'
-const REPORT_READY_TIMEOUT_MS = Number(process.env.REPORT_READY_TIMEOUT_MS ?? 45000)
-const NETWORK_IDLE_TIMEOUT_MS = Number(process.env.REPORT_NETWORK_IDLE_TIMEOUT_MS ?? 12000)
-const BROWSER_LAUNCH_TIMEOUT_MS = Number(process.env.PUPPETEER_LAUNCH_TIMEOUT_MS ?? 25000)
-const BROWSER_RESOLVE_TIMEOUT_MS = Number(process.env.PUPPETEER_CHROME_RESOLVE_TIMEOUT_MS ?? 30000)
+const REPORT_READY_TIMEOUT_MS = readBoundedTimeoutEnv(
+  'REPORT_READY_TIMEOUT_MS',
+  45_000,
+  5_000,
+  REPORT_PDF_RENDER_TIMEOUT_MAX_MS
+)
+const NETWORK_IDLE_TIMEOUT_MS = readBoundedTimeoutEnv(
+  'REPORT_NETWORK_IDLE_TIMEOUT_MS',
+  12_000,
+  1_000,
+  15_000
+)
+const BROWSER_LAUNCH_TIMEOUT_MS = readBoundedTimeoutEnv(
+  'PUPPETEER_LAUNCH_TIMEOUT_MS',
+  25_000,
+  1_000,
+  25_000
+)
+const BROWSER_RESOLVE_TIMEOUT_MS = readBoundedTimeoutEnv(
+  'PUPPETEER_CHROME_RESOLVE_TIMEOUT_MS',
+  30_000,
+  1_000,
+  30_000
+)
+const ASSET_DNS_TIMEOUT_MS = 3000
 const PROFILE_ROOT_DIR =
   process.env.PUPPETEER_PROFILE_ROOT_DIR?.trim() ||
   join(process.platform === 'linux' ? '/tmp' : tmpdir(), 'puppeteer-runtime-profiles')
@@ -19,6 +56,155 @@ type LaunchConfig = {
   executablePath: string
   args: string[]
   source: 'env' | 'sparticuz'
+}
+
+type NetworkFamily = 'ipv4' | 'ipv6'
+
+const blockedReportIpv4Networks = new BlockList()
+const blockedReportIpv6Networks = new BlockList()
+const BLOCKED_REPORT_NETWORKS: Array<[address: string, prefix: number, family: NetworkFamily]> = [
+  // IPv4 addresses that must never be reachable from report-controlled assets.
+  ['0.0.0.0', 8, 'ipv4'],
+  ['10.0.0.0', 8, 'ipv4'],
+  ['100.64.0.0', 10, 'ipv4'],
+  ['127.0.0.0', 8, 'ipv4'],
+  ['169.254.0.0', 16, 'ipv4'],
+  ['172.16.0.0', 12, 'ipv4'],
+  ['192.0.0.0', 24, 'ipv4'],
+  ['192.0.2.0', 24, 'ipv4'],
+  ['192.168.0.0', 16, 'ipv4'],
+  ['198.18.0.0', 15, 'ipv4'],
+  ['198.51.100.0', 24, 'ipv4'],
+  ['203.0.113.0', 24, 'ipv4'],
+  ['224.0.0.0', 4, 'ipv4'],
+  ['240.0.0.0', 4, 'ipv4'],
+  // IPv6 loopback, private, link-local, documentation and IPv4-translation ranges.
+  ['::', 96, 'ipv6'],
+  ['::1', 128, 'ipv6'],
+  ['::ffff:0:0', 96, 'ipv6'],
+  ['64:ff9b::', 96, 'ipv6'],
+  ['64:ff9b:1::', 48, 'ipv6'],
+  ['100::', 64, 'ipv6'],
+  ['2001::', 32, 'ipv6'],
+  ['2001:2::', 48, 'ipv6'],
+  ['2001:10::', 28, 'ipv6'],
+  ['2001:20::', 28, 'ipv6'],
+  ['2001:db8::', 32, 'ipv6'],
+  ['2002::', 16, 'ipv6'],
+  ['fc00::', 7, 'ipv6'],
+  ['fe80::', 10, 'ipv6'],
+  ['fec0::', 10, 'ipv6'],
+  ['ff00::', 8, 'ipv6'],
+]
+
+for (const [address, prefix, family] of BLOCKED_REPORT_NETWORKS) {
+  if (family === 'ipv4') {
+    blockedReportIpv4Networks.addSubnet(address, prefix, family)
+  } else {
+    blockedReportIpv6Networks.addSubnet(address, prefix, family)
+  }
+}
+
+function normalizeHostname(value: string) {
+  return value.replace(/^\[|\]$/gu, '').replace(/\.$/u, '').toLowerCase()
+}
+
+function isBlockedNetworkAddress(value: string) {
+  const address = normalizeHostname(value).split('%', 1)[0] ?? ''
+  const family = isIP(address)
+  if (family === 4) return blockedReportIpv4Networks.check(address, 'ipv4')
+  if (family === 6) return blockedReportIpv6Networks.check(address, 'ipv6')
+  return true
+}
+
+function configuredReportAssetOrigins(mainOrigin: string) {
+  const origins = new Set<string>([mainOrigin])
+  const configured = [
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? '',
+    ...(process.env.REPORT_PDF_ALLOWED_ASSET_ORIGINS ?? '')
+      .split(',')
+      .map((value) => value.trim()),
+  ]
+
+  for (const candidate of configured) {
+    if (!candidate) continue
+    try {
+      const parsed = new URL(candidate)
+      // External report assets must use TLS on the standard port. The main app
+      // origin remains allowed separately so localhost development still works.
+      if (parsed.protocol !== 'https:' || (parsed.port && parsed.port !== '443')) continue
+      origins.add(parsed.origin)
+    } catch {
+      // Invalid optional origins stay fail-closed.
+    }
+  }
+
+  return origins
+}
+
+type ReportRequestDecision =
+  | { allowed: true; isMainDocument: boolean }
+  | { allowed: false; reason: string }
+
+function createReportRequestPolicy(mainDocumentUrl: string) {
+  const parsedMainUrl = new URL(mainDocumentUrl)
+  const allowedOrigins = configuredReportAssetOrigins(parsedMainUrl.origin)
+  const publicDnsCache = new Map<string, Promise<boolean>>()
+
+  const resolvesOnlyToPublicAddresses = (hostname: string) => {
+    const normalized = normalizeHostname(hostname)
+    const literalFamily = isIP(normalized)
+    if (literalFamily > 0) return Promise.resolve(!isBlockedNetworkAddress(normalized))
+
+    const cached = publicDnsCache.get(normalized)
+    if (cached) return cached
+
+    const resolution = withTimeout(
+      lookup(normalized, { all: true, verbatim: true }),
+      ASSET_DNS_TIMEOUT_MS,
+      'REPORT_PDF_ASSET_DNS_TIMEOUT'
+    )
+      .then(
+        (addresses) =>
+          addresses.length > 0 &&
+          addresses.every((entry) => !isBlockedNetworkAddress(entry.address))
+      )
+      .catch(() => false)
+    publicDnsCache.set(normalized, resolution)
+    return resolution
+  }
+
+  return async (value: string): Promise<ReportRequestDecision> => {
+    if (value === mainDocumentUrl) return { allowed: true, isMainDocument: true }
+
+    let parsed: URL
+    try {
+      parsed = new URL(value)
+    } catch {
+      return { allowed: false, reason: 'invalid_url' }
+    }
+
+    if (parsed.protocol === 'data:' || parsed.protocol === 'blob:') {
+      return { allowed: true, isMainDocument: false }
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return { allowed: false, reason: 'unsafe_protocol' }
+    }
+    if (parsed.origin === parsedMainUrl.origin) {
+      return { allowed: true, isMainDocument: false }
+    }
+    if (parsed.protocol !== 'https:' || (parsed.port && parsed.port !== '443')) {
+      return { allowed: false, reason: 'unsafe_external_transport' }
+    }
+    if (!allowedOrigins.has(parsed.origin)) {
+      return { allowed: false, reason: 'external_origin_not_allowed' }
+    }
+    if (!(await resolvesOnlyToPublicAddresses(parsed.hostname))) {
+      return { allowed: false, reason: 'private_or_unresolved_address' }
+    }
+
+    return { allowed: true, isMainDocument: false }
+  }
 }
 
 export class PdfRenderReadinessTimeoutError extends Error {
@@ -360,11 +546,19 @@ async function launchPdfBrowser(
 
 export async function renderPreviewPdf(params: {
   url: string
-  cookieHeader?: string | null
+  /** Headers added only to the main document navigation, never to images or other subresources. */
+  mainDocumentHeaders?: Record<string, string> | null
   timeoutMs?: number
   traceId?: string
 }) {
-  const timeoutMs = params.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const requestedTimeoutMs =
+    typeof params.timeoutMs === 'number' && Number.isFinite(params.timeoutMs)
+      ? Math.round(params.timeoutMs)
+      : DEFAULT_TIMEOUT_MS
+  const timeoutMs = Math.max(
+    10_000,
+    Math.min(REPORT_PDF_RENDER_TIMEOUT_MAX_MS, requestedTimeoutMs)
+  )
   const traceId = params.traceId ?? `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const mark = createRenderTimingLogger(traceId)
 
@@ -424,19 +618,65 @@ export async function renderPreviewPdf(params: {
       })
       page.setDefaultTimeout(timeoutMs)
 
-      if (params.cookieHeader) {
-        await page.setExtraHTTPHeaders({
-          cookie: params.cookieHeader,
+      const mainDocumentHeaders = Object.fromEntries(
+        Object.entries(params.mainDocumentHeaders ?? {}).filter(
+          ([name, value]) => name.trim().length > 0 && typeof value === 'string'
+        )
+      )
+      const decideRequest = createReportRequestPolicy(params.url)
+      await page.setRequestInterception(true)
+      page.on('request', (request) => {
+        void (async () => {
+          const decision = await decideRequest(request.url())
+          if (request.isInterceptResolutionHandled()) return
+
+          if (!decision.allowed) {
+            rememberBrowserEvent('browser_request_blocked', {
+              resourceType: request.resourceType(),
+              url: compactUrlForLog(request.url()),
+              reason: decision.reason,
+            })
+            await request.abort('blockedbyclient')
+            return
+          }
+
+          const overrides =
+            decision.isMainDocument && Object.keys(mainDocumentHeaders).length > 0
+              ? {
+                  headers: {
+                    ...request.headers(),
+                    ...mainDocumentHeaders,
+                  },
+                }
+              : undefined
+          await request.continue(overrides)
+        })().catch((error) => {
+          rememberBrowserEvent('browser_request_policy_error', {
+            resourceType: request.resourceType(),
+            url: compactUrlForLog(request.url()),
+            error: errorMessage(error),
+          })
+          if (!request.isInterceptResolutionHandled()) {
+            void request.abort('blockedbyclient').catch(() => {
+              // Browser shutdown or navigation cancellation can settle the request first.
+            })
+          }
         })
-        mark('cookie_header_set')
-      }
+      })
+      mark('report_request_policy_configured', {
+        mainDocumentHeaderCount: Object.keys(mainDocumentHeaders).length,
+      })
 
       await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 })
       await page.emulateMediaType('print')
       mark('viewport_and_media_ready')
 
-      await page.goto(params.url, { waitUntil: 'domcontentloaded' })
-      mark('page_goto_domcontentloaded')
+      const mainResponse = await page.goto(params.url, { waitUntil: 'domcontentloaded' })
+      const mainResponseStatus = mainResponse?.status() ?? null
+      mark('page_goto_domcontentloaded', { status: mainResponseStatus })
+      if (mainResponseStatus === null || mainResponseStatus >= 400) {
+        throw new Error(`PDF_RENDER_PAGE_HTTP_${mainResponseStatus ?? 'NO_RESPONSE'}`)
+      }
       try {
         await page.waitForNetworkIdle({
           idleTime: 500,
