@@ -505,7 +505,7 @@ as $$
 declare
   endpoint_url text;
   cron_secret text;
-  request_id bigint;
+  dispatched_request_id bigint;
   dispatch_requested_at timestamptz := clock_timestamp();
 begin
   select secret_row.decrypted_secret
@@ -570,16 +570,16 @@ begin
     -- application's 300 s route limit.
     timeout_milliseconds := 280000
   )
-  into request_id;
+  into dispatched_request_id;
 
   insert into public.inspection_report_pdf_cron_requests (
     request_id,
     requested_at
   ) values (
-    request_id,
+    dispatched_request_id,
     dispatch_requested_at
   )
-  on conflict (request_id) do update
+  on conflict on constraint inspection_report_pdf_cron_requests_pkey do update
   set requested_at = excluded.requested_at;
 
   delete from public.inspection_report_pdf_cron_requests request_log
@@ -587,7 +587,7 @@ begin
 
   return jsonb_build_object(
     'status', 'requested',
-    'requestId', request_id,
+    'requestId', dispatched_request_id,
     'requestedAt', dispatch_requested_at
   );
 end;

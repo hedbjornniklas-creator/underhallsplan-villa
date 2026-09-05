@@ -45,8 +45,10 @@ Open `http://localhost:3000`.
 
 EB, TU and ÖB use the same durable PDF queue. Deploy the application first,
 then apply `docs/db/2026-09-05_01_inspection_report_pdf_job_queue.sql` to
-Supabase. The migration reuses the existing Uppdrag Cron endpoint origin and
-`CRON_SECRET` from Vault when those values are present, and activates the
+Supabase, followed by
+`docs/db/2026-09-05_02_inspection_report_pdf_cron_request_id_fix.sql`. The
+migrations reuse the existing Uppdrag Cron endpoint origin and
+`CRON_SECRET` from Vault when those values are present, and activate the
 one-minute report worker automatically.
 
 If Uppdrag Cron has not been configured, add
