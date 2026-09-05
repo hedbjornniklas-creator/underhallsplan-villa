@@ -3,8 +3,10 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { ArrowLeft, ClipboardCheck, Download, Loader2, Printer } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, ClipboardCheck, Download, Loader2, Printer, Send } from 'lucide-react'
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -13,6 +15,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react'
+import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import {
   isEbDrainageTemplate,
@@ -689,16 +692,29 @@ function TestingDocumentationReport({
         <div className="pt-1">
           <p className="underline">Dokumentation:</p>
           {documents.length > 0 ? (
-            <ul className="mt-2 space-y-1 pl-7">
-              {documents.map((document) => (
-                <li key={document.documentTypeId} className="pl-1">
-                  <div className="grid grid-cols-[88mm_1fr] items-end gap-x-5">
-                    <span>{document.title}</span>
-                    <span>{documentationResultText(document)}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <table className="mt-2 w-full table-fixed border-collapse text-[9.5pt] leading-[1.25] text-black">
+              <thead>
+                <tr className="bg-[#2f7d55] text-left text-white print:bg-[#2f7d55]">
+                  <th className="w-[68%] border border-[#2f7d55] px-2 py-1 font-bold">Dokument</th>
+                  <th className="border border-[#2f7d55] px-2 py-1 font-bold">Datum/status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((document) => (
+                  <tr key={document.documentTypeId} className="align-top">
+                    <td className="border border-[#2f7d55] px-2 py-1">
+                      <p>{document.title}</p>
+                      {document.note?.trim() ? (
+                        <p className="mt-0.5 text-[8.5pt] text-gray-700">{document.note.trim()}</p>
+                      ) : null}
+                    </td>
+                    <td className="border border-[#2f7d55] px-2 py-1">
+                      {documentationResultText(document)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
             <p className="mt-2">Inga dokument har markerats som redovisade för granskning.</p>
           )}
@@ -1329,6 +1345,9 @@ function ReportOpening({ report }: { report: EbInspectionReport }) {
 
   return (
     <section className="eb-report-section break-inside-avoid text-left text-black">
+      <h1 className={`${REPORT_TITLE_HEADING_CLASS_NAME} text-center ${lines.length > 0 ? 'mb-[11mm]' : ''}`}>
+        {reportDocumentTitle(report)}
+      </h1>
       {lines.length > 0 ? (
         <div className={REPORT_OPENING_METADATA_CLASS_NAME}>
           {lines.map((line, index) => (
@@ -1338,9 +1357,6 @@ function ReportOpening({ report }: { report: EbInspectionReport }) {
           ))}
         </div>
       ) : null}
-      <h1 className={`${REPORT_TITLE_HEADING_CLASS_NAME} ${lines.length > 0 ? 'mt-[11mm]' : ''}`}>
-        {reportDocumentTitle(report)}
-      </h1>
     </section>
   )
 }
@@ -2035,8 +2051,10 @@ export default function EbInspectionReportView({
   showInternalActions = true,
   publicActions,
 }: EbInspectionReportViewProps) {
+  const router = useRouter()
   const { showError } = useEbToast()
   const [pendingNavigationKey, setPendingNavigationKey] = useState<string | null>(null)
+  const [deliveryOpen, setDeliveryOpen] = useState(false)
   const printTitle = reportPrintTitle(report)
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
   const noteHeadings = useMemo(
@@ -2477,12 +2495,16 @@ export default function EbInspectionReportView({
   const isProjectNavigating = pendingNavigationKey === projectNavigationKey
   const isReviewNavigating = pendingNavigationKey === reviewNavigationKey
   const navigationInProgress = Boolean(pendingNavigationKey)
+  const refreshReport = useCallback(() => {
+    router.refresh()
+  }, [router])
+  const ignoreDeliveryProjectUpdate = useCallback(() => undefined, [])
 
   return (
     <main className="eb-report-print-root min-h-screen bg-neutral-200 text-black print:min-h-0 print:bg-white">
       {showInternalActions || publicActions ? (
         <div className="mx-auto max-w-5xl px-4 py-5 print:hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/95 p-2 shadow-sm">
             {showInternalActions ? (
               <Link
                 href={`/eb/projects/${report.project.id}`}
@@ -2507,31 +2529,42 @@ export default function EbInspectionReportView({
                   {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
                   Granska
                 </Link>
-                {report.inspection.reportPdfDownloadUrl ? (
-                  <a
-                    href={report.inspection.reportPdfDownloadUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                <div className="flex items-center overflow-hidden rounded-md border border-gray-300 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      document.title = printTitle
+                      window.print()
+                    }}
+                    aria-label="Skriv ut utlåtandet"
+                    title="Skriv ut"
+                    className="inline-flex h-10 w-10 items-center justify-center text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600"
                   >
-                    <Download size={16} />
-                    Ladda ner sökbar PDF
-                  </a>
-                ) : (
-                  <span className="max-w-48 text-right text-xs leading-tight text-gray-600">
-                    Sökbar slut-PDF skapas när utlåtandet låses.
-                  </span>
-                )}
+                    <Printer size={18} aria-hidden="true" />
+                  </button>
+                  {report.inspection.reportPdfDownloadUrl ? (
+                    <a
+                      href={report.inspection.reportPdfDownloadUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Ladda ner sökbar PDF"
+                      title="Ladda ner sökbar PDF"
+                      className="inline-flex h-10 w-10 items-center justify-center border-l border-gray-300 text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600"
+                    >
+                      <Download size={18} aria-hidden="true" />
+                    </a>
+                  ) : null}
+                </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    document.title = printTitle
-                    window.print()
-                  }}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                  onClick={() => setDeliveryOpen(true)}
+                  disabled={navigationInProgress}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
-                  <Printer size={16} />
-                  Skriv ut
+                  <Send size={17} aria-hidden="true" />
+                  {report.inspection.reportLockedAt
+                    ? 'Leverera och visa status'
+                    : 'Fastställ och leverera'}
                 </button>
               </div>
             ) : publicActions}
@@ -2540,6 +2573,17 @@ export default function EbInspectionReportView({
       ) : null}
 
       <EbPrintPagedDocument blocks={reportBlocks} report={report} />
+
+      {showInternalActions ? (
+        <EbReportDeliveryDialog
+          open={deliveryOpen}
+          projectId={report.project.id}
+          inspection={deliveryOpen ? report.inspection : null}
+          onClose={() => setDeliveryOpen(false)}
+          onProjectUpdated={ignoreDeliveryProjectUpdate}
+          onChanged={refreshReport}
+        />
+      ) : null}
     </main>
   )
 }

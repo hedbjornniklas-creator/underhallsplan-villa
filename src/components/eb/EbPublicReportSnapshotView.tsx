@@ -541,18 +541,34 @@ function TestingDocumentation({
       <div>
         <h3 className="text-sm font-semibold text-slate-950">Redovisad dokumentation</h3>
         {documents.length > 0 ? (
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            {documents.map((document) => (
-              <div key={document.documentTypeId} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <p className="font-semibold text-slate-950">{document.title}</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  {document.resultLabel?.toLocaleLowerCase('sv-SE').includes('överlämnas')
-                    ? 'Överlämnas'
-                    : `Daterad ${document.documentDate?.trim() || 'datum saknas'}`}
-                </p>
-                {document.note ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{document.note}</p> : null}
-              </div>
-            ))}
+          <div className="mt-3 overflow-x-auto rounded-xl border border-emerald-700">
+            <table className="w-full min-w-[520px] table-fixed border-collapse text-left text-sm">
+              <thead className="bg-emerald-800 text-white">
+                <tr>
+                  <th className="w-[68%] px-4 py-3 font-semibold">Dokument</th>
+                  <th className="px-4 py-3 font-semibold">Datum/status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-emerald-200 bg-white">
+                {documents.map((document) => (
+                  <tr key={document.documentTypeId} className="align-top">
+                    <td className="px-4 py-3 text-slate-800">
+                      <p>{document.title}</p>
+                      {document.note?.trim() ? (
+                        <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-600">
+                          {document.note.trim()}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {document.resultLabel?.toLocaleLowerCase('sv-SE').includes('överlämnas')
+                        ? 'Överlämnas'
+                        : `Daterad: ${document.documentDate?.trim() || 'datum saknas'}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <p className="mt-2 text-sm text-slate-600">Inga dokument har markerats som redovisade.</p>
