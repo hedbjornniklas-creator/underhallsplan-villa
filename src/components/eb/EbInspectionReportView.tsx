@@ -167,7 +167,7 @@ const REPORT_DOCUMENT_TITLES: Record<EbInspectionReport['inspection']['variant']
 }
 const DRAINAGE_REPORT_DOCUMENT_TITLE = 'UTLÅTANDE ÖVER DRÄNERINGSBESIKTNING'
 const REPORT_OPENING_METADATA_CLASS_NAME = 'text-[20pt] font-bold leading-[1.22] tracking-[-0.01em] text-black'
-const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[20pt] font-bold uppercase leading-[1.15] tracking-[-0.01em] text-black'
+const REPORT_TITLE_HEADING_CLASS_NAME = 'text-[20pt] font-bold uppercase leading-[1.15] tracking-[-0.01em] text-emerald-700'
 const REPORT_SECTION_HEADING_CLASS_NAME = 'mb-2 text-[12pt] font-bold leading-tight text-black'
 const REPORT_APPENDIX_HEADING_CLASS_NAME = 'mb-3 text-[13pt] font-bold uppercase leading-tight text-black'
 const EB_PAGE_WIDTH_MM = 210
@@ -1701,10 +1701,12 @@ function EbHeaderValue({
   label,
   value,
   nowrap = false,
+  valueClassName,
 }: {
   label: string
   value: string
   nowrap?: boolean
+  valueClassName?: string
 }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-1.5 py-0.5">
@@ -1712,7 +1714,7 @@ function EbHeaderValue({
       <div
         className={`min-w-0 overflow-hidden pb-0.5 font-medium text-black ${
           nowrap ? 'whitespace-nowrap' : 'break-words'
-        }`}
+        } ${valueClassName ?? ''}`}
       >
         {value || '-'}
       </div>
@@ -1756,20 +1758,25 @@ function EbPageHeader({
 
   return (
     <div
-      className="eb-report-header-table grid overflow-hidden border border-black text-[8pt] leading-tight text-black"
+      className="eb-report-header-table grid overflow-hidden border border-emerald-700 text-[8pt] leading-tight text-black"
       style={{
         height: mm(21),
         gridTemplateColumns: '58mm 42mm 52mm 34mm',
         gridTemplateRows: '10.5mm 10.5mm',
       }}
     >
-      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
-        <EbHeaderValue label={documentLabel} value={documentValue} />
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-emerald-700">
+        <EbHeaderValue
+          label={documentLabel}
+          value={documentValue}
+          nowrap
+          valueClassName="text-[9pt] font-semibold leading-[1.05]"
+        />
       </div>
-      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-emerald-700">
         <EbHeaderValue label="Besiktningsdatum" value={report.inspection.date ?? '-'} nowrap />
       </div>
-      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
+      <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-emerald-700">
         <EbHeaderValue label="Besiktningstyp" value={report.inspection.variantLabel} />
       </div>
       <div className="row-span-2 min-h-0 min-w-0 overflow-hidden">
@@ -1785,13 +1792,13 @@ function EbPageHeader({
           )}
         </div>
       </div>
-      <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-emerald-700">
         <EbHeaderValue label={objectIdentifierLabel} value={objectIdentifier} />
       </div>
-      <div className="col-span-1 min-h-0 min-w-0 overflow-hidden border-r border-black">
+      <div className="col-span-1 min-h-0 min-w-0 overflow-hidden border-r border-emerald-700">
         <EbHeaderValue label="Adress" value={detailLine([report.project.address, report.project.city])} />
       </div>
-      <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
+      <div className="min-h-0 min-w-0 overflow-hidden border-r border-emerald-700">
         <EbHeaderValue label="Sida" value={pageValue} nowrap />
       </div>
     </div>
@@ -1814,7 +1821,7 @@ function EbPageFooter({ report }: { report: EbInspectionReport }) {
 
   return (
     <footer
-      className="eb-report-footer absolute grid grid-cols-3 items-end gap-4 border-t border-gray-300 pt-1.5 text-[8px] leading-[1.25] text-gray-700"
+      className="eb-report-footer absolute grid grid-cols-3 items-end gap-4 border-t border-emerald-700 pt-1.5 text-[8px] leading-[1.25] text-gray-700"
       style={{
         left: mm(EB_PAGE_X_PADDING_MM),
         right: mm(EB_PAGE_X_PADDING_MM),

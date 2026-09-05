@@ -5969,7 +5969,7 @@ function ebAgreementChangeOrderLine(item: EbProjectAgreementItem) {
   const title = normalizeText(item.title) ?? 'Bilaga till avtalet enligt formulär Ändring och tilläggsarbeten'
   const dateText = item.documentDate ? ` undertecknat av parterna ${item.documentDate}` : ''
   const noteText = item.note ? ` ${item.note}` : ''
-  return sentenceWithPeriod(`${title}${dateText}${noteText}`)
+  return `• ${sentenceWithPeriod(`${title}${dateText}${noteText}`)}`
 }
 
 function ebAgreementOtherLine(item: EbProjectAgreementItem) {

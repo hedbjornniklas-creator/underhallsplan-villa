@@ -239,7 +239,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     align-items: end !important;
     gap: 4mm !important;
-    border-top: 1px solid #d1d5db !important;
+    border-top: 1px solid #047857 !important;
     color: #374151 !important;
     font-size: 8px !important;
     line-height: 1.25 !important;
