@@ -1,120 +1,55 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
+import { ArrowRight } from 'lucide-react'
+import PublicFrame from '@/components/public/PublicFrame'
+import PublicFaq from '@/components/public/PublicFaq'
+import { PublicProductLink } from '@/components/public/PublicSession'
 
 export const metadata: Metadata = {
   title: 'RenoApp | Renoveringsärenden för BRF',
-  description:
-    'RenoApp samlar BRF:s renoveringsansökningar i ett tydligt flöde för boende, styrelse och föreningar som vill ansluta.',
+  description: 'RenoApp samlar BRF:s renoveringsansökningar i ett tydligt flöde för boende, styrelse och föreningar som vill ansluta.',
 }
-
-const FAQ_ITEMS = [
-  {
-    question: 'Behöver boende skapa konto för att skicka in en ansökan?',
-    answer:
-      'Nej. Boende ansöker via sin BRF:s ansökningssida och får vid behov en säker ärendelänk för kompletteringar.',
-  },
-  {
-    question: 'Kan en BRF registrera sig fritt?',
-    answer: 'Nej. BRF skapas av admin eller via en godkänd intresseanmälan. Styrelsen får sedan en invite.',
-  },
-  {
-    question: 'Vad använder styrelsen RenoApp till?',
-    answer:
-      'Styrelsen granskar ärenden, ser dokument, begär kompletteringar och fattar beslut i samma flöde.',
-  },
-] as const
 
 export default function RenoAppLandingPage() {
   return (
-    <main>
-      <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1800px] flex-col px-6 py-8 sm:px-8 lg:px-10">
-        <section className="border-b border-stone-200 pb-8 text-left sm:text-center">
-          <h1 className="max-w-[18ch] text-[2.15rem] font-semibold tracking-tight text-stone-950 sm:mx-auto sm:text-4xl xl:text-5xl">
-            Renoveringsärenden för BRF
-          </h1>
-          <p className="mt-5 max-w-[34rem] text-base leading-7 text-stone-700 sm:mx-auto sm:mt-4 sm:max-w-[42rem] sm:text-lg sm:leading-8">
-            Ansökan är för boende, login är för styrelse och BRF-användare, och anslutning är för
-            föreningar som vill börja använda RenoApp.
-          </p>
-        </section>
-
-        <section className="flex flex-1 flex-col">
-          <Link
-            href="/renoapp/apply"
-            className="group border-b border-stone-200 px-2 py-12 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 lg:px-16 xl:px-20"
-          >
-            <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-stone-500 sm:tracking-[0.24em]">
-                För boende och lägenhetsinnehavare
-              </p>
-              <h2 className="mt-4 max-w-[14ch] text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-                Skapa renoveringsansökan
-              </h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
-                Gå vidare till din BRF:s ansökningssida, fyll i projektet och komplettera underlag i samma flöde.
-              </p>
-              <div className="mt-10 text-base font-semibold text-stone-950">
-                Till ansökan <span aria-hidden="true">→</span>
-              </div>
-            </div>
-          </Link>
-
-          <Link
-            href="/renoapp/login"
-            className="group border-b border-stone-200 px-2 py-12 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 lg:px-16 xl:px-20"
-          >
-            <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-stone-500 sm:tracking-[0.24em]">
-                För styrelse och BRF-användare
-              </p>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-                Styrelse-login
-              </h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
-                Öppna ärenden, dokument och beslut för föreningens pågående renoveringsärenden.
-              </p>
-              <div className="mt-10 text-base font-semibold text-stone-950">
-                Logga in <span aria-hidden="true">→</span>
-              </div>
-            </div>
-          </Link>
-
-          <Link
-            href="/renoapp/request-access"
-            className="group border-b border-stone-200 px-2 py-12 transition duration-300 ease-out hover:bg-stone-950/[0.025] md:px-12 lg:px-16 xl:px-20"
-          >
-            <div className="mx-auto w-full max-w-[32rem] origin-center transition duration-300 ease-out group-hover:scale-[1.02]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-stone-500 sm:tracking-[0.24em]">
-                För föreningar som vill ansluta sig
-              </p>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-                Anslut BRF
-              </h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
-                Ansök om att börja använda RenoApp och kom igång med ett gemensamt flöde för ansökan,
-                granskning och beslut.
-              </p>
-              <div className="mt-10 text-base font-semibold text-stone-950">
-                Ansök om anslutning <span aria-hidden="true">→</span>
-              </div>
-            </div>
-          </Link>
-        </section>
-
-        <section className="border-t border-stone-200 pt-8">
-          <h2 className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">Vanliga frågor</h2>
-          <div className="mt-6 border-t border-stone-200">
-            {FAQ_ITEMS.map((item) => (
-              <details key={item.question} className="border-b border-stone-200 py-5">
-                <summary className="cursor-pointer list-none text-lg font-semibold text-stone-950">
-                  {item.question}
-                </summary>
-                <p className="mt-3 max-w-[54rem] text-base leading-8 text-stone-700">{item.answer}</p>
-              </details>
-            ))}
+    <PublicFrame activeProduct="renoapp">
+      <section className="public-container public-reno-hero">
+        <div className="public-page-intro">
+          <Image className="public-feature-logo" src="/landing/Renoapp.png" alt="RenoApp" width={1240} height={453} priority />
+          <h1>Renoveringsansökningar för er förening.</h1>
+          <p>Låt de boende lämna in sina ansökningar i RenoApp. Styrelsen kan granska underlag, be om kompletteringar och dokumentera beslut i samma ärende.</p>
+          <div className="public-cta-row">
+            <PublicProductLink product="renoapp" className="public-button">Öppna styrelsens RenoApp <ArrowRight size={18} aria-hidden="true" /></PublicProductLink>
+            <Link href="/renoapp/request-access" className="public-button public-button-secondary">Anmäl föreningens intresse</Link>
           </div>
-        </section>
-      </div>
-    </main>
+        </div>
+        <aside className="public-resident-aside">
+          <span className="public-eyebrow">För dig som bor i föreningen</span>
+          <h2>Vill du renovera din lägenhet?</h2>
+          <p>Hitta din förening och börja ansökan. Du behöver inte logga in.</p>
+          <Link href="/renoapp/apply" className="public-text-link">Till renoveringsansökan <ArrowRight size={18} aria-hidden="true" /></Link>
+        </aside>
+      </section>
+      <section className="public-container public-reno-steps" aria-labelledby="reno-steps-title">
+        <span className="public-eyebrow">Så fungerar RenoApp</span>
+        <h2 id="reno-steps-title">Från ansökan till beslut</h2>
+        <ol>
+          <li><span>01 · Den boende</span><h3>Beskriver renoveringen</h3><p>Den boende öppnar föreningens ansökningssida, fyller i uppgifter om arbetet och bifogar handlingar. Ett utkast kan sparas för att fortsätta senare.</p></li>
+          <li><span>02 · Styrelsen</span><h3>Granskar underlaget</h3><p>Styrelsen ser inkomna ansökningar och tillhörande dokument. Om något saknas kan styrelsen begära en komplettering.</p></li>
+          <li><span>03 · Beslutet</span><h3>Sparas i ärendet</h3><p>Styrelsen dokumenterar sitt beslut och eventuella villkor. Ansökan, handlingarna och beslutet finns kvar tillsammans.</p></li>
+        </ol>
+      </section>
+      <section className="public-help">
+        <div className="public-container public-help-grid">
+          <div><span className="public-eyebrow">Innan ni börjar</span><h2>Frågor om RenoApp</h2></div>
+          <PublicFaq items={[
+            { question: 'Behöver de boende skapa konton?', answer: <>Nej. De använder föreningens ansökningssida. En personlig länk används för att fortsätta med ett sparat utkast eller lämna kompletteringar.</> },
+            { question: 'Hur börjar vår förening använda RenoApp?', answer: <><Link href="/renoapp/request-access">Skicka en intresseanmälan</Link> med föreningens uppgifter och en kontaktperson. Förfrågan granskas, och när den godkänts får styrelsen en inbjudan.</> },
+            { question: 'Vår förening är redan ansluten. Hur får jag ett konto?', answer: <>Be den som administrerar föreningen i RenoApp att bjuda in dig. Har du redan ett konto kan du <PublicProductLink product="renoapp">öppna styrelsens RenoApp</PublicProductLink>.</> },
+          ]} />
+        </div>
+      </section>
+    </PublicFrame>
   )
 }

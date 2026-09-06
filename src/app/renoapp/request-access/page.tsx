@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import PublicFrame from '@/components/public/PublicFrame'
 
 type FormState = {
   name: string
@@ -45,6 +47,11 @@ export default function RenoAppRequestAccessPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
+  const successRef = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    if (success) successRef.current?.focus()
+  }, [success])
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
@@ -91,59 +98,40 @@ export default function RenoAppRequestAccessPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-5xl px-6 py-14 md:px-10">
-      <div className="grid gap-8 lg:grid-cols-[0.92fr_1.08fr]">
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Anslut BRF</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">Ansök om att ansluta RenoApp</h1>
-          <p className="mt-4 text-base leading-8 text-stone-700">
-            Skicka en intresseanmälan så granskar RenoApp-teamet förfrågan och skickar
-            sedan en invite till styrelsen vid godkännande.
-          </p>
+    <PublicFrame activeProduct="renoapp">
+      <div className="public-container public-interest">
+        <section className="public-page-intro">
+          <span className="public-eyebrow">RenoApp för er förening</span>
+          <h1>Vill ni börja använda RenoApp?</h1>
+          <p>Berätta vilken förening ni företräder och vem vi kan kontakta. När er förfrågan har godkänts får styrelsen en inbjudan.</p>
+          <Link href="/renoapp" className="public-text-link">Läs mer om RenoApp →</Link>
+          <div className="public-aside-help"><h2>Vill du ansöka om renovering?</h2><p>Den här sidan är för föreningar som vill börja använda tjänsten. Som boende går du till <Link href="/renoapp/apply">föreningens renoveringsansökan</Link>.</p></div>
         </section>
-
-        <section className="rounded-[32px] border border-stone-200/80 bg-[linear-gradient(160deg,rgba(244,240,233,0.92),rgba(255,255,255,0.92))] p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-          <h2 className="text-2xl font-semibold text-stone-900">Skicka intresseanmälan</h2>
-          <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
-            <input value={form.name} onChange={(event) => updateField('name', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="BRF-namn" />
-            <input
-              value={form.orgNumber}
-              onChange={(event) => updateField('orgNumber', formatOrgNumber(event.target.value))}
-              className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
-              placeholder="Organisationsnummer, t.ex. 769600-1234"
-              inputMode="numeric"
-              autoComplete="off"
-              maxLength={11}
-              pattern="^\d{6}-\d{4}$"
-              title="Ange organisationsnummer i formatet XXXXXX-XXXX."
-              required
-            />
-            <input value={form.address} onChange={(event) => updateField('address', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Adress" />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <input value={form.contactName} onChange={(event) => updateField('contactName', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Kontaktperson" />
-              <input value={form.contactEmail} onChange={(event) => updateField('contactEmail', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="E-post" type="email" />
+        <section className="public-form-section" aria-labelledby="interest-title">
+          <h2 id="interest-title">Anmäl föreningens intresse</h2>
+          {success ? (
+            <div className="public-notice public-notice-success" role="status">
+              <h3 ref={successRef} tabIndex={-1}>Tack, vi har tagit emot er intresseanmälan.</h3>
+              <p>Er förfrågan granskas innan styrelsen får tillgång till RenoApp. Ni behöver inte skicka den igen.</p>
+              {submitResult?.receipt.emailSent ? <p>En bekräftelse har skickats till kontaktpersonens e-postadress.</p> : <p>Vi kunde inte skicka en mejlbekräftelse, men intresseanmälan är sparad.</p>}
+              <Link href="/renoapp" className="public-text-link">Tillbaka till RenoApp →</Link>
             </div>
-            <input value={form.contactPhone} onChange={(event) => updateField('contactPhone', event.target.value)} className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Telefon" />
-            <textarea value={form.message} onChange={(event) => updateField('message', event.target.value)} className="min-h-32 rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900" placeholder="Kort beskrivning eller frågor" />
-            {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
-            {success ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                <p>Intresseanmälan skickades. RenoApp-teamet behöver godkänna BRF innan någon invite kan skickas.</p>
-                {submitResult?.receipt.emailSent ? (
-                  <p className="mt-1">Bekräftelsemejl skickades till kontaktadressen.</p>
-                ) : submitResult?.receipt.emailError ? (
-                  <p className="mt-1 text-amber-900">Bekräftelsemejl kunde inte skickas: {submitResult.receipt.emailError}</p>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="flex flex-wrap gap-3">
-              <button type="submit" disabled={submitting} className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60">
-                {submitting ? 'Skickar...' : 'Skicka intresseanmälan'}
-              </button>
-            </div>
-          </form>
+          ) : (
+            <form className="public-form" onSubmit={handleSubmit} aria-busy={submitting}>
+              <p className="public-field-hint">Alla fält är obligatoriska om de inte är märkta valfritt.</p>
+              <label>Föreningens namn<input name="organization" autoComplete="organization" value={form.name} onChange={(event) => updateField('name', event.target.value)} required /></label>
+              <label>Organisationsnummer<input name="orgNumber" value={form.orgNumber} onChange={(event) => updateField('orgNumber', formatOrgNumber(event.target.value))} inputMode="numeric" autoComplete="off" maxLength={11} pattern="^\d{6}-\d{4}$" title="Ange organisationsnummer i formatet XXXXXX-XXXX." aria-describedby="org-number-hint" required /><span className="public-field-hint" id="org-number-hint">10 siffror, till exempel 769600-1234.</span></label>
+              <label>Föreningens adress <span className="public-optional">(valfritt)</span><input name="street-address" autoComplete="street-address" value={form.address} onChange={(event) => updateField('address', event.target.value)} /></label>
+              <label>Kontaktperson<input name="name" autoComplete="name" value={form.contactName} onChange={(event) => updateField('contactName', event.target.value)} required /></label>
+              <label>E-postadress<input name="email" autoComplete="email" value={form.contactEmail} onChange={(event) => updateField('contactEmail', event.target.value)} type="email" required /></label>
+              <label>Telefonnummer <span className="public-optional">(valfritt)</span><input name="tel" autoComplete="tel" value={form.contactPhone} onChange={(event) => updateField('contactPhone', event.target.value)} type="tel" /></label>
+              <label>Frågor eller övrig information <span className="public-optional">(valfritt)</span><textarea name="message" rows={4} value={form.message} onChange={(event) => updateField('message', event.target.value)} /></label>
+              {error ? <div className="public-notice public-notice-error" role="alert">{error}</div> : null}
+              <button type="submit" disabled={submitting} className="public-button">{submitting ? 'Skickar…' : 'Skicka intresseanmälan'}</button>
+            </form>
+          )}
         </section>
       </div>
-    </main>
+    </PublicFrame>
   )
 }

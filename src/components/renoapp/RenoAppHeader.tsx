@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Power } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { isPublicRenoPage } from '@/lib/publicNavigation'
 
 type RenoAppHeaderContext = {
   accessibleBrfs: Array<{
@@ -96,6 +97,8 @@ export default function RenoAppHeader() {
     brfContext?.accessibleBrfs.find((item) => item.id === brfContext.activeBrfId) ??
     brfContext?.accessibleBrfs[0] ??
     null
+
+  if (isPublicRenoPage(pathname)) return null
 
   return (
     <header className="border-b border-stone-200/80 bg-white/75 backdrop-blur">

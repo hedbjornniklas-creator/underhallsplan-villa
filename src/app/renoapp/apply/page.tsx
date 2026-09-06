@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, Search } from 'lucide-react'
+import PublicFrame from '@/components/public/PublicFrame'
+import PublicFaq from '@/components/public/PublicFaq'
 
 type PublicBrfListItem = {
   id: string
@@ -12,12 +14,11 @@ type PublicBrfListItem = {
 }
 
 export default function RenoAppResidentApplyEntryPage() {
-  const router = useRouter()
   const [search, setSearch] = useState('')
   const [items, setItems] = useState<PublicBrfListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isBrfPickerOpen, setIsBrfPickerOpen] = useState(false)
+  const [reloadCount, setReloadCount] = useState(0)
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -44,7 +45,7 @@ export default function RenoAppResidentApplyEntryPage() {
         }
 
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte läsa publika BRF:er.')
+          throw new Error(payload.error ?? 'Kunde inte hämta föreningarna. Försök igen om en stund.')
         }
 
         if (active) {
@@ -66,169 +67,34 @@ export default function RenoAppResidentApplyEntryPage() {
     return () => {
       active = false
     }
-  }, [])
-
-  const goToApply = (slug: string) => {
-    router.push(`/renoapp/brf/${slug}/apply`)
-  }
-
-  const openBrfPicker = () => {
-    setSearch('')
-    setIsBrfPickerOpen(true)
-  }
+  }, [reloadCount])
 
   return (
-    <main>
-      <div className="mx-auto flex min-h-[calc(100vh-73px)] w-full max-w-[1800px] flex-col px-6 py-8 sm:px-8 lg:px-10">
-        <section className="border-b border-stone-200 pb-8 text-center">
-          <h1 className="mx-auto max-w-[16ch] text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl xl:text-5xl">
-            Skapa renoveringsansökan
-          </h1>
-          <p className="mx-auto mt-4 max-w-[42rem] text-base leading-7 text-stone-700 sm:text-lg sm:leading-8">
-            Välj din BRF för att öppna rätt ansökningssida. Har du redan fått en direktlänk från styrelsen kan du gå
-            vidare via den direkt.
-          </p>
-        </section>
-
-        <section className="flex flex-1 flex-col">
-          <article className="border-b border-stone-200 px-2 py-12 md:px-12 lg:px-16 xl:px-20">
-            <div className="mx-auto w-full max-w-[32rem]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
-                För boende och lägenhetsinnehavare
-              </p>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">Välj din BRF</h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
-                Öppna sökningen och välj rätt BRF för att gå direkt till ansökan. Har du en personlig länk från
-                styrelsen kan du använda den i stället.
-              </p>
-              <div className="mt-10">
-                <button
-                  type="button"
-                  onClick={openBrfPicker}
-                  className="inline-flex items-center justify-center border border-stone-950 bg-stone-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-800"
-                >
-                  Sök BRF
-                </button>
-              </div>
-            </div>
-          </article>
-
-          <article className="border-b border-stone-200 px-2 py-12 md:px-12 lg:px-16 xl:px-20">
-            <div className="mx-auto w-full max-w-[32rem]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
-                Så fungerar ansökan
-              </p>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-                Ett steg i taget
-              </h2>
-              <ul className="mt-5 space-y-3 text-base leading-8 text-stone-700 sm:text-lg">
-                <li>Välj din BRF och öppna rätt ansökningssida.</li>
-                <li>Fyll i det du har just nu och spara utkast om du vill fortsätta senare.</li>
-                <li>Skicka in även om allt inte är klart från början.</li>
-                <li>Om styrelsen begär komplettering fortsätter du via samma länk.</li>
-              </ul>
-            </div>
-          </article>
-
-          <article className="border-b border-stone-200 px-2 py-12 md:px-12 lg:px-16 xl:px-20">
-            <div className="mx-auto w-full max-w-[32rem]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
-                Det här behöver du
-              </p>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-                Förbered det viktigaste
-              </h2>
-              <ul className="mt-5 space-y-3 text-base leading-8 text-stone-700 sm:text-lg">
-                <li>Kontaktuppgifter till dig som söker.</li>
-                <li>Rätt BRF eller BRF-länk från styrelsen.</li>
-                <li>En kort beskrivning av åtgärden du vill göra.</li>
-                <li>Underlag och dokument om din BRF kräver det.</li>
-              </ul>
-            </div>
-          </article>
-
-          <article className="border-b border-stone-200 px-2 py-12 md:px-12 lg:px-16 xl:px-20">
-            <div className="mx-auto w-full max-w-[32rem]">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">
-                Hittar du inte din BRF?
-              </p>
-              <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-                Be om rätt länk
-              </h2>
-              <p className="mt-5 max-w-[30rem] text-base leading-8 text-stone-700 sm:text-lg">
-                Kontakta din BRF eller styrelse och be om rätt RenoApp-länk. Om föreningen ännu inte använder RenoApp
-                kan den ansöka om anslutning.
-              </p>
-              <div className="mt-10">
-                <Link
-                  href="/renoapp/request-access"
-                  className="inline-flex items-center justify-center border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-                >
-                  Min BRF använder inte RenoApp än
-                </Link>
-              </div>
-            </div>
-          </article>
-        </section>
-      </div>
-
-      {isBrfPickerOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 px-4 py-6">
-          <div className="w-full max-w-3xl overflow-hidden border border-stone-200 bg-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-6 py-5">
-              <div>
-                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.24em] text-stone-500">Sök BRF</p>
-                <h2 className="mt-2 text-2xl font-semibold text-stone-950">Välj din BRF</h2>
-                <p className="mt-2 text-sm text-stone-600">Klicka på rätt BRF för att öppna ansökningssidan direkt.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsBrfPickerOpen(false)}
-                className="border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
-              >
-                Stäng
-              </button>
-            </div>
-
-            <div className="px-6 py-5">
-              <label className="block">
-                <span className="mb-2 block text-sm font-semibold text-stone-800">Sök BRF</span>
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="w-full border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 outline-none transition focus:border-stone-500"
-                  placeholder="Sök på namn eller adress"
-                />
-              </label>
-
-              {loading ? (
-                <p className="mt-6 text-sm text-stone-600">Laddar BRF-lista...</p>
-              ) : search.trim().length === 0 ? (
-                <p className="mt-6 text-sm text-stone-600">Skriv in namn eller adress för att söka efter din BRF.</p>
-              ) : filteredItems.length === 0 ? (
-                <p className="mt-6 text-sm text-stone-600">Ingen BRF matchade din sökning.</p>
-              ) : (
-                <div className="mt-6 max-h-[420px] overflow-y-auto border border-stone-200">
-                  {filteredItems.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => goToApply(item.slug)}
-                      className="flex w-full items-start justify-between gap-4 border-b border-stone-200 bg-white px-4 py-3 text-left transition last:border-b-0 hover:bg-stone-50"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-stone-900">{item.name}</p>
-                        <p className="mt-1 text-sm text-stone-600">{item.address ?? item.slug}</p>
-                      </div>
-                      <span className="shrink-0 text-sm font-medium text-stone-500">Öppna</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+    <PublicFrame activeProduct="renoapp">
+      <section className="public-container public-entry">
+        <div className="public-entry-heading">
+          <span className="public-eyebrow">Renoveringsansökan för boende</span>
+          <h1>Hitta din förening</h1>
+          <p>Välj din bostadsrättsförening för att börja ansökan. Du behöver inget konto.</p>
         </div>
-      ) : null}
-    </main>
+        <div className="public-search-panel">
+          <label htmlFor="brf-search">Föreningens namn eller adress</label>
+          <div className="public-search-input"><Search size={21} aria-hidden="true" /><input id="brf-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Sök förening" aria-describedby="brf-search-status" /></div>
+          <p id="brf-search-status" className="public-field-hint" role="status">
+            {loading ? 'Hämtar föreningar…' : error ? 'Föreningarna kunde inte hämtas.' : !search.trim() ? 'Skriv ett namn eller en adress för att se föreningar som använder RenoApp.' : filteredItems.length === 0 ? 'Ingen förening matchar sökningen. Prova en annan stavning eller sök på adressen.' : `${filteredItems.length} ${filteredItems.length === 1 ? 'förening' : 'föreningar'} hittades. Välj din förening nedan.`}
+          </p>
+          {error ? <div className="public-notice public-notice-error" role="alert"><p>Vi kunde inte hämta föreningarna. Försök igen eller använd ansökningslänken från din styrelse.</p><button type="button" className="public-text-link" onClick={() => setReloadCount((count) => count + 1)}>Försök igen <ArrowRight size={17} aria-hidden="true" /></button></div> : !loading && filteredItems.length > 0 ? (
+            <ul className="public-search-results" aria-label="Föreningar">
+              {filteredItems.map((item) => <li key={item.id}><Link href={`/renoapp/brf/${item.slug}/apply`} prefetch={false}><span><strong>{item.name}</strong>{item.address ? <span>{item.address}</span> : null}</span><ArrowRight size={20} aria-hidden="true" /></Link></li>)}
+            </ul>
+          ) : null}
+        </div>
+        <PublicFaq items={[
+          { question: 'Har du redan en länk till ansökan?', answer: <>Använd länken från din styrelse för att komma direkt till föreningens ansökan. Om du redan har börjat fylla i en ansökan använder du den personliga länk du sparade, eller fick via mejl, för att fortsätta.</> },
+          { question: 'Hittar du inte din förening?', answer: <>Kontakta styrelsen och be om föreningens ansökningslänk. Alla föreningar visas inte i sökningen. Om er förening inte använder RenoApp kan styrelsen <Link href="/renoapp/request-access">anmäla sitt intresse</Link>.</> },
+          { question: 'Vad behöver jag ha till hands?', answer: <>Dina kontaktuppgifter, en beskrivning av renoveringen och eventuella ritningar eller andra handlingar. I ansökan ser du vilka underlag föreningen efterfrågar. Du kan spara ett utkast och fortsätta senare.</> },
+        ]} />
+      </section>
+    </PublicFrame>
   )
 }
