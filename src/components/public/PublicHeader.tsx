@@ -2,19 +2,23 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Menu, X } from 'lucide-react'
 import { PUBLIC_PRODUCTS, type PublicProductId } from '@/lib/publicNavigation'
 import { PublicProductLink, usePublicSession } from './PublicSession'
+import { PUBLIC_COMMERCIAL_CONTENT, publishedContact } from '@/lib/publicCommercialContent'
 
 const navigation = [
-  { href: '/#produkter', label: 'Produkter' },
+  { href: '/besiktapp', label: 'För besiktningsmän' },
   { href: '/renoapp', label: 'För föreningen' },
   { href: '/#hjalp', label: 'Hjälp' },
+  ...(publishedContact(PUBLIC_COMMERCIAL_CONTENT.contact) ? [{ href: '#kontakt', label: 'Kontakt' }] : []),
 ]
 
 export default function PublicHeader({ activeProduct }: { activeProduct?: PublicProductId }) {
   const authenticated = usePublicSession()
+  const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
@@ -59,7 +63,7 @@ export default function PublicHeader({ activeProduct }: { activeProduct?: Public
           <span>HusHub</span>
         </Link>
         <nav aria-label="Huvudnavigation" className="public-desktop-nav">
-          {navigation.map((item) => <Link key={item.href} href={item.href}>{item.label}</Link>)}
+          {navigation.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === pathname ? 'page' : undefined}>{item.label}</Link>)}
         </nav>
         <div className="public-header-actions">
           <Link className="public-button public-button-small" href={accountHref} prefetch={false}>{accountLabel}</Link>
@@ -81,8 +85,8 @@ export default function PublicHeader({ activeProduct }: { activeProduct?: Public
         </div>
         <nav aria-label="Mobilnavigation" onClick={(event) => { if ((event.target as HTMLElement).closest('a')) setMenuOpen(false) }}>
           <Link href="/renoapp/apply">Ansök om renovering</Link>
-          {navigation.map((item) => <Link key={item.href} href={item.href}>{item.label}</Link>)}
-          <Link href="/#besiktapp">För besiktningsföretag</Link>
+          {navigation.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === pathname ? 'page' : undefined}>{item.label}</Link>)}
+          <Link href="/besiktapp/intresse">Intresse för BesiktApp</Link>
           <Link href="/renoapp/request-access">Anmäl föreningens intresse</Link>
           <Link href={accountHref} prefetch={false}>{accountLabel}</Link>
         </nav>

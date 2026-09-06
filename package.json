@@ -11,6 +11,7 @@
     "test:renoapp-brf": "node --experimental-strip-types --test test/renoapp-brf-lifecycle.test.ts test/renoapp-brf-services.test.ts",
     "test:renoapp-navigation": "node --experimental-strip-types --test test/renoapp-admin-navigation.test.ts",
     "test:public-navigation": "node --experimental-strip-types --test test/public-navigation.test.ts",
+    "test:public-products": "node --experimental-strip-types --test test/public-product-pages.test.ts test/public-navigation.test.ts test/assignments-mailer.test.ts",
     "test:tu": "node --experimental-strip-types --test test/tu-authoring-mode.test.ts test/tu-grounding.test.ts test/tu-report-editorial.test.ts test/tu-report-quality.test.ts"
   },
   "dependencies": {

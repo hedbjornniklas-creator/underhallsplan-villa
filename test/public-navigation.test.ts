@@ -16,6 +16,11 @@ test('authenticated product links go directly to canonical apps', () => {
   assert.equal(getPublicProductHref('renoapp', true), '/renoapp/app')
 })
 
+test('product information has separate public routes, without changing app destinations', () => {
+  assert.equal(PUBLIC_PRODUCTS.besiktapp.infoHref, '/besiktapp')
+  assert.equal(PUBLIC_PRODUCTS.renoapp.infoHref, '/renoapp')
+})
+
 test('generic login keeps the original destination allowlist and rejects external or unexpected targets', () => {
   for (const allowed of ['/dashboard-v1', '/renoapp/app', '/mina-uppdrag']) {
     assert.equal(getPublicLoginDestination(allowed), allowed)

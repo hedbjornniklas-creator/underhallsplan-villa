@@ -12,6 +12,7 @@ type SendAssignmentEmailInput = {
   html: string
   text: string
   attachments?: SendAssignmentEmailAttachment[]
+  idempotencyKey?: string
 }
 
 type SendAssignmentEmailResult = {
@@ -29,17 +30,20 @@ export async function sendAssignmentEmail(
     throw new Error('RESEND_API_KEY saknas. Konfigurera mejlprovider innan utskick.')
   }
 
-  const timeoutMs = Number(process.env.RESEND_REQUEST_TIMEOUT_MS ?? 15000)
+  const configuredTimeout = Number(process.env.RESEND_REQUEST_TIMEOUT_MS ?? 15000)
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 15000
   const controller = new AbortController()
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
 
   let response: Response
+  let data: { id?: string; message?: string }
   try {
     response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${resendApiKey}`,
         'Content-Type': 'application/json',
+        ...(input.idempotencyKey ? { 'Idempotency-Key': input.idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from: input.from,
@@ -59,16 +63,19 @@ export async function sendAssignmentEmail(
       }),
       signal: controller.signal,
     })
+    // Reading the response body must stay inside the same timeout as the request.
+    data = (await response.json().catch(error => {
+      if (controller.signal.aborted) throw error
+      return {}
+    })) as { id?: string; message?: string }
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
+    if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
       throw new Error('EMAIL_SEND_TIMEOUT')
     }
     throw error
   } finally {
     clearTimeout(timeoutHandle)
   }
-
-  const data = (await response.json().catch(() => ({}))) as { id?: string; message?: string }
 
   if (!response.ok) {
     console.error('[assignments.mailer] resend request failed', {

@@ -56,6 +56,7 @@ export default function PublicLogin({ destination, resetSuccess }: { destination
         <div className="public-auth-help">
           <h2>Har du inget konto?</h2>
           <p>Be administratören i ditt företag eller din förening om en inbjudan.</p>
+          {(destination === '/dashboard-v1' || destination === '/app') && <p>Nyfiken på BesiktApp för ditt företag? <Link href="/besiktapp/intresse">Anmäl ditt intresse.</Link></p>}
           <p>Ska du renovera din lägenhet? <Link href="/renoapp/apply">Gå till ansökan utan att logga in.</Link></p>
         </div>
       </section>

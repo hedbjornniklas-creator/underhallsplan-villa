@@ -3,7 +3,7 @@ export type PublicProductId = 'besiktapp' | 'renoapp'
 export const PUBLIC_PRODUCTS = {
   besiktapp: {
     name: 'BesiktApp', logo: '/landing/BesiktApp.png', width: 1096, height: 311,
-    appHref: '/dashboard-v1', loginHref: '/login?next=%2Fdashboard-v1', infoHref: '/#besiktapp',
+    appHref: '/dashboard-v1', loginHref: '/login?next=%2Fdashboard-v1', infoHref: '/besiktapp',
   },
   renoapp: {
     name: 'RenoApp', logo: '/landing/Renoapp.png', width: 1240, height: 453,
