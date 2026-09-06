@@ -73,6 +73,41 @@ test('approval and rejection emails contain only the external message, including
   }
 })
 
+test('approving a rejected request does not reuse the rejection message', async context => {
+  const previous = process.env.ASSIGNMENTS_MAIL_FROM
+  process.env.ASSIGNMENTS_MAIL_FROM = 'noreply@example.test'
+  context.after(() => { if (previous === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM; else process.env.ASSIGNMENTS_MAIL_FROM = previous })
+  const emails: unknown[] = []
+  const rejectedRequest = {
+    id: 'request-1', name: 'Test BRF', contact_name: 'Testperson', contact_email: 'board@example.test',
+    status: 'rejected', review_note: 'PRIVATE-NOTE', external_message: 'OLD-REJECTION-MESSAGE',
+  }
+  const approvedRequest = {
+    ...rejectedRequest, status: 'approved', external_message: null, approved_brf_id: 'brf-id',
+  }
+  const admin = {
+    from: () => query(rejectedRequest),
+    rpc: async (_name: string, args: Record<string, unknown>) => {
+      assert.equal((args.p_input as Record<string, unknown>).externalMessage, null)
+      return {
+        data: {
+          request: approvedRequest,
+          brf: { id: 'brf-id', name: 'Test BRF', slug: 'test-brf' },
+          inviteId: 'invite-id',
+          reused: false,
+        },
+        error: null,
+      }
+    },
+  }
+  const service = onboarding(admin, null, async input => { emails.push(input) })
+  await service.reviewBrfRequest('request-1', {
+    action: 'approve', reviewNote: 'PRIVATE-NOTE', externalMessage: 'OLD-REJECTION-MESSAGE',
+  }, 'https://example.test')
+  assert.equal(emails.length, 1)
+  assert.ok(!JSON.stringify(emails).includes('OLD-REJECTION-MESSAGE'))
+})
+
 test('failed optional invitations do not turn completed onboarding into an error', async () => {
   const calls: string[] = []
   const admin = {

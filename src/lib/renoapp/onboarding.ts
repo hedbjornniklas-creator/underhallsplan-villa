@@ -1049,12 +1049,14 @@ export async function createBrfWithInvite(input: AdminCreateBrfInput, origin: st
 export async function reviewBrfRequest(requestId: string, input: ReviewBrfRequestInput, origin: string): Promise<ReviewBrfRequestResult> {
   const context = await requireInternalAdminContext()
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const { data: request, error: requestError } = await admin.from('brf_requests').select('name').eq('id', requestId).maybeSingle()
+  const { data: request, error: requestError } = await admin.from('brf_requests').select('name,status').eq('id', requestId).maybeSingle()
   if (requestError) throw new Error(requestError.message)
   if (!request) throw new Error('BRF_REQUEST_NOT_FOUND')
   const token = makeToken()
   const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3600000).toISOString()
-  const externalMessage = normalizeText(input.externalMessage)
+  const externalMessage = input.action === 'approve' && request.status === 'rejected'
+    ? null
+    : normalizeText(input.externalMessage)
   const { data, error } = await admin.rpc('renoapp_start_brf_onboarding', {
     p_actor: context.userId, p_request_id: requestId,
     p_input: { decision: input.action === 'approve' ? 'approved' : 'rejected',

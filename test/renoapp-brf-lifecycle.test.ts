@@ -10,7 +10,10 @@ const db = new PGlite()
 const actor = randomUUID(), board = randomUUID(), other = randomUUID()
 const sql = (file: string) => readFileSync(new URL(`../docs/db/${file}`, import.meta.url), 'utf8')
 const withoutCrypto = (value: string) => value.replace(/create extension if not exists pgcrypto;/gi, '')
-const migration = sql('2026-09-05_01_renoapp_brf_lifecycle.sql')
+const migration = [
+  sql('2026-09-05_01_renoapp_brf_lifecycle.sql'),
+  sql('2026-09-06_01_renoapp_approve_rejected_request.sql'),
+].join('\n')
 before(async () => {
   await db.exec(`create role anon; create role authenticated; create role service_role;
     create schema auth; create table auth.users(id uuid primary key, email text);
@@ -54,6 +57,25 @@ test('approval saves the request, BRF and invitation once and separates the two 
   assert.equal(approved.brf.id, repeated.brf.id)
   const row = (await db.query('select status,review_note,external_message,approved_brf_id from brf_requests where id=$1', [requestId])).rows[0]
   assert.deepEqual(row, { status: 'approved', review_note: 'PRIVATE', external_message: 'PUBLIC', approved_brf_id: approved.brf.id })
+})
+
+test('a rejected request can be approved later without creating duplicates', async () => {
+  const requestId = randomUUID()
+  await db.query('insert into brf_requests(id,name,org_number,contact_name,contact_email) values($1,$2,$3,$4,$5)',
+    [requestId, 'Corrected BRF', '232323-2323', 'Board Person', 'board@example.test'])
+  await db.query('select renoapp_start_brf_onboarding($1,$2,$3,now()+interval \'7 days\',$4,$5)',
+    [actor, { decision: 'rejected', internalNote: 'Rejected first', externalMessage: 'Old rejection reason' }, randomUUID(), requestId, randomUUID()])
+  assert.equal((await db.query<{ status: string }>('select status from brf_requests where id=$1', [requestId])).rows[0].status, 'rejected')
+
+  const approved = await start('ignored', randomUUID(), requestId)
+  const repeated = await start('ignored', randomUUID(), requestId)
+  assert.equal(repeated.brf.id, approved.brf.id)
+  assert.equal(repeated.reused, true)
+  assert.equal((await db.query('select id from brf_associations where org_number=$1', ['232323-2323'])).rows.length, 1)
+  assert.equal((await db.query('select id from renoapp_brf_events where request_id=$1 and kind=\'request_rejected\'', [requestId])).rows.length, 1)
+  assert.equal((await db.query('select id from renoapp_brf_events where request_id=$1 and kind=\'request_approved\'', [requestId])).rows.length, 1)
+  await assert.rejects(db.query('select renoapp_start_brf_onboarding($1,$2,$3,now()+interval \'7 days\',$4,$5)',
+    [actor, { decision: 'rejected' }, randomUUID(), requestId, randomUUID()]), /BRF_REQUEST_ALREADY_REVIEWED/)
 })
 
 test('an invitation insert error rolls back the BRF and request decision; retry succeeds', async () => {

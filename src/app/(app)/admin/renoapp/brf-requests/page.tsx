@@ -153,6 +153,13 @@ export default function RenoAppAdminBrfRequestsPage() {
       }
 
       setItems((current) => current.map((item) => (item.id === id ? payload.request : item)))
+      setDrafts((current) => ({
+        ...current,
+        [id]: {
+          reviewNote: payload.request.reviewNote ?? '',
+          externalMessage: payload.request.externalMessage ?? '',
+        },
+      }))
       setResultById((current) => ({ ...current, [id]: payload }))
       setExpandedId(id)
       setStatusFilter(payload.request.status === 'pending' ? 'pending' : payload.request.status)
@@ -268,16 +275,17 @@ export default function RenoAppAdminBrfRequestsPage() {
                         <div className="flex flex-col items-start gap-3 md:items-end">
                           <div className="text-sm text-stone-500">{formatDateTime(item.createdAt)}</div>
                           <div className="flex flex-wrap gap-2">
+                            {item.status !== 'approved' ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleAction(item.id, 'approve')}
+                                disabled={submittingId !== null}
+                                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {submittingId === item.id ? 'Sparar...' : 'Godkänn'}
+                              </button>
+                            ) : null}
                             {item.status === 'pending' ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleAction(item.id, 'approve')}
-                                  disabled={submittingId !== null}
-                                  className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {submittingId === item.id ? 'Sparar...' : 'Godkänn'}
-                                </button>
                                 <button
                                   type="button"
                                   onClick={() => void handleAction(item.id, 'reject')}
@@ -286,7 +294,6 @@ export default function RenoAppAdminBrfRequestsPage() {
                                 >
                                   Avslå
                                 </button>
-                              </>
                             ) : null}
                             <button
                               type="button"
