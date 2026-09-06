@@ -134,6 +134,7 @@ type InviteRow = {
   email: string
   full_name: string | null
   role: 'board' | 'admin'
+  invite_kind: 'brf_activation' | 'member_access'
   expires_at: string
   accepted_at: string | null
   revoked_at: string | null
@@ -233,6 +234,7 @@ export type RenoAppInvitePreview = {
     email: string
     fullName: string | null
     role: 'board'
+    kind: 'brf_activation' | 'member_access'
     expiresAt: string
     acceptedAt: string | null
     revokedAt: string | null
@@ -274,6 +276,10 @@ export type AcceptBrfInviteInput = {
   termsAccepted?: boolean | null
   termsVersion?: string | null
   inviteUserName?: string | null
+  inviteUserEmail?: string | null
+  signatoryName?: string | null
+  signatoryRole?: string | null
+  signatoryAuthorityConfirmed?: boolean | null
   name?: string | null
   orgNumber?: string | null
   propertyDesignation?: string | null
@@ -305,6 +311,11 @@ export type AcceptBrfInviteResult = {
   signInEmail: string
   additionalInvitesCreated: number
   mode: 'brf_onboarding' | 'member_invite'
+  portalInvites: Array<{
+    email: string
+    emailSent: boolean
+    emailError: string | null
+  }>
 }
 
 function normalizeText(value: unknown) {
@@ -549,7 +560,7 @@ function prepareBrfCompletionInput(input: AcceptBrfInviteInput): PreparedBrfComp
 
 function prepareAdditionalInviteUsers(
   users: OnboardingUserInput[] | null | undefined,
-  inviteEmail: string
+  firstUserEmail: string
 ): PreparedInviteUserInput[] {
   const rows = Array.isArray(users) ? users : []
 
@@ -557,7 +568,7 @@ function prepareAdditionalInviteUsers(
     throw new Error('TOO_MANY_ADDITIONAL_USERS')
   }
 
-  const seenEmails = new Set<string>([inviteEmail])
+  const seenEmails = new Set<string>([firstUserEmail])
 
   return rows
     .map((user) => ({
@@ -581,6 +592,23 @@ function prepareAdditionalInviteUsers(
         email: user.email,
       }
     })
+}
+
+function prepareInitialInviteUsers(
+  input: AcceptBrfInviteInput,
+  fallback: { fullName: string | null; email: string }
+): PreparedInviteUserInput[] {
+  const fullName = normalizeText(input.inviteUserName) ?? normalizeText(fallback.fullName)
+  const email = normalizeEmail(input.inviteUserEmail) ?? normalizeEmail(fallback.email)
+
+  if (!fullName) throw new Error('INITIAL_USER_NAME_REQUIRED')
+  if (!email) throw new Error('INITIAL_USER_EMAIL_REQUIRED')
+  assertValidEmail(email, 'INITIAL_USER_EMAIL_INVALID')
+
+  return [
+    { fullName, email },
+    ...prepareAdditionalInviteUsers(input.additionalUsers, email),
+  ]
 }
 
 async function ensureProfile(
@@ -640,10 +668,11 @@ async function createInviteRecord(
     email: string
     fullName?: string | null
     role: 'board' | 'admin'
-    createdBy: string
+    createdBy?: string | null
     origin: string
     existingInvite?: { id: string; token: string; expiresAt: string }
     replace?: boolean
+    kind?: 'brf_activation' | 'member_access'
     approvalContext?: {
       contactName: string | null
       externalMessage: string | null
@@ -655,6 +684,7 @@ async function createInviteRecord(
   const expiresAt = input.existingInvite?.expiresAt ?? new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000).toISOString()
   let inviteId = input.existingInvite?.id
   if (!inviteId) {
+    if (!input.createdBy) throw new Error('INVITE_ACTOR_REQUIRED')
     const { data, error } = await admin.rpc('renoapp_issue_brf_invite', {
       p_actor: input.createdBy, p_brf_id: input.brfId, p_email: input.email,
       p_full_name: normalizeText(input.fullName), p_token_hash: tokenHash,
@@ -677,15 +707,17 @@ async function createInviteRecord(
         : null
       const recipientName = input.approvalContext?.contactName ?? input.fullName ?? null
       const safeContactName = escapeHtml(recipientName ?? 'er')
-      const isCombinedApprovalInvite = Boolean(input.approvalContext)
-      const subject = isCombinedApprovalInvite
+      const isActivationInvite = input.kind === 'brf_activation' || Boolean(input.approvalContext)
+      const subject = input.approvalContext
         ? `Er BRF-förfrågan för ${input.brfName} har godkänts`
-        : `Inbjudan till RenoApp för ${input.brfName}`
-      const htmlBody = isCombinedApprovalInvite
+        : isActivationInvite
+          ? `Aktivera ${input.brfName} i RenoApp`
+          : `Inbjudan till RenoApp för ${input.brfName}`
+      const htmlBody = isActivationInvite
         ? `
           <p>Hej ${safeContactName},</p>
-          <p>Er intresseanmälan för <strong>${safeBrfName}</strong> har godkänts.</p>
-          <p>Öppna länken nedan för att aktivera ditt styrelsekonto i RenoApp:</p>
+          ${input.approvalContext ? `<p>Er intresseanmälan för <strong>${safeBrfName}</strong> har godkänts.</p>` : `<p><strong>${safeBrfName}</strong> har lagts upp i RenoApp.</p>`}
+          <p>Öppna länken nedan för att komplettera föreningens uppgifter, välja vilka som ska ha tillgång till styrelseportalen och aktivera föreningen:</p>
           <p><a href="${inviteUrl}">${inviteUrl}</a></p>
           <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
           ${safeReviewNote ? `<p><strong>Kommentar:</strong> ${safeReviewNote}</p>` : ''}
@@ -693,15 +725,17 @@ async function createInviteRecord(
         : `
           <p>Hej ${safeContactName},</p>
           <p>Du har blivit inbjuden till RenoApp för <strong>${safeBrfName}</strong>.</p>
-          <p>Öppna länken nedan för att aktivera ditt styrelsekonto:</p>
+          <p>Öppna länken nedan för att få tillgång till föreningens styrelseportal. Ett befintligt HusHub-konto återanvänds; annars skapar du en ny inloggning.</p>
           <p><a href="${inviteUrl}">${inviteUrl}</a></p>
           <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
         `
-      const text = isCombinedApprovalInvite
+      const text = isActivationInvite
         ? [
-            `Hej ${input.approvalContext?.contactName ?? 'er'},`,
-            `Er intresseanmälan för ${input.brfName} har godkänts.`,
-            `Öppna länken nedan för att aktivera ditt styrelsekonto i RenoApp: ${inviteUrl}`,
+            `Hej ${input.approvalContext?.contactName ?? input.fullName ?? 'er'},`,
+            input.approvalContext
+              ? `Er intresseanmälan för ${input.brfName} har godkänts.`
+              : `${input.brfName} har lagts upp i RenoApp.`,
+            `Öppna länken för att komplettera föreningens uppgifter, välja användare och aktivera föreningen: ${inviteUrl}`,
             `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
             input.approvalContext?.externalMessage ? `Kommentar: ${input.approvalContext.externalMessage}` : null,
             '',
@@ -713,7 +747,7 @@ async function createInviteRecord(
         : [
             `Hej ${input.fullName ?? 'er'},`,
             `Du har blivit inbjuden till RenoApp för ${input.brfName}.`,
-            `Öppna länken för att aktivera ditt konto: ${inviteUrl}`,
+            `Öppna länken för att få tillgång till föreningens styrelseportal. Ett befintligt HusHub-konto återanvänds; annars skapar du en ny inloggning: ${inviteUrl}`,
             `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
             '',
             'Med vänlig hälsning,',
@@ -768,6 +802,47 @@ export async function issueBrfInviteForAuthorizedUser(input: {
   return createInviteRecord(admin, {
     brfId: input.brfId, brfName: String(brf.name), email: email as string, fullName: input.fullName,
     role: 'board', createdBy: input.actorId, origin: input.origin, replace: input.replace,
+  })
+}
+
+export async function reissueBrfActivationInviteForAuthorizedUser(input: {
+  brfId: string
+  inviteId: string
+  email: string
+  fullName: string | null
+  actorId: string
+  origin: string
+}) {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const { data: brf, error } = await admin
+    .from('brf_associations')
+    .select('id,name')
+    .eq('id', input.brfId)
+    .maybeSingle()
+  if (error || !brf) throw new Error(error?.message ?? 'BRF_NOT_FOUND')
+
+  const token = makeToken()
+  const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000).toISOString()
+  const { data: inviteId, error: reissueError } = await admin.rpc('renoapp_reissue_brf_activation', {
+    p_actor: input.actorId,
+    p_brf_id: input.brfId,
+    p_invite_id: input.inviteId,
+    p_token_hash: hashToken(token),
+    p_expires_at: expiresAt,
+  })
+  if (reissueError || !inviteId) {
+    throw new Error(reissueError?.message ?? 'Kunde inte skapa en ny aktiveringslänk.')
+  }
+
+  return createInviteRecord(admin, {
+    brfId: input.brfId,
+    brfName: String(brf.name),
+    email: input.email,
+    fullName: input.fullName,
+    role: 'board',
+    origin: input.origin,
+    kind: 'brf_activation',
+    existingInvite: { id: String(inviteId), token, expiresAt },
   })
 }
 
@@ -1042,6 +1117,7 @@ export async function createBrfWithInvite(input: AdminCreateBrfInput, origin: st
     brfId: brf.id, brfName: brf.name, email: email as string, role: 'board',
     createdBy: context.userId, origin,
     existingInvite: { id: String(data.inviteId), token, expiresAt },
+    kind: 'brf_activation',
   })
   return { brf: { id: brf.id, name: brf.name, slug: brf.slug }, invite }
 }
@@ -1073,6 +1149,7 @@ export async function reviewBrfRequest(requestId: string, input: ReviewBrfReques
       brfId: brf.id, brfName: brf.name, email: row.contact_email, fullName: row.contact_name,
       role: 'board', createdBy: context.userId, origin,
       existingInvite: { id: String(data.inviteId), token, expiresAt },
+      kind: 'brf_activation',
       approvalContext: { contactName: row.contact_name, externalMessage },
     })
   } else if (!data.reused && row.status === 'rejected') {
@@ -1112,7 +1189,7 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
 
   const { data: inviteData, error: inviteError } = await admin
     .from('brf_member_invites')
-    .select('id,brf_id,email,full_name,role,expires_at,accepted_at,revoked_at')
+    .select('id,brf_id,email,full_name,role,invite_kind,expires_at,accepted_at,revoked_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
@@ -1137,12 +1214,14 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
     throw new Error(brfError?.message ?? 'Kunde inte läsa BRF för invite.')
   }
 
-  const userClient = createSupabaseServerClient()
-  const {
-    data: { user },
-  } = await userClient.auth.getUser()
-
-  const currentUserEmail = normalizeEmail(user?.email ?? null)
+  let currentUserEmail: string | null = null
+  if (invite.invite_kind === 'member_access') {
+    const userClient = createSupabaseServerClient()
+    const {
+      data: { user },
+    } = await userClient.auth.getUser()
+    currentUserEmail = normalizeEmail(user?.email ?? null)
+  }
   const inviteEmail = normalizeEmail(invite.email)
   const now = Date.now()
   const state: RenoAppInvitePreview['state'] = invite.accepted_at
@@ -1157,12 +1236,13 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
     id: brfData.id, name: brfData.name, slug: brfData.slug, onboarding_completed_at: brfData.onboarding_completed_at,
   }
   return {
-    mode: visibleBrf.onboarding_completed_at ? 'member_invite' : 'brf_onboarding',
+    mode: invite.invite_kind === 'brf_activation' ? 'brf_onboarding' : 'member_invite',
     state,
     invite: {
       email: invite.email,
       fullName: invite.full_name,
       role: 'board',
+      kind: invite.invite_kind,
       expiresAt: invite.expires_at,
       acceptedAt: invite.accepted_at,
       revokedAt: invite.revoked_at,
@@ -1212,25 +1292,150 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
   if (!preview) throw new Error('INVITE_NOT_FOUND')
   if (preview.state === 'revoked') throw new Error('INVITE_REVOKED')
   if (preview.state === 'expired') throw new Error('INVITE_EXPIRED')
-  const { data: { user } } = await createSupabaseServerClient().auth.getUser()
-  if (user && normalizeEmail(user.email) !== normalizeEmail(preview.invite.email)) throw new Error('INVITE_EMAIL_MISMATCH')
-  if (preview.state === 'accepted') {
-    if (!user) throw new Error('EXISTING_USER_LOGIN_REQUIRED')
-    const { error } = await admin.rpc('renoapp_accept_brf_invite', { p_actor: user.id, p_token_hash: tokenHash })
-    if (error) throw new Error(error.message)
-    return { accepted: true, brfId: preview.brf.id, mode: preview.mode, createdUser: false,
-      signInEmail: preview.invite.email, signedInViaExistingSession: true, additionalInvitesCreated: 0, additionalInviteWarnings: [] }
-  }
-  const fullName = normalizeText(input.inviteUserName) ?? normalizeText(preview.invite.fullName)
-  if (!fullName) throw new Error('INVITE_USER_NAME_REQUIRED')
-  let completion: PreparedBrfCompletionInput | null = null
+
   if (preview.mode === 'brf_onboarding') {
+    if (preview.state === 'accepted') {
+      return {
+        accepted: true,
+        brfId: preview.brf.id,
+        mode: 'brf_onboarding',
+        createdUser: false,
+        signInEmail: '',
+        signedInViaExistingSession: false,
+        additionalInvitesCreated: 0,
+        additionalInviteWarnings: [],
+        portalInvites: [],
+      }
+    }
     if (input.termsAccepted !== true) throw new Error('TERMS_NOT_ACCEPTED')
     if (input.termsVersion !== RENOAPP_BRF_TERMS_VERSION) throw new Error('TERMS_VERSION_MISMATCH')
-    completion = prepareBrfCompletionInput(input)
+    const signatoryName = normalizeText(input.signatoryName)
+    const signatoryRole = normalizeText(input.signatoryRole)
+    if (!signatoryName) throw new Error('SIGNATORY_NAME_REQUIRED')
+    if (!signatoryRole) throw new Error('SIGNATORY_ROLE_REQUIRED')
+    if (input.signatoryAuthorityConfirmed !== true) throw new Error('SIGNATORY_AUTHORITY_REQUIRED')
+
+    const completion = prepareBrfCompletionInput(input)
+    const initialUsers = prepareInitialInviteUsers(input, {
+      fullName: preview.invite.fullName,
+      email: preview.invite.email,
+    })
+    const preparedInvites = initialUsers.map((initialUser) => {
+      const userToken = makeToken()
+      return {
+        ...initialUser,
+        token: userToken,
+        tokenHash: hashToken(userToken),
+        expiresAt: new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000).toISOString(),
+      }
+    })
+
+    const { data: acceptance, error } = await admin.rpc('renoapp_activate_brf', {
+      p_token_hash: tokenHash,
+      p_completion: {
+        ...completion,
+        termsVersion: RENOAPP_BRF_TERMS_VERSION,
+        signatoryName,
+        signatoryRole,
+        signatoryAuthorityConfirmed: true,
+      },
+      p_users: preparedInvites.map((initialUser) => ({
+        fullName: initialUser.fullName,
+        email: initialUser.email,
+        tokenHash: initialUser.tokenHash,
+        expiresAt: initialUser.expiresAt,
+      })),
+    })
+    if (error || !acceptance) throw new Error(error?.message ?? 'Kunde inte aktivera föreningen.')
+
+    const additionalInviteWarnings: string[] = []
+    const portalInvites: AcceptBrfInviteResult['portalInvites'] = []
+    const createdRows = Array.isArray(acceptance.memberInvites)
+      ? acceptance.memberInvites as Array<Record<string, unknown>>
+      : []
+
+    if (!acceptance.reused) {
+      for (const preparedInvite of preparedInvites) {
+        const createdRow = createdRows.find(
+          (row) => normalizeEmail(row.email) === preparedInvite.email
+        )
+        if (!createdRow?.id) {
+          const message = 'Inbjudan skapades, men utskicket kunde inte förberedas.'
+          additionalInviteWarnings.push(`${preparedInvite.email}: ${message}`)
+          portalInvites.push({ email: preparedInvite.email, emailSent: false, emailError: message })
+          continue
+        }
+
+        try {
+          const invite = await createInviteRecord(admin, {
+            brfId: preview.brf.id,
+            brfName: completion.name,
+            email: preparedInvite.email,
+            fullName: preparedInvite.fullName,
+            role: 'board',
+            origin,
+            kind: 'member_access',
+            existingInvite: {
+              id: String(createdRow.id),
+              token: preparedInvite.token,
+              expiresAt: preparedInvite.expiresAt,
+            },
+          })
+          portalInvites.push({
+            email: preparedInvite.email,
+            emailSent: invite.emailSent,
+            emailError: invite.emailError,
+          })
+          if (!invite.emailSent) {
+            additionalInviteWarnings.push(`${preparedInvite.email}: mejlet kunde inte skickas.`)
+          }
+        } catch (inviteError) {
+          const message = inviteError instanceof Error ? inviteError.message : 'Inbjudan kunde inte skickas.'
+          additionalInviteWarnings.push(`${preparedInvite.email}: ${message}`)
+          portalInvites.push({ email: preparedInvite.email, emailSent: false, emailError: message })
+        }
+      }
+    }
+
+    return {
+      accepted: true,
+      brfId: preview.brf.id,
+      mode: 'brf_onboarding',
+      createdUser: false,
+      signInEmail: '',
+      signedInViaExistingSession: false,
+      additionalInvitesCreated: acceptance.reused ? 0 : preparedInvites.length,
+      additionalInviteWarnings,
+      portalInvites,
+    }
   }
-  const additionalUsers = preview.mode === 'brf_onboarding'
-    ? prepareAdditionalInviteUsers(input.additionalUsers, preview.invite.email) : []
+
+  const { data: { user } } = await createSupabaseServerClient().auth.getUser()
+  if (user && normalizeEmail(user.email) !== normalizeEmail(preview.invite.email)) {
+    throw new Error('INVITE_EMAIL_MISMATCH')
+  }
+  if (preview.state === 'accepted') {
+    if (!user) throw new Error('EXISTING_USER_LOGIN_REQUIRED')
+    const { error } = await admin.rpc('renoapp_accept_brf_invite', {
+      p_actor: user.id,
+      p_token_hash: tokenHash,
+    })
+    if (error) throw new Error(error.message)
+    return {
+      accepted: true,
+      brfId: preview.brf.id,
+      mode: 'member_invite',
+      createdUser: false,
+      signInEmail: preview.invite.email,
+      signedInViaExistingSession: true,
+      additionalInvitesCreated: 0,
+      additionalInviteWarnings: [],
+      portalInvites: [],
+    }
+  }
+
+  const fullName = normalizeText(input.inviteUserName) ?? normalizeText(preview.invite.fullName)
+  if (!fullName) throw new Error('INVITE_USER_NAME_REQUIRED')
   let userId = user?.id
   let createdUser = false
   if (!userId) {
@@ -1249,25 +1454,20 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
   }
   const profileName = normalizeText(typeof user?.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : fullName) ?? fullName
   await ensureProfile(admin, { userId, email: preview.invite.email, fullName: profileName })
-  const { data: acceptance, error } = await admin.rpc('renoapp_accept_brf_invite', {
+  const { error } = await admin.rpc('renoapp_accept_brf_invite', {
     p_actor: userId, p_token_hash: tokenHash,
-    p_completion: completion ? { ...completion, termsVersion: RENOAPP_BRF_TERMS_VERSION } : null,
+    p_completion: null,
   })
   if (error) throw new Error(error.message ?? 'Kunde inte acceptera inbjudan.')
-  const additionalInviteWarnings: string[] = []
-  let additionalInvitesCreated = 0
-  if (!acceptance?.reused) for (const additionalUser of additionalUsers) {
-    try {
-      const invite = await createInviteRecord(admin, {
-        brfId: preview.brf.id, brfName: completion?.name ?? preview.brf.name,
-        email: additionalUser.email, fullName: additionalUser.fullName, role: 'board', createdBy: userId, origin,
-      })
-      additionalInvitesCreated += 1
-      if (!invite.emailSent) additionalInviteWarnings.push(additionalUser.email + ': mejlet kunde inte skickas.')
-    } catch {
-      additionalInviteWarnings.push(additionalUser.email + ': inbjudan kunde inte skapas.')
-    }
+  return {
+    accepted: true,
+    brfId: preview.brf.id,
+    signedInViaExistingSession: Boolean(user),
+    createdUser,
+    signInEmail: preview.invite.email,
+    additionalInvitesCreated: 0,
+    additionalInviteWarnings: [],
+    portalInvites: [],
+    mode: 'member_invite',
   }
-  return { accepted: true, brfId: preview.brf.id, signedInViaExistingSession: Boolean(user), createdUser,
-    signInEmail: preview.invite.email, additionalInvitesCreated, additionalInviteWarnings, mode: preview.mode }
 }

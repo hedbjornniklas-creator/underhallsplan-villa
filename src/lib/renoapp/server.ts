@@ -5590,6 +5590,7 @@ export async function listRenoAppUsers(): Promise<RenoAppUserListItem[]> {
       .from('brf_member_invites')
       .select('id,brf_id,email,full_name,expires_at,accepted_at,revoked_at,created_at')
       .in('brf_id', brfIds)
+      .eq('invite_kind', 'member_access')
       .is('accepted_at', null)
       .is('revoked_at', null)
       .order('created_at', { ascending: false }),

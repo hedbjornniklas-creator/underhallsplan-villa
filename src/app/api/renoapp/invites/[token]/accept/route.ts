@@ -27,6 +27,10 @@ export async function POST(request: Request, context: RouteContext) {
       termsAccepted: body.termsAccepted === true,
       termsVersion: typeof body.termsVersion === 'string' ? body.termsVersion : null,
       inviteUserName: typeof body.inviteUserName === 'string' ? body.inviteUserName : null,
+      inviteUserEmail: typeof body.inviteUserEmail === 'string' ? body.inviteUserEmail : null,
+      signatoryName: typeof body.signatoryName === 'string' ? body.signatoryName : null,
+      signatoryRole: typeof body.signatoryRole === 'string' ? body.signatoryRole : null,
+      signatoryAuthorityConfirmed: body.signatoryAuthorityConfirmed === true,
       name: typeof body.name === 'string' ? body.name : null,
       orgNumber: typeof body.orgNumber === 'string' ? body.orgNumber : null,
       propertyDesignation: typeof body.propertyDesignation === 'string' ? body.propertyDesignation : null,
@@ -64,6 +68,8 @@ export async function POST(request: Request, context: RouteContext) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'INVITE_NOT_FOUND') return jsonError('Inviten hittades inte.', 404)
     if (message === 'INVITE_ALREADY_ACCEPTED') return jsonError('Inviten har redan accepterats.', 409)
+    if (message === 'ACTIVATION_ALREADY_COMPLETED') return jsonError('Föreningen har redan aktiverats.', 409)
+    if (message === 'INVITE_KIND_MISMATCH') return jsonError('Länken kan inte användas för den här åtgärden.', 409)
     if (message === 'INVITE_REVOKED') return jsonError('Inviten har återkallats.', 409)
     if (message === 'INVITE_EXPIRED') return jsonError('Inviten har gått ut.', 409)
     if (message === 'TERMS_NOT_ACCEPTED') return jsonError('Du måste godkänna BRF-villkoren för att fortsätta.', 400)
@@ -74,6 +80,17 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'BRF_NAME_REQUIRED') return jsonError('Ange BRF-namn.', 400)
     if (message === 'FULL_NAME_REQUIRED') return jsonError('Ange huvudkontaktens namn.', 400)
     if (message === 'INVITE_USER_NAME_REQUIRED') return jsonError('Ange namn för första användaren.', 400)
+    if (message === 'INITIAL_USER_NAME_REQUIRED') return jsonError('Ange namn för den första användaren.', 400)
+    if (message === 'INITIAL_USER_EMAIL_REQUIRED') return jsonError('Ange e-post för den första användaren.', 400)
+    if (message === 'INITIAL_USER_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress för den första användaren.', 400)
+    if (message === 'INITIAL_USERS_REQUIRED') return jsonError('Lägg till minst en användare till styrelseportalen.', 400)
+    if (message === 'TOO_MANY_INITIAL_USERS') return jsonError('Du kan lägga till högst fyra användare i detta steg.', 400)
+    if (message === 'INITIAL_USER_DUPLICATE_EMAIL') return jsonError('Varje användare måste ha en unik e-postadress.', 400)
+    if (message === 'SIGNATORY_NAME_REQUIRED') return jsonError('Ange namnet på den som aktiverar föreningen.', 400)
+    if (message === 'SIGNATORY_ROLE_REQUIRED') return jsonError('Ange personens roll i föreningen.', 400)
+    if (message === 'SIGNATORY_AUTHORITY_REQUIRED') {
+      return jsonError('Bekräfta att du har rätt att aktivera RenoApp för föreningen.', 400)
+    }
     if (message === 'PASSWORD_TOO_SHORT') return jsonError('Lösenordet måste vara minst 8 tecken.', 400)
     if (message === 'ORG_NUMBER_INVALID') {
       return jsonError('Ange organisationsnummer i formatet XXXXXX-XXXX.', 400)

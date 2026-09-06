@@ -14,13 +14,15 @@ export type BrfAdminRecord = Record<Exclude<BrfAdminField, 'unit_count'>, string
   is_public_apply_enabled: boolean; is_public_apply_listed: boolean;
   onboarding_completed_at: string | null; onboarding_source: string | null; created_at: string;
   onboarding_terms_version: string | null; onboarding_terms_accepted_at: string | null;
+  onboarding_signatory_name: string | null; onboarding_signatory_email: string | null;
+  onboarding_signatory_role: string | null; onboarding_signatory_authority_confirmed: boolean;
 }
 export type BrfAdminDetail = {
   brf: BrfAdminRecord
   viewerId: string
   caseCount: number
   members: Array<{ profileId: string; name: string | null; email: string | null; role: string; hasAccess: boolean }>
-  invites: Array<{ id: string; email: string; fullName: string | null; expiresAt: string;
+  invites: Array<{ id: string; email: string; fullName: string | null; kind: 'brf_activation' | 'member_access'; expiresAt: string;
     state: 'open' | 'accepted' | 'expired' | 'revoked'; deliveryStatus: string; deliveryError: string | null; sentAt: string | null }>
   events: Array<{ id: string; kind: string; createdAt: string; actor: string | null; details: Record<string, unknown> }>
   requests: Array<{ id: string; status: string; created_at: string; reviewed_at: string | null }>

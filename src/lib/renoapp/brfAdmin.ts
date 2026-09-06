@@ -2,12 +2,13 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { requireBrfAdminContext } from './brfAdminAccess'
 import { getBrfInviteState, normalizeBrfOrgNumber } from './brfLifecycle'
 import { BRF_ADMIN_FIELDS, type BrfAdminDetail, type BrfAdminRecord } from './brfAdminTypes'
-import { issueBrfInviteForAuthorizedUser } from './onboarding'
+import { issueBrfInviteForAuthorizedUser, reissueBrfActivationInviteForAuthorizedUser } from './onboarding'
 import { removeRenoAppUserMember, revokeRenoAppUserInvite } from './server'
 
 const BRF_COLUMNS = ['id', 'slug', ...BRF_ADMIN_FIELDS.map(([key]) => key), 'internal_note',
   'is_public_apply_enabled', 'is_public_apply_listed', 'onboarding_completed_at', 'onboarding_source',
-  'created_at', 'onboarding_terms_version', 'onboarding_terms_accepted_at'].join(',')
+  'created_at', 'onboarding_terms_version', 'onboarding_terms_accepted_at', 'onboarding_signatory_name',
+  'onboarding_signatory_email', 'onboarding_signatory_role', 'onboarding_signatory_authority_confirmed'].join(',')
 function relation(value: unknown): Record<string, unknown> {
   if (Array.isArray(value)) return relation(value[0])
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -20,7 +21,7 @@ export async function getBrfAdminDetail(brfId: string): Promise<BrfAdminDetail> 
     admin.from('brf_associations').select(BRF_COLUMNS).eq('id', brfId).maybeSingle(),
     admin.from('brf_members').select('profile_id,role,profile:profiles(full_name,email)').eq('brf_id', brfId).eq('is_active', true),
     admin.from('platform_access_assignments').select('profile_id,expires_at,product:platform_products(key),module:platform_modules(key),role:platform_roles(key)').eq('scope_type', 'brf').eq('scope_id', brfId).eq('is_active', true),
-    admin.from('brf_member_invites').select('id,email,full_name,expires_at,accepted_at,revoked_at,delivery_status,delivery_error,sent_at').eq('brf_id', brfId).order('created_at', { ascending: false }),
+    admin.from('brf_member_invites').select('id,email,full_name,invite_kind,expires_at,accepted_at,revoked_at,delivery_status,delivery_error,sent_at').eq('brf_id', brfId).order('created_at', { ascending: false }),
     admin.from('renoapp_brf_events').select('id,kind,details,created_at,actor:profiles(full_name,email)').eq('brf_id', brfId).order('created_at', { ascending: false }).limit(200),
     admin.from('brf_requests').select('id,status,created_at,reviewed_at').eq('approved_brf_id', brfId),
     admin.from('renovation_cases').select('id', { count: 'exact', head: true }).eq('brf_id', brfId),
@@ -40,6 +41,7 @@ export async function getBrfAdminDetail(brfId: string): Promise<BrfAdminDetail> 
       name: relation(row.profile).full_name as string | null, email: relation(row.profile).email as string | null,
       hasAccess: accessIds.has(row.profile_id) })),
     invites: (invites.data ?? []).map(row => ({ id: row.id, email: row.email, fullName: row.full_name,
+      kind: row.invite_kind,
       expiresAt: row.expires_at, state: getBrfInviteState({ acceptedAt: row.accepted_at, revokedAt: row.revoked_at, expiresAt: row.expires_at }),
       deliveryStatus: row.delivery_status, deliveryError: row.delivery_error, sentAt: row.sent_at })),
     events: (events.data ?? []).map(row => ({ id: row.id, kind: row.kind, createdAt: row.created_at,
@@ -58,12 +60,22 @@ export async function updateBrfAdmin(brfId: string, body: Record<string, unknown
     return { invite }
   }
   if (body.action === 'resend_invite' || body.action === 'revoke_invite') {
-    const { data: invite, error } = await admin.from('brf_member_invites').select('id,email,full_name,accepted_at,revoked_at')
+    const { data: invite, error } = await admin.from('brf_member_invites').select('id,email,full_name,invite_kind,accepted_at,revoked_at')
       .eq('id', String(body.inviteId ?? '')).eq('brf_id', brfId).maybeSingle()
     if (error) throw new Error(error.message)
     if (!invite) throw new Error('INVITE_NOT_FOUND')
     if (body.action === 'revoke_invite') return revokeRenoAppUserInvite(invite.id, brfId)
     if (invite.accepted_at) throw new Error('INVITE_ALREADY_ACCEPTED')
+    if (invite.invite_kind === 'brf_activation') {
+      return { invite: await reissueBrfActivationInviteForAuthorizedUser({
+        brfId,
+        inviteId: invite.id,
+        fullName: invite.full_name,
+        email: invite.email,
+        actorId: context.userId,
+        origin,
+      }) }
+    }
     return { invite: await issueBrfInviteForAuthorizedUser({ brfId, fullName: invite.full_name,
       email: invite.email, actorId: context.userId, origin, replace: true }) }
   }

@@ -13,6 +13,7 @@ const withoutCrypto = (value: string) => value.replace(/create extension if not 
 const migration = [
   sql('2026-09-05_01_renoapp_brf_lifecycle.sql'),
   sql('2026-09-06_01_renoapp_approve_rejected_request.sql'),
+  sql('2026-09-06_02_renoapp_separate_activation_and_user_invites.sql'),
 ].join('\n')
 before(async () => {
   await db.exec(`create role anon; create role authenticated; create role service_role;
@@ -38,7 +39,15 @@ async function start(org = '111111-1111', token = randomUUID(), requestId: strin
 }
 const completion = (org: string) => ({ name: 'Aktiv BRF', orgNumber: org, propertyDesignation: 'Test 1:1', address: 'Gatan 1',
   postalCode: '123 45', city: 'Teststad', invoiceAddress: 'Gatan 1', invoiceEmail: 'invoice@example.test', primaryContactName: 'Testperson',
-  primaryContactEmail: 'board@example.test', primaryContactPhone: '0700000000', publicApplyMode: 'listed', termsVersion: 'test-version' })
+  primaryContactEmail: 'board@example.test', primaryContactPhone: '0700000000', publicApplyMode: 'listed', termsVersion: 'test-version',
+  signatoryName: 'Behörig person', signatoryRole: 'Styrelseordförande', signatoryAuthorityConfirmed: true })
+async function activate(created: Awaited<ReturnType<typeof start>>, org: string, email = 'board@example.test') {
+  const memberToken = randomUUID()
+  const users = [{ fullName: 'Board Person', email, tokenHash: memberToken, expiresAt: '2099-01-01T00:00:00.000Z' }]
+  const result = await db.query<{ result: { reused: boolean; memberInvites: Array<{ id: string; email: string }> } }>(
+    'select renoapp_activate_brf($1,$2,$3) as result', [created.token, completion(org), users])
+  return { memberToken, ...result.rows[0].result }
+}
 
 test('manual create is idempotent and organizational duplicates are rejected', async () => {
   const initial = await start()
@@ -89,23 +98,49 @@ test('an invitation insert error rolls back the BRF and request decision; retry 
   await start('ignored', randomUUID(), requestId)
 })
 
-test('acceptance verifies identity and atomically grants access, records terms and activates the BRF', async () => {
+test('BRF activation needs no login, records the signatory and creates personal invitations atomically', async () => {
   const created = await start('555555-5555')
-  await assert.rejects(db.query('select renoapp_accept_brf_invite($1,$2,$3)', [other, created.token, completion('555555-5555')]), /INVITE_EMAIL_MISMATCH/)
+  const activationInvite = (await db.query<{ invite_kind: string }>('select invite_kind from brf_member_invites where id=$1', [created.inviteId])).rows[0]
+  assert.equal(activationInvite.invite_kind, 'brf_activation')
+  const activated = await activate(created, '555555-5555')
   assert.equal((await db.query('select id from brf_members where brf_id=$1', [created.brf.id])).rows.length, 0)
-  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, created.token, completion('555555-5555')])
-  const brf = (await db.query<{ onboarding_completed_at: string; onboarding_terms_accepted_by: string; is_public_apply_enabled: boolean }>('select * from brf_associations where id=$1', [created.brf.id])).rows[0]
+  const brf = (await db.query<{ onboarding_completed_at: string; onboarding_terms_accepted_by: string | null; onboarding_signatory_name: string;
+    onboarding_signatory_role: string; onboarding_signatory_email: string; is_public_apply_enabled: boolean }>('select * from brf_associations where id=$1', [created.brf.id])).rows[0]
   assert.ok(brf.onboarding_completed_at)
-  assert.equal(brf.onboarding_terms_accepted_by, board)
+  assert.equal(brf.onboarding_terms_accepted_by, null)
+  assert.equal(brf.onboarding_signatory_name, 'Behörig person')
+  assert.equal(brf.onboarding_signatory_role, 'Styrelseordförande')
+  assert.equal(brf.onboarding_signatory_email, 'board@example.test')
   assert.equal(brf.is_public_apply_enabled, true)
+  assert.equal(activated.memberInvites.length, 1)
+  assert.equal((await db.query("select id from brf_member_invites where brf_id=$1 and invite_kind='member_access'", [created.brf.id])).rows.length, 1)
+  const repeated = await db.query<{ result: { reused: boolean } }>('select renoapp_activate_brf($1,$2,$3) as result', [created.token, null, null])
+  assert.equal(repeated.rows[0].result.reused, true)
+  assert.equal((await db.query("select id from brf_member_invites where brf_id=$1 and invite_kind='member_access'", [created.brf.id])).rows.length, 1)
+
+  await assert.rejects(db.query('select renoapp_accept_brf_invite($1,$2,$3)', [other, activated.memberToken, null]), /INVITE_EMAIL_MISMATCH/)
+  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, activated.memberToken, null])
   assert.equal((await db.query('select id from platform_access_assignments where profile_id=$1 and scope_id=$2 and is_active', [board, created.brf.id])).rows.length, 1)
-  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, created.token, null])
+  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, activated.memberToken, null])
   assert.equal((await db.query('select id from brf_members where brf_id=$1', [created.brf.id])).rows.length, 1)
+})
+
+test('activation requires an authorized signatory and unique initial users', async () => {
+  const created = await start('565656-5656')
+  await assert.rejects(db.query('select renoapp_activate_brf($1,$2,$3)', [created.token,
+    { ...completion('565656-5656'), signatoryAuthorityConfirmed: false },
+    [{ fullName: 'Board Person', email: 'board@example.test', tokenHash: randomUUID(), expiresAt: '2099-01-01' }]]),
+  /SIGNATORY_AUTHORITY_REQUIRED/)
+  const duplicatedUsers = ['first', 'second'].map(name => ({ fullName: name, email: 'same@example.test', tokenHash: randomUUID(), expiresAt: '2099-01-01' }))
+  await assert.rejects(db.query('select renoapp_activate_brf($1,$2,$3)', [created.token, completion('565656-5656'), duplicatedUsers]),
+    /INITIAL_USER_DUPLICATE_EMAIL/)
+  assert.equal((await db.query<{ onboarding_completed_at: string | null }>('select onboarding_completed_at from brf_associations where id=$1', [created.brf.id])).rows[0].onboarding_completed_at, null)
 })
 
 test('membership removal revokes normalized access, protects the last member and keeps an audit event', async () => {
   const created = await start('666666-6666')
-  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, created.token, completion('666666-6666')])
+  const activated = await activate(created, '666666-6666')
+  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, activated.memberToken, null])
   await assert.rejects(db.query('select renoapp_remove_brf_member($1,$2,$3)', [actor, created.brf.id, board]), /CANNOT_REMOVE_LAST_MEMBER/)
   await db.query('insert into brf_members(brf_id,profile_id,role,is_active) values($1,$2,\'board\',true)', [created.brf.id, other])
   await db.query('select renoapp_remove_brf_member($1,$2,$3)', [actor, created.brf.id, board])
@@ -113,21 +148,23 @@ test('membership removal revokes normalized access, protects the last member and
   assert.equal((await db.query('select id from renoapp_brf_events where brf_id=$1 and kind=\'member_removed\' and actor_profile_id=$2', [created.brf.id, actor])).rows.length, 1)
 })
 
-test('renewal replaces an expired invite and revocation prevents acceptance', async () => {
+test('activation renewal replaces an expired token and revocation prevents activation', async () => {
   const created = await start('777777-7777')
   await db.query('update brf_member_invites set expires_at=now()-interval \'1 day\' where id=$1', [created.inviteId])
+  await assert.rejects(db.query('select renoapp_activate_brf($1,$2,$3)', [created.token, completion('777777-7777'), []]), /INVITE_EXPIRED/)
   const token = randomUUID()
-  const issued = await db.query<{ id: string }>('select renoapp_issue_brf_invite($1,$2,$3,$4,$5,now()+interval \'7 days\',false) id',
-    [actor, created.brf.id, 'board@example.test', 'Test', token])
-  await assert.rejects(db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, created.token, completion('777777-7777')]), /INVITE_REVOKED/)
-  await db.query('select renoapp_revoke_brf_invite($1,$2,$3)', [actor, created.brf.id, issued.rows[0].id])
-  await assert.rejects(db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, token, completion('777777-7777')]), /INVITE_REVOKED/)
+  await db.query('select renoapp_reissue_brf_activation($1,$2,$3,$4,now()+interval \'7 days\')',
+    [actor, created.brf.id, created.inviteId, token])
+  await assert.rejects(db.query('select renoapp_activate_brf($1,$2,$3)', [created.token, completion('777777-7777'), []]), /INVITE_NOT_FOUND/)
+  await db.query('select renoapp_revoke_brf_invite($1,$2,$3)', [actor, created.brf.id, created.inviteId])
+  await assert.rejects(db.query('select renoapp_activate_brf($1,$2,$3)', [token, completion('777777-7777'), []]), /INVITE_REVOKED/)
 })
 
 test('publishing requires activation and disabling applications keeps activation and memberships', async () => {
   const created = await start('888888-8888')
   await assert.rejects(db.query('select renoapp_update_brf($1,$2,$3)', [actor, created.brf.id, { is_public_apply_enabled: true }]), /BRF_ACTIVATION_REQUIRED/)
-  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, created.token, completion('888888-8888')])
+  const activated = await activate(created, '888888-8888')
+  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, activated.memberToken, null])
   await db.query('select renoapp_update_brf($1,$2,$3)', [actor, created.brf.id, { is_public_apply_enabled: false, internal_note: 'Private' }])
   const row = (await db.query<{ onboarding_completed_at: string; is_public_apply_listed: boolean }>('select * from brf_associations where id=$1', [created.brf.id])).rows[0]
   assert.ok(row.onboarding_completed_at)
@@ -137,7 +174,8 @@ test('publishing requires activation and disabling applications keeps activation
 
 test('migration is repeatable and does not restore explicitly disabled grants', async () => {
   const created = await start('999999-9999')
-  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, created.token, completion('999999-9999')])
+  const activated = await activate(created, '999999-9999')
+  await db.query('select renoapp_accept_brf_invite($1,$2,$3)', [board, activated.memberToken, null])
   await db.query('update platform_access_assignments set is_active=false where scope_id=$1 and profile_id=$2', [created.brf.id, board])
   await db.exec(migration)
   assert.equal((await db.query('select id from platform_access_assignments where scope_id=$1 and profile_id=$2 and is_active', [created.brf.id, board])).rows.length, 0)
@@ -154,6 +192,7 @@ test('browser roles cannot execute lifecycle mutations or read internal history'
     await assert.rejects(db.query('select * from brf_member_invites'), /permission denied/)
     await assert.rejects(db.query('select * from brf_associations'), /permission denied/)
     await assert.rejects(db.query('select renoapp_restore_brf_member($1,$2,$3)', [actor, randomUUID(), board]), /permission denied/)
+    await assert.rejects(db.query('select renoapp_activate_brf($1,$2,$3)', ['token', {}, []]), /permission denied/)
   } finally { await db.exec('reset role') }
 })
 

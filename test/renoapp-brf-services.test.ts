@@ -25,6 +25,7 @@ function query(data: unknown, writes: unknown[] = []) {
     select: () => builder, eq: () => builder, in: () => builder, maybeSingle: async () => result,
     update: (value: unknown) => { writes.push(value); return builder },
     insert: (value: unknown) => { writes.push(value); return builder },
+    upsert: (value: unknown) => { writes.push(value); return builder },
     then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
   }
   return builder
@@ -62,6 +63,10 @@ test('approval and rejection emails contain only the external message, including
     assert.equal(emails.length, 1)
     assert.ok(JSON.stringify(emails).includes('EXTERNAL-MESSAGE'))
     assert.ok(!JSON.stringify(emails).includes('PRIVATE-NOTE'))
+    if (action === 'approve') {
+      assert.ok(JSON.stringify(emails).includes('aktivera föreningen'))
+      assert.ok(!JSON.stringify(emails).includes('aktivera ditt styrelsekonto'))
+    }
     replay = true
     await service.reviewBrfRequest('request-1', { action, reviewNote: 'PRIVATE-NOTE' }, 'https://example.test')
     assert.equal(emails.length, 1)
@@ -108,28 +113,82 @@ test('approving a rejected request does not reuse the rejection message', async 
   assert.ok(!JSON.stringify(emails).includes('OLD-REJECTION-MESSAGE'))
 })
 
-test('failed optional invitations do not turn completed onboarding into an error', async () => {
+test('activation ignores the current login and reports personal invitation delivery failures', async context => {
+  const previous = process.env.ASSIGNMENTS_MAIL_FROM
+  process.env.ASSIGNMENTS_MAIL_FROM = 'noreply@example.test'
+  context.after(() => { if (previous === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM; else process.env.ASSIGNMENTS_MAIL_FROM = previous })
   const calls: string[] = []
   const admin = {
     from: (table: string) => query(table === 'brf_member_invites'
-      ? { id: 'invite-id', brf_id: 'brf-id', email: 'board@example.test', full_name: 'Testperson', expires_at: '2099-01-01', accepted_at: null, revoked_at: null }
-      : table === 'profiles' ? { id: 'board-id' } : { id: 'brf-id', name: 'Test BRF', slug: 'test-brf', onboarding_completed_at: null }),
-    rpc: async (name: string) => {
+      ? { id: 'activation-id', brf_id: 'brf-id', email: 'contact@example.test', full_name: 'Kontakt', invite_kind: 'brf_activation', expires_at: '2099-01-01', accepted_at: null, revoked_at: null }
+      : { id: 'brf-id', name: 'Test BRF', slug: 'test-brf', onboarding_completed_at: null }),
+    rpc: async (name: string, args: Record<string, unknown>) => {
       calls.push(name)
-      return name === 'renoapp_accept_brf_invite' ? { data: { reused: false }, error: null } : { data: null, error: { message: 'Simulated invite failure' } }
+      assert.equal(name, 'renoapp_activate_brf')
+      const users = args.p_users as Array<{ email: string }>
+      assert.deepEqual(users.map(user => user.email), ['board@example.test', 'extra@example.test'])
+      return { data: { reused: false, memberInvites: users.map((user, index) => ({ id: `member-invite-${index}`, email: user.email })) }, error: null }
     },
   }
-  const result = await onboarding(admin, { id: 'board-id', email: 'board@example.test' }).acceptBrfInvite('token', {
-    inviteUserName: 'Testperson', name: 'Test BRF', orgNumber: '123456-7890', address: 'Gatan 1',
+  const result = await onboarding(admin, { id: 'wrong-user', email: 'wrong@example.test' }, async () => { throw new Error('Mail unavailable') }).acceptBrfInvite('token', {
+    inviteUserName: 'Testperson', inviteUserEmail: 'board@example.test', name: 'Test BRF', orgNumber: '123456-7890', address: 'Gatan 1',
     propertyDesignation: 'Test 1:1', postalCode: '123 45', city: 'Teststad', invoiceAddress: 'Gatan 1',
     invoiceEmail: 'invoice@example.test', primaryContactName: 'Testperson', primaryContactEmail: 'board@example.test',
     primaryContactPhone: '0701234567', publicApplyMode: 'listed', termsAccepted: true, termsVersion: 'test-version',
+    signatoryName: 'Firmatecknare', signatoryRole: 'Ordförande', signatoryAuthorityConfirmed: true,
     additionalUsers: [{ name: 'Extra person', email: 'extra@example.test' }],
   })
   assert.equal(result.accepted, true)
   assert.equal(result.brfId, 'brf-id')
-  assert.equal(result.additionalInviteWarnings.length, 1)
-  assert.deepEqual(calls, ['renoapp_accept_brf_invite', 'renoapp_issue_brf_invite'])
+  assert.equal(result.signedInViaExistingSession, false)
+  assert.equal(result.additionalInviteWarnings.length, 2)
+  assert.equal(result.portalInvites.length, 2)
+  assert.deepEqual(calls, ['renoapp_activate_brf'])
+})
+
+test('a personal invitation reuses the matching HusHub account and rejects a different logged-in account', async () => {
+  const rpcCalls: string[] = []
+  const invite = { id: 'member-invite', brf_id: 'brf-id', email: 'board@example.test', full_name: 'Board Person',
+    invite_kind: 'member_access', expires_at: '2099-01-01', accepted_at: null, revoked_at: null }
+  const admin = {
+    from: (table: string) => query(table === 'brf_member_invites' ? invite
+      : table === 'profiles' ? { id: 'board-id' }
+      : { id: 'brf-id', name: 'Test BRF', slug: 'test-brf', onboarding_completed_at: '2026-09-06' }),
+    rpc: async (name: string) => { rpcCalls.push(name); return { data: { reused: false }, error: null } },
+    auth: { admin: { createUser: async () => { throw new Error('Existing sessions must not create an account.') } } },
+  }
+  const matching = await onboarding(admin, { id: 'board-id', email: 'board@example.test', user_metadata: { full_name: 'Board Person' } })
+    .acceptBrfInvite('token', {})
+  assert.equal(matching.createdUser, false)
+  assert.equal(matching.signedInViaExistingSession, true)
+  assert.deepEqual(rpcCalls, ['renoapp_accept_brf_invite'])
+
+  const wrongAdmin = { ...admin, rpc: async () => { throw new Error('The RPC must not run for the wrong account.') } }
+  await assert.rejects(
+    onboarding(wrongAdmin, { id: 'wrong-id', email: 'wrong@example.test' }).acceptBrfInvite('token', {}),
+    /INVITE_EMAIL_MISMATCH/
+  )
+})
+
+test('a personal invitation creates an account only when no matching account exists', async () => {
+  const writes: unknown[] = []
+  const createdInputs: Array<Record<string, unknown>> = []
+  const invite = { id: 'member-invite', brf_id: 'brf-id', email: 'new@example.test', full_name: 'New Person',
+    invite_kind: 'member_access', expires_at: '2099-01-01', accepted_at: null, revoked_at: null }
+  const admin = {
+    from: (table: string) => query(table === 'brf_member_invites' ? invite
+      : table === 'profiles' ? null
+      : { id: 'brf-id', name: 'Test BRF', slug: 'test-brf', onboarding_completed_at: '2026-09-06' }, writes),
+    rpc: async () => ({ data: { reused: false }, error: null }),
+    auth: { admin: { createUser: async (input: Record<string, unknown>) => {
+      createdInputs.push(input)
+      return { data: { user: { id: 'new-user-id', email: 'new@example.test' } }, error: null }
+    } } },
+  }
+  const result = await onboarding(admin).acceptBrfInvite('token', { password: 'password123', inviteUserName: 'New Person' })
+  assert.equal(result.createdUser, true)
+  assert.equal(createdInputs[0]?.email, 'new@example.test')
+  assert.equal(writes.length, 1)
 })
 
 test('active BRF selection requires a session and actual membership before setting a cookie', async () => {

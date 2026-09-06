@@ -19,6 +19,7 @@ const EVENT_LABELS: Record<string, string> = {
   invite_delivery: 'Mejlleverans uppdaterad', request_approved: 'Intresseanmälan godkänd', request_rejected: 'Intresseanmälan avslagen',
 }
 const INVITE_LABELS = { open: 'Väntar på accept', accepted: 'Accepterad', expired: 'Utgången', revoked: 'Återkallad' }
+const INVITE_KIND_LABELS = { brf_activation: 'Aktiveringslänk för föreningen', member_access: 'Personlig användarinbjudan' }
 const DELIVERY_LABELS: Record<string, string> = { pending: 'Utskick ej bekräftat', sent: 'Mejl skickat', failed: 'Mejlet misslyckades', unknown: 'Leveransstatus saknas' }
 function date(value: string | null) { return value ? new Date(value).toLocaleString('sv-SE') : '-' }
 
@@ -116,6 +117,8 @@ export default function BrfAdminPage() {
             <dt className="text-slate-600">Aktiverad</dt><dd>{date(brf.onboarding_completed_at)}</dd>
             <dt className="text-slate-600">Villkorsversion</dt><dd>{brf.onboarding_terms_version ?? '-'}</dd>
             <dt className="text-slate-600">Villkor accepterade</dt><dd>{date(brf.onboarding_terms_accepted_at)}</dd>
+            <dt className="text-slate-600">Företrädare</dt><dd>{[brf.onboarding_signatory_name, brf.onboarding_signatory_role].filter(Boolean).join(', ') || '-'}</dd>
+            <dt className="text-slate-600">Aktiveringslänk skickad till</dt><dd className="break-all">{brf.onboarding_signatory_email ?? '-'}</dd>
             <dt className="text-slate-600">Medlemmar</dt><dd>{data.members.length}</dd>
             <dt className="text-slate-600">Renoveringsärenden</dt><dd>{data.caseCount}</dd>
             <dt className="text-slate-600">Boendes ansökningar</dt><dd>{getBrfVisibilityLabel({ isPublicApplyEnabled: brf.is_public_apply_enabled, isPublicApplyListed: brf.is_public_apply_listed })}</dd>
@@ -156,17 +159,18 @@ export default function BrfAdminPage() {
           </ul>}
         </section>
         <section><h2 className="text-lg font-semibold">Bjud in styrelsemedlem</h2>
+          {!brf.onboarding_completed_at && <p className="mt-3 text-sm text-amber-900">Föreningen måste aktiveras innan personliga användarinbjudningar kan skickas.</p>}
           <form onSubmit={event => { event.preventDefault(); void mutate({ action: 'invite', ...inviteForm }) }} className="mt-3 flex flex-wrap items-end gap-3">
-            <label className="min-w-0 flex-1 basis-56 text-sm font-medium">Namn<input required disabled={busy} value={inviteForm.fullName} onChange={event => setInviteForm(current => ({ ...current, fullName: event.target.value }))} className={INPUT} autoComplete="name" /></label>
-            <label className="min-w-0 flex-1 basis-56 text-sm font-medium">E-post<input required type="email" disabled={busy} value={inviteForm.email} onChange={event => setInviteForm(current => ({ ...current, email: event.target.value }))} className={INPUT} autoComplete="email" /></label>
-            <button type="submit" disabled={busy} className={PRIMARY}><UserPlus size={16} /> Skicka inbjudan</button>
+            <label className="min-w-0 flex-1 basis-56 text-sm font-medium">Namn<input required disabled={busy || !brf.onboarding_completed_at} value={inviteForm.fullName} onChange={event => setInviteForm(current => ({ ...current, fullName: event.target.value }))} className={INPUT} autoComplete="name" /></label>
+            <label className="min-w-0 flex-1 basis-56 text-sm font-medium">E-post<input required type="email" disabled={busy || !brf.onboarding_completed_at} value={inviteForm.email} onChange={event => setInviteForm(current => ({ ...current, email: event.target.value }))} className={INPUT} autoComplete="email" /></label>
+            <button type="submit" disabled={busy || !brf.onboarding_completed_at} className={PRIMARY}><UserPlus size={16} /> Skicka inbjudan</button>
           </form>
         </section>
         <section><h2 className="text-lg font-semibold">Inbjudningar</h2>
           {data.invites.length === 0 ? <p className="mt-3 text-sm text-slate-600">Inga inbjudningar.</p> : <ul className="mt-3 divide-y divide-slate-200 border-y border-slate-200">
             {data.invites.map(invite => <li key={invite.id} className="flex flex-wrap items-center justify-between gap-4 py-4">
-              <div className="min-w-0 flex-1 basis-64"><p className="break-words text-sm font-medium">{invite.fullName ?? 'Styrelsemedlem'}</p><p className="break-all text-sm">{invite.email}</p><div className="mt-2 flex flex-wrap gap-2 text-xs"><span className={`rounded border px-2 py-1 ${invite.state === 'accepted' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : invite.state === 'expired' ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-slate-200 bg-slate-50'}`}>{INVITE_LABELS[invite.state]}</span><span className={`inline-flex items-center gap-1 ${invite.deliveryStatus === 'failed' ? 'text-red-800' : 'text-slate-600'}`}><Mail size={13} />{DELIVERY_LABELS[invite.deliveryStatus] ?? 'Okänd leveransstatus'}</span></div><p className="mt-2 text-xs text-slate-600">Giltig till {date(invite.expiresAt)}</p></div>
-              {invite.state !== 'accepted' && invite.state !== 'revoked' && <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void mutate({ action: 'resend_invite', inviteId: invite.id })} title="Skicka en ny länk och ersätt tidigare aktiveringslänk" className={BUTTON}><RefreshCw size={16} />Skicka ny länk</button><button type="button" disabled={busy} onClick={() => setConfirm({ title: `Återkalla inbjudan till ${invite.email}?`, body: { action: 'revoke_invite', inviteId: invite.id } })} title="Återkalla inbjudan" aria-label={`Återkalla inbjudan till ${invite.email}`} className={BUTTON}><X size={16} /></button></div>}
+              <div className="min-w-0 flex-1 basis-64"><p className="text-xs font-semibold uppercase text-slate-500">{INVITE_KIND_LABELS[invite.kind]}</p><p className="mt-1 break-words text-sm font-medium">{invite.fullName ?? (invite.kind === 'brf_activation' ? 'Föreningens kontaktperson' : 'Styrelsemedlem')}</p><p className="break-all text-sm">{invite.email}</p><div className="mt-2 flex flex-wrap gap-2 text-xs"><span className={`rounded border px-2 py-1 ${invite.state === 'accepted' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : invite.state === 'expired' ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-slate-200 bg-slate-50'}`}>{INVITE_LABELS[invite.state]}</span><span className={`inline-flex items-center gap-1 ${invite.deliveryStatus === 'failed' ? 'text-red-800' : 'text-slate-600'}`}><Mail size={13} />{DELIVERY_LABELS[invite.deliveryStatus] ?? 'Okänd leveransstatus'}</span></div><p className="mt-2 text-xs text-slate-600">Giltig till {date(invite.expiresAt)}</p></div>
+              {invite.state !== 'accepted' && invite.state !== 'revoked' && <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void mutate({ action: 'resend_invite', inviteId: invite.id })} title="Skicka en ny länk och ersätt den tidigare länken" className={BUTTON}><RefreshCw size={16} />Skicka ny länk</button><button type="button" disabled={busy} onClick={() => setConfirm({ title: `Återkalla inbjudan till ${invite.email}?`, body: { action: 'revoke_invite', inviteId: invite.id } })} title="Återkalla inbjudan" aria-label={`Återkalla inbjudan till ${invite.email}`} className={BUTTON}><X size={16} /></button></div>}
             </li>)}
           </ul>}
         </section>
