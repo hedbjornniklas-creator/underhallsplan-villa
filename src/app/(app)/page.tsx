@@ -1,6 +1,5 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowDown, ArrowRight, Building2, ClipboardCheck, House } from 'lucide-react'
 import PublicFrame from '@/components/public/PublicFrame'
 import PublicFaq from '@/components/public/PublicFaq'
 import HomeRecoveryRedirect from '@/components/public/HomeRecoveryRedirect'
@@ -10,75 +9,78 @@ export default function HomePage() {
   return (
     <PublicFrame>
       <HomeRecoveryRedirect />
-      <section className="public-container public-hero" aria-labelledby="home-title">
-        <div className="public-hero-heading">
-          <h1 id="home-title">Besiktningar och<br />renoveringsansökningar.</h1>
-          <div className="public-hero-intro"><p>Ansök om renovering, hantera föreningens ansökningar eller arbeta med besiktningar.</p><Link className="public-text-link" href="#produkter">Läs om produkterna <ArrowDown size={18} aria-hidden="true" /></Link></div>
-        </div>
-        <h2 className="public-eyebrow">Vad vill du göra?</h2>
-        <div className="public-task-grid">
-          <Link href="/renoapp/apply" className="public-task-card public-task-resident">
-            <House size={26} aria-hidden="true" />
-            <h3>Jag vill renovera min lägenhet</h3>
-            <p>Skicka en ansökan till styrelsen. Du behöver inget konto.</p>
-            <span className="public-card-action">Hitta din förening <ArrowRight size={19} aria-hidden="true" /></span>
-          </Link>
-          <PublicProductLink product="renoapp" className="public-task-card public-task-board">
-            <Building2 size={26} aria-hidden="true" />
-            <h3>Jag sitter i styrelsen</h3>
-            <p>Granska ansökningar, begär kompletteringar och dokumentera beslut.</p>
-            <span className="public-card-action">Öppna styrelsens RenoApp <ArrowRight size={19} aria-hidden="true" /></span>
-          </PublicProductLink>
-          <PublicProductLink product="besiktapp" className="public-task-card public-task-inspector">
-            <ClipboardCheck size={26} aria-hidden="true" />
-            <h3>Jag arbetar med besiktningar</h3>
-            <p>Hantera uppdrag och skapa utlåtanden för överlåtelsebesiktningar, entreprenadbesiktningar och tekniska utredningar.</p>
-            <span className="public-card-action">Öppna BesiktApp <ArrowRight size={19} aria-hidden="true" /></span>
-          </PublicProductLink>
-        </div>
-        <div className="public-hero-bottom">
-          <Link className="public-text-link" href="/renoapp/request-access">Vill er förening använda RenoApp? <ArrowRight size={18} aria-hidden="true" /></Link>
+      <section className="hushub-hero" aria-labelledby="home-title">
+        <div className="public-container hushub-hero-inner">
+          <div className="hushub-hero-copy">
+            <h1 id="home-title">Ska du besikta<br />eller renovera?</h1>
+            <p>BesiktApp för besiktningsarbetet. RenoApp för föreningens renoveringsansökningar.</p>
+            <div className="hushub-hero-actions">
+              <Link href="#produkter" className="public-button hushub-button-light">Hitta rätt tjänst</Link>
+              <Link href="/renoapp/apply" className="hushub-hero-link">Ansök om renovering</Link>
+            </div>
+          </div>
+          <div className="hushub-hero-visual">
+            <Image
+              src="/landing/besiktning-editorial-v2.png"
+              alt="Illustrationsbild: en besiktningsman arbetar med sin surfplatta i en villa."
+              width={1122} height={1402} sizes="(max-width: 767px) 85vw, 440px"
+              className="hushub-hero-photo" priority
+            />
+            <div className="hushub-hero-caption">
+              <Image src="/landing/BesiktApp.png" alt="BesiktApp" width={1096} height={311} />
+              <span>Från uppdrag till utlåtande.</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section id="produkter" className="public-container public-section" aria-labelledby="products-title">
-        <h2 id="products-title" className="public-eyebrow">Produkter från HusHub</h2>
-        <div className="public-feature">
-          <div>
-            <Image className="public-feature-logo" src="/landing/Renoapp.png" alt="RenoApp" width={1240} height={453} />
-            <h3>Renoveringsansökningar<br />för er förening.</h3>
-            <p>Den boende beskriver renoveringen och bifogar handlingar. Styrelsen får ansökan, kompletteringarna och beslutet i samma ärende.</p>
-            <Link href="/renoapp" className="public-text-link">Så fungerar RenoApp <ArrowRight size={18} aria-hidden="true" /></Link>
+      <section id="produkter" className="hushub-products" aria-label="Våra produkter">
+        <div className="public-container hushub-product-layout">
+          <div className="hushub-product-photo hushub-photo-renovation">
+            <Image
+              src="/landing/renovering-editorial-v2.png"
+              alt="Illustrationsbild: två boende planerar sin renovering vid köksbordet."
+              width={1122} height={1402} sizes="(max-width: 767px) 90vw, 480px"
+            />
           </div>
-          <ol className="public-process">
-            <li><span>01</span><div><h4>Den boende ansöker</h4><p>Väljer förening, beskriver arbetet och lämnar in underlag.</p></div></li>
-            <li><span>02</span><div><h4>Styrelsen granskar</h4><p>Läser ansökan och ber om kompletteringar när något saknas.</p></div></li>
-            <li><span>03</span><div><h4>Beslutet dokumenteras</h4><p>Beslut och eventuella villkor sparas tillsammans med ansökan.</p></div></li>
-          </ol>
-        </div>
-        <div id="besiktapp" className="public-feature public-feature-divided">
-          <div>
-            <Image className="public-feature-logo" src="/landing/BesiktApp.png" alt="BesiktApp" width={1096} height={311} />
-            <h3>Från anteckningar på plats<br />till färdigt utlåtande.</h3>
-            <p>För besiktningsföretag som vill hantera uppdrag, dokumentera sina besiktningar och sammanställa utlåtanden.</p>
-            <PublicProductLink product="besiktapp" className="public-text-link">Öppna BesiktApp <ArrowRight size={18} aria-hidden="true" /></PublicProductLink>
+          <div className="hushub-product-copy">
+            <Image className="hushub-product-wordmark" src="/landing/Renoapp.png" alt="RenoApp" width={1240} height={453} />
+            <h2>En ansökan från den boende.<br />Ett ärende för styrelsen.</h2>
+            <p>Renoveringsansökan, handlingarna och beslutet på samma ställe. Den boende ansöker utan konto. Styrelsen granskar och begär kompletteringar när det behövs.</p>
+            <div className="hushub-product-actions">
+              <Link href="/renoapp" className="public-button">Läs om RenoApp</Link>
+              <PublicProductLink product="renoapp" className="public-text-link">Till styrelsens RenoApp</PublicProductLink>
+            </div>
           </div>
-          <dl className="public-module-list">
-            <div><dt>Överlåtelsebesiktning</dt><dd>Uppdragsuppgifter, iakttagelser och utlåtande.</dd></div>
-            <div><dt>Entreprenadbesiktning</dt><dd>Dokumentera besiktningen och sammanställ utlåtandet.</dd></div>
-            <div><dt>Teknisk utredning</dt><dd>Samla utredningens underlag, observationer och bedömning.</dd></div>
-          </dl>
         </div>
       </section>
 
-      <section id="hjalp" className="public-help" aria-labelledby="help-title">
+      <section id="besiktapp" className="hushub-inspection" aria-label="BesiktApp för besiktningsföretag">
+        <div className="public-container hushub-product-layout">
+          <div className="hushub-product-photo hushub-photo-inspection">
+            <Image
+              src="/landing/besiktning-editorial-v2.png"
+              alt="Illustrationsbild: besiktningsarbete på plats i ett hus."
+              width={1122} height={1402} sizes="(max-width: 767px) 90vw, 480px"
+            />
+          </div>
+          <div className="hushub-product-copy">
+            <Image className="hushub-product-wordmark" src="/landing/BesiktApp.png" alt="BesiktApp" width={1096} height={311} />
+            <h2>Från besiktning på plats<br />till färdigt utlåtande.</h2>
+            <p>Hantera uppdrag och dokumentera överlåtelsebesiktningar, entreprenadbesiktningar och tekniska utredningar i BesiktApp.</p>
+            <PublicProductLink product="besiktapp" className="public-button">Öppna BesiktApp</PublicProductLink>
+          </div>
+        </div>
+      </section>
+
+      <section id="hjalp" className="public-help hushub-home-help" aria-labelledby="help-title">
         <div className="public-container public-help-grid">
-          <div><span className="public-eyebrow">Hjälp att komma vidare</span><h2 id="help-title">Vanliga frågor</h2></div>
+          <h2 id="help-title">Hur kan vi hjälpa dig?</h2>
           <PublicFaq items={[
-            { question: 'Behöver jag ett konto för att ansöka om renovering?', answer: <>Nej. <Link href="/renoapp/apply">Hitta din förening</Link> och fyll i ansökan. Inloggningen i RenoApp är till för styrelsen.</> },
-            { question: 'Hur fortsätter jag med en påbörjad ansökan?', answer: <>Öppna den personliga länk du sparade när du fyllde i ansökan, eller länken i mejlet om du fick ett sådant. Kontakta styrelsen om du saknar länken.</> },
-            { question: 'Hur får styrelsen tillgång till RenoApp?', answer: <>Om er förening redan använder RenoApp kan den som administrerar föreningen bjuda in dig. Vill ni börja använda tjänsten? <Link href="/renoapp/request-access">Anmäl föreningens intresse.</Link></> },
-            { question: 'Hur får jag tillgång till BesiktApp?', answer: <>BesiktApp öppnas för företag och användare genom inbjudan. Om ditt företag redan använder tjänsten, be företagets administratör om tillgång.</> },
+            { question: 'Jag vill ansöka om renovering', answer: <><Link href="/renoapp/apply">Hitta din förening</Link> och fyll i ansökan. Du behöver inget konto.</> },
+            { question: 'Jag vill fortsätta med en påbörjad ansökan', answer: <>Öppna den personliga länk du sparade när du fyllde i ansökan, eller länken i mejlet om du fick ett sådant. Kontakta styrelsen om du saknar länken.</> },
+            { question: 'Vår förening vill börja använda RenoApp', answer: <><Link href="/renoapp/request-access">Anmäl föreningens intresse.</Link> Om ni redan använder RenoApp kan den som administrerar föreningen bjuda in fler styrelsemedlemmar.</> },
+            { question: 'Jag behöver tillgång till BesiktApp', answer: <>BesiktApp öppnas för företag och användare genom inbjudan. Om ditt företag redan använder tjänsten, be företagets administratör om tillgång.</> },
           ]} />
         </div>
       </section>
