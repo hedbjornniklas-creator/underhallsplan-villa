@@ -1,5 +1,5 @@
-import RenoAppAdminClient from './RenoAppAdminClient'
+import { redirect } from 'next/navigation'
 
 export default function RenoAppAdminPage() {
-  return <RenoAppAdminClient />
+  redirect('/admin/renoapp/brf')
 }

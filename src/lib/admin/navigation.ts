@@ -73,36 +73,13 @@ export const BESIKTAPP_ADMIN_TABS: {
   },
 ]
 
-export const RENOAPP_ADMIN_TABS = [
-  {
-    href: '/admin/renoapp',
-    label: 'Översikt',
-    description: 'Överblick över onboarding, ansökningsguide och vidare handläggning.',
-    match: (pathname: string) => pathname === '/admin/renoapp',
-  },
-  {
-    href: '/admin/renoapp/brf/create',
-    label: 'Skapa BRF',
-    description: 'Skapa BRF manuellt och skicka första styrelseinviten.',
-    match: (pathname: string) => pathname === '/admin/renoapp/brf/create',
-  },
-  {
-    href: '/admin/renoapp/brf',
-    label: 'BRF:er',
-    description: 'Administrera och felsök alla BRF:er som finns i RenoApp.',
-    match: (pathname: string) => pathname === '/admin/renoapp/brf',
-  },
-  {
-    href: '/admin/renoapp/brf-requests',
-    label: 'BRF-ansökningar',
-    description: 'Granska inkomna BRF-intresseanmälningar.',
-    match: (pathname: string) => pathname === '/admin/renoapp/brf-requests',
-  },
+export const RENOAPP_ADMIN_SETTINGS_TABS = [
   {
     href: '/admin/renoapp/action-types',
     label: 'Renoveringstyper',
     description: 'Styr vilka renoveringstyper som visas för boende.',
-    match: (pathname: string) => pathname === '/admin/renoapp/action-types',
+    match: (pathname: string) =>
+      pathname === '/admin/renoapp/action-types' || pathname === '/admin/renoapp/requirements',
   },
   {
     href: '/admin/renoapp/flow-builder',
@@ -139,5 +116,29 @@ export const RENOAPP_ADMIN_TABS = [
     label: 'Terminologi',
     description: 'Lås och underhåll RenoApps ordlista, alias och grundregler.',
     match: (pathname: string) => pathname === '/admin/renoapp/terminology',
+  },
+] as const
+
+export const RENOAPP_ADMIN_TABS = [
+  {
+    href: '/admin/renoapp/brf',
+    label: 'BRF:er',
+    description: 'Administrera och felsök alla BRF:er som finns i RenoApp.',
+    match: (pathname: string) =>
+      pathname === '/admin/renoapp' ||
+      pathname === '/admin/renoapp/brf' ||
+      pathname.startsWith('/admin/renoapp/brf/'),
+  },
+  {
+    href: '/admin/renoapp/brf-requests',
+    label: 'Intresseanmälningar',
+    description: 'Granska inkomna BRF-intresseanmälningar.',
+    match: (pathname: string) => pathname === '/admin/renoapp/brf-requests',
+  },
+  {
+    href: RENOAPP_ADMIN_SETTINGS_TABS[0].href,
+    label: 'Systeminställningar',
+    description: 'Hantera RenoApps ansökningsflöde och gemensamma inställningar.',
+    match: (pathname: string) => RENOAPP_ADMIN_SETTINGS_TABS.some((tab) => tab.match(pathname)),
   },
 ] as const

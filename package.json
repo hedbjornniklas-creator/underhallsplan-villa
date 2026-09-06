@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:assignments": "node --experimental-strip-types --test test/assignments-mailer.test.ts test/accepted-assignment-confirmation-pdf.test.ts",
     "test:renoapp-brf": "node --experimental-strip-types --test test/renoapp-brf-lifecycle.test.ts test/renoapp-brf-services.test.ts",
+    "test:renoapp-navigation": "node --experimental-strip-types --test test/renoapp-admin-navigation.test.ts",
     "test:tu": "node --experimental-strip-types --test test/tu-authoring-mode.test.ts test/tu-grounding.test.ts test/tu-report-editorial.test.ts test/tu-report-quality.test.ts"
   },
   "dependencies": {
