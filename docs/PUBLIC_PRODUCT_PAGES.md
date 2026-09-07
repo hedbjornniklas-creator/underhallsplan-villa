@@ -5,12 +5,13 @@
 - `/` är ingången till BesiktApp, RenoApp och den boendes ansökan.
 - `/besiktapp` förklarar besiktningsarbetet och länkar till `/besiktapp/intresse`.
 - `/renoapp` förklarar ansökan och styrelsens granskning. Befintlig ansökan, BRF-intresse och inloggning behåller sina adresser.
+- `/om-hushub` visar bolaget bakom tjänsten. Namn och organisationsnummer visas också i den gemensamma publika sidfoten. Säte är utelämnat enligt användarens önskemål. Källor och avgränsningar beskrivs i `docs/PUBLIC_COMPANY_INFO.md`.
 - `PublicProductIntro` återanvänder introduktion, produktlogotyp, intresselänk och befintlig inloggningsväg. Exemplen på produktsidorna har fiktiva uppgifter och är inte skärmbilder.
 - Inloggade arbetsflöden, behörigheter, databas och driftupplägg har inte byggts om. Gemensamma mejlsändaren har ett valfritt idempotenshuvud och timeouten omfattar nu även läsning av leverantörens svarskropp.
 
 ## Lägg till priser senare
 
-Allt redaktionellt pris- och kontaktinnehåll samlas i `src/lib/publicCommercialContent.ts`.
+De valfria kommersiella pris- och kontaktsektionerna styrs i `src/lib/publicCommercialContent.ts`. Bolagsidentitet och bekräftad offentlig företagskontakt finns separat i `src/lib/publicCompanyInfo.ts` och får inte döljas av kampanjinställningar.
 
 1. Fyll i `pricing.besiktapp.content` eller `pricing.renoapp.content`: rubrik, introduktion, planer med pristext, debiteringsperiod och vad som ingår, samt moms-/prisnotering.
 2. Sätt just den produktens `enabled` till `true` när innehållet är beslutat.
@@ -18,9 +19,9 @@ Allt redaktionellt pris- och kontaktinnehåll samlas i `src/lib/publicCommercial
 
 Belopp och villkor är medvetet inte ifyllda. Tomma/ofullständiga sektioner visas inte. Komponenten stödjer en eller flera planer, inte köp, abonnemangshantering eller betalning. Sådana nya arbetsflöden är ett separat beslut.
 
-## Lägg till kontaktuppgifter senare
+## Lägg till en större kontaktsektion senare
 
-Fyll i `contact.content` (rubrik, introduktion, företagsnamn och minst e-post eller telefon; adress är valfri) och sätt `enabled: true`. `PublicFrame` visar då en gemensam kontaktsektion, och meny/sidfot får fungerande kontaktlänkar. I nuläget finns varken kontaktsektion, tomma platshållare eller kontaktlänkar.
+Fyll i `contact.content` (rubrik, introduktion, företagsnamn och minst e-post eller telefon; adress är valfri) och sätt `enabled: true`. Hämta bolagsnamn och eventuell gemensam företagskontakt från `PUBLIC_COMPANY_INFO` för att undvika motstridiga uppgifter. `PublicFrame` visar då en större kontaktsektion, och meny/sidfot får ankarlänkar till den. Den sektionen är fortfarande avstängd. Företagsinformationen i sidfoten och på `/om-hushub` visas däremot alltid.
 
 Denna fil är **publikt innehåll**, inte en hemlighets- eller utkastförvaring. En avstängd sektion är dold i gränssnittet men innehåll i klientkod kan ändå finnas i JS-paket. Lägg därför aldrig privata kontaktadresser eller andra hemligheter i filen. Ändringarna publiceras genom projektets vanliga bygg-/deployflöde, inte ett nytt CMS.
 

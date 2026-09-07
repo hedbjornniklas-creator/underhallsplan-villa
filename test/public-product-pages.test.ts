@@ -9,9 +9,14 @@ import ts from 'typescript'
 import * as contracts from '../src/lib/besiktapp/interestContracts.ts'
 // @ts-expect-error Node's strip-types runner requires the TypeScript extension.
 import * as commercial from '../src/lib/publicCommercialContent.ts'
+// @ts-expect-error Node's strip-types runner requires the TypeScript extension.
+import * as companyInfo from '../src/lib/publicCompanyInfo.ts'
 import type * as InterestService from '../src/lib/besiktapp/interest'
 import type * as CommercialSections from '../src/components/public/PublicCommercialSections'
 import type * as ProductIntro from '../src/components/public/PublicProductIntro'
+import type * as CompanyIdentity from '../src/components/public/PublicCompanyIdentity'
+import type * as PublicFrame from '../src/components/public/PublicFrame'
+import type * as AboutHusHub from '../src/app/om-hushub/page'
 
 const nodeRequire = createRequire(import.meta.url)
 function loadSource<T>(file: string, dependencies: Record<string, unknown>): T {
@@ -48,7 +53,7 @@ function configure(context: { after: (fn: () => void) => void }) {
   context.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
 }
 
-test('public prices and contact information are unpublished, with no rendered empty sections', () => {
+test('optional pricing and sales contact sections remain unpublished, with no empty sections', () => {
   const sections = loadSource<typeof CommercialSections>('src/components/public/PublicCommercialSections.tsx', { '@/lib/publicCommercialContent': commercial })
   for (const product of ['besiktapp', 'renoapp'] as const) {
     assert.equal(commercial.publishedPricing(commercial.PUBLIC_COMMERCIAL_CONTENT.pricing[product]), null)
@@ -56,6 +61,42 @@ test('public prices and contact information are unpublished, with no rendered em
   }
   assert.equal(commercial.publishedContact(commercial.PUBLIC_COMMERCIAL_CONTENT.contact), null)
   assert.equal(sections.PublicContactSection(), null)
+})
+
+test('company identity remains visible in the shared footer when commercial sections are disabled', () => {
+  const identity = loadSource<typeof CompanyIdentity>('src/components/public/PublicCompanyIdentity.tsx', { '@/lib/publicCompanyInfo': companyInfo })
+  const frame = loadSource<typeof PublicFrame>('src/components/public/PublicFrame.tsx', {
+    'next/image': { default: () => null },
+    'next/link': { default: ({ href, children }: { href: string; children: ReactNode }) => createElement('a', { href }, children) },
+    './public.css': {}, './PublicHeader': { default: () => null },
+    './PublicSession': { PublicSessionProvider: ({ children }: { children: ReactNode }) => children },
+    './PublicCommercialSections': { PublicContactSection: () => null },
+    '@/lib/publicCommercialContent': commercial, './PublicCompanyIdentity': identity, '@/lib/publicCompanyInfo': companyInfo,
+  })
+  const html = renderToStaticMarkup(frame.default({ children: 'Innehåll' }))
+  assert.match(html, /HusHub ägs och drivs av JNH Consulting AB\./)
+  assert.match(html, /559027-7694/)
+  assert.doesNotMatch(html, /säte|Sundbyberg/i)
+  assert.match(html, /href="\/om-hushub"/)
+  assert.doesNotMatch(html, /id="priser"|id="kontakt"/)
+})
+
+test('company page uses shared address and omits the registered office and unconfirmed contact', () => {
+  for (const email of [null, 'confirmed@example.test']) {
+    const page = loadSource<typeof AboutHusHub>('src/app/om-hushub/page.tsx', {
+      'next/link': { default: ({ href, children }: { href: string; children: ReactNode }) => createElement('a', { href }, children) },
+      '@/components/public/PublicFrame': { default: ({ children }: { children: ReactNode }) => children },
+      '@/lib/publicCompanyInfo': { ...companyInfo, PUBLIC_COMPANY_INFO: { ...companyInfo.PUBLIC_COMPANY_INFO, email } },
+    })
+    const html = renderToStaticMarkup(page.default())
+    assert.doesNotMatch(html, /säte|Sundbyberg/i)
+    assert.match(html, /Bryggvägen 7/)
+    assert.match(html, /117 71 Stockholm/)
+    assert.match(html, /SE559027769401/)
+    assert.equal(html.includes('mailto:'), email !== null)
+    if (email) assert.match(html, /href="mailto:confirmed@example.test"/)
+    assert.equal(page.metadata.alternates?.canonical, '/om-hushub')
+  }
 })
 
 test('pricing and contact can be enabled through content alone; fixtures never enter production config', () => {

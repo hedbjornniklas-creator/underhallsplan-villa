@@ -10,6 +10,7 @@ import { PublicProductLink, usePublicSession } from './PublicSession'
 import { PUBLIC_COMMERCIAL_CONTENT, publishedContact } from '@/lib/publicCommercialContent'
 
 const navigation = [
+  { href: '/renoapp/apply', label: 'Ansök om renovering' },
   { href: '/besiktapp', label: 'För besiktningsmän' },
   { href: '/renoapp', label: 'För föreningen' },
   { href: '/#hjalp', label: 'Hjälp' },
@@ -50,7 +51,7 @@ export default function PublicHeader({ activeProduct }: { activeProduct?: Public
               key={id}
               product={id}
               ariaLabel={`Öppna ${product.name}${id === 'renoapp' ? ' för styrelsen' : ''}`}
-              className={`public-product-logo${activeProduct === id ? ' is-active' : ''}`}
+              className={`public-product-logo public-product-logo-${id}${activeProduct === id ? ' is-active' : ''}`}
             >
               <Image src={product.logo} alt={product.name} width={product.width} height={product.height} />
             </PublicProductLink>
@@ -84,7 +85,6 @@ export default function PublicHeader({ activeProduct }: { activeProduct?: Public
           <button type="button" onClick={() => setMenuOpen(false)} aria-label="Stäng menyn"><X size={24} aria-hidden="true" /></button>
         </div>
         <nav aria-label="Mobilnavigation" onClick={(event) => { if ((event.target as HTMLElement).closest('a')) setMenuOpen(false) }}>
-          <Link href="/renoapp/apply">Ansök om renovering</Link>
           {navigation.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === pathname ? 'page' : undefined}>{item.label}</Link>)}
           <Link href="/besiktapp/intresse">Intresse för BesiktApp</Link>
           <Link href="/renoapp/request-access">Anmäl föreningens intresse</Link>

@@ -31,6 +31,7 @@
 .public-productbar { display: flex; align-items: center; gap: 34px; min-height: 36px; }
 .public-product-logo { display: inline-flex; align-items: center; min-height: 36px; border-bottom: 2px solid transparent; }
 .public-product-logo img { width: 104px; height: 27px; object-fit: contain; }
+.public-product-logo-renoapp img { width: 114px; height: 30px; }
 .public-product-logo img, .hushub-product-wordmark { mix-blend-mode: multiply; }
 .public-product-logo:hover, .public-product-logo.is-active { border-bottom-color: currentColor; }
 .public-header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
@@ -73,9 +74,23 @@
 .public-footer nav { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: .875rem; }
 .public-footer nav a { display: inline-flex; align-items: center; min-height: 44px; }
 .public-footer nav a:hover { text-decoration: underline; }
+.public-company-identity { margin-top: 12px; }
+.public-company-identity > p { max-width: 460px; }
+.public-company-page { max-width: 1050px; padding-block: 30px 80px; }
+.public-company-page .public-page-intro > p { max-width: 720px; font-size: 1.0625rem; line-height: 1.7; }
+.public-company-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 72px; border-top: 1px solid var(--public-line); margin-top: 40px; padding-top: 34px; }
+.public-company-grid > section { min-width: 0; }
+.public-company-grid h2 { font-size: 1.3rem; font-weight: 600; line-height: 1.35; }
+.public-company-facts { margin: 22px 0 0; }
+.public-company-facts > div + div { margin-top: 18px; }
+.public-company-facts dt { color: var(--public-muted); font-size: .875rem; }
+.public-company-facts dd { margin: 4px 0 0; font-size: 1rem; overflow-wrap: anywhere; }
+.public-company-address { display: flex; flex-direction: column; align-items: start; margin-top: 22px; font-style: normal; font-size: 1rem; line-height: 1.8; overflow-wrap: anywhere; }
+.public-company-address a { margin-top: 18px; text-decoration: underline; }
 @media (max-width: 1023px) {
   .public-brandbar { min-height: 70px; padding-block: 9px; gap: 9px 12px; }
-  .public-desktop-nav { gap: 20px; }
+  .public-menu-trigger { display: inline-flex; }
+  .public-desktop-nav { display: none; }
   .public-help-grid { gap: 40px; }
   .public-footer > div { align-items: start; }
 }
@@ -88,15 +103,16 @@
   .public-productbar { justify-content: flex-start; gap: 30px; min-height: 38px; }
   .public-product-logo { min-height: 44px; }
   .public-product-logo img { width: 105px; }
+  .public-product-logo-renoapp img { width: 115px; height: 30px; }
   .public-header { border-bottom: 0; }
-  .public-menu-trigger { display: inline-flex; }
-  .public-desktop-nav { display: none; }
   .public-help { padding-block: 38px; }
   .public-help-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .public-feature-logo { height: 35px; margin-bottom: 18px; }
   .public-help h2 { font-size: 1.75rem; }
   .public-faq summary { gap: 16px; font-size: .9375rem; }
   .public-footer > div { flex-direction: column; gap: 18px; padding-block: 26px; }
+  .public-company-page { padding-block: 20px 48px; }
+  .public-company-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; margin-top: 30px; padding-top: 26px; }
 }
 .public-entry { max-width: 680px; padding-block: 42px 64px; }
 .public-entry-heading h1, .public-page-intro h1 { font-size: clamp(2rem, 3.6vw, 2.8rem); line-height: 1.16; letter-spacing: -.035em; font-weight: 700; margin-top: 13px; }
