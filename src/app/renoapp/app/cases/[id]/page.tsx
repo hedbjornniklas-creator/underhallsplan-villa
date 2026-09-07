@@ -120,7 +120,6 @@ export default function RenoAppCaseDetailPage() {
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
   const [decisionConfirmed, setDecisionConfirmed] = useState(false)
-  const [correctionIds, setCorrectionIds] = useState<string[]>([])
   const lastRequirementSaveRef = useRef<Promise<RenoAppCaseDetail | null> | null>(null)
   const completionAttemptRef = useRef<{ fingerprint: string; id: string } | null>(null)
 
@@ -163,7 +162,7 @@ export default function RenoAppCaseDetailPage() {
     mergePayload: mergeRequirementDecisionUpdates,
     onSaved: (savedItem) => {
       setItem(savedItem)
-      setActionSuccess('Valen sparades. Skicka en kompletteringsbegäran för att meddela sökanden.')
+      setActionSuccess('Valen sparades.')
     },
     onError: (saveError) => {
       setActionError(saveError instanceof Error ? saveError.message : 'Kunde inte spara kompletteringsval.')
@@ -213,7 +212,7 @@ export default function RenoAppCaseDetailPage() {
 
   const handleStatusSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const requestMessage = completionMessage(selectCompletionItems(item?.underlag ?? [], correctionIds), reason)
+    const requestMessage = completionMessage(selectCompletionItems(item?.underlag ?? []), reason)
 
     if (!caseId) {
       setActionError('Ogiltigt RenoApp-ärende.')
@@ -247,7 +246,7 @@ export default function RenoAppCaseDetailPage() {
     try {
       await lastRequirementSaveRef.current
       const selectedRequirementIds = item?.underlag.filter(row => row.requirementDecision === 'requested').map(row => row.id) ?? []
-      const fingerprint = JSON.stringify([selectedStatus, reason, correctionIds, selectedRequirementIds, item?.completion?.id])
+      const fingerprint = JSON.stringify([selectedStatus, reason, selectedRequirementIds, item?.completion?.id])
       if (completionAttemptRef.current?.fingerprint !== fingerprint) completionAttemptRef.current = { fingerprint, id: crypto.randomUUID() }
       const response = await fetch(`/api/renoapp/app/cases/${caseId}`, {
         method: 'POST',
@@ -260,7 +259,6 @@ export default function RenoAppCaseDetailPage() {
           completionRequestId: completionAttemptRef.current.id,
           selectedRequirementIds,
           previousCompletionId: item?.completion?.id ?? null,
-          correctionIds,
           conditions: selectedStatus === 'conditional' ? conditions : null,
         }),
       })
@@ -273,7 +271,6 @@ export default function RenoAppCaseDetailPage() {
       setItem(payload.item ?? null)
       setActionSuccess(payload.item?.completion?.delivery_status === 'failed'
         ? 'Begäran sparades, men mejlet kunde inte skickas.' : 'Ärendet uppdaterades.')
-      setCorrectionIds([])
       completionAttemptRef.current = null
       setReason('')
       setConditions('')
@@ -374,8 +371,6 @@ export default function RenoAppCaseDetailPage() {
         onConditionsChange={setConditions}
         onDecisionConfirmedChange={setDecisionConfirmed}
         onRequirementDecisionChange={handleRequirementDecisionChange}
-        correctionIds={correctionIds}
-        onCorrectionChange={(id, checked) => setCorrectionIds(current => checked ? [...new Set([...current, id])] : current.filter(value => value !== id))}
         onRetryDelivery={async () => {
           if (!item?.completion) return
           setSubmitting(true)

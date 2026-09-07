@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRenoAppViewerContext } from '@/lib/renoapp/server'
-import { getPublishedRules, prepareRulesUpload, publishRules } from '@/lib/renoapp/renovationRulesServer'
+import { getLatestSavedRules, getPublishedRules, prepareRulesUpload, publishRules } from '@/lib/renoapp/renovationRulesServer'
 import { RULES_ERRORS } from '@/lib/renoapp/renovationRules'
 
 export const runtime = 'nodejs'
@@ -28,7 +28,8 @@ export async function GET(request: Request) {
   try {
     const brfId = new URL(request.url).searchParams.get('brfId') ?? ''
     await authorize(brfId)
-    return NextResponse.json({ rules: await getPublishedRules(brfId) })
+    const rules = await getPublishedRules(brfId)
+    return NextResponse.json({ rules, savedRules: rules ?? await getLatestSavedRules(brfId) })
   } catch (error) { return failure(error) }
 }
 
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
       body: typeof body.body === 'string' ? body.body : undefined,
       uploadPath: typeof body.uploadPath === 'string' ? body.uploadPath : undefined,
       fileName: typeof body.fileName === 'string' ? body.fileName : undefined,
+      reuseVersionId: typeof body.reuseVersionId === 'string' ? body.reuseVersionId : undefined,
     })
     return NextResponse.json({ rules })
   } catch (error) { return failure(error) }

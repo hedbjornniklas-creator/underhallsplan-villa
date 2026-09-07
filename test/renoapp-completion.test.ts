@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 // @ts-expect-error Node's strip-types runner requires the TypeScript extension.
-import { selectCompletionItems, completionMessage, type CompletionItem } from '../src/lib/renoapp/completion.ts'
+import { getUnsentCompletionItems, selectCompletionItems, completionMessage, type CompletionItem } from '../src/lib/renoapp/completion.ts'
 
 const db = new PGlite()
 const docType = randomUUID(), role = randomUUID(), otherRole = randomUUID()
@@ -74,6 +74,22 @@ test('only missing requested items and explicitly requested corrections are sent
   assert.equal(selected[0].correction, true)
   assert.match(completionMessage(selected, 'Explain here'), /Explain here/)
   assert.equal(completionMessage([], '  '), '')
+})
+
+test('expanded requirements warn against the sent snapshot, not transient board edits', () => {
+  const missingDocument = { ...items[0], checked: false, requirementDecision: 'requested' }
+  const missingParticipant = { ...items[1], checked: false, requirementDecision: 'requested' }
+  const previous = { id: 'round', items: [items[0]], message: '', created_at: '', submitted_at: null,
+    delivery_status: 'sent' as const, delivery_error: null }
+  assert.deepEqual(getUnsentCompletionItems([missingDocument, missingParticipant], null), [])
+  assert.deepEqual(getUnsentCompletionItems([missingDocument, missingParticipant], previous), [items[1]])
+  assert.deepEqual(getUnsentCompletionItems([missingParticipant], { ...previous, submitted_at: '2026-09-07' }), [items[1]])
+  assert.deepEqual(getUnsentCompletionItems([{ ...missingParticipant, requirementDecision: 'not_requested' }], previous), [])
+  assert.deepEqual(getUnsentCompletionItems([{ ...missingParticipant, requirementDecision: null }], previous), [])
+  assert.deepEqual(getUnsentCompletionItems([{ ...missingParticipant, checked: true }], previous), [])
+  assert.deepEqual(getUnsentCompletionItems([missingDocument, missingParticipant], { ...previous, items }), [])
+  assert.deepEqual(getUnsentCompletionItems([missingDocument], { ...previous, items: [] }), [items[0]])
+  assert.deepEqual(previous.items, [items[0]])
 })
 
 test('publication is atomic, repeatable and separate from later board edits', async () => {

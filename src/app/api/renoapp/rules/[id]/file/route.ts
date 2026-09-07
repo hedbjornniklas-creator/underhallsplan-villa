@@ -33,8 +33,23 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
     if (!allowed) return new NextResponse('Du saknar tillgång till dokumentet.', { status: 403 })
     if (row.format !== 'pdf' || !row.file_path) return new NextResponse('PDF saknas.', { status: 404 })
+    if (url.searchParams.get('download') !== '1') {
+      const { data: file, error: fileError } = await admin.storage.from(RULES_BUCKET).download(row.file_path)
+      if (fileError || !file) throw fileError
+      const encodedFileName = encodeURIComponent(row.file_name || 'Renoveringsregler.pdf')
+        .replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+      return new NextResponse(file.stream(), { headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="Renoveringsregler.pdf"; filename*=UTF-8''${encodedFileName}`,
+        'Content-Length': String(file.size),
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, no-store',
+        'Referrer-Policy': 'no-referrer',
+        'X-Robots-Tag': 'noindex, nofollow',
+      } })
+    }
     const { data, error: signedError } = await admin.storage.from(RULES_BUCKET).createSignedUrl(row.file_path, 120,
-      url.searchParams.get('download') === '1' ? { download: row.file_name || 'Renoveringsregler.pdf' } : undefined)
+      { download: row.file_name || 'Renoveringsregler.pdf' })
     if (signedError || !data) throw signedError
     return NextResponse.redirect(data.signedUrl, { headers: { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' } })
   } catch {

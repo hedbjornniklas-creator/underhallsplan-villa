@@ -33,6 +33,7 @@ type SortField = 'caseNumber' | 'title' | 'status' | 'submittedAt' | 'applicant'
 type SortDirection = 'asc' | 'desc'
 
 type SavedListView = {
+  sortVersion: number
   search: string
   statusFilter: StatusFilter
   sortField: SortField
@@ -239,6 +240,7 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
 
 function getActionLabel(item: CaseItem) {
   const title = item.title.trim()
+  if (title === 'RenoveringsansÃ¶kan') return 'Renoveringsansökan'
   if (title) {
     return title.startsWith('Renovering: ') ? title.slice('Renovering: '.length) : title
   }
@@ -259,8 +261,8 @@ export default function RenoAppCasesPage() {
   const [showStatusHelp, setShowStatusHelp] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [sortField, setSortField] = useState<SortField>('submittedAt')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [sortField, setSortField] = useState<SortField>('status')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -312,8 +314,12 @@ export default function RenoAppCasesPage() {
       } else if (saved.statusFilter && STATUS_TABS.some((tab) => tab.key === saved.statusFilter)) {
         setStatusFilter(saved.statusFilter)
       }
-      if (saved.sortField) setSortField(saved.sortField)
-      if (saved.sortDirection) setSortDirection(saved.sortDirection)
+      // Migrate the old date default without discarding other saved preferences.
+      const oldDefault = saved.sortVersion !== 2 && saved.sortField === 'submittedAt' && saved.sortDirection === 'desc'
+      if (!oldDefault) {
+        if (saved.sortField) setSortField(saved.sortField)
+        if (saved.sortDirection) setSortDirection(saved.sortDirection)
+      }
       if (typeof saved.pageSize === 'number' && PAGE_SIZE_OPTIONS.includes(saved.pageSize)) {
         setPageSize(saved.pageSize)
       }
@@ -324,6 +330,7 @@ export default function RenoAppCasesPage() {
 
   useEffect(() => {
     const payload: SavedListView = {
+      sortVersion: 2,
       search,
       statusFilter,
       sortField,
@@ -421,15 +428,15 @@ export default function RenoAppCasesPage() {
   const hasActiveFilters =
     search.trim().length > 0 ||
     statusFilter !== 'all' ||
-    sortField !== 'submittedAt' ||
-    sortDirection !== 'desc' ||
+    sortField !== 'status' ||
+    sortDirection !== 'asc' ||
     pageSize !== DEFAULT_PAGE_SIZE
 
   const resetView = () => {
     setSearch('')
     setStatusFilter('all')
-    setSortField('submittedAt')
-    setSortDirection('desc')
+    setSortField('status')
+    setSortDirection('asc')
     setPageSize(DEFAULT_PAGE_SIZE)
     setCurrentPage(1)
   }
@@ -458,7 +465,7 @@ export default function RenoAppCasesPage() {
         <h1 className="text-3xl font-semibold tracking-tight text-stone-900 sm:text-4xl">Ärendehantering</h1>
       </div>
 
-      <section className="grid gap-3 border-y border-stone-200 bg-white py-3">
+      <section className="grid gap-3 border-y border-stone-200 bg-white p-4 sm:p-5">
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="min-w-0 flex-1 sm:max-w-xl">
             <input

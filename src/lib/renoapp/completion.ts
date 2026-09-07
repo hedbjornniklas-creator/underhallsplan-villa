@@ -37,6 +37,15 @@ export function completionMessage(items: CompletionItem[], note: string) {
   ).join('\n')}` : '', note.trim()].filter(Boolean).join('\n\n')
 }
 
+export function getUnsentCompletionItems(
+  rows: Parameters<typeof selectCompletionItems>[0],
+  previous: CompletionSummary | null
+): CompletionItem[] {
+  if (!previous) return []
+  const sentIds = new Set(previous.items.map(item => item.id))
+  return selectCompletionItems(rows).filter(item => !sentIds.has(item.id))
+}
+
 export function completionTargetId(item: CompletionItem) {
   return item.id.slice(item.id.indexOf(':') + 1)
 }

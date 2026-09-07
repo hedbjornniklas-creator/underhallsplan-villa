@@ -28,6 +28,14 @@ export async function getPublishedRules(brfId: string): Promise<RenovationRulesV
   return data.renovation_rules_version_id ? mapVersion(await getRulesRow(data.renovation_rules_version_id)) : null
 }
 
+// Only expose unpublished versions after checking the user's access to the BRF.
+export async function getLatestSavedRules(brfId: string): Promise<RenovationRulesVersion | null> {
+  const { data, error } = await createSupabaseAdminClient().from('renoapp_brf_rules_versions')
+    .select(fields).eq('brf_id', brfId).order('version', { ascending: false }).limit(1).maybeSingle()
+  if (error) throw new Error(error.message)
+  return data ? mapVersion(data as RulesRow) : null
+}
+
 // Call only after the caller has verified access to the case.
 export async function getCaseRulesAcceptance(caseId: string): Promise<RenovationRulesAcceptance> {
   const { data, error } = await createSupabaseAdminClient().from('renovation_cases')
@@ -49,7 +57,7 @@ export async function prepareRulesUpload(brfId: string, actorId: string) {
 
 export async function publishRules(input: {
   brfId: string; actorId: string; expectedVersion: string | null; format: 'text' | 'pdf' | 'none'
-  body?: string; uploadPath?: string; fileName?: string
+  body?: string; uploadPath?: string; fileName?: string; reuseVersionId?: string
 }) {
   const admin = createSupabaseAdminClient()
   let content: Record<string, string> | null = null
@@ -58,6 +66,15 @@ export async function publishRules(input: {
     const body = input.body?.trim() ?? ''
     if (!body || body.length > RULES_MAX_TEXT_LENGTH) throw new Error('RULES_TEXT_REQUIRED')
     content = { format: 'text', body }
+  } else if (input.format === 'pdf' && input.reuseVersionId && !input.uploadPath) {
+    const saved = await getRulesRow(input.reuseVersionId)
+    if (saved.brf_id !== input.brfId) throw new Error('RULES_FORBIDDEN')
+    if (saved.format !== 'pdf' || !saved.file_path?.startsWith(`${input.brfId}/published/`)) throw new Error('RULES_UPLOAD_INVALID')
+    // Each version owns a unique path; keep the accepted version's original file intact.
+    publishedPath = `${input.brfId}/published/${randomUUID()}.pdf`
+    const { error: copyError } = await admin.storage.from(RULES_BUCKET).copy(saved.file_path, publishedPath)
+    if (copyError) throw new Error(copyError.message)
+    content = { format: 'pdf', file_path: publishedPath, file_name: saved.file_name ?? 'Renoveringsregler.pdf' }
   } else if (input.format === 'pdf') {
     const prefix = `${input.brfId}/uploads/${input.actorId}/`
     if (!input.uploadPath?.startsWith(prefix) || !/^[0-9a-f-]{36}\.pdf$/.test(input.uploadPath.slice(prefix.length))) {

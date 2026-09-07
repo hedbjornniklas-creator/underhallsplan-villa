@@ -2,12 +2,13 @@
 
 ## Flode
 
-1. Styrelsens underlagsval sparas som tidigare, men andrar inte en redan skickad begaran.
-2. Vid Skicka registreras en separat kompletteringsomgang i samma arende. Endast saknade, begarda uppgifter och uttryckligt markerade rattelser ingar. Fritext kan anvandas for andra fortydliganden.
+1. Styrelsens underlagsval sparas som tidigare, men andrar inte en redan skickad begaran. Om nya saknade underlag eller foretagsuppgifter begars visas en varning om att kompletteringsbegaran behover skickas igen. Jamforelsen gors mot den senaste sparade omgangen och finns kvar efter omladdning. Angrade val och redan inkommet material ger ingen varning.
+2. Vid Skicka registreras en separat kompletteringsomgang i samma arende. Endast saknade, begarda uppgifter ingar. Valet Begar rattelse har tagits bort fran styrelsens vy; fritext kan anvandas for andra fortydliganden. Tidigare omgangar med rattelser bevaras.
 3. Sokanden far mejl till samma ansokan. En befintlig, ej aterkallad lank fornyas till 14 dagar; annars skapas en ny lank. Ingen ny ansokan skapas.
 4. Tidigare handlingar och foretagsuppgifter finns kvar. Grundansokan ar last. Foretagsuppgifter och svar autosparas privat i kompletteringsomgangen. Uppladdade filer finns direkt i arendet.
 5. Skicka komplettering kontrollerar bada foretagsbekraftelserna, sparar begarda foretagsuppgifter och svaret atomart och satter status till review (Att granska). Saknade dokument blockerar inte inskickning.
 6. Fler kompletteringsomgangar kan skickas. Tidigare handlingar kan inte raderas under en ny omgang. Styrelsen kan oppna fler filer under respektive underlag och samtliga filer ingar i hamtningen.
+7. Styrelsens arendehistorik ar hopfalld fran borjan. Visa historik visar kompletteringsbegaranden med registrerad leveransstatus sent och inskickade svar fran sokanden. Interna handelser, tomma meddelanden och utskick med misslyckad eller okand leveransstatus visas inte. Den fullstandiga handelseloggen finns kvar i databasen.
 
 ## Drift
 
@@ -24,10 +25,10 @@ En gammal flik med fel omgang eller sparrevision nekas och maste laddas om. Om e
 ## Verifiering
 
 - `npm run test:renoapp-completion`: PostgreSQL-tester i PGlite samt API- och mejltester med mockade leverantorer. Inga riktiga mejl skickas.
-- `node scripts/test-renoapp-completion-ui.mjs`: isolerade lokala browser-fixtures med de riktiga React-vyerna; dator, surfplatta, mobil, rattelseval, fler filer, foretagsuppgifter och sokandens autosparande. Anvand `CHROME_PATH` om Chrome finns pa annan sokvag. Skarmbilder sparas under `tmp/renoapp-completion-ui/`.
+- `node scripts/test-renoapp-completion-ui.mjs`: isolerade lokala browser-fixtures med de riktiga React-vyerna; dator, surfplatta, mobil, exklusiva kryssruteformade val, utokningsvarning efter omladdning och fram till ny begaran, fler filer, foretagsuppgifter och sokandens autosparande. Anvand `CHROME_PATH` om Chrome finns pa annan sokvag. Skarmbilder sparas under `tmp/renoapp-completion-ui/`.
 - `npx tsc --noEmit --incremental false`.
 
-Efter driftsattning: prova med ett testarende och en egen testmottagare. Begar komplettering, komplettera, begar rattelse, oppna samma ansokan igen och kontrollera att tidigare innehall finns kvar. Andra ett styrelseval utan att skicka och kontrollera att sokandens begaran inte andras. Kontrollera mejlavisering och faktisk leverans separat.
+Efter driftsattning: prova med ett testarende och en egen testmottagare. Begar komplettering, komplettera, lagg till ett nytt saknat underlag och kontrollera varningen. Skicka igen, oppna samma ansokan och kontrollera att tidigare innehall finns kvar. Andra ett styrelseval utan att skicka och kontrollera att sokandens begaran inte andras. Kontrollera mejlavisering och faktisk leverans separat.
 
 ## Jamforelse
 

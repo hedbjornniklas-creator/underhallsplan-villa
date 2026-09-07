@@ -1679,7 +1679,7 @@ function mapCaseMessage(row: CaseMessageRow): RenoAppCaseMessage {
   }
 }
 
-async function listCaseMessages(admin: SupabaseAdminClient, caseId: string) {
+async function listCaseMessages(admin: SupabaseAdminClient, caseId: string, options: { sentOnly?: boolean } = {}) {
   const { data, error } = await admin
     .from('renovation_case_messages')
     .select('id,case_id,type,author_role,author_profile_id,author_contact_id,message,metadata,created_at')
@@ -1690,7 +1690,21 @@ async function listCaseMessages(admin: SupabaseAdminClient, caseId: string) {
     throw new Error(error.message ?? 'Kunde inte lÃ¤sa Ã¤rendemeddelanden.')
   }
 
-  const rows = (data ?? []) as CaseMessageRow[]
+  let rows = (data ?? []) as CaseMessageRow[]
+  if (options.sentOnly) {
+    const { data: sentRequests, error: deliveryError } = await admin
+      .from('renoapp_completion_requests')
+      .select('id')
+      .eq('case_id', caseId)
+      .eq('delivery_status', 'sent')
+    if (deliveryError) throw new Error(deliveryError.message ?? 'Kunde inte läsa meddelandenas leveransstatus.')
+    const sentIds = new Set(((sentRequests ?? []) as Array<{ id: string }>).map(row => row.id))
+    // Request messages are created before email delivery; only show confirmed sends.
+    rows = rows.filter(row => row.message?.trim() && (
+      (row.type === 'request_for_info' && row.author_role === 'board' && sentIds.has(row.id)) ||
+      (row.type === 'applicant_reply' && row.author_role === 'applicant')
+    ))
+  }
   const profileIds = Array.from(new Set(rows.map((row) => row.author_profile_id).filter(Boolean))) as string[]
   const contactIds = Array.from(new Set(rows.map((row) => row.author_contact_id).filter(Boolean))) as string[]
 
@@ -3540,7 +3554,7 @@ async function loadActiveActionTypesByIds(admin: SupabaseAdminClient, ids: strin
 }
 
 function buildPublicCaseTitle(actionTypes: ActionTypeRow[]) {
-  if (actionTypes.length === 0) return 'RenoveringsansÃ¶kan'
+  if (actionTypes.length === 0) return 'Renoveringsansökan'
   if (actionTypes.length === 1) return `Renovering: ${actionTypes[0].label}`
   return `Renovering: ${actionTypes.map((item) => item.label).join(', ')}`
 }
@@ -8024,7 +8038,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
         .select('id,case_id,document_type_id,participant_role_id,decision,note,decided_at')
         .eq('case_id', caseId)
         .order('decided_at', { ascending: false }),
-      listCaseMessages(admin, caseId),
+      listCaseMessages(admin, caseId, { sentOnly: true }),
     ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')

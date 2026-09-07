@@ -145,6 +145,28 @@ test('withdrawal is detected for open drafts and new drafts no longer need conse
   assert.equal((await receipt(id)).rules_accepted_at, null)
 })
 
+test('turning rules off and back on restores consent requirements without changing previous receipts', async () => {
+  for (const format of ['text', 'pdf']) {
+    const association = await brf(), originalCase = await draft(association)
+    const content = format === 'text' ? { format, body: 'Sparade regler' }
+      : { format, file_name: 'Regler.pdf', file_path: `${association}/published/saved.pdf` }
+    const first = await publish(association, null, content)
+    await submit(originalCase, first)
+    const original = await receipt(originalCase)
+    await publish(association, first, null)
+    const withoutRules = await draft(association)
+    await submit(withoutRules, null, false)
+    const withoutRulesReceipt = await receipt(withoutRules)
+    const restored = await publish(association, null, format === 'pdf' ? { ...content, file_path: `${association}/published/restored.pdf` } : content)
+    assert.notEqual(restored, first)
+    const newCase = await draft(association)
+    await assert.rejects(submit(newCase, restored, false), /RULES_ACCEPTANCE_REQUIRED/)
+    await submit(newCase, restored)
+    assert.deepEqual(await receipt(originalCase), original)
+    assert.deepEqual(await receipt(withoutRules), withoutRulesReceipt)
+  }
+})
+
 test('empty publications fail and clients cannot read history or call the publishing RPC', async () => {
   const association = await brf()
   for (const content of [{ format: 'text', body: '' }, { format: 'text' }, { format: 'pdf' }]) {

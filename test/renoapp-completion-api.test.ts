@@ -7,7 +7,7 @@ import ts from 'typescript'
 import type * as UploadRoute from '../src/app/api/renoapp/case-access/[token]/documents/route'
 import type * as PublicRoute from '../src/app/api/renoapp/public/applications/route'
 import type * as DocumentRoute from '../src/app/api/renoapp/app/cases/[id]/documents/[documentId]/route'
-import type { UpdateRenoAppCaseStatusInput } from '../src/lib/renoapp/server'
+import type { RenoAppCaseMessage, UpdateRenoAppCaseStatusInput } from '../src/lib/renoapp/server'
 import type { CompletionRequest } from '../src/lib/renoapp/completion'
 
 const require = createRequire(import.meta.url)
@@ -34,6 +34,49 @@ function serviceFunction<T>(names: string[], dependencies: Record<string, unknow
 }
 const common = load<typeof import('../src/lib/renoapp/completion')>('src/lib/renoapp/completion.ts', {})
 const templates = load<Record<string, unknown>>('src/lib/renoapp/emailTemplate.ts', {})
+
+test('board history contains sent requests and applicant replies, without deleting the full event log', async () => {
+  const message = (id: string, type = 'request_for_info', authorRole = 'board', text = id) => ({
+    id, case_id: 'case', type, author_role: authorRole, message: text, created_at: '2026-09-07',
+    author_profile_id: authorRole === 'board' ? 'board' : null,
+    author_contact_id: authorRole === 'applicant' ? 'applicant' : null,
+  })
+  const tables: Record<string, Array<Record<string, unknown>>> = {
+    renovation_case_messages: [message('sent-new'), message('reply', 'applicant_reply', 'applicant'), message('sent-old'),
+      message('failed'), message('pending'), message('legacy-unknown'), message('empty', 'request_for_info', 'board', '  '),
+      message('empty-reply', 'applicant_reply', 'applicant', ''), message('internal', 'status_change'),
+      message('upload', 'document_uploaded'), message('decision', 'decision'), { ...message('other-case'), case_id: 'other' }],
+    renoapp_completion_requests: [
+      { id: 'sent-new', case_id: 'case', delivery_status: 'sent' }, { id: 'sent-old', case_id: 'case', delivery_status: 'sent' },
+      { id: 'failed', case_id: 'case', delivery_status: 'failed' }, { id: 'pending', case_id: 'case', delivery_status: 'pending' },
+      { id: 'empty', case_id: 'case', delivery_status: 'sent' }, { id: 'other-case', case_id: 'other', delivery_status: 'sent' },
+    ],
+    profiles: [{ id: 'board', full_name: 'Board Person' }], contacts: [{ id: 'applicant', name: 'Applicant Person' }],
+  }
+  let failDeliveryRead = false
+  const admin = { from: (table: string) => {
+    let rows = tables[table]
+    assert.ok(rows, `Unexpected table ${table}`)
+    const query = {
+      select: () => query, order: () => query,
+      eq: (column: string, value: unknown) => { rows = rows.filter(row => row[column] === value); return query },
+      in: (column: string, values: unknown[]) => { rows = rows.filter(row => values.includes(row[column])); return query },
+      then: (done: (value: unknown) => unknown) => done({ data: rows, error: table === 'renoapp_completion_requests' && failDeliveryRead ? { message: 'Delivery read failed' } : null }),
+    }
+    return query
+  } }
+  const list = serviceFunction<(admin: object, caseId: string, options?: { sentOnly?: boolean }) => Promise<RenoAppCaseMessage[]>>(
+    ['listCaseMessages', 'mapCaseMessage'], {}
+  )
+  const sent = await list(admin, 'case', { sentOnly: true })
+  assert.deepEqual(sent.map(row => row.id), ['sent-new', 'reply', 'sent-old'])
+  assert.deepEqual(sent.map(row => row.authorName), ['Board Person', 'Applicant Person', 'Board Person'])
+  assert.equal((await list(admin, 'case')).length, 11)
+  tables.renoapp_completion_requests.find(row => row.id === 'failed')!.delivery_status = 'sent'
+  assert.deepEqual((await list(admin, 'case', { sentOnly: true })).map(row => row.id), ['sent-new', 'reply', 'sent-old', 'failed'])
+  failDeliveryRead = true
+  await assert.rejects(list(admin, 'case', { sentOnly: true }), /Delivery read failed/)
+})
 
 test('failed completion email stays visible; retry sends the same snapshot and does not duplicate history', async () => {
   const requestId = randomUUID(), sent: Array<{ html: string; text: string; idempotencyKey: string }> = []

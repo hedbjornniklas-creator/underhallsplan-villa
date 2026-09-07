@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { RenovationRulesReceipt } from '@/components/renoapp/RenovationRulesView'
 import type { RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
-import { FileText, Building2 } from 'lucide-react'
-import { selectCompletionItems, type CompletionSummary } from '@/lib/renoapp/completion'
+import { FileText, Building2, Check, Minus, Info, TriangleAlert, ChevronDown, ChevronUp } from 'lucide-react'
+import { getUnsentCompletionItems, selectCompletionItems, type CompletionSummary } from '@/lib/renoapp/completion'
 
 export type RenoAppCaseStatusAction = 'need_info' | 'approved' | 'conditional' | 'rejected'
 type RequirementDecision = 'requested' | 'not_requested'
@@ -246,7 +246,7 @@ function getBoardActionSubmitLabel(status: RenoAppCaseStatusAction) {
 }
 
 function getMessageTitle(type: Message['type']) {
-  if (type === 'request_for_info') return 'Begäran om komplettering registrerad'
+  if (type === 'request_for_info') return 'Begäran om komplettering skickad'
   if (type === 'applicant_reply') return 'Lägenhetsinnehavaren skickade komplettering'
   if (type === 'document_uploaded') return 'Dokument uppladdat'
   if (type === 'decision') return 'Beslut registrerat'
@@ -403,33 +403,88 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function RequirementDecisionButtons({
+function RequirementDecisionChoices({
+  label,
   value,
   onChange,
 }: {
+  label: string
   value: RequirementDecision | null
   onChange: (decision: RequirementDecision) => void
 }) {
+  const name = useId()
   return (
-    <div className="flex flex-wrap gap-2">
+    <fieldset aria-label={`Underlagsval för ${label}`} className="grid min-w-0 gap-1">
       {(['requested', 'not_requested'] as const).map((decision) => {
         const active = value === decision
         return (
-          <button
+          <label
             key={decision}
-            type="button"
-            onClick={() => onChange(decision)}
-            className={cx(
-              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-              active
-                ? 'border-stone-900 bg-stone-900 text-white'
-                : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'
-            )}
+            className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-stone-800"
           >
-            {decision === 'requested' ? 'Begär in' : 'Begär inte in'}
-          </button>
+            <span className="relative flex h-4 w-4 shrink-0">
+              <input
+                type="radio"
+                name={name}
+                value={decision}
+                checked={active}
+                onChange={() => onChange(decision)}
+                className="h-4 w-4 appearance-none rounded-sm border border-stone-400 bg-white checked:border-sky-700 checked:bg-sky-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              {active ? <Check size={14} strokeWidth={3} aria-hidden="true" className="pointer-events-none absolute inset-0 m-auto text-white" /> : null}
+            </span>
+            <span>{decision === 'requested' ? 'Begär in' : 'Begär inte in'}</span>
+          </label>
         )
       })}
+    </fieldset>
+  )
+}
+
+function MaterialIndicator({ row }: { row: UnderlagItem }) {
+  return (
+    <span aria-hidden="true" className={cx(
+      'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
+      row.checked ? 'bg-emerald-100 text-emerald-700' : row.requirementDecision === 'not_requested'
+        ? 'bg-stone-100 text-stone-500' : 'bg-amber-100 text-amber-800'
+    )}>
+      {row.checked ? <Check size={16} /> : <Minus size={16} />}
+    </span>
+  )
+}
+
+function RequirementHeading({ label, onInfo }: { label: string; onInfo: () => void }) {
+  return (
+    <p className="font-semibold text-stone-950 [overflow-wrap:anywhere]">
+      {label}{' '}
+      <button type="button" onClick={onInfo} aria-label={`Visa granskningsstöd för ${label}`} title="Visa granskningsstöd"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full align-middle text-stone-500 hover:bg-stone-100 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-sky-700">
+        <Info size={15} aria-hidden="true" />
+      </button>
+    </p>
+  )
+}
+
+function CompletionExpansionWarning({ item, rows, onPrepareCompletion }: {
+  item: RenoAppCaseDetail
+  rows: UnderlagItem[]
+  onPrepareCompletion: () => void
+}) {
+  const additions = getUnsentCompletionItems(rows, item.completion)
+  if (additions.length === 0 || item.status === 'draft') return null
+  return (
+    <div role="status" className="flex items-start gap-3 border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950">
+      <TriangleAlert size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="font-semibold">Begäran om komplettering behöver skickas igen</p>
+        <p className="mt-1">De utökade kraven ingår inte i den senaste begäran till sökanden:</p>
+        <ul className="mt-1 list-disc pl-5 [overflow-wrap:anywhere]">
+          {additions.map(row => <li key={row.id}>{displayText(row.label)}</li>)}
+        </ul>
+        <a href="#board-decision" onClick={onPrepareCompletion} className="mt-2 inline-block font-semibold underline underline-offset-2">
+          Gå till kompletteringsbegäran
+        </a>
+      </div>
     </div>
   )
 }
@@ -568,16 +623,14 @@ function DocumentsPanel({
   downloading,
   onDownloadAll,
   onRequirementDecisionChange,
-  correctionIds,
-  onCorrectionChange,
+  onPrepareCompletion,
 }: {
   item: RenoAppCaseDetail
   documentRows: UnderlagItem[]
   downloading: boolean
   onDownloadAll: () => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
-  correctionIds: string[]
-  onCorrectionChange: (id: string, checked: boolean) => void
+  onPrepareCompletion: () => void
 }) {
   const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
     null
@@ -612,14 +665,18 @@ function DocumentsPanel({
         {rows.map((row) => {
           const document = row.documentId ? documentById.get(row.documentId) : null
           return (
-            <div key={row.id} className="grid gap-4 border-b border-stone-200 bg-white px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_190px_220px_44px] lg:items-center">
+            <div key={row.id} data-requirement-id={row.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-4 border-b border-stone-200 bg-white px-4 py-4 last:border-b-0 lg:grid-cols-[28px_minmax(0,1fr)_140px_230px] lg:gap-x-4 lg:items-start">
+              <MaterialIndicator row={row} />
               <div className="min-w-0">
-                <p className="font-semibold text-stone-950">{displayText(row.label)}</p>
-                {document?.fileName ? <p className="mt-1 truncate text-sm text-stone-500">{displayText(document.fileName)}</p> : null}
+                <RequirementHeading label={displayText(row.label)} onInfo={() => setActiveReviewSupport({ label: displayText(row.label), reviewGuidance: row.reviewGuidance })} />
                 <SuggestionReason sources={row.suggestionSources ?? []} />
               </div>
-              <div className="grid min-w-0 justify-items-start gap-2">
+              <div className="col-start-2 lg:col-start-auto">
+                <RequirementDecisionChoices label={displayText(row.label)} value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
+              </div>
+              <div className="col-start-2 grid min-w-0 justify-items-start gap-2 lg:col-start-auto">
                 <p className={cx('text-sm font-medium', row.checked ? 'text-emerald-800' : 'text-stone-600')}>{getDocumentStatusLabel(row)}</p>
+                {document?.fileName ? <p className="w-full text-sm text-stone-500 [overflow-wrap:anywhere]">{displayText(document.fileName)}</p> : null}
               {row.documentId ? (
                 <a
                   href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}?view=1`}
@@ -640,29 +697,6 @@ function DocumentsPanel({
                 </details>
               ) : null}
               </div>
-              <div className="grid gap-2">
-                <RequirementDecisionButtons value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
-                {row.checked && row.requirementDecision === 'requested' ? (
-                  <label className="flex items-center gap-2 text-sm text-stone-700">
-                    <input type="checkbox" checked={correctionIds.includes(row.id)} onChange={e => onCorrectionChange(row.id, e.target.checked)} className="h-4 w-4 accent-stone-900" />
-                    Begär rättelse
-                  </label>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setActiveReviewSupport({
-                    label: displayText(row.label),
-                    reviewGuidance: row.reviewGuidance,
-                  })
-                }
-                className="inline-flex h-7 w-7 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-xs font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-end"
-                aria-label={`Visa granskningsstöd för ${displayText(row.label)}`}
-                title="Visa granskningsstöd"
-              >
-                i
-              </button>
             </div>
           )
         })}
@@ -690,6 +724,7 @@ function DocumentsPanel({
       </div>
 
       <div className="mt-6 grid gap-5">
+        <CompletionExpansionWarning item={item} rows={documentRows} onPrepareCompletion={onPrepareCompletion} />
         <section className="grid gap-3">
           {renderRows(rows, 'Inga underlag är registrerade.')}
         </section>
@@ -739,16 +774,14 @@ function ConsultantsPanel({
   expandedParticipantIds,
   onToggle,
   onRequirementDecisionChange,
-  correctionIds,
-  onCorrectionChange,
+  onPrepareCompletion,
 }: {
   item: RenoAppCaseDetail
   rows: UnderlagItem[]
   expandedParticipantIds: Record<string, boolean>
   onToggle: (participantId: string) => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
-  correctionIds: string[]
-  onCorrectionChange: (id: string, checked: boolean) => void
+  onPrepareCompletion: () => void
 }) {
   const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
     null
@@ -774,6 +807,9 @@ function ConsultantsPanel({
         title="Föreslagna uppgifter om entreprenörer och konsulter"
         description="RenoApp föreslår vilka entreprenörer eller konsulter som kan behöva anges utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in eller avstå från uppgifter utifrån det enskilda ärendets omfattning."
       />
+      <div className="mt-5 empty:hidden">
+        <CompletionExpansionWarning item={item} rows={rows} onPrepareCompletion={onPrepareCompletion} />
+      </div>
       {rows.length === 0 ? (
         <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
           Inga entreprenörer eller konsulter efterfrågas i ärendet.
@@ -783,15 +819,19 @@ function ConsultantsPanel({
           {rows.map((row) => {
             const expanded = expandedParticipantIds[row.id] === true
             return (
-              <div key={row.id} className="border-b border-stone-200 bg-white px-4 py-3 last:border-b-0">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px_220px_44px] lg:items-center">
+              <div key={row.id} data-requirement-id={row.id} className="border-b border-stone-200 bg-white px-4 py-4 last:border-b-0">
+                <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-4 lg:grid-cols-[28px_minmax(0,1fr)_140px_230px] lg:gap-x-4 lg:items-start">
+                  <MaterialIndicator row={row} />
                   <div className="min-w-0">
-                    <p className="font-semibold text-stone-950">{getParticipantDisplayLabel(row.label)}</p>
-                    <p className="mt-1 text-sm text-stone-500">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
+                    <RequirementHeading label={getParticipantDisplayLabel(row.label)} onInfo={() => setActiveReviewSupport({ label: getParticipantDisplayLabel(row.label), reviewGuidance: row.reviewGuidance })} />
                     <SuggestionReason sources={row.suggestionSources ?? []} />
                   </div>
-                  <div className="grid justify-items-start gap-2">
+                  <div className="col-start-2 lg:col-start-auto">
+                    <RequirementDecisionChoices label={getParticipantDisplayLabel(row.label)} value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
+                  </div>
+                  <div className="col-start-2 grid min-w-0 justify-items-start gap-2 lg:col-start-auto">
                     <p className="text-sm font-medium text-stone-700">{getParticipantStatusLabel(row)}</p>
+                    <p className="w-full text-sm text-stone-500 [overflow-wrap:anywhere]">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
                   <button
                     type="button"
                     onClick={() => onToggle(row.id)}
@@ -802,29 +842,6 @@ function ConsultantsPanel({
                     {expanded ? 'Dölj företagsuppgifter' : 'Visa företagsuppgifter'}
                   </button>
                   </div>
-                  <div className="grid gap-2">
-                    <RequirementDecisionButtons value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
-                    {row.checked && row.requirementDecision === 'requested' ? (
-                      <label className="flex items-center gap-2 text-sm text-stone-700">
-                        <input type="checkbox" checked={correctionIds.includes(row.id)} onChange={e => onCorrectionChange(row.id, e.target.checked)} className="h-4 w-4 accent-stone-900" />
-                        Begär rättelse
-                      </label>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setActiveReviewSupport({
-                        label: getParticipantDisplayLabel(row.label),
-                        reviewGuidance: row.reviewGuidance,
-                      })
-                    }
-                    className="inline-flex h-7 w-7 items-center justify-center justify-self-start rounded-full border border-stone-300 bg-white text-xs font-semibold text-stone-700 transition hover:bg-stone-100 md:justify-self-end"
-                    aria-label={`Visa granskningsstöd för ${getParticipantDisplayLabel(row.label)}`}
-                    title="Visa granskningsstöd"
-                  >
-                    i
-                  </button>
                 </div>
 
                 {expanded ? (
@@ -1118,26 +1135,27 @@ function BoardDecisionPanel({
 }
 
 function CaseHistoryTimeline({ messages, expanded, onToggle }: { messages: Message[]; expanded: boolean; onToggle: () => void }) {
-  const visibleMessages = expanded ? messages : messages.slice(0, 4)
+  const historyId = useId()
 
   return (
     <Card className="p-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <SectionTitle title="Ärendehistorik" />
-        {messages.length > 4 ? (
-          <button type="button" onClick={onToggle} className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
-            {expanded ? 'Visa mindre' : 'Visa full historik'}
-          </button>
-        ) : null}
+        <button type="button" onClick={onToggle} aria-expanded={expanded} aria-controls={historyId}
+          className="inline-flex min-h-9 items-center gap-2 text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
+          {expanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+          {expanded ? 'Dölj historik' : 'Visa historik'}
+        </button>
       </div>
 
+      <div id={historyId} hidden={!expanded}>
       {messages.length === 0 ? (
         <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
-          Ingen historik har registrerats ännu.
+          Inga skickade meddelanden.
         </p>
       ) : (
         <ol className="mt-5 grid gap-3">
-          {visibleMessages.map((message) => (
+          {messages.map((message) => (
             <li key={message.id} className="relative rounded-[14px] border border-stone-200 bg-stone-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <p className="font-semibold text-stone-950">{getMessageTitle(message.type)}</p>
@@ -1152,6 +1170,7 @@ function CaseHistoryTimeline({ messages, expanded, onToggle }: { messages: Messa
           ))}
         </ol>
       )}
+      </div>
     </Card>
   )
 }
@@ -1211,8 +1230,6 @@ export default function RenoAppCaseDecisionView({
   onDecisionConfirmedChange,
   onRequirementDecisionChange,
   onSubmit,
-  correctionIds,
-  onCorrectionChange,
   onRetryDelivery,
 }: {
   item: RenoAppCaseDetail
@@ -1229,8 +1246,6 @@ export default function RenoAppCaseDecisionView({
   onDecisionConfirmedChange: (value: boolean) => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
-  correctionIds: string[]
-  onCorrectionChange: (id: string, checked: boolean) => void
   onRetryDelivery: () => void
 }) {
   const [historyExpanded, setHistoryExpanded] = useState(false)
@@ -1241,13 +1256,13 @@ export default function RenoAppCaseDecisionView({
   const missingReviewFlags = useMemo(() => getMissingReviewFlags(item), [item])
   const completionSnippets = useMemo(
     () =>
-      selectCompletionItems(item.underlag, correctionIds)
+      selectCompletionItems(item.underlag)
         .map((row) =>
           row.category === 'document'
-            ? `Underlag: ${displayText(row.label)}${row.correction ? ' (rättelse begärd)' : ''}`
-            : `Uppgifter: ${getParticipantDisplayLabel(row.label)}${row.correction ? ' (rättelse begärd)' : ''}`
+            ? `Underlag: ${displayText(row.label)}`
+            : `Uppgifter: ${getParticipantDisplayLabel(row.label)}`
         ),
-    [item.underlag, correctionIds]
+    [item.underlag]
   )
   const downloadAllUrls = useMemo(
     () =>
@@ -1305,21 +1320,20 @@ export default function RenoAppCaseDecisionView({
         documentRows={documentUnderlag}
         downloading={downloadingFiles}
         onDownloadAll={() => startDownloads(downloadAllUrls)}
-        correctionIds={correctionIds}
-        onCorrectionChange={onCorrectionChange}
+        onPrepareCompletion={() => onStatusChange('need_info')}
         onRequirementDecisionChange={onRequirementDecisionChange}
       />
       <ConsultantsPanel
         item={item}
         rows={participantUnderlag}
         expandedParticipantIds={expandedParticipantIds}
-        correctionIds={correctionIds}
-        onCorrectionChange={onCorrectionChange}
+        onPrepareCompletion={() => onStatusChange('need_info')}
         onToggle={toggleParticipantDetails}
         onRequirementDecisionChange={onRequirementDecisionChange}
       />
       <ReviewFlagsCard flags={missingReviewFlags.filter((flag) => flag.sourceType !== 'missing_document')} />
       </fieldset>
+      <div id="board-decision" className="scroll-mt-24">
       <BoardDecisionPanel
         isDraftCase={item.status === 'draft'}
         selectedStatus={selectedStatus}
@@ -1336,6 +1350,7 @@ export default function RenoAppCaseDecisionView({
         onDecisionConfirmedChange={onDecisionConfirmedChange}
         onSubmit={onSubmit}
       />
+      </div>
       <CaseHistoryTimeline messages={item.messages} expanded={historyExpanded} onToggle={() => setHistoryExpanded((current) => !current)} />
       <InfoDisclaimerCard />
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { Download, ExternalLink, FileText } from 'lucide-react'
+import { ExternalLink, FileText } from 'lucide-react'
 import { rulesFileUrl, type RenovationRulesAcceptance, type RenovationRulesVersion } from '@/lib/renoapp/renovationRules'
 
 export function RenovationRulesDocument({ rules, token }: { rules: RenovationRulesVersion; token?: string | null }) {
@@ -16,7 +16,6 @@ export function RenovationRulesDocument({ rules, token }: { rules: RenovationRul
           <p className="flex min-w-0 items-start gap-2 text-stone-700"><FileText size={18} className="shrink-0" /><span className="break-all">{rules.fileName}</span></p>
           <div className="flex flex-wrap gap-4">
             <a className="inline-flex items-center gap-2 font-semibold text-sky-800 underline underline-offset-4" href={rulesFileUrl(rules.id, token)} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />Öppna PDF</a>
-            <a className="inline-flex items-center gap-2 font-semibold text-sky-800 underline underline-offset-4" href={rulesFileUrl(rules.id, token, true)} target="_blank" rel="noopener noreferrer"><Download size={16} />Ladda ned</a>
           </div>
         </div>
       )}

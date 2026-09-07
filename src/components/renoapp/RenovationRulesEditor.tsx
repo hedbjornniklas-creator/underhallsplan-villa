@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { EyeOff, Save, Upload } from 'lucide-react'
+import { Save, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { RULES_MAX_FILE_BYTES, RULES_MAX_TEXT_LENGTH, type RenovationRulesVersion } from '@/lib/renoapp/renovationRules'
 import { RenovationRulesDocument } from './RenovationRulesView'
 
 type ResponseBody = {
   rules: RenovationRulesVersion | null
+  savedRules?: RenovationRulesVersion | null
   error?: string
   code?: string
   upload?: { bucket: string; path: string; token: string }
@@ -15,6 +16,8 @@ type ResponseBody = {
 
 export default function RenovationRulesEditor({ brfId }: { brfId: string }) {
   const [rules, setRules] = useState<RenovationRulesVersion | null>(null)
+  const [savedRules, setSavedRules] = useState<RenovationRulesVersion | null>(null)
+  const [enabled, setEnabled] = useState(false)
   const [format, setFormat] = useState<'text' | 'pdf'>('text')
   const [body, setBody] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -32,9 +35,12 @@ export default function RenovationRulesEditor({ brfId }: { brfId: string }) {
         const payload: ResponseBody = await response.json()
         if (!response.ok) throw new Error(payload.error ?? 'Kunde inte läsa renoveringsreglerna.')
         if (!active) return
+        const saved = payload.rules ?? payload.savedRules ?? null
         setRules(payload.rules)
-        setFormat(payload.rules?.format ?? 'text')
-        setBody(payload.rules?.body ?? '')
+        setSavedRules(saved)
+        setEnabled(Boolean(payload.rules))
+        setFormat(saved?.format ?? 'text')
+        setBody(saved?.body ?? '')
         setLoading(false)
       }).catch(reason => { if (active) setError(reason.message) })
     return () => { active = false }
@@ -48,7 +54,11 @@ export default function RenovationRulesEditor({ brfId }: { brfId: string }) {
     if (!response.ok) {
       if (payload.code === 'RULES_VERSION_CHANGED') {
         const latest = await fetch(`/api/renoapp/app/brf/rules?brfId=${encodeURIComponent(brfId)}`, { cache: 'no-store' })
-        if (latest.ok) setRules((await latest.json()).rules)
+        if (latest.ok) {
+          const state: ResponseBody = await latest.json()
+          setRules(state.rules)
+          setSavedRules(state.rules ?? state.savedRules ?? null)
+        }
         throw new Error('En annan användare har ändrat reglerna. Kontrollera den publicerade versionen nedan innan du sparar igen. Din redigering finns kvar.')
       }
       throw new Error(payload.error ?? 'Kunde inte spara renoveringsreglerna.')
@@ -56,14 +66,21 @@ export default function RenovationRulesEditor({ brfId }: { brfId: string }) {
     return payload
   }
 
-  const save = async (withdraw = false) => {
+  const reusablePdf = savedRules?.format === 'pdf' ? savedRules : null
+  const unchanged = enabled === Boolean(rules) && (!enabled || (format === 'text'
+    ? rules?.format === 'text' && body.trim() === rules.body
+    : rules?.format === 'pdf' && !file && rules.id === reusablePdf?.id))
+  const missingContent = enabled && (format === 'text' ? !body.trim() : !file && !reusablePdf)
+
+  const save = async () => {
     if (busy || loading) return
+    const withdraw = !enabled
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
       let uploadPath: string | undefined
-      if (!withdraw && format === 'pdf') {
+      if (!withdraw && format === 'pdf' && (file || !reusablePdf)) {
         if (!file || !file.name.toLowerCase().endsWith('.pdf') || file.size <= 0 || file.size > RULES_MAX_FILE_BYTES) {
           throw new Error('Välj en PDF-fil, högst 15 MB.')
         }
@@ -74,12 +91,17 @@ export default function RenovationRulesEditor({ brfId }: { brfId: string }) {
         uploadPath = upload.path
       }
       const payload = await post({ action: 'publish', expectedVersion: rules?.id ?? null,
-        format: withdraw ? 'none' : format, body, uploadPath, fileName: file?.name })
+        format: withdraw ? 'none' : format, body, uploadPath, fileName: file?.name,
+        reuseVersionId: !withdraw && format === 'pdf' && !file ? reusablePdf?.id : undefined })
       setRules(payload.rules)
-      setBody(payload.rules?.body ?? '')
+      setEnabled(Boolean(payload.rules))
+      if (payload.rules) {
+        setSavedRules(payload.rules)
+        setBody(payload.rules.body ?? '')
+      }
       setFile(null)
       if (inputRef.current) inputRef.current.value = ''
-      setMessage(withdraw ? 'Reglerna är avpublicerade. Tidigare godkännanden finns kvar i respektive ansökan.' : 'Reglerna är publicerade och behöver godkännas när nya ansökningar skickas in.')
+      setMessage(withdraw ? 'Godkännande krävs inte för nya ansökningar. Sparade regler och tidigare godkännanden finns kvar.' : 'Reglerna är publicerade och behöver godkännas när nya ansökningar skickas in.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Kunde inte spara reglerna.') }
     finally { setBusy(false) }
   }
@@ -87,9 +109,17 @@ export default function RenovationRulesEditor({ brfId }: { brfId: string }) {
   return (
     <section className="mt-8 min-w-0 border-t border-stone-200 pt-6">
       <h3 className="text-xl font-semibold text-stone-900">Föreningens renoveringsregler</h3>
-      <p className="mt-2 text-sm text-stone-600">{loading ? 'Laddar regler...' : rules ? `Publicerad version ${rules.version}, ${new Date(rules.publishedAt).toLocaleDateString('sv-SE')}.` : 'Inga renoveringsregler är publicerade.'}</p>
+      <p className="mt-2 text-sm leading-6 text-stone-600">
+        Här kan ni lägga in föreningens renoveringsregler som text eller PDF. Den sökande behöver läsa och godkänna de publicerade reglerna innan en ny ansökan skickas in.
+      </p>
+      <p className="mt-2 text-sm text-stone-600">{loading ? 'Laddar regler...' : rules ? `Publicerad version ${rules.version}, ${new Date(rules.publishedAt).toLocaleDateString('sv-SE')}.` : savedRules ? 'Reglerna finns sparade men godkännande krävs inte.' : 'Inga renoveringsregler är publicerade.'}</p>
       <fieldset disabled={loading || busy} className="mt-5 min-w-0 space-y-4 disabled:opacity-60">
-        <legend className="sr-only">Reglernas format</legend>
+        <legend className="sr-only">Renoveringsregler och godkännande</legend>
+        <label className="flex cursor-pointer items-start gap-3 text-sm font-medium leading-6 text-stone-900">
+          <input type="checkbox" checked={enabled} onChange={event => { setEnabled(event.target.checked); setMessage(null) }} className="mt-1 h-4 w-4 shrink-0 accent-emerald-700" />
+          <span>Kräv att sökanden läser och godkänner föreningens renoveringsregler</span>
+        </label>
+        <div hidden={!enabled} className="space-y-4">
         <div className="flex flex-wrap gap-5 text-sm font-medium text-stone-800">
           {(['text', 'pdf'] as const).map(option => <label key={option} className="flex cursor-pointer items-center gap-2">
             <input type="radio" name={`rules-format-${brfId}`} checked={format === option} onChange={() => setFormat(option)} className="h-4 w-4 accent-emerald-700" />
@@ -98,20 +128,21 @@ export default function RenovationRulesEditor({ brfId }: { brfId: string }) {
         </div>
         {format === 'text' ? <label className="block text-sm font-medium text-stone-800">Renoveringsregler
           <textarea aria-label="Renoveringsregler" rows={9} maxLength={RULES_MAX_TEXT_LENGTH} value={body} onChange={event => setBody(event.target.value)} className="mt-2 block w-full rounded-lg border border-stone-300 bg-white p-3 text-sm font-normal leading-6" />
-        </label> : <label className="block text-sm font-medium text-stone-800">PDF-fil (högst 15 MB)
+        </label> : <label className="block text-sm font-medium text-stone-800">{reusablePdf ? 'Byt PDF (högst 15 MB)' : 'PDF-fil (högst 15 MB)'}
+          {reusablePdf && !file ? <span className="mt-1 block break-words text-sm font-normal text-stone-600">Sparad PDF: {reusablePdf.fileName}</span> : null}
           <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={event => setFile(event.target.files?.[0] ?? null)} className="mt-2 block w-full min-w-0 text-sm file:mr-3 file:rounded-md file:border file:border-stone-300 file:bg-white file:px-3 file:py-2" />
         </label>}
+        </div>
         <div className="flex flex-wrap gap-3">
-          <button type="button" disabled={format === 'text' ? !body.trim() || (rules?.format === 'text' && body.trim() === rules.body) : !file} onClick={() => void save()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
-            {format === 'pdf' ? <Upload size={17} /> : <Save size={17} />}{busy ? 'Sparar...' : 'Spara och publicera'}
+          <button type="button" disabled={unchanged || missingContent} onClick={() => void save()} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+            {enabled && format === 'pdf' && file ? <Upload size={17} /> : <Save size={17} />}{busy ? 'Sparar...' : enabled ? 'Spara och publicera' : 'Spara'}
           </button>
-          {rules ? <button type="button" onClick={() => void save(true)} className="inline-flex items-center gap-2 rounded-lg border border-stone-300 px-4 py-2.5 text-sm font-semibold text-stone-800"><EyeOff size={17} />Avpublicera</button> : null}
         </div>
       </fieldset>
       {error ? <p role="alert" className="mt-3 text-sm text-rose-700">{error}</p> : null}
       {loading && error ? <button type="button" onClick={() => { setError(null); setReloadKey(value => value + 1) }} className="mt-3 text-sm font-semibold text-sky-800 underline">Försök hämta reglerna igen</button> : null}
       {message ? <p role="status" className="mt-3 text-sm text-emerald-800">{message}</p> : null}
-      {rules ? <div className="mt-5"><RenovationRulesDocument rules={rules} /></div> : null}
+      {enabled && savedRules ? <div className="mt-5"><RenovationRulesDocument rules={savedRules} /></div> : null}
     </section>
   )
 }
