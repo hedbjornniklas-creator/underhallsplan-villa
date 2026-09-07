@@ -54,12 +54,6 @@ export async function POST(request: Request) {
           ? body.riskLevel
           : undefined,
       contractorRequirement: contractorRequirement(body.contractorRequirement),
-      impliesStructure: typeof body.impliesStructure === 'boolean' ? body.impliesStructure : undefined,
-      impliesPlumbing: typeof body.impliesPlumbing === 'boolean' ? body.impliesPlumbing : undefined,
-      impliesVentilation: typeof body.impliesVentilation === 'boolean' ? body.impliesVentilation : undefined,
-      impliesElectrical: typeof body.impliesElectrical === 'boolean' ? body.impliesElectrical : undefined,
-      impliesWetRoom: typeof body.impliesWetRoom === 'boolean' ? body.impliesWetRoom : undefined,
-      impliesSurfaceOnly: typeof body.impliesSurfaceOnly === 'boolean' ? body.impliesSurfaceOnly : undefined,
       sortOrder:
         typeof body.sortOrder === 'number'
           ? body.sortOrder

@@ -278,6 +278,7 @@ test('board access does not fall back to old memberships or unlimited admin scop
     } }) },
     '@/lib/assignments/mailer': {}, '@/lib/renoapp/brfAdminAccess': {}, '@/lib/renoapp/onboarding': {},
     '@/lib/renoapp/renovationRulesServer': {}, '@/lib/renoapp/renovationRules': {},
+    '@/lib/renoapp/consultantReviewAccess': {},
     '@/lib/renoapp/completion': {}, '@/lib/renoapp/completionServer': {},
     '@/lib/renoapp/emailTemplate': loadSource('src/lib/renoapp/emailTemplate.ts', {}),
   })

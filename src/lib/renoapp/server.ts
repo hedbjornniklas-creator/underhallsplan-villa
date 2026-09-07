@@ -8,6 +8,7 @@ import { getCurrentUserPlatformAccessContext, type PlatformAccessAssignment } fr
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { requireBrfAdminContext } from '@/lib/renoapp/brfAdminAccess'
+import { requireConsultantReviewAccess } from '@/lib/renoapp/consultantReviewAccess'
 import { issueBrfInviteForAuthorizedUser } from '@/lib/renoapp/onboarding'
 import { getPublishedRules, getCaseRulesAcceptance } from '@/lib/renoapp/renovationRulesServer'
 import { rulesAcceptanceFields, type RenovationRulesVersion, type RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
@@ -56,12 +57,6 @@ type ActionTypeRow = {
     | 'safe_water'
     | 'bkr_or_gvk'
     | 'structural_engineer'
-  implies_structure: boolean
-  implies_plumbing: boolean
-  implies_ventilation: boolean
-  implies_electrical: boolean
-  implies_wet_room: boolean
-  implies_surface_only: boolean
   sort_order: number
   is_active: boolean
 }
@@ -816,14 +811,6 @@ export type CreatePublicApplicationInput = {
   }>
   actionTypeKeys: string[]
   questionAnswers?: Record<string, string[]>
-  checks?: {
-    affectsStructure: boolean
-    affectsPlumbing: boolean
-    affectsVentilation: boolean
-    affectsElectrical: boolean
-    affectsWetRoom: boolean
-    affectsSurfaceOnly: boolean
-  }
 }
 
 export type CreatePublicApplicationResult = {
@@ -950,12 +937,6 @@ export type RenoAppAdminActionType = {
     | 'safe_water'
     | 'bkr_or_gvk'
     | 'structural_engineer'
-  impliesStructure: boolean
-  impliesPlumbing: boolean
-  impliesVentilation: boolean
-  impliesElectrical: boolean
-  impliesWetRoom: boolean
-  impliesSurfaceOnly: boolean
   sortOrder: number
   isActive: boolean
   requirementCount: number
@@ -1411,14 +1392,6 @@ export type RenoAppCaseDetail = {
     unitNumberSkatteverket: string | null
     status: string | null
   }
-  checks: {
-    affectsStructure: boolean
-    affectsPlumbing: boolean
-    affectsVentilation: boolean
-    affectsElectrical: boolean
-    affectsWetRoom: boolean
-    affectsSurfaceOnly: boolean
-  } | null
   currentContacts: Array<{
     id: string
     name: string | null
@@ -1611,34 +1584,7 @@ function computeRiskLevelFromActionTypes(actionTypes: ActionTypeRow[]) {
   return null
 }
 
-function computeRiskLevel(checks?: CreatePublicApplicationInput['checks']) {
-  if (!checks) return null
-  if (checks.affectsStructure || checks.affectsPlumbing || checks.affectsVentilation) return 'high'
-  if (checks.affectsElectrical || checks.affectsWetRoom) return 'medium'
-  if (checks.affectsSurfaceOnly) return 'low'
-  return null
-}
 
-function deriveChecksFromActionTypes(actionTypes: ActionTypeRow[]) {
-  return {
-    affectsStructure: actionTypes.some((item) => item.implies_structure),
-    affectsPlumbing: actionTypes.some((item) => item.implies_plumbing),
-    affectsVentilation: actionTypes.some((item) => item.implies_ventilation),
-    affectsElectrical: actionTypes.some((item) => item.implies_electrical),
-    affectsWetRoom: actionTypes.some((item) => item.implies_wet_room),
-    affectsSurfaceOnly:
-      actionTypes.length > 0 &&
-      actionTypes.every((item) => item.implies_surface_only) &&
-      !actionTypes.some(
-        (item) =>
-          item.implies_structure ||
-          item.implies_plumbing ||
-          item.implies_ventilation ||
-          item.implies_electrical ||
-          item.implies_wet_room
-      ),
-  }
-}
 
 function requiresQualifiedContractor(actionTypes: ActionTypeRow[]) {
   return actionTypes.some((item) => item.contractor_requirement !== 'none')
@@ -1853,7 +1799,7 @@ async function listActiveActionTypes(admin: SupabaseAdminClient) {
   const { data, error } = await admin
     .from('renovation_action_types')
     .select(
-      'id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active'
+      'id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active'
     )
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
@@ -3115,403 +3061,6 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
   }*/
 }
 
-export async function createPublicApplication(
-  input: CreatePublicApplicationInput,
-  requestOrigin: string
-): Promise<CreatePublicApplicationResult> {
-  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const brf = await getPublicBrfBySlug(admin, input.brfSlug)
-
-  if (!brf || !brf.is_public_apply_enabled) {
-    throw new Error('BRF_NOT_FOUND')
-  }
-
-  const applicantName = normalizeText(input.applicantName)
-  const applicantEmail = normalizeEmail(input.applicantEmail)
-  const applicantPhone = normalizeText(input.applicantPhone)
-  const unitNumberInternal = normalizeText(input.unitNumberInternal)
-  const unitNumberSkatteverket = normalizeText(input.unitNumberSkatteverket)
-  const description = normalizeText(input.description)
-  const actionTypeKey = normalizeText(input.actionTypeKeys?.[0] ?? null)
-
-  if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
-  assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
-  if (!unitNumberInternal && !unitNumberSkatteverket) throw new Error('UNIT_NUMBER_REQUIRED')
-  if (!description) throw new Error('DESCRIPTION_REQUIRED')
-  if (!actionTypeKey) throw new Error('ACTION_TYPE_REQUIRED')
-  /*
-  /*
-  /*
-  /*
-  const { error: deleteParticipantError } = await admin
-    .from('renoapp_case_participants')
-    .delete()
-    .eq('case_id', caseId)
-
-  if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
-  }
-
-  const participantRowsToInsert = participantEntriesInput
-    .filter((item) =>
-      Boolean(
-        item.companyName ||
-          item.orgNumber ||
-          item.contactName ||
-          item.email ||
-          item.phone ||
-          item.certificationReference ||
-          item.hasVerifiedAuthorization ||
-          item.acceptsResponsibility
-      )
-    )
-    .map((item) => ({
-      case_id: caseId,
-      participant_role_id: item.participantRoleId,
-      company_name: item.companyName || null,
-      org_number: item.orgNumber || null,
-      contact_name: item.contactName || null,
-      email: item.email || null,
-      phone: item.phone || null,
-      certification_reference: item.certificationReference || null,
-      has_verified_authorization: item.hasVerifiedAuthorization,
-      accepts_responsibility: item.acceptsResponsibility,
-    }))
-
-  if (participantRowsToInsert.length > 0) {
-    const { error: insertParticipantError } = await admin
-      .from('renoapp_case_participants')
-      .insert(participantRowsToInsert)
-
-    if (insertParticipantError) {
-      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenÃ¶rer och konsulter.')
-    }
-  }
-
-  /*
-  const { error: deleteParticipantError } = await admin
-    .from('renoapp_case_participants')
-    .delete()
-    .eq('case_id', caseId)
-
-  if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
-  }
-
-  const participantRowsToInsert = participantEntriesInput
-    .filter((item) =>
-      Boolean(
-        item.companyName ||
-          item.orgNumber ||
-          item.contactName ||
-          item.email ||
-          item.phone ||
-          item.certificationReference ||
-          item.hasVerifiedAuthorization ||
-          item.acceptsResponsibility
-      )
-    )
-    .map((item) => ({
-      case_id: caseId,
-      participant_role_id: item.participantRoleId,
-      company_name: item.companyName || null,
-      org_number: item.orgNumber || null,
-      contact_name: item.contactName || null,
-      email: item.email || null,
-      phone: item.phone || null,
-      certification_reference: item.certificationReference || null,
-      has_verified_authorization: item.hasVerifiedAuthorization,
-      accepts_responsibility: item.acceptsResponsibility,
-    }))
-
-  if (participantRowsToInsert.length > 0) {
-    const { error: insertParticipantError } = await admin
-      .from('renoapp_case_participants')
-      .insert(participantRowsToInsert)
-
-    if (insertParticipantError) {
-      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenÃ¶rer och konsulter.')
-    }
-  }
-
-  /*
-  const { error: deleteParticipantError } = await admin
-    .from('renoapp_case_participants')
-    .delete()
-    .eq('case_id', caseId)
-
-  if (deleteParticipantError) {
-    throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera entreprenÃ¶rer och konsulter.')
-  }
-
-  const participantRowsToInsert = participantEntriesInput
-    .filter((item) =>
-      Boolean(
-        item.companyName ||
-          item.orgNumber ||
-          item.contactName ||
-          item.email ||
-          item.phone ||
-          item.certificationReference ||
-          item.hasVerifiedAuthorization ||
-          item.acceptsResponsibility
-      )
-    )
-    .map((item) => ({
-      case_id: caseId,
-      participant_role_id: item.participantRoleId,
-      company_name: item.companyName || null,
-      org_number: item.orgNumber || null,
-      contact_name: item.contactName || null,
-      email: item.email || null,
-      phone: item.phone || null,
-      certification_reference: item.certificationReference || null,
-      has_verified_authorization: item.hasVerifiedAuthorization,
-      accepts_responsibility: item.acceptsResponsibility,
-    }))
-
-  if (participantRowsToInsert.length > 0) {
-    const { error: insertParticipantError } = await admin
-      .from('renoapp_case_participants')
-      .insert(participantRowsToInsert)
-
-    if (insertParticipantError) {
-      throw new Error(insertParticipantError.message ?? 'Kunde inte spara entreprenÃ¶rer och konsulter.')
-    }
-  }
-
-  */
-  const applicantEmailValue = applicantEmail as string
-
-  const { data: actionType, error: actionTypeError } = await admin
-    .from('renovation_action_types')
-    .select('id,key,label,sort_order,is_active')
-    .eq('key', actionTypeKey)
-    .eq('is_active', true)
-    .maybeSingle()
-
-  if (actionTypeError) {
-    throw new Error(actionTypeError.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdstyp.')
-  }
-
-  if (!actionType) {
-    throw new Error('ACTION_TYPE_REQUIRED')
-  }
-
-  let contact: ContactRow | null = null
-  if (applicantEmail) {
-    const { data } = await admin
-      .from('contacts')
-      .select('id,name,email,phone')
-      .eq('email', applicantEmailValue)
-      .limit(1)
-      .maybeSingle()
-    contact = (data ?? null) as ContactRow | null
-  }
-
-  if (!contact && applicantPhone) {
-    const { data } = await admin
-      .from('contacts')
-      .select('id,name,email,phone')
-      .eq('phone', applicantPhone)
-      .limit(1)
-      .maybeSingle()
-    contact = (data ?? null) as ContactRow | null
-  }
-
-  if (!contact) {
-    const { data, error } = await admin
-      .from('contacts')
-      .insert({
-        name: applicantName,
-        email: applicantEmailValue,
-        phone: applicantPhone,
-      })
-      .select('id,name,email,phone')
-      .single()
-
-    if (error) {
-      throw new Error(error.message ?? 'Kunde inte skapa kontakt.')
-    }
-
-    contact = data as ContactRow
-  }
-
-  let unit: UnitRow | null = null
-  if (unitNumberInternal) {
-    const { data } = await admin
-      .from('brf_units')
-      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
-      .eq('brf_id', brf.id)
-      .eq('unit_number_internal', unitNumberInternal)
-      .limit(1)
-      .maybeSingle()
-    unit = (data ?? null) as UnitRow | null
-  }
-
-  if (!unit && unitNumberSkatteverket) {
-    const { data } = await admin
-      .from('brf_units')
-      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
-      .eq('brf_id', brf.id)
-      .eq('unit_number_skatteverket', unitNumberSkatteverket)
-      .limit(1)
-      .maybeSingle()
-    unit = (data ?? null) as UnitRow | null
-  }
-
-  if (!unit) {
-    const { data, error } = await admin
-      .from('brf_units')
-      .insert({
-        brf_id: brf.id,
-        unit_number_internal: unitNumberInternal,
-        unit_number_skatteverket: unitNumberSkatteverket,
-        status: 'preliminary',
-      })
-      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
-      .single()
-
-    if (error) {
-      throw new Error(error.message ?? 'Kunde inte skapa lÃ¤genhet.')
-    }
-
-    unit = data as UnitRow
-  }
-
-  const { data: existingUnitContact } = await admin
-    .from('unit_contacts')
-    .select('id')
-    .eq('unit_id', unit.id)
-    .eq('contact_id', contact.id)
-    .eq('is_current', true)
-    .limit(1)
-    .maybeSingle()
-
-  if (!existingUnitContact) {
-    const { error } = await admin.from('unit_contacts').insert({
-      unit_id: unit.id,
-      contact_id: contact.id,
-      relationship_type: 'unknown',
-      verification_status: 'unverified',
-      is_current: true,
-    })
-
-    if (error) {
-      throw new Error(error.message ?? 'Kunde inte koppla kontakt till lÃ¤genhet.')
-    }
-  }
-
-  const caseNumber = await createUniqueCaseNumber(admin)
-  const riskLevel = computeRiskLevel(input.checks)
-  const title = `Renovering: ${(actionType as ActionTypeRow).label}`
-
-  const { data: insertedCase, error: caseError } = await admin
-    .from('renovation_cases')
-    .insert({
-      brf_id: brf.id,
-      unit_id: unit.id,
-      applicant_contact_id: contact.id,
-      action_type_id: (actionType as ActionTypeRow).id,
-      case_number: caseNumber,
-      ...rulesAcceptanceFields({ mode: 'submit', isCompletion: false, versionId: input.rulesVersionId,
-        accepted: input.rulesAccepted, applicantName, applicantEmail: applicantEmail ?? '' }),
-      title,
-      description,
-      status: 'submitted',
-      risk_level: riskLevel,
-      submitted_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-
-  if (caseError || !insertedCase) {
-    throw new Error(caseError?.message ?? 'Kunde inte skapa Ã¤rende.')
-  }
-
-  const { error: checksError } = await admin.from('renovation_case_checks').insert({
-    case_id: insertedCase.id,
-    affects_structure: !!input.checks?.affectsStructure,
-    affects_plumbing: !!input.checks?.affectsPlumbing,
-    affects_ventilation: !!input.checks?.affectsVentilation,
-    affects_electrical: !!input.checks?.affectsElectrical,
-    affects_wet_room: !!input.checks?.affectsWetRoom,
-    affects_surface_only: !!input.checks?.affectsSurfaceOnly,
-  })
-
-  if (checksError) {
-    throw new Error(checksError.message ?? 'Kunde inte spara teknisk pÃ¥verkan.')
-  }
-
-  const plainToken = makeToken()
-  const tokenHash = hashToken(plainToken)
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString()
-
-  const { error: accessError } = await admin.from('case_access_links').insert({
-    case_id: insertedCase.id,
-    token_hash: tokenHash,
-    plain_token: plainToken,
-    email: applicantEmailValue,
-    scope: 'answer_questions',
-    expires_at: expiresAt,
-  })
-
-  if (accessError) {
-    throw new Error(accessError.message ?? 'Kunde inte skapa Ã¥tkomstlÃ¤nk.')
-  }
-
-  const accessUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/case/${plainToken}`)
-  const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${plainToken}`)
-  let emailSent = false
-  let emailError: string | null = null
-
-  const mailFrom = getMailFromAddress()
-  if (mailFrom && applicantEmailValue) {
-    try {
-      await sendAssignmentEmail({
-        to: applicantEmailValue,
-        from: mailFrom,
-        replyTo: brf.email ?? null,
-        subject: `RenoApp: ditt ärende ${caseNumber}`,
-        html: [
-          `<p>Hej ${applicantName},</p>`,
-          `<p>Vi har tagit emot din renoveringsansökan för <strong>${brf.name}</strong>.</p>`,
-          `<p>Ärendenummer: <strong>${caseNumber}</strong></p>`,
-          `<p>Styrelsen handlägger nu ärendet. Om mer information behövs får du ett meddelande via e-post.</p>`,
-          `<p>Du kan öppna ärendet via länken nedan för att se status och kommunikation:</p>`,
-          `<p><a href="${resumeUrl}">${resumeUrl}</a></p>`,
-          `<p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>`,
-        ].join(''),
-        text: [
-          `Hej ${applicantName},`,
-          ``,
-          `Vi har tagit emot din renoveringsansökan för ${brf.name}.`,
-          `Ärendenummer: ${caseNumber}`,
-          `Styrelsen handlägger nu ärendet. Om mer information behövs får du ett meddelande via e-post.`,
-          `Öppna ärendet här för att se status och kommunikation: ${resumeUrl}`,
-          `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
-        ].join('\n'),
-      })
-      emailSent = true
-    } catch (error) {
-      emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
-    }
-  } else if (!applicantEmailValue) {
-        emailError = 'Ingen e-postadress är angiven. Ansökan sparades men inget mejl kunde skickas.'
-  } else {
-        emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Åtkomstlänken skapades men inget mejl skickades.'
-  }
-
-  return {
-    caseId: insertedCase.id as string,
-    caseNumber,
-    accessUrl,
-    resumeUrl,
-    status: 'submitted',
-    emailSent,
-    emailError,
-  }
-}
 
 async function loadActiveActionTypesByKeys(admin: SupabaseAdminClient, keys: string[]) {
   const normalizedKeys = Array.from(new Set(keys.map((key) => normalizeText(key)).filter((value): value is string => Boolean(value))))
@@ -3520,7 +3069,7 @@ async function loadActiveActionTypesByKeys(admin: SupabaseAdminClient, keys: str
   const { data, error } = await admin
     .from('renovation_action_types')
     .select(
-      'id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active'
+      'id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active'
     )
     .in('key', normalizedKeys)
     .eq('is_active', true)
@@ -3540,7 +3089,7 @@ async function loadActiveActionTypesByIds(admin: SupabaseAdminClient, ids: strin
   const { data, error } = await admin
     .from('renovation_action_types')
     .select(
-      'id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active'
+      'id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active'
     )
     .in('id', normalizedIds)
     .eq('is_active', true)
@@ -4457,50 +4006,11 @@ export async function upsertPublicApplication(
     }
   }
 
-  if (mode === 'submit') {
-    const participantRoleIdsRequiringConfirmation = new Set<string>()
-
-    if (isCompletionCase) {
-      for (const participantRoleId of requestedCompletionParticipantRoleIds) {
-        participantRoleIdsRequiringConfirmation.add(participantRoleId)
-      }
-    } else {
-      if (selectedActionTypes.length > 0) {
-        const { data: actionParticipantRoles, error: actionParticipantRolesError } = await admin
-          .from('renoapp_action_type_participant_roles')
-          .select('id,action_type_id,participant_role_id,is_required,sort_order,is_active')
-          .in(
-            'action_type_id',
-            selectedActionTypes.map((actionType) => actionType.id)
-          )
-          .eq('is_active', true)
-
-        if (actionParticipantRolesError) {
-          throw new Error(actionParticipantRolesError.message ?? 'Kunde inte läsa medverkandekrav.')
-        }
-
-        for (const participantRole of (actionParticipantRoles ?? []) as ActionTypeParticipantRoleRow[]) {
-          participantRoleIdsRequiringConfirmation.add(participantRole.participant_role_id)
-        }
-      }
-
-      for (const question of applicableQuestions) {
-        const selectedOptionKeys = questionAnswersInput[question.key] ?? []
-        for (const option of question.options) {
-          if (!selectedOptionKeys.includes(option.key)) continue
-          for (const trigger of option.triggers) {
-            if (trigger.triggerType === 'participant_role' && trigger.participantRoleId) {
-              participantRoleIdsRequiringConfirmation.add(trigger.participantRoleId)
-            }
-          }
-        }
-      }
-    }
-
+  if (mode === 'submit' && isCompletionCase) {
     const participantEntryByRoleId = new Map(
       participantEntriesInput.map((entry) => [entry.participantRoleId, entry] as const)
     )
-    const hasUnconfirmedParticipant = Array.from(participantRoleIdsRequiringConfirmation).some((participantRoleId) => {
+    const hasUnconfirmedParticipant = Array.from(requestedCompletionParticipantRoleIds).some((participantRoleId) => {
       const entry = participantEntryByRoleId.get(participantRoleId)
       return !entry?.hasVerifiedAuthorization || !entry.acceptsResponsibility
     })
@@ -4583,7 +4093,6 @@ export async function upsertPublicApplication(
     contactId: contact?.id ?? null,
   })
 
-  const derivedChecks = deriveChecksFromActionTypes(selectedActionTypes)
   const riskLevel = computeRiskLevelFromActionTypes(selectedActionTypes)
   const title = buildPublicCaseTitle(selectedActionTypes)
   const nextStatus =
@@ -4632,19 +4141,6 @@ export async function upsertPublicApplication(
     caseId = String(insertedCase.id ?? '')
     isNewDraft = true
 
-    const { error: checksError } = await admin.from('renovation_case_checks').insert({
-      case_id: caseId,
-      affects_structure: derivedChecks.affectsStructure,
-      affects_plumbing: derivedChecks.affectsPlumbing,
-      affects_ventilation: derivedChecks.affectsVentilation,
-      affects_electrical: derivedChecks.affectsElectrical,
-      affects_wet_room: derivedChecks.affectsWetRoom,
-      affects_surface_only: derivedChecks.affectsSurfaceOnly,
-    })
-
-    if (checksError) {
-      throw new Error(checksError.message ?? 'Kunde inte spara teknisk pÃ¥verkan.')
-    }
   } else {
     const { error: updateCaseError } = await admin
       .from('renovation_cases')
@@ -4670,21 +4166,6 @@ export async function upsertPublicApplication(
       throw new Error(updateCaseError.message ?? 'Kunde inte uppdatera Ã¤rendet.')
     }
 
-    const { error: checksError } = await admin
-      .from('renovation_case_checks')
-      .update({
-        affects_structure: derivedChecks.affectsStructure,
-        affects_plumbing: derivedChecks.affectsPlumbing,
-        affects_ventilation: derivedChecks.affectsVentilation,
-        affects_electrical: derivedChecks.affectsElectrical,
-        affects_wet_room: derivedChecks.affectsWetRoom,
-        affects_surface_only: derivedChecks.affectsSurfaceOnly,
-      })
-      .eq('case_id', caseId)
-
-    if (checksError) {
-      throw new Error(checksError.message ?? 'Kunde inte uppdatera teknisk pÃ¥verkan.')
-    }
   }
 
   if (!isCompletionCase) {
@@ -6216,7 +5697,7 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
   const [actionTypeRows, requirementRows, questionRows, participantRoleRows] = await Promise.all([
     admin
       .from('renovation_action_types')
-      .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin.from('renovation_action_document_requirements').select('action_type_id,document_type_id').is('brf_id', null),
     admin.from('renoapp_action_type_questions').select('action_type_id,question_id').eq('is_active', true),
@@ -6274,12 +5755,6 @@ export async function listRenoAppAdminActionTypes(): Promise<RenoAppAdminActionT
     description: item.description ?? null,
     riskLevel: item.risk_level,
     contractorRequirement: item.contractor_requirement,
-    impliesStructure: item.implies_structure,
-    impliesPlumbing: item.implies_plumbing,
-    impliesVentilation: item.implies_ventilation,
-    impliesElectrical: item.implies_electrical,
-    impliesWetRoom: item.implies_wet_room,
-    impliesSurfaceOnly: item.implies_surface_only,
     sortOrder: item.sort_order,
     isActive: item.is_active,
     requirementCount: requirementCountByActionTypeId.get(item.id) ?? 0,
@@ -6802,7 +6277,7 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
   const [actionTypeRows, participantRoleRows, linkRows] = await Promise.all([
     admin
       .from('renovation_action_types')
-      .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renoapp_participant_roles')
@@ -6831,12 +6306,6 @@ export async function listRenoAppAdminParticipantRoleConfig(): Promise<{
     description: row.description ?? null,
     riskLevel: row.risk_level,
     contractorRequirement: row.contractor_requirement,
-    impliesStructure: row.implies_structure,
-    impliesPlumbing: row.implies_plumbing,
-    impliesVentilation: row.implies_ventilation,
-    impliesElectrical: row.implies_electrical,
-    impliesWetRoom: row.implies_wet_room,
-    impliesSurfaceOnly: row.implies_surface_only,
     sortOrder: row.sort_order,
     isActive: row.is_active,
     requirementCount: 0,
@@ -7610,12 +7079,6 @@ export async function saveRenoAppAdminActionType(input: {
     | 'safe_water'
     | 'bkr_or_gvk'
     | 'structural_engineer'
-  impliesStructure?: boolean
-  impliesPlumbing?: boolean
-  impliesVentilation?: boolean
-  impliesElectrical?: boolean
-  impliesWetRoom?: boolean
-  impliesSurfaceOnly?: boolean
   sortOrder?: number | null
   isActive?: boolean
 }): Promise<RenoAppAdminActionType> {
@@ -7652,12 +7115,6 @@ export async function saveRenoAppAdminActionType(input: {
     ...(contractorRequirement !== undefined
       ? { contractor_requirement: contractorRequirement }
       : {}),
-    ...(input.impliesStructure !== undefined ? { implies_structure: input.impliesStructure } : {}),
-    ...(input.impliesPlumbing !== undefined ? { implies_plumbing: input.impliesPlumbing } : {}),
-    ...(input.impliesVentilation !== undefined ? { implies_ventilation: input.impliesVentilation } : {}),
-    ...(input.impliesElectrical !== undefined ? { implies_electrical: input.impliesElectrical } : {}),
-    ...(input.impliesWetRoom !== undefined ? { implies_wet_room: input.impliesWetRoom } : {}),
-    ...(input.impliesSurfaceOnly !== undefined ? { implies_surface_only: input.impliesSurfaceOnly } : {}),
   }
 
   const query = input.id
@@ -7670,16 +7127,10 @@ export async function saveRenoAppAdminActionType(input: {
         contractor_requirement: contractorRequirement ?? 'none',
         sort_order: sortOrder ?? 100,
         is_active: isActive ?? true,
-        implies_structure: input.impliesStructure ?? false,
-        implies_plumbing: input.impliesPlumbing ?? false,
-        implies_ventilation: input.impliesVentilation ?? false,
-        implies_electrical: input.impliesElectrical ?? false,
-        implies_wet_room: input.impliesWetRoom ?? false,
-        implies_surface_only: input.impliesSurfaceOnly ?? false,
       })
 
   const { data, error } = await query
-    .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
+    .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
     .single()
 
   if (error || !data) {
@@ -7695,12 +7146,6 @@ export async function saveRenoAppAdminActionType(input: {
     description: row.description ?? null,
     riskLevel: row.risk_level,
     contractorRequirement: row.contractor_requirement,
-    impliesStructure: row.implies_structure,
-    impliesPlumbing: row.implies_plumbing,
-    impliesVentilation: row.implies_ventilation,
-    impliesElectrical: row.implies_electrical,
-    impliesWetRoom: row.implies_wet_room,
-    impliesSurfaceOnly: row.implies_surface_only,
     sortOrder: row.sort_order,
     isActive: row.is_active,
     requirementCount: 0,
@@ -7730,7 +7175,7 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
   const [actionTypeRows, documentTypeRows, requirementRows] = await Promise.all([
     admin
       .from('renovation_action_types')
-      .select('id,category_id,key,label,description,risk_level,contractor_requirement,implies_structure,implies_plumbing,implies_ventilation,implies_electrical,implies_wet_room,implies_surface_only,sort_order,is_active')
+      .select('id,category_id,key,label,description,risk_level,contractor_requirement,sort_order,is_active')
       .order('sort_order', { ascending: true }),
     admin
       .from('renovation_document_types')
@@ -7774,18 +7219,6 @@ export async function listRenoAppAdminRequirementConfig(): Promise<{
         riskLevel: actionTypes.find((actionType) => actionType.id === item.id)?.risk_level ?? 'low',
         contractorRequirement:
           actionTypes.find((actionType) => actionType.id === item.id)?.contractor_requirement ?? 'none',
-        impliesStructure:
-          actionTypes.find((actionType) => actionType.id === item.id)?.implies_structure ?? false,
-        impliesPlumbing:
-          actionTypes.find((actionType) => actionType.id === item.id)?.implies_plumbing ?? false,
-        impliesVentilation:
-          actionTypes.find((actionType) => actionType.id === item.id)?.implies_ventilation ?? false,
-        impliesElectrical:
-          actionTypes.find((actionType) => actionType.id === item.id)?.implies_electrical ?? false,
-        impliesWetRoom:
-          actionTypes.find((actionType) => actionType.id === item.id)?.implies_wet_room ?? false,
-        impliesSurfaceOnly:
-          actionTypes.find((actionType) => actionType.id === item.id)?.implies_surface_only ?? false,
         sortOrder: item.sortOrder,
         isActive: actionTypes.find((actionType) => actionType.id === item.id)?.is_active ?? true,
         requirementCount: item.requirements.length,
@@ -7941,6 +7374,16 @@ export async function removeRenoAppUserMember(input: { brfId: string; profileId:
 
 export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseDetail | null> {
   const context = await requireRenoAppViewerContext()
+  return loadRenoAppCaseDetail(caseId, context.authorizedBrfIds ?? [])
+}
+
+export async function getRenoAppConsultantCaseDetail(caseId: string) {
+  const order = await requireConsultantReviewAccess(caseId)
+  const item = await loadRenoAppCaseDetail(caseId, [order.brf_id])
+  return { order, item }
+}
+
+async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[]): Promise<RenoAppCaseDetail | null> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
 
   const { data: caseData, error: caseError } = await admin
@@ -7960,7 +7403,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   }
 
   const caseRow = caseData as CaseRow
-  if (context.authorizedBrfIds && !context.authorizedBrfIds.includes(caseRow.brf_id)) {
+  if (!authorizedBrfIds.includes(caseRow.brf_id)) {
     throw new Error('CASE_NOT_FOUND')
   }
 
@@ -7968,7 +7411,6 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     brfResult,
     contactResult,
     unitResult,
-    checksResult,
     docsResult,
     decisionsResult,
     linksResult,
@@ -7996,13 +7438,6 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
             .eq('id', caseRow.unit_id)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
-      admin
-        .from('renovation_case_checks')
-        .select(
-          'affects_structure,affects_plumbing,affects_ventilation,affects_electrical,affects_wet_room,affects_surface_only'
-        )
-        .eq('case_id', caseId)
-        .maybeSingle(),
       admin
         .from('renovation_case_documents')
         .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note')
@@ -8044,7 +7479,6 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
   if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte lÃ¤sa kontakt.')
   if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte lÃ¤sa lÃ¤genhet.')
-  if (checksResult.error) throw new Error(checksResult.error.message ?? 'Kunde inte lÃ¤sa Ã¤rendechecks.')
   if (docsResult.error) throw new Error(docsResult.error.message ?? 'Kunde inte lÃ¤sa dokument.')
   if (decisionsResult.error) throw new Error(decisionsResult.error.message ?? 'Kunde inte lÃ¤sa beslut.')
   if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte lÃ¤sa access links.')
@@ -8229,16 +7663,6 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       unitNumberSkatteverket: (unitResult.data?.unit_number_skatteverket as string | null | undefined) ?? null,
       status: (unitResult.data?.status as string | null | undefined) ?? null,
     },
-    checks: checksResult.data
-      ? {
-          affectsStructure: Boolean(checksResult.data.affects_structure),
-          affectsPlumbing: Boolean(checksResult.data.affects_plumbing),
-          affectsVentilation: Boolean(checksResult.data.affects_ventilation),
-          affectsElectrical: Boolean(checksResult.data.affects_electrical),
-          affectsWetRoom: Boolean(checksResult.data.affects_wet_room),
-          affectsSurfaceOnly: Boolean(checksResult.data.affects_surface_only),
-        }
-      : null,
     currentContacts: currentContactRows.map((row) => {
       const contact = contactMap.get(String(row.contact_id ?? '')) ?? { id: String(row.contact_id ?? ''), name: null, email: null }
       return {

@@ -163,6 +163,7 @@ vite.config.ts.timestamp-*
 /build
 
 # misc
+/tmp/renoapp-classification-ui/
 .DS_Store
 *.pem
 

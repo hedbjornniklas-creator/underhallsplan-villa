@@ -23,7 +23,7 @@ persist()
 window.fetch = async (input, init) => {
   const url = String(input)
   if (url.includes('/public/applications/draft/')) return Response.json(draft)
-  if (url.includes('/brf/test/public')) return Response.json({ brf: draft.brf, actionTypes: [], questionBank: [] })
+  if (url.includes('/brf/test/public')) return Response.json(JSON.parse(sessionStorage.getItem('initial-application-config') ?? 'null') ?? { brf: draft.brf, actionTypes: [], questionBank: [] })
   if (url === '/api/renoapp/public/applications' && init?.method === 'POST') {
     const body = JSON.parse(String(init.body))
     sessionStorage.setItem('completion-last-request', JSON.stringify(body))
@@ -31,7 +31,7 @@ window.fetch = async (input, init) => {
     draft.form.participantEntries = body.participantEntries
     draft.completionDraft.replyMessage = body.replyMessage
     draft.completionDraft.revision++
-    if (body.mode === 'submit') draft.case.status = 'review'
+    if (body.mode === 'submit') draft.case.status = draft.case.status === 'need_info' ? 'review' : 'submitted'
     persist()
     return Response.json({ caseId: 'case', caseNumber: 'RA-TEST', completionRevision: draft.completionDraft.revision,
       status: body.mode === 'submit' ? 'submitted' : 'draft', resumeUrl: '/renoapp/brf/test/apply?draft=fixture-secret', accessUrl: '', emailSent: false, emailError: null })

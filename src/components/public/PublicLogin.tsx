@@ -19,6 +19,7 @@ const labels: Record<Destination, string> = {
 
 export default function PublicLogin({ destination, resetSuccess }: { destination: Destination; resetSuccess: boolean }) {
   const router = useRouter()
+  const destinationLabel = labels[destination] ?? 'RenoApp'
   const authRedirectTo = typeof window === 'undefined' ? undefined : `${window.location.origin}/auth/reset-password`
 
   useEffect(() => {
@@ -49,8 +50,8 @@ export default function PublicLogin({ destination, resetSuccess }: { destination
     <PublicFrame activeProduct={destination === '/dashboard-v1' ? 'besiktapp' : destination === '/renoapp/app' ? 'renoapp' : undefined}>
       <section className="public-auth">
         <span className="public-eyebrow">{destination === '/dashboard-v1' ? 'För besiktningsföretag' : 'Ditt HusHub-konto'}</span>
-        <h1>Logga in till {labels[destination]}</h1>
-        <p className="public-auth-intro">{destination === '/app' ? 'Använd kontot du fått via ditt företag eller din förening.' : `Efter inloggningen öppnas ${labels[destination]}.`}</p>
+        <h1>Logga in till {destinationLabel}</h1>
+        <p className="public-auth-intro">{destination === '/app' ? 'Använd kontot du fått via ditt företag eller din förening.' : `Efter inloggningen öppnas ${destinationLabel}.`}</p>
         {resetSuccess ? <div className="public-notice public-notice-success" role="status">Lösenordet är uppdaterat. Logga in med ditt nya lösenord.</div> : null}
         <PasswordAuthPanel redirectTo={authRedirectTo} />
         <div className="public-auth-help">

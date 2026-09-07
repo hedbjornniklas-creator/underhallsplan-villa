@@ -7,7 +7,7 @@ import ts from 'typescript'
 import type * as UploadRoute from '../src/app/api/renoapp/case-access/[token]/documents/route'
 import type * as PublicRoute from '../src/app/api/renoapp/public/applications/route'
 import type * as DocumentRoute from '../src/app/api/renoapp/app/cases/[id]/documents/[documentId]/route'
-import type { RenoAppCaseMessage, UpdateRenoAppCaseStatusInput } from '../src/lib/renoapp/server'
+import type { CreatePublicApplicationInput, RenoAppCaseMessage, UpdateRenoAppCaseStatusInput, upsertPublicApplication } from '../src/lib/renoapp/server'
 import type { CompletionRequest } from '../src/lib/renoapp/completion'
 
 const require = createRequire(import.meta.url)
@@ -34,6 +34,86 @@ function serviceFunction<T>(names: string[], dependencies: Record<string, unknow
 }
 const common = load<typeof import('../src/lib/renoapp/completion')>('src/lib/renoapp/completion.ts', {})
 const templates = load<Record<string, unknown>>('src/lib/renoapp/emailTemplate.ts', {})
+
+function confirmationFixture(status: 'new' | 'draft' | 'need_info', requestedRoles = ['plumber']) {
+  const form = {
+    applicantName: 'Applicant', applicantEmail: 'applicant@example.test', applicantPhone: '0700000000',
+    unitNumberInternal: '1', unitNumberSkatteverket: '1101', description: 'Wall removal',
+    actionTypeKeys: ['wall'], questionAnswers: { plumbing: ['yes'] },
+    contractorName: '', contractorOrgNumber: '', contractorEmail: '', contractorPhone: '', contractorHasRequiredCertification: false,
+    participantEntries: [] as NonNullable<CreatePublicApplicationInput['participantEntries']>,
+  }
+  const input: CreatePublicApplicationInput = { ...form, brfSlug: 'test', mode: 'submit',
+    draftToken: status === 'new' ? null : 'secret', completionRequestId: 'round', completionRevision: 0 }
+  const calls: string[] = []
+  const persist = async (kind: string) => { calls.push(kind); throw new Error(`REACHED_${kind}`) }
+  const admin = { from: (table: string) => {
+    const query = { select: () => query, eq: () => query, in: () => query,
+      maybeSingle: async () => ({ error: null, data: table === 'case_access_links'
+        ? { case_id: 'case', expires_at: '2099-01-01', revoked_at: null }
+        : { id: 'case', brf_id: 'brf', status, case_number: 'RA-TEST' } }),
+      then: (done: (value: unknown) => unknown) => done({ error: null, data: [{ participant_role_id: 'builder' }] }),
+    }
+    return query
+  } }
+  const service = serviceFunction<typeof upsertPublicApplication>([
+    'upsertPublicApplication', 'normalizeText', 'normalizeEmail', 'normalizeMachineKey', 'assertValidEmail',
+    'canonicalStringSet', 'canonicalQuestionAnswers', 'canonicalParticipantEntry',
+  ], {
+    exports: {}, EMAIL_REGEX: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    createSupabaseAdminClient: () => admin, hashToken: (token: string) => token,
+    getPublicBrfBySlug: async () => ({ id: 'brf', slug: 'test', is_public_apply_enabled: true }),
+    loadActiveActionTypesByKeys: async () => [{ id: 'wall', key: 'wall' }],
+    listActiveApplyQuestions: async () => ({ questions: [], options: [], links: [], triggers: [] }),
+    buildContractorRequirementSummary: () => [], requiresQualifiedContractor: () => false,
+    resolveApplicableQuestionsForSelection: () => [{ id: 'plumbing', key: 'plumbing', options: [{ key: 'yes', triggers: [{ triggerType: 'participant_role', participantRoleId: 'plumber' }] }] }],
+    getPublishedRules: async () => null, rulesAcceptanceFields: () => ({}),
+    getPublicApplicationDraftByToken: async () => ({ state: 'open', case: { id: 'case' }, form,
+      completionRequest: { id: 'round', requestedParticipants: requestedRoles.map(participantRoleId => ({ participantRoleId })) } }),
+    upsertPublicApplicationContact: () => persist('INITIAL_SAVE'),
+    saveCompletion: () => persist('COMPLETION_SAVE'), buildAbsoluteUrl: (origin: string, path: string) => origin + path,
+  })
+  return { input, form, calls, save: () => service(input, 'https://example.test') }
+}
+
+test('new applications and resumed initial drafts reach persistence without confirming suggested companies', async () => {
+  for (const status of ['new', 'draft'] as const) {
+    const f = confirmationFixture(status)
+    // Both action-linked and answer-triggered companies are suggested, not yet requested by the board.
+    await assert.rejects(f.save(), /REACHED_INITIAL_SAVE/)
+    assert.deepEqual(f.calls, ['INITIAL_SAVE'])
+  }
+})
+
+test('completion submission still requires both confirmations for every company in the sent request', async () => {
+  for (const flags of [null, [false, false], [true, false], [false, true]]) {
+    const f = confirmationFixture('need_info')
+    f.input.participantEntries = flags ? [{ participantRoleId: 'plumber', hasVerifiedAuthorization: flags[0], acceptsResponsibility: flags[1] }] : []
+    await assert.rejects(f.save(), /PARTICIPANT_CONFIRMATION_REQUIRED/)
+    assert.deepEqual(f.calls, [])
+  }
+  const confirmed = confirmationFixture('need_info')
+  confirmed.input.participantEntries = [{ participantRoleId: 'plumber', hasVerifiedAuthorization: true, acceptsResponsibility: true }]
+  await assert.rejects(confirmed.save(), /REACHED_COMPLETION_SAVE/)
+})
+
+test('document-only completions and completion drafts do not require company confirmations', async () => {
+  const documentsOnly = confirmationFixture('need_info', [])
+  await assert.rejects(documentsOnly.save(), /REACHED_COMPLETION_SAVE/)
+  const draft = confirmationFixture('need_info')
+  draft.input.mode = 'draft'
+  await assert.rejects(draft.save(), /REACHED_COMPLETION_SAVE/)
+})
+
+test('unrequested existing companies need no new confirmation and remain protected from edits', async () => {
+  const f = confirmationFixture('need_info')
+  const unrequested = { participantRoleId: 'builder', companyName: 'Original builder', hasVerifiedAuthorization: false, acceptsResponsibility: false }
+  f.form.participantEntries = [unrequested]
+  f.input.participantEntries = [unrequested, { participantRoleId: 'plumber', hasVerifiedAuthorization: true, acceptsResponsibility: true }]
+  await assert.rejects(f.save(), /REACHED_COMPLETION_SAVE/)
+  f.input.participantEntries[0] = { ...unrequested, companyName: 'Changed builder' }
+  await assert.rejects(f.save(), /COMPLETION_BASE_FIELDS_LOCKED/)
+})
 
 test('board history contains sent requests and applicant replies, without deleting the full event log', async () => {
   const message = (id: string, type = 'request_for_info', authorRole = 'board', text = id) => ({

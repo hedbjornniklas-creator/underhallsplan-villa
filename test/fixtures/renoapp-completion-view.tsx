@@ -9,7 +9,7 @@ const item: RenoAppCaseDetail = {
   brf: { id: 'brf', name: 'Testföreningen', slug: 'test' }, actionType: { id: 'wall', key: 'wall', label: 'Riva vägg' },
   applicant: { id: 'person', name: 'Testperson', email: 'applicant@example.test', phone: '0700000000' },
   unit: { id: 'unit', unitNumberInternal: '123', unitNumberSkatteverket: '1101', status: 'active' },
-  checks: null, currentContacts: [], documents: [
+  currentContacts: [], documents: [
     { id: 'drawing', documentTypeId: 'drawing-type', documentTypeLabel: 'Utlåtande från byggnadskonstruktör', fileName: 'Konstruktionsutlåtande version 2.pdf', status: 'uploaded', uploadedAt: '2026-09-07', note: null },
     { id: 'old-drawing', documentTypeId: 'drawing-type', documentTypeLabel: 'Utlåtande från byggnadskonstruktör', fileName: 'Tidigare utlåtande.pdf', status: 'uploaded', uploadedAt: '2026-09-06', note: null },
   ],

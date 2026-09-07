@@ -18,12 +18,6 @@ type ActionTypeItem = {
     | 'safe_water'
     | 'bkr_or_gvk'
     | 'structural_engineer'
-  impliesStructure: boolean
-  impliesPlumbing: boolean
-  impliesVentilation: boolean
-  impliesElectrical: boolean
-  impliesWetRoom: boolean
-  impliesSurfaceOnly: boolean
   sortOrder: number
   isActive: boolean
   requirementCount: number
@@ -197,12 +191,6 @@ type ActionTypeDraft = {
   description: string
   riskLevel: ActionTypeItem['riskLevel']
   contractorRequirement: ActionTypeItem['contractorRequirement']
-  impliesStructure: boolean
-  impliesPlumbing: boolean
-  impliesVentilation: boolean
-  impliesElectrical: boolean
-  impliesWetRoom: boolean
-  impliesSurfaceOnly: boolean
   sortOrder: string
   isActive: boolean
 }
@@ -290,12 +278,6 @@ const EMPTY_ACTION_TYPE_DRAFT: ActionTypeDraft = {
   description: '',
   riskLevel: 'medium',
   contractorRequirement: 'none',
-  impliesStructure: false,
-  impliesPlumbing: false,
-  impliesVentilation: false,
-  impliesElectrical: false,
-  impliesWetRoom: false,
-  impliesSurfaceOnly: false,
   sortOrder: '100',
   isActive: true,
 }
@@ -750,7 +732,6 @@ function FlowBuilderHelpSection() {
           <HelpField name="Beskrivning">Intern förklaring av när renoveringstypen ska användas och vad den omfattar.</HelpField>
           <HelpField name="Risknivå">Övergripande riskklassning som används i ansökan och granskningen.</HelpField>
           <HelpField name="Entreprenörskrav">Anger om åtgärden normalt kräver en viss typ av företag eller sakkunnig.</HelpField>
-          <HelpField name="Teknisk klassning">Markerar vilka teknikområden åtgärden berör. Endast ytskikt kan inte kombineras med övriga teknikområden.</HelpField>
           <HelpField name="Sortering">Styr ordningen i listor. Lägre tal visas tidigare.</HelpField>
           <HelpField name="Aktiv renoveringstyp">Avgör om renoveringstypen ska vara tillgänglig för användning.</HelpField>
         </HelpGroup>
@@ -1349,12 +1330,6 @@ export default function RenoAppFlowBuilderPage() {
             description: selectedAction.description ?? '',
             riskLevel: selectedAction.riskLevel,
             contractorRequirement: selectedAction.contractorRequirement,
-            impliesStructure: selectedAction.impliesStructure,
-            impliesPlumbing: selectedAction.impliesPlumbing,
-            impliesVentilation: selectedAction.impliesVentilation,
-            impliesElectrical: selectedAction.impliesElectrical,
-            impliesWetRoom: selectedAction.impliesWetRoom,
-            impliesSurfaceOnly: selectedAction.impliesSurfaceOnly,
             sortOrder: String(selectedAction.sortOrder),
             isActive: selectedAction.isActive,
           }
@@ -1562,12 +1537,6 @@ export default function RenoAppFlowBuilderPage() {
             description: actionTypeDraft.description || null,
             riskLevel: actionTypeDraft.riskLevel,
             contractorRequirement: actionTypeDraft.contractorRequirement,
-            impliesStructure: actionTypeDraft.impliesStructure,
-            impliesPlumbing: actionTypeDraft.impliesPlumbing,
-            impliesVentilation: actionTypeDraft.impliesVentilation,
-            impliesElectrical: actionTypeDraft.impliesElectrical,
-            impliesWetRoom: actionTypeDraft.impliesWetRoom,
-            impliesSurfaceOnly: actionTypeDraft.impliesSurfaceOnly,
             sortOrder: Number(actionTypeDraft.sortOrder || 100),
             isActive: actionTypeDraft.isActive,
           }),
@@ -1855,12 +1824,6 @@ export default function RenoAppFlowBuilderPage() {
             categoryId: selectedAction.categoryId,
             riskLevel: selectedAction.riskLevel,
             contractorRequirement: selectedAction.contractorRequirement,
-            impliesStructure: selectedAction.impliesStructure,
-            impliesPlumbing: selectedAction.impliesPlumbing,
-            impliesVentilation: selectedAction.impliesVentilation,
-            impliesElectrical: selectedAction.impliesElectrical,
-            impliesWetRoom: selectedAction.impliesWetRoom,
-            impliesSurfaceOnly: selectedAction.impliesSurfaceOnly,
             sortOrder: selectedAction.sortOrder + 10,
             isActive: selectedAction.isActive,
           }),
@@ -2418,17 +2381,6 @@ export default function RenoAppFlowBuilderPage() {
             <OverviewCard label="Status" value={actionTypeDraft.isActive ? 'Aktiv renoveringstyp' : 'Inaktiv renoveringstyp'} />
             <OverviewCard label="Risknivå" value={labelForRiskLevel(actionTypeDraft.riskLevel)} />
             <OverviewCard label="Entreprenörskrav" value={labelForContractorRequirement(actionTypeDraft.contractorRequirement)} />
-            <OverviewCard
-              label="Teknisk klassning"
-              value={[
-                actionTypeDraft.impliesStructure ? 'Konstruktion' : '',
-                actionTypeDraft.impliesPlumbing ? 'VA' : '',
-                actionTypeDraft.impliesVentilation ? 'Ventilation' : '',
-                actionTypeDraft.impliesElectrical ? 'El' : '',
-                actionTypeDraft.impliesWetRoom ? 'Våtrum' : '',
-                actionTypeDraft.impliesSurfaceOnly ? 'Endast ytskikt' : '',
-              ].filter(Boolean).join(', ') || 'Ingen angiven'}
-            />
             <OverviewCard label="Sortering" value={actionTypeDraft.sortOrder} />
             <OverviewCard label="Kopplingar" value={`${rootQuestions.length} frågor, ${rootRequirements.length} underlag, ${rootParticipants.length} medverkande`} />
           </div>
@@ -2765,50 +2717,6 @@ export default function RenoAppFlowBuilderPage() {
                           <option value="structural_engineer">Konstruktör</option>
                         </select>
                       </ModalField>
-                      <div className="grid gap-2 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700 md:col-span-2 md:grid-cols-3">
-                        {([
-                          ['impliesStructure', 'Berör konstruktion'],
-                          ['impliesPlumbing', 'Berör VA'],
-                          ['impliesVentilation', 'Berör ventilation'],
-                          ['impliesElectrical', 'Berör el'],
-                          ['impliesWetRoom', 'Berör våtrum'],
-                        ] as const).map(([key, label]) => (
-                          <label key={key} className="inline-flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={actionTypeDraft[key]}
-                              onChange={(event) => setActionTypeDraft((current) => ({
-                                ...current,
-                                [key]: event.target.checked,
-                                ...(event.target.checked ? { impliesSurfaceOnly: false } : {}),
-                              }))}
-                              className="h-4 w-4 rounded border-stone-300"
-                            />
-                            {label}
-                          </label>
-                        ))}
-                        <label className="inline-flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={actionTypeDraft.impliesSurfaceOnly}
-                            onChange={(event) => setActionTypeDraft((current) => ({
-                              ...current,
-                              impliesSurfaceOnly: event.target.checked,
-                              ...(event.target.checked
-                                ? {
-                                    impliesStructure: false,
-                                    impliesPlumbing: false,
-                                    impliesVentilation: false,
-                                    impliesElectrical: false,
-                                    impliesWetRoom: false,
-                                  }
-                                : {}),
-                            }))}
-                            className="h-4 w-4 rounded border-stone-300"
-                          />
-                          Endast ytskikt
-                        </label>
-                      </div>
                       <ModalField label="Sortering">
                         <input value={actionTypeDraft.sortOrder} onChange={(event) => setActionTypeDraft((current) => ({ ...current, sortOrder: event.target.value }))} className="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" />
                       </ModalField>

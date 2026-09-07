@@ -218,12 +218,6 @@ async function applyBaseChange(
         || after.contractorRequirement === 'structural_engineer'
           ? after.contractorRequirement
           : 'none',
-      impliesStructure: bool(after.impliesStructure, false),
-      impliesPlumbing: bool(after.impliesPlumbing, false),
-      impliesVentilation: bool(after.impliesVentilation, false),
-      impliesElectrical: bool(after.impliesElectrical, false),
-      impliesWetRoom: bool(after.impliesWetRoom, false),
-      impliesSurfaceOnly: bool(after.impliesSurfaceOnly, false),
       sortOrder: positiveNumber(after.sortOrder),
       isActive: bool(after.isActive, change.operation !== 'deactivate'),
     })

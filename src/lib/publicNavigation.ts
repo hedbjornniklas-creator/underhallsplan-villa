@@ -22,5 +22,6 @@ export function isPublicRenoPage(pathname: string) {
 
 // Keep the existing login allowlist: query parameters never authorize a new destination.
 export function getPublicLoginDestination(value: unknown) {
+  if (typeof value === 'string' && /^\/renoapp\/review\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return value
   return value === '/dashboard-v1' || value === '/renoapp/app' || value === '/mina-uppdrag' ? value : '/app'
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { RenovationRulesReceipt } from '@/components/renoapp/RenovationRulesView'
+import ConsultantReviewOrder from '@/components/renoapp/ConsultantReviewOrder'
 import type { RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
 import { FileText, Building2, Check, Minus, Info, TriangleAlert, ChevronDown, ChevronUp } from 'lucide-react'
 import { getUnsentCompletionItems, selectCompletionItems, type CompletionSummary } from '@/lib/renoapp/completion'
@@ -49,14 +50,6 @@ export type RenoAppCaseDetail = {
     unitNumberSkatteverket: string | null
     status: string | null
   }
-  checks: {
-    affectsStructure: boolean
-    affectsPlumbing: boolean
-    affectsVentilation: boolean
-    affectsElectrical: boolean
-    affectsWetRoom: boolean
-    affectsSurfaceOnly: boolean
-  } | null
   currentContacts: Array<{
     id: string
     name: string | null
@@ -347,25 +340,7 @@ function buildCaseSummaryChips(item: RenoAppCaseDetail) {
     const actionLabel = getCaseSubtitle(item)
     if (actionLabel && actionLabel !== '-') chips.push(actionLabel)
   }
-  if (item.checks?.affectsStructure) chips.push('Kan påverka konstruktion')
-  if (item.checks?.affectsPlumbing) chips.push('Kan påverka VVS')
-  if (item.checks?.affectsVentilation) chips.push('Kan påverka ventilation')
-  if (item.checks?.affectsElectrical) chips.push('Kan påverka el')
-  if (item.checks?.affectsWetRoom) chips.push('Berör våtrum')
-  if (item.checks?.affectsSurfaceOnly) chips.push('Markerad som ytskiktsarbete')
   return Array.from(new Set(chips))
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function buildConsiderations(item: RenoAppCaseDetail, missingItems: UnderlagItem[]) {
-  const considerations: string[] = []
-  if (item.checks?.affectsStructure) considerations.push('Åtgärden kan påverka bärande konstruktion eller stomme.')
-  if (item.checks?.affectsPlumbing) considerations.push('Åtgärden kan påverka VVS-installationer.')
-  if (item.checks?.affectsVentilation) considerations.push('Åtgärden kan påverka ventilation eller luftflöden.')
-  if (item.checks?.affectsElectrical) considerations.push('Åtgärden kan påverka elinstallationer.')
-  if (item.checks?.affectsWetRoom) considerations.push('Våtrumsrenovering omfattar normalt tätskikt och vatteninstallationer.')
-  if (missingItems.length > 0) considerations.push('Saknat underlag innebär att vissa delar inte kan bedömas fullt ut.')
-  return considerations.length > 0 ? considerations : ['Inga särskilda kontrollpunkter är registrerade från ansökans strukturerade svar.']
 }
 
 function getMissingReviewFlags(item: RenoAppCaseDetail) {
@@ -1333,6 +1308,7 @@ export default function RenoAppCaseDecisionView({
       />
       <ReviewFlagsCard flags={missingReviewFlags.filter((flag) => flag.sourceType !== 'missing_document')} />
       </fieldset>
+      <ConsultantReviewOrder key={item.id} caseId={item.id} brfName={item.brf.name} isDraft={item.status === 'draft'} />
       <div id="board-decision" className="scroll-mt-24">
       <BoardDecisionPanel
         isDraftCase={item.status === 'draft'}

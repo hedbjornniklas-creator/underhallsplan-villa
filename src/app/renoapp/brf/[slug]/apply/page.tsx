@@ -162,14 +162,6 @@ type DraftResponse = {
     participantEntries: ParticipantEntry[]
     actionTypeKeys: string[]
     questionAnswers: Record<string, string[]>
-    checks?: {
-      affectsStructure: boolean
-      affectsPlumbing: boolean
-      affectsVentilation: boolean
-      affectsElectrical: boolean
-      affectsWetRoom: boolean
-      affectsSurfaceOnly: boolean
-    }
   }
   case: {
     id: string
@@ -1199,7 +1191,7 @@ export default function RenoAppApplyPage() {
         setStep(5)
         return
       }
-      const rolesMissingConfirmations = participantRolesForCurrentFlow.filter((participantRole) => {
+      const rolesMissingConfirmations = (isNeedInfoCase ? completionParticipantRoles : []).filter((participantRole) => {
         const entry = getParticipantEntry(participantRole.id)
         return !entry.hasVerifiedAuthorization || !entry.acceptsResponsibility
       })

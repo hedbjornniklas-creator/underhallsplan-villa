@@ -73,7 +73,7 @@ function fixture(resumed = false) {
   const emails: Email[] = []
   const unexpected = () => { throw new Error('Unexpected non-draft service dependency') }
   const writeTables = new Set([
-    'renovation_cases', 'renovation_case_checks', 'renovation_case_action_types',
+    'renovation_cases', 'renovation_case_action_types',
     'renoapp_case_question_answers', 'renoapp_case_participants', 'case_access_links',
   ])
 
@@ -135,6 +135,7 @@ function fixture(resumed = false) {
     '@/lib/renoapp/completionServer': { getLatestCompletion: unexpected, saveCompletion: unexpected },
     '@/lib/access/server': { getCurrentUserPlatformAccessContext: unexpected },
     '@/lib/renoapp/brfAdminAccess': { requireBrfAdminContext: unexpected },
+    '@/lib/renoapp/consultantReviewAccess': { requireConsultantReviewAccess: unexpected },
     '@/lib/renoapp/onboarding': { issueBrfInviteForAuthorizedUser: unexpected },
     '@/lib/renoapp/renovationRulesServer': { getPublishedRules: unexpected, getCaseRulesAcceptance: unexpected },
     '@/lib/renoapp/renovationRules': rules,

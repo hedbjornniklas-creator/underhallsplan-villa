@@ -444,6 +444,33 @@ test('turns an AI add request into an update when the semantic key already exist
   })
 })
 
+test('AI proposals ignore retired classification fields while preserving supported action settings', () => {
+  const retired = ['impliesStructure', 'impliesPlumbing', 'impliesVentilation',
+    'impliesElectrical', 'impliesWetRoom', 'impliesSurfaceOnly']
+  const snapshot = makeSnapshot({ actionTypes: [{ id: 'action-1', key: 'electrical', label: 'El' }] })
+  const result = buildFlowAiDeterministicDiff({ snapshot, candidates: [{
+    changeId: 'change-1', requestedOperation: 'update', entityType: 'action_type',
+    semanticKey: 'electrical', parentSemanticKey: null, title: 'Update', reason: 'Test', risk: 'low',
+    fieldsJson: JSON.stringify({ ...Object.fromEntries(retired.map(key => [key, true])),
+      label: 'Electrical work', riskLevel: 'medium', contractorRequirement: 'authorized_electrician' }),
+    sourceIds: [], requiresExpertReview: false,
+  }] })
+  assert.equal(result.issues.filter(issue => issue.code === 'UNSUPPORTED_FIELD').length, 6)
+  assert.equal(result.changes.length, 1)
+  const saved = JSON.parse(result.changes[0].afterJson ?? '{}')
+  for (const field of retired) assert.equal(Object.hasOwn(saved, field), false)
+  assert.equal(saved.label, 'Electrical work')
+  assert.equal(saved.riskLevel, 'medium')
+  assert.equal(saved.contractorRequirement, 'authorized_electrician')
+})
+
+test('old AI snapshots become stale when retired fields disappear from the current snapshot', async () => {
+  const action = { id: 'action-1', key: 'electrical', label: 'El' }
+  const current = makeSnapshot({ actionTypes: [action] })
+  const previous = makeSnapshot({ actionTypes: [{ ...action, impliesElectrical: true }] })
+  assert.notEqual(await fingerprintFlowAiSnapshot(current), await fingerprintFlowAiSnapshot(previous))
+})
+
 test('blocks a mandatory flow requirement when its source was not retrieved', () => {
   const snapshot = makeSnapshot({
     actionTypes: [{ id: 'action-1', key: 'electrical', label: 'El' }],

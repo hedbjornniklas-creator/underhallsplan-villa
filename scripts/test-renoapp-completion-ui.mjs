@@ -22,6 +22,7 @@ const { css } = await postcss([tailwind()]).process(await readFile('src/app/glob
 const js = await readFile(resolve(output, 'view.js'))
 const applicantJs = await readFile(resolve(output, 'applicant.js'))
 const server = createServer((request, response) => {
+  if (request.url.endsWith('/consultant-review')) { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ order: null })); return }
   if (request.url === '/view.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(js); return }
   if (request.url === '/applicant.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(applicantJs); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -99,7 +100,7 @@ try {
     assert.equal((await page.$$('[data-requirement-id="document:plumber-certificate"] input:checked')).length, 1)
     await page.locator('a[href="#board-decision"]').click()
     assert.equal(await page.$eval('input[name="board-decision"][value="need_info"]', input => input.checked), true)
-    await page.locator('button[type="submit"]').click()
+    await page.locator('#board-decision button[type="submit"]').click()
     await page.waitForFunction(() => document.querySelectorAll('[role="status"]').length === 0)
     assert.deepEqual(await page.evaluate(() => JSON.parse(sessionStorage.getItem('board-fixture')).completion.items.map(row => row.id)), ['document:plumber-certificate', 'participant:builder'])
     assert.ok(await page.$('a[href*="drawing?view=1"]'))
@@ -125,6 +126,45 @@ try {
   }
   await page.setViewport({ width: 1440, height: 1000 })
   await page.goto(`http://127.0.0.1:${server.address().port}/applicant`, { waitUntil: 'networkidle0' })
+  const originalCompletion = await page.evaluate(() => sessionStorage.getItem('completion-fixture'))
+  for (const width of [1440, 390]) {
+    for (const source of ['action', 'answer']) {
+      await page.evaluate(({ originalCompletion, source }) => {
+        const draft = JSON.parse(originalCompletion)
+        const role = { ...draft.completionRequest.requestedParticipants[0], id: 'plumber', isRequired: true, sortOrder: 1 }
+        draft.case.status = 'draft'
+        draft.form.actionTypeKeys = ['wall']
+        draft.form.questionAnswers = { plumbing: ['yes'] }
+        draft.form.participantEntries = []
+        draft.completionRequest = { id: null, requestedDocuments: [], requestedParticipants: [] }
+        const question = { id: 'plumbing', key: 'plumbing', label: 'Påverkas vatteninstallationer?', responseType: 'boolean', isRequired: true, sortOrder: 1,
+          options: [{ id: 'yes', key: 'yes', label: 'Ja', sortOrder: 1, triggers: [{ id: 'trigger', triggerType: 'participant_role', participantRoleId: 'plumber', participantRole: role }] }] }
+        const action = { id: 'wall', key: 'wall', label: 'Riva vägg', sortOrder: 1, requirements: [],
+          participantRoles: source === 'action' ? [role] : [], questions: source === 'answer' ? [question] : [] }
+        sessionStorage.setItem('completion-fixture', JSON.stringify(draft))
+        sessionStorage.setItem('initial-application-config', JSON.stringify({ brf: draft.brf, renovationRules: null, actionTypes: [action], questionBank: [question] }))
+        sessionStorage.removeItem('completion-last-request')
+      }, { originalCompletion, source })
+      await page.setViewport({ width, height: 1000 })
+      await page.reload({ waitUntil: 'networkidle0' })
+      await page.locator('::-p-xpath(//button[contains(., "Granska och skicka")])').click()
+      await page.locator('::-p-xpath(//button[normalize-space(.)="Skicka ansökan"])').click()
+      await page.waitForFunction(() => JSON.parse(sessionStorage.getItem('completion-last-request') ?? 'null')?.mode === 'submit')
+      const submitted = await page.evaluate(() => JSON.parse(sessionStorage.getItem('completion-last-request')))
+      assert.deepEqual(submitted.participantEntries, [])
+      assert.equal(submitted.completionRequestId, null)
+      assert.doesNotMatch(await page.$eval('body', node => node.textContent), /Bekräfta företagets behörighet/)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+      await page.screenshot({ path: resolve(output, `initial-${source}-${width}.png`) })
+      console.log(`PASS initial ${width}px: ${source}-suggested company does not block the initial application`)
+    }
+  }
+  await page.evaluate(originalCompletion => {
+    sessionStorage.setItem('completion-fixture', originalCompletion)
+    sessionStorage.removeItem('initial-application-config')
+  }, originalCompletion)
+  await page.setViewport({ width: 1440, height: 1000 })
+  await page.reload({ waitUntil: 'networkidle0' })
   const company = page.locator('input').filter(input => input.value === 'Original plumber')
   await company.fill('Changed plumber')
   await page.waitForFunction(() => JSON.parse(sessionStorage.getItem('completion-fixture')).form.participantEntries[0].companyName === 'Changed plumber')

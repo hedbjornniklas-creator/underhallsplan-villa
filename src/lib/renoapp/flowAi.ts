@@ -324,12 +324,6 @@ const ALLOWED_PATCH_FIELDS: Record<FlowAiEntityType, ReadonlySet<string>> = {
     'categoryKey',
     'riskLevel',
     'contractorRequirement',
-    'impliesStructure',
-    'impliesPlumbing',
-    'impliesVentilation',
-    'impliesElectrical',
-    'impliesWetRoom',
-    'impliesSurfaceOnly',
     'sortOrder',
     'isActive',
   ]),
@@ -920,12 +914,6 @@ function normalizePatch(
     'requiresEmail',
     'requiresPhone',
     'requiresCertification',
-    'impliesStructure',
-    'impliesPlumbing',
-    'impliesVentilation',
-    'impliesElectrical',
-    'impliesWetRoom',
-    'impliesSurfaceOnly',
   ]) {
     if (field in result && typeof result[field] !== 'boolean') {
       issues.push(makeIssue({
@@ -1072,25 +1060,6 @@ export function buildFlowAiDeterministicDiff(input: {
       : { ...(before ?? newEntityBase(candidate)), ...patch }
     const beforeJson = before ? stableStringifyFlowAiSnapshot(before) : null
     const afterJson = stableStringifyFlowAiSnapshot(after)
-
-    if (
-      candidate.entityType === 'action_type'
-      && after.impliesSurfaceOnly === true
-      && [
-        after.impliesStructure,
-        after.impliesPlumbing,
-        after.impliesVentilation,
-        after.impliesElectrical,
-        after.impliesWetRoom,
-      ].some((value) => value === true)
-    ) {
-      issues.push(makeIssue({
-        code: 'SURFACE_ONLY_CONFLICT',
-        severity: 'error',
-        message: 'En ren ytskiktsåtgärd kan inte samtidigt markeras som konstruktion, VVS, ventilation, el eller våtrum.',
-        changeId: candidate.changeId,
-      }))
-    }
 
     if (beforeJson === afterJson) {
       issues.push(makeIssue({
