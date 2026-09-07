@@ -1698,7 +1698,7 @@ function InspectionDetailsDialog({
                           <option value="">Ej satt</option>
                           <option value="approved">Godkänd</option>
                           <option value="not_approved">Ej godkänd</option>
-                          <option value="partly_approved">Delvis godkänd</option>
+                          <option value="interrupted">Avbruten</option>
                         </select>
                       )}
                       <div className="sm:col-span-2">

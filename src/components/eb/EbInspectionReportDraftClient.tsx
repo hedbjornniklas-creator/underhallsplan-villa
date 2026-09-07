@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, Check, FileText, Loader2, Save } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Save } from 'lucide-react'
 import type { MouseEvent, ReactNode } from 'react'
 import { useMemo, useState, useTransition } from 'react'
 import { useEbToast } from '@/components/eb/EbToastProvider'
@@ -14,7 +14,6 @@ import type {
   EbInspectionReport,
   EbPreviousInspectionItem,
   EbReportDraftSection,
-  EbReportSectionStatus,
 } from '@/lib/eb/server'
 
 type Props = {
@@ -27,20 +26,6 @@ function draftNavigationClassName(emerald: boolean, busy: boolean) {
     ? 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
     : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-50'
   return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
-}
-
-const statusLabels: Record<EbReportSectionStatus, string> = {
-  draft: 'Utkast',
-  complete: 'Klar',
-  missing: 'Saknas',
-  not_applicable: 'Ej relevant',
-}
-
-const statusClasses: Record<EbReportSectionStatus, string> = {
-  draft: 'border-amber-200 bg-amber-50 text-amber-800',
-  complete: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  missing: 'border-rose-200 bg-rose-50 text-rose-800',
-  not_applicable: 'border-gray-200 bg-gray-50 text-gray-600',
 }
 
 const sourceLabels: Record<EbReportDraftSection['source'], string> = {
@@ -313,11 +298,11 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
     [activeKey, visibleSections]
   )
 
-  const completeCount = visibleSections.filter((section) => section.status === 'complete').length
-  const missingCount = visibleSections.filter((section) => section.status === 'missing').length
+  const includedCount = visibleSections.filter((section) => section.isRelevant).length
+  const isLocked = Boolean(initialReport.inspection.reportLockedAt)
 
   function updateActiveSection(patch: Partial<EbReportDraftSection>) {
-    if (!activeSection) return
+    if (!activeSection || isLocked) return
     setDraftDirty(true)
     setSections((current) =>
       current.map((section) => (section.key === activeSection.key ? { ...section, ...patch } : section))
@@ -446,7 +431,7 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
             <button
               type="button"
               onClick={saveDraft}
-              disabled={isPending}
+              disabled={isPending || isLocked}
               className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save size={16} />
@@ -466,10 +451,7 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
             </div>
             <div className="flex gap-2 text-sm">
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">
-                {completeCount} klara
-              </span>
-              <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 font-semibold text-rose-800">
-                {missingCount} saknas
+                {includedCount} av {visibleSections.length} avsnitt valda
               </span>
             </div>
           </div>
@@ -525,7 +507,7 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                   <option value="">Ej satt</option>
                   <option value="approved">Godkänd</option>
                   <option value="not_approved">Ej godkänd</option>
-                  <option value="partly_approved">Delvis godkänd</option>
+                  <option value="interrupted">Avbruten</option>
                 </select>
               )
             ) : null}
@@ -750,16 +732,18 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                 >
                   <span
                     className={`mt-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full border text-xs font-bold ${
-                      statusClasses[section.status]
+                      section.isRelevant
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : 'border-gray-200 bg-gray-50 text-gray-500'
                     }`}
                   >
-                    {section.status === 'complete' ? <Check size={13} /> : section.sbrPoint ?? '-'}
+                    {section.sbrPoint ?? '–'}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-bold text-gray-950">{section.title}</span>
                     <span className="mt-1 block text-xs text-gray-500">
                       {section.sbrPoint ? `SBR punkt ${section.sbrPoint} · ` : ''}
-                      {sourceLabels[section.source]}
+                      {section.isRelevant ? 'Tas med i utlåtandet' : 'Tas inte med i utlåtandet'}
                     </span>
                   </span>
                 </button>
@@ -775,16 +759,19 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                     {activeSection.sbrPoint ? `SBR punkt ${activeSection.sbrPoint}` : 'Utlåtande'}
                   </p>
                   <h2 className="mt-1 text-xl font-bold">{activeSection.title}</h2>
-                  <p className="mt-1 text-sm text-gray-500">Källa: {sourceLabels[activeSection.source]}</p>
                   <p className="mt-1 text-xs font-semibold text-gray-600">
                     {activeSection.contentMode === 'structured'
-                      ? 'Fältstyrd information'
+                      ? `Sakuppgifter · ${sourceLabels[activeSection.source]}`
                       : activeSection.contentMode === 'mixed'
-                        ? 'Redigerbar text · Fältdata uppdateras automatiskt'
-                        : 'Redigerbar text'}
+                        ? 'Fri text med tillhörande sakuppgifter'
+                        : 'Fri text'}
                   </p>
                   <p className="mt-2 max-w-2xl rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                    {sourceHints[activeSection.source]}
+                    {activeSection.contentMode === 'structured'
+                      ? sourceHints[activeSection.source]
+                      : activeSection.contentMode === 'mixed'
+                        ? 'Formuleringen redigeras fritt här och sparas i utlåtandet. Tillhörande namn, datum och listor hämtas från sina fält och visas tillsammans med texten.'
+                        : 'Texten nedan används i PDF och digitalt utlåtande. Anpassa den till besiktningen; ändringar i andra formulär skriver inte över din text.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -792,6 +779,7 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                     <input
                       type="checkbox"
                       checked={activeSection.isRelevant}
+                      disabled={isLocked}
                       onChange={(event) =>
                         updateActiveSection({
                           isRelevant: event.target.checked,
@@ -800,32 +788,23 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                         })
                       }
                     />
-                    Relevant
+                    Ta med i utlåtandet
                   </label>
-                  <select
-                    value={activeSection.status}
-                    disabled={activeSection.contentMode !== 'editable'}
-                    onChange={(event) =>
-                      updateActiveSection({ status: event.target.value as EbReportSectionStatus })
-                    }
-                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold disabled:cursor-default disabled:bg-gray-50 disabled:text-gray-500"
-                  >
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
                 </div>
               </div>
 
-              <textarea
+              {activeSection.contentMode === 'structured' ? (
+                <div className="mt-5 whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-700">
+                  {activeSection.text || 'Inga uppgifter har angetts.'}
+                </div>
+              ) : <textarea
                 value={activeSection.text}
                 onChange={(event) => updateActiveSection({ text: event.target.value })}
-                readOnly={activeSection.contentMode === 'structured'}
+                aria-label={`Text för ${activeSection.title}`}
+                disabled={isLocked}
                 rows={18}
                 className="mt-5 w-full rounded-lg border border-gray-300 bg-white p-4 text-sm leading-6 text-gray-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 read-only:cursor-default read-only:bg-gray-50 read-only:text-gray-700"
-              />
+              />}
             </section>
           ) : null}
         </div>

@@ -65,9 +65,9 @@ import type {
   EbProjectListItem,
   EbReportDraftSection,
   EbReportNoteHeading,
-  EbReportSectionStatus,
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
+import { ebReviewChildSectionKeys, ebReviewSectionKeys } from '@/lib/eb/reviewSections'
 
 type EbInspectionRoundClientProps = {
   initialRound: EbInspectionReport
@@ -140,8 +140,6 @@ type InspectionDebouncedTextField =
   | 'inspectionCostDistribution'
   | 'defectNumberingExplanation'
 type ParticipantsAutosavePayload = {
-  subject: string
-  body: string
   participants: EditableParticipant[]
 }
 type DocumentsAutosavePayload = { documents: EbInspectionDocument[] }
@@ -263,13 +261,6 @@ const PREVIOUS_INSPECTION_STATUS_OPTIONS: Array<{
   { value: 'not_performed', label: 'Ej utförd' },
   { value: 'not_applicable', label: 'Ej aktuell' },
 ]
-
-const REPORT_SECTION_STATUS_LABELS: Record<EbReportSectionStatus, string> = {
-  draft: 'Utkast',
-  complete: 'Klar',
-  missing: 'Saknas',
-  not_applicable: 'Ej relevant',
-}
 
 const REPORT_SECTION_SOURCE_LABELS: Record<EbReportDraftSection['source'], string> = {
   project: 'Entreprenad',
@@ -606,12 +597,8 @@ function mergeReportDraftAutosavePayload(
   }
 }
 
-function participantsFingerprint(subject: string, body: string, participants: EditableParticipant[]) {
-  return JSON.stringify({
-    subject,
-    body,
-    participants: participantPayload(participants),
-  })
+function participantsFingerprint(participants: EditableParticipant[]) {
+  return JSON.stringify(participantPayload(participants))
 }
 
 function getNoteLabel(round: EbInspectionRound, note: EbNote | null, nextNumber: number) {
@@ -1588,6 +1575,350 @@ function InspectionDocumentsEditor({
   )
 }
 
+
+function ReviewInspectionFields({
+  sectionKey,
+  form,
+  inspectionId,
+  disabled,
+  preliminaryInspection,
+  supportsFinalDecision,
+  onChange,
+  onTextSave,
+}: {
+  sectionKey: string
+  form: InspectionDetailsFormState
+  inspectionId: string
+  disabled: boolean
+  preliminaryInspection: boolean
+  supportsFinalDecision: boolean
+  onChange: <K extends keyof InspectionDetailsFormState>(
+    field: K,
+    value: InspectionDetailsFormState[K]
+  ) => void
+  onTextSave: (field: InspectionDebouncedTextField, value: string) => Promise<void>
+}) {
+  const fields =
+    sectionKey === 'inspection_time' ? (
+      <>
+        {fieldLabel(
+          'Besiktningsdatum',
+          <input
+            type="date"
+            value={form.inspectionDate}
+            onChange={(event) => onChange('inspectionDate', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+        {fieldLabel(
+          'Besiktningstid',
+          <input
+            type="time"
+            value={form.inspectionTime}
+            onChange={(event) => onChange('inspectionTime', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+        {fieldLabel(
+          'Samlingsplats',
+          <input
+            value={form.meetingPlace}
+            onChange={(event) => onChange('meetingPlace', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+        {fieldLabel(
+          'Försammanträde',
+          <input
+            type="time"
+            value={form.startMeetingTime}
+            onChange={(event) => onChange('startMeetingTime', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+        {fieldLabel(
+          'Slutsammanträde',
+          <input
+            type="time"
+            value={form.finalMeetingTime}
+            onChange={(event) => onChange('finalMeetingTime', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+      </>
+    ) : sectionKey === 'inspectors' ? (
+      <>
+        {fieldLabel(
+          'Besiktningsman utsedd av',
+          <select
+            value={form.inspectorAppointedBy}
+            onChange={(event) => onChange('inspectorAppointedBy', event.target.value)}
+            className={inputClassName()}
+          >
+            <option value="">Ej satt</option>
+            <option value="client">Beställare</option>
+            <option value="parties_jointly">Parterna gemensamt</option>
+            <option value="contractor">Entreprenör</option>
+          </select>
+        )}
+      </>
+    ) : sectionKey === 'summons' ? (
+      <>
+        {fieldLabel(
+          'Kallelsemetod',
+          <InvitationMethodField
+            value={form.invitationMethod}
+            onChange={(value) => onChange('invitationMethod', value)}
+          />
+        )}
+        {fieldLabel(
+          'Kallelsedatum',
+          <input
+            type="date"
+            value={form.invitationDate}
+            onChange={(event) => onChange('invitationDate', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+      </>
+    ) : sectionKey === 'approval_decision' && supportsFinalDecision ? (
+      <>
+        {fieldLabel(
+          'Beslut',
+          <select
+            value={form.approvalStatus}
+            onChange={(event) =>
+              onChange('approvalStatus', event.target.value)
+            }
+            className={inputClassName()}
+          >
+            <option value="">Ej satt</option>
+            <option value="approved">Godkänd</option>
+            <option value="not_approved">Ej godkänd</option>
+            <option value="interrupted">Avbruten</option>
+          </select>
+        )}
+        <div className="md:col-span-2">{fieldLabel(
+          'Beslutets motivering',
+          <DebouncedTextarea
+            value={form.approvalNote}
+            draftKey={`eb:${inspectionId}:inspection:approval-note`}
+            disabled={disabled}
+            onSave={(value) => onTextSave('approvalNote', value)}
+            rows={3}
+            className={`${inputClassName()} resize-y leading-6`}
+          />
+        )}</div>
+      </>
+    ) : sectionKey === 'continued_final_inspection' && supportsFinalDecision ? (
+      <>
+        {fieldLabel(
+          'Fortsatt slutbesiktning',
+          <select
+            value={form.requiresContinuedFinalInspection}
+            onChange={(event) =>
+              onChange(
+                'requiresContinuedFinalInspection',
+                event.target.value
+              )
+            }
+            className={inputClassName()}
+          >
+            <option value="">Ej satt</option>
+            <option value="true">Ja</option>
+            <option value="false">Nej</option>
+          </select>
+        )}
+        {form.requiresContinuedFinalInspection === 'true' ? (
+          <>
+            {fieldLabel(
+              'Ny slutbesiktning datum',
+              <input
+                type="date"
+                value={form.continuedFinalInspectionDate}
+                onChange={(event) =>
+                  onChange(
+                    'continuedFinalInspectionDate',
+                    event.target.value
+                  )
+                }
+                className={inputClassName()}
+              />
+            )}
+            {fieldLabel(
+              'Ny slutbesiktning tid',
+              <input
+                type="time"
+                value={form.continuedFinalInspectionTime}
+                onChange={(event) =>
+                  onChange(
+                    'continuedFinalInspectionTime',
+                    event.target.value
+                  )
+                }
+                className={inputClassName()}
+              />
+            )}
+          </>
+        ) : null}
+      </>
+    ) : sectionKey === 'reclamation_notice' && supportsFinalDecision ? (
+      <>
+        {fieldLabel(
+          'Garantitidens slut',
+          <input
+            type="date"
+            value={form.warrantyEndDate}
+            onChange={(event) =>
+              onChange('warrantyEndDate', event.target.value)
+            }
+            className={inputClassName()}
+          />
+        )}
+        {fieldLabel(
+          'Särskild varugaranti för',
+          <input
+            value={form.warrantyScope}
+            onChange={(event) =>
+              onChange('warrantyScope', event.target.value)
+            }
+            className={inputClassName()}
+          />
+        )}
+      </>
+    ) : sectionKey === 'remedy_deadline' ? (
+      <>
+        {fieldLabel(
+          'Fel avhjälpta senast',
+          <input
+            type="date"
+            value={form.defaultRemedyDeadline}
+            onChange={(event) => onChange('defaultRemedyDeadline', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+        {!preliminaryInspection ? (
+          <>
+            {fieldLabel(
+              'Efterbesiktning påkallad',
+              <select
+                value={form.afterInspectionRequested}
+                onChange={(event) =>
+                  onChange('afterInspectionRequested', event.target.value)
+                }
+                className={inputClassName()}
+              >
+                <option value="">Ej satt</option>
+                <option value="true">Ja</option>
+                <option value="false">Nej</option>
+              </select>
+            )}
+            {form.afterInspectionRequested === 'true' ? (
+              <>
+                {fieldLabel(
+                  'Efterbesiktning påkallad av',
+                  <select
+                    value={form.afterInspectionRequestedBy}
+                    onChange={(event) =>
+                      onChange('afterInspectionRequestedBy', event.target.value)
+                    }
+                    className={inputClassName()}
+                  >
+                    <option value="">Ej satt</option>
+                    <option value="client">Beställare</option>
+                    <option value="contractor">Hantverkare</option>
+                  </select>
+                )}
+                {fieldLabel(
+                  'Efterbesiktning senast',
+                  <input
+                    type="date"
+                    value={form.afterInspectionDueDate}
+                    onChange={(event) =>
+                      onChange('afterInspectionDueDate', event.target.value)
+                    }
+                    className={inputClassName()}
+                  />
+                )}
+                <label className="flex min-h-[2.75rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900 md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={form.afterInspectionNoticeInReport}
+                    onChange={(event) => onChange('afterInspectionNoticeInReport', event.target.checked)}
+                    className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
+                  />
+                  Utlåtandet gäller som kallelse till efterbesiktning
+                </label>
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </>
+    ) : sectionKey === 'distribution_list' ? (
+      <>
+        {fieldLabel(
+          'Distributionsdatum',
+          <input
+            type="date"
+            value={form.reportDistributionDate}
+            onChange={(event) => onChange('reportDistributionDate', event.target.value)}
+            className={inputClassName()}
+          />
+        )}
+      </>
+    ) : sectionKey === 'defects_appendices' ? (
+      <>
+        <div className="md:col-span-2">{fieldLabel(
+          'Övriga förklaringar',
+          <DebouncedTextarea
+            value={form.defectNumberingExplanation}
+            draftKey={`eb:${inspectionId}:inspection:defect-explanation`}
+            disabled={disabled}
+            onSave={(value) =>
+              onTextSave('defectNumberingExplanation', value)
+            }
+            rows={4}
+            className={`${inputClassName()} resize-y leading-6`}
+          />
+        )}</div>
+        {fieldLabel(
+          'Lokal, byggdel eller installationsdel utan fel redovisas',
+          <select
+            value={form.defectNoErrorPartsPolicy}
+            onChange={(event) => onChange('defectNoErrorPartsPolicy', event.target.value)}
+            className={inputClassName()}
+          >
+            <option value="not_listed">inte</option>
+            <option value="listed_with_dash">med ---</option>
+          </select>
+        )}
+      </>
+    ) : null
+
+  if (!fields) return null
+  const fieldContent = (
+    <fieldset disabled={disabled} className="grid gap-3 md:grid-cols-2">
+      {fields}
+    </fieldset>
+  )
+
+  if (sectionKey === 'summons' || sectionKey === 'remedy_deadline') {
+    return (
+      <details className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+        <summary className="cursor-pointer text-sm font-semibold text-gray-800">
+          Underlag för starttext
+        </summary>
+        <p className="mb-3 mt-2 text-xs leading-5 text-gray-600">
+          Ändringar här skriver inte över texten. Justera texten själv eller välj Återställ starttext.
+        </p>
+        {fieldContent}
+      </details>
+    )
+  }
+
+  return fieldContent
+}
+
 function ReportDraftSectionsEditor({
   sections,
   inspectionId,
@@ -1596,6 +1927,9 @@ function ReportDraftSectionsEditor({
   onSectionChange,
   onSectionTextSave,
   onResetSection,
+  renderSectionFields,
+  replacesStructuredText,
+  renderSectionSupplement,
 }: {
   sections: EbReportDraftSection[]
   inspectionId: string
@@ -1604,6 +1938,9 @@ function ReportDraftSectionsEditor({
   onSectionChange: (section: EbReportDraftSection) => void
   onSectionTextSave: (sectionKey: string, text: string) => Promise<void>
   onResetSection: (sectionKey: string) => Promise<void>
+  renderSectionFields?: (section: EbReportDraftSection) => ReactNode
+  replacesStructuredText?: (sectionKey: string) => boolean
+  renderSectionSupplement?: (section: EbReportDraftSection) => ReactNode
 }) {
   const updateSection = (key: string, patch: Partial<EbReportDraftSection>) => {
     const section = sections.find((item) => item.key === key)
@@ -1621,8 +1958,12 @@ function ReportDraftSectionsEditor({
 
   return (
     <div className="space-y-4">
-      {sections.map((section) => (
-        <article key={section.key} className="rounded-md border border-emerald-100 bg-white p-3">
+      {sections.filter((section) => ebReviewSectionKeys(sections).includes(section.key)).map((section) => {
+        const fields = renderSectionFields?.(section)
+        const supplement = renderSectionSupplement?.(section)
+        const childKeys = ebReviewChildSectionKeys(section.key, sections)
+        return (
+        <article id={`eb-review-${section.key}`} key={section.key} className="scroll-mt-4 rounded-md border border-emerald-100 bg-white p-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
@@ -1630,12 +1971,11 @@ function ReportDraftSectionsEditor({
               </p>
               <h3 className="mt-1 text-sm font-semibold text-gray-950">{section.title}</h3>
               <p className="mt-1 text-xs text-gray-500">
-                {REPORT_SECTION_SOURCE_LABELS[section.source]}
                 {section.contentMode === 'structured'
-                  ? ' · Fältstyrd'
+                  ? `Sakuppgifter · ${REPORT_SECTION_SOURCE_LABELS[section.source]}`
                   : section.contentMode === 'mixed'
-                    ? ' · Redigerbar text · Fältdata automatiskt'
-                    : ' · Redigerbar'}
+                    ? 'Fri text med tillhörande sakuppgifter'
+                    : 'Fri text'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1644,8 +1984,8 @@ function ReportDraftSectionsEditor({
                   type="button"
                   onClick={() => void onResetSection(section.key)}
                   disabled={disabled}
-                  title={resettingSectionKey === section.key ? 'Återställer standardtext...' : 'Återställ standardtext'}
-                  aria-label={`Återställ standardtext för ${section.title}`}
+                  title={resettingSectionKey === section.key ? 'Återställer starttext...' : 'Återställ starttext'}
+                  aria-label={`Återställ starttext för ${section.title}`}
                   aria-busy={resettingSectionKey === section.key}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 transition hover:bg-gray-50 hover:text-gray-950 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -1670,49 +2010,68 @@ function ReportDraftSectionsEditor({
                   }
                   className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
                 />
-                Relevant
+                Ta med i utlåtandet
               </label>
-              <select
-                value={section.status}
-                disabled={disabled || section.contentMode !== 'editable'}
-                onChange={(event) =>
-                  updateSection(section.key, { status: event.target.value as EbReportSectionStatus })
-                }
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-950"
-              >
-                {Object.entries(REPORT_SECTION_STATUS_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
           {section.contentMode === 'mixed' ? (
             <p className="mt-3 rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-              Standardtexten redigeras här. Namn, datum, handlingar och andra sakuppgifter visas i
-              utlåtandet från sina respektive fält och kan inte ändras i texten.
+              Formuleringen redigeras fritt här och sparas i utlåtandet. Tillhörande namn, datum
+              och listor hämtas från sina fält och visas tillsammans med texten.
             </p>
           ) : section.contentMode === 'structured' ? (
             <p className="mt-3 text-xs text-gray-500">
-              Innehållet ändras i de fält som sektionen hämtar sina uppgifter från.
+              {fields ? 'Sakuppgifterna nedan används i utlåtandet.' : 'Uppgifterna hämtas från entreprenaden eller besiktningen.'}
             </p>
+          ) : (
+            <p className="mt-3 text-xs text-gray-500">
+              Texten nedan används i PDF och digitalt utlåtande. Anpassa den till besiktningen;
+              ändringar i andra formulär skriver inte över din text.
+            </p>
+          )}
+          {section.contentMode === 'structured' ? (
+            replacesStructuredText?.(section.key) ? null : (
+              <div className="mt-3 whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-3 text-sm leading-6 text-gray-700">
+                {section.text || 'Inga uppgifter har angetts.'}
+              </div>
+            )
+          ) : (
+            <DebouncedTextarea
+              value={section.text}
+              draftKey={`eb:${inspectionId}:report-section:${section.key}`}
+              disabled={disabled}
+              aria-label={`Text för ${section.title}`}
+              onSave={(text) => onSectionTextSave(section.key, text)}
+              rows={8}
+              className={`${inputClassName()} mt-3 resize-y leading-6`}
+            />
+          )}
+          {fields ? <div className="mt-4 border-t border-emerald-100 pt-4">{fields}</div> : null}
+          {childKeys.length > 0 ? (
+            <div className="mt-4 space-y-3 border-l-2 border-emerald-100 pl-3">
+              {section.key === 'defects_appendices' && !section.isRelevant ? (
+                <p className="text-xs text-gray-500">
+                  Underavsnitten visas i utlåtandet när detta avsnitt är valt.
+                </p>
+              ) : null}
+              <ReportDraftSectionsEditor
+                sections={sections.filter((candidate) => childKeys.includes(candidate.key))}
+                inspectionId={inspectionId}
+                disabled={disabled}
+                resettingSectionKey={resettingSectionKey}
+                onSectionChange={onSectionChange}
+                onSectionTextSave={onSectionTextSave}
+                onResetSection={onResetSection}
+                renderSectionFields={renderSectionFields}
+                replacesStructuredText={replacesStructuredText}
+                renderSectionSupplement={renderSectionSupplement}
+              />
+            </div>
           ) : null}
-          <DebouncedTextarea
-            value={section.text}
-            draftKey={
-              section.contentMode !== 'structured'
-                ? `eb:${inspectionId}:report-section:${section.key}`
-                : undefined
-            }
-            disabled={disabled}
-            readOnly={section.contentMode === 'structured'}
-            onSave={(text) => onSectionTextSave(section.key, text)}
-            rows={8}
-            className={`${inputClassName()} mt-3 resize-y leading-6 read-only:cursor-default read-only:bg-gray-50 read-only:text-gray-700`}
-          />
+          {supplement ? <div className="mt-4">{supplement}</div> : null}
         </article>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -1959,8 +2318,6 @@ export default function EbInspectionRoundClient({
   const [participants, setParticipants] = useState<EditableParticipant[]>(() =>
     initialRound.participants.map(toLocalParticipant)
   )
-  const [invitationSubject, setInvitationSubject] = useState('')
-  const [invitationBody, setInvitationBody] = useState('')
   const [invitationLoading, setInvitationLoading] = useState(true)
   const [invitationLoaded, setInvitationLoaded] = useState(false)
   const [reportSections, setReportSections] = useState<EbReportDraftSection[]>(
@@ -1974,10 +2331,10 @@ export default function EbInspectionRoundClient({
   const reportDraftUpdatedAtRef = useRef<string | null>(
     initialRound.reportDraft.updatedAt ?? null
   )
-  const [inspectionSaving, setInspectionSaving] = useState(false)
-  const [participantsSaving, setParticipantsSaving] = useState(false)
-  const [documentsSaving, setDocumentsSaving] = useState(false)
-  const [checkpointsSaving, setCheckpointsSaving] = useState(false)
+  const [, setInspectionSaving] = useState(false)
+  const [, setParticipantsSaving] = useState(false)
+  const [, setDocumentsSaving] = useState(false)
+  const [, setCheckpointsSaving] = useState(false)
   const [reportDraftSaving, setReportDraftSaving] = useState(false)
   const [refreshingReportSource, setRefreshingReportSource] = useState<'project' | 'inspector' | null>(null)
   const [resettingReportSectionKey, setResettingReportSectionKey] = useState<string | null>(null)
@@ -1994,7 +2351,7 @@ export default function EbInspectionRoundClient({
   const checkpointNotePromisesRef = useRef(new Map<string, Promise<EbNote>>())
   const lastAutosavedInspectionRef = useRef(inspectionFormFingerprint(inspectionForm))
   const lastAutosavedParticipantsRef = useRef(
-    participantsFingerprint(invitationSubject, invitationBody, participants)
+    participantsFingerprint(participants)
   )
   const lastAutosavedDocumentsRef = useRef(documentsFingerprint(documents))
   const lastAutosavedCheckpointsRef = useRef(checkpointsFingerprint(checkpoints))
@@ -2218,20 +2575,16 @@ export default function EbInspectionRoundClient({
         const response = await fetch(invitationPath)
         const payload = (await response.json().catch(() => ({}))) as InvitationResponse
         if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte hämta kallelse och deltagare.')
+          throw new Error(payload.error ?? 'Kunde inte hämta deltagare.')
         }
         if (cancelled) return
-        const nextSubject = payload.subject ?? ''
-        const nextBody = payload.body ?? ''
         const nextParticipants = (payload.participants ?? []).map(toLocalParticipant)
-        lastAutosavedParticipantsRef.current = participantsFingerprint(nextSubject, nextBody, nextParticipants)
-        setInvitationSubject(nextSubject)
-        setInvitationBody(nextBody)
+        lastAutosavedParticipantsRef.current = participantsFingerprint(nextParticipants)
         setParticipants(nextParticipants)
         setInvitationLoaded(true)
       } catch (loadError) {
         if (!cancelled) {
-          showError(loadError, 'Kunde inte hämta kallelse och deltagare.')
+          showError(loadError, 'Kunde inte hämta deltagare.')
         }
       } finally {
         if (!cancelled) {
@@ -2428,65 +2781,6 @@ export default function EbInspectionRoundClient({
     setParticipants((current) => current.filter((_, participantIndex) => participantIndex !== index))
   }
 
-  const saveInspectionDetails = async () => {
-    if (isLocked) {
-      showError(lockedMessage)
-      return
-    }
-    if (inspectionSaving) return
-
-    try {
-      setReviewMessage(null)
-      resetInspectionAutosaveError()
-      await enqueueInspectionAutosave({
-        kind: 'inspection',
-        form: inspectionFormRef.current,
-      })
-      setReviewMessage('Besiktningsuppgifterna är sparade.')
-    } catch {
-      // Kön visar felet och lämnar den lokala texten orörd.
-    }
-  }
-
-  const saveParticipants = async () => {
-    if (isLocked) {
-      showError(lockedMessage)
-      return
-    }
-    if (participantsSaving || invitationLoading || !invitationLoaded) return
-
-    try {
-      setReviewMessage(null)
-      resetParticipantsAutosaveError()
-      await enqueueParticipantsAutosave({
-        kind: 'participants',
-        subject: invitationSubject,
-        body: invitationBody,
-        participants,
-      })
-      setReviewMessage('Kallelse och deltagare är sparade.')
-    } catch {
-      // Kön visar felet och lämnar den lokala texten orörd.
-    }
-  }
-
-  const saveDocuments = async () => {
-    if (isLocked) {
-      showError(lockedMessage)
-      return
-    }
-    if (documentsSaving) return
-
-    try {
-      setReviewMessage(null)
-      resetDocumentsAutosaveError()
-      await enqueueDocumentsAutosave({ kind: 'documents', documents })
-      setReviewMessage('Handlingarna är sparade.')
-    } catch {
-      // Kön visar felet och lämnar den lokala texten orörd.
-    }
-  }
-
   const updateCheckpoint = <K extends keyof EbInspectionCheckpoint>(
     checkpointId: string,
     field: K,
@@ -2497,23 +2791,6 @@ export default function EbInspectionRoundClient({
         checkpoint.id === checkpointId ? { ...checkpoint, [field]: value } : checkpoint
       )
     )
-  }
-
-  const saveCheckpoints = async () => {
-    if (isLocked) {
-      showError(lockedMessage)
-      return
-    }
-    if (checkpointsSaving) return
-
-    try {
-      setReviewMessage(null)
-      resetCheckpointsAutosaveError()
-      await enqueueCheckpointsAutosave({ kind: 'checkpoints', checkpoints })
-      setReviewMessage('Kontrollpunkterna är sparade.')
-    } catch {
-      // Kön visar felet och lämnar den lokala texten orörd.
-    }
   }
 
   const saveReportDraft = async () => {
@@ -2592,7 +2869,7 @@ export default function EbInspectionRoundClient({
     if (resettingReportSectionKey || reportDraftSaving || deletingNoteRef.current) return
     const section = reportSectionsRef.current.find((item) => item.key === sectionKey)
     if (!section || section.contentMode === 'structured') return
-    if (!window.confirm(`Återställ standardtexten för "${section.title}"?`)) return
+    if (!window.confirm(`Ersätt din text i "${section.title}" med starttexten från mallen och aktuella uppgifter?`)) return
 
     setResettingReportSectionKey(sectionKey)
     setReviewMessage(null)
@@ -2613,7 +2890,7 @@ export default function EbInspectionRoundClient({
         replaceNoteHeadings(body.reportDraft.noteHeadings)
       }
       reportDraftUpdatedAtRef.current = body.reportDraft?.updatedAt ?? null
-      setReviewMessage(`Standardtexten för ${section.title} är återställd.`)
+      setReviewMessage(`Starttexten för ${section.title} är återställd.`)
     } catch (error) {
       showError(error, 'Kunde inte återställa standardtexten.')
     } finally {
@@ -2657,14 +2934,12 @@ export default function EbInspectionRoundClient({
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              subject: payload.subject,
-              body: payload.body,
               participants: participantPayload(payload.participants),
             }),
           })
           const body = (await response.json().catch(() => ({}))) as InvitationResponse
           if (!response.ok) {
-            throw new Error(body.error ?? 'Kunde inte autospara kallelse och deltagare.')
+            throw new Error(body.error ?? 'Kunde inte autospara deltagare.')
           }
           return { kind: 'participants', payload: body }
         } finally {
@@ -2772,11 +3047,7 @@ export default function EbInspectionRoundClient({
     }
 
     if (result.kind === 'participants' && payload.kind === 'participants') {
-      lastAutosavedParticipantsRef.current = participantsFingerprint(
-        payload.subject,
-        payload.body,
-        payload.participants
-      )
+      lastAutosavedParticipantsRef.current = participantsFingerprint(payload.participants)
       return
     }
 
@@ -2958,7 +3229,7 @@ export default function EbInspectionRoundClient({
     }
     if (isLocked || invitationLoading || !invitationLoaded) return
 
-    const fingerprint = participantsFingerprint(invitationSubject, invitationBody, participants)
+    const fingerprint = participantsFingerprint(participants)
     if (fingerprint === lastAutosavedParticipantsRef.current) return
 
     participantsAutosaveTimerRef.current = setTimeout(() => {
@@ -2966,8 +3237,6 @@ export default function EbInspectionRoundClient({
       resetParticipantsAutosaveError()
       void enqueueParticipantsAutosave({
           kind: 'participants',
-          subject: invitationSubject,
-          body: invitationBody,
           participants,
         }).catch(() => undefined)
     }, 700)
@@ -2980,10 +3249,8 @@ export default function EbInspectionRoundClient({
     }
   }, [
     enqueueParticipantsAutosave,
-    invitationBody,
     invitationLoaded,
     invitationLoading,
-    invitationSubject,
     isLocked,
     participants,
     resetParticipantsAutosaveError,
@@ -4287,187 +4554,28 @@ export default function EbInspectionRoundClient({
   const isMobileRoundNavigating = pendingNavigationKey === mobileRoundNavigationKey
   const navigationInProgress = Boolean(pendingNavigationKey)
 
-  return (
-    <Protected>
-      <main className="relative min-h-full overflow-hidden">
-        <input
-          ref={noteRowImageInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(event) => void handleNoteRowImageSelected(event)}
-          className="hidden"
-        />
-        <input
-          ref={checkpointImageInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(event) => void handleCheckpointImageSelected(event)}
-          className="hidden"
-        />
-        <input
-          ref={imageBankInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(event) => void handleImageBankFilesSelected(event)}
-          className="hidden"
-        />
-        <input
-          ref={inspectionImageBankInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(event) => void handleInspectionImageBankFilesSelected(event)}
-          className="hidden"
-        />
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'radial-gradient(100% 72% at 50% 0%, rgba(220,252,231,0.08) 0%, rgba(220,252,231,0) 62%), linear-gradient(135deg, #ffffff 0%, #fbfefc 52%, #fafdfb 100%)',
-          }}
-        />
-        <div className="pointer-events-none absolute inset-0 bg-white/62 backdrop-blur-[1px]" />
 
-        <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
-          <header className="rounded-lg border border-emerald-100 bg-white/84 p-4 shadow-sm backdrop-blur-sm md:p-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div className="flex min-w-0 items-start gap-3">
-                <Link
-                  href={`/eb/projects/${round.project.id}`}
-                  onClick={(event) => handleNavigation(event, projectNavigationKey)}
-                  aria-label="Tillbaka"
-                  title="Tillbaka"
-                  aria-disabled={navigationInProgress}
-                  aria-busy={isProjectNavigating}
-                  className={navigationIconLinkClassName(navigationInProgress)}
-                >
-                  {isProjectNavigating ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} strokeWidth={2} />}
-                </Link>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                    {inspectionTitle(round)}
-                  </p>
-                  <h1 className="truncate text-2xl font-semibold text-gray-950">{round.project.title}</h1>
-                  <p className="mt-1 truncate text-sm text-gray-600">
-                    {round.inspection.variantLabel} · {formatDate(round.inspection.date)}
-                    {round.inspection.inspectionTime ? ` ${formatTime(round.inspection.inspectionTime)}` : ''}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/report`}
-                  onClick={(event) => handleNavigation(event, reportNavigationKey)}
-                  aria-disabled={navigationInProgress}
-                  aria-busy={isReportNavigating}
-                  className={navigationLinkClassName(false, navigationInProgress)}
-                >
-                  {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                  Utlåtande
-                </Link>
-                <Link
-                  href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/round${
-                    activeDisciplineId ? `?disciplineId=${activeDisciplineId}` : ''
-                  }`}
-                  onClick={(event) => handleNavigation(event, mobileRoundNavigationKey)}
-                  aria-disabled={navigationInProgress}
-                  aria-busy={isMobileRoundNavigating}
-                  className={navigationLinkClassName(true, navigationInProgress)}
-                >
-                  {isMobileRoundNavigating ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
-                  Mobil runda
-                </Link>
-              </div>
-            </div>
-          </header>
+  const renderReviewSectionFields = (section: EbReportDraftSection): ReactNode => {
+    if (
+      ['approval_decision', 'continued_final_inspection', 'reclamation_notice'].includes(section.key) &&
+      !supportsFinalDecision
+    ) return null
 
-          {isLocked ? (
-            <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm">
-              Utlåtandet är låst och visas i läsläge.
-            </p>
-          ) : null}
+    const inspectionFields = (
+      <ReviewInspectionFields
+        sectionKey={section.key}
+        form={inspectionForm}
+        inspectionId={round.inspection.inspectionId}
+        disabled={isLocked}
+        preliminaryInspection={preliminaryInspection}
+        supportsFinalDecision={supportsFinalDecision}
+        onChange={updateInspectionField}
+        onTextSave={handleInspectionTextSave}
+      />
+    )
 
-          {reviewMessage ? (
-            <p className="mt-4 rounded-md border border-emerald-100 bg-white/90 px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
-              {reviewMessage}
-            </p>
-          ) : null}
-
-          {reviewAutosaveStatus !== 'idle' || showReviewAutosaveSaved || resettingReportSectionKey ? (
-            <div
-              className={`pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[210] inline-flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold shadow-xl ${
-                reviewAutosaveStatus === 'error'
-                  ? 'border-rose-200 bg-rose-50 text-rose-800'
-                  : 'border-emerald-200 bg-white text-emerald-800'
-              }`}
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {reviewAutosaveStatus === 'saving' || resettingReportSectionKey ? (
-                <Loader2 size={15} className="animate-spin" aria-hidden="true" />
-              ) : reviewAutosaveStatus === 'error' ? (
-                <X size={15} aria-hidden="true" />
-              ) : (
-                <CheckCircle2 size={15} aria-hidden="true" />
-              )}
-              {resettingReportSectionKey
-                ? 'Återställer standardtext...'
-                : reviewAutosaveStatus === 'saving'
-                  ? 'Autosparar...'
-                  : reviewAutosaveStatus === 'error'
-                    ? reviewAutosaveError ?? 'Autospar misslyckades'
-                    : 'Sparat'}
-            </div>
-          ) : null}
-
-          {imageUploadQueue.counts.total > 0 || imageUploadQueue.queueError ? (
-            <div
-              className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm font-semibold shadow-sm ${
-                imageUploadQueue.counts.failed > 0 || imageUploadQueue.queueError
-                  ? 'border-rose-200 bg-rose-50 text-rose-800'
-                  : 'border-emerald-200 bg-emerald-50 text-emerald-900'
-              }`}
-            >
-              <span className="inline-flex items-center gap-2">
-                {imageUploadQueue.counts.uploading > 0 ? (
-                  <Loader2 size={15} className="animate-spin" />
-                ) : (
-                  <ImageIcon size={15} />
-                )}
-                {imageUploadQueue.queueError ??
-                  `${imageUploadQueue.counts.total} ${
-                    imageUploadQueue.counts.total === 1 ? 'bild sparad' : 'bilder sparade'
-                  } lokalt: ${imageUploadQueue.counts.uploading} laddas upp, ${
-                    imageUploadQueue.counts.waiting
-                  } väntar${
-                    imageUploadQueue.counts.failed > 0
-                      ? `, ${imageUploadQueue.counts.failed} misslyckades`
-                      : ''
-                  }.`}
-              </span>
-              {imageUploadQueue.counts.failed > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => void imageUploadQueue.retryAll()}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100"
-                >
-                  <RefreshCw size={13} />
-                  Försök igen
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="mt-4 space-y-4">
-            <ReviewSection
-              title="Objekt och entreprenad"
-              description="Uppgifter som hör till entreprenaden visas låsta här så Granska följer utlåtandet utan att skapa dubbla källor."
-            >
-              <dl className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    if (section.key === 'contract_parties') return (
+      <dl className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <LockedValue label="Fastighetsbeteckning" value={round.project.propertyDesignation} />
                 <LockedValue label="BRF och lgh nr" value={round.project.brfApartmentNumber} />
                 <LockedValue label="Gatuadress, ort" value={addressLine} />
@@ -4481,196 +4589,73 @@ export default function EbInspectionRoundClient({
                 <LockedValue label={vocabulary.contractorLabel} value={round.project.contractorName} />
                 <LockedValue label={`${vocabulary.contractorShortLabel} adress`} value={contractorAddressLine} />
               </dl>
-            </ReviewSection>
-
-            <ReviewSection
-              title="Tid och kallelse"
-              description="Redigeras på besiktningen och styr motsvarande uppgifter i utlåtandet."
-              action={
-                <button
-                  type="button"
-                  onClick={() => void saveInspectionDetails()}
-                  disabled={isLocked || inspectionSaving}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {inspectionSaving ? 'Sparar...' : 'Spara'}
-                </button>
-              }
-            >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {fieldLabel(
-                  'Besiktningsdatum',
-                  <input
-                    type="date"
-                    value={inspectionForm.inspectionDate}
-                    onChange={(event) => updateInspectionField('inspectionDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Besiktningstid',
-                  <input
-                    type="time"
-                    value={inspectionForm.inspectionTime}
-                    onChange={(event) => updateInspectionField('inspectionTime', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Samlingsplats',
-                  <input
-                    value={inspectionForm.meetingPlace}
-                    onChange={(event) => updateInspectionField('meetingPlace', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Kallelsemetod',
-                  <InvitationMethodField
-                    value={inspectionForm.invitationMethod}
-                    onChange={(value) => updateInspectionField('invitationMethod', value)}
-                  />
-                )}
-                {fieldLabel(
-                  'Kallelsedatum',
-                  <input
-                    type="date"
-                    value={inspectionForm.invitationDate}
-                    onChange={(event) => updateInspectionField('invitationDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Försammanträde',
-                  <input
-                    type="time"
-                    value={inspectionForm.startMeetingTime}
-                    onChange={(event) => updateInspectionField('startMeetingTime', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {fieldLabel(
-                  'Slutsammanträde',
-                  <input
-                    type="time"
-                    value={inspectionForm.finalMeetingTime}
-                    onChange={(event) => updateInspectionField('finalMeetingTime', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-              </div>
-            </ReviewSection>
-
-            <ReviewSection
-              title="Närvarande och sändlista"
-              description="Samma deltagare används för närvaroredovisning, kallelse och sändlista."
-              action={
-                <button
-                  type="button"
-                  onClick={() => void saveParticipants()}
-                  disabled={isLocked || participantsSaving || invitationLoading || !invitationLoaded}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  {participantsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {participantsSaving ? 'Sparar...' : 'Spara'}
-                </button>
-              }
-            >
-              {invitationLoading ? (
-                <div className="flex items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-3 text-sm text-gray-600">
-                  <Loader2 size={16} className="animate-spin text-emerald-700" />
-                  Hämtar kallelse och deltagare...
-                </div>
-              ) : (
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                  <div className="space-y-3">
-                    {fieldLabel(
-                      'Ämne',
-                      <input
-                        value={invitationSubject}
-                        onChange={(event) => setInvitationSubject(event.target.value)}
-                        className={inputClassName()}
-                      />
-                    )}
-                    {fieldLabel(
-                      'Kallelsetext',
-                      <textarea
-                        value={invitationBody}
-                        onChange={(event) => setInvitationBody(event.target.value)}
-                        rows={10}
-                        className={`${inputClassName()} resize-y leading-6`}
-                      />
-                    )}
-                  </div>
-                  <ParticipantEditor
-                    project={round.project}
-                    participants={participants}
-                    onAdd={addParticipant}
-                    onRemove={removeParticipant}
-                    onChange={updateParticipant}
-                  />
-                </div>
-              )}
-            </ReviewSection>
-
-            <ReviewSection
-              title="Tidigare besiktningar"
-              description="Visas i samma avsnitt som tidigare besiktningar i utlåtandet."
-              action={
-                <button
-                  type="button"
-                  onClick={() => void saveInspectionDetails()}
-                  disabled={isLocked || inspectionSaving}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {inspectionSaving ? 'Sparar...' : 'Spara'}
-                </button>
-              }
-            >
-              <PreviousInspectionsEditor
-                rows={inspectionForm.previousInspections}
-                onChange={(rows) => updateInspectionField('previousInspections', rows)}
-              />
-            </ReviewSection>
-
-            <ReviewSection
-              hidden={isDrainageProject}
-              title="Provning och dokumentation"
-              description="Handlingar som redovisats inför besiktningen."
-              action={
-                <button
-                  type="button"
-                  onClick={() => void saveDocuments()}
-                  disabled={isLocked || documentsSaving}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  {documentsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {documentsSaving ? 'Sparar...' : 'Spara'}
-                </button>
-              }
-            >
-              <InspectionDocumentsEditor documents={documents} onChange={setDocuments} />
-            </ReviewSection>
-
-            {isDrainageProject ? (
-              <ReviewSection
-                title="Kontrollunderlag dränering"
-                description="Status och kommentarer för mallens kontrollpunkter."
-                action={
-                  <button
-                    type="button"
-                    onClick={() => void saveCheckpoints()}
-                    disabled={isLocked || checkpointsSaving || checkpoints.length === 0}
-                    className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                  >
-                    {checkpointsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                    {checkpointsSaving ? 'Sparar...' : 'Spara'}
-                  </button>
-                }
-              >
-                {checkpoints.length === 0 ? (
+    )
+    if (section.key === 'inspectors') return (
+      <div className="space-y-3">
+        <div className="whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-3 text-sm leading-6 text-gray-700">
+          {section.text.split('\n').filter((line) => !line.startsWith('Utsedd av:')).join('\n').trim()}
+        </div>
+        {inspectionFields}
+      </div>
+    )
+    if (section.key === 'participants') return (
+      <fieldset disabled={isLocked || invitationLoading || !invitationLoaded}>
+        {invitationLoading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Loader2 size={16} className="animate-spin text-emerald-700" />
+            Hämtar deltagare...
+          </div>
+        ) : (
+          <ParticipantEditor
+            project={round.project}
+            participants={participants}
+            onAdd={addParticipant}
+            onRemove={removeParticipant}
+            onChange={updateParticipant}
+          />
+        )}
+      </fieldset>
+    )
+    if (section.key === 'previous_inspections_tests') return (
+      <fieldset disabled={isLocked}>
+        <PreviousInspectionsEditor
+          rows={inspectionForm.previousInspections}
+          onChange={(rows) => updateInspectionField('previousInspections', rows)}
+        />
+      </fieldset>
+    )
+    if (section.key === 'testing_documentation') return (
+      <fieldset disabled={isLocked}>
+        <InspectionDocumentsEditor documents={documents} onChange={setDocuments} />
+      </fieldset>
+    )
+    if (section.key === 'distribution_list') return (
+      <div className="space-y-4">
+        {inspectionFields}
+        <div className="rounded-md border border-emerald-100 bg-emerald-50/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-gray-950">Mottagare av utlåtandet</h4>
+            <a href="#eb-review-participants" className="text-xs font-semibold text-emerald-800 underline">
+              Ändra under Närvarande
+            </a>
+          </div>
+          {participants.some((participant) => participant.receivesReport) ? (
+            <ul className="mt-2 space-y-1 text-sm text-gray-700">
+              {participants.filter((participant) => participant.receivesReport).map((participant) => (
+                <li key={participant.localId}>
+                  {[participant.personName, participant.companyName, participant.email].filter(Boolean).join(' · ') || 'Namn saknas'}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-gray-600">Inga mottagare har valts.</p>
+          )}
+        </div>
+      </div>
+    )
+    if (section.key === 'drainage_checklist') return (
+      <fieldset disabled={isLocked}>
+        {checkpoints.length === 0 ? (
                   <p className="rounded-md border border-dashed border-emerald-200 bg-emerald-50/40 px-3 py-3 text-sm text-gray-600">
                     Inga kontrollpunkter är skapade för besiktningen.
                   </p>
@@ -4808,364 +4793,23 @@ export default function EbInspectionRoundClient({
                     ))}
                   </div>
                 )}
-              </ReviewSection>
-            ) : null}
+      </fieldset>
+    )
+    return [
+      'inspection_time', 'summons', 'approval_decision', 'continued_final_inspection',
+      'reclamation_notice', 'remedy_deadline', 'defects_appendices',
+    ].includes(section.key) ? inspectionFields : null
+  }
 
-            <ReviewSection
-              title="Utlåtandeuppgifter"
-              description={
-                preliminaryInspection
-                  ? 'Datum, avhjälpande och kostnadsfördelning för förbesiktningen.'
-                  : 'Beslut, datum, garanti, reklamation och kostnadsfördelning.'
-              }
-              action={
-                <button
-                  type="button"
-                  onClick={() => void saveInspectionDetails()}
-                  disabled={isLocked || inspectionSaving}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {inspectionSaving ? 'Sparar...' : 'Spara'}
-                </button>
-              }
-            >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {fieldLabel(
-                  'Besiktningsman utsedd av',
-                  <select
-                    value={inspectionForm.inspectorAppointedBy}
-                    onChange={(event) => updateInspectionField('inspectorAppointedBy', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="">Ej satt</option>
-                    <option value="client">Beställare</option>
-                    <option value="parties_jointly">Parterna gemensamt</option>
-                    <option value="contractor">Entreprenör</option>
-                  </select>
-                )}
-                {supportsFinalDecision ? (
-                  <>
-                    {fieldLabel(
-                      'Beslut',
-                      <select
-                        value={inspectionForm.approvalStatus}
-                        onChange={(event) =>
-                          updateInspectionField('approvalStatus', event.target.value)
-                        }
-                        className={inputClassName()}
-                      >
-                        <option value="">Ej satt</option>
-                        <option value="approved">Godkänd</option>
-                        <option value="not_approved">Ej godkänd</option>
-                        <option value="partly_approved">Delvis godkänd</option>
-                      </select>
-                    )}
-                    <div className="md:col-span-2 xl:col-span-4">
-                      {fieldLabel(
-                        'Beslutets motivering',
-                        <DebouncedTextarea
-                          value={inspectionForm.approvalNote}
-                          draftKey={`eb:${round.inspection.inspectionId}:inspection:approval-note`}
-                          disabled={isLocked}
-                          onSave={(value) => handleInspectionTextSave('approvalNote', value)}
-                          rows={3}
-                          className={`${inputClassName()} resize-y leading-6`}
-                        />
-                      )}
-                    </div>
-                    {fieldLabel(
-                      'Fortsatt slutbesiktning',
-                      <select
-                        value={inspectionForm.requiresContinuedFinalInspection}
-                        onChange={(event) =>
-                          updateInspectionField(
-                            'requiresContinuedFinalInspection',
-                            event.target.value
-                          )
-                        }
-                        className={inputClassName()}
-                      >
-                        <option value="">Ej satt</option>
-                        <option value="true">Ja</option>
-                        <option value="false">Nej</option>
-                      </select>
-                    )}
-                    {inspectionForm.requiresContinuedFinalInspection === 'true' ? (
-                      <>
-                        {fieldLabel(
-                          'Ny slutbesiktning datum',
-                          <input
-                            type="date"
-                            value={inspectionForm.continuedFinalInspectionDate}
-                            onChange={(event) =>
-                              updateInspectionField(
-                                'continuedFinalInspectionDate',
-                                event.target.value
-                              )
-                            }
-                            className={inputClassName()}
-                          />
-                        )}
-                        {fieldLabel(
-                          'Ny slutbesiktning tid',
-                          <input
-                            type="time"
-                            value={inspectionForm.continuedFinalInspectionTime}
-                            onChange={(event) =>
-                              updateInspectionField(
-                                'continuedFinalInspectionTime',
-                                event.target.value
-                              )
-                            }
-                            className={inputClassName()}
-                          />
-                        )}
-                      </>
-                    ) : null}
-                    {fieldLabel(
-                      'Garantitid',
-                      <select
-                        value={inspectionForm.warrantyPeriodYears}
-                        onChange={(event) =>
-                          updateInspectionField('warrantyPeriodYears', event.target.value)
-                        }
-                        className={inputClassName()}
-                      >
-                        <option value="">Ej satt</option>
-                        {Array.from({ length: 10 }, (_, index) => index + 1).map((year) => (
-                          <option key={year} value={year}>
-                            {year} år
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    {fieldLabel(
-                      'Garantitidens slut',
-                      <input
-                        type="date"
-                        value={inspectionForm.warrantyEndDate}
-                        onChange={(event) =>
-                          updateInspectionField('warrantyEndDate', event.target.value)
-                        }
-                        className={inputClassName()}
-                      />
-                    )}
-                    {fieldLabel(
-                      'Särskild varugaranti för',
-                      <input
-                        value={inspectionForm.warrantyScope}
-                        onChange={(event) =>
-                          updateInspectionField('warrantyScope', event.target.value)
-                        }
-                        className={inputClassName()}
-                      />
-                    )}
-                  </>
-                ) : null}
-                {fieldLabel(
-                  'Fel avhjälpta senast',
-                  <input
-                    type="date"
-                    value={inspectionForm.defaultRemedyDeadline}
-                    onChange={(event) => updateInspectionField('defaultRemedyDeadline', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                {!preliminaryInspection ? (
-                  <>
-                    {fieldLabel(
-                      'Efterbesiktning påkallad',
-                      <select
-                        value={inspectionForm.afterInspectionRequested}
-                        onChange={(event) =>
-                          updateInspectionField('afterInspectionRequested', event.target.value)
-                        }
-                        className={inputClassName()}
-                      >
-                        <option value="">Ej satt</option>
-                        <option value="true">Ja</option>
-                        <option value="false">Nej</option>
-                      </select>
-                    )}
-                    {fieldLabel(
-                      'Efterbesiktning påkallad av',
-                      <select
-                        value={inspectionForm.afterInspectionRequestedBy}
-                        onChange={(event) =>
-                          updateInspectionField('afterInspectionRequestedBy', event.target.value)
-                        }
-                        className={inputClassName()}
-                      >
-                        <option value="">Ej satt</option>
-                        <option value="client">Beställare</option>
-                        <option value="contractor">Hantverkare</option>
-                      </select>
-                    )}
-                    {fieldLabel(
-                      'Efterbesiktning senast',
-                      <input
-                        type="date"
-                        value={inspectionForm.afterInspectionDueDate}
-                        onChange={(event) =>
-                          updateInspectionField('afterInspectionDueDate', event.target.value)
-                        }
-                        className={inputClassName()}
-                      />
-                    )}
-                  </>
-                ) : null}
-                {fieldLabel(
-                  'Distributionsdatum',
-                  <input
-                    type="date"
-                    value={inspectionForm.reportDistributionDate}
-                    onChange={(event) => updateInspectionField('reportDistributionDate', event.target.value)}
-                    className={inputClassName()}
-                  />
-                )}
-                <div className="md:col-span-2 xl:col-span-4">
-                  {fieldLabel(
-                    'Besiktningskostnadens fördelning',
-                    <DebouncedTextarea
-                      value={inspectionForm.inspectionCostDistribution}
-                      draftKey={`eb:${round.inspection.inspectionId}:inspection:cost-distribution`}
-                      disabled={isLocked}
-                      onSave={(value) =>
-                        handleInspectionTextSave('inspectionCostDistribution', value)
-                      }
-                      rows={3}
-                      className={`${inputClassName()} resize-y leading-6`}
-                    />
-                  )}
-                </div>
-                {!preliminaryInspection ? (
-                  <label className="flex min-h-[2.75rem] items-center gap-2 rounded-md border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm font-medium text-emerald-900">
-                    <input
-                      type="checkbox"
-                      checked={inspectionForm.afterInspectionNoticeInReport}
-                      onChange={(event) => updateInspectionField('afterInspectionNoticeInReport', event.target.checked)}
-                      className="h-4 w-4 rounded border-emerald-300 text-emerald-700 focus:ring-emerald-600"
-                    />
-                    Utlåtandet gäller som kallelse till efterbesiktning
-                  </label>
-                ) : null}
-              </div>
-            </ReviewSection>
+  const renderReviewSectionSupplement = (section: EbReportDraftSection): ReactNode => {
+    if (section.key !== 'notes' && section.key !== 'drainage_checklist') return null
 
-            <ReviewSection
-              title="Förklaringar"
-              description="Förklaringar som visas vid fel och förhållanden."
-              action={
-                <button
-                  type="button"
-                  onClick={() => void saveInspectionDetails()}
-                  disabled={isLocked || inspectionSaving}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  {inspectionSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {inspectionSaving ? 'Sparar...' : 'Spara'}
-                </button>
-              }
-            >
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
-                {fieldLabel(
-                  'Övriga förklaringar',
-                  <DebouncedTextarea
-                    value={inspectionForm.defectNumberingExplanation}
-                    draftKey={`eb:${round.inspection.inspectionId}:inspection:defect-explanation`}
-                    disabled={isLocked}
-                    onSave={(value) =>
-                      handleInspectionTextSave('defectNumberingExplanation', value)
-                    }
-                    rows={4}
-                    className={`${inputClassName()} resize-y leading-6`}
-                  />
-                )}
-                {fieldLabel(
-                  'Lokal, byggdel eller installationsdel utan fel redovisas',
-                  <select
-                    value={inspectionForm.defectNoErrorPartsPolicy}
-                    onChange={(event) => updateInspectionField('defectNoErrorPartsPolicy', event.target.value)}
-                    className={inputClassName()}
-                  >
-                    <option value="not_listed">inte</option>
-                    <option value="listed_with_dash">med ---</option>
-                  </select>
-                )}
-              </div>
-            </ReviewSection>
-
-            <ReviewSection
-              title="Utlåtandetexter"
-              description="Alla utlåtandesektioner visas i samma ordning som de sedan renderas i utlåtandet."
-              action={
-                <button
-                  type="button"
-                  onClick={() => void saveReportDraft()}
-                  disabled={isLocked || reportDraftSaving || Boolean(deletingId)}
-                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  {reportDraftSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                  {reportDraftSaving ? 'Sparar...' : 'Spara texter'}
-                </button>
-              }
-            >
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-2">
-                <div>
-                  <span className="text-xs font-semibold text-emerald-900">
-                    Arbetsversion skapad{' '}
-                    {round.reportDraft.initializedAt
-                      ? new Date(round.reportDraft.initializedAt).toLocaleString('sv-SE')
-                      : 'vid första öppningen'}
-                  </span>
-                  <p className="mt-0.5 text-xs text-emerald-800">
-                    Avtal, parter och övriga grunduppgifter synkas när entreprenaden sparas.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void refreshReportSource('project')}
-                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving || Boolean(deletingId)}
-                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <RefreshCw
-                      size={15}
-                      className={refreshingReportSource === 'project' ? 'animate-spin' : undefined}
-                    />
-                    Uppdatera grunduppgifter
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void refreshReportSource('inspector')}
-                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving || Boolean(deletingId)}
-                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <RefreshCw
-                      size={15}
-                      className={refreshingReportSource === 'inspector' ? 'animate-spin' : undefined}
-                    />
-                    Hämta besiktningsman
-                  </button>
-                </div>
-              </div>
-              <ReportDraftSectionsEditor
-                sections={visibleReportSections}
-                inspectionId={round.inspection.inspectionId}
-                disabled={isLocked || Boolean(resettingReportSectionKey) || Boolean(deletingId)}
-                resettingSectionKey={resettingReportSectionKey}
-                onSectionChange={handleReportSectionChange}
-                onSectionTextSave={handleReportSectionTextSave}
-                onResetSection={resetReportSection}
-              />
-            </ReviewSection>
-
-            <ReviewSection
-              title="Noteringar"
-              description="Ordningen här styr ordningen i utlåtandet. Lägg in fria rubriker för exempelvis plan, rum eller en egen gruppering."
-            >
-              <div className="overflow-x-auto rounded-md border border-emerald-100 bg-white/70 px-2 py-2">
+    return (
+      <div className="space-y-3 overflow-x-auto">
+        <p className="text-xs leading-5 text-gray-600">
+          Ordningen här styr utlåtandet. Lägg in fria rubriker för exempelvis plan och rum.
+        </p>
+        <div className="overflow-x-auto rounded-md border border-emerald-100 bg-white/70 px-2 py-2">
             <div className="flex min-w-max gap-2">
               <button
                 type="button"
@@ -5440,7 +5084,253 @@ export default function EbInspectionRoundClient({
               )}
             </section>
           </div>
-        </ReviewSection>
+      </div>
+    )
+  }
+
+  return (
+    <Protected>
+      <main className="relative min-h-full overflow-hidden">
+        <input
+          ref={noteRowImageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(event) => void handleNoteRowImageSelected(event)}
+          className="hidden"
+        />
+        <input
+          ref={checkpointImageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(event) => void handleCheckpointImageSelected(event)}
+          className="hidden"
+        />
+        <input
+          ref={imageBankInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(event) => void handleImageBankFilesSelected(event)}
+          className="hidden"
+        />
+        <input
+          ref={inspectionImageBankInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(event) => void handleInspectionImageBankFilesSelected(event)}
+          className="hidden"
+        />
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              'radial-gradient(100% 72% at 50% 0%, rgba(220,252,231,0.08) 0%, rgba(220,252,231,0) 62%), linear-gradient(135deg, #ffffff 0%, #fbfefc 52%, #fafdfb 100%)',
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-white/62 backdrop-blur-[1px]" />
+
+        <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
+          <header className="rounded-lg border border-emerald-100 bg-white/84 p-4 shadow-sm backdrop-blur-sm md:p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <Link
+                  href={`/eb/projects/${round.project.id}`}
+                  onClick={(event) => handleNavigation(event, projectNavigationKey)}
+                  aria-label="Tillbaka"
+                  title="Tillbaka"
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isProjectNavigating}
+                  className={navigationIconLinkClassName(navigationInProgress)}
+                >
+                  {isProjectNavigating ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} strokeWidth={2} />}
+                </Link>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                    {inspectionTitle(round)}
+                  </p>
+                  <h1 className="truncate text-2xl font-semibold text-gray-950">{round.project.title}</h1>
+                  <p className="mt-1 truncate text-sm text-gray-600">
+                    {round.inspection.variantLabel} · {formatDate(round.inspection.date)}
+                    {round.inspection.inspectionTime ? ` ${formatTime(round.inspection.inspectionTime)}` : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/report`}
+                  onClick={(event) => handleNavigation(event, reportNavigationKey)}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isReportNavigating}
+                  className={navigationLinkClassName(false, navigationInProgress)}
+                >
+                  {isReportNavigating ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+                  Utlåtande
+                </Link>
+                <Link
+                  href={`/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/round${
+                    activeDisciplineId ? `?disciplineId=${activeDisciplineId}` : ''
+                  }`}
+                  onClick={(event) => handleNavigation(event, mobileRoundNavigationKey)}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isMobileRoundNavigating}
+                  className={navigationLinkClassName(true, navigationInProgress)}
+                >
+                  {isMobileRoundNavigating ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />}
+                  Mobil runda
+                </Link>
+              </div>
+            </div>
+          </header>
+
+          {isLocked ? (
+            <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm">
+              Utlåtandet är låst och visas i läsläge.
+            </p>
+          ) : null}
+
+          {reviewMessage ? (
+            <p className="mt-4 rounded-md border border-emerald-100 bg-white/90 px-3 py-2 text-sm font-medium text-gray-700 shadow-sm">
+              {reviewMessage}
+            </p>
+          ) : null}
+
+          {reviewAutosaveStatus !== 'idle' || showReviewAutosaveSaved || resettingReportSectionKey ? (
+            <div
+              className={`pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-[210] inline-flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold shadow-xl ${
+                reviewAutosaveStatus === 'error'
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-emerald-200 bg-white text-emerald-800'
+              }`}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {reviewAutosaveStatus === 'saving' || resettingReportSectionKey ? (
+                <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+              ) : reviewAutosaveStatus === 'error' ? (
+                <X size={15} aria-hidden="true" />
+              ) : (
+                <CheckCircle2 size={15} aria-hidden="true" />
+              )}
+              {resettingReportSectionKey
+                ? 'Återställer standardtext...'
+                : reviewAutosaveStatus === 'saving'
+                  ? 'Autosparar...'
+                  : reviewAutosaveStatus === 'error'
+                    ? reviewAutosaveError ?? 'Autospar misslyckades'
+                    : 'Sparat'}
+            </div>
+          ) : null}
+
+          {imageUploadQueue.counts.total > 0 || imageUploadQueue.queueError ? (
+            <div
+              className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm font-semibold shadow-sm ${
+                imageUploadQueue.counts.failed > 0 || imageUploadQueue.queueError
+                  ? 'border-rose-200 bg-rose-50 text-rose-800'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                {imageUploadQueue.counts.uploading > 0 ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <ImageIcon size={15} />
+                )}
+                {imageUploadQueue.queueError ??
+                  `${imageUploadQueue.counts.total} ${
+                    imageUploadQueue.counts.total === 1 ? 'bild sparad' : 'bilder sparade'
+                  } lokalt: ${imageUploadQueue.counts.uploading} laddas upp, ${
+                    imageUploadQueue.counts.waiting
+                  } väntar${
+                    imageUploadQueue.counts.failed > 0
+                      ? `, ${imageUploadQueue.counts.failed} misslyckades`
+                      : ''
+                  }.`}
+              </span>
+              {imageUploadQueue.counts.failed > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => void imageUploadQueue.retryAll()}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100"
+                >
+                  <RefreshCw size={13} />
+                  Försök igen
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-4">
+            <ReviewSection
+              title="Granska utlåtandet"
+              description="Avsnitten följer utlåtandets ordning. Redigera texten och kontrollera tillhörande uppgifter på samma ställe."
+              action={
+                <button
+                  type="button"
+                  onClick={() => void saveReportDraft()}
+                  disabled={isLocked || reportDraftSaving || Boolean(deletingId)}
+                  className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                >
+                  {reportDraftSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {reportDraftSaving ? 'Sparar...' : 'Spara texter'}
+                </button>
+              }
+            >
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50/50 px-3 py-2">
+                <div>
+                  <span className="text-xs font-semibold text-emerald-900">
+                    Arbetsversion skapad{' '}
+                    {round.reportDraft.initializedAt
+                      ? new Date(round.reportDraft.initializedAt).toLocaleString('sv-SE')
+                      : 'vid första öppningen'}
+                  </span>
+                  <p className="mt-0.5 text-xs text-emerald-800">
+                    Dina texter sparas i arbetsversionen. Sakuppgifter uppdateras från formulären.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void refreshReportSource('project')}
+                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving || Boolean(deletingId)}
+                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={refreshingReportSource === 'project' ? 'animate-spin' : undefined}
+                    />
+                    Uppdatera grunduppgifter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void refreshReportSource('inspector')}
+                    disabled={isLocked || Boolean(refreshingReportSource) || reportDraftSaving || Boolean(deletingId)}
+                    className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={refreshingReportSource === 'inspector' ? 'animate-spin' : undefined}
+                    />
+                    Hämta besiktningsman
+                  </button>
+                </div>
+              </div>
+              <ReportDraftSectionsEditor
+                sections={visibleReportSections}
+                inspectionId={round.inspection.inspectionId}
+                disabled={isLocked || Boolean(resettingReportSectionKey) || Boolean(deletingId)}
+                resettingSectionKey={resettingReportSectionKey}
+                onSectionChange={handleReportSectionChange}
+                onSectionTextSave={handleReportSectionTextSave}
+                onResetSection={resetReportSection}
+                renderSectionFields={renderReviewSectionFields}
+                replacesStructuredText={(key) => ['inspection_time', 'contract_parties', 'inspectors', 'previous_inspections_tests', 'approval_decision', 'distribution_list', 'drainage_checklist', 'notes'].includes(key)}
+                renderSectionSupplement={renderReviewSectionSupplement}
+              />
+            </ReviewSection>
       </div>
     </div>
 

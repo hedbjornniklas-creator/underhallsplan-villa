@@ -9,16 +9,19 @@ import {
   isEbPreliminaryInspection,
   isEbReportSectionApplicable,
 } from '@/lib/eb/reportSectionRules'
+import { EB_PHOTO_APPENDIX_LABEL } from '@/lib/eb/reportText'
 import {
-  EB_PHOTO_APPENDIX_LABEL,
-  normalizeEbTestingDocumentationText,
-} from '@/lib/eb/reportText'
+  ebApprovalStatusLabel,
+  normalizeEbApprovalStatus,
+  toEbApprovalStatusStorageValue,
+  type EbApprovalStatus,
+} from '@/lib/eb/approvalStatus'
 import { classifyEbAgreement, resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
 export type EbInspectorAppointedBy = 'client' | 'parties_jointly' | 'contractor'
-export type EbApprovalStatus = 'approved' | 'not_approved' | 'partly_approved'
+export type { EbApprovalStatus } from '@/lib/eb/approvalStatus'
 export type EbPartyKey = 'client' | 'contractor' | 'other'
 export type EbAfterInspectionRequestedBy = 'client' | 'contractor'
 export type EbPreviousInspectionStatus = 'performed' | 'not_performed' | 'not_applicable'
@@ -378,9 +381,13 @@ export const EB_REPORT_TEMPLATE_VERSION = 2
 
 const EB_EDITABLE_REPORT_SECTION_KEYS = new Set([
   'scope',
+  'summons',
   'conflict_of_interest',
+  'not_accessible',
   'documentation_only',
+  'remedy_deadline',
   'remedy_cost',
+  'inspection_cost_distribution',
   'other_notes',
 ])
 
@@ -391,6 +398,16 @@ const EB_MIXED_REPORT_SECTION_KEYS = new Set([
   'marker_legend',
   'continued_final_inspection',
   'reclamation_notice',
+])
+
+// Drafts created before content modes existed contained generated field text
+// for these sections. Seed their editable prose once during the mode upgrade.
+const EB_LEGACY_STRUCTURED_REPORT_SECTION_KEYS = new Set([
+  'summons',
+  'not_accessible',
+  'remedy_deadline',
+  'inspection_cost_distribution',
+  ...EB_MIXED_REPORT_SECTION_KEYS,
 ])
 
 function ebReportSectionContentMode(key: string): EbReportSectionContentMode {
@@ -459,26 +476,11 @@ function mergeEbMixedReportSection(
   existing: EbReportDraftSection,
   fallbackUpdatedAt: string
 ) {
-  let text = existing.text
-  if (current.key === 'testing_documentation') {
-    text = normalizeEbTestingDocumentationText(text)
-  }
-  if (current.key === 'reclamation_notice') {
-    const currentBlocks = reportTextBlocks(current.text)
-    const existingBlocks = reportTextBlocks(text)
-    const firstBlock = existingBlocks[0] ?? ''
-    const generatedNotice =
-      firstBlock.startsWith('Beställarens reklamationsrätter framgår') ||
-      firstBlock.startsWith('För denna konsumententreprenad gäller') ||
-      firstBlock.startsWith('Reklamationsfrister följer av parternas avtal')
-    if (generatedNotice && currentBlocks[0]) {
-      text = [currentBlocks[0], ...existingBlocks.slice(1)].join('\n\n')
-    }
-  }
-
   return {
     ...mergeEbStructuredReportSection(current, existing, fallbackUpdatedAt),
-    text,
+    // The saved prose belongs to this report, including an intentionally empty
+    // text. Changes to fields or standard texts must never rewrite it.
+    text: existing.text,
   }
 }
 
@@ -1219,7 +1221,6 @@ const VARIANT_LABELS: Record<EbInspectionVariant, string> = {
 
 const EB_VARIANTS = Object.keys(VARIANT_LABELS) as EbInspectionVariant[]
 const INSPECTOR_APPOINTED_BY_VALUES = ['client', 'parties_jointly', 'contractor'] as const
-const APPROVAL_STATUS_VALUES = ['approved', 'not_approved', 'partly_approved'] as const
 const PARTY_KEY_VALUES = ['client', 'contractor', 'other'] as const
 const AFTER_INSPECTION_REQUESTED_BY_VALUES = ['client', 'contractor'] as const
 const PREVIOUS_INSPECTION_STATUS_VALUES = ['performed', 'not_performed', 'not_applicable'] as const
@@ -1413,10 +1414,7 @@ function normalizeInspectorAppointedBy(value: string | null | undefined): EbInsp
 }
 
 function normalizeApprovalStatus(value: string | null | undefined): EbApprovalStatus | null {
-  const normalized = normalizeText(value)
-  return APPROVAL_STATUS_VALUES.includes(normalized as EbApprovalStatus)
-    ? (normalized as EbApprovalStatus)
-    : null
+  return normalizeEbApprovalStatus(value)
 }
 
 function normalizeAfterInspectionRequestedBy(
@@ -3643,12 +3641,20 @@ export async function getEbInspectionReport(input: {
     storedDraft: initializedDraft,
   })
 
-  const storedSectionKeys = new Set(storedDraft.sections.map((section) => section.key))
+  const storedSectionsByKey = new Map(
+    storedDraft.sections.map((section) => [section.key, section])
+  )
   const needsInitializationWrite =
     !storedDraft.initializedAt ||
     !storedDraft.sourceSnapshot ||
-    storedSectionKeys.size === 0
-  const needsDraftWrite = needsInitializationWrite || projectSourceNeedsRefresh
+    storedSectionsByKey.size === 0
+  const needsContentModeWrite = reportDraft.sections.some((section) => {
+    const stored = storedSectionsByKey.get(section.key)
+    return stored && stored.contentMode !== section.contentMode
+  })
+  const canRebaseAcrossDraftRefresh = projectSourceNeedsRefresh || needsContentModeWrite
+  const needsDraftWrite =
+    needsInitializationWrite || projectSourceNeedsRefresh || needsContentModeWrite
   let resolvedReportDraft = reportDraft
   if (needsDraftWrite && !liveRound.inspection.reportLockedAt) {
     try {
@@ -3656,13 +3662,16 @@ export async function getEbInspectionReport(input: {
         input,
         {
           ...reportDraft,
+          projectSourceRefreshBaseUpdatedAt: canRebaseAcrossDraftRefresh
+            ? reportDraft.projectSourceRefreshBaseUpdatedAt ?? storedDraft.updatedAt
+            : reportDraft.projectSourceRefreshBaseUpdatedAt,
           updatedAt: projectSourceNeedsRefresh
             ? sourceRefreshAt
             : nextEbReportDraftUpdatedAt(storedDraft.updatedAt),
         },
         {
           expectedUpdatedAt: storedDraft.updatedAt,
-          ...(projectSourceNeedsRefresh ? { preserveProjectSourceRefreshBase: true } : {}),
+          ...(canRebaseAcrossDraftRefresh ? { preserveProjectSourceRefreshBase: true } : {}),
         }
       )
     } catch (error) {
@@ -3791,10 +3800,10 @@ function canRebaseEbReportDraftAcrossSourceRefresh(
 ) {
   if (!expectedUpdatedAt) return false
 
-  // The lineage marker is set only by project-source refreshes and cleared by
-  // every ordinary editor write. Rebase only when the editor's
-  // version is exactly the revision that preceded that uninterrupted source
-  // refresh sequence; this cannot hide another editor's change.
+  // Source refreshes and one-time content-mode upgrades set this marker;
+  // every ordinary editor write clears it. Rebase only when the editor's
+  // version preceded that uninterrupted automatic refresh sequence, so
+  // another editor's change can never be hidden by a refresh.
   return isSameTimestamp(draft.projectSourceRefreshBaseUpdatedAt, expectedUpdatedAt)
 }
 
@@ -4121,7 +4130,7 @@ function normalizeEbReportDraftSection(value: unknown): EbReportDraftSection | n
     updatedAt: normalizeText(raw.updatedAt),
     contentMode: isEbReportSectionContentMode(raw.contentMode)
       ? raw.contentMode
-      : EB_MIXED_REPORT_SECTION_KEYS.has(key)
+      : EB_LEGACY_STRUCTURED_REPORT_SECTION_KEYS.has(key)
         ? 'structured'
         : ebReportSectionContentMode(key),
   }
@@ -4904,7 +4913,7 @@ export async function updateEbInspection(input: UpdateEbInspectionInput): Promis
       inspector_appointed_by: normalizeInspectorAppointedBy(input.inspectorAppointedBy),
       invitation_method: normalizeText(input.invitationMethod),
       invitation_date: normalizeDate(input.invitationDate),
-      approval_status: normalizeApprovalStatus(input.approvalStatus),
+      approval_status: toEbApprovalStatusStorageValue(input.approvalStatus),
       approval_note: normalizeText(input.approvalNote),
       requires_continued_final_inspection: normalizeBoolean(input.requiresContinuedFinalInspection),
       continued_final_inspection_date: normalizeDate(input.continuedFinalInspectionDate),
@@ -5736,10 +5745,7 @@ function appointedByLabel(value: EbInspectorAppointedBy | null) {
 }
 
 function approvalStatusLabel(value: EbApprovalStatus | null) {
-  if (value === 'approved') return 'Godkänd'
-  if (value === 'not_approved') return 'Ej godkänd'
-  if (value === 'partly_approved') return 'Delvis godkänd'
-  return null
+  return ebApprovalStatusLabel(value)
 }
 
 function yesNoLabel(value: boolean | null) {
@@ -5905,13 +5911,19 @@ function ebApprovalDecisionReportText(round: EbInspectionRound) {
       ? `De delar av entreprenaden som omfattas av besiktningen godkänns${dateSuffix}.`
       : round.inspection.approvalStatus === 'not_approved'
         ? `De delar av entreprenaden som omfattas av besiktningen godkänns inte${dateSuffix}.`
-        : `De delar av entreprenaden som omfattas av besiktningen godkänns delvis${dateSuffix}.`
+        : 'Besiktningen avbryts.'
 
-  return reportList([
-    decisionText,
-    round.inspection.approvalNote,
-    decisionDate ? 'Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.' : null,
-  ])
+  return reportList(
+    round.inspection.approvalStatus === 'approved'
+      ? [
+          decisionText,
+          round.inspection.approvalNote,
+          decisionDate
+            ? 'Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.'
+            : null,
+        ]
+      : [decisionText, round.inspection.approvalNote]
+  )
 }
 
 function ebRemedyDeadlineAgreementReportText(round: EbInspectionRound) {
@@ -5938,7 +5950,9 @@ function ebRemedyDeadlineAgreementReportText(round: EbInspectionRound) {
       : round.inspection.afterInspectionRequested === false
         ? 'Efterbesiktning har inte påkallats vid tidpunkten för utlåtandets upprättande.'
         : null,
-    round.inspection.afterInspectionNoticeInReport ? 'Denna notering gäller som kallelse.' : null,
+    round.inspection.afterInspectionRequested === true && round.inspection.afterInspectionNoticeInReport
+      ? 'Denna notering gäller som kallelse.'
+      : null,
   ])
 }
 
@@ -6651,6 +6665,9 @@ function buildEbReportDraft(input: {
   const copiedTemplateSections = storedDraft.sections.map((existing) => {
     const current = defaultsByKey.get(existing.key)
     if (!current) return existing
+    if (round.inspection.reportLockedAt && existing.contentMode !== current.contentMode) {
+      return existing
+    }
     if (existing.contentMode === current.contentMode) {
       if (current.contentMode === 'editable') return existing
       if (current.contentMode === 'mixed') {
@@ -6662,6 +6679,9 @@ function buildEbReportDraft(input: {
   const initializedSections = defaultsWithModes.map((section) => {
     const existing = existingByKey.get(section.key)
     if (!existing) return section
+    if (round.inspection.reportLockedAt && existing.contentMode !== section.contentMode) {
+      return existing
+    }
     if (existing.contentMode !== section.contentMode || section.contentMode === 'structured') {
       return mergeEbStructuredReportSection(section, existing, storedDraft.updatedAt ?? now)
     }
@@ -7345,6 +7365,30 @@ function participantHasContent(participant: EbInvitationParticipant) {
   )
 }
 
+export function isEbInvitationParticipantDraftInput(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  const textKeys = ['id', 'roleLabel', 'companyName', 'personName', 'email', 'phone']
+  if (textKeys.some((key) => record[key] != null && typeof record[key] !== 'string')) return false
+  const booleanKeys = ['receivesInvitation', 'attended', 'receivesReport', 'canRepresentParty']
+  if (booleanKeys.some((key) => record[key] !== undefined && typeof record[key] !== 'boolean')) {
+    return false
+  }
+  if (record.sortOrder != null && (typeof record.sortOrder !== 'number' || !Number.isFinite(record.sortOrder))) {
+    return false
+  }
+  if (
+    record.representsPartyKey != null &&
+    (typeof record.representsPartyKey !== 'string' ||
+      (record.representsPartyKey.trim() !== '' && !normalizePartyKey(record.representsPartyKey)))
+  ) {
+    return false
+  }
+  // A newly added form row may still be blank while autosave runs. Recognize
+  // its fields, then let the existing content filter omit that empty row.
+  return textKeys.slice(1).some((key) => Object.prototype.hasOwnProperty.call(record, key))
+}
+
 async function replaceInspectionParticipants(input: {
   orgId: string
   projectId: string
@@ -7540,8 +7584,27 @@ export async function sendEbInvitation(input: SendEbInvitationInput): Promise<Se
 
 export async function saveEbInvitationDraft(input: SaveEbInvitationDraftInput): Promise<EbInvitationContext> {
   await assertEbInspectionEditable(input)
-  await getEbInvitationContext(input)
+  if (
+    !Array.isArray(input.participants) ||
+    input.participants.some((participant) => !isEbInvitationParticipantDraftInput(participant))
+  ) {
+    throw new Error('INVITATION_PARTICIPANTS_INVALID')
+  }
   const participants = input.participants.map(normalizeParticipantInput).filter(participantHasContent)
+
+  const emailUpdate: { invitation_subject?: string | null; invitation_body?: string | null } = {}
+  if (input.subject !== undefined) {
+    if (input.subject !== null && typeof input.subject !== 'string') {
+      throw new Error('INVITATION_DRAFT_INVALID')
+    }
+    emailUpdate.invitation_subject = normalizeText(input.subject)
+  }
+  if (input.body !== undefined) {
+    if (input.body !== null && typeof input.body !== 'string') {
+      throw new Error('INVITATION_DRAFT_INVALID')
+    }
+    emailUpdate.invitation_body = normalizeText(input.body)
+  }
 
   await replaceInspectionParticipants({
     orgId: input.orgId,
@@ -7550,19 +7613,20 @@ export async function saveEbInvitationDraft(input: SaveEbInvitationDraftInput): 
     participants,
   })
 
-  const admin = createSupabaseAdminClient()
-  const { error } = await admin
-    .from('eb_inspection_details')
-    .update({
-      invitation_subject: normalizeText(input.subject),
-      invitation_body: normalizeText(input.body),
-    })
-    .eq('org_id', input.orgId)
-    .eq('eb_project_id', input.projectId)
-    .eq('inspection_id', input.inspectionId)
+  // A participant-only save must not read and then write back email fields:
+  // they may be NULL, or a newer invitation may be saved concurrently.
+  if (Object.keys(emailUpdate).length > 0) {
+    const admin = createSupabaseAdminClient()
+    const { error } = await admin
+      .from('eb_inspection_details')
+      .update(emailUpdate)
+      .eq('org_id', input.orgId)
+      .eq('eb_project_id', input.projectId)
+      .eq('inspection_id', input.inspectionId)
 
-  if (error) {
-    throw new Error(error.message ?? 'Kunde inte spara kallelse och deltagare.')
+    if (error) {
+      throw new Error(error.message ?? 'Kunde inte spara kallelse och deltagare.')
+    }
   }
 
   return getEbInvitationContext(input)

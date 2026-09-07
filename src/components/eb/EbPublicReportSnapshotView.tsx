@@ -19,6 +19,11 @@ import PublicReportPdfDownload, {
 } from '@/components/report/PublicReportPdfDownload'
 import ReportShareButton from '@/components/report/ReportShareButton'
 import {
+  ebApprovalDecisionHeading,
+  ebApprovalStatusUsesObstacleExplanation,
+  isEbLegacyPartlyApprovedStatus,
+} from '@/lib/eb/approvalStatus'
+import {
   isEbDrainageTemplate,
   isEbReportSectionApplicable,
 } from '@/lib/eb/reportSectionRules'
@@ -220,6 +225,24 @@ function ReadableText({ text }: { text: string }) {
         )
       })}
     </div>
+  )
+}
+
+function EditableReadableText({ text }: { text: string }) {
+  if (!text.trim()) return null
+
+  return (
+    <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-800 sm:text-base">
+      {text}
+    </div>
+  )
+}
+
+function SectionText({ section }: { section: EbReportDraftSection }) {
+  return section.contentMode === 'editable' || section.contentMode === 'mixed' ? (
+    <EditableReadableText text={section.text} />
+  ) : (
+    <ReadableText text={section.text} />
   )
 }
 
@@ -443,7 +466,7 @@ function Participants({ report, section }: { report: EbInspectionReport; section
 
   return (
     <div className="space-y-5">
-      <ReadableText text={section.text} />
+      <SectionText section={section} />
       <div className="grid gap-3 lg:grid-cols-3">
         {groups.map((group) => (
           <div key={group.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -520,7 +543,10 @@ function TestingDocumentation({
   const documents = [...report.inspectionDocuments]
     .filter((document) => document.status === 'present')
     .sort((left, right) => left.sortOrder - right.sortOrder)
-  const proseBlocks = normalizeText(normalizeEbTestingDocumentationText(section.text))
+  const prose = section.contentMode === 'mixed'
+    ? section.text.replace(/\r\n?/g, '\n')
+    : normalizeText(normalizeEbTestingDocumentationText(section.text))
+  const proseBlocks = prose
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean)
@@ -548,7 +574,11 @@ function TestingDocumentation({
 
   return (
     <div className="space-y-5">
-      <ReadableText text={beforeList.join('\n\n')} />
+      {section.contentMode === 'mixed' ? (
+        <EditableReadableText text={beforeList.join('\n\n')} />
+      ) : (
+        <ReadableText text={beforeList.join('\n\n')} />
+      )}
       <div>
         <h3 className="text-sm font-semibold text-slate-950">Redovisad dokumentation</h3>
         {documents.length > 0 ? (
@@ -585,7 +615,11 @@ function TestingDocumentation({
           <p className="mt-2 text-sm text-slate-600">Inga dokument har markerats som redovisade.</p>
         )}
       </div>
-      <ReadableText text={afterList.join('\n\n')} />
+      {section.contentMode === 'mixed' ? (
+        <EditableReadableText text={afterList.join('\n\n')} />
+      ) : (
+        <ReadableText text={afterList.join('\n\n')} />
+      )}
     </div>
   )
 }
@@ -689,14 +723,14 @@ function DefectsAndNotes({
 
   return (
     <div className="space-y-6">
-      <ReadableText text={section.text} />
+      <SectionText section={section} />
 
       {markerSection?.isRelevant !== false ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
           <h3 className="text-base font-semibold text-slate-950">Så läses noteringarna</h3>
           {markerSection?.contentMode === 'mixed' ? (
             <div className="mt-3">
-              <ReadableText text={markerSection.text} />
+              <EditableReadableText text={markerSection.text} />
             </div>
           ) : (
             <p className="mt-3 text-sm leading-6 text-slate-700">
@@ -824,22 +858,20 @@ function DefectsAndNotes({
 
 function ApprovalDecision({ report }: { report: EbInspectionReport }) {
   const status = report.inspection.approvalStatus
-  if (!status) return null
+  const decisionLabel = ebApprovalDecisionHeading(status)
+  if (!status || !decisionLabel) return null
 
   const isApproved = status === 'approved'
-  const isPartlyApproved = status === 'partly_approved'
-  const decisionLabel = isApproved
-    ? 'Arbetena godkänns'
-    : isPartlyApproved
-      ? 'Arbetena godkänns delvis'
-      : 'Arbetena godkänns inte'
+  const isInterrupted = status === 'interrupted'
+  const isLegacyPartlyApproved = isEbLegacyPartlyApprovedStatus(status)
+  const usesObstacleExplanation = ebApprovalStatusUsesObstacleExplanation(status)
   const reasonLines = normalizeText(report.inspection.approvalNote)
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
   const tone = isApproved
     ? 'border-emerald-500 bg-emerald-50 text-emerald-950'
-    : isPartlyApproved
+    : isInterrupted || isLegacyPartlyApproved
       ? 'border-amber-500 bg-amber-50 text-amber-950'
       : 'border-rose-600 bg-rose-50 text-rose-950'
 
@@ -853,7 +885,18 @@ function ApprovalDecision({ report }: { report: EbInspectionReport }) {
         <p className="mt-3 text-sm leading-6">
           Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.
         </p>
-      ) : (
+      ) : isInterrupted ? (
+        reasonLines.length > 0 ? (
+          <div className="mt-3 text-sm leading-6">
+            <p className="font-semibold">Besiktningsmannens motivering:</p>
+            <ul className="mt-1 list-disc space-y-1 pl-6">
+              {reasonLines.map((line, index) => (
+                <li key={`${line}-${index}`}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null
+      ) : usesObstacleExplanation ? (
         <div className="mt-3 space-y-3 text-sm leading-6">
           <p>Noterade fel anses sammantaget inte vara av mindre betydelse.</p>
           {reasonLines.length > 0 ? (
@@ -867,7 +910,7 @@ function ApprovalDecision({ report }: { report: EbInspectionReport }) {
             </div>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -936,7 +979,11 @@ function SectionContent({
 
   return (
     <div className="space-y-5">
-      <ReadableText text={sectionText} />
+      {section.key === 'summons' || section.contentMode === 'editable' || section.contentMode === 'mixed' ? (
+        <EditableReadableText text={sectionText} />
+      ) : (
+        <ReadableText text={sectionText} />
+      )}
       {continuedInspection && (continuedInspection.date || continuedInspection.time) ? (
         <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-800">
           Enligt överenskommelse verkställs ny slutbesiktning{' '}

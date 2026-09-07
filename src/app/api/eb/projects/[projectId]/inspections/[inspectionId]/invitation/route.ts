@@ -4,6 +4,7 @@ import { requireOrgContext } from '@/lib/assignments/server'
 import { hasAcceptedEbAssignmentConfirmation } from '@/lib/eb/assignmentConfirmationServer'
 import {
   getEbInvitationContext,
+  isEbInvitationParticipantDraftInput,
   saveEbInvitationDraft,
   sendEbInvitation,
   type EbInvitationParticipantInput,
@@ -46,6 +47,10 @@ function toParticipant(value: unknown, index: number): EbInvitationParticipantIn
   }
 }
 
+function toDraftParticipant(value: unknown, index: number): EbInvitationParticipantInput | null {
+  return isEbInvitationParticipantDraftInput(value) ? toParticipant(value, index) : null
+}
+
 async function requireEbContext() {
   await requireModuleAccess({
     productKey: 'dashboard',
@@ -68,6 +73,10 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'INVITATION_SUBJECT_REQUIRED') return jsonError('Ange ämne.', 400)
   if (message === 'INVITATION_BODY_REQUIRED') return jsonError('Ange kallelsetext.', 400)
+  if (message === 'INVITATION_DRAFT_INVALID') return jsonError('Ogiltiga uppgifter för kallelsen.', 400)
+  if (message === 'INVITATION_PARTICIPANTS_INVALID') {
+    return jsonError('Deltagarlistan innehåller ogiltiga uppgifter.', 400)
+  }
   if (message === 'INVITATION_RECIPIENT_REQUIRED') {
     return jsonError('Lägg till minst en mottagare med giltig mejladress.', 400)
   }
@@ -150,20 +159,35 @@ export async function PATCH(
   try {
     const { projectId, inspectionId } = await context.params
     const org = await requireEbContext()
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-    const participants = Array.isArray(body.participants)
-      ? body.participants
-          .map((participant, index) => toParticipant(participant, index))
-          .filter((participant): participant is EbInvitationParticipantInput => Boolean(participant))
-      : []
+    const rawBody: unknown = await request.json().catch(() => null)
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+      return jsonError('Ogiltiga uppgifter för deltagarna.', 400)
+    }
+    const body = rawBody as Record<string, unknown>
+    if (!Array.isArray(body.participants)) {
+      return jsonError('Deltagarlistan måste finnas med när uppgifterna sparas.', 400)
+    }
+    const parsedParticipants = body.participants.map(toDraftParticipant)
+    if (parsedParticipants.some((participant) => participant === null)) {
+      return jsonError('Deltagarlistan innehåller ogiltiga uppgifter.', 400)
+    }
+    const participants = parsedParticipants as EbInvitationParticipantInput[]
+    const hasSubject = Object.prototype.hasOwnProperty.call(body, 'subject')
+    const hasBody = Object.prototype.hasOwnProperty.call(body, 'body')
+    if (
+      (hasSubject && body.subject !== null && typeof body.subject !== 'string') ||
+      (hasBody && body.body !== null && typeof body.body !== 'string')
+    ) {
+      return jsonError('Ämne och kallelsetext måste vara text eller tomma.', 400)
+    }
 
     const invitation = await saveEbInvitationDraft({
       orgId: org.orgId,
       requestedByUserId: org.userId,
       projectId,
       inspectionId,
-      subject: toText(body.subject) || null,
-      body: toText(body.body) || null,
+      ...(hasSubject ? { subject: toText(body.subject) || null } : {}),
+      ...(hasBody ? { body: toText(body.body) || null } : {}),
       participants,
     })
 

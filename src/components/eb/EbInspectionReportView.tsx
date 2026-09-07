@@ -18,6 +18,11 @@ import {
 import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import {
+  ebApprovalDecisionHeading,
+  ebApprovalStatusUsesObstacleExplanation,
+  isEbLegacyPartlyApprovedStatus,
+} from '@/lib/eb/approvalStatus'
+import {
   isEbDrainageTemplate,
   isEbReportSectionApplicable,
   isEbReportSectionIntegrated,
@@ -444,16 +449,11 @@ function InspectorReport({
 }
 
 function EditableReportText({ text }: { text: string }) {
-  const normalized = normalizeReportText(text)
-  if (!normalized) return null
+  if (!text.trim()) return null
 
   return (
-    <div className="space-y-2 text-[10.5pt] leading-[1.35] text-black">
-      {normalized.split(/\n{2,}/).map((block, index) => (
-        <p key={`${index}-${block}`} className="whitespace-pre-wrap">
-          {block}
-        </p>
-      ))}
+    <div className="whitespace-pre-wrap text-[10.5pt] leading-[1.35] text-black">
+      {text}
     </div>
   )
 }
@@ -577,40 +577,14 @@ function ParticipantsReport({
   )
 }
 
-function summonsMethod(report: EbInspectionReport, sectionText: string) {
-  const method = report.inspection.invitationMethod?.trim()
-  if (method) return method.toLocaleLowerCase('sv-SE')
-
-  const lowerText = sectionText.toLocaleLowerCase('sv-SE')
-  if (lowerText.includes('e-post') || lowerText.includes('epost') || lowerText.includes('e-mail')) return 'e-post'
-  return 'e-post'
-}
-
-function summonsDate(report: EbInspectionReport, sectionText: string) {
-  const date = report.inspection.invitationDate?.trim() || report.inspection.invitationSentAt?.trim()
-  if (date) return date.slice(0, 10)
-
-  const match = sectionText.match(/\b\d{4}-\d{2}-\d{2}\b/)
-  return match?.[0] ?? null
-}
-
 function SummonsReport({
-  report,
   section,
 }: {
-  report: EbInspectionReport
   section: EbInspectionReport['reportDraft']['sections'][number]
 }) {
-  const date = summonsDate(report, section.text)
-  const method = summonsMethod(report, section.text)
-
   return (
-    <ReportSection title="Sättet för kallelse till besiktningen" headingMarker>
-      <p className="text-[10.5pt] leading-[1.35] text-black">
-        {date
-          ? `Besiktningsmannen har ${date} kallat parterna per ${method}.`
-          : `Besiktningsmannen har kallat parterna per ${method}.`}
-      </p>
+    <ReportSection title={section.title} headingMarker>
+      <EditableReportText text={section.text} />
     </ReportSection>
   )
 }
@@ -657,7 +631,10 @@ function isTestingDocumentationDocumentBlock(block: string) {
 }
 
 function testingDocumentationBlocks(text: string, filterLegacyDocumentList: boolean) {
-  const proseBlocks = normalizeReportText(normalizeEbTestingDocumentationText(text))
+  const prose = filterLegacyDocumentList
+    ? normalizeReportText(normalizeEbTestingDocumentationText(text))
+    : text.replace(/\r\n?/g, '\n')
+  const proseBlocks = prose
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(
@@ -941,20 +918,21 @@ function approvalReasonLines(value: string | null) {
 }
 
 function ApprovalDecisionReport({ report }: { report: EbInspectionReport }) {
-  if (!report.inspection.approvalStatus) return null
+  const approvalStatus = report.inspection.approvalStatus
+  const decisionLabel = ebApprovalDecisionHeading(approvalStatus)
+  if (!approvalStatus || !decisionLabel) return null
 
-  const isApproved = report.inspection.approvalStatus === 'approved'
-  const isPartlyApproved = report.inspection.approvalStatus === 'partly_approved'
+  const isApproved = approvalStatus === 'approved'
+  const isInterrupted = approvalStatus === 'interrupted'
+  const isLegacyPartlyApproved = isEbLegacyPartlyApprovedStatus(
+    approvalStatus
+  )
+  const usesObstacleExplanation = ebApprovalStatusUsesObstacleExplanation(approvalStatus)
   const decisionDate = approvalDecisionDate(report)
   const reasonLines = approvalReasonLines(report.inspection.approvalNote)
-  const decisionLabel = isApproved
-    ? 'Arbetena godkänns'
-    : isPartlyApproved
-      ? 'Arbetena godkänns delvis'
-      : 'Arbetena godkänns inte'
   const statusClassName = isApproved
     ? 'border-[#2f7d55] bg-[#eef7f2]'
-    : isPartlyApproved
+    : isInterrupted || isLegacyPartlyApproved
       ? 'border-[#a16207] bg-[#fffbeb]'
       : 'border-[#991b1b] bg-[#fef2f2]'
 
@@ -970,7 +948,18 @@ function ApprovalDecisionReport({ report }: { report: EbInspectionReport }) {
           <p className="mt-2 text-[10.5pt] leading-[1.35]">
             Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.
           </p>
-        ) : (
+        ) : isInterrupted ? (
+          reasonLines.length > 0 ? (
+            <div className="mt-2 text-[10.5pt] leading-[1.35]">
+              <p>Besiktningsmannens motivering:</p>
+              <ul className="mt-1 list-disc space-y-1 pl-8">
+                {reasonLines.map((line, index) => (
+                  <li key={`${line}-${index}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null
+        ) : usesObstacleExplanation ? (
           <div className="mt-2 space-y-2 text-[10.5pt] leading-[1.35]">
             <p>
               Noterade fel anses sammantaget inte vara av mindre betydelse.
@@ -986,7 +975,7 @@ function ApprovalDecisionReport({ report }: { report: EbInspectionReport }) {
               </>
             ) : null}
           </div>
-        )}
+        ) : null}
       </div>
     </ReportSection>
   )
@@ -2257,7 +2246,7 @@ export default function EbInspectionReportView({
       if (section.key === 'summons') {
         blocks.push({
           id: `section-${section.key}`,
-          node: <SummonsReport report={report} section={section} />,
+          node: <SummonsReport section={section} />,
         })
         continue
       }

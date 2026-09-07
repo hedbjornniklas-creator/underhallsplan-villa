@@ -63,7 +63,7 @@ Hantverkare /(Näringsidkare): [företagsnamn]
 | Avtal/entreprenadform/upphandling/kontraktsdatum | `eb_projects` | Entreprenadsidan | Strukturerat. |
 | Beställare/hantverkare/entreprenör/org.nr/adress | `eb_projects`, initialt `eb_participants` | Entreprenadsidan, kallelse | Strukturerat för beställare och primär hantverkare/entreprenör. |
 | Besiktningstyp/datum/tid | `inspections`, `eb_inspection_details` | Ny besiktning/runda, Utlåtandeutkast | Strukturerat. |
-| Kallelse | `eb_inspection_details`, `eb_participants`, `outbound_messages` | Kallelse-dialog, Utlåtandeutkast | Delvis strukturerat. |
+| Kallelse | `eb_inspection_details`, `eb_participants`, `outbound_messages`, `report_draft.summons` | Kallelse-dialog, Granska | Utskicksuppgifter är strukturerade; utlåtandets formulering redigeras fritt i Granska. |
 | Deltagare/närvarande | `eb_participants` | Kallelse-dialog | Strukturerat, men partsombud/för talan behöver tydligare rollstöd. |
 | Fack/littera | `eb_disciplines` | Seedas, visas i granska | Strukturerat. |
 | Noteringar | `eb_notes` | Granska/runda | Strukturerat. |
@@ -102,7 +102,7 @@ All nödvändig information ska antingen finnas som strukturerat fält eller som
 | Bilageförteckning med littera | Byggs från valda handlingar, kompletteringar och bilagor | Ska inte dubbelmatas. |
 | Delar ej åtkomliga | Granska + utlåtandeuppgifter | Baseras på noteringar/status och kan kompletteras i utlåtandeuppgifter. |
 | Delar endast besiktigade genom handling | Utlåtandeuppgifter | Fritext/lista. |
-| Beslut godkänd/ej godkänd/delvis | Besiktningen | Dropdown. |
+| Beslut godkänd/ej godkänd/avbruten | Besiktningen | Dropdown. |
 | Beslutets motivering | Besiktningen eller utlåtandeuppgifter | Fritext. |
 | Fortsatt/ny slutbesiktning krävs | Besiktningen | Dropdown ja/nej. Om ja kan överenskommet datum och klockslag anges. Sektionen visas inte i utlåtandet om valet inte är ja. |
 | Garantitidens längd | Besiktningen | Dropdown 1-10 år. |
@@ -175,7 +175,7 @@ Regel: textfilerna får vara våra egna standardtexter och stödtexter, men de s
 
 ### Redigering i Granska
 
-När arbetsversionen skapas kopieras mallens standardtexter till `report_draft`. Den kopierade texten är därefter utlåtandets egen text och ändras inte när mallen ändras.
+När arbetsversionen skapas kopieras mallens standardtexter och genererade starttexter till `report_draft`. Den kopierade texten är därefter utlåtandets egen text. Sparad fritext, även avsiktligt tom text, ändras inte när mallen eller källuppgifterna ändras. PDF och digitalt utlåtande visar den sparade formuleringen. `Återställ starttext` är ett uttryckligt, bekräftat val som ersätter texten med en ny starttext från mallen och aktuella uppgifter.
 
 Arbetsversionens projekt- och profilsnapshot ändras inte heller automatiskt vid läsning eller autosparning. Om entreprenads- eller profiluppgifter har ändrats väljer besiktningsmannen uttryckligen `Hämta från entreprenaden` eller `Hämta besiktningsman` i Granska. Det gör att en pågående textredigering aldrig får en ny version enbart för att utlåtandet laddas eller läses in.
 
@@ -185,7 +185,20 @@ Sektionerna har tre innehållslägen:
 - `structured`: innehållet kommer från dedikerade projekt-, besiktnings-, deltagar- eller noteringsfält och ändras i dessa fält.
 - `mixed`: standardtexten redigeras i Granska, medan tillhörande sakuppgifter och listor fortsatt byggs från sina dedikerade fält.
 
-`Provning, dokumentation` är en blandad sektion. Bedömnings- och standardtexten sparas i arbetsversionen och kan redigeras, men handlingarnas titel, status och datum hämtas alltid från `Provning och dokumentation`. Samma princip används för ingressen till `Närvarande` (deltagarna förblir fältstyrda), den redigerbara ingressen och kolumnförklaringarna till `Fel och förhållanden`, standardtexten för ny slutbesiktning och reklamationsfrister. En sektion tas med eller utesluts med valet `Relevant`.
+`Provning, dokumentation` är en blandad sektion. Bedömnings- och standardtexten sparas i arbetsversionen och kan redigeras, men handlingarnas titel, status och datum hämtas alltid från `Provning och dokumentation`. Samma princip används för ingressen till `Närvarande` (deltagarna förblir fältstyrda), den redigerbara ingressen och kolumnförklaringarna till `Fel och förhållanden`, standardtexten för ny slutbesiktning och reklamationsfrister. En sektion tas med eller utesluts med valet `Ta med i utlåtandet`. Den tidigare statusmenyn `Utkast/Klar/Ej relevant` visas inte längre; det finns ingen extra klarmarkering för avsnitten.
+
+`Sättet för kallelse`, `Delar som inte varit åtkomliga`, `Parternas överenskommelse om när fel skall vara avhjälpta` och `Besiktningskostnadens fördelning` är redigerbara berättande texter. Äldre arbetsversioner får dessa sektioner uppgraderade och starttexten sparad en gång. Redan fastställda sektioners text och innehållsläge ändras inte. Sakuppgifter som deltagarlistor, objektuppgifter, avtal, tider och beslut redigeras fortsatt i sina särskilda fält och visas som information, inte som låsta textrutor.
+
+#### Granska som sammanhållen redigeringsyta
+
+- Avsnitten följer utlåtandets ordning. Varje text redigeras på ett ställe, med tillhörande sakuppgifter i samma avsnitt. En extra låst textkopia visas inte när avsnittet redan har ett formulär för sina sakuppgifter.
+- Beteckningar, nedsättning och noteringar hör till `Fel och förhållanden`. Underskriftens val hör till `Sändlista`. Grupperingen styrs av `src/lib/eb/reviewSections.ts`; äldre utkast utan föräldraavsnitt behåller barnets kontroll som ett eget kort.
+- De äldre separata korten `Garantitidens slut` och `Efterbesiktning` visas inte i Granska eftersom deras egna synlighetsval inte används av renderingen. Sparade data tas inte bort.
+- Den oanvända väljaren för garantitid i antal år visas inte i Granska. Sparat värde behålls. Datum och omfattning för särskild varugaranti finns fortsatt vid reklamationsavsnittet.
+- Kostnadsfördelningen redigeras enbart i sin utlåtandetext i Granska. Det äldre besiktningsfältets värde behålls som underlag för starttext, men visas inte som en andra texteditor.
+- Efterbesiktningens detaljfält visas först när efterbesiktning är påkallad. Att dölja fälten raderar inte tidigare sparade värden.
+- Underlag för starttext, exempelvis kallelsemetod och datum för avhjälpande, skiljs från sakuppgifter som visas direkt i utlåtandet. Ändrat underlag skriver inte över sparad fritext; besiktningsmannen redigerar texten eller väljer uttryckligen `Återställ starttext`.
+- Mejlets ämne och kallelsetext redigeras under `Kallelse`, inte i Granska. Deltagarsparning från Granska skickar endast deltagare och får inte ändra ett sparat mejlutkast. Invitation-API:ts PATCH kräver en giltig deltagarlista och uppdaterar ämne eller meddelande endast när respektive fält uttryckligen skickas med.
 
 | SBR-punkt | Stöd i Hushub | Källa |
 |---|---|---|
@@ -195,7 +208,7 @@ Sektionerna har tre innehållslägen:
 | Entreprenaden samt parter (4) | Ja | `eb_projects`, `report_draft.contract_parties` |
 | Besiktningsman (5) | Redigerbart utkast | `report_draft.inspectors` |
 | Närvarande (6) | Delvis strukturerat | `eb_participants`, `report_draft.participants` |
-| Sättet för kallelse (7) | Delvis strukturerat | `eb_inspection_details.invitation_sent_at`, `report_draft.summons` |
+| Sättet för kallelse (7) | Fri text, starttext från kallelseuppgifterna | `report_draft.summons` |
 | Fråga om jäv (8) | Redigerbart utkast | `report_draft.conflict_of_interest` |
 | Tidigare besiktningar/provningar (9) | Redigerbart utkast | `report_draft.previous_inspections_tests` |
 | Provning/dokumentation | Redigerbart utkast + standardtext | `report_draft.testing_documentation` |
@@ -210,10 +223,10 @@ Sektionerna har tre innehållslägen:
 | Fortsatt/ny slutbesiktning (19) | Strukturerat + redigerbart utkast | `eb_inspection_details.requires_continued_final_inspection`, `continued_final_inspection_date`, `continued_final_inspection_time`, `report_draft.continued_final_inspection` |
 | Garantitidens slut (20) | Ingår i `Reklamationsfrister` i denna layout | `warranty_end_date`, `warranty_scope` |
 | Reklamationsfrister | Standardtext + strukturerad särskild varugaranti | `warranty_end_date`, `warranty_scope`, `report_draft.reclamation_notice` |
-| Parternas överenskommelse om när fel skall vara avhjälpta (24) | Strukturerat + redigerbart utkast | `default_remedy_deadline`, `after_inspection_requested`, `after_inspection_requested_by`, `after_inspection_due_date`, `after_inspection_notice_in_report`, `report_draft.remedy_deadline` |
+| Parternas överenskommelse om när fel skall vara avhjälpta (24) | Fri text, starttext från besiktningsuppgifterna | `default_remedy_deadline`, `after_inspection_requested`, `after_inspection_requested_by`, `after_inspection_due_date`, `after_inspection_notice_in_report`, `report_draft.remedy_deadline` |
 | Kostnad för avhjälpande | Ska inte skrivas ut i denna version | `report_draft.remedy_cost` är ej relevant. |
 | Efterbesiktning (24) | Ingår i avhjälpandesektionen | `report_draft.after_inspection` skrivs inte ut som egen sektion. |
-| Besiktningskostnadens fördelning | Strukturerat + redigerbart utkast | `eb_inspection_details.inspection_cost_distribution`, `report_draft.inspection_cost_distribution` |
+| Besiktningskostnadens fördelning | Fri text, starttext från besiktningsuppgifterna | `eb_inspection_details.inspection_cost_distribution`, `report_draft.inspection_cost_distribution` |
 | Övriga noteringar | Redigerbart utkast | `report_draft.other_notes` |
 | Sändlista (25) | Strukturerat | `eb_participants.receives_report`, `report_distribution_date`, `report_draft.distribution_list` |
 | Underskrift/certifiering/SBR | Hämtas från besiktningsmannens settings/profil | `profiles`, `profile_certifications`, `report_draft.signature_certificate` |
@@ -224,19 +237,19 @@ Layoutregel för `Besiktningsman`: sektionen ska visa rubriken `Besiktningsman` 
 
 Layoutregel för `Närvarande`: uppgifterna fylls i under `Uppgifter` på besiktningen. Sektionen ska visa rubriken `Närvarande`, texten `Vid besiktningen var parterna representerade av:` och tre rader: `för beställaren:`, `för hantverkaren:`/`för entreprenören:` samt `Övriga närvarande:`. Övriga närvarande ska visa namn, företag och roll i projektet när uppgifterna finns.
 
-Layoutregel för `Sättet för kallelse till besiktningen`: sektionen ska visa rubriken med markering och meningen `Besiktningsmannen har [kallelsedatum] kallat parterna per [kallelsemetod].`. Kallelsedatum och metod fylls i under `Uppgifter` på besiktningen. Kallelsemetod ska kunna väljas från vanliga alternativ, med möjlighet att ange egen metod.
+Layoutregel för `Sättet för kallelse`: sektionen visar den sparade texten från Granska i både PDF och digitalt utlåtande. Kallelseuppgifter används endast till starttexten när arbetsversionen skapas eller texten uttryckligen återställs. Besiktningsmannen kan exempelvis skriva `Beställaren har själv kallat entreprenören till besiktningen.` utan att behöva ändra systemets utskickshistorik. Om uppgift om kallelse saknas får renderingen inte påstå att besiktningsmannen har kallat per e-post.
 
 Layoutregel för `Tidigare besiktningar`: uppgifterna fylls i under `Uppgifter > Tidigare` på besiktningen och sparas strukturerat i `eb_inspection_details.previous_inspections`. Listan ska kunna kompletteras med valfria fritextrader samt rader som senare kan hämtas från programmet. Om inga tidigare besiktningar finns ska utlåtandet visa `-`.
 
 Layoutregel för `Föreskrift om en ny slutbesiktning`: sektionen visas endast när `Fortsatt slutbesiktning`/ny slutbesiktning är vald som `Ja` i `Uppgifter > Utlåtande`. Texten ska börja med `En ny slutbesiktning skall ske, efter att hantverkaren underrättat om färdigställande.` och innehålla `Denna notering gäller som kallelse.` Om parterna har kommit överens om tidpunkt visas även `Enligt överenskommelse verkställs ny slutbesiktning [datum], kl [tid].`
 
-Layoutregel för `Parternas överenskommelse om när fel skall vara avhjälpta`: sektionen ersätter de tidigare separata sektionerna `När fel ska vara avhjälpta` och `Efterbesiktning`. Texten ska skrivas som löptext: `Parterna har överenskommit att fel skall vara avhjälpta senast till [datum].` Om efterbesiktning är påkallad ska nästa rad vara `Efterbesiktning som påkallats av [beställaren/hantverkaren] görs [datum].` Om utlåtandet ska gälla som kallelse visas även `Denna notering gäller som kallelse.`
+Layoutregel för `Parternas överenskommelse om när fel skall vara avhjälpta`: sektionen ersätter de tidigare separata sektionerna `När fel ska vara avhjälpta` och `Efterbesiktning`. Starttexten byggs av överenskommen avhjälpandetid och uppgifter om efterbesiktning. Därefter redigeras formuleringen fritt i Granska och skrivs ut som sparad löptext.
 
 Layoutregel för `Reklamationsfrister`: sektionen ska visa standardtexten `Beställarens reklamationsrätter framgår av konsumenttjänstlagen (Ktjl. 17 §).` Särskild varugaranti fylls i under `Uppgifter > Utlåtande` med fälten `Garantitidens slut` och `Särskild varugaranti för`. Om båda är ifyllda visas `Särskild varugaranti enligt nedan gäller till och med:` följt av punktlistan `[datum] för [vara/produkt/material]`. Om ingen sådan garanti finns, eller om bara datum/vara är ifyllt, ska raden markeras med `-` i stället för att skriva ut ofullständig text som `för vara`. Instruktionstext som `Ange eller ta bort...` ska inte skrivas ut i färdigt utlåtande.
 
 Layoutregel för `Sändlista`: sista sektionen ska visa rubriken `Sändlista`, meningen `Undertecknat utlåtande har [datum] sänts per e-post till parterna och övriga enligt nedan.` och en tabell med kolumnerna `Företag`, `Namn`, `Adress`. Raderna byggs från deltagare/mottagare där `receives_report=true`; adresskolumnen visar e-postadress. Direkt under tabellen visas besiktningsmannens porträtt från `profiles.avatar_path`, namn och certifierings-/medlemskapsuppgifter från settings/profil samt SBR-logotypen. Den separata sektionen `Underskrift och certifiering` ska inte skrivas ut som egen rubrik utan ingå visuellt i `Sändlista`.
 
-Standardtext för `Provning, dokumentation`: texten ligger i `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt` och ska börja med `Följande dokument över avtalade kvalitetsåtgärder redovisades...`. Bedömningstexten om att entreprenörens dokumentation utgjort tillräckligt underlag ska ligga före listan med granskade handlingar. Under dessa stycken ska underrubriken `Dokumentation:` visas, följt av granskade handlingar i två kolumner: handling till vänster och `Daterad: [datum]` eller överlämningsstatus till höger. Under listan med handlingar ska texten om att saknad eller felaktig dokumentation noteras som fel under `Fel och förhållanden` ligga. Äldre sparade utkast med den tidigare interna instruktionstexten ersätts automatiskt av den aktuella standardtexten.
+Standardtext för `Provning, dokumentation`: starttexten hämtas från `src/content/standardtexts/eb/EB_REPORT_TESTING_DOCUMENTATION.txt`. Sparade formuleringar visas utan automatiska språkliga ersättningar. Listan med handlingar visas separat i en tabell med handling och datum/status; dessa sakuppgifter redigeras i `Provning och dokumentation`. En äldre sparad standardtext ersätts endast när besiktningsmannen uttryckligen väljer `Återställ starttext`.
 
 Regel för saknad dokumentation: när en EB-handling i `Provning och dokumentation` markeras som `Ej redovisad`/`Ej överlämnad` ska systemet skapa en automatisk notering i `Fel och förhållanden`. Noteringen märks med `eb_notes.source_system = eb_missing_document` och `source_record_id = document_types.id`, så den kan uppdateras eller tas bort när dokumentstatus ändras utan att manuella noteringar påverkas. Själva avsnittet `Provning, dokumentation` ska bara lista handlingar som är `Granskad`/`Överlämnad`.
 
@@ -250,7 +263,7 @@ Om det finns nedsättningsnoteringar (`marker_key=N`) ska en sammanfattande text
 
 Layoutregel för `Bilaga 1 – Fotobilaga`: bilagan ska börja direkt efter underskriften och därmed omfattas av samma signering. Manuella grupprubriker från `Granska` ska följas, men bilder från flera noteringar inom samma grupp ska packas tillsammans i ett tvåspaltsrutnät i stället för att varje enbildsnotering lämnar en tom högerspalt. Varje bildkort ska visa kontrollpunkt/notering, del/rum, bildnummer, eventuell bildtext och noteringstexten en gång per notering. Bilden får inte beskäras; hela bilden ska visas med `object-contain`. Kommun från entreprenadens objektuppgifter ska också visas i varje sidhuvud, tillsammans med fastighetsbeteckning eller objektidentitet.
 
-Layoutregel för `Besked om godkännande`: sektionen styrs av `eb_inspection_details.approval_status`, `approval_note` och besiktningsdatumet. Vid `approved` ska texten vara `Arbetena godkänns [datum]` och `Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.`. Vid `not_approved` eller `partly_approved` ska alternativtexten för icke godkännande visas och motiveringen från `approval_note` listas som skäl.
+Layoutregel för `Besked om godkännande`: sektionen styrs av `eb_inspection_details.approval_status`, `approval_note` och besiktningsdatumet. Vid `approved` ska texten vara `Arbetena godkänns [datum]` och `Beslutet meddelades av besiktningsmannen till parterna vid besiktningen.`. Vid `not_approved` ska alternativtexten för icke godkännande visas och motiveringen från `approval_note` listas som hinder för godkännande. Vid `interrupted` ska texten vara `Besiktningen avbryts` och en eventuell `approval_note` visas som besiktningsmannens motivering, utan text om hinder för godkännande.
 
 ## Kvar att göra för mer strukturerat stöd
 

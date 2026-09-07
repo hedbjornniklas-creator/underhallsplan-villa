@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+import { normalizeEbApprovalStatus } from '@/lib/eb/approvalStatus'
 import {
   deleteEbInspection,
   updateEbInspection,
-  type EbApprovalStatus,
   type EbAfterInspectionRequestedBy,
   type EbDefectNoErrorPartsPolicy,
   type EbInspectorAppointedBy,
@@ -82,6 +82,14 @@ export async function PATCH(
     const { projectId, inspectionId } = await context.params
     const org = await requireEbContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const approvalStatusValue = toText(body.approvalStatus)
+    const approvalStatus = approvalStatusValue
+      ? normalizeEbApprovalStatus(approvalStatusValue)
+      : null
+
+    if (approvalStatusValue && !approvalStatus) {
+      return jsonError('Välj Godkänd, Ej godkänd eller Avbruten som beslut.', 400)
+    }
 
     const project = await updateEbInspection({
       orgId: org.orgId,
@@ -96,7 +104,7 @@ export async function PATCH(
       inspectorAppointedBy: (toText(body.inspectorAppointedBy) || null) as EbInspectorAppointedBy | null,
       invitationMethod: toText(body.invitationMethod) || null,
       invitationDate: toText(body.invitationDate) || null,
-      approvalStatus: (toText(body.approvalStatus) || null) as EbApprovalStatus | null,
+      approvalStatus,
       approvalNote: toText(body.approvalNote) || null,
       requiresContinuedFinalInspection: toOptionalBoolean(body.requiresContinuedFinalInspection),
       continuedFinalInspectionDate: toText(body.continuedFinalInspectionDate) || null,
