@@ -21,8 +21,12 @@ await new Promise((resolveBuild, reject) => webpack({
 const { css } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const js = await readFile(resolve(output, 'view.js'))
 const applicantJs = await readFile(resolve(output, 'applicant.js'))
+let reviewOrderPosts = 0
 const server = createServer((request, response) => {
-  if (request.url.endsWith('/consultant-review')) { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ order: null })); return }
+  if (request.url.endsWith('/consultant-review')) {
+    if (request.method === 'POST') reviewOrderPosts++
+    response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ order: null })); return
+  }
   if (request.url === '/view.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(js); return }
   if (request.url === '/applicant.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(applicantJs); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -41,6 +45,30 @@ try {
     await page.setViewport({ width, height: 1000 })
     await page.goto(`http://127.0.0.1:${server.address().port}`, { waitUntil: 'networkidle0' })
     await page.waitForSelector('a[href$="?view=1"]')
+    const reviewSection = '[aria-label="Granskning av byggkonsult"]'
+    const scope = `${reviewSection} > details`
+    assert.equal(await page.$eval(scope, node => node.open), false)
+    await page.$eval(`${scope} summary`, node => node.focus())
+    await page.keyboard.press('Enter')
+    assert.equal(await page.$eval(scope, node => node.open), true)
+    assert.match(await page.$eval(scope, node => node.textContent), /En genomgång av renoveringsansökan/)
+    assert.match(await page.$eval(scope, node => node.textContent), /Råd om hur styrelsen kan gå vidare/)
+    assert.match(await page.$eval(scope, node => node.textContent), /Beslutet om ansökan fattas alltid av styrelsen/)
+    await (await page.$(reviewSection)).screenshot({ path: resolve(output, `consultant-scope-${width}.png`) })
+    await page.keyboard.press('Enter')
+    assert.equal(await page.$eval(scope, node => node.open), false)
+    await page.locator(`${reviewSection} button`).filter(node => node.textContent.includes('Få hjälp av byggkonsult')).click()
+    await page.waitForSelector('dialog[open]')
+    if (width === 390) await page.setViewport({ width, height: 844 })
+    await page.locator('dialog[open] summary').click()
+    assert.equal(await page.$eval('dialog[open] details', node => node.open), true)
+    assert.equal(await page.$eval('dialog[open]', node => node.scrollWidth > node.clientWidth), false)
+    assert.match(await page.$eval('dialog[open]', node => node.textContent), /1 500 kr exkl\. moms/)
+    await page.screenshot({ path: resolve(output, `consultant-dialog-scope-${width}.png`) })
+    await page.locator('dialog[open] button[aria-label="Stäng"]').click()
+    if (width === 390) await page.setViewport({ width, height: 1000 })
+    assert.equal(reviewOrderPosts, 0)
+    console.log(`PASS scope ${width}px: collapsed by default, keyboard toggle, same service description in dialog, no paid order`)
     const historyToggle = page.locator('::-p-xpath(//button[contains(., "Visa historik") or contains(., "Dölj historik")])')
     assert.equal(await historyToggle.map(button => button.getAttribute('aria-expanded')).wait(), 'false')
     assert.equal(await historyToggle.map(button => document.getElementById(button.getAttribute('aria-controls')).getClientRects().length).wait(), 0)

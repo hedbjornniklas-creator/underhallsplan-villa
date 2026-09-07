@@ -1,8 +1,28 @@
 'use client'
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { Check, Headset, LoaderCircle, RefreshCw, X } from 'lucide-react'
+import { Check, ChevronDown, Headset, Info, LoaderCircle, RefreshCw, X } from 'lucide-react'
 import { CONSULTANT_REVIEW_MAX_MESSAGE, CONSULTANT_REVIEW_PRICE_LABEL, CONSULTANT_REVIEW_PRICE_ORE, type ConsultantReviewOrder as Order } from '@/lib/renoapp/consultantReview'
+
+function ConsultantReviewScope() {
+  return (
+    <details className="group mt-3 min-w-0 text-sm">
+      <summary className="flex min-h-9 w-fit cursor-pointer list-none items-center gap-2 font-semibold text-sky-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 [&::-webkit-details-marker]:hidden">
+        <Info size={18} className="shrink-0" aria-hidden="true" />
+        <span>Vad ingår i priset?</span>
+        <ChevronDown size={16} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="mt-2 border-l-2 border-sky-300 bg-sky-50 px-4 py-3 leading-6 text-stone-800 [overflow-wrap:anywhere]">
+        <p className="font-semibold">Byggkonsulten hjälper styrelsen med:</p>
+        <ul className="mt-2 list-disc space-y-2 pl-5">
+          <li>En genomgång av renoveringsansökan och de underlag som har skickats in.</li>
+          <li>Råd om hur styrelsen kan gå vidare med ansökan, till exempel vilka frågor som behöver redas ut eller om ytterligare underlag behövs.</li>
+        </ul>
+        <p className="mt-3">Granskningen är ett stöd för styrelsen. Beslutet om ansökan fattas alltid av styrelsen.</p>
+      </div>
+    </details>
+  )
+}
 
 export default function ConsultantReviewOrder({ caseId, brfName, isDraft }: { caseId: string; brfName: string | null; isDraft: boolean }) {
   const [order, setOrder] = useState<Order | null>(null)
@@ -68,6 +88,7 @@ export default function ConsultantReviewOrder({ caseId, brfName, isDraft }: { ca
           <Headset size={18} aria-hidden="true" />{loading ? 'Läser beställningsstatus...' : 'Få hjälp av byggkonsult'}
         </button> : null}
       </div>
+      <ConsultantReviewScope />
       {isDraft ? <p className="mt-3 text-sm text-stone-600">Granskning kan beställas när ansökan har skickats in.</p> : null}
       {loadError ? <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 text-sm text-rose-800"><p>{loadError}</p><button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 font-semibold underline"><RefreshCw size={16} />Försök igen</button></div> : null}
       {order ? <div role="status" className="mt-4 border-t border-stone-200 pt-4 text-sm">
@@ -89,7 +110,10 @@ export default function ConsultantReviewOrder({ caseId, brfName, isDraft }: { ca
             <button type="button" autoFocus disabled={sending} aria-label="Stäng" title="Stäng" onClick={() => dialog.current?.close()} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-stone-100 disabled:opacity-50"><X size={20} /></button>
           </div>
           <p className="mt-3 break-words text-sm text-stone-700">Granskning av ansökan och inskickade underlag för {brfName || 'föreningen'}. Styrelsen fattar fortsatt beslut om ansökan.</p>
-          <p id={priceId} className="my-5 border-y border-stone-200 py-4 text-xl font-semibold">Fast pris: {CONSULTANT_REVIEW_PRICE_LABEL}</p>
+          <div className="my-5 border-y border-stone-200 py-4">
+            <p id={priceId} className="text-xl font-semibold">Fast pris: {CONSULTANT_REVIEW_PRICE_LABEL}</p>
+            <ConsultantReviewScope />
+          </div>
           <label className="grid gap-2 text-sm font-semibold">Meddelande till byggkonsulten <span className="font-normal text-stone-500">Frivilligt</span>
             <textarea value={message} onChange={event => setMessage(event.target.value)} maxLength={CONSULTANT_REVIEW_MAX_MESSAGE} rows={4} disabled={sending}
               className="w-full resize-y rounded-md border border-stone-300 px-3 py-2 font-normal focus:outline-2 focus:outline-emerald-700" />
