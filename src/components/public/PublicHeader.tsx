@@ -67,7 +67,7 @@ export default function PublicHeader({ activeProduct }: { activeProduct?: Public
           {navigation.map((item) => <Link key={item.href} href={item.href} aria-current={item.href === pathname ? 'page' : undefined}>{item.label}</Link>)}
         </nav>
         <div className="public-header-actions">
-          <Link className="public-button public-button-small" href={accountHref} prefetch={false}>{accountLabel}</Link>
+          <Link className="public-button public-button-small public-button-secondary" href={accountHref} prefetch={false}>{accountLabel}</Link>
           <button
             type="button" className="public-menu-trigger" ref={menuButtonRef}
             onClick={() => setMenuOpen(true)} aria-expanded={menuOpen}
