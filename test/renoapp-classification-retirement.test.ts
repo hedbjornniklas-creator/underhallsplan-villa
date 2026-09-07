@@ -118,10 +118,23 @@ test('existing case details load without the checks table and still enforce the 
   await assert.rejects(load('case', ['other-brf']), /CASE_NOT_FOUND/)
 })
 
-test('unconfirmed cleanup refuses to remove data', async () => {
+test('repository cleanup is blocked by default without removing data', async () => {
+  assert.match(migration, /code_is_deployed boolean := false/)
+  assert.match(migration, /backup_is_verified boolean := false/)
   await assert.rejects(db.exec(migration), /Deploy the classification-free code/)
   await db.exec('rollback')
   assert.equal((await db.query('select * from renovation_case_checks')).rows.length, 1)
+})
+
+test('unconfirmed cleanup refuses to remove data', async () => {
+  for (const confirmation of ['code_is_deployed', 'backup_is_verified']) {
+    const unconfirmedMigration = confirmedMigration.replace(
+      `${confirmation} boolean := true`, `${confirmation} boolean := false`
+    )
+    await assert.rejects(db.exec(unconfirmedMigration), /Deploy the classification-free code/)
+    await db.exec('rollback')
+    assert.equal((await db.query('select * from renovation_case_checks')).rows.length, 1)
+  }
 })
 
 test('cleanup refuses unknown columns and dependent views without partially deleting columns', async () => {

@@ -28,8 +28,20 @@ still reads/writes the retired objects before removing them.
 ## Optional database cleanup after deployment
 
 `docs/db/2026-09-07_05_renoapp_retire_technical_classification.sql` is a separate,
-manual follow-up, not a prerequisite for the code release. It is deliberately blocked
-until both `code_is_deployed` and `backup_is_verified` are changed to `true`.
+manual follow-up, not a prerequisite for the code release. It is blocked unless
+both `code_is_deployed` and `backup_is_verified` are `true`.
+
+On 2026-09-07 the operator confirmed that the retired controls are absent from the
+live flow builder and accepted the scheduled backup shown as 2026-09-06 22:05:19 UTC,
+including the possible loss of later changes if a full restore is needed. Both
+confirmations were set to `true` for that approved manual cleanup. No restore test or
+successful production SQL execution has been verified here.
+
+The repository defaults have since been restored to `false` to prevent accidental
+reuse of that approval. This does not change the database or SQL already copied to
+Supabase. Before any new execution, check the current database state, deployment,
+backup and dependencies, then confirm both prerequisites in the manual execution
+copy only. Keep the repository defaults `false`.
 
 1. Verify a restorable backup covering the old columns and checks table.
 2. Inspect production views, functions, triggers, policies and external integrations

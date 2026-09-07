@@ -1,6 +1,8 @@
 -- MANUAL FOLLOW-UP ONLY: deploy the classification-free application first.
 -- Verify a restorable backup and inspect production dependencies before running.
--- Change BOTH confirmations below to true only after those checks.
+-- 2026-09-07: the operator confirmed the release is live and accepted the scheduled backup.
+-- No restore test or production execution was verified here; see the retirement notes.
+-- Keep repository defaults false. Confirm BOTH prerequisites for each manual run.
 -- Never use CASCADE here: unknown dependencies must stop the cleanup.
 begin;
 
