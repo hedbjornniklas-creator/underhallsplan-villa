@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
+import { CircleHelp } from 'lucide-react'
 
 type CaseItem = {
   id: string
@@ -27,7 +28,7 @@ type CaseItem = {
   }
 }
 
-type StatusFilter = 'all' | 'draft' | 'new_application' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
+type StatusFilter = 'all' | 'draft' | 'new_application' | 'review' | 'need_info' | 'approved' | 'rejected'
 type SortField = 'caseNumber' | 'title' | 'status' | 'submittedAt' | 'applicant'
 type SortDirection = 'asc' | 'desc'
 
@@ -46,22 +47,15 @@ const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
 
 const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
-  { key: 'draft', label: 'Utkast' },
   { key: 'new_application', label: 'Ny ansökan' },
   { key: 'review', label: 'Att granska' },
   { key: 'need_info', label: 'Komplettering begärd' },
   { key: 'approved', label: 'Godkänd' },
-  { key: 'conditional', label: 'Godkänd med villkor' },
   { key: 'rejected', label: 'Avslag' },
+  { key: 'draft', label: 'Utkast' },
 ]
 
 const STATUS_HELP_ITEMS = [
-  {
-    key: 'draft',
-    label: 'Utkast',
-    meaning: 'Ärendet är påbörjat men ännu inte inskickat av lägenhetsinnehavaren.',
-    action: 'Styrelsen behöver normalt inte göra något ännu. Avvakta tills ansökan skickas in.',
-  },
   {
     key: 'new_application',
     label: 'Ny ansökan',
@@ -83,20 +77,20 @@ const STATUS_HELP_ITEMS = [
   {
     key: 'approved',
     label: 'Godkänd',
-    meaning: 'Ansökan är godkänd och beslut är fattat.',
-    action: 'Öppna ärendet om du vill läsa beslutet eller använda det som dokumentation i efterhand.',
-  },
-  {
-    key: 'conditional',
-    label: 'Godkänd med villkor',
-    meaning: 'Ansökan är godkänd, men bara under de villkor som styrelsen har angett.',
-    action: 'Öppna ärendet och kontrollera att villkoren är tydligt dokumenterade.',
+    meaning: 'Ansökan är godkänd. Beslutet kan innehålla villkor som måste följas.',
+    action: 'Öppna ärendet för att läsa beslutet och eventuella villkor.',
   },
   {
     key: 'rejected',
     label: 'Avslag',
     meaning: 'Ansökan har fått avslag i sin nuvarande form.',
     action: 'Öppna ärendet för att läsa motivering och beslut om lägenhetsinnehavaren återkommer senare.',
+  },
+  {
+    key: 'draft',
+    label: 'Utkast',
+    meaning: 'Ärendet är påbörjat men ännu inte inskickat av lägenhetsinnehavaren.',
+    action: 'Styrelsen behöver normalt inte göra något ännu. Avvakta tills ansökan skickas in.',
   },
 ] as const
 
@@ -111,8 +105,7 @@ function getStatusLabel(status: string) {
   if (status === 'new_application' || status === 'submitted') return 'Ny ansökan'
   if (status === 'review') return 'Att granska'
   if (status === 'need_info') return 'Komplettering begärd'
-  if (status === 'approved') return 'Godkänd'
-  if (status === 'conditional') return 'Godkänd med villkor'
+  if (status === 'approved' || status === 'conditional') return 'Godkänd'
   if (status === 'rejected') return 'Avslag'
   return status || '-'
 }
@@ -121,51 +114,46 @@ function getStatusBucket(status: CaseItem['status']): StatusFilter {
   if (status === 'draft') return 'draft'
   if (status === 'new_application' || status === 'submitted') return 'new_application'
   if (status === 'need_info') return 'need_info'
-  if (status === 'approved') return 'approved'
-  if (status === 'conditional') return 'conditional'
+  if (status === 'approved' || status === 'conditional') return 'approved'
   if (status === 'rejected') return 'rejected'
   return 'review'
 }
 
 function getStatusSortRank(status: CaseItem['status']) {
   switch (getStatusBucket(status)) {
-    case 'draft':
-      return 0
     case 'new_application':
-      return 1
+      return 0
     case 'review':
-      return 2
+      return 1
     case 'need_info':
-      return 3
+      return 2
     case 'approved':
-      return 4
-    case 'conditional':
-      return 5
+      return 3
     case 'rejected':
-      return 6
+      return 4
+    case 'draft':
+      return 5
     default:
-      return 7
+      return 6
   }
 }
 
-function getStatusRowClass(status: CaseItem['status']) {
+function getStatusMarkerClass(status: CaseItem['status']) {
   switch (getStatusBucket(status)) {
     case 'draft':
-      return 'bg-stone-50 text-black hover:bg-stone-100 focus-visible:bg-stone-100'
+      return 'bg-stone-500'
     case 'new_application':
-      return 'bg-violet-50 text-black hover:bg-violet-100 focus-visible:bg-violet-100'
+      return 'bg-violet-600'
     case 'review':
-      return 'bg-cyan-50 text-black hover:bg-cyan-100 focus-visible:bg-cyan-100'
+      return 'bg-cyan-600'
     case 'need_info':
-      return 'bg-amber-50 text-black hover:bg-amber-100 focus-visible:bg-amber-100'
+      return 'bg-amber-500'
     case 'approved':
-      return 'bg-emerald-50 text-black hover:bg-emerald-100 focus-visible:bg-emerald-100'
-    case 'conditional':
-      return 'bg-orange-50 text-black hover:bg-orange-100 focus-visible:bg-orange-100'
+      return 'bg-emerald-600'
     case 'rejected':
-      return 'bg-rose-50 text-black hover:bg-rose-100 focus-visible:bg-rose-100'
+      return 'bg-rose-600'
     default:
-      return 'bg-white text-black hover:bg-stone-50 focus-visible:bg-stone-50'
+      return 'bg-stone-500'
   }
 }
 
@@ -181,8 +169,6 @@ function getStatusBadgeClass(status: CaseItem['status']) {
       return 'border-amber-300 bg-amber-100 text-amber-950'
     case 'approved':
       return 'border-emerald-300 bg-emerald-100 text-emerald-950'
-    case 'conditional':
-      return 'border-orange-300 bg-orange-100 text-orange-950'
     case 'rejected':
       return 'border-rose-300 bg-rose-100 text-rose-950'
     default:
@@ -232,21 +218,14 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
         inactive: 'border-[#D1EAD7] bg-[#F8FDF9] text-[#3D6B4A] hover:bg-[#F0FAF2]',
         active: 'border-[#A4CFB0] bg-[#EEF7F0] text-[#355E41]',
         countInactive: 'bg-[#F0F8F2] text-[#3D6B4A]',
-        countActive: 'bg-white/20 text-white',
-      }
-    case 'conditional':
-      return {
-        inactive: 'border-[#F0D7C4] bg-[#FFFAF5] text-[#8D5A3C] hover:bg-[#FFF3EA]',
-        active: 'border-[#DEB79B] bg-[#F8ECE2] text-[#7B4E34]',
-        countInactive: 'bg-[#FAEFE7] text-[#8D5A3C]',
-        countActive: 'bg-white/20 text-white',
+        countActive: 'bg-[#D1EAD7] text-[#355E41]',
       }
     case 'rejected':
       return {
         inactive: 'border-[#EBCFCF] bg-[#FFF8F8] text-[#8A5858] hover:bg-[#FFF0F0]',
         active: 'border-[#D9B0B0] bg-[#F9ECEC] text-[#7B4C4C]',
         countInactive: 'bg-[#FAEEEE] text-[#8A5858]',
-        countActive: 'bg-white/20 text-white',
+        countActive: 'bg-[#EBCFCF] text-[#7B4C4C]',
       }
     default:
       return {
@@ -326,9 +305,11 @@ export default function RenoAppCasesPage() {
       const raw = window.localStorage.getItem(STORAGE_KEY)
       if (!raw) return
 
-      const saved = JSON.parse(raw) as Partial<SavedListView>
+      const saved = JSON.parse(raw) as Partial<Omit<SavedListView, 'statusFilter'>> & { statusFilter?: StatusFilter | 'conditional' }
       if (typeof saved.search === 'string') setSearch(saved.search)
-      if (saved.statusFilter && STATUS_TABS.some((tab) => tab.key === saved.statusFilter)) {
+      if (saved.statusFilter === 'conditional') {
+        setStatusFilter('approved')
+      } else if (saved.statusFilter && STATUS_TABS.some((tab) => tab.key === saved.statusFilter)) {
         setStatusFilter(saved.statusFilter)
       }
       if (saved.sortField) setSortField(saved.sortField)
@@ -365,7 +346,6 @@ export default function RenoAppCasesPage() {
       review: 0,
       need_info: 0,
       approved: 0,
-      conditional: 0,
       rejected: 0,
     }
 
@@ -478,18 +458,29 @@ export default function RenoAppCasesPage() {
         <h1 className="text-3xl font-semibold tracking-tight text-stone-900 sm:text-4xl">Ärendehantering</h1>
       </div>
 
-      <section className="rounded-[32px] border border-stone-200/80 bg-white/90 p-3 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="w-full shrink-0 lg:w-[320px]">
+      <section className="grid gap-3 border-y border-stone-200 bg-white py-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="min-w-0 flex-1 sm:max-w-xl">
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Sök på ärendenummer, åtgärd, status eller sökande"
-              className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500"
+              aria-label="Sök ärenden"
+              className="h-10 w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500"
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setShowStatusHelp(true)}
+            className="inline-flex min-h-10 max-w-[145px] shrink-0 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-left text-xs text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400 sm:max-w-none sm:text-sm"
+          >
+            <CircleHelp size={16} className="shrink-0" aria-hidden="true" />
+            <span>Vad betyder statusarna?</span>
+          </button>
+        </div>
 
+        <div className="flex flex-wrap items-center gap-2">
           {STATUS_TABS.map((tab) => {
             const active = statusFilter === tab.key
             const style = getStatusTabStyle(tab.key)
@@ -498,6 +489,7 @@ export default function RenoAppCasesPage() {
                 key={tab.key}
                 type="button"
                 onClick={() => setStatusFilter(tab.key)}
+                aria-pressed={active}
                 className={
                   active
                     ? `inline-flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium ${style.active}`
@@ -517,14 +509,6 @@ export default function RenoAppCasesPage() {
               </button>
             )
           })}
-
-          <button
-            type="button"
-            onClick={() => setShowStatusHelp(true)}
-            className="inline-flex shrink-0 items-center rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400"
-          >
-            Vad betyder statusarna?
-          </button>
 
           <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
             <label className="text-xs text-stone-600" htmlFor="renoappCasesPageSize">
@@ -566,8 +550,15 @@ export default function RenoAppCasesPage() {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
-            <table className="min-w-full text-left text-sm text-black">
+          <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
+            <table className="w-full min-w-[1000px] table-fixed text-left text-sm text-black">
+              <colgroup>
+                <col className="w-[190px]" />
+                <col />
+                <col className="w-[200px]" />
+                <col className="w-[155px]" />
+                <col className="w-[170px]" />
+              </colgroup>
               <thead className="border-b bg-stone-50 text-xs uppercase text-black">
                 <tr>
                   <th className="px-4 py-3">
@@ -629,15 +620,18 @@ export default function RenoAppCasesPage() {
                         router.push(`/renoapp/app/cases/${item.id}`)
                       }
                     }}
-                    className={`${getStatusRowClass(item.status)} cursor-pointer border-b border-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-inset`}
+                    className="h-12 cursor-pointer border-b border-stone-200 bg-white text-black last:border-b-0 hover:bg-stone-50 focus-visible:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-inset"
                   >
-                    <td className="px-4 py-3">
-                      <Link href={`/renoapp/app/cases/${item.id}`} className="font-semibold text-stone-900">
+                    <td className="relative whitespace-nowrap px-4 py-2">
+                      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${getStatusMarkerClass(item.status)}`} />
+                      <Link href={`/renoapp/app/cases/${item.id}`} className="whitespace-nowrap font-semibold tabular-nums text-stone-900">
                         {item.caseNumber}
                       </Link>
                     </td>
-                    <td className="px-4 py-3">{getActionLabel(item)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-2">
+                      <span className="block truncate" title={getActionLabel(item)}>{getActionLabel(item)}</span>
+                    </td>
+                    <td className="px-4 py-2">
                       <span
                         className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
                           item.status
@@ -646,8 +640,10 @@ export default function RenoAppCasesPage() {
                         {getStatusLabel(item.status)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">{formatDate(item.submittedAt)}</td>
-                    <td className="px-4 py-3">{item.applicant.name ?? '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-2 tabular-nums">{formatDate(item.submittedAt)}</td>
+                    <td className="px-4 py-2">
+                      <span className="block truncate" title={item.applicant.name ?? undefined}>{item.applicant.name ?? '-'}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -1,10 +1,16 @@
 ﻿import crypto from 'node:crypto'
 import { cookies } from 'next/headers'
+import { buildRenoAppEmailHtml } from '@/lib/renoapp/emailTemplate'
+import { buildRenoAppEmailButton } from '@/lib/renoapp/emailTemplate'
+import { selectCompletionItems, completionMessage, completionTargetId, type CompletionSummary } from '@/lib/renoapp/completion'
+import { getLatestCompletion, saveCompletion } from '@/lib/renoapp/completionServer'
 import { getCurrentUserPlatformAccessContext, type PlatformAccessAssignment } from '@/lib/access/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { requireBrfAdminContext } from '@/lib/renoapp/brfAdminAccess'
 import { issueBrfInviteForAuthorizedUser } from '@/lib/renoapp/onboarding'
+import { getPublishedRules, getCaseRulesAcceptance } from '@/lib/renoapp/renovationRulesServer'
+import { rulesAcceptanceFields, type RenovationRulesVersion, type RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
@@ -759,6 +765,7 @@ export type PublicApplyQuestion = {
 }
 
 export type RenoAppPublicBrfConfig = {
+  renovationRules: RenovationRulesVersion | null
   brf: {
     id: string
     name: string
@@ -777,6 +784,10 @@ export type RenoAppPublicBrfListItem = {
 }
 
 export type CreatePublicApplicationInput = {
+  completionRequestId?: string | null
+  completionRevision?: number
+  rulesVersionId?: string | null
+  rulesAccepted?: boolean
   brfSlug: string
   draftToken?: string | null
   mode?: 'draft' | 'submit'
@@ -816,6 +827,8 @@ export type CreatePublicApplicationInput = {
 }
 
 export type CreatePublicApplicationResult = {
+  completionRevision?: number
+  rulesAcceptance?: RenovationRulesAcceptance
   caseId: string
   caseNumber: string
   accessUrl: string
@@ -835,6 +848,8 @@ export type RenoAppCaseMessage = {
 }
 
 export type RenoAppPublicApplicationDraft = {
+  completionDraft: { revision: number; replyMessage: string }
+  rulesAcceptance: RenovationRulesAcceptance | null
   state: 'open' | 'expired' | 'revoked'
   access: {
     email: string
@@ -882,6 +897,7 @@ export type RenoAppPublicApplicationDraft = {
   documents: Array<{
     id: string
     documentTypeId: string | null
+    completionRequestId: string | null
     participantRoleId: string | null
     documentScope: 'general' | 'participant_insurance'
     fileName: string | null
@@ -890,6 +906,8 @@ export type RenoAppPublicApplicationDraft = {
     note: string | null
   }>
   completionRequest: {
+    id: string | null
+    requestedAt: string | null
     requestedDocuments: Array<{
       documentTypeId: string
       label: string
@@ -1354,6 +1372,8 @@ export type RenoAppUnitListItem = {
 }
 
 export type RenoAppCaseDetail = {
+  completion: CompletionSummary | null
+  rulesAcceptance: RenovationRulesAcceptance
   id: string
   caseNumber: string
   title: string
@@ -1410,6 +1430,7 @@ export type RenoAppCaseDetail = {
     id: string
     documentTypeId: string | null
     documentTypeLabel: string | null
+    participantRoleId?: string | null
     fileName: string | null
     status: string
     uploadedAt: string
@@ -1472,6 +1493,11 @@ export type RenoAppCaseDetail = {
 }
 
 export type UpdateRenoAppCaseStatusInput = {
+  completionRequestId?: string
+  previousCompletionId?: string | null
+  selectedRequirementIds?: string[]
+  correctionIds?: string[]
+  retryCompletion?: boolean
   status: 'new_application' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
   reason?: string | null
   conditions?: string | null
@@ -3030,6 +3056,7 @@ export async function getRenoAppPublicConfig(slug: string): Promise<RenoAppPubli
       slug: brf.slug,
       applyIntroText: brf.apply_intro_text,
     },
+    renovationRules: await getPublishedRules(brf.id),
     actionTypes: publicActionTypes,
     questionBank: buildPublicQuestionBank(
       questionConfig.questions,
@@ -3373,6 +3400,8 @@ export async function createPublicApplication(
       applicant_contact_id: contact.id,
       action_type_id: (actionType as ActionTypeRow).id,
       case_number: caseNumber,
+      ...rulesAcceptanceFields({ mode: 'submit', isCompletion: false, versionId: input.rulesVersionId,
+        accepted: input.rulesAccepted, applicantName, applicantEmail: applicantEmail ?? '' }),
       title,
       description,
       status: 'submitted',
@@ -3757,6 +3786,7 @@ async function findReusableCaseAccessToken(admin: SupabaseAdminClient, caseId: s
     .from('case_access_links')
     .select('id,email,plain_token,revoked_at,expires_at')
     .eq('case_id', caseId)
+    .eq('scope', 'answer_questions')
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -3770,6 +3800,7 @@ async function findReusableCaseAccessToken(admin: SupabaseAdminClient, caseId: s
 
   return {
     id: String(data.id ?? ''),
+    expiresAt: String(data.expires_at ?? ''),
     email: (data.email as string | null | undefined) ?? null,
     token: (data.plain_token as string | null | undefined) ?? null,
   }
@@ -3784,9 +3815,12 @@ async function ensureReusableCaseAccessToken(input: {
   const existing = await findReusableCaseAccessToken(admin, caseId)
 
   if (existing?.token) {
-    if (email && existing.email !== email) {
-      await admin.from('case_access_links').update({ email }).eq('id', existing.id)
-    }
+    const { data, error } = await admin.from('case_access_links').update({
+      email: email ?? existing.email,
+      expires_at: new Date(Date.now() + 14 * 86400000).toISOString(),
+    }).eq('id', existing.id).is('revoked_at', null).select('id').maybeSingle()
+    if (error) throw new Error(error.message ?? 'Kunde inte förnya länken.')
+    if (!data) throw new Error('DRAFT_LINK_INVALID')
     return existing.token
   }
 
@@ -3839,6 +3873,7 @@ export async function getRenoAppPublicGuideConfig(slug: string, draftToken?: str
       slug: brf.slug,
       applyIntroText: brf.apply_intro_text,
     },
+    renovationRules: await getPublishedRules(brf.id),
     actionTypes: buildPublicActionTypes(
       categories,
       actionTypes,
@@ -3918,7 +3953,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     questionRows,
     optionRows,
     messages,
-    requirementDecisionsResult,
+    publishedCompletion,
     documentTypesResult,
     participantRolesResult,
   ] = await Promise.all([
@@ -3937,7 +3972,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     listActiveActionTypes(admin),
     admin
       .from('renovation_case_documents')
-      .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note')
+      .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note,completion_request_id')
       .eq('case_id', String(caseRow.id ?? ''))
       .order('uploaded_at', { ascending: false }),
     listCaseQuestionAnswers(admin, [String(caseRow.id ?? '')]),
@@ -3945,10 +3980,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     admin.from('renoapp_apply_questions').select('id,key').order('sort_order', { ascending: true }),
     admin.from('renoapp_apply_question_options').select('id,question_id,key').order('sort_order', { ascending: true }),
     listCaseMessages(admin, String(caseRow.id ?? '')),
-    admin
-      .from('renoapp_case_requirement_decisions')
-      .select('id,case_id,document_type_id,participant_role_id,decision,note,decided_at')
-      .eq('case_id', String(caseRow.id ?? '')),
+    getLatestCompletion(String(caseRow.id ?? '')),
     admin
       .from('renovation_document_types')
       .select('id,key,label,description,review_guidance,default_phase,sort_order,is_active')
@@ -3968,9 +4000,6 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
   if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte lasa dokument.')
   if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa frÃ¥gor.')
   if (optionRows.error) throw new Error(optionRows.error.message ?? 'Kunde inte lasa svarsalternativ.')
-  if (requirementDecisionsResult.error) {
-    throw new Error(requirementDecisionsResult.error.message ?? 'Kunde inte läsa begärda kompletteringar.')
-  }
   if (documentTypesResult.error) {
     throw new Error(documentTypesResult.error.message ?? 'Kunde inte läsa dokumenttyper.')
   }
@@ -4008,9 +4037,11 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     },
     {} as Record<string, string[]>
   )
-  const requestedDecisions = ((requirementDecisionsResult.data ?? []) as CaseRequirementDecisionRow[]).filter(
-    (decision) => decision.decision === 'requested'
-  )
+  const requestedDecisions = (publishedCompletion?.items ?? []).map(item => ({
+    document_type_id: item.category === 'document' ? completionTargetId(item) : null,
+    participant_role_id: item.category === 'participant' ? completionTargetId(item) : null,
+    note: item.correction ? 'Styrelsen har begärt en rättelse av tidigare lämnade uppgifter.' : null,
+  }))
   const documentTypeById = new Map(
     ((documentTypesResult.data ?? []) as DocumentTypeRow[]).map((documentType) => [documentType.id, documentType])
   )
@@ -4023,6 +4054,11 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
 
   return {
     state,
+    completionDraft: {
+      revision: publishedCompletion?.revision ?? 0,
+      replyMessage: publishedCompletion?.submitted_at ? '' : publishedCompletion?.draft.replyMessage ?? '',
+    },
+    rulesAcceptance: state === 'open' ? await getCaseRulesAcceptance(String(caseRow.id)) : null,
     access: {
       email: String(access.email ?? ''),
       expiresAt: String(access.expires_at ?? ''),
@@ -4055,7 +4091,11 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
         certificationReference: row.certification_reference ?? '',
         hasVerifiedAuthorization: row.has_verified_authorization === true,
         acceptsResponsibility: row.accepts_responsibility === true,
-      })),
+      })).filter(row => !(caseRow.status === 'need_info' && !publishedCompletion?.submitted_at &&
+        (publishedCompletion?.draft.participantEntries ?? []).some(draft =>
+          (draft as { participantRoleId: string }).participantRoleId === row.participantRoleId)))
+        .concat(caseRow.status === 'need_info' && !publishedCompletion?.submitted_at
+          ? (publishedCompletion?.draft.participantEntries ?? []) as RenoAppPublicApplicationDraft['form']['participantEntries'] : []),
       actionTypeKeys: actionTypes.filter((item) => actionTypeIdSet.has(item.id)).map((item) => item.key),
       questionAnswers,
     },
@@ -4068,6 +4108,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     },
     documents: ((documentsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id ?? ''),
+      completionRequestId: (row.completion_request_id as string | null) ?? null,
       documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
       participantRoleId: (row.participant_role_id as string | null | undefined) ?? null,
       documentScope:
@@ -4078,6 +4119,8 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       note: (row.note as string | null | undefined) ?? null,
     })),
     completionRequest: {
+      id: publishedCompletion?.id ?? null,
+      requestedAt: publishedCompletion?.created_at ?? null,
       requestedDocuments: requestedDecisions.flatMap((decision) => {
         if (!decision.document_type_id) return []
         const documentType = documentTypeById.get(decision.document_type_id)
@@ -4246,6 +4289,9 @@ export async function upsertPublicApplication(
     ).values()
   )
 
+  if (mode === 'draft' && !applicantEmail) {
+    throw new Error('APPLICANT_EMAIL_REQUIRED')
+  }
   if (applicantEmail) {
     assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
   }
@@ -4286,7 +4332,7 @@ export async function upsertPublicApplication(
     const tokenHash = hashToken(input.draftToken)
     const { data: existingLink, error: existingLinkError } = await admin
       .from('case_access_links')
-      .select('case_id,revoked_at')
+      .select('case_id,revoked_at,expires_at')
       .eq('token_hash', tokenHash)
       .maybeSingle()
 
@@ -4294,7 +4340,7 @@ export async function upsertPublicApplication(
       throw new Error(existingLinkError.message ?? 'Kunde inte lÃ¤sa utkastslÃ¤nk.')
     }
 
-    if (existingLink?.revoked_at) {
+    if (!existingLink || existingLink.revoked_at || new Date(String(existingLink.expires_at)).getTime() <= Date.now()) {
       throw new Error('DRAFT_LINK_INVALID')
     }
 
@@ -4327,16 +4373,28 @@ export async function upsertPublicApplication(
   }
 
   const isCompletionCase = existingStatus === 'need_info'
+  if (mode === 'submit' && !isCompletionCase) {
+    const currentRules = await getPublishedRules(brf.id)
+    if ((input.rulesVersionId || null) !== (currentRules?.id ?? null)) throw new Error('RULES_VERSION_CHANGED')
+    if (currentRules && input.rulesAccepted !== true) throw new Error('RULES_ACCEPTANCE_REQUIRED')
+  }
+  const acceptanceFields = rulesAcceptanceFields({
+    mode, isCompletion: isCompletionCase, versionId: input.rulesVersionId,
+    accepted: input.rulesAccepted, applicantName: applicantName ?? '', applicantEmail: applicantEmail ?? '',
+  })
   const requestedCompletionParticipantRoleIds = new Set<string>()
 
   if (isCompletionCase) {
-    if (mode !== 'submit' || !input.draftToken) {
+    if (!input.draftToken) {
       throw new Error('COMPLETION_SUBMIT_REQUIRED')
     }
 
     const originalDraft = await getPublicApplicationDraftByToken(input.draftToken)
     if (!originalDraft || originalDraft.case.id !== draftCaseId) {
       throw new Error('DRAFT_LINK_INVALID')
+    }
+    if (originalDraft.state !== 'open' || !input.completionRequestId || input.completionRequestId !== originalDraft.completionRequest.id) {
+      throw new Error('COMPLETION_CHANGED')
     }
 
     for (const participant of originalDraft.completionRequest.requestedParticipants) {
@@ -4438,6 +4496,57 @@ export async function upsertPublicApplication(
     }
   }
 
+  if (isCompletionCase) {
+    if (!existingCase || !input.draftToken || !input.completionRequestId) throw new Error('COMPLETION_CHANGED')
+    const caseId = String(existingCase.id)
+    const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${input.draftToken}`)
+    let emailSent = false
+    let emailError: string | null = null
+    const saved = await saveCompletion({
+      caseId, requestId: input.completionRequestId, tokenHash: hashToken(input.draftToken),
+      revision: input.completionRevision ?? -1,
+      participantEntries: participantEntriesInput.filter(entry => requestedCompletionParticipantRoleIds.has(entry.participantRoleId)),
+      replyMessage, submit: mode === 'submit',
+    })
+    if (mode === 'submit') {
+      try {
+        await sendRenoAppCaseEventNotification({
+        admin, brfId: brf.id, requestOrigin, replyTo: brf.email ?? null,
+        subject: `RenoApp: komplettering klar ${String(existingCase.case_number)}`,
+        preheader: 'Sökanden har skickat in kompletteringen.',
+        bodyHtml: `<p>Komplettering har skickats in för ${escapeHtml(String(existingCase.case_number))}.</p>${buildRenoAppEmailButton(buildAbsoluteUrl(requestOrigin, `/renoapp/app/cases/${caseId}`), 'Öppna ärendet')}`,
+        text: `Komplettering har skickats in för ${String(existingCase.case_number)}.\n${buildAbsoluteUrl(requestOrigin, `/renoapp/app/cases/${caseId}`)}`,
+        })
+      } catch (error) {
+        console.error('[renoapp.completion] Board notification failed after submission', { caseId, error })
+        emailError = 'Kompletteringen är inskickad, men styrelsens mejlavisering kunde inte skickas.'
+      }
+      try {
+        const from = getMailFromAddress()
+        if (!from || !applicantEmail) throw new Error('Mail configuration or recipient missing')
+        const subject = `RenoApp: komplettering mottagen ${String(existingCase.case_number)}`
+        await sendAssignmentEmail({
+          to: applicantEmail, from, replyTo: brf.email ?? null,
+          idempotencyKey: `renoapp-completion-receipt-${input.completionRequestId}`,
+          subject,
+          html: buildRenoAppEmailHtml({ origin: requestOrigin, preheader: subject,
+            bodyHtml: `<p>Vi har tagit emot din komplettering för ${escapeHtml(brf.name)}.</p><p>Ärendenummer: ${escapeHtml(String(existingCase.case_number))}</p><p>Styrelsen granskar nu underlagen. Tidigare inskickade uppgifter finns kvar.</p>${buildRenoAppEmailButton(resumeUrl, 'Öppna ärendet')}` }),
+          text: `Vi har tagit emot din komplettering för ${brf.name}.\nÄrendenummer: ${String(existingCase.case_number)}\nStyrelsen granskar nu underlagen.\n${resumeUrl}`,
+        })
+        emailSent = true
+      } catch (error) {
+        console.error('[renoapp.completion] Receipt failed after submission', { caseId, error })
+        emailError = [emailError, 'Kompletteringen är inskickad, men ditt bekräftelsemejl kunde inte skickas.'].filter(Boolean).join(' ')
+      }
+    }
+    return {
+      caseId, caseNumber: String(existingCase.case_number), completionRevision: saved.revision,
+      accessUrl: buildAbsoluteUrl(requestOrigin, `/renoapp/case/${input.draftToken}`),
+      resumeUrl,
+      status: mode === 'submit' ? 'submitted' : 'draft', emailSent, emailError,
+    }
+  }
+
   const contact = await upsertPublicApplicationContact({
     admin,
     existingContactId: (existingCase?.applicant_contact_id as string | null | undefined) ?? null,
@@ -4484,6 +4593,7 @@ export async function upsertPublicApplication(
       .insert({
         brf_id: brf.id,
         unit_id: unit?.id ?? null,
+        ...acceptanceFields,
         applicant_contact_id: contact?.id ?? null,
         action_type_id: selectedActionTypes[0]?.id ?? null,
         case_number: caseNumber,
@@ -4521,20 +4631,12 @@ export async function upsertPublicApplication(
     if (checksError) {
       throw new Error(checksError.message ?? 'Kunde inte spara teknisk pÃ¥verkan.')
     }
-  } else if (isCompletionCase) {
-    const { error: updateCaseError } = await admin
-      .from('renovation_cases')
-      .update({ status: nextStatus })
-      .eq('id', caseId)
-
-    if (updateCaseError) {
-      throw new Error(updateCaseError.message ?? 'Kunde inte uppdatera kompletteringen.')
-    }
   } else {
     const { error: updateCaseError } = await admin
       .from('renovation_cases')
       .update({
         unit_id: unit?.id ?? null,
+        ...acceptanceFields,
         applicant_contact_id: contact?.id ?? null,
         action_type_id: selectedActionTypes[0]?.id ?? null,
         title,
@@ -4621,19 +4723,7 @@ export async function upsertPublicApplication(
   }
 
   const applicantEmailValue = applicantEmail ?? null
-  if (isCompletionCase) {
-    if (requestedCompletionParticipantRoleIds.size > 0) {
-      const { error: deleteParticipantError } = await admin
-        .from('renoapp_case_participants')
-        .delete()
-        .eq('case_id', caseId)
-        .in('participant_role_id', Array.from(requestedCompletionParticipantRoleIds))
-
-      if (deleteParticipantError) {
-        throw new Error(deleteParticipantError.message ?? 'Kunde inte uppdatera begärda deltagaruppgifter.')
-      }
-    }
-  } else {
+  {
     const { error: deleteParticipantError } = await admin
       .from('renoapp_case_participants')
       .delete()
@@ -4645,9 +4735,6 @@ export async function upsertPublicApplication(
   }
 
   const participantRowsToInsert = participantEntriesInput
-    .filter(
-      (item) => !isCompletionCase || requestedCompletionParticipantRoleIds.has(item.participantRoleId)
-    )
     .filter((item) =>
       Boolean(
         item.companyName ||
@@ -4702,23 +4789,7 @@ export async function upsertPublicApplication(
   const caseAdminUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/app/cases/${caseId}`)
   const applicantDisplayName = contact?.name ?? applicantName ?? 'OkÃ¤nd sÃ¶kande'
   const caseTitle = title.trim()
-  const isCompletionSubmit = mode === 'submit' && String(existingCase?.status ?? '') === 'need_info'
-
-  if (isCompletionSubmit) {
-    await insertCaseMessage({
-      admin,
-      caseId,
-      type: 'applicant_reply',
-      authorRole: 'applicant',
-      authorContactId: contact?.id ?? null,
-      message: replyMessage ?? 'Komplettering inskickad.',
-      metadata: {
-        nextStatus,
-      },
-    })
-  }
-
-  if (mode === 'submit' && !isCompletionSubmit) {
+  if (mode === 'submit') {
     await insertCaseMessage({
       admin,
       caseId,
@@ -4733,32 +4804,6 @@ export async function upsertPublicApplication(
   }
 
   if (mode === 'submit') {
-    if (isCompletionSubmit) {
-      await sendRenoAppCaseEventNotification({
-        admin,
-        brfId: brf.id,
-        requestOrigin,
-        replyTo: brf.email ?? null,
-        subject: `RenoApp: komplettering klar ${caseNumber}`,
-        preheader: `Komplettering klar för ${caseNumber}`,
-        bodyHtml: `
-          <p>En medlem har skickat in begärd komplettering i RenoApp.</p>
-          <p>Ärendenummer: <strong>${escapeHtml(caseNumber)}</strong></p>
-          ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-          <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
-          <p>Öppna ärendet här:</p>
-          <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
-        `,
-        text: [
-          'En medlem har skickat in begärd komplettering i RenoApp.',
-          `Ärendenummer: ${caseNumber}`,
-          ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
-          `Sökande: ${applicantDisplayName}`,
-          '',
-          `Öppna ärendet här: ${caseAdminUrl}`,
-        ].join('\n'),
-      })
-    } else {
       await sendRenoAppCaseEventNotification({
         admin,
         brfId: brf.id,
@@ -4783,7 +4828,6 @@ export async function upsertPublicApplication(
           `Öppna ärendet här: ${caseAdminUrl}`,
         ].join('\n'),
       })
-    }
   }
 
   const mailFrom = getMailFromAddress()
@@ -4876,6 +4920,7 @@ export async function upsertPublicApplication(
     accessUrl,
     resumeUrl,
     status: mode === 'submit' ? 'submitted' : 'draft',
+    rulesAcceptance: mode === 'submit' ? await getCaseRulesAcceptance(caseId) : undefined,
     emailSent,
     emailError,
   }
@@ -5312,40 +5357,6 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
-function buildRenoAppEmailHtml(input: {
-  origin: string
-  preheader?: string | null
-  bodyHtml: string
-}) {
-  const logoUrl = buildAbsoluteUrl(input.origin, '/landing/Renoapp.png')
-  const preheader = input.preheader ? escapeHtml(input.preheader) : null
-
-  return `
-    <div style="margin:0;padding:0;background:#f6f1ea;color:#1c1917;font-family:Arial,sans-serif;">
-      ${
-        preheader
-          ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${preheader}</div>`
-          : ''
-      }
-      <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
-        <div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:24px;padding:32px;">
-          <div style="margin-bottom:24px;">
-            <img
-              src="${logoUrl}"
-              alt="RenoApp"
-              width="132"
-              style="display:block;width:132px;max-width:132px;height:auto;border:0;outline:none;text-decoration:none;"
-            />
-          </div>
-          <div style="font-size:16px;line-height:1.75;color:#292524;">
-            ${input.bodyHtml}
-            <p style="margin:24px 0 0;">Med vänlig hälsning,<br />RenoApp-teamet på HusHub</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  `
-}
 
 export async function getRenoAppDashboardSummary(): Promise<RenoAppDashboardSummary> {
   const context = await requireRenoAppViewerContext()
@@ -8160,6 +8171,10 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
 
   return {
     id: caseRow.id,
+    completion: await getLatestCompletion(caseId).then(value => value ? ({
+      id: value.id, items: value.items, message: value.message, created_at: value.created_at,
+      submitted_at: value.submitted_at, delivery_status: value.delivery_status, delivery_error: value.delivery_error,
+    }) : null),
     caseNumber: caseRow.case_number,
     title: caseRow.title,
     description: caseRow.description,
@@ -8168,6 +8183,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
     submittedAt: caseRow.submitted_at,
     updatedAt: caseRow.updated_at,
     blockedAt: caseRow.blocked_at,
+    rulesAcceptance: await getCaseRulesAcceptance(caseRow.id),
     blockedReason: caseRow.blocked_reason,
     brf: {
       id: String(brfResult.data?.id ?? caseRow.brf_id),
@@ -8223,6 +8239,7 @@ export async function getRenoAppCaseDetail(caseId: string): Promise<RenoAppCaseD
       id: String(row.id ?? ''),
       documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
       documentTypeLabel: documentTypeMap.get(String(row.document_type_id ?? '')) ?? null,
+      participantRoleId: (row.participant_role_id as string | null | undefined) ?? null,
       fileName: (row.file_name as string | null | undefined) ?? null,
       status: String(row.status ?? ''),
       uploadedAt: String(row.uploaded_at ?? ''),
@@ -8341,6 +8358,69 @@ export async function saveRenoAppCaseRequirementDecision(
   return updatedCase
 }
 
+async function publishRenoAppCompletion(caseId: string, input: UpdateRenoAppCaseStatusInput, actorId: string, status: string) {
+  const detail = await getRenoAppCaseDetail(caseId)
+  if (!detail) throw new Error('CASE_NOT_FOUND')
+  let request = await getLatestCompletion(caseId)
+  const admin = createSupabaseAdminClient()
+  const requestId = input.completionRequestId
+  if (!requestId || !/^[0-9a-f-]{36}$/i.test(requestId)) throw new Error('COMPLETION_CHANGED')
+  if (input.retryCompletion) {
+    if (request?.id !== requestId || request.submitted_at || status !== 'need_info') throw new Error('COMPLETION_CHANGED')
+  } else if (request?.id !== requestId) {
+    if ((request?.id ?? null) !== (input.previousCompletionId ?? null)) throw new Error('COMPLETION_CHANGED')
+    const selectedIds = detail.underlag.filter(row => row.requirementDecision === 'requested').map(row => row.id)
+    if (canonicalStringSet(selectedIds) !== canonicalStringSet(input.selectedRequirementIds ?? [])) throw new Error('COMPLETION_REQUIREMENTS_CHANGED')
+    const items = selectCompletionItems(detail.underlag, input.correctionIds)
+    const message = completionMessage(items, input.reason ?? '')
+    if (!message) throw new Error('NEED_INFO_MESSAGE_REQUIRED')
+    const { error } = await admin.rpc('renoapp_publish_completion', {
+      p_case_id: caseId, p_id: requestId, p_previous_id: request?.id ?? null,
+      p_status: status, p_actor: actorId, p_items: items, p_message: message,
+      p_selected: selectedIds,
+    })
+    if (error) throw new Error(error.message)
+    request = await getLatestCompletion(caseId)
+  }
+  if (!request || request.id !== requestId) throw new Error('COMPLETION_CHANGED')
+  if (request.delivery_status === 'sent' || request.submitted_at) return (await getRenoAppCaseDetail(caseId))!
+  let deliveryError: string | null = null
+  let providerMessageId: string | null = null
+  try {
+    if (!detail.applicant.email) throw new Error('Sökandens e-postadress saknas.')
+    const from = getMailFromAddress()
+    if (!from || !input.requestOrigin || !detail.brf.slug) throw new Error('Mejlutskicket är inte konfigurerat.')
+    const token = await ensureReusableCaseAccessToken({
+      admin: admin as unknown as SupabaseAdminClient, caseId, email: detail.applicant.email,
+    })
+    const url = buildAbsoluteUrl(input.requestOrigin, `/renoapp/brf/${detail.brf.slug}/apply?draft=${token}`)
+    const { data: brf } = await admin.from('brf_associations').select('email').eq('id', detail.brf.id).maybeSingle()
+    const delivery = await sendAssignmentEmail({
+      to: detail.applicant.email, from, replyTo: brf?.email ?? null,
+      idempotencyKey: `renoapp-completion-${requestId}`,
+      subject: `RenoApp: ditt ärende ${detail.caseNumber} behöver kompletteras`,
+      html: buildRenoAppEmailHtml({ origin: input.requestOrigin, preheader: 'Styrelsen har begärt en komplettering.',
+        bodyHtml: `<p>Hej ${escapeHtml(detail.applicant.name ?? '')},</p>
+          <p>Styrelsen för ${escapeHtml(detail.brf.name ?? '')} behöver komplettering i ärende ${escapeHtml(detail.caseNumber)}.</p>
+          <p style="white-space:pre-wrap;">${escapeHtml(request.message)}</p>
+          <p>Tidigare inskickade handlingar och uppgifter finns kvar. Fortsätt i samma ansökan.</p>
+          ${buildRenoAppEmailButton(url, 'Öppna komplettering')}`,
+      }),
+      text: `Styrelsen behöver komplettering i ärende ${detail.caseNumber}.\n\n${request.message}\n\nTidigare inskickade handlingar och uppgifter finns kvar.\n${url}`,
+    })
+    providerMessageId = delivery.providerMessageId
+  } catch (error) {
+    console.error('[renoapp.completion] delivery failed', { requestId, error })
+    deliveryError = 'Mejlet kunde inte skickas. Begäran är sparad. Försök skicka mejlet igen.'
+  }
+  const { error } = await admin.from('renoapp_completion_requests').update({
+    delivery_status: deliveryError ? 'failed' : 'sent', delivery_error: deliveryError,
+    provider_message_id: providerMessageId,
+  }).eq('id', requestId)
+  if (error) throw new Error('Begäran sparades, men mejlets leveransstatus kunde inte sparas. Ladda om ärendet.')
+  return (await getRenoAppCaseDetail(caseId))!
+}
+
 export async function updateRenoAppCaseStatus(
   caseId: string,
   input: UpdateRenoAppCaseStatusInput
@@ -8358,9 +8438,6 @@ export async function updateRenoAppCaseStatus(
   const reason = normalizeText(input.reason)
   const conditions = normalizeText(input.conditions)
 
-  if (input.status === 'need_info' && !reason) {
-    throw new Error('NEED_INFO_MESSAGE_REQUIRED')
-  }
 
   if (input.status === 'rejected' && !reason) {
     throw new Error('DECISION_REASON_REQUIRED')
@@ -8394,101 +8471,16 @@ export async function updateRenoAppCaseStatus(
     throw new Error('DRAFT_CASE_LOCKED')
   }
 
+  if (input.status === 'need_info') {
+    return publishRenoAppCompletion(caseId, input, context.profile.id, currentStatus)
+  }
+
   const { error: updateError } = await admin.from('renovation_cases').update({ status: input.status }).eq('id', caseId)
 
   if (updateError) {
     throw new Error(updateError.message ?? 'Kunde inte uppdatera RenoApp-Ã¤rende.')
   }
 
-  if (input.status === 'need_info') {
-    await insertCaseMessage({
-      admin,
-      caseId,
-      type: 'request_for_info',
-      authorRole: 'board',
-      authorProfileId: context.profile.id,
-      message: reason,
-      metadata: {
-        previousStatus: currentStatus,
-        nextStatus: input.status,
-      },
-    })
-
-    const [brfResult, contactResult] = await Promise.all([
-      admin.from('brf_associations').select('name,slug,email').eq('id', brfId).maybeSingle(),
-      caseData.applicant_contact_id
-        ? admin
-            .from('contacts')
-            .select('id,name,email')
-            .eq('id', String(caseData.applicant_contact_id))
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-    ])
-
-    if (brfResult.error) {
-      throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
-    }
-    if (contactResult.error) {
-      throw new Error(contactResult.error.message ?? 'Kunde inte lÃ¤sa kontakt.')
-    }
-
-    const applicantEmail = (contactResult.data?.email as string | null | undefined) ?? null
-    const applicantName = (contactResult.data?.name as string | null | undefined) ?? 'hej'
-    const brfName = String(brfResult.data?.name ?? 'din BRF')
-    const brfSlug = String(brfResult.data?.slug ?? '')
-
-    if (input.requestOrigin && brfSlug) {
-      const token = await ensureReusableCaseAccessToken({
-        admin,
-        caseId,
-        email: applicantEmail,
-      })
-
-      const resumeUrl = buildAbsoluteUrl(input.requestOrigin, `/renoapp/brf/${brfSlug}/apply?draft=${token}`)
-      const mailFrom = getMailFromAddress()
-
-      if (mailFrom && applicantEmail) {
-        try {
-          const caseTitle = String(caseData.title ?? '').trim()
-
-          await sendAssignmentEmail({
-            to: applicantEmail,
-            from: mailFrom,
-            replyTo: (brfResult.data?.email as string | null | undefined) ?? null,
-            subject: `RenoApp: ditt ärende ${String(caseData.case_number ?? '')} behöver kompletteras`,
-            html: buildRenoAppEmailHtml({
-              origin: input.requestOrigin,
-              preheader: `Ditt ärende ${String(caseData.case_number ?? '')} behöver kompletteras`,
-              bodyHtml: `
-                <div style="height:16px;"></div>
-                <p>Hej ${escapeHtml(applicantName)},</p>
-                <p>Styrelsen behöver komplettering i ditt ärende för <strong>${escapeHtml(brfName)}</strong>.</p>
-                <p>Ärendenummer: <strong>${escapeHtml(String(caseData.case_number ?? ''))}</strong></p>
-                ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
-                <p><strong>Begäran om komplettering:</strong></p>
-                <p>${escapeHtml(reason ?? '')}</p>
-                <p>Öppna din ansökningssida här:</p>
-                <p><a href="${resumeUrl}">${resumeUrl}</a></p>
-              `,
-            }),
-            text: [
-              `Hej ${applicantName},`,
-              `Styrelsen behöver komplettering i ditt ärende för ${brfName}.`,
-              `Ärendenummer: ${String(caseData.case_number ?? '')}`,
-              ...(caseTitle ? [`Renovering: ${caseTitle}`] : []),
-              ``,
-              `Begäran om komplettering:`,
-              reason ?? '',
-              ``,
-              `Öppna din ansökningssida här: ${resumeUrl}`,
-            ].join('\n'),
-          })
-        } catch {
-          // Status och Ã¤rendehistorik ska sparas Ã¤ven om mejlet inte gÃ¥r ivÃ¤g.
-        }
-      }
-    }
-  }
 
   if (decisionStatuses.has(input.status)) {
     const { error: insertError } = await admin.from('renovation_case_decisions').insert({

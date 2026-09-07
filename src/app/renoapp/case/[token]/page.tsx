@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 
 type CaseAccessResponse = {
   state: 'open' | 'expired' | 'revoked'
@@ -68,6 +68,7 @@ function formatDateTime(value: string | null) {
 }
 
 export default function RenoAppCaseAccessPage() {
+  const router = useRouter()
   const params = useParams<{ token: string }>()
   const token = typeof params?.token === 'string' ? params.token : ''
   const [payload, setPayload] = useState<CaseAccessResponse | null>(null)
@@ -99,6 +100,9 @@ export default function RenoAppCaseAccessPage() {
 
         if (active) {
           setPayload(data)
+          if (data.state === 'open' && data.case.status === 'need_info' && data.brf.slug) {
+            router.replace(`/renoapp/brf/${encodeURIComponent(data.brf.slug)}/apply?draft=${encodeURIComponent(token)}`)
+          }
         }
       } catch (fetchError) {
         if (active) {
@@ -121,9 +125,9 @@ export default function RenoAppCaseAccessPage() {
     return () => {
       active = false
     }
-  }, [token, reloadKey])
+  }, [token, reloadKey, router])
 
-  const canUpload = payload?.state === 'open' && payload.access.allowedActions.includes('upload_documents')
+  const canUpload = payload?.state === 'open' && payload.case.status === 'draft' && payload.access.allowedActions.includes('upload_documents')
 
   const handleUpload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()

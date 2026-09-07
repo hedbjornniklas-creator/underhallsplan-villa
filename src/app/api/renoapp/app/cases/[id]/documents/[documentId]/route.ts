@@ -18,7 +18,7 @@ type RouteContext = {
   }>
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { id, documentId } = await context.params
     const viewer = await requireRenoAppViewerContext()
@@ -58,9 +58,8 @@ export async function GET(_request: Request, context: RouteContext) {
       return notFoundResponse()
     }
 
-    const { data, error } = await admin.storage.from(bucket).createSignedUrl(path, SIGNED_URL_TTL_SECONDS, {
-      download: fileName,
-    })
+    const { data, error } = await admin.storage.from(bucket).createSignedUrl(path, SIGNED_URL_TTL_SECONDS,
+      new URL(request.url).searchParams.get('view') === '1' ? undefined : { download: fileName })
 
     if (error || !data?.signedUrl) {
       return notFoundResponse()

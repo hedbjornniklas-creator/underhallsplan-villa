@@ -2,8 +2,9 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
+import { completionMessage, selectCompletionItems } from '@/lib/renoapp/completion'
 import RenoAppCaseDecisionView, {
   type RenoAppCaseDetail,
   type RenoAppCaseStatusAction,
@@ -119,6 +120,9 @@ export default function RenoAppCaseDetailPage() {
   const [reason, setReason] = useState('')
   const [conditions, setConditions] = useState('')
   const [decisionConfirmed, setDecisionConfirmed] = useState(false)
+  const [correctionIds, setCorrectionIds] = useState<string[]>([])
+  const lastRequirementSaveRef = useRef<Promise<RenoAppCaseDetail | null> | null>(null)
+  const completionAttemptRef = useRef<{ fingerprint: string; id: string } | null>(null)
 
   const saveRequirementDecisionBatch = useCallback(
     async (updates: RequirementDecisionUpdate[]) => {
@@ -159,7 +163,7 @@ export default function RenoAppCaseDetailPage() {
     mergePayload: mergeRequirementDecisionUpdates,
     onSaved: (savedItem) => {
       setItem(savedItem)
-      setActionSuccess('Kompletteringsvalen sparades.')
+      setActionSuccess('Valen sparades. Skicka en kompletteringsbegäran för att meddela sökanden.')
     },
     onError: (saveError) => {
       setActionError(saveError instanceof Error ? saveError.message : 'Kunde inte spara kompletteringsval.')
@@ -209,28 +213,14 @@ export default function RenoAppCaseDetailPage() {
 
   const handleStatusSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const requestedCompletionLines =
-      item?.underlag
-        .filter((row) => row.requirementDecision === 'requested')
-        .map((row) => `${row.category === 'document' ? 'Underlag' : 'Uppgifter'}: ${row.label}`) ?? []
-    const completionMessage =
-      selectedStatus === 'need_info'
-        ? [
-            requestedCompletionLines.length > 0
-              ? `Följande ska kompletteras:\n${requestedCompletionLines.map((line) => `- ${line}`).join('\n')}`
-              : null,
-            reason.trim() || null,
-          ]
-            .filter((line): line is string => Boolean(line))
-            .join('\n\n')
-        : reason
+    const requestMessage = completionMessage(selectCompletionItems(item?.underlag ?? [], correctionIds), reason)
 
     if (!caseId) {
       setActionError('Ogiltigt RenoApp-ärende.')
       return
     }
 
-    if (selectedStatus === 'need_info' && !completionMessage.trim()) {
+    if (selectedStatus === 'need_info' && !requestMessage.trim()) {
       setActionError('Skriv vad lägenhetsinnehavaren behöver komplettera.')
       return
     }
@@ -255,6 +245,10 @@ export default function RenoAppCaseDetailPage() {
     setActionSuccess(null)
 
     try {
+      await lastRequirementSaveRef.current
+      const selectedRequirementIds = item?.underlag.filter(row => row.requirementDecision === 'requested').map(row => row.id) ?? []
+      const fingerprint = JSON.stringify([selectedStatus, reason, correctionIds, selectedRequirementIds, item?.completion?.id])
+      if (completionAttemptRef.current?.fingerprint !== fingerprint) completionAttemptRef.current = { fingerprint, id: crypto.randomUUID() }
       const response = await fetch(`/api/renoapp/app/cases/${caseId}`, {
         method: 'POST',
         headers: {
@@ -262,7 +256,11 @@ export default function RenoAppCaseDetailPage() {
         },
         body: JSON.stringify({
           status: selectedStatus,
-          reason: selectedStatus === 'conditional' ? null : completionMessage,
+          reason: selectedStatus === 'conditional' ? null : reason,
+          completionRequestId: completionAttemptRef.current.id,
+          selectedRequirementIds,
+          previousCompletionId: item?.completion?.id ?? null,
+          correctionIds,
           conditions: selectedStatus === 'conditional' ? conditions : null,
         }),
       })
@@ -273,7 +271,10 @@ export default function RenoAppCaseDetailPage() {
       }
 
       setItem(payload.item ?? null)
-      setActionSuccess('Ärendet uppdaterades.')
+      setActionSuccess(payload.item?.completion?.delivery_status === 'failed'
+        ? 'Begäran sparades, men mejlet kunde inte skickas.' : 'Ärendet uppdaterades.')
+      setCorrectionIds([])
+      completionAttemptRef.current = null
       setReason('')
       setConditions('')
       setDecisionConfirmed(false)
@@ -313,14 +314,16 @@ export default function RenoAppCaseDetailPage() {
         : current
     )
 
-    void requirementDecisionAutosave.enqueue([
+    const save = requirementDecisionAutosave.enqueue([
       {
         targetKey: row.id,
         targetType: row.category,
         targetId,
         decision,
       },
-    ]).catch(() => undefined)
+    ])
+    lastRequirementSaveRef.current = save
+    void save.catch(() => undefined)
   }
 
   if (loading) {
@@ -371,6 +374,23 @@ export default function RenoAppCaseDetailPage() {
         onConditionsChange={setConditions}
         onDecisionConfirmedChange={setDecisionConfirmed}
         onRequirementDecisionChange={handleRequirementDecisionChange}
+        correctionIds={correctionIds}
+        onCorrectionChange={(id, checked) => setCorrectionIds(current => checked ? [...new Set([...current, id])] : current.filter(value => value !== id))}
+        onRetryDelivery={async () => {
+          if (!item?.completion) return
+          setSubmitting(true)
+          setActionError(null)
+          try {
+            const response = await fetch(`/api/renoapp/app/cases/${caseId}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'need_info', retryCompletion: true, completionRequestId: item.completion.id }),
+            })
+            const payload = await response.json()
+            if (!response.ok) throw new Error(payload.error)
+            setItem(payload.item)
+          } catch (error) { setActionError(error instanceof Error ? error.message : 'Mejlet kunde inte skickas.') }
+          finally { setSubmitting(false) }
+        }}
         onSubmit={handleStatusSubmit}
       />
     </div>

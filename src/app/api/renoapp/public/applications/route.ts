@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { upsertPublicApplication, type CreatePublicApplicationInput } from '@/lib/renoapp/server'
+import { RULES_ERRORS } from '@/lib/renoapp/renovationRules'
+import { COMPLETION_ERRORS } from '@/lib/renoapp/completion'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -58,6 +60,10 @@ export async function POST(request: Request) {
     const result = await upsertPublicApplication(
       {
         brfSlug: String(body.brfSlug ?? ''),
+        completionRequestId: typeof body.completionRequestId === 'string' ? body.completionRequestId : null,
+        completionRevision: typeof body.completionRevision === 'number' ? body.completionRevision : -1,
+        rulesVersionId: typeof body.rulesVersionId === 'string' ? body.rulesVersionId : null,
+        rulesAccepted: body.rulesAccepted === true,
         draftToken: typeof body.draftToken === 'string' ? body.draftToken : null,
         mode: body.mode === 'draft' ? 'draft' : 'submit',
         applicantName: String(body.applicantName ?? ''),
@@ -86,6 +92,11 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okant fel.'
+    if (COMPLETION_ERRORS[message]) return NextResponse.json({ error: COMPLETION_ERRORS[message], code: message }, { status: 409 })
+    if (RULES_ERRORS[message]) {
+      const ruleError = RULES_ERRORS[message]
+      return NextResponse.json({ error: ruleError.message, code: message }, { status: ruleError.status })
+    }
     if (message === 'BRF_NOT_FOUND') {
       return jsonError('BRF hittades inte eller har inte publik ansokan aktiverad.', 404)
     }

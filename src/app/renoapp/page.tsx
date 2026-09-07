@@ -6,6 +6,7 @@ import PublicFaq from '@/components/public/PublicFaq'
 import { PublicProductLink } from '@/components/public/PublicSession'
 import PublicProductIntro from '@/components/public/PublicProductIntro'
 import { PublicPricingSection } from '@/components/public/PublicCommercialSections'
+import ResidentApplicationProcess from '@/components/renoapp/ResidentApplicationProcess'
 
 export const metadata: Metadata = {
   title: 'RenoApp – renoveringsansökningar för BRF',
@@ -39,6 +40,7 @@ export default function RenoAppLandingPage() {
             <li><h3>Komplettera det som saknas</h3><p>Om styrelsen behöver mer information får du komplettera de delar som efterfrågas. Tidigare inskickade handlingar finns kvar.</p></li>
           </ol>
         </div>
+        <div className="public-container public-resident-process"><ResidentApplicationProcess /></div>
       </section>
 
       <section className="public-product-section public-product-tint">

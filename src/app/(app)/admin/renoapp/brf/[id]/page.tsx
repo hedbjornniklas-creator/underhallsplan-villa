@@ -20,7 +20,7 @@ const EVENT_LABELS: Record<string, string> = {
 }
 const INVITE_LABELS = { open: 'Väntar på accept', accepted: 'Accepterad', expired: 'Utgången', revoked: 'Återkallad' }
 const INVITE_KIND_LABELS = { brf_activation: 'Aktiveringslänk för föreningen', member_access: 'Personlig användarinbjudan' }
-const DELIVERY_LABELS: Record<string, string> = { pending: 'Utskick ej bekräftat', sent: 'Mejl skickat', failed: 'Mejlet misslyckades', unknown: 'Leveransstatus saknas' }
+const DELIVERY_LABELS: Record<string, string> = { pending: 'Utskick ej bekräftat', sent: 'Överlämnat till mejltjänsten', failed: 'Mejlutskicket misslyckades', unknown: 'Leveransstatus saknas' }
 function date(value: string | null) { return value ? new Date(value).toLocaleString('sv-SE') : '-' }
 
 function ConfirmDialog({ title, busy, error, onCancel, onConfirm }: {

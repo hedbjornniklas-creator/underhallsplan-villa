@@ -22,7 +22,8 @@ function loadSource<T>(file: string, dependencies: Record<string, unknown>): T {
 function query(data: unknown, writes: unknown[] = []) {
   const result = { data, error: null }
   const builder = {
-    select: () => builder, eq: () => builder, in: () => builder, maybeSingle: async () => result,
+    select: () => builder, eq: () => builder, gte: () => builder, in: () => builder,
+    order: () => builder, limit: () => builder, maybeSingle: async () => result,
     update: (value: unknown) => { writes.push(value); return builder },
     insert: (value: unknown) => { writes.push(value); return builder },
     upsert: (value: unknown) => { writes.push(value); return builder },
@@ -32,11 +33,12 @@ function query(data: unknown, writes: unknown[] = []) {
 }
 
 const identity = { userId: 'admin-id', profile: { id: 'admin-id' } }
-function onboarding(admin: unknown, user: unknown = null, mail: (input: unknown) => Promise<void> = async () => {}) {
+function onboarding(admin: unknown, user: unknown = null, mail: (input: unknown) => Promise<unknown> = async () => {}) {
   return loadSource<typeof Onboarding>('src/lib/renoapp/onboarding.ts', {
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/supabase/server': { createSupabaseServerClient: () => ({ auth: { getUser: async () => ({ data: { user } }) } }) },
     '@/lib/assignments/mailer': { sendAssignmentEmail: mail },
+    '@/lib/renoapp/emailTemplate': loadSource('src/lib/renoapp/emailTemplate.ts', {}),
     '@/lib/renoapp/brfTerms': { RENOAPP_BRF_TERMS_VERSION: 'test-version' },
     '@/lib/renoapp/brfAdminAccess': { requireBrfAdminContext: async () => identity },
     '@/lib/renoapp/brfLifecycle': { normalizeBrfOrgNumber: (value: string) => value },
@@ -120,7 +122,7 @@ test('activation ignores the current login and reports personal invitation deliv
   const calls: string[] = []
   const admin = {
     from: (table: string) => query(table === 'brf_member_invites'
-      ? { id: 'activation-id', brf_id: 'brf-id', email: 'contact@example.test', full_name: 'Kontakt', invite_kind: 'brf_activation', expires_at: '2099-01-01', accepted_at: null, revoked_at: null }
+      ? { id: 'activation-id', brf_id: 'brf-id', email: 'board@example.test', full_name: 'Kontakt', invite_kind: 'brf_activation', expires_at: '2099-01-01', accepted_at: null, revoked_at: null }
       : { id: 'brf-id', name: 'Test BRF', slug: 'test-brf', onboarding_completed_at: null }),
     rpc: async (name: string, args: Record<string, unknown>) => {
       calls.push(name)
@@ -143,7 +145,48 @@ test('activation ignores the current login and reports personal invitation deliv
   assert.equal(result.signedInViaExistingSession, false)
   assert.equal(result.additionalInviteWarnings.length, 2)
   assert.equal(result.portalInvites.length, 2)
+  assert.match(result.continueInviteUrl ?? '', /^https:\/\/hushub\.se\/renoapp\/invite\//)
   assert.deepEqual(calls, ['renoapp_activate_brf'])
+})
+
+test('an accepted activation link can replace and reopen its matching personal invitation', async context => {
+  const previous = process.env.ASSIGNMENTS_MAIL_FROM
+  process.env.ASSIGNMENTS_MAIL_FROM = 'noreply@example.test'
+  context.after(() => { if (previous === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM; else process.env.ASSIGNMENTS_MAIL_FROM = previous })
+  const writes: unknown[] = []
+  const emails: unknown[] = []
+  let inviteReads = 0
+  const activation = {
+    id: 'activation-id', brf_id: 'brf-id', email: 'board@example.test', full_name: 'Board Person',
+    invite_kind: 'brf_activation', expires_at: '2099-01-01', accepted_at: '2000-01-01', revoked_at: null,
+    created_by: 'admin-id',
+  }
+  const memberInvite = {
+    id: 'member-invite', email: 'board@example.test', full_name: 'Board Person', expires_at: '2099-01-01',
+    accepted_at: null, revoked_at: null, created_at: '2000-01-01', sent_at: '2000-01-01', delivery_status: 'sent',
+  }
+  const admin = {
+    from: (table: string) => {
+      if (table === 'brf_member_invites') {
+        inviteReads += 1
+        return query(inviteReads === 1 ? activation : inviteReads === 2 ? [memberInvite] : null, writes)
+      }
+      return query({ id: 'brf-id', name: 'Test BRF', created_by: 'admin-id' }, writes)
+    },
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      assert.equal(name, 'renoapp_issue_brf_invite')
+      assert.equal(args.p_replace, true)
+      assert.equal(args.p_email, 'board@example.test')
+      return { data: 'replacement-invite', error: null }
+    },
+  }
+  const result = await onboarding(admin, null, async input => { emails.push(input) })
+    .resendActivationMemberInvite('activation-token', 'https://example.test')
+  assert.equal(result.email, 'board@example.test')
+  assert.equal(result.emailSent, true)
+  assert.match(result.continueInviteUrl, /^https:\/\/example\.test\/renoapp\/invite\//)
+  assert.equal(emails.length, 1)
+  assert.ok(writes.some(write => (write as Record<string, unknown>).delivery_status === 'sent'))
 })
 
 test('a personal invitation reuses the matching HusHub account and rejects a different logged-in account', async () => {
@@ -234,10 +277,41 @@ test('board access does not fall back to old memberships or unlimited admin scop
       return query([{ id: 'my-brf', name: 'My BRF', slug: 'my-brf' }])
     } }) },
     '@/lib/assignments/mailer': {}, '@/lib/renoapp/brfAdminAccess': {}, '@/lib/renoapp/onboarding': {},
+    '@/lib/renoapp/renovationRulesServer': {}, '@/lib/renoapp/renovationRules': {},
+    '@/lib/renoapp/completion': {}, '@/lib/renoapp/completionServer': {},
+    '@/lib/renoapp/emailTemplate': loadSource('src/lib/renoapp/emailTemplate.ts', {}),
   })
   await assert.rejects(service.requireRenoAppViewerContext(), /RENOAPP_MEMBERSHIP_REQUIRED/)
   assignments.push({ productKey: 'renoapp', moduleKey: 'board_portal', roleKey: 'board_member', scopeType: 'brf', scopeId: 'my-brf' })
   const context = await service.requireRenoAppViewerContext()
   assert.equal(context.activeBrfId, 'my-brf')
   assert.deepEqual(context.authorizedBrfIds, ['my-brf'])
+})
+
+test('personal invite preserves its secret link, escapes names and records the provider id', async context => {
+  const previous = process.env.ASSIGNMENTS_MAIL_FROM
+  process.env.ASSIGNMENTS_MAIL_FROM = 'Hushub <noreply@hushub.se>'
+  context.after(() => { if (previous === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM; else process.env.ASSIGNMENTS_MAIL_FROM = previous })
+  const writes: unknown[] = []
+  let email: { html: string; text: string; replyTo: string } | undefined
+  const admin = {
+    from: () => query({ id: 'brf-id', name: 'BRF <Test>' }, writes),
+    rpc: async () => ({ data: 'invite-id', error: null }),
+  }
+  const service = onboarding(admin, null, async input => {
+    email = input as typeof email
+    return { provider: 'resend', providerMessageId: 'resend-message-id' }
+  })
+  const result = await service.issueBrfInviteForAuthorizedUser({
+    brfId: 'brf-id', email: 'board@example.test', fullName: '<Person>', actorId: 'admin-id', origin: 'https://hushub.se',
+  })
+  assert.equal(result.emailSent, true)
+  assert.ok(email)
+  assert.ok(email.html.includes(`href="${result.inviteUrl}"`))
+  assert.ok(email.text.includes(result.inviteUrl))
+  assert.ok(!email.html.includes(`>${result.inviteUrl}</a>`))
+  assert.ok(email.html.includes('&lt;Test&gt;'))
+  assert.ok(!email.html.includes('<Person>'))
+  assert.equal(email.replyTo, 'jn@hedbjorn.se')
+  assert.ok(writes.some(value => (value as Record<string, unknown>).provider_message_id === 'resend-message-id'))
 })

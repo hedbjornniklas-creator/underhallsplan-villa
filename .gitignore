@@ -151,6 +151,7 @@ vite.config.ts.timestamp-*
 
 # testing
 /coverage
+/tmp/renoapp-completion-ui/
 
 # next.js
 /.next/

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getRenoAppCaseDetail, updateRenoAppCaseStatus } from '@/lib/renoapp/server'
+import { COMPLETION_ERRORS } from '@/lib/renoapp/completion'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -42,6 +43,11 @@ export async function POST(request: Request, context: RouteContext) {
       status?: 'new_application' | 'review' | 'need_info' | 'approved' | 'conditional' | 'rejected'
       reason?: string | null
       conditions?: string | null
+      completionRequestId?: string
+      previousCompletionId?: string | null
+      correctionIds?: string[]
+      selectedRequirementIds?: string[]
+      retryCompletion?: boolean
     }
 
     if (!body.status) {
@@ -53,6 +59,11 @@ export async function POST(request: Request, context: RouteContext) {
       reason: body.reason ?? null,
       conditions: body.conditions ?? null,
       requestOrigin: origin,
+      completionRequestId: body.completionRequestId,
+      previousCompletionId: body.previousCompletionId,
+      selectedRequirementIds: Array.isArray(body.selectedRequirementIds) ? body.selectedRequirementIds.filter(id => typeof id === 'string') : [],
+      correctionIds: Array.isArray(body.correctionIds) ? body.correctionIds.filter(id => typeof id === 'string') : [],
+      retryCompletion: body.retryCompletion === true,
     })
 
     return NextResponse.json({ item })
@@ -63,6 +74,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'PROFILE_NOT_FOUND') return jsonError('Ingen profil hittades för användaren.', 403)
     if (message === 'CASE_NOT_FOUND') return jsonError('RenoApp-ärendet hittades inte.', 404)
     if (message === 'INVALID_CASE_STATUS') return jsonError('Ogiltig status för RenoApp-ärendet.', 400)
+    if (COMPLETION_ERRORS[message]) return jsonError(COMPLETION_ERRORS[message], 409)
     if (message === 'DRAFT_CASE_LOCKED') {
       return jsonError('Utkast är låsta för styrelsen tills medlemmen skickat in dem.', 409)
     }

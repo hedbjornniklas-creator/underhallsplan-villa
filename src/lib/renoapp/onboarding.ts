@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { buildRenoAppEmailHtml, buildRenoAppEmailButton } from '@/lib/renoapp/emailTemplate'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { RENOAPP_BRF_TERMS_VERSION } from '@/lib/renoapp/brfTerms'
@@ -11,6 +12,8 @@ const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
 const POSTAL_CODE_REGEX = /^\d{3}\s\d{2}$/
 const INVITE_TTL_HOURS = 24 * 7
 const MIN_PASSWORD_LENGTH = 8
+const MEMBER_INVITE_RESEND_COOLDOWN_MS = 60 * 1000
+const MEMBER_INVITE_SELF_SERVICE_LIMIT = 3
 const BRF_REQUEST_ADMIN_NOTIFICATION_EMAIL = 'jn@hedbjorn.se'
 
 type SupabaseError = {
@@ -35,6 +38,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
   upsert: (values: unknown, options?: unknown) => QueryBuilder<T>
   update: (values: unknown) => QueryBuilder<T>
   eq: (column: string, value: unknown) => QueryBuilder<T>
+  gte: (column: string, value: unknown) => QueryBuilder<T>
   is: (column: string, value: unknown) => QueryBuilder<T>
   in: (column: string, values: unknown[]) => QueryBuilder<T>
   order: (
@@ -138,6 +142,10 @@ type InviteRow = {
   expires_at: string
   accepted_at: string | null
   revoked_at: string | null
+  created_at?: string
+  created_by?: string | null
+  delivery_status?: string | null
+  sent_at?: string | null
 }
 
 type OnboardingUserInput = {
@@ -268,6 +276,11 @@ export type RenoAppInvitePreview = {
     email: string | null
     matchesInvite: boolean
   }
+  activationMemberInvite: {
+    state: 'open' | 'expired' | 'revoked' | 'accepted'
+    deliveryStatus: string
+    sentAt: string | null
+  } | null
 }
 
 export type AcceptBrfInviteInput = {
@@ -316,6 +329,14 @@ export type AcceptBrfInviteResult = {
     emailSent: boolean
     emailError: string | null
   }>
+  continueInviteUrl: string | null
+}
+
+export type ResendActivationMemberInviteResult = {
+  email: string
+  emailSent: boolean
+  emailError: string | null
+  continueInviteUrl: string
 }
 
 function normalizeText(value: unknown) {
@@ -391,40 +412,6 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
-function buildRenoAppEmailHtml(input: {
-  origin: string
-  preheader?: string | null
-  bodyHtml: string
-}) {
-  const logoUrl = buildAbsoluteUrl(input.origin, '/landing/Renoapp.png')
-  const preheader = input.preheader ? escapeHtml(input.preheader) : null
-
-  return `
-    <div style="margin:0;padding:0;background:#f6f1ea;color:#1c1917;font-family:Arial,sans-serif;">
-      ${
-        preheader
-          ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${preheader}</div>`
-          : ''
-      }
-      <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
-        <div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:24px;padding:32px;">
-          <div style="margin-bottom:24px;">
-            <img
-              src="${logoUrl}"
-              alt="RenoApp"
-              width="132"
-              style="display:block;width:132px;max-width:132px;height:auto;border:0;outline:none;text-decoration:none;"
-            />
-          </div>
-          <div style="font-size:16px;line-height:1.75;color:#292524;">
-            ${input.bodyHtml}
-            <p style="margin:24px 0 0;">Med vänlig hälsning,<br />RenoApp-teamet på HusHub</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  `
-}
 
 function slugify(value: string) {
   return value
@@ -712,22 +699,24 @@ async function createInviteRecord(
         ? `Er BRF-förfrågan för ${input.brfName} har godkänts`
         : isActivationInvite
           ? `Aktivera ${input.brfName} i RenoApp`
-          : `Inbjudan till RenoApp för ${input.brfName}`
+          : `RenoApp: tillgång till styrelseportalen för ${input.brfName}`
       const htmlBody = isActivationInvite
         ? `
           <p>Hej ${safeContactName},</p>
           ${input.approvalContext ? `<p>Er intresseanmälan för <strong>${safeBrfName}</strong> har godkänts.</p>` : `<p><strong>${safeBrfName}</strong> har lagts upp i RenoApp.</p>`}
           <p>Öppna länken nedan för att komplettera föreningens uppgifter, välja vilka som ska ha tillgång till styrelseportalen och aktivera föreningen:</p>
-          <p><a href="${inviteUrl}">${inviteUrl}</a></p>
+          ${buildRenoAppEmailButton(inviteUrl, 'Aktivera föreningen')}
           <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
           ${safeReviewNote ? `<p><strong>Kommentar:</strong> ${safeReviewNote}</p>` : ''}
         `
         : `
           <p>Hej ${safeContactName},</p>
-          <p>Du har blivit inbjuden till RenoApp för <strong>${safeBrfName}</strong>.</p>
-          <p>Öppna länken nedan för att få tillgång till föreningens styrelseportal. Ett befintligt HusHub-konto återanvänds; annars skapar du en ny inloggning.</p>
-          <p><a href="${inviteUrl}">${inviteUrl}</a></p>
+          <p>Du har blivit inbjuden till RenoApp för <strong>${safeBrfName}</strong>. Din e-postadress har angetts som användare av föreningens styrelseportal.</p>
+          <p>I portalen kan du följa och handlägga föreningens renoveringsansökningar. Öppna RenoApp för att bekräfta din tillgång. Har du redan ett HusHub-konto använder du det; annars får du skapa ett konto på sidan.</p>
+          ${buildRenoAppEmailButton(inviteUrl, 'Öppna RenoApp')}
+          <p>Länken är personlig och leder till ${escapeHtml(new URL(inviteUrl).hostname)}. Dela den inte med andra.</p>
           <p>Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.</p>
+          <p>Om du inte väntade dig denna inbjudan kan du ignorera mejlet. Du kan svara på mejlet om du behöver hjälp.</p>
         `
       const text = isActivationInvite
         ? [
@@ -746,17 +735,21 @@ async function createInviteRecord(
             .join('\n')
         : [
             `Hej ${input.fullName ?? 'er'},`,
-            `Du har blivit inbjuden till RenoApp för ${input.brfName}.`,
-            `Öppna länken för att få tillgång till föreningens styrelseportal. Ett befintligt HusHub-konto återanvänds; annars skapar du en ny inloggning: ${inviteUrl}`,
+            `Du har blivit inbjuden till RenoApp för ${input.brfName}. Din e-postadress har angetts som användare av föreningens styrelseportal.`,
+            'I portalen kan du följa och handlägga föreningens renoveringsansökningar. Har du redan ett HusHub-konto använder du det; annars får du skapa ett konto på sidan.',
+            `Öppna RenoApp för att bekräfta din tillgång: ${inviteUrl}`,
+            'Länken är personlig. Dela den inte med andra.',
             `Länken gäller till ${new Date(expiresAt).toLocaleString('sv-SE')}.`,
+            'Om du inte väntade dig denna inbjudan kan du ignorera mejlet. Du kan svara på mejlet om du behöver hjälp.',
             '',
             'Med vänlig hälsning,',
             'RenoApp-teamet på HusHub',
           ].join('\n')
 
-      await sendAssignmentEmail({
+      const delivery = await sendAssignmentEmail({
         to: input.email,
         from: mailFrom,
+        replyTo: BRF_REQUEST_ADMIN_NOTIFICATION_EMAIL,
         subject,
         html: buildRenoAppEmailHtml({
           origin: input.origin,
@@ -766,6 +759,19 @@ async function createInviteRecord(
         text,
       })
       emailSent = true
+      // Keep mail acceptance independent of a delayed database migration or log failure.
+      if (delivery?.providerMessageId) {
+        try {
+          const { error } = await admin.from('brf_member_invites').update({
+            provider_message_id: delivery.providerMessageId,
+          }).eq('id', inviteId)
+          if (error) throw new Error(error.message)
+        } catch {
+          console.error('[renoapp.invite] message id could not be persisted', {
+            inviteId, providerMessageId: delivery.providerMessageId,
+          })
+        }
+      }
     } catch (error) {
       emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
     }
@@ -868,6 +874,7 @@ async function sendRenoAppEmail(input: {
     await sendAssignmentEmail({
       to: recipient as string,
       from: mailFrom,
+      replyTo: BRF_REQUEST_ADMIN_NOTIFICATION_EMAIL,
       subject: input.subject,
       html: buildRenoAppEmailHtml({
         origin: input.origin,
@@ -1232,6 +1239,38 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
         ? 'expired'
         : 'open'
 
+  let activationMemberInvite: RenoAppInvitePreview['activationMemberInvite'] = null
+  if (invite.invite_kind === 'brf_activation' && state === 'accepted') {
+    const { data: memberInviteData, error: memberInviteError } = await admin
+      .from('brf_member_invites')
+      .select('id,expires_at,accepted_at,revoked_at,delivery_status,sent_at')
+      .eq('brf_id', invite.brf_id)
+      .eq('invite_kind', 'member_access')
+      .eq('email', inviteEmail ?? invite.email)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (memberInviteError) {
+      throw new Error(memberInviteError.message ?? 'Kunde inte läsa den personliga inbjudan.')
+    }
+
+    const memberInvite = Array.isArray(memberInviteData) ? memberInviteData[0] as InviteRow | undefined : undefined
+    if (memberInvite) {
+      const memberState: NonNullable<RenoAppInvitePreview['activationMemberInvite']>['state'] = memberInvite.accepted_at
+        ? 'accepted'
+        : memberInvite.revoked_at
+          ? 'revoked'
+          : new Date(memberInvite.expires_at).getTime() < now
+            ? 'expired'
+            : 'open'
+      activationMemberInvite = {
+        state: memberState,
+        deliveryStatus: memberInvite.delivery_status ?? 'unknown',
+        sentAt: memberInvite.sent_at ?? null,
+      }
+    }
+  }
+
   const visibleBrf: Record<string, unknown> = state === 'open' ? brfData : {
     id: brfData.id, name: brfData.name, slug: brfData.slug, onboarding_completed_at: brfData.onboarding_completed_at,
   }
@@ -1281,6 +1320,81 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
       email: currentUserEmail,
       matchesInvite: currentUserEmail !== null && currentUserEmail === inviteEmail,
     },
+    activationMemberInvite,
+  }
+}
+
+export async function resendActivationMemberInvite(
+  token: string,
+  origin: string
+): Promise<ResendActivationMemberInviteResult> {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const { data: activationData, error: activationError } = await admin
+    .from('brf_member_invites')
+    .select('id,brf_id,email,full_name,role,invite_kind,expires_at,accepted_at,revoked_at,created_by')
+    .eq('token_hash', hashToken(token))
+    .maybeSingle()
+
+  if (activationError) throw new Error(activationError.message ?? 'Kunde inte läsa aktiveringslänken.')
+  if (!activationData) throw new Error('INVITE_NOT_FOUND')
+
+  const activation = activationData as InviteRow
+  if (activation.invite_kind !== 'brf_activation') throw new Error('INVITE_KIND_MISMATCH')
+  if (!activation.accepted_at) throw new Error('ACTIVATION_NOT_COMPLETED')
+  if (activation.revoked_at) throw new Error('INVITE_REVOKED')
+  if (new Date(activation.expires_at).getTime() < Date.now()) throw new Error('INVITE_EXPIRED')
+
+  const email = normalizeEmail(activation.email)
+  if (!email) throw new Error('EMAIL_INVALID')
+  const { data: memberInviteData, error: memberInviteError } = await admin
+    .from('brf_member_invites')
+    .select('id,email,full_name,expires_at,accepted_at,revoked_at,created_at,delivery_status,sent_at')
+    .eq('brf_id', activation.brf_id)
+    .eq('invite_kind', 'member_access')
+    .eq('email', email)
+    .gte('created_at', activation.accepted_at)
+    .order('created_at', { ascending: false })
+
+  if (memberInviteError) throw new Error(memberInviteError.message ?? 'Kunde inte läsa den personliga inbjudan.')
+  const memberInvites = Array.isArray(memberInviteData) ? memberInviteData as InviteRow[] : []
+  if (memberInvites.length === 0) throw new Error('MEMBER_INVITE_NOT_FOUND')
+  if (memberInvites.some((invite) => Boolean(invite.accepted_at))) throw new Error('INVITE_ALREADY_ACCEPTED')
+
+  const latestInvite = memberInvites[0]
+  if (latestInvite.revoked_at) throw new Error('INVITE_REVOKED')
+  if (memberInvites.length >= MEMBER_INVITE_SELF_SERVICE_LIMIT) throw new Error('INVITE_RESEND_LIMIT')
+
+  const latestAttemptAt = new Date(latestInvite.sent_at ?? latestInvite.created_at ?? 0).getTime()
+  if (Number.isFinite(latestAttemptAt) && Date.now() - latestAttemptAt < MEMBER_INVITE_RESEND_COOLDOWN_MS) {
+    throw new Error('INVITE_RESEND_TOO_SOON')
+  }
+
+  const { data: brfData, error: brfError } = await admin
+    .from('brf_associations')
+    .select('id,name,created_by')
+    .eq('id', activation.brf_id)
+    .maybeSingle()
+  if (brfError || !brfData) throw new Error(brfError?.message ?? 'BRF_NOT_FOUND')
+
+  const actorId = activation.created_by ?? (typeof brfData.created_by === 'string' ? brfData.created_by : null)
+  if (!actorId) throw new Error('INVITE_ACTOR_REQUIRED')
+  const invite = await createInviteRecord(admin, {
+    brfId: activation.brf_id,
+    brfName: String(brfData.name),
+    email,
+    fullName: latestInvite.full_name ?? activation.full_name,
+    role: 'board',
+    createdBy: actorId,
+    origin,
+    replace: true,
+    kind: 'member_access',
+  })
+
+  return {
+    email,
+    emailSent: invite.emailSent,
+    emailError: invite.emailError,
+    continueInviteUrl: invite.inviteUrl,
   }
 }
 
@@ -1305,6 +1419,7 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
         additionalInvitesCreated: 0,
         additionalInviteWarnings: [],
         portalInvites: [],
+        continueInviteUrl: null,
       }
     }
     if (input.termsAccepted !== true) throw new Error('TERMS_NOT_ACCEPTED')
@@ -1350,6 +1465,7 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
 
     const additionalInviteWarnings: string[] = []
     const portalInvites: AcceptBrfInviteResult['portalInvites'] = []
+    let continueInviteUrl: string | null = null
     const createdRows = Array.isArray(acceptance.memberInvites)
       ? acceptance.memberInvites as Array<Record<string, unknown>>
       : []
@@ -1386,6 +1502,9 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
             emailSent: invite.emailSent,
             emailError: invite.emailError,
           })
+          if (preparedInvite.email === normalizeEmail(preview.invite.email)) {
+            continueInviteUrl = invite.inviteUrl
+          }
           if (!invite.emailSent) {
             additionalInviteWarnings.push(`${preparedInvite.email}: mejlet kunde inte skickas.`)
           }
@@ -1407,6 +1526,7 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
       additionalInvitesCreated: acceptance.reused ? 0 : preparedInvites.length,
       additionalInviteWarnings,
       portalInvites,
+      continueInviteUrl,
     }
   }
 
@@ -1431,6 +1551,7 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
       additionalInvitesCreated: 0,
       additionalInviteWarnings: [],
       portalInvites: [],
+      continueInviteUrl: null,
     }
   }
 
@@ -1468,6 +1589,7 @@ export async function acceptBrfInvite(token: string, input: AcceptBrfInviteInput
     additionalInvitesCreated: 0,
     additionalInviteWarnings: [],
     portalInvites: [],
+    continueInviteUrl: null,
     mode: 'member_invite',
   }
 }

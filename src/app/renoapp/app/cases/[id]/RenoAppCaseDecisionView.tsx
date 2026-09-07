@@ -1,11 +1,17 @@
 'use client'
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { RenovationRulesReceipt } from '@/components/renoapp/RenovationRulesView'
+import type { RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
+import { FileText, Building2 } from 'lucide-react'
+import { selectCompletionItems, type CompletionSummary } from '@/lib/renoapp/completion'
 
 export type RenoAppCaseStatusAction = 'need_info' | 'approved' | 'conditional' | 'rejected'
 type RequirementDecision = 'requested' | 'not_requested'
 
 export type RenoAppCaseDetail = {
+  completion: CompletionSummary | null
+  rulesAcceptance?: RenovationRulesAcceptance
   id: string
   caseNumber: string
   title: string
@@ -60,6 +66,7 @@ export type RenoAppCaseDetail = {
   }>
   documents: Array<{
     id: string
+    participantRoleId?: string | null
     documentTypeId: string | null
     documentTypeLabel: string | null
     fileName: string | null
@@ -239,7 +246,7 @@ function getBoardActionSubmitLabel(status: RenoAppCaseStatusAction) {
 }
 
 function getMessageTitle(type: Message['type']) {
-  if (type === 'request_for_info') return 'Begäran om komplettering skickad'
+  if (type === 'request_for_info') return 'Begäran om komplettering registrerad'
   if (type === 'applicant_reply') return 'Lägenhetsinnehavaren skickade komplettering'
   if (type === 'document_uploaded') return 'Dokument uppladdat'
   if (type === 'decision') return 'Beslut registrerat'
@@ -486,6 +493,7 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
         <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-700">
           {displayText(item.description, 'Ingen beskrivning registrerad.')}
         </p>
+        {item.rulesAcceptance ? <div className="mt-4"><RenovationRulesReceipt acceptance={item.rulesAcceptance} /></div> : null}
         {item.blockedAt ? (
           <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
             <p className="font-semibold">Ärendet är spärrat</p>
@@ -560,12 +568,16 @@ function DocumentsPanel({
   downloading,
   onDownloadAll,
   onRequirementDecisionChange,
+  correctionIds,
+  onCorrectionChange,
 }: {
   item: RenoAppCaseDetail
   documentRows: UnderlagItem[]
   downloading: boolean
   onDownloadAll: () => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
+  correctionIds: string[]
+  onCorrectionChange: (id: string, checked: boolean) => void
 }) {
   const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
     null
@@ -600,37 +612,43 @@ function DocumentsPanel({
         {rows.map((row) => {
           const document = row.documentId ? documentById.get(row.documentId) : null
           return (
-            <div key={row.id} className="grid gap-3 border-b border-stone-200 bg-white px-4 py-4 last:border-b-0 lg:grid-cols-[auto_minmax(0,1fr)_160px_220px_90px_44px] lg:items-center">
-              <div className="flex items-center gap-3">
-                <span
-                  className={cx(
-                    'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
-                    row.checked ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                  )}
-                >
-                  {row.checked ? '✓' : '!'}
-                </span>
-              </div>
+            <div key={row.id} className="grid gap-4 border-b border-stone-200 bg-white px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_190px_220px_44px] lg:items-center">
               <div className="min-w-0">
                 <p className="font-semibold text-stone-950">{displayText(row.label)}</p>
                 {document?.fileName ? <p className="mt-1 truncate text-sm text-stone-500">{displayText(document.fileName)}</p> : null}
                 <SuggestionReason sources={row.suggestionSources ?? []} />
               </div>
-              <p className="text-sm text-stone-700">{getDocumentStatusLabel(row)}</p>
-              <RequirementDecisionButtons
-                value={row.requirementDecision}
-                onChange={(decision) => onRequirementDecisionChange(row, decision)}
-              />
+              <div className="grid min-w-0 justify-items-start gap-2">
+                <p className={cx('text-sm font-medium', row.checked ? 'text-emerald-800' : 'text-stone-600')}>{getDocumentStatusLabel(row)}</p>
               {row.documentId ? (
                 <a
-                  href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}`}
-                  className="text-sm font-semibold text-stone-900 underline-offset-4 hover:underline"
+                  href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}?view=1`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="inline-flex min-h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-900 hover:bg-stone-50"
                 >
-                  Visa
+                  <FileText size={16} aria-hidden="true" /> Öppna dokument
                 </a>
-              ) : (
-                <span className="text-sm text-stone-400">-</span>
-              )}
+              ) : null}
+              {document && item.documents.filter(file => file.documentTypeId === document.documentTypeId && file.id !== document.id).length > 0 ? (
+                <details className="w-full min-w-0 text-sm">
+                  <summary className="cursor-pointer text-stone-700">Fler filer</summary>
+                  <ul className="mt-2 space-y-2">
+                    {item.documents.filter(file => file.documentTypeId === document.documentTypeId && file.id !== document.id).map(file => (
+                      <li key={file.id}><a className="break-all text-sky-800 underline underline-offset-2" href={`/api/renoapp/app/cases/${item.id}/documents/${file.id}?view=1`} target="_blank" rel="noopener noreferrer">{file.fileName ?? 'Dokument'}</a></li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+              </div>
+              <div className="grid gap-2">
+                <RequirementDecisionButtons value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
+                {row.checked && row.requirementDecision === 'requested' ? (
+                  <label className="flex items-center gap-2 text-sm text-stone-700">
+                    <input type="checkbox" checked={correctionIds.includes(row.id)} onChange={e => onCorrectionChange(row.id, e.target.checked)} className="h-4 w-4 accent-stone-900" />
+                    Begär rättelse
+                  </label>
+                ) : null}
+              </div>
               <button
                 type="button"
                 onClick={() =>
@@ -716,15 +734,21 @@ function DocumentsPanel({
 }
 
 function ConsultantsPanel({
+  item,
   rows,
   expandedParticipantIds,
   onToggle,
   onRequirementDecisionChange,
+  correctionIds,
+  onCorrectionChange,
 }: {
+  item: RenoAppCaseDetail
   rows: UnderlagItem[]
   expandedParticipantIds: Record<string, boolean>
   onToggle: (participantId: string) => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
+  correctionIds: string[]
+  onCorrectionChange: (id: string, checked: boolean) => void
 }) {
   const [activeReviewSupport, setActiveReviewSupport] = useState<{ label: string; reviewGuidance: string | null } | null>(
     null
@@ -760,32 +784,33 @@ function ConsultantsPanel({
             const expanded = expandedParticipantIds[row.id] === true
             return (
               <div key={row.id} className="border-b border-stone-200 bg-white px-4 py-3 last:border-b-0">
-                <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)_170px_220px_80px_44px] lg:items-center">
-                  <span
-                    className={cx(
-                      'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold',
-                      row.checked ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                    )}
-                  >
-                    {row.checked ? '✓' : '!'}
-                  </span>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px_220px_44px] lg:items-center">
                   <div className="min-w-0">
                     <p className="font-semibold text-stone-950">{getParticipantDisplayLabel(row.label)}</p>
                     <p className="mt-1 text-sm text-stone-500">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
                     <SuggestionReason sources={row.suggestionSources ?? []} />
                   </div>
-                  <p className="text-sm text-stone-700">{getParticipantStatusLabel(row)}</p>
-                  <RequirementDecisionButtons
-                    value={row.requirementDecision}
-                    onChange={(decision) => onRequirementDecisionChange(row, decision)}
-                  />
+                  <div className="grid justify-items-start gap-2">
+                    <p className="text-sm font-medium text-stone-700">{getParticipantStatusLabel(row)}</p>
                   <button
                     type="button"
                     onClick={() => onToggle(row.id)}
-                    className="text-left text-sm font-semibold text-stone-900 underline-offset-4 hover:underline md:text-right"
+                    aria-expanded={expanded}
+                    className="inline-flex min-h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-left text-sm font-semibold text-stone-900 hover:bg-stone-50"
                   >
-                    {expanded ? 'Dölj' : 'Visa'}
+                    <Building2 size={16} className="shrink-0" aria-hidden="true" />
+                    {expanded ? 'Dölj företagsuppgifter' : 'Visa företagsuppgifter'}
                   </button>
+                  </div>
+                  <div className="grid gap-2">
+                    <RequirementDecisionButtons value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
+                    {row.checked && row.requirementDecision === 'requested' ? (
+                      <label className="flex items-center gap-2 text-sm text-stone-700">
+                        <input type="checkbox" checked={correctionIds.includes(row.id)} onChange={e => onCorrectionChange(row.id, e.target.checked)} className="h-4 w-4 accent-stone-900" />
+                        Begär rättelse
+                      </label>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     onClick={() =>
@@ -803,7 +828,7 @@ function ConsultantsPanel({
                 </div>
 
                 {expanded ? (
-                  <div className="mt-4 grid gap-4 rounded-[14px] border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                  <div className="mt-4 grid gap-4 break-words rounded-[14px] border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
                     <div className="grid gap-2 sm:grid-cols-2">
                       <p><span className="font-semibold text-stone-950">Företag:</span> {displayText(row.details?.companyName)}</p>
                       <p><span className="font-semibold text-stone-950">Kontaktperson:</span> {displayText(row.details?.contactName)}</p>
@@ -812,6 +837,9 @@ function ConsultantsPanel({
                       <p><span className="font-semibold text-stone-950">Telefon:</span> {displayText(row.details?.phone)}</p>
                       <p><span className="font-semibold text-stone-950">Certifiering:</span> {displayText(row.details?.certificationReference)}</p>
                     </div>
+                    {item.documents.filter(file => `participant:${file.participantRoleId}` === row.id).map(file => (
+                      <a key={file.id} className="inline-flex items-start gap-2 break-all text-sky-800 underline underline-offset-2" href={`/api/renoapp/app/cases/${item.id}/documents/${file.id}?view=1`} target="_blank" rel="noopener noreferrer"><FileText size={16} className="mt-0.5 shrink-0" />{file.fileName ?? 'Dokument'}</a>
+                    ))}
                     {row.summary.length > 0 ? (
                       <ul className="grid gap-2 border-t border-stone-200 pt-4">
                         {row.summary.map((line) => (
@@ -1183,6 +1211,9 @@ export default function RenoAppCaseDecisionView({
   onDecisionConfirmedChange,
   onRequirementDecisionChange,
   onSubmit,
+  correctionIds,
+  onCorrectionChange,
+  onRetryDelivery,
 }: {
   item: RenoAppCaseDetail
   selectedStatus: RenoAppCaseStatusAction
@@ -1198,6 +1229,9 @@ export default function RenoAppCaseDecisionView({
   onDecisionConfirmedChange: (value: boolean) => void
   onRequirementDecisionChange: (row: UnderlagItem, decision: RequirementDecision) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  correctionIds: string[]
+  onCorrectionChange: (id: string, checked: boolean) => void
+  onRetryDelivery: () => void
 }) {
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const [downloadingFiles, setDownloadingFiles] = useState(false)
@@ -1207,22 +1241,20 @@ export default function RenoAppCaseDecisionView({
   const missingReviewFlags = useMemo(() => getMissingReviewFlags(item), [item])
   const completionSnippets = useMemo(
     () =>
-      item.underlag
-        .filter((row) => row.requirementDecision === 'requested')
+      selectCompletionItems(item.underlag, correctionIds)
         .map((row) =>
           row.category === 'document'
-            ? `Underlag: ${displayText(row.label)}`
-            : `Uppgifter: ${getParticipantDisplayLabel(row.label)}`
+            ? `Underlag: ${displayText(row.label)}${row.correction ? ' (rättelse begärd)' : ''}`
+            : `Uppgifter: ${getParticipantDisplayLabel(row.label)}${row.correction ? ' (rättelse begärd)' : ''}`
         ),
-    [item.underlag]
+    [item.underlag, correctionIds]
   )
   const downloadAllUrls = useMemo(
     () =>
       Array.from(
         new Set(
-          item.underlag
-            .map((row) => row.documentId)
-            .filter((documentId): documentId is string => Boolean(documentId))
+          item.documents
+            .map((document) => document.id)
             .map((documentId) => `/api/renoapp/app/cases/${item.id}/documents/${documentId}`)
         )
       ),
@@ -1261,20 +1293,33 @@ export default function RenoAppCaseDecisionView({
   return (
     <div className="grid gap-6">
       <CaseHeaderSummary item={item} />
+      {item.completion && item.status === 'need_info' && item.completion.delivery_status !== 'sent' ? (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <p>{item.completion.delivery_error ?? 'Begäran är sparad, men mejlleveransen är inte bekräftad.'}</p>
+          <button type="button" disabled={submitting} onClick={onRetryDelivery} className="rounded-md border border-amber-800 px-3 py-2 font-semibold disabled:opacity-50">Skicka mejlet igen</button>
+        </div>
+      ) : null}
+      <fieldset disabled={submitting} className="grid min-w-0 gap-6">
       <DocumentsPanel
         item={item}
         documentRows={documentUnderlag}
         downloading={downloadingFiles}
         onDownloadAll={() => startDownloads(downloadAllUrls)}
+        correctionIds={correctionIds}
+        onCorrectionChange={onCorrectionChange}
         onRequirementDecisionChange={onRequirementDecisionChange}
       />
       <ConsultantsPanel
+        item={item}
         rows={participantUnderlag}
         expandedParticipantIds={expandedParticipantIds}
+        correctionIds={correctionIds}
+        onCorrectionChange={onCorrectionChange}
         onToggle={toggleParticipantDetails}
         onRequirementDecisionChange={onRequirementDecisionChange}
       />
       <ReviewFlagsCard flags={missingReviewFlags.filter((flag) => flag.sourceType !== 'missing_document')} />
+      </fieldset>
       <BoardDecisionPanel
         isDraftCase={item.status === 'draft'}
         selectedStatus={selectedStatus}

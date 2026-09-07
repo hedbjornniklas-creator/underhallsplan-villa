@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { CheckCircle2, Mail, Plus, Trash2 } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Mail, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import {
   RENOAPP_BRF_TERMS_DOWNLOAD_URL,
@@ -50,6 +50,11 @@ type InvitePreview = {
     isPublicApplyListed: boolean
   }
   currentUser: { email: string | null; matchesInvite: boolean }
+  activationMemberInvite: {
+    state: 'open' | 'expired' | 'revoked' | 'accepted'
+    deliveryStatus: string
+    sentAt: string | null
+  } | null
 }
 
 type UserState = { name: string; email: string }
@@ -169,7 +174,11 @@ export default function RenoAppInvitePage() {
   const [requiresManualLogin, setRequiresManualLogin] = useState(false)
   const [completionWarnings, setCompletionWarnings] = useState<string[]>([])
   const [portalInviteResults, setPortalInviteResults] = useState<PortalInviteResult[]>([])
+  const [continueInviteUrl, setContinueInviteUrl] = useState<string | null>(null)
+  const [resendingMemberInvite, setResendingMemberInvite] = useState(false)
+  const [resendMessage, setResendMessage] = useState<string | null>(null)
   const loginHref = `/renoapp/login?next=${encodeURIComponent(`/renoapp/invite/${token}`)}`
+  const continueStorageKey = `renoapp-activation-member:${token}`
 
   useEffect(() => {
     let active = true
@@ -189,12 +198,23 @@ export default function RenoAppInvitePage() {
         setPassword('')
         setTermsAccepted(false)
         setSignatoryAuthorityConfirmed(false)
+        setContinueInviteUrl(null)
+        setResendMessage(null)
         if (data.mode === 'member_invite') {
           try {
             const saved = JSON.parse(sessionStorage.getItem(`renoapp-invite-user:${token}`) ?? 'null')
             if (data.state === 'open' && saved?.email === data.invite.email && Date.now() - saved.savedAt < 30 * 60 * 1000) {
               if (typeof saved.name === 'string') setFirstUser({ name: saved.name, email: data.invite.email })
             } else sessionStorage.removeItem(`renoapp-invite-user:${token}`)
+          } catch { /* Session storage may be unavailable in private browsing. */ }
+        } else if (data.state === 'accepted') {
+          try {
+            const saved = JSON.parse(sessionStorage.getItem(continueStorageKey) ?? 'null')
+            const savedUrl = typeof saved?.url === 'string' ? new URL(saved.url, window.location.origin) : null
+            if (savedUrl?.origin === window.location.origin && savedUrl.pathname.startsWith('/renoapp/invite/')
+              && saved?.email === data.invite.email && Date.now() - saved.savedAt < 7 * 24 * 60 * 60 * 1000) {
+              setContinueInviteUrl(savedUrl.toString())
+            } else sessionStorage.removeItem(continueStorageKey)
           } catch { /* Session storage may be unavailable in private browsing. */ }
         }
       } catch (fetchError) {
@@ -204,7 +224,7 @@ export default function RenoAppInvitePage() {
     if (token) void loadInvite()
     else { setLoading(false); setError('Ogiltig inbjudningslänk.') }
     return () => { active = false }
-  }, [token])
+  }, [continueStorageKey, token])
 
   const updateField = <K extends keyof FormState>(field: K, value: FormState[K]) => setForm(current => ({ ...current, [field]: value }))
   const updateAdditionalUser = (index: number, field: keyof UserState, value: string) => setAdditionalUsers(current =>
@@ -212,6 +232,11 @@ export default function RenoAppInvitePage() {
   const saveBeforeLogin = () => {
     try { sessionStorage.setItem(`renoapp-invite-user:${token}`, JSON.stringify({ name: firstUser.name, email: payload?.invite.email, savedAt: Date.now() })) }
     catch { /* The login flow still works without session storage. */ }
+  }
+  const saveContinueInvite = (url: string, email: string) => {
+    setContinueInviteUrl(url)
+    try { sessionStorage.setItem(continueStorageKey, JSON.stringify({ url, email, savedAt: Date.now() })) }
+    catch { /* The direct link still works without session storage. */ }
   }
   const handleSignOut = async (redirectToLogin = false) => {
     setSigningOut(true)
@@ -248,7 +273,7 @@ export default function RenoAppInvitePage() {
           termsAccepted, termsVersion: RENOAPP_BRF_TERMS_VERSION }),
       })
       const result = (await response.json().catch(() => ({}))) as { createdUser?: boolean; signInEmail?: string; error?: string;
-        additionalInviteWarnings?: string[]; portalInvites?: PortalInviteResult[] }
+        additionalInviteWarnings?: string[]; portalInvites?: PortalInviteResult[]; continueInviteUrl?: string | null }
       if (!response.ok) {
         const message = result.error ?? (payload.mode === 'member_invite' ? 'Kunde inte acceptera inbjudan.' : 'Kunde inte aktivera föreningen.')
         if (response.status === 409 && message.includes('Logga in först')) setRequiresManualLogin(true)
@@ -260,6 +285,7 @@ export default function RenoAppInvitePage() {
       if (payload.mode === 'brf_onboarding') {
         setPortalInviteResults(result.portalInvites ?? [])
         setCompletionWarnings(result.additionalInviteWarnings ?? [])
+        if (result.continueInviteUrl) saveContinueInvite(result.continueInviteUrl, firstUser.email)
         return
       }
       if (result.createdUser && result.signInEmail) {
@@ -273,6 +299,32 @@ export default function RenoAppInvitePage() {
       await openBrf().catch(() => setCompletionWarnings(['Åtkomsten är klar, men föreningen kunde inte öppnas. Försök igen.']))
     } catch (submitError) { setActionError(submitError instanceof Error ? submitError.message : 'Kunde inte slutföra åtgärden.') }
     finally { setSubmitting(false) }
+  }
+
+  const handleResendMemberInvite = async () => {
+    if (!payload || resendingMemberInvite) return
+    setResendingMemberInvite(true)
+    setActionError(null)
+    setResendMessage(null)
+    try {
+      const response = await fetch(`/api/renoapp/invites/${token}/resend-member`, { method: 'POST' })
+      const result = (await response.json().catch(() => ({}))) as {
+        email?: string
+        emailSent?: boolean
+        emailError?: string | null
+        continueInviteUrl?: string
+        error?: string
+      }
+      if (!response.ok) throw new Error(result.error ?? 'Kunde inte skicka en ny inbjudan.')
+      if (!result.email || !result.continueInviteUrl) throw new Error('Inbjudan skapades, men svaret var ofullständigt.')
+      saveContinueInvite(result.continueInviteUrl, result.email)
+      setPortalInviteResults([{ email: result.email, emailSent: result.emailSent === true, emailError: result.emailError ?? null }])
+      setResendMessage(result.emailSent
+        ? `En ny personlig inbjudan har överlämnats till mejltjänsten för ${result.email}.`
+        : 'Mejlutskicket misslyckades, men den nya personliga inbjudan kan öppnas direkt nedan.')
+    } catch (resendError) {
+      setActionError(resendError instanceof Error ? resendError.message : 'Kunde inte skicka en ny inbjudan.')
+    } finally { setResendingMemberInvite(false) }
   }
 
   if (loading) return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14">Laddar inbjudan...</main>
@@ -303,10 +355,22 @@ export default function RenoAppInvitePage() {
       : payload.state === 'accepted' && isActivation ?
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
           <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0" size={21} /><div><h2 className="font-semibold">Föreningen är aktiverad</h2>
-            <p className="mt-1 text-sm leading-6">De valda användarna får var sin personlig inbjudan. Där loggar de in med ett befintligt HusHub-konto eller skapar en ny inloggning.</p></div></div>
+            <p className="mt-1 text-sm leading-6">De valda användarnas personliga inbjudningar har skapats. Där loggar de in med ett befintligt HusHub-konto eller skapar en ny inloggning.</p></div></div>
           {portalInviteResults.length > 0 ? <ul className="mt-5 divide-y divide-emerald-200 border-y border-emerald-200">{portalInviteResults.map(invite =>
-            <li key={invite.email} className="flex items-center justify-between gap-4 py-3 text-sm"><span className="min-w-0 break-all">{invite.email}</span>
-              <span className={`inline-flex shrink-0 items-center gap-1.5 font-medium ${invite.emailSent ? 'text-emerald-900' : 'text-amber-900'}`}><Mail size={15} />{invite.emailSent ? 'Inbjudan skickad' : 'Behöver skickas om'}</span></li>)}</ul> : null}
+            <li key={invite.email} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span className="min-w-0 break-all">{invite.email}</span>
+              <span className={`inline-flex shrink-0 items-center gap-1.5 font-medium ${invite.emailSent ? 'text-emerald-900' : 'text-amber-900'}`}><Mail size={15} />{invite.emailSent ? 'Överlämnad till mejltjänsten' : 'Mejlutskicket misslyckades'}</span></li>)}</ul> : null}
+          {portalInviteResults.some(invite => invite.emailSent) ? <p className="mt-3 text-xs leading-5 text-emerald-900">Mejlet är beställt hos mejltjänsten. Det kan dröja några minuter innan mottagarens e-postleverantör visar det. Kontrollera även skräppost.</p> : null}
+          <div className="mt-5 border-t border-emerald-200 pt-5">
+            {continueInviteUrl ? <><p className="text-sm leading-6">Aktiveringsadressen är också vald som användare. Du kan fortsätta direkt utan att invänta mejlet.</p>
+              <Link href={continueInviteUrl} className="mt-3 inline-flex items-center gap-2 rounded-md bg-stone-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-stone-800">Fortsätt till inloggning <ArrowRight size={16} /></Link></>
+            : payload.activationMemberInvite?.state === 'accepted' ? <><p className="text-sm leading-6">Den personliga inbjudan för aktiveringsadressen är redan accepterad.</p>
+              <Link href="/renoapp/login?next=/renoapp/app" className="mt-3 inline-flex items-center gap-2 rounded-md bg-stone-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-stone-800">Logga in <ArrowRight size={16} /></Link></>
+            : payload.activationMemberInvite && payload.activationMemberInvite.state !== 'revoked' ? <><p className="text-sm leading-6">Har den personliga inbjudan till {payload.invite.email} inte kommit fram? Du kan ersätta den tidigare länken och skicka en ny.</p>
+              <button type="button" disabled={resendingMemberInvite} onClick={() => void handleResendMemberInvite()} className="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-800 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw size={16} />{resendingMemberInvite ? 'Skickar...' : 'Skicka ny personlig inbjudan'}</button></>
+            : null}
+          </div>
+          {resendMessage ? <p role="status" className="mt-4 text-sm leading-6">{resendMessage}</p> : null}
+          {actionError ? <div role="alert" className="mt-4 rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-950">{actionError}</div> : null}
           <p className="mt-4 text-sm leading-6">Fler användare kan läggas till och tas bort senare under Användare i styrelseportalen.</p>
           {completionWarnings.length > 0 ? <div role="status" className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">{completionWarnings.join(' ')} Kontakta HusHub om inbjudan behöver skickas om.</div> : null}
         </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import RenovationRulesEditor from '@/components/renoapp/RenovationRulesEditor'
 
 type BrfItem = {
   id: string
@@ -438,6 +439,7 @@ export default function RenoAppBrfPage() {
                     <p className="text-sm text-emerald-700">Ändringarna är sparade.</p>
                   ) : null}
                 </div>
+                <RenovationRulesEditor key={item.id} brfId={item.id} />
               </article>
             )
           })}

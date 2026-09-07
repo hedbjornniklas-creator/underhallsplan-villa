@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getCaseAccessByToken } from '@/lib/renoapp/server'
+import { getLatestCompletion } from '@/lib/renoapp/completionServer'
+import { COMPLETION_ERRORS } from '@/lib/renoapp/completion'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -70,6 +72,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const access = accessResult.access
     const formData = await request.formData()
+    const completionRequestId = String(formData.get('completion_request_id') ?? '') || null
     const fileEntry = formData.get('file')
     const note = String(formData.get('note') ?? '').trim() || null
     const documentTypeId = String(formData.get('document_type_id') ?? '').trim() || null
@@ -79,6 +82,9 @@ export async function POST(request: Request, context: RouteContext) {
         ? 'participant_insurance'
         : 'general'
 
+    if ((documentTypeId && participantRoleId) || (participantRoleId && documentScope !== 'participant_insurance') || (documentScope === 'participant_insurance' && !participantRoleId)) {
+      return jsonError('Välj en dokumenttyp eller en företagsroll för filen.', 400)
+    }
     if (!(fileEntry instanceof File)) return jsonError('Fil saknas.', 400)
     if (fileEntry.size <= 0) return jsonError('Tom fil kan inte laddas upp.', 400)
     if (fileEntry.size > MAX_UPLOAD_BYTES) return jsonError('Filen är för stor (max 15 MB).', 400)
@@ -92,23 +98,11 @@ export async function POST(request: Request, context: RouteContext) {
         return jsonError('Välj den komplettering som dokumentet hör till.', 400)
       }
 
-      let requestedTargetQuery = admin
-        .from('renoapp_case_requirement_decisions')
-        .select('id')
-        .eq('case_id', access.case.id)
-        .eq('decision', 'requested')
-
-      requestedTargetQuery = documentTypeId
-        ? requestedTargetQuery.eq('document_type_id', documentTypeId)
-        : requestedTargetQuery.eq('participant_role_id', participantRoleId)
-
-      const { data: requestedTarget, error: requestedTargetError } = await requestedTargetQuery.maybeSingle()
-      if (requestedTargetError) {
-        throw new Error(requestedTargetError.message ?? 'Kunde inte kontrollera begärd komplettering.')
-      }
-      if (!requestedTarget) {
-        return jsonError('Styrelsen har inte begärt den här kompletteringen.', 403)
-      }
+      const round = await getLatestCompletion(access.case.id)
+      if (!round || round.id !== completionRequestId || round.submitted_at) return jsonError(COMPLETION_ERRORS.COMPLETION_CHANGED, 409)
+      const key = documentTypeId ? `document:${documentTypeId}` : `participant:${participantRoleId}`
+      if (documentTypeId && participantRoleId) return jsonError('Välj en dokumenttyp eller en företagsroll.', 400)
+      if (!round.items.some(item => item.id === key)) return jsonError('Styrelsen har inte begärt den här kompletteringen.', 403)
     }
 
     const ext = resolveFileExtension(fileEntry)
@@ -129,6 +123,7 @@ export async function POST(request: Request, context: RouteContext) {
       .from('renovation_case_documents')
       .insert({
         case_id: access.case.id,
+        completion_request_id: access.case.status === 'need_info' ? completionRequestId : null,
         contact_id: access.contact.id,
         document_type_id: documentTypeId,
         participant_role_id: participantRoleId,
@@ -141,7 +136,7 @@ export async function POST(request: Request, context: RouteContext) {
         status: 'uploaded',
         note,
       })
-      .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note')
+      .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note,completion_request_id')
       .single()
 
     if (insertError) {
@@ -163,9 +158,16 @@ export async function POST(request: Request, context: RouteContext) {
       },
     })
 
-    return NextResponse.json({ ok: true, document: insertedDocument }, { status: 201 })
+    return NextResponse.json({ ok: true, document: {
+      id: insertedDocument.id, documentTypeId: insertedDocument.document_type_id,
+      participantRoleId: insertedDocument.participant_role_id, documentScope: insertedDocument.document_scope,
+      fileName: insertedDocument.file_name, status: insertedDocument.status,
+      uploadedAt: insertedDocument.uploaded_at, note: insertedDocument.note,
+      completionRequestId: insertedDocument.completion_request_id,
+    } }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
+    if (COMPLETION_ERRORS[message]) return jsonError(COMPLETION_ERRORS[message], 409)
     return jsonError(message || 'Kunde inte ladda upp dokument.', 500)
   }
 }
@@ -187,7 +189,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     const admin = createSupabaseAdminClient()
     const { data: documentRow, error: documentError } = await admin
       .from('renovation_case_documents')
-      .select('id,case_id,document_type_id,participant_role_id,uploaded_at,storage_bucket,file_path')
+      .select('id,case_id,document_type_id,participant_role_id,uploaded_at,storage_bucket,file_path,completion_request_id')
       .eq('id', documentId)
       .eq('case_id', access.case.id)
       .maybeSingle()
@@ -200,41 +202,14 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
 
     if (access.case.status === 'need_info') {
-      const documentTypeId = String(documentRow.document_type_id ?? '').trim()
-      const participantRoleId = String(documentRow.participant_role_id ?? '').trim()
-      let requestedTargetQuery = admin
-        .from('renoapp_case_requirement_decisions')
-        .select('id,decided_at')
-        .eq('case_id', access.case.id)
-        .eq('decision', 'requested')
-        .order('decided_at', { ascending: false })
-        .limit(1)
-
-      requestedTargetQuery = documentTypeId
-        ? requestedTargetQuery.eq('document_type_id', documentTypeId)
-        : requestedTargetQuery.eq('participant_role_id', participantRoleId)
-
-      const { data: requestedTarget, error: requestedTargetError } = await requestedTargetQuery.maybeSingle()
-      if (requestedTargetError) {
-        throw new Error(requestedTargetError.message ?? 'Kunde inte kontrollera begärd komplettering.')
-      }
-
-      const uploadedAt = new Date(String(documentRow.uploaded_at ?? '')).getTime()
-      const requestedAt = new Date(String(requestedTarget?.decided_at ?? '')).getTime()
-      if (!requestedTarget || !Number.isFinite(uploadedAt) || !Number.isFinite(requestedAt) || uploadedAt < requestedAt) {
-        return jsonError('Tidigare inskickade handlingar kan inte raderas under kompletteringen.', 409)
-      }
+      const round = await getLatestCompletion(access.case.id)
+      const requestId = new URL(request.url).searchParams.get('completionRequestId')
+      if (!round || round.id !== requestId || round.submitted_at) return jsonError(COMPLETION_ERRORS.COMPLETION_CHANGED, 409)
+      if (documentRow.completion_request_id !== round.id) return jsonError(COMPLETION_ERRORS.COMPLETION_PREVIOUS_DOCUMENT, 409)
     }
 
     const bucket = String(documentRow.storage_bucket ?? '')
     const filePath = String(documentRow.file_path ?? '')
-    if (bucket && filePath) {
-      const { error: storageError } = await admin.storage.from(bucket).remove([filePath])
-      if (storageError) {
-        throw new Error(storageError.message ?? 'Kunde inte radera filen.')
-      }
-    }
-
     const { error: deleteError } = await admin
       .from('renovation_case_documents')
       .delete()
@@ -245,9 +220,16 @@ export async function DELETE(request: Request, context: RouteContext) {
       throw new Error(deleteError.message ?? 'Kunde inte radera dokumentet.')
     }
 
+    // Validate the round in the database before removing the stored file.
+    if (bucket && filePath) {
+      const { error: storageError } = await admin.storage.from(bucket).remove([filePath])
+      if (storageError) console.error('[renoapp] Deleted document storage cleanup failed', storageError)
+    }
+
     return NextResponse.json({ ok: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
+    if (COMPLETION_ERRORS[message]) return jsonError(COMPLETION_ERRORS[message], 409)
     return jsonError(message || 'Kunde inte radera dokumentet.', 500)
   }
 }
