@@ -4,7 +4,7 @@ export const EB_FOLLOW_UP_VAT_ORE = 11_980
 export const EB_FOLLOW_UP_VAT_RATE = 25
 /** Orders produce manual invoice material for Admin, never an automatically issued invoice. */
 export const EB_FOLLOW_UP_ADMIN_EMAIL = 'jn@hedbjorn.se'
-export const EB_FOLLOW_UP_TERMS_VERSION = '2026-09-08'
+export const EB_FOLLOW_UP_TERMS_VERSION = '2026-09-08.2'
 export const EB_FOLLOW_UP_SERVICE_DESCRIPTION =
   'Digital uppföljning av noteringarna i detta fastställda utlåtande. Du fördelar noteringar till entreprenörer som kan svara och lämna åtgärdsbilder. Tjänsten omfattar inte en ny besiktning, teknisk granskning eller godkännande av åtgärder.'
 
@@ -32,6 +32,9 @@ export type EbFollowUpOffer = {
 }
 
 export type EbFollowUpBuyer = {
+  /** Absent only on historical orders; never inferred from the invoice recipient. */
+  customerType?: 'consumer' | 'business'
+  acceptanceSnapshot?: EbFollowUpAcceptance
   name: string
   email: string
   invoiceName: string
@@ -41,10 +44,21 @@ export type EbFollowUpBuyer = {
   invoiceCity: string
 }
 
+export type EbFollowUpAcceptance = {
+  termsVersion: string
+  termsText: string
+  termsHash: string
+  acceptedAt: string
+  withdrawalDeadline: string | null
+  withdrawalFormUrl: string
+  consentTexts: { acceptTerms: string; requestImmediateStart: string; acceptInvoice: string; consumerWithdrawalAcknowledged?: string }
+  consents: { acceptTerms: true; requestImmediateStart: true; acceptInvoice: true; consumerWithdrawalAcknowledged: boolean }
+}
+
 export type EbFollowUpOrderInput = {
   action: 'order'
-  challengeId: string
-  code: string
+  customerType: 'consumer' | 'business'
+  consumerWithdrawalAcknowledged: boolean
   name: string
   invoiceName: string
   invoiceOrgNo?: string | null
@@ -68,6 +82,8 @@ export function validateEbFollowUpBuyer(input: Record<string, unknown>, email: s
   if (input.acceptTerms !== true || input.requestImmediateStart !== true || input.acceptInvoice !== true) {
     throw new Error('EB_FOLLOW_UP_CONSENT_REQUIRED')
   }
+  if (input.customerType !== 'consumer' && input.customerType !== 'business') throw new Error('EB_FOLLOW_UP_BUYER_INVALID')
+  if (input.customerType === 'consumer' && input.consumerWithdrawalAcknowledged !== true) throw new Error('EB_FOLLOW_UP_CONSENT_REQUIRED')
   if (input.termsVersion !== EB_FOLLOW_UP_TERMS_VERSION || input.confirmedPriceOre !== EB_FOLLOW_UP_PRICE_ORE) {
     throw new Error('EB_FOLLOW_UP_OFFER_CHANGED')
   }
@@ -80,6 +96,7 @@ export function validateEbFollowUpBuyer(input: Record<string, unknown>, email: s
   }
   const invoiceOrgNo = input.invoiceOrgNo == null || input.invoiceOrgNo === '' ? null : field('invoiceOrgNo', 40)
   return {
+    customerType: input.customerType,
     name: field('name', 150), email, invoiceName: field('invoiceName', 200), invoiceOrgNo,
     invoiceAddress: field('invoiceAddress', 250), invoicePostalCode: field('invoicePostalCode', 30),
     invoiceCity: field('invoiceCity', 100),

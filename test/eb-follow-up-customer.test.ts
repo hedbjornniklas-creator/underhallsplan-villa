@@ -214,10 +214,13 @@ test('management links and copy are recipient-specific; normal and shared emails
     assert.doesNotMatch(other.html + other.text, /customer=|Hantera din besiktning/)
   }
   assert.equal(customer.ebFollowUpCustomerEntryUrl(input.detailsUrl, 'buyer@example.test', null), null)
-  const intended = templates.buildInspectionReportDeliveryEmail({ ...input, customerManagementUrl: matching })
+  const privateLink = 'https://example.test/api/eb/customer/separate-private-buyer-token'
+  const intended = templates.buildInspectionReportDeliveryEmail({ ...input, customerManagementUrl: privateLink })
   assert.match(intended.html, /Hantera din besiktning/)
-  assert.match(intended.text, /customer=1/)
-  assert.match(intended.text, /verifiera din e-postadress/)
+  assert.ok(intended.text.includes(privateLink))
+  assert.match(intended.text, /personliga beställarlänk/)
+  assert.match(intended.text, /Dela inte denna länk/)
+  assert.doesNotMatch(intended.text, /verifiera din e-postadress|engångskod/)
   const shared = templates.buildInspectionReportShareEmail(input)
   assert.doesNotMatch(shared.html + shared.text, /customer=|Hantera din besiktning/)
 })

@@ -1,4 +1,4 @@
-import { createHmac, randomInt, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomInt, randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
@@ -14,7 +14,10 @@ import {
 } from '@/lib/eb/followUpDelivery'
 import { resolveEbFollowUpCustomer } from '@/lib/eb/followUpCustomer'
 import { getEbFollowUpPlatformSeller } from '@/lib/eb/followUpSeller'
+import { EB_FOLLOW_UP_WITHDRAWAL_FORM_URL, getEbFollowUpConsentTexts, getEbFollowUpTermsText,
+  getEbFollowUpWithdrawalDeadline, getEbFollowUpWithdrawalFormText } from '@/lib/eb/followUpTerms'
 import { readEbCustomerSession, setEbCustomerSession, type EbCustomerSession } from '@/lib/eb/customerSession'
+import { EB_CUSTOMER_LINK_MESSAGE, isEbCustomerLinkSessionActive, issueEbCustomerLink } from '@/lib/eb/customerLinks'
 
 const ORIGINALS_BUCKET = 'eb-follow-up-originals'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -167,7 +170,8 @@ async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext
   if (!session || session.orgId !== context.link.org_id || session.inspectionId !== context.link.inspection_id
     || (session.kind === 'report' && session.reportLinkId !== context.link.id)
     || (session.kind === 'owner' && (!context.order || !session.portalPath))
-    || !(await eligibleCustomerEmails(context)).has(session.email)) return null
+    || !(await eligibleCustomerEmails(context)).has(session.email)
+    || !(await isEbCustomerLinkSessionActive(session))) return null
   return session
 }
 
@@ -244,6 +248,23 @@ export async function requestEbFollowUpCode(input: { token: string; email: unkno
   return { challengeId: id, message: GENERIC_CODE_MESSAGE }
 }
 
+/** Anonymous recovery never exposes buyer identity or places an order. */
+export async function requestEbFollowUpCustomerLink(input: { token: string; email: unknown; baseUrl?: string }) {
+  const email = normalizeEbFollowUpEmail(input.email)
+  if (!email) throw new Error('EB_FOLLOW_UP_EMAIL_INVALID')
+  const context = await loadContext(input.token)
+  const eligible = (await eligibleCustomerEmails(context)).has(email)
+  if (eligible) {
+    try {
+      await issueEbCustomerLink({ publicToken: input.token, email, baseUrl: ebFollowUpBaseUrl(input.baseUrl), sendEmail: true })
+    } catch (error) {
+      // Same response for wrong addresses and rate-limited known buyers.
+      if (!(error instanceof Error) || error.message !== 'EB_FOLLOW_UP_RATE_LIMITED') throw error
+    }
+  }
+  return { message: EB_CUSTOMER_LINK_MESSAGE }
+}
+
 function followUpNotes(context: Awaited<ReturnType<typeof loadContext>>) {
   return context.report.notes.filter(item => (!item.inspectionId || item.inspectionId === context.link.inspection_id)
     && UUID.test(item.id) && Boolean(item.noteText?.trim()))
@@ -286,10 +307,16 @@ async function createFrozenTasks(context: Awaited<ReturnType<typeof loadContext>
 }
 
 function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuyer, seller: EbFollowUpSeller, portalUrl: string, inspectionSummary = '') {
-  const terms = `${EB_FOLLOW_UP_SERVICE_DESCRIPTION}\nPris 599 kr inklusive 25 % moms (479,20 kr exklusive moms och 119,80 kr moms). Fakturering sker manuellt; detta är inte en faktura. Du har uttryckligen godkänt villkoren version ${EB_FOLLOW_UP_TERMS_VERSION}, begärt omedelbar start och accepterat betalning via faktura. Du har som konsument normalt 14 dagars ångerrätt. Omedelbar start innebär inte att all ångerrätt försvinner. Du kan meddela att du vill frånträda beställningen med knappen i din personliga portal eller via ${seller.email}. Ingen efterbesiktning ingår.`
+  const acceptance = buyer.acceptanceSnapshot
+  const terms = acceptance?.termsText ?? EB_FOLLOW_UP_SERVICE_DESCRIPTION
+  const accepted = acceptance ? `Godkänt: ${acceptance.acceptedAt}\nVillkorsversion: ${acceptance.termsVersion}\nGodkända samtycken:\n${Object.values(acceptance.consentTexts).map(value => `• ${value}`).join('\n')}` : ''
+  const withdrawalUrl = `${portalUrl}#angra-bestallning`
+  const withdrawal = buyer.customerType === 'consumer' && acceptance
+    ? `Beräknad sista ångerdag: ${acceptance.withdrawalDeadline} (svensk tid). Beräkningen förutsätter att föreskriven ångerinformation lämnats vid köpet.\nÅngra beställningen: ${withdrawalUrl}\nKonsumentverkets ångerblankett: ${acceptance.withdrawalFormUrl}\n\n${getEbFollowUpWithdrawalFormText(seller)}`
+    : buyer.customerType === 'business' ? 'Köpet har gjorts för företag eller förening. Konsumentens lagstadgade ångerrätt gäller inte.' : ''
   const sellerText = `${seller.name}, org.nr ${seller.orgNumber}, ${seller.address}, ${seller.email}${seller.phone ? `, ${seller.phone}` : ''}`
-  const receipt = `Beställning ${orderId} är mottagen och din digitala åtgärdsuppföljning är aktiverad.\n\n${terms}\n\nSäljare: ${sellerText}\n\nFakturamottagare: ${buyer.invoiceName}\n${buyer.invoiceAddress}\n${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `\nOrg.nr: ${buyer.invoiceOrgNo}` : ''}\n\nDin personliga portal: ${portalUrl}\nDela inte denna länk. Entreprenörer bjuds in med egna begränsade länkar från portalen.`
-  const invoice = `Ett köp av digital åtgärdsuppföljning har skett.\nManuellt fakturaunderlag för beställning ${orderId}.\nBeställt: ${new Date().toISOString()}\n${inspectionSummary}\n599,00 SEK inklusive moms; netto 479,20 SEK; moms 25 % 119,80 SEK.\nSäljare: ${sellerText}\nBeställare: ${buyer.name}, ${buyer.email}.\nFakturamottagare: ${buyer.invoiceName}, ${buyer.invoiceAddress}, ${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `, org.nr ${buyer.invoiceOrgNo}` : ''}.\nE-post för fakturakontakt: ${buyer.email}.\nTjänsten har aktiverats automatiskt. Ingen faktura har skapats eller skickats av systemet. Fakturering hanteras manuellt av Admin. Kontrollera orderns billing_status och eventuell begäran att frånträda beställningen innan fakturering.\nVillkor ${EB_FOLLOW_UP_TERMS_VERSION}; beställaren har accepterat villkor, omedelbar start och betalning via faktura.`
+  const receipt = `Beställning ${orderId} är mottagen och din digitala åtgärdsuppföljning är aktiverad.\nBeställare: ${buyer.name}, ${buyer.email}\n\n${accepted}\n\n${withdrawal}\n\n${terms}\n\nFakturamottagare: ${buyer.invoiceName}\n${buyer.invoiceAddress}\n${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `\nOrg.nr: ${buyer.invoiceOrgNo}` : ''}\n\nDin personliga portal: ${portalUrl}\nDela inte denna länk. Entreprenörer bjuds in med egna begränsade länkar från portalen.\nDetta är en beställningsbekräftelse, inte en faktura.`
+  const invoice = `Ett köp av digital åtgärdsuppföljning har skett.\nManuellt fakturaunderlag för beställning ${orderId}.\nBeställt: ${acceptance?.acceptedAt ?? new Date().toISOString()}\n${inspectionSummary}\n599,00 SEK inklusive moms; netto 479,20 SEK; moms 25 % 119,80 SEK.\nSäljare: ${sellerText}\nBeställare: ${buyer.name}, ${buyer.email}.\nKundtyp: ${buyer.customerType === 'consumer' ? 'Privatkund' : buyer.customerType === 'business' ? 'Företag/förening' : 'Ej registrerad på äldre order'}\nBeräknad sista ångerdag: ${acceptance?.withdrawalDeadline ?? 'Ej tillämpligt/ej registrerat'}.\nFakturamottagare: ${buyer.invoiceName}, ${buyer.invoiceAddress}, ${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `, org.nr ${buyer.invoiceOrgNo}` : ''}.\nE-post för fakturakontakt: ${buyer.email}.\nTjänsten har aktiverats automatiskt. Ingen faktura har skapats eller skickats av systemet. Fakturering hanteras manuellt av Admin. Kontrollera orderns billing_status och eventuell begäran att frånträda beställningen innan fakturering.\n${accepted}`
   const access = `Här är din personliga länk till din redan beställda åtgärdsuppföljning:\n${portalUrl}\nIngen ny beställning eller avgift har skapats. Dela inte denna länk. Entreprenörer bjuds in separat från portalen.`
   return [
     { kind: 'receipt', dedupeKey: `receipt:${orderId}`, to: buyer.email, subject: 'Beställningsbekräftelse – digital åtgärdsuppföljning', text: receipt },
@@ -297,7 +324,7 @@ function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuye
     { kind: 'access', dedupeKey: `access:${challengeId}`, to: buyer.email, subject: 'Din personliga åtgärdsportal', text: access },
   ].map(mail => ({ kind: mail.kind, dedupeKey: mail.dedupeKey, ciphertext: encryptEbFollowUpPayload({
     to: mail.to, replyTo: seller.email, subject: mail.subject, text: mail.text,
-    html: `<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
+    html: `${mail.kind !== 'invoice' ? `<p><a href="${escapeEbFollowUpHtml(portalUrl)}">Öppna din personliga åtgärdsportal</a></p>` : ''}${mail.kind === 'receipt' && buyer.customerType === 'consumer' ? `<p><a href="${escapeEbFollowUpHtml(withdrawalUrl)}">Ångra beställningen</a> · <a href="${escapeEbFollowUpHtml(acceptance?.withdrawalFormUrl ?? EB_FOLLOW_UP_WITHDRAWAL_FORM_URL)}">Konsumentverkets ångerblankett</a></p>` : ''}<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
   } satisfies EbFollowUpEmail) }))
 }
 
@@ -342,6 +369,22 @@ export async function completeEbFollowUpOrder(input: { token: string; input: Rec
   const accessToken = generateAssignmentToken()
   const portalUrl = `${ebFollowUpBaseUrl(input.baseUrl)}/atgarder/${accessToken}`
   const tasks = context.order ? [] : await createFrozenTasks(context, candidateId)
+  if (!context.order) {
+    // Never accept caller-supplied wording, dates or consent evidence. Freeze
+    // exactly the server's checkout terms before the atomic order/outbox write.
+    const acceptedAt = new Date().toISOString()
+    const customerType = buyer.customerType!
+    const termsText = getEbFollowUpTermsText({ seller, customerType })
+    buyer = { ...buyer, acceptanceSnapshot: {
+      termsVersion: EB_FOLLOW_UP_TERMS_VERSION, termsText,
+      termsHash: createHash('sha256').update(termsText).digest('hex'), acceptedAt,
+      withdrawalDeadline: customerType === 'consumer' ? getEbFollowUpWithdrawalDeadline(acceptedAt) : null,
+      withdrawalFormUrl: EB_FOLLOW_UP_WITHDRAWAL_FORM_URL,
+      consentTexts: getEbFollowUpConsentTexts(customerType),
+      consents: { acceptTerms: true, requestImmediateStart: true, acceptInvoice: true,
+        consumerWithdrawalAcknowledged: customerType === 'consumer' },
+    } }
+  }
   const { data, error } = await context.admin.rpc('eb_complete_follow_up_order', {
     p_challenge_id: challengeId, p_report_link_id: context.link.id, p_candidate_order_id: candidateId,
     p_project_id: context.project.id, p_buyer: buyer, p_seller: seller, p_tasks: tasks,
@@ -371,7 +414,7 @@ export async function withdrawEbFollowUpOrder(input: { orderId: string; actorEma
 
 /** Expired bearer possession can only request mail to the already verified buyer, never return a new bearer. */
 export async function requestEbFollowUpOwnerRenewal(input: { accessToken: string; baseUrl?: string }) {
-  const message = 'Om länken hör till en beställarportal skickas en ny personlig länk till beställarens verifierade e-postadress.'
+  const message = 'Om länken hör till en beställarportal skickas en ny personlig länk till beställarens registrerade e-postadress.'
   if (input.accessToken.length < 20 || input.accessToken.length > 200) return { message }
   const admin = createSupabaseAdminClient()
   const { data: access, error } = await admin.from('eb_remediation_access_links')

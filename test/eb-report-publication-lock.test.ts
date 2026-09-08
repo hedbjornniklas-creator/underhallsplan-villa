@@ -301,6 +301,11 @@ function routeFixture(options: FixtureOptions = {}) {
         },
         ebFollowUpCustomerEntryUrl: customer.ebFollowUpCustomerEntryUrl,
       },
+      '@/lib/eb/customerLinks': { issueEbCustomerLink: async (input: Row) => {
+        assert.equal(input.publicToken, 'new-public-token')
+        assert.equal(input.email, deliveryCustomer.email)
+        return 'https://hushub.test/api/eb/customer/private-buyer-secret'
+      } },
       '@/lib/eb/server': {
         getEbProjectById: async () => structuredClone(live.project),
         getEbInspectionReport: async () => { reportReads++; return structuredClone(live) },
@@ -385,9 +390,9 @@ test('EB delivery sends customer management entry only to the designated address
       const content = String(message.html) + String(message.text)
       if (message.to === deliveryCustomer) {
         assert.match(content, /Hantera din besiktning/)
-        assert.match(content, /customer=1/)
+        assert.match(content, /\/api\/eb\/customer\/private-buyer-secret/)
       } else {
-        assert.doesNotMatch(content, /Hantera din besiktning|customer=/)
+        assert.doesNotMatch(content, /Hantera din besiktning|customer=|private-buyer-secret/)
       }
     }
   }

@@ -17,8 +17,8 @@ export default async function EbPublicRemediationPage({
     workspace = await getEbRemediationWorkspaceByToken(token)
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    if (message === 'EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED' || message === 'EB_REMEDIATION_OWNER_LINK_EXPIRED') {
-      return <EbOwnerAccessVerifier endpoint={endpoint} expired={message === 'EB_REMEDIATION_OWNER_LINK_EXPIRED'} />
+    if (message === 'EB_REMEDIATION_OWNER_LINK_EXPIRED') {
+      return <EbOwnerAccessVerifier endpoint={endpoint} />
     }
     if (message === 'EB_REMEDIATION_ACCESS_REVOKED' || message === 'EB_REMEDIATION_ACTION_FORBIDDEN') notFound()
     throw error

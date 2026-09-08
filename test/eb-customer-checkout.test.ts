@@ -26,12 +26,15 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
   const compiledModule = { exports: {} }
   new Function('require', 'module', 'exports', compiled)((name: string) => {
     if (name in dependencies) return dependencies[name]
+    if (name === '@/lib/eb/followUpTerms') return terms
+    if (name === '@/lib/eb/customerLinks') return { isEbCustomerLinkSessionActive: async () => true }
     if (name.startsWith('node:')) return require(name)
     throw new Error(`Unexpected dependency ${name}`)
   }, compiledModule, compiledModule.exports)
   return compiledModule.exports as T
 }
 const shared = load<typeof Shared>('src/lib/eb/followUp.ts', {})
+const terms = load<typeof import('../src/lib/eb/followUpTerms')>('src/lib/eb/followUpTerms.ts', { './followUp': shared })
 const platformSeller = load<{ getEbFollowUpPlatformSeller: () => Shared.EbFollowUpSeller }>('src/lib/eb/followUpSeller.ts', {
   '@/lib/eb/followUp': shared,
   '@/lib/publicCompanyInfo': load('src/lib/publicCompanyInfo.ts', {}),
@@ -55,7 +58,7 @@ function fixture() {
     eb_follow_up_challenges: [{ id: challenge, org_id: org, inspection_id: inspection, report_link_id: link, purpose: 'report', expires_at: new Date(Date.now() + 15 * 60_000).toISOString() }],
     eb_remediation_access_links: [],
   }
-  const state = { session: null as EbCustomerSession | null, designated: email, sessionReadError: false, rpcs: [] as Array<{ name: string; input: Row }> }
+  const state = { session: null as EbCustomerSession | null, designated: email, sessionReadError: false, linkRequests: 0, rpcs: [] as Array<{ name: string; input: Row }> }
   const admin = {
     from: (table: string) => {
       assert.ok(table in rows, `Unexpected table ${table}`)
@@ -91,6 +94,11 @@ function fixture() {
     '@/lib/eb/followUpDelivery': { encryptEbFollowUpPayload: JSON.stringify, decryptEbFollowUpPayload: JSON.parse, escapeEbFollowUpHtml: (value: string) => value },
     '@/lib/eb/followUpCustomer': { resolveEbFollowUpCustomer: async () => ({ email: state.designated || null, source: 'confirmed' }) },
     '@/lib/eb/followUpSeller': platformSeller,
+    '@/lib/eb/customerLinks': {
+      isEbCustomerLinkSessionActive: async () => true,
+      EB_CUSTOMER_LINK_MESSAGE: 'Generic personal-link message',
+      issueEbCustomerLink: async () => { state.linkRequests++; if (state.linkRequests > 1) throw new Error('EB_FOLLOW_UP_RATE_LIMITED'); return 'private-link' },
+    },
     '@/lib/eb/customerSession': {
       readEbCustomerSession: async () => { if (state.sessionReadError) throw new Error('PRIVATE_AUTH_ERROR'); return state.session },
       setEbCustomerSession: async (session: EbCustomerSession) => { state.session = session },
@@ -99,6 +107,7 @@ function fixture() {
   const verify = (code = '123456') => server.verifyEbFollowUpCustomerCode({ token, challengeId: challenge, code })
   const orderInput = { action: 'order', name: 'Verified Buyer', invoiceName: 'Fakturamottagare', invoiceAddress: 'Fakturagatan 3',
     invoicePostalCode: '12345', invoiceCity: 'Staden', invoiceOrgNo: '556677-8899',
+    customerType: 'consumer', consumerWithdrawalAcknowledged: true,
     acceptTerms: true, requestImmediateStart: true, acceptInvoice: true, termsVersion: shared.EB_FOLLOW_UP_TERMS_VERSION, confirmedPriceOre: 59900 }
   return { org, inspection, project, link, challenge, token, email, ownerToken, rows, state, server, verify, orderInput }
 }
@@ -107,6 +116,19 @@ test('public report holder gets no offer, price, seller or purchase state before
   const f = fixture()
   assert.deepEqual(await f.server.getEbFollowUpCustomerState(f.token), { verified: false, offer: null, accessAvailable: true, retryable: false })
   assert.equal(f.state.rpcs.length, 0)
+})
+
+test('wrong, eligible and rate-limited personal-link requests have identical public replies and never order', async () => {
+  const f = fixture()
+  const replies = []
+  for (const email of ['wrong@example.test', f.email, f.email]) {
+    replies.push(await f.server.requestEbFollowUpCustomerLink({token:f.token,email,baseUrl:'https://hushub.test'}))
+  }
+  assert.deepEqual(replies[0],replies[1])
+  assert.deepEqual(replies[1],replies[2])
+  assert.equal(f.state.linkRequests,2)
+  assert.equal(f.state.session,null)
+  assert.equal(f.state.rpcs.length,0)
 })
 
 test('temporary session lookup failure is a neutral retry without revealing an offer or internal error', async () => {
@@ -173,7 +195,7 @@ test('a new purchase queues full manual invoice material only to Admin and a sep
   const completion = f.state.rpcs.find(call => call.name === 'eb_complete_follow_up_order')!.input
   assert.equal((completion.p_buyer as Row).email, f.email)
   assert.deepEqual(completion.p_seller, platformSeller.getEbFollowUpPlatformSeller())
-  assert.equal(completion.p_terms_version, '2026-09-08')
+  assert.equal(completion.p_terms_version, '2026-09-08.2')
   const mails = completion.p_emails as Array<{ kind: string; ciphertext: string; dedupeKey: string }>
   const invoice = JSON.parse(mails.find(mail => mail.kind === 'invoice')!.ciphertext)
   assert.equal(invoice.to, 'jn@hedbjorn.se')
@@ -181,6 +203,16 @@ test('a new purchase queues full manual invoice material only to Admin and a sep
     assert.ok(invoice.text.includes(text), `Missing invoice material: ${text}`)
   }
   assert.equal(JSON.parse(mails.find(mail => mail.kind === 'receipt')!.ciphertext).to, f.email)
+  const receipt = JSON.parse(mails.find(mail => mail.kind === 'receipt')!.ciphertext)
+  const saved = (completion.p_buyer as Shared.EbFollowUpBuyer).acceptanceSnapshot!
+  assert.ok(receipt.text.includes(saved.termsText), 'Receipt contains the complete archived terms, not a mutable link alone')
+  for (const text of Object.values(saved.consentTexts)) assert.ok(receipt.text.includes(text))
+  assert.ok(receipt.text.includes(saved.withdrawalDeadline))
+  assert.ok(receipt.text.includes(saved.acceptedAt))
+  assert.match(receipt.text, /Underskrift \(endast om blanketten skickas på papper\)/)
+  assert.ok(receipt.html.includes(`href="https://hushub.test/atgarder/${f.ownerToken}#angra-bestallning"`))
+  assert.ok(receipt.html.includes(terms.EB_FOLLOW_UP_WITHDRAWAL_FORM_URL))
+  assert.ok(invoice.text.includes(saved.withdrawalDeadline))
   assert.equal(f.state.session?.kind, 'owner')
   const before = f.state.rpcs.length
   f.state.designated = 'later-project-contact@example.test'

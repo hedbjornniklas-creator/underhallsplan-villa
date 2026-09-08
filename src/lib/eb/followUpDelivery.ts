@@ -67,8 +67,18 @@ async function expandNotification(row: OutboxRow) {
   let text: string
   if (row.kind === 'withdrawal') {
     recipients = [buyerEmail, sellerEmail, EB_FOLLOW_UP_ADMIN_EMAIL]
-    subject = 'Begäran att frånträda digital åtgärdsuppföljning mottagen'
-    text = `Vi har tagit emot begäran att frånträda beställning ${order.id}. Begäran registrerades ${order.withdrawal_requested_at}. Fakturaunderlaget är pausat för manuell hantering. Entreprenörens möjlighet att lämna nya svar är pausad. Tidigare underlag finns kvar i portalen. Detta är en mottagningsbekräftelse, inte ett besked om återbetalning. Kontakta ${seller.email} vid frågor.`
+    subject = `Mottagningsbekräftelse – frånträde av beställning ${order.id}`
+    text = [
+      'Vi har tagit emot din begäran att frånträda beställningen av digital åtgärdsuppföljning.',
+      `Beställare: ${buyer.name || 'Beställaren'}`,
+      `Beställningsnummer: ${order.id}`,
+      `Registrerad tidpunkt: ${order.withdrawal_requested_at}`,
+      `Bekräftelse till: ${buyerEmail}`,
+      '',
+      'Fakturaunderlaget och nya åtgärdssvar är pausade för manuell hantering. Tidigare underlag och historik finns kvar i portalen.',
+      'Detta är en mottagningsbekräftelse, inte ett beslut om betalning eller återbetalning. Begäran bedöms enligt avtalsvillkoren och tillämpliga regler.',
+      `Kontakta ${seller.email} vid frågor.`,
+    ].join('\n')
   } else {
     const { data: event, error: eventError } = await admin.from('eb_remediation_events')
       .select('task_id,event_type,actor_email').eq('id', row.event_id).single()
@@ -96,7 +106,7 @@ async function expandNotification(row: OutboxRow) {
     const recipientKey = createHash('sha256').update(to).digest('hex').slice(0, 24)
     await queueEbFollowUpEmail({
       orderId: order.id, dedupeKey: `notification:${row.id}:${recipientKey}`,
-      to, replyTo: seller.email, subject, text, html: `<p>${escapeEbFollowUpHtml(text)}</p>`,
+      to, replyTo: seller.email, subject, text, html: `<p style="white-space:pre-line">${escapeEbFollowUpHtml(text)}</p>`,
     })
   }
 }

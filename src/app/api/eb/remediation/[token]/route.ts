@@ -3,7 +3,6 @@ import {
   getEbRemediationWorkspaceByToken,
   performEbRemediationTokenAction,
 } from '@/lib/eb/remediation'
-import { requestEbOwnerAccessCode, verifyEbOwnerAccessCode } from '@/lib/eb/ownerAuth'
 import { requestEbFollowUpOwnerRenewal } from '@/lib/eb/followUpServer'
 import { assertEbCustomerRequestOrigin } from '@/lib/eb/customerSession'
 
@@ -23,10 +22,11 @@ function json(body: unknown, status = 200) {
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : 'Okänt fel.'
   if (message === 'EB_CUSTOMER_ORIGIN_FORBIDDEN') return jsonError('Begäran måste göras från den här webbplatsen.', 403)
-  if (message === 'EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED') return jsonError('Verifiera din e-post för att öppna den personliga portalen. Ladda om sidan för att ange en engångskod.', 403)
+  if (message === 'EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED') return jsonError('Öppna din personliga åtgärdslänk igen.', 403)
   if (message === 'EB_REMEDIATION_OWNER_LINK_EXPIRED') return jsonError('Länken har gått ut. Ladda om sidan för att begära en ny personlig länk.', 410)
   if (message === 'EB_REMEDIATION_CONFLICT') return jsonError('Punkten ändrades av någon annan. Aktuella uppgifter har hämtats. Din osparade text finns kvar; kontrollera läget och försök igen.', 409)
   if (message === 'EB_FOLLOW_UP_ORDER_INACTIVE') return jsonError('Uppföljningen är pausad. Befintlig historik finns kvar.', 403)
+  if (message === 'EB_FOLLOW_UP_WITHDRAWAL_CONFIRMATION_REQUIRED') return jsonError('Kontrollera beställningen och bekräfta att du vill frånträda den.', 400)
   if (message === 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED') return jsonError('Lägg till en åtgärdsbild eller en förklarande kommentar om arbetet inte kan fotograferas.', 400)
   if (message === 'EB_FOLLOW_UP_RATE_LIMITED') return jsonError('Vänta en stund innan du begär en ny länk.', 429)
   if (message.startsWith('EB_FOLLOW_UP_MAIL_') || message === 'EB_FOLLOW_UP_CONFIGURATION' || message === 'EB_FOLLOW_UP_UNAVAILABLE') return jsonError('Tjänsten kunde inte slutföra åtgärden just nu. Försök igen om en stund.', 503)
@@ -75,10 +75,6 @@ export async function POST(
     const payload = body.payload && typeof body.payload === 'object'
       ? (body.payload as Record<string, unknown>)
       : {}
-    if (action === 'request_owner_code') return json(await requestEbOwnerAccessCode({ token }))
-    if (action === 'verify_owner_code') return json(await verifyEbOwnerAccessCode({
-      token, challengeId: payload.challengeId, code: payload.code,
-    }))
     if (action === 'renew_owner_link') return json(await requestEbFollowUpOwnerRenewal({
       accessToken: token, baseUrl: new URL(request.url).origin,
     }))

@@ -137,6 +137,10 @@ export type EbRemediationWorkspace = {
     acceptedAt: string | null
     withdrawalRequestedAt: string | null
     status: string
+    buyerName?: string | null
+    receiptEmail?: string | null
+    customerType?: 'consumer' | 'business' | null
+    withdrawalDeadline?: string | null
   } | null
   assignees: EbRemediationAssignee[]
   tasks: EbRemediationTask[]
@@ -468,9 +472,24 @@ async function syncRemediationTasks(project: EbProjectListItem) {
   }
 }
 
+function followUpWithdrawalDetails(snapshot: unknown) {
+  const buyer = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+    ? snapshot as Record<string, unknown> : {}
+  const acceptance = buyer.acceptanceSnapshot && typeof buyer.acceptanceSnapshot === 'object' && !Array.isArray(buyer.acceptanceSnapshot)
+    ? buyer.acceptanceSnapshot as Record<string, unknown> : {}
+  const customerType: 'consumer' | 'business' | null = buyer.customerType === 'consumer' || buyer.customerType === 'business' ? buyer.customerType : null
+  return {
+    buyerName: typeof buyer.name === 'string' ? buyer.name : null,
+    receiptEmail: typeof buyer.email === 'string' ? buyer.email : null,
+    customerType,
+    withdrawalDeadline: customerType === 'consumer' && typeof acceptance.withdrawalDeadline === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(acceptance.withdrawalDeadline) ? acceptance.withdrawalDeadline : null,
+  }
+}
+
 async function requireFollowUpOrder(input: { orgId: string; projectId: string; orderId: string }) {
   const { data, error } = await createSupabaseAdminClient().from('eb_follow_up_orders')
-    .select('id,inspection_id,report_snapshot,status,accepted_at,withdrawal_requested_at')
+    .select('id,inspection_id,report_snapshot,buyer_snapshot,status,accepted_at,withdrawal_requested_at')
     .eq('id', input.orderId).eq('org_id', input.orgId).eq('eb_project_id', input.projectId).maybeSingle()
   if (error) throw new Error(error.message)
   if (!data || data.status !== 'active') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
@@ -495,6 +514,8 @@ async function loadWorkspace(input: {
   const followUp = order ? {
     id: order.id, acceptedAt: order.accepted_at,
     withdrawalRequestedAt: order.withdrawal_requested_at, status: order.status,
+    // The receipt identity belongs only in the buyer's private workspace.
+    ...(access?.role === 'customer_owner' ? followUpWithdrawalDetails(order.buyer_snapshot) : {}),
   } : null
   const state = input.state ?? 'open'
   const inspectionId = access?.inspection_id ?? normalizeText(input.inspectionId)
@@ -1381,6 +1402,7 @@ export async function performEbRemediationTokenAction(input: {
 
   if (input.action === 'withdraw_order') {
     if (access.role !== 'customer_owner' || !access.follow_up_order_id) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    if (input.payload.confirmed !== true) throw new Error('EB_FOLLOW_UP_WITHDRAWAL_CONFIRMATION_REQUIRED')
     await withdrawEbFollowUpOrder({ orderId: access.follow_up_order_id, actorEmail: access.email, baseUrl: appBaseUrl(input.requestOrigin) })
   } else if (input.action === 'comment') {
     if (!ebRemediationCanComment(access.role)) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')

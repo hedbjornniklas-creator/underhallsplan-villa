@@ -30,7 +30,8 @@ const initial = role => ({
   access: { id: role, role, displayName: role === 'customer_owner' ? 'Testbeställare' : 'Testutförare',
     email: 'person@example.invalid', assigneeId: role === 'assignee' ? 'worker' : null,
     expiresAt: '2027-01-01T00:00:00Z', followUpOrderId: 'order' },
-  followUp: { id: 'order', status: 'active', acceptedAt: '2026-09-07T10:00:00Z', withdrawalRequestedAt: null },
+  followUp: { id: 'order', status: 'active', acceptedAt: '2026-09-07T10:00:00Z', withdrawalRequestedAt: null,
+    buyerName: 'Testbeställare', receiptEmail: 'buyer@example.invalid', customerType: 'consumer', withdrawalDeadline: '2026-09-21' },
   assignees: [{ id: 'worker', name: 'Målare', companyName: 'Testmåleri AB', contactName: 'Testutförare',
     email: 'worker@example.invalid', phone: null, isActive: true }],
   tasks: [{ id: 'task', inspectionId: 'inspection', noteId: 'note', followUpOrderId: 'order',
@@ -108,7 +109,7 @@ try {
     await page.goto(url, { waitUntil: 'networkidle0' })
     await page.waitForSelector('article select')
     assert.match(await page.$eval('main', node => node.textContent), /Beställare · uppföljning/)
-    assert.equal(await page.$eval('header a[href="#follow-up-order"]', node => document.querySelector(node.getAttribute('href'))?.querySelector('h2')?.textContent), 'Din beställning')
+    assert.equal(await page.$eval('header a[href="#angra-bestallning"]', node => document.querySelector(node.getAttribute('href'))?.querySelector('h2')?.textContent), 'Ångra beställningen')
     await page.select('article select', 'worker')
     await page.waitForFunction(() => document.querySelector('article select')?.value === 'worker' && !document.querySelector('article select')?.disabled)
     assert.equal(posts[0].action, 'assign')
@@ -125,13 +126,21 @@ try {
     assert.equal(posts[1].payload.email, 'updated-worker@example.invalid')
     await page.screenshot({ path: resolve(output, `owner-${width}.png`), fullPage: true })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-    page.once('dialog', dialog => dialog.dismiss())
     await button('Ångra beställningen').click()
+    assert.match(await page.$eval('#withdrawal-review', node => node.textContent), /Testbeställare.*beställning order.*buyer@example.invalid/)
+    await button('Avbryt').click()
     assert.equal(posts.length, 3, 'dismissing withdrawal confirmation must not mutate the order')
-    page.once('dialog', dialog => dialog.accept())
     await button('Ångra beställningen').click()
-    await page.waitForFunction(() => document.body.textContent.includes('Din begäran om att ångra beställningen har registrerats'))
+    await page.screenshot({ path: resolve(output, `withdrawal-review-${width}.png`), fullPage: true })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await page.evaluate(() => {
+      const confirm = document.querySelector('#withdrawal-review button[type="submit"]')
+      confirm.click(); confirm.click()
+    })
+    await page.waitForFunction(() => document.body.textContent.includes('Din begäran har registrerats'))
     assert.equal(posts.at(-1).action, 'withdraw_order')
+    assert.deepEqual(posts.at(-1).payload, { confirmed: true })
+    assert.equal(posts.filter(post => post.action === 'withdraw_order').length, 1)
     assert.equal(await page.$('input[type=file]'), null)
     assert.equal(await page.$('#comment-task'), null)
     assert.equal(await page.$('input[aria-label="E-post"]'), null)
@@ -141,6 +150,7 @@ try {
     workspace = initial('assignee'); revision = 0; posts.length = 0
     await page.goto(url, { waitUntil: 'networkidle0' })
     await page.waitForSelector('#comment-task')
+    assert.equal(await page.$('#angra-bestallning'), null, 'only the buyer sees order withdrawal')
     assert.equal(await page.$('input[aria-label="E-post"]'), null)
     assert.match(await page.$eval('main', node => node.textContent), /Bilder i utlåtandet/)
     await button('Anmäl avhjälpt').click()

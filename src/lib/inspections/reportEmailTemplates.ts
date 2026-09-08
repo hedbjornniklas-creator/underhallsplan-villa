@@ -101,7 +101,7 @@ export function buildInspectionReportDeliveryEmail(
         backgroundColor: '#ffffff',
         textColor: '#3730a3',
         borderColor: '#3730a3',
-      })}<p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:#4b5563;">Som beställare kan du öppna hanteringen av din besiktning. Du behöver verifiera din e-postadress innan du får åtkomst.</p></div>`
+      })}<p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:#4b5563;">Detta är din personliga beställarlänk. Du kan läsa villkoren och beställa åtgärdsuppföljning. Att öppna länken skapar ingen beställning. Dela inte denna länk; använd Dela utlåtande för att dela själva rapporten.</p></div>`
     : ''
 
   const html = `
@@ -166,7 +166,7 @@ export function buildInspectionReportDeliveryEmail(
     `Öppna besiktningsutlåtande: ${input.detailsUrl}\n\n` +
     `På sidan kan du läsa, skriva ut och spara utlåtandet.` +
     (input.customerManagementUrl
-      ? `\n\nHantera din besiktning: ${input.customerManagementUrl}\nDu behöver verifiera din e-postadress innan du får åtkomst.`
+      ? `\n\nHantera din besiktning: ${input.customerManagementUrl}\nDetta är din personliga beställarlänk. Du kan läsa villkoren och beställa åtgärdsuppföljning. Att öppna länken skapar ingen beställning. Dela inte denna länk; använd Dela utlåtande för att dela själva rapporten.`
       : '')
 
   return { subject, html, text }

@@ -19,12 +19,23 @@ function load<T>(file: string, dependencies: Record<string, unknown>, expose: st
   const compiledModule = { exports: {} }
   new Function('require', 'exports', 'module', compiled)((id: string) => {
     if (id in dependencies) return dependencies[id]
+    if (id === '@/lib/eb/followUpTerms') return terms
+    if (id === '@/lib/eb/customerLinks') return { isEbCustomerLinkSessionActive: async () => true }
     if (id.startsWith('node:')) return require(id)
     throw new Error(`Unexpected I/O dependency ${id}`)
   }, compiledModule.exports, compiledModule)
   return compiledModule.exports as T
 }
 const shared = load<typeof FollowUp>('src/lib/eb/followUp.ts', {})
+const terms = load<typeof import('../src/lib/eb/followUpTerms')>('src/lib/eb/followUpTerms.ts', { './followUp': shared })
+function acceptance(customerType: 'consumer' | 'business' = 'consumer') {
+  const acceptedAt = new Date().toISOString()
+  const termsText = terms.getEbFollowUpTermsText({ seller: { name: 'Seller', email: 'seller@example.test', address: 'Street', orgNumber: '123' }, customerType })
+  return { termsVersion: shared.EB_FOLLOW_UP_TERMS_VERSION, termsText, termsHash: createHash('sha256').update(termsText).digest('hex'),
+    acceptedAt, withdrawalDeadline: customerType === 'consumer' ? terms.getEbFollowUpWithdrawalDeadline(acceptedAt) : null,
+    withdrawalFormUrl: terms.EB_FOLLOW_UP_WITHDRAWAL_FORM_URL, consentTexts: terms.getEbFollowUpConsentTexts(customerType),
+    consents: { acceptTerms: true, requestImmediateStart: true, acceptInvoice: true, consumerWithdrawalAcknowledged: customerType === 'consumer' } }
+}
 const db = new PGlite()
 const org = randomUUID()
 const migration = read('docs/db/2026-09-07_07_eb_follow_up_orders.sql')
@@ -38,7 +49,11 @@ before(async () => {
     create table eb_notes(id uuid primary key,org_id uuid references organizations,eb_project_id uuid references eb_projects,
       inspection_id uuid references inspections,trade_group text,responsible_party text,note_text text);
     create table inspection_report_links(id uuid primary key,org_id uuid references organizations,
-      inspection_id uuid references inspections,snapshot_payload jsonb,revoked_at timestamptz,created_at timestamptz default now());
+      inspection_id uuid references inspections,snapshot_payload jsonb,token_hash text,revoked_at timestamptz,created_at timestamptz default now());
+    create table eb_inspection_details(org_id uuid,eb_project_id uuid,inspection_id uuid);
+    create table eb_follow_up_customers(org_id uuid,eb_project_id uuid,inspection_id uuid,email text);
+    create function eb_resolve_follow_up_customer_email(p_org uuid,p_project uuid,p_inspection uuid) returns text language sql as $$
+      select email from eb_follow_up_customers where org_id=p_org and eb_project_id=p_project and inspection_id=p_inspection $$;
     create function eb_set_updated_at() returns trigger language plpgsql as $$ begin new.updated_at:=clock_timestamp();return new;end $$;
     create function is_org_member(uuid) returns boolean language sql stable as $$ select true $$;
     create schema storage;
@@ -50,6 +65,10 @@ before(async () => {
   await db.exec(migration)
   await db.exec(read('docs/db/2026-09-08_04_eb_follow_up_platform_seller.sql'))
   await db.exec(read('docs/db/2026-09-08_04_eb_follow_up_platform_seller.sql'))
+  await db.exec("alter table eb_follow_up_challenges add column purpose text not null default 'report'")
+  await db.exec(read('docs/db/2026-09-08_05_eb_follow_up_customer_links.sql'))
+  await db.exec(read('docs/db/2026-09-08_06_eb_follow_up_acceptance.sql'))
+  await db.exec(read('docs/db/2026-09-08_06_eb_follow_up_acceptance.sql'))
   await db.query('insert into organizations(id) values($1)', [org])
   await db.exec(`create function test_reject_follow_up_email() returns trigger language plpgsql as $$
     begin if current_setting('test.reject_follow_up_email',true)='yes' then raise exception 'TEST_QUEUE_FAILURE'; end if; return new;end $$;
@@ -62,19 +81,22 @@ async function fixture() {
   const inspection = randomUUID(), project = randomUUID(), link = randomUUID(), note = randomUUID(), challenge = randomUUID()
   await db.query('insert into eb_projects values($1,$2)', [project, org])
   await db.query('insert into inspections values($1)', [inspection])
+  await db.query('insert into eb_inspection_details values($1,$2,$3)', [org,project,inspection])
+  await db.query("insert into eb_follow_up_customers values($1,$2,$3,'buyer@example.test')", [org,project,inspection])
   await db.query('insert into eb_notes(id,org_id,eb_project_id,inspection_id,note_text) values($1,$2,$3,$4,$5)', [note, org, project, inspection, 'Live text'])
   const snapshot = { module: 'EB', report: { notes: [{ id: note, noteText: 'Published original' }] } }
   await db.query('insert into inspection_report_links(id,org_id,inspection_id,snapshot_payload) values($1,$2,$3,$4)', [link, org, inspection, snapshot])
+  await db.query('update inspection_report_links set token_hash=$2 where id=$1', [link,createHash('sha256').update(link).digest('hex')])
   const request = async (id = challenge, email = 'buyer@example.test', eligible = true) =>
     (await db.query<{ result: { limited: boolean } }>('select eb_request_follow_up_challenge($1,$2,$3,$4,$5,$6,$7,$8) result',
       [id, org, inspection, link, email, hash(id, '123456'), eligible, eligible ? 'encrypted-code' : null])).rows[0].result
   const verify = async (code = '123456', id = challenge) =>
     (await db.query<{ result: { verified: boolean; email?: string } }>('select eb_verify_follow_up_challenge($1,$2,$3) result', [id, link, hash(id, code)])).rows[0].result
-  const complete = async (id = challenge, email = 'buyer@example.test', create = true, terms: string | null = shared.EB_FOLLOW_UP_TERMS_VERSION) => {
+  const complete = async (id = challenge, email = 'buyer@example.test', create = true, terms: string | null = shared.EB_FOLLOW_UP_TERMS_VERSION, buyerExtra: Record<string, unknown> = {}) => {
     const owner = randomUUID()
     return (await db.query<{ result: { orderId: string; encryptedResult: string; created: boolean } }>(
       'select eb_complete_follow_up_order($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) result', [
-        id, link, id, project, { name: 'Buyer', email, invoiceName: 'Buyer', invoiceAddress: 'Street1', invoicePostalCode: '12345', invoiceCity: 'City' },
+        id, link, id, project, { name: 'Buyer', email, invoiceName: 'Buyer', invoiceAddress: 'Street1', invoicePostalCode: '12345', invoiceCity: 'City', customerType: 'consumer', acceptanceSnapshot: acceptance(), ...buyerExtra },
         { name: 'Seller', email: 'seller@example.test' },
         [{ noteId: note, snapshot: { originalNoteId: note, noteText: 'Published original' }, images: [{ filePath: `frozen/${id}/photo.jpg`, storageBucket: 'eb-follow-up-originals' }] }],
         { id: owner, tokenHash: `hash-${owner}`, expiresAt: new Date(Date.now()+180*86400_000).toISOString(), encryptedResult: `encrypted-url:${owner}` },
@@ -84,13 +106,14 @@ async function fixture() {
   return { inspection, project, link, note, challenge, snapshot, request, verify, complete }
 }
 
-test('fixed inclusive price and all three explicit consents are validated before purchase', () => {
+test('fixed inclusive price and all four explicit consumer consents are validated before purchase', () => {
   assert.equal(shared.EB_FOLLOW_UP_PRICE_ORE, 59900)
   assert.equal(shared.EB_FOLLOW_UP_NET_PRICE_ORE + shared.EB_FOLLOW_UP_VAT_ORE, shared.EB_FOLLOW_UP_PRICE_ORE)
   const valid = { name: 'Buyer', invoiceName: 'Recipient', invoiceAddress: 'Street1', invoicePostalCode: '12345', invoiceCity: 'City',
+    customerType: 'consumer', consumerWithdrawalAcknowledged: true,
     acceptTerms: true, requestImmediateStart: true, acceptInvoice: true, termsVersion: shared.EB_FOLLOW_UP_TERMS_VERSION, confirmedPriceOre: 59900 }
   assert.equal(shared.validateEbFollowUpBuyer(valid, 'buyer@example.test').email, 'buyer@example.test')
-  for (const key of ['acceptTerms','requestImmediateStart','acceptInvoice']) {
+  for (const key of ['acceptTerms','requestImmediateStart','acceptInvoice','consumerWithdrawalAcknowledged']) {
     for (const value of [false, undefined, 'true']) assert.throws(() => shared.validateEbFollowUpBuyer({ ...valid, [key]: value }, 'buyer@example.test'), /CONSENT_REQUIRED/)
   }
   for (const changed of [{ confirmedPriceOre: 50000 }, { termsVersion: 'old' }]) {
@@ -120,6 +143,50 @@ test('challenge creation is rate-limited atomically and wrong addresses receive 
   assert.deepEqual(await f.request(decoy, 'unknown@example.test', false), { limited: false })
   assert.equal((await db.query('select id from eb_follow_up_email_outbox where dedupe_key=$1', [`challenge:${decoy}`])).rows.length, 0)
   assert.deepEqual(await f.verify('123456', decoy), { verified: false })
+})
+
+test('database rejects missing consent evidence and shortened consumer deadlines without an order or invoice', async () => {
+  const f = await fixture()
+  await f.request(); await f.verify()
+  for (const overrides of [
+    { acceptanceSnapshot: null },
+    { customerType: null },
+    { acceptanceSnapshot: { ...acceptance(), consents: { ...acceptance().consents, consumerWithdrawalAcknowledged: false } } },
+    { acceptanceSnapshot: { ...acceptance(), consents: { ...acceptance().consents, acceptTerms: 'true' } } },
+    { acceptanceSnapshot: { ...acceptance(), withdrawalDeadline: new Date().toISOString().slice(0, 10) } },
+  ]) await assert.rejects(f.complete(f.challenge, 'buyer@example.test', true, shared.EB_FOLLOW_UP_TERMS_VERSION, overrides), /CONSENT_REQUIRED|TIME_INVALID/)
+  assert.equal((await db.query('select id from eb_follow_up_orders where inspection_id=$1', [f.inspection])).rows.length, 0)
+  const result = await f.complete()
+  const row = (await db.query<{ buyer_snapshot: { acceptanceSnapshot: ReturnType<typeof acceptance> }; accepted_at: Date }>('select buyer_snapshot,accepted_at from eb_follow_up_orders where id=$1', [result.orderId])).rows[0]
+  assert.equal(new Date(row.accepted_at).toISOString(), row.buyer_snapshot.acceptanceSnapshot.acceptedAt)
+  await assert.rejects(db.query("update eb_follow_up_orders set buyer_snapshot='{}' where id=$1", [result.orderId]), /IMMUTABLE/)
+})
+
+test('business order saves explicit customer type without consumer withdrawal deadline', async () => {
+  const f = await fixture()
+  await f.request(); await f.verify()
+  const result = await f.complete(f.challenge, 'buyer@example.test', true, shared.EB_FOLLOW_UP_TERMS_VERSION,
+    { customerType: 'business', acceptanceSnapshot: acceptance('business') })
+  const row = (await db.query<{ buyer_snapshot: { customerType: string; acceptanceSnapshot: ReturnType<typeof acceptance> } }>('select buyer_snapshot from eb_follow_up_orders where id=$1', [result.orderId])).rows[0]
+  assert.equal(row.buyer_snapshot.customerType, 'business')
+  assert.equal(row.buyer_snapshot.acceptanceSnapshot.withdrawalDeadline, null)
+})
+
+test('personal buyer link authorizes the real atomic purchase with current consent without an emailed code', async () => {
+  const f = await fixture()
+  const privateId = randomUUID(), privateHash = createHash('sha256').update(privateId).digest('hex')
+  const issued = (await db.query<{ result: { issued: boolean } }>('select eb_issue_follow_up_customer_link($1,$2,$3,$4,$5,null) result',
+    [privateId,createHash('sha256').update(f.link).digest('hex'),'buyer@example.test',privateHash,'encrypted-public-token'])).rows[0].result
+  assert.equal(issued.issued,true)
+  const opened = (await db.query<{ result: { authorized: boolean } }>('select eb_open_follow_up_customer_link($1,$2,$3) result',
+    [privateHash,f.challenge,hash(f.challenge,'123456')])).rows[0].result
+  assert.equal(opened.authorized,true)
+  assert.equal((await db.query("select id from eb_follow_up_email_outbox where kind='verification' and dedupe_key=$1", [`challenge:${f.challenge}`])).rows.length,0)
+  const result = await f.complete()
+  assert.equal(result.created,true)
+  assert.equal((await f.complete()).created,false)
+  const saved = (await db.query<{ buyer_snapshot: { acceptanceSnapshot: { termsVersion: string } } }>('select buyer_snapshot from eb_follow_up_orders where id=$1',[result.orderId])).rows[0]
+  assert.equal(saved.buyer_snapshot.acceptanceSnapshot.termsVersion,'2026-09-08.2')
 })
 
 test('incorrect verification attempts are committed and a correct sixth attempt cannot bypass the cap', async () => {
@@ -188,10 +255,13 @@ test('legacy paid orders retain their original seller and terms when recovered a
   const f = await fixture()
   const id = randomUUID()
   const legacySeller = { name: 'Historical inspecting company', email: 'original-seller@example.test' }
-  await db.query(`insert into eb_follow_up_orders(id,org_id,eb_project_id,inspection_id,report_link_id,
+  // Seed the historical order as it existed BEFORE the new-insert migration.
+  await db.exec('alter table eb_follow_up_orders disable trigger eb_follow_up_acceptance_required')
+  try { await db.query(`insert into eb_follow_up_orders(id,org_id,eb_project_id,inspection_id,report_link_id,
     report_snapshot,buyer_snapshot,seller_snapshot,terms_version,accept_terms,request_immediate_start,accept_invoice)
     values($1,$2,$3,$4,$5,$6,$7,$8,'2026-09-07',true,true,true)`,
     [id, org, f.project, f.inspection, f.link, f.snapshot, { name: 'Original buyer', email: 'buyer@example.test' }, legacySeller])
+  } finally { await db.exec('alter table eb_follow_up_orders enable trigger eb_follow_up_acceptance_required') }
   await f.request(); await f.verify()
   const recovered = await f.complete(f.challenge, 'buyer@example.test', false, '2026-09-07')
   assert.equal(recovered.orderId, id)

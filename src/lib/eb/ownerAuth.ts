@@ -3,7 +3,7 @@ import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { normalizeEbFollowUpEmail } from '@/lib/eb/followUp'
 import { encryptEbFollowUpPayload, escapeEbFollowUpHtml, type EbFollowUpEmail } from '@/lib/eb/followUpDelivery'
-import { readEbCustomerSession, setEbCustomerSession } from '@/lib/eb/customerSession'
+import { setEbCustomerSession } from '@/lib/eb/customerSession'
 
 const GENERIC_CODE_MESSAGE = 'Om länken hör till en beställarportal skickas en engångskod till beställarens verifierade e-postadress. Kontrollera även skräpposten. Koden gäller i 15 minuter.'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -41,12 +41,9 @@ export async function assertEbRemediationOwnerSession(access: OwnerAccess): Prom
   }
   const order = await loadOwnerOrder(access)
   if (!order || !access.inspection_id) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
-  const session = await readEbCustomerSession(access.inspection_id)
-  if (!session || session.orgId !== access.org_id || session.inspectionId !== access.inspection_id ||
-      !['report', 'owner'].includes(session.kind) || !Number.isFinite(session.expiresAt) || session.expiresAt <= Date.now() ||
-      normalizeEbFollowUpEmail(session.email) !== order.email) {
-    throw new Error('EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED')
-  }
+  // The caller has just resolved the separate, high-entropy owner bearer token
+  // from eb_remediation_access_links. Its scoped frozen order is authority, like
+  // assignment acceptance links; an additional email code is not required.
 }
 
 async function loadOwnerContext(token: string) {

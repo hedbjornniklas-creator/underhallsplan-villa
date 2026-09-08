@@ -4,10 +4,10 @@ import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import {
-  ebFollowUpCustomerEntryUrl,
   getEbFollowUpDeliveryCustomerDefaults,
   initializeEbFollowUpDeliveryCustomer,
 } from '@/lib/eb/followUpCustomer'
+import { issueEbCustomerLink } from '@/lib/eb/customerLinks'
 import {
   createEbReportSnapshotPayloadV1,
   isEbReportSnapshotPayloadV1,
@@ -893,6 +893,7 @@ export async function POST(
     const publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(createdLink.token)}`
     let reportLockedAt = inspection.reportLockedAt
     let customerEmail: string | null = null
+    let customerManagementUrl: string | null = null
     let publicationPersisted = false
 
     try {
@@ -921,6 +922,10 @@ export async function POST(
           throw new Error('EB_DELIVERY_CUSTOMER_CHANGED')
         }
         customerEmail = registeredCustomer.email
+        customerManagementUrl = await issueEbCustomerLink({
+          publicToken: createdLink.token, email: registeredCustomer.email!, baseUrl: publicBaseUrl,
+        })
+        if (!customerManagementUrl) throw new Error('EB_DELIVERY_CUSTOMER_CHANGED')
       }
       if (!sendingFrozenRevision) {
         await revokeOlderReportLinks(admin, {
@@ -965,7 +970,7 @@ export async function POST(
       for (const recipient of recipients) {
         const emailContent = buildInspectionReportDeliveryEmail({
           ...emailInput,
-          customerManagementUrl: ebFollowUpCustomerEntryUrl(publicLink, recipient, customerEmail),
+          customerManagementUrl: recipient === customerEmail ? customerManagementUrl : null,
         })
         let messageId: string | null = null
         try {

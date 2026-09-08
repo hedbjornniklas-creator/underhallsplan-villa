@@ -157,9 +157,9 @@ async function fixture() {
     calls, state, saved, admin, auth, access, session, request, code }
 }
 
-test('paid owner access requires the verified browser session; contractor access remains bearer-only', async () => {
+test('paid owner access uses its personal scoped bearer link without an email code or cookie', async () => {
   const f = await fixture()
-  await assert.rejects(f.auth.assertEbRemediationOwnerSession(await f.access()), /OWNER_VERIFICATION_REQUIRED/)
+  await f.auth.assertEbRemediationOwnerSession(await f.access())
   await f.auth.assertEbRemediationOwnerSession(await f.access(f.worker))
   assert.equal(f.saved.length, 0)
   for (const kind of ['report', 'owner'] as const) {
@@ -168,7 +168,7 @@ test('paid owner access requires the verified browser session; contractor access
   }
   for (const patch of [{ orgId: randomUUID() }, { inspectionId: randomUUID() }, { email: 'forwarded@example.test' }, { expiresAt: Date.now() - 1 }]) {
     f.state.session = f.session(patch)
-    await assert.rejects(f.auth.assertEbRemediationOwnerSession(await f.access()), /OWNER_VERIFICATION_REQUIRED/)
+    await f.auth.assertEbRemediationOwnerSession(await f.access())
   }
 })
 
@@ -210,7 +210,7 @@ test('owner OTP uses the frozen buyer and purchased report even after public rep
   assert.ok(f.saved[0].expiresAt <= Date.now() + 8 * 3600_000)
   await f.auth.assertEbRemediationOwnerSession(await f.access())
   f.state.session = null // Same link forwarded to a different browser.
-  await assert.rejects(f.auth.assertEbRemediationOwnerSession(await f.access()), /OWNER_VERIFICATION_REQUIRED/)
+  await f.auth.assertEbRemediationOwnerSession(await f.access())
   assert.equal((await db.query('select id from eb_follow_up_orders where inspection_id=$1', [f.inspection])).rows.length, 1)
   assert.deepEqual((await db.query<{ kind: string }>('select kind from eb_follow_up_email_outbox where order_id=$1', [f.order])).rows.map(row => row.kind), ['verification'])
 })
@@ -327,36 +327,38 @@ async function protectedFixture() {
   return { ...f, service, api, images, context }
 }
 
-test('the actual workspace, mutation and image upload services stop before private reads or writes for an unverified owner', async () => {
+test('the actual workspace, mutation and image upload services stop before private reads for revoked owner links', async () => {
   const f = await protectedFixture()
-  await assert.rejects(f.service.getEbRemediationWorkspaceByToken(f.token), /OWNER_VERIFICATION_REQUIRED/)
+  await db.query('update eb_remediation_access_links set revoked_at=now() where id=$1', [f.owner])
+  await assert.rejects(f.service.getEbRemediationWorkspaceByToken(f.token), /ACCESS_REVOKED/)
   await assert.rejects(f.service.performEbRemediationTokenAction({ token: f.token, action: 'comment', payload: {
     taskId: randomUUID(), message: 'forged', session: f.session(),
-  } }), /OWNER_VERIFICATION_REQUIRED/)
+  } }), /ACCESS_REVOKED/)
   await assert.rejects(f.service.uploadEbRemediationImageByToken({ token: f.token, taskId: randomUUID(),
-    file: new File(['not-read'], 'photo.png', { type: 'image/png' }) }), /OWNER_VERIFICATION_REQUIRED/)
+    file: new File(['not-read'], 'photo.png', { type: 'image/png' }) }), /ACCESS_REVOKED/)
   assert.equal(f.calls.includes('PRIVATE_PROJECT_READ'), false)
   assert.ok(f.calls.every(call => ['read:eb_remediation_access_links', 'read:eb_follow_up_orders'].includes(call)))
-  f.state.session = f.session()
+  await db.query('update eb_remediation_access_links set revoked_at=null where id=$1', [f.owner])
   await assert.rejects(f.service.getEbRemediationWorkspaceByToken(f.token), /PRIVATE_PROJECT_READ/)
 })
 
-test('HTTP workspace and image routes reject forged client sessions and cross-site posts without private payloads', async () => {
+test('HTTP workspace and image routes reject revoked links and cross-site posts without private payloads', async () => {
   const f = await protectedFixture()
+  await db.query('update eb_remediation_access_links set revoked_at=now() where id=$1', [f.owner])
   const get = await f.api.GET(new Request('https://example.test/api/owner'), f.context)
-  assert.equal(get.status, 403)
+  assert.equal(get.status, 410)
   assert.match(get.headers.get('cache-control') ?? '', /no-store/)
   const post = await f.api.POST(new Request('https://example.test/api/owner', {
     method: 'POST', headers: { Origin: 'https://example.test', 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'withdraw_order', session: f.session(), payload: { session: f.session() } }),
   }), f.context)
-  assert.equal(post.status, 403)
+  assert.equal(post.status, 410)
   const form = new FormData()
   form.set('taskId', randomUUID()); form.set('file', new File(['image'], 'photo.png', { type: 'image/png' }))
   const image = await f.images.POST(new Request('https://example.test/api/owner/images', {
     method: 'POST', headers: { Origin: 'https://example.test' }, body: form,
   }), f.context)
-  assert.equal(image.status, 403)
+  assert.equal(image.status, 410)
   for (const response of [get, post, image]) assert.doesNotMatch(await response.text(), /PRIVATE|frozen-buyer|workspace|invoiceAddress/)
   f.calls.length = 0
   for (const origin of ['https://attacker.test', '']) {
@@ -372,27 +374,23 @@ test('HTTP workspace and image routes reject forged client sessions and cross-si
   assert.deepEqual(f.calls, [])
 })
 
-test('owner OTP and expired-link renewal endpoints return only generic metadata, never a workspace or selected email', async () => {
+test('expired-link renewal returns only generic metadata and the API no longer exposes OTP actions', async () => {
   const f = await protectedFixture()
   const post = (action: string, payload: Row = {}) => f.api.POST(new Request('https://example.test/api/owner', {
     method: 'POST', headers: { Origin: 'https://example.test', 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, payload }),
   }), f.context)
-  const issued = await (await post('request_owner_code', { email: 'attacker@example.test' })).json()
-  const otp = await f.code(issued.challengeId)
-  assert.equal(otp.mail.to, f.email)
-  const verified = await (await post('verify_owner_code', { challengeId: issued.challengeId, code: otp.value, session: f.session({ email: 'attacker@example.test' }) })).json()
-  assert.deepEqual(verified, { verified: true })
+  assert.doesNotMatch(read('src/app/api/eb/remediation/[token]/route.ts'), /request_owner_code|verify_owner_code/)
   const renewed = await (await post('renew_owner_link')).json()
   assert.deepEqual(Object.keys(renewed), ['message'])
-  assert.doesNotMatch(JSON.stringify([issued, verified, renewed]), /PRIVATE|frozen-buyer|workspace|invoiceAddress/)
+  assert.doesNotMatch(JSON.stringify(renewed), /PRIVATE|frozen-buyer|workspace|invoiceAddress/)
 })
 
-test('the server page renders a neutral OTP or renewal gate without passing customer details to the browser', async () => {
+test('an expired owner link renders only a renewal gate without customer details or OTP fields', async () => {
   const verifier = () => null
   const portal = () => null
   type Page = { default: (props: { params: Promise<{ token: string }> }) => Promise<{ type: unknown; props: Row }> }
-  for (const message of ['EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED', 'EB_REMEDIATION_OWNER_LINK_EXPIRED']) {
+  for (const message of ['EB_REMEDIATION_OWNER_LINK_EXPIRED']) {
     const page = load<Page>('src/app/atgarder/[token]/page.tsx', {
       'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') } },
       '@/components/eb/EbOwnerAccessVerifier': { __esModule: true, default: verifier },
@@ -401,6 +399,7 @@ test('the server page renders a neutral OTP or renewal gate without passing cust
     })
     const rendered = await page.default({ params: Promise.resolve({ token: 'test-token' }) })
     assert.equal(rendered.type, verifier)
-    assert.deepEqual(rendered.props, { endpoint: '/api/eb/remediation/test-token', expired: message.endsWith('LINK_EXPIRED') })
+    assert.deepEqual(rendered.props, { endpoint: '/api/eb/remediation/test-token' })
   }
+  assert.doesNotMatch(read('src/components/eb/EbOwnerAccessVerifier.tsx'), /engångskod|request_owner_code|verify_owner_code|one-time-code/)
 })

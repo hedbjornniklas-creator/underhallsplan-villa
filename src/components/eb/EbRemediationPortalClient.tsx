@@ -182,6 +182,8 @@ export default function EbRemediationPortalClient({
   const [comments, setComments] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState<Record<string, number>>({})
   const uploadingTaskIdsRef = useRef(new Set<string>())
+  const [reviewWithdrawal, setReviewWithdrawal] = useState(false)
+  const withdrawalReviewRef = useRef<HTMLParagraphElement>(null)
 
   const role = workspace.access.role
   const paid = Boolean(workspace.followUp)
@@ -190,6 +192,11 @@ export default function EbRemediationPortalClient({
   const canRespond = role === 'assignee' || role === 'contractor_admin'
   const isReadOnly = withdrawalPending || !ebRemediationCanComment(role)
   const isBusy = Boolean(busyKey) || Object.keys(uploading).length > 0
+  const consumerOrder = workspace.followUp?.customerType === 'consumer'
+  const businessOrder = workspace.followUp?.customerType === 'business'
+  const withdrawalLabel = consumerOrder ? 'Ångra beställningen' : businessOrder ? 'Begär avbeställning' : 'Frånträd beställningen'
+  const withdrawalBuyerName = workspace.followUp?.buyerName || workspace.access.displayName || 'Beställaren'
+  const withdrawalReceiptEmail = workspace.followUp?.receiptEmail || workspace.access.email
 
   const handleBackNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
     if (backNavigationPending) {
@@ -232,6 +239,9 @@ export default function EbRemediationPortalClient({
   }, [scopedEndpoint, applyWorkspace])
 
   useEffect(() => () => { if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current) }, [])
+  useEffect(() => {
+    if (reviewWithdrawal && !withdrawalPending) withdrawalReviewRef.current?.focus()
+  }, [reviewWithdrawal, withdrawalPending])
 
   const callAction = async (action: string, payload: Record<string, unknown>, key = action) => {
     if (busyKeyRef.current || uploadingTaskIdsRef.current.size > 0) return false
@@ -480,7 +490,7 @@ export default function EbRemediationPortalClient({
               {role === 'customer_owner' ? 'Beställare · uppföljning' : role === 'internal' ? 'Besiktningsman' : role === 'contractor_admin' ? (paid ? 'Entreprenör' : 'Entreprenör · administratör') : role === 'contractor_viewer' ? 'Entreprenör · läsbehörighet' : 'Utförare'}
             </span>
             {paid && role === 'customer_owner' ? (
-              <a href="#follow-up-order" className="inline-flex items-center rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50">Din beställning</a>
+              <a href="#angra-bestallning" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-emerald-700 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={16} />{withdrawalPending ? 'Beställning och registrerad begäran' : withdrawalLabel}</a>
             ) : null}
             <button type="button" onClick={() => void reload()} disabled={isBusy} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50" title="Uppdatera" aria-label="Uppdatera">
               <RefreshCw size={16} className={busyKey === 'reload' ? 'animate-spin' : ''} />
@@ -725,12 +735,39 @@ export default function EbRemediationPortalClient({
           )}
         </section>
 
-        {paid && role === 'customer_owner' ? <section id="follow-up-order" className="scroll-mt-5 rounded-md border border-gray-200 bg-white p-4 text-sm print:hidden">
-          <h2 className="font-semibold">Din beställning</h2>
+        {paid && role === 'customer_owner' ? <section id="angra-bestallning" aria-labelledby="withdrawal-heading" className="scroll-mt-5 rounded-md border border-emerald-300 bg-white p-4 text-sm [overflow-wrap:anywhere] print:hidden">
+          <h2 id="withdrawal-heading" className="flex items-center gap-2 text-base font-semibold"><RotateCcw size={18} />{withdrawalPending ? 'Registrerad begäran' : withdrawalLabel}</h2>
+          <div id="follow-up-order" className="scroll-mt-5">
+          <h3 className="mt-3 font-semibold">Din beställning</h3>
           <p className="mt-1 text-gray-600">Beställd {formatDateTime(workspace.followUp?.acceptedAt ?? null)} · 599 kr inklusive moms.</p>
-          {workspace.followUp?.withdrawalRequestedAt ? <p className="mt-2 text-emerald-800">Din begäran om att ångra beställningen har registrerats. Faktureringen är pausad för hantering. Befintlig historik finns kvar.</p> : <button type="button" disabled={isBusy} onClick={() => {
-            if (window.confirm('Vill du ångra beställningen av digital uppföljning? Din begäran registreras och faktureringen pausas för hantering.')) void callAction('withdraw_order', {})
-          }} className="mt-3 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold disabled:opacity-50">Ångra beställningen</button>}
+          <dl className="mt-3 grid gap-x-4 gap-y-1 sm:grid-cols-[max-content_minmax(0,1fr)]">
+            <dt className="font-medium">Beställare</dt><dd className="break-words">{withdrawalBuyerName}</dd>
+            <dt className="font-medium">Beställningsnummer</dt><dd className="break-all">{workspace.followUp?.id}</dd>
+            <dt className="font-medium">Bekräftelse skickas till</dt><dd className="break-all">{withdrawalReceiptEmail || 'Beställarens registrerade e-postadress'}</dd>
+          </dl>
+          </div>
+          {workspace.followUp?.withdrawalRequestedAt ? <div role="status" className="mt-4 border-l-4 border-emerald-600 bg-emerald-50 p-3 text-emerald-950">
+            <p className="font-semibold">Din begäran har registrerats {formatDateTime(workspace.followUp.withdrawalRequestedAt)}.</p>
+            <p className="mt-2">Mottagningsbekräftelsen ligger i e-postkön till {withdrawalReceiptEmail || 'din registrerade e-postadress'}. Faktureringen och nya åtgärdssvar är pausade för hantering. Befintlig historik finns kvar.</p>
+            <p className="mt-2">Detta bekräftar mottagandet av din begäran, inte ett beslut om återbetalning.</p>
+          </div> : <>
+            {consumerOrder ? <p className="mt-4 leading-6 text-gray-700">Som konsument har du normalt 14 dagars ångerrätt.{workspace.followUp?.withdrawalDeadline ? ` Enligt beställningsbekräftelsen är sista ordinarie ångerdag ${workspace.followUp.withdrawalDeadline} (svensk tid).` : ''} Omedelbar aktivering tar inte i sig bort ångerrätten. Du kan lämna en begäran även efter detta; den bedöms då utifrån omständigheterna.</p>
+              : businessOrder ? <p className="mt-4 leading-6 text-gray-700">Beställningen gäller ett företag eller en organisation. Här kan du begära avbeställning. Begäran hanteras enligt avtalets villkor; konsumentens lagstadgade ångerrätt gäller inte.</p>
+              : <p className="mt-4 leading-6 text-gray-700">Här kan du meddela att du vill frånträda beställningen. För denna äldre beställning visas ingen beräknad ångerfrist. Begäran bedöms enligt dina villkor och tillämpliga regler.</p>}
+            {!reviewWithdrawal ? <button type="button" disabled={isBusy} aria-expanded={false} aria-controls="withdrawal-review" onClick={() => setReviewWithdrawal(true)} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-md border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-900 disabled:opacity-50"><RotateCcw size={16} />{withdrawalLabel}</button>
+              : <form id="withdrawal-review" aria-label="Bekräfta begäran" onSubmit={async event => {
+                event.preventDefault()
+                if (await callAction('withdraw_order', { confirmed: true })) setReviewWithdrawal(false)
+              }} className="mt-4 border-t border-gray-200 pt-4">
+                <p ref={withdrawalReviewRef} tabIndex={-1} className="font-semibold outline-none">Kontrollera uppgifterna ovan och bekräfta din begäran.</p>
+                <p className="mt-2 leading-6 text-gray-700">Jag, {withdrawalBuyerName}, meddelar att jag vill frånträda beställning {workspace.followUp?.id} av digital åtgärdsuppföljning. Bekräftelsen skickas till {withdrawalReceiptEmail || 'min registrerade e-postadress'}.</p>
+                <p className="mt-2 leading-6 text-gray-700">När du bekräftar registreras tidpunkten och faktureringen samt nya åtgärdssvar pausas för hantering. Underlag och historik bevaras. Eventuell betalning eller återbetalning bedöms separat.</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button type="submit" disabled={isBusy} className="inline-flex min-h-11 items-center gap-2 rounded-md bg-emerald-800 px-4 py-2 font-semibold text-white hover:bg-emerald-900 disabled:opacity-50">{busyKey === 'withdraw_order' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}{consumerOrder ? 'Bekräfta ånger' : 'Bekräfta begäran'}</button>
+                  <button type="button" disabled={isBusy} onClick={() => setReviewWithdrawal(false)} className="min-h-11 rounded-md border border-gray-300 px-4 py-2 font-semibold disabled:opacity-50">Avbryt</button>
+                </div>
+              </form>}
+          </>}
         </section> : null}
         <p className="pb-8 text-xs leading-5 text-gray-500 print:pb-0">Denna portal är en operativ åtgärdslista. Utlåtandet och dess låsta innehåll ändras inte av kommentarer, bilder, tilldelningar eller statusar här. Formell kontroll sker vid besiktning.</p>
       </div>

@@ -187,9 +187,9 @@ function orderRouteFixture() {
         calls.push({ name: 'offer', input: value })
         return { verified: false, offer: null, accessAvailable: true }
       },
-      requestEbFollowUpCode: async (input: unknown) => {
-        calls.push({ name: 'request_code', input })
-        return { challengeId: 'challenge', message: 'Kontrollera din e-post.' }
+      requestEbFollowUpCustomerLink: async (input: unknown) => {
+        calls.push({ name: 'request_link', input })
+        return { message: 'Kontrollera din e-post.' }
       },
       completeEbFollowUpOrder: async (input: unknown) => {
         calls.push({ name: 'complete', input })
@@ -210,16 +210,17 @@ function orderRouteFixture() {
   return { api, calls, state, context, post }
 }
 
-test('purchase HTTP boundary keeps GET read-only, forwards verification, and does not create an order on request_code', async () => {
+test('purchase HTTP boundary keeps GET read-only and link requests do not order or expose old OTP endpoints', async () => {
   const f = orderRouteFixture()
   const response = await f.api.GET(new Request('https://hushub.test/offer'), f.context)
   assert.equal(response.status, 200)
   assert.match(response.headers.get('Cache-Control') ?? '', /no-store/)
   assert.deepEqual(await response.json(), { verified: false, offer: null, accessAvailable: true })
   assert.deepEqual(f.calls, [{ name: 'offer', input: token }])
-  const code = await f.post({ action: 'request_code', email: 'buyer@example.test' })
+  for (const action of ['request_code', 'verify_code']) assert.equal((await f.post({ action })).status, 400)
+  const code = await f.post({ action: 'request_link', email: 'buyer@example.test' })
   assert.equal(code.status, 200)
-  assert.equal(f.calls[1].name, 'request_code')
+  assert.equal(f.calls[1].name, 'request_link')
   assert.equal(f.calls.some(call => call.name === 'complete'), false)
   const input = { action: 'order', challengeId: 'challenge', code: '123456', confirmedPriceOre: 59900,
     acceptTerms: true, requestImmediateStart: true, acceptInvoice: true, termsVersion: '2026-09-07' }

@@ -55,6 +55,12 @@ test('view-only recipient and paused-order writes are denied', async () => {
   assert.match((await response.json()).error, /historik finns kvar/)
 })
 
+test('withdrawing an order requires an explicit confirmation and returns actionable HTTP400', async () => {
+  const response = await actionError('EB_FOLLOW_UP_WITHDRAWAL_CONFIRMATION_REQUIRED')
+  assert.equal(response.status, 400)
+  assert.match((await response.json()).error, /Kontrollera beställningen och bekräfta/)
+})
+
 test('expired and revoked access remain HTTP410', async () => {
   assert.equal((await actionError('EB_REMEDIATION_ACCESS_EXPIRED')).status, 410)
   assert.equal((await actionError('EB_REMEDIATION_ACCESS_REVOKED')).status, 410)

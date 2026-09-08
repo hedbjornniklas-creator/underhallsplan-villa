@@ -16,7 +16,7 @@ function jsonError(message: string, status: number) {
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : 'Okänt fel.'
   if (message === 'EB_CUSTOMER_ORIGIN_FORBIDDEN') return jsonError('Begäran måste göras från den här webbplatsen.', 403)
-  if (message === 'EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED') return jsonError('Verifiera din e-post innan du lägger till bilder i den personliga portalen.', 403)
+  if (message === 'EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED') return jsonError('Öppna din personliga åtgärdslänk igen innan du lägger till bilder.', 403)
   if (message === 'EB_REMEDIATION_OWNER_LINK_EXPIRED') return jsonError('Länken har gått ut.', 410)
   if (message === 'EB_FOLLOW_UP_UNAVAILABLE' || message === 'EB_FOLLOW_UP_CONFIGURATION') return jsonError('Tjänsten är tillfälligt otillgänglig. Försök igen om en stund.', 503)
   if (message === 'EB_REMEDIATION_CONFLICT') return jsonError('Punkten ändrades av någon annan. Aktuella uppgifter har hämtats. Din osparade text finns kvar; kontrollera läget och försök igen.', 409)

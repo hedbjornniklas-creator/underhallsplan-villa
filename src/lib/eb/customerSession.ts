@@ -8,6 +8,7 @@ export type EbCustomerSession = {
   kind: 'report' | 'owner'
   expiresAt: number
   reportLinkId?: string
+  personalLinkId?: string
   challengeId?: string
   code?: string
   portalPath?: string
@@ -33,6 +34,7 @@ function valid(session: EbCustomerSession, now: number) {
     && (session.kind !== 'report' || (UUID.test(session.reportLinkId ?? '')
       && UUID.test(session.challengeId ?? '') && /^\d{6}$/.test(session.code ?? '')))
     && (!session.portalPath || /^\/atgarder\/[A-Za-z0-9_-]{20,200}$/.test(session.portalPath))
+    && (!session.personalLinkId || UUID.test(session.personalLinkId))
 }
 
 export function encodeEbCustomerSession(session: EbCustomerSession, now = Date.now()): string {

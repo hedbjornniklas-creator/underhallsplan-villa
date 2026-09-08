@@ -105,6 +105,8 @@ function fixture(legacy = false) {
     '@/lib/eb/followUpCustomer': { resolveEbFollowUpCustomer: async () => ({ email: 'buyer@example.test', source: 'confirmed' }) },
     '@/lib/eb/followUpSeller': { getEbFollowUpPlatformSeller: () => state.platformSellerAvailable ? seller : null },
     '@/lib/eb/customerSession': { readEbCustomerSession: async () => null },
+    '@/lib/eb/customerLinks': {},
+    '@/lib/eb/followUpTerms': {},
   })
   return { report, snapshot, rows, errors, failures, state, reads, seller, server, offer: () => server.getEbFollowUpOffer(token) }
 }
