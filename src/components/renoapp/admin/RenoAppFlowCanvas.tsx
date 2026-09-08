@@ -1,10 +1,10 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { ReactFlow, ReactFlowProvider, Handle, Position, useNodesState, useReactFlow, type Node, type NodeProps } from '@xyflow/react'
-import dagre from '@dagrejs/dagre'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { ReactFlow, ReactFlowProvider, Handle, Position, useNodesState, useReactFlow, type Node, type NodeProps, type NodeChange } from '@xyflow/react'
 import { Copy, GripVertical, Maximize, Minus, MoveRight, Plus, RotateCcw, Trash2, RefreshCw, CornerDownRight, X } from 'lucide-react'
 import { canChooseFlowTarget, flattenFlow, flowSubtreeIds, flowTarget, type FlowNode, type FlowMove, type FlowMovePreview } from '@/lib/renoapp/flowEditor'
+import { FLOW_CARD_WIDTH, FLOW_CARD_INITIAL_HEIGHT, FLOW_LAYOUT_VERSION, layoutFlow } from '@/lib/renoapp/flowLayout'
 import '@xyflow/react/dist/style.css'
 
 type DiagramNode = Node<{ item: FlowNode; expanded: boolean }, 'flowCard'>
@@ -19,15 +19,15 @@ type Props = {
   onReload: () => Promise<void>
 }
 type PositionMap = Record<string, { x: number; y: number }>
-const WIDTH = 240
-const HEIGHT = 156
 const colors = {
   stone: 'border-stone-300 bg-white', sky: 'border-sky-300 bg-sky-50',
   emerald: 'border-emerald-300 bg-emerald-50', amber: 'border-amber-300 bg-amber-50',
   rose: 'border-rose-300 bg-rose-50', violet: 'border-violet-300 bg-violet-50',
 }
 const labels = { root: 'Renoveringstyp', question: 'Fråga', option: 'Svar', document: 'Underlag', participant: 'Medverkande', flag: 'Flagga', status: 'Status' }
-const buttonClass = 'nodrag nopan inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-transparent text-stone-600 hover:border-stone-300 hover:bg-white disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-sky-600'
+const iconButtonClass = 'nodrag nopan inline-flex shrink-0 items-center justify-center rounded border border-transparent text-stone-600 hover:border-stone-300 hover:bg-white disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-sky-600'
+const buttonClass = `${iconButtonClass} h-7 w-7`
+const cardButtonClass = `${iconButtonClass} h-6 w-6`
 type Selection = { operation: 'move' | 'copy'; source: FlowNode; sourceId: string }
 const Actions = createContext<Pick<Props, 'onOpen' | 'onRemove' | 'onToggle' | 'disabled'> & {
   highlighted: string | null
@@ -45,28 +45,28 @@ function FlowCard({ id, data, selected }: NodeProps<DiagramNode>) {
   const target = actions.targetIds.has(id)
   const source = actions.selection?.sourceId === id
   const title = <span className="line-clamp-3 [overflow-wrap:anywhere]">{item.title}</span>
-  return <div data-flow-id={item.id} data-flow-target={choosing ? String(target) : undefined} className={`relative h-[156px] w-[240px] rounded-md border p-2.5 text-stone-900 shadow-sm ${colors[item.tone]} ${source || (!choosing && selected) ? 'ring-2 ring-sky-500' : ''} ${target || actions.highlighted === id ? 'ring-2 ring-emerald-600' : ''} ${choosing && !target && !source ? 'opacity-45' : ''}`}>
+  return <div data-flow-id={item.id} data-flow-target={choosing ? String(target) : undefined} style={{ width: FLOW_CARD_WIDTH }} className={`relative rounded-md border p-2 text-stone-900 shadow-sm ${colors[item.tone]} ${source || (!choosing && selected) ? 'ring-2 ring-sky-500' : ''} ${target || actions.highlighted === id ? 'ring-2 ring-emerald-600' : ''} ${choosing && !target && !source ? 'opacity-45' : ''}`}>
     {item.kind !== 'root' ? <Handle type="target" position={Position.Left} isConnectable={false} /> : null}
-    <div className="flex h-7 items-center justify-between gap-1">
-      <span className={`flow-drag-handle flex h-7 min-w-0 items-center gap-1 text-[11px] font-semibold text-stone-600 ${choosing ? '' : 'cursor-grab active:cursor-grabbing'}`} title="Flytta kortets placering">
+    <div className="flex h-6 items-center justify-between gap-1">
+      <span className={`flow-drag-handle flex h-6 min-w-0 items-center gap-1 text-[10px] font-semibold text-stone-600 ${choosing ? '' : 'cursor-grab active:cursor-grabbing'}`} title="Flytta kortets placering">
         <GripVertical size={15} className="shrink-0" />{labels[item.kind]}
       </span>
       <div className="flex shrink-0">
-        {!choosing && item.source ? <button type="button" className={buttonClass} disabled={actions.disabled} title="Flytta koppling" aria-label="Flytta koppling" onClick={() => actions.choose(id, item, 'move')}><MoveRight size={15} /></button> : null}
+        {!choosing && item.source ? <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Flytta koppling" aria-label="Flytta koppling" onClick={() => actions.choose(id, item, 'move')}><MoveRight size={15} /></button> : null}
         {!choosing && editable ? <>
-          <button type="button" className={buttonClass} disabled={actions.disabled} title="Skapa kopia" aria-label="Skapa kopia" onClick={() => actions.choose(id, item, 'copy')}><Copy size={15} /></button>
-          <button type="button" className={buttonClass} disabled={actions.disabled} title={item.kind === 'root' ? 'Radera renoveringstyp överallt' : 'Ta bort från flödet'} aria-label={item.kind === 'root' ? 'Radera renoveringstyp överallt' : 'Ta bort från flödet'} onClick={() => actions.onRemove(item)}><Trash2 size={15} /></button>
+          <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Skapa kopia" aria-label="Skapa kopia" onClick={() => actions.choose(id, item, 'copy')}><Copy size={15} /></button>
+          <button type="button" className={cardButtonClass} disabled={actions.disabled} title={item.kind === 'root' ? 'Radera renoveringstyp överallt' : 'Ta bort från flödet'} aria-label={item.kind === 'root' ? 'Radera renoveringstyp överallt' : 'Ta bort från flödet'} onClick={() => actions.onRemove(item)}><Trash2 size={15} /></button>
         </> : null}
-        {item.children.length ? <button type="button" className={`${buttonClass} relative z-20`} disabled={actions.disabled} title={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-label={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-expanded={data.expanded} onClick={() => actions.onToggle(item.id)}>{data.expanded ? <Minus size={15} /> : <Plus size={15} />}</button> : null}
+        {item.children.length ? <button type="button" className={`${cardButtonClass} relative z-20`} disabled={actions.disabled} title={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-label={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-expanded={data.expanded} onClick={() => actions.onToggle(item.id)}>{data.expanded ? <Minus size={15} /> : <Plus size={15} />}</button> : null}
       </div>
     </div>
-    {choosing ? <div className="mt-1 h-[60px] text-sm font-semibold leading-5">{title}</div> : <button type="button" className="nodrag nopan mt-1 block h-[60px] w-full text-left text-sm font-semibold leading-5 disabled:opacity-50" disabled={actions.disabled || !editable} aria-label={`Öppna ${item.title}`} title={item.title} onClick={() => actions.onOpen(item)}>{title}</button>}
-    <div className="mt-2 flex h-7 items-center gap-1 overflow-hidden">
-      {item.badges.map(badge => <span key={badge} title={badge} className="min-w-0 truncate rounded border border-stone-200 bg-white px-1.5 py-0.5 text-[10px]">{badge}</span>)}
+    {choosing ? <div className="mt-1 text-[13px] font-semibold leading-[17px]">{title}</div> : <button type="button" className="nodrag nopan mt-1 block w-full text-left text-[13px] font-semibold leading-[17px] disabled:opacity-50" disabled={actions.disabled || !editable} aria-label={`Öppna ${item.title}`} title={item.title} onClick={() => actions.onOpen(item)}>{title}</button>}
+    <div className="mt-1 flex h-4 items-center gap-1 overflow-hidden pr-4">
+      {item.badges.map(badge => <span key={badge} title={badge} className="min-w-0 truncate rounded border border-stone-200 bg-white px-1 text-[10px] leading-[14px]">{badge}</span>)}
     </div>
     {item.children.length ? <Handle type="source" position={Position.Right} isConnectable={false} /> : null}
     {choosing ? <button type="button" className="nodrag nopan absolute inset-0 z-10 rounded-md enabled:cursor-pointer enabled:hover:bg-emerald-100/35 focus-visible:outline-4 focus-visible:outline-emerald-700" disabled={actions.disabled || !target} aria-label={`Koppla hit: ${item.title}`} onClick={() => actions.selectTarget(id)}>
-      {target ? <CornerDownRight size={18} className="absolute bottom-3 right-3 rounded bg-white text-emerald-700" /> : null}
+      {target ? <CornerDownRight size={16} className="absolute bottom-2 right-2 rounded bg-white text-emerald-700" /> : null}
     </button> : null}
   </div>
 }
@@ -97,9 +97,26 @@ async function requestMove(move: FlowMove, version?: string) {
 function Canvas(props: Props) {
   const { root, expandedIds, disabled, onReload } = props
   const flow = useReactFlow<DiagramNode>()
-  const storageKey = `renoapp-flow-layout:v1:${root.id}`
+  const storageKey = `renoapp-flow-layout:${FLOW_LAYOUT_VERSION}:${root.id}`
   const positions = useRef<PositionMap>({})
   const [nodes, setNodes, onNodesChange] = useNodesState<DiagramNode>([])
+  const [cardHeights, setCardHeights] = useState<Record<string, number>>({})
+  const handleNodesChange = useCallback((changes: NodeChange<DiagramNode>[]) => {
+    onNodesChange(changes)
+    const dimensions = changes.filter(change => change.type === 'dimensions' && change.dimensions)
+    if (dimensions.length) setCardHeights(current => {
+      const next = { ...current }
+      let changed = false
+      for (const change of dimensions) {
+        if (change.type === 'dimensions' && change.dimensions && change.dimensions.height > 0
+          && next[change.id] !== change.dimensions.height) {
+          next[change.id] = change.dimensions.height
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [onNodesChange])
   const [highlighted, setHighlighted] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -113,19 +130,15 @@ function Canvas(props: Props) {
   const allOccurrences = useMemo(() => flattenFlow(root, null), [root])
   const occurrences = useMemo(() => flattenFlow(root, expandedIds), [root, expandedIds])
   const graph = useMemo(() => {
-    const layout = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
-    layout.setGraph({ rankdir: 'LR', nodesep: 28, ranksep: 72, marginx: 24, marginy: 24 })
-    occurrences.forEach(row => layout.setNode(row.id, { width: WIDTH, height: HEIGHT }))
-    occurrences.forEach(row => { if (row.parentId) layout.setEdge(row.parentId, row.id) })
-    dagre.layout(layout, { disableOptimalOrderHeuristic: true })
+    const layout = layoutFlow(occurrences, cardHeights)
     return {
       nodes: occurrences.map(row => ({ id: row.id, type: 'flowCard' as const, dragHandle: '.flow-drag-handle',
-        position: { x: layout.node(row.id).x - WIDTH / 2, y: layout.node(row.id).y - HEIGHT / 2 },
+        position: layout.get(row.id)!,
         data: { item: row.node, expanded: row.node === root || expandedIds.includes(row.node.id) } })),
       edges: occurrences.flatMap(row => row.parentId ? [{ id: `edge:${row.id}`, source: row.parentId, target: row.id,
-        type: 'smoothstep', style: { stroke: '#78716c', strokeWidth: 1.5 }, reconnectable: false, deletable: false }] : []),
+        type: 'smoothstep', pathOptions: { offset: 16, borderRadius: 5 }, style: { stroke: '#78716c', strokeWidth: 1.5 }, reconnectable: false, deletable: false }] : []),
     }
-  }, [occurrences, root, expandedIds])
+  }, [occurrences, root, expandedIds, cardHeights])
 
   useEffect(() => {
     positions.current = readPositions(storageKey)
@@ -190,8 +203,8 @@ function Canvas(props: Props) {
     if (!point) return null
     const cursor = flow.screenToFlowPosition({ x: point.clientX, y: point.clientY })
     return flow.getNodes().find(target => target.id !== node.id && !dragStart.current?.movingIds.has(target.id)
-      && cursor.x >= target.position.x && cursor.x <= target.position.x + WIDTH
-      && cursor.y >= target.position.y && cursor.y <= target.position.y + HEIGHT) ?? null
+      && cursor.x >= target.position.x && cursor.x <= target.position.x + FLOW_CARD_WIDTH
+      && cursor.y >= target.position.y && cursor.y <= target.position.y + (cardHeights[target.id] ?? FLOW_CARD_INITIAL_HEIGHT)) ?? null
   }
   const prepareMove = async (source: FlowNode, destination: FlowNode) => {
     const target = flowTarget(destination)
@@ -288,7 +301,7 @@ function Canvas(props: Props) {
           if (operation === 'copy' && node.kind === 'root') { void props.onCopy(node); return }
           setNotice(null); setChoice({ operation, source: node, sourceId: id })
         } }}>
-        <ReactFlow<DiagramNode> nodes={nodes} edges={graph.edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange}
+        <ReactFlow<DiagramNode> nodes={nodes} edges={graph.edges} nodeTypes={nodeTypes} onNodesChange={handleNodesChange}
           fitView fitViewOptions={{ padding: 0.12, maxZoom: 1 }} minZoom={0.15} maxZoom={1.6}
           nodesDraggable={!locked && !choice} nodesConnectable={false} edgesReconnectable={false} deleteKeyCode={null}
           nodesFocusable={!locked && !choice} edgesFocusable={false} multiSelectionKeyCode={null} selectionKeyCode={null}
@@ -320,8 +333,9 @@ function Canvas(props: Props) {
             const stationary = flow.getNodes().filter(other => !movingIds.has(other.id))
             const overlaps = flow.getNodes().filter(item => movingIds.has(item.id)).some(item => {
               const position = translated[item.id] ?? item.position
-              return stationary.some(other => position.x < other.position.x + WIDTH && position.x + WIDTH > other.position.x
-                && position.y < other.position.y + HEIGHT && position.y + HEIGHT > other.position.y)
+              return stationary.some(other => position.x < other.position.x + FLOW_CARD_WIDTH && position.x + FLOW_CARD_WIDTH > other.position.x
+                && position.y < other.position.y + (cardHeights[other.id] ?? FLOW_CARD_INITIAL_HEIGHT)
+                && position.y + (cardHeights[item.id] ?? FLOW_CARD_INITIAL_HEIGHT) > other.position.y)
             })
             if (overlaps) { restoreDrag(); setNotice('Grenen får inte överlappa andra kort. Välj en ledig plats.'); return }
             persistPosition(node)

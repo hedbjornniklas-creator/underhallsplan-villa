@@ -13,6 +13,12 @@
 
 ## Interaction
 
+- Cards are 224px wide and use their measured content height (about 83px for a
+  one-line answer, up to 117px for three title lines). The d3-flextree layout keeps
+  sibling answers in their own branch, with 40px between columns and 16-24px between
+  cards. Expanding a branch recalculates bounds without changing connections.
+- Compact placement uses browser storage version `v2`, so old absolute positions
+  do not retain the previous oversized gaps. Old `v1` data is left untouched.
 - Drag the grip onto empty space to reposition a card and its complete descendant
   branch. Lines follow it. Stored positions of collapsed descendants move too;
   newly expanded cards inherit their positioned ancestor. Positions
@@ -68,10 +74,12 @@ No production migration or live administrative mutation is run by the automated 
 ## Verification
 
 - `npm run test:renoapp-flow-editor`: isolated PGlite migration, guards, rollback,
-  permission grants, shared occurrences, request validation and route authorization.
+  permission grants, shared occurrences, request validation, route authorization
+  and compact layout checks with variable-height cards and wide branches.
 - `node scripts/test-renoapp-flow-editor-ui.mjs`: real flow-builder rendering with mock
   endpoints; actual pointer dragging, line movement, local persistence, copy/removal,
   click-to-move/copy, destination highlighting, cancel/Escape, missing migration,
-  failed copy and stale apply; desktop/tablet/mobile screenshots.
+  failed copy and stale apply; desktop/tablet/mobile screenshots including a dense
+  kitchen fixture with long questions and nearby requirements.
 - `node scripts/test-renoapp-classification-ui.mjs`: existing board-summary and admin
   editor regression coverage.

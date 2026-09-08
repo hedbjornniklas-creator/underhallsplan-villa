@@ -12,7 +12,7 @@
     "test:renoapp-navigation": "node --experimental-strip-types --test test/renoapp-admin-navigation.test.ts",
     "test:renoapp-drafts": "node --experimental-strip-types --test test/renoapp-draft-email.test.ts",
     "test:renoapp-classification": "node --experimental-strip-types --test test/renoapp-classification-retirement.test.ts",
-    "test:renoapp-flow-editor": "node --experimental-strip-types --test test/renoapp-flow-editor.test.ts",
+    "test:renoapp-flow-editor": "node --experimental-strip-types --test test/renoapp-flow-editor.test.ts test/renoapp-flow-layout.test.ts",
     "test:renoapp-completion": "node --experimental-strip-types --test test/renoapp-completion.test.ts test/renoapp-completion-api.test.ts",
     "test:renoapp-rules": "node --experimental-strip-types --test test/renoapp-renovation-rules.test.ts test/renoapp-renovation-rules-api.test.ts",
     "test:renoapp-reviews": "node --experimental-strip-types --test test/renoapp-consultant-review.test.ts test/renoapp-consultant-review-api.test.ts",
@@ -24,7 +24,6 @@
     "test:tu": "node --experimental-strip-types --test test/tu-authoring-mode.test.ts test/tu-grounding.test.ts test/tu-report-editorial.test.ts test/tu-report-quality.test.ts"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^3.1.1",
     "@react-pdf/renderer": "^4.3.2",
     "@sparticuz/chromium": "^143.0.4",
     "@supabase/auth-ui-react": "^0.4.7",
@@ -32,6 +31,7 @@
     "@supabase/ssr": "^0.5.0",
     "@supabase/supabase-js": "^2.79.0",
     "@xyflow/react": "^12.11.6",
+    "d3-flextree": "^2.1.2",
     "lucide-react": "^0.552.0",
     "next": "^16.1.1",
     "puppeteer-core": "^24.40.0",
@@ -42,6 +42,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
+    "@types/d3-flextree": "^2.1.4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

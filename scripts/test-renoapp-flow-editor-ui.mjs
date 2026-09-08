@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import puppeteer from 'puppeteer-core'
 import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
+import { compactFlowResponses, compactWallQuestion, compactWallAnswerIds } from '../test/fixtures/renoapp-compact-flow.mjs'
 
 const require = createRequire(import.meta.url)
 const { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -31,8 +32,8 @@ const questions = [question]
 const docs = [doc]
 const requirements = [{id:id(12),documentTypeId:doc.id,documentLabel:doc.label,isRequired:true,sortOrder:100,note:null}]
 const writes = []
-let moveFailure = null, copyFailure = false, sequence = 30
-const responses = () => ({
+let moveFailure = null, copyFailure = false, sequence = 30, fixture = null
+const responses = () => fixture ?? ({
   'action-types':{items:[action]},'questions':{items:questions},'document-types':{items:docs},'participants':{items:[]},
   'review-flags':{items:[]},'review-flag-links':{items:[]},'action-type-participants':{actionTypes:[]},
   'action-type-questions':{actionTypes:[{actionType:action,questions:[{id:id(11),questionId:question.id,questionLabel:question.label,isRequired:true,sortOrder:100}]}]},
@@ -174,7 +175,7 @@ try{
   await page.reload({waitUntil:'networkidle0'})
   assert.equal(await page.$eval(rootDoc,node=>node.closest('.react-flow__node').style.transform),await page.evaluate(selector=>{
     const node=document.querySelector(selector).closest('.react-flow__node')
-    const position=JSON.parse(localStorage.getItem('renoapp-flow-layout:v1:action-type:'+ '00000000-0000-4000-8000-000000000001'))[node.dataset.id]
+    const position=JSON.parse(localStorage.getItem('renoapp-flow-layout:v2:action-type:'+ '00000000-0000-4000-8000-000000000001'))[node.dataset.id]
     return `translate(${position.x}px, ${position.y}px)`
   },rootDoc))
   console.log('PASS position-only drag: edges follow, no configuration writes, position survives reload')
@@ -307,5 +308,42 @@ try{
   await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent.includes('Kopian kunde inte skapas'))
   assert.equal(writes.length,beforeFailedCopy+1);assert.equal(no.triggers.length,1);assert.equal(yes.triggers.length,0)
   console.log('PASS failed copy: original retained, no link or blind retry, error displayed')
+
+  // Regression for the kitchen branch in the reported screenshot.
+  fixture=compactFlowResponses
+  const writesBeforeLayout=writes.length
+  await page.setViewport({width:1440,height:1100})
+  await page.reload({waitUntil:'networkidle0'})
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
+  await page.waitForFunction(()=>document.querySelectorAll('[data-flow-id]').length>=29)
+  await page.locator('button[aria-label="Återställ kortens placering"]').click()
+  const cards=await page.$$eval('[data-flow-id]',nodes=>nodes.map(card=>{
+    const wrapper=card.closest('.react-flow__node')
+    const [x,y]=wrapper.style.transform.match(/-?[\d.]+/g).map(Number)
+    const title=card.querySelector('button[aria-label^="Öppna "]')
+    const header=card.querySelector('.flow-drag-handle').parentElement
+    return {id:card.dataset.flowId,x,y,width:card.offsetWidth,height:card.offsetHeight,title:title?.textContent,
+      overflow:header.scrollWidth>header.clientWidth,titleOverflow:title?.scrollHeight>title?.clientHeight}
+  }))
+  assert.deepEqual(cards.filter(card=>card.width!==224 || card.height>117 || card.overflow || card.titleOverflow),[])
+  const wall=cards.find(card=>card.title===compactWallQuestion)
+  const [yesCard,noCard]=compactWallAnswerIds.map(id=>cards.find(card=>card.id.endsWith(':'+id)))
+  assert.ok(yesCard.height<=84 && noCard.height<=84,'short answers must no longer reserve three title lines')
+  assert.equal(yesCard.x-wall.x-wall.width,40)
+  assert.equal(noCard.x,yesCard.x)
+  assert.ok(noCard.y-yesCard.y-yesCard.height<=24,'Yes/No must stay together rather than spreading across other branches')
+  for(let a=0;a<cards.length;a++)for(let b=a+1;b<cards.length;b++){
+    const one=cards[a],two=cards[b]
+    assert.equal(one.x<two.x+two.width && one.x+one.width>two.x && one.y<two.y+two.height && one.y+one.height>two.y,false,`${one.id} overlaps ${two.id}`)
+  }
+  for(const width of [1440,1024,390]){
+    await page.setViewport({width,height:1100})
+    await page.locator('button[aria-label="Visa hela flödet"]').click()
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+    await page.screenshot({path:resolve(output,`compact-kitchen-${width}.png`)})
+  }
+  assert.equal(writes.length,writesBeforeLayout)
+  assert.deepEqual(errors,[])
+  console.log('PASS compact kitchen layout: content-sized cards, clustered answers, no overlap or configuration writes')
 }catch(error){await page?.screenshot({path:resolve(output,'failure.png'),fullPage:true});throw error}
 finally{await browser?.close();await new Promise(done=>server.close(done))}
