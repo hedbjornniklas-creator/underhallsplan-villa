@@ -6,6 +6,7 @@ import { getEbProjectById, type EbProjectListItem } from '@/lib/eb/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { ebRemediationAllowedStatuses, ebRemediationCanComment, ebRemediationCanManage } from '@/lib/eb/remediationPolicy'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
+import { ebReportNoteDisplayIndex } from '@/lib/eb/reportNoteDisplay'
 import { queueEbFollowUpEmail } from '@/lib/eb/followUpDelivery'
 import { requestEbFollowUpOwnerRenewal, withdrawEbFollowUpOrder } from '@/lib/eb/followUpServer'
 import { assertEbRemediationOwnerSession } from '@/lib/eb/ownerAuth'
@@ -186,6 +187,7 @@ type RemediationAccessRow = {
 
 type RemediationTaskRow = {
   id: string
+  original_note_id?: string | null
   follow_up_order_id: string | null
   original_images: Array<Record<string, unknown>> | null
   inspection_id: string
@@ -586,7 +588,7 @@ async function loadWorkspace(input: {
   let tasksQuery = admin
     .from('eb_remediation_tasks')
     .select(
-      'id,follow_up_order_id,original_images,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
+      'id,follow_up_order_id,original_note_id,original_images,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
     )
     .eq('org_id', project.orgId)
     .eq('eb_project_id', project.id)
@@ -630,12 +632,19 @@ async function loadWorkspace(input: {
   if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte läsa åtkomstlänkar.')
 
   const taskRows = [...((tasksResult.data ?? []) as RemediationTaskRow[])]
+  const displayNumbers = frozenReport ? ebReportNoteDisplayIndex(frozenReport) : null
+  const originalNoteId = (task: RemediationTaskRow) => String(task.note_snapshot?.originalNoteId ?? task.original_note_id ?? task.eb_note_id)
   if (frozenReport) {
-    const noteOrder = new Map(frozenReport.notes.map((note, index) => [note.id, index]))
-    const position = (task: RemediationTaskRow) => noteOrder.get(String(task.note_snapshot?.originalNoteId ?? task.eb_note_id)) ?? Number.MAX_SAFE_INTEGER
+    const position = (task: RemediationTaskRow) => displayNumbers?.get(originalNoteId(task)) ?? Number.MAX_SAFE_INTEGER
     taskRows.sort((a, b) => position(a) - position(b))
   }
-  let tasks = taskRows.map(mapTask)
+  // Existing orders retain their immutable task snapshots. Only the DTO's
+  // displayed reference is reconciled against the order's own frozen report.
+  let tasks = taskRows.map((row) => {
+    const task = mapTask(row)
+    const number = displayNumbers?.get(originalNoteId(row))
+    return number === undefined ? task : { ...task, snapshot: { ...task.snapshot, noteNumber: number } }
+  })
   let assignees = (
     (assigneesResult.data ?? []) as Array<{
       id: string
@@ -1457,6 +1466,30 @@ function versionPayload(value: unknown): Record<string, string | null> | undefin
     typeof entry[1] === 'string' || entry[1] === null))
 }
 
+async function savedContractorCompletionExplanation(task: RemediationTaskRow, access: RemediationAccessRow): Promise<string | null> {
+  if (!task.follow_up_order_id || !task.remediation_assignee_id ||
+    !['assignee', 'contractor_admin'].includes(access.role)) return null
+  const admin = createSupabaseAdminClient()
+  // Only the most recent task activity can supply the explanation. A later
+  // reassignment, request for more work or other activity requires fresh evidence.
+  const { data: event, error: eventError } = await admin.from('eb_remediation_events')
+    .select('event_type,message,actor_access_link_id')
+    .eq('org_id', access.org_id).eq('eb_project_id', access.eb_project_id).eq('task_id', task.id)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (eventError) throw new Error(eventError.message ?? 'Kunde inte kontrollera den sparade kommentaren.')
+  if (event?.event_type !== 'comment' || !event.actor_access_link_id || !normalizeText(event.message)) return null
+  // A buyer's comment is not completion evidence. Historical links can have
+  // expired or been renewed, but must identify this task's current contractor.
+  const { data: author, error: authorError } = await admin.from('eb_remediation_access_links')
+    .select('id').eq('id', event.actor_access_link_id)
+    .eq('org_id', access.org_id).eq('eb_project_id', access.eb_project_id)
+    .eq('inspection_id', task.inspection_id).eq('follow_up_order_id', task.follow_up_order_id)
+    .eq('remediation_assignee_id', task.remediation_assignee_id).in('role', ['assignee', 'contractor_admin'])
+    .maybeSingle()
+  if (authorError) throw new Error(authorError.message ?? 'Kunde inte kontrollera kommentarens avsändare.')
+  return author ? normalizeText(event.message) : null
+}
+
 export async function performEbRemediationTokenAction(input: {
   token: string
   action: string
@@ -1506,7 +1539,7 @@ export async function performEbRemediationTokenAction(input: {
     assertTaskVisibleToAccess(task, access)
     const allowed = new Set(ebRemediationAllowedStatuses(access.role, paid))
     if (!allowed.has(status)) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
-    const message = nullableString(input.payload.message)
+    let message = nullableString(input.payload.message)
     if (paid && (access.role === 'customer_owner' || status === 'cannot_remedy') && !message) {
       throw new Error('EB_REMEDIATION_COMMENT_REQUIRED')
     }
@@ -1520,7 +1553,8 @@ export async function performEbRemediationTokenAction(input: {
         .eq('eb_project_id', access.eb_project_id)
         .eq('task_id', taskId)
       if (error) throw new Error(error.message ?? 'Kunde inte kontrollera åtgärdsbilder.')
-      if (!count) throw new Error(paid ? 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED' : 'EB_REMEDIATION_COMPLETION_IMAGE_REQUIRED')
+      if (!count && paid) message = await savedContractorCompletionExplanation(task, access)
+      if (!count && (!paid || !message)) throw new Error(paid ? 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED' : 'EB_REMEDIATION_COMPLETION_IMAGE_REQUIRED')
     }
     await changeEbRemediationTaskStatus({
       orgId: access.org_id,

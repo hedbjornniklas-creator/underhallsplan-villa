@@ -18,6 +18,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
   const compiled = { exports: {} }
   new Function('require', 'module', 'exports', output)((name: string) => {
     if (name in dependencies) return dependencies[name]
+    if (name === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (name.startsWith('node:')) return require(name)
     throw new Error(`Unexpected remediation test dependency: ${name}`)
   }, compiled, compiled.exports)
@@ -28,7 +29,8 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
 // PostgreSQL action RPC. Only the unrelated post-mutation workspace read stops
 // at a sentinel; no assignment, deadline or authorization logic is replaced.
 function assignmentService() {
-  const tables = new Set(['eb_remediation_access_links', 'eb_follow_up_orders', 'eb_remediation_assignees', 'eb_remediation_tasks'])
+  const tables = new Set(['eb_remediation_access_links', 'eb_follow_up_orders', 'eb_remediation_assignees', 'eb_remediation_tasks',
+    'eb_remediation_events', 'eb_remediation_images'])
   const admin = { from(table: string) {
     if (table === 'profiles') {
       const query = { select: () => query, eq: () => query,
@@ -37,17 +39,23 @@ function assignmentService() {
     }
     assert.ok(tables.has(table), table)
     const clauses: string[] = [], values: unknown[] = []
+    let orderBy = '', limit = '', count = false
     const condition = (key: string, operator: string, value: unknown) => {
       assert.match(key, /^[a-z_]+$/)
       if (operator === 'is') clauses.push(`${key} is null`)
       else { values.push(value); clauses.push(`${key} ${operator} $${values.length}`) }
     }
-    const result = async () => ({ data: (await db.query<Row>(`select * from ${table}${clauses.length ? ` where ${clauses.join(' and ')}` : ''}`, values)).rows
-      .map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key,
-        value instanceof Date ? (key === 'due_date' ? value.toISOString().slice(0, 10) : value.toISOString()) : value]))), error: null })
+    const result = async () => {
+      const rows = (await db.query<Row>(`select * from ${table}${clauses.length ? ` where ${clauses.join(' and ')}` : ''}${orderBy}${limit}`, values)).rows
+        .map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key,
+          value instanceof Date ? (key === 'due_date' ? value.toISOString().slice(0, 10) : value.toISOString()) : value])))
+      return { data: rows, error: null, ...(count ? { count: rows.length } : {}) }
+    }
     const query = {
-      select: () => query,
+      select: (_columns?: string, options?: { count?: string }) => { count = options?.count === 'exact'; return query },
       eq: (key: string, value: unknown) => { condition(key, '=', value); return query },
+      order: (key: string, options: { ascending: boolean }) => { assert.match(key, /^[a-z_]+$/); orderBy = ` order by ${key} ${options.ascending ? 'asc' : 'desc'}`; return query },
+      limit: (value: number) => { assert.ok(Number.isInteger(value) && value > 0); limit = ` limit ${value}`; return query },
       filter: (key: string, operator: string, value: unknown) => { condition(key, operator === 'is' ? 'is' : '=', value); return query },
       in: (key: string, options: unknown[]) => {
         assert.match(key, /^[a-z_]+$/)
@@ -374,4 +382,76 @@ test('retiring activity mail preserves task changes, images and audit history wi
       "select has_function_privilege($1,'public.eb_skip_follow_up_activity_mail()','EXECUTE') allowed", [role])
     assert.equal(rows[0].allowed, false)
   }
+})
+
+test('actual contractor handler completes with a submitted explanation, saved explanation or action photo through the atomic RPC', async () => {
+  const service = assignmentService()
+  for (const evidence of ['submitted', 'saved', 'image']) {
+    const f = await fixture()
+    const message = 'Injusteringen är genomförd och kan inte visas med ett foto.'
+    if (evidence === 'saved') await f.action(f.worker, 'comment', { message })
+    if (evidence === 'image') {
+      const id = randomUUID()
+      await f.action(f.worker, 'image', { id, storageBucket: 'eb-remediation-images',
+        filePath: `${f.project}/${f.task}/${id}.jpg`, contentType: 'image/jpeg', fileSizeBytes: 10 })
+    }
+    await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${f.worker}`, action: 'status',
+      payload: { taskId: f.task, status: 'reported_remedied', message: evidence === 'submitted' ? message : '' } }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+    assert.equal((await f.current()).status, 'reported_remedied', evidence)
+    const last = (await f.events()).at(-1)!
+    assert.equal(last.event_type, 'status_changed')
+    assert.equal(last.actor_access_link_id, f.worker)
+    assert.equal(last.message, evidence === 'image' ? null : message)
+    assert.deepEqual((await f.current()).note_snapshot, { noteText: 'PURCHASED NOTE', noteNumber: 1 })
+    assert.equal((await f.jobs()).length, 0, 'Completing a point must not send activity emails')
+  }
+})
+
+test('a renewed contractor token can use its own last saved explanation but cannot inherit buyer comments', async () => {
+  const service = assignmentService()
+  const f = await fixture()
+  await f.action(f.worker, 'comment', { message: 'Åtgärden är utförd. Funktionsprovet dokumenteras här.' })
+  const renewed = randomUUID()
+  await db.query(`insert into eb_remediation_access_links(id,org_id,eb_project_id,inspection_id,follow_up_order_id,
+    remediation_assignee_id,role,email,display_name,token_hash,expires_at)
+    select $1,org_id,eb_project_id,inspection_id,follow_up_order_id,remediation_assignee_id,role,email,display_name,$2,now()+interval '180 days'
+    from eb_remediation_access_links where id=$3`, [renewed, `hash-${renewed}`, f.worker])
+  await db.query('update eb_remediation_access_links set revoked_at=now() where id=$1', [f.worker])
+  await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${renewed}`, action: 'status',
+    payload: { taskId: f.task, status: 'reported_remedied', message: '' } }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+  assert.equal((await f.current()).status, 'reported_remedied')
+  assert.equal((await f.events()).at(-1)!.actor_access_link_id, renewed)
+
+  const buyer = await fixture()
+  await buyer.action(buyer.owner, 'comment', { message: 'Beställarens fråga är inte entreprenörens åtgärdsredovisning.' })
+  await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${buyer.worker}`, action: 'status',
+    payload: { taskId: buyer.task, status: 'reported_remedied' } }), /COMPLETION_EVIDENCE_REQUIRED/)
+  assert.equal((await buyer.current()).status, 'assigned')
+  assert.equal((await buyer.events()).length, 1)
+})
+
+test('saved contractor evidence cannot cross tasks or survive a later request for more work; stale writes still conflict', async () => {
+  const service = assignmentService()
+  const f = await fixture(), other = await fixture()
+  await other.action(other.worker, 'comment', { message: 'En annan entreprenörs kommentar på en annan punkt.' })
+  await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${f.worker}`, action: 'status',
+    payload: { taskId: f.task, status: 'reported_remedied' } }), /COMPLETION_EVIDENCE_REQUIRED/)
+  assert.equal((await f.events()).length, 0)
+  const stale = new Date((await f.current()).updated_at).toISOString()
+  await f.action(f.worker, 'comment', { message: 'Entreprenörens sparade beskrivning.' })
+  await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${f.worker}`, action: 'status',
+    payload: { taskId: f.task, status: 'reported_remedied', expectedUpdatedAt: stale } }), /REMEDIATION_CONFLICT/)
+  assert.equal((await f.current()).status, 'assigned')
+  await f.action(f.owner, 'status', { status: 'returned', message: 'Åtgärden behöver kompletteras.' })
+  await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${f.worker}`, action: 'status',
+    payload: { taskId: f.task, status: 'reported_remedied' } }), /COMPLETION_EVIDENCE_REQUIRED/)
+  assert.equal((await f.current()).status, 'returned')
+})
+
+test('actual legacy handler still requires an action photo even when a comment is supplied', async () => {
+  const service = assignmentService()
+  const f = await fixture(false)
+  await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${f.worker}`, action: 'status',
+    payload: { taskId: f.task, status: 'ready_for_review', message: 'En kommentar ersätter inte bildkravet i den äldre portalen.' } }), /COMPLETION_IMAGE_REQUIRED/)
+  assert.equal((await f.current()).status, 'assigned')
 })

@@ -42,6 +42,7 @@ import type {
   EbReportNoteHeading,
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
+import { ebReportCheckpointDisplayIndex, sortEbReportNotes as sortNotes } from '@/lib/eb/reportNoteDisplay'
 
 export type EbPublicDeliveryDocumentLink = {
   id: string
@@ -246,16 +247,6 @@ function SectionText({ section }: { section: EbReportDraftSection }) {
   ) : (
     <ReadableText text={section.text} />
   )
-}
-
-function sortNotes(notes: EbNote[]) {
-  return [...notes].sort((left, right) => {
-    if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
-    if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
-      return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
-    }
-    return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
-  })
 }
 
 function sortImages(images: EbNoteImage[]) {
@@ -1379,13 +1370,7 @@ function ReportSnapshotView({
     ]
   )
   const checkpointNumberByNoteId = useMemo(() => {
-    const map = new Map<string, number>()
-    let number = 0
-    for (const checkpoint of sortCheckpoints(report.checkpoints.filter((item) => item.groupKey !== 'documents'))) {
-      number += 1
-      if (checkpoint.noteId) map.set(checkpoint.noteId, number)
-    }
-    return map
+    return ebReportCheckpointDisplayIndex(report.checkpoints)
   }, [report.checkpoints])
   const imageData = useMemo(() => {
     const groups: PublicImageGroup[] = []

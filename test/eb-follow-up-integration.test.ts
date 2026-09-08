@@ -26,6 +26,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>, expose: st
   const compiledModule = { exports: {} }
   new Function('require', 'module', 'exports', output)((name: string) => {
     if (name in dependencies) return dependencies[name]
+    if (name === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (name.startsWith('node:') || ['react', 'react/jsx-runtime', 'lucide-react', 'next/server'].includes(name)) return require(name)
     throw new Error(`Unexpected integration test dependency: ${name}`)
   }, compiledModule, compiledModule.exports)
@@ -398,6 +399,34 @@ test('actual paid worker workspace contains only its assigned frozen tasks, orig
   assert.ok(f.signed.every(path => path.includes('mine.jpg')))
   assert.doesNotMatch(JSON.stringify(workspace), new RegExp(secret))
   assert.doesNotMatch(JSON.stringify(workspace), /LIVE PROJECT CHANGED|2099-12-31|other-worker|other-order/)
+})
+
+test('older purchased tasks display frozen report numbers and order without rewriting evidence or closing recipient gaps', async () => {
+  const f = workspaceFixture()
+  const frozen = snapshots.getEbInspectionReportFromSnapshot(f.tables.eb_follow_up_orders[0].report_snapshot)!
+  const note = frozen.notes[0]
+  frozen.notes = [
+    { ...note, id: 'mine', noteNumber: 1, sortOrder: 300, noteText: 'Senare rapportpunkt.' },
+    { ...note, id: 'other-worker', noteNumber: 2, sortOrder: 100, noteText: 'Första rapportpunkten.' },
+    { ...note, id: 'not-followed', noteNumber: 81, sortOrder: 200, noteText: '' },
+  ]
+  // Simulate an old order whose source note was subsequently deleted. The
+  // immutable original id still resolves it to the same frozen report point.
+  f.tables.eb_remediation_tasks[0].eb_note_id = null
+  f.tables.eb_remediation_tasks[0].original_note_id = 'mine'
+  f.tables.eb_remediation_tasks[1].note_snapshot = {
+    ...(f.tables.eb_remediation_tasks[1].note_snapshot as Record<string, unknown>), originalNoteId: 'other-worker',
+  }
+  const before = JSON.stringify(f.tables.eb_remediation_tasks)
+  const reportBefore = JSON.stringify(f.tables.eb_follow_up_orders[0].report_snapshot)
+  const owner = await f.workspace('customer_owner')
+  assert.deepEqual(owner.tasks.map(task => [task.id, task.snapshot.noteNumber]), [['other-worker', 1], ['mine', 3]])
+  const worker = await f.workspace('assignee')
+  assert.deepEqual(worker.tasks.map(task => [task.id, task.snapshot.noteNumber]), [['mine', 3]], 'Do not number a recipient subset from 1')
+  assert.equal(worker.tasks[0].snapshot.noteText, 'FROZEN mine', 'Saved task evidence must not be replaced by another text')
+  assert.equal(JSON.stringify(f.tables.eb_remediation_tasks), before)
+  assert.equal(JSON.stringify(f.tables.eb_follow_up_orders[0].report_snapshot), reportBefore)
+  assert.ok(f.writes.every(table => table === 'eb_remediation_access_links'))
 })
 
 test('paid owner and legacy portal scopes do not inherit one another, nor a second purchased version', async () => {

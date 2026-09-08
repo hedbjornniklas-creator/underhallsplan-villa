@@ -13,6 +13,9 @@ type Props = {
   caseId?: string
   attachments?: ActionCaseView['attachments']
   participants?: ActionCaseView['participants']
+  initialCostLineId?: string
+  onRequest?: (costLineId: string) => void
+  onOpenRequest?: (requestId: string) => void
   busy: boolean
   onClose: () => void
   onSave: (payload: Record<string, unknown>) => Promise<boolean>
@@ -98,17 +101,17 @@ function Proposal({ proposal, stale, busy, onApply }: {
   </section>
 }
 
-export default function ActionCaseItemSheet({ item, caseId, attachments = [], participants = [], busy, onClose, onSave, onCostAction }: Props) {
+export default function ActionCaseItemSheet({ item, caseId, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, onCostAction }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
   const inFlight = useRef(false)
-  const [tab, setTab] = useState<'scope' | 'cost'>('scope')
+  const [tab, setTab] = useState<'scope' | 'cost'>(initialCostLineId ? 'cost' : 'scope')
   const [title, setTitle] = useState(item.title)
   const [scope, setScope] = useState(item.scope ?? '')
   const [editing, setEditing] = useState<{ category: string; line?: ActionCaseCostLineView } | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [pending, setPending] = useState(false)
-  const [quoteLineId, setQuoteLineId] = useState<string | null>(null)
+  const [quoteLineId, setQuoteLineId] = useState<string | null>(initialCostLineId ?? null)
   const [quoteEditing, setQuoteEditing] = useState(false)
   const working = busy || pending
   const dirty = title !== item.title || scope !== (item.scope ?? '')
@@ -181,7 +184,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
                   <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40" disabled={working || Boolean(editing) || quoteEditing || Boolean(line.coveredByQuoteId) || Boolean(line.quotes?.some((q) => q.deliveryStatus !== 'draft'))} title={line.coveredByQuoteId ? "Ingår i vald offert" : line.quotes?.some((q) => q.deliveryStatus !== 'draft') ? "Har en påbörjad offertförfrågan" : "Ta bort kalkylrad"} aria-label={`Ta bort ${line.description}`} onClick={() => setDeleting(line.id)}><Trash2 size={16} /></button>
                 </div>
                 {['own_labor', 'subcontractor'].includes(line.category) ? <button type="button" className={`${secondary} mt-3`} disabled={working || Boolean(editing) || quoteEditing || dirty} aria-expanded={quoteLineId === line.id} onClick={() => setQuoteLineId(quoteLineId === line.id ? null : line.id)}><Mail size={16} />{quoteLineId === line.id ? 'Dölj prisunderlag' : 'Timmar / offerter'}</button> : null}
-                {quoteLineId === line.id ? <ActionCaseWorkQuotes key={line.id} line={line} item={item} caseId={caseId} attachments={attachments} participants={participants} busy={working || dirty} onEditing={setQuoteEditing} onAction={(name, payload) => run(() => onCostAction(name, payload))} /> : null}
+                {quoteLineId === line.id ? <ActionCaseWorkQuotes key={line.id} line={line} item={item} caseId={caseId} attachments={attachments} participants={participants} busy={working || dirty} onEditing={setQuoteEditing} onRequest={onRequest} onOpenRequest={onOpenRequest} onAction={(name, payload) => run(() => onCostAction(name, payload))} /> : null}
                 {line.notes ? <p className="mt-2 break-words text-xs leading-5 text-slate-600">{line.notes}</p> : null}
                 {line.sourceUrl && /^https?:\/\//i.test(line.sourceUrl) ? <a href={line.sourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-violet-700 underline">Öppna priskälla</a> : null}
                 {deleting === line.id ? <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span>Ta bort raden?</span><button type="button" disabled={working} className={secondary} onClick={() => setDeleting(null)}>Avbryt</button><button type="button" disabled={working} className={`${secondary} text-rose-700`} onClick={() => void run(() => onCostAction('delete_cost_line', { costLineId: line.id })).then((saved) => { if (saved) setDeleting(null) })}>{working ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Ta bort</button></div> : null}

@@ -16,6 +16,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
   const compiledModule = { exports: {} }
   new Function('require', 'exports', 'module', compiled)((id: string) => {
     if (id in dependencies) return dependencies[id]
+    if (id === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (id.startsWith('node:')) return require(id)
     throw new Error(`Unexpected I/O dependency: ${id}`)
   }, compiledModule.exports, compiledModule)

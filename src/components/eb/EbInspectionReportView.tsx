@@ -42,6 +42,7 @@ import type {
   EbReportNoteHeading,
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
+import { ebReportCheckpointDisplayIndex, sortEbReportNotes as sortNotes } from '@/lib/eb/reportNoteDisplay'
 
 type EbInspectionReportViewProps = {
   report: EbInspectionReport
@@ -55,18 +56,6 @@ function reportNavigationClassName(emerald: boolean, busy: boolean) {
     ? 'border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50'
     : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-50'
   return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
-}
-
-function sortNotes(notes: EbNote[]) {
-  return [...notes].sort((left, right) => {
-    if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
-      return (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-    }
-    if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
-      return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
-    }
-    return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
-  })
 }
 
 function sortImages(images: EbNoteImage[]) {
@@ -124,13 +113,7 @@ function numberedCheckpointGroups(checkpoints: EbInspectionCheckpoint[]) {
 }
 
 function checkpointNumberByNoteId(report: EbInspectionReport) {
-  const byNoteId = new Map<string, number>()
-  for (const group of numberedCheckpointGroups(printableDrainageCheckpoints(report))) {
-    for (const item of group.checkpoints) {
-      if (item.checkpoint.noteId) byNoteId.set(item.checkpoint.noteId, item.number)
-    }
-  }
-  return byNoteId
+  return ebReportCheckpointDisplayIndex(report.checkpoints)
 }
 
 function checkpointStatusLabel(status: EbInspectionCheckpoint['status']) {

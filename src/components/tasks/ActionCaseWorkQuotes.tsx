@@ -15,6 +15,8 @@ type Props = {
   attachments: ActionCaseView['attachments']; participants: ActionCaseView['participants']; busy: boolean
   onAction: (name: string, data: Record<string, unknown>) => Promise<boolean>
   onEditing: (editing: boolean) => void
+  onRequest?: (costLineId: string) => void
+  onOpenRequest?: (requestId: string) => void
 }
 
 function QuoteForm({ line, item, attachments, participants, quote, mode, busy, onSave, onCancel }: Props & {
@@ -45,7 +47,7 @@ function QuoteForm({ line, item, attachments, participants, quote, mode, busy, o
     {quote && quoteIsStale(quote, item.scope, line.description) ? <p role="status" className="text-sm text-amber-800">Omfattningen eller giltigheten har ändrats. Registrera en ny, bekräftad offert innan den används i kalkylen.</p> : null}
     <fieldset disabled={busy} className="space-y-4">
       {!quote && participants.some((p) => p.role === 'subcontractor') ? <label className="block text-xs font-semibold text-slate-600">Befintlig underentreprenör<select className={input} defaultValue="" onChange={(e) => { const p = participants.find((p) => p.id === e.target.value); if (p) setForm((f) => ({ ...f, supplierName: p.companyName || p.name, supplierEmail: p.email ?? '' })) }}><option value="">Välj kontakt eller fyll i nedan</option>{participants.filter((p) => p.role === 'subcontractor').map((p) => <option value={p.id} key={p.id}>{p.companyName || p.name}</option>)}</select></label> : null}
-      <div className="grid gap-3 sm:grid-cols-2">{field('supplierName', 'Företag / namn *')}{field('supplierEmail', mode === 'request' ? 'E-post *' : 'E-post', 'email', requestLocked)}</div>
+      <div className="grid gap-3 sm:grid-cols-2">{field('supplierName', 'Företag / namn *', 'text', Boolean(quote?.requestId))}{field('supplierEmail', mode === 'request' ? 'E-post *' : 'E-post', 'email', requestLocked)}</div>
       {mode === 'request' ? <>
         {field('requestSubject', 'Ämne *', 'text', requestLocked)}
         <label className="block text-xs font-semibold text-slate-600">Meddelande *<textarea name="requestBody" rows={9} className={`${input} py-2`} disabled={requestLocked} value={form.requestBody} onChange={(e) => set('requestBody', e.target.value)} /></label>
@@ -85,7 +87,7 @@ export default function ActionCaseWorkQuotes(props: Props) {
         if (saved && editor.mode === 'request') setPreviewId(String(data.quoteId))
         return saved
       }} /> : <>
-        <div className="my-4 flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => edit({ mode: 'offer' })}><Plus size={16} />Registrera offert</button><button className={button} disabled={busy} onClick={() => edit({ mode: 'request' })}><Mail size={16} />Begär offert</button></div>
+        <div className="my-4 flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => edit({ mode: 'offer' })}><Plus size={16} />Registrera offert</button><button className={button} disabled={busy} onClick={() => props.onRequest ? props.onRequest(line.id) : edit({ mode: 'request' })}><Mail size={16} />Begär offert</button></div>
         {!quotes.length ? <p className="py-3 text-sm text-slate-500">Inga offertalternativ ännu.</p> : <ul className="divide-y divide-slate-200">{quotes.map((q) => {
           const stale = quoteIsStale(q, item.scope, line.description), selected = line.selectedQuoteId === q.id
           return <li className="space-y-2 py-4" key={q.id}>
@@ -96,11 +98,12 @@ export default function ActionCaseWorkQuotes(props: Props) {
             <p className="text-xs text-slate-500">{q.validUntil ? `Giltig till ${q.validUntil}` : 'Giltighet ej angiven'}{q.availableFrom ? ` · Tillgänglig ${q.availableFrom}` : ''}{q.coveredLineIds.length ? ` · ${q.coveredLineIds.length} kalkylrader ingår` : ''}</p>
             {q.documentId && caseId ? <a className="inline-flex min-h-11 items-center gap-2 text-sm text-violet-700 underline" href={`/api/action-cases/${caseId}/attachments/${q.documentId}`} target="_blank" rel="noreferrer"><FileText size={16} />Öppna offertdokument</a> : null}
             <div className="flex flex-wrap gap-2">
-              <button className={selected ? button : primary} disabled={busy || (!selected && (stale || !q.checked || q.amount === null))} onClick={() => void action(selected ? 'unselect' : 'select', { quoteId: q.id, expectedQuoteUpdatedAt: q.updatedAt })}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}{selected ? 'Ta bort val' : 'Använd i kalkylen'}</button>
+              <button className={selected ? button : primary} disabled={busy || (!selected && (stale || !q.checked || q.amount === null || q.separatePricesConfirmed === false))} onClick={() => void action(selected ? 'unselect' : 'select', { quoteId: q.id, expectedQuoteUpdatedAt: q.updatedAt })}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}{selected ? 'Ta bort val' : 'Använd i kalkylen'}</button>
               <button className={button} disabled={busy} title="Redigera offert" aria-label={`Redigera offert från ${q.supplierName}`} onClick={() => edit({ quote: q, mode: 'offer' })}><Pencil size={16} /></button>
-              <button className={button} disabled={busy} title="Visa förfrågan" aria-label={`Visa förfrågan till ${q.supplierName}`} onClick={() => setPreviewId(previewId === q.id ? null : q.id)}><Mail size={16} /></button>
+              <button className={button} disabled={busy} title="Visa förfrågan" aria-label={`Visa förfrågan till ${q.supplierName}`} onClick={() => q.requestId && props.onOpenRequest ? props.onOpenRequest(q.requestId) : setPreviewId(previewId === q.id ? null : q.id)}><Mail size={16} /></button>
               {q.deliveryStatus === 'draft' ? <button className={button} disabled={busy} title="Ta bort offertalternativ" aria-label={`Ta bort offert från ${q.supplierName}`} onClick={() => setDeleting(q.id)}><Trash2 size={16} /></button> : null}
             </div>
+            {q.requestId && q.separatePricesConfirmed === false ? <p className="text-sm text-amber-800">Prisvillkoren behöver bekräftas i den samlade förfrågan.</p> : null}
             {deleting === q.id ? <div className="flex flex-wrap items-center gap-2 text-sm"><span>Ta bort offertalternativet?</span><button className={button} disabled={busy} onClick={() => setDeleting(null)}>Avbryt</button><button className={button} disabled={busy} onClick={() => void action('delete', { quoteId: q.id, expectedQuoteUpdatedAt: q.updatedAt }).then((saved) => { if (saved) setDeleting(null) })}>Ta bort</button></div> : null}
           </li>
         })}</ul>}

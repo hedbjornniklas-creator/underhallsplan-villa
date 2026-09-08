@@ -26,6 +26,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
   const compiledModule = { exports: {} }
   new Function('require', 'module', 'exports', compiled)((name: string) => {
     if (name in dependencies) return dependencies[name]
+    if (name === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (name === '@/lib/eb/followUpTerms') return terms
     if (name === '@/lib/eb/customerLinks') return { isEbCustomerLinkSessionActive: async () => true }
     if (name.startsWith('node:')) return require(name)

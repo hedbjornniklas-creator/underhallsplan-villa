@@ -25,6 +25,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>, expose: st
   const compiled = { exports: {} }
   new Function('require', 'module', 'exports', output)((name: string) => {
     if (name in dependencies) return dependencies[name]
+    if (name === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (name.startsWith('node:')) return require(name)
     throw new Error(`Unexpected invitation test dependency ${name}`)
   }, compiled, compiled.exports)

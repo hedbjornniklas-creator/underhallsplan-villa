@@ -2,6 +2,7 @@ import { createHash, createHmac, randomInt, randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
+import { ebReportNoteDisplayIndex, sortEbReportNotes } from '@/lib/eb/reportNoteDisplay'
 import {
   EB_FOLLOW_UP_NET_PRICE_ORE, EB_FOLLOW_UP_PRICE_ORE, EB_FOLLOW_UP_SERVICE_DESCRIPTION,
   EB_FOLLOW_UP_TERMS_VERSION, EB_FOLLOW_UP_VAT_ORE, EB_FOLLOW_UP_VAT_RATE, EB_FOLLOW_UP_ADMIN_EMAIL,
@@ -268,13 +269,16 @@ export async function requestEbFollowUpCustomerLink(input: { token: string; emai
 }
 
 function followUpNotes(context: Awaited<ReturnType<typeof loadContext>>) {
-  return context.report.notes.filter(item => (!item.inspectionId || item.inspectionId === context.link.inspection_id)
-    && UUID.test(item.id) && Boolean(item.noteText?.trim()))
+  const displayNumbers = ebReportNoteDisplayIndex(context.report)
+  return sortEbReportNotes(context.report.notes).filter(item => (!item.inspectionId || item.inspectionId === context.link.inspection_id)
+    && UUID.test(item.id) && Boolean(item.noteText?.trim()) && displayNumbers.has(item.id))
+    .sort((left, right) => displayNumbers.get(left.id)! - displayNumbers.get(right.id)!)
 }
 
 async function createFrozenTasks(context: Awaited<ReturnType<typeof loadContext>>, candidateId: string) {
   const tasks: Array<{ noteId: string; snapshot: Record<string, unknown>; images: Array<Record<string, unknown>> }> = []
   const copies: Array<() => Promise<void>> = []
+  const displayNumbers = ebReportNoteDisplayIndex(context.report)
   for (const note of followUpNotes(context)) {
     const images: Array<Record<string, unknown>> = []
     for (const image of context.report.images.filter(item => item.noteId === note.id)) {
@@ -297,7 +301,7 @@ async function createFrozenTasks(context: Awaited<ReturnType<typeof loadContext>
         thumbnailFilePath: null, fileName: null, label: image.label })
     }
     tasks.push({ noteId: note.id, images, snapshot: {
-      originalNoteId: note.id, noteNumber: note.noteNumber, noteText: note.noteText, location: note.location,
+      originalNoteId: note.id, noteNumber: displayNumbers.get(note.id) ?? note.noteNumber, noteText: note.noteText, location: note.location,
       room: note.room, placeDetail: note.placeDetail, markerKey: note.markerKey, statusKey: note.statusKey,
       disciplineLabel: note.disciplineLabel, disciplineLittera: note.disciplineLittera,
       inspectionVariant: context.report.inspection.variant, inspectionVariantLabel: context.report.inspection.variantLabel,

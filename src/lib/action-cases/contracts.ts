@@ -65,6 +65,8 @@ export type ActionCaseCostLineView = {
 
 export type ActionCaseQuote = {
   id: string
+  requestId?: string | null
+  separatePricesConfirmed?: boolean
   supplierName: string
   supplierEmail: string | null
   amount: number | null
@@ -85,6 +87,36 @@ export type ActionCaseQuote = {
   requestAttachmentIds: string[]
   deliveryStatus: 'draft' | 'sending' | 'sent' | 'failed' | 'unknown'
   sentAt: string | null
+  updatedAt: string
+}
+
+export type ActionCaseRequestLine = {
+  costLineId: string
+  itemId: string
+  itemTitle: string
+  scope: string
+  description: string
+}
+
+export type ActionCaseQuoteRequest = {
+  id: string
+  supplierName: string
+  supplierEmail: string
+  subject: string
+  message: string
+  requirements: Array<{ key: string; label: string; text: string; kind: 'included' | 'separate' }>
+  otherRequirements: string
+  lines: ActionCaseRequestLine[]
+  attachmentIds: string[]
+  body: string
+  supplementsId: string | null
+  responseMode: 'pending' | 'itemized' | 'package'
+  packageAmount: number | null
+  responseNotes: string
+  responseDocumentId: string | null
+  deliveryStatus: ActionCaseQuote['deliveryStatus']
+  sentAt: string | null
+  firstAttemptAt: string | null
   updatedAt: string
 }
 
@@ -137,6 +169,7 @@ export type ActionCaseView = {
   items: ActionCaseItemView[]
   participants: ActionCaseParticipantView[]
   attachments: ActionCaseAttachmentView[]
+  quoteRequests?: ActionCaseQuoteRequest[]
 }
 
 export type ActionCaseWorkspace = {

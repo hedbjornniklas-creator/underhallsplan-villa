@@ -19,6 +19,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>, expose: st
   const compiledModule = { exports: {} }
   new Function('require', 'exports', 'module', compiled)((id: string) => {
     if (id in dependencies) return dependencies[id]
+    if (id === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (id === '@/lib/eb/followUpTerms') return terms
     if (id === '@/lib/eb/followUpConfirmation') return load('src/lib/eb/followUpConfirmation.ts', {})
     if (id === '@/lib/eb/customerLinks') return { isEbCustomerLinkSessionActive: async () => true }
@@ -505,4 +506,32 @@ test('original-image preparation executes actual bounded copies and retains the 
   assert.equal(prepared[0].snapshot.noteText, 'FROZEN SOURCE')
   assert.equal(prepared[0].images.length, 9)
   assert.equal(prepared[0].images.every(image => image.storageBucket === 'eb-follow-up-originals'), true)
+})
+
+test('new purchases freeze actual report display references before blank-note filtering, including grouped drainage checkpoints', async () => {
+  const inspection = randomUUID(), first = randomUUID(), blank = randomUUID(), last = randomUUID()
+  const server = load<{ createFrozenTasks: (context: unknown, orderId: string) => Promise<Array<{ noteId: string; snapshot: { noteNumber: number; noteText: string } }>> }>('src/lib/eb/followUpServer.ts', {
+    '@/lib/eb/followUp': shared, '@/lib/supabase/admin': {}, '@/lib/assignments/tokens': {},
+    '@/lib/eb/reportSnapshot': {}, '@/lib/eb/followUpDelivery': {}, '@/lib/eb/followUpCustomer': {},
+    '@/lib/eb/customerSession': {}, '@/lib/eb/followUpSeller': {},
+  }, ['createFrozenTasks'])
+  const notes = [
+    { id: last, inspectionId: inspection, noteNumber: 1, sortOrder: 300, noteText: 'Sista feltexten är fryst.' },
+    { id: first, inspectionId: inspection, noteNumber: 2, sortOrder: 100, noteText: 'Första feltexten är fryst.' },
+    { id: blank, inspectionId: inspection, noteNumber: 81, sortOrder: 200, noteText: '   ' },
+  ]
+  const report = { project: {}, notes, images: [], inspection: { variant: 'SLB', variantLabel: 'Slutbesiktning', sequenceNo: 1 } }
+  const before = JSON.stringify(report)
+  const tasks = await server.createFrozenTasks({ report, link: { org_id: org, inspection_id: inspection } }, randomUUID())
+  assert.deepEqual(tasks.map(task => [task.noteId, task.snapshot.noteNumber]), [[first, 1], [last, 3]])
+  assert.equal(tasks[0].snapshot.noteText, notes[1].noteText)
+  assert.equal(JSON.stringify(report), before)
+
+  const drainage = { ...report, project: { projectTemplateKey: 'drainage_foundation' }, checkpoints: [
+    { noteId: first, groupKey: 'walls', title: 'Vägg 1', sortOrder: 100 },
+    { noteId: last, groupKey: 'drainage', title: 'Dränering', sortOrder: 200 },
+    { noteId: null, groupKey: 'walls', title: 'Vägg 2 utan anmärkning', sortOrder: 300 },
+  ] }
+  const drainageTasks = await server.createFrozenTasks({ report: drainage, link: { org_id: org, inspection_id: inspection } }, randomUUID())
+  assert.deepEqual(drainageTasks.map(task => [task.noteId, task.snapshot.noteNumber]), [[first, 1], [last, 3]])
 })

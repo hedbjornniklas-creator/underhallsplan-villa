@@ -26,6 +26,7 @@ import type { ActionCaseItemView, ActionCaseView, ActionCaseWorkspace as Workspa
 import { supabase } from '@/lib/supabaseClient'
 import ActionCaseImageBank from './ActionCaseImageBank'
 import ActionCaseItemSheet from './ActionCaseItemSheet'
+import ActionCaseRequestSheet, { ActionCaseRequestsPanel } from './ActionCaseQuoteRequests'
 import { actionCaseItemCompletion, actionCaseCostCoverage } from '@/lib/action-cases/domain'
 
 type Props = {
@@ -293,6 +294,8 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
   const [search, setSearch] = useState('')
   const [selectedCaseId, setSelectedCaseId] = useState(initialWorkspace?.cases[0]?.id ?? null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [initialCostLineId, setInitialCostLineId] = useState<string>()
+  const [requestEditor, setRequestEditor] = useState<{ requestId: string | null; preselectedLineId?: string; supplementId?: string } | null>(null)
   const [creating, setCreating] = useState(false)
   const [newItemTitle, setNewItemTitle] = useState('')
   const selectedCase = workspace?.cases.find((item) => item.id === selectedCaseId) ?? null
@@ -312,7 +315,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       return result as ActionResult
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
-      if (name === 'send_quote_request' || name === 'work_quote') {
+      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request'].includes(name)) {
         await fetch('/api/action-cases').then(async (response) => {
           if (response.ok) { const result = await response.json(); setWorkspace(result.workspace) }
         }).catch(() => undefined)
@@ -339,18 +342,28 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
         if (result) { setNewItemTitle(''); if (result.itemId) setSelectedItemId(result.itemId) }
       })
     }}><label className="min-w-0 flex-1 text-sm font-semibold">Ny åtgärd<input required value={newItemTitle} onChange={(event) => setNewItemTitle(event.target.value)} placeholder="Beskriv arbetet kort" className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-3 font-normal" /></label><button type="submit" disabled={busy || !newItemTitle.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white disabled:opacity-40">{busy ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />} Lägg till åtgärd</button></form> : null}
+    {selectedCase ? <ActionCaseRequestsPanel actionCase={selectedCase} busy={busy} onOpen={(requestId) => setRequestEditor({ requestId })} /> : null}
     {selectedCase ? <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} /> : null}
     {creating ? <CreateCaseSheet busy={busy} onClose={() => setCreating(false)} onCreate={async (payload) => { const result = await action('create_case', payload); if (result) setCreating(false) }} /> : null}
     {selectedItem && selectedCase ? <ActionCaseItemSheet
-      key={selectedItem.id}
+      key={`${selectedItem.id}:${initialCostLineId ?? ''}`}
       item={selectedItem}
       caseId={selectedCase.id}
       attachments={selectedCase.attachments}
       participants={selectedCase.participants}
+      initialCostLineId={initialCostLineId}
+      onRequest={(preselectedLineId) => setRequestEditor({ requestId: null, preselectedLineId })}
+      onOpenRequest={(requestId) => setRequestEditor({ requestId })}
       busy={busy}
-      onClose={() => setSelectedItemId(null)}
+      onClose={() => { setSelectedItemId(null); setInitialCostLineId(undefined) }}
       onSave={async (payload) => Boolean(await action('update_item', { itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt, ...payload }))}
       onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, name === 'send_quote_request' ? 'Offertförfrågan har skickats.' : name === 'work_quote' ? payload.operation === 'select' ? 'Offerten används i kalkylen. Ingen beställning har skickats.' : payload.operation === 'save' ? 'Offerten sparades. Välj den för att använda priset i kalkylen.' : 'Prisunderlaget uppdaterades.' : name === 'generate_cost_suggestions' ? 'Kalkylförslaget är klart för granskning.' : name === 'apply_cost_suggestions' ? 'Valda rader lades till i kalkylen.' : name === 'delete_cost_line' ? 'Kalkylraden togs bort.' : 'Kalkylraden sparades.'))}
+    /> : null}
+    {selectedCase && requestEditor ? <ActionCaseRequestSheet key={`${selectedCase.id}:${requestEditor.requestId ?? requestEditor.supplementId ?? 'new'}:${requestEditor.preselectedLineId ?? ''}`}
+      actionCase={selectedCase} {...requestEditor} busy={busy} onClose={() => setRequestEditor(null)}
+      onSupplement={(request) => setRequestEditor({ requestId: null, supplementId: request.id })}
+      onOpenWork={(itemId, costLineId) => { setRequestEditor(null); setSelectedItemId(itemId); setInitialCostLineId(costLineId) }}
+      onAction={async (name, data) => Boolean(await action(name, data, name === 'send_grouped_quote_request' ? 'Den samlade offertförfrågan har skickats.' : data.operation === 'response' ? 'Prisvillkoren har sparats.' : data.operation === 'delete' ? 'Utkastet togs bort.' : 'Förfrågan är sparad. Granska den före utskick.'))}
     /> : null}
   </>
 }

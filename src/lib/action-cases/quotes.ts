@@ -41,7 +41,7 @@ export function normalizeQuote(input: Record<string, unknown>) {
     materials: inclusion(input.materials), travel: inclusion(input.travel), waste: inclusion(input.waste),
     coveredLineIds: ids(input.coveredLineIds), documentId: input.documentId ? quoteId(input.documentId) : null,
     requestSubject: text(input.requestSubject, 200).replace(/[\r\n]/g, ' '),
-    requestBody: text(input.requestBody, 12000), requestAttachmentIds: ids(input.requestAttachmentIds),
+    requestBody: text(input.requestBody, 100000), requestAttachmentIds: ids(input.requestAttachmentIds),
     expectedUpdatedAt: input.expectedUpdatedAt ? text(input.expectedUpdatedAt, 50) : null,
   }
 }
@@ -60,6 +60,7 @@ export const QUOTE_VIEW_COLUMNS = 'id,cost_line_id,supplier_name,supplier_email,
 export function mapQuote(row: Record<string, unknown>): ActionCaseQuote {
   return {
     id: String(row.id), supplierName: String(row.supplier_name), supplierEmail: row.supplier_email ? String(row.supplier_email) : null,
+    requestId: row.request_id ? String(row.request_id) : null,
     amount: row.amount == null ? null : Number(row.amount), offeredScope: String(row.offered_scope ?? ''), exclusions: String(row.exclusions ?? ''),
     validUntil: row.valid_until ? String(row.valid_until) : null, availableFrom: row.available_from ? String(row.available_from) : null,
     materials: row.materials as ActionCaseQuote['materials'], travel: row.travel as ActionCaseQuote['travel'], waste: row.waste as ActionCaseQuote['waste'],

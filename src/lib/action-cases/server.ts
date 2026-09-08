@@ -7,6 +7,7 @@ import type { ActionCaseAttachmentView, ActionCaseCostLineView, ActionCaseItemVi
 import { filterActionCasePortalItems } from './domain'
 import { normalizeCostLine } from './costing'
 import { mapQuote, QUOTE_VIEW_COLUMNS, quoteIsStale } from './quotes'
+import { mapQuoteRequest, REQUEST_VIEW_COLUMNS } from './quoteRequests'
 import { calculateActionCaseCostTotals } from './domain'
 import { createQuoteWorkLine } from './quotesServer'
 
@@ -136,8 +137,12 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     : { data: [], error: null }
   // Keep pre-migration workspaces readable during a rolling deployment.
   if (suggestionError && !['42P01', 'PGRST205'].includes(suggestionError.code)) throw new Error('ACTION_CASES_READ_FAILED')
+  const { data: requestRows, error: requestError } = caseIds.length
+    ? await admin.from('action_case_quote_requests').select(REQUEST_VIEW_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false })
+    : { data: [], error: null }
+  if (requestError && !['42P01', 'PGRST205'].includes(requestError.code)) throw new Error('ACTION_CASES_READ_FAILED')
   const { data: quotes, error: quoteError } = caseIds.length
-    ? await admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
+    ? await admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS + (requestError ? '' : ',request_id')).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
     : { data: [], error: null }
   if (quoteError && !['42P01', 'PGRST205'].includes(quoteError.code)) throw new Error('ACTION_CASES_READ_FAILED')
 
@@ -152,6 +157,9 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     const list = costLinesByItem.get(row.action_case_item_id) ?? []
     const line = mapCostLine(row)
     line.quotes = (quotes as unknown as Record<string, unknown>[] | null)?.filter((q) => q.cost_line_id === row.id).map(mapQuote) ?? []
+    for (const q of line.quotes) {
+      q.separatePricesConfirmed = !q.requestId || requestRows?.some((r) => r.id === q.requestId && r.response_mode === 'itemized' && r.sent_at) === true
+    }
     list.push(line)
     costLinesByItem.set(row.action_case_item_id, list)
   }
@@ -162,7 +170,7 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     for (const line of view.costLines) {
       if (line.pricingMethod !== 'quotes') continue
       const selected = line.quotes?.find((q) => q.id === line.selectedQuoteId)
-      if (!selected || quoteIsStale(selected, view.scope, line.description)) {
+      if (!selected || selected.separatePricesConfirmed === false || quoteIsStale(selected, view.scope, line.description)) {
         line.unitCost = null; line.verified = false; view.subcontractorPriceReady = false
         if (['ready_for_quote', 'pricing_needed', 'waiting_subcontractor'].includes(view.status)) view.status = 'waiting_subcontractor'
       }
@@ -222,6 +230,7 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     items: itemsByCase.get(row.id) ?? [],
     participants: participantsByCase.get(row.id) ?? [],
     attachments: attachmentsByCase.get(row.id) ?? [],
+    quoteRequests: (requestRows as unknown as Record<string, unknown>[] | null)?.filter((r) => r.action_case_id === row.id).map(mapQuoteRequest) ?? [],
   }))
 
   for (const view of views) {

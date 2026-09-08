@@ -18,6 +18,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>, expose: st
   const compiled = { exports: {} }
   new Function('require', 'module', 'exports', output)((name: string) => {
     if (name in dependencies) return dependencies[name]
+    if (name === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (name.startsWith('node:') || ['react', 'react/jsx-runtime', 'lucide-react'].includes(name)) return require(name)
     throw new Error(`Unexpected withdrawal test dependency: ${name}`)
   }, compiled, compiled.exports)

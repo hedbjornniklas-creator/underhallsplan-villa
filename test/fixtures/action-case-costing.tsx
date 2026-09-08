@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import ActionCaseItemSheet from '@/components/tasks/ActionCaseItemSheet'
 import { AppToastProvider, useToast } from '@/components/ui/AppToastProvider'
+import RequestApp from './action-case-requests'
 import { normalizeCostLine } from '@/lib/action-cases/costing'
 import { normalizeQuote } from '@/lib/action-cases/quotes'
 import type { ActionCaseCostLineView, ActionCaseItemView, ActionCaseQuote } from '@/lib/action-cases/contracts'
@@ -72,4 +73,4 @@ function App() {
     }} /> : null}
   </main>
 }
-createRoot(document.getElementById('root')!).render(<AppToastProvider><App /></AppToastProvider>)
+createRoot(document.getElementById('root')!).render(<AppToastProvider>{new URLSearchParams(location.search).has('requests') ? <RequestApp /> : <App />}</AppToastProvider>)

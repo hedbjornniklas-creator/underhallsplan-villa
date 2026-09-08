@@ -20,6 +20,7 @@ import {
 } from '@/lib/action-cases/server'
 import { generateActionCaseCosts } from '@/lib/action-cases/costingAiServer'
 import { handleQuoteAction, sendQuoteRequest } from '@/lib/action-cases/quotesServer'
+import { handleRequestAction, sendGroupedRequest } from '@/lib/action-cases/quoteRequestsServer'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -45,6 +46,10 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {
+    ACTION_CASE_REQUEST_INVALID: [400, 'Kontrollera mottagare, valda arbeten och uppgifter i förfrågan.'],
+    ACTION_CASE_REQUEST_NOT_FOUND: [404, 'Offertförfrågan kunde inte hittas.'],
+    ACTION_CASE_REQUEST_USE_GROUP: [409, 'Öppna den samlade förfrågan för att hantera utskicket.'],
+    ACTION_CASE_REQUEST_PACKAGE_PRICE: [409, 'Bekräfta i den samlade förfrågan att UE:s delpriser gäller vid separat beställning. Ett paketpris får inte användas som fristående delpriser.'],
     ACTION_CASE_QUOTE_INVALID: [400, 'Kontrollera offertens uppgifter, belopp och e-postadress.'],
     ACTION_CASE_QUOTE_NOT_FOUND: [404, 'Offerten kunde inte hittas.'],
     ACTION_CASE_QUOTE_WORK_REQUIRED: [400, 'Offerter ska kopplas till en arbetsrad.'],
@@ -109,6 +114,8 @@ export async function POST(request: Request) {
     else if (action === 'apply_cost_suggestions') await applyActionCaseCostSuggestions(ctx, payload)
     else if (action === 'work_quote') await handleQuoteAction(ctx, payload)
     else if (action === 'send_quote_request') await sendQuoteRequest(ctx, payload)
+    else if (action === 'quote_request') await handleRequestAction(ctx, payload)
+    else if (action === 'send_grouped_quote_request') await sendGroupedRequest(ctx, payload)
     else throw new Error('ACTION_CASE_ACTION_INVALID')
     return NextResponse.json({ workspace: await getActionCaseWorkspace(ctx), accessUrl, upload, itemId })
   } catch (error) { return errorResponse(error) }

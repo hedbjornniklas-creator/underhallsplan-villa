@@ -21,6 +21,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
   const compiledModule = { exports: {} }
   new Function('require', 'module', 'exports', output)((name: string) => {
     if (name in dependencies) return dependencies[name]
+    if (name === '@/lib/eb/reportNoteDisplay') return load('src/lib/eb/reportNoteDisplay.ts', {})
     if (name.startsWith('node:') || name === 'react/jsx-runtime') return require(name)
     throw new Error(`Unexpected owner-auth test dependency: ${name}`)
   }, compiledModule, compiledModule.exports)

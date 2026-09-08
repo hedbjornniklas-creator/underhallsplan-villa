@@ -98,6 +98,9 @@ const galleryWorkspace = (role = 'customer_owner') => {
 }
 let workspace = initial('customer_owner'), revision = 0, conflictNext = false, reads = 0
 const posts = []
+// Evidence ownership is checked by the synthetic server, not exposed as an
+// extra client-side capability or inferred from a visible comment's author name.
+const savedContractorComments = new Map()
 const server = createServer(async (request, response) => {
   if (request.url.startsWith('/mock-image.png')) {
     const fixtureImage = new URL(request.url, 'http://127.0.0.1').searchParams.get('image')
@@ -122,7 +125,8 @@ const server = createServer(async (request, response) => {
     await new Promise(ok => setTimeout(ok, 250))
     if (conflictNext) { conflictNext = false; response.statusCode = 409; response.end(JSON.stringify({ error: 'Testkonflikt. Texten finns kvar, försök igen.' })); return }
     if (input.action === 'status' && input.payload.status === 'reported_remedied' &&
-      !input.payload.message?.trim() && workspace.images.length === 0) {
+      !input.payload.message?.trim() && !workspace.images.some(image => image.taskId === input.payload.taskId) &&
+      !savedContractorComments.has(input.payload.taskId)) {
       response.statusCode = 400; response.end(JSON.stringify({ error: 'Lägg till en åtgärdsbild eller en förklarande kommentar.' })); return
     }
     const task = workspace.tasks.find(item => item.id === input.payload.taskId) ?? workspace.tasks[0]
@@ -139,6 +143,9 @@ const server = createServer(async (request, response) => {
     if (input.action === 'create_assignee') workspace.assignees.push({ id: `created-${revision}`, ...input.payload })
     if (input.action === 'update_assignee') Object.assign(workspace.assignees.find(item => item.id === input.payload.assigneeId), input.payload)
     if (input.action === 'status') task.status = input.payload.status
+    if (input.action === 'comment' && ['assignee', 'contractor_admin'].includes(workspace.access.role) && input.payload.message?.trim()) {
+      savedContractorComments.set(task.id, input.payload.message.trim())
+    }
     if (input.action === 'image') workspace.images.push({ id: `after-${revision}`, taskId: 'task',
       imageUrl: '/mock-image.png', thumbnailUrl: '/mock-image.png', createdAt: '2026-09-07T11:00:00Z' })
     if (input.action === 'withdraw_order') workspace.followUp.withdrawalRequestedAt = '2026-09-07T12:00:00Z'
@@ -171,12 +178,11 @@ try {
       .find(node => node.getAttribute('aria-label') === value || node.textContent.trim() === value), label, scope)
     const element = handle.asElement()
     assert.ok(element, `Missing button: ${label}`)
-    if (label.startsWith('Hjälp om ')) {
-      // Settle automatic test scrolling before clicking. The real popover deliberately
-      // dismisses on scroll, so a delayed scroll event must not arrive after the click.
-      await element.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }))
-      await page.evaluate(() => new Promise(ok => requestAnimationFrame(() => requestAnimationFrame(ok))))
-    }
+    await page.waitForFunction(node => !node.disabled, {}, element)
+    // Settle test-driven scrolling before every physical click. Besides popovers
+    // dismissing on scroll, compact cards can move after a preceding form expands.
+    await element.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }))
+    await page.evaluate(() => new Promise(ok => requestAnimationFrame(() => requestAnimationFrame(ok))))
     if (label === 'Skriv ut åtgärdslista') {
       await element.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }))
       const hit = await element.evaluate(node => {
@@ -238,7 +244,7 @@ try {
       !Array.from(document.querySelectorAll('input[type=file]')).some(node => node.disabled))
   }
   const load = async value => {
-    workspace = value; revision = 0; posts.length = 0; reads = 0; conflictNext = false
+    workspace = value; revision = 0; posts.length = 0; reads = 0; conflictNext = false; savedContractorComments.clear()
     await page.goto(url, { waitUntil: 'networkidle0' })
     await page.waitForSelector('article')
   }
@@ -499,11 +505,12 @@ try {
     completedForOwner.tasks[0].assigneeId = 'worker'
     completedForOwner.tasks[0].status = 'reported_remedied'
     await load(completedForOwner)
+    assert.equal(await hasButton('Begär komplettering'), false, 'requesting clarification is inside the owner comment form')
     await button('Kommentera', 'article').click()
     await page.type('#comment-task', 'Bilden behöver även visa fönstrets nederkant.')
     assert.equal(await hasButton('Markera klar'), false)
     await button('Begär komplettering', 'article').click()
-    await page.waitForFunction(() => document.querySelector('#comment-task')?.value === '' && !document.querySelector('#comment-task').disabled)
+    await page.waitForSelector('#comment-task', { hidden: true })
     assert.equal(posts.at(-1).action, 'status')
     assert.equal(posts.at(-1).payload.status, 'returned')
     assert.equal(posts.at(-1).payload.message, 'Bilden behöver även visa fönstrets nederkant.')
@@ -514,6 +521,8 @@ try {
     const gallery = galleryWorkspace()
     const originalNoteText = gallery.tasks[0].snapshot.noteText
     await load(gallery)
+    assert.deepEqual(await page.$$eval('article[data-task-id]', nodes => nodes.map(node => node.dataset.taskId)),
+      gallery.tasks.map(task => task.id), 'the cards retain exactly the note order delivered by the backend')
     for (const [taskId, noteNumber] of [['task', 17], ['task-2', 4], ['task-3', 81]]) {
       assert.equal(await page.$eval(`[data-task-id="${taskId}"] span[aria-label="Punkt ${noteNumber}"]`, node => node.textContent), String(noteNumber),
         'displayed note numbers come from the report, not the current card position')
@@ -714,47 +723,113 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     console.log(`PASS deadlines ${width}px: individual dates without a report default, mixed dates/missing counts, effective report fallback, live refresh, status/recipient filters and contractor-scoped summary`)
 
-    await load(initial('assignee'))
+    const contractorWithBuyerComment = initial('assignee')
+    contractorWithBuyerComment.events.push({ id: 'buyer-comment', taskId: 'task', eventType: 'comment',
+      actorName: 'Testbeställare', actorEmail: 'buyer@example.invalid', message: 'Min kommentar som beställare är inte entreprenörens återrapportering.',
+      fromStatus: null, toStatus: null, createdAt: '2026-09-07T10:00:00Z' })
+    await load(contractorWithBuyerComment)
     assert.equal(await page.$('#comment-task'), null, 'contractor overview starts with the reporting form collapsed')
     assert.equal(await page.$('article input[type=file]'), null, 'contractor uploads are hidden until opening reporting')
-    assert.equal(await hasButton('Återrapportera'), true)
-    assert.equal(await hasButton('Markera klar'), true, 'completion remains directly reachable from the compact card')
-    await button('Återrapportera', 'article').click()
+    assert.equal(await page.$$eval('article button[aria-controls="comment-panel-task"]', nodes => nodes.length), 1,
+      'the contractor has exactly one entry into reporting')
+    assert.equal(await hasButton('Rapportera åtgärd'), true)
+    assert.equal(await hasButton('Markera klar'), false, 'opening the form and saving completion are not competing actions')
+    assert.equal(await page.$eval('button[aria-controls="comment-panel-task"]', node =>
+      Array.from(node.querySelectorAll('svg')).some(icon => /check/i.test(icon.getAttribute('class') ?? ''))), false,
+    'the report action must not visually suggest that the task is already completed')
+    const compactCardHeight = await page.$eval('article', node => Math.ceil(node.getBoundingClientRect().height))
+    assert.ok(compactCardHeight <= (width === 1440 ? 300 : 500), `normal contractor card should remain compact: ${compactCardHeight}px at ${width}px`)
+    await page.screenshot({ path: resolve(output, `worker-overview-${width}.png`), fullPage: true })
+    await (await page.$('article')).screenshot({ path: resolve(output, `worker-compact-card-${width}.png`) })
+    assert.equal(await page.$eval('#history-task', node => node.getClientRects().length), 0)
+    await button('Historik (1)', 'article').click()
+    assert.match(await page.$eval('#history-task', node => node.innerText), /Min kommentar som beställare/)
+    assert.equal(await page.$eval('button[aria-controls="history-task"]', node => node.getAttribute('aria-expanded')), 'true')
+    await button('Historik (1)', 'article').click()
+    await button('Rapportera åtgärd', 'article').click()
     await page.waitForSelector('#comment-task')
+    assert.equal(posts.length, 0, 'opening history and the reporting form does not submit a status or comment')
+    assert.equal(workspace.tasks[0].status, 'assigned')
+    assert.equal(await page.$eval('#comment-task', node => node.rows), 3)
+    assert.equal(await page.$$eval('article button', nodes => nodes.filter(node => node.textContent.trim() === 'Markera klar').length), 1)
+    assert.equal(await page.$eval('article', node => Array.from(node.querySelectorAll('button'))
+      .find(button => button.textContent.trim() === 'Markera klar').querySelector('svg')), null,
+    'the unsaved completion action does not contain a completed-state check mark')
     await page.type('#comment-task', 'Pågående utkast ska finnas kvar när panelen stängs.')
     await button('Stäng återrapportering', 'article').click()
     assert.equal(await page.$('#comment-task'), null)
-    await button('Återrapportera', 'article').click()
+    await button('Rapportera åtgärd', 'article').click()
     assert.equal(await page.$eval('#comment-task', node => node.value), 'Pågående utkast ska finnas kvar när panelen stängs.')
+    assert.equal(posts.length, 0, 'drafting, closing and reopening never changes status')
     await fill('#comment-task', '')
-    await button('Stäng återrapportering', 'article').click()
     assert.equal(await page.$('#angra-bestallning'), null, 'only the buyer sees order withdrawal')
     assert.equal(await page.$('input[aria-label="E-post"]'), null)
     assert.match(await page.$eval('main', node => node.textContent), /Bilder i utlåtandet/)
     assert.equal(await hasButton('Påbörja'), false, 'contractors need not announce that they have started work')
     assert.equal(await hasButton('Kan inte avhjälpas'), false, 'obstacles are comments rather than another workflow status')
-    await button('Markera klar').click()
-    await page.waitForFunction(() => document.body.textContent.includes('Lägg till en åtgärdsbild eller en förklarande kommentar.'))
-    await page.waitForSelector('#comment-task')
-    assert.equal(workspace.tasks[0].status, 'assigned')
+    await button('Markera klar', 'article').click()
+    await page.waitForSelector('article [data-testid="remediation-task-error"][role="alert"]')
+    assert.match(await page.$eval('article [data-testid="remediation-task-error"]', node => node.textContent), /Lägg till en åtgärdsbild eller en förklarande kommentar/)
+    assert.equal(workspace.tasks[0].status, 'assigned', 'a buyer comment must not satisfy the contractor evidence requirement')
+    assert.equal(posts.at(-1).payload.status, 'reported_remedied', 'the server evaluates evidence ownership, not the client')
+    await waitIdle()
     await page.type('#comment-task', 'Åtgärdat, men resultatet kan inte visas med foto.')
     conflictNext = true
-    await button('Markera klar').click()
-    await page.waitForFunction(() => document.body.textContent.includes('Testkonflikt'))
+    await button('Markera klar', 'article').click()
+    await page.waitForFunction(() => document.querySelector('article [data-testid="remediation-task-error"]')?.textContent.includes('Testkonflikt'))
     assert.equal(await page.$eval('#comment-task', node => node.value), 'Åtgärdat, men resultatet kan inte visas med foto.')
+    assert.equal(workspace.tasks[0].status, 'assigned')
     await waitIdle()
-    await chooseImage()
-    await page.waitForFunction(() => !document.querySelector('#comment-task').disabled)
-    assert.equal(posts.at(-1).action, 'image')
-    assert.equal(await page.$eval('#comment-task', node => node.value), 'Åtgärdat, men resultatet kan inte visas med foto.')
-    await button('Markera klar').click()
+    await button('Markera klar', 'article').click()
+    await page.waitForSelector('#comment-task', { hidden: true })
+    assert.equal(workspace.tasks[0].status, 'reported_remedied')
+    assert.equal(workspace.images.length, 0, 'an explanatory comment alone is sufficient when the work cannot be photographed')
+    assert.equal(posts.at(-1).payload.message, 'Åtgärdat, men resultatet kan inte visas med foto.')
+    assert.equal(posts.at(-1).payload.expectedUpdatedAt, '2026-09-07T10:00:00.000Z')
+    assert.equal(await hasButton('Kommentera'), true)
+    assert.equal(await hasButton('Markera klar'), false)
+    await readHelp('status', /inte att besiktningsmannen har godkänt/)
+    assert.equal(workspace.tasks[0].snapshot.noteText, initial('assignee').tasks[0].snapshot.noteText)
+    console.log(`PASS worker evidence ${width}px: compact ${compactCardHeight}px card, one non-mutating report entry, hidden history, local missing-evidence/conflict errors, retained draft and comment-only completion`)
+
+    await load(initial('assignee'))
+    await button('Rapportera åtgärd', 'article').click()
+    await page.type('#comment-task', 'Åtgärden är utförd men går inte att fotografera.')
+    await button('Skicka endast kommentar', 'article').click()
     await page.waitForFunction(() => document.querySelector('#comment-task')?.value === '' && !document.querySelector('#comment-task').disabled)
+    assert.deepEqual(posts.map(post => post.action), ['comment'])
+    assert.equal(workspace.tasks[0].status, 'assigned', 'sending only a comment must not mark the task completed')
+    assert.equal(await page.$eval('#history-task', node => node.getClientRects().length), 0)
+    await button('Historik (1)', 'article').click()
+    assert.match(await page.$eval('#history-task', node => node.innerText), /Åtgärden är utförd men går inte att fotografera/)
+    assert.equal(posts.length, 1, 'reading the saved explanation does not submit anything else')
+    await button('Historik (1)', 'article').click()
+    await button('Markera klar', 'article').click()
+    await page.waitForSelector('#comment-task', { hidden: true })
+    assert.deepEqual(posts.map(post => post.action), ['comment', 'status'])
+    assert.equal(workspace.tasks[0].status, 'reported_remedied', 'a saved contractor explanation may be reused without retyping it')
+    assert.equal(posts.at(-1).payload.message, '')
+    assert.equal(posts.at(-1).payload.expectedUpdatedAt, '2026-09-07T10:01:00.000Z')
+    console.log(`PASS worker saved comment ${width}px: comment-only preserves status, folded history is read-only and server-verified contractor evidence is reusable`)
+
+    await load(initial('assignee'))
+    await button('Rapportera åtgärd', 'article').click()
+    await chooseImage()
+    assert.equal(await page.$eval('#comment-task', node => node.value), '')
+    assert.equal(workspace.tasks[0].status, 'assigned', 'uploading a photo alone does not mark the task complete')
+    await page.evaluate(() => {
+      const save = Array.from(document.querySelectorAll('article button')).find(node => node.textContent.trim() === 'Markera klar')
+      save.click(); save.click()
+    })
+    await page.waitForSelector('#comment-task', { hidden: true })
+    assert.deepEqual(posts.map(post => post.action), ['image', 'status'], 'a double click saves image-only completion once')
+    assert.equal(workspace.tasks[0].status, 'reported_remedied')
     assert.equal(posts.at(-1).payload.status, 'reported_remedied')
     assert.equal(posts.at(-1).payload.expectedUpdatedAt, '2026-09-07T10:01:00.000Z')
-    await readHelp('status', /inte att besiktningsmannen har godkänt/)
+    assert.equal(workspace.tasks[0].snapshot.noteText, initial('assignee').tasks[0].snapshot.noteText)
     await page.screenshot({ path: resolve(output, `worker-${width}.png`), fullPage: true })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-    console.log(`PASS worker ${width}px: originals, no owner controls, evidence requirement, conflict retains draft, upload, completion CAS, no horizontal overflow`)
+    console.log(`PASS worker image ${width}px: image-only completion, double-click suppression, current CAS, unchanged original text and no horizontal overflow`)
   }
   assert.deepEqual(errors, [])
 } catch (error) {

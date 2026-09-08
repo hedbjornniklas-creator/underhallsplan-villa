@@ -18,6 +18,21 @@ Email uses the existing assignment mailer and its `RESEND_API_KEY`, `ASSIGNMENTS
 - Explicitly select material / transport / waste rows already covered by the offer. Those rows remain visible but are excluded from totals. They cannot belong to two selected offers or be edited / deleted while covered.
 - Editing a selected offer clears its selection. A changed work scope / description or expired validity invalidates use of the old offer. Register a newly confirmed offer against the current scope.
 
+## Grouped Requests
+
+Apply `docs/db/2026-09-08_09_action_case_grouped_requests.sql` after 01 through 05 before deploying the grouped-request feature. It is transactional and rerunnable. Existing single-row requests remain in place, without backfill or changes to their delivery history or prices. The workspace remains readable without migration 09; grouped writes require it.
+
+- Use **Begär offert** on the case, or on a work row to preselect that row. Select work rows across the case's actions, one UE recipient, requested inclusions and attachments.
+- Nothing is checked by default. Choices cover travel, materials, own waste, protection, establishment, tools, lift/scaffolding, freight, cleaning and documentation. ÄTA rates are requested separately, not treated as included fixed-price work. Other requirements are free text.
+- **Spara och förhandsgranska** creates a resumable draft, not a send. **Skicka förfrågan** sends one email for all selected rows. The saved request contains frozen source text, requirement wording and recipient details.
+- Sending creates linked quote alternatives on the selected work rows. It neither switches an hourly calculation to quotes nor assumes that requested items are actually included. Confirm inclusions when registering the received quote.
+- For several work rows, register whether UE's prices apply independently or only as a package. Until independent prices are confirmed, the linked alternatives cannot be selected separately in calculations. A single-row request has no multi-row dependency.
+- Package amounts and shared conditions can be recorded for reference. They are **not automatically allocated to actions or counted in the calculation**. Obtain confirmed independent prices before using delpriser, and register shared costs once through the existing cost rows. Switching back to package/unknown conditions clears selected linked prices and releases their covered rows.
+- Register per-work prices via **Öppna kalkyl**, using the existing **Offerter** view. Existing manual quotation alternatives and direct hourly pricing continue to work.
+- **Komplettera** creates a new draft linked to the old request, for the same recipient. Previously sent work is not preselected. The old email, source snapshot and prices are not overwritten.
+
+Grouped sends reuse the existing mailer, selected-file validation, payload freezing and bounded idempotent retry mechanism. Their provider key is `action-case-group-rfq-<request-id>`. A retry of an uncertain send retains its original content even if work has since changed. New scope requires a new request or supplement. Registered response documents are excluded from outbound requests, including older single-row requests.
+
 ## Delivery and Access
 
 Quotes and immutable outbound mail payloads are service-role-only. API operations retain the existing authenticated organization and module-access checks. Quote selection, covered cost rows and recalculation are transactional, locking the parent action first.
@@ -31,7 +46,7 @@ The first send freezes the exact message and attachment bytes. A stable provider
 Run:
 
 ```sh
-node --test test/action-cases-domain.test.mjs test/action-cases-costing.test.mjs test/action-cases-costing-ai.test.mjs test/action-cases-quotes.test.mjs test/action-cases-quotes-mail.test.mjs
+node --test test/action-cases-domain.test.mjs test/action-cases-costing.test.mjs test/action-cases-costing-ai.test.mjs test/action-cases-quotes.test.mjs test/action-cases-quotes-mail.test.mjs test/action-cases-grouped-requests.test.mjs
 node scripts/test-action-case-costing-ui.mjs
 npx tsc --noEmit --incremental false
 npm run build
