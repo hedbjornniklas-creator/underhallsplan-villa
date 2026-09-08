@@ -180,6 +180,9 @@ function CaseDocuments({
 }) {
   const toast = useToast()
   const fileInput = useRef<HTMLInputElement>(null)
+  const uploadInProgress = useRef(false)
+  const dragDepth = useRef(0)
+  const [draggingFiles, setDraggingFiles] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [uploading, setUploading] = useState<string[]>([])
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([])
@@ -197,7 +200,13 @@ function CaseDocuments({
 
   const uploadFiles = async (files: File[]) => {
     if (!files.length) return
+    if (busy || uploadInProgress.current) {
+      toast.info('Vänta tills den pågående åtgärden är klar innan du laddar upp fler filer.')
+      return
+    }
+    uploadInProgress.current = true
     setUploading(files.map((file) => file.name))
+    try {
     for (const file of files) {
       const signed = await runAction('create_signed_upload', {
         caseId: actionCase.id,
@@ -232,8 +241,13 @@ function CaseDocuments({
       }
       setUploading((current) => current.filter((name) => name !== file.name))
     }
-    setUploading([])
-    if (fileInput.current) fileInput.current.value = ''
+    } catch (error) {
+      toast.error(error, 'Filen kunde inte laddas upp. Försök igen.')
+    } finally {
+      uploadInProgress.current = false
+      setUploading([])
+      if (fileInput.current) fileInput.current.value = ''
+    }
   }
 
   const copyParticipantLink = async (participantId: string) => {
@@ -270,6 +284,39 @@ function CaseDocuments({
                   {actionCase.participants.map((participant) => <label key={participant.id} className={`inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-full border px-3 text-xs font-semibold ${selectedParticipantIds.includes(participant.id) ? 'border-violet-300 bg-violet-50 text-violet-800' : 'border-slate-200 text-slate-600'}`}><input type="checkbox" checked={selectedParticipantIds.includes(participant.id)} onChange={() => toggleSelected(participant.id)} className="sr-only" />{selectedParticipantIds.includes(participant.id) ? <Check size={14} /> : null}{participant.role === 'customer' ? 'Beställare' : participant.name}</label>)}
                 </div>
               </fieldset>
+              <button
+                type="button"
+                aria-label="Ladda upp bilder och dokument"
+                aria-disabled={busy || uploading.length > 0}
+                onClick={() => { if (!busy && !uploadInProgress.current) fileInput.current?.click() }}
+                onDragEnter={(event) => {
+                  if (!event.dataTransfer.types.includes('Files')) return
+                  event.preventDefault()
+                  dragDepth.current += 1
+                  setDraggingFiles(true)
+                }}
+                onDragOver={(event) => {
+                  if (!event.dataTransfer.types.includes('Files')) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = busy || uploadInProgress.current ? 'none' : 'copy'
+                }}
+                onDragLeave={() => {
+                  dragDepth.current = Math.max(0, dragDepth.current - 1)
+                  if (dragDepth.current === 0) setDraggingFiles(false)
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  dragDepth.current = 0
+                  setDraggingFiles(false)
+                  void uploadFiles(Array.from(event.dataTransfer.files))
+                }}
+                className={`mt-4 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${busy || uploading.length > 0 ? 'cursor-wait border-slate-200 bg-slate-50 text-slate-500' : draggingFiles ? 'border-violet-600 bg-violet-100 text-violet-900' : 'border-slate-300 bg-slate-50 text-slate-600 hover:border-violet-400 hover:bg-violet-50'}`}
+              >
+                {uploading.length > 0 ? <Loader2 size={22} className="animate-spin" /> : <Upload size={22} />}
+                <span className="text-sm font-semibold">{uploading.length > 0 ? 'Uppladdning pågår' : busy ? 'Vänta tills åtgärden är klar' : draggingFiles ? 'Släpp för att ladda upp' : 'Dra bilder och dokument hit'}</span>
+                <span className="text-xs">Max 25 MB per fil</span>
+              </button>
               {uploading.length ? <div className="mt-3 flex items-center gap-2 rounded-lg bg-violet-50 px-3 py-3 text-sm font-medium text-violet-800" role="status"><Loader2 className="animate-spin" size={17} /> Laddar upp {uploading.join(', ')}</div> : null}
               <div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">
                 {actionCase.attachments.length ? actionCase.attachments.map((attachment) => {
