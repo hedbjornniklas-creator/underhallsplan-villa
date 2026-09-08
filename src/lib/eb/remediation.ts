@@ -1147,6 +1147,59 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
+function paidRemediationInvitation(input: {
+  report: NonNullable<ReturnType<typeof getEbInspectionReportFromSnapshot>>
+  buyerSnapshot: unknown
+  recipient: string | null
+  accessUrl: string
+  taskCount: number
+}) {
+  const { report } = input
+  const buyer = input.buyerSnapshot && typeof input.buyerSnapshot === 'object' && !Array.isArray(input.buyerSnapshot)
+    ? input.buyerSnapshot as Record<string, unknown> : {}
+  // Report facts identify the job. Billing/contact data and buyer-only links do
+  // not belong in the contractor's invitation, including for older snapshots.
+  const projectTitle = normalizeText(report.project.title) ?? 'Entreprenadbesiktning'
+  const customerName = normalizeText(report.inspection.clientName) ?? normalizeText(report.project.clientName) ??
+    normalizeText(nullableString(buyer.name))
+  const inspectionLabel = [normalizeText(report.inspection.variantLabel), report.inspection.sequenceNo || null]
+    .filter(Boolean).join(' ') || 'Besiktning'
+  const deadline = ebRemediationReportDeadline(report.inspection.defaultRemedyDeadline)
+  const facts: Array<[string, string | null]> = [
+    ['Projekt', projectTitle],
+    ['Objekt', projectObjectLabel(report.project)],
+    ['Adress', projectAddress(report.project)],
+    ['Beställare', customerName],
+    ['Besiktning', inspectionLabel],
+    ['Besiktningsdatum', ebRemediationReportDeadline(report.inspection.date)],
+    ['Utlåtandenummer', normalizeText(report.inspection.assignmentNumber)],
+    ['Tilldelade anmärkningar', String(input.taskCount)],
+    ['Åtgärdsfrist enligt utlåtandet', deadline],
+  ]
+  const visibleFacts = facts.filter((entry): entry is [string, string] => Boolean(entry[1]))
+  const greeting = input.recipient ? `Hej ${input.recipient},` : 'Hej,'
+  const introduction = 'Du har fått tillgång till dina tilldelade anmärkningar efter besiktningen. I åtgärdslistan ser du vad som ska åtgärdas och kan markera punkter som klara, skriva kommentarer och lägga till bilder.'
+  const deadlineNote = deadline ? 'Se sista åtgärdsdatum för varje punkt i listan; enskilda punkter kan ha ett annat överenskommet datum.' : null
+  const caution = 'En klarmarkering är entreprenörens återrapportering, inte ett godkännande från besiktningsmannen.'
+  const privacy = 'Länken är personlig och ger tillgång till dina tilldelade punkter. Vidarebefordra den inte.'
+  const text = [greeting, '', introduction, '', ...visibleFacts.map(([label, value]) => `${label}: ${value}`),
+    ...(deadlineNote ? ['', deadlineNote] : []), '', `Öppna åtgärdslistan: ${input.accessUrl}`, '', caution, '', privacy].join('\n')
+  const factRows = visibleFacts.map(([label, value]) => `<tr><th scope="row" align="left" style="width:40%;padding:9px 12px;border-bottom:1px solid #e2e8f0;vertical-align:top;font-size:13px;font-weight:600;color:#475569;">${escapeHtml(label)}</th><td style="padding:9px 12px;border-bottom:1px solid #e2e8f0;vertical-align:top;font-size:14px;color:#0f172a;word-break:break-word;">${escapeHtml(value)}</td></tr>`).join('')
+  const html = `<!doctype html>
+<html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Åtgärdslista</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;color:#1e293b;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;"><tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+<tr><td style="padding:22px 24px;border-top:4px solid #397c5a;border-bottom:1px solid #e2e8f0;"><p style="margin:0 0 8px;color:#397c5a;font-size:12px;font-weight:700;letter-spacing:1px;">HUSHUB · ÅTGÄRDSUPPFÖLJNING</p><h1 style="margin:0;font-size:26px;line-height:1.25;color:#0f172a;">Din åtgärdslista</h1><p style="margin:8px 0 0;font-size:16px;line-height:1.5;">${escapeHtml(projectTitle)}</p></td></tr>
+<tr><td style="padding:24px;"><p style="margin:0 0 12px;font-size:15px;line-height:1.6;">${escapeHtml(greeting)}</p><p style="margin:0 0 20px;font-size:15px;line-height:1.6;">${escapeHtml(introduction)}</p>
+<table width="100%" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;">${factRows}</table>
+${deadlineNote ? `<p style="margin:12px 0 0;font-size:13px;line-height:1.6;color:#475569;">${escapeHtml(deadlineNote)}</p>` : ''}
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;"><tr><td align="center" bgcolor="#397c5a" style="border-radius:6px;padding:14px 22px;"><a href="${escapeHtml(input.accessUrl)}" style="display:inline-block;font-size:16px;line-height:1.4;font-weight:600;text-decoration:none;color:#ffffff;">Öppna åtgärdslistan</a></td></tr></table>
+<p style="margin:0 0 12px;font-size:13px;line-height:1.6;color:#475569;">${escapeHtml(caution)}</p><p style="margin:0;font-size:13px;line-height:1.6;color:#475569;">${escapeHtml(privacy)}</p></td></tr>
+</table></td></tr></table></body></html>`
+  return { subject: `Åtgärdslista – ${projectTitle.replace(/[\r\n]+/g, ' ')} – ${inspectionLabel.replace(/[\r\n]+/g, ' ')}`, text, html }
+}
+
 export async function issueEbRemediationAccessLink(input: {
   orgId: string
   projectId: string
@@ -1166,6 +1219,10 @@ export async function issueEbRemediationAccessLink(input: {
   if (order?.withdrawal_requested_at) throw new Error('EB_FOLLOW_UP_ORDER_INACTIVE')
   const inspectionId = normalizeText(input.inspectionId)
   if (order && order.inspection_id !== inspectionId) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+  const frozenReport = order ? getEbInspectionReportFromSnapshot(order.report_snapshot) : null
+  if (order && (!frozenReport || frozenReport.project.id !== input.projectId || frozenReport.inspection.inspectionId !== inspectionId)) {
+    throw new Error('EB_REMEDIATION_ORDER_INVALID')
+  }
   // Owner links are created/recovered only by the verified purchase flow.
   if (input.role === 'customer_owner') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
   const inspection = inspectionId
@@ -1180,6 +1237,7 @@ export async function issueEbRemediationAccessLink(input: {
   const fromAddress = input.sendEmail === false || orderId ? null : mailFromAddress()
 
   const admin = createSupabaseAdminClient()
+  let assignedTaskCount = 0
   if (assigneeId) {
     const { data: assignee, error } = await admin
       .from('eb_remediation_assignees')
@@ -1191,11 +1249,12 @@ export async function issueEbRemediationAccessLink(input: {
       .maybeSingle()
     if (error || !assignee) throw new Error('EB_REMEDIATION_ASSIGNEE_NOT_FOUND')
     if (orderId) {
-      const { data: assignedTasks, error: assignedError } = await admin.from('eb_remediation_tasks')
-        .select('id').eq('follow_up_order_id', orderId).eq('remediation_assignee_id', assigneeId)
-        .eq('included', true).limit(1)
+      const { count, error: assignedError } = await admin.from('eb_remediation_tasks')
+        .select('id', { count: 'exact', head: true }).eq('follow_up_order_id', orderId).eq('remediation_assignee_id', assigneeId)
+        .eq('org_id', input.orgId).eq('eb_project_id', input.projectId).eq('inspection_id', inspectionId).eq('included', true)
       if (assignedError) throw new Error(assignedError.message)
-      if (!assignedTasks?.length) throw new Error('EB_REMEDIATION_TASK_REQUIRED')
+      assignedTaskCount = count ?? 0
+      if (assignedTaskCount === 0) throw new Error('EB_REMEDIATION_TASK_REQUIRED')
     }
   }
 
@@ -1258,7 +1317,9 @@ export async function issueEbRemediationAccessLink(input: {
 
     if (orderId) {
       try {
-        await queueEbFollowUpEmail({ orderId, dedupeKey: `access:${link.id}`, to: email, subject, html, text })
+        const invitation = paidRemediationInvitation({ report: frozenReport!, buyerSnapshot: order!.buyer_snapshot,
+          recipient: displayName, accessUrl, taskCount: assignedTaskCount })
+        await queueEbFollowUpEmail({ orderId, dedupeKey: `access:${link.id}`, to: email, ...invitation })
       } catch (error) {
         await admin.from('eb_remediation_access_links').update({ revoked_at: new Date().toISOString() }).eq('id', link.id)
         throw error

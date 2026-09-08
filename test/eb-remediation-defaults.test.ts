@@ -10,6 +10,7 @@ const output = ts.transpileModule(readFileSync(new URL('../src/lib/eb/remediatio
 const compiled = { exports: {} }
 new Function('exports', 'module', output)(compiled.exports, compiled)
 const { ebRemediationAssignmentDueDate: dueDate, ebRemediationReportDeadline: deadline,
+  ebRemediationEffectiveDeadline: effectiveDeadline, ebRemediationDeadlineSummary: deadlineSummary,
   ebRemediationContractorSuggestions: suggestions } = compiled.exports as typeof Defaults
 
 const reportProject = { contractorName: 'Bygg AB', contractorOrgNo: '556000-0001', contractorEmail: null, contractorPhone: null }
@@ -33,6 +34,34 @@ test('only calendar-valid frozen report dates can become an inherited deadline',
   for (const value of ['2026-02-29', '2026-09-31', '2026-09-03T00:00:00Z', '', null]) {
     assert.equal(deadline(value), null)
   }
+})
+
+test('individual task dates are reported even when the frozen report has no default deadline', () => {
+  const tasks = [{ dueDate: '2026-09-30' }, { dueDate: '2026-09-30' }]
+  const original = structuredClone(tasks)
+  assert.deepEqual(deadlineSummary(tasks, null), { missingCount: 0, commonDeadline: '2026-09-30' })
+  assert.equal(effectiveDeadline(tasks[0].dueDate, null), '2026-09-30')
+  assert.equal(effectiveDeadline(tasks[0].dueDate, '2026-10-15'), '2026-09-30')
+  assert.deepEqual(tasks, original)
+})
+
+test('deadline summary counts actual missing dates and never treats multiple dates as missing', () => {
+  assert.deepEqual(deadlineSummary([{ dueDate: '2026-09-30' }, { dueDate: '2026-10-01' }], null),
+    { missingCount: 0, commonDeadline: null })
+  assert.deepEqual(deadlineSummary([{ dueDate: '2026-09-30' }, { dueDate: null }], null),
+    { missingCount: 1, commonDeadline: null })
+  assert.deepEqual(deadlineSummary([{ dueDate: null }, { dueDate: null }], null),
+    { missingCount: 2, commonDeadline: null })
+  assert.deepEqual(deadlineSummary([], '2026-09-30'), { missingCount: 0, commonDeadline: null })
+})
+
+test('the summary and task use the same report fallback and individual-date precedence', () => {
+  assert.equal(effectiveDeadline(null, '2026-09-30'), '2026-09-30')
+  assert.deepEqual(deadlineSummary([{ dueDate: null }, { dueDate: '2026-09-30' }], '2026-09-30'),
+    { missingCount: 0, commonDeadline: '2026-09-30' })
+  assert.deepEqual(deadlineSummary([{ dueDate: null }, { dueDate: '2026-10-01' }], '2026-09-30'),
+    { missingCount: 0, commonDeadline: null })
+  assert.equal(effectiveDeadline(null, '2026-02-31'), null)
 })
 
 test('same frozen company can use its live company contact without changing the frozen identity', () => {

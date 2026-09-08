@@ -40,6 +40,23 @@ export function ebRemediationReportDeadline(value: unknown): string | null {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === candidate ? candidate : null
 }
 
+/** Keep the list summary and each task consistent: an individual date wins. */
+export function ebRemediationEffectiveDeadline(dueDate: unknown, reportDeadline: unknown): string | null {
+  return ebRemediationReportDeadline(dueDate) ?? ebRemediationReportDeadline(reportDeadline)
+}
+
+/** Summarize only the caller's visible, authorized tasks without changing stored dates. */
+export function ebRemediationDeadlineSummary(tasks: ReadonlyArray<{ dueDate: string | null }>, reportDeadline: string | null) {
+  const dates = new Set<string>()
+  let missingCount = 0
+  for (const task of tasks) {
+    const date = ebRemediationEffectiveDeadline(task.dueDate, reportDeadline)
+    if (date) dates.add(date)
+    else missingCount += 1
+  }
+  return { missingCount, commonDeadline: missingCount === 0 && dates.size === 1 ? [...dates][0] : null }
+}
+
 /** Omitted assignment dates mean preserve; only an explicit null/empty string clears a date. */
 export function ebRemediationAssignmentDueDate(payload: Record<string, unknown>): string | null | undefined {
   if (!Object.hasOwn(payload, 'dueDate') || payload.dueDate === undefined) return undefined

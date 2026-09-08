@@ -337,3 +337,41 @@ test('competing notification claims never claim one job twice; stale leases reco
   assert.equal((await db.query<{ ok: boolean }>('select eb_finish_follow_up_email($1,$2,true) ok', [second.id, second.lease_id])).rows[0].ok, true)
   assert.equal((await db.query('select * from eb_claim_follow_up_emails(1)')).rows.length, 0)
 })
+
+test('retiring activity mail preserves task changes, images and audit history without creating mail jobs', async () => {
+  // The tests above exercise the historical migration and its pending jobs.
+  // Applying the new policy is repeatable and leaves those old rows available
+  // for the new worker to classify; no task or evidence is deleted.
+  const old = await fixture()
+  await old.action(old.worker, 'comment', { message: 'An old queued activity.' })
+  const oldJobs = await old.jobs()
+  await db.exec(migration('2026-09-08_08_eb_follow_up_activity_mail.sql'))
+  await db.exec(migration('2026-09-08_08_eb_follow_up_activity_mail.sql'))
+  assert.deepEqual(await old.jobs(), oldJobs)
+
+  const f = await fixture()
+  await f.action(f.owner, 'assign', { assigneeId: f.assignee })
+  await f.action(f.worker, 'comment', { message: 'Work documented in the portal, not email.' })
+  const imageId = randomUUID()
+  await f.action(f.worker, 'image', { id: imageId, storageBucket: 'eb-remediation-images',
+    filePath: `${f.project}/${f.task}/${imageId}.jpg`, contentType: 'image/jpeg', fileSizeBytes: 10, fileName: 'Efter.jpg' })
+  await f.action(f.worker, 'status', { status: 'reported_remedied' })
+  assert.equal((await f.current()).status, 'reported_remedied')
+  assert.equal((await f.events()).length, 4)
+  assert.equal((await db.query('select id from eb_remediation_images where task_id=$1', [f.task])).rows.length, 1)
+  assert.deepEqual((await f.current()).note_snapshot, { noteText: 'PURCHASED NOTE', noteNumber: 1 })
+  assert.equal((await f.jobs()).length, 0)
+
+  for (const kind of ['email', 'verification', 'receipt', 'invoice', 'access']) {
+    const inserted = await db.query(`insert into eb_follow_up_email_outbox(order_id,dedupe_key,kind,payload_ciphertext)
+      values($1,$2,$3,'test-encrypted-payload') returning id`, [f.order, `${kind}:${randomUUID()}`, kind])
+    assert.equal(inserted.rows.length, 1, `${kind} must retain its existing delivery path`)
+  }
+  await db.query('select eb_withdraw_follow_up_order($1,$2)', [f.order, 'buyer@example.test'])
+  assert.deepEqual((await f.jobs()).map(row => row.kind).sort(), ['access', 'email', 'invoice', 'receipt', 'verification', 'withdrawal'])
+  for (const role of ['anon', 'authenticated']) {
+    const { rows } = await db.query<{ allowed: boolean }>(
+      "select has_function_privilege($1,'public.eb_skip_follow_up_activity_mail()','EXECUTE') allowed", [role])
+    assert.equal(rows[0].allowed, false)
+  }
+})

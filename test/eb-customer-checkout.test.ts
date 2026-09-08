@@ -88,6 +88,7 @@ function fixture() {
   }
   const server = load<typeof Server>('src/lib/eb/followUpServer.ts', {
     '@/lib/eb/followUp': shared,
+    '@/lib/eb/followUpConfirmation': load('src/lib/eb/followUpConfirmation.ts', {}),
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/tokens': { hashAssignmentToken: (value: string) => value, generateAssignmentToken: () => ownerToken },
     '@/lib/eb/reportSnapshot': { getEbInspectionReportFromSnapshot: (value: unknown) => value },
@@ -190,7 +191,8 @@ test('another inspection, report or changed designated contact invalidates check
 test('a new purchase queues full manual invoice material only to Admin and a separate buyer receipt', async () => {
   const f = fixture()
   await f.verify()
-  const result = await f.server.completeEbFollowUpOrder({ token: f.token, input: { ...f.orderInput, email: 'attacker@example.test' } })
+  const result = await f.server.completeEbFollowUpOrder({ token: f.token, input: { ...f.orderInput, email: 'attacker@example.test',
+    acceptanceSnapshot: { termsText: 'UNTRUSTED-CHECKOUT-TERMS' }, confirmationPdf: { project: { title: 'UNTRUSTED-PROJECT' } } } })
   assert.equal(result.portalUrl, `/atgarder/${f.ownerToken}`)
   const completion = f.state.rpcs.find(call => call.name === 'eb_complete_follow_up_order')!.input
   assert.equal((completion.p_buyer as Row).email, f.email)
@@ -205,13 +207,25 @@ test('a new purchase queues full manual invoice material only to Admin and a sep
   assert.equal(JSON.parse(mails.find(mail => mail.kind === 'receipt')!.ciphertext).to, f.email)
   const receipt = JSON.parse(mails.find(mail => mail.kind === 'receipt')!.ciphertext)
   const saved = (completion.p_buyer as Shared.EbFollowUpBuyer).acceptanceSnapshot!
-  assert.ok(receipt.text.includes(saved.termsText), 'Receipt contains the complete archived terms, not a mutable link alone')
-  for (const text of Object.values(saved.consentTexts)) assert.ok(receipt.text.includes(text))
+  assert.equal(receipt.confirmationPdf.version, 1)
+  assert.equal(receipt.confirmationPdf.orderId, f.challenge)
+  assert.deepEqual(receipt.confirmationPdf.buyer, completion.p_buyer)
+  assert.deepEqual(receipt.confirmationPdf.seller, completion.p_seller)
+  assert.deepEqual(receipt.confirmationPdf.buyer.acceptanceSnapshot, saved, 'PDF source contains exact archived terms, consents, hash and timestamps')
+  assert.deepEqual(receipt.confirmationPdf.price, { totalOre: 59900, netOre: 47920, vatOre: 11980, vatRate: 25 })
+  assert.deepEqual(receipt.confirmationPdf.project, { title: 'Testvilla', propertyDesignation: 'VILLAN 1', address: 'Testgatan 1',
+    customerName: 'Verified Buyer', inspectionLabel: 'Slutbesiktning 1', inspectionDate: '2026-09-03', reportNumber: '' })
+  assert.equal(receipt.confirmationPdf.withdrawalFormText, terms.getEbFollowUpWithdrawalFormText(completion.p_seller as Shared.EbFollowUpSeller))
+  assert.match(receipt.confirmationPdf.withdrawalFormText, /Underskrift \(endast om blanketten skickas på papper\)/)
+  assert.doesNotMatch(JSON.stringify(receipt), /UNTRUSTED-CHECKOUT-TERMS|UNTRUSTED-PROJECT|Intern besiktningsvy/)
+  assert.ok(!receipt.text.includes(saved.termsText), 'Full terms belong in the durable attachment, not duplicated in the short email')
+  assert.match(receipt.text, /bifogad PDF/)
   assert.ok(receipt.text.includes(saved.withdrawalDeadline))
-  assert.ok(receipt.text.includes(saved.acceptedAt))
-  assert.match(receipt.text, /Underskrift \(endast om blanketten skickas på papper\)/)
+  assert.match(receipt.text, /Beställt: .*\(svensk tid\)/)
   assert.ok(receipt.html.includes(`href="https://hushub.test/atgarder/${f.ownerToken}#angra-bestallning"`))
   assert.ok(receipt.html.includes(terms.EB_FOLLOW_UP_WITHDRAWAL_FORM_URL))
+  assert.equal(invoice.confirmationPdf, undefined)
+  assert.equal(JSON.parse(mails.find(mail => mail.kind === 'access')!.ciphertext).confirmationPdf, undefined)
   assert.ok(invoice.text.includes(saved.withdrawalDeadline))
   assert.equal(f.state.session?.kind, 'owner')
   const before = f.state.rpcs.length

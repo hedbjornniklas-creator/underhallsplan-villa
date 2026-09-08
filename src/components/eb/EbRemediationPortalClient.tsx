@@ -40,6 +40,8 @@ import type {
   EbRemediationWorkspace,
 } from '@/lib/eb/remediation'
 import { ebRemediationAllowedStatuses, ebRemediationCanComment, ebRemediationCanManage } from '@/lib/eb/remediationPolicy'
+import { ebRemediationDeadlineSummary, ebRemediationEffectiveDeadline } from '@/lib/eb/remediationDefaults'
+import EbRemediationImageViewer from '@/components/eb/EbRemediationImageViewer'
 
 type Props = {
   initialWorkspace: EbRemediationWorkspace
@@ -123,6 +125,27 @@ function taskReference(task: EbRemediationTask) {
 
 function locationLabel(task: EbRemediationTask) {
   return [task.snapshot.location, task.snapshot.room, task.snapshot.placeDetail].filter(Boolean).join(' · ')
+}
+
+function matchesTaskFilters(task: EbRemediationTask, status: string, assignee: string, paid: boolean) {
+  if (paid ? status === 'done' ? task.status !== 'reported_remedied' : status === 'not_done' && task.status === 'reported_remedied' : status !== 'all' && task.status !== status) return false
+  if (assignee === 'unassigned') return !task.assigneeId
+  return assignee === 'all' || task.assigneeId === assignee
+}
+
+function taskImageGallery(task: EbRemediationTask, workspace: EbRemediationWorkspace) {
+  return [
+    ...(workspace.followUp ? workspace.originalImages ?? [] : []).filter((image) => image.taskId === task.id).map((image) => ({
+      id: `original:${image.id}`, url: image.imageUrl,
+      alt: `${taskReference(task)} – ${image.fileName || 'Originalbild från utlåtandet'}`,
+      caption: `${taskReference(task)} · Bilder i utlåtandet${image.fileName ? ` · ${image.fileName}` : ''}`,
+    })),
+    ...workspace.images.filter((image) => image.taskId === task.id).map((image) => ({
+      id: `follow-up:${image.id}`, url: image.imageUrl,
+      alt: `${taskReference(task)} – ${image.fileName || 'Bild i uppföljningen'}`,
+      caption: `${taskReference(task)} · Bilder i uppföljningen${image.fileName ? ` · ${image.fileName}` : ''}`,
+    })),
+  ]
 }
 
 function assigneeDraft(assignee: EbRemediationAssignee): AssigneeDraft {
@@ -213,6 +236,7 @@ export default function EbRemediationPortalClient({
   const [bulkDueDate, setBulkDueDate] = useState(initialWorkspace.inspection?.defaultRemedyDeadline ?? '')
   const [changeBulkDueDate, setChangeBulkDueDate] = useState(false)
   const [expandedComments, setExpandedComments] = useState<string[]>([])
+  const [imageSelection, setImageSelection] = useState<{ taskId: string; imageId: string } | null>(null)
   const [selectedSuggestion, setSelectedSuggestion] = useState('')
   const [addingAssignee, setAddingAssignee] = useState(initialWorkspace.assignees.length === 0)
   const [editingAssigneeId, setEditingAssigneeId] = useState<string | null>(null)
@@ -274,7 +298,10 @@ export default function EbRemediationPortalClient({
     setWorkspace(next)
     setAssigneeDrafts((drafts) => mergeEbRemediationDrafts(drafts, previous.assignees, next.assignees))
     setSelectedTaskIds((ids) => ids.filter((id) => next.tasks.some((task) => task.id === id)))
-  }, [])
+    setImageSelection((selection) => selection && next.state === 'open' && next.tasks.some((task) =>
+      task.id === selection.taskId && matchesTaskFilters(task, filterStatus, filterAssignee, Boolean(next.followUp)))
+      ? selection : null)
+  }, [filterStatus, filterAssignee])
 
   useEffect(() => {
     let disposed = false
@@ -373,18 +400,15 @@ export default function EbRemediationPortalClient({
   }, [workspace.tasks, paid])
 
   const filteredTasks = useMemo(
-    () =>
-      workspace.tasks.filter((task) => {
-        if (paid ? filterStatus === 'done' ? task.status !== 'reported_remedied' : filterStatus === 'not_done' && task.status === 'reported_remedied' : filterStatus !== 'all' && task.status !== filterStatus) return false
-        if (filterAssignee === 'unassigned' && task.assigneeId) return false
-        if (filterAssignee !== 'all' && filterAssignee !== 'unassigned' && task.assigneeId !== filterAssignee) {
-          return false
-        }
-        return true
-      }),
+    () => workspace.tasks.filter((task) => matchesTaskFilters(task, filterStatus, filterAssignee, paid)),
     [filterAssignee, filterStatus, workspace.tasks, paid]
   )
   const selectedVisibleTaskIds = selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id))
+  const deadlineSummary = ebRemediationDeadlineSummary(filteredTasks, defaultRemedyDeadline)
+  // Re-resolve against current authorized data after refresh/reassignment.
+  // Never retain an old task's signed image URLs in viewer state.
+  const imageTask = filteredTasks.find((task) => task.id === imageSelection?.taskId)
+  const galleryImages = imageTask ? taskImageGallery(imageTask, workspace) : []
 
   const createAssignee = async () => {
     const ok = await callAction('create_assignee', newAssignee, 'create-assignee')
@@ -442,6 +466,9 @@ export default function EbRemediationPortalClient({
 
   const changeStatus = async (taskId: string, status: EbRemediationStatus) => {
     const task = workspace.tasks.find((item) => item.id === taskId)
+    if (paid && (status === 'returned' || !workspace.images.some((image) => image.taskId === taskId))) {
+      setExpandedComments((current) => current.includes(taskId) ? current : [...current, taskId])
+    }
     const ok = await callAction('status', { taskId, status, message: comments[taskId] ?? '', expectedUpdatedAt: task?.updatedAt }, `status-${taskId}-${status}`)
     if (ok) setComments((current) => ({ ...current, [taskId]: '' }))
   }
@@ -715,8 +742,8 @@ export default function EbRemediationPortalClient({
           <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 md:flex-row md:items-end md:justify-between print:hidden">
             <div><h2 className="text-lg font-semibold">Anmärkningar</h2><p className="mt-1 text-xs text-gray-600">{paid ? 'Klar = anmäld klar av entreprenören, inte godkänd vid besiktning.' : '“Anmäld avhjälpt” är entreprenörens uppgift och innebär inte att punkten är godkänd vid besiktning.'}</p></div>
             <div className="flex flex-wrap gap-2">
-              <label><span className="sr-only">Filtrera status</span><select aria-label="Filtrera status" value={filterStatus} onChange={(event) => { setFilterStatus(event.target.value); setSelectedTaskIds([]) }} className={inputClassName()}><option value="all">Alla anmärkningar</option>{paid ? <><option value="not_done">Ej klara</option><option value="done">Klara</option></> : STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-              {role !== 'assignee' ? <label><span className="sr-only">Filtrera mottagare</span><select aria-label="Filtrera mottagare" value={filterAssignee} onChange={(event) => { setFilterAssignee(event.target.value); setSelectedTaskIds([]) }} className={inputClassName()}><option value="all">Alla utförare</option><option value="unassigned">Ej tilldelade</option>{workspace.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label> : null}
+              <label><span className="sr-only">Filtrera status</span><select aria-label="Filtrera status" value={filterStatus} onChange={(event) => { setFilterStatus(event.target.value); setSelectedTaskIds([]); setImageSelection(null) }} className={inputClassName()}><option value="all">Alla anmärkningar</option>{paid ? <><option value="not_done">Ej klara</option><option value="done">Klara</option></> : STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              {role !== 'assignee' ? <label><span className="sr-only">Filtrera mottagare</span><select aria-label="Filtrera mottagare" value={filterAssignee} onChange={(event) => { setFilterAssignee(event.target.value); setSelectedTaskIds([]); setImageSelection(null) }} className={inputClassName()}><option value="all">Alla utförare</option><option value="unassigned">Ej tilldelade</option>{workspace.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label> : null}
             </div>
           </div>
 
@@ -746,35 +773,60 @@ export default function EbRemediationPortalClient({
             </div>
           ) : null}
 
-          {paid ? <div className="flex items-center gap-1 px-4 py-2 text-sm text-slate-600 print:hidden"><p>{defaultRemedyDeadline ? `Frist enligt utlåtandet: ${formatDate(defaultRemedyDeadline)}` : 'Åtgärdsdatum saknas'}</p><PortalHelp label="sista åtgärdsdatum">{defaultRemedyDeadline ? 'Fristen i utlåtandet används när anmärkningen saknar ett eget datum. Ett separat angivet datum har företräde.' : isCustomerOwner ? 'Sista åtgärdsdatum saknas i utlåtandet. Kom överens med entreprenören om när åtgärderna ska vara klara. Markera sedan anmärkningarna och välj Ändra sista åtgärdsdatum.' : 'Datumet behöver tas fram genom en gemensam överenskommelse mellan beställaren och entreprenören.'}</PortalHelp></div> : null}
+          {paid && filteredTasks.length > 0 ? (
+            <div data-testid="remediation-deadline-summary" className="flex items-center gap-1 px-4 py-2 text-sm text-slate-600 print:hidden">
+              <p>{deadlineSummary.missingCount > 0
+                ? `Åtgärdsdatum saknas för ${deadlineSummary.missingCount} av ${filteredTasks.length} anmärkningar i urvalet.`
+                : deadlineSummary.commonDeadline
+                  ? `Klar senast: ${formatDate(deadlineSummary.commonDeadline)}`
+                  : 'Olika åtgärdsdatum – se respektive anmärkning.'}</p>
+              <PortalHelp label="sista åtgärdsdatum">
+                <p>Sammanfattningen gäller anmärkningarna i det aktuella urvalet. Ett separat angivet datum har företräde framför fristen i utlåtandet. Datumet för varje punkt visas vid Klar senast.</p>
+                {deadlineSummary.missingCount > 0 ? <p className="mt-2">{isCustomerOwner
+                  ? 'För punkter som saknar datum: kom överens med entreprenören om när åtgärderna ska vara klara. Markera sedan dessa anmärkningar och välj Ändra sista åtgärdsdatum.'
+                  : 'För punkter som saknar datum behöver beställaren och entreprenören komma överens om när åtgärderna ska vara klara.'}</p> : null}
+              </PortalHelp>
+            </div>
+          ) : null}
 
           {filteredTasks.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-gray-600">Inga anmärkningar matchar urvalet.</div>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="space-y-4 bg-slate-50/50 p-4 sm:p-5 print:bg-white print:p-0">
               {filteredTasks.map((task) => {
                 const assignee = workspace.assignees.find((item) => item.id === task.assigneeId)
                 const events = workspace.events.filter((event) => event.taskId === task.id)
                 const images = workspace.images.filter((image) => image.taskId === task.id)
+                const taskGallery = taskImageGallery(task, workspace)
                 const checked = selectedTaskIds.includes(task.id)
-                const showResponse = !isCustomerOwner || expandedComments.includes(task.id)
+                const showResponse = !paid || expandedComments.includes(task.id)
                 return (
-                  <article key={task.id} data-task-id={task.id} className="break-inside-avoid px-4 py-4 print:px-0">
-                    <div className="flex items-start gap-3">
-                      {canManage ? <input type="checkbox" checked={checked} disabled={isBusy} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))} className="mt-1 h-4 w-4 rounded border-gray-300 text-emerald-700 print:hidden" aria-label={`Välj ${taskReference(task)}`} /> : null}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-semibold uppercase text-emerald-700">{taskReference(task)}</span><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClassName(task.status, paid)}`}>{statusLabel(task.status, paid)}</span></div>
-                            <p className="mt-2 whitespace-pre-wrap text-sm font-medium leading-6 text-gray-950">{task.snapshot.noteText}</p>
-                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
-                              {task.snapshot.disciplineLabel ? <span>Del: {task.snapshot.disciplineLabel}</span> : null}
-                              {locationLabel(task) ? <span>Plats: {locationLabel(task)}</span> : null}
-                              <span>Besiktning: {formatDate(task.snapshot.inspectionDate)}</span>
-                              <span>Klar senast: {formatDate(task.dueDate ?? defaultRemedyDeadline)}{!task.dueDate && defaultRemedyDeadline ? ' (enligt utlåtandet)' : ''}</span>
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 flex-col gap-2 lg:w-64 print:w-auto">
+                  <article key={task.id} data-task-id={task.id} className="break-inside-avoid overflow-hidden rounded-xl border border-slate-200 bg-white [overflow-wrap:anywhere] print:rounded-none">
+                    <header className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+                      {canManage ? <input type="checkbox" checked={checked} disabled={isBusy} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))} className="mr-1 h-4 w-4 rounded border-gray-300 text-emerald-700 print:hidden" aria-label={`Välj ${taskReference(task)}`} /> : null}
+                      <span aria-label={task.snapshot.noteNumber ? `Punkt ${task.snapshot.noteNumber}` : 'Onumrerad punkt'} className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-emerald-700 px-1 text-sm font-bold text-white">{task.snapshot.noteNumber ?? '–'}</span>
+                      <span className="text-sm font-semibold text-slate-950">{task.snapshot.inspectionVariant}{task.snapshot.inspectionSequenceNo}</span>
+                      {task.snapshot.markerKey ? <span title="Beteckning i utlåtandet" className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">{task.snapshot.markerKey}</span> : null}
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClassName(task.status, paid)}`}>{statusLabel(task.status, paid)}</span>
+                      {taskGallery.length > 0 ? <button type="button" data-testid="remediation-note-images" aria-label={`Visa ${taskGallery.length} ${taskGallery.length === 1 ? 'bild' : 'bilder'} för ${taskReference(task)}`} aria-haspopup="dialog" onClick={() => setImageSelection({ taskId: task.id, imageId: taskGallery[0].id })} className="ml-auto inline-flex min-h-10 items-center gap-1.5 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 print:hidden"><Camera size={15} aria-hidden />{taskGallery.length} {taskGallery.length === 1 ? 'bild' : 'bilder'}</button> : null}
+                    </header>
+                    <div className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(150px,0.32fr)_1fr] sm:px-5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">Del / rum</p>
+                        {task.snapshot.disciplineLabel ? <p className="mt-1 text-sm font-medium leading-6 text-slate-800">{task.snapshot.disciplineLabel}</p> : null}
+                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-800">{locationLabel(task) || '–'}</p>
+                        <p className="mt-3 text-xs leading-5 text-slate-500">Besiktning: {formatDate(task.snapshot.inspectionDate)}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">Notering</p>
+                        <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-slate-950">{task.snapshot.noteText || '–'}</p>
+                      </div>
+                    </div>
+                    <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+                      <div className="min-w-0">
+                        <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
+                          <p className="text-sm leading-6 text-slate-700"><span className="font-semibold">Klar senast:</span> {formatDate(ebRemediationEffectiveDeadline(task.dueDate, defaultRemedyDeadline))}{!task.dueDate && defaultRemedyDeadline ? ' (enligt utlåtandet)' : ''}</p>
+                          <div className="flex min-w-0 flex-col gap-2">
                             <p className="text-xs font-semibold text-gray-500">Åtgärdas av</p>
                             {canManage ? (
                               <>
@@ -785,21 +837,21 @@ export default function EbRemediationPortalClient({
                           </div>
                         </div>
 
-                        {isCustomerOwner && !isReadOnly ? <button type="button" onClick={() => setExpandedComments((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} aria-expanded={showResponse} aria-controls={`comment-panel-${task.id}`} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 print:hidden"><MessageSquareText size={15} />{showResponse ? 'Stäng kommentarsfält' : 'Kommentera'}</button> : null}
+                        {paid && !isReadOnly ? <div className="mt-4 flex flex-wrap gap-2 print:hidden">
+                          {ebRemediationAllowedStatuses(role, true).filter((status) => (status === 'reported_remedied' || status === 'returned') && status !== task.status && (!isCustomerOwner || task.status === 'reported_remedied' || task.status === 'cannot_remedy')).map((status) => (
+                            <button key={status} type="button" onClick={() => void changeStatus(task.id, status as EbRemediationStatus)} disabled={isBusy} className={`inline-flex min-h-10 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold disabled:opacity-50 ${status === 'reported_remedied' ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'border border-gray-300 bg-white text-gray-800 hover:bg-gray-50'}`}>
+                              {busyKey === `status-${task.id}-${status}` ? <Loader2 size={14} className="animate-spin" /> : status === 'reported_remedied' ? <Check size={16} /> : null}
+                              {status === 'returned' ? 'Begär komplettering' : 'Markera klar'}
+                            </button>
+                          ))}
+                          <button type="button" onClick={() => setExpandedComments((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} aria-expanded={showResponse} aria-controls={`comment-panel-${task.id}`} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"><MessageSquareText size={15} />{isCustomerOwner ? showResponse ? 'Stäng kommentarsfält' : 'Kommentera' : showResponse ? 'Stäng återrapportering' : 'Återrapportera'}</button>
+                        </div> : null}
                         {paid && !isReadOnly && showResponse ? (
                           <div id={`comment-panel-${task.id}`} className="mt-4 space-y-2 print:hidden">
                             <label className="block text-xs font-semibold text-gray-700" htmlFor={`comment-${task.id}`}>{isCustomerOwner ? 'Kommentar till entreprenören' : 'Kommentar eller beskrivning av utförd åtgärd'}</label>
                             <textarea id={`comment-${task.id}`} rows={3} value={comments[task.id] ?? ''} onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))} disabled={isBusy} className={inputClassName()} placeholder={role === 'customer_owner' ? 'Beskriv din fråga eller vad som behöver kompletteras.' : 'Beskriv utförd åtgärd. Om arbetet inte kan fotograferas: förklara varför och hur det har åtgärdats.'} />
                             <PortalHelp label="kommentarer">{isCustomerOwner ? 'Ställ en fråga, bifoga en bild eller förklara vad som behöver kompletteras. Begär komplettering återför punkten till Ej klar och är inte ett besiktningsbeslut.' : 'Markera klar med en åtgärdsbild eller en förklarande kommentar när arbetet inte kan fotograferas. Om du inte kan åtgärda punkten: lämna den som Ej klar och beskriv hindret i en kommentar.'}</PortalHelp>
-                            <div className="flex flex-wrap gap-2">
-                              {ebRemediationAllowedStatuses(role, true).filter((status) => (status === 'reported_remedied' || status === 'returned') && status !== task.status && (!isCustomerOwner || task.status === 'reported_remedied' || task.status === 'cannot_remedy')).map((status) => (
-                                <button key={status} type="button" onClick={() => void changeStatus(task.id, status as EbRemediationStatus)} disabled={isBusy} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold disabled:opacity-50 ${status === 'reported_remedied' ? 'bg-emerald-700 text-white' : 'border border-gray-300 bg-white text-gray-800'}`}>
-                                  {busyKey === `status-${task.id}-${status}` ? <Loader2 size={14} className="animate-spin" /> : null}
-                                  {status === 'returned' ? 'Begär komplettering' : 'Markera klar'}
-                                </button>
-                              ))}
-                              <button type="button" disabled={isBusy || !(comments[task.id] ?? '').trim()} onClick={() => void addComment(task.id)} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold disabled:opacity-50"><Send size={14} /> Skicka kommentar</button>
-                            </div>
+                            <button type="button" disabled={isBusy || !(comments[task.id] ?? '').trim()} onClick={() => void addComment(task.id)} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold disabled:opacity-50"><Send size={14} /> Skicka kommentar</button>
                           </div>
                         ) : null}
 
@@ -814,21 +866,23 @@ export default function EbRemediationPortalClient({
                         ) : null}
 
                         {paid && (workspace.originalImages ?? []).some((image) => image.taskId === task.id) ? (
-                          <div className="mt-4">
+                          <div className="mt-4 hidden print:block">
                             <h3 className="text-xs font-semibold text-gray-700">Bilder i utlåtandet</h3>
                             <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-                              {(workspace.originalImages ?? []).filter((image) => image.taskId === task.id).map((image) => image.imageUrl ? <a key={image.id} href={image.imageUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border border-gray-200 bg-gray-100"><img src={image.thumbnailUrl ?? image.imageUrl} alt={image.fileName ?? 'Originalbild från utlåtandet'} loading="lazy" className="aspect-square w-full object-cover" /></a> : <p key={image.id} className="text-xs text-gray-500">Originalbilden kunde inte läsas.</p>)}
+                              {(workspace.originalImages ?? []).filter((image) => image.taskId === task.id).map((image) => image.imageUrl ? <div key={image.id} className="overflow-hidden rounded-md border border-gray-200 bg-gray-100"><img src={image.thumbnailUrl ?? image.imageUrl} alt={image.fileName ?? 'Originalbild från utlåtandet'} loading="lazy" className="aspect-square w-full object-cover" /></div> : <p key={image.id} className="text-xs text-gray-500">Originalbilden kunde inte läsas.</p>)}
                             </div>
                           </div>
                         ) : null}
 
+                        <div className={paid && !showResponse ? 'hidden print:block' : ''}>
                         {images.length > 0 ? <h3 className="mt-4 text-xs font-semibold text-gray-700">{paid ? 'Bilder i uppföljningen' : 'Åtgärdsbilder'}</h3> : null}
                         {(images.length > 0 || uploading[task.id]) ? (
                           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-                            {images.map((image) => <a key={image.id} href={image.imageUrl ?? '#'} target="_blank" rel="noreferrer" className="block overflow-hidden border border-gray-200 bg-gray-100"><img src={image.thumbnailUrl ?? image.imageUrl ?? ''} alt="Åtgärdsbild" loading="lazy" className="aspect-square w-full object-cover" /></a>)}
+                            {images.map((image) => <button type="button" key={image.id} aria-label={`Visa åtgärdsbild för ${taskReference(task)}`} aria-haspopup="dialog" onClick={() => setImageSelection({ taskId: task.id, imageId: `follow-up:${image.id}` })} className="block overflow-hidden rounded-md border border-gray-200 bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">{image.thumbnailUrl || image.imageUrl ? <img src={image.thumbnailUrl ?? image.imageUrl!} alt={image.fileName ?? 'Åtgärdsbild'} loading="lazy" className="aspect-square w-full object-cover" /> : <span className="block p-3 text-sm text-slate-600">Bilden kunde inte läsas.</span>}</button>)}
                             {uploading[task.id] ? <div className="flex aspect-square items-center justify-center border border-dashed border-emerald-300 bg-emerald-50 text-emerald-800"><div className="text-center"><Loader2 className="mx-auto animate-spin" size={20} /><p className="mt-2 text-xs">{uploading[task.id]} laddas upp</p></div></div> : null}
                           </div>
                         ) : null}
+                        </div>
 
                         {!internal && !isReadOnly && showResponse && (canRespond || role === 'customer_owner') ? (
                           <div className="mt-4 rounded-md border border-dashed border-emerald-300 bg-emerald-50/40 p-3 print:hidden"
@@ -909,6 +963,7 @@ export default function EbRemediationPortalClient({
         </section> : null}
         <p className="pb-8 text-xs leading-5 text-gray-500 print:pb-0">Åtgärdslistan används för uppföljning. Utlåtandet och dess låsta innehåll ändras inte av kommentarer, bilder, tilldelningar eller statusar här. Formell kontroll sker vid besiktning.</p>
       </div>
+      <EbRemediationImageViewer images={galleryImages} activeImageId={imageTask ? imageSelection?.imageId ?? null : null} onClose={() => setImageSelection(null)} />
     </main>
   )
 }

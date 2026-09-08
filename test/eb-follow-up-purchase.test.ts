@@ -20,6 +20,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>, expose: st
   new Function('require', 'exports', 'module', compiled)((id: string) => {
     if (id in dependencies) return dependencies[id]
     if (id === '@/lib/eb/followUpTerms') return terms
+    if (id === '@/lib/eb/followUpConfirmation') return load('src/lib/eb/followUpConfirmation.ts', {})
     if (id === '@/lib/eb/customerLinks') return { isEbCustomerLinkSessionActive: async () => true }
     if (id.startsWith('node:')) return require(id)
     throw new Error(`Unexpected I/O dependency ${id}`)
@@ -399,14 +400,14 @@ test('outbox encrypts private links, retries failed sends, and suppresses expire
     assert.deepEqual(delivery.decryptEbFollowUpPayload(encrypted), { portalUrl: 'https://example.test/atgarder/PRIVATE-TOKEN' })
     const email = { to: 'buyer@example.test', subject: 'Test', html: '<p>Test</p>', text: 'Test' }
     state.jobs = [{ id: 'mail', lease_id: 'lease', kind: 'verification', payload_ciphertext: delivery.encryptEbFollowUpPayload({ ...email, expiresAt: '2000-01-01T00:00:00Z' }) }]
-    assert.deepEqual(await delivery.processEbFollowUpEmails(), { claimed: 1, sent: 1, failed: 0 })
+    assert.deepEqual(await delivery.processEbFollowUpEmails(), { claimed: 1, sent: 0, skipped: 1, expanded: 0, failed: 0 })
     assert.equal(state.sends, 0)
     state.jobs = [{ id: 'mail', lease_id: 'lease2', kind: 'receipt', payload_ciphertext: delivery.encryptEbFollowUpPayload(email) }]
     state.failed = true
-    assert.deepEqual(await delivery.processEbFollowUpEmails(), { claimed: 1, sent: 0, failed: 1 })
+    assert.deepEqual(await delivery.processEbFollowUpEmails(), { claimed: 1, sent: 0, skipped: 0, expanded: 0, failed: 1 })
     assert.equal(state.finished.at(-1)?.p_success, false)
     state.failed = false
-    assert.deepEqual(await delivery.processEbFollowUpEmails(), { claimed: 1, sent: 1, failed: 0 })
+    assert.deepEqual(await delivery.processEbFollowUpEmails(), { claimed: 1, sent: 1, skipped: 0, expanded: 0, failed: 0 })
   } finally {
     if (previousKey === undefined) delete process.env.EB_FOLLOW_UP_EMAIL_ENCRYPTION_KEY; else process.env.EB_FOLLOW_UP_EMAIL_ENCRYPTION_KEY = previousKey
     if (previousFrom === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM; else process.env.ASSIGNMENTS_MAIL_FROM = previousFrom

@@ -139,6 +139,8 @@ test('withdrawal acknowledgement durably contains buyer name, order, exact time 
 test('owner withdrawal remains visible with read-only history and distinguishes business and legacy wording', () => {
   const component = load<{ default: (props: { initialWorkspace: unknown; endpoint: string }) => ReturnType<typeof createElement> }>('src/components/eb/EbRemediationPortalClient.tsx', {
     'next/link': { __esModule: true, default: 'a' }, '@/lib/eb/remediationPolicy': load('src/lib/eb/remediationPolicy.ts', {}),
+    '@/lib/eb/remediationDefaults': load('src/lib/eb/remediationDefaults.ts', {}),
+    '@/components/eb/EbRemediationImageViewer': load('src/components/eb/EbRemediationImageViewer.tsx', {}),
   })
   const workspace = { state: 'open', project: { title: 'Testvilla' }, inspection: null,
     access: { role: 'customer_owner', displayName: 'Buyer', email: 'buyer@example.test' },

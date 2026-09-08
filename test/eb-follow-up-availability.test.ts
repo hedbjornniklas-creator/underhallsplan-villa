@@ -95,6 +95,7 @@ function fixture(legacy = false) {
   }, rpc: () => { throw new Error('Unexpected mutation in read-only offer test') } }
   const server = load<typeof Server>('src/lib/eb/followUpServer.ts', {
     '@/lib/eb/followUp': shared,
+    '@/lib/eb/followUpConfirmation': load('src/lib/eb/followUpConfirmation.ts', {}),
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => {
       if (state.clientConfigurationError) throw new Error('PRIVATE-SERVER-CONFIGURATION')
       return admin

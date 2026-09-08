@@ -14,6 +14,7 @@ import {
 } from '@/lib/eb/followUpDelivery'
 import { resolveEbFollowUpCustomer } from '@/lib/eb/followUpCustomer'
 import { getEbFollowUpPlatformSeller } from '@/lib/eb/followUpSeller'
+import { buildEbFollowUpConfirmationEmail, type EbFollowUpConfirmation } from '@/lib/eb/followUpConfirmation'
 import { EB_FOLLOW_UP_WITHDRAWAL_FORM_URL, getEbFollowUpConsentTexts, getEbFollowUpTermsText,
   getEbFollowUpWithdrawalDeadline, getEbFollowUpWithdrawalFormText } from '@/lib/eb/followUpTerms'
 import { readEbCustomerSession, setEbCustomerSession, type EbCustomerSession } from '@/lib/eb/customerSession'
@@ -307,25 +308,28 @@ async function createFrozenTasks(context: Awaited<ReturnType<typeof loadContext>
   return tasks
 }
 
-function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuyer, seller: EbFollowUpSeller, portalUrl: string, inspectionSummary = '') {
+function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuyer, seller: EbFollowUpSeller, portalUrl: string, inspectionSummary = '',
+  project: EbFollowUpConfirmation['project'] = { title: '', propertyDesignation: '', address: '', customerName: '', inspectionLabel: '', inspectionDate: '', reportNumber: '' }) {
   const acceptance = buyer.acceptanceSnapshot
-  const terms = acceptance?.termsText ?? EB_FOLLOW_UP_SERVICE_DESCRIPTION
   const accepted = acceptance ? `Godkänt: ${acceptance.acceptedAt}\nVillkorsversion: ${acceptance.termsVersion}\nGodkända samtycken:\n${Object.values(acceptance.consentTexts).map(value => `• ${value}`).join('\n')}` : ''
-  const withdrawalUrl = `${portalUrl}#angra-bestallning`
-  const withdrawal = buyer.customerType === 'consumer' && acceptance
-    ? `Beräknad sista ångerdag: ${acceptance.withdrawalDeadline} (svensk tid). Beräkningen förutsätter att föreskriven ångerinformation lämnats vid köpet.\nÅngra beställningen: ${withdrawalUrl}\nKonsumentverkets ångerblankett: ${acceptance.withdrawalFormUrl}\n\n${getEbFollowUpWithdrawalFormText(seller)}`
-    : buyer.customerType === 'business' ? 'Köpet har gjorts för företag eller förening. Konsumentens lagstadgade ångerrätt gäller inte.' : ''
   const sellerText = `${seller.name}, org.nr ${seller.orgNumber}, ${seller.address}, ${seller.email}${seller.phone ? `, ${seller.phone}` : ''}`
-  const receipt = `Beställning ${orderId} är mottagen och din digitala åtgärdsuppföljning är aktiverad.\nBeställare: ${buyer.name}, ${buyer.email}\n\n${accepted}\n\n${withdrawal}\n\n${terms}\n\nFakturamottagare: ${buyer.invoiceName}\n${buyer.invoiceAddress}\n${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `\nOrg.nr: ${buyer.invoiceOrgNo}` : ''}\n\nDin personliga åtgärdsuppföljning: ${portalUrl}\nDela inte denna länk. Entreprenörer bjuds in med egna begränsade länkar från åtgärdsuppföljningen.\nDetta är en beställningsbekräftelse, inte en faktura.`
+  const confirmation: EbFollowUpConfirmation = {
+    version: 1, orderId, buyer, seller, project,
+    price: { totalOre: EB_FOLLOW_UP_PRICE_ORE, netOre: EB_FOLLOW_UP_NET_PRICE_ORE,
+      vatOre: EB_FOLLOW_UP_VAT_ORE, vatRate: EB_FOLLOW_UP_VAT_RATE },
+    withdrawalFormText: buyer.customerType === 'consumer' ? getEbFollowUpWithdrawalFormText(seller) : '',
+  }
+  const receipt = buildEbFollowUpConfirmationEmail(confirmation, portalUrl)
   const invoice = `Ett köp av digital åtgärdsuppföljning har skett.\nManuellt fakturaunderlag för beställning ${orderId}.\nBeställt: ${acceptance?.acceptedAt ?? new Date().toISOString()}\n${inspectionSummary}\n599,00 SEK inklusive moms; netto 479,20 SEK; moms 25 % 119,80 SEK.\nSäljare: ${sellerText}\nBeställare: ${buyer.name}, ${buyer.email}.\nKundtyp: ${buyer.customerType === 'consumer' ? 'Privatkund' : buyer.customerType === 'business' ? 'Företag/förening' : 'Ej registrerad på äldre order'}\nBeräknad sista ångerdag: ${acceptance?.withdrawalDeadline ?? 'Ej tillämpligt/ej registrerat'}.\nFakturamottagare: ${buyer.invoiceName}, ${buyer.invoiceAddress}, ${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `, org.nr ${buyer.invoiceOrgNo}` : ''}.\nE-post för fakturakontakt: ${buyer.email}.\nTjänsten har aktiverats automatiskt. Ingen faktura har skapats eller skickats av systemet. Fakturering hanteras manuellt av Admin. Kontrollera orderns billing_status och eventuell begäran att frånträda beställningen innan fakturering.\n${accepted}`
   const access = `Här är din personliga länk till din redan beställda åtgärdsuppföljning:\n${portalUrl}\nIngen ny beställning eller avgift har skapats. Dela inte denna länk. Entreprenörer bjuds in separat från åtgärdsuppföljningen.`
   return [
-    { kind: 'receipt', dedupeKey: `receipt:${orderId}`, to: buyer.email, subject: 'Beställningsbekräftelse – digital åtgärdsuppföljning', text: receipt },
+    { kind: 'receipt', dedupeKey: `receipt:${orderId}`, to: buyer.email, ...receipt },
     { kind: 'invoice', dedupeKey: `invoice:${orderId}`, to: EB_FOLLOW_UP_ADMIN_EMAIL, subject: 'Nytt köp – fakturaunderlag för EB åtgärdsuppföljning', text: invoice },
     { kind: 'access', dedupeKey: `access:${challengeId}`, to: buyer.email, subject: 'Din personliga åtgärdsuppföljning', text: access },
   ].map(mail => ({ kind: mail.kind, dedupeKey: mail.dedupeKey, ciphertext: encryptEbFollowUpPayload({
     to: mail.to, replyTo: seller.email, subject: mail.subject, text: mail.text,
-    html: `${mail.kind !== 'invoice' ? `<p><a href="${escapeEbFollowUpHtml(portalUrl)}">Öppna åtgärdsuppföljningen</a></p>` : ''}${mail.kind === 'receipt' && buyer.customerType === 'consumer' ? `<p><a href="${escapeEbFollowUpHtml(withdrawalUrl)}">Ångra beställningen</a> · <a href="${escapeEbFollowUpHtml(acceptance?.withdrawalFormUrl ?? EB_FOLLOW_UP_WITHDRAWAL_FORM_URL)}">Konsumentverkets ångerblankett</a></p>` : ''}<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
+    html: mail.kind === 'receipt' ? receipt.html : `${mail.kind !== 'invoice' ? `<p><a href="${escapeEbFollowUpHtml(portalUrl)}">Öppna åtgärdsuppföljningen</a></p>` : ''}<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
+    ...(mail.kind === 'receipt' ? { confirmationPdf: confirmation } : {}),
   } satisfies EbFollowUpEmail) }))
 }
 
@@ -394,7 +398,15 @@ export async function completeEbFollowUpOrder(input: { token: string; input: Rec
     p_access: { id: randomUUID(), tokenHash: hashAssignmentToken(accessToken),
       expiresAt: new Date(Date.now() + 180 * 86400_000).toISOString(), encryptedResult: encryptEbFollowUpPayload({ portalUrl }) },
     p_emails: orderEmails(context.order?.id ?? candidateId, challengeId, buyer, seller, portalUrl,
-      `Entreprenad: ${context.report.project.title || context.project.id}\nObjekt: ${context.report.project.propertyDesignation || '-'}\nAdress: ${[context.report.project.address, context.report.project.postalCode, context.report.project.city].filter(Boolean).join(', ')}\nBesiktning: ${context.report.inspection.variantLabel || ''} ${context.report.inspection.sequenceNo || ''}, ${context.report.inspection.date || '-'}\nBesiktnings-ID: ${context.link.inspection_id}\nIntern besiktningsvy: ${ebFollowUpBaseUrl(input.baseUrl)}/eb/projects/${context.project.id}`),
+      `Entreprenad: ${context.report.project.title || context.project.id}\nObjekt: ${context.report.project.propertyDesignation || '-'}\nAdress: ${[context.report.project.address, context.report.project.postalCode, context.report.project.city].filter(Boolean).join(', ')}\nBesiktning: ${context.report.inspection.variantLabel || ''} ${context.report.inspection.sequenceNo || ''}, ${context.report.inspection.date || '-'}\nBesiktnings-ID: ${context.link.inspection_id}\nIntern besiktningsvy: ${ebFollowUpBaseUrl(input.baseUrl)}/eb/projects/${context.project.id}`, {
+        title: context.report.project.title || '',
+        propertyDesignation: context.report.project.propertyDesignation || '',
+        address: [context.report.project.address, [context.report.project.postalCode, context.report.project.city].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+        customerName: context.report.inspection.clientName || context.report.project.clientName || buyer.name,
+        inspectionLabel: [context.report.inspection.variantLabel, context.report.inspection.sequenceNo].filter(Boolean).join(' '),
+        inspectionDate: context.report.inspection.date || '',
+        reportNumber: context.report.inspection.assignmentNumber || '',
+      }),
     p_create: !context.order && payload.action === 'order', p_terms_version: EB_FOLLOW_UP_TERMS_VERSION,
   })
   if (error || !data?.orderId || !data?.encryptedResult) throw new Error('EB_FOLLOW_UP_ORDER_FAILED')

@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { EB_FOLLOW_UP_ADMIN_EMAIL, normalizeEbFollowUpEmail } from '@/lib/eb/followUp'
+import type { EbFollowUpConfirmation } from '@/lib/eb/followUpConfirmation'
 
 export type EbFollowUpEmail = {
   to: string
@@ -11,6 +12,9 @@ export type EbFollowUpEmail = {
   html: string
   text: string
   expiresAt?: string
+  /** Frozen at purchase; only new receipts carry this private PDF source. */
+  confirmationPdf?: EbFollowUpConfirmation
+  attachments?: Array<{ filename: string; contentBase64: string; contentType: string }>
 }
 
 function encryptionKey() {
@@ -49,10 +53,13 @@ export async function queueEbFollowUpEmail(input: EbFollowUpEmail & { orderId: s
 
 type OutboxRow = {
   id: string; order_id: string | null; event_id: string | null; kind: string;
-  payload_ciphertext: string | null; lease_id: string; attempts: number
+  payload_ciphertext: string | null; lease_id: string; attempts: number; dedupe_key?: string
 }
 
 async function expandNotification(row: OutboxRow) {
+  // Activity stays in the portal. Only the explicit invitation sends the list.
+  // Keep the historical task_event jobs consumable without sending any mail.
+  if (row.kind !== 'withdrawal') return
   const admin = createSupabaseAdminClient()
   const { data: order, error } = await admin.from('eb_follow_up_orders')
     .select('id,buyer_snapshot,seller_snapshot,withdrawal_requested_at').eq('id', row.order_id).single()
@@ -62,46 +69,19 @@ async function expandNotification(row: OutboxRow) {
   const buyerEmail = normalizeEbFollowUpEmail(buyer.email)
   const sellerEmail = normalizeEbFollowUpEmail(seller.email)
   if (!buyerEmail || !sellerEmail) throw new Error('EB_FOLLOW_UP_NOTIFICATION_RECIPIENT')
-  let recipients: string[] = []
-  let subject: string
-  let text: string
-  if (row.kind === 'withdrawal') {
-    recipients = [buyerEmail, sellerEmail, EB_FOLLOW_UP_ADMIN_EMAIL]
-    subject = `Mottagningsbekräftelse – frånträde av beställning ${order.id}`
-    text = [
-      'Vi har tagit emot din begäran att frånträda beställningen av digital åtgärdsuppföljning.',
-      `Beställare: ${buyer.name || 'Beställaren'}`,
-      `Beställningsnummer: ${order.id}`,
-      `Registrerad tidpunkt: ${order.withdrawal_requested_at}`,
-      `Bekräftelse till: ${buyerEmail}`,
-      '',
-      'Fakturaunderlaget och nya åtgärdssvar är pausade för manuell hantering. Tidigare underlag och historik finns kvar i portalen.',
-      'Detta är en mottagningsbekräftelse, inte ett beslut om betalning eller återbetalning. Begäran bedöms enligt avtalsvillkoren och tillämpliga regler.',
-      `Kontakta ${seller.email} vid frågor.`,
-    ].join('\n')
-  } else {
-    const { data: event, error: eventError } = await admin.from('eb_remediation_events')
-      .select('task_id,event_type,actor_email').eq('id', row.event_id).single()
-    if (eventError || !event) throw new Error('EB_FOLLOW_UP_NOTIFICATION_EVENT')
-    const { data: task, error: taskError } = await admin.from('eb_remediation_tasks')
-      .select('note_snapshot,remediation_assignee_id').eq('id', event.task_id).eq('follow_up_order_id', order.id).single()
-    if (taskError || !task) throw new Error('EB_FOLLOW_UP_NOTIFICATION_TASK')
-    recipients = [buyerEmail]
-    if (task.remediation_assignee_id) {
-      const { data: assignee } = await admin.from('eb_remediation_assignees').select('email')
-        .eq('id', task.remediation_assignee_id).eq('follow_up_order_id', order.id).maybeSingle()
-      const email = normalizeEbFollowUpEmail(assignee?.email)
-      if (email) recipients.push(email)
-    }
-    recipients = recipients.filter(email => email !== normalizeEbFollowUpEmail(event.actor_email))
-    const labels: Record<string, string> = {
-      assigned: 'en tilldelning har ändrats', status_changed: 'ett åtgärdssvar har lämnats',
-      comment: 'en kommentar har lämnats', photo_added: 'en åtgärdsbild har laddats upp',
-    }
-    const number = (task.note_snapshot as Record<string, unknown>)?.noteNumber
-    subject = 'Ny aktivitet i åtgärdsuppföljningen'
-    text = `Notering ${number ?? 'utan nummer'}: ${labels[event.event_type] ?? 'ny aktivitet finns'}. Öppna din personliga åtgärdsportal via länken i ditt tidigare mejl för att läsa svaret och se bilder. Ett åtgärdssvar är entreprenörens uppgift och innebär inte ett godkännande från besiktningsmannen.`
-  }
+  const recipients = [buyerEmail, sellerEmail, EB_FOLLOW_UP_ADMIN_EMAIL]
+  const subject = `Mottagningsbekräftelse – frånträde av beställning ${order.id}`
+  const text = [
+    'Vi har tagit emot din begäran att frånträda beställningen av digital åtgärdsuppföljning.',
+    `Beställare: ${buyer.name || 'Beställaren'}`,
+    `Beställningsnummer: ${order.id}`,
+    `Registrerad tidpunkt: ${order.withdrawal_requested_at}`,
+    `Bekräftelse till: ${buyerEmail}`,
+    '',
+    'Fakturaunderlaget och nya åtgärdssvar är pausade för manuell hantering. Tidigare underlag och historik finns kvar i portalen.',
+    'Detta är en mottagningsbekräftelse, inte ett beslut om betalning eller återbetalning. Begäran bedöms enligt avtalsvillkoren och tillämpliga regler.',
+    `Kontakta ${seller.email} vid frågor.`,
+  ].join('\n')
   for (const to of new Set(recipients)) {
     const recipientKey = createHash('sha256').update(to).digest('hex').slice(0, 24)
     await queueEbFollowUpEmail({
@@ -111,6 +91,22 @@ async function expandNotification(row: OutboxRow) {
   }
 }
 
+/** Old workers may already have expanded activity jobs into encrypted emails.
+ * Withdrawal confirmations use the same notification prefix, so classify by
+ * the source job, never by recipient, subject text or the prefix alone. */
+async function isRetiredActivityEmail(row: OutboxRow): Promise<boolean> {
+  if (row.kind !== 'email' || !row.dedupe_key?.startsWith('notification:')) return false
+  const sourceId = row.dedupe_key.split(':')[1]
+  if (!sourceId || !row.order_id) throw new Error('EB_FOLLOW_UP_NOTIFICATION_SOURCE')
+  const { data: source, error } = await createSupabaseAdminClient().from('eb_follow_up_email_outbox')
+    .select('kind,order_id').eq('id', sourceId).maybeSingle()
+  if (error || !source || source.order_id !== row.order_id || !['task_event', 'withdrawal'].includes(source.kind)) {
+    // Do not send an unclassified notification or silently discard a receipt.
+    throw new Error('EB_FOLLOW_UP_NOTIFICATION_SOURCE')
+  }
+  return source.kind === 'task_event'
+}
+
 /** Durable retry worker. Called only by a protected scheduler, never by an anonymous GET. */
 export async function processEbFollowUpEmails(limit = 10) {
   const admin = createSupabaseAdminClient()
@@ -118,27 +114,54 @@ export async function processEbFollowUpEmails(limit = 10) {
   if (error) throw new Error('EB_FOLLOW_UP_MAIL_CLAIM_FAILED')
   const rows = (data ?? []) as OutboxRow[]
   let sent = 0
+  let skipped = 0
+  let expanded = 0
   let failed = 0
   // Small batches keep the worker within serverless limits; leases recover interrupted runs.
   for (let offset = 0; offset < rows.length; offset += 3) {
     await Promise.all(rows.slice(offset, offset + 3).map(async row => {
       try {
-        if (row.kind === 'task_event' || row.kind === 'withdrawal') {
+        let outcome: 'sent' | 'skipped' | 'expanded'
+        if (row.kind === 'task_event' || await isRetiredActivityEmail(row)) {
+          outcome = 'skipped'
+        } else if (row.kind === 'withdrawal') {
           await expandNotification(row)
+          outcome = 'expanded'
         } else {
           if (!row.payload_ciphertext) throw new Error('EB_FOLLOW_UP_MAIL_PAYLOAD')
-          const email = decryptEbFollowUpPayload<EbFollowUpEmail>(row.payload_ciphertext)
+          let email = decryptEbFollowUpPayload<EbFollowUpEmail>(row.payload_ciphertext)
           const from = email.from?.trim() || process.env.ASSIGNMENTS_MAIL_FROM?.trim()
           if (!from) throw new Error('EB_FOLLOW_UP_MAIL_CONFIGURATION')
           if (!email.expiresAt || new Date(email.expiresAt).getTime() > Date.now()) {
-            await sendAssignmentEmail({ ...email, from, idempotencyKey: `eb-follow-up-${row.id}` })
+            if (email.confirmationPdf && !email.attachments?.length) {
+              const { renderEbFollowUpConfirmationPdf, buildEbFollowUpConfirmationFilename } = await import('@/lib/eb/followUpConfirmationPdf')
+              const pdf = await renderEbFollowUpConfirmationPdf(email.confirmationPdf)
+              email = { ...email, from, attachments: [{
+                filename: buildEbFollowUpConfirmationFilename(email.confirmationPdf),
+                contentBase64: pdf.toString('base64'), contentType: 'application/pdf',
+              }] }
+              // Persist exact bytes before contacting the provider. Retries keep
+              // an identical request body even if the renderer later changes.
+              const { data: saved, error: saveError } = await admin.from('eb_follow_up_email_outbox')
+                .update({ payload_ciphertext: encryptEbFollowUpPayload(email) })
+                .eq('id', row.id).eq('lease_id', row.lease_id).select('id').maybeSingle()
+              if (saveError || !saved) throw new Error('EB_FOLLOW_UP_CONFIRMATION_SAVE_FAILED')
+            }
+            const { confirmationPdf: _confirmationPdf, ...mail } = email
+            void _confirmationPdf
+            await sendAssignmentEmail({ ...mail, from, idempotencyKey: `eb-follow-up-${row.id}` })
+            outcome = 'sent'
+          } else {
+            outcome = 'skipped'
           }
         }
         const { error: finishError } = await admin.rpc('eb_finish_follow_up_email', {
           p_id: row.id, p_lease_id: row.lease_id, p_success: true, p_error: null,
         })
         if (finishError) throw new Error('EB_FOLLOW_UP_MAIL_FINISH_FAILED')
-        sent += 1
+        if (outcome === 'sent') sent += 1
+        else if (outcome === 'skipped') skipped += 1
+        else expanded += 1
       } catch {
         failed += 1
         // Do not persist provider errors containing private addresses, codes or links.
@@ -148,5 +171,5 @@ export async function processEbFollowUpEmails(limit = 10) {
       }
     }))
   }
-  return { claimed: rows.length, sent, failed }
+  return { claimed: rows.length, sent, skipped, expanded, failed }
 }
