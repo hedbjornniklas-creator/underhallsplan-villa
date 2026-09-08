@@ -24,6 +24,7 @@ const flowCss = await readFile(resolve('node_modules/@xyflow/react/dist/style.cs
 const bundle = await readFile(resolve(output, 'flow.js'))
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const action = { id:id(1), key:'wall',label:'Riva vägg',sortOrder:100,isActive:true,riskLevel:'medium',contractorRequirement:'none' }
+const secondAction = { ...action, id:id(2), key:'kitchen', label:'Kök', sortOrder:200 }
 const doc = { id:id(3),key:'drawing',label:'Utlåtande från byggnadskonstruktör',sortOrder:100,isActive:true,defaultPhase:'before_required' }
 const yes = { id:id(8),key:'yes',label:'Ja',isActive:true,sortOrder:10,triggers:[] }
 const no = { id:id(9),key:'no',label:'Nej',isActive:true,sortOrder:20,triggers:[] }
@@ -33,8 +34,17 @@ const docs = [doc]
 const requirements = [{id:id(12),documentTypeId:doc.id,documentLabel:doc.label,isRequired:true,sortOrder:100,note:null}]
 const writes = []
 let moveFailure = null, copyFailure = false, sequence = 30, fixture = null
+let writeGate = null, readGate = null, patchFailure = false, linkFailure = false, activeWrites = 0, maxActiveWrites = 0, gets = 0
+const releaseGates = []
+const holdWrites = () => {
+  let release
+  writeGate = new Promise(resolve => { release = resolve })
+  const done = () => { writeGate = null; release() }
+  releaseGates.push(done)
+  return done
+}
 const responses = () => fixture ?? ({
-  'action-types':{items:[action]},'questions':{items:questions},'document-types':{items:docs},'participants':{items:[]},
+  'action-types':{items:[action,secondAction]},'questions':{items:questions},'document-types':{items:docs},'participants':{items:[]},
   'review-flags':{items:[]},'review-flag-links':{items:[]},'action-type-participants':{actionTypes:[]},
   'action-type-questions':{actionTypes:[{actionType:action,questions:[{id:id(11),questionId:question.id,questionLabel:question.label,isRequired:true,sortOrder:100}]}]},
   'requirements':{actionTypes:[{actionType:action,requirements}]},
@@ -44,9 +54,19 @@ const server = createServer(async(request,response)=>{
   if(request.url.startsWith('/api/')){
     response.setHeader('Content-Type','application/json')
     const key=request.url.split('/').at(-1)
-    if(request.method==='POST'){
+    if(request.method==='POST' || request.method==='PATCH'){
       let body='';for await(const chunk of request)body+=chunk
-      const input=JSON.parse(body);writes.push({key,input})
+      const input=JSON.parse(body);writes.push({key,input,method:request.method})
+      activeWrites++;maxActiveWrites=Math.max(maxActiveWrites,activeWrites)
+      response.once('finish',()=>activeWrites--)
+      if(writeGate)await writeGate
+      if(key==='questions' && request.method==='PATCH'){
+        if(patchFailure){response.writeHead(500);response.end(JSON.stringify({error:'Testfel vid sparande.'}));return}
+        const question=responses().questions.items.find(q=>q.id===input.questionId)
+        const target=input.optionId?question.options.find(o=>o.id===input.optionId):question
+        Object.assign(target,input.fields)
+        response.end(JSON.stringify({item:{id:target.id,fields:input.fields}}));return
+      }
       if(key==='flow-move'){
         const operation=input.operation??'move'
         const failure=operation==='move'?moveFailure:(operation==='copy'&&input.apply&&copyFailure?500:null)
@@ -68,6 +88,9 @@ const server = createServer(async(request,response)=>{
         }
         response.end(JSON.stringify({version:'a'.repeat(32),itemLabel:child.label,fromLabel,toLabel:target?parentLabel(target):null,shared:true,saved:input.apply}));return
       }
+      if(key==='action-type-questions'){
+        response.end(JSON.stringify({saved:true}));return
+      }
       if(key==='document-types'){
         if(copyFailure){response.writeHead(500);response.end(JSON.stringify({error:'Kopian kunde inte skapas.'}));return}
         const saved={...input,id:id(sequence++)};docs.push(saved);response.end(JSON.stringify({item:saved}));return
@@ -78,6 +101,7 @@ const server = createServer(async(request,response)=>{
         response.end(JSON.stringify({saved:true}));return
       }
       if(key==='questions'){
+        if(linkFailure){response.writeHead(500);response.end(JSON.stringify({error:'Testfel efter skapad definition.'}));return}
         const updated=input.question
         const target=questions.find(item=>item.id===updated.id)
         if(target){
@@ -90,7 +114,9 @@ const server = createServer(async(request,response)=>{
       }
       response.writeHead(400);response.end('{}');return
     }
-    const result=responses()[key];if(!result)response.writeHead(404)
+    gets++
+    const result=structuredClone(responses()[key]);if(!result)response.writeHead(404)
+    if(readGate && key==='questions')await readGate
     response.end(JSON.stringify(result??{}));return
   }
   response.setHeader('Content-Type','text/html; charset=utf-8')
@@ -294,7 +320,7 @@ try{
   moveFailure=409
   const beforeFailure=writes.length
   await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Flytta koppling"])').click()
-  await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent.includes('Flödet har ändrats'))
+  await page.waitForFunction(()=>document.querySelector('[role="alert"]')?.textContent.includes('Flödet har ändrats'))
   await page.waitForSelector('dialog',{hidden:true})
   assert.equal(writes.length,beforeFailure+1);assert.equal(no.triggers.length,1);assert.equal(yes.triggers.length,0)
   console.log('PASS stale apply: source retained, configuration reloaded, no automatic retry')
@@ -312,7 +338,7 @@ try{
   await clickTarget(answerNode(yes))
   copyFailure=true
   await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Koppla hit"])').click()
-  await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent.includes('Kopplingen kunde inte skapas'))
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('[role="alert"]')).some(node=>node.textContent.includes('Kopplingen kunde inte skapas')))
   assert.equal(writes.length,beforeFailedCopy+2);assert.equal(no.triggers.length,1);assert.equal(yes.triggers.length,0)
   console.log('PASS failed copy: original retained, no link or blind retry, error displayed')
 
@@ -387,5 +413,175 @@ try{
   assert.ok(writes.every(write=>write.key==='flow-move'))
   assert.deepEqual(errors,[])
   console.log('PASS question reuse: same question/answers/descendants at two places, unlink/reload retain all original data')
+
+  fixture=null;moveFailure=null;copyFailure=false
+  await page.reload({waitUntil:'networkidle0'})
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
+  const clickText = text => page.locator(`::-p-xpath(//aside//button[normalize-space(.)="${text}"])`).click()
+  const fillField = (label,value) => page.locator(`::-p-xpath(//aside//label[span[normalize-space(.)="${label}"]]//input)`).fill(value)
+  const openEdit = async selector => {
+    await page.locator(`${selector} button[aria-label^="Öppna "]`).click()
+    await clickText('Redigera')
+  }
+  const saved = () => page.waitForFunction(()=>document.querySelector('[data-flow-save-status]')?.textContent==='Alla ändringar sparade.')
+  await openEdit(questionNode)
+  await fillField('Visningsnamn','Fråga version ett?')
+  const readsBeforeEdit=gets, writesBeforeEdit=writes.length
+  const releaseEdits=holdWrites()
+  await clickText('Spara')
+  await page.waitForFunction(()=>document.querySelector('[data-flow-save-status]')?.textContent.includes('Sparar i bakgrunden'))
+  assert.equal(writes.length,writesBeforeEdit+1)
+  assert.equal(await page.$eval('aside fieldset',node=>node.disabled),false)
+  await clickText('Stäng')
+  // Reopening before save completion must retain the latest submitted draft.
+  await openEdit(questionNode)
+  assert.equal(await page.$eval('aside input',node=>node.value),'Fråga version ett?')
+  await fillField('Visningsnamn','Fråga version två?')
+  await clickText('Spara')
+  await clickText('Stäng')
+  await openEdit(answerNode(yes))
+  await fillField('Svarstext','Ja, påverkas')
+  await clickText('Spara')
+  await clickText('Stäng')
+  await openEdit(answerNode(no))
+  await fillField('Svarstext','Nej, påverkas inte')
+  await clickText('Spara')
+  await clickText('Stäng')
+  assert.equal(writes.length,writesBeforeEdit+1,'waiting jobs must not run concurrently')
+  assert.equal(await page.evaluate(()=>{
+    const event=new Event('beforeunload',{cancelable:true});window.dispatchEvent(event);return event.defaultPrevented
+  }),true,'leaving during a pending save must warn')
+  assert.equal(await page.$eval('button[aria-label="Zooma in"]',node=>node.disabled),false)
+  await page.locator('button[aria-label="Zooma in"]').click()
+  await page.screenshot({path:resolve(output,'background-saving.png')})
+  releaseEdits()
+  await saved()
+  assert.equal(maxActiveWrites,1)
+  assert.equal(question.label,'Fråga version två?')
+  assert.equal(yes.label,'Ja, påverkas')
+  assert.equal(no.label,'Nej, påverkas inte')
+  assert.equal(no.triggers.length,1)
+  assert.equal(gets,readsBeforeEdit,'ordinary editing must not refetch the nine configuration endpoints')
+  assert.equal(writes.slice(writesBeforeEdit).filter(write=>write.key==='questions' && write.method==='PATCH').length,4)
+  assert.ok(writes.slice(writesBeforeEdit).every(write=>!('options' in write.input)),'text edits never rewrite options/triggers')
+  console.log('PASS background editing: StrictMode, FIFO, responsive form/canvas, reopening pending draft, no redundant reloads')
+
+  // A failed first save must not cancel another queued edit or discard the captured input.
+  await openEdit(answerNode(yes))
+  await fillField('Svarstext','Behåll vid sparfel')
+  patchFailure=true
+  await clickText('Spara')
+  await clickText('Stäng')
+  await page.waitForFunction(()=>document.querySelector('[role="alert"]')?.textContent.includes('Testfel vid sparande'))
+  assert.equal(yes.label,'Ja, påverkas')
+  patchFailure=false
+  await openEdit(answerNode(no))
+  await fillField('Svarstext','Nej efter sparfel')
+  await clickText('Spara')
+  await page.waitForFunction(()=>document.querySelector('[data-flow-save-status]')?.textContent==='Alla ändringar kunde inte sparas.')
+  await clickText('Stäng')
+  assert.equal(no.label,'Nej efter sparfel')
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Öppna ändringen"])').click()
+  assert.equal(await page.$eval('aside input',node=>node.value),'Behåll vid sparfel')
+  await clickText('Spara')
+  await saved()
+  assert.equal(yes.label,'Behåll vid sparfel')
+  await clickText('Stäng')
+  assert.equal(await page.$('[role="alert"]'),null)
+  console.log('PASS save failure: error persists across other successful saves, draft restored, explicit retry succeeds')
+
+  // Confirmed graph changes run in the same background queue.
+  await page.locator('button[aria-label="Visa hela flödet"]').click()
+  await page.locator(`${triggerDoc(no)} button[aria-label="Kopiera till en annan plats"]`).click()
+  await clickTarget(answerNode(yes))
+  const releaseCopy=holdWrites()
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Koppla hit"])').click()
+  await page.waitForSelector('dialog',{hidden:true})
+  assert.equal(await page.$eval('button[aria-label="Zooma in"]',node=>node.disabled),false)
+  await openEdit(answerNode(yes))
+  await fillField('Svarstext','Ändrat medan kopian sparades')
+  await clickText('Spara')
+  await clickText('Stäng')
+  releaseCopy()
+  await saved()
+  assert.equal(yes.triggers.length,1)
+  assert.equal(no.triggers.length,1)
+  assert.equal(yes.label,'Ändrat medan kopian sparades')
+  assert.equal(maxActiveWrites,1)
+  assert.deepEqual(errors,[])
+  console.log('PASS graph save: dialog closes immediately, editor remains usable, follow-up edit preserves new connection')
+
+  let releaseReads
+  readGate=new Promise(resolve=>{releaseReads=()=>{readGate=null;resolve()}})
+  releaseGates.push(releaseReads)
+  await page.locator('button[aria-label="Ladda om flödet"]').click()
+  await openEdit(questionNode)
+  await fillField('Visningsnamn','Nyare än omladdningen?')
+  await clickText('Spara')
+  await saved()
+  releaseReads()
+  await page.waitForNetworkIdle()
+  await clickText('Stäng')
+  assert.equal(await page.$eval(`${questionNode} button[aria-label^="Öppna "]`,node=>node.textContent),'Nyare än omladdningen?')
+  console.log('PASS stale refresh: an older read cannot replace a confirmed edit')
+
+  await openEdit(answerNode(no))
+  await fillField('Svarstext','Sparas i rätt flöde')
+  const releaseSwitch=holdWrites()
+  await clickText('Spara')
+  await clickText('Stäng')
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Kök"])').click()
+  await page.waitForSelector(`[data-flow-id="action-type:${secondAction.id}"]`)
+  releaseSwitch()
+  await saved()
+  assert.equal(no.label,'Sparas i rätt flöde')
+  assert.ok(await page.$(`[data-flow-id="action-type:${secondAction.id}"]`),'background save must not change current flow')
+  console.log('PASS flow switch: page-owned queue retains the original write without switching back')
+
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Riva vägg"])').click()
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
+  await openEdit(answerNode(yes))
+  await clickText('Lägg till')
+  await clickText('Underlag')
+  await clickText('Skapa ny')
+  await fillField('Visningsnamn','Nytt underlag i bakgrunden')
+  const releaseAdd=holdWrites()
+  await clickText('Spara + Ny')
+  assert.equal(await page.$eval('aside input',node=>node.value),'')
+  await fillField('Visningsnamn','Nästa underlag')
+  releaseAdd()
+  await saved()
+  assert.equal(await page.$eval('aside input',node=>node.value),'Nästa underlag','completion must not clear a newer draft')
+  assert.equal(docs.filter(item=>item.label==='Nytt underlag i bakgrunden').length,1)
+  assert.equal(yes.triggers.length,2)
+  assert.equal(no.triggers.length,1)
+  assert.equal(yes.label,'Ändrat medan kopian sparades')
+  await clickText('Stäng')
+  assert.equal(maxActiveWrites,1)
+  assert.deepEqual(errors,[])
+  console.log('PASS add/save-and-new: resets immediately, retains next draft, no duplicate definition or lost branch')
+
+  await openEdit(answerNode(yes))
+  await clickText('Lägg till')
+  await clickText('Underlag')
+  await clickText('Skapa ny')
+  await fillField('Visningsnamn','Återanvänd efter sparfel')
+  linkFailure=true
+  await clickText('Spara')
+  await page.waitForFunction(()=>document.querySelector('[role="alert"]')?.textContent.includes('Testfel efter skapad definition'))
+  const created=docs.find(item=>item.label==='Återanvänd efter sparfel')
+  assert.ok(created)
+  assert.equal(yes.triggers.some(trigger=>trigger.documentTypeId===created.id),false)
+  linkFailure=false
+  const writesBeforeRecovery=writes.length
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Öppna ändringen"])').click()
+  await clickText('Spara')
+  await saved()
+  assert.equal(docs.filter(item=>item.label===created.label).length,1)
+  assert.equal(yes.triggers.filter(trigger=>trigger.documentTypeId===created.id).length,1)
+  assert.equal(writes.slice(writesBeforeRecovery).some(write=>write.key==='document-types'),false)
+  assert.equal(await page.$('[role="alert"]'),null)
+  assert.deepEqual(errors,[])
+  console.log('PASS partial add recovery: reuses acknowledged definition and clears only the retried failure')
 }catch(error){await page?.screenshot({path:resolve(output,'failure.png'),fullPage:true});throw error}
-finally{await browser?.close();await new Promise(done=>server.close(done))}
+finally{releaseGates.forEach(release=>release());await browser?.close();await new Promise(done=>server.close(done))}

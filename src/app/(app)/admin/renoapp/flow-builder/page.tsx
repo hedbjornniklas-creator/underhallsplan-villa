@@ -1,11 +1,13 @@
 ﻿'use client'
 
 import type { ReactNode } from 'react'
+import { X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import RenoAppAiFlowDrawer from '@/components/renoapp/admin/RenoAppAiFlowDrawer'
 import RenoAppFlowCanvas from '@/components/renoapp/admin/RenoAppFlowCanvas'
-import { type FlowNode, type FlowNodeTone, type FlowSource } from '@/lib/renoapp/flowEditor'
+import { type FlowNode, type FlowNodeTone, type FlowSource, type FlowEdit } from '@/lib/renoapp/flowEditor'
 import { requestFlowEdit } from '@/lib/renoapp/flowEditorClient'
+import { useFlowBuilderSaveQueue } from '@/hooks/useFlowBuilderSaveQueue'
 
 type ActionTypeItem = {
   id: string
@@ -688,13 +690,28 @@ function FlowBuilderHelpSection() {
 }
 
 export default function RenoAppFlowBuilderPage() {
+  const saves = useFlowBuilderSaveQueue()
+  const pendingDrafts = useRef(new Map<string, () => void>())
+  const addSubmission = useRef<string | null>(null)
+  const addRecovery = useRef<{ key: string; nodeId: string; type: AddType } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const loadSequence = useRef(0)
+  const writeRevision = useRef(0)
+  const initialized = useRef(false)
+  const configurationIsFresh = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false)
 
   const [actionTypes, setActionTypes] = useState<ActionTypeItem[]>([])
   const [questionItems, setQuestionItems] = useState<QuestionItem[]>([])
+  const questionItemsRef = useRef<QuestionItem[]>([])
+  const replaceQuestions = (update: QuestionItem[] | ((current: QuestionItem[]) => QuestionItem[])) => {
+    const next = typeof update === 'function' ? update(questionItemsRef.current) : update
+    questionItemsRef.current = next
+    setQuestionItems(next)
+  }
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeItem[]>([])
   const [participantRoles, setParticipantRoles] = useState<ParticipantRoleItem[]>([])
   const [reviewFlags, setReviewFlags] = useState<ReviewFlagItem[]>([])
@@ -731,8 +748,11 @@ export default function RenoAppFlowBuilderPage() {
   const [questionLinkDraft, setQuestionLinkDraft] = useState<QuestionLinkDraft>(EMPTY_QUESTION_LINK_DRAFT)
   const [participantLinkDraft, setParticipantLinkDraft] = useState<ParticipantLinkDraft>(EMPTY_PARTICIPANT_LINK_DRAFT)
 
-  const loadData = async (preferredActionTypeId?: string | null) => {
-    setLoading(true)
+  const loadData = async (preferredActionTypeId?: string | null, requireFresh = false) => {
+    const sequence = ++loadSequence.current
+    const revision = writeRevision.current
+    if (!initialized.current) setLoading(true)
+    setRefreshing(true)
     setError(null)
 
     try {
@@ -790,12 +810,14 @@ export default function RenoAppFlowBuilderPage() {
       if (!participantConfigResponse.ok) throw new Error(participantConfigPayload.error ?? 'Kunde inte läsa medverkandekopplingar.')
       if (!reviewFlagLinksResponse.ok) throw new Error(reviewFlagLinksPayload.error ?? 'Kunde inte läsa flaggkopplingar.')
 
+      if (sequence !== loadSequence.current || revision !== writeRevision.current) return
+      configurationIsFresh.current = true
       const nextActionTypes = [...(actionTypesPayload.items ?? [])].sort(
         (left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label, 'sv')
       )
 
       setActionTypes(nextActionTypes)
-      setQuestionItems([...(questionsPayload.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
+      replaceQuestions([...(questionsPayload.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
       setDocumentTypes([...(documentTypesPayload.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
       setParticipantRoles([...(participantRolesPayload.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
       setReviewFlags([...(reviewFlagsPayload.items ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
@@ -805,14 +827,21 @@ export default function RenoAppFlowBuilderPage() {
       setReviewFlagLinks(reviewFlagLinksPayload.items ?? [])
 
       setSelectedActionTypeId((current) => {
-        const candidate = preferredActionTypeId ?? current
+        const candidate = current ?? preferredActionTypeId
         if (candidate && nextActionTypes.some((item) => item.id === candidate)) return candidate
         return nextActionTypes[0]?.id ?? null
       })
     } catch (loadError) {
+      if (sequence !== loadSequence.current || revision !== writeRevision.current) return
+      configurationIsFresh.current = false
       setError(loadError instanceof Error ? loadError.message : 'Kunde inte läsa flödesvisaren.')
+      if (requireFresh) throw loadError
     } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) {
+        initialized.current = true
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }
 
@@ -1081,7 +1110,22 @@ export default function RenoAppFlowBuilderPage() {
       ref: { type: 'actionType', actionTypeId: selectedAction.id } }
   }, [selectedAction, flowRootChildren, rootQuestions, rootRequirements, rootParticipants, questionMap, reviewFlagLinks])
 
+  const editorKey = (node: FlowNode) => {
+    const ref = node.ref
+    if (ref.type === 'actionType') return `action:${ref.actionTypeId}`
+    if (ref.type === 'option') return `option:${ref.optionId}`
+    if (ref.type === 'question' || ref.type === 'rootQuestion') return `question:${ref.questionId}`
+    if (ref.type === 'optionQuestionTrigger') return `question:${ref.targetQuestionId}`
+    if (ref.type === 'rootRequirement') return `document:${ref.documentTypeId}`
+    if (ref.type === 'optionDocumentTrigger') return `document:${ref.targetDocumentTypeId}`
+    if (ref.type === 'rootParticipant') return `participant:${ref.participantRoleId}`
+    if (ref.type === 'optionParticipantTrigger') return `participant:${ref.targetParticipantRoleId}`
+    if ('targetReviewFlagId' in ref) return `flag:${ref.targetReviewFlagId}`
+    return node.id
+  }
+
   const openNodeModal = (node: FlowNode, nextMode: ModalMode = 'summary') => {
+    addRecovery.current = null
     setActiveNode(node)
     setModalMode(nextMode)
     setModalError(null)
@@ -1267,6 +1311,8 @@ export default function RenoAppFlowBuilderPage() {
           }
         : EMPTY_ACTION_TYPE_DRAFT
     )
+    pendingDrafts.current.get(editorKey(node))?.()
+    pendingDrafts.current.get(`link:${node.id}`)?.()
   }
 
   const openCreateActionTypeModal = () => {
@@ -1376,8 +1422,9 @@ export default function RenoAppFlowBuilderPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(questionToRequestPayload(question)),
     })
-    const payload = await readJson<{ error?: string }>(response)
-    if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara frågan.')
+    const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
+    if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte spara frågan.')
+    replaceQuestions(current => current.map(item => item.id === payload.item!.id ? payload.item! : item))
   }
 
   const updateOptionTriggers = async (
@@ -1385,7 +1432,7 @@ export default function RenoAppFlowBuilderPage() {
     optionId: string,
     updater: (triggers: QuestionOptionTriggerItem[]) => QuestionOptionTriggerItem[]
   ) => {
-    const question = questionMap.get(questionId)
+    const question = questionItemsRef.current.find(item => item.id === questionId)
     if (!question) throw new Error('Frågan kunde inte hittas.')
     const nextQuestion: QuestionItem = {
       ...question,
@@ -1414,188 +1461,284 @@ export default function RenoAppFlowBuilderPage() {
     if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara flaggkoppling.')
   }
 
-  const saveEdit = async () => {
+  const restoreEditor = () => {
     if (!activeNode) return
-    setModalSaving(true)
-    setModalError(null)
-
-    try {
-      if (activeNode.ref.type === 'actionType') {
-        const response = await fetch('/api/renoapp/admin/action-types', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: actionTypeDraft.id,
-            key: generatedActionTypeKey(actionTypeDraft),
-            label: actionTypeDraft.label,
-            description: actionTypeDraft.description || null,
-            riskLevel: actionTypeDraft.riskLevel,
-            contractorRequirement: actionTypeDraft.contractorRequirement,
-            sortOrder: Number(actionTypeDraft.sortOrder || 100),
-            isActive: actionTypeDraft.isActive,
-          }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara renoveringstypen.')
-      } else if (activeNode.ref.type === 'rootQuestion' || activeNode.ref.type === 'question' || activeNode.ref.type === 'optionQuestionTrigger') {
-        const questionId =
-          activeNode.ref.type === 'rootQuestion'
-            ? activeNode.ref.questionId
-            : activeNode.ref.type === 'question'
-              ? activeNode.ref.questionId
-              : activeNode.ref.targetQuestionId
-        const currentQuestion = questionMap.get(questionId)
-        if (!currentQuestion) throw new Error('Frågan kunde inte hittas.')
-        await persistQuestionWithOptions({
-          ...currentQuestion,
-          key: generatedQuestionKey(questionDraft),
-          label: questionDraft.label,
-          helpText: questionDraft.helpText || null,
-          responseType: questionDraft.responseType,
-          sortOrder: Number(questionDraft.sortOrder || 100),
-          isActive: questionDraft.isActive,
-        })
-        if (activeNode.ref.type === 'rootQuestion') {
-          const relationResponse = await fetch('/api/renoapp/admin/action-type-questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              actionTypeId: activeNode.ref.actionTypeId,
-              questionId: activeNode.ref.questionId,
-              isEnabled: true,
-              isRequired: questionLinkDraft.isRequired,
-              sortOrder: Number(questionLinkDraft.sortOrder || 100),
-            }),
-          })
-          const relationPayload = await readJson<{ error?: string }>(relationResponse)
-          if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara frågekopplingen.')
-        }
-      } else if (activeNode.ref.type === 'option') {
-        const ref = activeNode.ref
-        const question = questionMap.get(ref.questionId)
-        if (!question) throw new Error('Frågan kunde inte hittas.')
-        const currentOption = question.options.find((item) => item.id === ref.optionId)
-        if (!currentOption) throw new Error('Svarsalternativet kunde inte hittas.')
-        await persistQuestionWithOptions({
-          ...question,
-          options: question.options.map((item) =>
-            item.id === ref.optionId
-              ? {
-                  ...currentOption,
-                  key: generatedOptionKey(optionDraft),
-                  label: optionDraft.label,
-                  description: optionDraft.description || null,
-                  sortOrder: Number(optionDraft.sortOrder || 100),
-                  isActive: optionDraft.isActive,
-                }
-              : item
-          ),
-        })
-      } else if (activeNode.ref.type === 'rootRequirement' || activeNode.ref.type === 'optionDocumentTrigger') {
-        const response = await fetch('/api/renoapp/admin/document-types', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: documentDraft.id,
-            key: generatedDocumentKey(documentDraft),
-            label: documentDraft.label,
-            description: documentDraft.description || null,
-            reviewGuidance: documentDraft.reviewGuidance || null,
-            defaultPhase: documentDraft.defaultPhase,
-            sortOrder: Number(documentDraft.sortOrder || 100),
-            isActive: documentDraft.isActive,
-          }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara underlaget.')
-        if (activeNode.ref.type === 'rootRequirement') {
-          const relationResponse = await fetch('/api/renoapp/admin/requirements', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              actionTypeId: activeNode.ref.actionTypeId,
-              documentTypeId: activeNode.ref.documentTypeId,
-              isEnabled: true,
-              isRequired: requirementLinkDraft.isRequired,
-              note: requirementLinkDraft.note || null,
-              sortOrder: Number(requirementLinkDraft.sortOrder || 100),
-            }),
-          })
-          const relationPayload = await readJson<{ error?: string }>(relationResponse)
-          if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara underlagskopplingen.')
-        }
-      } else if (activeNode.ref.type === 'rootParticipant' || activeNode.ref.type === 'optionParticipantTrigger') {
-        const response = await fetch('/api/renoapp/admin/participants', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: participantDraft.id,
-            key: generatedParticipantKey(participantDraft),
-            label: participantDraft.label,
-            description: participantDraft.description || null,
-            reviewGuidance: participantDraft.reviewGuidance || null,
-            roleKind: participantDraft.roleKind,
-            verificationInstructions: participantDraft.verificationInstructions || null,
-            verificationUrl: participantDraft.verificationUrl || null,
-            insuranceRequired: participantDraft.insuranceRequired,
-            requiresCompanyName: participantDraft.requiresCompanyName,
-            requiresOrgNumber: participantDraft.requiresOrgNumber,
-            requiresContactName: participantDraft.requiresContactName,
-            requiresEmail: participantDraft.requiresEmail,
-            requiresPhone: participantDraft.requiresPhone,
-            requiresCertification: participantDraft.requiresCertification,
-            sortOrder: Number(participantDraft.sortOrder || 100),
-            isActive: participantDraft.isActive,
-          }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara medverkandetypen.')
-        if (activeNode.ref.type === 'rootParticipant') {
-          const relationResponse = await fetch('/api/renoapp/admin/action-type-participants', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              actionTypeId: activeNode.ref.actionTypeId,
-              participantRoleId: activeNode.ref.participantRoleId,
-              isEnabled: true,
-              isRequired: participantLinkDraft.isRequired,
-              sortOrder: Number(participantLinkDraft.sortOrder || 100),
-            }),
-          })
-          const relationPayload = await readJson<{ error?: string }>(relationResponse)
-          if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara medverkandekopplingen.')
-        }
-      } else if (
-        activeNode.ref.type === 'optionReviewFlagTrigger' ||
-        activeNode.ref.type === 'actionTypeReviewFlag' ||
-        activeNode.ref.type === 'documentReviewFlag' ||
-        activeNode.ref.type === 'participantReviewFlag'
-      ) {
-        const response = await fetch('/api/renoapp/admin/review-flags', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: reviewFlagDraft.id,
-            key: generatedReviewFlagKey(reviewFlagDraft),
-            label: reviewFlagDraft.label,
-            description: reviewFlagDraft.description || null,
-            severity: reviewFlagDraft.severity,
-            category: reviewFlagDraft.category || null,
-            sortOrder: Number(reviewFlagDraft.sortOrder || 100),
-            isActive: reviewFlagDraft.isActive,
-          }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara flaggan.')
-      }
-
-      await loadData(selectedActionTypeId)
-    } catch (saveError) {
-      setModalError(saveError instanceof Error ? saveError.message : 'Kunde inte spara.')
-    } finally {
-      setModalSaving(false)
-    }
+    setSelectedActionTypeId(selectedActionTypeId)
+    openNodeModal(activeNode)
+    setModalMode(modalMode)
+    setActionTypeDraft(actionTypeDraft)
+    setQuestionDraft(questionDraft)
+    setOptionDraft(optionDraft)
+    setQuestionOptionDrafts(questionOptionDrafts)
+    setDocumentDraft(documentDraft)
+    setParticipantDraft(participantDraft)
+    setReviewFlagDraft(reviewFlagDraft)
+    setRequirementLinkDraft(requirementLinkDraft)
+    setQuestionLinkDraft(questionLinkDraft)
+    setParticipantLinkDraft(participantLinkDraft)
+    setAddType(addType); setAddMode(addMode); setExistingTargetId(existingTargetId)
+    setAddPreviewQuestionId(addPreviewQuestionId); setDuplicateQuestionSourceId(duplicateQuestionSourceId)
+    setFlagTargetOptionId(flagTargetOptionId)
   }
+
+  const patchQuestionDetails = async (questionId: string, fields: Record<string, unknown>, optionId?: string) => {
+    const response = await fetch('/api/renoapp/admin/questions', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionId, optionId, fields }),
+    })
+    const payload = await readJson<{ item?: { id: string; fields: Record<string, unknown> }; error?: string }>(response)
+    if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte spara frågan.')
+    const saved = payload.item.fields
+    replaceQuestions(current => current.map(question => question.id !== questionId ? question
+      : optionId ? { ...question, options: question.options.map(option => option.id === optionId ? { ...option, ...saved } : option) }
+        : { ...question, ...saved }))
+    if (!optionId && typeof saved.label === 'string') setQuestionGroups(current => current.map(group => ({
+      ...group, questions: group.questions.map(question => question.questionId === questionId ? { ...question, questionLabel: saved.label as string } : question),
+    })))
+  }
+
+  const saveEdit = () => {
+    if (!activeNode) return
+    setModalError(null)
+    const ref = activeNode.ref
+    const draft = ref.type === 'actionType' ? actionTypeDraft : ref.type === 'option' ? optionDraft
+      : ref.type === 'rootQuestion' || ref.type === 'question' || ref.type === 'optionQuestionTrigger' ? questionDraft
+      : ref.type === 'rootRequirement' || ref.type === 'optionDocumentTrigger' ? documentDraft
+      : ref.type === 'rootParticipant' || ref.type === 'optionParticipantTrigger' ? participantDraft : reviewFlagDraft
+    if (!draft.label.trim() || !Number.isFinite(Number(draft.sortOrder))) {
+      setModalError('Ange visningsnamn och en giltig sortering.'); return
+    }
+    const key = editorKey(activeNode)
+    const restoreDraft = () => {
+      if (ref.type === 'actionType') setActionTypeDraft(actionTypeDraft)
+      else if (ref.type === 'option') setOptionDraft(optionDraft)
+      else if (ref.type === 'rootQuestion' || ref.type === 'question' || ref.type === 'optionQuestionTrigger') setQuestionDraft(questionDraft)
+      else if (ref.type === 'rootRequirement' || ref.type === 'optionDocumentTrigger') setDocumentDraft(documentDraft)
+      else if (ref.type === 'rootParticipant' || ref.type === 'optionParticipantTrigger') setParticipantDraft(participantDraft)
+      else setReviewFlagDraft(reviewFlagDraft)
+    }
+    const linkKey = `link:${activeNode.id}`
+    const linkWasPending = pendingDrafts.current.has(linkKey)
+    const restoreLink = () => {
+      setQuestionLinkDraft(questionLinkDraft)
+      setRequirementLinkDraft(requirementLinkDraft)
+      setParticipantLinkDraft(participantLinkDraft)
+    }
+    pendingDrafts.current.set(key, restoreDraft)
+    pendingDrafts.current.set(linkKey, restoreLink)
+    const job = saves.enqueue({ key: `edit:${key}:${activeNode.id}`, label: draft.label,
+      recover: restoreEditor,
+      run: async () => {
+        writeRevision.current++
+        try {
+          if (activeNode.ref.type === 'actionType') {
+            const response = await fetch('/api/renoapp/admin/action-types', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: actionTypeDraft.id,
+                key: generatedActionTypeKey(actionTypeDraft),
+                label: actionTypeDraft.label,
+                description: actionTypeDraft.description || null,
+                riskLevel: actionTypeDraft.riskLevel,
+                contractorRequirement: actionTypeDraft.contractorRequirement,
+                sortOrder: Number(actionTypeDraft.sortOrder || 100),
+                isActive: actionTypeDraft.isActive,
+              }),
+            })
+            const payload = await readJson<{ item?: ActionTypeItem; error?: string }>(response)
+            if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte spara renoveringstypen.')
+            const saved = payload.item
+            setActionTypes(current => (current.some(item => item.id === saved.id) ? current.map(item => item.id === saved.id ? saved : item) : [...current, saved])
+              .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
+          } else if (activeNode.ref.type === 'rootQuestion' || activeNode.ref.type === 'question' || activeNode.ref.type === 'optionQuestionTrigger') {
+            const questionId =
+              activeNode.ref.type === 'rootQuestion'
+                ? activeNode.ref.questionId
+                : activeNode.ref.type === 'question'
+                  ? activeNode.ref.questionId
+                  : activeNode.ref.targetQuestionId
+            await patchQuestionDetails(questionId, {
+              label: questionDraft.label, helpText: questionDraft.helpText || null,
+              responseType: questionDraft.responseType, sortOrder: Number(questionDraft.sortOrder || 100),
+              isActive: questionDraft.isActive,
+            })
+            const currentQuestionLink = rootQuestions.find(item => item.questionId === questionId)
+            if (activeNode.ref.type === 'rootQuestion' && (linkWasPending || !currentQuestionLink
+              || currentQuestionLink.isRequired !== questionLinkDraft.isRequired
+              || currentQuestionLink.sortOrder !== Number(questionLinkDraft.sortOrder || 100))) {
+              const relationResponse = await fetch('/api/renoapp/admin/action-type-questions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  actionTypeId: activeNode.ref.actionTypeId,
+                  questionId: activeNode.ref.questionId,
+                  isEnabled: true,
+                  isRequired: questionLinkDraft.isRequired,
+                  sortOrder: Number(questionLinkDraft.sortOrder || 100),
+                }),
+              })
+              const relationPayload = await readJson<{ error?: string }>(relationResponse)
+              if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara frågekopplingen.')
+              const actionId = activeNode.ref.actionTypeId, itemId = activeNode.ref.questionId
+              setQuestionGroups(current => current.map(group => group.actionType.id !== actionId ? group : { ...group,
+                questions: group.questions.map(item => item.questionId === itemId ? { ...item, isRequired: questionLinkDraft.isRequired,
+                  sortOrder: Number(questionLinkDraft.sortOrder || 100) } : item),
+              }))
+            }
+          } else if (activeNode.ref.type === 'option') {
+            const ref = activeNode.ref
+            await patchQuestionDetails(ref.questionId, {
+              label: optionDraft.label, description: optionDraft.description || null,
+              sortOrder: Number(optionDraft.sortOrder || 100), isActive: optionDraft.isActive,
+            }, ref.optionId)
+          } else if (activeNode.ref.type === 'rootRequirement' || activeNode.ref.type === 'optionDocumentTrigger') {
+            const response = await fetch('/api/renoapp/admin/document-types', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: documentDraft.id,
+                key: generatedDocumentKey(documentDraft),
+                label: documentDraft.label,
+                description: documentDraft.description || null,
+                reviewGuidance: documentDraft.reviewGuidance || null,
+                defaultPhase: documentDraft.defaultPhase,
+                sortOrder: Number(documentDraft.sortOrder || 100),
+                isActive: documentDraft.isActive,
+              }),
+            })
+            const payload = await readJson<{ item?: DocumentTypeItem; error?: string }>(response)
+            if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte spara underlaget.')
+            const saved = payload.item
+            setDocumentTypes(current => (current.some(item => item.id === saved.id) ? current.map(item => item.id === saved.id ? saved : item) : [...current, saved])
+              .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
+            setRequirementGroups(current => current.map(group => ({ ...group, requirements: group.requirements.map(item => item.documentTypeId === saved.id ? { ...item, documentLabel: saved.label } : item) })))
+            const currentRequirementLink = rootRequirements.find(item => item.documentTypeId === documentDraft.id)
+            if (activeNode.ref.type === 'rootRequirement' && (linkWasPending || !currentRequirementLink
+              || currentRequirementLink.isRequired !== requirementLinkDraft.isRequired
+              || currentRequirementLink.sortOrder !== Number(requirementLinkDraft.sortOrder || 100)
+              || (currentRequirementLink.note ?? '') !== requirementLinkDraft.note)) {
+              const relationResponse = await fetch('/api/renoapp/admin/requirements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  actionTypeId: activeNode.ref.actionTypeId,
+                  documentTypeId: activeNode.ref.documentTypeId,
+                  isEnabled: true,
+                  isRequired: requirementLinkDraft.isRequired,
+                  note: requirementLinkDraft.note || null,
+                  sortOrder: Number(requirementLinkDraft.sortOrder || 100),
+                }),
+              })
+              const relationPayload = await readJson<{ error?: string }>(relationResponse)
+              if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara underlagskopplingen.')
+              const actionId = activeNode.ref.actionTypeId, itemId = activeNode.ref.documentTypeId
+              setRequirementGroups(current => current.map(group => group.actionType.id !== actionId ? group : { ...group,
+                requirements: group.requirements.map(item => item.documentTypeId === itemId ? { ...item, isRequired: requirementLinkDraft.isRequired,
+                  sortOrder: Number(requirementLinkDraft.sortOrder || 100), note: requirementLinkDraft.note || null } : item),
+              }))
+            }
+          } else if (activeNode.ref.type === 'rootParticipant' || activeNode.ref.type === 'optionParticipantTrigger') {
+            const response = await fetch('/api/renoapp/admin/participants', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: participantDraft.id,
+                key: generatedParticipantKey(participantDraft),
+                label: participantDraft.label,
+                description: participantDraft.description || null,
+                reviewGuidance: participantDraft.reviewGuidance || null,
+                roleKind: participantDraft.roleKind,
+                verificationInstructions: participantDraft.verificationInstructions || null,
+                verificationUrl: participantDraft.verificationUrl || null,
+                insuranceRequired: participantDraft.insuranceRequired,
+                requiresCompanyName: participantDraft.requiresCompanyName,
+                requiresOrgNumber: participantDraft.requiresOrgNumber,
+                requiresContactName: participantDraft.requiresContactName,
+                requiresEmail: participantDraft.requiresEmail,
+                requiresPhone: participantDraft.requiresPhone,
+                requiresCertification: participantDraft.requiresCertification,
+                sortOrder: Number(participantDraft.sortOrder || 100),
+                isActive: participantDraft.isActive,
+              }),
+            })
+            const payload = await readJson<{ item?: ParticipantRoleItem; error?: string }>(response)
+            if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte spara medverkandetypen.')
+            const saved = payload.item
+            setParticipantRoles(current => (current.some(item => item.id === saved.id) ? current.map(item => item.id === saved.id ? saved : item) : [...current, saved])
+              .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
+            setParticipantGroups(current => current.map(group => ({ ...group, participantRoles: group.participantRoles.map(item => item.participantRoleId === saved.id ? { ...item, participantRoleLabel: saved.label } : item) })))
+            const currentParticipantLink = rootParticipants.find(item => item.participantRoleId === participantDraft.id)
+            if (activeNode.ref.type === 'rootParticipant' && (linkWasPending || !currentParticipantLink
+              || currentParticipantLink.isRequired !== participantLinkDraft.isRequired
+              || currentParticipantLink.sortOrder !== Number(participantLinkDraft.sortOrder || 100))) {
+              const relationResponse = await fetch('/api/renoapp/admin/action-type-participants', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  actionTypeId: activeNode.ref.actionTypeId,
+                  participantRoleId: activeNode.ref.participantRoleId,
+                  isEnabled: true,
+                  isRequired: participantLinkDraft.isRequired,
+                  sortOrder: Number(participantLinkDraft.sortOrder || 100),
+                }),
+              })
+              const relationPayload = await readJson<{ error?: string }>(relationResponse)
+              if (!relationResponse.ok) throw new Error(relationPayload.error ?? 'Kunde inte spara medverkandekopplingen.')
+              const actionId = activeNode.ref.actionTypeId, itemId = activeNode.ref.participantRoleId
+              setParticipantGroups(current => current.map(group => group.actionType.id !== actionId ? group : { ...group,
+                participantRoles: group.participantRoles.map(item => item.participantRoleId === itemId ? { ...item, isRequired: participantLinkDraft.isRequired,
+                  sortOrder: Number(participantLinkDraft.sortOrder || 100) } : item),
+              }))
+            }
+          } else if (
+            activeNode.ref.type === 'optionReviewFlagTrigger' ||
+            activeNode.ref.type === 'actionTypeReviewFlag' ||
+            activeNode.ref.type === 'documentReviewFlag' ||
+            activeNode.ref.type === 'participantReviewFlag'
+          ) {
+            const response = await fetch('/api/renoapp/admin/review-flags', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: reviewFlagDraft.id,
+                key: generatedReviewFlagKey(reviewFlagDraft),
+                label: reviewFlagDraft.label,
+                description: reviewFlagDraft.description || null,
+                severity: reviewFlagDraft.severity,
+                category: reviewFlagDraft.category || null,
+                sortOrder: Number(reviewFlagDraft.sortOrder || 100),
+                isActive: reviewFlagDraft.isActive,
+              }),
+            })
+            const payload = await readJson<{ item?: ReviewFlagItem; error?: string }>(response)
+            if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte spara flaggan.')
+            const saved = payload.item
+            setReviewFlags(current => (current.some(item => item.id === saved.id) ? current.map(item => item.id === saved.id ? saved : item) : [...current, saved])
+              .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, 'sv')))
+          }
+
+        } catch (saveError) {
+          await loadData()
+          throw saveError
+        }
+      },
+    })
+    if (ref.type === 'actionType' && !actionTypeDraft.id) closeModal()
+    void job.then(() => {
+      if (pendingDrafts.current.get(key) === restoreDraft) pendingDrafts.current.delete(key)
+      if (pendingDrafts.current.get(linkKey) === restoreLink) pendingDrafts.current.delete(linkKey)
+    }).catch(() => undefined)
+  }
+
+  const saveFlowEdit = (edit: FlowEdit, version: string, label: string) => saves.enqueue({
+    key: `flow:${crypto.randomUUID()}`, label,
+    run: async () => {
+      writeRevision.current++
+      try { await requestFlowEdit(edit, version) }
+      finally { await loadData(undefined, true) }
+    },
+  })
 
   const removeConnection = async (node = activeNode) => {
     if (!node?.source || nodeActionInFlight.current) return
@@ -1604,15 +1747,15 @@ export default function RenoAppFlowBuilderPage() {
     setModalError(null)
     const edit = { source: node.source, operation: 'remove' as const }
     try {
+      await saves.flush()
       const preview = await requestFlowEdit(edit)
       const warning = preview.shared ? '\nSamma överordnade kort är delat. Kopplingen tas bort i alla flöden som använder det.' : ''
       if (!window.confirm(`Ta bort kopplingen till "${preview.itemLabel}" från "${preview.fromLabel}"? Originalet, svaren och underfunktionerna finns kvar.${warning}`)) return
-      await requestFlowEdit(edit, preview.version)
-      await loadData(selectedActionTypeId)
+      void saveFlowEdit(edit, preview.version, `Ta bort: ${preview.itemLabel}`).catch(() => undefined)
       closeModal()
     } catch (error) {
       setModalError(error instanceof Error ? error.message : 'Kunde inte ta bort kopplingen.')
-      await loadData(selectedActionTypeId)
+      await loadData()
     } finally {
       nodeActionInFlight.current = false
       setModalSaving(false)
@@ -1630,254 +1773,295 @@ export default function RenoAppFlowBuilderPage() {
     if (type === 'flag') setReviewFlagDraft(EMPTY_REVIEW_FLAG_DRAFT)
   }
 
-  const saveAdd = async (behavior: AddSaveBehavior = 'save') => {
+  const saveAdd = (behavior: AddSaveBehavior = 'save') => {
     if (!activeNode || !addType) return
-    setModalSaving(true)
     setModalError(null)
+    const draft = addType === 'question' ? questionDraft : addType === 'option' ? optionDraft
+      : addType === 'document' ? documentDraft : addType === 'participant' ? participantDraft : reviewFlagDraft
+    if (addMode === 'new' && !draft.label.trim()) {
+      setModalError('Ange ett visningsnamn.'); return
+    }
+    if (addMode === 'existing' && !existingTargetId && addType !== 'option') {
+      setModalError('Välj först vad som ska läggas till.'); return
+    }
+    if (addMode === 'new' && addType === 'question' && !questionOptionDrafts.some(option => option.label.trim())) {
+      setModalError('Lägg till minst ett svarsalternativ innan frågan sparas.'); return
+    }
+    const fingerprint = JSON.stringify([activeNode.id, addType, addMode, existingTargetId, draft, questionOptionDrafts])
+    if (addSubmission.current === fingerprint) return
+    addSubmission.current = fingerprint
+    let createdTargetId: string | null = null
+    const recovery = addRecovery.current
+    const jobKey = recovery?.nodeId === activeNode.id && recovery.type === addType
+      ? recovery.key : `add:${crypto.randomUUID()}`
+    addRecovery.current = null
+    const job = saves.enqueue({
+      key: jobKey, label: `Lägg till: ${addMode === 'new' ? draft.label : activeNode.title}`,
+      recover: () => {
+        restoreEditor()
+        addRecovery.current = { key: jobKey, nodeId: activeNode.id, type: addType }
+        if (createdTargetId) {
+          setAddMode('existing')
+          setExistingTargetId(createdTargetId)
+        }
+        setModalError('Kontrollera flödet innan du sparar igen. En del av tillägget kan redan ha sparats.')
+      },
+      run: async () => {
+        if (!configurationIsFresh.current) await loadData(undefined, true)
+        writeRevision.current++
+        try {
+          let targetId = existingTargetId
 
-    try {
-      let targetId = existingTargetId
+          if (addMode === 'new') {
+            if (addType === 'option') {
+              targetId = ''
+            } else if (addType === 'question') {
+              const nextOptions = questionOptionDrafts
+                .map((option, index) => ({
+                  id: null,
+                  key: generatedOptionKey(option),
+                  label: option.label.trim(),
+                  description: option.description.trim() || null,
+                  sortOrder: Number(option.sortOrder || (index + 1) * 10),
+                  isActive: option.isActive,
+                  metadata: {},
+                  triggers: [],
+                }))
+                .filter((option) => option.label)
 
-      if (addMode === 'new') {
-        if (addType === 'option') {
-          targetId = ''
-        } else if (addType === 'question') {
-          const nextOptions = questionOptionDrafts
-            .map((option, index) => ({
-              id: null,
-              key: generatedOptionKey(option),
-              label: option.label.trim(),
-              description: option.description.trim() || null,
-              sortOrder: Number(option.sortOrder || (index + 1) * 10),
-              isActive: option.isActive,
-              metadata: {},
-              triggers: [],
-            }))
-            .filter((option) => option.label)
+              if (nextOptions.length === 0) {
+                throw new Error('Lägg till minst ett svarsalternativ innan frågan sparas.')
+              }
 
-          if (nextOptions.length === 0) {
-            throw new Error('Lägg till minst ett svarsalternativ innan frågan sparas.')
+              const response = await fetch('/api/renoapp/admin/questions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  question: {
+                    id: null,
+                    key: generatedQuestionKey(questionDraft),
+                    label: questionDraft.label,
+                    helpText: questionDraft.helpText || null,
+                    responseType: questionDraft.responseType,
+                    sortOrder: Number(questionDraft.sortOrder || 100),
+                    isActive: questionDraft.isActive,
+                    metadata: {},
+                  },
+                  options: nextOptions,
+                }),
+              })
+              const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
+              if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa frågan.')
+              targetId = payload.item.id
+              createdTargetId = targetId
+            } else if (addType === 'document') {
+              const response = await fetch('/api/renoapp/admin/document-types', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: null, key: generatedDocumentKey(documentDraft), label: documentDraft.label, description: documentDraft.description || null, reviewGuidance: documentDraft.reviewGuidance || null, defaultPhase: documentDraft.defaultPhase, sortOrder: Number(documentDraft.sortOrder || 100), isActive: documentDraft.isActive }),
+              })
+              const payload = await readJson<{ item?: DocumentTypeItem; error?: string }>(response)
+              if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa underlaget.')
+              targetId = payload.item.id
+              createdTargetId = targetId
+            } else if (addType === 'participant') {
+              const response = await fetch('/api/renoapp/admin/participants', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  id: null,
+                  key: generatedParticipantKey(participantDraft),
+                  label: participantDraft.label,
+                  description: participantDraft.description || null,
+                  reviewGuidance: participantDraft.reviewGuidance || null,
+                  roleKind: participantDraft.roleKind,
+                  verificationInstructions: participantDraft.verificationInstructions || null,
+                  verificationUrl: participantDraft.verificationUrl || null,
+                  insuranceRequired: participantDraft.insuranceRequired,
+                  requiresCompanyName: participantDraft.requiresCompanyName,
+                  requiresOrgNumber: participantDraft.requiresOrgNumber,
+                  requiresContactName: participantDraft.requiresContactName,
+                  requiresEmail: participantDraft.requiresEmail,
+                  requiresPhone: participantDraft.requiresPhone,
+                  requiresCertification: participantDraft.requiresCertification,
+                  sortOrder: Number(participantDraft.sortOrder || 100),
+                  isActive: participantDraft.isActive,
+                }),
+              })
+              const payload = await readJson<{ item?: ParticipantRoleItem; error?: string }>(response)
+              if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa medverkandetypen.')
+              targetId = payload.item.id
+              createdTargetId = targetId
+            } else if (addType === 'flag') {
+              const response = await fetch('/api/renoapp/admin/review-flags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: null, key: generatedReviewFlagKey(reviewFlagDraft), label: reviewFlagDraft.label, description: reviewFlagDraft.description || null, severity: reviewFlagDraft.severity, category: reviewFlagDraft.category || null, sortOrder: Number(reviewFlagDraft.sortOrder || 100), isActive: reviewFlagDraft.isActive }),
+              })
+              const payload = await readJson<{ item?: ReviewFlagItem; error?: string }>(response)
+              if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa flaggan.')
+              targetId = payload.item.id
+              createdTargetId = targetId
+            }
           }
 
-          const response = await fetch('/api/renoapp/admin/questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              question: {
-                id: null,
-                key: generatedQuestionKey(questionDraft),
-                label: questionDraft.label,
-                helpText: questionDraft.helpText || null,
-                responseType: questionDraft.responseType,
-                sortOrder: Number(questionDraft.sortOrder || 100),
-                isActive: questionDraft.isActive,
-                metadata: {},
-              },
-              options: nextOptions,
-            }),
-          })
-          const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
-          if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa frågan.')
-          targetId = payload.item.id
-        } else if (addType === 'document') {
-          const response = await fetch('/api/renoapp/admin/document-types', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: null, key: generatedDocumentKey(documentDraft), label: documentDraft.label, description: documentDraft.description || null, reviewGuidance: documentDraft.reviewGuidance || null, defaultPhase: documentDraft.defaultPhase, sortOrder: Number(documentDraft.sortOrder || 100), isActive: documentDraft.isActive }),
-          })
-          const payload = await readJson<{ item?: DocumentTypeItem; error?: string }>(response)
-          if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa underlaget.')
-          targetId = payload.item.id
-        } else if (addType === 'participant') {
-          const response = await fetch('/api/renoapp/admin/participants', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              id: null,
-              key: generatedParticipantKey(participantDraft),
-              label: participantDraft.label,
-              description: participantDraft.description || null,
-              reviewGuidance: participantDraft.reviewGuidance || null,
-              roleKind: participantDraft.roleKind,
-              verificationInstructions: participantDraft.verificationInstructions || null,
-              verificationUrl: participantDraft.verificationUrl || null,
-              insuranceRequired: participantDraft.insuranceRequired,
-              requiresCompanyName: participantDraft.requiresCompanyName,
-              requiresOrgNumber: participantDraft.requiresOrgNumber,
-              requiresContactName: participantDraft.requiresContactName,
-              requiresEmail: participantDraft.requiresEmail,
-              requiresPhone: participantDraft.requiresPhone,
-              requiresCertification: participantDraft.requiresCertification,
-              sortOrder: Number(participantDraft.sortOrder || 100),
-              isActive: participantDraft.isActive,
-            }),
-          })
-          const payload = await readJson<{ item?: ParticipantRoleItem; error?: string }>(response)
-          if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa medverkandetypen.')
-          targetId = payload.item.id
-        } else if (addType === 'flag') {
-          const response = await fetch('/api/renoapp/admin/review-flags', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: null, key: generatedReviewFlagKey(reviewFlagDraft), label: reviewFlagDraft.label, description: reviewFlagDraft.description || null, severity: reviewFlagDraft.severity, category: reviewFlagDraft.category || null, sortOrder: Number(reviewFlagDraft.sortOrder || 100), isActive: reviewFlagDraft.isActive }),
-          })
-          const payload = await readJson<{ item?: ReviewFlagItem; error?: string }>(response)
-          if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte skapa flaggan.')
-          targetId = payload.item.id
-        }
-      }
+          if (addType !== 'option' && !targetId) throw new Error('Välj först vad som ska läggas till.')
 
-      if (addType !== 'option' && !targetId) throw new Error('Välj först vad som ska läggas till.')
+          if (activeNode.ref.type === 'actionType') {
+            if (addType === 'question') {
+              const response = await fetch('/api/renoapp/admin/action-type-questions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionTypeId: activeNode.ref.actionTypeId, questionId: targetId, isEnabled: true, isRequired: true, sortOrder: (rootQuestions.at(-1)?.sortOrder ?? 0) + 10 }),
+              })
+              const payload = await readJson<{ error?: string }>(response)
+              if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla frågan.')
+            } else if (addType === 'document') {
+              const response = await fetch('/api/renoapp/admin/requirements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionTypeId: activeNode.ref.actionTypeId, documentTypeId: targetId, isEnabled: true, isRequired: true, note: null, sortOrder: (rootRequirements.at(-1)?.sortOrder ?? 0) + 10 }),
+              })
+              const payload = await readJson<{ error?: string }>(response)
+              if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla underlaget.')
+            } else if (addType === 'participant') {
+              const response = await fetch('/api/renoapp/admin/action-type-participants', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionTypeId: activeNode.ref.actionTypeId, participantRoleId: targetId, isEnabled: true, isRequired: true, sortOrder: (rootParticipants.at(-1)?.sortOrder ?? 0) + 10 }),
+              })
+              const payload = await readJson<{ error?: string }>(response)
+              if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla medverkandetypen.')
+            } else if (addType === 'flag') {
+              await saveReviewFlagLink({
+                actionTypeId: activeNode.ref.actionTypeId,
+                reviewFlagId: targetId,
+              })
+            }
+          } else if (
+            (activeNode.ref.type === 'rootQuestion' ||
+              activeNode.ref.type === 'question' ||
+              activeNode.ref.type === 'optionQuestionTrigger') &&
+            addType === 'option'
+          ) {
+            const questionId = activeQuestionIdForOptionAdd
+            if (!questionId) throw new Error('Frågan kunde inte hittas.')
+            const question = questionItemsRef.current.find(item => item.id === questionId)
+            if (!question) throw new Error('Frågan kunde inte hittas.')
+            await persistQuestionWithOptions({
+              ...question,
+              options: [
+                ...question.options,
+                {
+                  id: `new-${Date.now()}`,
+                  key: generatedOptionKey(optionDraft),
+                  label: optionDraft.label,
+                  description: optionDraft.description || null,
+                  sortOrder: Number(optionDraft.sortOrder || Math.max(0, ...question.options.map((item) => item.sortOrder)) + 10 || 100),
+                  isActive: optionDraft.isActive,
+                  metadata: {},
+                  triggers: [],
+                },
+              ],
+            })
+          } else if (
+            (activeNode.ref.type === 'rootQuestion' ||
+              activeNode.ref.type === 'question' ||
+              activeNode.ref.type === 'optionQuestionTrigger') &&
+            addType === 'flag'
+          ) {
+            const questionId = activeQuestionIdForOptionAdd
+            if (!questionId) throw new Error('Frågan kunde inte hittas.')
+            const targetOptionId = flagTargetOptionId || activeQuestionSummary?.options[0]?.id || ''
+            if (!targetOptionId) throw new Error('Välj vilket svarsalternativ som ska trigga flaggan.')
 
-      if (activeNode.ref.type === 'actionType') {
-        if (addType === 'question') {
-          const response = await fetch('/api/renoapp/admin/action-type-questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ actionTypeId: activeNode.ref.actionTypeId, questionId: targetId, isEnabled: true, isRequired: true, sortOrder: (rootQuestions.at(-1)?.sortOrder ?? 0) + 10 }),
-          })
-          const payload = await readJson<{ error?: string }>(response)
-          if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla frågan.')
-        } else if (addType === 'document') {
-          const response = await fetch('/api/renoapp/admin/requirements', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ actionTypeId: activeNode.ref.actionTypeId, documentTypeId: targetId, isEnabled: true, isRequired: true, note: null, sortOrder: (rootRequirements.at(-1)?.sortOrder ?? 0) + 10 }),
-          })
-          const payload = await readJson<{ error?: string }>(response)
-          if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla underlaget.')
-        } else if (addType === 'participant') {
-          const response = await fetch('/api/renoapp/admin/action-type-participants', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ actionTypeId: activeNode.ref.actionTypeId, participantRoleId: targetId, isEnabled: true, isRequired: true, sortOrder: (rootParticipants.at(-1)?.sortOrder ?? 0) + 10 }),
-          })
-          const payload = await readJson<{ error?: string }>(response)
-          if (!response.ok) throw new Error(payload.error ?? 'Kunde inte koppla medverkandetypen.')
-        } else if (addType === 'flag') {
-          await saveReviewFlagLink({
-            actionTypeId: activeNode.ref.actionTypeId,
-            reviewFlagId: targetId,
-          })
-        }
-      } else if (
-        (activeNode.ref.type === 'rootQuestion' ||
-          activeNode.ref.type === 'question' ||
-          activeNode.ref.type === 'optionQuestionTrigger') &&
-        addType === 'option'
-      ) {
-        const questionId = activeQuestionIdForOptionAdd
-        if (!questionId) throw new Error('Frågan kunde inte hittas.')
-        const question = questionMap.get(questionId)
-        if (!question) throw new Error('Frågan kunde inte hittas.')
-        await persistQuestionWithOptions({
-          ...question,
-          options: [
-            ...question.options,
-            {
-              id: `new-${Date.now()}`,
-              key: generatedOptionKey(optionDraft),
-              label: optionDraft.label,
-              description: optionDraft.description || null,
-              sortOrder: Number(optionDraft.sortOrder || Math.max(0, ...question.options.map((item) => item.sortOrder)) + 10 || 100),
-              isActive: optionDraft.isActive,
-              metadata: {},
-              triggers: [],
-            },
-          ],
-        })
-      } else if (
-        (activeNode.ref.type === 'rootQuestion' ||
-          activeNode.ref.type === 'question' ||
-          activeNode.ref.type === 'optionQuestionTrigger') &&
-        addType === 'flag'
-      ) {
-        const questionId = activeQuestionIdForOptionAdd
-        if (!questionId) throw new Error('Frågan kunde inte hittas.')
-        const targetOptionId = flagTargetOptionId || activeQuestionSummary?.options[0]?.id || ''
-        if (!targetOptionId) throw new Error('Välj vilket svarsalternativ som ska trigga flaggan.')
+            await updateOptionTriggers(questionId, targetOptionId, (triggers) => {
+              const exists = triggers.some(
+                (trigger) => trigger.triggerType === 'review_flag' && trigger.reviewFlagId === targetId
+              )
+              if (exists) return triggers
 
-        await updateOptionTriggers(questionId, targetOptionId, (triggers) => {
-          const exists = triggers.some(
-            (trigger) => trigger.triggerType === 'review_flag' && trigger.reviewFlagId === targetId
-          )
-          if (exists) return triggers
-
-          return [
-            ...triggers,
-            {
-              id: `new-${Date.now()}`,
-              triggerType: 'review_flag',
-              questionId: null,
-              documentTypeId: null,
-              participantRoleId: null,
+              return [
+                ...triggers,
+                {
+                  id: `new-${Date.now()}`,
+                  triggerType: 'review_flag',
+                  questionId: null,
+                  documentTypeId: null,
+                  participantRoleId: null,
+                  reviewFlagId: targetId,
+                  sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+                  isActive: true,
+                },
+              ]
+            })
+          } else if (
+            (activeNode.ref.type === 'rootRequirement' || activeNode.ref.type === 'optionDocumentTrigger') &&
+            addType === 'flag'
+          ) {
+            await saveReviewFlagLink({
+              documentTypeId:
+                activeNode.ref.type === 'rootRequirement'
+                  ? activeNode.ref.documentTypeId
+                  : activeNode.ref.targetDocumentTypeId,
               reviewFlagId: targetId,
-              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
-              isActive: true,
-            },
-          ]
-        })
-      } else if (
-        (activeNode.ref.type === 'rootRequirement' || activeNode.ref.type === 'optionDocumentTrigger') &&
-        addType === 'flag'
-      ) {
-        await saveReviewFlagLink({
-          documentTypeId:
-            activeNode.ref.type === 'rootRequirement'
-              ? activeNode.ref.documentTypeId
-              : activeNode.ref.targetDocumentTypeId,
-          reviewFlagId: targetId,
-        })
-      } else if (
-        (activeNode.ref.type === 'rootParticipant' || activeNode.ref.type === 'optionParticipantTrigger') &&
-        addType === 'flag'
-      ) {
-        await saveReviewFlagLink({
-          participantRoleId:
-            activeNode.ref.type === 'rootParticipant'
-              ? activeNode.ref.participantRoleId
-              : activeNode.ref.targetParticipantRoleId,
-          reviewFlagId: targetId,
-        })
-      } else if (activeNode.ref.type === 'option') {
-        await updateOptionTriggers(activeNode.ref.questionId, activeNode.ref.optionId, (triggers) => {
-          const exists = triggers.some((trigger) => {
-            if (addType === 'question') return trigger.triggerType === 'question' && trigger.questionId === targetId
-            if (addType === 'document') return trigger.triggerType === 'document' && trigger.documentTypeId === targetId
-            if (addType === 'participant') return trigger.triggerType === 'participant_role' && trigger.participantRoleId === targetId
-            return trigger.triggerType === 'review_flag' && trigger.reviewFlagId === targetId
-          })
-          if (exists) return triggers
+            })
+          } else if (
+            (activeNode.ref.type === 'rootParticipant' || activeNode.ref.type === 'optionParticipantTrigger') &&
+            addType === 'flag'
+          ) {
+            await saveReviewFlagLink({
+              participantRoleId:
+                activeNode.ref.type === 'rootParticipant'
+                  ? activeNode.ref.participantRoleId
+                  : activeNode.ref.targetParticipantRoleId,
+              reviewFlagId: targetId,
+            })
+          } else if (activeNode.ref.type === 'option') {
+            await updateOptionTriggers(activeNode.ref.questionId, activeNode.ref.optionId, (triggers) => {
+              const exists = triggers.some((trigger) => {
+                if (addType === 'question') return trigger.triggerType === 'question' && trigger.questionId === targetId
+                if (addType === 'document') return trigger.triggerType === 'document' && trigger.documentTypeId === targetId
+                if (addType === 'participant') return trigger.triggerType === 'participant_role' && trigger.participantRoleId === targetId
+                return trigger.triggerType === 'review_flag' && trigger.reviewFlagId === targetId
+              })
+              if (exists) return triggers
 
-          return [
-            ...triggers,
-            {
-              id: `new-${Date.now()}`,
-              triggerType: addType === 'question' ? 'question' : addType === 'document' ? 'document' : addType === 'participant' ? 'participant_role' : 'review_flag',
-              questionId: addType === 'question' ? targetId : null,
-              documentTypeId: addType === 'document' ? targetId : null,
-              participantRoleId: addType === 'participant' ? targetId : null,
-              reviewFlagId: addType === 'flag' ? targetId : null,
-              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
-              isActive: true,
-            },
-          ]
-        })
-      }
+              return [
+                ...triggers,
+                {
+                  id: `new-${Date.now()}`,
+                  triggerType: addType === 'question' ? 'question' : addType === 'document' ? 'document' : addType === 'participant' ? 'participant_role' : 'review_flag',
+                  questionId: addType === 'question' ? targetId : null,
+                  documentTypeId: addType === 'document' ? targetId : null,
+                  participantRoleId: addType === 'participant' ? targetId : null,
+                  reviewFlagId: addType === 'flag' ? targetId : null,
+                  sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
+                  isActive: true,
+                },
+              ]
+            })
+          }
 
-      await loadData(selectedActionTypeId)
-      if (behavior === 'saveAndNew') {
-        setAddMode('new')
-        setExistingTargetId('')
-        setAddPreviewQuestionId(null)
-        setDuplicateQuestionSourceId(null)
-        setFlagTargetOptionId('')
-        resetNewDraftForType(addType)
-      }
-    } catch (addError) {
-      setModalError(addError instanceof Error ? addError.message : 'Kunde inte lägga till kopplingen.')
-    } finally {
-      setModalSaving(false)
+          await loadData(undefined, true)
+        } catch (addError) {
+          await loadData()
+          throw addError
+        }
+      },
+    })
+    void job.finally(() => {
+      if (addSubmission.current === fingerprint) addSubmission.current = null
+    }).catch(() => undefined)
+    if (behavior === 'saveAndNew') {
+      setAddMode('new')
+      setExistingTargetId('')
+      setAddPreviewQuestionId(null)
+      setDuplicateQuestionSourceId(null)
+      setFlagTargetOptionId('')
+      resetNewDraftForType(addType)
+    } else {
+      closeModal()
     }
   }
 
@@ -2064,10 +2248,21 @@ export default function RenoAppFlowBuilderPage() {
     )
   }
 
+  const renderSaveFailures = () => saves.failures.map(failure => <div key={failure.key} role="alert" className="mb-2 flex flex-wrap items-center gap-3 border-l-4 border-rose-600 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+        <span className="min-w-0 flex-1 break-words"><strong>{failure.label}:</strong> {failure.message}</span>
+        {failure.recover ? <button type="button" className="underline underline-offset-2" onClick={failure.recover}>Öppna ändringen</button> : null}
+        <button type="button" title="Avfärda sparfelet" aria-label="Avfärda sparfelet" className="rounded p-1 hover:bg-rose-100" onClick={() => saves.dismissFailure(failure.key)}><X size={16} /></button>
+      </div>)
+
   return (
     <main className="w-full px-4 pb-6 pt-3 md:px-6">
       {error ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
+      <div className="mb-2 min-h-6 text-sm" aria-live="polite" data-flow-save-status>
+        {saves.isSaving ? `Sparar i bakgrunden (${saves.pending})...` : saves.failures.length
+          ? 'Alla ändringar kunde inte sparas.' : saves.lastSavedAt ? 'Alla ändringar sparade.' : refreshing ? 'Uppdaterar flödet...' : ''}
+      </div>
+      {!activeNode ? renderSaveFailures() : null}
       <div className="min-w-0 space-y-3">
         <div className="border-b border-stone-200 pb-2">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -2089,6 +2284,7 @@ export default function RenoAppFlowBuilderPage() {
             <button
               type="button"
               onClick={() => setAiDrawerOpen(true)}
+                disabled={saves.isSaving}
               className="ml-1 inline-flex h-8 items-center gap-1.5 rounded-md border border-violet-300 bg-violet-50 px-3 text-xs font-semibold text-violet-800 transition hover:border-violet-400 hover:bg-violet-100"
             >
               <span aria-hidden>✦</span>
@@ -2134,7 +2330,10 @@ export default function RenoAppFlowBuilderPage() {
                 ? setExpandedNodeIds(current => current.length ? [] : allExpandableNodeIds)
                 : toggleNode(id)}
               onOpen={openNodeModal}
-              onReload={() => loadData(selectedActionTypeId)}
+              mutationsDisabled={saves.isSaving || refreshing}
+              onPrepareEdit={async edit => { await saves.flush(); return requestFlowEdit(edit) }}
+              onApplyEdit={saveFlowEdit}
+              onReload={async () => { await saves.flush(); await loadData() }}
             /> : null}
           </>
         )}
@@ -2145,7 +2344,9 @@ export default function RenoAppFlowBuilderPage() {
           currentAction={selectedAction}
           onClose={() => setAiDrawerOpen(false)}
           onApplied={async () => {
-            await loadData(selectedActionTypeId)
+            await saves.flush()
+            writeRevision.current++
+            await loadData()
           }}
         />
       ) : null}
@@ -2163,6 +2364,8 @@ export default function RenoAppFlowBuilderPage() {
             </div>
 
             <div className="space-y-6 px-6 py-5">
+              {saves.isSaving ? <p role="status" className="text-sm text-stone-600">Sparar i bakgrunden ({saves.pending})...</p> : null}
+              {renderSaveFailures()}
               {modalError ? <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{modalError}</div> : null}
 
               <div className="flex flex-wrap gap-2">

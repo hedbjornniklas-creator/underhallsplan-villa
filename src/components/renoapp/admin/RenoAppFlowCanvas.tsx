@@ -5,7 +5,6 @@ import { ReactFlow, ReactFlowProvider, Handle, Position, useNodesState, useReact
 import { Copy, GripVertical, Maximize, Minus, MoveRight, Plus, RotateCcw, Trash2, RefreshCw, CornerDownRight, X } from 'lucide-react'
 import { canChooseFlowTarget, flattenFlow, flowSubtreeIds, flowTarget, type FlowNode, type FlowEdit, type FlowMovePreview } from '@/lib/renoapp/flowEditor'
 import { FLOW_CARD_WIDTH, FLOW_CARD_INITIAL_HEIGHT, FLOW_LAYOUT_VERSION, layoutFlow } from '@/lib/renoapp/flowLayout'
-import { requestFlowEdit } from '@/lib/renoapp/flowEditorClient'
 import '@xyflow/react/dist/style.css'
 
 type DiagramNode = Node<{ item: FlowNode; expanded: boolean }, 'flowCard'>
@@ -13,6 +12,9 @@ type Props = {
   root: FlowNode
   expandedIds: string[]
   disabled: boolean
+  mutationsDisabled: boolean
+  onPrepareEdit: (edit: FlowEdit) => Promise<FlowMovePreview>
+  onApplyEdit: (edit: FlowEdit, version: string, label: string) => Promise<void>
   onToggle: (id: string) => void
   onOpen: (node: FlowNode) => void
   onReload: () => Promise<void>
@@ -28,7 +30,7 @@ const iconButtonClass = 'nodrag nopan inline-flex shrink-0 items-center justify-
 const buttonClass = `${iconButtonClass} h-7 w-7`
 const cardButtonClass = `${iconButtonClass} h-6 w-6`
 type Selection = { operation: 'move' | 'copy'; source: FlowNode; sourceId: string }
-const Actions = createContext<Pick<Props, 'onOpen' | 'onToggle' | 'disabled'> & {
+const Actions = createContext<Pick<Props, 'onOpen' | 'onToggle' | 'disabled' | 'mutationsDisabled'> & {
   onRemove: (node: FlowNode) => void
   highlighted: string | null
   selection: Selection | null
@@ -52,10 +54,10 @@ function FlowCard({ id, data, selected }: NodeProps<DiagramNode>) {
         <GripVertical size={15} className="shrink-0" />{labels[item.kind]}
       </span>
       <div className="flex shrink-0">
-        {!choosing && item.source ? <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Flytta koppling" aria-label="Flytta koppling" onClick={() => actions.choose(id, item, 'move')}><MoveRight size={15} /></button> : null}
+        {!choosing && item.source ? <button type="button" className={cardButtonClass} disabled={actions.mutationsDisabled} title="Flytta koppling" aria-label="Flytta koppling" onClick={() => actions.choose(id, item, 'move')}><MoveRight size={15} /></button> : null}
         {!choosing && item.source ? <>
-          <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Kopiera till en annan plats" aria-label="Kopiera till en annan plats" onClick={() => actions.choose(id, item, 'copy')}><Copy size={15} /></button>
-          <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Ta bort från flödet" aria-label="Ta bort från flödet" onClick={() => actions.onRemove(item)}><Trash2 size={15} /></button>
+          <button type="button" className={cardButtonClass} disabled={actions.mutationsDisabled} title="Kopiera till en annan plats" aria-label="Kopiera till en annan plats" onClick={() => actions.choose(id, item, 'copy')}><Copy size={15} /></button>
+          <button type="button" className={cardButtonClass} disabled={actions.mutationsDisabled} title="Ta bort från flödet" aria-label="Ta bort från flödet" onClick={() => actions.onRemove(item)}><Trash2 size={15} /></button>
         </> : null}
         {item.children.length ? <button type="button" className={`${cardButtonClass} relative z-20`} disabled={actions.disabled} title={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-label={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-expanded={data.expanded} onClick={() => actions.onToggle(item.id)}>{data.expanded ? <Minus size={15} /> : <Plus size={15} />}</button> : null}
       </div>
@@ -65,7 +67,7 @@ function FlowCard({ id, data, selected }: NodeProps<DiagramNode>) {
       {item.badges.map(badge => <span key={badge} title={badge} className="min-w-0 truncate rounded border border-stone-200 bg-white px-1 text-[10px] leading-[14px]">{badge}</span>)}
     </div>
     {item.children.length ? <Handle type="source" position={Position.Right} isConnectable={false} /> : null}
-    {choosing ? <button type="button" className="nodrag nopan absolute inset-0 z-10 rounded-md enabled:cursor-pointer enabled:hover:bg-emerald-100/35 focus-visible:outline-4 focus-visible:outline-emerald-700" disabled={actions.disabled || !target} aria-label={`Koppla hit: ${item.title}`} onClick={() => actions.selectTarget(id)}>
+    {choosing ? <button type="button" className="nodrag nopan absolute inset-0 z-10 rounded-md enabled:cursor-pointer enabled:hover:bg-emerald-100/35 focus-visible:outline-4 focus-visible:outline-emerald-700" disabled={actions.mutationsDisabled || !target} aria-label={`Koppla hit: ${item.title}`} onClick={() => actions.selectTarget(id)}>
       {target ? <CornerDownRight size={16} className="absolute bottom-2 right-2 rounded bg-white text-emerald-700" /> : null}
     </button> : null}
   </div>
@@ -84,7 +86,7 @@ function readPositions(key: string): PositionMap {
 }
 
 function Canvas(props: Props) {
-  const { root, expandedIds, disabled, onReload } = props
+  const { root, expandedIds, disabled, mutationsDisabled, onReload } = props
   const flow = useReactFlow<DiagramNode>()
   const storageKey = `renoapp-flow-layout:${FLOW_LAYOUT_VERSION}:${root.id}`
   const positions = useRef<PositionMap>({})
@@ -111,6 +113,11 @@ function Canvas(props: Props) {
   const [busy, setBusy] = useState(false)
   const [fitAfterChange, setFitAfterChange] = useState(false)
   const operationInFlight = useRef(false)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   const [choice, setChoice] = useState<Selection | null>(null)
   const [preview, setPreview] = useState<{ edit: FlowEdit; result: FlowMovePreview; destinationNodeId?: string } | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
@@ -159,8 +166,8 @@ function Canvas(props: Props) {
   }, [choice])
 
   useEffect(() => {
-    if (choice && (disabled || !allOccurrences.some(row => row.id === choice.sourceId))) setChoice(null)
-  }, [choice, disabled, allOccurrences])
+    if (choice && (disabled || mutationsDisabled || !allOccurrences.some(row => row.id === choice.sourceId))) setChoice(null)
+  }, [choice, disabled, mutationsDisabled, allOccurrences])
 
   useEffect(() => {
     if (!fitAfterChange || busy) return
@@ -196,7 +203,7 @@ function Canvas(props: Props) {
   }
   const prepareEdit = async (source: FlowNode, destination: FlowNode | null, operation: FlowEdit['operation']) => {
     const target = destination && flowTarget(destination)
-    if (!source.source || (operation !== 'remove' && !target) || operationInFlight.current) return
+    if (!source.source || (operation !== 'remove' && !target) || disabled || mutationsDisabled || operationInFlight.current) return
     operationInFlight.current = true
     setBusy(true)
     setNotice(null)
@@ -204,38 +211,44 @@ function Canvas(props: Props) {
     const edit: FlowEdit = operation === 'remove' ? { source: source.source, operation }
       : { source: source.source, target: target!, operation }
     try {
-      setPreview({ edit, result: await requestFlowEdit(edit), destinationNodeId: destination?.id })
+      const result = await props.onPrepareEdit(edit)
+      if (mounted.current) setPreview({ edit, result, destinationNodeId: destination?.id })
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Kunde inte förbereda ändringen.')
     } finally { setBusy(false); operationInFlight.current = false }
   }
   const applyEdit = async () => {
     if (!preview || operationInFlight.current) return
+    const confirmed = preview
     operationInFlight.current = true
     setBusy(true)
+    setPreview(null)
+    if (confirmed.destinationNodeId && confirmed.destinationNodeId !== root.id && !expandedIds.includes(confirmed.destinationNodeId)) {
+      props.onToggle(confirmed.destinationNodeId)
+    }
     try {
-      await requestFlowEdit(preview.edit, preview.result.version)
-      if (preview.destinationNodeId && preview.destinationNodeId !== root.id && !expandedIds.includes(preview.destinationNodeId)) {
-        props.onToggle(preview.destinationNodeId)
-      }
-      setNotice(preview.edit.operation === 'copy' ? 'Kortet har kopplats till den nya platsen. Originalet finns kvar.'
-        : preview.edit.operation === 'remove' ? 'Kopplingen har tagits bort. Originalet och dess underfunktioner finns kvar.'
+      const verb = confirmed.edit.operation === 'copy' ? 'Kopiera' : confirmed.edit.operation === 'remove' ? 'Ta bort' : 'Flytta'
+      await props.onApplyEdit(confirmed.edit, confirmed.result.version, `${verb}: ${confirmed.result.itemLabel}`)
+      if (!mounted.current) return
+      setNotice(confirmed.edit.operation === 'copy' ? 'Kortet har kopplats till den nya platsen. Originalet finns kvar.'
+        : confirmed.edit.operation === 'remove' ? 'Kopplingen har tagits bort. Originalet och dess underfunktioner finns kvar.'
         : 'Kopplingen har flyttats.')
       setFitAfterChange(true)
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Ändringen kunde inte bekräftas. Ladda om flödet.')
+    } catch {
+      // The page-owned save queue keeps errors visible even after changing flow.
     } finally {
-      setPreview(null)
-      try { await onReload() } finally { setBusy(false); operationInFlight.current = false }
+      if (mounted.current) setBusy(false)
+      operationInFlight.current = false
     }
   }
   const targetIds = new Set(choice ? occurrences.filter(row => canChooseFlowTarget(choice.source, row.node, choice.operation)).map(row => row.id) : [])
   const selectTarget = (id: string) => {
-    if (!choice || !targetIds.has(id) || disabled || operationInFlight.current) return
+    if (!choice || !targetIds.has(id) || disabled || mutationsDisabled || operationInFlight.current) return
     const target = occurrences.find(row => row.id === id)!
     void prepareEdit(choice.source, target.node, choice.operation)
   }
-  const locked = disabled || busy || Boolean(preview)
+  const locked = disabled || Boolean(preview)
+  const mutationLocked = locked || mutationsDisabled || busy
 
   return <section className="min-w-0" aria-label="Flödesdiagram">
     {choice ? <div role="status" className="mb-2 flex flex-col gap-2 rounded-md border border-emerald-600 bg-emerald-50 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
@@ -260,10 +273,10 @@ function Canvas(props: Props) {
         setNodes(graph.nodes)
         requestAnimationFrame(() => void flow.fitView({ padding: 0.12, maxZoom: 1 }))
       }}><RotateCcw size={17} /></button>
-      <button type="button" className={buttonClass} disabled={locked || Boolean(choice)} aria-label="Ladda om flödet" title="Ladda om flödet" onClick={() => void onReload()}><RefreshCw size={17} /></button>
+      <button type="button" className={buttonClass} disabled={mutationLocked || Boolean(choice)} aria-label="Ladda om flödet" title="Ladda om flödet" onClick={() => void onReload()}><RefreshCw size={17} /></button>
     </div>
     <div className="h-[min(72vh,820px)] min-h-[480px] w-full overflow-hidden rounded-md border border-stone-200 bg-stone-50">
-      <Actions.Provider value={{ ...props, disabled: locked, highlighted, selection: choice, targetIds, selectTarget, onRemove: node => { void prepareEdit(node, null, 'remove') },
+      <Actions.Provider value={{ ...props, disabled: locked, mutationsDisabled: mutationLocked, highlighted, selection: choice, targetIds, selectTarget, onRemove: node => { void prepareEdit(node, null, 'remove') },
         choose: (id, node, operation) => {
           setNotice(null); setChoice({ operation, source: node, sourceId: id })
         } }}>
@@ -282,7 +295,7 @@ function Canvas(props: Props) {
           onNodeDrag={(event, node) => {
             const translated = translatedBranch(node)
             setNodes(current => current.map(item => translated[item.id] ? { ...item, position: translated[item.id] } : item))
-            const target = findDropTarget(event, node)
+            const target = mutationLocked ? null : findDropTarget(event, node)
             setHighlighted(target && canChooseFlowTarget(node.data.item, target.data.item, 'move') ? target.id : null)
           }}
           onNodeDragStop={(event, node) => {
@@ -290,6 +303,7 @@ function Canvas(props: Props) {
             const target = findDropTarget(event, node)
             if (target) {
               restoreDrag()
+              if (mutationLocked) { setNotice('Vänta tills ändringarna sparats innan du ändrar en koppling.'); return }
               if (canChooseFlowTarget(node.data.item, target.data.item, 'move')) void prepareEdit(node.data.item, target.data.item, 'move')
               else setNotice(node.data.item.kind === 'option' ? 'Svarsalternativ hör till sin fråga. Flytta hela frågan för att behålla svarens betydelse.' : 'Kortet kan inte flyttas till den kopplingen.')
               return

@@ -55,6 +55,34 @@
 - Copy uses the same destination types as move. Existing direct connections and
   recursive descendants cannot be chosen. Server validation is authoritative.
 
+## Background saving
+
+The editor uses the shared `useAutosaveQueue`, as in RenoApp case decisions and
+TU editing. Its flow-specific adapter serializes confirmed commands instead of
+merging away intermediate operations. The queue belongs to the page, so switching
+renovation types does not discard a pending save or switch the user back afterward.
+
+Saving a draft leaves the editor responsive. Pending drafts can be reopened before
+the server answers; older responses never replace currently edited input. Ordinary
+edits merge the returned item into the local configuration instead of re-fetching
+all nine configuration endpoints. Question/answer details use an admin-only PATCH
+which updates only the selected row, without rewriting options, triggers or keys.
+Unchanged root-link settings are not sent except when an earlier link save is pending.
+
+Confirmed move/copy/unlink closes its confirmation and runs in the same queue.
+Topology controls wait for the refreshed configuration, but panning, zooming,
+expansion and draft editing remain available. Preview fingerprints are still
+checked; a stale preview is never silently retried. Structural additions refresh
+configuration before the next queued command. Older refresh responses cannot
+overwrite a newer edit. This change requires an application deployment, not new SQL.
+
+The page and editor show pending saves and named errors. Failed draft snapshots can
+be reopened; writes are never retried automatically. An acknowledged new definition
+is reused when recovering a partially failed addition. Browser close/reload and
+ordinary navigation links warn while saves or unacknowledged errors remain. The
+queue is in memory, not an offline outbox: do not force-close the tab before saving
+finishes. Existing multi-step create/add operations are not made transactional.
+
 ## Safety and limitations
 
 The database validates source identity, parent identity, active targets, duplicate
@@ -82,12 +110,15 @@ No production migration or live administrative mutation is run by the automated 
 
 - `npm run test:renoapp-flow-editor`: isolated PGlite migration, guards, rollback,
   permission grants, shared occurrences, request validation, route authorization
-  and compact layout checks with variable-height cards and wide branches.
+  and compact layout checks with variable-height cards and wide branches; narrow
+  question/answer update scope, validation and authorization.
 - `node scripts/test-renoapp-flow-editor-ui.mjs`: real flow-builder rendering with mock
   endpoints; actual pointer dragging, line movement, local persistence, copy/removal,
   click-to-move/copy, destination highlighting, cancel/Escape, missing migration,
   failed copy and stale apply; desktop/tablet/mobile screenshots including a dense
   kitchen fixture. Reusing a complete question branch, unlinking and reloading must
   leave the original definitions, answers and descendants unchanged.
+  Delayed writes under React StrictMode exercise FIFO saves, pending draft reopening,
+  error recovery, stale reads, flow switching and Save + New without losing input.
 - `node scripts/test-renoapp-classification-ui.mjs`: existing board-summary and admin
   editor regression coverage.

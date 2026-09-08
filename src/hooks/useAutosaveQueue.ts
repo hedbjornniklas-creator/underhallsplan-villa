@@ -42,6 +42,7 @@ export function useAutosaveQueue<TPayload, TResult>({
   }, [mergePayload, onError, onSaved, save])
 
   useEffect(() => {
+    mountedRef.current = true
     return () => {
       mountedRef.current = false
       pendingRef.current?.resolvers.forEach((resolve) => resolve(null))

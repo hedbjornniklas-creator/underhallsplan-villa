@@ -12,7 +12,7 @@
     "test:renoapp-navigation": "node --experimental-strip-types --test test/renoapp-admin-navigation.test.ts",
     "test:renoapp-drafts": "node --experimental-strip-types --test test/renoapp-draft-email.test.ts",
     "test:renoapp-classification": "node --experimental-strip-types --test test/renoapp-classification-retirement.test.ts",
-    "test:renoapp-flow-editor": "node --experimental-strip-types --test test/renoapp-flow-editor.test.ts test/renoapp-flow-layout.test.ts",
+    "test:renoapp-flow-editor": "node --experimental-strip-types --test test/renoapp-flow-editor.test.ts test/renoapp-flow-layout.test.ts test/renoapp-flow-background-save.test.ts",
     "test:renoapp-completion": "node --experimental-strip-types --test test/renoapp-completion.test.ts test/renoapp-completion-api.test.ts",
     "test:renoapp-rules": "node --experimental-strip-types --test test/renoapp-renovation-rules.test.ts test/renoapp-renovation-rules-api.test.ts",
     "test:renoapp-reviews": "node --experimental-strip-types --test test/renoapp-consultant-review.test.ts test/renoapp-consultant-review-api.test.ts",

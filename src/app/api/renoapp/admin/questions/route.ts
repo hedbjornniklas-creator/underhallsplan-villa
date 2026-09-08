@@ -3,6 +3,7 @@ import {
   deleteRenoAppAdminQuestion,
   listRenoAppAdminQuestions,
   saveRenoAppAdminQuestion,
+  patchRenoAppAdminQuestionDetails,
 } from '@/lib/renoapp/server'
 
 export const runtime = 'nodejs'
@@ -120,6 +121,25 @@ export async function POST(request: Request) {
     if (message === 'QUESTION_KEY_REQUIRED') return jsonError('Ange intern nyckel.', 400)
     if (message === 'QUESTION_LABEL_REQUIRED') return jsonError('Ange visningsnamn.', 400)
     return jsonError(message || 'Kunde inte spara fraga.', 500)
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body.questionId !== 'string' || !body.fields || typeof body.fields !== 'object'
+      || Array.isArray(body.fields) || (body.optionId !== undefined && typeof body.optionId !== 'string')) {
+      return jsonError('Ogiltig ändring.', 400)
+    }
+    const item = await patchRenoAppAdminQuestionDetails(body)
+    return NextResponse.json({ item })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+    if (['ADMIN_REQUIRED', 'PROFILE_NOT_FOUND', 'MODULE_ACCESS_REQUIRED', 'PRODUCT_ACCESS_REQUIRED'].includes(message)) return jsonError('Endast admin har åtkomst.', 403)
+    if (message === 'FLOW_FIELD_INVALID') return jsonError('Ogiltig ändring.', 400)
+    if (message === 'QUESTION_LABEL_REQUIRED') return jsonError('Ange visningsnamn.', 400)
+    return jsonError('Ändringen kunde inte sparas. Kontrollera att frågan finns kvar.', 500)
   }
 }
 

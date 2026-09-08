@@ -6496,6 +6496,49 @@ export async function listRenoAppAdminQuestions(): Promise<RenoAppAdminQuestion[
   }))
 }
 
+export async function patchRenoAppAdminQuestionDetails(input: {
+  questionId: string
+  optionId?: string
+  fields: Record<string, unknown>
+}) {
+  await requireRenoAppAdminProfile()
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!uuid.test(input.questionId) || (input.optionId !== undefined && !uuid.test(input.optionId))) {
+    throw new Error('FLOW_FIELD_INVALID')
+  }
+  const columns: Record<string, string> = input.optionId
+    ? { label: 'label', description: 'description', sortOrder: 'sort_order', isActive: 'is_active' }
+    : { label: 'label', helpText: 'help_text', responseType: 'response_type', sortOrder: 'sort_order', isActive: 'is_active' }
+  const patch: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input.fields)) {
+    if (!Object.hasOwn(columns, key)) throw new Error('FLOW_FIELD_INVALID')
+    if (key === 'isActive') {
+      if (typeof value !== 'boolean') throw new Error('FLOW_FIELD_INVALID')
+      patch[columns[key]] = value
+    } else if (key === 'sortOrder') {
+      if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new Error('FLOW_FIELD_INVALID')
+      patch[columns[key]] = value > 0 ? value : 100
+    } else if (key === 'responseType') {
+      if (typeof value !== 'string' || !['single_select', 'multi_select', 'boolean'].includes(value)) throw new Error('FLOW_FIELD_INVALID')
+      patch[columns[key]] = value
+    } else {
+      if (value !== null && typeof value !== 'string') throw new Error('FLOW_FIELD_INVALID')
+      const text = normalizeTerminologyText(value)
+      if (key === 'label' && !text) throw new Error('QUESTION_LABEL_REQUIRED')
+      patch[columns[key]] = text
+    }
+  }
+  if (!Object.keys(patch).length) throw new Error('FLOW_FIELD_INVALID')
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  // Updating text/settings must not rewrite answer IDs or any outgoing triggers.
+  let query = admin.from(input.optionId ? 'renoapp_apply_question_options' : 'renoapp_apply_questions')
+    .update(patch).eq('id', input.optionId ?? input.questionId)
+  if (input.optionId) query = query.eq('question_id', input.questionId)
+  const { data, error } = await query.select('id,' + Object.values(columns).join(',')).single()
+  if (error || !data) throw new Error('FLOW_FIELD_SAVE_FAILED')
+  return { id: String(data.id), fields: Object.fromEntries(Object.entries(columns).map(([key, column]) => [key, data[column]])) }
+}
+
 export async function saveRenoAppAdminQuestion(input: {
   question: {
     id?: string | null
