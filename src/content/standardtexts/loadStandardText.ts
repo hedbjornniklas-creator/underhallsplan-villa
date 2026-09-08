@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { join } from 'node:path'
 import { getStandardTextPath, type StandardTextId } from './registry'
 
 function repairMojibake(value: string) {
@@ -26,7 +26,22 @@ function repairMojibake(value: string) {
 
 export function loadStandardText(id: StandardTextId): string {
   const relativePath = getStandardTextPath(id)
-  const fullPath = resolve(process.cwd(), relativePath)
+  const prefix = 'src/content/standardtexts/'
+  if (typeof relativePath !== 'string' || !relativePath.startsWith(prefix)) {
+    throw new Error(`Ogiltig sökväg för standardtext "${id}".`)
+  }
+  const filename = relativePath.slice(prefix.length)
+  if (
+    filename.includes('\\') || filename.includes(':') ||
+    filename.split('/').some(part => !part || part === '.' || part === '..') ||
+    !filename.endsWith('.txt')
+  ) {
+    throw new Error(`Ogiltig sökväg för standardtext "${id}".`)
+  }
+
+  // Keep the fixed directory inside the fs path expression. A dynamic path
+  // joined directly to cwd makes deployment tracing include the whole repo.
+  const fullPath = join(process.cwd(), 'src/content/standardtexts', filename)
 
   if (!existsSync(fullPath)) {
     throw new Error(

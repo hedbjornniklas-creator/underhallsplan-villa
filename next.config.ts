@@ -38,6 +38,11 @@ const nextConfig: NextConfig = {
       'node_modules/@sparticuz/chromium/build/**/*',
     ],
   },
+  outputFileTracingExcludes: {
+    // Browser/PDF runtime paths are dynamic. Do not bundle development artifacts
+    // when the tracer conservatively follows those paths through the project.
+    '/*': ['./tmp/**/*', './output/**/*', './docs/**/*', './test/**/*', './scripts/**/*'],
+  },
 }
 
 export default nextConfig
