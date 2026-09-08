@@ -245,7 +245,10 @@ const digital = load<{ SectionContent: SectionRenderer; default: ComponentType<{
 test('digital report headings and contents use descriptive titles without SBR point labels', () => {
   const f = fixture()
   const report = f.report()
-  report.branding = { footer: { companyLines: [], contactLines: [] }, besiktAppLogoUrl: '/test-logo.svg' } as EbInspectionReport['branding']
+  report.branding = {
+    footer: { companyLines: [], contactLines: [] }, besiktAppLogoUrl: '/test-logo.svg',
+    inspectorLogoUrl: null, inspectorAvatarUrl: null, inspectorSignatureUrl: null, signature: null,
+  }
   const section = { ...f.section('scope'), sbrPoint: '2', isRelevant: true }
   report.reportDraft.sections = [section]
   const html = renderToStaticMarkup(createElement(digital.default, {

@@ -43,12 +43,12 @@ async function loadContext(token: string) {
     .eq('token_hash', hashAssignmentToken(token)).is('revoked_at', null).maybeSingle()
   if (error || !link) throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
   const report = getEbInspectionReportFromSnapshot(link.snapshot_payload)
-  if (!report || report.inspection.inspectionId !== link.inspection_id || !report.inspection.reportLockedAt) {
+  if (!report || report.inspection.inspectionId !== link.inspection_id) {
     throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
   }
   const [projectResult, detailResult, latestResult, orderResult] = await Promise.all([
     admin.from('eb_projects').select('id,org_id,client_email').eq('id', report.project.id).eq('org_id', link.org_id).maybeSingle(),
-    admin.from('eb_inspection_details').select('eb_project_id').eq('inspection_id', link.inspection_id).eq('org_id', link.org_id).maybeSingle(),
+    admin.from('eb_inspection_details').select('eb_project_id,report_locked_at').eq('inspection_id', link.inspection_id).eq('org_id', link.org_id).maybeSingle(),
     admin.from('inspection_report_links').select('id').eq('inspection_id', link.inspection_id).eq('org_id', link.org_id)
       .is('revoked_at', null).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1).maybeSingle(),
     admin.from('eb_follow_up_orders').select('id,org_id,eb_project_id,inspection_id,report_link_id,buyer_snapshot,seller_snapshot,withdrawal_requested_at')
@@ -57,6 +57,23 @@ async function loadContext(token: string) {
   if (orderResult.error) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
   if (projectResult.error || !projectResult.data || detailResult.error || detailResult.data?.eb_project_id !== report.project.id || latestResult.error) {
     throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
+  }
+  if (!orderResult.data && !Number.isFinite(Date.parse(report.inspection.reportLockedAt ?? ''))) {
+    // Older deliveries saved the snapshot immediately BEFORE locking the
+    // inspection. Verify that same lock cycle without rewriting the report.
+    // A resend's link.created_at is not evidence: it can refer to an older copy.
+    const snapshotCreatedAt = link.snapshot_payload?.createdAt
+    const snapshotTime = typeof snapshotCreatedAt === 'string' ? Date.parse(snapshotCreatedAt) : NaN
+    const lockedAt = detailResult.data?.report_locked_at
+    const lockTime = typeof lockedAt === 'string' ? Date.parse(lockedAt) : NaN
+    if (!Number.isFinite(snapshotTime) || !Number.isFinite(lockTime) || snapshotTime > lockTime) {
+      throw new Error('EB_FOLLOW_UP_REPORT_NOT_FINALIZED')
+    }
+    const { data: unlock, error: unlockError } = await admin.from('inspection_lock_events')
+      .select('id').eq('org_id', link.org_id).eq('inspection_id', link.inspection_id)
+      .eq('action', 'unlock').gte('performed_at', snapshotCreatedAt).limit(1).maybeSingle()
+    if (unlockError) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
+    if (unlock) throw new Error('EB_FOLLOW_UP_REPORT_NOT_FINALIZED')
   }
   return { admin, link, report, project: projectResult.data, latest: latestResult.data?.id === link.id,
     order: orderResult.data as OrderRow | null }
@@ -97,7 +114,10 @@ export async function getEbFollowUpOffer(token: string): Promise<EbFollowUpOffer
       return { ...base, reason: 'Tjänsten är ännu inte klar för beställning. Kontakta besiktningsföretaget.' }
     }
     return { ...base, available: true }
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'EB_FOLLOW_UP_REPORT_NOT_FINALIZED') {
+      return { ...base, reason: 'Den här rapportversionens fastställande kunde inte bekräftas. Kontakta besiktningsmannen för att få den senast fastställda versionen.' }
+    }
     return { ...base, reason: 'Åtgärdsuppföljning är inte tillgänglig för detta utlåtande just nu.' }
   }
 }

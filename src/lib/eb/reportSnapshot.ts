@@ -202,6 +202,33 @@ function stockholmDate(value: string) {
   return `${part('year')}-${part('month')}-${part('day')}`
 }
 
+/** Add confirmed publication metadata without rebuilding the frozen report. */
+export function withEbReportLockTimestamp(snapshot: unknown, lockedAt: string) {
+  if (!isEbReportSnapshotPayloadV1(snapshot) || !Number.isFinite(Date.parse(lockedAt))) {
+    return snapshot
+  }
+
+  const inspectionId = snapshot.report.inspection.inspectionId
+  return {
+    ...snapshot,
+    report: {
+      ...snapshot.report,
+      inspection: {
+        ...snapshot.report.inspection,
+        reportLockedAt: lockedAt,
+      },
+      project: {
+        ...snapshot.report.project,
+        inspections: snapshot.report.project.inspections.map((inspection) =>
+          inspection.inspectionId === inspectionId
+            ? { ...inspection, reportLockedAt: lockedAt }
+            : inspection
+        ),
+      },
+    },
+  } satisfies EbReportSnapshotPayloadV1
+}
+
 export function withEbReportDeliveryTimestamp(snapshot: unknown, sentAt: string) {
   if (!isEbReportSnapshotPayloadV1(snapshot)) return snapshot
 

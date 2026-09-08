@@ -76,6 +76,7 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
   }
 
   function open(mode: 'purchase' | 'access') {
+    if (!offer || (mode === 'purchase' && !offer.available)) return
     setAccessOnly(mode === 'access')
     setError(null)
     dialog.current?.showModal()
@@ -84,6 +85,7 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
 
   async function send(action: 'request_code' | 'order' | 'access') {
     if (busyRef.current || !offer) return
+    if ((!offer.available && !offer.alreadyActive) || (action === 'order' && !offer.available)) return
     if (action !== 'request_code' && (!challengeId || challengeEmail !== fields.email.trim().toLowerCase())) {
       setError('Begär först en kod till din e-postadress.')
       return
@@ -135,10 +137,8 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
       Åtgärdsuppföljning kunde inte hämtas. <button type="button" onClick={() => void load()} className="ml-1 font-semibold text-emerald-800 underline">Försök igen</button>
     </div> : null
   }
-  // An unavailable offer must not make reading the report depend on billing setup.
-  if (!offer.available && !offer.alreadyActive) return null
-
   const priceLabel = `${money(offer.priceOre)} inkl. moms`
+  const purchaseUnavailable = !offer.available && !offer.alreadyActive
   const verifiedEmailUnchanged = challengeId !== null && challengeEmail === fields.email.trim().toLowerCase()
 
   return (
@@ -148,18 +148,19 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
           <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><CheckCheck size={25} aria-hidden /></span>
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.13em] text-emerald-700">Tillval efter besiktningen</p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-950">Följ upp felen på ett ställe</h2>
+            <h2 className="mt-1 text-xl font-semibold text-slate-950">Digital åtgärdsuppföljning</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Skicka felen till entreprenören och följ vilka som anmälts åtgärdade. Samla kommentarer, före- och åtgärdsbilder utan att ändra utlåtandet.</p>
           </div>
         </div>
         <div className="shrink-0 lg:text-right">
           {!offer.alreadyActive ? <><p className="text-xl font-semibold text-slate-950">{priceLabel}</p><p className="mb-3 mt-1 text-xs text-slate-500">Engångspris för denna besiktning. Ingen prenumeration.</p></> : null}
           {portalUrl ? <a href={portalUrl} rel="noreferrer" className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>Öppna åtgärdsuppföljningen<ArrowRight size={17} aria-hidden /></a>
-            : <button type="button" onClick={() => open(offer.alreadyActive ? 'access' : 'purchase')} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
-              {offer.alreadyActive ? 'Öppna åtgärdsuppföljningen' : 'Se vad som ingår'}<ArrowRight size={17} aria-hidden />
+            : <button type="button" disabled={purchaseUnavailable} onClick={() => open(offer.alreadyActive ? 'access' : 'purchase')} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
+              {offer.alreadyActive ? 'Öppna åtgärdsuppföljningen' : purchaseUnavailable ? 'Köp inte tillgängligt just nu' : 'Köp åtgärdsuppföljning'}<ArrowRight size={17} aria-hidden />
             </button>}
         </div>
       </div>
+      {purchaseUnavailable ? <p role="status" className="border-t border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-950 sm:px-6">{offer.reason?.trim() || 'Digital åtgärdsuppföljning är inte tillgänglig för nya beställningar just nu.'}</p> : null}
       {portalUrl ? <div role="status" className="flex items-start gap-2 border-t border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-950"><Check size={18} className="mt-0.5 shrink-0" aria-hidden /><span>{message} Din personliga länk ska inte delas med entreprenören; skicka en separat entreprenörslänk från portalen.</span></div> : null}
       {!portalUrl ? <div className="border-t border-slate-100 px-5 py-3 text-xs leading-5 text-slate-500 sm:px-6">Utlåtandet är tillgängligt även utan tillvalet. Entreprenörens avbockning är inte ett godkännande av besiktningsmannen.</div> : null}
 

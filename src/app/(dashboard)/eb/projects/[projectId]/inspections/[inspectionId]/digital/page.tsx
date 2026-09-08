@@ -127,17 +127,23 @@ export default async function EbInspectionDigitalReportPage({
     ).filter((document): document is NonNullable<typeof document> => Boolean(document))
 
     return (
-      <EbPublicReportSnapshotView
-        report={report}
-        publishedAt={snapshot?.createdAt ?? row.created_at}
-        pdfDownloadUrl={pdfDownloadUrl}
-        pdfStatus={pdfStatus}
-        pdfStatusEndpoint={pdfStatusEndpoint}
-        pdfError={row.pdf_error}
-        shareEndpoint={null}
-        shareUrl={null}
-        deliveryDocuments={deliveryDocuments}
-      />
+      <>
+        <aside className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-center text-sm leading-6 text-slate-600 print:hidden">
+          Intern förhandsvisning. Beställaren köper digital åtgärdsuppföljning för 599 kr inkl. moms
+          via den publika rapportlänken som skickas med utlåtandet. Köpknappen visas inte här.
+        </aside>
+        <EbPublicReportSnapshotView
+          report={report}
+          publishedAt={snapshot?.createdAt ?? row.created_at}
+          pdfDownloadUrl={pdfDownloadUrl}
+          pdfStatus={pdfStatus}
+          pdfStatusEndpoint={pdfStatusEndpoint}
+          pdfError={row.pdf_error}
+          shareEndpoint={null}
+          shareUrl={null}
+          deliveryDocuments={deliveryDocuments}
+        />
+      </>
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'

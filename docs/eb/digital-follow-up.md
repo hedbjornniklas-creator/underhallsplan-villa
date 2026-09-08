@@ -2,7 +2,7 @@
 
 ## Första versionen
 
-- Tillval i det publika digitala utlåtandet, i anslutning till noteringarna.
+- Tillval i det publika digitala utlåtandet, direkt under översta informationsrutan. Knappen heter **Köp åtgärdsuppföljning** och priset visas intill. Klicket öppnar information och verifiering, inte en direkt beställning.
 - **599 kr inklusive moms per besiktning**, engångsköp. Netto 479,20 kr och moms 119,80 kr (25 %). Ingen prenumeration eller ny tjänstetidsgräns.
 - Beställning mot faktura. Tjänsten aktiveras när beställningen sparats, inte först efter betalning.
 - Systemet mejlar beställningsbekräftelse till kunden och fakturaunderlag till säljaren. **Det skapar inte en faktura eller bokför betalning**; fakturering hanteras manuellt.
@@ -17,6 +17,10 @@ Det kostnadsfria utlåtandet och dess PDF kräver inte beställning eller inlogg
 Beställning kräver en engångskod till registrerad beställaradress i entreprenaden eller accepterad uppdragsbekräftelse. Publika rapportlänken är inte tillräcklig behörighet för köp eller fakturering. Efter köp tillhör åtkomsten den verifierade köparen, även om projektets kontakt senare byts ut. Publika svar visar inte kundens registrerade e-post eller fakturauppgifter.
 
 En unik order per besiktning, låsning i databasen och återanvändning av slutförd kodförfrågan skyddar mot dubbelbeställning. Nya beställningar görs endast från senaste publicerade rapportversionen. En redan beställd uppföljning behåller sitt ursprungliga underlag.
+
+Besiktningsdatumet begränsar inte tillvalet: även äldre fastställda utlåtanden kan användas. Äldre rapportkopior kan sakna `inspection.reportLockedAt`, eftersom kopian tidigare skapades precis före låsningen. Då kontrolleras den verkliga låsningen för samma organisation/projekt/besiktning och att ingen upplåsning har skett sedan rapportkopians ursprungliga `createdAt`. Ett senare datum på en omskickad länk används inte som bevis. Saknad eller osäker historik stoppar nya köp; rapportens text ändras inte och en befintlig köpares verifierade åtkomst bevaras.
+
+Köprutan visar anledningen om erbjudandet är otillgängligt, i stället för att försvinna. I den interna digitala förhandsvisningen finns en upplysning om att köpet görs från kundens publika rapportlänk; där skapas inga köp eller nya länkar automatiskt.
 
 Noteringar och originalbilder kopieras från den fastställda rapporten. Originalbilder förvaras i den privata bucketen `eb-follow-up-originals`. Åtgärdsbilder, kommentarer och status är separata från utlåtandet och ändrar inte dess text eller PDF. Köpta uppföljningar, äldre portaler och olika besiktningar har separata kontakt-/uppgifts-/länkområden. Entreprenörer ser endast tilldelade uppgifter.
 

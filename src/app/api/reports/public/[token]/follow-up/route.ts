@@ -19,6 +19,7 @@ function failure(error: unknown) {
     EB_FOLLOW_UP_BUYER_INVALID: [400, 'Kontrollera namn och fakturaadress. Alla obligatoriska fält behöver fyllas i.'],
     EB_FOLLOW_UP_ORDER_REQUIRED: [409, 'Ingen tidigare beställning finns. Beställ tjänsten först.'],
     EB_FOLLOW_UP_REPORT_UNAVAILABLE: [404, 'Utlåtandet är inte tillgängligt.'],
+    EB_FOLLOW_UP_REPORT_NOT_FINALIZED: [409, 'Den här rapportversionens fastställande kunde inte bekräftas. Kontakta besiktningsmannen för att få den senast fastställda versionen.'],
     EB_FOLLOW_UP_ORIGINAL_IMAGE_FAILED: [503, 'Originalbilderna kunde inte säkras. Ingen ny beställning har aktiverats. Försök igen.'],
   }
   const [status, message] = messages[code] ?? [503, 'Tjänsten kunde inte slutföra begäran just nu. Försök igen. En tidigare mottagen beställning debiteras inte på nytt.']

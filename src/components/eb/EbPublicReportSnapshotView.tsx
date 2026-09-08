@@ -13,7 +13,7 @@ import {
   List,
   X,
 } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import EbFollowUpOrder from '@/components/eb/EbFollowUpOrder'
 import PublicReportPdfDownload, {
   type PublicReportPdfStatus,
@@ -1545,6 +1545,12 @@ export default function EbPublicReportSnapshotView({
           </div>
         </section>
 
+        {followUpEndpoint ? (
+          <div className="mt-4 print:hidden">
+            <EbFollowUpOrder endpoint={followUpEndpoint} />
+          </div>
+        ) : null}
+
         <details className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm xl:hidden">
           <summary className="cursor-pointer list-none text-sm font-semibold text-slate-950">Visa innehåll</summary>
           <div className="mt-4 border-t border-slate-100 pt-4">
@@ -1559,28 +1565,19 @@ export default function EbPublicReportSnapshotView({
 
           <article className="space-y-4">
             {visibleSections.map((section) => (
-              <Fragment key={section.key}>
-                <SectionShell section={section}>
-                  <SectionContent
-                    report={report}
-                    section={section}
-                    notes={notes}
-                    headingsByNoteId={headingsByNoteId}
-                    trailingHeadings={trailingHeadings}
-                    hasPhotoAppendix={imageData.images.length > 0}
-                    noteImagesByNoteId={imageData.noteImagesByNoteId}
-                    onOpenImage={openImage}
-                  />
-                </SectionShell>
-                {section.key === 'defects_appendices' && followUpEndpoint && notes.length > 0 ? (
-                  <EbFollowUpOrder endpoint={followUpEndpoint} />
-                ) : null}
-              </Fragment>
+              <SectionShell key={section.key} section={section}>
+                <SectionContent
+                  report={report}
+                  section={section}
+                  notes={notes}
+                  headingsByNoteId={headingsByNoteId}
+                  trailingHeadings={trailingHeadings}
+                  hasPhotoAppendix={imageData.images.length > 0}
+                  noteImagesByNoteId={imageData.noteImagesByNoteId}
+                  onOpenImage={openImage}
+                />
+              </SectionShell>
             ))}
-
-            {followUpEndpoint && notes.length > 0 && !visibleSections.some(section => section.key === 'defects_appendices') ? (
-              <EbFollowUpOrder endpoint={followUpEndpoint} />
-            ) : null}
 
             <Signature report={report} hasImages={imageData.images.length > 0} />
             <PhotoAppendix groups={imageData.groups} images={imageData.images} onOpen={openImage} />

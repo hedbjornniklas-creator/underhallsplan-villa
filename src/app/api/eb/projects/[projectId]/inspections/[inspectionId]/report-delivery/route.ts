@@ -7,7 +7,9 @@ import {
   createEbReportSnapshotPayloadV1,
   isEbReportSnapshotPayloadV1,
   withEbReportDeliveryTimestamp,
+  withEbReportLockTimestamp,
   type EbReportDeliveryDocument,
+  type EbReportSnapshotPayloadV1,
 } from '@/lib/eb/reportSnapshot'
 import { getEbInspectionReport, getEbProjectById, type EbProjectListItem } from '@/lib/eb/server'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
@@ -267,7 +269,10 @@ async function lockEbInspection(
   })
 
   if (error) throw new Error(error.message ?? 'Kunde inte låsa EB-utlåtandet.')
-  return typeof data === 'string' ? data : new Date().toISOString()
+  if (typeof data !== 'string' || !Number.isFinite(Date.parse(data))) {
+    throw new Error('Kunde inte bekräfta EB-utlåtandets låstidpunkt.')
+  }
+  return data
 }
 
 async function createReportLink(
@@ -292,6 +297,9 @@ async function createReportLink(
       delivery_mode: 'link_only',
       snapshot_schema_version: input.snapshotSchemaVersion,
       snapshot_payload: input.snapshotPayload,
+      // Keep this link private and out of the PDF queue until its confirmed
+      // lock timestamp and frozen snapshot can be published together.
+      revoked_at: new Date().toISOString(),
       pdf_status: 'pending',
       pdf_error: null,
       pdf_attempts: 0,
@@ -304,6 +312,56 @@ async function createReportLink(
 
   if (error || !data) throw new Error(error?.message ?? 'Kunde inte skapa rapportlänk.')
   return { linkId: data.id as string, token, tokenHash }
+}
+
+async function publishReportLink(
+  admin: AdminClient,
+  input: { orgId: string; linkId: string; snapshotPayload: unknown }
+) {
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .update({ snapshot_payload: input.snapshotPayload, revoked_at: null })
+    .eq('org_id', input.orgId)
+    .eq('id', input.linkId)
+    .select('id')
+    .single()
+
+  if (error || !data) {
+    throw new Error(error?.message ?? 'Kunde inte publicera den fastställda rapportversionen.')
+  }
+}
+
+async function backfillFrozenReportLockTimestamp(
+  admin: AdminClient,
+  input: {
+    orgId: string
+    inspectionId: string
+    snapshotPayload: EbReportSnapshotPayloadV1
+    lockedAt: string | null
+  }
+) {
+  const snapshot = input.snapshotPayload
+  if (snapshot.report.inspection.reportLockedAt) return snapshot
+  if (typeof snapshot.createdAt !== 'string' || !input.lockedAt) return snapshot
+  const createdAt = Date.parse(snapshot.createdAt)
+  const lockedAt = Date.parse(input.lockedAt)
+  if (!Number.isFinite(createdAt) || !Number.isFinite(lockedAt) || createdAt > lockedAt) {
+    return snapshot
+  }
+
+  // Unlocking keeps earlier links active. Never attach a later lock to an old
+  // frozen copy after an unlock/relock or when that history cannot be verified.
+  const { data: unlock, error } = await admin
+    .from('inspection_lock_events')
+    .select('id')
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('action', 'unlock')
+    .gte('performed_at', snapshot.createdAt)
+    .limit(1)
+    .maybeSingle()
+  if (error || unlock) return snapshot
+  return withEbReportLockTimestamp(snapshot, input.lockedAt)
 }
 
 async function recordReportDeliveryMetadata(
@@ -783,7 +841,12 @@ export async function POST(
           409
         )
       }
-      snapshotPayload = frozenLink.snapshot_payload
+      snapshotPayload = await backfillFrozenReportLockTimestamp(admin, {
+        orgId: org.orgId,
+        inspectionId,
+        snapshotPayload: frozenLink.snapshot_payload,
+        lockedAt: inspection.reportLockedAt,
+      })
       snapshotSchemaVersion = frozenLink.snapshot_schema_version || 'eb_v1'
     } else {
       const report = await getEbInspectionReport({
@@ -806,23 +869,31 @@ export async function POST(
     const publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(createdLink.token)}`
     let reportLockedAt = inspection.reportLockedAt
 
-    if (!sendingFrozenRevision) {
-      try {
+    try {
+      if (!sendingFrozenRevision) {
         reportLockedAt = await lockEbInspection(admin, {
           orgId: org.orgId,
           projectId,
           inspectionId,
           userId: org.userId,
         })
+        snapshotPayload = withEbReportLockTimestamp(snapshotPayload, reportLockedAt)
+      }
+      await publishReportLink(admin, {
+        orgId: org.orgId,
+        linkId: createdLink.linkId,
+        snapshotPayload,
+      })
+      if (!sendingFrozenRevision) {
         await revokeOlderReportLinks(admin, {
           orgId: org.orgId,
           inspectionId,
           activeLinkId: createdLink.linkId,
         })
-      } catch (lockError) {
-        await revokeReportLink(admin, org.orgId, createdLink.linkId).catch(() => undefined)
-        throw lockError
       }
+    } catch (publicationError) {
+      await revokeReportLink(admin, org.orgId, createdLink.linkId).catch(() => undefined)
+      throw publicationError
     }
 
     const sentRecipients: string[] = []
