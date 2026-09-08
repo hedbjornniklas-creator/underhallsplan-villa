@@ -102,6 +102,8 @@ function fixture(legacy = false) {
     '@/lib/assignments/tokens': { hashAssignmentToken: (value: string) => `hash:${value}` },
     '@/lib/eb/reportSnapshot': snapshots,
     '@/lib/eb/followUpDelivery': {},
+    '@/lib/eb/followUpCustomer': { resolveEbFollowUpCustomer: async () => ({ email: 'buyer@example.test', source: 'confirmed' }) },
+    '@/lib/eb/customerSession': { readEbCustomerSession: async () => null },
   })
   return { report, snapshot, rows, errors, failures, state, reads, seller, server, offer: () => server.getEbFollowUpOffer(token) }
 }

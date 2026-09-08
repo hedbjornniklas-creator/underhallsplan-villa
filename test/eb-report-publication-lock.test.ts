@@ -5,6 +5,8 @@ import ts from 'typescript'
 import type { EbInspectionReport } from '../src/lib/eb/server'
 import type * as Snapshots from '../src/lib/eb/reportSnapshot'
 import type * as DeliveryRoute from '../src/app/api/eb/projects/[projectId]/inspections/[inspectionId]/report-delivery/route'
+import type * as Customer from '../src/lib/eb/followUpCustomer'
+import type * as EmailTemplates from '../src/lib/inspections/reportEmailTemplates'
 
 // Execute the production helper and POST flow with all I/O replaced. An
 // unexpected dependency fails closed; no database, PDF worker or mail is used.
@@ -22,6 +24,8 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
 }
 
 const snapshots = load<typeof Snapshots>('src/lib/eb/reportSnapshot.ts', {})
+const customer = load<typeof Customer>('src/lib/eb/followUpCustomer.ts', { 'server-only': {} })
+const emailTemplates = load<typeof EmailTemplates>('src/lib/inspections/reportEmailTemplates.ts', { 'server-only': {} })
 const lockedAt = '2026-09-08T09:12:34.567+00:00'
 const previousLockedAt = '2026-09-01T08:00:00.000+00:00'
 
@@ -99,6 +103,8 @@ type FixtureOptions = {
   unlockAfterSnapshot?: boolean
   unlockHistoryError?: boolean
   frozenCreatedAt?: string
+  deliveryCustomer?: string | null
+  extraRecipients?: string[]
 }
 
 function routeFixture(options: FixtureOptions = {}) {
@@ -124,6 +130,7 @@ function routeFixture(options: FixtureOptions = {}) {
   }
   const links: Row[] = [previousLink]
   const outbound: Row[] = []
+  const sentMessages: Row[] = []
   const events: string[] = []
   const scheduled: Array<() => Promise<void>> = []
   const insertedSnapshots: unknown[] = []
@@ -251,14 +258,22 @@ function routeFixture(options: FixtureOptions = {}) {
       '@/lib/assignments/server': { requireOrgContext: async () => ({ orgId: 'org', userId: 'inspector', orgName: 'Test' }) },
       '@/lib/assignments/tokens': { generateAssignmentToken: () => 'new-public-token', hashAssignmentToken: () => 'new-hash' },
       '@/lib/eb/reportSnapshot': snapshots,
+      '@/lib/eb/followUpCustomer': {
+        resolveEbFollowUpDeliveryCustomer: async (input: Row) => {
+          assert.equal(input.orgId, 'org')
+          assert.equal(input.projectId, 'project')
+          assert.equal(input.inspectionId, 'inspection')
+          return options.deliveryCustomer ?? null
+        },
+        ebFollowUpCustomerEntryUrl: customer.ebFollowUpCustomerEntryUrl,
+      },
       '@/lib/eb/server': {
         getEbProjectById: async () => structuredClone(live.project),
         getEbInspectionReport: async () => { reportReads++; return structuredClone(live) },
       },
-      '@/lib/inspections/reportEmailTemplates': {
-        buildInspectionReportDeliveryEmail: () => ({ subject: 'Utlåtande', html: '<p>Test</p>', text: 'Test' }),
-      },
-      '@/lib/assignments/mailer': { sendAssignmentEmail: async () => {
+      '@/lib/inspections/reportEmailTemplates': emailTemplates,
+      '@/lib/assignments/mailer': { sendAssignmentEmail: async (input: Row) => {
+        sentMessages.push(input)
         events.push('send')
         const active = links.find(row => row.id === 'new-link' && row.revoked_at === null)
         assert.ok(active, 'No delivery is allowed before publication metadata is saved')
@@ -271,7 +286,7 @@ function routeFixture(options: FixtureOptions = {}) {
     }
   )
   return {
-    links, previousLink, frozenOriginal, events, insertedSnapshots, scheduled, live,
+    links, previousLink, frozenOriginal, events, insertedSnapshots, scheduled, live, sentMessages,
     reportReads: () => reportReads,
     created: () => { const link = links.find(row => row.id === 'new-link'); assert.ok(link); return link },
     post: async (action: 'lock_only' | 'send_and_lock' | 'resend') => {
@@ -280,7 +295,7 @@ function routeFixture(options: FixtureOptions = {}) {
       try {
         return await route.POST(new Request('https://example.test/api/delivery', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, primary_recipient: 'buyer@example.test' }),
+          body: JSON.stringify({ action, primary_recipient: 'buyer@example.test', extra_recipients: options.extraRecipients }),
         }), { params: Promise.resolve({ projectId: 'project', inspectionId: 'inspection' }) })
       } finally {
         if (previousFrom === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM
@@ -315,6 +330,26 @@ test('send-and-lock persists publication before mail and later delivery metadata
   assert.ok(persisted.report.inspection.reportLastSentAt)
   assert.equal(persisted.report.notes[0].noteText, 'FROZEN NOTE')
   assert.deepEqual(f.events, ['stage', 'lock', 'publish', 'revoke-previous', 'outbound', 'send', 'delivery-metadata', 'schedule-pdf'])
+})
+
+test('EB delivery sends customer management entry only to the designated address, not every report recipient', async () => {
+  for (const deliveryCustomer of ['buyer@example.test', 'extra-customer@example.test', null]) {
+    const f = routeFixture({ deliveryCustomer, extraRecipients: ['contractor@example.test', 'extra-customer@example.test'] })
+    const response = await f.post('send_and_lock')
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(f.sentMessages.length, 3)
+    assert.doesNotMatch(body.publicLink, /customer=/, 'Shared/public API output must remain a plain report URL')
+    for (const message of f.sentMessages) {
+      const content = String(message.html) + String(message.text)
+      if (message.to === deliveryCustomer) {
+        assert.match(content, /Hantera din besiktning/)
+        assert.match(content, /customer=1/)
+      } else {
+        assert.doesNotMatch(content, /Hantera din besiktning|customer=/)
+      }
+    }
+  }
 })
 
 test('resending an old snapshot backfills missing lock metadata without fetching live report content', async () => {

@@ -53,8 +53,8 @@ export default function BesiktInterestForm() {
 
   if (sent) return (
     <div className="public-notice public-notice-success" role="status">
-      <h2 ref={successRef} tabIndex={-1}>Din intresseanmälan har skickats.</h2>
-      <p>Tack! Vi kontaktar dig på den e-postadress du angav för att prata vidare om BesiktApp.</p>
+      <h2 ref={successRef} tabIndex={-1}>Tack för din intresseanmälan.</h2>
+      <p>Vi kontaktar dig på den e-postadress du angav för att prata vidare om BesiktApp. Anmälan skapar inte ett konto.</p>
       <Link href="/besiktapp" className="public-text-link">Tillbaka till BesiktApp</Link>
     </div>
   )
@@ -74,7 +74,7 @@ export default function BesiktInterestForm() {
         return <label key={field} htmlFor={shared.id}>{labels[field]}{optional && <span className="public-optional"> (valfritt)</span>}{field === 'message' ? <textarea {...shared} rows={4} /> : <input {...shared} type={field === 'email' ? 'email' : field === 'phone' ? 'tel' : 'text'} />}</label>
       })}
       <div className="public-honeypot" aria-hidden="true"><label>Webbplats<input name="website" tabIndex={-1} autoComplete="off" value={website} onChange={event => setWebsite(event.target.value)} /></label></div>
-      <p className="public-field-hint">Uppgifterna skickas till oss via mejl för att vi ska kunna kontakta dig om BesiktApp. Ta inte med känsliga uppgifter eller information om dina kunder.</p>
+      <p className="public-field-hint">Vi använder dina uppgifter för att kontakta dig om BesiktApp. Ta inte med känsliga uppgifter eller information om dina kunder.</p>
       {error && <div id="interest-error" className="public-notice public-notice-error" role="alert" tabIndex={-1} ref={errorRef}>{error.message}</div>}
       <ActionButton type="submit" busy={busy} busyLabel="Skickar…" className="public-button">Skicka intresseanmälan</ActionButton>
     </form>

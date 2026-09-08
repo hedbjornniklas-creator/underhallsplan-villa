@@ -5,6 +5,11 @@ import Protected from '@/components/Protected'
 
 const ADMIN_APPS = [
   {
+    href: '/admin/access/besiktapp-interest',
+    title: 'Intresse för BesiktApp',
+    description: 'Följ upp nya kontakter, ange ansvarig och planera nästa kontakt. Kräver behörighet till accesshanteringen.',
+  },
+  {
     href: '/admin/access',
     title: 'Accesshantering',
     description:

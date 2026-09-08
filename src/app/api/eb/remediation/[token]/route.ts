@@ -3,16 +3,28 @@ import {
   getEbRemediationWorkspaceByToken,
   performEbRemediationTokenAction,
 } from '@/lib/eb/remediation'
+import { requestEbOwnerAccessCode, verifyEbOwnerAccessCode } from '@/lib/eb/ownerAuth'
+import { requestEbFollowUpOwnerRenewal } from '@/lib/eb/followUpServer'
+import { assertEbCustomerRequestOrigin } from '@/lib/eb/customerSession'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status })
+  return json({ error: message }, status)
+}
+
+function json(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: {
+    'Cache-Control': 'private, no-store, max-age=0', Vary: 'Cookie', 'X-Content-Type-Options': 'nosniff',
+  } })
 }
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : 'Okänt fel.'
+  if (message === 'EB_CUSTOMER_ORIGIN_FORBIDDEN') return jsonError('Begäran måste göras från den här webbplatsen.', 403)
+  if (message === 'EB_REMEDIATION_OWNER_VERIFICATION_REQUIRED') return jsonError('Verifiera din e-post för att öppna den personliga portalen. Ladda om sidan för att ange en engångskod.', 403)
+  if (message === 'EB_REMEDIATION_OWNER_LINK_EXPIRED') return jsonError('Länken har gått ut. Ladda om sidan för att begära en ny personlig länk.', 410)
   if (message === 'EB_REMEDIATION_CONFLICT') return jsonError('Punkten ändrades av någon annan. Aktuella uppgifter har hämtats. Din osparade text finns kvar; kontrollera läget och försök igen.', 409)
   if (message === 'EB_FOLLOW_UP_ORDER_INACTIVE') return jsonError('Uppföljningen är pausad. Befintlig historik finns kvar.', 403)
   if (message === 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED') return jsonError('Lägg till en åtgärdsbild eller en förklarande kommentar om arbetet inte kan fotograferas.', 400)
@@ -34,7 +46,7 @@ function errorResponse(error: unknown) {
   }
   if (message === 'EB_REMEDIATION_TASK_REQUIRED') return jsonError('Välj minst en anmärkning.', 400)
   if (message.startsWith('MISSING_ENV:')) return jsonError('E-postinställningarna är inte klara.', 503)
-  return jsonError(message || 'Kunde inte hantera åtgärdslistan.', 500)
+  return jsonError('Kunde inte hantera åtgärdslistan. Försök igen om en stund.', 500)
 }
 
 export async function GET(
@@ -45,7 +57,7 @@ export async function GET(
     const { token } = await context.params
     const workspace = await getEbRemediationWorkspaceByToken(token)
     if (!workspace) return jsonError('Länken hittades inte.', 404)
-    return NextResponse.json({ workspace })
+    return json({ workspace })
   } catch (error) {
     return errorResponse(error)
   }
@@ -56,19 +68,27 @@ export async function POST(
   context: { params: Promise<{ token: string }> }
 ) {
   try {
+    assertEbCustomerRequestOrigin(request)
     const { token } = await context.params
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = typeof body.action === 'string' ? body.action : ''
     const payload = body.payload && typeof body.payload === 'object'
       ? (body.payload as Record<string, unknown>)
       : {}
+    if (action === 'request_owner_code') return json(await requestEbOwnerAccessCode({ token }))
+    if (action === 'verify_owner_code') return json(await verifyEbOwnerAccessCode({
+      token, challengeId: payload.challengeId, code: payload.code,
+    }))
+    if (action === 'renew_owner_link') return json(await requestEbFollowUpOwnerRenewal({
+      accessToken: token, baseUrl: new URL(request.url).origin,
+    }))
     const workspace = await performEbRemediationTokenAction({
       token,
       action,
       payload,
       requestOrigin: new URL(request.url).origin,
     })
-    return NextResponse.json({ workspace })
+    return json({ workspace })
   } catch (error) {
     return errorResponse(error)
   }

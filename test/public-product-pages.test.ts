@@ -96,9 +96,14 @@ const submission = {
   message: 'Jag arbetar med överlåtelsebesiktningar.', website: '', submissionId: 'ca90d944-d455-44f9-ae0a-d4f4a2aa0011',
 }
 type EmailInput = { to: string; from: string; replyTo: string; html: string; text: string; subject: string; idempotencyKey: string }
-function service(send: (input: EmailInput) => Promise<{ providerMessageId: string | null }> = async () => ({ providerMessageId: 'test-message' })) {
+function service(send: (input: EmailInput) => Promise<{ providerMessageId: string | null }> = async () => ({ providerMessageId: 'test-message' }), tracking = {
+  isInterestTrackingEnabled: () => false,
+  recordInterest: async (value: contracts.InterestSubmission): Promise<string> => { void value; throw new Error('Tracking disabled in test') },
+  markInterestNotification: async (id: string, state: 'accepted' | 'failed'): Promise<void> => { void id; void state },
+}) {
   return loadSource<typeof InterestService>('src/lib/besiktapp/interest.ts', {
     'server-only': {}, './interestContracts': contracts, '@/lib/assignments/mailer': { sendAssignmentEmail: send },
+    './interestTracking': tracking,
   })
 }
 function request(body: unknown = submission, overrides: HeadersInit = {}) {
@@ -297,4 +302,40 @@ test('route throttling returns retry guidance without another email', async cont
   assert.equal(limited.status, 429)
   assert.equal(limited.headers.get('retry-after'), '600')
   assert.equal(sends, 5)
+})
+
+test('tracked intake saves before sending and remains successful when notification fails', async context => {
+  configure(context)
+  const calls: string[] = []
+  const intake = service(async () => { calls.push('send'); throw new Error('Provider down') }, {
+    isInterestTrackingEnabled: () => true,
+    recordInterest: async () => { calls.push('save'); return 'saved-id' },
+    markInterestNotification: async (id, state) => { calls.push(`${id}:${state}`) },
+  })
+  const response = await intake.handleBesiktInterest(request())
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { ok: true })
+  assert.deepEqual(calls, ['save', 'send', 'saved-id:failed'])
+})
+
+test('tracked intake never sends or reports success when persistence fails', async context => {
+  configure(context)
+  let sends = 0
+  const intake = service(async () => { sends++; return { providerMessageId: 'sent' } }, {
+    isInterestTrackingEnabled: () => true,
+    recordInterest: async () => { throw new Error('Missing database table') },
+    markInterestNotification: async () => { assert.fail('Must not update a missing request') },
+  })
+  assert.equal((await intake.handleBesiktInterest(request())).status, 503)
+  assert.equal(sends, 0)
+})
+
+test('failure to store notification status cannot lose an already saved request', async context => {
+  configure(context)
+  const intake = service(async () => ({ providerMessageId: 'accepted' }), {
+    isInterestTrackingEnabled: () => true,
+    recordInterest: async () => 'saved-id',
+    markInterestNotification: async () => { throw new Error('Status write unavailable') },
+  })
+  assert.equal((await intake.handleBesiktInterest(request())).status, 200)
 })

@@ -70,7 +70,7 @@ export default async function PublicReportPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>
-  searchParams?: Promise<{ pdf?: string }>
+  searchParams?: Promise<{ pdf?: string; customer?: string }>
 }) {
   const { token } = await params
   const resolvedSearchParams = await searchParams
@@ -149,6 +149,7 @@ export default async function PublicReportPage({
         shareUrl={shareUrl}
         deliveryDocuments={deliveryDocuments}
         followUpEndpoint={`/api/reports/public/${encodeURIComponent(normalizedToken)}/follow-up`}
+        customerAutoOpen={resolvedSearchParams?.customer === '1'}
       />
     )
   }
@@ -220,5 +221,3 @@ export default async function PublicReportPage({
     />
   )
 }
-
-

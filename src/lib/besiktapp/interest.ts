@@ -2,6 +2,7 @@ import 'server-only'
 import { createHash } from 'node:crypto'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { isInterestEmail, validateInterestSubmission, type InterestSubmission } from './interestContracts'
+import { isInterestTrackingEnabled, recordInterest, markInterestNotification } from './interestTracking'
 
 const MAX_BODY_BYTES = 16_384
 const WINDOW_MS = 10 * 60_000
@@ -94,6 +95,13 @@ export async function handleBesiktInterest(request: Request): Promise<Response> 
   const clientKey = createHash('sha256').update(clientAddress).digest('hex')
   if (!permitSubmission(clientKey)) return reply({ error: 'För många försök. Vänta tio minuter och försök igen.' }, 429)
   const value = validated.value
+  let recordedId: string | null = null
+  if (isInterestTrackingEnabled()) {
+    try { recordedId = await recordInterest(value) } catch {
+      console.error('[besiktapp.interest] intake storage unavailable')
+      return reply({ error: 'Anmälan kunde inte sparas. Dina uppgifter finns kvar. Försök igen eller mejla oss.' }, 503)
+    }
+  }
   const content = interestEmailContent(value)
   const fingerprint = createHash('sha256').update(JSON.stringify({ ...content, ...settings, replyTo: value.email })).digest('hex')
   try {
@@ -102,9 +110,17 @@ export async function handleBesiktInterest(request: Request): Promise<Response> 
       idempotencyKey: `besiktapp-interest/${value.submissionId}/${fingerprint}`,
     })
     if (!result.providerMessageId?.trim()) throw new Error('MISSING_PROVIDER_ID')
+    if (recordedId) {
+      try { await markInterestNotification(recordedId, 'accepted') } catch { console.error('[besiktapp.interest] notification status unavailable') }
+    }
     return reply({ ok: true }, 200)
   } catch {
     console.error('[besiktapp.interest] email delivery not confirmed')
+    if (recordedId) {
+      try { await markInterestNotification(recordedId, 'failed') } catch { console.error('[besiktapp.interest] notification status unavailable') }
+      // A saved request remains actionable even if its email notification failed.
+      return reply({ ok: true }, 200)
+    }
     return reply({ error: 'Vi kunde inte bekräfta att anmälan skickades. Dina uppgifter finns kvar. Försök igen.' }, 502)
   }
 }

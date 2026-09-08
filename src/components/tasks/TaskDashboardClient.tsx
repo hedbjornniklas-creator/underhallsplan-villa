@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Search,
   UserRoundCheck,
+  Wrench,
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
@@ -37,11 +38,13 @@ import {
 import TaskComposerSheet from './TaskComposerSheet'
 import TaskDetailSheet from './TaskDetailSheet'
 import TaskIssuerAnalyticsPanel from './TaskIssuerAnalyticsPanel'
+import ActionCaseWorkspace from './ActionCaseWorkspace'
+import type { ActionCaseWorkspace as ActionCaseWorkspaceData } from '@/lib/action-cases/contracts'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
-type WorkspaceView = 'current' | 'statistics'
+type WorkspaceView = 'current' | 'action_cases' | 'statistics'
 type TaskListMode = 'grouped' | 'all' | 'attention'
 type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated'
 type SortDirection = 'asc' | 'desc'
@@ -53,6 +56,8 @@ const TASK_COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: tr
 type Props = {
   initialWorkspace: TaskWorkspace | null
   initialError: string | null
+  initialActionCases: ActionCaseWorkspaceData | null
+  initialActionCasesError: string | null
 }
 
 type TaskDrilldown = {
@@ -416,7 +421,7 @@ function TaskTableRow({
   )
 }
 
-export default function TaskDashboardClient({ initialWorkspace, initialError }: Props) {
+export default function TaskDashboardClient({ initialWorkspace, initialError, initialActionCases, initialActionCasesError }: Props) {
   const { success: showSuccess, error: showError, warning: showWarning } = useToast()
   const deepLinkHandled = useRef(false)
   const taskListRef = useRef<HTMLElement>(null)
@@ -806,7 +811,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
               type="button"
               onClick={() => openComposer()}
               disabled={!workspace || busy}
-              className="hidden min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 hover:bg-slate-800 disabled:opacity-50 sm:inline-flex"
+              className={`min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 hover:bg-slate-800 disabled:opacity-50 ${workspaceView === 'current' ? 'hidden sm:inline-flex' : 'hidden'}`}
             >
               <Plus size={18} /> Nytt uppdrag
             </button>
@@ -852,6 +857,15 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                 <button
                   type="button"
                   role="tab"
+                  aria-selected={workspaceView === 'action_cases'}
+                  onClick={() => setWorkspaceView('action_cases')}
+                  className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'action_cases' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                >
+                  <Wrench size={17} aria-hidden="true" /> Åtgärdsärenden
+                </button>
+                <button
+                  type="button"
+                  role="tab"
                   aria-selected={workspaceView === 'statistics'}
                   onClick={() => setWorkspaceView('statistics')}
                   className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'statistics' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
@@ -867,6 +881,8 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
                   onPeriodChange={setAnalyticsPeriod}
                   onDrilldown={openAnalyticsDrilldown}
                 />
+              ) : workspaceView === 'action_cases' ? (
+                <ActionCaseWorkspace initialWorkspace={initialActionCases} initialError={initialActionCasesError} />
               ) : (
                 <>
                   <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -1105,7 +1121,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError }: 
           type="button"
           onClick={() => openComposer()}
           disabled={!workspace || busy}
-          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-14 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-2xl shadow-slate-950/30 disabled:opacity-50 sm:hidden"
+          className={`fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-20 min-h-14 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-2xl shadow-slate-950/30 disabled:opacity-50 sm:hidden ${workspaceView === 'current' ? 'inline-flex' : 'hidden'}`}
         >
           <Plus size={20} /> Nytt uppdrag
         </button>

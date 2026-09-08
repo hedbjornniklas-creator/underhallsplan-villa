@@ -27,7 +27,7 @@ Denna fil är **publikt innehåll**, inte en hemlighets- eller utkastförvaring.
 
 ## BesiktApps intresseformulär
 
-Formuläret skickar ett mejl till en uttryckligen konfigurerad intern mottagare. Det skapar inte ett konto, en BRF, en databaspost eller en automatisk bekräftelse till den sökande.
+Formuläret skickar ett mejl till en uttryckligen konfigurerad intern mottagare. Det skapar inte ett konto, en BRF eller en automatisk bekräftelse till den sökande. Med `BESIKTAPP_INTEREST_TRACKING=1` sparas förfrågan dessutom före mejlutskicket i en separat, adminskyddad intresselista. Funktionen är av som standard och kräver granskad migration och driftaktivering; se `docs/BESIKTAPP_ONBOARDING.md`.
 
 Serverinställningar som krävs före aktivering:
 
@@ -41,8 +41,9 @@ Mottagaren är oberoende av framtida **offentliga** kontaktuppgifter. Utan gilti
 
 ### Leverans och begränsningar
 
-- Framgång visas först när mejlleverantören accepterat begäran och returnerat ett meddelande-id. Det är inte bevis på leverans till eller läsning i inkorgen.
-- Mejlet är det enda sparade underlaget. Bevaka leveranser, studsar och skräppost hos leverantören/mottagaren. Ingen separat adminlista eller garanterad återställning finns.
+- Utan intresselistan visas framgång först när mejlleverantören accepterat begäran och returnerat ett meddelande-id. Det är inte bevis på leverans till eller läsning i inkorgen. Mejlet är då det enda sparade underlaget.
+- Med intresselistan aktiverad räcker en säkert sparad förfrågan för framgång även om mejlaviseringen misslyckas. Misslyckad/obekräftad avisering visas i adminlistan. Vid databasfel sparas inget via reservväg och inget mejl skickas: besökaren får ett fel och kan använda den offentliga kontaktadressen.
+- Bevaka leveranser, studsar och skräppost hos leverantören/mottagaren. Databasläget ersätter inte leveranskontroll eller bemannad uppföljning.
 - Vid nätverksfel behåller formuläret uppgifterna i den öppna sidan. Omladdning stänger sessionen; personuppgifter lagras inte lokalt i webbläsaren.
 - Ett submissions-id behålls vid återförsök; stabilt innehåll ger samma leverantörsnyckel. Idempotens gäller inom Resends 24-timmarsfönster. Ändrat innehåll eller omladdad sida är en ny logisk sändning. Se [Resends dokumentation om idempotens](https://resend.com/docs/dashboard/emails/idempotency-keys).
 - API:t kräver same-origin JSON, begränsar faktisk kropp till 16 KiB, validerar fälttyper och längder, escapear HTML och använder en honeypot. Avsändare, mottagare och ämnesrad kommer inte från fri användartext.

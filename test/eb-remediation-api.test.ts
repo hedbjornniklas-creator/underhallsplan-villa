@@ -16,6 +16,8 @@ function tokenRoute(errorMessage: string): Route {
   const compiled = { exports: {} }
   new Function('require', 'module', 'exports', output)((name: string) => {
     if (name === 'next/server') return { NextResponse: { json: (data: unknown, init?: ResponseInit) => Response.json(data, init) } }
+    if (name === '@/lib/eb/customerSession') return { assertEbCustomerRequestOrigin: () => undefined }
+    if (name === '@/lib/eb/ownerAuth' || name === '@/lib/eb/followUpServer') return {}
     if (name === '@/lib/eb/remediation') return {
       performEbRemediationTokenAction: async () => { throw new Error(errorMessage) },
       getEbRemediationWorkspaceByToken: async () => { throw new Error('Unexpected read') },
@@ -56,4 +58,10 @@ test('view-only recipient and paused-order writes are denied', async () => {
 test('expired and revoked access remain HTTP410', async () => {
   assert.equal((await actionError('EB_REMEDIATION_ACCESS_EXPIRED')).status, 410)
   assert.equal((await actionError('EB_REMEDIATION_ACCESS_REVOKED')).status, 410)
+})
+
+test('unexpected service errors do not leak database or private context', async () => {
+  const response = await actionError('PRIVATE_DATABASE_ERROR: buyer@example.test relation missing')
+  assert.equal(response.status, 500)
+  assert.doesNotMatch(await response.text(), /PRIVATE|buyer@example|relation/)
 })

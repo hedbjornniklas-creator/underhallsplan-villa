@@ -2,10 +2,10 @@
 
 ## Första versionen
 
-- Tillval i det publika digitala utlåtandet, direkt under översta informationsrutan. Knappen heter **Köp åtgärdsuppföljning** och priset visas intill. Klicket öppnar information och verifiering, inte en direkt beställning.
+- Det publika utlåtandet visar en diskret ingång **För beställaren**. Först efter separat, godkänd e-postverifiering visas tillvalet **Köp åtgärdsuppföljning**, pris och fakturafält. Att begära en kod gör ingen beställning.
 - **599 kr inklusive moms per besiktning**, engångsköp. Netto 479,20 kr och moms 119,80 kr (25 %). Ingen prenumeration eller ny tjänstetidsgräns.
 - Beställning mot faktura. Tjänsten aktiveras när beställningen sparats, inte först efter betalning.
-- Systemet mejlar beställningsbekräftelse till kunden och fakturaunderlag till säljaren. **Det skapar inte en faktura eller bokför betalning**; fakturering hanteras manuellt.
+- Systemet mejlar en separat beställningsbekräftelse till kunden och fakturaunderlag till **Admin, jn@hedbjorn.se**. Underlaget innehåller ordernummer, beställningstid, besiktning/objekt, köpare, fakturaadress, organisationsnummer om angivet, kontaktadress, säljare, pris, netto och moms. **Det skapar inte en faktura eller bokför betalning**; ingen koppling till faktureringssystem används. Admin meddelas även om kunden begär att frånträda köpet, så att manuell fakturering kan pausas.
 - Beställaren fördelar noteringar och skickar personliga entreprenörslänkar. Entreprenören lämnar kommentarer och åtgärdsbilder och anmäler åtgärder.
 - ”Anmält åtgärdat” är entreprenörens uppgift. Ingen besiktningsmans kontroll, godkännande eller efterbesiktning ingår.
 - Bokning av efterbesiktning ingår inte i denna leverans.
@@ -14,7 +14,11 @@
 
 Det kostnadsfria utlåtandet och dess PDF kräver inte beställning eller inloggning. Köpdelen laddas separat och får aldrig blockera rapportvisningen.
 
-Beställning kräver en engångskod till registrerad beställaradress i entreprenaden eller accepterad uppdragsbekräftelse. Publika rapportlänken är inte tillräcklig behörighet för köp eller fakturering. Efter köp tillhör åtkomsten den verifierade köparen, även om projektets kontakt senare byts ut. Publika svar visar inte kundens registrerade e-post eller fakturauppgifter.
+Beställning kräver en engångskod till **en beställarkontakt per besiktning**. En uttryckligen bekräftad kontakt gäller i första hand. Annars används kundadressen i den aktuella godkända uppdragsbekräftelsen (accepted_at och status ordered/booked/completed, eller äldre accepted). Om denna saknas eller skiljer sig från entreprenadens kontakt måste besiktningsmannen bekräfta kontakten i **Digitalt utlåtande → Beställarkontakt**. Enbart entreprenadens e-post, fakturaadress, närvaro eller plats i sändlistan ger inte köprätt. Detta gäller även äldre besiktningar, utan att deras utlåtanden återskapas.
+
+Publika rapportlänken är inte tillräcklig behörighet för köp eller fakturering. Kodverifiering är ett separat serversteg innan köpet visas och lagras i en krypterad HttpOnly-cookie avgränsad till besiktningen. Köpkoden gäller i 15 minuter; en öppnad privat kundportal har en verifierad webbläsarsession i högst åtta timmar. Servern kontrollerar aktuell kontakt igen vid köp; databasen kontrollerar också köparen i samma lås som ordern skapas. Efter köp tillhör åtkomsten den frysta verifierade köparen, även om projektets kontakt senare byts ut. Publika svar visar inte kundens registrerade e-post, orderstatus, pris eller fakturauppgifter innan verifieringen.
+
+I utlåtandets mejl får endast den utsedda beställaren tillägget **Hantera din besiktning**. Det är en ingång till samma verifiering, inte en behörighetslänk. Vidarebefordring ger inte kundbehörighet. **Dela utlåtande** fortsätter att kopiera eller skicka den rena publika rapportlänken, aldrig en kundsession eller privat portallänk.
 
 En unik order per besiktning, låsning i databasen och återanvändning av slutförd kodförfrågan skyddar mot dubbelbeställning. Nya beställningar görs endast från senaste publicerade rapportversionen. En redan beställd uppföljning behåller sitt ursprungliga underlag.
 
@@ -26,7 +30,7 @@ Driftstatus och orsaker till avstängning visas i den behörighetsskyddade inter
 
 Noteringar och originalbilder kopieras från den fastställda rapporten. Originalbilder förvaras i den privata bucketen `eb-follow-up-originals`. Åtgärdsbilder, kommentarer och status är separata från utlåtandet och ändrar inte dess text eller PDF. Köpta uppföljningar, äldre portaler och olika besiktningar har separata kontakt-/uppgifts-/länkområden. Entreprenörer ser endast tilldelade uppgifter.
 
-Personliga länkar har säkerhetsutgång enligt befintlig portalmodell (180 dagar), inte ett slutdatum för köpt tjänst. Ägaren kan begära förnyelse till sin verifierade adress; en gammal länks innehavare får inte en ny länk direkt. Ägarlänk ska aldrig skickas vidare till entreprenören.
+Personliga länkar har säkerhetsutgång enligt befintlig portalmodell (180 dagar), inte ett slutdatum för köpt tjänst. Ägarlänkar kräver dessutom verifierad beställarsession innan kunduppgifter, historik, bilder eller ändringsfunktioner lämnas ut. Att vidarebefordra ägarlänken räcker alltså inte för att ge åtkomst. Ägaren kan begära förnyelse till sin verifierade adress; en gammal länks innehavare får inte en ny länk direkt. Entreprenören har en egen separat länk med åtkomst endast till tilldelade uppgifter.
 
 Privatkunden får information om ångerrätt och kan använda **Ångra beställningen** i sin privata portal. Begäran tidsstämplas, kvitteras via mejl och pausar nya åtgärdssvar och fakturaunderlaget för manuell hantering. Ingen automatisk återbetalning, kreditering eller radering utförs. Detta ersätter inte säljarens bedömning av begäran.
 
@@ -36,6 +40,9 @@ Privatkunden får information om ångerrätt och kan använda **Ångra beställn
    - `docs/db/2026-09-07_07_eb_follow_up_orders.sql`
    - `docs/db/2026-09-07_08_eb_follow_up_remediation.sql`
    - `docs/db/2026-09-07_09_eb_follow_up_mail_cron.sql`
+   - `docs/db/2026-09-08_01_eb_follow_up_customer.sql`
+   - `docs/db/2026-09-08_02_eb_follow_up_owner_verification.sql`
+   De två sista migreringarna måste finnas före publicering av den striktare kundverifieringen. Saknad konfiguration ger inte en reservväg för köp eller kundåtkomst.
 2. Publicera applikationskoden. Låt `EB_FOLLOW_UP_ENABLED` vara avstängd tills checklistan är klar. Befintliga köp kan fortfarande öppnas om nyförsäljningen stängs av.
 3. Säkerställ säljaridentitet per organisation. I första hand används `organizations.eb_follow_up_seller` med `name`, `orgNumber`, `address`, `email` och valfritt `phone`. Saknade värden hämtas från organisationsskaparens företagsprofil. Tjänsten erbjuds inte om namn, organisationsnummer, adress eller e-post saknas. Kontrollera uttryckligen **vilket företag som säljer och fakturerar tjänsten**; dessa uppgifter visas för kunden och fryses med ordern. Administrativ redigeringsvy för denna konfiguration ingår inte ännu.
 4. Kontrollera befintliga `APP_BASE_URL`, `RESEND_API_KEY`, `ASSIGNMENTS_MAIL_FROM`, `SUPABASE_SERVICE_ROLE_KEY` och `CRON_SECRET`. Produktionsbasadressen ska vara den rätta HTTPS-adressen. Lägg helst till en separat stark `EB_FOLLOW_UP_EMAIL_ENCRYPTION_KEY`; annars härleds krypteringen från service role-nyckeln. Koder och ägarlänkar lagras krypterat i mejlkön. **Rotera inte krypteringsnyckeln med väntande mejl eller aktiva kodförfrågningar utan en migreringsplan.**
@@ -57,6 +64,7 @@ När en entreprenörslänk utfärdas på nytt återkallas föregående länk eft
 ## Lokal verifiering
 
 - `node --experimental-strip-types --test test/eb-follow-up-*.test.ts` — köp/behörighet, atomiska databasåtgärder, ursprungsrapportens integritet och cron.
+- `node --experimental-strip-types --test test/eb-customer-*.test.ts` — krypterade kundsessioner, separata verifieringssteg, scope/CSRF, dolt publikt erbjudande och fakturaunderlag till Admin.
 - `node scripts/test-eb-follow-up-ui.mjs` — verklig köpdelskomponent med lokal simulerad API, 390/1440 px, tangentbord, dubbelklick, samtycken, felbevarande och återöppning utan nytt köp. Inga verkliga mejl, beställningar eller databasanrop.
 - `node scripts/test-eb-follow-up-portal-ui.mjs` — rollspecifik portal med simulerade svar: tilldelning/inbjudan, ångerbegäran, åtgärdsrapportering, bilder och mobil layout.
 - `node node_modules/typescript/bin/tsc --noEmit --pretty false`

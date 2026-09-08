@@ -1,19 +1,21 @@
 import { NextResponse } from 'next/server'
-import { completeEbFollowUpOrder, getEbFollowUpOffer, requestEbFollowUpCode } from '@/lib/eb/followUpServer'
+import { completeEbFollowUpOrder, getEbFollowUpCustomerState, requestEbFollowUpCode, verifyEbFollowUpCustomerCode } from '@/lib/eb/followUpServer'
+import { assertEbCustomerRequestOrigin } from '@/lib/eb/customerSession'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 type Context = { params: Promise<{ token: string }> }
-const noStore = { 'Cache-Control': 'no-store, private', 'X-Robots-Tag': 'noindex, nofollow' }
+const noStore = { 'Cache-Control': 'no-store, private', 'X-Robots-Tag': 'noindex, nofollow', Vary: 'Cookie' }
 
 function failure(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const messages: Record<string, [number, string]> = {
     EB_FOLLOW_UP_EMAIL_INVALID: [400, 'Ange en giltig e-postadress.'],
     EB_FOLLOW_UP_RATE_LIMITED: [429, 'För många kodförfrågningar. Vänta en stund innan du försöker igen.'],
-    EB_FOLLOW_UP_VERIFICATION_REQUIRED: [400, 'Koden är felaktig eller har gått ut. Begär vid behov en ny kod.'],
+    EB_FOLLOW_UP_VERIFICATION_REQUIRED: [401, 'Verifieringen saknas eller har gått ut. Bekräfta din e-postadress med en ny kod.'],
+    EB_CUSTOMER_ORIGIN_FORBIDDEN: [403, 'Öppna utlåtandet på nytt innan du fortsätter.'],
     EB_FOLLOW_UP_CONSENT_REQUIRED: [400, 'Godkänn villkoren, omedelbar start och betalning via faktura.'],
     EB_FOLLOW_UP_OFFER_CHANGED: [409, 'Pris eller villkor har ändrats. Ladda om sidan innan du beställer.'],
     EB_FOLLOW_UP_BUYER_INVALID: [400, 'Kontrollera namn och fakturaadress. Alla obligatoriska fält behöver fyllas i.'],
@@ -28,12 +30,13 @@ function failure(error: unknown) {
 
 export async function GET(_request: Request, context: Context) {
   const { token } = await context.params
-  return NextResponse.json({ offer: await getEbFollowUpOffer(token) }, { headers: noStore })
+  return NextResponse.json(await getEbFollowUpCustomerState(token), { headers: noStore })
 }
 
 export async function POST(request: Request, context: Context) {
   const { token } = await context.params
   try {
+    assertEbCustomerRequestOrigin(request)
     const raw = await request.text()
     if (raw.length > 12_000) return NextResponse.json({ error: 'Begäran är för stor.' }, { status: 413, headers: noStore })
     const body: unknown = JSON.parse(raw)
@@ -42,6 +45,9 @@ export async function POST(request: Request, context: Context) {
     const baseUrl = new URL(request.url).origin
     if (payload.action === 'request_code') {
       return NextResponse.json(await requestEbFollowUpCode({ token, email: payload.email, baseUrl }), { headers: noStore })
+    }
+    if (payload.action === 'verify_code') {
+      return NextResponse.json(await verifyEbFollowUpCustomerCode({ token, challengeId: payload.challengeId, code: payload.code }), { headers: noStore })
     }
     if (payload.action === 'order' || payload.action === 'access') {
       return NextResponse.json(await completeEbFollowUpOrder({ token, input: payload, baseUrl }), { headers: noStore })

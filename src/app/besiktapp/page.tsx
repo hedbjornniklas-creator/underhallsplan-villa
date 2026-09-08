@@ -55,6 +55,17 @@ export default function BesiktAppPage() {
 
       <PublicPricingSection product="besiktapp" />
 
+      <section className="public-product-section" aria-labelledby="besikt-start-title">
+        <div className="public-container public-detail-grid">
+          <div className="public-section-heading"><span className="public-eyebrow">Så kommer du igång</span><h2 id="besikt-start-title">Vi börjar med ditt arbete.</h2><p>Du behöver inte använda hela HusHub. Berätta vilka besiktningar du arbetar med, så går vi igenom vilka delar av BesiktApp som passar dig.</p></div>
+          <ol className="public-feature-list">
+            <li><h3>Lämna dina kontaktuppgifter</h3><p><Link href="/besiktapp/intresse" className="public-text-link">Anmäl intresse</Link>. Ange gärna företaget du arbetar i och vad du vill ha hjälp med. Det skapas inget konto när du skickar formuläret.</p></li>
+            <li><h3>Vi går igenom ditt behov</h3><p>Vi kontaktar dig och pratar om vilka arbetsområden du behöver. Upplägg och kostnad går vi igenom innan tillgång aktiveras.</p></li>
+            <li><h3>Kom igång med rätt delar</h3><p>När vi har kommit överens ordnas din tillgång. Du kan använda enbart överlåtelsebesiktning, utan att arbeta i de andra tjänsterna.</p></li>
+          </ol>
+        </div>
+      </section>
+
       <section className="public-help">
         <div className="public-container public-help-grid">
           <div><span className="public-eyebrow">Innan du börjar</span><h2>Frågor om BesiktApp</h2></div>

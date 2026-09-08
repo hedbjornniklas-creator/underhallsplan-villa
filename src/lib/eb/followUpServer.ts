@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import {
   EB_FOLLOW_UP_NET_PRICE_ORE, EB_FOLLOW_UP_PRICE_ORE, EB_FOLLOW_UP_SERVICE_DESCRIPTION,
-  EB_FOLLOW_UP_TERMS_VERSION, EB_FOLLOW_UP_VAT_ORE, EB_FOLLOW_UP_VAT_RATE,
+  EB_FOLLOW_UP_TERMS_VERSION, EB_FOLLOW_UP_VAT_ORE, EB_FOLLOW_UP_VAT_RATE, EB_FOLLOW_UP_ADMIN_EMAIL,
   normalizeEbFollowUpEmail, validateEbFollowUpBuyer,
   type EbFollowUpBuyer, type EbFollowUpOffer, type EbFollowUpSeller,
 } from '@/lib/eb/followUp'
@@ -12,6 +12,8 @@ import {
   decryptEbFollowUpPayload, encryptEbFollowUpPayload, escapeEbFollowUpHtml,
   type EbFollowUpEmail,
 } from '@/lib/eb/followUpDelivery'
+import { resolveEbFollowUpCustomer } from '@/lib/eb/followUpCustomer'
+import { readEbCustomerSession, setEbCustomerSession, type EbCustomerSession } from '@/lib/eb/customerSession'
 
 const ORIGINALS_BUCKET = 'eb-follow-up-originals'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -156,6 +158,9 @@ async function evaluateOffer(load: () => ReturnType<typeof loadContext>): Promis
     if (!process.env.ASSIGNMENTS_MAIL_FROM?.trim() || !process.env.RESEND_API_KEY?.trim()) {
       return { ...base, reason: 'E-postutskicken för tjänsten är inte konfigurerade.' }
     }
+    if (!(await eligibleCustomerEmails(context)).size) {
+      return { ...base, reason: 'Bekräfta beställarkontakten för denna besiktning innan tjänsten kan beställas.' }
+    }
     return { ...base, available: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'EB_FOLLOW_UP_REPORT_NOT_FINALIZED') {
@@ -174,23 +179,58 @@ async function evaluateOffer(load: () => ReturnType<typeof loadContext>): Promis
 async function eligibleCustomerEmails(context: Awaited<ReturnType<typeof loadContext>>): Promise<Set<string>> {
   // An existing purchase belongs to its verified buyer, not to a later replacement project contact.
   if (context.order) return new Set([context.order.buyer_snapshot.email.toLowerCase()])
-  const emails = new Set<string>()
-  const projectEmail = normalizeEbFollowUpEmail(context.project.client_email)
-  if (projectEmail) emails.add(projectEmail)
-  const { data: confirmation, error } = await context.admin.from('eb_assignment_confirmations')
-    .select('assignment_id').eq('org_id', context.link.org_id).eq('inspection_id', context.link.inspection_id)
-    .eq('is_current', true).maybeSingle()
-  if (error) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
-  if (confirmation?.assignment_id) {
-    const { data: assignment, error: assignmentError } = await context.admin.from('assignments')
-      .select('customer_email,accepted_at,status').eq('id', confirmation.assignment_id).eq('org_id', context.link.org_id).maybeSingle()
-    if (assignmentError) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
-    if (assignment?.accepted_at && assignment.status === 'accepted') {
-      const acceptedEmail = normalizeEbFollowUpEmail(assignment.customer_email)
-      if (acceptedEmail) emails.add(acceptedEmail)
-    }
+  const customer = await resolveEbFollowUpCustomer({ admin: context.admin, orgId: context.link.org_id,
+    inspectionId: context.link.inspection_id, projectId: context.project.id })
+  return new Set(customer.email ? [customer.email] : [])
+}
+
+async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext>>): Promise<EbCustomerSession | null> {
+  const session = await readEbCustomerSession(context.link.inspection_id)
+  if (!session || session.orgId !== context.link.org_id || session.inspectionId !== context.link.inspection_id
+    || (session.kind === 'report' && session.reportLinkId !== context.link.id)
+    || (session.kind === 'owner' && (!context.order || !session.portalPath))
+    || !(await eligibleCustomerEmails(context)).has(session.email)) return null
+  return session
+}
+
+/** Public recipients see only a neutral entry. Price, purchase state and seller details require verified identity. */
+export async function getEbFollowUpCustomerState(token: string) {
+  let context: Awaited<ReturnType<typeof loadContext>>
+  try { context = await loadContext(token) }
+  catch {
+    const unavailable = await getEbFollowUpOffer(token)
+    return { verified: false, offer: null, accessAvailable: false, retryable: unavailable.retryable === true }
   }
-  return emails
+  const offer = await evaluateOffer(async () => context)
+  let session: EbCustomerSession | null
+  try { session = await customerSessionFor(context) }
+  catch { return { verified: false, offer: null, accessAvailable: false, retryable: true } }
+  if (session) return { verified: true, offer: { ...offer, reason: offer.available ? null : 'Tjänsten kan inte beställas just nu. Kontakta besiktningsmannen vid frågor.' } }
+  return { verified: false, offer: null, accessAvailable: offer.available || offer.alreadyActive, retryable: offer.retryable === true }
+}
+
+export async function verifyEbFollowUpCustomerCode(input: { token: string; challengeId: unknown; code: unknown }) {
+  const challengeId = typeof input.challengeId === 'string' ? input.challengeId : ''
+  const code = typeof input.code === 'string' ? input.code.trim() : ''
+  if (!UUID.test(challengeId) || !/^\d{6}$/.test(code)) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
+  const context = await loadContext(input.token)
+  const { data: challenge, error } = await context.admin.from('eb_follow_up_challenges')
+    .select('expires_at').eq('id', challengeId).eq('org_id', context.link.org_id)
+    .eq('inspection_id', context.link.inspection_id).eq('report_link_id', context.link.id)
+    .eq('purpose', 'report').maybeSingle()
+  if (error || !challenge) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
+  const { data, error: verifyError } = await context.admin.rpc('eb_verify_follow_up_challenge', {
+    p_id: challengeId, p_report_link_id: context.link.id, p_code_hash: challengeHash(challengeId, code),
+  })
+  const email = normalizeEbFollowUpEmail(data?.email)
+  if (verifyError || !data?.verified || !email || !(await eligibleCustomerEmails(context)).has(email)) {
+    throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
+  }
+  const expiresAt = Math.min(Date.parse(challenge.expires_at), Date.now() + 15 * 60_000)
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
+  await setEbCustomerSession({ kind: 'report', orgId: context.link.org_id, inspectionId: context.link.inspection_id,
+    email, reportLinkId: context.link.id, challengeId, code, expiresAt })
+  return { verified: true, offer: await evaluateOffer(async () => context) }
 }
 
 function challengeHash(challengeId: string, code: string): string {
@@ -267,15 +307,15 @@ async function createFrozenTasks(context: Awaited<ReturnType<typeof loadContext>
   return tasks
 }
 
-function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuyer, seller: EbFollowUpSeller, portalUrl: string) {
+function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuyer, seller: EbFollowUpSeller, portalUrl: string, inspectionSummary = '') {
   const terms = `${EB_FOLLOW_UP_SERVICE_DESCRIPTION}\nPris 599 kr inklusive 25 % moms (479,20 kr exklusive moms och 119,80 kr moms). Fakturering sker manuellt; detta är inte en faktura. Du har uttryckligen godkänt villkoren version ${EB_FOLLOW_UP_TERMS_VERSION}, begärt omedelbar start och accepterat betalning via faktura. Du har som konsument normalt 14 dagars ångerrätt. Omedelbar start innebär inte att all ångerrätt försvinner. Du kan meddela att du vill frånträda beställningen med knappen i din personliga portal eller via ${seller.email}. Ingen efterbesiktning ingår.`
   const sellerText = `${seller.name}, org.nr ${seller.orgNumber}, ${seller.address}, ${seller.email}${seller.phone ? `, ${seller.phone}` : ''}`
   const receipt = `Beställning ${orderId} är mottagen och din digitala åtgärdsuppföljning är aktiverad.\n\n${terms}\n\nSäljare: ${sellerText}\n\nFakturamottagare: ${buyer.invoiceName}\n${buyer.invoiceAddress}\n${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `\nOrg.nr: ${buyer.invoiceOrgNo}` : ''}\n\nDin personliga portal: ${portalUrl}\nDela inte denna länk. Entreprenörer bjuds in med egna begränsade länkar från portalen.`
-  const invoice = `Manuellt fakturaunderlag för beställning ${orderId}.\n599,00 SEK inklusive moms; netto 479,20 SEK; moms25 % 119,80 SEK.\nBeställare: ${buyer.name}, ${buyer.email}.\nFakturamottagare: ${buyer.invoiceName}, ${buyer.invoiceAddress}, ${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `, org.nr ${buyer.invoiceOrgNo}` : ''}.\nTjänsten har aktiverats automatiskt. Ingen faktura har skapats eller skickats av systemet. Kontrollera orderns billing_status och eventuell begäran att frånträda beställningen innan fakturering.\nVillkor ${EB_FOLLOW_UP_TERMS_VERSION}; beställaren har accepterat villkor, omedelbar start och betalning via faktura.`
+  const invoice = `Ett köp av digital åtgärdsuppföljning har skett.\nManuellt fakturaunderlag för beställning ${orderId}.\nBeställt: ${new Date().toISOString()}\n${inspectionSummary}\n599,00 SEK inklusive moms; netto 479,20 SEK; moms 25 % 119,80 SEK.\nSäljare: ${sellerText}\nBeställare: ${buyer.name}, ${buyer.email}.\nFakturamottagare: ${buyer.invoiceName}, ${buyer.invoiceAddress}, ${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `, org.nr ${buyer.invoiceOrgNo}` : ''}.\nE-post för fakturakontakt: ${buyer.email}.\nTjänsten har aktiverats automatiskt. Ingen faktura har skapats eller skickats av systemet. Fakturering hanteras manuellt av Admin. Kontrollera orderns billing_status och eventuell begäran att frånträda beställningen innan fakturering.\nVillkor ${EB_FOLLOW_UP_TERMS_VERSION}; beställaren har accepterat villkor, omedelbar start och betalning via faktura.`
   const access = `Här är din personliga länk till din redan beställda åtgärdsuppföljning:\n${portalUrl}\nIngen ny beställning eller avgift har skapats. Dela inte denna länk. Entreprenörer bjuds in separat från portalen.`
   return [
     { kind: 'receipt', dedupeKey: `receipt:${orderId}`, to: buyer.email, subject: 'Beställningsbekräftelse – digital åtgärdsuppföljning', text: receipt },
-    { kind: 'invoice', dedupeKey: `invoice:${orderId}`, to: seller.email, subject: 'Manuellt fakturaunderlag – EB åtgärdsuppföljning', text: invoice },
+    { kind: 'invoice', dedupeKey: `invoice:${orderId}`, to: EB_FOLLOW_UP_ADMIN_EMAIL, subject: 'Nytt köp – fakturaunderlag för EB åtgärdsuppföljning', text: invoice },
     { kind: 'access', dedupeKey: `access:${challengeId}`, to: buyer.email, subject: 'Din personliga åtgärdsportal', text: access },
   ].map(mail => ({ kind: mail.kind, dedupeKey: mail.dedupeKey, ciphertext: encryptEbFollowUpPayload({
     to: mail.to, replyTo: seller.email, subject: mail.subject, text: mail.text,
@@ -285,12 +325,24 @@ function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuye
 
 export async function completeEbFollowUpOrder(input: { token: string; input: Record<string, unknown>; baseUrl?: string }) {
   const payload = input.input
-  const challengeId = typeof payload.challengeId === 'string' ? payload.challengeId : ''
-  const code = typeof payload.code === 'string' ? payload.code.trim() : ''
+  const context = await loadContext(input.token)
+  const session = await customerSessionFor(context)
+  if (!session) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
+  // Return verified existing access without creating an order, a new invoice or another access email.
+  if (session.kind === 'owner' && context.order && session.portalPath && ['access', 'order'].includes(String(payload.action))) {
+    const accessToken = session.portalPath.split('/').pop() ?? ''
+    const { data: access, error: accessError } = await context.admin.from('eb_remediation_access_links')
+      .select('id,expires_at').eq('token_hash', hashAssignmentToken(accessToken)).eq('role', 'customer_owner')
+      .eq('org_id', context.link.org_id).eq('inspection_id', context.link.inspection_id)
+      .eq('follow_up_order_id', context.order.id).eq('email', session.email).is('revoked_at', null).maybeSingle()
+    if (accessError || !access || !(Date.parse(access.expires_at) > Date.now())) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
+    return { orderId: context.order.id, portalUrl: session.portalPath, message: 'Din åtgärdsportal är klar. Ingen ny beställning eller avgift har skapats.' }
+  }
+  const challengeId = session.challengeId ?? ''
+  const code = session.code ?? ''
   if (!UUID.test(challengeId) || !/^\d{6}$/.test(code) || !['order', 'access'].includes(String(payload.action))) {
     throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
   }
-  const context = await loadContext(input.token)
   const { data: verification, error: verificationError } = await context.admin.rpc('eb_verify_follow_up_challenge', {
     p_id: challengeId, p_report_link_id: context.link.id, p_code_hash: challengeHash(challengeId, code),
   })
@@ -317,13 +369,16 @@ export async function completeEbFollowUpOrder(input: { token: string; input: Rec
     p_project_id: context.project.id, p_buyer: buyer, p_seller: seller, p_tasks: tasks,
     p_access: { id: randomUUID(), tokenHash: hashAssignmentToken(accessToken),
       expiresAt: new Date(Date.now() + 180 * 86400_000).toISOString(), encryptedResult: encryptEbFollowUpPayload({ portalUrl }) },
-    p_emails: orderEmails(context.order?.id ?? candidateId, challengeId, buyer, seller, portalUrl),
+    p_emails: orderEmails(context.order?.id ?? candidateId, challengeId, buyer, seller, portalUrl,
+      `Entreprenad: ${context.report.project.title || context.project.id}\nObjekt: ${context.report.project.propertyDesignation || '-'}\nAdress: ${[context.report.project.address, context.report.project.postalCode, context.report.project.city].filter(Boolean).join(', ')}\nBesiktning: ${context.report.inspection.variantLabel || ''} ${context.report.inspection.sequenceNo || ''}, ${context.report.inspection.date || '-'}\nBesiktnings-ID: ${context.link.inspection_id}\nIntern besiktningsvy: ${ebFollowUpBaseUrl(input.baseUrl)}/eb/projects/${context.project.id}`),
     p_create: !context.order && payload.action === 'order', p_terms_version: EB_FOLLOW_UP_TERMS_VERSION,
   })
   if (error || !data?.orderId || !data?.encryptedResult) throw new Error('EB_FOLLOW_UP_ORDER_FAILED')
   const result = decryptEbFollowUpPayload<{ portalUrl: string }>(data.encryptedResult)
   const portalPath = new URL(result.portalUrl).pathname
   if (!/^\/atgarder\/[A-Za-z0-9_-]{20,200}$/.test(portalPath)) throw new Error('EB_FOLLOW_UP_ORDER_FAILED')
+  await setEbCustomerSession({ kind: 'owner', orgId: context.link.org_id, inspectionId: context.link.inspection_id,
+    email, portalPath, expiresAt: Date.now() + 8 * 60 * 60_000 })
   return { orderId: String(data.orderId), portalUrl: portalPath,
     message: data.created ? 'Beställningen är mottagen och åtgärdsuppföljningen är aktiverad. Bekräftelse och fakturaunderlag ligger i e-postkön.' : 'Din åtgärdsportal är klar. Ingen ny beställning eller avgift har skapats.' }
 }

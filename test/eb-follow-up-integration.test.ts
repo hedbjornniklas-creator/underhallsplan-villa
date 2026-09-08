@@ -183,9 +183,9 @@ function orderRouteFixture() {
   const state = { fail: '' }
   const api = load<typeof OrderApi>('src/app/api/reports/public/[token]/follow-up/route.ts', {
     '@/lib/eb/followUpServer': {
-      getEbFollowUpOffer: async (value: string) => {
+      getEbFollowUpCustomerState: async (value: string) => {
         calls.push({ name: 'offer', input: value })
-        return { available: true, priceOre: 59900, netPriceOre: 47920, vatOre: 11980, vatRate: 25 }
+        return { verified: false, offer: null, accessAvailable: true }
       },
       requestEbFollowUpCode: async (input: unknown) => {
         calls.push({ name: 'request_code', input })
@@ -196,7 +196,12 @@ function orderRouteFixture() {
         if (state.fail) throw new Error(state.fail)
         return { orderId: 'order', portalUrl: '/atgarder/private-token' }
       },
+      verifyEbFollowUpCustomerCode: async (input: unknown) => {
+        calls.push({ name: 'verify', input })
+        return { verified: true, offer: { priceOre: 59900 } }
+      },
     },
+    '@/lib/eb/customerSession': { assertEbCustomerRequestOrigin: () => undefined },
   })
   const context = { params: Promise.resolve({ token }) }
   const post = (body: unknown) => api.POST(new Request(`https://hushub.test/api/reports/public/${token}/follow-up`, {
@@ -210,7 +215,7 @@ test('purchase HTTP boundary keeps GET read-only, forwards verification, and doe
   const response = await f.api.GET(new Request('https://hushub.test/offer'), f.context)
   assert.equal(response.status, 200)
   assert.match(response.headers.get('Cache-Control') ?? '', /no-store/)
-  assert.equal((await response.json()).offer.priceOre, 59900)
+  assert.deepEqual(await response.json(), { verified: false, offer: null, accessAvailable: true })
   assert.deepEqual(f.calls, [{ name: 'offer', input: token }])
   const code = await f.post({ action: 'request_code', email: 'buyer@example.test' })
   assert.equal(code.status, 200)
@@ -231,7 +236,7 @@ test('purchase HTTP input/error paths reject oversized or malformed requests and
   }
   assert.equal(f.calls.length, 0)
   for (const [error, status] of [
-    ['EB_FOLLOW_UP_VERIFICATION_REQUIRED', 400], ['EB_FOLLOW_UP_CONSENT_REQUIRED', 400],
+    ['EB_FOLLOW_UP_VERIFICATION_REQUIRED', 401], ['EB_FOLLOW_UP_CONSENT_REQUIRED', 400],
     ['EB_FOLLOW_UP_OFFER_CHANGED', 409], [`DATABASE_ERROR:${secret}`, 503],
   ] as const) {
     f.state.fail = error
@@ -334,6 +339,7 @@ function workspaceFixture() {
     '@/lib/eb/reportSnapshot': snapshots,
     '@/lib/eb/remediationPolicy': load('src/lib/eb/remediationPolicy.ts', {}),
     '@/lib/eb/followUpDelivery': {}, '@/lib/eb/followUpServer': {},
+    '@/lib/eb/ownerAuth': { assertEbRemediationOwnerSession: async () => undefined },
   })
   const workspace = async (role: string) => {
     const value = await service.getEbRemediationWorkspaceByToken(role.padEnd(35, '-'))

@@ -16,13 +16,13 @@ function load<T>(file: string, dependencies: Record<string, unknown>, expose: st
   const compiled = ts.transpileModule(source, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
   } }).outputText
-  const module = { exports: {} }
+  const compiledModule = { exports: {} }
   new Function('require', 'exports', 'module', compiled)((id: string) => {
     if (id in dependencies) return dependencies[id]
     if (id.startsWith('node:')) return require(id)
     throw new Error(`Unexpected I/O dependency ${id}`)
-  }, module.exports, module)
-  return module.exports as T
+  }, compiledModule.exports, compiledModule)
+  return compiledModule.exports as T
 }
 const shared = load<typeof FollowUp>('src/lib/eb/followUp.ts', {})
 const db = new PGlite()
@@ -292,6 +292,12 @@ test('actual server keeps recovery verified when sales are off and returns only 
     '@/lib/assignments/tokens': { generateAssignmentToken: () => 'new-owner-token-long-enough', hashAssignmentToken: (token: string) => `hashed:${token}` },
     '@/lib/eb/reportSnapshot': { getEbInspectionReportFromSnapshot: (snapshot: unknown) => snapshot },
     '@/lib/eb/followUpDelivery': { encryptEbFollowUpPayload: JSON.stringify, decryptEbFollowUpPayload: JSON.parse, escapeEbFollowUpHtml: (value: string) => value },
+    '@/lib/eb/followUpCustomer': {},
+    '@/lib/eb/customerSession': {
+      readEbCustomerSession: async () => verified ? ({ orgId: org, inspectionId: inspection, email: buyer.email.toLowerCase(),
+        kind: 'report', reportLinkId: link, challengeId: randomUUID(), code: '123456', expiresAt: Date.now() + 60_000 }) : null,
+      setEbCustomerSession: async () => undefined,
+    },
   })
   try {
     const offer = await server.getEbFollowUpOffer('public-report-token-long-enough')
@@ -318,6 +324,7 @@ test('original-image preparation executes actual bounded copies and retains the 
     '@/lib/eb/followUp': shared,
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => { throw new Error('No real database') } },
     '@/lib/assignments/tokens': {}, '@/lib/eb/reportSnapshot': {}, '@/lib/eb/followUpDelivery': {},
+    '@/lib/eb/followUpCustomer': {}, '@/lib/eb/customerSession': {},
   }, ['createFrozenTasks'])
   const prepared = await server.createFrozenTasks({
     link: { org_id: org, inspection_id: inspection },

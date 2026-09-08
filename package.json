@@ -17,6 +17,7 @@
     "test:renoapp-reviews": "node --experimental-strip-types --test test/renoapp-consultant-review.test.ts test/renoapp-consultant-review-api.test.ts",
     "test:public-navigation": "node --experimental-strip-types --test test/public-navigation.test.ts",
     "test:public-products": "node --experimental-strip-types --test test/public-product-pages.test.ts test/public-navigation.test.ts test/assignments-mailer.test.ts",
+    "test:besiktapp-intake": "node --experimental-strip-types --test test/besiktapp-interest-tracking.test.ts test/public-product-pages.test.ts",
     "test:tu": "node --experimental-strip-types --test test/tu-authoring-mode.test.ts test/tu-grounding.test.ts test/tu-report-editorial.test.ts test/tu-report-quality.test.ts"
   },
   "dependencies": {

@@ -6,6 +6,8 @@ type BuildInspectionReportDeliveryEmailInput = {
   propertyAddress: string | null
   inspectionDate: string | null
   detailsUrl: string
+  /** EB-only, recipient-specific entry. Never grants authorization by itself. */
+  customerManagementUrl?: string | null
 }
 
 type BuildInspectionReportDeliveryEmailResult = {
@@ -91,6 +93,16 @@ export function buildInspectionReportDeliveryEmail(
     textColor: '#ffffff',
     borderColor: '#312e81',
   })
+  const customerManagement = input.customerManagementUrl
+    ? `<div style="margin-top:20px;">${buildBulletproofButton({
+        href: input.customerManagementUrl,
+        label: 'Hantera din besiktning',
+        width: 260,
+        backgroundColor: '#ffffff',
+        textColor: '#3730a3',
+        borderColor: '#3730a3',
+      })}<p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:#4b5563;">Som beställare kan du öppna hanteringen av din besiktning. Du behöver verifiera din e-postadress innan du får åtkomst.</p></div>`
+    : ''
 
   const html = `
 <!doctype html>
@@ -135,6 +147,7 @@ export function buildInspectionReportDeliveryEmail(
                 <p style="margin:0;font-size:12px;line-height:1.5;color:#4b5563;">
                   På sidan kan du läsa, skriva ut och spara utlåtandet.
                 </p>
+                ${customerManagement}
               </td>
             </tr>
           </table>
@@ -151,7 +164,10 @@ export function buildInspectionReportDeliveryEmail(
     `Adress: ${propertyAddress}\n` +
     `Besiktningsdag: ${inspectionDate}\n\n` +
     `Öppna besiktningsutlåtande: ${input.detailsUrl}\n\n` +
-    `På sidan kan du läsa, skriva ut och spara utlåtandet.`
+    `På sidan kan du läsa, skriva ut och spara utlåtandet.` +
+    (input.customerManagementUrl
+      ? `\n\nHantera din besiktning: ${input.customerManagementUrl}\nDu behöver verifiera din e-postadress innan du får åtkomst.`
+      : '')
 
   return { subject, html, text }
 }

@@ -8,6 +8,7 @@ import { ebRemediationAllowedStatuses, ebRemediationCanComment, ebRemediationCan
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { queueEbFollowUpEmail } from '@/lib/eb/followUpDelivery'
 import { requestEbFollowUpOwnerRenewal, withdrawEbFollowUpOrder } from '@/lib/eb/followUpServer'
+import { assertEbRemediationOwnerSession } from '@/lib/eb/ownerAuth'
 
 export const EB_REMEDIATION_IMAGE_BUCKET = 'eb-remediation-images'
 export const EB_REMEDIATION_MAX_IMAGE_BYTES = 15 * 1024 * 1024
@@ -797,6 +798,7 @@ export async function getEbRemediationWorkspaceByToken(
 ): Promise<EbRemediationWorkspace | null> {
   const access = await resolveAccessToken(token)
   if (!access) return null
+  await assertEbRemediationOwnerSession(access)
   const now = Date.now()
   const state: 'open' | 'expired' | 'revoked' = access.revoked_at
     ? 'revoked'
@@ -1363,8 +1365,10 @@ export async function performEbRemediationTokenAction(input: {
   if (input.action === 'renew_owner_link') {
     if (access.role !== 'customer_owner' || !access.follow_up_order_id || access.revoked_at) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     await requestEbFollowUpOwnerRenewal({ accessToken: input.token, baseUrl: appBaseUrl(input.requestOrigin) })
-    return getEbRemediationWorkspaceByToken(input.token)
+    // Renewal can only email the existing buyer; it must not return a workspace.
+    return null
   }
+  await assertEbRemediationOwnerSession(access)
   assertOpenAccess(access)
   const paid = Boolean(access.follow_up_order_id)
   if (access.follow_up_order_id) {
@@ -1652,6 +1656,7 @@ export async function uploadEbRemediationImageByToken(input: {
 }) {
   const access = await resolveAccessToken(input.token)
   if (!access) throw new Error('EB_REMEDIATION_ACCESS_NOT_FOUND')
+  await assertEbRemediationOwnerSession(access)
   assertOpenAccess(access)
   if (access.role === 'contractor_viewer') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
   const task = await requireTask({

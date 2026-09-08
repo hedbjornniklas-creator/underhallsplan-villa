@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { normalizeEbFollowUpEmail } from '@/lib/eb/followUp'
+import { EB_FOLLOW_UP_ADMIN_EMAIL, normalizeEbFollowUpEmail } from '@/lib/eb/followUp'
 
 export type EbFollowUpEmail = {
   to: string
@@ -66,7 +66,7 @@ async function expandNotification(row: OutboxRow) {
   let subject: string
   let text: string
   if (row.kind === 'withdrawal') {
-    recipients = [buyerEmail, sellerEmail]
+    recipients = [buyerEmail, sellerEmail, EB_FOLLOW_UP_ADMIN_EMAIL]
     subject = 'Begäran att frånträda digital åtgärdsuppföljning mottagen'
     text = `Vi har tagit emot begäran att frånträda beställning ${order.id}. Begäran registrerades ${order.withdrawal_requested_at}. Fakturaunderlaget är pausat för manuell hantering. Entreprenörens möjlighet att lämna nya svar är pausad. Tidigare underlag finns kvar i portalen. Detta är en mottagningsbekräftelse, inte ett besked om återbetalning. Kontakta ${seller.email} vid frågor.`
   } else {

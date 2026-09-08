@@ -64,6 +64,7 @@ type EbPublicReportSnapshotViewProps = {
   pdfError?: string | null
   deliveryDocuments?: EbPublicDeliveryDocumentLink[]
   followUpEndpoint?: string | null
+  customerAutoOpen?: boolean
 }
 
 type PublicImage = {
@@ -1324,6 +1325,7 @@ export default function EbPublicReportSnapshotView({
   pdfStatusEndpoint = null,
   deliveryDocuments = [],
   followUpEndpoint = null,
+  customerAutoOpen = false,
 }: EbPublicReportSnapshotViewProps) {
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
   const headings = useMemo(
@@ -1547,7 +1549,7 @@ export default function EbPublicReportSnapshotView({
 
         {followUpEndpoint ? (
           <div className="mt-4 empty:hidden print:hidden">
-            <EbFollowUpOrder endpoint={followUpEndpoint} />
+            <EbFollowUpOrder endpoint={followUpEndpoint} autoOpen={customerAutoOpen} />
           </div>
         ) : null}
 

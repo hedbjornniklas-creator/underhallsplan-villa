@@ -3,6 +3,7 @@ import { requireModuleAccess } from '@/lib/access/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
+import { ebFollowUpCustomerEntryUrl, resolveEbFollowUpDeliveryCustomer } from '@/lib/eb/followUpCustomer'
 import {
   createEbReportSnapshotPayloadV1,
   isEbReportSnapshotPayloadV1,
@@ -904,7 +905,7 @@ export async function POST(
         primaryRecipient as string,
         ...parseExtraRecipients(body?.extra_recipients ?? body?.extraRecipients, primaryRecipient),
       ]
-      const emailContent = buildInspectionReportDeliveryEmail({
+      const emailInput = {
         orgName: org.orgName,
         customerName: project.clientName ?? inspection.clientName,
         propertyAddress:
@@ -913,10 +914,17 @@ export async function POST(
             .join(', ') || null,
         inspectionDate: inspection.date,
         detailsUrl: publicLink,
+      }
+      const customerEmail = await resolveEbFollowUpDeliveryCustomer({
+        admin, orgId: org.orgId, projectId, inspectionId,
       })
       const replyToEmail = await getReplyToEmail(admin, project.ownerProfileId)
 
       for (const recipient of recipients) {
+        const emailContent = buildInspectionReportDeliveryEmail({
+          ...emailInput,
+          customerManagementUrl: ebFollowUpCustomerEntryUrl(publicLink, recipient, customerEmail),
+        })
         let messageId: string | null = null
         try {
           messageId = await createOutboundMessage(admin, {

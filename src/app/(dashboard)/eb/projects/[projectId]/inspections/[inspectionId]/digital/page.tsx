@@ -142,6 +142,9 @@ export default async function EbInspectionDigitalReportPage({
       <>
         <aside className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-center text-sm leading-6 text-slate-600 print:hidden">
           Intern förhandsvisning. {followUpStatus} Köpknappen visas inte här.
+          <a className="ml-2 text-indigo-700 underline" href={`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/follow-up-customer`}>
+            Kontrollera eller bekräfta beställarkontakt
+          </a>
         </aside>
         <EbPublicReportSnapshotView
           report={report}
