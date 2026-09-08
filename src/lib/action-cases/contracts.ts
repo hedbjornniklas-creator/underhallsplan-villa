@@ -36,15 +36,17 @@ export type ActionCaseItemView = {
   estimatedCost: number | null
   customerPrice: number | null
   costLines: ActionCaseCostLineView[]
+  updatedAt: string
+  costSuggestion: ActionCaseCostSuggestion | null
 }
 
 export type ActionCaseCostLineView = {
   id: string
   category: 'own_labor' | 'material' | 'subcontractor' | 'waste' | 'transport' | 'other'
   description: string
-  quantity: number
+  quantity: number | null
   unit: string
-  unitCost: number
+  unitCost: number | null
   markupPercent: number
   vatRate: number
   priceSource: 'manual' | 'beijer' | 'subcontractor' | 'price_book' | 'ai_suggestion' | 'other'
@@ -52,6 +54,19 @@ export type ActionCaseCostLineView = {
   sourceCheckedAt: string | null
   verified: boolean
   sortOrder: number
+  quantityBasis: 'provided' | 'calculated' | 'estimated' | 'unknown'
+  notes: string | null
+}
+
+export type ActionCaseSuggestedCostLine = Pick<ActionCaseCostLineView,
+  'category' | 'description' | 'quantity' | 'unit' | 'quantityBasis' | 'notes'> & { id: string }
+
+export type ActionCaseCostSuggestion = {
+  id: string
+  sourceUpdatedAt: string
+  createdAt: string
+  lines: ActionCaseSuggestedCostLine[]
+  warnings: string[]
 }
 
 export type ActionCaseParticipantView = {

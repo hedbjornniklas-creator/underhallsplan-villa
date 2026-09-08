@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import type { ActionCaseAttachmentView, ActionCaseCostLineView, ActionCaseItemView, ActionCaseParticipantView, ActionCasePortal, ActionCaseView, ActionCaseWorkspace } from './contracts'
-import { calculateActionCaseCostTotals, filterActionCasePortalItems } from './domain'
+import { filterActionCasePortalItems } from './domain'
+import { normalizeCostLine } from './costing'
 
 type Context = { orgId: string; userId: string }
 
@@ -70,6 +71,8 @@ function mapItem(row: Record<string, unknown>, costLines: ActionCaseCostLineView
     estimatedCost: row.estimated_cost === null ? null : Number(row.estimated_cost),
     customerPrice: row.customer_price === null ? null : Number(row.customer_price),
     costLines,
+    updatedAt: String(row.updated_at),
+    costSuggestion: null,
   }
 }
 
@@ -78,9 +81,9 @@ function mapCostLine(row: Record<string, unknown>): ActionCaseCostLineView {
     id: String(row.id),
     category: row.category as ActionCaseCostLineView['category'],
     description: String(row.description),
-    quantity: Number(row.quantity),
+    quantity: row.quantity == null ? null : Number(row.quantity),
     unit: String(row.unit),
-    unitCost: Number(row.unit_cost),
+    unitCost: row.unit_cost == null ? null : Number(row.unit_cost),
     markupPercent: Number(row.markup_percent),
     vatRate: Number(row.vat_rate),
     priceSource: row.price_source as ActionCaseCostLineView['priceSource'],
@@ -88,6 +91,8 @@ function mapCostLine(row: Record<string, unknown>): ActionCaseCostLineView {
     sourceCheckedAt: row.source_checked_at ? String(row.source_checked_at) : null,
     verified: Boolean(row.is_verified),
     sortOrder: Number(row.sort_order),
+    quantityBasis: (row.quantity_basis ?? 'provided') as ActionCaseCostLineView['quantityBasis'],
+    notes: row.notes ? String(row.notes) : null,
   }
 }
 
@@ -118,6 +123,12 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
       ])
     : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }]
   if (participantError || attachmentError || costLineError) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
+  const { data: suggestions, error: suggestionError } = caseIds.length
+    ? await admin.from('action_case_cost_suggestions').select('id,action_case_item_id,source_updated_at,created_at,lines,warnings,applied_at')
+      .eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false })
+    : { data: [], error: null }
+  // Keep pre-migration workspaces readable during a rolling deployment.
+  if (suggestionError && !['42P01', 'PGRST205'].includes(suggestionError.code)) throw new Error('ACTION_CASES_READ_FAILED')
 
   const attachmentIds = (attachments ?? []).map((row) => row.id)
   const { data: grants, error: grantsError } = attachmentIds.length
@@ -134,7 +145,10 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
   const itemsByCase = new Map<string, ActionCaseItemView[]>()
   for (const row of items ?? []) {
     const list = itemsByCase.get(row.action_case_id) ?? []
-    list.push(mapItem(row, costLinesByItem.get(row.id) ?? []))
+    const view = mapItem(row, costLinesByItem.get(row.id) ?? [])
+    const proposal = suggestions?.find((candidate) => candidate.action_case_item_id === row.id)
+    view.costSuggestion = proposal && !proposal.applied_at ? { id: proposal.id, sourceUpdatedAt: proposal.source_updated_at, createdAt: proposal.created_at, lines: proposal.lines, warnings: proposal.warnings } : null
+    list.push(view)
     itemsByCase.set(row.action_case_id, list)
   }
   const participantsByCase = new Map<string, ActionCaseParticipantView[]>()
@@ -199,71 +213,34 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
   }
 }
 
-const COST_CATEGORIES = new Set(['own_labor', 'material', 'subcontractor', 'waste', 'transport', 'other'])
-const PRICE_SOURCES = new Set(['manual', 'beijer', 'subcontractor', 'price_book', 'ai_suggestion', 'other'])
-
-async function recalculateActionItemCost(context: Context, caseId: string, itemId: string) {
-  const admin = createSupabaseAdminClient()
-  const { data: rows } = await admin.from('action_case_cost_lines').select('quantity,unit_cost,markup_percent').eq('action_case_item_id', itemId).eq('action_case_id', caseId).eq('org_id', context.orgId)
-  const totals = calculateActionCaseCostTotals((rows ?? []).map((row) => ({ quantity: Number(row.quantity), unitCost: Number(row.unit_cost), markupPercent: Number(row.markup_percent) })))
-  await admin.from('action_case_items').update({ estimated_cost: totals.internalCost, customer_price: totals.customerPrice, updated_by: context.userId }).eq('id', itemId).eq('action_case_id', caseId).eq('org_id', context.orgId)
+async function writeCosts(context: Context, payload: Record<string, unknown>, operation: string, lines: unknown[]) {
+  const { error } = await createSupabaseAdminClient().rpc('write_action_case_costs', {
+    p_org_id: context.orgId, p_case_id: text(payload.caseId), p_item_id: text(payload.itemId),
+    p_user_id: context.userId, p_operation: operation, p_lines: lines,
+    p_suggestion_id: nullableText(payload.suggestionId),
+  })
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883') throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
+    const known = ['ACTION_CASE_NOT_FOUND', 'ACTION_CASE_AI_NOT_FOUND', 'ACTION_CASE_AI_STALE', 'ACTION_CASE_COST_LINE_INVALID', 'ACTION_CASE_COST_LINE_NOT_FOUND']
+    throw new Error(known.find((code) => error.message.includes(code)) ?? 'ACTION_CASE_COST_LINE_WRITE_FAILED')
+  }
 }
 
 export async function createActionCaseCostLine(context: Context, payload: Record<string, unknown>) {
-  const caseId = text(payload.caseId)
-  const itemId = text(payload.itemId)
-  const category = text(payload.category)
-  const description = text(payload.description)
-  const quantity = Number(payload.quantity)
-  const unitCost = Number(payload.unitCost)
-  const markupPercent = Number(payload.markupPercent)
-  const priceSource = text(payload.priceSource) || 'manual'
-  if (!caseId || !itemId || !description || !COST_CATEGORIES.has(category) || !PRICE_SOURCES.has(priceSource)
-    || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0
-    || !Number.isFinite(markupPercent) || markupPercent < -100 || markupPercent > 1000) {
-    throw new Error('ACTION_CASE_COST_LINE_INVALID')
-  }
-  await requireCase(context, caseId)
-  const admin = createSupabaseAdminClient()
-  const { data: item } = await admin.from('action_case_items').select('id').eq('id', itemId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
-  if (!item) throw new Error('ACTION_CASE_ITEM_REQUIRED')
-  const { data: last } = await admin.from('action_case_cost_lines').select('sort_order').eq('action_case_item_id', itemId).order('sort_order', { ascending: false }).limit(1).maybeSingle()
-  const verified = payload.verified === true
-  const { error } = await admin.from('action_case_cost_lines').insert({
-    org_id: context.orgId,
-    action_case_id: caseId,
-    action_case_item_id: itemId,
-    category,
-    description,
-    quantity,
-    unit: text(payload.unit) || 'st',
-    unit_cost: unitCost,
-    markup_percent: markupPercent,
-    vat_rate: 25,
-    price_source: priceSource,
-    source_url: nullableText(payload.sourceUrl),
-    source_checked_at: verified ? new Date().toISOString() : null,
-    is_verified: verified,
-    verified_by: verified ? context.userId : null,
-    verified_at: verified ? new Date().toISOString() : null,
-    sort_order: Number(last?.sort_order ?? 0) + 100,
-    created_by: context.userId,
-    updated_by: context.userId,
-  })
-  if (error) throw new Error('ACTION_CASE_COST_LINE_CREATE_FAILED')
-  await recalculateActionItemCost(context, caseId, itemId)
-  await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId, action_case_item_id: itemId, event_type: 'cost_line_added', message: `Kalkylrad lades till: ${description}.`, performed_by: context.userId })
+  await writeCosts(context, payload, 'add', [normalizeCostLine(payload)])
+}
+
+export async function updateActionCaseCostLine(context: Context, payload: Record<string, unknown>) {
+  await writeCosts(context, payload, 'update', [{ ...normalizeCostLine(payload), id: text(payload.costLineId) }])
 }
 
 export async function deleteActionCaseCostLine(context: Context, payload: Record<string, unknown>) {
-  const caseId = text(payload.caseId)
-  const itemId = text(payload.itemId)
-  const costLineId = text(payload.costLineId)
-  if (!caseId || !itemId || !costLineId) throw new Error('ACTION_CASE_COST_LINE_INVALID')
-  await requireCase(context, caseId)
-  const { data, error } = await createSupabaseAdminClient().from('action_case_cost_lines').delete().eq('id', costLineId).eq('action_case_id', caseId).eq('action_case_item_id', itemId).eq('org_id', context.orgId).select('id').maybeSingle()
-  if (error || !data) throw new Error('ACTION_CASE_COST_LINE_NOT_FOUND')
-  await recalculateActionItemCost(context, caseId, itemId)
+  await writeCosts(context, payload, 'delete', [{ id: text(payload.costLineId) }])
+}
+
+export async function applyActionCaseCostSuggestions(context: Context, payload: Record<string, unknown>) {
+  if (!Array.isArray(payload.lineIds) || payload.lineIds.length < 1 || payload.lineIds.length > 30) throw new Error('ACTION_CASE_COST_LINE_INVALID')
+  await writeCosts(context, payload, 'apply', [...new Set(payload.lineIds.map(text))].map((id) => ({ id })))
 }
 
 export async function createActionCase(context: Context, payload: Record<string, unknown>) {
@@ -632,10 +609,16 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
     && merged.waste_solution_ready
     && (!merged.requires_subcontractor || merged.subcontractor_price_ready)
   )
-  patch.status = scopeReady ? (pricingReady ? 'ready_for_quote' : 'pricing_needed') : 'scope_needed'
+  if (['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(existing.status)) {
+    patch.status = scopeReady ? (pricingReady ? 'ready_for_quote' : 'pricing_needed') : 'scope_needed'
+  } else {
+    delete patch.status
+  }
 
-  const { error } = await admin.from('action_case_items').update(patch).eq('id', itemId).eq('org_id', context.orgId)
-  if (error) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
+  let update = admin.from('action_case_items').update(patch).eq('id', itemId).eq('org_id', context.orgId)
+  if (payload.expectedUpdatedAt) update = update.eq('updated_at', text(payload.expectedUpdatedAt))
+  const { data: updated, error } = await update.select('id').maybeSingle()
+  if (error || !updated) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
 
   const { data: siblings } = await admin
     .from('action_case_items')
@@ -644,7 +627,7 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
     .eq('org_id', context.orgId)
   const allQuoteReady = Boolean(siblings?.length) && siblings!.every((item) => item.status === 'ready_for_quote')
   await admin.from('action_cases').update({ status: allQuoteReady ? 'quote_ready' : 'pricing', updated_by: context.userId })
-    .eq('id', existing.action_case_id).eq('org_id', context.orgId)
+    .eq('id', existing.action_case_id).eq('org_id', context.orgId).in('status', ['preparing', 'pricing', 'quote_ready'])
   await admin.from('action_case_events').insert({
     org_id: context.orgId,
     action_case_id: existing.action_case_id,
