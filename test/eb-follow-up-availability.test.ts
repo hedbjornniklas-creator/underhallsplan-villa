@@ -64,7 +64,7 @@ function fixture(legacy = false) {
   }
   const errors: Record<string, string> = {}
   const failures: Record<string, Error> = {}
-  const state = { clientConfigurationError: false }
+  const state = { clientConfigurationError: false, platformSellerAvailable: true }
   const reads: Array<{ table: string; filters: Array<[string, unknown]>; fields: string }> = []
   const admin = { from: (table: string) => {
     assert.ok(table in rows, `Unexpected table: ${table}`)
@@ -103,6 +103,7 @@ function fixture(legacy = false) {
     '@/lib/eb/reportSnapshot': snapshots,
     '@/lib/eb/followUpDelivery': {},
     '@/lib/eb/followUpCustomer': { resolveEbFollowUpCustomer: async () => ({ email: 'buyer@example.test', source: 'confirmed' }) },
+    '@/lib/eb/followUpSeller': { getEbFollowUpPlatformSeller: () => state.platformSellerAvailable ? seller : null },
     '@/lib/eb/customerSession': { readEbCustomerSession: async () => null },
   })
   return { report, snapshot, rows, errors, failures, state, reads, seller, server, offer: () => server.getEbFollowUpOffer(token) }
@@ -212,11 +213,22 @@ test('feature flag, eligible notes and seller configuration remain required', as
   assert.match(noNotes.reason ?? '', /inga noteringar/)
   assert.equal(noNotes.retryable, false)
   const noSeller = fixture()
-  noSeller.rows.organizations[0].eb_follow_up_seller = null
+  noSeller.state.platformSellerAvailable = false
   const unconfigured = await noSeller.offer()
   assert.equal(unconfigured.available, false)
   assert.equal(unconfigured.retryable, false)
   assert.match(unconfigured.reason ?? '', /Säljaruppgifterna/)
+})
+
+test('external inspectors need no seller configuration and cannot replace the platform seller', async () => {
+  const f = fixture()
+  f.rows.organizations[0].eb_follow_up_seller = { name: 'External inspecting company', email: 'external@example.test' }
+  f.failures.organizations = new Error('Tenant settings are unrelated')
+  f.failures.profiles = new Error('Tenant profile is unrelated')
+  const offer = await f.offer()
+  assert.equal(offer.available, true)
+  assert.deepEqual(offer.seller, f.seller)
+  assert.equal(f.reads.some(read => ['organizations', 'profiles'].includes(read.table)), false)
 })
 
 test('existing paid access survives missing historical lock metadata and sales being disabled', async () => {
@@ -248,8 +260,7 @@ test('missing sender/API credentials and schema/server setup are hidden, not tem
   }
   for (const [table, code] of [
     ['inspection_report_links', '42P01'], ['eb_follow_up_orders', 'PGRST205'],
-    ['organizations', '42703'], ['organizations', 'PGRST204'],
-    ['inspection_lock_events', '42501'], ['profiles', 'PGRST205'],
+    ['inspection_lock_events', '42501'],
   ]) {
     const f = fixture()
     f.rows.organizations[0].created_by = 'owner'
@@ -269,7 +280,7 @@ test('missing sender/API credentials and schema/server setup are hidden, not tem
 })
 
 test('temporary database failures and thrown network errors offer a safe retry', async () => {
-  for (const table of ['inspection_report_links', 'eb_follow_up_orders', 'eb_projects', 'eb_inspection_details', 'inspection_lock_events', 'organizations', 'profiles']) {
+  for (const table of ['inspection_report_links', 'eb_follow_up_orders', 'eb_projects', 'eb_inspection_details', 'inspection_lock_events']) {
     for (const thrown of [false, true]) {
       const f = fixture()
       f.rows.organizations[0].created_by = 'owner'

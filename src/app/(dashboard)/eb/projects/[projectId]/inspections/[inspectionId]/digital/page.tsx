@@ -4,7 +4,6 @@ import EbPublicReportSnapshotView from '@/components/eb/EbPublicReportSnapshotVi
 import { EbToastProvider } from '@/components/eb/EbToastProvider'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
-import { getEbFollowUpOfferForInspection } from '@/lib/eb/followUpServer'
 import {
   getEbInspectionReportFromSnapshot,
   isEbReportSnapshotPayloadV1,
@@ -104,15 +103,6 @@ export default async function EbInspectionDigitalReportPage({
       )
     }
 
-    const followUpOffer = await getEbFollowUpOfferForInspection({
-      orgId: context.orgId, inspectionId, reportLinkId: row.id,
-    })
-    const followUpStatus = followUpOffer.alreadyActive
-      ? 'Digital åtgärdsuppföljning är redan beställd. Beställaren kan återfå åtkomst via den publika rapportlänken utan en ny avgift.'
-      : followUpOffer.available
-        ? 'Digital åtgärdsuppföljning är tillgänglig för beställning för 599 kr inkl. moms via den publika rapportlänken som skickas med utlåtandet.'
-        : `${followUpOffer.retryable ? 'Tillfälligt tekniskt fel vid kontroll av digital åtgärdsuppföljning.' : 'Digital åtgärdsuppföljning är inte tillgänglig för beställning.'} ${followUpOffer.reason ?? ''}`
-
     const deliveryDocuments = (
       await Promise.all(
         (snapshot?.deliveryDocuments ?? []).map(async (document) => {
@@ -141,9 +131,9 @@ export default async function EbInspectionDigitalReportPage({
     return (
       <>
         <aside className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-center text-sm leading-6 text-slate-600 print:hidden">
-          Intern förhandsvisning. {followUpStatus} Köpknappen visas inte här.
+          Intern förhandsvisning av det fastställda utlåtandet.
           <a className="ml-2 text-indigo-700 underline" href={`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/follow-up-customer`}>
-            Kontrollera eller bekräfta beställarkontakt
+            Ändra beställaradress
           </a>
         </aside>
         <EbPublicReportSnapshotView

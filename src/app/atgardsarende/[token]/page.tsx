@@ -1,0 +1,18 @@
+import Image from 'next/image'
+import { notFound } from 'next/navigation'
+import { FileText, MapPin } from 'lucide-react'
+import { getActionCasePortal } from '@/lib/action-cases/server'
+
+export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Åtgärdsärende', robots: { index: false, follow: false } }
+
+export default async function ActionCasePortalPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params
+  const portal = await getActionCasePortal(token)
+  if (!portal) notFound()
+  if (portal.accessState !== 'open') {
+    return <main className="min-h-screen bg-slate-50 px-4 py-16"><section className="mx-auto max-w-xl border border-slate-200 bg-white p-8 text-center shadow-sm"><h1 className="text-2xl font-semibold text-slate-950">Länken är inte längre aktiv</h1><p className="mt-2 text-sm leading-6 text-slate-600">Kontakta uppdragsgivaren för en ny länk.</p></section></main>
+  }
+  const { actionCase, participant } = portal
+  return <main className="min-h-screen bg-slate-50 pb-16"><header className="border-b border-slate-200 bg-white"><div className="mx-auto max-w-5xl px-4 py-5 sm:px-6"><p className="text-xs font-semibold uppercase text-violet-700">Åtgärdsärende</p><h1 className="mt-1 text-2xl font-semibold text-slate-950">{actionCase.title}</h1><p className="mt-2 flex items-center gap-2 text-sm text-slate-600"><MapPin size={16} /> {actionCase.propertyAddress}</p></div></header><div className="mx-auto max-w-5xl px-4 py-7 sm:px-6"><p className="text-sm text-slate-600">Visas för <strong className="text-slate-900">{participant.name}</strong>{participant.companyName ? `, ${participant.companyName}` : ''}.</p><section className="mt-7 border-y border-slate-200 bg-white"><div className="px-4 py-4"><h2 className="text-lg font-semibold text-slate-950">Arbeten</h2></div>{actionCase.items.map((item, index) => <article key={item.id} className="border-t border-slate-100 px-4 py-4"><div className="flex gap-3"><span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-violet-50 text-xs font-semibold text-violet-700">{index + 1}</span><div><h3 className="font-semibold text-slate-950">{item.title}</h3>{item.scope ? <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.scope}</p> : null}</div></div></article>)}</section><section className="mt-7"><h2 className="text-lg font-semibold text-slate-950">Delade bilder och dokument</h2><p className="mt-1 text-sm text-slate-500">Här visas endast material som har delats med dig.</p>{actionCase.attachments.length ? <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{actionCase.attachments.map((attachment) => { const href = `/api/action-cases/public/${token}/attachments/${attachment.id}`; return <a key={attachment.id} href={href} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm hover:border-violet-300">{attachment.type === 'image' ? <div className="relative aspect-[4/3] bg-slate-100"><Image src={href} alt={attachment.title || attachment.fileName} fill unoptimized className="object-cover" /></div> : <div className="flex aspect-[4/3] items-center justify-center bg-slate-50 text-slate-400"><FileText size={38} /></div>}<div className="p-3"><strong className="block truncate text-sm text-slate-900">{attachment.title || attachment.fileName}</strong><span className="mt-1 block text-xs text-violet-700">Öppna fil</span></div></a>})}</div> : <div className="mt-4 border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-500">Inget material har delats ännu.</div>}</section></div></main>
+}

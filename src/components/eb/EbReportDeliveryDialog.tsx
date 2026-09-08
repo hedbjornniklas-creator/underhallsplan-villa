@@ -54,6 +54,8 @@ type DeliveryResponse = {
   defaultRecipientEmail?: string | null
   defaultExtraRecipients?: string[]
   ordererEmail?: string | null
+  deliveryCustomer?: { email: string | null; established: boolean; purchased: boolean } | null
+  customerContactUnavailable?: boolean
   hasBeenSent?: boolean
   deliveryStatus?: 'draft' | 'finalized' | 'sending' | 'sent' | 'failed'
   history?: DeliveryHistoryItem[]
@@ -72,6 +74,8 @@ type DeliveryMeta = {
   publicLink: string | null
   defaultRecipientEmail: string | null
   ordererEmail: string | null
+  deliveryCustomer: { email: string | null; established: boolean; purchased: boolean } | null
+  customerContactUnavailable: boolean
   hasBeenSent: boolean
   deliveryStatus: 'draft' | 'finalized' | 'sending' | 'sent' | 'failed'
   history: DeliveryHistoryItem[]
@@ -89,6 +93,8 @@ function initialMeta(inspection: EbInspectionSummary): DeliveryMeta {
     publicLink: null,
     defaultRecipientEmail: null,
     ordererEmail: null,
+    deliveryCustomer: null,
+    customerContactUnavailable: true,
     hasBeenSent: inspection.reportDeliveryStatus === 'sent',
     deliveryStatus:
       inspection.reportDeliveryStatus === 'sent'
@@ -117,6 +123,8 @@ function mergeMeta(current: DeliveryMeta, payload: DeliveryResponse): DeliveryMe
         ? payload.defaultRecipientEmail
         : current.defaultRecipientEmail,
     ordererEmail: payload.ordererEmail !== undefined ? payload.ordererEmail : current.ordererEmail,
+    deliveryCustomer: payload.deliveryCustomer !== undefined ? payload.deliveryCustomer : current.deliveryCustomer,
+    customerContactUnavailable: payload.customerContactUnavailable ?? current.customerContactUnavailable,
     hasBeenSent: payload.hasBeenSent ?? current.hasBeenSent,
     deliveryStatus: payload.deliveryStatus ?? current.deliveryStatus,
     history: payload.history ?? current.history,
@@ -224,6 +232,7 @@ export default function EbReportDeliveryDialog({
   const applyResponse = useCallback(
     (payload: DeliveryResponse) => {
       setMeta((current) => mergeMeta(current ?? initialMeta(inspection!), payload))
+      if (payload.deliveryCustomer?.established) setRecipientEmail(payload.deliveryCustomer.email ?? '')
       if (payload.project) onProjectUpdated(payload.project)
     },
     [inspection, onProjectUpdated]
@@ -239,7 +248,7 @@ export default function EbReportDeliveryDialog({
         if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta leveransstatus.')
         applyResponse(payload)
         if (!recipientsInitializedRef.current) {
-          setRecipientEmail(payload.defaultRecipientEmail ?? payload.ordererEmail ?? '')
+          setRecipientEmail(payload.deliveryCustomer?.email ?? payload.defaultRecipientEmail ?? '')
           setExtraRecipients((payload.defaultExtraRecipients ?? []).join('\n'))
           recipientsInitializedRef.current = true
         }
@@ -316,7 +325,11 @@ export default function EbReportDeliveryDialog({
     const primary = recipientEmail.trim().toLowerCase()
     const extras = parseExtraRecipients(extraRecipients)
     if (action === 'send_and_lock' && !isValidEmail(primary)) {
-      showError('Ange en giltig e-postadress för huvudmottagaren.')
+      showError('Ange en giltig e-postadress för beställaren.')
+      return
+    }
+    if (action === 'send_and_lock' && meta?.customerContactUnavailable) {
+      showError('Beställaruppgifterna kunde inte läsas. Försök igen.')
       return
     }
 
@@ -353,6 +366,7 @@ export default function EbReportDeliveryDialog({
       onChanged()
     } catch (error) {
       showError(error, 'Kunde inte hantera utlåtandet.')
+      await loadMeta({ silent: true })
     } finally {
       setBusyAction(null)
     }
@@ -397,7 +411,7 @@ export default function EbReportDeliveryDialog({
   const locked = Boolean(meta?.reportLockedAt)
   const hasSentDelivery = meta?.hasBeenSent ?? false
   const busy = loading || Boolean(busyAction) || unlockBusy
-  const canSend = locked && isValidEmail(recipientEmail) && !busy
+  const canSend = locked && isValidEmail(recipientEmail) && !meta?.customerContactUnavailable && !busy
 
   if (!open || !inspection) return null
 
@@ -548,23 +562,48 @@ export default function EbReportDeliveryDialog({
           {!loading && locked ? (
             <section className="rounded-lg border border-blue-200 bg-blue-50/40 p-4">
               <h3 className="text-sm font-semibold text-gray-950">Steg 2 · Välj mottagare och skicka</h3>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold text-gray-700">Huvudmottagare</span>
+              {meta?.customerContactUnavailable ? (
+                <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
+                  <p>Beställaruppgifterna kunde inte läsas. Försök igen.</p>
+                  <button type="button" onClick={() => void loadMeta()} disabled={busy} className="mt-1 font-semibold underline underline-offset-2 disabled:opacity-50">
+                    Hämta beställaruppgifter igen
+                  </button>
+                </div>
+              ) : null}
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label htmlFor="eb-delivery-customer" className="block text-xs font-semibold text-gray-700">Beställare – huvudmottagare</label>
                   <input
+                    id="eb-delivery-customer"
                     type="email"
                     value={recipientEmail}
                     onChange={(event) => setRecipientEmail(event.target.value)}
-                    disabled={busy}
+                    readOnly={Boolean(meta?.deliveryCustomer?.established)}
+                    disabled={busy || meta?.customerContactUnavailable}
+                    aria-describedby="eb-delivery-customer-help"
                     placeholder="namn@epost.se"
-                    className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+                    className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 read-only:bg-gray-50 disabled:bg-gray-100"
                   />
-                  <p className="text-[11px] text-gray-500">
-                    Föreslagen: {meta?.ordererEmail ?? meta?.defaultRecipientEmail ?? 'E-postadress saknas'}
+                  <p id="eb-delivery-customer-help" className="text-xs leading-5 text-gray-600">
+                    Beställarens e-postadress. Övriga mottagare anges nedan.
                   </p>
-                </label>
+                  {meta?.deliveryCustomer?.established ? (
+                    <div className="text-xs leading-5 text-gray-600">
+                      <p>
+                        {meta.deliveryCustomer.purchased
+                          ? 'Beställaradressen är knuten till ett genomfört köp och ändras inte vid nya utskick.'
+                          : 'Beställaradressen är registrerad för denna besiktning och behålls vid nya utskick.'}
+                      </p>
+                      {!meta.deliveryCustomer.purchased ? (
+                        <a href={`/eb/projects/${projectId}/inspections/${inspection.inspectionId}/follow-up-customer`} className="font-semibold text-blue-800 underline underline-offset-2">
+                          Ändra beställaradress
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
                 <label className="space-y-1">
-                  <span className="text-xs font-semibold text-gray-700">Extra mottagare</span>
+                  <span className="text-xs font-semibold text-gray-700">Övriga mottagare</span>
                   <textarea
                     value={extraRecipients}
                     onChange={(event) => setExtraRecipients(event.target.value)}
@@ -573,6 +612,7 @@ export default function EbReportDeliveryDialog({
                     placeholder="En eller flera adresser, separerade med komma"
                     className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
                   />
+                  <span className="block text-xs leading-5 text-gray-600">Till exempel entreprenören eller andra som ska få utlåtandet.</span>
                 </label>
               </div>
               <button

@@ -104,11 +104,25 @@ type FixtureOptions = {
   unlockHistoryError?: boolean
   frozenCreatedAt?: string
   deliveryCustomer?: string | null
+  establishedCustomer?: boolean
+  purchased?: boolean
+  concurrentCustomer?: string
+  customerError?: string
+  initializeError?: string
+  projectEmail?: string | null
+  primaryRecipient?: string | null
+  participantEmails?: string[]
   extraRecipients?: string[]
 }
 
 function routeFixture(options: FixtureOptions = {}) {
   const live = reportFixture()
+  if ('projectEmail' in options) live.project.clientEmail = options.projectEmail ?? null
+  let deliveryCustomer = {
+    email: 'deliveryCustomer' in options ? options.deliveryCustomer ?? null : live.project.clientEmail,
+    established: options.establishedCustomer ?? false,
+    purchased: options.purchased ?? false,
+  }
   if (options.frozen) {
     live.inspection.reportLockedAt = lockedAt
     live.inspection.status = 'completed'
@@ -218,7 +232,10 @@ function routeFixture(options: FixtureOptions = {}) {
           if (options.unlockHistoryError) return { data: null, error: { message: 'AUDIT_UNAVAILABLE' } }
           return { data: options.unlockAfterSnapshot ? { id: 'unlock' } : null, error: null }
         }
-        if (table === 'eb_participants' || table === 'inspection_lock_events') return { data: [], error: null }
+        if (table === 'eb_participants') return { data: (options.participantEmails ?? []).map(email => ({
+          email, receives_report: true, role_label: 'Entreprenör',
+        })), error: null }
+        if (table === 'inspection_lock_events') return { data: [], error: null }
         throw new Error(`Unexpected publication test table ${table}`)
       }
       const query = {
@@ -259,11 +276,28 @@ function routeFixture(options: FixtureOptions = {}) {
       '@/lib/assignments/tokens': { generateAssignmentToken: () => 'new-public-token', hashAssignmentToken: () => 'new-hash' },
       '@/lib/eb/reportSnapshot': snapshots,
       '@/lib/eb/followUpCustomer': {
-        resolveEbFollowUpDeliveryCustomer: async (input: Row) => {
+        getEbFollowUpDeliveryCustomerDefaults: async (input: Row) => {
           assert.equal(input.orgId, 'org')
           assert.equal(input.projectId, 'project')
           assert.equal(input.inspectionId, 'inspection')
-          return options.deliveryCustomer ?? null
+          if (options.customerError) throw new Error(options.customerError)
+          return { ...deliveryCustomer }
+        },
+        initializeEbFollowUpDeliveryCustomer: async (input: Row) => {
+          assert.equal(input.orgId, 'org')
+          assert.equal(input.projectId, 'project')
+          assert.equal(input.inspectionId, 'inspection')
+          assert.equal(input.userId, 'inspector')
+          const active = links.find(row => row.id === 'new-link' && row.revoked_at === null)
+          assert.ok(active, 'Only an actual delivery of a published report registers the customer')
+          events.push('register-customer')
+          if (options.initializeError) throw new Error(options.initializeError)
+          if (options.concurrentCustomer) {
+            deliveryCustomer = { email: options.concurrentCustomer, established: true, purchased: false }
+          } else if (!deliveryCustomer.established) {
+            deliveryCustomer = { email: String(input.email), established: true, purchased: false }
+          }
+          return { ...deliveryCustomer }
         },
         ebFollowUpCustomerEntryUrl: customer.ebFollowUpCustomerEntryUrl,
       },
@@ -288,6 +322,10 @@ function routeFixture(options: FixtureOptions = {}) {
   return {
     links, previousLink, frozenOriginal, events, insertedSnapshots, scheduled, live, sentMessages,
     reportReads: () => reportReads,
+    customer: () => ({ ...deliveryCustomer }),
+    get: () => route.GET(new Request('https://example.test/api/delivery'), {
+      params: Promise.resolve({ projectId: 'project', inspectionId: 'inspection' }),
+    }),
     created: () => { const link = links.find(row => row.id === 'new-link'); assert.ok(link); return link },
     post: async (action: 'lock_only' | 'send_and_lock' | 'resend') => {
       const previousFrom = process.env.ASSIGNMENTS_MAIL_FROM
@@ -295,7 +333,9 @@ function routeFixture(options: FixtureOptions = {}) {
       try {
         return await route.POST(new Request('https://example.test/api/delivery', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, primary_recipient: 'buyer@example.test', extra_recipients: options.extraRecipients }),
+          body: JSON.stringify({ action,
+            primary_recipient: 'primaryRecipient' in options ? options.primaryRecipient : 'buyer@example.test',
+            extra_recipients: options.extraRecipients }),
         }), { params: Promise.resolve({ projectId: 'project', inspectionId: 'inspection' }) })
       } finally {
         if (previousFrom === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM
@@ -329,12 +369,13 @@ test('send-and-lock persists publication before mail and later delivery metadata
   assert.equal(persisted.report.inspection.reportDeliveryStatus, 'sent')
   assert.ok(persisted.report.inspection.reportLastSentAt)
   assert.equal(persisted.report.notes[0].noteText, 'FROZEN NOTE')
-  assert.deepEqual(f.events, ['stage', 'lock', 'publish', 'revoke-previous', 'outbound', 'send', 'delivery-metadata', 'schedule-pdf'])
+  assert.deepEqual(f.events, ['stage', 'lock', 'publish', 'register-customer', 'revoke-previous', 'outbound', 'send', 'delivery-metadata', 'schedule-pdf'])
 })
 
 test('EB delivery sends customer management entry only to the designated address, not every report recipient', async () => {
-  for (const deliveryCustomer of ['buyer@example.test', 'extra-customer@example.test', null]) {
-    const f = routeFixture({ deliveryCustomer, extraRecipients: ['contractor@example.test', 'extra-customer@example.test'] })
+  for (const deliveryCustomer of ['buyer@example.test', 'extra-customer@example.test']) {
+    const f = routeFixture({ deliveryCustomer, primaryRecipient: deliveryCustomer, establishedCustomer: true,
+      extraRecipients: ['contractor@example.test', 'other-recipient@example.test'] })
     const response = await f.post('send_and_lock')
     assert.equal(response.status, 200)
     const body = await response.json()
@@ -454,4 +495,112 @@ test('failed first delivery retains the confirmed locked version for retry and P
   assert.equal(f.created().revoked_at, null)
   assert.equal(snapshotReport(f.created().snapshot_payload).report.inspection.reportLockedAt, lockedAt)
   assert.equal(f.scheduled.length, 1)
+})
+
+test('first delivery uses the explicitly entered customer without any assignment or project email', async () => {
+  const f = routeFixture({ projectEmail: null, deliveryCustomer: null,
+    primaryRecipient: '  New.Customer@Example.test  ', participantEmails: ['contractor@example.test'],
+    extraRecipients: ['contractor@example.test'] })
+  const before = await (await f.get()).json()
+  assert.equal(before.defaultRecipientEmail, null, 'A contractor must never become the default customer')
+  assert.deepEqual(before.defaultExtraRecipients, ['contractor@example.test'])
+  assert.equal((await f.post('send_and_lock')).status, 200)
+  assert.deepEqual(f.customer(), { email: 'new.customer@example.test', established: true, purchased: false })
+  assert.equal(f.sentMessages[0].to, 'new.customer@example.test')
+  assert.match(String(f.sentMessages[0].text), /Hantera din besiktning/)
+  assert.doesNotMatch(String(f.sentMessages[1].text), /Hantera din besiktning|customer=/)
+  assert.equal(snapshotReport(f.created().snapshot_payload).report.project.clientEmail, null,
+    'Registering the delivery customer must not modify the frozen report facts')
+})
+
+test('delivery defaults use the chosen accepted-assignment/customer contact rather than the old project address', async () => {
+  const f = routeFixture({ projectEmail: 'old-project@example.test', deliveryCustomer: 'accepted@example.test' })
+  const body = await (await f.get()).json()
+  assert.equal(body.defaultRecipientEmail, 'accepted@example.test')
+  assert.equal(body.ordererEmail, 'accepted@example.test')
+  assert.deepEqual(body.deliveryCustomer, { email: 'accepted@example.test', established: false, purchased: false })
+})
+
+test('blank/invalid explicit customer or contractor-only recipient list cannot silently choose a customer', async () => {
+  for (const primaryRecipient of ['', 'not-an-email', null]) {
+    const f = routeFixture({ primaryRecipient, participantEmails: ['contractor@example.test'] })
+    assert.equal((await f.post('send_and_lock')).status, 400)
+    assert.deepEqual(f.events, [])
+    assert.equal(f.sentMessages.length, 0)
+  }
+  const contractorOnly = routeFixture({ projectEmail: null, deliveryCustomer: null,
+    primaryRecipient: undefined, participantEmails: ['contractor@example.test'] })
+  assert.equal((await contractorOnly.post('send_and_lock')).status, 400)
+  assert.equal(contractorOnly.sentMessages.length, 0)
+})
+
+test('established and purchased customers cannot be replaced during resend, but ordinary extra recipients still work', async () => {
+  for (const purchased of [false, true]) {
+    const f = routeFixture({ frozen: true, deliveryCustomer: 'owner@example.test', establishedCustomer: true,
+      purchased, primaryRecipient: 'contractor@example.test' })
+    const response = await f.post('resend')
+    assert.equal(response.status, 409)
+    assert.match((await response.json()).error, /Övriga mottagare/)
+    assert.deepEqual(f.events, [], 'Reject customer changes before creating or publishing any new link')
+    assert.equal(f.sentMessages.length, 0)
+    assert.equal(f.customer().email, 'owner@example.test')
+  }
+  const extra = routeFixture({ frozen: true, deliveryCustomer: 'owner@example.test', establishedCustomer: true,
+    purchased: true, primaryRecipient: 'owner@example.test', extraRecipients: ['contractor@example.test'] })
+  assert.equal((await extra.post('resend')).status, 200)
+  assert.match(String(extra.sentMessages[0].text), /Hantera din besiktning/)
+  assert.doesNotMatch(String(extra.sentMessages[1].text), /Hantera din besiktning|customer=/)
+  assert.equal(extra.customer().purchased, true)
+})
+
+test('missing customer migration preserves status and lock-only but blocks mail before publication', async () => {
+  for (const customerError of ['EB_FOLLOW_UP_CONFIGURATION', 'EB_FOLLOW_UP_UNAVAILABLE']) {
+    const f = routeFixture({ customerError })
+    const metaResponse = await f.get()
+    assert.equal(metaResponse.status, 200)
+    const meta = await metaResponse.json()
+    assert.equal(meta.customerContactUnavailable, true)
+    assert.equal(meta.defaultRecipientEmail, null)
+    assert.equal(meta.deliveryCustomer, null)
+    assert.equal((await f.post('send_and_lock')).status, 503)
+    assert.equal(f.events.length, 0)
+    assert.equal((await f.post('lock_only')).status, 200)
+    assert.equal(f.events.includes('register-customer'), false)
+    assert.equal(f.sentMessages.length, 0)
+  }
+})
+
+test('concurrent customer registration or failed storage never sends mail to the losing address or revokes the old publication', async () => {
+  for (const options of [{ concurrentCustomer: 'other@example.test' }, { initializeError: 'EB_FOLLOW_UP_UNAVAILABLE' }]) {
+    const f = routeFixture({ frozen: true, ...options })
+    const response = await f.post('resend')
+    assert.equal(response.status, options.concurrentCustomer ? 409 : 503)
+    assert.equal(f.sentMessages.length, 0)
+    assert.equal(f.previousLink.revoked_at, null)
+    assert.ok(f.created().revoked_at)
+    assert.deepEqual(f.previousLink.snapshot_payload, f.frozenOriginal)
+    assert.equal(f.scheduled.length, 0)
+  }
+})
+
+test('customer storage failure after a first successful publication keeps the frozen report recoverable for retry', async () => {
+  const options: FixtureOptions = { initializeError: 'EB_FOLLOW_UP_UNAVAILABLE' }
+  const f = routeFixture(options)
+  assert.equal((await f.post('send_and_lock')).status, 503)
+  assert.equal(f.sentMessages.length, 0)
+  assert.equal(f.live.inspection.reportLockedAt, lockedAt)
+  assert.equal(f.created().revoked_at, null)
+  assert.equal(f.previousLink.revoked_at, null)
+  assert.equal(snapshotReport(f.created().snapshot_payload).report.inspection.reportLockedAt, lockedAt)
+  assert.equal(f.scheduled.length, 1)
+  const meta = await (await f.get()).json()
+  assert.equal(meta.reportLockedAt, lockedAt)
+  assert.equal(meta.hasActiveLink, true)
+  assert.equal(meta.hasBeenSent, false)
+  // Retry uses the retained frozen snapshot without unlocking or reading live content.
+  options.initializeError = undefined
+  const readsBeforeRetry = f.reportReads()
+  assert.equal((await f.post('send_and_lock')).status, 200)
+  assert.equal(f.reportReads(), readsBeforeRetry)
+  assert.equal(f.sentMessages.length, 1)
 })

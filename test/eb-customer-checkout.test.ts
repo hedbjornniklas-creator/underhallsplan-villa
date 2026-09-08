@@ -32,6 +32,10 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
   return compiledModule.exports as T
 }
 const shared = load<typeof Shared>('src/lib/eb/followUp.ts', {})
+const platformSeller = load<{ getEbFollowUpPlatformSeller: () => Shared.EbFollowUpSeller }>('src/lib/eb/followUpSeller.ts', {
+  '@/lib/eb/followUp': shared,
+  '@/lib/publicCompanyInfo': load('src/lib/publicCompanyInfo.ts', {}),
+})
 type Row = Record<string, unknown>
 function fixture() {
   const org = randomUUID(), inspection = randomUUID(), project = randomUUID(), link = randomUUID(), challenge = randomUUID()
@@ -86,6 +90,7 @@ function fixture() {
     '@/lib/eb/reportSnapshot': { getEbInspectionReportFromSnapshot: (value: unknown) => value },
     '@/lib/eb/followUpDelivery': { encryptEbFollowUpPayload: JSON.stringify, decryptEbFollowUpPayload: JSON.parse, escapeEbFollowUpHtml: (value: string) => value },
     '@/lib/eb/followUpCustomer': { resolveEbFollowUpCustomer: async () => ({ email: state.designated || null, source: 'confirmed' }) },
+    '@/lib/eb/followUpSeller': platformSeller,
     '@/lib/eb/customerSession': {
       readEbCustomerSession: async () => { if (state.sessionReadError) throw new Error('PRIVATE_AUTH_ERROR'); return state.session },
       setEbCustomerSession: async (session: EbCustomerSession) => { state.session = session },
@@ -167,10 +172,12 @@ test('a new purchase queues full manual invoice material only to Admin and a sep
   assert.equal(result.portalUrl, `/atgarder/${f.ownerToken}`)
   const completion = f.state.rpcs.find(call => call.name === 'eb_complete_follow_up_order')!.input
   assert.equal((completion.p_buyer as Row).email, f.email)
+  assert.deepEqual(completion.p_seller, platformSeller.getEbFollowUpPlatformSeller())
+  assert.equal(completion.p_terms_version, '2026-09-08')
   const mails = completion.p_emails as Array<{ kind: string; ciphertext: string; dedupeKey: string }>
   const invoice = JSON.parse(mails.find(mail => mail.kind === 'invoice')!.ciphertext)
   assert.equal(invoice.to, 'jn@hedbjorn.se')
-  for (const text of ['599,00', '479,20', '119,80', 'Fakturamottagare', 'Fakturagatan 3', '12345', 'Staden', '556677-8899', f.email, f.inspection, f.challenge, 'Testvilla', 'VILLAN 1', '2026-09-03', 'Ingen faktura har skapats']) {
+  for (const text of ['599,00', '479,20', '119,80', 'JNH Consulting AB', '559027-7694', 'Fakturamottagare', 'Fakturagatan 3', '12345', 'Staden', '556677-8899', f.email, f.inspection, f.challenge, 'Testvilla', 'VILLAN 1', '2026-09-03', 'Ingen faktura har skapats']) {
     assert.ok(invoice.text.includes(text), `Missing invoice material: ${text}`)
   }
   assert.equal(JSON.parse(mails.find(mail => mail.kind === 'receipt')!.ciphertext).to, f.email)

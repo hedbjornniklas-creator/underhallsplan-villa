@@ -3,7 +3,11 @@ import { requireModuleAccess } from '@/lib/access/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
-import { ebFollowUpCustomerEntryUrl, resolveEbFollowUpDeliveryCustomer } from '@/lib/eb/followUpCustomer'
+import {
+  ebFollowUpCustomerEntryUrl,
+  getEbFollowUpDeliveryCustomerDefaults,
+  initializeEbFollowUpDeliveryCustomer,
+} from '@/lib/eb/followUpCustomer'
 import {
   createEbReportSnapshotPayloadV1,
   isEbReportSnapshotPayloadV1,
@@ -26,6 +30,7 @@ const TEMPLATE_KEY = 'eb_report_delivery'
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 type DeliveryAction = 'lock_only' | 'send_and_lock' | 'resend' | 'regenerate_pdf'
+type DeliveryCustomer = Awaited<ReturnType<typeof getEbFollowUpDeliveryCustomerDefaults>>
 
 type EbReportLinkRow = {
   id: string
@@ -606,15 +611,15 @@ async function getReplyToEmail(admin: AdminClient, profileId: string) {
 }
 
 function resolveDefaultRecipients(
-  project: EbProjectListItem,
+  customer: DeliveryCustomer | null,
   recipientOptions: ReportRecipientOption[]
 ) {
-  const clientEmail = normalizeEmail(project.clientEmail)
-  const primary = clientEmail ?? recipientOptions.find((option) => option.receivesReport)?.email ?? null
+  // Recipient order or contractor participation must never imply customer authority.
+  const primary = customer?.email ?? null
   const extras = recipientOptions
     .filter((option) => option.receivesReport && option.email !== primary)
     .map((option) => option.email)
-  return { clientEmail, primary, extras }
+  return { primary, extras }
 }
 
 function getCurrentVersionHistory(
@@ -645,11 +650,12 @@ function buildStatusPayload(input: {
   history: OutboundMessageRow[]
   unlockHistory: InspectionUnlockLogRow[]
   recipientOptions: ReportRecipientOption[]
+  deliveryCustomer: DeliveryCustomer | null
 }) {
   const inspection = input.project.inspections.find(
     (item) => item.inspectionId === input.inspectionId
   )
-  const defaults = resolveDefaultRecipients(input.project, input.recipientOptions)
+  const defaults = resolveDefaultRecipients(input.deliveryCustomer, input.recipientOptions)
   const currentVersionHistory = getCurrentVersionHistory(input.history, input.activeLink)
   const deliveryStatus = buildDeliveryStatus(input.activeLink, currentVersionHistory)
 
@@ -659,8 +665,10 @@ function buildStatusPayload(input: {
     inspectionStatus: inspection?.status ?? null,
     defaultRecipientEmail: defaults.primary,
     defaultExtraRecipients: defaults.extras,
-    ordererEmail: defaults.clientEmail,
-    clientEmail: defaults.clientEmail,
+    ordererEmail: defaults.primary,
+    clientEmail: normalizeEmail(input.project.clientEmail),
+    deliveryCustomer: input.deliveryCustomer,
+    customerContactUnavailable: input.deliveryCustomer === null,
     recipientOptions: input.recipientOptions,
     hasActiveLink: Boolean(input.activeLink),
     hasBeenSent: deliveryStatus === 'sent',
@@ -698,11 +706,16 @@ async function loadDeliveryStatus(
   const inspection = project?.inspections.find((item) => item.inspectionId === input.inspectionId)
   if (!project || !inspection) return null
 
-  const [activeLink, history, unlockHistory, recipientOptions] = await Promise.all([
+  const [activeLink, history, unlockHistory, recipientOptions, deliveryCustomer] = await Promise.all([
     getLatestReportLink(admin, input.orgId, input.inspectionId),
     getDeliveryHistory(admin, input.orgId, input.projectId, input.inspectionId),
     getUnlockHistory(admin, input.orgId, input.inspectionId),
     listReportRecipientOptions(admin, { ...input, project }),
+    getEbFollowUpDeliveryCustomerDefaults({ admin, ...input }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : ''
+      if (message === 'EB_FOLLOW_UP_CONFIGURATION' || message === 'EB_FOLLOW_UP_UNAVAILABLE') return null
+      throw error
+    }),
   ])
 
   return buildStatusPayload({
@@ -713,6 +726,7 @@ async function loadDeliveryStatus(
     history,
     unlockHistory,
     recipientOptions,
+    deliveryCustomer,
   })
 }
 
@@ -748,6 +762,9 @@ export async function GET(
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
+    if (message === 'EB_FOLLOW_UP_CONFIGURATION' || message === 'EB_FOLLOW_UP_UNAVAILABLE') {
+      return jsonError('Beställaruppgifterna kan inte hämtas just nu. Försök igen senare.', 503)
+    }
     return jsonError(message || 'Kunde inte läsa EB-utlåtandets status.', 500)
   }
 }
@@ -816,19 +833,25 @@ export async function POST(
       return jsonError('Fastställ utlåtandet innan du skickar det igen.', 409)
     }
 
-    const recipientOptions = await listReportRecipientOptions(admin, {
-      orgId: org.orgId,
-      projectId,
-      inspectionId,
-      project,
-    })
-    const defaultRecipients = resolveDefaultRecipients(project, recipientOptions)
+    const customerScope = { admin, orgId: org.orgId, projectId, inspectionId }
+    const deliveryCustomer = action === 'lock_only'
+      ? null
+      : await getEbFollowUpDeliveryCustomerDefaults(customerScope)
+    const enteredPrimary = body?.primary_recipient !== undefined ? body.primary_recipient : body?.recipientEmail
     const primaryRecipient =
       action === 'lock_only'
         ? null
-        : normalizeEmail(body?.primary_recipient ?? body?.recipientEmail) ?? defaultRecipients.primary
+        : enteredPrimary === undefined
+          ? deliveryCustomer?.email ?? null
+          : normalizeEmail(enteredPrimary)
     if (action !== 'lock_only' && !primaryRecipient) {
-      return jsonError('Ange en giltig huvudmottagare.', 400)
+      return jsonError('Ange en giltig e-postadress för beställaren.', 400)
+    }
+    if (deliveryCustomer?.established && primaryRecipient !== deliveryCustomer.email) {
+      return jsonError(
+        'Beställaradressen är redan registrerad. Använd Ändra beställaradress för en rättelse, eller lägg till andra mottagare under Övriga mottagare.',
+        409
+      )
     }
 
     const sendingFrozenRevision = Boolean(inspection.reportLockedAt)
@@ -869,6 +892,8 @@ export async function POST(
     const publicBaseUrl = resolvePublicBaseUrl(request)
     const publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(createdLink.token)}`
     let reportLockedAt = inspection.reportLockedAt
+    let customerEmail: string | null = null
+    let publicationPersisted = false
 
     try {
       if (!sendingFrozenRevision) {
@@ -885,6 +910,18 @@ export async function POST(
         linkId: createdLink.linkId,
         snapshotPayload,
       })
+      publicationPersisted = true
+      if (action !== 'lock_only') {
+        // The first delivery registers the named customer independently of the
+        // frozen report. The RPC never transfers an existing contact or order.
+        const registeredCustomer = await initializeEbFollowUpDeliveryCustomer({
+          ...customerScope, email: primaryRecipient, userId: org.userId,
+        })
+        if (registeredCustomer.email !== primaryRecipient) {
+          throw new Error('EB_DELIVERY_CUSTOMER_CHANGED')
+        }
+        customerEmail = registeredCustomer.email
+      }
       if (!sendingFrozenRevision) {
         await revokeOlderReportLinks(admin, {
           orgId: org.orgId,
@@ -893,7 +930,15 @@ export async function POST(
         })
       }
     } catch (publicationError) {
-      await revokeReportLink(admin, org.orgId, createdLink.linkId).catch(() => undefined)
+      if (!sendingFrozenRevision && publicationPersisted) {
+        // A successful first lock must retain its frozen version for retry if
+        // customer registration subsequently fails. No mail has been sent.
+        after(async () => {
+          await runInspectionReportPdfBatch({ origin: publicBaseUrl, linkId: createdLink.linkId, limit: 1 })
+        })
+      } else {
+        await revokeReportLink(admin, org.orgId, createdLink.linkId).catch(() => undefined)
+      }
       throw publicationError
     }
 
@@ -915,9 +960,6 @@ export async function POST(
         inspectionDate: inspection.date,
         detailsUrl: publicLink,
       }
-      const customerEmail = await resolveEbFollowUpDeliveryCustomer({
-        admin, orgId: org.orgId, projectId, inspectionId,
-      })
       const replyToEmail = await getReplyToEmail(admin, project.ownerProfileId)
 
       for (const recipient of recipients) {
@@ -1012,6 +1054,13 @@ export async function POST(
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
     if (message === 'EB_PROJECT_NOT_FOUND' || message === 'EB_INSPECTION_NOT_FOUND') {
       return jsonError('Besiktningen hittades inte.', 404)
+    }
+    if (message === 'EB_DELIVERY_CUSTOMER_CHANGED') {
+      return jsonError('Beställaradressen ändrades samtidigt. Öppna leveransvyn igen och kontrollera beställaren innan du skickar.', 409)
+    }
+    if (message === 'EB_FOLLOW_UP_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress för beställaren.', 400)
+    if (message === 'EB_FOLLOW_UP_CONFIGURATION' || message === 'EB_FOLLOW_UP_UNAVAILABLE') {
+      return jsonError('Beställaruppgifterna kan inte sparas just nu. Inget mejl har skickats. Försök igen senare.', 503)
     }
     if (message.includes('RESEND_API_KEY')) return jsonError('Servern saknar mejlkonfiguration.', 500)
     if (message.includes('ASSIGNMENTS_MAIL_FROM')) {

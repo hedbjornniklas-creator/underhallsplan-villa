@@ -29,9 +29,9 @@ export default async function EbFollowUpCustomerPage({ params }: {
   const base = `/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}`
   return <main className="mx-auto max-w-3xl space-y-5 px-5 py-8">
     <a href={`${base}/digital`} className="text-sm text-indigo-700 underline">Till digitalt utlåtande</a>
-    <h1 className="text-2xl font-semibold text-slate-900">Beställarkontakt</h1>
+    <h1 className="text-2xl font-semibold text-slate-900">Besiktningens beställare</h1>
     {settings
       ? <EbFollowUpCustomerSettings initialSettings={settings} endpoint={`/api${base}/follow-up-customer`} />
-      : <p>Databasuppdateringen för beställarkontakt behöver installeras innan kontakten kan visas eller ändras. Utlåtandet påverkas inte.</p>}
+      : <p>Beställaradressen kan inte visas eller ändras förrän systemets databas är uppdaterad. Kontakta administratören. Utlåtandet påverkas inte.</p>}
   </main>
 }

@@ -16,9 +16,10 @@ await new Promise((done, reject) => webpack({
   entry: { board: resolve('test/fixtures/renoapp-completion-view.tsx'), flow: resolve('test/fixtures/renoapp-classification-flow.tsx') },
   output: { path: output, filename: '[name].js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: { '@': resolve('src') } },
-  module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
+  module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }, { test: /\.css$/, type: 'asset/source' }] },
 }, (error, stats) => error || stats.hasErrors() ? reject(error ?? new Error(stats.toString('errors-only'))) : done()))
 const { css } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
+const flowCss = await readFile(resolve('node_modules/@xyflow/react/dist/style.css'), 'utf8')
 const bundles = { '/board.js': await readFile(resolve(output, 'board.js')), '/flow.js': await readFile(resolve(output, 'flow.js')) }
 const writes = []
 const action = { id: 'electrical', categoryId: null, key: 'electrical', label: 'Elinstallationer', description: 'Arbete med el.',
@@ -57,7 +58,7 @@ const server = createServer(async (request, response) => {
     response.end(JSON.stringify(responses[key])); return
   }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
-  response.end(`<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script src="/${request.url === '/flow' ? 'flow' : 'board'}.js"></script></body></html>`)
+  response.end(`<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${flowCss}\n${css}</style></head><body><div id="root"></div><script src="/${request.url === '/flow' ? 'flow' : 'board'}.js"></script></body></html>`)
 })
 await new Promise(done => server.listen(0, '127.0.0.1', done))
 let browser, page
@@ -92,7 +93,7 @@ try {
   }
   await page.setViewport({ width: 1440, height: 1000 })
   await page.goto(`${origin}/flow`, { waitUntil: 'networkidle0' })
-  await page.locator('::-p-xpath(//button[normalize-space(.)="Öppna"])').click()
+  await page.locator('[data-flow-id="action-type:electrical"] button[aria-label^="Öppna "]').click()
   await page.waitForSelector('aside')
   await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Redigera"])').click()
   await page.waitForSelector('aside input[type="checkbox"]')
@@ -114,7 +115,7 @@ try {
   assert.ok(Object.keys(writes[0].input).every(key => !key.startsWith('implies')))
   assert.match(await page.$eval('body', node => node.textContent), /Eldokumentation/)
   assert.match(await page.$eval('body', node => node.textContent), /Elinstallationsforetag/)
-  await page.locator('::-p-xpath(//button[normalize-space(.)="Öppna"])').click()
+  await page.locator('[data-flow-id="action-type:electrical"] button[aria-label^="Öppna "]').click()
   await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Redigera"])').click()
   await page.screenshot({ path: resolve(output, 'admin-1440.png') })
   await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Skapa kopia"])').click()

@@ -156,6 +156,7 @@ vite.config.ts.timestamp-*
 /tmp/renoapp-rules-ui/
 /tmp/eb-follow-up-ui/
 /tmp/eb-follow-up-portal-ui/
+/tmp/eb-report-delivery-ui/
 
 # next.js
 /.next/
@@ -166,6 +167,7 @@ vite.config.ts.timestamp-*
 
 # misc
 /tmp/renoapp-classification-ui/
+/tmp/renoapp-flow-editor-ui/
 .DS_Store
 *.pem
 

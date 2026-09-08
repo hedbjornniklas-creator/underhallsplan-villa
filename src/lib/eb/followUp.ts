@@ -4,7 +4,7 @@ export const EB_FOLLOW_UP_VAT_ORE = 11_980
 export const EB_FOLLOW_UP_VAT_RATE = 25
 /** Orders produce manual invoice material for Admin, never an automatically issued invoice. */
 export const EB_FOLLOW_UP_ADMIN_EMAIL = 'jn@hedbjorn.se'
-export const EB_FOLLOW_UP_TERMS_VERSION = '2026-09-07'
+export const EB_FOLLOW_UP_TERMS_VERSION = '2026-09-08'
 export const EB_FOLLOW_UP_SERVICE_DESCRIPTION =
   'Digital uppföljning av noteringarna i detta fastställda utlåtande. Du fördelar noteringar till entreprenörer som kan svara och lämna åtgärdsbilder. Tjänsten omfattar inte en ny besiktning, teknisk granskning eller godkännande av åtgärder.'
 

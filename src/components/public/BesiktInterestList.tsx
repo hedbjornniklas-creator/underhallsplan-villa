@@ -79,6 +79,7 @@ export default function BesiktInterestList() {
     <main className="mx-auto max-w-5xl px-5 py-8 text-stone-900">
       <Link href="/admin/access" className="text-sm underline">Till accesshanteringen</Link>
       <h1 className="mt-5 text-3xl font-semibold">Intresse för BesiktApp</h1>
+      <Link href="/admin/access/besiktapp-invitations" className="mt-3 inline-block text-blue-800 underline">Hantera inbjudningar till BesiktApp</Link>
       <p className="mt-3 text-stone-600">Följ upp nya kontakter. Konton och tillgång till tjänsten hanteras separat.</p>
       <div className="my-6 flex flex-wrap items-end gap-4">
         <label className="text-sm">Visa status<select value={filter} className={fieldClass} onChange={event => { setFilter(event.target.value); setPage(0) }}><option value="all">Alla</option>{Object.entries(INTEREST_STATUSES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>

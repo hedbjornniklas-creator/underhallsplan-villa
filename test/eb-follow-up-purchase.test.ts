@@ -48,6 +48,8 @@ before(async () => {
   await db.exec('alter table eb_remediation_access_links add column inspection_id uuid references inspections;')
   await db.exec(migration)
   await db.exec(migration)
+  await db.exec(read('docs/db/2026-09-08_04_eb_follow_up_platform_seller.sql'))
+  await db.exec(read('docs/db/2026-09-08_04_eb_follow_up_platform_seller.sql'))
   await db.query('insert into organizations(id) values($1)', [org])
   await db.exec(`create function test_reject_follow_up_email() returns trigger language plpgsql as $$
     begin if current_setting('test.reject_follow_up_email',true)='yes' then raise exception 'TEST_QUEUE_FAILURE'; end if; return new;end $$;
@@ -68,7 +70,7 @@ async function fixture() {
       [id, org, inspection, link, email, hash(id, '123456'), eligible, eligible ? 'encrypted-code' : null])).rows[0].result
   const verify = async (code = '123456', id = challenge) =>
     (await db.query<{ result: { verified: boolean; email?: string } }>('select eb_verify_follow_up_challenge($1,$2,$3) result', [id, link, hash(id, code)])).rows[0].result
-  const complete = async (id = challenge, email = 'buyer@example.test', create = true) => {
+  const complete = async (id = challenge, email = 'buyer@example.test', create = true, terms: string | null = shared.EB_FOLLOW_UP_TERMS_VERSION) => {
     const owner = randomUUID()
     return (await db.query<{ result: { orderId: string; encryptedResult: string; created: boolean } }>(
       'select eb_complete_follow_up_order($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) result', [
@@ -76,7 +78,7 @@ async function fixture() {
         { name: 'Seller', email: 'seller@example.test' },
         [{ noteId: note, snapshot: { originalNoteId: note, noteText: 'Published original' }, images: [{ filePath: `frozen/${id}/photo.jpg`, storageBucket: 'eb-follow-up-originals' }] }],
         { id: owner, tokenHash: `hash-${owner}`, expiresAt: new Date(Date.now()+180*86400_000).toISOString(), encryptedResult: `encrypted-url:${owner}` },
-        ['receipt','invoice','access'].map(kind => ({ kind, dedupeKey: `${kind}:${id}`, ciphertext: `encrypted-${kind}` })), create, '2026-09-07',
+        ['receipt','invoice','access'].map(kind => ({ kind, dedupeKey: `${kind}:${id}`, ciphertext: `encrypted-${kind}` })), create, terms,
       ])).rows[0].result
   }
   return { inspection, project, link, note, challenge, snapshot, request, verify, complete }
@@ -86,7 +88,7 @@ test('fixed inclusive price and all three explicit consents are validated before
   assert.equal(shared.EB_FOLLOW_UP_PRICE_ORE, 59900)
   assert.equal(shared.EB_FOLLOW_UP_NET_PRICE_ORE + shared.EB_FOLLOW_UP_VAT_ORE, shared.EB_FOLLOW_UP_PRICE_ORE)
   const valid = { name: 'Buyer', invoiceName: 'Recipient', invoiceAddress: 'Street1', invoicePostalCode: '12345', invoiceCity: 'City',
-    acceptTerms: true, requestImmediateStart: true, acceptInvoice: true, termsVersion: '2026-09-07', confirmedPriceOre: 59900 }
+    acceptTerms: true, requestImmediateStart: true, acceptInvoice: true, termsVersion: shared.EB_FOLLOW_UP_TERMS_VERSION, confirmedPriceOre: 59900 }
   assert.equal(shared.validateEbFollowUpBuyer(valid, 'buyer@example.test').email, 'buyer@example.test')
   for (const key of ['acceptTerms','requestImmediateStart','acceptInvoice']) {
     for (const value of [false, undefined, 'true']) assert.throws(() => shared.validateEbFollowUpBuyer({ ...valid, [key]: value }, 'buyer@example.test'), /CONSENT_REQUIRED/)
@@ -95,6 +97,18 @@ test('fixed inclusive price and all three explicit consents are validated before
     assert.throws(() => shared.validateEbFollowUpBuyer({ ...valid, ...changed }, 'buyer@example.test'), /OFFER_CHANGED/)
   }
   assert.throws(() => shared.validateEbFollowUpBuyer({ ...valid, invoiceAddress: '\nBcc: x@example.test' }, 'buyer@example.test'), /BUYER_INVALID/)
+})
+
+test('the central-seller revision rejects stale or missing consent without creating orders or invoice mail', async () => {
+  const f = await fixture()
+  await f.request()
+  await f.verify()
+  for (const terms of ['2026-09-07', null]) {
+    await assert.rejects(f.complete(f.challenge, 'buyer@example.test', true, terms), /CONSENT_REQUIRED/)
+  }
+  assert.equal((await db.query('select id from eb_follow_up_orders where inspection_id=$1', [f.inspection])).rows.length, 0)
+  assert.equal((await db.query("select id from eb_follow_up_email_outbox where kind='invoice' and order_id=$1", [f.challenge])).rows.length, 0)
+  assert.equal((await f.complete()).created, true)
 })
 
 test('challenge creation is rate-limited atomically and wrong addresses receive no email or eligibility result', async () => {
@@ -168,6 +182,24 @@ test('a new verified code recovers an existing order without rebilling; a differ
   const other = randomUUID()
   await f.request(other, 'replacement@example.test'); await f.verify('123456', other)
   await assert.rejects(f.complete(other, 'replacement@example.test'), /BUYER_MISMATCH/)
+})
+
+test('legacy paid orders retain their original seller and terms when recovered after the platform migration', async () => {
+  const f = await fixture()
+  const id = randomUUID()
+  const legacySeller = { name: 'Historical inspecting company', email: 'original-seller@example.test' }
+  await db.query(`insert into eb_follow_up_orders(id,org_id,eb_project_id,inspection_id,report_link_id,
+    report_snapshot,buyer_snapshot,seller_snapshot,terms_version,accept_terms,request_immediate_start,accept_invoice)
+    values($1,$2,$3,$4,$5,$6,$7,$8,'2026-09-07',true,true,true)`,
+    [id, org, f.project, f.inspection, f.link, f.snapshot, { name: 'Original buyer', email: 'buyer@example.test' }, legacySeller])
+  await f.request(); await f.verify()
+  const recovered = await f.complete(f.challenge, 'buyer@example.test', false, '2026-09-07')
+  assert.equal(recovered.orderId, id)
+  assert.equal(recovered.created, false)
+  const saved = (await db.query<{ seller_snapshot: unknown; terms_version: string }>(
+    'select seller_snapshot,terms_version from eb_follow_up_orders where id=$1', [id])).rows[0]
+  assert.deepEqual(saved, { seller_snapshot: legacySeller, terms_version: '2026-09-07' })
+  assert.equal((await db.query("select id from eb_follow_up_email_outbox where order_id=$1 and kind='invoice'", [id])).rows.length, 0)
 })
 
 test('a superseded or revoked report cannot activate a new purchase, even after code verification', async () => {
@@ -293,6 +325,7 @@ test('actual server keeps recovery verified when sales are off and returns only 
     '@/lib/eb/reportSnapshot': { getEbInspectionReportFromSnapshot: (snapshot: unknown) => snapshot },
     '@/lib/eb/followUpDelivery': { encryptEbFollowUpPayload: JSON.stringify, decryptEbFollowUpPayload: JSON.parse, escapeEbFollowUpHtml: (value: string) => value },
     '@/lib/eb/followUpCustomer': {},
+    '@/lib/eb/followUpSeller': { getEbFollowUpPlatformSeller: () => { throw new Error('Existing orders keep their seller') } },
     '@/lib/eb/customerSession': {
       readEbCustomerSession: async () => verified ? ({ orgId: org, inspectionId: inspection, email: buyer.email.toLowerCase(),
         kind: 'report', reportLinkId: link, challengeId: randomUUID(), code: '123456', expiresAt: Date.now() + 60_000 }) : null,
@@ -324,7 +357,7 @@ test('original-image preparation executes actual bounded copies and retains the 
     '@/lib/eb/followUp': shared,
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => { throw new Error('No real database') } },
     '@/lib/assignments/tokens': {}, '@/lib/eb/reportSnapshot': {}, '@/lib/eb/followUpDelivery': {},
-    '@/lib/eb/followUpCustomer': {}, '@/lib/eb/customerSession': {},
+    '@/lib/eb/followUpCustomer': {}, '@/lib/eb/customerSession': {}, '@/lib/eb/followUpSeller': {},
   }, ['createFrozenTasks'])
   const prepared = await server.createFrozenTasks({
     link: { org_id: org, inspection_id: inspection },

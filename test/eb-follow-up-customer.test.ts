@@ -60,23 +60,29 @@ function resolverFixture() {
   }
   const calls: Array<{ table: string; filters: Array<[string, unknown]> }> = []
   let failure: string | null = null
+  let rejection: { table: string; stage: 'from' | 'maybeSingle' } | null = null
   const admin = {
     from: (table: string) => {
       assert.ok(table in tables)
+      if (rejection?.table === table && rejection.stage === 'from') throw new TypeError('fetch failed')
       const filters: Array<[string, unknown]> = []
       calls.push({ table, filters })
       const query = {
         select: () => query,
         eq: (key: string, value: unknown) => { filters.push([key, value]); return query },
-        maybeSingle: async () => ({ data: tables[table].find(row => filters.every(([key, value]) => row[key] === value)) ?? null,
-          error: failure === table ? { code: '42P01', message: 'missing table' } : null }),
+        maybeSingle: async () => {
+          if (rejection?.table === table && rejection.stage === 'maybeSingle') throw new TypeError('fetch failed')
+          return { data: tables[table].find(row => filters.every(([key, value]) => row[key] === value)) ?? null,
+            error: failure === table ? { code: '42P01', message: 'missing table' } : null }
+        },
       }
       return query
     },
   }
   const input = { admin: admin as unknown as Parameters<typeof customer.resolveEbFollowUpCustomer>[0]['admin'],
     orgId: 'org', projectId: 'project', inspectionId: 'inspection' }
-  return { tables, calls, input, scope, fail: (table: string) => { failure = table } }
+  return { tables, calls, input, scope, fail: (table: string) => { failure = table },
+    reject: (table: string, stage: 'from' | 'maybeSingle') => { rejection = { table, stage } } }
 }
 
 test('server resolver verifies org/project/inspection, current assignment and actual accepted status', async () => {
@@ -109,6 +115,92 @@ test('delivery uses only the designated contact, freezes a paid owner, and fails
   f.tables.eb_follow_up_orders = []
   assert.equal(await customer.resolveEbFollowUpDeliveryCustomer(f.input), null)
   await assert.rejects(customer.resolveEbFollowUpCustomer(f.input), /EB_FOLLOW_UP_CONFIGURATION/)
+})
+
+test('delivery prefills accepted assignment then project, but suggestions never become purchase authority', async () => {
+  const f = resolverFixture()
+  f.tables.eb_projects[0].client_email = 'project@example.test'
+  assert.deepEqual(await customer.getEbFollowUpDeliveryCustomerDefaults(f.input), {
+    email: 'buyer@example.test', established: false, purchased: false,
+  })
+  assert.deepEqual(await customer.resolveEbFollowUpCustomer(f.input), { email: null, source: 'conflict' })
+  f.tables.eb_assignment_confirmations = []
+  assert.deepEqual(await customer.getEbFollowUpDeliveryCustomerDefaults(f.input), {
+    email: 'project@example.test', established: false, purchased: false,
+  })
+  assert.deepEqual(await customer.resolveEbFollowUpCustomer(f.input), { email: null, source: 'missing' })
+  f.tables.eb_projects[0].client_email = null
+  assert.deepEqual(await customer.getEbFollowUpDeliveryCustomerDefaults(f.input), {
+    email: null, established: false, purchased: false,
+  })
+  f.tables.eb_follow_up_customers.push({ ...f.scope, email: 'established@example.test' })
+  assert.deepEqual(await customer.getEbFollowUpDeliveryCustomerDefaults(f.input), {
+    email: 'established@example.test', established: true, purchased: false,
+  })
+  f.tables.eb_follow_up_orders.push({ ...f.scope, buyer_snapshot: { email: 'frozen@example.test' } })
+  assert.deepEqual(await customer.getEbFollowUpDeliveryCustomerDefaults(f.input), {
+    email: 'frozen@example.test', established: true, purchased: true,
+  })
+  for (const change of [{ orgId: 'other' }, { projectId: 'other' }, { inspectionId: 'other' }]) {
+    await assert.rejects(customer.getEbFollowUpDeliveryCustomerDefaults({ ...f.input, ...change }), /EB_INSPECTION_NOT_FOUND/)
+  }
+})
+
+test('delivery initialization passes only explicit server scope and returns authoritative RPC customer, not its requested address', async () => {
+  const f = resolverFixture()
+  const calls: Array<{ name: string; args: unknown }> = []
+  let result: { data: unknown; error: { code?: string; message?: string } | null } = {
+    data: { email: 'frozen@example.test', established: true, purchased: true }, error: null,
+  }
+  const admin = { rpc: async (name: string, args: unknown) => { calls.push({ name, args }); return result } }
+  const input = { ...f.input, admin: admin as unknown as typeof f.input.admin, email: ' NEW@example.test ', userId: 'inspector' }
+  assert.deepEqual(await customer.initializeEbFollowUpDeliveryCustomer(input), result.data)
+  assert.deepEqual(calls, [{ name: 'eb_initialize_follow_up_delivery_customer', args: {
+    p_org_id: 'org', p_project_id: 'project', p_inspection_id: 'inspection', p_email: 'new@example.test', p_actor: 'inspector',
+  } }])
+  await assert.rejects(customer.initializeEbFollowUpDeliveryCustomer({ ...input, email: 'invalid' }), /EB_FOLLOW_UP_EMAIL_INVALID/)
+  assert.equal(calls.length, 1)
+  for (const code of ['EB_INSPECTION_NOT_FOUND', 'EB_FOLLOW_UP_EMAIL_INVALID', 'EB_FOLLOW_UP_ACTOR_INVALID']) {
+    result = { data: null, error: { message: code } }
+    await assert.rejects(customer.initializeEbFollowUpDeliveryCustomer(input), new RegExp(code))
+  }
+  result = { data: null, error: { code: 'PGRST202' } }
+  await assert.rejects(customer.initializeEbFollowUpDeliveryCustomer(input), /EB_FOLLOW_UP_CONFIGURATION/)
+  for (const data of [null, {}, [], { established: false }, { established: true, purchased: 'false' }]) {
+    result = { data, error: null }
+    await assert.rejects(customer.initializeEbFollowUpDeliveryCustomer(input), /EB_FOLLOW_UP_UNAVAILABLE/)
+  }
+})
+
+test('delivery metadata normalizes thrown reads while retaining known scope/configuration errors', async () => {
+  for (const table of ['eb_follow_up_orders', 'eb_follow_up_customers', 'assignments']) {
+    for (const stage of ['from', 'maybeSingle'] as const) {
+      const f = resolverFixture()
+      f.reject(table, stage)
+      await assert.rejects(customer.getEbFollowUpDeliveryCustomerDefaults(f.input), { message: 'EB_FOLLOW_UP_UNAVAILABLE' })
+    }
+  }
+  const f = resolverFixture()
+  f.fail('eb_follow_up_customers')
+  await assert.rejects(customer.getEbFollowUpDeliveryCustomerDefaults(f.input), { message: 'EB_FOLLOW_UP_CONFIGURATION' })
+  await assert.rejects(customer.getEbFollowUpDeliveryCustomerDefaults({ ...resolverFixture().input, inspectionId: 'other' }),
+    { message: 'EB_INSPECTION_NOT_FOUND' })
+})
+
+test('delivery initialization normalizes synchronous and asynchronous RPC failures while retaining known errors', async () => {
+  const f = resolverFixture()
+  for (const rpc of [() => { throw new TypeError('fetch failed') }, async () => { throw new TypeError('fetch failed') }]) {
+    await assert.rejects(customer.initializeEbFollowUpDeliveryCustomer({ ...f.input,
+      admin: { rpc } as unknown as typeof f.input.admin, email: 'buyer@example.test', userId: 'inspector',
+    }), { message: 'EB_FOLLOW_UP_UNAVAILABLE' })
+  }
+  for (const code of ['EB_INSPECTION_NOT_FOUND', 'EB_FOLLOW_UP_EMAIL_INVALID', 'EB_FOLLOW_UP_ACTOR_INVALID', 'EB_FOLLOW_UP_CONFIGURATION']) {
+    const error = new Error(code)
+    await assert.rejects(customer.initializeEbFollowUpDeliveryCustomer({ ...f.input,
+      admin: { rpc: async () => { throw error } } as unknown as typeof f.input.admin,
+      email: 'buyer@example.test', userId: 'inspector',
+    }), failure => failure === error)
+  }
 })
 
 test('management links and copy are recipient-specific; normal and shared emails contain only a reading link', () => {
@@ -161,7 +253,7 @@ test('authenticated API requires module and org access, an explicit confirmation
   assert.equal((await route.GET(request(null), params)).headers.get('Cache-Control'), 'private, no-store')
 })
 
-test('settings show explicit consent for missing/conflicting contacts and never an edit control for a paid owner', () => {
+test('correction settings explain automatic delivery contact without an upsell decision and never edit a paid owner', () => {
   const Component = load<typeof Settings>('src/components/eb/EbFollowUpCustomerSettings.tsx', {}).default
   const settings: Customer.EbFollowUpCustomerSettings = {
     email: null, source: 'missing', projectEmail: 'project@example.test', assignmentEmail: null,
@@ -171,18 +263,23 @@ test('settings show explicit consent for missing/conflicting contacts and never 
     initialSettings: { ...settings, ...changes }, endpoint: '/scoped-api',
   }))
   const missing = render({})
-  assert.match(missing, /förifylld projektadress ger inte behörighet/)
+  assert.match(missing, /sparas automatiskt vid den första leveransen från Fastställ och leverera/)
+  assert.match(missing, /även utan uppdragsbekräftelse/)
+  assert.match(missing, /Ingen beställaradress är sparad/)
   assert.match(missing, /value="project@example.test"/)
   assert.match(missing, /type="checkbox"/)
   assert.match(missing, /disabled=""/)
-  assert.match(render({ source: 'conflict', assignmentEmail: 'buyer@example.test' }), /Nya beställningar är spärrade/)
+  assert.match(render({ source: 'conflict', assignmentEmail: 'buyer@example.test' }), /innehåller olika adresser/)
+  assert.doesNotMatch(missing, /Aktivera köp|Tillåt köp|Nya beställningar är spärrade/)
   const paid = render({ purchased: true, purchasedEmail: 'original@example.test' })
   assert.match(paid, /original@example.test/)
+  assert.match(paid, /Adressen kan inte ändras här efter ett köp/)
   assert.doesNotMatch(paid, /<form|<input|<button/)
 })
 
 const db = new PGlite()
 const migration = read('docs/db/2026-09-08_01_eb_follow_up_customer.sql')
+const deliveryMigration = read('docs/db/2026-09-08_03_eb_follow_up_delivery_customer.sql')
 const org = randomUUID(), actor = randomUUID()
 before(async () => {
   await db.exec(`create role anon; create role authenticated; create role service_role;
@@ -196,6 +293,8 @@ before(async () => {
     create table eb_follow_up_orders(id uuid primary key default gen_random_uuid(),org_id uuid,eb_project_id uuid,inspection_id uuid unique,buyer_snapshot jsonb);`)
   await db.exec(migration)
   await db.exec(migration)
+  await db.exec(deliveryMigration)
+  await db.exec(deliveryMigration)
   await db.query('insert into organizations values($1)', [org])
   await db.query('insert into profiles values($1)', [actor])
 })
@@ -212,22 +311,27 @@ async function sqlFixture() {
     'select eb_confirm_follow_up_customer($1,$2,$3,$4,$5)', [...scope, email, actor])
   const buy = async (email: string) => db.query('insert into eb_follow_up_orders(org_id,eb_project_id,inspection_id,buyer_snapshot) values($1,$2,$3,$4)',
     [org, project, inspection, { email }])
-  return { project, inspection, assignment, resolve, confirm, buy }
+  const initialize = async (email: string, scope = [org, project, inspection], userId: string | null = actor) =>
+    (await db.query<{ customer: Customer.EbFollowUpDeliveryCustomer }>(
+      'select eb_initialize_follow_up_delivery_customer($1,$2,$3,$4,$5) customer', [...scope, email, userId])).rows[0].customer
+  return { project, inspection, assignment, resolve, confirm, buy, initialize }
 }
 
 test('migration is repeatable and denies anonymous/authenticated direct access and RPCs, including direct service writes', async () => {
   for (const role of ['anon', 'authenticated']) {
-    const grants = (await db.query<{ read: boolean; write: boolean; confirm: boolean; resolve: boolean }>(`select
+    const grants = (await db.query<{ read: boolean; write: boolean; confirm: boolean; resolve: boolean; initialize: boolean }>(`select
       has_table_privilege($1,'eb_follow_up_customers','SELECT') as read,
       has_table_privilege($1,'eb_follow_up_customers','INSERT') as write,
       has_function_privilege($1,'eb_confirm_follow_up_customer(uuid,uuid,uuid,text,uuid)','EXECUTE') as confirm,
-      has_function_privilege($1,'eb_resolve_follow_up_customer_email(uuid,uuid,uuid)','EXECUTE') as resolve`, [role])).rows[0]
-    assert.deepEqual(grants, { read: false, write: false, confirm: false, resolve: false })
+      has_function_privilege($1,'eb_resolve_follow_up_customer_email(uuid,uuid,uuid)','EXECUTE') as resolve,
+      has_function_privilege($1,'eb_initialize_follow_up_delivery_customer(uuid,uuid,uuid,text,uuid)','EXECUTE') as initialize`, [role])).rows[0]
+    assert.deepEqual(grants, { read: false, write: false, confirm: false, resolve: false, initialize: false })
   }
-  const service = (await db.query<{ write: boolean; confirm: boolean }>(`select
+  const service = (await db.query<{ write: boolean; confirm: boolean; initialize: boolean }>(`select
     has_table_privilege('service_role','eb_follow_up_customers','INSERT') as write,
-    has_function_privilege('service_role','eb_confirm_follow_up_customer(uuid,uuid,uuid,text,uuid)','EXECUTE') as confirm`)).rows[0]
-  assert.deepEqual(service, { write: false, confirm: true })
+    has_function_privilege('service_role','eb_confirm_follow_up_customer(uuid,uuid,uuid,text,uuid)','EXECUTE') as confirm,
+    has_function_privilege('service_role','eb_initialize_follow_up_delivery_customer(uuid,uuid,uuid,text,uuid)','EXECUTE') as initialize`)).rows[0]
+  assert.deepEqual(service, { write: false, confirm: true, initialize: true })
 })
 
 test('SQL and TS policy agree for actual accepted statuses, absent acceptance and source disagreement', async () => {
@@ -270,4 +374,58 @@ test('explicit confirmation works for old locked reports, is audited, supersedes
   assert.deepEqual((await db.query('select * from eb_inspection_details where inspection_id=$1', [f.inspection])).rows[0], before)
   assert.deepEqual((await db.query<{ buyer_snapshot: { email: string } }>('select buyer_snapshot from eb_follow_up_orders where inspection_id=$1', [f.inspection])).rows[0].buyer_snapshot,
     { email: 'replacement@example.test' })
+})
+
+test('first delivery establishes its typed customer without an assignment, audits once and never changes a resend customer', async () => {
+  const f = await sqlFixture()
+  await db.query('delete from eb_assignment_confirmations where inspection_id=$1', [f.inspection])
+  await db.query('update eb_projects set client_email=null where id=$1', [f.project])
+  const before = (await db.query('select * from eb_inspection_details where inspection_id=$1', [f.inspection])).rows[0]
+  assert.equal(await f.resolve(), null)
+  assert.deepEqual(await f.initialize(' TYPED@example.test '), { email: 'typed@example.test', established: true, purchased: false })
+  assert.equal(await f.resolve(), 'typed@example.test')
+  assert.deepEqual(await f.initialize('different@example.test'), { email: 'typed@example.test', established: true, purchased: false })
+  const audit = (await db.query('select previous_email,email,confirmed_by from eb_follow_up_customer_audit where inspection_id=$1', [f.inspection])).rows
+  assert.deepEqual(audit, [{ previous_email: null, email: 'typed@example.test', confirmed_by: actor }])
+  assert.deepEqual((await db.query('select * from eb_inspection_details where inspection_id=$1', [f.inspection])).rows[0], before)
+  // Only the deliberate correction operation may change an established customer before purchase.
+  await f.confirm('corrected@example.test')
+  assert.deepEqual(await f.initialize('typed@example.test'), { email: 'corrected@example.test', established: true, purchased: false })
+})
+
+test('delivery initialization validates scope, email and actor before any contact or audit is written', async () => {
+  const f = await sqlFixture()
+  for (const scope of [[randomUUID(), f.project, f.inspection], [org, randomUUID(), f.inspection], [org, f.project, randomUUID()]]) {
+    await assert.rejects(f.initialize('buyer@example.test', scope), /INSPECTION_NOT_FOUND/)
+  }
+  for (const userId of [null, randomUUID()]) {
+    await assert.rejects(f.initialize('buyer@example.test', undefined, userId), /ACTOR_INVALID/)
+  }
+  for (const invalid of ['', 'not-an-email', 'a'.repeat(255) + '@example.test']) {
+    await assert.rejects(f.initialize(invalid), /EMAIL_INVALID/)
+  }
+  assert.equal((await db.query('select * from eb_follow_up_customers where inspection_id=$1', [f.inspection])).rows.length, 0)
+  assert.equal((await db.query('select * from eb_follow_up_customer_audit where inspection_id=$1', [f.inspection])).rows.length, 0)
+})
+
+test('serialized delivery/purchase outcomes preserve frozen buyers and prevent a stale accepted customer buying after initialization', async () => {
+  const purchaseFirst = await sqlFixture()
+  await purchaseFirst.buy('buyer@example.test')
+  assert.deepEqual(await purchaseFirst.initialize('different@example.test'), { email: 'buyer@example.test', established: true, purchased: true })
+  assert.equal((await db.query('select * from eb_follow_up_customers where inspection_id=$1', [purchaseFirst.inspection])).rows.length, 0)
+  const deliveryFirst = await sqlFixture()
+  await deliveryFirst.initialize('typed@example.test')
+  await assert.rejects(deliveryFirst.buy('buyer@example.test'), /BUYER_MISMATCH/)
+  await deliveryFirst.buy('typed@example.test')
+  assert.deepEqual(await deliveryFirst.initialize('different@example.test'), { email: 'typed@example.test', established: true, purchased: true })
+  // PGlite uses a single connection; verify both ordering outcomes above plus the
+  // exact DB lock shared by initialization, correction and order validation.
+  for (const signature of [
+    'eb_initialize_follow_up_delivery_customer(uuid,uuid,uuid,text,uuid)',
+    'eb_confirm_follow_up_customer(uuid,uuid,uuid,text,uuid)',
+    'eb_guard_follow_up_order_customer()',
+  ]) {
+    const definition = (await db.query<{ definition: string }>('select pg_get_functiondef($1::regprocedure) definition', [signature])).rows[0].definition
+    assert.match(definition, /pg_advisory_xact_lock\(hashtextextended\('eb-follow-up-order:'/)
+  }
 })

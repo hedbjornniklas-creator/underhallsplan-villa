@@ -13,6 +13,7 @@ import {
   type EbFollowUpEmail,
 } from '@/lib/eb/followUpDelivery'
 import { resolveEbFollowUpCustomer } from '@/lib/eb/followUpCustomer'
+import { getEbFollowUpPlatformSeller } from '@/lib/eb/followUpSeller'
 import { readEbCustomerSession, setEbCustomerSession, type EbCustomerSession } from '@/lib/eb/customerSession'
 
 const ORIGINALS_BUCKET = 'eb-follow-up-originals'
@@ -21,10 +22,6 @@ const GENERIC_CODE_MESSAGE = 'Om adressen tillhör beställaren skickas en engå
 type OrderRow = {
   id: string; org_id: string; eb_project_id: string; inspection_id: string; report_link_id: string;
   buyer_snapshot: EbFollowUpBuyer; seller_snapshot: EbFollowUpSeller; withdrawal_requested_at: string | null;
-}
-
-function text(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
 export function ebFollowUpBaseUrl(requestOrigin?: string): string {
@@ -112,25 +109,6 @@ async function loadContextForLink(selector: { tokenHash: string } | InspectionOf
     order: orderResult.data as OrderRow | null }
 }
 
-async function loadSeller(orgId: string): Promise<EbFollowUpSeller | null> {
-  const admin = createFollowUpAdminClient()
-  const { data: org, error } = await admin.from('organizations').select('name,created_by,eb_follow_up_seller').eq('id', orgId).maybeSingle()
-  if (error) throwOfferReadError(error)
-  if (!org) return null
-  const { data: profile, error: profileError } = org.created_by ? await admin.from('profiles')
-    .select('company_name,company_orgno,company_address,company_postal_code,company_city,email,phone').eq('id', org.created_by).maybeSingle()
-    : { data: null, error: null }
-  if (profileError) throwOfferReadError(profileError)
-  const configured = org.eb_follow_up_seller as Partial<EbFollowUpSeller> | null
-  const name = text(configured?.name) || text(profile?.company_name) || text(org.name)
-  const orgNumber = text(configured?.orgNumber) || text(profile?.company_orgno)
-  const address = text(configured?.address) || [text(profile?.company_address),
-    [text(profile?.company_postal_code), text(profile?.company_city)].filter(Boolean).join(' ')].filter(Boolean).join(', ')
-  const email = normalizeEbFollowUpEmail(configured?.email) || normalizeEbFollowUpEmail(profile?.email)
-  if (!name || !orgNumber || !address || !email) return null
-  return { name, orgNumber, address, email, phone: text(configured?.phone) || text(profile?.phone) }
-}
-
 export async function getEbFollowUpOffer(token: string): Promise<EbFollowUpOffer> {
   return evaluateOffer(() => loadContext(token))
 }
@@ -153,13 +131,13 @@ async function evaluateOffer(load: () => ReturnType<typeof loadContext>): Promis
     if (process.env.EB_FOLLOW_UP_ENABLED !== 'true') return { ...base, reason: 'Tjänsten är inte aktiverad för nya beställningar.' }
     if (!context.latest) return { ...base, reason: 'Öppna den senast publicerade versionen av utlåtandet för att beställa.' }
     if (!followUpNotes(context).length) return { ...base, reason: 'Utlåtandet innehåller inga noteringar att följa upp.' }
-    base.seller = await loadSeller(context.link.org_id)
+    base.seller = getEbFollowUpPlatformSeller()
     if (!base.seller) return { ...base, reason: 'Säljaruppgifterna behöver kompletteras innan tjänsten kan beställas.' }
     if (!process.env.ASSIGNMENTS_MAIL_FROM?.trim() || !process.env.RESEND_API_KEY?.trim()) {
       return { ...base, reason: 'E-postutskicken för tjänsten är inte konfigurerade.' }
     }
     if (!(await eligibleCustomerEmails(context)).size) {
-      return { ...base, reason: 'Bekräfta beställarkontakten för denna besiktning innan tjänsten kan beställas.' }
+      return { ...base, reason: 'Beställarens e-postadress registreras när utlåtandet levereras.' }
     }
     return { ...base, available: true }
   } catch (error) {
@@ -205,7 +183,7 @@ export async function getEbFollowUpCustomerState(token: string) {
   let session: EbCustomerSession | null
   try { session = await customerSessionFor(context) }
   catch { return { verified: false, offer: null, accessAvailable: false, retryable: true } }
-  if (session) return { verified: true, offer: { ...offer, reason: offer.available ? null : 'Tjänsten kan inte beställas just nu. Kontakta besiktningsmannen vid frågor.' } }
+  if (session) return { verified: true, offer: { ...offer, reason: offer.available ? null : 'Tjänsten kan inte beställas just nu. Försök igen senare.' } }
   return { verified: false, offer: null, accessAvailable: offer.available || offer.alreadyActive, retryable: offer.retryable === true }
 }
 
@@ -356,7 +334,7 @@ export async function completeEbFollowUpOrder(input: { token: string; input: Rec
     if (process.env.EB_FOLLOW_UP_ENABLED !== 'true' || !context.latest) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
     if (!followUpNotes(context).length) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
     buyer = validateEbFollowUpBuyer(payload, email)
-    seller = await loadSeller(context.link.org_id) ?? undefined
+    seller = getEbFollowUpPlatformSeller() ?? undefined
     if (!seller || !process.env.ASSIGNMENTS_MAIL_FROM?.trim() || !process.env.RESEND_API_KEY?.trim()) throw new Error('EB_FOLLOW_UP_CONFIGURATION')
   }
   if (!buyer || !seller || buyer.email.toLowerCase() !== email) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')

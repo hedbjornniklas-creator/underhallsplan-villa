@@ -1,8 +1,10 @@
 ﻿'use client'
 
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import RenoAppAiFlowDrawer from '@/components/renoapp/admin/RenoAppAiFlowDrawer'
+import RenoAppFlowCanvas from '@/components/renoapp/admin/RenoAppFlowCanvas'
+import type { FlowNode, FlowNodeTone, FlowSource } from '@/lib/renoapp/flowEditor'
 
 type ActionTypeItem = {
   id: string
@@ -32,6 +34,7 @@ type RequirementItem = {
   sortOrder: number
   isRequired: boolean
   note: string | null
+  phase?: 'before_required' | 'before_conditional' | 'during_execution' | 'after_completion'
 }
 
 type ActionTypeGroup = {
@@ -152,33 +155,6 @@ type ReviewFlagLinkItem = {
   isActive: boolean
 }
 
-type FlowNodeTone = 'stone' | 'sky' | 'emerald' | 'amber' | 'rose' | 'violet'
-
-type FlowNodeRef =
-  | { type: 'actionType'; actionTypeId: string }
-  | { type: 'rootQuestion'; actionTypeId: string; questionId: string }
-  | { type: 'rootRequirement'; actionTypeId: string; documentTypeId: string }
-  | { type: 'rootParticipant'; actionTypeId: string; participantRoleId: string }
-  | { type: 'question'; questionId: string }
-  | { type: 'option'; questionId: string; optionId: string }
-  | { type: 'optionQuestionTrigger'; questionId: string; optionId: string; targetQuestionId: string }
-  | { type: 'optionDocumentTrigger'; questionId: string; optionId: string; targetDocumentTypeId: string }
-  | { type: 'optionParticipantTrigger'; questionId: string; optionId: string; targetParticipantRoleId: string }
-  | { type: 'optionReviewFlagTrigger'; questionId: string; optionId: string; targetReviewFlagId: string }
-  | { type: 'actionTypeReviewFlag'; actionTypeId: string; targetReviewFlagId: string }
-  | { type: 'documentReviewFlag'; documentTypeId: string; targetReviewFlagId: string }
-  | { type: 'participantReviewFlag'; participantRoleId: string; targetReviewFlagId: string }
-  | { type: 'status' }
-
-type FlowNode = {
-  id: string
-  kind: 'root' | 'question' | 'option' | 'document' | 'participant' | 'flag' | 'status'
-  title: string
-  badges: string[]
-  tone: FlowNodeTone
-  children: FlowNode[]
-  ref: FlowNodeRef
-}
 
 type AddType = 'question' | 'option' | 'document' | 'participant' | 'flag'
 type ModalMode = 'summary' | 'edit' | 'add'
@@ -439,24 +415,6 @@ function labelForContractorRequirement(value: ActionTypeItem['contractorRequirem
   return 'Inget generellt krav'
 }
 
-function labelForNodeKind(value: FlowNode['kind']) {
-  if (value === 'root') return 'Renoveringstyp'
-  if (value === 'question') return 'Fråga'
-  if (value === 'option') return 'Svar'
-  if (value === 'document') return 'Underlag'
-  if (value === 'participant') return 'Medverkande'
-  if (value === 'flag') return 'Flagga'
-  return 'Status'
-}
-
-function toneClasses(tone: FlowNodeTone) {
-  if (tone === 'sky') return 'border-sky-200 bg-sky-50 text-sky-900'
-  if (tone === 'emerald') return 'border-emerald-200 bg-emerald-50 text-emerald-900'
-  if (tone === 'amber') return 'border-amber-200 bg-amber-50 text-amber-900'
-  if (tone === 'rose') return 'border-rose-200 bg-rose-50 text-rose-900'
-  if (tone === 'violet') return 'border-violet-200 bg-violet-50 text-violet-900'
-  return 'border-stone-300 bg-white text-stone-900'
-}
 
 function collectExpandableNodeIds(nodes: FlowNode[]) {
   const ids: string[] = []
@@ -501,6 +459,11 @@ function questionToRequestPayload(question: QuestionItem) {
   }
 }
 
+function labelForNodeKind(value: FlowNode['kind']) {
+  return { root: 'Renoveringstyp', question: 'Fråga', option: 'Svar', document: 'Underlag',
+    participant: 'Medverkande', flag: 'Flagga', status: 'Status' }[value]
+}
+
 function createDuplicateQuestionDraft(question: QuestionItem): QuestionDraft {
   return {
     key: '',
@@ -535,81 +498,6 @@ function createQuestionOptionDraftsFromQuestion(question: QuestionItem): OptionD
   )
 }
 
-function FlowNodeCard({
-  node,
-  expanded,
-  onToggle,
-  onOpen,
-}: {
-  node: FlowNode
-  expanded: boolean
-  onToggle: () => void
-  onOpen: () => void
-}) {
-  const expandable = node.children.length > 0
-
-  return (
-    <div className={cn('w-[158px] rounded-md border px-2.5 py-2 shadow-sm', toneClasses(node.tone))}>
-      <div className="flex items-start justify-between gap-2">
-        <button type="button" onClick={onOpen} className="min-w-0 text-left">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">{labelForNodeKind(node.kind)}</div>
-          <div className="mt-1 text-[13px] font-semibold leading-4">{node.title}</div>
-        </button>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={onOpen} className="rounded border border-current/15 bg-white/80 px-1.5 py-0.5 text-[9px] font-semibold">
-            Öppna
-          </button>
-          {expandable ? (
-            <button type="button" onClick={onToggle} className="rounded border border-current/15 bg-white/80 px-1.5 py-0.5 text-[9px] font-semibold" aria-expanded={expanded}>
-              {expanded ? '-' : '+'}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-1">
-        {node.badges.map((badge) => (
-          <span key={badge} className="rounded-full border border-current/15 bg-white/80 px-1.5 py-0.5 text-[9px] font-semibold">
-            {badge}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function HorizontalBranch({
-  node,
-  expandedNodeIds,
-  onToggle,
-  onOpen,
-}: {
-  node: FlowNode
-  expandedNodeIds: string[]
-  onToggle: (id: string) => void
-  onOpen: (node: FlowNode) => void
-}) {
-  const expanded = expandedNodeIds.includes(node.id)
-
-  return (
-    <div className="flex items-start gap-3">
-      <FlowNodeCard node={node} expanded={expanded} onToggle={() => onToggle(node.id)} onOpen={() => onOpen(node)} />
-      {node.children.length > 0 && expanded ? (
-        <div className="mt-5 flex min-w-0 items-start">
-          <div className="mr-3 mt-5 h-px w-5 bg-stone-300" />
-          <div className="relative space-y-3 border-l border-stone-300 pl-4">
-            {node.children.map((child) => (
-              <div key={child.id} className="relative">
-                <div className="absolute left-[-16px] top-5 h-px w-4 bg-stone-300" />
-                <HorizontalBranch node={child} expandedNodeIds={expandedNodeIds} onToggle={onToggle} onOpen={onOpen} />
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  )
-}
 
 function ModalField({
   label,
@@ -821,6 +709,7 @@ export default function RenoAppFlowBuilderPage() {
   const [modalMode, setModalMode] = useState<ModalMode>('summary')
   const [modalError, setModalError] = useState<string | null>(null)
   const [modalSaving, setModalSaving] = useState(false)
+  const nodeActionInFlight = useRef(false)
   const [addType, setAddType] = useState<AddType | null>(null)
   const [addMode, setAddMode] = useState<'existing' | 'new'>('existing')
   const [existingTargetId, setExistingTargetId] = useState('')
@@ -1148,6 +1037,48 @@ export default function RenoAppFlowBuilderPage() {
   }, [documentTypeMap, participantRoleMap, questionMap, reviewFlagLinks, reviewFlagMap, rootParticipants, rootQuestions, rootRequirements, selectedActionTypeId])
 
   const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(flowRootChildren), [flowRootChildren])
+
+  const diagramRoot = useMemo<FlowNode | null>(() => {
+    if (!selectedAction) return null
+    const attachSource = (node: FlowNode): FlowNode => {
+      const ref = node.ref
+      let source: FlowSource | undefined
+      if (ref.type === 'rootQuestion') {
+        const link = rootQuestions.find(item => item.questionId === ref.questionId)
+        if (link) source = { kind: 'action_question', id: link.id, parentId: ref.actionTypeId }
+      } else if (ref.type === 'rootRequirement') {
+        const link = rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)
+        if (link) source = { kind: 'action_document', id: link.id, parentId: ref.actionTypeId }
+      } else if (ref.type === 'rootParticipant') {
+        const link = rootParticipants.find(item => item.participantRoleId === ref.participantRoleId)
+        if (link) source = { kind: 'action_participant', id: link.id, parentId: ref.actionTypeId }
+      } else if (ref.type === 'optionQuestionTrigger' || ref.type === 'optionDocumentTrigger'
+        || ref.type === 'optionParticipantTrigger' || ref.type === 'optionReviewFlagTrigger') {
+        const option = questionMap.get(ref.questionId)?.options.find(item => item.id === ref.optionId)
+        const trigger = option?.triggers.find(item => item.isActive && (
+          (ref.type === 'optionQuestionTrigger' && item.questionId === ref.targetQuestionId)
+          || (ref.type === 'optionDocumentTrigger' && item.documentTypeId === ref.targetDocumentTypeId)
+          || (ref.type === 'optionParticipantTrigger' && item.participantRoleId === ref.targetParticipantRoleId)
+          || (ref.type === 'optionReviewFlagTrigger' && item.reviewFlagId === ref.targetReviewFlagId)
+        ))
+        if (trigger) source = { kind: 'option_trigger', id: trigger.id, parentId: ref.optionId }
+      } else if (ref.type === 'actionTypeReviewFlag' || ref.type === 'documentReviewFlag' || ref.type === 'participantReviewFlag') {
+        const link = reviewFlagLinks.find(item => item.isActive && item.reviewFlagId === ref.targetReviewFlagId && (
+          (ref.type === 'actionTypeReviewFlag' && item.actionTypeId === ref.actionTypeId)
+          || (ref.type === 'documentReviewFlag' && item.documentTypeId === ref.documentTypeId)
+          || (ref.type === 'participantReviewFlag' && item.participantRoleId === ref.participantRoleId)
+        ))
+        const parentId = ref.type === 'actionTypeReviewFlag' ? ref.actionTypeId
+          : ref.type === 'documentReviewFlag' ? ref.documentTypeId : ref.participantRoleId
+        if (link) source = { kind: 'flag_link', id: link.id, parentId }
+      }
+      return { ...node, source, children: node.children.map(attachSource) }
+    }
+    return { id: `action-type:${selectedAction.id}`, kind: 'root', title: selectedAction.label,
+      badges: [`${rootQuestions.length} frågor`, `${rootRequirements.length} underlag`, `${rootParticipants.length} medverkande`],
+      tone: 'stone', children: flowRootChildren.map(attachSource),
+      ref: { type: 'actionType', actionTypeId: selectedAction.id } }
+  }, [selectedAction, flowRootChildren, rootQuestions, rootRequirements, rootParticipants, questionMap, reviewFlagLinks])
 
   const openNodeModal = (node: FlowNode, nextMode: ModalMode = 'summary') => {
     setActiveNode(node)
@@ -1703,11 +1634,12 @@ export default function RenoAppFlowBuilderPage() {
     }
   }
 
-  const removeConnection = async () => {
-    if (!activeNode) return
+  const removeConnection = async (node = activeNode) => {
+    if (!node || nodeActionInFlight.current) return
+    nodeActionInFlight.current = true
     setModalSaving(true)
     setModalError(null)
-    const ref = activeNode.ref
+    const ref = node.ref
 
     try {
       if (ref.type === 'rootQuestion') {
@@ -1758,13 +1690,15 @@ export default function RenoAppFlowBuilderPage() {
     } catch (removeError) {
       setModalError(removeError instanceof Error ? removeError.message : 'Kunde inte ta bort kopplingen.')
     } finally {
+      nodeActionInFlight.current = false
       setModalSaving(false)
     }
   }
 
-  const deleteOptionNode = async () => {
-    if (!activeNode || activeNode.ref.type !== 'option') return
-    const ref = activeNode.ref
+  const deleteOptionNode = async (node = activeNode) => {
+    if (!node || node.ref.type !== 'option' || nodeActionInFlight.current) return
+    nodeActionInFlight.current = true
+    const ref = node.ref
     setModalSaving(true)
     setModalError(null)
 
@@ -1780,17 +1714,19 @@ export default function RenoAppFlowBuilderPage() {
     } catch (deleteError) {
       setModalError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera svarsalternativet.')
     } finally {
+      nodeActionInFlight.current = false
       setModalSaving(false)
     }
   }
 
-  const duplicateActiveNode = async () => {
-    if (!activeNode) return
+  const duplicateActiveNode = async (node = activeNode) => {
+    if (!node || nodeActionInFlight.current) return
+    nodeActionInFlight.current = true
     setModalSaving(true)
     setModalError(null)
 
     try {
-      const ref = activeNode.ref
+      const ref = node.ref
       if (ref.type === 'option') {
         const question = questionMap.get(ref.questionId)
         const option = question?.options.find((item) => item.id === ref.optionId)
@@ -1868,8 +1804,8 @@ export default function RenoAppFlowBuilderPage() {
               actionTypeId: ref.actionTypeId,
               questionId: payload.item.id,
               isEnabled: true,
-              isRequired: questionLinkDraft.isRequired,
-              sortOrder: Number(questionLinkDraft.sortOrder || 100) + 10,
+              isRequired: rootQuestions.find(item => item.questionId === ref.questionId)?.isRequired ?? true,
+              sortOrder: (rootQuestions.find(item => item.questionId === ref.questionId)?.sortOrder ?? 100) + 10,
             }),
           })
           const linkPayload = await readJson<{ error?: string }>(linkResponse)
@@ -1914,9 +1850,10 @@ export default function RenoAppFlowBuilderPage() {
               actionTypeId: ref.actionTypeId,
               documentTypeId: payload.item.id,
               isEnabled: true,
-              isRequired: requirementLinkDraft.isRequired,
-              note: requirementLinkDraft.note || null,
-              sortOrder: Number(requirementLinkDraft.sortOrder || 100) + 10,
+              isRequired: rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.isRequired ?? true,
+              note: rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.note ?? null,
+              phase: rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.phase,
+              sortOrder: (rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.sortOrder ?? 100) + 10,
             }),
           })
           const linkPayload = await readJson<{ error?: string }>(linkResponse)
@@ -1961,8 +1898,8 @@ export default function RenoAppFlowBuilderPage() {
               actionTypeId: ref.actionTypeId,
               participantRoleId: payload.item.id,
               isEnabled: true,
-              isRequired: participantLinkDraft.isRequired,
-              sortOrder: Number(participantLinkDraft.sortOrder || 100) + 10,
+              isRequired: rootParticipants.find(item => item.participantRoleId === ref.participantRoleId)?.isRequired ?? true,
+              sortOrder: (rootParticipants.find(item => item.participantRoleId === ref.participantRoleId)?.sortOrder ?? 100) + 10,
             }),
           })
           const linkPayload = await readJson<{ error?: string }>(linkResponse)
@@ -2031,17 +1968,19 @@ export default function RenoAppFlowBuilderPage() {
     } catch (duplicateError) {
       setModalError(duplicateError instanceof Error ? duplicateError.message : 'Kunde inte duplicera objektet.')
     } finally {
+      nodeActionInFlight.current = false
       setModalSaving(false)
     }
   }
 
-  const deleteActiveObject = async () => {
-    if (!activeNode) return
+  const deleteActiveObject = async (node = activeNode) => {
+    if (!node || nodeActionInFlight.current) return
+    nodeActionInFlight.current = true
     setModalSaving(true)
     setModalError(null)
 
     try {
-      const ref = activeNode.ref
+      const ref = node.ref
       if (ref.type === 'actionType') {
         const response = await fetch('/api/renoapp/admin/action-types', {
           method: 'DELETE',
@@ -2098,6 +2037,7 @@ export default function RenoAppFlowBuilderPage() {
     } catch (deleteError) {
       setModalError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera objektet.')
     } finally {
+      nodeActionInFlight.current = false
       setModalSaving(false)
     }
   }
@@ -2551,11 +2491,7 @@ export default function RenoAppFlowBuilderPage() {
     <main className="w-full px-4 pb-6 pt-3 md:px-6">
       {error ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
 
-      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 lg:hidden">
-        Flödesvisaren är byggd för större skärmar.
-      </div>
-
-      <div className="hidden space-y-3 lg:block">
+      <div className="min-w-0 space-y-3">
         <div className="border-b border-stone-200 pb-2">
           <div className="flex flex-wrap items-center gap-1.5">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Sök renoveringstyp..." className="mr-2 w-48 rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-900" />
@@ -2597,8 +2533,8 @@ export default function RenoAppFlowBuilderPage() {
           <div className="rounded-md border border-dashed border-stone-300 bg-stone-50 px-6 py-10 text-center text-sm text-stone-600">Välj en renoveringstyp ovan.</div>
         ) : (
           <>
-            <div className="flex items-center justify-between border-b border-stone-200 pb-2 text-sm">
-              <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-2 text-sm">
+              <div className="flex min-w-0 flex-wrap items-center gap-6 [overflow-wrap:anywhere]">
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Namn</div>
                   <div className="mt-1 font-semibold text-stone-900">{selectedAction.label}</div>
@@ -2614,30 +2550,37 @@ export default function RenoAppFlowBuilderPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-md border border-stone-200 bg-slate-100 px-4 py-4">
-              <div className="min-w-max">
-                <div className="flex items-start gap-4">
-                  <FlowNodeCard
-                    node={{ id: `action-type:${selectedAction.id}`, kind: 'root', title: selectedAction.label, badges: [`${rootQuestions.length} frågor`, `${rootRequirements.length} underlag`, `${rootParticipants.length} medverkande`], tone: 'stone', children: flowRootChildren, ref: { type: 'actionType' as const, actionTypeId: selectedAction.id } }}
-                    expanded
-                    onToggle={() => setExpandedNodeIds((current) => (current.length === 0 ? allExpandableNodeIds : []))}
-                    onOpen={() => openNodeModal({ id: `action-type:${selectedAction.id}`, kind: 'root', title: selectedAction.label, badges: [`${rootQuestions.length} frågor`, `${rootRequirements.length} underlag`, `${rootParticipants.length} medverkande`], tone: 'stone', children: flowRootChildren, ref: { type: 'actionType' as const, actionTypeId: selectedAction.id } })}
-                  />
-
-                  <div className="mt-6 h-px w-6 bg-stone-300" />
-
-                  <div className="space-y-3">
-                    {loading ? (
-                      <div className="rounded-md border border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">Laddar flöde...</div>
-                    ) : flowRootChildren.length > 0 ? (
-                      flowRootChildren.map((node) => <HorizontalBranch key={node.id} node={node} expandedNodeIds={expandedNodeIds} onToggle={toggleNode} onOpen={openNodeModal} />)
-                    ) : (
-                      <div className="rounded-md border border-dashed border-stone-300 bg-white px-4 py-3 text-sm text-stone-600">Inga frågor, underlag eller medverkande är kopplade ännu.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+            {diagramRoot ? <RenoAppFlowCanvas
+              root={diagramRoot} expandedIds={expandedNodeIds}
+              disabled={loading || modalSaving || Boolean(activeNode)}
+              onToggle={id => id === diagramRoot.id
+                ? setExpandedNodeIds(current => current.length ? [] : allExpandableNodeIds)
+                : toggleNode(id)}
+              onOpen={openNodeModal}
+              onReload={() => loadData(selectedActionTypeId)}
+              onCopy={node => {
+                const message = node.kind === 'root'
+                  ? 'Skapa en kopia av renoveringstypens inställningar utan kopplingar?'
+                  : node.kind === 'question' || node.kind === 'option'
+                    ? 'Skapa en kopia här? Frågans svar kopieras, men redan kopplade underlag, medverkande och följdfrågor är fortsatt delade.'
+                    : `Skapa en fristående kopia av "${node.title}" på samma plats?`
+                if (!window.confirm(message)) return
+                openNodeModal(node)
+                void duplicateActiveNode(node)
+              }}
+              onRemove={node => {
+                const message = node.kind === 'root'
+                  ? 'Radera renoveringstypen överallt? Alla dess flödeskopplingar tas bort.'
+                  : node.kind === 'option'
+                    ? 'Radera detta svar och dess kopplingar? Detta gäller alla flöden som använder frågan.'
+                    : 'Ta bort denna koppling? Själva frågan eller underlaget finns kvar. Kopplingar på delade svar, underlag och medverkande ändras i alla flöden som använder dem.'
+                if (!window.confirm(message)) return
+                openNodeModal(node)
+                if (node.kind === 'root') void deleteActiveObject(node)
+                else if (node.kind === 'option') void deleteOptionNode(node)
+                else void removeConnection(node)
+              }}
+            /> : null}
           </>
         )}
       </div>
@@ -2653,8 +2596,8 @@ export default function RenoAppFlowBuilderPage() {
       ) : null}
 
       {activeNode ? (
-        <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-3xl border-l border-stone-200 bg-white shadow-2xl lg:block">
-          <div className="h-full overflow-y-auto">
+        <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl border-l border-stone-200 bg-white shadow-2xl">
+          <fieldset disabled={modalSaving} className="h-full min-w-0 overflow-y-auto">
             <div className="flex items-start justify-between border-b border-stone-200 px-6 py-5">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Nod</div>
@@ -3184,7 +3127,7 @@ export default function RenoAppFlowBuilderPage() {
                 </div>
               ) : null}
             </div>
-          </div>
+          </fieldset>
         </aside>
       ) : null}
     </main>

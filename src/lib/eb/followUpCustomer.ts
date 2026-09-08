@@ -19,6 +19,12 @@ export type EbFollowUpCustomerSettings = EbFollowUpCustomerResolution & {
   purchasedEmail: string | null
 }
 
+export type EbFollowUpDeliveryCustomer = {
+  email: string | null
+  established: boolean
+  purchased: boolean
+}
+
 function email(value: unknown): string | null {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
   return normalized.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : null
@@ -54,6 +60,20 @@ function assertQuery(error: { code?: string; message?: string } | null) {
     throw new Error('EB_FOLLOW_UP_CONFIGURATION')
   }
   throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
+}
+
+async function deliveryCustomerOperation<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation()
+  } catch (failure) {
+    if (failure instanceof Error && [
+      'EB_INSPECTION_NOT_FOUND', 'EB_FOLLOW_UP_CONFIGURATION', 'EB_FOLLOW_UP_UNAVAILABLE',
+      'EB_FOLLOW_UP_EMAIL_INVALID', 'EB_FOLLOW_UP_ACTOR_INVALID',
+    ].includes(failure.message)) throw failure
+    // Supabase can reject before returning its usual { data, error } envelope.
+    // Keep optional customer metadata isolated from report/PDF availability.
+    throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
+  }
 }
 
 async function loadCustomerSources(input: CustomerScope) {
@@ -101,6 +121,48 @@ export async function getEbFollowUpCustomerSettings(input: CustomerScope): Promi
     .eq('org_id', input.orgId).eq('eb_project_id', input.projectId).eq('inspection_id', input.inspectionId).maybeSingle()
   assertQuery(order.error)
   return { ...sources, purchased: Boolean(order.data), purchasedEmail: email(order.data?.buyer_snapshot?.email) }
+}
+
+/** Suggestions fill the delivery form; only an established contact or accepted assignment grants authority. */
+export async function getEbFollowUpDeliveryCustomerDefaults(input: CustomerScope): Promise<EbFollowUpDeliveryCustomer> {
+  return deliveryCustomerOperation(async () => {
+    const order = await input.admin.from('eb_follow_up_orders').select('buyer_snapshot')
+      .eq('org_id', input.orgId).eq('eb_project_id', input.projectId).eq('inspection_id', input.inspectionId).maybeSingle()
+    assertQuery(order.error)
+    if (order.data) return { email: email(order.data.buyer_snapshot?.email), established: true, purchased: true }
+    const sources = await loadCustomerSources(input)
+    const established = sources.source === 'confirmed'
+    return {
+      email: established ? sources.email : sources.assignmentEmail ?? sources.projectEmail,
+      established,
+      purchased: false,
+    }
+  })
+}
+
+/** First real delivery establishes the customer. Resending never silently transfers an existing contact/order. */
+export async function initializeEbFollowUpDeliveryCustomer(
+  input: CustomerScope & { email: unknown; userId: string },
+): Promise<EbFollowUpDeliveryCustomer> {
+  return deliveryCustomerOperation(async () => {
+    const normalized = email(input.email)
+    if (!normalized) throw new Error('EB_FOLLOW_UP_EMAIL_INVALID')
+    const { data, error } = await input.admin.rpc('eb_initialize_follow_up_delivery_customer', {
+      p_org_id: input.orgId,
+      p_project_id: input.projectId,
+      p_inspection_id: input.inspectionId,
+      p_email: normalized,
+      p_actor: input.userId,
+    })
+    for (const code of ['EB_INSPECTION_NOT_FOUND', 'EB_FOLLOW_UP_EMAIL_INVALID', 'EB_FOLLOW_UP_ACTOR_INVALID']) {
+      if (error?.message?.includes(code)) throw new Error(code)
+    }
+    assertQuery(error)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
+    const result = data as Record<string, unknown>
+    if (result.established !== true || typeof result.purchased !== 'boolean') throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
+    return { email: email(result.email), established: true, purchased: result.purchased }
+  })
 }
 
 /** Only authenticated, org/inspection-authorized server callers may confirm a contact. */

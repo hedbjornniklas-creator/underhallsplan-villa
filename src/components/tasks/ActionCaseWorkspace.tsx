@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   Building2,
@@ -8,7 +8,11 @@ import {
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
+  Eye,
+  FileText,
   Hammer,
+  Image as ImageIcon,
+  Link2,
   Loader2,
   Mail,
   MapPin,
@@ -16,12 +20,15 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
   UserRound,
   UsersRound,
   X,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import type { ActionCaseItemView, ActionCaseView, ActionCaseWorkspace as Workspace } from '@/lib/action-cases/contracts'
+import { supabase } from '@/lib/supabaseClient'
+import { actionCaseItemCompletion, calculateActionCaseCostTotals } from '@/lib/action-cases/domain'
 
 type Props = {
   initialWorkspace: Workspace | null
@@ -51,9 +58,7 @@ function nextAction(item: ActionCaseItemView) {
 }
 
 function completion(item: ActionCaseItemView) {
-  const checks = [Boolean(item.scope), item.ownLaborReady, item.materialPriceReady, item.wasteSolutionReady]
-  if (item.requiresSubcontractor) checks.push(item.subcontractorPriceReady)
-  return Math.round((checks.filter(Boolean).length / checks.length) * 100)
+  return actionCaseItemCompletion(item)
 }
 
 function CreateCaseSheet({ busy, onClose, onCreate }: { busy: boolean; onClose: () => void; onCreate: (payload: Record<string, unknown>) => Promise<void> }) {
@@ -96,12 +101,193 @@ function CreateCaseSheet({ busy, onClose, onCreate }: { busy: boolean; onClose: 
   )
 }
 
-function ItemSheet({ item, busy, onClose, onSave }: { item: ActionCaseItemView; busy: boolean; onClose: () => void; onSave: (payload: Record<string, unknown>) => Promise<void> }) {
+function ItemSheet({
+  item,
+  busy,
+  onClose,
+  onSave,
+  onAddCostLine,
+  onDeleteCostLine,
+}: {
+  item: ActionCaseItemView
+  busy: boolean
+  onClose: () => void
+  onSave: (payload: Record<string, unknown>) => Promise<void>
+  onAddCostLine: (payload: Record<string, unknown>) => Promise<boolean>
+  onDeleteCostLine: (costLineId: string) => Promise<void>
+}) {
   const [form, setForm] = useState(item)
+  const [showCostForm, setShowCostForm] = useState(false)
+  const emptyCost = { category: 'material', description: '', quantity: '1', unit: 'st', unitCost: '', markupPercent: '20', priceSource: 'manual', sourceUrl: '', verified: false }
+  const [cost, setCost] = useState(emptyCost)
+  const { internalCost: internalTotal, customerPrice: customerTotal } = calculateActionCaseCostTotals(item.costLines)
+  const money = new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK', maximumFractionDigits: 0 })
   const check = (key: keyof ActionCaseItemView, label: string, icon: React.ReactNode, disabled = false) => (
-    <label className={`flex min-h-14 items-center gap-3 border-b border-slate-100 px-1 py-3 last:border-0 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}><span className="text-slate-400">{icon}</span><span className="flex-1 text-sm font-medium text-slate-800">{label}</span><input type="checkbox" disabled={disabled} checked={Boolean(form[key])} onChange={(e) => setForm((current) => ({ ...current, [key]: e.target.checked }))} className="h-5 w-5 accent-violet-600" /></label>
+    <label className={`flex min-h-14 items-center gap-3 border-b border-slate-100 px-1 py-3 last:border-0 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
+      <span className="text-slate-400">{icon}</span><span className="flex-1 text-sm font-medium text-slate-800">{label}</span>
+      <input type="checkbox" disabled={disabled} checked={Boolean(form[key])} onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.checked }))} className="h-5 w-5 accent-violet-600" />
+    </label>
   )
-  return <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" role="dialog" aria-modal="true"><div className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"><header className="flex items-start justify-between border-b border-slate-200 px-5 py-5"><div><p className="text-xs font-semibold uppercase text-violet-700">Åtgärd {item.sortOrder / 100}</p><h2 className="mt-1 text-xl font-semibold text-slate-950">{item.title}</h2></div><button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-lg hover:bg-slate-100" aria-label="Stäng"><X size={20} /></button></header><div className="flex-1 overflow-y-auto px-5 py-5"><label className="text-sm font-semibold text-slate-800">Rubrik<input value={form.title} onChange={(e) => setForm((current) => ({ ...current, title: e.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-3" /></label><label className="mt-5 block text-sm font-semibold text-slate-800">Arbetets omfattning<textarea value={form.scope ?? ''} onChange={(e) => setForm((current) => ({ ...current, scope: e.target.value }))} rows={6} placeholder="Vad ska göras, vad ingår och vilka förutsättningar gäller?" className="mt-2 w-full rounded-lg border border-slate-300 p-3 leading-6" /></label><div className="mt-6"><h3 className="text-sm font-semibold text-slate-950">Underlag för pris</h3><p className="mt-1 text-xs text-slate-500">Markera det som är kontrollerat. AI-stöd och prisrader kopplas in i nästa etapp.</p><div className="mt-2 border-y border-slate-200">{check('ownLaborReady', 'Egen arbetstid är beräknad', <Hammer size={18} />)}{check('materialPriceReady', 'Material och priser är kontrollerade', <PackageSearch size={18} />)}<label className="flex min-h-14 items-center gap-3 border-b border-slate-100 px-1 py-3"><span className="text-slate-400"><UsersRound size={18} /></span><span className="flex-1 text-sm font-medium text-slate-800">Underentreprenör behövs</span><input type="checkbox" checked={form.requiresSubcontractor} onChange={(e) => setForm((current) => ({ ...current, requiresSubcontractor: e.target.checked, subcontractorPriceReady: e.target.checked ? current.subcontractorPriceReady : false }))} className="h-5 w-5 accent-violet-600" /></label>{check('subcontractorPriceReady', 'UE-pris är mottaget och kontrollerat', <CircleDollarSign size={18} />, !form.requiresSubcontractor)}{check('wasteSolutionReady', 'Avfall och transport har en lösning', <Building2 size={18} />)}</div></div></div><footer className="border-t border-slate-200 bg-white p-4"><button type="button" disabled={busy || !form.title.trim()} onClick={() => void onSave({ itemId: item.id, title: form.title, scope: form.scope, ownLaborReady: form.ownLaborReady, materialPriceReady: form.materialPriceReady, requiresSubcontractor: form.requiresSubcontractor, subcontractorPriceReady: form.subcontractorPriceReady, wasteSolutionReady: form.wasteSolutionReady })} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-violet-700 px-5 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50">{busy ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />} Spara åtgärden</button></footer></div></div>
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" role="dialog" aria-modal="true">
+      <div className="flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl">
+        <header className="flex items-start justify-between border-b border-slate-200 px-5 py-5">
+          <div><p className="text-xs font-semibold uppercase text-violet-700">Åtgärd {item.sortOrder / 100}</p><h2 className="mt-1 text-xl font-semibold text-slate-950">{item.title}</h2></div>
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-lg hover:bg-slate-100" aria-label="Stäng"><X size={20} /></button>
+        </header>
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <label className="text-sm font-semibold text-slate-800">Rubrik<input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-3" /></label>
+          <label className="mt-5 block text-sm font-semibold text-slate-800">Arbetets omfattning<textarea value={form.scope ?? ''} onChange={(event) => setForm((current) => ({ ...current, scope: event.target.value }))} rows={5} placeholder="Vad ska göras, vad ingår och vilka förutsättningar gäller?" className="mt-2 w-full rounded-lg border border-slate-300 p-3 leading-6" /></label>
+
+          <section className="mt-7 border-t border-slate-200 pt-5">
+            <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-950">Kalkyl</h3><p className="mt-1 text-xs text-slate-500">Belopp exklusive moms. Källor och kontrollstatus följer varje rad.</p></div><button type="button" onClick={() => setShowCostForm((current) => !current)} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Plus size={16} /> Kalkylrad</button></div>
+            <div className="mt-4 grid grid-cols-2 gap-3 bg-slate-50 p-3"><div><span className="text-xs text-slate-500">Intern kostnad</span><strong className="mt-1 block text-lg text-slate-950">{money.format(internalTotal)}</strong></div><div><span className="text-xs text-slate-500">Kundpris</span><strong className="mt-1 block text-lg text-violet-800">{money.format(customerTotal)}</strong></div></div>
+            {showCostForm ? <div className="mt-3 grid gap-3 rounded-lg border border-violet-200 bg-violet-50/40 p-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-600">Typ<select value={cost.category} onChange={(event) => setCost((current) => ({ ...current, category: event.target.value }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-normal text-slate-900"><option value="own_labor">Eget arbete</option><option value="material">Material</option><option value="subcontractor">Underentreprenör</option><option value="waste">Avfall</option><option value="transport">Transport</option><option value="other">Övrigt</option></select></label>
+              <label className="text-xs font-semibold text-slate-600">Beskrivning *<input value={cost.description} onChange={(event) => setCost((current) => ({ ...current, description: event.target.value }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm font-normal text-slate-900" /></label>
+              <div className="grid grid-cols-2 gap-2"><label className="text-xs font-semibold text-slate-600">Mängd<input type="number" min="0.001" step="0.01" value={cost.quantity} onChange={(event) => setCost((current) => ({ ...current, quantity: event.target.value }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm font-normal" /></label><label className="text-xs font-semibold text-slate-600">Enhet<input value={cost.unit} onChange={(event) => setCost((current) => ({ ...current, unit: event.target.value }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm font-normal" /></label></div>
+              <div className="grid grid-cols-2 gap-2"><label className="text-xs font-semibold text-slate-600">Inköpspris<input type="number" min="0" step="0.01" value={cost.unitCost} onChange={(event) => setCost((current) => ({ ...current, unitCost: event.target.value }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm font-normal" /></label><label className="text-xs font-semibold text-slate-600">Påslag %<input type="number" min="-100" max="1000" step="0.1" value={cost.markupPercent} onChange={(event) => setCost((current) => ({ ...current, markupPercent: event.target.value }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 text-sm font-normal" /></label></div>
+              <label className="text-xs font-semibold text-slate-600">Priskälla<select value={cost.priceSource} onChange={(event) => setCost((current) => ({ ...current, priceSource: event.target.value }))} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm font-normal"><option value="manual">Manuellt pris</option><option value="beijer">Beijer</option><option value="subcontractor">UE-offert</option><option value="price_book">Prislista</option><option value="ai_suggestion">AI-förslag</option><option value="other">Annan källa</option></select></label>
+              <label className="text-xs font-semibold text-slate-600">Länk till källa<input type="url" value={cost.sourceUrl} onChange={(event) => setCost((current) => ({ ...current, sourceUrl: event.target.value }))} placeholder="https://" className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm font-normal" /></label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700 sm:col-span-2"><input type="checkbox" checked={cost.verified} onChange={(event) => setCost((current) => ({ ...current, verified: event.target.checked }))} className="h-4 w-4 accent-violet-600" />Jag har kontrollerat priset och mängden</label>
+              <div className="flex justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowCostForm(false)} className="min-h-10 px-3 text-sm font-semibold text-slate-600">Avbryt</button><button type="button" disabled={busy || !cost.description.trim() || Number(cost.quantity) <= 0 || Number(cost.unitCost) < 0} onClick={() => void onAddCostLine(cost).then((saved) => { if (saved) { setCost(emptyCost); setShowCostForm(false) } })} className="min-h-10 rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white disabled:opacity-40">Spara kalkylrad</button></div>
+            </div> : null}
+            <div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">{item.costLines.length ? item.costLines.map((line) => <div key={line.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm text-slate-900">{line.description}</strong><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${line.verified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{line.verified ? 'Kontrollerad' : 'Kontrollera'}</span></div><p className="mt-1 text-xs text-slate-500">{line.quantity} {line.unit} × {money.format(line.unitCost)} · påslag {line.markupPercent} % · {line.priceSource === 'beijer' ? 'Beijer' : line.priceSource === 'subcontractor' ? 'UE-offert' : 'Manuell källa'}</p></div><div className="flex items-center gap-2"><strong className="text-sm text-slate-900">{money.format(line.quantity * line.unitCost * (1 + line.markupPercent / 100))}</strong><button type="button" onClick={() => void onDeleteCostLine(line.id)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700" aria-label={`Ta bort ${line.description}`}><Trash2 size={16} /></button></div></div>) : <p className="py-5 text-center text-sm text-slate-500">Inga kalkylrader ännu.</p>}</div>
+          </section>
+
+          <div className="mt-7 border-t border-slate-200 pt-5"><h3 className="text-sm font-semibold text-slate-950">Kontroll av prisunderlag</h3><p className="mt-1 text-xs text-slate-500">Markera även en kategori som klar när den inte behövs för just denna åtgärd.</p><div className="mt-2 border-y border-slate-200">{check('ownLaborReady', 'Egen arbetstid är beräknad eller ej aktuell', <Hammer size={18} />)}{check('materialPriceReady', 'Material är kontrollerat eller ej aktuellt', <PackageSearch size={18} />)}<label className="flex min-h-14 items-center gap-3 border-b border-slate-100 px-1 py-3"><span className="text-slate-400"><UsersRound size={18} /></span><span className="flex-1 text-sm font-medium text-slate-800">Underentreprenör behövs</span><input type="checkbox" checked={form.requiresSubcontractor} onChange={(event) => setForm((current) => ({ ...current, requiresSubcontractor: event.target.checked, subcontractorPriceReady: event.target.checked ? current.subcontractorPriceReady : false }))} className="h-5 w-5 accent-violet-600" /></label>{check('subcontractorPriceReady', 'UE-pris är mottaget och kontrollerat', <CircleDollarSign size={18} />, !form.requiresSubcontractor)}{check('wasteSolutionReady', 'Avfall och transport har en lösning eller är ej aktuellt', <Building2 size={18} />)}</div></div>
+        </div>
+        <footer className="border-t border-slate-200 bg-white p-4"><button type="button" disabled={busy || !form.title.trim()} onClick={() => void onSave({ itemId: item.id, title: form.title, scope: form.scope, ownLaborReady: form.ownLaborReady, materialPriceReady: form.materialPriceReady, requiresSubcontractor: form.requiresSubcontractor, subcontractorPriceReady: form.subcontractorPriceReady, wasteSolutionReady: form.wasteSolutionReady })} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-violet-700 px-5 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50">{busy ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />} Spara åtgärden</button></footer>
+      </div>
+    </div>
+  )
+}
+
+type ActionResult = {
+  workspace: Workspace
+  accessUrl?: string
+  upload?: { bucket: string; filePath: string; token: string; contentType: string }
+}
+
+function CaseDocuments({
+  actionCase,
+  busy,
+  runAction,
+}: {
+  actionCase: ActionCaseView
+  busy: boolean
+  runAction: (name: string, payload: Record<string, unknown>, successMessage?: string | null) => Promise<ActionResult | null>
+}) {
+  const toast = useToast()
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [uploading, setUploading] = useState<string[]>([])
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([])
+  const [selectedItemId, setSelectedItemId] = useState('')
+  const [newSubcontractor, setNewSubcontractor] = useState({ name: '', companyName: '', email: '', phone: '' })
+  const [showParticipantForm, setShowParticipantForm] = useState(false)
+  const customer = actionCase.participants.find((participant) => participant.role === 'customer')
+  const subcontractors = actionCase.participants.filter((participant) => participant.role === 'subcontractor')
+
+  const toggleSelected = (participantId: string) => {
+    setSelectedParticipantIds((current) => current.includes(participantId)
+      ? current.filter((id) => id !== participantId)
+      : [...current, participantId])
+  }
+
+  const uploadFiles = async (files: File[]) => {
+    if (!files.length) return
+    setUploading(files.map((file) => file.name))
+    for (const file of files) {
+      const signed = await runAction('create_signed_upload', {
+        caseId: actionCase.id,
+        fileName: file.name,
+        contentType: file.type,
+        fileSize: file.size,
+      }, null)
+      if (!signed?.upload) break
+      const { error } = await supabase.storage.from(signed.upload.bucket).uploadToSignedUrl(
+        signed.upload.filePath,
+        signed.upload.token,
+        file,
+        { contentType: signed.upload.contentType }
+      )
+      if (error) {
+        toast.error(error, 'Filen kunde inte laddas upp.')
+        await runAction('abort_upload', { caseId: actionCase.id, filePath: signed.upload.filePath }, null)
+        break
+      }
+      const completed = await runAction('complete_upload', {
+        caseId: actionCase.id,
+        filePath: signed.upload.filePath,
+        fileName: file.name,
+        contentType: file.type,
+        fileSize: file.size,
+        itemId: selectedItemId || null,
+        participantIds: selectedParticipantIds,
+      }, `${file.name} laddades upp.`)
+      if (!completed) {
+        await runAction('abort_upload', { caseId: actionCase.id, filePath: signed.upload.filePath }, null)
+        break
+      }
+      setUploading((current) => current.filter((name) => name !== file.name))
+    }
+    setUploading([])
+    if (fileInput.current) fileInput.current.value = ''
+  }
+
+  const copyParticipantLink = async (participantId: string) => {
+    const result = await runAction('issue_participant_link', { caseId: actionCase.id, participantId }, null)
+    if (!result?.accessUrl) return
+    try {
+      await navigator.clipboard.writeText(result.accessUrl)
+      toast.success('Portalens länk kopierades.')
+    } catch {
+      toast.error('Länken skapades men kunde inte kopieras.')
+    }
+  }
+
+  return (
+    <section className="border-t border-slate-200">
+      <button type="button" onClick={() => setExpanded((current) => !current)} className="flex w-full items-center justify-between px-5 py-4 text-left hover:bg-slate-50 sm:px-6" aria-expanded={expanded}>
+        <span className="flex items-center gap-3"><span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><ImageIcon size={18} /></span><span><strong className="block text-sm text-slate-950">Bilder och dokument</strong><span className="mt-0.5 block text-xs text-slate-500">{actionCase.attachments.length} filer · privat som standard</span></span></span>
+        <ChevronRight size={19} className={`text-slate-400 transition ${expanded ? 'rotate-90' : ''}`} />
+      </button>
+      {expanded ? (
+        <div className="border-t border-slate-200 px-5 py-5 sm:px-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div><h3 className="text-sm font-semibold text-slate-950">Dokumentbibliotek</h3><p className="mt-1 text-xs leading-5 text-slate-500">Välj mottagare före uppladdning. Intern åtkomst gäller alltid.</p></div>
+                <button type="button" disabled={busy || uploading.length > 0} onClick={() => fileInput.current?.click()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"><Upload size={17} /> Ladda upp</button>
+                <input ref={fileInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.doc,.docx,.xls,.xlsx,.txt" className="hidden" onChange={(event) => void uploadFiles(Array.from(event.target.files ?? []))} />
+              </div>
+              <label className="mt-4 block text-xs font-semibold uppercase text-slate-500">Koppla till åtgärd<select value={selectedItemId} onChange={(event) => setSelectedItemId(event.target.value)} className="mt-2 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal normal-case text-slate-800"><option value="">Hela ärendet</option>{actionCase.items.map((item, index) => <option key={item.id} value={item.id}>{index + 1}. {item.title}</option>)}</select></label>
+              <fieldset className="mt-4 border-y border-slate-200 py-3">
+                <legend className="px-1 text-xs font-semibold uppercase text-slate-500">Dela nya filer med</legend>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="inline-flex min-h-9 items-center gap-2 rounded-full bg-slate-950 px-3 text-xs font-semibold text-white"><Check size={14} /> Internt</span>
+                  {actionCase.participants.map((participant) => <label key={participant.id} className={`inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-full border px-3 text-xs font-semibold ${selectedParticipantIds.includes(participant.id) ? 'border-violet-300 bg-violet-50 text-violet-800' : 'border-slate-200 text-slate-600'}`}><input type="checkbox" checked={selectedParticipantIds.includes(participant.id)} onChange={() => toggleSelected(participant.id)} className="sr-only" />{selectedParticipantIds.includes(participant.id) ? <Check size={14} /> : null}{participant.role === 'customer' ? 'Beställare' : participant.name}</label>)}
+                </div>
+              </fieldset>
+              {uploading.length ? <div className="mt-3 flex items-center gap-2 rounded-lg bg-violet-50 px-3 py-3 text-sm font-medium text-violet-800" role="status"><Loader2 className="animate-spin" size={17} /> Laddar upp {uploading.join(', ')}</div> : null}
+              <div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">
+                {actionCase.attachments.length ? actionCase.attachments.map((attachment) => {
+                  const granted = actionCase.participants.filter((participant) => attachment.grantedParticipantIds.includes(participant.id))
+                  return <div key={attachment.id} className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="flex min-w-0 items-center gap-3"><span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">{attachment.type === 'image' ? <ImageIcon size={18} /> : <FileText size={18} />}</span><span className="min-w-0"><strong className="block truncate text-sm text-slate-900">{attachment.title || attachment.fileName}</strong><span className="mt-1 block truncate text-xs text-slate-500">Internt{granted.length ? ` · ${granted.map((participant) => participant.role === 'customer' ? 'Beställare' : participant.name).join(', ')}` : ' endast'}</span></span></div><div className="flex items-center gap-2"><a href={`/api/action-cases/${actionCase.id}/attachments/${attachment.id}`} target="_blank" rel="noreferrer" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Öppna ${attachment.fileName}`}><Eye size={17} /></a><details className="relative"><summary className="inline-flex min-h-10 cursor-pointer list-none items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Åtkomst</summary><div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"><p className="text-xs font-semibold text-slate-950">Synlig för</p><p className="mt-1 text-xs text-slate-500">Internt är alltid valt.</p><div className="mt-2 space-y-1">{actionCase.participants.map((participant) => <label key={participant.id} className="flex min-h-9 cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={attachment.grantedParticipantIds.includes(participant.id)} onChange={(event) => { const ids = event.target.checked ? [...attachment.grantedParticipantIds, participant.id] : attachment.grantedParticipantIds.filter((id) => id !== participant.id); void runAction('update_attachment_grants', { caseId: actionCase.id, attachmentId: attachment.id, participantIds: ids }, 'Åtkomsten uppdaterades.') }} className="h-4 w-4 accent-violet-600" />{participant.role === 'customer' ? `Beställare: ${participant.name}` : `UE: ${participant.name}`}</label>)}</div></div></details><button type="button" onClick={() => { if (window.confirm(`Ta bort ${attachment.fileName}?`)) void runAction('delete_attachment', { caseId: actionCase.id, attachmentId: attachment.id }, 'Filen togs bort.') }} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700" aria-label={`Ta bort ${attachment.fileName}`}><Trash2 size={17} /></button></div></div>
+                }) : <p className="py-7 text-center text-sm text-slate-500">Inga bilder eller dokument har lagts till.</p>}
+              </div>
+            </div>
+            <aside className="border-t border-slate-200 pt-5 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
+              <div className="flex items-start justify-between gap-2"><div><h3 className="text-sm font-semibold text-slate-950">Deltagare</h3><p className="mt-1 text-xs text-slate-500">Länken visar bara filer som personen fått åtkomst till.</p></div><button type="button" onClick={() => setShowParticipantForm((current) => !current)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200" aria-label="Lägg till underentreprenör"><Plus size={16} /></button></div>
+              <div className="mt-3 divide-y divide-slate-100">{customer ? <div className="flex items-center gap-2 py-3"><UserRound size={17} className="text-slate-400" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{customer.name}</strong><span className="text-xs text-slate-500">Beställare</span></span><button type="button" onClick={() => void copyParticipantLink(customer.id)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-violet-700 hover:bg-violet-50" aria-label="Kopiera beställarens länk"><Link2 size={16} /></button></div> : <p className="py-3 text-xs text-amber-700">Beställaren saknar kontaktuppgifter och kan inte få en portalänk.</p>}{subcontractors.map((participant) => <div key={participant.id} className="flex items-center gap-2 py-3"><UsersRound size={17} className="text-slate-400" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{participant.name}</strong><span className="block truncate text-xs text-slate-500">{participant.companyName || 'Underentreprenör'}</span></span><button type="button" onClick={() => void copyParticipantLink(participant.id)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-violet-700 hover:bg-violet-50" aria-label={`Kopiera länk för ${participant.name}`}><Link2 size={16} /></button></div>)}</div>
+              {showParticipantForm ? <div className="mt-3 space-y-2 border-t border-slate-200 pt-3"><input value={newSubcontractor.name} onChange={(e) => setNewSubcontractor((current) => ({ ...current, name: e.target.value }))} placeholder="Kontaktperson *" className="min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm" /><input value={newSubcontractor.companyName} onChange={(e) => setNewSubcontractor((current) => ({ ...current, companyName: e.target.value }))} placeholder="Företag" className="min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm" /><input type="email" value={newSubcontractor.email} onChange={(e) => setNewSubcontractor((current) => ({ ...current, email: e.target.value }))} placeholder="E-post *" className="min-h-10 w-full rounded-lg border border-slate-300 px-3 text-sm" /><button type="button" disabled={busy || !newSubcontractor.name.trim() || !newSubcontractor.email.trim()} onClick={() => void runAction('add_participant', { caseId: actionCase.id, ...newSubcontractor }, 'Underentreprenören lades till.').then((result) => { if (result) { setNewSubcontractor({ name: '', companyName: '', email: '', phone: '' }); setShowParticipantForm(false) } })} className="min-h-10 w-full rounded-lg bg-violet-700 px-3 text-sm font-semibold text-white disabled:opacity-40">Lägg till UE</button></div> : null}
+            </aside>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
 }
 
 export default function ActionCaseWorkspace({ initialWorkspace, initialError }: Props) {
@@ -117,7 +303,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
   const selectedItem = selectedCase?.items.find((item) => item.id === selectedItemId) ?? null
   const filtered = useMemo(() => workspace?.cases.filter((item) => [item.title, item.customerName, item.propertyAddress].some((value) => value.toLocaleLowerCase('sv-SE').includes(search.toLocaleLowerCase('sv-SE')))) ?? [], [search, workspace])
 
-  const action = async (name: string, payload: Record<string, unknown>) => {
+  const action = async (name: string, payload: Record<string, unknown>, successMessage?: string | null): Promise<ActionResult | null> => {
     setBusy(true)
     try {
       const response = await fetch('/api/action-cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, payload }) })
@@ -126,8 +312,9 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       setWorkspace(result.workspace)
       setError(null)
       if (name === 'create_case') setSelectedCaseId(result.workspace.cases[0]?.id ?? null)
-      toast.success(name === 'create_case' ? 'Åtgärdsärendet skapades.' : 'Åtgärden sparades.')
-    } catch (caught) { toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.') }
+      if (successMessage !== null) toast.success(successMessage ?? (name === 'create_case' ? 'Åtgärdsärendet skapades.' : 'Åtgärden sparades.'))
+      return result as ActionResult
+    } catch (caught) { toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.'); return null }
     finally { setBusy(false) }
   }
 
@@ -141,7 +328,15 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       <aside className="border-b border-slate-200 lg:border-b-0 lg:border-r"><div className="border-b border-slate-200 p-4"><div className="flex gap-2"><label className="relative flex-1"><Search className="absolute left-3 top-3 text-slate-400" size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Sök ärende" className="min-h-11 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" /></label><button type="button" onClick={() => setCreating(true)} className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-950 text-white" aria-label="Nytt åtgärdsärende"><Plus size={19} /></button></div></div><div>{filtered.map((item) => <button key={item.id} type="button" onClick={() => setSelectedCaseId(item.id)} className={`w-full border-b border-slate-100 px-4 py-4 text-left hover:bg-slate-50 ${selectedCaseId === item.id ? 'border-l-4 border-l-violet-600 bg-violet-50/50' : ''}`}><div className="flex items-start justify-between gap-3"><span className="font-semibold text-slate-950">{item.title}</span><ChevronRight size={17} className="mt-1 shrink-0 text-slate-400" /></div><p className="mt-1 truncate text-sm text-slate-600">{item.propertyAddress}</p><div className="mt-2 flex items-center justify-between text-xs"><span className="font-medium text-violet-700">{CASE_STATUS[item.status]}</span><span className="text-slate-400">{item.items.length} åtgärder</span></div></button>)}</div></aside>
       <div className="min-w-0">{selectedCase ? <><header className="border-b border-slate-200 px-5 py-5 sm:px-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase text-violet-700">{CASE_STATUS[selectedCase.status]}</p><h2 className="mt-1 text-2xl font-semibold text-slate-950">{selectedCase.title}</h2><p className="mt-2 flex items-center gap-2 text-sm text-slate-600"><MapPin size={16} /> {selectedCase.propertyAddress}</p></div><div className="rounded-lg bg-violet-50 px-4 py-3 text-sm text-violet-900"><strong className="block">Nästa steg</strong><span>Öppna den första ofullständiga åtgärden.</span></div></div><div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600"><span className="inline-flex items-center gap-2"><UserRound size={16} /> {selectedCase.customerName}</span>{selectedCase.customerEmail ? <span className="inline-flex items-center gap-2"><Mail size={16} /> {selectedCase.customerEmail}</span> : null}</div></header><div className="px-5 py-5 sm:px-6"><div className="flex items-end justify-between"><div><h3 className="text-lg font-semibold text-slate-950">Åtgärder</h3><p className="mt-1 text-sm text-slate-500">Öppna en rad för att komplettera omfattning och prisunderlag.</p></div><span className="text-sm font-semibold text-slate-500">{selectedCase.items.filter((item) => completion(item) === 100).length}/{selectedCase.items.length} kalkylklara</span></div><div className="mt-4 overflow-hidden rounded-lg border border-slate-200">{selectedCase.items.map((item, index) => <button key={item.id} type="button" onClick={() => setSelectedItemId(item.id)} className="grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-3 py-4 text-left last:border-0 hover:bg-slate-50 sm:grid-cols-[40px_minmax(0,1fr)_140px_auto]"><span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-sm font-semibold text-slate-600">{index + 1}</span><span className="min-w-0"><strong className="block truncate text-sm text-slate-950">{item.title}</strong><span className="mt-1 block truncate text-xs text-slate-500">Nästa: {nextAction(item)}</span></span><span className="hidden sm:block"><span className="block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className="block h-full bg-violet-600" style={{ width: `${completion(item)}%` }} /></span><span className="mt-1 block text-right text-[11px] font-medium text-slate-500">{completion(item)} %</span></span><span className="inline-flex items-center gap-2 text-xs font-semibold text-violet-700">{ITEM_STATUS[item.status]} <ChevronRight size={17} /></span></button>)}</div></div></> : <div className="flex min-h-[500px] items-center justify-center text-sm text-slate-500">Välj ett ärende i listan.</div>}</div>
     </section>
-    {creating ? <CreateCaseSheet busy={busy} onClose={() => setCreating(false)} onCreate={async (payload) => { await action('create_case', payload); setCreating(false) }} /> : null}
-    {selectedItem ? <ItemSheet item={selectedItem} busy={busy} onClose={() => setSelectedItemId(null)} onSave={async (payload) => { await action('update_item', payload); setSelectedItemId(null) }} /> : null}
+    {selectedCase ? <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} /> : null}
+    {creating ? <CreateCaseSheet busy={busy} onClose={() => setCreating(false)} onCreate={async (payload) => { const result = await action('create_case', payload); if (result) setCreating(false) }} /> : null}
+    {selectedItem && selectedCase ? <ItemSheet
+      item={selectedItem}
+      busy={busy}
+      onClose={() => setSelectedItemId(null)}
+      onSave={async (payload) => { const result = await action('update_item', payload); if (result) setSelectedItemId(null) }}
+      onAddCostLine={async (payload) => Boolean(await action('create_cost_line', { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, 'Kalkylraden sparades.'))}
+      onDeleteCostLine={async (costLineId) => { await action('delete_cost_line', { caseId: selectedCase.id, itemId: selectedItem.id, costLineId }, 'Kalkylraden togs bort.') }}
+    /> : null}
   </>
 }
