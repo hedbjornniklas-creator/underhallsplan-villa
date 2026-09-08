@@ -61,6 +61,31 @@ export function canDropFlowNode(node: FlowNode, target: FlowNode) {
   return ['question', 'document', 'participant', 'flag'].includes(node.kind)
 }
 
+export function flowQuestionId(node: FlowNode): string | null {
+  const ref = node.ref
+  if (ref.type === 'rootQuestion' || ref.type === 'question') return ref.questionId
+  if (ref.type === 'optionQuestionTrigger') return ref.targetQuestionId
+  return null
+}
+
+export function canChooseFlowTarget(source: FlowNode, target: FlowNode, operation: 'move' | 'copy') {
+  if (operation === 'move' && !canDropFlowNode(source, target)) return false
+  const destination = flowTarget(target)
+  if (operation === 'copy') {
+    if (source.kind === 'option') {
+      if (!flowQuestionId(target)) return false
+    } else if (!source.source || !destination
+      || !['question', 'document', 'participant', 'flag'].includes(source.kind)
+      || (['document', 'participant'].includes(destination.kind) && source.kind !== 'flag')) return false
+  }
+  // Shared questions can be drawn more than once. Exclude descendants by entity,
+  // not only by their visual occurrence, so a copied branch cannot loop back.
+  const targetQuestion = flowQuestionId(target) ?? (target.ref.type === 'option' ? target.ref.questionId : null)
+  if (!targetQuestion) return true
+  const containsQuestion = (node: FlowNode): boolean => flowQuestionId(node) === targetQuestion || node.children.some(containsQuestion)
+  return !containsQuestion(source)
+}
+
 export type FlowOccurrence = { id: string; node: FlowNode; parentId: string | null }
 
 export function flattenFlow(root: FlowNode, expandedIds: string[] | null): FlowOccurrence[] {

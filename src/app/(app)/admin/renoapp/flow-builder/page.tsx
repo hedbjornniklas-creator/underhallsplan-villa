@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import RenoAppAiFlowDrawer from '@/components/renoapp/admin/RenoAppAiFlowDrawer'
 import RenoAppFlowCanvas from '@/components/renoapp/admin/RenoAppFlowCanvas'
-import type { FlowNode, FlowNodeTone, FlowSource } from '@/lib/renoapp/flowEditor'
+import { canChooseFlowTarget, flowQuestionId, flowTarget, type FlowNode, type FlowNodeTone, type FlowSource } from '@/lib/renoapp/flowEditor'
 
 type ActionTypeItem = {
   id: string
@@ -1719,17 +1719,62 @@ export default function RenoAppFlowBuilderPage() {
     }
   }
 
-  const duplicateActiveNode = async (node = activeNode) => {
-    if (!node || nodeActionInFlight.current) return
+  const linkCopiedNode = async (source: FlowNode, destination: FlowNode, type: QuestionOptionTriggerItem['triggerType'], id: string) => {
+    const target = flowTarget(destination)
+    if (!target) throw new Error('Den valda kopplingen är inte giltig.')
+    const ids = { questionId: type === 'question' ? id : null, documentTypeId: type === 'document' ? id : null,
+      participantRoleId: type === 'participant_role' ? id : null, reviewFlagId: type === 'review_flag' ? id : null }
+    if (destination.ref.type === 'option') {
+      await updateOptionTriggers(destination.ref.questionId, destination.ref.optionId, triggers => [
+        ...triggers, { ...ids, id: `new-${Date.now()}`, triggerType: type, isActive: true,
+          sortOrder: Math.max(0, ...triggers.map(item => item.sortOrder)) + 10 },
+      ])
+    } else if (type === 'review_flag') {
+      await saveReviewFlagLink({ reviewFlagId: id, actionTypeId: target.kind === 'action' ? target.id : null,
+        documentTypeId: target.kind === 'document' ? target.id : null, participantRoleId: target.kind === 'participant' ? target.id : null })
+    } else if (target.kind === 'action') {
+      const ref = source.ref
+      const link = ref.type === 'rootQuestion' ? rootQuestions.find(item => item.questionId === ref.questionId)
+        : ref.type === 'rootRequirement' ? rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)
+        : ref.type === 'rootParticipant' ? rootParticipants.find(item => item.participantRoleId === ref.participantRoleId) : undefined
+      const endpoint = type === 'question' ? 'action-type-questions' : type === 'document' ? 'requirements' : 'action-type-participants'
+      const response = await fetch(`/api/renoapp/admin/${endpoint}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ids, actionTypeId: target.id, isEnabled: true, isRequired: link?.isRequired ?? true,
+          sortOrder: (link?.sortOrder ?? 100) + 10,
+          ...(type === 'document' ? { note: link && 'note' in link ? link.note : null, phase: link && 'phase' in link ? link.phase : undefined } : {}) }),
+      })
+      const payload = await readJson<{ error?: string }>(response)
+      if (!response.ok) throw new Error(payload.error ?? 'Kopian skapades men kunde inte kopplas till den valda platsen.')
+    } else throw new Error('Den valda kopplingen är inte giltig.')
+  }
+
+  const duplicateActiveNode = async (node = activeNode, destination?: FlowNode) => {
+    if (!node || nodeActionInFlight.current) {
+      if (destination) throw new Error('En annan ändring pågår. Försök igen när den är klar.')
+      return
+    }
     nodeActionInFlight.current = true
     setModalSaving(true)
     setModalError(null)
 
     try {
       const ref = node.ref
+      if (destination) {
+        if (!canChooseFlowTarget(node, destination, 'copy')) throw new Error('Kortet kan inte kopieras till den valda platsen.')
+        if (destination.kind === 'option') {
+          const link = ref.type === 'rootQuestion' ? rootQuestions.find(item => item.questionId === ref.questionId)
+            : ref.type === 'rootRequirement' ? rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)
+            : ref.type === 'rootParticipant' ? rootParticipants.find(item => item.participantRoleId === ref.participantRoleId) : undefined
+          if (link && (!link.isRequired || ('note' in link && link.note)
+            || ('phase' in link && link.phase && ref.type === 'rootRequirement' && link.phase !== documentTypeMap.get(ref.documentTypeId)?.defaultPhase))) {
+            throw new Error('Kopplingen har egna inställningar för obligatoriskt krav, fas eller anteckning som inte kan kopieras till ett svar. Inga ändringar har gjorts.')
+          }
+        }
+      }
       if (ref.type === 'option') {
-        const question = questionMap.get(ref.questionId)
-        const option = question?.options.find((item) => item.id === ref.optionId)
+        const option = questionMap.get(ref.questionId)?.options.find((item) => item.id === ref.optionId)
+        const question = questionMap.get(destination ? flowQuestionId(destination) ?? '' : ref.questionId)
         if (!question || !option) throw new Error('Svarsalternativet kunde inte hittas.')
         await persistQuestionWithOptions({
           ...question,
@@ -1796,7 +1841,9 @@ export default function RenoAppFlowBuilderPage() {
         })
         const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
         if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera frågan.')
-        if (ref.type === 'rootQuestion') {
+        if (destination) {
+          await linkCopiedNode(node, destination, 'question', payload.item.id)
+        } else if (ref.type === 'rootQuestion') {
           const linkResponse = await fetch('/api/renoapp/admin/action-type-questions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1842,7 +1889,9 @@ export default function RenoAppFlowBuilderPage() {
         })
         const payload = await readJson<{ item?: DocumentTypeItem; error?: string }>(response)
         if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera underlaget.')
-        if (ref.type === 'rootRequirement') {
+        if (destination) {
+          await linkCopiedNode(node, destination, 'document', payload.item.id)
+        } else if (ref.type === 'rootRequirement') {
           const linkResponse = await fetch('/api/renoapp/admin/requirements', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1890,7 +1939,9 @@ export default function RenoAppFlowBuilderPage() {
         })
         const payload = await readJson<{ item?: ParticipantRoleItem; error?: string }>(response)
         if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera medverkandetypen.')
-        if (ref.type === 'rootParticipant') {
+        if (destination) {
+          await linkCopiedNode(node, destination, 'participant_role', payload.item.id)
+        } else if (ref.type === 'rootParticipant') {
           const linkResponse = await fetch('/api/renoapp/admin/action-type-participants', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1940,7 +1991,9 @@ export default function RenoAppFlowBuilderPage() {
         })
         const payload = await readJson<{ item?: ReviewFlagItem; error?: string }>(response)
         if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera flaggan.')
-        if (ref.type === 'optionReviewFlagTrigger') {
+        if (destination) {
+          await linkCopiedNode(node, destination, 'review_flag', payload.item.id)
+        } else if (ref.type === 'optionReviewFlagTrigger') {
           await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
             ...triggers,
             {
@@ -1966,6 +2019,7 @@ export default function RenoAppFlowBuilderPage() {
       await loadData(selectedActionTypeId)
       closeModal()
     } catch (duplicateError) {
+      if (destination) throw duplicateError
       setModalError(duplicateError instanceof Error ? duplicateError.message : 'Kunde inte duplicera objektet.')
     } finally {
       nodeActionInFlight.current = false
@@ -2558,7 +2612,8 @@ export default function RenoAppFlowBuilderPage() {
                 : toggleNode(id)}
               onOpen={openNodeModal}
               onReload={() => loadData(selectedActionTypeId)}
-              onCopy={node => {
+              onCopy={async (node, destination) => {
+                if (destination) { await duplicateActiveNode(node, destination); return }
                 const message = node.kind === 'root'
                   ? 'Skapa en kopia av renoveringstypens inställningar utan kopplingar?'
                   : node.kind === 'question' || node.kind === 'option'
@@ -2566,7 +2621,7 @@ export default function RenoAppFlowBuilderPage() {
                     : `Skapa en fristående kopia av "${node.title}" på samma plats?`
                 if (!window.confirm(message)) return
                 openNodeModal(node)
-                void duplicateActiveNode(node)
+                await duplicateActiveNode(node)
               }}
               onRemove={node => {
                 const message = node.kind === 'root'

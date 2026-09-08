@@ -11,7 +11,7 @@ const commonModule = { exports: {} } as { exports: typeof import('../src/lib/ren
 new Function('module', 'exports', ts.transpileModule(read('src/lib/renoapp/flowEditor.ts'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText)(commonModule, commonModule.exports)
-const { canDropFlowNode, flattenFlow, flowSubtreeIds, flowTarget, parseFlowMove } = commonModule.exports
+const { canDropFlowNode, canChooseFlowTarget, flattenFlow, flowSubtreeIds, flowTarget, parseFlowMove } = commonModule.exports
 const sql = read('docs/db/2026-09-08_03_renoapp_flow_editor.sql')
 const db = new PGlite()
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -190,6 +190,28 @@ test('request parsing rejects missing confirmation and invalid source types', ()
   assert.throws(()=>parseFlowMove({...body,apply:true}),/FLOW_MOVE_INVALID/)
   assert.throws(()=>parseFlowMove({...body,apply:'false'}),/FLOW_MOVE_INVALID/)
   assert.throws(()=>parseFlowMove({...body,source:{...body.source,kind:'renovation_cases'}}),/FLOW_MOVE_INVALID/)
+})
+
+test('canvas targets distinguish move/copy and exclude loops through shared descendants', () => {
+  const node = (id: string, kind: FlowNode['kind'], ref: FlowNode['ref'], children: FlowNode[] = []): FlowNode =>
+    ({ id, kind, ref, title:id, badges:[], tone:'stone', children })
+  const root = node('root','root',{type:'actionType',actionTypeId:id(1)})
+  const doc: FlowNode = {...node('doc','document',{type:'rootRequirement',actionTypeId:id(1),documentTypeId:id(3)}),source:{kind:'action_document',id:id(12),parentId:id(1)}}
+  const nextQuestion = node('next','question',{type:'question',questionId:id(7)})
+  const option = node('yes','option',{type:'option',questionId:id(6),optionId:id(8)},[nextQuestion])
+  const question: FlowNode = {...node('question','question',{type:'rootQuestion',actionTypeId:id(1),questionId:id(6)},[option]),source:{kind:'action_question',id:id(11),parentId:id(1)}}
+  const descendantAnswer = node('other-occurrence','option',{type:'option',questionId:id(7),optionId:id(10)})
+  assert.equal(canChooseFlowTarget(doc,root,'copy'),true)
+  assert.equal(canChooseFlowTarget(doc,root,'move'),false)
+  assert.equal(canChooseFlowTarget(doc,option,'copy'),true)
+  assert.equal(canChooseFlowTarget(doc,question,'copy'),false)
+  for (const operation of ['move','copy'] as const) {
+    assert.equal(canChooseFlowTarget(question,option,operation),false)
+    assert.equal(canChooseFlowTarget(question,descendantAnswer,operation),false)
+  }
+  assert.equal(canChooseFlowTarget(option,question,'copy'),true)
+  assert.equal(canChooseFlowTarget(option,nextQuestion,'copy'),false)
+  assert.equal(canChooseFlowTarget(option,question,'move'),false)
 })
 
 test('route authorizes before RPC and sends preview/apply to the transactional function', async () => {

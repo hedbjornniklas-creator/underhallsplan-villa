@@ -20,7 +20,12 @@
   The reset icon resets placement, not business rules. Zoom and fit controls are available.
 - Drop onto a compatible card to change its parent connection. The preview names
   the old and new parent. Only the explicit confirmation changes configuration.
-  The arrow icon provides the same workflow using a select control, including on mobile.
+- The move and copy icons start a destination-selection mode on the canvas, without
+  a dropdown or blocking dialog. Eligible recipient cards have a green outline and
+  a full-card target button; the source is blue and invalid recipients are faded.
+  Branches can still be expanded and the canvas panned/zoomed while choosing.
+  Select a recipient by click, touch or keyboard, then confirm. Escape or Cancel
+  leaves configuration unchanged. After saving, the view fits the updated diagram.
 - Questions, documents and participants can move between action roots and answers.
   Flags can also move to documents and participants. The selected renovation type
   defines which destinations are visible in the diagram.
@@ -34,6 +39,10 @@
 - Existing copy semantics are retained: a question copy includes its own answer
   options, but downstream targets remain shared. An action-root copy copies settings
   without links; the confirmation states this. This is not a deep subtree clone.
+  A canvas copy is attached directly to the selected recipient, leaving the source
+  untouched. Answers may be copied to questions; other linked cards use the same
+  recipient types as moves. Descendants are excluded to prevent recursive copies.
+  Copying retains existing create/link services and requires no additional SQL.
 
 ## Safety and limitations
 
@@ -62,6 +71,7 @@ No production migration or live administrative mutation is run by the automated 
   permission grants, shared occurrences, request validation and route authorization.
 - `node scripts/test-renoapp-flow-editor-ui.mjs`: real flow-builder rendering with mock
   endpoints; actual pointer dragging, line movement, local persistence, copy/removal,
-  reparent/cancel, missing migration and stale apply; desktop/tablet/mobile screenshots.
+  click-to-move/copy, destination highlighting, cancel/Escape, missing migration,
+  failed copy and stale apply; desktop/tablet/mobile screenshots.
 - `node scripts/test-renoapp-classification-ui.mjs`: existing board-summary and admin
   editor regression coverage.

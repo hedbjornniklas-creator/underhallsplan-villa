@@ -31,7 +31,7 @@ const questions = [question]
 const docs = [doc]
 const requirements = [{id:id(12),documentTypeId:doc.id,documentLabel:doc.label,isRequired:true,sortOrder:100,note:null}]
 const writes = []
-let moveFailure = null, sequence = 30
+let moveFailure = null, copyFailure = false, sequence = 30
 const responses = () => ({
   'action-types':{items:[action]},'questions':{items:questions},'document-types':{items:docs},'participants':{items:[]},
   'review-flags':{items:[]},'review-flag-links':{items:[]},'action-type-participants':{actionTypes:[]},
@@ -60,6 +60,7 @@ const server = createServer(async(request,response)=>{
         response.end(JSON.stringify({version:'a'.repeat(32),itemLabel:doc.label,fromLabel:input.source.kind==='action_document'?'Riva vägg':`${question.label} / ${input.source.parentId===no.id?'Nej':'Ja'}`,toLabel:`${question.label} / ${input.target.id===no.id?'Nej':'Ja'}`,shared:true,saved:input.apply}));return
       }
       if(key==='document-types'){
+        if(copyFailure){response.writeHead(500);response.end(JSON.stringify({error:'Kopian kunde inte skapas.'}));return}
         const saved={...input,id:id(sequence++)};docs.push(saved);response.end(JSON.stringify({item:saved}));return
       }
       if(key==='requirements'){
@@ -70,7 +71,13 @@ const server = createServer(async(request,response)=>{
       if(key==='questions'){
         const updated=input.question
         const target=questions.find(item=>item.id===updated.id)
-        if(target){target.options=input.options;Object.assign(target,updated);response.end(JSON.stringify({item:target}));return}
+        if(target){
+          const options=input.options.map(option=>Object.assign(target.options.find(item=>item.id===option.id)??{},option,{
+            id:option.id?.startsWith('00000000')?option.id:id(sequence++),
+            triggers:option.triggers.map(trigger=>({...trigger,id:id(sequence++)})),
+          }))
+          Object.assign(target,updated,{options});response.end(JSON.stringify({item:target}));return
+        }
       }
       response.writeHead(400);response.end('{}');return
     }
@@ -94,8 +101,19 @@ try{
   await page.goto(origin,{waitUntil:'networkidle0'})
   await page.waitForSelector('.react-flow__node')
   const rootDoc=`[data-flow-id="root-document:${doc.id}"]`
+  const rootNode=`[data-flow-id="action-type:${action.id}"]`
   const answerNode=option=>`[data-flow-id="option:${question.id}:${option.id}"]`
   const triggerDoc=option=>`[data-flow-id="document:${option.id}:${doc.id}"]`
+  const clickTarget=async selector=>{
+    await page.locator(`${selector} button[aria-label^="Koppla hit:"]`).click()
+    await page.waitForSelector('dialog[open]')
+  }
+  const chooseMove=async(from,to)=>{
+    await page.locator(`${from} button[aria-label="Flytta koppling"]`).click()
+    assert.equal(await page.$('dialog[open]'),null)
+    assert.equal(await page.$('dialog select'),null)
+    await clickTarget(to)
+  }
   await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
   await page.waitForSelector(answerNode(yes))
   await page.locator('button[aria-label="Visa hela flödet"]').click()
@@ -163,6 +181,21 @@ try{
 
   // Copy/remove on the canvas must affect the selected document, not the last opened node.
   await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
+  assert.equal(writes.length,0)
+  assert.equal(await page.$('dialog[open]'),null)
+  await page.locator(`${questionNode} button[aria-label="Expandera"]`).click()
+  await page.waitForSelector(answerNode(yes))
+  assert.equal(await page.$eval(answerNode(yes),node=>node.dataset.flowTarget),'true')
+  await page.keyboard.press('Escape')
+  assert.equal(writes.length,0)
+  await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
+  await clickTarget(rootNode)
+  assert.equal(writes.length,0)
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Avbryt"])').click()
+  assert.equal(writes.length,0)
+  await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
+  await clickTarget(rootNode)
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Skapa kopia"])').click()
   await page.waitForFunction(()=>[...document.querySelectorAll('[data-flow-id]')].some(node=>node.textContent.includes('(kopia)')))
   const copied=docs.at(-1)
   assert.equal(copied.label,`${doc.label} (kopia)`)
@@ -176,6 +209,31 @@ try{
   await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
   await page.waitForSelector(answerNode(yes))
   await page.locator('button[aria-label="Återställ kortens placering"]').click()
+  // Copy directly to an answer, retaining the original and choosing the target on the canvas.
+  const beforeCopy=writes.length
+  await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
+  assert.equal(await page.$eval(questionNode,node=>node.dataset.flowTarget),'false')
+  assert.equal(await page.$eval(answerNode(yes),node=>node.dataset.flowTarget),'true')
+  await page.screenshot({path:resolve(output,'copy-targets.png')})
+  await clickTarget(answerNode(yes))
+  assert.equal(writes.length,beforeCopy)
+  assert.match(await page.$eval('dialog',node=>node.textContent),/TillPåverkas vatteninstallationer\? \/ Ja/)
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Skapa kopia"])').click()
+  await page.waitForFunction(()=>[...document.querySelectorAll('[data-flow-id]')].some(node=>node.dataset.flowId.startsWith('document:')&&node.textContent.includes('(kopia)')))
+  const answerCopy=docs.at(-1)
+  assert.equal(requirements[0].documentTypeId,doc.id)
+  assert.equal(yes.triggers[0].documentTypeId,answerCopy.id)
+  assert.notEqual(answerCopy.id,doc.id)
+  const answerCopySelector=`[data-flow-id="document:${yes.id}:${answerCopy.id}"]`
+  await page.locator(`${answerCopySelector} button[aria-label="Ta bort från flödet"]`).click()
+  await page.waitForSelector(answerCopySelector,{hidden:true})
+  assert.equal(requirements.length,1);assert.equal(yes.triggers.length,0)
+  console.log('PASS click-to-copy: no list, no writes before confirmation, chosen answer receives new object, original retained')
+
+  await page.locator(`${questionNode} button[aria-label="Flytta koppling"]`).click()
+  assert.equal(await page.$eval(answerNode(yes),node=>node.dataset.flowTarget),'false')
+  assert.equal(await page.$eval(answerNode(no),node=>node.dataset.flowTarget),'false')
+  await page.keyboard.press('Escape')
   const drag=async(from,to)=>{
     const a=await(await page.$(`${from} .flow-drag-handle`)).boundingBox()
     const b=await(await page.$(to)).boundingBox()
@@ -190,7 +248,7 @@ try{
   assert.match(await page.$eval('dialog',node=>node.textContent),/FrånRiva väggTillPåverkas vatteninstallationer\? \/ Ja/)
   await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Avbryt"])').click()
   assert.equal(requirements.length,1)
-  await drag(rootDoc,answerNode(yes))
+  await chooseMove(rootDoc,answerNode(yes))
   await page.screenshot({path:resolve(output,'move-confirmation.png')})
   await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Flytta koppling"])').click()
   await page.waitForSelector(triggerDoc(yes))
@@ -209,9 +267,13 @@ try{
     assert.equal((await page.$$('.react-flow__node')).length,5)
     await page.screenshot({path:resolve(output,`flow-${width}.png`)})
     await page.locator(`${triggerDoc(no)} button[aria-label="Flytta koppling"]`).click()
-    await page.locator('dialog select').click()
-    await page.select('dialog select',await page.$eval('dialog select',node=>[...node.options].find(option=>option.textContent.endsWith('/ Ja')).value))
-    await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Granska flytt"])').click()
+    assert.equal(await page.$('dialog[open]'),null)
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
+    if(width===390)assert.ok(await page.$eval('[role="status"] span.font-semibold',node=>node.getBoundingClientRect().width)>200)
+    await page.screenshot({path:resolve(output,`move-targets-${width}.png`)})
+    // Enter on the full-card target button supports keyboard as well as pointer selection.
+    await page.focus(`${answerNode(yes)} button[aria-label^="Koppla hit:"]`)
+    await page.keyboard.press('Enter')
     await page.waitForFunction(()=>document.querySelector('dialog')?.textContent.includes('alla renoveringsflöden'))
     assert.equal(await page.$eval('dialog',node=>node.scrollWidth>node.clientWidth),false)
     await page.screenshot({path:resolve(output,`confirmation-${width}.png`)})
@@ -219,9 +281,7 @@ try{
     console.log(`PASS ${width}px: diagram and keyboard-accessible move dialog render without page overflow`)
   }
   // A stale confirmation must not change the source or retry a write automatically.
-  await page.locator(`${triggerDoc(no)} button[aria-label="Flytta koppling"]`).click()
-  await page.select('dialog select',await page.$eval('dialog select',node=>[...node.options].find(option=>option.textContent.endsWith('/ Ja')).value))
-  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Granska flytt"])').click()
+  await chooseMove(triggerDoc(no),answerNode(yes))
   await page.waitForFunction(()=>document.querySelector('dialog')?.textContent.includes('alla renoveringsflöden'))
   moveFailure=409
   const beforeFailure=writes.length
@@ -234,11 +294,18 @@ try{
   moveFailure=503
   const count=writes.length
   await page.locator(`${triggerDoc(no)} button[aria-label="Flytta koppling"]`).click()
-  await page.select('dialog select',await page.$eval('dialog select',node=>[...node.options].find(option=>option.textContent.endsWith('/ Ja')).value))
-  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Granska flytt"])').click()
+  await page.locator(`${answerNode(yes)} button[aria-label^="Koppla hit:"]`).click()
   await page.waitForFunction(()=>document.body.textContent.includes('Databasuppdateringen'))
   assert.equal(writes.length,count+1);assert.equal(no.triggers.length,1)
   assert.deepEqual(errors,[])
   console.log('PASS missing migration: clear error, no configuration changes')
+  copyFailure=true
+  const beforeFailedCopy=writes.length
+  await page.locator(`${triggerDoc(no)} button[aria-label="Skapa kopia"]`).click()
+  await clickTarget(answerNode(yes))
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Skapa kopia"])').click()
+  await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent.includes('Kopian kunde inte skapas'))
+  assert.equal(writes.length,beforeFailedCopy+1);assert.equal(no.triggers.length,1);assert.equal(yes.triggers.length,0)
+  console.log('PASS failed copy: original retained, no link or blind retry, error displayed')
 }catch(error){await page?.screenshot({path:resolve(output,'failure.png'),fullPage:true});throw error}
 finally{await browser?.close();await new Promise(done=>server.close(done))}
