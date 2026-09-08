@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
+import ProfileStartReturn from '@/components/besiktapp/ProfileStartReturn'
 import { supabase } from '@/lib/supabaseClient'
 import { isCustomerSelectableAddonKey } from '@/lib/assignments/addons'
 
@@ -154,6 +155,8 @@ export default function ObSettingsPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savedSnapshot, setSavedSnapshot] = useState('')
+  const [saveRetry, setSaveRetry] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [avatarLoadError, setAvatarLoadError] = useState(false)
@@ -263,6 +266,7 @@ export default function ObSettingsPage() {
       }
       setForm(loadedForm)
       lastSavedProfileSnapshotRef.current = serializeProfileForm(loadedForm)
+      setSavedSnapshot(serializeProfileForm(loadedForm))
       profileHydratedRef.current = true
 
       const activeOrgId = await loadAddonSettingsForProfile(user.id)
@@ -503,12 +507,13 @@ export default function ObSettingsPage() {
       }
 
       lastSavedProfileSnapshotRef.current = nextSnapshot
+      setSavedSnapshot(nextSnapshot)
       setSuccess('Profilen sparades automatiskt.')
       setSaving(false)
     }, 700)
 
     return () => window.clearTimeout(timeoutId)
-  }, [form, loading, signaturePathSupported, userId])
+  }, [form, loading, signaturePathSupported, userId, saveRetry])
 
   const handleAddonToggle = (addonServiceId: string, checked: boolean) => {
     setAddonRows((prev) =>
@@ -714,7 +719,7 @@ export default function ObSettingsPage() {
       router.back()
       return
     }
-    router.push('/ob')
+    router.push('/dashboard-v1')
   }
 
   return (
@@ -758,6 +763,14 @@ export default function ObSettingsPage() {
             </div>
           </header>
 
+          <ProfileStartReturn
+            pending={loading || saving || serializeProfileForm(form) !== savedSnapshot}
+            error={error}
+            onRetry={() => {
+              if (!profileHydratedRef.current || serializeProfileForm(form) === lastSavedProfileSnapshotRef.current) window.location.reload()
+              else setSaveRetry(value => value + 1)
+            }}
+          />
           <section className="rounded-2xl border border-white/30 bg-white/90 p-5 shadow-sm backdrop-blur-sm">
             {loading ? <p className="text-sm text-gray-600">Laddar...</p> : null}
             {error ? <p className="mb-3 text-sm text-rose-700">{error}</p> : null}

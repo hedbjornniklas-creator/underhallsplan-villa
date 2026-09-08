@@ -634,7 +634,18 @@ export default function TuAssignmentsPage() {
                       return (
                         <tr
                           key={item.id}
-                          className={`border-b last:border-b-0 ${
+                          role="link"
+                          tabIndex={0}
+                          aria-label={`Öppna uppdragsbekräftelse för ${item.customer_name || item.customer_email}`}
+                          onClick={() => router.push(`/tu/assignments/${item.id}`)}
+                          onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget) return
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              router.push(`/tu/assignments/${item.id}`)
+                            }
+                          }}
+                          className={`cursor-pointer border-b outline-none last:border-b-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 ${
                             archived
                               ? 'bg-slate-200 text-slate-900 hover:bg-slate-300'
                               : getStatusRowClass(item.status)
@@ -660,7 +671,10 @@ export default function TuAssignmentsPage() {
                               ) : null}
                             </div>
                           </td>
-                          <td className="px-3 py-2 align-middle whitespace-nowrap">
+                          <td
+                            className="px-3 py-2 align-middle whitespace-nowrap"
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <div className="flex items-center justify-end gap-1">
                               {item.inspection_id ? (
                                 <button

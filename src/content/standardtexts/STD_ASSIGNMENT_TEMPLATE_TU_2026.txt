@@ -1,13 +1,42 @@
-VILLKOR FOR TEKNISK UTREDNING
+VILLKOR FÖR TEKNISK UTREDNING
 
-Uppdragets omfattning framgar av uppdragsbekraftelsen och av den beskrivning som anges under "Utredningens omfattning". Utredningen avser endast de fragestallningar, byggnadsdelar och utrymmen som uttryckligen omfattas av uppdraget.
+1. Uppdrag och omfattning
+Uppdragets omfattning framgår av uppdragsbekräftelsen och av beskrivningen under "Utredningens omfattning". Utredningen avser endast de frågeställningar, byggnadsdelar och utrymmen som uttryckligen omfattas av uppdraget. Ändringar och tillägg ska avtalas särskilt.
 
-Utredningen genomfors som en teknisk bedomning baserad pa tillgangliga handlingar, lamnade upplysningar, platsbesok och synliga forhallanden vid utredningstillfallet. Dolda delar, inbyggda konstruktioner och forhallanden som inte kan kontrolleras utan forstorande ingrepp ingar endast om detta sarskilt har avtalats.
+2. Genomförande och avgränsningar
+Utredningen är en teknisk bedömning som grundas på tillgängliga handlingar, lämnade upplysningar, platsbesök, mätningar och de förhållanden som kan kontrolleras vid utredningstillfället. Dolda eller inbyggda delar, förstörande ingrepp, provtagning, laboratorieanalys, projektering och myndighetsprövning ingår endast om detta uttryckligen har avtalats.
 
-Uppdragsgivaren ansvarar for att lamna relevanta handlingar, upplysningar och tilltrade till berorda utrymmen. Om tilltrade, handlingar eller forutsattningar saknas kan utlåtandet begransas eller kompletterande utredning rekommenderas.
+3. Uppdragsgivarens medverkan
+Uppdragsgivaren ska lämna relevanta och riktiga upplysningar och handlingar samt ordna tillträde till berörda utrymmen. Brister i underlag, åtkomst eller andra förutsättningar kan begränsa bedömningen och medföra behov av kompletterande utredning.
 
-Datum, tid, adress och pris framgar av uppdragsbekraftelsen. Om uppdraget behover ombokas ska parterna meddela varandra sa snart som mojligt.
+4. Utlåtandet
+Utlåtandet redovisar besiktningsmannens iakttagelser, tekniska bedömningar och rekommendationer utifrån uppdragets avgränsning och förhållandena vid utredningstillfället. Utlåtandet är inte en garanti för framtida funktion och ersätter inte projektering, myndighetsbeslut eller entreprenadhandlingar om detta inte särskilt har avtalats.
 
-Utlåtandet redovisar iakttagelser, tekniska bedomningar och rekommenderade atgarder utifran de forutsattningar som fanns vid utredningen. Utlåtandet ar inte en garanti for framtida funktion och ersatter inte projektering, myndighetsbeslut eller entreprenadhandlingar om inte detta sarskilt avtalats.
+5. Pris, betalning och tillägg
+Pris, datum, tid och betalningsvillkor framgår av uppdragsbekräftelsen eller en separat skriftlig överenskommelse. Pris till privatperson anges inklusive mervärdesskatt. Tillkommande moment, provtagningar, laboratorieanalyser och kompletterande platsbesök utförs och debiteras först efter separat godkännande.
 
-Betalning sker enligt uppdragsbekraftelsen eller enligt separat overenskommelse. Eventuella tillkommande moment, provtagningar, laboratorieanalyser eller kompletterande platsbesok debiteras endast efter separat godkannande.
+6. Ombokning, avbeställning och reklamation
+Part som behöver boka om ska meddela den andra parten så snart som möjligt. Vid avbeställning får besiktningsföretaget begära ersättning endast i den omfattning som följer av avtalet och tillämplig lag. Synpunkter och reklamationer lämnas till besiktningsföretaget via kontaktuppgifterna i uppdragsbekräftelsen. En konsument kan även vända sig till Allmänna reklamationsnämnden (ARN) för prövning.
+
+7. Konsumentens ångerrätt vid distansavtal
+När uppdragsgivaren är en privatperson som ingår avtalet på distans gäller normalt 14 dagars ångerrätt från den dag avtalet ingås. Om fristens sista dag infaller på en lördag, söndag eller annan lagstadgad fridag förlängs fristen till nästa vardag. Konsumenten kan ångra avtalet genom den digitala ångerfunktionen i uppdragslänken eller genom att lämna ett annat tydligt meddelande till besiktningsföretaget. Konsumentverkets standardblankett kan användas men är inte obligatorisk: https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett
+
+Om konsumenten uttryckligen begär att uppdraget ska påbörjas under ångerfristen och därefter ångrar avtalet innan tjänsten är fullgjord, kan konsumenten behöva betala en skälig och proportionell del för det arbete som redan har utförts. Ångerrätten upphör när tjänsten har fullgjorts endast om konsumenten uttryckligen har samtyckt till att tjänsten påbörjas och bekräftat att ångerrätten då upphör. Tvingande konsumentskyddsregler gäller alltid före villkor som är mindre förmånliga för konsumenten.
+
+8. Behandling av personuppgifter
+Personuppgifter behandlas för att administrera, genomföra, dokumentera och följa upp uppdraget samt för att uppfylla rättsliga skyldigheter. Frågor om behandlingen lämnas till besiktningsföretaget via kontaktuppgifterna i uppdragsbekräftelsen.
+
+9. Ångerblankett
+(Fyll i och skicka blanketten endast om du vill frånträda avtalet.)
+
+Till: Besiktningsföretaget enligt kontaktuppgifterna i uppdragsbekräftelsen.
+
+Jag/vi meddelar härmed att jag/vi frånträder avtalet om teknisk utredning.
+Uppdrags- eller avtalsnummer: ____________________
+Avtalet ingicks den: ____________________
+Konsumentens/konsumenternas namn: ____________________
+Konsumentens/konsumenternas adress: ____________________
+Datum: ____________________
+Underskrift (endast om blanketten lämnas på papper): ____________________
+
+Stryk det som inte gäller. Du kan också använda Konsumentverkets standardblankett: https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett

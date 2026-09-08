@@ -2,6 +2,16 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams } from 'next/navigation'
+import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react'
+import {
+  CONSUMER_EARLY_START_CONSENT_TEXT,
+  CONSUMER_WITHDRAWAL_FORM_URL,
+  CONSUMER_WITHDRAWAL_ACKNOWLEDGEMENT_TEXT,
+  CONSUMER_WITHDRAWAL_INFORMATION_URL,
+  getConsumerWithdrawalDeadline,
+  requiresConsumerEarlyStartConsent,
+  resolveAssignmentCustomerType,
+} from '@/lib/assignments/consumer'
 
 type AcceptState = 'open' | 'used' | 'expired' | 'revoked' | 'outdated'
 type OrdererRole = 'buyer' | 'seller' | 'apartment' | ''
@@ -81,6 +91,12 @@ type AcceptReadResponse = {
   inspector: InspectorProfile | null
   addonOffers: AddonOffer[]
   selectedAddonServiceIds?: string[]
+  withdrawal?: {
+    requestedAt: string
+    receiptEmail: string
+    receiptSentAt: string | null
+    withdrawalDeadline: string | null
+  } | null
   terms: {
     version: string
     documents: {
@@ -200,13 +216,6 @@ function toFormState(
   }
 }
 
-function requiresConsumerEarlyStartConsent(preferredDate: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) return false
-  const serviceDate = Date.parse(`${preferredDate}T23:59:59.999Z`)
-  if (!Number.isFinite(serviceDate)) return false
-  return serviceDate < Date.now() + 14 * 24 * 60 * 60 * 1000
-}
-
 function roleToLabel(role: OrdererRole) {
   if (role === 'buyer') return 'Köpare'
   if (role === 'apartment') return 'Lägenhet'
@@ -225,6 +234,12 @@ export default function AssignmentAcceptPage() {
   const [data, setData] = useState<AcceptReadResponse | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
+  const [withdrawalReview, setWithdrawalReview] = useState(false)
+  const [withdrawalConfirmed, setWithdrawalConfirmed] = useState(false)
+  const [withdrawalName, setWithdrawalName] = useState('')
+  const [withdrawalEmail, setWithdrawalEmail] = useState('')
+  const [withdrawalSaving, setWithdrawalSaving] = useState(false)
+  const [withdrawalError, setWithdrawalError] = useState<string | null>(null)
 
   const canSubmit = data?.state === 'open'
 
@@ -245,6 +260,8 @@ export default function AssignmentAcceptPage() {
 
         const resolved = payload as AcceptReadResponse
         setData(resolved)
+        setWithdrawalName(resolved.assignment.customer_name ?? '')
+        setWithdrawalEmail(resolved.assignment.customer_email ?? '')
         setForm(
           toFormState(
             resolved.assignment,
@@ -268,7 +285,14 @@ export default function AssignmentAcceptPage() {
 
   const stateText = useMemo(() => {
     if (!data) return ''
-    if (data.state === 'used') return 'Den här länken är redan använd.'
+    if (data.state === 'used') {
+      const isConsumerTu =
+        data.assignment.assignment_type === 'TU' &&
+        resolveAssignmentCustomerType('TU', data.assignment.assignment_details) === 'consumer'
+      return isConsumerTu
+        ? 'Uppdragsbekräftelsen är godkänd. Uppgifterna visas skrivskyddade.'
+        : 'Den här länken är redan använd.'
+    }
     if (data.state === 'expired') return 'Den här länken har gått ut.'
     if (data.state === 'revoked') return 'Den här länken är inte längre aktiv.'
     if (data.state === 'outdated') {
@@ -289,11 +313,21 @@ export default function AssignmentAcceptPage() {
     return data.assignment.assignment_details
   }, [data, isEbAssignment])
   const isConsumerEbAssignment = isEbAssignment && ebDetails?.customerType === 'consumer'
+  const tuCustomerType = useMemo(
+    () =>
+      isTechnicalAssignment
+        ? resolveAssignmentCustomerType('TU', data?.assignment.assignment_details)
+        : null,
+    [data?.assignment.assignment_details, isTechnicalAssignment]
+  )
+  const isConsumerTechnicalAssignment =
+    isTechnicalAssignment && tuCustomerType === 'consumer'
+  const isConsumerAssignment = isConsumerEbAssignment || isConsumerTechnicalAssignment
   const consumerEarlyStartConsentRequired = Boolean(
-    isConsumerEbAssignment && form && requiresConsumerEarlyStartConsent(form.preferredDate)
+    isConsumerAssignment && form && requiresConsumerEarlyStartConsent(form.preferredDate)
   )
   const consumerRequirementsMet =
-    !isConsumerEbAssignment ||
+    !isConsumerAssignment ||
     Boolean(
       form?.consumerWithdrawalAcknowledged &&
         (!consumerEarlyStartConsentRequired || form?.startDuringWithdrawalPeriod)
@@ -383,13 +417,13 @@ export default function AssignmentAcceptPage() {
       return
     }
 
-    if (isConsumerEbAssignment && !form.consumerWithdrawalAcknowledged) {
+    if (isConsumerAssignment && !form.consumerWithdrawalAcknowledged) {
       setError('Bekräfta att du har tagit del av informationen om ångerrätt.')
       return
     }
     if (consumerEarlyStartConsentRequired && !form.startDuringWithdrawalPeriod) {
       setError(
-        'Besiktningen infaller under ångerfristen. Begär att uppdraget får påbörjas under denna tid för att fortsätta.'
+        `${isTechnicalAssignment ? 'Utredningen' : 'Besiktningen'} infaller under ångerfristen. Begär att uppdraget får påbörjas under denna tid för att fortsätta.`
       )
       return
     }
@@ -491,7 +525,19 @@ export default function AssignmentAcceptPage() {
               : roleToLabel(lockedOrdererRole)
         }).`
       )
-      setData((prev) => (prev ? { ...prev, state: 'used' } : prev))
+      const acceptedAt = new Date().toISOString()
+      setWithdrawalName(form.customerName)
+      setWithdrawalEmail(form.customerEmail)
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              state: 'used',
+              usedAt: acceptedAt,
+              assignment: { ...prev.assignment, accepted_at: acceptedAt },
+            }
+          : prev
+      )
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte acceptera uppdraget.')
     } finally {
@@ -499,26 +545,122 @@ export default function AssignmentAcceptPage() {
     }
   }
 
+  const handleWithdrawal = async (options?: { retryExisting?: boolean }) => {
+    if (!data || !isConsumerTechnicalAssignment || data.state !== 'used') return
+
+    const requestName = options?.retryExisting
+      ? data.assignment.customer_name ?? withdrawalName
+      : withdrawalName
+    const requestEmail = options?.retryExisting
+      ? data.withdrawal?.receiptEmail ?? data.assignment.customer_email
+      : withdrawalEmail
+
+    if (!requestName.trim()) {
+      setWithdrawalError('Ange namnet på den som begär att avtalet ska frånträdas.')
+      return
+    }
+    if (!EMAIL_REGEX.test(requestEmail.trim())) {
+      setWithdrawalError('Ange en giltig e-postadress för mottagningsbekräftelsen.')
+      return
+    }
+    if (!options?.retryExisting && !withdrawalConfirmed) {
+      setWithdrawalError('Bekräfta att du vill frånträda avtalet.')
+      return
+    }
+
+    try {
+      setWithdrawalSaving(true)
+      setWithdrawalError(null)
+      const response = await fetch(`/api/assignments/withdraw/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerName: requestName,
+          receiptEmail: requestEmail,
+          confirmed: true,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string
+        withdrawal?: AcceptReadResponse['withdrawal']
+      }
+      if (!response.ok || !payload.withdrawal) {
+        throw new Error(payload.error ?? 'Kunde inte registrera begäran.')
+      }
+      setData((prev) => (prev ? { ...prev, withdrawal: payload.withdrawal } : prev))
+      setWithdrawalReview(false)
+      setWithdrawalConfirmed(false)
+    } catch (withdrawalSubmitError) {
+      setWithdrawalError(
+        withdrawalSubmitError instanceof Error
+          ? withdrawalSubmitError.message
+          : 'Kunde inte registrera begäran.'
+      )
+    } finally {
+      setWithdrawalSaving(false)
+    }
+  }
+
+  const withdrawalDeadline = useMemo(() => {
+    if (data?.withdrawal?.withdrawalDeadline) {
+      const saved = new Date(data.withdrawal.withdrawalDeadline)
+      if (!Number.isNaN(saved.getTime())) return saved
+    }
+    if (!data?.assignment.accepted_at) return null
+    return getConsumerWithdrawalDeadline(data.assignment.accepted_at)
+  }, [data?.assignment.accepted_at, data?.withdrawal?.withdrawalDeadline])
+
   return (
-    <main className="relative min-h-screen overflow-hidden">
+    <main className="relative min-h-screen overflow-hidden bg-slate-50">
       <div
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: isTechnicalAssignment
-            ? 'radial-gradient(100% 70% at 50% 0%, rgba(237,233,254,0.55) 0%, rgba(237,233,254,0) 60%), linear-gradient(135deg, #4c1d95 0%, #7c3aed 42%, #c084fc 100%)'
+            ? 'linear-gradient(135deg, #f8fafc 0%, #ffffff 52%, #f5f3ff 100%)'
             : isEbAssignment
               ? 'radial-gradient(100% 70% at 50% 0%, rgba(209,250,229,0.55) 0%, rgba(209,250,229,0) 60%), linear-gradient(135deg, #064e3b 0%, #047857 42%, #34d399 100%)'
             : 'radial-gradient(100% 70% at 50% 0%, rgba(219,234,254,0.5) 0%, rgba(219,234,254,0) 60%), linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 42%, #60a5fa 100%)',
         }}
       />
-      <div className="pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]" />
+      <div
+        className={
+          isTechnicalAssignment
+            ? 'pointer-events-none absolute inset-0 bg-transparent'
+            : 'pointer-events-none absolute inset-0 bg-white/10 backdrop-blur-[1px]'
+        }
+      />
 
       <div className="relative mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-        <header className="rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold text-white drop-shadow-sm">UPPDRAGSBEKRÄFTELSE</h1>
+        <header
+          className={
+            isTechnicalAssignment
+              ? 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-5'
+              : 'rounded-2xl border border-white/30 bg-white/10 p-4 shadow-sm backdrop-blur-sm md:p-5'
+          }
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1
+              className={
+                isTechnicalAssignment
+                  ? 'text-2xl font-semibold text-slate-950'
+                  : 'text-2xl font-semibold text-white drop-shadow-sm'
+              }
+            >
+              Uppdragsbekräftelse
+            </h1>
+            {isConsumerTechnicalAssignment && data?.state === 'used' ? (
+              <a
+                href="#angra-avtalet"
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-violet-300 bg-white px-4 text-sm font-semibold text-violet-800 hover:bg-violet-50"
+              >
+                <RotateCcw size={16} aria-hidden />
+                Ångra avtalet
+              </a>
+            ) : null}
           </div>
-          <p className="mt-2 text-sm text-white/90">Fyll i uppgifterna och godkänn villkoren.</p>
+          <p className={isTechnicalAssignment ? 'mt-2 text-sm text-slate-600' : 'mt-2 text-sm text-white/90'}>
+            Kontrollera uppgifterna och godkänn villkoren.
+          </p>
         </header>
 
         {loading ? (
@@ -543,8 +685,8 @@ export default function AssignmentAcceptPage() {
               </div>
             ) : null}
 
-            <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
+            <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 md:gap-3">
                 {isTechnicalAssignment || isEbAssignment ? (
                   <p className="pr-1 text-base font-bold uppercase tracking-wide text-violet-900 md:text-lg">
                     {isEbAssignment ? 'ENTREPRENADBESIKTNING' : 'TEKNISK UTREDNING'}
@@ -751,7 +893,9 @@ export default function AssignmentAcceptPage() {
                               ? 'Timpris (SEK) *'
                               : isEbAssignment
                                 ? 'Fast pris (SEK) *'
-                                : 'Pris (SEK) *'
+                                : isConsumerTechnicalAssignment
+                                  ? 'Pris inkl. moms (SEK) *'
+                                  : 'Pris (SEK) *'
                           }
                           type="number"
                           step="0.01"
@@ -868,6 +1012,29 @@ export default function AssignmentAcceptPage() {
                 </SectionCard>
               ) : null}
 
+              {isTechnicalAssignment ? (
+                <SectionCard title="Avtalsuppgifter">
+                  <div className="grid gap-2 text-sm text-gray-700 md:grid-cols-2">
+                    <AssignmentFact
+                      label="Beställartyp"
+                      value={
+                        isConsumerTechnicalAssignment
+                          ? 'Privatperson'
+                          : 'Företag/organisation'
+                      }
+                    />
+                    <AssignmentFact
+                      label="Prisangivelse"
+                      value={
+                        isConsumerTechnicalAssignment
+                          ? 'Angivet pris är inklusive moms'
+                          : 'Enligt uppdragsbekräftelsen'
+                      }
+                    />
+                  </div>
+                </SectionCard>
+              ) : null}
+
               {data.addonOffers.length > 0 ? (
                 <SectionCard title="Tilläggsuppdrag">
                   <p className="text-xs text-gray-600">
@@ -924,11 +1091,13 @@ export default function AssignmentAcceptPage() {
               ) : null}
             </section>
 
-            <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
+            <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
                   {isTechnicalAssignment
-                    ? 'Villkor för teknisk utredning'
+                    ? isConsumerTechnicalAssignment
+                      ? 'Villkor för teknisk utredning - privatperson'
+                      : 'Villkor för teknisk utredning - företag'
                     : isEbAssignment
                       ? isConsumerEbAssignment
                         ? 'Villkor för entreprenadbesiktning – privat konsument'
@@ -949,20 +1118,30 @@ export default function AssignmentAcceptPage() {
                 <span>Jag har läst och godkänner villkoren nedan (version {data.terms.version}). *</span>
               </label>
 
-              {isConsumerEbAssignment ? (
+              {isConsumerAssignment ? (
                 <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
                   <p>
                     Eftersom avtalet ingås digitalt har du normalt 14 dagars ångerrätt. Du kan
-                    använda ångerrätten genom att lämna ett tydligt meddelande till
-                    besiktningsföretaget. Mer information och standardblankett finns hos
+                    använda ångerrätten via ångerfunktionen som visas här efter godkännandet eller
+                    genom att lämna ett annat tydligt meddelande till besiktningsföretaget. Läs
                     {' '}
                     <a
-                      href="https://www.konsumentverket.se/lagar/lagen-om-distansavtal-och-avtal-utanfor-affarslokaler/"
+                      href={CONSUMER_WITHDRAWAL_INFORMATION_URL}
                       target="_blank"
                       rel="noreferrer"
                       className="font-semibold underline underline-offset-2"
                     >
-                      Konsumentverket
+                      Konsumentverkets information om ångerrätt
+                    </a>
+                    {' '}eller öppna
+                    {' '}
+                    <a
+                      href={CONSUMER_WITHDRAWAL_FORM_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold underline underline-offset-2"
+                    >
+                      standardblanketten
                     </a>
                     .
                   </p>
@@ -976,7 +1155,7 @@ export default function AssignmentAcceptPage() {
                       disabled={!canSubmit}
                       className="mt-0.5 h-4 w-4 rounded border-amber-400"
                     />
-                    <span>Jag har tagit del av informationen om ångerrätt. *</span>
+                    <span>{CONSUMER_WITHDRAWAL_ACKNOWLEDGEMENT_TEXT} *</span>
                   </label>
                   {consumerEarlyStartConsentRequired ? (
                     <label className="flex items-start gap-2">
@@ -989,11 +1168,7 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                         className="mt-0.5 h-4 w-4 rounded border-amber-400"
                       />
-                      <span>
-                        Jag begär uttryckligen att uppdraget får påbörjas under ångerfristen och
-                        förstår att jag kan behöva betala för arbete som redan har utförts om jag
-                        därefter ångrar avtalet. *
-                      </span>
+                      <span>{CONSUMER_EARLY_START_CONSENT_TEXT} *</span>
                     </label>
                   ) : null}
                 </div>
@@ -1003,7 +1178,11 @@ export default function AssignmentAcceptPage() {
                 type="button"
                 onClick={() => void handleSubmit()}
                 disabled={!canSubmit || saving || !form.termsAccepted || !consumerRequirementsMet}
-                className="inline-flex h-10 items-center justify-center rounded-lg bg-indigo-600 px-5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+                className={`inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-semibold text-white transition disabled:cursor-not-allowed ${
+                  isTechnicalAssignment
+                    ? 'bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300'
+                    : 'bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300'
+                }`}
               >
                 {saving
                   ? 'Sparar...'
@@ -1018,6 +1197,135 @@ export default function AssignmentAcceptPage() {
                 </pre>
               </div>
             </section>
+
+            {isConsumerTechnicalAssignment && data.state === 'used' ? (
+              <section
+                id="angra-avtalet"
+                className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-5"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                    <RotateCcw size={18} aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold text-slate-950">Ångra avtalet</h2>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Här kan du lämna ett tydligt meddelande om att du vill frånträda avtalet.
+                      Begäran registreras även om den lämnas efter den beräknade ångerfristen och
+                      bedöms då av besiktningsföretaget.
+                    </p>
+                    {withdrawalDeadline ? (
+                      <p className="mt-1 text-sm font-medium text-slate-700">
+                        Beräknad sista ordinarie ångerdag:{' '}
+                        {withdrawalDeadline.toLocaleDateString('sv-SE')}.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {data.withdrawal ? (
+                  <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden />
+                      <div>
+                        <p className="font-semibold">
+                          Din begäran registrerades{' '}
+                          {new Date(data.withdrawal.requestedAt).toLocaleString('sv-SE')}.
+                        </p>
+                        <p className="mt-1 leading-6">
+                          {data.withdrawal.receiptSentAt
+                            ? `En mottagningsbekräftelse har skickats till ${data.withdrawal.receiptEmail}.`
+                            : `Begäran är registrerad, men mottagningsbekräftelsen kunde inte skickas till ${data.withdrawal.receiptEmail}. Använd knappen nedan för att försöka igen.`}
+                        </p>
+                      </div>
+                    </div>
+                    {!data.withdrawal.receiptSentAt ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleWithdrawal({ retryExisting: true })}
+                        disabled={withdrawalSaving}
+                        className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-700 bg-white px-4 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {withdrawalSaving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : null}
+                        Skicka mottagningsbekräftelsen igen
+                      </button>
+                    ) : null}
+                  </div>
+                ) : !withdrawalReview ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWithdrawalError(null)
+                      setWithdrawalReview(true)
+                    }}
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-violet-300 bg-white px-4 text-sm font-semibold text-violet-800 transition hover:bg-violet-50"
+                  >
+                    <RotateCcw size={16} aria-hidden />
+                    Ångra avtalet
+                  </button>
+                ) : (
+                  <div className="space-y-3 rounded-lg border border-violet-200 bg-violet-50/60 p-4">
+                    <p className="text-sm font-semibold text-slate-950">
+                      Kontrollera uppgifterna och bekräfta din begäran.
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Field
+                        label="Namn *"
+                        value={withdrawalName}
+                        onChange={setWithdrawalName}
+                      />
+                      <Field
+                        label="E-post för mottagningsbekräftelse *"
+                        type="email"
+                        value={withdrawalEmail}
+                        onChange={setWithdrawalEmail}
+                      />
+                    </div>
+                    <p className="text-sm leading-6 text-slate-700">
+                      Jag, {withdrawalName || 'beställaren'}, meddelar att jag vill frånträda avtal{' '}
+                      {data.assignment.id} om teknisk utredning.
+                    </p>
+                    <label className="flex items-start gap-2 text-sm text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={withdrawalConfirmed}
+                        onChange={(event) => setWithdrawalConfirmed(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-violet-300"
+                      />
+                      <span>Jag bekräftar att jag vill frånträda avtalet. *</span>
+                    </label>
+                    {withdrawalError ? (
+                      <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+                        {withdrawalError}
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleWithdrawal()}
+                        disabled={withdrawalSaving || !withdrawalConfirmed}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:bg-violet-300"
+                      >
+                        {withdrawalSaving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : null}
+                        Bekräfta och skicka
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWithdrawalReview(false)
+                          setWithdrawalConfirmed(false)
+                          setWithdrawalError(null)
+                        }}
+                        disabled={withdrawalSaving}
+                        className="h-10 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Avbryt
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : null}
           </>
         ) : null}
       </div>

@@ -332,6 +332,33 @@ export async function createActionCase(context: Context, payload: Record<string,
   return created.id
 }
 
+export async function addActionCaseItem(context: Context, payload: Record<string, unknown>) {
+  const caseId = text(payload.caseId)
+  const title = text(payload.title)
+  if (!caseId || !title) throw new Error('ACTION_CASE_ITEM_REQUIRED')
+  await requireCase(context, caseId)
+  const admin = createSupabaseAdminClient()
+  // Retry ordering conflicts when two colleagues append to the same case.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data: last, error: readError } = await admin.from('action_case_items').select('sort_order')
+      .eq('action_case_id', caseId).eq('org_id', context.orgId).order('sort_order', { ascending: false }).limit(1).maybeSingle()
+    if (readError) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
+    const { data, error } = await admin.from('action_case_items').insert({
+      org_id: context.orgId, action_case_id: caseId, title,
+      sort_order: Number(last?.sort_order ?? 0) + 100,
+      created_by: context.userId, updated_by: context.userId,
+    }).select('id').single()
+    if (error?.code === '23505') continue
+    if (error || !data) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
+    await admin.from('action_cases').update({ status: 'pricing', updated_by: context.userId })
+      .eq('id', caseId).eq('org_id', context.orgId).in('status', ['preparing', 'pricing', 'quote_ready'])
+    await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId,
+      action_case_item_id: data.id, event_type: 'item_added', message: `Åtgärd tillagd: ${title}.`, performed_by: context.userId })
+    return data.id
+  }
+  throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
+}
+
 export async function addActionCaseParticipant(context: Context, payload: Record<string, unknown>) {
   const caseId = text(payload.caseId)
   const name = text(payload.name)

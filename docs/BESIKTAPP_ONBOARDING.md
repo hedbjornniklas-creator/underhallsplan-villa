@@ -98,6 +98,23 @@ Ingen migration, flagga, produktionsbehörighet, skarpt konto eller riktigt mejl
 - `npm run test:besiktapp-intake` och `npm run test:public-products` passerar. Full typkontroll och riktad ESLint passerade vid denna kontroll.
 - `node scripts/preview-besiktapp-invitations.mjs` startar en isolerad UI-vy med mockad Auth och API. Webbläsartest verifierade granskning före utskick, tömda fält efter simulerat utskick, nya kontots lösenordsbekräftelse, synligt fel vid olika lösenord, aktiveringsbekräftelse med direktlänk till ÖB och hjälp vid ogiltig länk. Formulärlayouten granskades visuellt på desktop. Mobil och skarp Supabase-/mejl-integration återstår inför pilot.
 
+## Etapp C1: profilguide och vägen till första uppdraget
+
+Implementerat lokalt 2026-09-08:
+
+- En frivillig, återöppningsbar startguide på `/ob`, `/eb` och `/tu`. Ingen omdirigering, obligatorisk guide eller ny behörighet. Vanliga arbetsflöden är kvar. Varje guide handlar enbart om den aktuella tjänsten.
+- Guiden läser inloggad användares sparade namn, e-post och företagsnamn via befintlig profilåtkomst. Den visar vad som saknas, men verifierar inte uppgifternas riktighet, certifieringar eller att användaren är redo att skicka ett utlåtande. Vid läsfel visas ingen falsk klarstatus.
+- Guiden öppnas initialt om grunduppgifter saknas; med ifyllda grunduppgifter visas endast en diskret öppningsrad. Öppet/stängt sparas i denna webbläsare, separat per användare och modul, utan personuppgifter i värdet. Detta är en lokal visningsinställning, inte serversynkroniserad introduktionsstatus. Funktionen fungerar även när lokal lagring är blockerad.
+- Profilen nås via gemensamma `/settings?besiktStart=ob|eb|tu`. Sparade profiluppgifter finns kvar via befintlig autosparning även när användaren byter enhet. Guiden lagrar inte en separat kopia. Profilens nya återlänk visas först när aktuell profilversion är sparad och inget profilfel visas. Tillåtna återvägar är fasta; inga externa returadresser accepteras.
+- ÖB öppnar befintligt formulär för uppdragsbekräftelse. EB öppnar befintlig dialog för ny entreprenad. TU öppnar befintlig dialog för ny utredning. Att använda guidens knapp skapar ingen post och skickar inget mejl; ordinarie formulär har kvar sina egna inskickningssteg. Inget första uppdrag markeras automatiskt som klart bara för att användaren klickat.
+- TU:s befintliga profillänk pekar nu på `/settings`, inte ÖB:s modulskyddade `/ob/settings`. Profilens generella reservväg tillbaka är arbetsområdesväljaren, inte ÖB. Inga accessregler har ändrats.
+
+Verifiering: fem testgrupper i `npm run test:besiktapp-start` passerar. Inbjudningarnas sju testgrupper passerar också. Riktad ESLint passerar. Isolerad webbläsarkontroll med mockad profil verifierade saknat företagsnamn, dold guide vid återbesök, hopfällt läge med ifylld profil, TU:s startcallback, vänteläge vid profilsparning, återlänk till TU samt synligt profilläsfel. Layout granskades i bred och 390 px bred behållare; det är inte ett fullständigt mobiltest av hela appen. Preview: `node scripts/preview-besiktapp-start.mjs`.
+
+Full typkontroll stoppade i parallellt ändrade `src/lib/eb/remediation.ts:562` och `:762` (customerType-typ) samt `test/eb-follow-up-withdrawal.test.ts:147` (initialWorkspace-prop). Inga typfel rapporterades i C1-filerna. Dessa EB-ändringar lämnades orörda.
+
+Ingen databasändring, publicering, kontoskapande, kundpost eller mejlsändning ingår. Före pilot återstår ett sammanhängande test i avskild Supabase-miljö: inbjudan → rätt modulbehörighet → profilsparning → verkligt första testuppdrag → förhandsgranskning av avsändaruppgifter. B2:s driftkontroller gäller fortsatt. En separat serverlagrad checklista för introduktionsstatus ingår inte i C1.
+
 ## Verifiering av etapp A
 
 `npm run test:public-products` innehåller renderingskontroller för tom, partiell och fullständig profil, meriter, escapad användartext samt offentlig kontakt utan läckage av privata mottagarinställningar. Befintliga tester täcker validering, mejlfel och återförsök med mockad leverans. Komplettera med typkontroll och browserkontroll av de publika sidorna.

@@ -3,6 +3,7 @@ import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import {
   abortActionCaseUpload,
+  addActionCaseItem,
   addActionCaseParticipant,
   completeActionCaseUpload,
   createActionCase,
@@ -53,9 +54,11 @@ export async function POST(request: Request) {
     const payload = body.payload && typeof body.payload === 'object' ? body.payload as Record<string, unknown> : {}
     const ctx = await context()
     let accessUrl: string | undefined
+    let itemId: string | undefined
     let upload: Awaited<ReturnType<typeof createActionCaseSignedUpload>> | undefined
     if (action === 'create_case') await createActionCase(ctx, payload)
     else if (action === 'update_item') await updateActionCaseItem(ctx, payload)
+    else if (action === 'add_item') itemId = await addActionCaseItem(ctx, payload)
     else if (action === 'add_participant') await addActionCaseParticipant(ctx, payload)
     else if (action === 'create_signed_upload') upload = await createActionCaseSignedUpload(ctx, payload)
     else if (action === 'abort_upload') await abortActionCaseUpload(ctx, payload)
@@ -66,6 +69,6 @@ export async function POST(request: Request) {
     else if (action === 'create_cost_line') await createActionCaseCostLine(ctx, payload)
     else if (action === 'delete_cost_line') await deleteActionCaseCostLine(ctx, payload)
     else throw new Error('ACTION_CASE_ACTION_INVALID')
-    return NextResponse.json({ workspace: await getActionCaseWorkspace(ctx), accessUrl, upload })
+    return NextResponse.json({ workspace: await getActionCaseWorkspace(ctx), accessUrl, upload, itemId })
   } catch (error) { return errorResponse(error) }
 }

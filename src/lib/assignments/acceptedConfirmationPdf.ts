@@ -630,9 +630,22 @@ function AcceptedAssignmentConfirmationDocument({
   )
   const isApartment = Boolean(normalizePdfText(brfName) || normalizePdfText(apartmentNumber))
   const isEb = assignment.assignment_type === 'EB'
+  const isTu = assignment.assignment_type === 'TU'
   const isConsumerEb = terms.role === 'construction_consumer'
+  const tuCustomerType =
+    details.customerType === 'business'
+      ? 'business'
+      : details.customerType === 'consumer' || isTu
+        ? 'consumer'
+        : null
   const pricingModel = detailText(details, 'pricingModel', 'fixed')
-  const priceLabel = isEb ? (pricingModel === 'hourly' ? 'Timpris' : 'Fast pris') : 'Pris'
+  const priceLabel = isEb
+    ? pricingModel === 'hourly'
+      ? 'Timpris'
+      : 'Fast pris'
+    : isTu && tuCustomerType === 'consumer'
+      ? 'Pris inklusive moms'
+      : 'Pris'
 
   const objectFacts: Fact[] = [
     { label: 'Adress', value: displayText(propertyAddress) },
@@ -666,6 +679,13 @@ function AcceptedAssignmentConfirmationDocument({
     { label: 'Tid', value: formatTime(preferredTime) },
     { label: priceLabel, value: formatMoney(priceAmount, currency) },
   ]
+
+  if (isTu && (details.customerType === 'consumer' || details.customerType === 'business')) {
+    inspectionFacts.push({
+      label: 'Beställartyp',
+      value: details.customerType === 'consumer' ? 'Privatperson' : 'Företag/organisation',
+    })
+  }
 
   if (isEb) {
     inspectionFacts.push({
@@ -745,6 +765,11 @@ function AcceptedAssignmentConfirmationDocument({
 
   const consumerWithdrawalAcknowledged =
     snapshotValue(payload, 'consumer_withdrawal_acknowledged', null) === true
+  const hasConsumerWithdrawalRecord =
+    typeof snapshotValue(payload, 'consumer_withdrawal_acknowledged', null) === 'boolean'
+  const isConsumerTuAcceptance =
+    isTu && tuCustomerType === 'consumer' && hasConsumerWithdrawalRecord
+  const isConsumerAcceptance = isConsumerEb || isConsumerTuAcceptance
   const consumerEarlyStartRequired =
     snapshotValue(payload, 'consumer_early_start_required', null) === true
   const consumerEarlyStartRequested =
@@ -757,7 +782,7 @@ function AcceptedAssignmentConfirmationDocument({
     { label: 'Dokumentfingeravtryck (SHA-256)', value: formatHash(terms.documentHash) },
   ]
 
-  if (isConsumerEb) {
+  if (isConsumerAcceptance) {
     approvalFacts.push({
       label: 'Information om ångerrätt mottagen',
       value: consumerWithdrawalAcknowledged ? 'Ja' : 'Nej',
@@ -798,7 +823,7 @@ function AcceptedAssignmentConfirmationDocument({
         { style: styles.acceptanceMeta },
         `Dokumentfingeravtryck (SHA-256): ${formatHash(terms.documentHash)}`
       ),
-      ...(isConsumerEb
+      ...(isConsumerAcceptance
         ? [
             h(
               Text,

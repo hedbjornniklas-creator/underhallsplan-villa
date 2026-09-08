@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
+import GettingStarted from '@/components/besiktapp/GettingStarted'
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, type FormEvent, type MouseEvent } from 'react'
 import {
@@ -309,6 +310,7 @@ export default function EbDashboardClient({
             </div>
           </header>
 
+          <GettingStarted module="eb" onStart={() => setDialogOpen(true)} />
           <section className="mt-4 grid gap-3 md:grid-cols-3">
             <div className="rounded-lg border border-emerald-100 bg-white/82 p-4 shadow-sm">
               <div className="flex items-center gap-3">

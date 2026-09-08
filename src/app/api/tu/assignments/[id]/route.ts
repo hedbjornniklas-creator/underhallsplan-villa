@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getTuAssignmentById, requireTuContext } from '@/lib/tu/server'
 import { updateAssignmentById, type AssignmentStatus } from '@/lib/assignments/server'
+import { resolveAssignmentCustomerType } from '@/lib/assignments/consumer'
+import { getAssignmentTermsDocument } from '@/lib/assignments/terms'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,7 +49,48 @@ export async function GET(
     const orgContext = await requireTuContext()
     const assignment = await getTuAssignmentById(orgContext.orgId, id)
     if (!assignment) return jsonError('TU-uppdraget hittades inte.', 404)
-    return NextResponse.json({ assignment })
+    const currentTerms = getAssignmentTermsDocument('technical')
+    const admin = createSupabaseAdminClient()
+    const { data: withdrawalData, error: withdrawalError } = await admin
+      .from('assignment_withdrawal_requests')
+      .select('requested_at,receipt_email,receipt_sent_at,status,resolved_at,resolution_note')
+      .eq('org_id', orgContext.orgId)
+      .eq('assignment_id', assignment.id)
+      .maybeSingle()
+
+    if (withdrawalError && withdrawalError.code !== '42P01') {
+      console.error('[tu.assignments.detail] failed to load withdrawal request', {
+        assignmentId: assignment.id,
+        error: withdrawalError.message,
+      })
+    }
+
+    return NextResponse.json({
+      assignment,
+      customerType: resolveAssignmentCustomerType('TU', assignment.assignment_details),
+      currentTerms: {
+        version: currentTerms.version,
+        documentHash: currentTerms.documentHash,
+        text: currentTerms.text,
+        matchesAcceptedVersion:
+          !assignment.accepted_at
+            ? true
+            : Boolean(
+                assignment.terms_version &&
+                  assignment.terms_version === currentTerms.version
+              ),
+      },
+      withdrawal: withdrawalData
+        ? {
+            requestedAt: withdrawalData.requested_at,
+            receiptEmail: withdrawalData.receipt_email,
+            receiptSentAt: withdrawalData.receipt_sent_at,
+            status: withdrawalData.status,
+            resolvedAt: withdrawalData.resolved_at,
+            resolutionNote: withdrawalData.resolution_note,
+          }
+        : null,
+    })
   } catch (error) {
     const accessError = mapAccessError(error)
     if (accessError) return accessError

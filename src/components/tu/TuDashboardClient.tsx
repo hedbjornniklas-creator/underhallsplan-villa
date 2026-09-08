@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import GettingStarted from '@/components/besiktapp/GettingStarted'
 import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -30,6 +31,7 @@ import type {
 
 type TuFormState = {
   objectType: 'villa' | 'apartment'
+  customerType: 'consumer' | 'business'
   customerAddressMatchesObject: boolean
   customerName: string
   customerEmail: string
@@ -82,6 +84,7 @@ type ScratchFormState = {
 
 const EMPTY_TU_FORM: TuFormState = {
   objectType: 'villa',
+  customerType: 'consumer',
   customerAddressMatchesObject: false,
   customerName: '',
   customerEmail: '',
@@ -568,6 +571,7 @@ export default function TuDashboardClient({
             </div>
           </header>
 
+          <GettingStarted module="tu" onStart={() => openCreationDialog('scratch')} />
           {error && !dialog && !selectedAssignment ? (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
               {error}
@@ -579,7 +583,7 @@ export default function TuDashboardClient({
             </div>
           ) : null}
 
-          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <AssignmentConfirmationsCard
               assignments={latestAssignments}
               busy={busy}
@@ -666,7 +670,7 @@ function StatPill({ label, value }: { label: string; value: number }) {
 
 function CardShell({ children }: { children: React.ReactNode }) {
   return (
-    <article className="relative flex min-h-[260px] flex-col overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-4 shadow-xl ring-1 ring-black/5 backdrop-blur-md md:min-h-[300px] md:p-5">
+    <article className="relative flex min-h-[260px] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-4 shadow-xl ring-1 ring-black/5 backdrop-blur-md md:min-h-[300px] md:p-5">
       <div className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-violet-600 to-fuchsia-400" />
       {children}
     </article>
@@ -710,7 +714,7 @@ function AssignmentConfirmationsCard({
     <CardShell>
       <CardHeading
         title="Uppdragsbekräftelser"
-        description="Skicka ny bekräftelse och följ senaste uppdrag."
+        description="Skapa en bekräftelse och följ dina senaste uppdrag."
         icon={<ListChecks size={22} aria-hidden />}
       />
       <div className="mt-3">
@@ -722,12 +726,12 @@ function AssignmentConfirmationsCard({
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
           {busy === 'quick-send' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
-          {busy === 'quick-send' ? 'Öppnar...' : 'Skicka uppdragsbekräftelse'}
+          {busy === 'quick-send' ? 'Öppnar...' : 'Skapa uppdragsbekräftelse'}
         </button>
       </div>
       <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
         {assignments.length > 0 ? (
-          <ul className="h-full space-y-1 overflow-auto pr-1">
+          <ul className="h-full min-w-0 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
             {assignments.map((assignment) => (
               <AssignmentMiniRow
                 key={assignment.id}
@@ -740,7 +744,7 @@ function AssignmentConfirmationsCard({
           <ListEmptyState>Inga uppdragsbekräftelser ännu.</ListEmptyState>
         )}
       </div>
-      <CardFooterLink href="/tu/assignments" label="Öppna alla uppdrag" />
+      <CardFooterLink href="/tu/assignments" label="Visa alla uppdragsbekräftelser" />
     </CardShell>
   )
 }
@@ -780,13 +784,13 @@ function StartInvestigationCard({
           Godkända uppdrag
         </h3>
         {acceptedAssignments.length > 0 ? (
-          <ul className="space-y-1 overflow-auto pr-1">
+          <ul className="min-w-0 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
             {acceptedAssignments.map((assignment) => (
               <li key={assignment.id}>
                 <button
                   type="button"
                   onClick={() => onStartAssignment(assignment)}
-                  className="block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                  className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
                 >
                   <span className="block truncate text-xs font-medium text-slate-950">
                     {assignment.customer_name || assignment.customer_email}
@@ -816,7 +820,7 @@ function InvestigationsCard({ investigations }: { investigations: TuInspectionSu
       />
       <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
         {investigations.length > 0 ? (
-          <ul className="h-full space-y-1 overflow-auto pr-1">
+          <ul className="h-full min-w-0 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
             {investigations.map((investigation) => (
               <InvestigationMiniRow key={investigation.inspectionId} investigation={investigation} />
             ))}
@@ -894,7 +898,7 @@ function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
       </div>
       <div className="mt-auto pt-5">
         <PendingLink
-          href="/ob/settings"
+          href="/settings"
           autoPending
           pendingLabel="Öppnar profil..."
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
@@ -925,7 +929,7 @@ function AssignmentMiniRow({
           href={`/tu/investigations/${encodeURIComponent(assignment.inspection_id)}`}
           autoPending
           pendingLabel="Öppnar utredning..."
-          className="flex w-full justify-start rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+          className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
         >
           <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
           <span className="block truncate text-[11px] text-slate-600">{meta}</span>
@@ -958,10 +962,10 @@ function AssignmentMiniRow({
   return (
     <li>
       <PendingLink
-        href="/tu/assignments"
+        href={`/tu/assignments/${encodeURIComponent(assignment.id)}`}
         autoPending
         pendingLabel="Öppnar uppdrag..."
-        className="flex w-full justify-start rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+        className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
       >
         <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
         <span className="block truncate text-[11px] text-slate-600">{meta}</span>
@@ -978,7 +982,7 @@ function InvestigationMiniRow({ investigation }: { investigation: TuInspectionSu
         href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`}
         autoPending
         pendingLabel="Öppnar utredning..."
-        className="flex w-full justify-start rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+        className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
       >
         <span className="block truncate text-xs font-medium text-slate-950">{investigation.title}</span>
         <span className="block truncate text-[11px] text-slate-600">
@@ -1217,6 +1221,10 @@ function QuickAssignmentDialog({
           <h3 className="text-sm font-semibold text-slate-950">Beställare</h3>
           <p className="mt-1 text-xs text-slate-600">Uppdragsbekräftelsen skickas till beställarens e-postadress.</p>
         </div>
+        <CustomerTypeControl
+          value={form.customerType}
+          onChange={(value) => onChange('customerType', value)}
+        />
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Namn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
           <Field label="Beställarmejl" required value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
@@ -1254,7 +1262,13 @@ function QuickAssignmentDialog({
         </div>
         <Textarea label="Utredningens omfattning" required value={form.scopeDescription} onChange={(value) => onChange('scopeDescription', value)} rows={4} />
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <Field label="Pris SEK" required value={form.priceAmount} onChange={(value) => onChange('priceAmount', value)} type="number" />
+          <Field
+            label={form.customerType === 'consumer' ? 'Pris inkl. moms, SEK' : 'Pris, SEK'}
+            required
+            value={form.priceAmount}
+            onChange={(value) => onChange('priceAmount', value)}
+            type="number"
+          />
         </div>
       </section>
 
@@ -1560,7 +1574,7 @@ function CreationModePicker({
           }`}
         >
           <span className={`block text-sm font-semibold ${confirmationActive ? 'text-violet-900' : 'text-slate-900'}`}>
-            Skicka uppdragsbekräftelse
+            Skapa uppdragsbekräftelse
           </span>
           <span className="mt-1 block text-xs leading-5 text-slate-600">
             Kunden får uppdraget för godkännande innan utredningen startas.
@@ -1602,6 +1616,45 @@ function ObjectTypeControl({
         {[
           { value: 'villa' as const, label: 'Villa' },
           { value: 'apartment' as const, label: 'Lägenhet' },
+        ].map((option) => {
+          const active = value === option.value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(option.value)}
+              className={
+                active
+                  ? 'rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm'
+                  : 'rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white'
+              }
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
+
+function CustomerTypeControl({
+  value,
+  onChange,
+}: {
+  value: 'consumer' | 'business'
+  onChange: (value: 'consumer' | 'business') => void
+}) {
+  return (
+    <fieldset className="mb-3 space-y-1">
+      <legend className="text-xs font-medium text-slate-600">
+        Beställartyp<span className="ml-0.5 text-rose-600" aria-hidden>*</span>
+      </legend>
+      <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
+        {[
+          { value: 'consumer' as const, label: 'Privatperson' },
+          { value: 'business' as const, label: 'Företag/organisation' },
         ].map((option) => {
           const active = value === option.value
           return (

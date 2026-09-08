@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     const customerEmail = text(body, 'customerEmail').toLowerCase()
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
+    const customerType = text(body, 'customerType') === 'business' ? 'business' : 'consumer'
     const price = parsePrice(text(body, 'priceAmount'))
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
       apartmentHolderName: objectType === 'apartment' ? text(body, 'apartmentHolderName') || null : null,
       invoiceEmail: invoiceEmail || null,
       objectType,
+      customerType,
       scopeDescription: text(body, 'scopeDescription') || null,
       preferredDate: text(body, 'preferredDate') || null,
       preferredTime: text(body, 'preferredTime') || null,

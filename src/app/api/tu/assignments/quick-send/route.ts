@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const scopeDescription = text(body, 'scopeDescription')
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
+    const customerType = text(body, 'customerType') === 'business' ? 'business' : 'consumer'
     const cadastralId = text(body, 'cadastralId')
     const brfName = text(body, 'brfName')
     const apartmentNumber = text(body, 'apartmentNumber')
@@ -87,6 +88,7 @@ export async function POST(request: Request) {
       apartmentHolderName: objectType === 'apartment' ? text(body, 'apartmentHolderName') || null : null,
       invoiceEmail: invoiceEmail || null,
       objectType,
+      customerType,
       scopeDescription,
       preferredDate: text(body, 'preferredDate') || null,
       preferredTime: text(body, 'preferredTime') || null,

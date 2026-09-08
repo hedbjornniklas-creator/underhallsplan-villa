@@ -16,6 +16,13 @@ import {
 } from '@/lib/assignments/terms'
 import { isBaseAssignmentAddonKey } from '@/lib/assignments/addons'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import {
+  CONSUMER_EARLY_START_CONSENT_TEXT,
+  CONSUMER_WITHDRAWAL_ACKNOWLEDGEMENT_TEXT,
+  getConsumerWithdrawalDeadline,
+  requiresConsumerEarlyStartConsent,
+  resolveAssignmentCustomerType,
+} from '@/lib/assignments/consumer'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -164,13 +171,6 @@ function roleLooksLikeApartment(value: string | null | undefined) {
   return normalized.includes('lagenhet') || normalized.includes('apartment') || normalized.includes('apt')
 }
 
-function requiresConsumerEarlyStartConsent(preferredDate: string) {
-  if (!DATE_REGEX.test(preferredDate)) return false
-  const serviceDate = Date.parse(`${preferredDate}T23:59:59.999Z`)
-  if (!Number.isFinite(serviceDate)) return false
-  return serviceDate < Date.now() + 14 * 24 * 60 * 60 * 1000
-}
-
 function toState(link: PublicLink): PublicState {
   const now = Date.now()
   const expiresAt = String(link.expires_at ?? '')
@@ -191,8 +191,8 @@ function toState(link: PublicLink): PublicState {
 
   if (cancelled) return 'revoked'
   if (revoked) return 'revoked'
-  if (expired) return 'expired'
   if (used) return 'used'
+  if (expired) return 'expired'
   if (outdated) return 'outdated'
   return 'open'
 }
@@ -223,9 +223,15 @@ export async function GET(
     let inspector: PublicInspectorProfile | null = null
     let addonOffers: PublicAddonOffer[] = []
     let selectedAddonServiceIds: string[] = []
+    let withdrawal: {
+      requestedAt: string
+      receiptEmail: string
+      receiptSentAt: string | null
+      withdrawalDeadline: string | null
+    } | null = null
+    const admin = createSupabaseAdminClient()
 
     if (assignment.responsible_profile_id) {
-      const admin = createSupabaseAdminClient()
       const { data: inspectorData } = await admin
         .from('profiles')
         .select(
@@ -282,6 +288,37 @@ export async function GET(
       }
     }
 
+    const isConsumerTechnicalAssignment =
+      assignment.assignment_type === 'TU' &&
+      resolveAssignmentCustomerType('TU', assignment.assignment_details) === 'consumer'
+
+    if (isConsumerTechnicalAssignment && assignment.accepted_at) {
+      const { data: withdrawalData, error: withdrawalError } = await admin
+        .from('assignment_withdrawal_requests')
+        .select('requested_at,receipt_email,receipt_sent_at')
+        .eq('assignment_id', assignment.id)
+        .maybeSingle()
+
+      if (withdrawalError && withdrawalError.code !== '42P01') {
+        console.error('[assignments.accept] failed to load withdrawal request', {
+          assignmentId: assignment.id,
+          error: withdrawalError.message,
+        })
+      }
+
+      if (withdrawalData) {
+        withdrawal = {
+          requestedAt: String(withdrawalData.requested_at),
+          receiptEmail: String(withdrawalData.receipt_email),
+          receiptSentAt: withdrawalData.receipt_sent_at
+            ? String(withdrawalData.receipt_sent_at)
+            : null,
+          withdrawalDeadline:
+            getConsumerWithdrawalDeadline(assignment.accepted_at)?.toISOString() ?? null,
+        }
+      }
+    }
+
     return NextResponse.json({
       state: toState(link as PublicLink),
       expiresAt: link.expires_at ?? null,
@@ -290,6 +327,7 @@ export async function GET(
       inspector,
       addonOffers,
       selectedAddonServiceIds,
+      withdrawal,
       terms: {
         version: assignmentTerms.version,
         documents: {
@@ -420,17 +458,21 @@ export async function POST(
     }
 
     const isConsumerEbAssignment = termsRole === 'construction_consumer'
+    const isConsumerTechnicalAssignment =
+      isTechnicalAssignment &&
+      resolveAssignmentCustomerType('TU', assignment.assignment_details) === 'consumer'
+    const isConsumerAssignment = isConsumerEbAssignment || isConsumerTechnicalAssignment
     const consumerWithdrawalAcknowledged = body.consumerWithdrawalAcknowledged === true
     const startDuringWithdrawalPeriod = body.startDuringWithdrawalPeriod === true
     const earlyStartConsentRequired =
-      isConsumerEbAssignment && requiresConsumerEarlyStartConsent(preferredDate)
+      isConsumerAssignment && requiresConsumerEarlyStartConsent(preferredDate)
 
-    if (isConsumerEbAssignment && !consumerWithdrawalAcknowledged) {
+    if (isConsumerAssignment && !consumerWithdrawalAcknowledged) {
       return jsonError('Bekräfta att du har tagit del av informationen om ångerrätt.', 400)
     }
     if (earlyStartConsentRequired && !startDuringWithdrawalPeriod) {
       return jsonError(
-        'Besiktningen infaller under ångerfristen. Du behöver uttryckligen begära att uppdraget får påbörjas under denna tid.',
+        `${isTechnicalAssignment ? 'Utredningen' : 'Besiktningen'} infaller under ångerfristen. Du behöver uttryckligen begära att uppdraget får påbörjas under denna tid.`,
         400
       )
     }
@@ -549,13 +591,20 @@ export async function POST(
         assignment.assignment_details && typeof assignment.assignment_details === 'object'
           ? assignment.assignment_details
           : {},
-      consumer_withdrawal_acknowledged: isConsumerEbAssignment
+      consumer_withdrawal_acknowledged: isConsumerAssignment
         ? consumerWithdrawalAcknowledged
         : null,
-      consumer_early_start_required: isConsumerEbAssignment ? earlyStartConsentRequired : null,
-      consumer_early_start_requested: isConsumerEbAssignment
+      consumer_withdrawal_acknowledgement_text: isConsumerAssignment
+        ? CONSUMER_WITHDRAWAL_ACKNOWLEDGEMENT_TEXT
+        : null,
+      consumer_early_start_required: isConsumerAssignment ? earlyStartConsentRequired : null,
+      consumer_early_start_requested: isConsumerAssignment
         ? startDuringWithdrawalPeriod
         : null,
+      consumer_early_start_consent_text:
+        isConsumerAssignment && earlyStartConsentRequired
+          ? CONSUMER_EARLY_START_CONSENT_TEXT
+          : null,
     }
 
     await consumeAssignmentToken({

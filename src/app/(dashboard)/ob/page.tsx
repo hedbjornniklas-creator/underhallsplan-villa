@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import InspectorProfileDetails from '@/components/ob/InspectorProfileDetails'
+import GettingStarted from '@/components/besiktapp/GettingStarted'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 
 type DashboardCard = {
@@ -1006,6 +1007,7 @@ export default function OverlatelsebesiktningPage() {
             </div>
           </header>
 
+          <GettingStarted module="ob" />
           <section className="mx-auto mt-4 grid w-full max-w-7xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-center lg:grid-cols-4">
             {MODULES.map((module) => (
               <div key={module.id} className="w-full max-w-[260px] sm:max-w-[300px]">

@@ -14,6 +14,7 @@ export type AssignmentTermsRole =
   | 'construction_consumer'
 
 export const ASSIGNMENT_TERMS_VERSION = '2026-02-21.v1'
+export const TU_ASSIGNMENT_TERMS_VERSION = '2026-09-08.tu.v3'
 export const EB_ASSIGNMENT_TERMS_VERSION = '2026-08-22.eb.v1'
 export const EB_BUSINESS_ASSIGNMENT_TERMS_VERSION = '2026-08-22.eb-business.v1'
 export const EB_CONSUMER_ASSIGNMENT_TERMS_VERSION = '2026-08-22.eb-consumer.v1'
@@ -112,7 +113,9 @@ export function getAssignmentTermsDocument(role: AssignmentTermsRole): Assignmen
 
   return {
     version:
-      role === 'construction_business'
+      role === 'technical'
+        ? TU_ASSIGNMENT_TERMS_VERSION
+        : role === 'construction_business'
         ? EB_BUSINESS_ASSIGNMENT_TERMS_VERSION
         : role === 'construction_consumer'
           ? EB_CONSUMER_ASSIGNMENT_TERMS_VERSION

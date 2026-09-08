@@ -996,6 +996,7 @@ export async function createTuAssignmentDraft(input: {
   apartmentHolderName?: string | null
   invoiceEmail?: string | null
   objectType?: TuObjectType | null
+  customerType?: 'consumer' | 'business' | null
   scopeDescription?: string | null
   preferredDate?: string | null
   preferredTime?: string | null
@@ -1037,6 +1038,10 @@ export async function createTuAssignmentDraft(input: {
     priceAmount: input.priceAmount,
     currency: 'SEK',
     notesInternal: input.notesInternal,
+    assignmentDetails: {
+      objectType,
+      customerType: input.customerType === 'business' ? 'business' : 'consumer',
+    },
   })
 }
 
