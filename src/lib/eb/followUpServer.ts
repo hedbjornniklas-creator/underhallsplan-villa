@@ -37,11 +37,40 @@ export function ebFollowUpBaseUrl(requestOrigin?: string): string {
 
 async function loadContext(token: string) {
   if (token.length < 20 || token.length > 200) throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
-  const admin = createSupabaseAdminClient()
-  const { data: link, error } = await admin.from('inspection_report_links')
+  return loadContextForLink({ tokenHash: hashAssignmentToken(token) })
+}
+
+type InspectionOfferScope = { orgId: string; inspectionId: string; reportLinkId: string }
+
+function createFollowUpAdminClient() {
+  try {
+    return createSupabaseAdminClient()
+  } catch {
+    // Client construction fails on absent/invalid server configuration, not a
+    // network request. Do not turn an unconfigured service into a retry prompt.
+    throw new Error('EB_FOLLOW_UP_CONFIGURATION')
+  }
+}
+
+function throwOfferReadError(error: { code?: string }) {
+  const configurationCodes = ['42P01', '42703', '42883', '42501', 'PGRST200', 'PGRST202', 'PGRST204', 'PGRST205', 'PGRST301', 'PGRST302', 'PGRST303']
+  throw new Error(configurationCodes.includes(error.code ?? '') ? 'EB_FOLLOW_UP_CONFIGURATION' : 'EB_FOLLOW_UP_UNAVAILABLE')
+}
+
+async function loadContextForLink(selector: { tokenHash: string } | InspectionOfferScope) {
+  const admin = createFollowUpAdminClient()
+  let query = admin.from('inspection_report_links')
     .select('id,org_id,inspection_id,created_at,revoked_at,snapshot_payload')
-    .eq('token_hash', hashAssignmentToken(token)).is('revoked_at', null).maybeSingle()
-  if (error || !link) throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
+    .is('revoked_at', null)
+  if ('tokenHash' in selector) {
+    query = query.eq('token_hash', selector.tokenHash)
+  } else {
+    if (!selector.orgId || !selector.inspectionId || !selector.reportLinkId) throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
+    query = query.eq('id', selector.reportLinkId).eq('org_id', selector.orgId).eq('inspection_id', selector.inspectionId)
+  }
+  const { data: link, error } = await query.maybeSingle()
+  if (error) throwOfferReadError(error)
+  if (!link) throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
   const report = getEbInspectionReportFromSnapshot(link.snapshot_payload)
   if (!report || report.inspection.inspectionId !== link.inspection_id) {
     throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
@@ -54,8 +83,10 @@ async function loadContext(token: string) {
     admin.from('eb_follow_up_orders').select('id,org_id,eb_project_id,inspection_id,report_link_id,buyer_snapshot,seller_snapshot,withdrawal_requested_at')
       .eq('inspection_id', link.inspection_id).eq('org_id', link.org_id).maybeSingle(),
   ])
-  if (orderResult.error) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
-  if (projectResult.error || !projectResult.data || detailResult.error || detailResult.data?.eb_project_id !== report.project.id || latestResult.error) {
+  for (const result of [orderResult, projectResult, detailResult, latestResult]) {
+    if (result.error) throwOfferReadError(result.error)
+  }
+  if (!projectResult.data || detailResult.data?.eb_project_id !== report.project.id) {
     throw new Error('EB_FOLLOW_UP_REPORT_UNAVAILABLE')
   }
   if (!orderResult.data && !Number.isFinite(Date.parse(report.inspection.reportLockedAt ?? ''))) {
@@ -72,7 +103,7 @@ async function loadContext(token: string) {
     const { data: unlock, error: unlockError } = await admin.from('inspection_lock_events')
       .select('id').eq('org_id', link.org_id).eq('inspection_id', link.inspection_id)
       .eq('action', 'unlock').gte('performed_at', snapshotCreatedAt).limit(1).maybeSingle()
-    if (unlockError) throw new Error('EB_FOLLOW_UP_UNAVAILABLE')
+    if (unlockError) throwOfferReadError(unlockError)
     if (unlock) throw new Error('EB_FOLLOW_UP_REPORT_NOT_FINALIZED')
   }
   return { admin, link, report, project: projectResult.data, latest: latestResult.data?.id === link.id,
@@ -80,12 +111,14 @@ async function loadContext(token: string) {
 }
 
 async function loadSeller(orgId: string): Promise<EbFollowUpSeller | null> {
-  const admin = createSupabaseAdminClient()
+  const admin = createFollowUpAdminClient()
   const { data: org, error } = await admin.from('organizations').select('name,created_by,eb_follow_up_seller').eq('id', orgId).maybeSingle()
-  if (error || !org) return null
-  const { data: profile } = org.created_by ? await admin.from('profiles')
+  if (error) throwOfferReadError(error)
+  if (!org) return null
+  const { data: profile, error: profileError } = org.created_by ? await admin.from('profiles')
     .select('company_name,company_orgno,company_address,company_postal_code,company_city,email,phone').eq('id', org.created_by).maybeSingle()
-    : { data: null }
+    : { data: null, error: null }
+  if (profileError) throwOfferReadError(profileError)
   const configured = org.eb_follow_up_seller as Partial<EbFollowUpSeller> | null
   const name = text(configured?.name) || text(profile?.company_name) || text(org.name)
   const orgNumber = text(configured?.orgNumber) || text(profile?.company_orgno)
@@ -97,28 +130,44 @@ async function loadSeller(orgId: string): Promise<EbFollowUpSeller | null> {
 }
 
 export async function getEbFollowUpOffer(token: string): Promise<EbFollowUpOffer> {
+  return evaluateOffer(() => loadContext(token))
+}
+
+/** Server-only preview: the caller must authenticate and validate organisation/inspection access first. */
+export async function getEbFollowUpOfferForInspection(scope: InspectionOfferScope): Promise<EbFollowUpOffer> {
+  return evaluateOffer(() => loadContextForLink(scope))
+}
+
+async function evaluateOffer(load: () => ReturnType<typeof loadContext>): Promise<EbFollowUpOffer> {
   const base: EbFollowUpOffer = {
-    available: false, reason: null, priceOre: EB_FOLLOW_UP_PRICE_ORE, netPriceOre: EB_FOLLOW_UP_NET_PRICE_ORE,
+    available: false, retryable: false, reason: null, priceOre: EB_FOLLOW_UP_PRICE_ORE, netPriceOre: EB_FOLLOW_UP_NET_PRICE_ORE,
     vatOre: EB_FOLLOW_UP_VAT_ORE, vatRate: EB_FOLLOW_UP_VAT_RATE, termsVersion: EB_FOLLOW_UP_TERMS_VERSION,
     serviceDescription: EB_FOLLOW_UP_SERVICE_DESCRIPTION, alreadyActive: false, seller: null,
   }
   try {
-    const context = await loadContext(token)
+    const context = await load()
     base.alreadyActive = Boolean(context.order)
-    base.seller = context.order?.seller_snapshot ?? await loadSeller(context.link.org_id)
-    if (context.order) return { ...base, available: true }
-    if (process.env.EB_FOLLOW_UP_ENABLED !== 'true') return { ...base, reason: 'Digital åtgärdsuppföljning är inte tillgänglig för nya beställningar just nu.' }
+    if (context.order) return { ...base, available: true, seller: context.order.seller_snapshot }
+    if (process.env.EB_FOLLOW_UP_ENABLED !== 'true') return { ...base, reason: 'Tjänsten är inte aktiverad för nya beställningar.' }
     if (!context.latest) return { ...base, reason: 'Öppna den senast publicerade versionen av utlåtandet för att beställa.' }
     if (!followUpNotes(context).length) return { ...base, reason: 'Utlåtandet innehåller inga noteringar att följa upp.' }
-    if (!base.seller || !process.env.ASSIGNMENTS_MAIL_FROM?.trim() || !process.env.RESEND_API_KEY?.trim()) {
-      return { ...base, reason: 'Tjänsten är ännu inte klar för beställning. Kontakta besiktningsföretaget.' }
+    base.seller = await loadSeller(context.link.org_id)
+    if (!base.seller) return { ...base, reason: 'Säljaruppgifterna behöver kompletteras innan tjänsten kan beställas.' }
+    if (!process.env.ASSIGNMENTS_MAIL_FROM?.trim() || !process.env.RESEND_API_KEY?.trim()) {
+      return { ...base, reason: 'E-postutskicken för tjänsten är inte konfigurerade.' }
     }
     return { ...base, available: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'EB_FOLLOW_UP_REPORT_NOT_FINALIZED') {
       return { ...base, reason: 'Den här rapportversionens fastställande kunde inte bekräftas. Kontakta besiktningsmannen för att få den senast fastställda versionen.' }
     }
-    return { ...base, reason: 'Åtgärdsuppföljning är inte tillgänglig för detta utlåtande just nu.' }
+    if (error instanceof Error && error.message === 'EB_FOLLOW_UP_CONFIGURATION') {
+      return { ...base, reason: 'Tjänstens databas- eller serverkonfiguration behöver kompletteras.' }
+    }
+    if (error instanceof Error && error.message === 'EB_FOLLOW_UP_REPORT_UNAVAILABLE') {
+      return { ...base, reason: 'Åtgärdsuppföljning är inte tillgänglig för detta utlåtande.' }
+    }
+    return { ...base, retryable: true, reason: 'Tillgängligheten kunde inte kontrolleras just nu. Försök igen om en stund.' }
   }
 }
 

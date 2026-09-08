@@ -4,6 +4,7 @@ import EbPublicReportSnapshotView from '@/components/eb/EbPublicReportSnapshotVi
 import { EbToastProvider } from '@/components/eb/EbToastProvider'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+import { getEbFollowUpOfferForInspection } from '@/lib/eb/followUpServer'
 import {
   getEbInspectionReportFromSnapshot,
   isEbReportSnapshotPayloadV1,
@@ -17,6 +18,7 @@ export const dynamic = 'force-dynamic'
 const DELIVERY_DOCUMENT_SIGNED_URL_TTL_SECONDS = 60 * 10
 
 type ReportLinkRow = {
+  id: string
   created_at: string | null
   snapshot_payload: unknown
   pdf_status: string | null
@@ -64,12 +66,13 @@ export default async function EbInspectionDigitalReportPage({
     const { data, error } = await admin
       .from('inspection_report_links')
       .select(
-        'created_at,snapshot_payload,pdf_status,pdf_error,pdf_base64,pdf_storage_bucket,pdf_storage_path'
+        'id,created_at,snapshot_payload,pdf_status,pdf_error,pdf_base64,pdf_storage_bucket,pdf_storage_path'
       )
       .eq('org_id', context.orgId)
       .eq('inspection_id', inspectionId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(1)
       .maybeSingle()
 
@@ -101,6 +104,15 @@ export default async function EbInspectionDigitalReportPage({
       )
     }
 
+    const followUpOffer = await getEbFollowUpOfferForInspection({
+      orgId: context.orgId, inspectionId, reportLinkId: row.id,
+    })
+    const followUpStatus = followUpOffer.alreadyActive
+      ? 'Digital åtgärdsuppföljning är redan beställd. Beställaren kan återfå åtkomst via den publika rapportlänken utan en ny avgift.'
+      : followUpOffer.available
+        ? 'Digital åtgärdsuppföljning är tillgänglig för beställning för 599 kr inkl. moms via den publika rapportlänken som skickas med utlåtandet.'
+        : `${followUpOffer.retryable ? 'Tillfälligt tekniskt fel vid kontroll av digital åtgärdsuppföljning.' : 'Digital åtgärdsuppföljning är inte tillgänglig för beställning.'} ${followUpOffer.reason ?? ''}`
+
     const deliveryDocuments = (
       await Promise.all(
         (snapshot?.deliveryDocuments ?? []).map(async (document) => {
@@ -129,8 +141,7 @@ export default async function EbInspectionDigitalReportPage({
     return (
       <>
         <aside className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-center text-sm leading-6 text-slate-600 print:hidden">
-          Intern förhandsvisning. Beställaren köper digital åtgärdsuppföljning för 599 kr inkl. moms
-          via den publika rapportlänken som skickas med utlåtandet. Köpknappen visas inte här.
+          Intern förhandsvisning. {followUpStatus} Köpknappen visas inte här.
         </aside>
         <EbPublicReportSnapshotView
           report={report}

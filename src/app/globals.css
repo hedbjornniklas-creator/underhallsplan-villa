@@ -49,7 +49,8 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     }
 
     @bottom-left {
-      content: "Besiktningsbolaget Stockholm\AOrg.nr 559281-0823\ABryggvägen 7, 117 71, Stockholm";
+      /* Company identity belongs to the report's own data, never a global default. */
+      content: none;
       white-space: pre;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 8pt;
@@ -61,7 +62,7 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     }
 
     @bottom-center {
-      content: "0735678716\Aniklas.h@bbsab.nu";
+      content: none;
       white-space: pre;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 8pt;

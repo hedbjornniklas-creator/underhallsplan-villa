@@ -19,3 +19,7 @@ export const PUBLIC_COMPANY_INFO: PublicCompanyInfo = {
 }
 
 export const PUBLIC_COMPANY_PAGE = '/om-hushub'
+
+// Temporary public BesiktApp contact, explicitly approved by the user 2026-09-08.
+// Separate from both the company's general contact and private delivery settings.
+export const PUBLIC_BESIKTAPP_CONTACT_EMAIL = 'jn@hedbjorn.se'

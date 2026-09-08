@@ -36,6 +36,7 @@ function safePortalUrl(value: unknown) {
 export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
   const [offer, setOffer] = useState<EbFollowUpOffer | null>(null)
   const [loadError, setLoadError] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const [fields, setFields] = useState<OrderFields>(emptyFields)
   const [challengeId, setChallengeId] = useState<string | null>(null)
   const [challengeEmail, setChallengeEmail] = useState('')
@@ -45,6 +46,7 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
   const [portalUrl, setPortalUrl] = useState<string | null>(null)
   const [accessOnly, setAccessOnly] = useState(false)
   const busyRef = useRef(false)
+  const retryRef = useRef(false)
   const mounted = useRef(true)
   const dialog = useRef<HTMLDialogElement>(null)
   const emailInput = useRef<HTMLInputElement>(null)
@@ -53,13 +55,21 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
   const descriptionId = useId()
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    const timeout = setTimeout(abort, 15_000)
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) abort()
     try {
-      const response = await fetch(endpoint, { cache: 'no-store', signal, credentials: 'same-origin' })
+      const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal, credentials: 'same-origin' })
       const payload = await response.json()
       if (!response.ok || !payload.offer) throw new Error('OFFER_UNAVAILABLE')
-      if (!signal?.aborted) { setOffer(payload.offer); setLoadError(false) }
+      if (!signal?.aborted && mounted.current) { setOffer(payload.offer); setLoadError(false) }
     } catch {
-      if (!signal?.aborted) setLoadError(true)
+      if (!signal?.aborted && mounted.current) setLoadError(true)
+    } finally {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', abort)
     }
   }, [endpoint])
 
@@ -69,6 +79,17 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
     void load(controller.signal)
     return () => { mounted.current = false; controller.abort() }
   }, [load])
+
+  async function retry() {
+    if (retryRef.current) return
+    retryRef.current = true
+    setRetrying(true)
+    try { await load() }
+    finally {
+      retryRef.current = false
+      if (mounted.current) setRetrying(false)
+    }
+  }
 
   function change<K extends keyof OrderFields>(key: K, value: OrderFields[K]) {
     setFields(current => ({ ...current, [key]: value }))
@@ -132,13 +153,17 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
     }
   }
 
-  if (!offer) {
-    return loadError ? <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 print:hidden">
-      Åtgärdsuppföljning kunde inte hämtas. <button type="button" onClick={() => void load()} className="ml-1 font-semibold text-emerald-800 underline">Försök igen</button>
+  if (!offer || (!offer.available && !offer.alreadyActive)) {
+    // A disabled or inapplicable service is not a customer offer. Operational
+    // reasons belong in the authenticated preview, not in a disabled sales card.
+    return loadError || offer?.retryable ? <div id="digital-follow-up-retry" role="status" className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500 print:hidden">
+      Åtgärdsuppföljningen kunde inte laddas.
+      <button type="button" disabled={retrying} onClick={() => void retry()} className="inline-flex min-h-10 items-center gap-1.5 font-semibold text-emerald-800 underline disabled:cursor-wait disabled:opacity-60">
+        {retrying ? <><LoaderCircle size={14} className="animate-spin" aria-hidden />Försöker igen…</> : 'Försök igen'}
+      </button>
     </div> : null
   }
   const priceLabel = `${money(offer.priceOre)} inkl. moms`
-  const purchaseUnavailable = !offer.available && !offer.alreadyActive
   const verifiedEmailUnchanged = challengeId !== null && challengeEmail === fields.email.trim().toLowerCase()
 
   return (
@@ -149,18 +174,17 @@ export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.13em] text-emerald-700">Tillval efter besiktningen</p>
             <h2 className="mt-1 text-xl font-semibold text-slate-950">Digital åtgärdsuppföljning</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Skicka felen till entreprenören och följ vilka som anmälts åtgärdade. Samla kommentarer, före- och åtgärdsbilder utan att ändra utlåtandet.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Skicka felen till entreprenören och följ vilka som anmälts åtgärdade. Samla kommentarer, före- och åtgärdsbilder.</p>
           </div>
         </div>
         <div className="shrink-0 lg:text-right">
-          {!offer.alreadyActive ? <><p className="text-xl font-semibold text-slate-950">{priceLabel}</p><p className="mb-3 mt-1 text-xs text-slate-500">Engångspris för denna besiktning. Ingen prenumeration.</p></> : null}
+          {!offer.alreadyActive ? <><p className="text-xl font-semibold text-slate-950">{priceLabel}</p><p className="mb-3 mt-1 text-xs text-slate-500">Engångspris för denna besiktning.</p></> : null}
           {portalUrl ? <a href={portalUrl} rel="noreferrer" className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>Öppna åtgärdsuppföljningen<ArrowRight size={17} aria-hidden /></a>
-            : <button type="button" disabled={purchaseUnavailable} onClick={() => open(offer.alreadyActive ? 'access' : 'purchase')} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
-              {offer.alreadyActive ? 'Öppna åtgärdsuppföljningen' : purchaseUnavailable ? 'Köp inte tillgängligt just nu' : 'Köp åtgärdsuppföljning'}<ArrowRight size={17} aria-hidden />
+            : <button type="button" onClick={() => open(offer.alreadyActive ? 'access' : 'purchase')} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
+              {offer.alreadyActive ? 'Öppna åtgärdsuppföljningen' : 'Köp åtgärdsuppföljning'}<ArrowRight size={17} aria-hidden />
             </button>}
         </div>
       </div>
-      {purchaseUnavailable ? <p role="status" className="border-t border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-950 sm:px-6">{offer.reason?.trim() || 'Digital åtgärdsuppföljning är inte tillgänglig för nya beställningar just nu.'}</p> : null}
       {portalUrl ? <div role="status" className="flex items-start gap-2 border-t border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-950"><Check size={18} className="mt-0.5 shrink-0" aria-hidden /><span>{message} Din personliga länk ska inte delas med entreprenören; skicka en separat entreprenörslänk från portalen.</span></div> : null}
       {!portalUrl ? <div className="border-t border-slate-100 px-5 py-3 text-xs leading-5 text-slate-500 sm:px-6">Utlåtandet är tillgängligt även utan tillvalet. Entreprenörens avbockning är inte ett godkännande av besiktningsmannen.</div> : null}
 

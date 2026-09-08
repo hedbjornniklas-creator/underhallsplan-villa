@@ -17,8 +17,68 @@ import type * as ProductIntro from '../src/components/public/PublicProductIntro'
 import type * as CompanyIdentity from '../src/components/public/PublicCompanyIdentity'
 import type * as PublicFrame from '../src/components/public/PublicFrame'
 import type * as AboutHusHub from '../src/app/om-hushub/page'
+import type * as ProfileDetails from '../src/components/ob/InspectorProfileDetails'
+import type * as InterestUnavailable from '../src/components/public/BesiktInterestUnavailable'
 
 const nodeRequire = createRequire(import.meta.url)
+
+test('an unavailable interest form offers the approved public contact, never delivery settings', context => {
+  const previous = process.env.BESIKTAPP_INTEREST_TO
+  process.env.BESIKTAPP_INTEREST_TO = 'private-recipient@example.test'
+  context.after(() => {
+    if (previous === undefined) delete process.env.BESIKTAPP_INTEREST_TO
+    else process.env.BESIKTAPP_INTEREST_TO = previous
+  })
+  const component = loadSource<typeof InterestUnavailable>('src/components/public/BesiktInterestUnavailable.tsx', {
+    '@/lib/publicCompanyInfo': companyInfo,
+  })
+  const html = renderToStaticMarkup(createElement(component.default))
+  assert.match(html, /mailto:jn@hedbjorn.se\?subject=/)
+  assert.doesNotMatch(html, /private-recipient|<form|Välkommen tillbaka senare/)
+})
+
+function renderProfile(profile: Parameters<typeof ProfileDetails.default>[0]['profile'], certificationLines: string[] = []) {
+  const component = loadSource<typeof ProfileDetails>('src/components/ob/InspectorProfileDetails.tsx', {})
+  return renderToStaticMarkup(createElement(component.default, { profile, certificationLines }))
+}
+
+test('a missing or blank profile shows a completion prompt without invented identity or credentials', () => {
+  for (const profile of [null, {}, { full_name: '  ', email: '\t', company_name: '' }]) {
+    const html = renderProfile(profile)
+    assert.match(html, /Komplettera din profil/)
+    assert.doesNotMatch(html, /Niklas|SBR|Medlem:|Cert:|Org.nr:|Tel:|E-post:|Besiktningsbolaget|22015326|Bryggv/)
+  }
+})
+
+test('partial profiles show only supplied details and retain partial addresses', () => {
+  const html = renderProfile({ full_name: ' Testperson ', phone: '0100000000', company_city: 'Teststad' })
+  assert.match(html, />Testperson</)
+  assert.match(html, /Tel: 0100000000/)
+  assert.match(html, /Teststad/)
+  assert.match(html, /Komplettera din profil/)
+  assert.doesNotMatch(html, /SBR|Cert:|Org.nr:|E-post:/)
+})
+
+test('complete profiles retain their own identity and legacy credentials without the completion prompt', () => {
+  const html = renderProfile({ full_name: 'Testperson', email: 'inspector@example.test', company_name: 'Testföretag',
+    sbr_status: 'Egen registrerad merit', membership_number: '123', certification_number: 'ABC',
+    company_orgno: '123456-7890', company_address: 'Testvägen 1', company_postal_code: '12345', company_city: 'Teststad' })
+  for (const text of ['Testperson', 'inspector@example.test', 'Testföretag', 'Egen registrerad merit', 'Medlem: 123', 'Cert: ABC', 'Org.nr: 123456-7890', 'Testvägen 1, 12345 Teststad']) assert.ok(html.includes(text))
+  assert.doesNotMatch(html, /Komplettera din profil/)
+})
+
+test('selected certification lines take precedence over legacy fields and profile text is escaped', () => {
+  const html = renderProfile({ full_name: '<script>bad()</script>', sbr_status: 'Legacy credential' }, ['Selected credential'])
+  assert.match(html, /Selected credential/)
+  assert.doesNotMatch(html, /Legacy credential|<script>/)
+  assert.match(html, /&lt;script&gt;/)
+})
+
+test('global TU print margins cannot inject a fixed company or personal contact', () => {
+  const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
+  assert.doesNotMatch(css, /Besiktningsbolaget Stockholm|559281-0823|0735678716|niklas\.h@bbsab\.nu/)
+})
+
 function loadSource<T>(file: string, dependencies: Record<string, unknown>): T {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } })

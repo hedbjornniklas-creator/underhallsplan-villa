@@ -16,7 +16,7 @@ export default function BesiktAppPage() {
     <PublicFrame activeProduct="besiktapp">
       <PublicProductIntro product="besiktapp" audience="För besiktningsmän och besiktningsföretag"
         title="Lägg mer tid på besiktningen. Mindre på efterarbetet."
-        interestHref="/besiktapp/intresse" interestLabel="Jag är intresserad"
+        interestHref="/besiktapp/intresse" interestLabel="Anmäl intresse"
         aside={
           <figure className="public-work-example">
             <figcaption>Exempel på innehåll i en överlåtelsebesiktning · fiktiva uppgifter</figcaption>
@@ -62,7 +62,7 @@ export default function BesiktAppPage() {
             { question: 'Vilka typer av besiktningar finns det stöd för?', answer: <>Överlåtelsebesiktningar (ÖB), entreprenadbesiktningar (EB) och tekniska utredningar (TU). Innehåll och verktyg är anpassade efter besiktningstyp – alla funktioner finns inte i alla delar.</> },
             { question: 'Kan jag använda enbart överlåtelsebesiktning?', answer: <>Ja. Du kan arbeta med överlåtelsebesiktningar utan att använda RenoApp eller en underhållsplan. De andra tjänsterna är inget extra moment i din besiktning.</> },
             { question: 'Gör AI:n bedömningen åt mig?', answer: <>Nej. AI-stödet hjälper med sökning och textarbete i de delar där det finns tillgängligt. Du granskar dokumentationen och ansvarar för den byggtekniska bedömningen.</> },
-            { question: 'Hur börjar jag använda BesiktApp?', answer: <><Link href="/besiktapp/intresse">Anmäl ditt intresse</Link> så kontaktar vi dig om BesiktApp. Använder ditt företag redan tjänsten kan företagets administratör bjuda in dig.</> },
+            { question: 'Hur börjar jag använda BesiktApp?', answer: <><Link href="/besiktapp/intresse">Anmäl ditt intresse</Link> så går vi igenom ditt behov och hur du kan få tillgång. Ett konto skapas inte automatiskt. Om ditt företag redan använder BesiktApp, ange företagets namn i din förfrågan.</> },
           ]} />
         </div>
       </section>

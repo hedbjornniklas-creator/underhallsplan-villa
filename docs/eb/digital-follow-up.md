@@ -20,7 +20,9 @@ En unik order per besiktning, låsning i databasen och återanvändning av slutf
 
 Besiktningsdatumet begränsar inte tillvalet: även äldre fastställda utlåtanden kan användas. Äldre rapportkopior kan sakna `inspection.reportLockedAt`, eftersom kopian tidigare skapades precis före låsningen. Då kontrolleras den verkliga låsningen för samma organisation/projekt/besiktning och att ingen upplåsning har skett sedan rapportkopians ursprungliga `createdAt`. Ett senare datum på en omskickad länk används inte som bevis. Saknad eller osäker historik stoppar nya köp; rapportens text ändras inte och en befintlig köpares verifierade åtkomst bevaras.
 
-Köprutan visar anledningen om erbjudandet är otillgängligt, i stället för att försvinna. I den interna digitala förhandsvisningen finns en upplysning om att köpet görs från kundens publika rapportlänk; där skapas inga köp eller nya länkar automatiskt.
+Köprutan visas för kunden endast när tjänsten går att köpa. Avstängd nyförsäljning, saknad konfiguration, olämpligt underlag eller en ersatt rapportversion döljer hela erbjudandet, inklusive pris och instruktioner. Tillfälliga tekniska fel visas diskret med **Försök igen**, utan ett köperbjudande. En redan beställd uppföljning behåller sin verifierade åtkomst även när nyförsäljningen är avstängd.
+
+Driftstatus och orsaker till avstängning visas i den behörighetsskyddade interna digitala förhandsvisningen. Där förklaras också att själva köpet görs från kundens publika rapportlänk; inga köp eller nya länkar skapas automatiskt vid visning.
 
 Noteringar och originalbilder kopieras från den fastställda rapporten. Originalbilder förvaras i den privata bucketen `eb-follow-up-originals`. Åtgärdsbilder, kommentarer och status är separata från utlåtandet och ändrar inte dess text eller PDF. Köpta uppföljningar, äldre portaler och olika besiktningar har separata kontakt-/uppgifts-/länkområden. Entreprenörer ser endast tilldelade uppgifter.
 

@@ -1546,7 +1546,7 @@ export default function EbPublicReportSnapshotView({
         </section>
 
         {followUpEndpoint ? (
-          <div className="mt-4 print:hidden">
+          <div className="mt-4 empty:hidden print:hidden">
             <EbFollowUpOrder endpoint={followUpEndpoint} />
           </div>
         ) : null}

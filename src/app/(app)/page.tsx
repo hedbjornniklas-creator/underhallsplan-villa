@@ -42,7 +42,7 @@ export default function HomePage() {
             { question: 'Jag vill ansöka om renovering', answer: <><Link href="/renoapp/apply">Hitta din förening</Link> och fyll i ansökan. Du behöver inget konto.</> },
             { question: 'Jag vill fortsätta med en påbörjad ansökan', answer: <>Öppna den personliga länk du sparade när du fyllde i ansökan, eller länken i mejlet om du fick ett sådant. Kontakta styrelsen om du saknar länken.</> },
             { question: 'Vår förening vill börja använda RenoApp', answer: <><Link href="/renoapp/request-access">Anmäl föreningens intresse.</Link> Om ni redan använder RenoApp kan den som administrerar föreningen bjuda in fler styrelsemedlemmar.</> },
-            { question: 'Jag vill börja använda BesiktApp', answer: <><Link href="/besiktapp">Läs om BesiktApp</Link> eller <Link href="/besiktapp/intresse">anmäl ditt intresse</Link>. Om ditt företag redan använder tjänsten, be företagets administratör om en inbjudan.</> },
+            { question: 'Jag vill börja använda BesiktApp', answer: <><Link href="/besiktapp">Läs om BesiktApp</Link> eller <Link href="/besiktapp/intresse">anmäl ditt intresse</Link>. Vi går igenom ditt behov och hur du kan få tillgång. Om ditt företag redan använder tjänsten, ange företagets namn i din förfrågan.</> },
           ]} />
         </div>
       </section>

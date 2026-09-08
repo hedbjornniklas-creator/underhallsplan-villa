@@ -56,9 +56,10 @@ export default function PublicLogin({ destination, resetSuccess }: { destination
         <PasswordAuthPanel redirectTo={authRedirectTo} />
         <div className="public-auth-help">
           <h2>Har du inget konto?</h2>
-          <p>Be administratören i ditt företag eller din förening om en inbjudan.</p>
-          {(destination === '/dashboard-v1' || destination === '/app') && <p>Nyfiken på BesiktApp för ditt företag? <Link href="/besiktapp/intresse">Anmäl ditt intresse.</Link></p>}
-          <p>Ska du renovera din lägenhet? <Link href="/renoapp/apply">Gå till ansökan utan att logga in.</Link></p>
+          {(destination === '/dashboard-v1' || destination === '/app') && <p>Vill du börja använda BesiktApp? <Link href="/besiktapp/intresse">Anmäl intresse</Link> så går vi igenom hur du kan få tillgång. Ange gärna företagets namn om ni redan använder tjänsten.</p>}
+          {(destination === '/renoapp/app' || destination === '/app') && <p>För tillgång till styrelsens RenoApp, be den som administrerar föreningen om en inbjudan.</p>}
+          {destination === '/mina-uppdrag' && <p>Kontakta den som skickade uppdraget om du saknar uppgifter för att logga in.</p>}
+          {destination !== '/dashboard-v1' && <p>Ska du renovera din lägenhet? <Link href="/renoapp/apply">Gå till ansökan utan att logga in.</Link></p>}
         </div>
       </section>
     </PublicFrame>

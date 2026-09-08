@@ -59,19 +59,21 @@ function fixture(legacy = false) {
       created_at: '2026-09-08T05:24:07Z', revoked_at: null, snapshot_payload: snapshot }],
     eb_projects: [{ id: 'project', org_id: 'org', client_email: 'PRIVATE-BUYER@example.test' }],
     eb_inspection_details: [{ org_id: 'org', inspection_id: 'inspection', eb_project_id: 'project', report_locked_at: lockTime }],
-    inspection_lock_events: [], eb_follow_up_orders: [],
+    inspection_lock_events: [], eb_follow_up_orders: [], profiles: [],
     organizations: [{ id: 'org', name: 'Test Seller', created_by: null, eb_follow_up_seller: seller }],
   }
   const errors: Record<string, string> = {}
-  const reads: Array<{ table: string; filters: Array<[string, unknown]> }> = []
+  const failures: Record<string, Error> = {}
+  const state = { clientConfigurationError: false }
+  const reads: Array<{ table: string; filters: Array<[string, unknown]>; fields: string }> = []
   const admin = { from: (table: string) => {
     assert.ok(table in rows, `Unexpected table: ${table}`)
     let selected = [...rows[table]]
-    const read = { table, filters: [] as Array<[string, unknown]> }
+    const read = { table, filters: [] as Array<[string, unknown]>, fields: '' }
     reads.push(read)
     let maximum = Infinity
     const query = {
-      select: () => query,
+      select: (fields: string) => { read.fields = fields; return query },
       eq: (key: string, value: unknown) => {
         read.filters.push([key, value]); selected = selected.filter(row => row[key] === value); return query
       },
@@ -83,19 +85,25 @@ function fixture(legacy = false) {
         selected.sort((a, b) => String(b[key]).localeCompare(String(a[key]))); return query
       },
       limit: (value: number) => { maximum = value; return query },
-      maybeSingle: async () => ({ data: errors[table] ? null : selected.slice(0, maximum)[0] ?? null,
-        error: errors[table] ? { code: errors[table] } : null }),
+      maybeSingle: async () => {
+        if (failures[table]) throw failures[table]
+        return { data: errors[table] ? null : selected.slice(0, maximum)[0] ?? null,
+          error: errors[table] ? { code: errors[table], message: 'PRIVATE-DATABASE-DETAILS' } : null }
+      },
     }
     return query
   }, rpc: () => { throw new Error('Unexpected mutation in read-only offer test') } }
   const server = load<typeof Server>('src/lib/eb/followUpServer.ts', {
     '@/lib/eb/followUp': shared,
-    '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => {
+      if (state.clientConfigurationError) throw new Error('PRIVATE-SERVER-CONFIGURATION')
+      return admin
+    } },
     '@/lib/assignments/tokens': { hashAssignmentToken: (value: string) => `hash:${value}` },
     '@/lib/eb/reportSnapshot': snapshots,
     '@/lib/eb/followUpDelivery': {},
   })
-  return { report, snapshot, rows, errors, reads, seller, server, offer: () => server.getEbFollowUpOffer(token) }
+  return { report, snapshot, rows, errors, failures, state, reads, seller, server, offer: () => server.getEbFollowUpOffer(token) }
 }
 
 for (const legacy of [false, true]) {
@@ -104,6 +112,7 @@ for (const legacy of [false, true]) {
     const before = JSON.stringify(f.snapshot)
     const offer = await f.offer()
     assert.equal(offer.available, true)
+    assert.equal(offer.retryable, false)
     assert.equal(offer.priceOre, 59900)
     assert.equal(JSON.stringify(f.snapshot), before, 'Do not backfill or rewrite the delivered report')
     assert.equal(f.report.inspection.reportLockedAt, null)
@@ -128,6 +137,7 @@ test('unlocked, pending or malformed legacy report metadata cannot start a purch
     f.rows.eb_inspection_details[0].report_locked_at = lockedAt
     const offer = await f.offer()
     assert.equal(offer.available, false)
+    assert.equal(offer.retryable, false)
     assert.match(offer.reason ?? '', /fastställande kunde inte bekräftas/)
     await assert.rejects(f.server.requestEbFollowUpCode({ token, email: 'buyer@example.test' }), /REPORT_NOT_FINALIZED/)
   }
@@ -159,7 +169,9 @@ test('audit, schema, project scope and missing or revoked link failures remain c
   for (const table of ['inspection_lock_events', 'eb_follow_up_orders', 'eb_projects', 'eb_inspection_details']) {
     const f = fixture()
     f.errors[table] = 'PGRST205'
-    assert.equal((await f.offer()).available, false)
+    const offer = await f.offer()
+    assert.equal(offer.available, false)
+    assert.equal(offer.retryable, false)
   }
   for (const change of [
     (f: ReturnType<typeof fixture>) => { f.rows.eb_inspection_details[0].eb_project_id = 'other' },
@@ -178,19 +190,31 @@ test('a newer active report version still blocks a new order from the old link',
   f.rows.inspection_report_links.push({ ...f.rows.inspection_report_links[0], id: 'new-link', token_hash: 'new-token', created_at: '2026-09-09T10:00:00Z' })
   const offer = await f.offer()
   assert.equal(offer.available, false)
+  assert.equal(offer.retryable, false)
   assert.match(offer.reason ?? '', /senast publicerade/)
 })
 
 test('feature flag, eligible notes and seller configuration remain required', async () => {
   const f = fixture()
   process.env.EB_FOLLOW_UP_ENABLED = 'false'
-  try { assert.equal((await f.offer()).available, false) }
+  try {
+    const offer = await f.offer()
+    assert.equal(offer.available, false)
+    assert.equal(offer.retryable, false)
+    assert.match(offer.reason ?? '', /inte aktiverad/)
+    assert.equal(f.reads.some(read => read.table === 'organizations'), false)
+  }
   finally { process.env.EB_FOLLOW_UP_ENABLED = 'true' }
   f.report.notes = []
-  assert.match((await f.offer()).reason ?? '', /inga noteringar/)
+  const noNotes = await f.offer()
+  assert.match(noNotes.reason ?? '', /inga noteringar/)
+  assert.equal(noNotes.retryable, false)
   const noSeller = fixture()
   noSeller.rows.organizations[0].eb_follow_up_seller = null
-  assert.equal((await noSeller.offer()).available, false)
+  const unconfigured = await noSeller.offer()
+  assert.equal(unconfigured.available, false)
+  assert.equal(unconfigured.retryable, false)
+  assert.match(unconfigured.reason ?? '', /Säljaruppgifterna/)
 })
 
 test('existing paid access survives missing historical lock metadata and sales being disabled', async () => {
@@ -203,7 +227,106 @@ test('existing paid access survives missing historical lock metadata and sales b
     const offer = await f.offer()
     assert.equal(offer.alreadyActive, true)
     assert.equal(offer.available, true)
+    assert.equal(offer.retryable, false)
     assert.doesNotMatch(JSON.stringify(offer), /PRIVATE-BUYER/)
     assert.equal(f.reads.some(read => read.table === 'inspection_lock_events'), false)
   } finally { process.env.EB_FOLLOW_UP_ENABLED = 'true' }
+})
+
+test('missing sender/API credentials and schema/server setup are hidden, not temporary retry states', async () => {
+  for (const key of ['ASSIGNMENTS_MAIL_FROM', 'RESEND_API_KEY']) {
+    const saved = process.env[key]
+    process.env[key] = ' '
+    try {
+      const offer = await fixture().offer()
+      assert.equal(offer.available, false)
+      assert.equal(offer.retryable, false)
+      assert.match(offer.reason ?? '', /E-postutskicken/)
+    } finally { process.env[key] = saved }
+  }
+  for (const [table, code] of [
+    ['inspection_report_links', '42P01'], ['eb_follow_up_orders', 'PGRST205'],
+    ['organizations', '42703'], ['organizations', 'PGRST204'],
+    ['inspection_lock_events', '42501'], ['profiles', 'PGRST205'],
+  ]) {
+    const f = fixture()
+    f.rows.organizations[0].created_by = 'owner'
+    f.errors[table] = code
+    const offer = await f.offer()
+    assert.equal(offer.available, false)
+    assert.equal(offer.retryable, false)
+    assert.match(offer.reason ?? '', /konfiguration/)
+    assert.doesNotMatch(JSON.stringify(offer), /PRIVATE-|42P01|42703|PGRST|42501/)
+  }
+  const f = fixture()
+  f.state.clientConfigurationError = true
+  const offer = await f.offer()
+  assert.equal(offer.available, false)
+  assert.equal(offer.retryable, false)
+  assert.doesNotMatch(JSON.stringify(offer), /PRIVATE-/)
+})
+
+test('temporary database failures and thrown network errors offer a safe retry', async () => {
+  for (const table of ['inspection_report_links', 'eb_follow_up_orders', 'eb_projects', 'eb_inspection_details', 'inspection_lock_events', 'organizations', 'profiles']) {
+    for (const thrown of [false, true]) {
+      const f = fixture()
+      f.rows.organizations[0].created_by = 'owner'
+      if (thrown) f.failures[table] = new TypeError('fetch failed PRIVATE-SERVICE-TOKEN')
+      else f.errors[table] = '57014'
+      const offer = await f.offer()
+      assert.equal(offer.available, false)
+      assert.equal(offer.retryable, true)
+      assert.equal(offer.alreadyActive, false)
+      assert.equal(offer.priceOre, 59900)
+      assert.match(offer.reason ?? '', /Försök igen/)
+      assert.doesNotMatch(JSON.stringify(offer), /PRIVATE-|57014|fetch failed/)
+    }
+  }
+})
+
+test('paid access does not depend on new-sale notes, seller setup, mail setup or latest-version eligibility', async () => {
+  const f = fixture()
+  f.rows.eb_follow_up_orders.push({ id: 'paid', org_id: 'org', inspection_id: 'inspection', seller_snapshot: f.seller })
+  f.rows.inspection_report_links.push({ ...f.rows.inspection_report_links[0], id: 'new-link', token_hash: 'new-token', created_at: '2026-09-09T10:00:00Z' })
+  f.report.notes = []
+  f.failures.organizations = new Error('PRIVATE-SERVER-FAILURE')
+  const saved = process.env.RESEND_API_KEY
+  delete process.env.RESEND_API_KEY
+  try {
+    const offer = await f.offer()
+    assert.equal(offer.available, true)
+    assert.equal(offer.alreadyActive, true)
+    assert.equal(offer.retryable, false)
+    assert.deepEqual(offer.seller, f.seller)
+    assert.equal(f.reads.some(read => read.table === 'organizations'), false)
+  } finally { process.env.RESEND_API_KEY = saved }
+})
+
+test('internal preview evaluates the selected existing link with organisation and inspection scope, without any bearer token', async () => {
+  const f = fixture()
+  const offer = await f.server.getEbFollowUpOfferForInspection({ orgId: 'org', inspectionId: 'inspection', reportLinkId: 'link' })
+  assert.equal(offer.available, true)
+  const selected = f.reads[0]
+  assert.equal(selected.table, 'inspection_report_links')
+  assert.deepEqual(selected.filters, [['revoked_at', null], ['id', 'link'], ['org_id', 'org'], ['inspection_id', 'inspection']])
+  assert.doesNotMatch(selected.fields, /token/)
+  assert.doesNotMatch(JSON.stringify(f.reads), /token_hash|hash:/)
+  assert.doesNotMatch(JSON.stringify(offer), /PRIVATE-|report-token/)
+  assert.deepEqual(offer, await f.offer())
+})
+
+test('internal preview cannot substitute another organisation, inspection, missing link or revoked link', async () => {
+  for (const scope of [
+    { orgId: 'other', inspectionId: 'inspection', reportLinkId: 'link' },
+    { orgId: 'org', inspectionId: 'other', reportLinkId: 'link' },
+    { orgId: 'org', inspectionId: 'inspection', reportLinkId: 'missing' },
+    { orgId: '', inspectionId: 'inspection', reportLinkId: 'link' },
+  ]) {
+    const offer = await fixture().server.getEbFollowUpOfferForInspection(scope)
+    assert.equal(offer.available, false)
+    assert.equal(offer.retryable, false)
+  }
+  const f = fixture()
+  f.rows.inspection_report_links[0].revoked_at = lockTime
+  assert.equal((await f.server.getEbFollowUpOfferForInspection({ orgId: 'org', inspectionId: 'inspection', reportLinkId: 'link' })).available, false)
 })

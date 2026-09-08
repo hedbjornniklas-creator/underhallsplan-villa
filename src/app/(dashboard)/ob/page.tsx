@@ -8,6 +8,7 @@ import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
+import InspectorProfileDetails from '@/components/ob/InspectorProfileDetails'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 
 type DashboardCard = {
@@ -533,22 +534,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
     resolvePublicMediaUrl(profile?.avatar_path) ??
     resolvePublicMediaUrl(profile?.logo_path) ??
     resolvePublicMediaUrl(profile?.logo_url)
-  const name = profile?.full_name ?? 'Niklas Hedbj\u00f6rn'
-  const sbrGroup = profile?.sbr_group ?? 'Medlem i SBR \u00d6verl\u00e5telsebesiktningsgrupp'
-  const sbrStatus = profile?.sbr_status ?? 'Av SBR godk\u00e4nd besiktningsman'
-  const membership = profile?.membership_number ?? '22015326'
-  const certification = profile?.certification_number ?? null
   const certificationLines = formatCertificationDisplayLines(profile?.certification_items)
-  const phone = profile?.phone ?? '0735678716'
-  const email = profile?.email ?? 'niklas.h@bbsab.nu'
-  const company = profile?.company_name ?? 'Besiktningsbolaget Stockholm'
-  const orgNo = profile?.company_orgno ?? '559281-0823'
-
-  let addressLine = 'Bryggv\u00e4gen 7, 117 71 Stockholm'
-  if (profile?.company_address) {
-    const postalCity = [profile.company_postal_code, profile.company_city].filter(Boolean).join(' ')
-    addressLine = [profile.company_address, postalCity].filter(Boolean).join(', ')
-  }
 
   return cardShell(
     <div className="relative flex h-full flex-col rounded-lg border border-indigo-100 bg-white/70 p-2.5">
@@ -571,28 +557,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
           </div>
         )}
 
-        <div className="min-w-0 flex-1 text-[10px] leading-snug text-gray-700">
-          <p className="truncate font-semibold text-gray-900">{name}</p>
-          {certificationLines.length > 0 ? (
-            certificationLines.map((line) => (
-              <p key={line} className="truncate">
-                {line}
-              </p>
-            ))
-          ) : (
-            <>
-              <p className="truncate">{sbrGroup}</p>
-              <p className="truncate">{sbrStatus}</p>
-              <p className="mt-0.5 truncate">Medlem: {membership}</p>
-              <p className="truncate">Cert: {certification ?? '\u2013'}</p>
-            </>
-          )}
-          <p className="truncate">Tel: {phone}</p>
-          <p className="truncate">E-post: {email}</p>
-          <p className="mt-0.5 truncate">{company}</p>
-          <p className="truncate">Org.nr: {orgNo}</p>
-          <p className="truncate">{addressLine}</p>
-        </div>
+        <InspectorProfileDetails profile={profile} certificationLines={certificationLines} />
       </div>
 
       <div className="mt-auto pt-1.5">
@@ -600,7 +565,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
           href="/ob/settings"
           aria-label="Redigera visitkort"
           title="Redigera visitkort"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-indigo-200 bg-white text-indigo-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-800 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-indigo-200 bg-white px-3 text-xs text-indigo-700 shadow-sm hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
           <svg
             aria-hidden="true"
@@ -615,7 +580,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
             <path d="M12 20h9" />
             <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
           </svg>
-          <span className="sr-only">Redigera visitkort</span>
+          <span>Redigera visitkort</span>
         </Link>
       </div>
     </div>,

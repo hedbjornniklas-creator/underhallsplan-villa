@@ -23,7 +23,7 @@ await new Promise((ok, fail) => webpack({
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? new Error(stats.toString('errors-only'))) : ok()))
 const { css } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const js = await readFile(resolve(output, 'view.js'))
-const offer = { available: true, reason: null, alreadyActive: false, priceOre: 59900, netPriceOre: 47920, vatOre: 11980, vatRate: 25,
+const offer = { available: true, reason: null, retryable: false, alreadyActive: false, priceOre: 59900, netPriceOre: 47920, vatOre: 11980, vatRate: 25,
   termsVersion: '2026-09-07', serviceDescription: 'Digital uppföljning. Ingen besiktning ingår.',
   seller: { name: 'Testbolaget AB', orgNumber: 'TEST', address: 'Testgatan 1', email: 'seller@example.invalid' } }
 const portalUrl = '/atgarder/test-only-private-token-with-more-than-20-characters'
@@ -31,11 +31,13 @@ const posts = []
 let failOrder = false
 let failOffer = false
 let offerRequests = 0
+let offerDelay = 0
 const server = createServer(async (request, response) => {
   if (request.url === '/mock-follow-up') {
     response.setHeader('Content-Type', 'application/json')
     if (request.method === 'GET') {
       offerRequests += 1
+      if (offerDelay) await new Promise(ok => setTimeout(ok, offerDelay))
       response.statusCode = failOffer ? 503 : 200
       response.end(JSON.stringify(failOffer ? { error: 'Unavailable' } : { offer })); return
     }
@@ -71,6 +73,9 @@ try {
     await page.goto(url, { waitUntil: 'networkidle0' })
     await page.waitForSelector('#digital-follow-up')
     assert.match(await page.$eval('#digital-follow-up', node => node.textContent), /599 kr inkl\. moms/)
+    const offerText = await page.$eval('#digital-follow-up > div', node => node.textContent)
+    assert.match(offerText, /Samla kommentarer, före- och åtgärdsbilder\./)
+    assert.doesNotMatch(offerText, /utan att ändra utlåtandet|Ingen prenumeration/)
     await page.screenshot({ path: resolve(output, `offer-${width}.png`) })
     await page.locator('#digital-follow-up button').filter(node => node.textContent.includes('Köp åtgärdsuppföljning')).click()
     await page.waitForSelector('dialog[open]')
@@ -147,23 +152,42 @@ try {
   for (const [view, reason] of unavailableCases) {
     offer.reason = reason
     await page.goto(`${url}?view=${view}`, { waitUntil: 'networkidle0' })
-    await page.waitForSelector('#digital-follow-up [role=status]')
-    assert.equal(await page.$eval('#digital-follow-up [role=status]', node => node.textContent), reason || unavailableCases[0][1])
-    assert.equal(await page.$eval('#digital-follow-up button', node => node.disabled), true)
-    await page.$eval('#digital-follow-up button', node => node.click())
+    assert.equal(await page.$('#digital-follow-up'), null, 'unavailable sales must not be advertised')
+    assert.equal(await page.$('#digital-follow-up-retry'), null, 'disabled or inapplicable sales do not ask the customer to retry')
+    const text = await page.$eval('main', node => node.textContent)
+    if (reason) assert.equal(text.includes(reason), false, 'operational reasons stay out of the customer report')
+    assert.doesNotMatch(text, /599 kr|Köp åtgärdsuppföljning|Köp inte tillgängligt|Engångspris/)
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('h1').closest('section').nextElementSibling).display), 'none', 'hidden offers leave no empty card spacing')
     assert.equal(await page.$('dialog[open]'), null, 'unavailable offer must not open checkout')
     assert.match(await page.$eval('#section-summons', node => node.textContent), /Originalrapporten förblir tillgänglig utan köp/)
     assert.equal(posts.length, 0, 'unavailable offer must not send a purchase or code request')
-    await page.emulateMediaType('print')
-    assert.equal(await page.$eval('#digital-follow-up', node => getComputedStyle(node).display), 'none')
-    await page.emulateMediaType('screen')
   }
   await page.screenshot({ path: resolve(output, 'unavailable-390.png'), fullPage: true })
-  console.log('PASS unavailable: server reasons and fallback are visible, no checkout/POST, report accessible, print hidden')
+  console.log('PASS unavailable: no offer, price, reason or empty spacing; no checkout/POST; report accessible')
+
+  // A transient backend failure is distinct from deliberately disabled sales.
+  offer.retryable = true; offer.reason = 'INTERNAL-ERROR-SENTINEL'
+  await page.goto(`${url}?view=report`, { waitUntil: 'networkidle0' })
+  await page.waitForSelector('#digital-follow-up-retry')
+  assert.equal(await page.$('#digital-follow-up'), null)
+  assert.doesNotMatch(await page.$eval('main', node => node.textContent), /INTERNAL-ERROR|599 kr|Köp åtgärdsuppföljning/)
+  await page.emulateMediaType('print')
+  assert.equal(await page.$eval('#digital-follow-up-retry', node => getComputedStyle(node).display), 'none')
+  await page.emulateMediaType('screen')
+  await page.screenshot({ path: resolve(output, 'retry-390.png') })
+  const beforeRetry = offerRequests
+  offer.available = true; offer.retryable = false; offer.reason = null; offerDelay = 350
+  await page.$eval('#digital-follow-up-retry button', node => { node.click(); node.click() })
+  await page.waitForFunction(() => document.querySelector('#digital-follow-up-retry button')?.disabled)
+  await page.waitForSelector('#digital-follow-up')
+  assert.equal(offerRequests, beforeRetry + 1, 'retry must not submit parallel requests')
+  assert.equal(posts.length, 0)
+  offerDelay = 0
+  console.log('PASS transient failure: discreet retry without price or internal reason; one request; recovery shows offer')
 
   offer.available = true; offer.reason = null; failOffer = true
   await page.goto(`${url}?view=report`, { waitUntil: 'networkidle0' })
-  assert.match(await page.$eval('main', node => node.textContent), /Åtgärdsuppföljning kunde inte hämtas/)
+  assert.match(await page.$eval('main', node => node.textContent), /Åtgärdsuppföljningen kunde inte laddas/)
   assert.match(await page.$eval('#section-summons', node => node.textContent), /Originalrapporten förblir tillgänglig utan köp/)
   failOffer = false
   await page.locator('button').filter(node => node.textContent.includes('Försök igen')).click()
@@ -176,7 +200,9 @@ try {
 
   posts.length = 0; offer.alreadyActive = true; offer.available = false
   await page.goto(url, { waitUntil: 'networkidle0' })
+  assert.doesNotMatch(await page.$eval('#digital-follow-up > div', node => node.textContent), /599 kr|Köp åtgärdsuppföljning/)
   await page.locator('#digital-follow-up button').filter(node => node.textContent.includes('Öppna')).click()
+  assert.doesNotMatch(await page.$eval('dialog[open]', node => node.textContent), /599 kr|Beställ för/)
   await page.type('[name=email]', 'customer@example.invalid')
   await page.$eval('button[type=submit]', node => node.click())
   await page.waitForSelector('[name=code]')

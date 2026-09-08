@@ -28,7 +28,7 @@ export default function PublicProductIntro({ product, audience, title, children,
           <div className="public-product-lead">{children}</div>
           <div className="public-cta-row">
             <Link href={interestHref} className="public-button">{interestLabel}<ArrowRight size={18} aria-hidden="true" /></Link>
-            <PublicProductLink product={product} className="public-text-link">{product === 'renoapp' ? 'Öppna styrelsens RenoApp' : 'Öppna BesiktApp'}</PublicProductLink>
+            <PublicProductLink product={product} className="public-text-link">{product === 'renoapp' ? 'Öppna styrelsens RenoApp' : 'Jag har redan konto'}</PublicProductLink>
           </div>
           {pricing && <a className="public-text-link public-pricing-link" href="#priser">Se priser</a>}
         </div>

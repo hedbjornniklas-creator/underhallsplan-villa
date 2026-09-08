@@ -16,6 +16,8 @@ export type EbFollowUpSeller = {
 
 export type EbFollowUpOffer = {
   available: boolean
+  /** Only temporary technical failures should offer the customer a retry. */
+  retryable?: boolean
   reason: string | null
   priceOre: number
   netPriceOre: number
