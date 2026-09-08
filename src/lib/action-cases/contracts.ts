@@ -56,6 +56,36 @@ export type ActionCaseCostLineView = {
   sortOrder: number
   quantityBasis: 'provided' | 'calculated' | 'estimated' | 'unknown'
   notes: string | null
+  pricingMethod?: 'direct' | 'quotes'
+  selectedQuoteId?: string | null
+  coveredByQuoteId?: string | null
+  quotes?: ActionCaseQuote[]
+  updatedAt?: string
+}
+
+export type ActionCaseQuote = {
+  id: string
+  supplierName: string
+  supplierEmail: string | null
+  amount: number | null
+  offeredScope: string
+  exclusions: string
+  validUntil: string | null
+  availableFrom: string | null
+  materials: 'included' | 'excluded' | 'unspecified'
+  travel: 'included' | 'excluded' | 'unspecified'
+  waste: 'included' | 'excluded' | 'unspecified'
+  coveredLineIds: string[]
+  documentId: string | null
+  checked: boolean
+  scopeSnapshot: string
+  descriptionSnapshot: string
+  requestSubject: string
+  requestBody: string
+  requestAttachmentIds: string[]
+  deliveryStatus: 'draft' | 'sending' | 'sent' | 'failed' | 'unknown'
+  sentAt: string | null
+  updatedAt: string
 }
 
 export type ActionCaseSuggestedCostLine = Pick<ActionCaseCostLineView,

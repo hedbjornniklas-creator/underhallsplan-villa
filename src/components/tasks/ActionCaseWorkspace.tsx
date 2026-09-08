@@ -310,7 +310,15 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       if (name === 'create_case') setSelectedCaseId(result.workspace.cases[0]?.id ?? null)
       if (successMessage !== null) toast.success(successMessage ?? (name === 'create_case' ? 'Åtgärdsärendet skapades.' : 'Åtgärden sparades.'))
       return result as ActionResult
-    } catch (caught) { toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.'); return null }
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
+      if (name === 'send_quote_request' || name === 'work_quote') {
+        await fetch('/api/action-cases').then(async (response) => {
+          if (response.ok) { const result = await response.json(); setWorkspace(result.workspace) }
+        }).catch(() => undefined)
+      }
+      return null
+    }
     finally { setBusy(false) }
   }
 
@@ -336,10 +344,13 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
     {selectedItem && selectedCase ? <ActionCaseItemSheet
       key={selectedItem.id}
       item={selectedItem}
+      caseId={selectedCase.id}
+      attachments={selectedCase.attachments}
+      participants={selectedCase.participants}
       busy={busy}
       onClose={() => setSelectedItemId(null)}
       onSave={async (payload) => Boolean(await action('update_item', { itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt, ...payload }))}
-      onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, name === 'generate_cost_suggestions' ? 'Kalkylförslaget är klart för granskning.' : name === 'apply_cost_suggestions' ? 'Valda rader lades till i kalkylen.' : name === 'delete_cost_line' ? 'Kalkylraden togs bort.' : 'Kalkylraden sparades.'))}
+      onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, name === 'send_quote_request' ? 'Offertförfrågan har skickats.' : name === 'work_quote' ? payload.operation === 'select' ? 'Offerten används i kalkylen. Ingen beställning har skickats.' : payload.operation === 'save' ? 'Offerten sparades. Välj den för att använda priset i kalkylen.' : 'Prisunderlaget uppdaterades.' : name === 'generate_cost_suggestions' ? 'Kalkylförslaget är klart för granskning.' : name === 'apply_cost_suggestions' ? 'Valda rader lades till i kalkylen.' : name === 'delete_cost_line' ? 'Kalkylraden togs bort.' : 'Kalkylraden sparades.'))}
     /> : null}
   </>
 }

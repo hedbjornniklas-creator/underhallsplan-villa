@@ -149,13 +149,20 @@ try{
     assert.equal(await page.$('dialog select'),null)
     await clickTarget(to)
   }
-  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
+  // Every branch is expanded on initial entry, without clicking Expand all.
   await page.waitForSelector(answerNode(yes))
   await page.locator('button[aria-label="Visa hela flödet"]').click()
   await page.waitForFunction(()=>document.querySelectorAll('.react-flow__edge-path').length===4)
   await page.screenshot({path:resolve(output,'desktop-before.png')})
 
   const questionNode=`[data-flow-id="question:root:${question.id}"]`
+  await page.locator(`${questionNode} button[aria-label="Fäll ihop"]`).click()
+  await page.waitForSelector(answerNode(yes),{hidden:true})
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Kök"])').click()
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Riva vägg"])').click()
+  await page.waitForSelector(answerNode(yes))
+  assert.equal(writes.length,0)
+  console.log('PASS initial expansion: switching back to a previously collapsed flow expands every branch')
   const positions=()=>page.$$eval('[data-flow-id]',cards=>Object.fromEntries(cards.map(card=>{
     const transform=card.closest('.react-flow__node').style.transform
     const [x,y]=transform.match(/-?[\d.]+/g).map(Number)
@@ -215,6 +222,7 @@ try{
   console.log('PASS position-only drag: edges follow, no configuration writes, position survives reload')
 
   // Copy/remove on the canvas must affect the selected document, not the last opened node.
+  await page.locator(`${questionNode} button[aria-label="Fäll ihop"]`).click()
   await page.locator(`${rootDoc} button[aria-label="Kopiera till en annan plats"]`).click()
   assert.equal(writes.length,0)
   assert.equal(await page.$('dialog[open]'),null)
@@ -347,7 +355,6 @@ try{
   const writesBeforeLayout=writes.length
   await page.setViewport({width:1440,height:1100})
   await page.reload({waitUntil:'networkidle0'})
-  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
   await page.waitForFunction(()=>document.querySelectorAll('[data-flow-id]').length>=29)
   await page.locator('button[aria-label="Återställ kortens placering"]').click()
   const cards=await page.$$eval('[data-flow-id]',nodes=>nodes.map(card=>{
@@ -424,6 +431,7 @@ try{
     await clickText('Redigera')
   }
   const saved = () => page.waitForFunction(()=>document.querySelector('[data-flow-save-status]')?.textContent==='Alla ändringar sparade.')
+  await page.locator(`${questionNode} button[aria-label="Fäll ihop"]`).click()
   await openEdit(questionNode)
   await fillField('Visningsnamn','Fråga version ett?')
   const readsBeforeEdit=gets, writesBeforeEdit=writes.length
@@ -439,6 +447,8 @@ try{
   await fillField('Visningsnamn','Fråga version två?')
   await clickText('Spara')
   await clickText('Stäng')
+  assert.equal(await page.$(answerNode(yes)),null,'saving must not reopen a manually collapsed branch')
+  await page.locator(`${questionNode} button[aria-label="Expandera"]`).click()
   await openEdit(answerNode(yes))
   await fillField('Svarstext','Ja, påverkas')
   await clickText('Spara')

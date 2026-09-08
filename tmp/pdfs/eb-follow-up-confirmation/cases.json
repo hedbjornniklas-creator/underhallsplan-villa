@@ -1,0 +1,178 @@
+[
+  {
+    "pdf": "C:\\Users\\hedbj\\underhallsplan-villa\\output\\pdf\\Exempel-bestallningsbekraftelse-atgardsuppfoljning.pdf",
+    "data": {
+      "version": 1,
+      "orderId": "cfe2174a-8511-4e14-96c9-12deacf91234",
+      "project": {
+        "title": "Renovering av villa",
+        "propertyDesignation": "EXEMPELGÅRDEN 1:23",
+        "address": "Villavägen 13, 123 45 Exempelstad",
+        "customerName": "Anna och Erik Andersson",
+        "inspectionLabel": "Slutbesiktning 1",
+        "inspectionDate": "2026-09-03",
+        "reportNumber": "EB 2026-0903-01"
+      },
+      "price": {
+        "totalOre": 59900,
+        "netOre": 47920,
+        "vatOre": 11980,
+        "vatRate": 25
+      },
+      "seller": {
+        "name": "Exempelföretaget AB",
+        "orgNumber": "000000-0000",
+        "address": "Exempelgatan 7, 123 45 Exempelstad",
+        "email": "kontakt@example.invalid"
+      },
+      "withdrawalFormText": "Ångerblankett – fyll i och skicka endast om du vill frånträda avtalet\nTill: Exempelföretaget AB, Exempelgatan 7, 123 45 Exempelstad, kontakt@example.invalid\nJag/vi meddelar härmed att jag/vi frånträder mitt/vårt avtal avseende följande tjänst: Digital åtgärdsuppföljning.\nBeställningsnummer: ____________________\nBeställdes den: ____________________\nKonsumentens/konsumenternas namn: ____________________\nKonsumentens/konsumenternas adress: ____________________\nDatum: ____________________\nUnderskrift (endast om blanketten skickas på papper): ____________________\nStryk det som inte gäller. Du kan också använda Konsumentverkets standardblankett: https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett",
+      "buyer": {
+        "name": "Anna Andersson",
+        "email": "anna@example.invalid",
+        "customerType": "consumer",
+        "invoiceName": "Anna Andersson",
+        "invoiceAddress": "Villavägen 13",
+        "invoicePostalCode": "123 45",
+        "invoiceCity": "Exempelstad",
+        "invoiceOrgNo": null,
+        "acceptanceSnapshot": {
+          "acceptedAt": "2026-09-08T11:23:40.308Z",
+          "termsVersion": "2026-09-08.2",
+          "termsText": "Köpvillkor – Digital åtgärdsuppföljning\nVersion 2026-09-08.2\n\nSäljare\nExempelföretaget AB, org.nr 000000-0000\nExempelgatan 7, 123 45 Exempelstad\nE-post: kontakt@example.invalid\n\nOmfattning\nDigital uppföljning av noteringarna i detta fastställda utlåtande. Du fördelar noteringar till entreprenörer som kan svara och lämna åtgärdsbilder. Tjänsten omfattar inte en ny besiktning, teknisk granskning eller godkännande av åtgärder.\nTillvalet gäller endast denna besiktning. Entreprenörens avbockning är inte besiktningsmannens godkännande. Utlåtandet kan läsas även utan tillvalet.\n\nPris och beställning\nEngångspriset är 599 kr inkl. moms (25 % moms). Beställningen medför betalningsskyldighet. Fakturering hanteras manuellt; beställningsbekräftelsen är inte en faktura. Fakturans betalningsuppgifter skickas separat. Inga återkommande avgifter debiteras för detta köp.\n\nTillgång till tjänsten\nTjänsten aktiveras när beställningen har godkänts och sparats. Uppföljningen är knuten till besiktningen och förnyas inte som ett nytt köp när en personlig åtkomstlänk förnyas. Du använder tjänsten i en aktuell webbläsare med internetanslutning. Håll din beställarlänk privat; bjud in entreprenörer med deras egna begränsade länkar.\n\nÅngerrätt för privatkund\nDu har rätt att ångra köpet utan att ange skäl inom 14 dagar från avtalets ingående. Ångerfristen börjar inte löpa innan du fått föreskriven information om ångerrätten. Beräknad sista ångerdag anges i bekräftelsen; om slutdagen infaller på en helgdag eller motsvarande fridag förlängs fristen till nästa vardag.\nDu kan använda funktionen ”Ångra beställningen” i din personliga åtgärdsportal eller skicka ett tydligt meddelande till kontakt@example.invalid eller säljarens postadress ovan. Det räcker att du skickar meddelandet innan fristen löpt ut. Ange gärna namn och beställningsnummer. Du kan använda standardblanketten, men det är inget krav: https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett\nOm du uttryckligen begär start under ångerfristen kan du vid frånträdande behöva betala en skälig och proportionell del för det som faktiskt har tillhandahållits fram till ditt meddelande, om lagens förutsättningar är uppfyllda. Aktivering är inte i sig ett fullgörande av hela tjänsten och innebär inte att ångerrätten upphör.\nNär du frånträder beställningen stoppas fortsatt användning och faktureringen pausas för handläggning. Eventuell återbetalning hanteras utan onödigt dröjsmål, senast 14 dagar efter mottaget meddelande, med samma betalningssätt om ni inte uttryckligen kommer överens om annat. Ingen återbetalningsavgift tas ut.\n\nFrågor och reklamation\nKontakta kontakt@example.invalid vid problem med tjänsten, faktureringen eller om du vill avsluta tillgången. Dina tvingande rättigheter som konsument begränsas inte av dessa villkor. Om en tvist inte kan lösas kan du vända dig till Allmänna reklamationsnämnden, www.arn.se, när dess prövningskrav är uppfyllda.",
+          "termsHash": "bfbb34072dc73a26aced93cc4f96cd804373ebd01c85ecdb8cf0d957b8d9946d",
+          "withdrawalDeadline": "2026-09-22",
+          "withdrawalFormUrl": "https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett",
+          "consentTexts": {
+            "acceptTerms": "Jag har läst och godkänner tjänstens omfattning och köpvillkor.",
+            "requestImmediateStart": "Jag begär uttryckligen att tjänsten aktiveras och börjar tillhandahållas direkt, innan ångerfristen på 14 dagar har löpt ut. Jag har tagit del av informationen om eventuell proportionell ersättning för det som tillhandahållits om jag ångrar köpet. Aktiveringen i sig tar inte bort min ångerrätt.",
+            "acceptInvoice": "Jag godkänner betalningsskyldigheten på 599 kr inkl. moms mot faktura och har rätt att beställa för angiven fakturamottagare.",
+            "consumerWithdrawalAcknowledged": "Jag har tagit del av informationen om 14 dagars ångerrätt, hur jag ångrar beställningen och ångerblanketten."
+          },
+          "consents": {
+            "acceptTerms": true,
+            "requestImmediateStart": true,
+            "acceptInvoice": true,
+            "consumerWithdrawalAcknowledged": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "pdf": "C:\\Users\\hedbj\\underhallsplan-villa\\tmp\\pdfs\\eb-follow-up-confirmation\\business.pdf",
+    "data": {
+      "version": 1,
+      "orderId": "cfe2174a-8511-4e14-96c9-12deacf91234",
+      "project": {
+        "title": "Renovering av villa",
+        "propertyDesignation": "EXEMPELGÅRDEN 1:23",
+        "address": "Villavägen 13, 123 45 Exempelstad",
+        "customerName": "Anna och Erik Andersson",
+        "inspectionLabel": "Slutbesiktning 1",
+        "inspectionDate": "2026-09-03",
+        "reportNumber": "EB 2026-0903-01"
+      },
+      "price": {
+        "totalOre": 59900,
+        "netOre": 47920,
+        "vatOre": 11980,
+        "vatRate": 25
+      },
+      "seller": {
+        "name": "Exempelföretaget AB",
+        "orgNumber": "000000-0000",
+        "address": "Exempelgatan 7, 123 45 Exempelstad",
+        "email": "kontakt@example.invalid"
+      },
+      "withdrawalFormText": "Ångerblankett – fyll i och skicka endast om du vill frånträda avtalet\nTill: Exempelföretaget AB, Exempelgatan 7, 123 45 Exempelstad, kontakt@example.invalid\nJag/vi meddelar härmed att jag/vi frånträder mitt/vårt avtal avseende följande tjänst: Digital åtgärdsuppföljning.\nBeställningsnummer: ____________________\nBeställdes den: ____________________\nKonsumentens/konsumenternas namn: ____________________\nKonsumentens/konsumenternas adress: ____________________\nDatum: ____________________\nUnderskrift (endast om blanketten skickas på papper): ____________________\nStryk det som inte gäller. Du kan också använda Konsumentverkets standardblankett: https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett",
+      "buyer": {
+        "name": "Anna Andersson",
+        "email": "anna@example.invalid",
+        "customerType": "business",
+        "invoiceName": "Exemplets bostadsrättsförening",
+        "invoiceAddress": "Villavägen 13",
+        "invoicePostalCode": "123 45",
+        "invoiceCity": "Exempelstad",
+        "invoiceOrgNo": "000000-0000",
+        "acceptanceSnapshot": {
+          "acceptedAt": "2026-09-08T11:23:40.308Z",
+          "termsVersion": "2026-09-08.2",
+          "termsText": "Köpvillkor – Digital åtgärdsuppföljning\nVersion 2026-09-08.2\n\nSäljare\nExempelföretaget AB, org.nr 000000-0000\nExempelgatan 7, 123 45 Exempelstad\nE-post: kontakt@example.invalid\n\nOmfattning\nDigital uppföljning av noteringarna i detta fastställda utlåtande. Du fördelar noteringar till entreprenörer som kan svara och lämna åtgärdsbilder. Tjänsten omfattar inte en ny besiktning, teknisk granskning eller godkännande av åtgärder.\nTillvalet gäller endast denna besiktning. Entreprenörens avbockning är inte besiktningsmannens godkännande. Utlåtandet kan läsas även utan tillvalet.\n\nPris och beställning\nEngångspriset är 599 kr inkl. moms (25 % moms). Beställningen medför betalningsskyldighet. Fakturering hanteras manuellt; beställningsbekräftelsen är inte en faktura. Fakturans betalningsuppgifter skickas separat. Inga återkommande avgifter debiteras för detta köp.\n\nTillgång till tjänsten\nTjänsten aktiveras när beställningen har godkänts och sparats. Uppföljningen är knuten till besiktningen och förnyas inte som ett nytt köp när en personlig åtkomstlänk förnyas. Du använder tjänsten i en aktuell webbläsare med internetanslutning. Håll din beställarlänk privat; bjud in entreprenörer med deras egna begränsade länkar.\n\nKöp för företag eller förening\nDen lagstadgade ångerrätten för konsumenter gäller inte köp för företag eller förening. Kontakta säljaren om du vill begära att beställningen avslutas.\n\nFrågor och reklamation\nKontakta kontakt@example.invalid vid problem med tjänsten, faktureringen eller om du vill avsluta tillgången. Dina tvingande rättigheter som konsument begränsas inte av dessa villkor.",
+          "termsHash": "4fb164d9dbd984fdb09ad282599fb80eb4a7ffafbd4064c8fcdd81cb5318c2bf",
+          "withdrawalDeadline": null,
+          "withdrawalFormUrl": "https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett",
+          "consentTexts": {
+            "acceptTerms": "Jag har läst och godkänner tjänstens omfattning och köpvillkor.",
+            "requestImmediateStart": "Jag begär att tjänsten aktiveras och börjar tillhandahållas direkt.",
+            "acceptInvoice": "Jag godkänner betalningsskyldigheten på 599 kr inkl. moms mot faktura och har rätt att beställa för angiven fakturamottagare."
+          },
+          "consents": {
+            "acceptTerms": true,
+            "requestImmediateStart": true,
+            "acceptInvoice": true,
+            "consumerWithdrawalAcknowledged": false
+          }
+        }
+      }
+    }
+  },
+  {
+    "pdf": "C:\\Users\\hedbj\\underhallsplan-villa\\tmp\\pdfs\\eb-follow-up-confirmation\\long.pdf",
+    "data": {
+      "version": 1,
+      "orderId": "cfe2174a-8511-4e14-96c9-12deacf91234",
+      "project": {
+        "title": "Renovering och ombyggnad av flerbostadshus med installationer och gemensamma utrymmen Renovering och ombyggnad av flerbostadshus med installationer och gemensamma utrymmen Renovering och ombyggnad av flerbostadshus med installationer och gemensamma utrymmen ",
+        "propertyDesignation": "EXEMPELGÅRDEN 1:23",
+        "address": "Villavägen 13, 123 45 Exempelstad",
+        "customerName": "Bostadsrättsföreningen Exemplet och samfällighetens gemensamma beställarorganisation",
+        "inspectionLabel": "Slutbesiktning 1",
+        "inspectionDate": "2026-09-03",
+        "reportNumber": "EB 2026-0903-01"
+      },
+      "price": {
+        "totalOre": 59900,
+        "netOre": 47920,
+        "vatOre": 11980,
+        "vatRate": 25
+      },
+      "seller": {
+        "name": "Exempelföretaget AB",
+        "orgNumber": "000000-0000",
+        "address": "Exempelgatan 7, 123 45 Exempelstad",
+        "email": "kontakt@example.invalid"
+      },
+      "withdrawalFormText": "Ångerblankett – fyll i och skicka endast om du vill frånträda avtalet\nTill: Exempelföretaget AB, Exempelgatan 7, 123 45 Exempelstad, kontakt@example.invalid\nJag/vi meddelar härmed att jag/vi frånträder mitt/vårt avtal avseende följande tjänst: Digital åtgärdsuppföljning.\nBeställningsnummer: ____________________\nBeställdes den: ____________________\nKonsumentens/konsumenternas namn: ____________________\nKonsumentens/konsumenternas adress: ____________________\nDatum: ____________________\nUnderskrift (endast om blanketten skickas på papper): ____________________\nStryk det som inte gäller. Du kan också använda Konsumentverkets standardblankett: https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett",
+      "buyer": {
+        "name": "Anna Andersson",
+        "email": "anna@example.invalid",
+        "customerType": "consumer",
+        "invoiceName": "Bostadsrättsföreningen Långa Namnet med gemensamhetsanläggningar och förvaltningsorganisation",
+        "invoiceAddress": "c/o Fastighetsförvaltningen, avdelningen för gemensamma utrymmen, Exempelgatan 123 B, våning 14",
+        "invoicePostalCode": "123 45",
+        "invoiceCity": "Exempelstad",
+        "invoiceOrgNo": null,
+        "acceptanceSnapshot": {
+          "acceptedAt": "2026-09-08T11:23:40.308Z",
+          "termsVersion": "2026-09-08.2",
+          "termsText": "Köpvillkor – Digital åtgärdsuppföljning\nVersion 2026-09-08.2\n\nSäljare\nExempelföretaget AB, org.nr 000000-0000\nExempelgatan 7, 123 45 Exempelstad\nE-post: kontakt@example.invalid\n\nOmfattning\nDigital uppföljning av noteringarna i detta fastställda utlåtande. Du fördelar noteringar till entreprenörer som kan svara och lämna åtgärdsbilder. Tjänsten omfattar inte en ny besiktning, teknisk granskning eller godkännande av åtgärder.\nTillvalet gäller endast denna besiktning. Entreprenörens avbockning är inte besiktningsmannens godkännande. Utlåtandet kan läsas även utan tillvalet.\n\nPris och beställning\nEngångspriset är 599 kr inkl. moms (25 % moms). Beställningen medför betalningsskyldighet. Fakturering hanteras manuellt; beställningsbekräftelsen är inte en faktura. Fakturans betalningsuppgifter skickas separat. Inga återkommande avgifter debiteras för detta köp.\n\nTillgång till tjänsten\nTjänsten aktiveras när beställningen har godkänts och sparats. Uppföljningen är knuten till besiktningen och förnyas inte som ett nytt köp när en personlig åtkomstlänk förnyas. Du använder tjänsten i en aktuell webbläsare med internetanslutning. Håll din beställarlänk privat; bjud in entreprenörer med deras egna begränsade länkar.\n\nÅngerrätt för privatkund\nDu har rätt att ångra köpet utan att ange skäl inom 14 dagar från avtalets ingående. Ångerfristen börjar inte löpa innan du fått föreskriven information om ångerrätten. Beräknad sista ångerdag anges i bekräftelsen; om slutdagen infaller på en helgdag eller motsvarande fridag förlängs fristen till nästa vardag.\nDu kan använda funktionen ”Ångra beställningen” i din personliga åtgärdsportal eller skicka ett tydligt meddelande till kontakt@example.invalid eller säljarens postadress ovan. Det räcker att du skickar meddelandet innan fristen löpt ut. Ange gärna namn och beställningsnummer. Du kan använda standardblanketten, men det är inget krav: https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett\nOm du uttryckligen begär start under ångerfristen kan du vid frånträdande behöva betala en skälig och proportionell del för det som faktiskt har tillhandahållits fram till ditt meddelande, om lagens förutsättningar är uppfyllda. Aktivering är inte i sig ett fullgörande av hela tjänsten och innebär inte att ångerrätten upphör.\nNär du frånträder beställningen stoppas fortsatt användning och faktureringen pausas för handläggning. Eventuell återbetalning hanteras utan onödigt dröjsmål, senast 14 dagar efter mottaget meddelande, med samma betalningssätt om ni inte uttryckligen kommer överens om annat. Ingen återbetalningsavgift tas ut.\n\nFrågor och reklamation\nKontakta kontakt@example.invalid vid problem med tjänsten, faktureringen eller om du vill avsluta tillgången. Dina tvingande rättigheter som konsument begränsas inte av dessa villkor. Om en tvist inte kan lösas kan du vända dig till Allmänna reklamationsnämnden, www.arn.se, när dess prövningskrav är uppfyllda.\n\nExtra långt testavsnitt\nEtt långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. Ett långt stycke ska fortsätta på nästa sida utan att rubrik, rad eller sidfot överlappar. ",
+          "termsHash": "bfbb34072dc73a26aced93cc4f96cd804373ebd01c85ecdb8cf0d957b8d9946d",
+          "withdrawalDeadline": "2026-09-22",
+          "withdrawalFormUrl": "https://publikationer.konsumentverket.se/mallar-och-blanketter/angerblankett",
+          "consentTexts": {
+            "acceptTerms": "Jag har läst och godkänner tjänstens omfattning och köpvillkor.",
+            "requestImmediateStart": "Jag begär uttryckligen att tjänsten aktiveras och börjar tillhandahållas direkt, innan ångerfristen på 14 dagar har löpt ut. Jag har tagit del av informationen om eventuell proportionell ersättning för det som tillhandahållits om jag ångrar köpet. Aktiveringen i sig tar inte bort min ångerrätt.",
+            "acceptInvoice": "Jag godkänner betalningsskyldigheten på 599 kr inkl. moms mot faktura och har rätt att beställa för angiven fakturamottagare.",
+            "consumerWithdrawalAcknowledged": "Jag har tagit del av informationen om 14 dagars ångerrätt, hur jag ångrar beställningen och ångerblanketten."
+          },
+          "consents": {
+            "acceptTerms": true,
+            "requestImmediateStart": true,
+            "acceptInvoice": true,
+            "consumerWithdrawalAcknowledged": true
+          }
+        }
+      }
+    }
+  }
+]

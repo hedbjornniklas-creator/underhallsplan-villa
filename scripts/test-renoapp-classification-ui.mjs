@@ -29,13 +29,22 @@ const actions = [action]
 const document = { id: 'document', key: 'electrical_document', label: 'Eldokumentation', description: null,
   reviewGuidance: null, defaultPhase: 'after_completion', sortOrder: 100, isActive: true }
 const role = { id: 'electrician', key: 'electrician', label: 'Elinstallationsforetag', description: null,
-  reviewGuidance: null, roleKind: 'contractor', sortOrder: 100, isActive: true }
+  reviewGuidance: 'Kontrollera uppgifterna.', roleKind: 'contractor', sortOrder: 100, isActive: true,
+  insuranceRequired: false, requiresCompanyName: true, requiresOrgNumber: true, requiresContactName: false,
+  requiresEmail: true, requiresPhone: false, requiresCertification: false,
+  verificationInstructions: 'Kontrollera registret.', verificationUrl: 'https://example.com/' + 'register'.repeat(35) }
+const flag = { id:'flag', key:'permission', label:'Kontrollera tillstånd', description:'Särskild kontroll.', severity:'high', category:'Tillstånd', sortOrder:30, isActive:false }
+const question = { id:'question', key:'water', label:'Påverkas vatteninstallationerna?', helpText:'Beskriv påverkan.', responseType:'boolean', sortOrder:20, isActive:true,
+  options:[{ id:'yes', key:'yes', label:'Ja', description:'Installationer påverkas.', sortOrder:10, isActive:true,
+    triggers:[{ id:'trigger', triggerType:'document', documentTypeId:document.id, sortOrder:15, isActive:false }] },
+    { id:'no', key:'no', label:'Nej', description:null, sortOrder:20, isActive:false, triggers:[] }] }
 const responses = {
-  'action-types': { items: actions }, 'questions': { items: [] }, 'document-types': { items: [document] },
-  'participants': { items: [role] }, 'review-flags': { items: [] }, 'review-flag-links': { items: [] },
+  'action-types': { items: actions }, 'questions': { items: [question] }, 'document-types': { items: [document] },
+  'participants': { items: [role] }, 'review-flags': { items: [flag] },
+  'review-flag-links': { items: [{id:'flag-link',reviewFlagId:flag.id,actionTypeId:action.id,isActive:true,sortOrder:30}] },
   'requirements': { actionTypes: [{ actionType: action, requirements: [{ id: 'requirement', documentTypeId: document.id,
     documentLabel: document.label, isRequired: true, sortOrder: 100, note: null }] }] },
-  'action-type-questions': { actionTypes: [] },
+  'action-type-questions': { actionTypes: [{actionType:action,questions:[{id:'question-link',questionId:question.id,questionLabel:question.label,isRequired:false,sortOrder:20}]}] },
   'action-type-participants': { actionTypes: [{ actionType: action, participantRoles: [{ id: 'role-link', participantRoleId: role.id,
     participantRoleLabel: role.label, roleKind: role.roleKind, isRequired: true, sortOrder: 100 }] }] },
 }
@@ -123,6 +132,64 @@ try {
   assert.equal(writes.length, 1)
   assert.deepEqual(errors, [])
   console.log('PASS admin: no classification controls or global delete/clone, save omits retired fields, risk and linked requirements preserved')
+
+  await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Stäng"])').click()
+  const open = async id => {
+    await page.locator(`[data-flow-id="${id}"] button[aria-label^="Öppna "]`).click()
+    await page.waitForSelector('[data-flow-overview]')
+  }
+  const close = () => page.locator('::-p-xpath(//aside//button[normalize-space(.)="Stäng"])').click()
+  const nodes=['action-type:electrical','question:root:question','option:question:yes','root-document:document','root-participant:electrician','action:electrical:flag:flag']
+  for (const id of nodes) {
+    await open(id)
+    assert.equal(await page.$('aside input'),null,'opening defaults to read-only overview')
+    await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Redigera"])').click()
+    const fields=await page.$$eval('aside label',labels=>labels.map(label=>{
+      const control=label.querySelector('input,textarea,select')
+      if(!control)return null
+      return {label:(label.querySelector('span')?.textContent??label.textContent).trim().replace('Hjälpttext','Hjälptext'),
+        checkbox:control.type==='checkbox',checked:control.checked,
+        value:control.tagName==='SELECT'?control.selectedOptions[0].textContent:control.value}
+    }).filter(Boolean))
+    await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Översikt"])').click()
+    const overview=await page.$$eval('[data-overview-field]',items=>Object.fromEntries(items.map(item=>[item.dataset.overviewField,item.lastElementChild.textContent.trim()])))
+    for(const field of fields) {
+      if(field.checkbox && field.label.startsWith('Aktiv')) {
+        assert.match(overview.Status,field.checked?/^Aktiv/:/^Inaktiv/);continue
+      }
+      if(field.checkbox && field.label.startsWith('Obligatorisk')) {
+        assert.match(overview['Koppling till renoveringstyp'],field.checked?/^Obligatorisk/:/^Valfri/);continue
+      }
+      assert.ok(Object.hasOwn(overview,field.label),`${id}: overview is missing ${field.label}`)
+      if(field.checkbox)assert.equal(overview[field.label],field.checked?'Ja':'Nej')
+      else if(field.value)assert.equal(overview[field.label].replaceAll(/\s/g,''),field.value.replaceAll(/\s/g,''),`${id}: ${field.label}`)
+    }
+    if(id.startsWith('question:')) {
+      assert.match(await page.$eval('[data-flow-overview]',node=>node.textContent),/Nej/)
+      assert.match(await page.$eval('[data-flow-overview]',node=>node.textContent),/Inaktiv koppling/)
+      assert.match(await page.$eval('[data-flow-overview]',node=>node.textContent),/Eldokumentation/)
+      await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Redigera"])').click()
+      await page.locator('aside textarea').fill('Ny hjälptext före sparande.')
+      await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Översikt"])').click()
+      assert.equal(await page.$eval('[data-overview-field="Hjälptext"]',node=>node.lastElementChild.textContent),'Ny hjälptext före sparande.')
+    }
+    if(id==='action-type:electrical')for(const label of [question.label,document.label,role.label,flag.label]) {
+      assert.ok((await page.$eval('[data-flow-overview]',node=>node.textContent)).includes(label))
+    }
+    if(id.includes(':flag:'))assert.equal(overview['Kopplad från'],'Elinstallationer uppdaterad')
+    await close()
+  }
+  for(const width of [1440,390]) {
+    await page.setViewport({width,height:1000})
+    await page.locator('button[aria-label="Visa hela flödet"]').click()
+    await open('root-participant:electrician')
+    assert.equal(await page.$eval('aside fieldset',node=>node.scrollWidth>node.clientWidth),false)
+    await page.screenshot({path:resolve(output,`overview-${width}.png`)})
+    await close()
+  }
+  assert.equal(writes.length,1,'reading or switching overview must never save')
+  assert.deepEqual(errors,[])
+  console.log('PASS overview parity: every edit field is readable, unchecked requirements explicit, inactive answers/links visible, live draft and mobile wrapping preserved')
 } catch (error) {
   await page?.screenshot({ path: resolve(output, 'failure.png'), fullPage: true })
   throw error

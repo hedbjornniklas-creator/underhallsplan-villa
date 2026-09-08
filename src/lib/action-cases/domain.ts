@@ -1,8 +1,9 @@
 import type { ActionCaseCostLineView, ActionCaseItemView } from './contracts'
 
 export function calculateActionCaseCostTotals(
-  lines: ReadonlyArray<Pick<ActionCaseCostLineView, 'quantity' | 'unitCost' | 'markupPercent'>>
+  input: ReadonlyArray<Pick<ActionCaseCostLineView, 'quantity' | 'unitCost' | 'markupPercent'> & { coveredByQuoteId?: string | null }>
 ) {
+  const lines = input.filter((line) => !line.coveredByQuoteId)
   if (!lines.length || lines.some((line) => line.quantity === null || line.unitCost === null)) {
     return { internalCost: null, customerPrice: null }
   }
@@ -17,8 +18,9 @@ export function calculateActionCaseCostTotals(
   }
 }
 
-export function actionCaseCostCoverage(lines: ReadonlyArray<Pick<ActionCaseCostLineView,
-  'quantity' | 'unitCost' | 'markupPercent' | 'verified'>>) {
+export function actionCaseCostCoverage(input: ReadonlyArray<Pick<ActionCaseCostLineView,
+  'quantity' | 'unitCost' | 'markupPercent' | 'verified'> & { coveredByQuoteId?: string | null }>) {
+  const lines = input.filter((line) => !line.coveredByQuoteId)
   const known = lines.filter((line) => line.quantity !== null && line.unitCost !== null)
   return {
     missingQuantity: lines.filter((line) => line.quantity === null).length,

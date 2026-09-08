@@ -6,6 +6,9 @@ import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/
 import type { ActionCaseAttachmentView, ActionCaseCostLineView, ActionCaseItemView, ActionCaseParticipantView, ActionCasePortal, ActionCaseView, ActionCaseWorkspace } from './contracts'
 import { filterActionCasePortalItems } from './domain'
 import { normalizeCostLine } from './costing'
+import { mapQuote, QUOTE_VIEW_COLUMNS, quoteIsStale } from './quotes'
+import { calculateActionCaseCostTotals } from './domain'
+import { createQuoteWorkLine } from './quotesServer'
 
 type Context = { orgId: string; userId: string }
 
@@ -93,6 +96,10 @@ function mapCostLine(row: Record<string, unknown>): ActionCaseCostLineView {
     sortOrder: Number(row.sort_order),
     quantityBasis: (row.quantity_basis ?? 'provided') as ActionCaseCostLineView['quantityBasis'],
     notes: row.notes ? String(row.notes) : null,
+    pricingMethod: row.pricing_method === 'quotes' ? 'quotes' : 'direct',
+    selectedQuoteId: row.selected_quote_id ? String(row.selected_quote_id) : null,
+    coveredByQuoteId: row.covered_by_quote_id ? String(row.covered_by_quote_id) : null,
+    updatedAt: String(row.updated_at),
   }
 }
 
@@ -129,6 +136,10 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     : { data: [], error: null }
   // Keep pre-migration workspaces readable during a rolling deployment.
   if (suggestionError && !['42P01', 'PGRST205'].includes(suggestionError.code)) throw new Error('ACTION_CASES_READ_FAILED')
+  const { data: quotes, error: quoteError } = caseIds.length
+    ? await admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
+    : { data: [], error: null }
+  if (quoteError && !['42P01', 'PGRST205'].includes(quoteError.code)) throw new Error('ACTION_CASES_READ_FAILED')
 
   const attachmentIds = (attachments ?? []).map((row) => row.id)
   const { data: grants, error: grantsError } = attachmentIds.length
@@ -139,13 +150,27 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
   const costLinesByItem = new Map<string, ActionCaseCostLineView[]>()
   for (const row of costLines ?? []) {
     const list = costLinesByItem.get(row.action_case_item_id) ?? []
-    list.push(mapCostLine(row))
+    const line = mapCostLine(row)
+    line.quotes = (quotes as unknown as Record<string, unknown>[] | null)?.filter((q) => q.cost_line_id === row.id).map(mapQuote) ?? []
+    list.push(line)
     costLinesByItem.set(row.action_case_item_id, list)
   }
   const itemsByCase = new Map<string, ActionCaseItemView[]>()
   for (const row of items ?? []) {
     const list = itemsByCase.get(row.action_case_id) ?? []
     const view = mapItem(row, costLinesByItem.get(row.id) ?? [])
+    for (const line of view.costLines) {
+      if (line.pricingMethod !== 'quotes') continue
+      const selected = line.quotes?.find((q) => q.id === line.selectedQuoteId)
+      if (!selected || quoteIsStale(selected, view.scope, line.description)) {
+        line.unitCost = null; line.verified = false; view.subcontractorPriceReady = false
+        if (['ready_for_quote', 'pricing_needed', 'waiting_subcontractor'].includes(view.status)) view.status = 'waiting_subcontractor'
+      }
+    }
+    if (view.costLines.some((line) => line.pricingMethod === 'quotes')) {
+      const totals = calculateActionCaseCostTotals(view.costLines)
+      view.estimatedCost = totals.internalCost; view.customerPrice = totals.customerPrice
+    }
     const proposal = suggestions?.find((candidate) => candidate.action_case_item_id === row.id)
     view.costSuggestion = proposal && !proposal.applied_at ? { id: proposal.id, sourceUpdatedAt: proposal.source_updated_at, createdAt: proposal.created_at, lines: proposal.lines, warnings: proposal.warnings } : null
     list.push(view)
@@ -199,6 +224,9 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     attachments: attachmentsByCase.get(row.id) ?? [],
   }))
 
+  for (const view of views) {
+    if (view.status === 'quote_ready' && view.items.some((item) => item.status === 'waiting_subcontractor')) view.status = 'pricing'
+  }
   const allItems = views.flatMap((item) => item.items)
   return {
     cases: views,
@@ -221,12 +249,13 @@ async function writeCosts(context: Context, payload: Record<string, unknown>, op
   })
   if (error) {
     if (error.code === 'PGRST202' || error.code === '42883') throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
-    const known = ['ACTION_CASE_NOT_FOUND', 'ACTION_CASE_AI_NOT_FOUND', 'ACTION_CASE_AI_STALE', 'ACTION_CASE_COST_LINE_INVALID', 'ACTION_CASE_COST_LINE_NOT_FOUND']
+    const known = ['ACTION_CASE_NOT_FOUND', 'ACTION_CASE_AI_NOT_FOUND', 'ACTION_CASE_AI_STALE', 'ACTION_CASE_COST_LINE_INVALID', 'ACTION_CASE_COST_LINE_NOT_FOUND', 'ACTION_CASE_QUOTE_SENT_IMMUTABLE', 'ACTION_CASE_QUOTE_COVERAGE']
     throw new Error(known.find((code) => error.message.includes(code)) ?? 'ACTION_CASE_COST_LINE_WRITE_FAILED')
   }
 }
 
 export async function createActionCaseCostLine(context: Context, payload: Record<string, unknown>) {
+  if (payload.pricingMethod === 'quotes') return createQuoteWorkLine(context, payload)
   await writeCosts(context, payload, 'add', [normalizeCostLine(payload)])
 }
 

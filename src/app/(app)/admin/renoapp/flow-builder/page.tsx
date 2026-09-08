@@ -462,11 +462,6 @@ function questionToRequestPayload(question: QuestionItem) {
   }
 }
 
-function labelForNodeKind(value: FlowNode['kind']) {
-  return { root: 'Renoveringstyp', question: 'Fråga', option: 'Svar', document: 'Underlag',
-    participant: 'Medverkande', flag: 'Flagga', status: 'Status' }[value]
-}
-
 function createDuplicateQuestionDraft(question: QuestionItem): QuestionDraft {
   return {
     key: '',
@@ -525,9 +520,9 @@ function OverviewCard({
   value: ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+    <div data-overview-field={label} className="min-w-0 rounded-lg border border-stone-200 bg-white px-4 py-3">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{label}</div>
-      <div className="mt-1 font-medium text-stone-900">{value}</div>
+      <div className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium text-stone-900">{value}</div>
     </div>
   )
 }
@@ -542,11 +537,26 @@ function OverviewText({
   fallback?: string
 }) {
   return (
-    <div className="rounded-lg border border-stone-200 bg-white px-4 py-3">
+    <div data-overview-field={label} className="min-w-0 rounded-lg border border-stone-200 bg-white px-4 py-3">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">{label}</div>
-      <div className="mt-1 whitespace-pre-wrap text-stone-800">{value?.trim() ? value : fallback}</div>
+      <div className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-stone-800">{value?.trim() ? value : fallback}</div>
     </div>
   )
+}
+
+function OverviewConnections({ label, items }: {
+  label: string
+  items: Array<{ id: string; label: string; detail: string }>
+}) {
+  return <section aria-label={label} className="min-w-0">
+    <h3 className="text-sm font-semibold text-stone-900">{label}</h3>
+    {items.length ? <ul className="mt-2 divide-y divide-stone-200">
+      {items.map(item => <li key={item.id} className="py-2 break-words [overflow-wrap:anywhere]">
+        <div className="font-medium text-stone-900">{item.label}</div>
+        <div className="mt-1 whitespace-pre-wrap text-xs text-stone-600">{item.detail}</div>
+      </li>)}
+    </ul> : <p className="mt-2 text-sm text-stone-500">Inga kopplingar.</p>}
+  </section>
 }
 
 function HelpField({
@@ -721,7 +731,7 @@ export default function RenoAppFlowBuilderPage() {
   const [participantGroups, setParticipantGroups] = useState<ActionTypeParticipantRoleGroup[]>([])
 
   const [selectedActionTypeId, setSelectedActionTypeId] = useState<string | null>(null)
-  const [expandedNodeIds, setExpandedNodeIds] = useState<string[]>([])
+  const [expansion, setExpansion] = useState<{ actionTypeId: string | null; ids: string[] | null } | null>(null)
 
   const [activeNode, setActiveNode] = useState<FlowNode | null>(null)
   const [modalMode, setModalMode] = useState<ModalMode>('summary')
@@ -850,7 +860,7 @@ export default function RenoAppFlowBuilderPage() {
   }, [])
 
   useEffect(() => {
-    setExpandedNodeIds([])
+    setExpansion({ actionTypeId: selectedActionTypeId, ids: null })
   }, [selectedActionTypeId])
 
   const visibleActionTypes = useMemo(() => {
@@ -1067,6 +1077,14 @@ export default function RenoAppFlowBuilderPage() {
   }, [documentTypeMap, participantRoleMap, questionMap, reviewFlagLinks, reviewFlagMap, rootParticipants, rootQuestions, rootRequirements, selectedActionTypeId])
 
   const allExpandableNodeIds = useMemo(() => collectExpandableNodeIds(flowRootChildren), [flowRootChildren])
+  const expandedNodeIds = expansion?.actionTypeId === selectedActionTypeId
+    ? expansion.ids ?? allExpandableNodeIds : allExpandableNodeIds
+  const setExpandedNodeIds = (update: string[] | ((ids: string[]) => string[])) => {
+    setExpansion(current => {
+      const ids = current?.actionTypeId === selectedActionTypeId ? current.ids ?? allExpandableNodeIds : allExpandableNodeIds
+      return { actionTypeId: selectedActionTypeId, ids: typeof update === 'function' ? update(ids) : update }
+    })
+  }
 
   const diagramRoot = useMemo<FlowNode | null>(() => {
     if (!selectedAction) return null
@@ -2069,15 +2087,37 @@ export default function RenoAppFlowBuilderPage() {
     if (!activeNode) return null
 
     const commonShell = (children: ReactNode) => (
-      <div className="space-y-4 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+      <div data-flow-overview className="min-w-0 space-y-4 text-sm text-stone-700">
         {children}
       </div>
     )
+
+    const triggerRows = (triggers: QuestionOptionTriggerItem[]) => [...triggers]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(trigger => {
+        const target = trigger.triggerType === 'question' ? questionMap.get(trigger.questionId ?? '')
+          : trigger.triggerType === 'document' ? documentTypeMap.get(trigger.documentTypeId ?? '')
+          : trigger.triggerType === 'participant_role' ? participantRoleMap.get(trigger.participantRoleId ?? '')
+          : reviewFlagMap.get(trigger.reviewFlagId ?? '')
+        const kind = { question: 'Fråga', document: 'Underlag', participant_role: 'Medverkande', review_flag: 'Flagga' }[trigger.triggerType]
+        return { id: trigger.id, label: target?.label ?? 'Objektet saknas',
+          detail: `${kind} · ${trigger.isActive ? 'Aktiv koppling' : 'Inaktiv koppling'} · Sortering: ${trigger.sortOrder}${target && !target.isActive ? ' · Objektet är inaktivt' : ''}` }
+      })
+    const flagsFor = (field: 'actionTypeId' | 'documentTypeId' | 'participantRoleId', id?: string) =>
+      <OverviewConnections label="Kopplade flaggor" items={reviewFlagLinks
+        .filter(link => Boolean(id) && link[field] === id)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map(link => {
+          const flag = reviewFlagMap.get(link.reviewFlagId)
+          return { id: link.id, label: flag?.label ?? 'Flaggan saknas',
+            detail: `${link.isActive ? 'Aktiv koppling' : 'Inaktiv koppling'} · Sortering: ${link.sortOrder}${flag ? ` · ${labelForSeverity(flag.severity)}${flag.isActive ? '' : ' · Flaggan är inaktiv'}` : ''}` }
+        })} />
 
     if (activeNode.ref.type === 'actionType') {
       return commonShell(
         <>
           <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Visningsnamn" value={actionTypeDraft.label || '-'} />
             <OverviewCard label="Intern nyckel" value={actionTypeDraft.key || '-'} />
             <OverviewCard label="Status" value={actionTypeDraft.isActive ? 'Aktiv renoveringstyp' : 'Inaktiv renoveringstyp'} />
             <OverviewCard label="Risknivå" value={labelForRiskLevel(actionTypeDraft.riskLevel)} />
@@ -2086,6 +2126,19 @@ export default function RenoAppFlowBuilderPage() {
             <OverviewCard label="Kopplingar" value={`${rootQuestions.length} frågor, ${rootRequirements.length} underlag, ${rootParticipants.length} medverkande`} />
           </div>
           <OverviewText label="Beskrivning" value={actionTypeDraft.description} fallback="Ingen beskrivning angiven." />
+          <OverviewConnections label="Kopplade frågor" items={rootQuestions.map(item => ({ id: item.id,
+            label: questionMap.get(item.questionId)?.label ?? item.questionLabel,
+            detail: `${item.isRequired ? 'Obligatorisk' : 'Valfri'} · Sortering: ${item.sortOrder}${questionMap.get(item.questionId)?.isActive === false ? ' · Frågan är inaktiv' : ''}`,
+          }))} />
+          <OverviewConnections label="Kopplade underlag" items={rootRequirements.map(item => ({ id: item.id,
+            label: documentTypeMap.get(item.documentTypeId)?.label ?? item.documentLabel,
+            detail: `${item.isRequired ? 'Obligatoriskt' : 'Valfritt'} · Sortering: ${item.sortOrder}${documentTypeMap.get(item.documentTypeId)?.isActive === false ? ' · Underlaget är inaktivt' : ''}${item.note ? `\nNotering: ${item.note}` : ''}`,
+          }))} />
+          <OverviewConnections label="Kopplade medverkande" items={rootParticipants.map(item => ({ id: item.id,
+            label: participantRoleMap.get(item.participantRoleId)?.label ?? item.participantRoleLabel,
+            detail: `${item.isRequired ? 'Obligatorisk' : 'Valfri'} · Sortering: ${item.sortOrder}${participantRoleMap.get(item.participantRoleId)?.isActive === false ? ' · Medverkandetypen är inaktiv' : ''}`,
+          }))} />
+          {flagsFor('actionTypeId', actionTypeDraft.id)}
         </>
       )
     }
@@ -2094,10 +2147,11 @@ export default function RenoAppFlowBuilderPage() {
       return commonShell(
         <>
           <div className="grid gap-4 md:grid-cols-2">
-            <OverviewCard label="Intern nyckel" value={activeQuestionSummary.key} />
-            <OverviewCard label="Svarstyp" value={labelForResponseType(activeQuestionSummary.responseType)} />
-            <OverviewCard label="Sortering" value={activeQuestionSummary.sortOrder} />
-            <OverviewCard label="Status" value={activeQuestionSummary.isActive ? 'Aktiv fråga' : 'Inaktiv fråga'} />
+            <OverviewCard label="Visningsnamn" value={questionDraft.label || '-'} />
+            <OverviewCard label="Intern nyckel" value={questionDraft.key} />
+            <OverviewCard label="Svarstyp" value={labelForResponseType(questionDraft.responseType)} />
+            <OverviewCard label="Sortering" value={questionDraft.sortOrder} />
+            <OverviewCard label="Status" value={questionDraft.isActive ? 'Aktiv fråga' : 'Inaktiv fråga'} />
           </div>
 
           {activeNode.ref.type === 'rootQuestion' ? (
@@ -2107,7 +2161,7 @@ export default function RenoAppFlowBuilderPage() {
             </div>
           ) : null}
 
-          <OverviewText label="Hjälptext" value={activeQuestionSummary.helpText} fallback="Ingen hjälptext angiven." />
+          <OverviewText label="Hjälptext" value={questionDraft.helpText} fallback="Ingen hjälptext angiven." />
 
           <div className="space-y-2">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">Svarsalternativ</div>
@@ -2119,10 +2173,10 @@ export default function RenoAppFlowBuilderPage() {
                   const activeTriggerCount = option.triggers.filter((trigger) => trigger.isActive).length
                   return (
                     <div key={option.id} className="rounded-lg border border-stone-200 bg-white px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="font-semibold text-stone-900">{option.label}</div>
-                          <div className="mt-1 text-xs text-stone-500">{option.key}</div>
+                          <div className="break-words [overflow-wrap:anywhere] font-semibold text-stone-900">{option.label}</div>
+                          <div className="mt-1 break-words [overflow-wrap:anywhere] text-xs text-stone-500">{option.key}</div>
                         </div>
                         <div className="flex flex-wrap justify-end gap-1">
                           <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.sortOrder}</span>
@@ -2130,7 +2184,8 @@ export default function RenoAppFlowBuilderPage() {
                           <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[10px] font-semibold text-stone-700">{option.isActive ? 'Aktiv' : 'Inaktiv'}</span>
                         </div>
                       </div>
-                      {option.description?.trim() ? <div className="mt-2 whitespace-pre-wrap text-sm text-stone-700">{option.description}</div> : null}
+                      <div className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-sm text-stone-700">{option.description?.trim() || 'Ingen beskrivning angiven.'}</div>
+                      <OverviewConnections label="Svarsalternativets kopplingar" items={triggerRows(option.triggers)} />
                     </div>
                   )
                 })
@@ -2153,12 +2208,14 @@ export default function RenoAppFlowBuilderPage() {
       return commonShell(
         <>
           <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Svarstext" value={optionDraft.label || '-'} />
             <OverviewCard label="Intern nyckel" value={optionDraft.key || generatedOptionKey(optionDraft) || '-'} />
             <OverviewCard label="Status" value={optionDraft.isActive ? 'Aktivt svarsalternativ' : 'Inaktivt svarsalternativ'} />
             <OverviewCard label="Sortering" value={optionDraft.sortOrder} />
             <OverviewCard label="Kopplingar" value={`${optionTriggerCount} kopplingar`} />
           </div>
           <OverviewText label="Beskrivning" value={optionDraft.description} fallback="Ingen beskrivning angiven." />
+          <OverviewConnections label="Svarsalternativets kopplingar" items={triggerRows(questionMap.get(optionRef.questionId)?.options.find(item => item.id === optionRef.optionId)?.triggers ?? [])} />
         </>
       )
     }
@@ -2167,6 +2224,7 @@ export default function RenoAppFlowBuilderPage() {
       return commonShell(
         <>
           <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Visningsnamn" value={documentDraft.label || '-'} />
             <OverviewCard label="Intern nyckel" value={documentDraft.key || '-'} />
             <OverviewCard label="Standardfas" value={labelForPhase(documentDraft.defaultPhase)} />
             <OverviewCard label="Sortering" value={documentDraft.sortOrder} />
@@ -2181,24 +2239,18 @@ export default function RenoAppFlowBuilderPage() {
           <OverviewText label="Hjälptext till sökande" value={documentDraft.description} fallback="Ingen hjälptext angiven." />
           <OverviewText label="Granskningsstöd" value={documentDraft.reviewGuidance} fallback="Inget granskningsstöd angivet." />
           {activeNode.ref.type === 'rootRequirement' ? <OverviewText label="Notering" value={requirementLinkDraft.note} fallback="Ingen notering angiven." /> : null}
+          {flagsFor('documentTypeId', documentDraft.id)}
         </>
       )
     }
 
     if (activeNode.ref.type === 'rootParticipant' || activeNode.ref.type === 'optionParticipantTrigger') {
-      const requirements = [
-        participantDraft.insuranceRequired ? 'Försäkringsbevis' : null,
-        participantDraft.requiresCompanyName ? 'Företagsnamn' : null,
-        participantDraft.requiresOrgNumber ? 'Org.nr' : null,
-        participantDraft.requiresContactName ? 'Kontaktperson' : null,
-        participantDraft.requiresEmail ? 'E-post' : null,
-        participantDraft.requiresPhone ? 'Telefon' : null,
-        participantDraft.requiresCertification ? 'Certifiering' : null,
-      ].filter(Boolean).join(', ')
+
 
       return commonShell(
         <>
           <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Visningsnamn" value={participantDraft.label || '-'} />
             <OverviewCard label="Intern nyckel" value={participantDraft.key || '-'} />
             <OverviewCard label="Typ" value={participantDraft.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'} />
             <OverviewCard label="Sortering" value={participantDraft.sortOrder} />
@@ -2210,11 +2262,27 @@ export default function RenoAppFlowBuilderPage() {
               <OverviewCard label="Kopplingens sortering" value={participantLinkDraft.sortOrder} />
             </div>
           ) : null}
-          <OverviewCard label="Informationskrav" value={requirements || 'Inga särskilda informationskrav'} />
+          <section aria-label="Informationskrav">
+            <h3 className="mb-2 text-sm font-semibold text-stone-900">Informationskrav</h3>
+            <dl className="divide-y divide-stone-200">
+              {([
+                ['Försäkringsbevis krävs', participantDraft.insuranceRequired],
+                ['Kräver företagsnamn', participantDraft.requiresCompanyName],
+                ['Kräver org.nr', participantDraft.requiresOrgNumber],
+                ['Kräver kontaktperson', participantDraft.requiresContactName],
+                ['Kräver e-post', participantDraft.requiresEmail],
+                ['Kräver telefon', participantDraft.requiresPhone],
+                ['Kräver certifiering', participantDraft.requiresCertification],
+              ] as const).map(([label, required]) => <div key={label} data-overview-field={label} className="flex justify-between gap-4 py-2">
+                <dt className="min-w-0 break-words">{label}</dt><dd className="shrink-0 font-medium">{required ? 'Ja' : 'Nej'}</dd>
+              </div>)}
+            </dl>
+          </section>
           <OverviewText label="Hjälptext till sökande" value={participantDraft.description} fallback="Ingen hjälptext angiven." />
           <OverviewText label="Granskningsstöd" value={participantDraft.reviewGuidance} fallback="Inget granskningsstöd angivet." />
           <OverviewText label="Verifieringsinstruktion" value={participantDraft.verificationInstructions} fallback="Ingen verifieringsinstruktion angiven." />
           <OverviewCard label="Verifieringslänk" value={participantDraft.verificationUrl || '-'} />
+          {flagsFor('participantRoleId', participantDraft.id)}
         </>
       )
     }
@@ -2225,15 +2293,23 @@ export default function RenoAppFlowBuilderPage() {
       activeNode.ref.type === 'documentReviewFlag' ||
       activeNode.ref.type === 'participantReviewFlag'
     ) {
+      const ref = activeNode.ref
       return commonShell(
         <>
           <div className="grid gap-4 md:grid-cols-2">
+            <OverviewCard label="Visningsnamn" value={reviewFlagDraft.label || '-'} />
             <OverviewCard label="Intern nyckel" value={reviewFlagDraft.key || '-'} />
             <OverviewCard label="Allvar" value={labelForSeverity(reviewFlagDraft.severity)} />
             <OverviewCard label="Kategori" value={reviewFlagDraft.category || '-'} />
             <OverviewCard label="Status" value={reviewFlagDraft.isActive ? 'Aktiv flagga' : 'Inaktiv flagga'} />
             <OverviewCard label="Sortering" value={reviewFlagDraft.sortOrder} />
-            <OverviewCard label="Kopplad från" value={labelForNodeKind(activeNode.kind)} />
+            <OverviewCard label="Kopplad från" value={ref.type === 'actionTypeReviewFlag'
+              ? actionTypes.find(item => item.id === ref.actionTypeId)?.label ?? 'Renoveringstypen saknas'
+              : ref.type === 'documentReviewFlag'
+                ? documentTypeMap.get(ref.documentTypeId)?.label ?? 'Underlaget saknas'
+                : ref.type === 'participantReviewFlag'
+                  ? participantRoleMap.get(ref.participantRoleId)?.label ?? 'Medverkandetypen saknas'
+                  : `${questionMap.get(ref.questionId)?.label ?? 'Frågan saknas'} / ${questionMap.get(ref.questionId)?.options.find(item => item.id === ref.optionId)?.label ?? 'Svaret saknas'}`} />
           </div>
           <OverviewText label="Beskrivning" value={reviewFlagDraft.description} fallback="Ingen beskrivning angiven." />
         </>
@@ -2319,7 +2395,7 @@ export default function RenoAppFlowBuilderPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setExpandedNodeIds(allExpandableNodeIds)} className="rounded-md border border-stone-300 bg-white px-2.5 py-2 font-semibold text-stone-800 hover:bg-stone-100">Expandera alla</button>
-                <button type="button" onClick={() => setExpandedNodeIds([])} className="rounded-md border border-stone-300 bg-white px-2.5 py-2 font-semibold text-stone-800 hover:bg-stone-100">Återställ vy</button>
+                <button type="button" onClick={() => setExpansion({ actionTypeId: selectedActionTypeId, ids: null })} className="rounded-md border border-stone-300 bg-white px-2.5 py-2 font-semibold text-stone-800 hover:bg-stone-100">Återställ vy</button>
               </div>
             </div>
 

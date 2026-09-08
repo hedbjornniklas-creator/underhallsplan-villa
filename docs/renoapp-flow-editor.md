@@ -17,6 +17,13 @@
 
 ## Interaction
 
+- Selecting a renovation type opens all its branches expanded, including after
+  returning to a previously collapsed flow. Manual collapse choices remain during
+  editing, saving and refresh. Reset view returns to the fully expanded default.
+- The read-only overview includes every edit field, explicit Yes/No values for
+  participant requirements, and named connections rather than counts alone.
+  Inactive answers and connections remain visible with their status. Question
+  details use the current editor draft, just like the other node types.
 - Cards are 224px wide and use their measured content height (about 83px for a
   one-line answer, up to 117px for three title lines). The d3-flextree layout keeps
   sibling answers in their own branch, with 40px between columns and 16-24px between
@@ -121,4 +128,5 @@ No production migration or live administrative mutation is run by the automated 
   Delayed writes under React StrictMode exercise FIFO saves, pending draft reopening,
   error recovery, stale reads, flow switching and Save + New without losing input.
 - `node scripts/test-renoapp-classification-ui.mjs`: existing board-summary and admin
-  editor regression coverage.
+  editor regression coverage; overview/edit field parity for all node types,
+  inactive items, unsaved question text and long content on desktop/mobile.
