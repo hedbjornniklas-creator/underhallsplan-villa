@@ -373,12 +373,7 @@ function SectionShell({
       className="scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
     >
       <header className="border-b border-slate-100 px-5 py-4 sm:px-7">
-        {section.sbrPoint ? (
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
-            SBR punkt {section.sbrPoint}
-          </p>
-        ) : null}
-        <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">
+        <h2 className="text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">
           {section.title}
         </h2>
       </header>
@@ -1456,7 +1451,7 @@ export default function EbPublicReportSnapshotView({
   const contentLinks = [
     ...visibleSections.map((section) => ({
       href: `#section-${section.key}`,
-      label: `${section.sbrPoint ? `SBR ${section.sbrPoint} · ` : ''}${section.title}`,
+      label: section.title,
     })),
     ...(hasSignature ? [{ href: '#signature', label: 'Underskrift och certifiering' }] : []),
     ...(imageData.images.length > 0 ? [{ href: '#photo-appendix', label: 'Bilaga 1 · Fotobilaga' }] : []),
@@ -1487,32 +1482,32 @@ export default function EbPublicReportSnapshotView({
       />
 
       <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
-        <section className="overflow-hidden rounded-2xl bg-emerald-950 text-white shadow-sm">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-sm">
           <div className="grid lg:grid-cols-[1fr_320px]">
             <div className="p-6 sm:p-8 lg:p-10">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 bg-emerald-900 px-3 py-1 text-xs font-semibold text-emerald-50">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
                   <CheckCircle2 size={14} aria-hidden />
                   Fastställd version
                 </span>
                 {reference ? (
-                  <span className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-emerald-50">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
                     EB {reference}
                   </span>
                 ) : null}
               </div>
-              <p className="mt-6 text-sm font-semibold uppercase tracking-[0.17em] text-emerald-200">
+              <p className="mt-6 text-sm font-semibold uppercase tracking-[0.17em] text-emerald-700">
                 {report.inspection.variantLabel}
               </p>
               <h1 className="mt-2 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
                 {documentTitle}
               </h1>
-              <p className="mt-4 max-w-3xl text-lg leading-8 text-emerald-50/90">
+              <p className="mt-4 max-w-3xl text-lg leading-8 text-slate-700">
                 {report.project.objectDescription?.trim() || report.project.contractName?.trim() || report.project.title}
               </p>
-              {versionDate ? <p className="mt-6 text-xs text-emerald-100/70">Fastställd {versionDate}</p> : null}
+              {versionDate ? <p className="mt-6 text-xs text-slate-500">Fastställd {versionDate}</p> : null}
             </div>
-            <div className="border-t border-white/10 bg-white/5 p-6 sm:p-8 lg:border-l lg:border-t-0">
+            <div className="border-t border-slate-200 bg-slate-50 p-6 sm:p-8 lg:border-l lg:border-t-0">
               {report.branding.inspectorLogoUrl ? (
                 <img
                   src={report.branding.inspectorLogoUrl}
@@ -1522,27 +1517,27 @@ export default function EbPublicReportSnapshotView({
               ) : null}
               <dl className="space-y-4">
                 <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Objekt</dt>
-                  <dd className="mt-1 font-semibold text-white">{objectIdentity}</dd>
+                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Objekt</dt>
+                  <dd className="mt-1 font-semibold text-slate-950">{objectIdentity}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Adress</dt>
-                  <dd className="mt-1 leading-6 text-emerald-50">{address}</dd>
+                  <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Adress</dt>
+                  <dd className="mt-1 leading-6 text-slate-700">{address}</dd>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Datum</dt>
-                    <dd className="mt-1 text-emerald-50">{report.inspection.date || '–'}</dd>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Datum</dt>
+                    <dd className="mt-1 text-slate-700">{report.inspection.date || '–'}</dd>
                   </div>
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Tid</dt>
-                    <dd className="mt-1 text-emerald-50">{report.inspection.inspectionTime || '–'}</dd>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Tid</dt>
+                    <dd className="mt-1 text-slate-700">{report.inspection.inspectionTime || '–'}</dd>
                   </div>
                 </div>
                 {report.inspection.assignmentNumber ? (
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">Uppdragsnummer</dt>
-                    <dd className="mt-1 text-emerald-50">{report.inspection.assignmentNumber}</dd>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Uppdragsnummer</dt>
+                    <dd className="mt-1 text-slate-700">{report.inspection.assignmentNumber}</dd>
                   </div>
                 ) : null}
               </dl>

@@ -231,14 +231,31 @@ test('a locked historical report keeps its stored section mode and text without 
 })
 
 type SectionRenderer = ComponentType<{ report: EbInspectionReport; section: EbReportDraftSection }>
-const rendererDependencies = { ...pureDependencies, 'next/link': { default: () => null }, 'next/navigation': {},
-  '@/components/eb/EbReportDeliveryDialog': { default: () => null }, '@/components/eb/EbToastProvider': {},
-  '@/components/eb/EbFollowUpOrder': { default: () => null },
-  '@/components/report/PublicReportPdfDownload': { default: () => null }, '@/components/report/ReportShareButton': { default: () => null } }
+const rendererDependencies = { ...pureDependencies, 'next/link': { __esModule: true, default: () => null }, 'next/navigation': {},
+  '@/components/eb/EbReportDeliveryDialog': { __esModule: true, default: () => null }, '@/components/eb/EbToastProvider': {},
+  '@/components/eb/EbFollowUpOrder': { __esModule: true, default: () => null },
+  '@/components/report/PublicReportPdfDownload': { __esModule: true, default: () => null }, '@/components/report/ReportShareButton': { __esModule: true, default: () => null } }
 const pdf = load<{ SummonsReport: SectionRenderer; TestingDocumentationReport: SectionRenderer }>(
   'src/components/eb/EbInspectionReportView.tsx', rendererDependencies, ['SummonsReport', 'TestingDocumentationReport'])
-const digital = load<{ SectionContent: SectionRenderer }>(
+const digital = load<{ SectionContent: SectionRenderer; default: ComponentType<{
+  report: EbInspectionReport; shareEndpoint: null; shareUrl: null; pdfDownloadUrl: null
+}> }>(
   'src/components/eb/EbPublicReportSnapshotView.tsx', rendererDependencies, ['SectionContent'])
+
+test('digital report headings and contents use descriptive titles without SBR point labels', () => {
+  const f = fixture()
+  const report = f.report()
+  report.branding = { footer: { companyLines: [], contactLines: [] }, besiktAppLogoUrl: '/test-logo.svg' } as EbInspectionReport['branding']
+  const section = { ...f.section('scope'), sbrPoint: '2', isRelevant: true }
+  report.reportDraft.sections = [section]
+  const html = renderToStaticMarkup(createElement(digital.default, {
+    report, shareEndpoint: null, shareUrl: null, pdfDownloadUrl: null,
+  }))
+  assert.match(html, /<h2[^>]*>Besiktningens omfattning<\/h2>/)
+  assert.match(html, /href="#section-scope"[^>]*>Besiktningens omfattning<\/a>/)
+  assert.doesNotMatch(html, /SBR punkt|SBR 2/)
+  assert.equal(section.sbrPoint, '2', 'Internal template metadata must remain unchanged')
+})
 
 test('PDF and digital output render saved summons literally, including text resembling editor instructions', async () => {
   const f = fixture()
@@ -371,6 +388,7 @@ test('Granska displays inclusion checkboxes without status menus, editable summo
   assert.equal((html.match(/Ta med i utlåtandet/g) ?? []).length, 2)
   assert.equal((html.match(/type="checkbox"/g) ?? []).length, 2)
   assert.doesNotMatch(html, /<select\b/)
+  assert.doesNotMatch(html, /SBR punkt/)
   assert.equal((html.match(/<textarea\b/g) ?? []).length, 1)
   assert.match(html, /<textarea[^>]*aria-label="Text för Sättet för kallelse"[^>]*>/)
   assert.doesNotMatch(html, /<textarea[^>]*(disabled|readOnly)/)
@@ -387,6 +405,7 @@ test('the alternate draft editor also offers free summons prose and no per-secti
     const html = renderToStaticMarkup(createElement(legacyEditor.default, { initialReport: report }))
     assert.ok(html.includes('Ta med i utlåtandet'))
     assert.doesNotMatch(html, /<option[^>]*value="(?:draft|complete|missing|not_applicable)"/)
+    assert.doesNotMatch(html, /SBR punkt/)
     if (key === 'summons') {
       assert.match(html, /<textarea[^>]*aria-label="Text för Sättet för kallelse"[^>]*>/)
     } else {

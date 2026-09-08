@@ -1966,10 +1966,7 @@ function ReportDraftSectionsEditor({
         <article id={`eb-review-${section.key}`} key={section.key} className="scroll-mt-4 rounded-md border border-emerald-100 bg-white p-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
-                {section.sbrPoint ? `SBR punkt ${section.sbrPoint}` : 'Utlåtande'}
-              </p>
-              <h3 className="mt-1 text-sm font-semibold text-gray-950">{section.title}</h3>
+              <h3 className="text-sm font-semibold text-gray-950">{section.title}</h3>
               <p className="mt-1 text-xs text-gray-500">
                 {section.contentMode === 'structured'
                   ? `Sakuppgifter · ${REPORT_SECTION_SOURCE_LABELS[section.source]}`

@@ -730,19 +730,9 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
                     section.key === activeSection?.key ? 'bg-emerald-50' : 'hover:bg-gray-50'
                   }`}
                 >
-                  <span
-                    className={`mt-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full border text-xs font-bold ${
-                      section.isRelevant
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                        : 'border-gray-200 bg-gray-50 text-gray-500'
-                    }`}
-                  >
-                    {section.sbrPoint ?? '–'}
-                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-bold text-gray-950">{section.title}</span>
                     <span className="mt-1 block text-xs text-gray-500">
-                      {section.sbrPoint ? `SBR punkt ${section.sbrPoint} · ` : ''}
                       {section.isRelevant ? 'Tas med i utlåtandet' : 'Tas inte med i utlåtandet'}
                     </span>
                   </span>
@@ -755,10 +745,7 @@ export default function EbInspectionReportDraftClient({ initialReport }: Props) 
             <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800">
-                    {activeSection.sbrPoint ? `SBR punkt ${activeSection.sbrPoint}` : 'Utlåtande'}
-                  </p>
-                  <h2 className="mt-1 text-xl font-bold">{activeSection.title}</h2>
+                  <h2 className="text-xl font-bold">{activeSection.title}</h2>
                   <p className="mt-1 text-xs font-semibold text-gray-600">
                     {activeSection.contentMode === 'structured'
                       ? `Sakuppgifter · ${sourceLabels[activeSection.source]}`
