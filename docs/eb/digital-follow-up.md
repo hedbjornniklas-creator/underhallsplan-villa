@@ -11,6 +11,26 @@
 - ”Anmält åtgärdat” är entreprenörens uppgift. Ingen besiktningsmans kontroll, godkännande eller efterbesiktning ingår.
 - Bokning av efterbesiktning ingår inte i denna leverans.
 
+## Återkommande ingång från utlåtandet
+
+Beställarens verifierade personliga rapport visar **Åtgärdsuppföljning** i sidhuvudet bredvid **Dela utlåtande**. Före köp visas knappen inaktiverad med **Aktiveras efter köp**, medan köpboxen under rapporthuvudet behålls. Ingången visas inte i den publika läsvyn eller när inget erbjudande eller verifierad befintlig beställning finns.
+
+Ett slutfört köp aktiverar sidhuvudets knapp direkt, utan omladdning. Köpboxen ersätts av en kompakt bekräftelse som hänvisar till **Öppna åtgärdsuppföljningen** för att fördela fel och bjuda in entreprenören. Vid återbesök hämtas befintlig beställning; öppnandet använder det befintliga `access`-flödet och gör ingen ny beställning. Bekräftelsemejl och åtkomstmeddelanden använder samma namn, **Åtgärdsuppföljning**, för den privata arbetsytan.
+
+**Dela utlåtande** delar fortsatt endast den vanliga publika rapporten. Entreprenörernas separata, uppgiftsbegränsade länkar skickas från åtgärdsuppföljningen; beställarens personliga länk får inte delas.
+
+## Beställarens arbetsyta
+
+Beställaren ser en översikt med ansvarig, status, datum och bilder. **Kommentera** öppnar kommentarsfält och **Bifoga bild** vid behov; utkast bevaras när fältet stängs eller data uppdateras. **Begär komplettering** visas i kommentarsfältet efter entreprenörens återrapportering. Beställaren kan inte anmäla arbetet åtgärdat. Entreprenören behåller sitt separata arbetsformulär. Små ljusgrå hjälprutor med infoikon förklarar utskrift/uppdatering, mottagare, masshantering, datum och kommentarer. Hjälptexten anpassas efter rollen och följer inte med i utskriften.
+
+**Markera alla i urvalet**, **Markera ej tilldelade** och **Avmarkera** finns synligt ovanför anmärkningarna. Filterbyte rensar markeringarna och endast synliga markerade punkter behandlas. Finns exakt en aktiv entreprenör erbjuds även **Tilldela alla ej tilldelade** med tydligt antal, för samtliga ännu otilldelade punkter. Tidigare tilldelningar och individuella datum lämnas orörda. Tilldelning skickar inget mejl; utskick görs separat med **Skicka lista**.
+
+Entreprenörsförslag visas bara för den öppna, köpta beställarvyn. Rapportens frysta entreprenör/deltagare används; aktuella kontaktuppgifter från entreprenaden får komplettera endast en entydigt matchande företagsidentitet. Flera kontakter kräver ett val. En ensam kandidat förifyller det tomma formuläret, men skapar ingen mottagare eller inbjudan innan beställaren bekräftar uppgifterna.
+
+Den frysta besiktningens `defaultRemedyDeadline` visas som utgångspunkt märkt **enligt utlåtandet** när en anmärkning saknar eget datum. Det är ett ärvt visningsvärde, inte en ändring av lagrade uppgifter eller ett nytt datum beräknat från besiktningsdagen. Det gäller även befintliga beställningar. Om frist saknas visas instruktion om gemensam överenskommelse. I masshanteringen ersätts datum först efter det uttryckliga valet **Ändra sista åtgärdsdatum** och ett ifyllt datum. Utelämnad `dueDate` i API bevarar befintligt datum; explicit `null` behåller sin betydelse som borttagning av individuellt datum. Ingen ny SQL-migrering krävs.
+
+**Skriv ut åtgärdslista** använder webbläsarens utskrift av aktuellt urval, inte originalutlåtandets PDF. Urval och antal framgår i utskriften. **Uppdatera** hämtar senaste data manuellt; den befintliga automatiska uppdateringen var 30:e sekund när sidan är aktiv finns kvar.
+
 ## Avgränsning och åtkomst
 
 Det kostnadsfria utlåtandet och dess PDF kräver inte beställning eller inloggning. Köpdelen laddas separat och får aldrig blockera rapportvisningen.

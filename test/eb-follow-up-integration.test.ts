@@ -372,6 +372,7 @@ function workspaceFixture() {
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/eb/reportSnapshot': snapshots,
     '@/lib/eb/remediationPolicy': load('src/lib/eb/remediationPolicy.ts', {}),
+    '@/lib/eb/remediationDefaults': load('src/lib/eb/remediationDefaults.ts', {}),
     '@/lib/eb/followUpDelivery': {}, '@/lib/eb/followUpServer': {},
     '@/lib/eb/ownerAuth': { assertEbRemediationOwnerSession: async () => undefined },
   })
@@ -380,7 +381,7 @@ function workspaceFixture() {
     assert.ok(value)
     return value
   }
-  return { workspace, tables, writes, signed }
+  return { workspace, tables, writes, signed, savedReport, liveProject }
 }
 
 test('actual paid worker workspace contains only its assigned frozen tasks, original photos and events, without billing or owner contacts', async () => {
@@ -424,4 +425,44 @@ test('revoked paid portal links never expose task, history or photo content and 
   assert.deepEqual(workspace.originalImages, [])
   assert.deepEqual(f.signed, [])
   assert.deepEqual(f.writes, [])
+})
+
+test('purchased workspaces inherit only the frozen report deadline without overwriting per-task dates or writing on read', async () => {
+  const f = workspaceFixture()
+  const frozen = snapshots.getEbInspectionReportFromSnapshot(f.tables.eb_follow_up_orders[0].report_snapshot)!
+  frozen.inspection.defaultRemedyDeadline = '2026-10-01'
+  f.liveProject.inspections[0].defaultRemedyDeadline = '2099-12-30'
+  f.tables.eb_remediation_tasks[0].due_date = '2026-10-15'
+  const owner = await f.workspace('customer_owner')
+  assert.equal(owner.inspection?.defaultRemedyDeadline, '2026-10-01')
+  assert.equal(owner.tasks[0].dueDate, '2026-10-15')
+  assert.equal(owner.tasks[1].dueDate, null, 'The inherited display default must not manufacture a stored task deadline')
+  const worker = await f.workspace('assignee')
+  assert.equal(worker.inspection?.defaultRemedyDeadline, '2026-10-01')
+  assert.deepEqual(f.writes, ['eb_remediation_access_links', 'eb_remediation_access_links'])
+  frozen.inspection.defaultRemedyDeadline = null
+  const missing = await f.workspace('customer_owner')
+  assert.equal(missing.inspection?.defaultRemedyDeadline, null, 'A newer live project date is not substituted for missing frozen facts')
+})
+
+test('contractor contact suggestions are confined to the open paid buyer workspace and matched frozen identity', async () => {
+  const f = workspaceFixture()
+  f.liveProject.contractorEmail = 'company-contact@example.test'
+  f.liveProject.contractorPhone = '010-123456'
+  const owner = await f.workspace('customer_owner')
+  assert.equal(owner.contractorSuggestions?.[0].email, 'company-contact@example.test')
+  assert.equal(owner.contractorSuggestions?.[0].source, 'project')
+  assert.equal((await f.workspace('assignee')).contractorSuggestions, undefined)
+  assert.equal((await f.workspace('contractor_admin')).contractorSuggestions, undefined)
+
+  f.liveProject.contractorName = 'Replacement company after the report was frozen'
+  assert.equal((await f.workspace('customer_owner')).contractorSuggestions?.[0].email, null)
+  const access = f.tables.eb_remediation_access_links.find(row => row.role === 'customer_owner')!
+  access.expires_at = '2000-01-01T00:00:00Z'
+  const expired = await f.workspace('customer_owner')
+  assert.equal(expired.contractorSuggestions, undefined)
+  assert.equal(expired.inspection?.defaultRemedyDeadline, undefined)
+  access.expires_at = '2099-01-01T00:00:00Z'
+  access.revoked_at = '2026-09-08T10:00:00Z'
+  assert.equal((await f.workspace('customer_owner')).contractorSuggestions, undefined)
 })

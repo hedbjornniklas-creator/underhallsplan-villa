@@ -71,3 +71,9 @@ test('unexpected service errors do not leak database or private context', async 
   assert.equal(response.status, 500)
   assert.doesNotMatch(await response.text(), /PRIVATE|buyer@example|relation/)
 })
+
+test('an invalid explicit deadline is actionable HTTP400, never a false date removal', async () => {
+  const response = await actionError('EB_REMEDIATION_DATE_INVALID')
+  assert.equal(response.status, 400)
+  assert.match((await response.json()).error, /giltigt sista åtgärdsdatum/)
+})

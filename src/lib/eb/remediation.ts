@@ -9,6 +9,14 @@ import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { queueEbFollowUpEmail } from '@/lib/eb/followUpDelivery'
 import { requestEbFollowUpOwnerRenewal, withdrawEbFollowUpOrder } from '@/lib/eb/followUpServer'
 import { assertEbRemediationOwnerSession } from '@/lib/eb/ownerAuth'
+import {
+  ebRemediationAssignmentDueDate,
+  ebRemediationContractorSuggestions,
+  ebRemediationReportDeadline,
+  type EbRemediationContractorSuggestion,
+} from '@/lib/eb/remediationDefaults'
+
+export type { EbRemediationContractorSuggestion } from '@/lib/eb/remediationDefaults'
 
 export const EB_REMEDIATION_IMAGE_BUCKET = 'eb-remediation-images'
 export const EB_REMEDIATION_MAX_IMAGE_BYTES = 15 * 1024 * 1024
@@ -122,6 +130,7 @@ export type EbRemediationWorkspace = {
     variantLabel: string
     sequenceNo: number
     date: string | null
+    defaultRemedyDeadline?: string | null
   } | null
   access: {
     id: string | null
@@ -143,6 +152,7 @@ export type EbRemediationWorkspace = {
     withdrawalDeadline?: string | null
   } | null
   assignees: EbRemediationAssignee[]
+  contractorSuggestions?: EbRemediationContractorSuggestion[]
   tasks: EbRemediationTask[]
   events: EbRemediationEvent[]
   images: EbRemediationImage[]
@@ -529,6 +539,9 @@ async function loadWorkspace(input: {
     variantLabel: frozenReport.inspection.variantLabel,
     sequenceNo: frozenReport.inspection.sequenceNo,
     date: frozenReport.inspection.date,
+    ...(state === 'open' ? {
+      defaultRemedyDeadline: ebRemediationReportDeadline(frozenReport.inspection.defaultRemedyDeadline),
+    } : {}),
   } : inspection
     ? {
         id: inspection.inspectionId,
@@ -761,6 +774,14 @@ async function loadWorkspace(input: {
     },
     followUp,
     assignees,
+    ...(orderId && access?.role === 'customer_owner' ? {
+      contractorSuggestions: ebRemediationContractorSuggestions({
+        state, role: access.role, paid: true,
+        reportProject: frozenReport?.project ?? null,
+        participants: frozenReport?.participants,
+        project,
+      }),
+    } : {}),
     tasks,
     events: (
       (eventsResult.data ?? []) as Array<{
@@ -1462,7 +1483,7 @@ export async function performEbRemediationTokenAction(input: {
       expectedVersions: versionPayload(input.payload.expectedVersions),
       taskIds,
       assigneeId: nullableString(input.payload.assigneeId),
-      dueDate: nullableString(input.payload.dueDate),
+      dueDate: ebRemediationAssignmentDueDate(input.payload),
       actor,
     })
   } else if (input.action === 'create_assignee') {
@@ -1577,7 +1598,7 @@ export async function performEbRemediationInternalAction(input: {
       expectedVersions: versionPayload(input.payload.expectedVersions),
       taskIds,
       assigneeId: nullableString(input.payload.assigneeId),
-      dueDate: nullableString(input.payload.dueDate),
+      dueDate: ebRemediationAssignmentDueDate(input.payload),
       actor,
     })
   } else if (input.action === 'status') {

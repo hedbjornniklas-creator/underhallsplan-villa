@@ -2,11 +2,78 @@ import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { PGlite } from '@electric-sql/pglite'
+import ts from 'typescript'
+import type * as Remediation from '../src/lib/eb/remediation'
 
 // Real PostgreSQL migrations/RPCs, in an ephemeral local WASM database only.
 const db = new PGlite()
 const org = randomUUID(), profile = randomUUID()
+const require = createRequire(import.meta.url)
+function load<T>(path: string, dependencies: Record<string, unknown>): T {
+  const output = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText
+  const compiled = { exports: {} }
+  new Function('require', 'module', 'exports', output)((name: string) => {
+    if (name in dependencies) return dependencies[name]
+    if (name.startsWith('node:')) return require(name)
+    throw new Error(`Unexpected remediation test dependency: ${name}`)
+  }, compiled, compiled.exports)
+  return compiled.exports as T
+}
+
+// Exercise the production handlers and assignment service against the real
+// PostgreSQL action RPC. Only the unrelated post-mutation workspace read stops
+// at a sentinel; no assignment, deadline or authorization logic is replaced.
+function assignmentService() {
+  const tables = new Set(['eb_remediation_access_links', 'eb_follow_up_orders', 'eb_remediation_assignees', 'eb_remediation_tasks'])
+  const admin = { from(table: string) {
+    if (table === 'profiles') {
+      const query = { select: () => query, eq: () => query,
+        maybeSingle: async () => ({ data: { full_name: 'Inspector', email: 'inspector@example.test' }, error: null }) }
+      return query
+    }
+    assert.ok(tables.has(table), table)
+    const clauses: string[] = [], values: unknown[] = []
+    const condition = (key: string, operator: string, value: unknown) => {
+      assert.match(key, /^[a-z_]+$/)
+      if (operator === 'is') clauses.push(`${key} is null`)
+      else { values.push(value); clauses.push(`${key} ${operator} $${values.length}`) }
+    }
+    const result = async () => ({ data: (await db.query<Row>(`select * from ${table}${clauses.length ? ` where ${clauses.join(' and ')}` : ''}`, values)).rows
+      .map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key,
+        value instanceof Date ? (key === 'due_date' ? value.toISOString().slice(0, 10) : value.toISOString()) : value]))), error: null })
+    const query = {
+      select: () => query,
+      eq: (key: string, value: unknown) => { condition(key, '=', value); return query },
+      filter: (key: string, operator: string, value: unknown) => { condition(key, operator === 'is' ? 'is' : '=', value); return query },
+      in: (key: string, options: unknown[]) => {
+        assert.match(key, /^[a-z_]+$/)
+        clauses.push(`${key} in (${options.map(value => { values.push(value); return `$${values.length}` }).join(',')})`)
+        return query
+      },
+      maybeSingle: async () => ({ data: (await result()).data[0] ?? null, error: null }),
+      then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => result().then(resolve, reject),
+    }
+    return query
+  }, rpc: async (name: string, args: Row) => {
+    assert.equal(name, 'eb_apply_remediation_action')
+    const result = await db.query<{ result: Row }>('select eb_apply_remediation_action($1,$2,$3,$4,$5,$6,$7) result',
+      [args.p_org_id, args.p_project_id, args.p_task_id, args.p_expected_updated_at, args.p_action, args.p_payload, args.p_actor])
+    return { data: result.rows[0].result, error: null }
+  } }
+  return load<typeof Remediation>('src/lib/eb/remediation.ts', {
+    sharp: {}, '@/lib/assignments/tokens': { hashAssignmentToken: (value: string) => value },
+    '@/lib/assignments/mailer': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
+    '@/lib/eb/server': { getEbProjectById: async () => { throw new Error('TEST_POST_ASSIGN_WORKSPACE_READ') } },
+    '@/lib/eb/remediationPolicy': load('src/lib/eb/remediationPolicy.ts', {}),
+    '@/lib/eb/remediationDefaults': load('src/lib/eb/remediationDefaults.ts', {}),
+    '@/lib/eb/reportSnapshot': {}, '@/lib/eb/followUpDelivery': {}, '@/lib/eb/followUpServer': {},
+    '@/lib/eb/ownerAuth': { assertEbRemediationOwnerSession: async () => undefined },
+  })
+}
 const migration = (name: string) => readFileSync(new URL(`../docs/db/${name}`, import.meta.url), 'utf8')
 before(async () => {
   await db.exec(`
@@ -206,6 +273,32 @@ test('legacy portals retain image-before-review and contractor administration, w
   assert.equal((await f.current()).status, 'unassigned')
   assert.equal((await f.events()).length, 2)
   assert.equal((await f.jobs()).length, 0)
+})
+
+test('public buyer and internal assignment handlers preserve stored dates through the PostgreSQL RPC', async () => {
+  const service = assignmentService()
+  for (const paid of [true, false]) {
+    const f = await fixture(paid)
+    const savedDeadline = async () => (await db.query<{ due_date: string | null }>(
+      'select due_date::text due_date from eb_remediation_tasks where id=$1', [f.task])).rows[0].due_date
+    await f.action(f.owner, 'assign', { assigneeId: f.assignee, dueDate: '2026-10-15' })
+    const action = (payload: Row) => paid
+      ? service.performEbRemediationTokenAction({ token: `hash-${f.owner}`, action: 'assign', payload })
+      : service.performEbRemediationInternalAction({ orgId: org, projectId: f.project,
+        inspectionId: f.inspection, profileId: profile, action: 'assign', payload })
+
+    await assert.rejects(action({ taskIds: [f.task], assigneeId: null }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+    assert.equal(await savedDeadline(), '2026-10-15', 'Changing only the assignee must not erase its deadline')
+    assert.equal((await f.current()).remediation_assignee_id, null)
+    await assert.rejects(action({ taskIds: [f.task], assigneeId: f.assignee }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+    assert.equal(await savedDeadline(), '2026-10-15')
+
+    await assert.rejects(action({ taskIds: [f.task], assigneeId: f.assignee, dueDate: '2026-11-02' }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+    assert.equal(await savedDeadline(), '2026-11-02')
+    await assert.rejects(action({ taskIds: [f.task], assigneeId: f.assignee, dueDate: null }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+    assert.equal(await savedDeadline(), null, 'Explicit removal remains deliberate and supported')
+    assert.deepEqual((await f.current()).note_snapshot, { noteText: 'PURCHASED NOTE', noteNumber: 1 })
+  }
 })
 
 test('anon and authenticated roles cannot invoke RPC or bypass paid protections with REST-style table writes', async () => {

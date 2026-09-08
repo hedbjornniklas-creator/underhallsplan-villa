@@ -1214,13 +1214,14 @@ function PhotoAppendix({
 }
 
 function PublicToolbar({
+  followUpAction,
   shareEndpoint,
   shareUrl,
   pdfDownloadUrl,
   pdfStatus,
   pdfStatusEndpoint,
   deliveryDocuments,
-}: Pick<
+}: { followUpAction: ReactNode } & Pick<
   EbPublicReportSnapshotViewProps,
   | 'shareEndpoint'
   | 'shareUrl'
@@ -1237,10 +1238,11 @@ function PublicToolbar({
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Digitalt utlåtande</p>
             <p className="mt-0.5 text-lg font-semibold text-slate-950">Entreprenadbesiktning</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-start gap-2">
             {shareEndpoint && shareUrl ? (
               <ReportShareButton shareEndpoint={shareEndpoint} shareUrl={shareUrl} />
             ) : null}
+            {followUpAction}
             <PublicReportPdfDownload
               downloadUrl={pdfDownloadUrl}
               initialStatus={pdfStatus}
@@ -1314,7 +1316,17 @@ function Contents({ links }: { links: Array<{ href: string; label: string }> }) 
   )
 }
 
-export default function EbPublicReportSnapshotView({
+export default function EbPublicReportSnapshotView(props: EbPublicReportSnapshotViewProps) {
+  // Never mount buyer controls on a shared report or internal preview. The
+  // private endpoint validates access before supplying either of these slots.
+  return props.followUpEndpoint ? (
+    <EbFollowUpOrder endpoint={props.followUpEndpoint} render={({ toolbarAction, orderPanel }) => (
+      <ReportSnapshotView {...props} followUpAction={toolbarAction} followUpPanel={orderPanel} />
+    )} />
+  ) : <ReportSnapshotView {...props} />
+}
+
+function ReportSnapshotView({
   report,
   publishedAt,
   shareEndpoint,
@@ -1323,8 +1335,9 @@ export default function EbPublicReportSnapshotView({
   pdfStatus = 'pending',
   pdfStatusEndpoint = null,
   deliveryDocuments = [],
-  followUpEndpoint = null,
-}: EbPublicReportSnapshotViewProps) {
+  followUpAction = null,
+  followUpPanel = null,
+}: EbPublicReportSnapshotViewProps & { followUpAction?: ReactNode; followUpPanel?: ReactNode }) {
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
   const headings = useMemo(
     () => sortHeadings(report.reportDraft.noteHeadings ?? []),
@@ -1473,6 +1486,7 @@ export default function EbPublicReportSnapshotView({
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
       <PublicToolbar
+        followUpAction={followUpAction}
         shareEndpoint={shareEndpoint}
         shareUrl={shareUrl}
         pdfDownloadUrl={pdfDownloadUrl}
@@ -1545,9 +1559,9 @@ export default function EbPublicReportSnapshotView({
           </div>
         </section>
 
-        {followUpEndpoint ? (
+        {followUpPanel ? (
           <div className="mt-4 empty:hidden print:hidden">
-            <EbFollowUpOrder endpoint={followUpEndpoint} />
+            {followUpPanel}
           </div>
         ) : null}
 

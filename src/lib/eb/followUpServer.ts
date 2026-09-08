@@ -316,16 +316,16 @@ function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuye
     ? `Beräknad sista ångerdag: ${acceptance.withdrawalDeadline} (svensk tid). Beräkningen förutsätter att föreskriven ångerinformation lämnats vid köpet.\nÅngra beställningen: ${withdrawalUrl}\nKonsumentverkets ångerblankett: ${acceptance.withdrawalFormUrl}\n\n${getEbFollowUpWithdrawalFormText(seller)}`
     : buyer.customerType === 'business' ? 'Köpet har gjorts för företag eller förening. Konsumentens lagstadgade ångerrätt gäller inte.' : ''
   const sellerText = `${seller.name}, org.nr ${seller.orgNumber}, ${seller.address}, ${seller.email}${seller.phone ? `, ${seller.phone}` : ''}`
-  const receipt = `Beställning ${orderId} är mottagen och din digitala åtgärdsuppföljning är aktiverad.\nBeställare: ${buyer.name}, ${buyer.email}\n\n${accepted}\n\n${withdrawal}\n\n${terms}\n\nFakturamottagare: ${buyer.invoiceName}\n${buyer.invoiceAddress}\n${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `\nOrg.nr: ${buyer.invoiceOrgNo}` : ''}\n\nDin personliga portal: ${portalUrl}\nDela inte denna länk. Entreprenörer bjuds in med egna begränsade länkar från portalen.\nDetta är en beställningsbekräftelse, inte en faktura.`
+  const receipt = `Beställning ${orderId} är mottagen och din digitala åtgärdsuppföljning är aktiverad.\nBeställare: ${buyer.name}, ${buyer.email}\n\n${accepted}\n\n${withdrawal}\n\n${terms}\n\nFakturamottagare: ${buyer.invoiceName}\n${buyer.invoiceAddress}\n${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `\nOrg.nr: ${buyer.invoiceOrgNo}` : ''}\n\nDin personliga åtgärdsuppföljning: ${portalUrl}\nDela inte denna länk. Entreprenörer bjuds in med egna begränsade länkar från åtgärdsuppföljningen.\nDetta är en beställningsbekräftelse, inte en faktura.`
   const invoice = `Ett köp av digital åtgärdsuppföljning har skett.\nManuellt fakturaunderlag för beställning ${orderId}.\nBeställt: ${acceptance?.acceptedAt ?? new Date().toISOString()}\n${inspectionSummary}\n599,00 SEK inklusive moms; netto 479,20 SEK; moms 25 % 119,80 SEK.\nSäljare: ${sellerText}\nBeställare: ${buyer.name}, ${buyer.email}.\nKundtyp: ${buyer.customerType === 'consumer' ? 'Privatkund' : buyer.customerType === 'business' ? 'Företag/förening' : 'Ej registrerad på äldre order'}\nBeräknad sista ångerdag: ${acceptance?.withdrawalDeadline ?? 'Ej tillämpligt/ej registrerat'}.\nFakturamottagare: ${buyer.invoiceName}, ${buyer.invoiceAddress}, ${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `, org.nr ${buyer.invoiceOrgNo}` : ''}.\nE-post för fakturakontakt: ${buyer.email}.\nTjänsten har aktiverats automatiskt. Ingen faktura har skapats eller skickats av systemet. Fakturering hanteras manuellt av Admin. Kontrollera orderns billing_status och eventuell begäran att frånträda beställningen innan fakturering.\n${accepted}`
-  const access = `Här är din personliga länk till din redan beställda åtgärdsuppföljning:\n${portalUrl}\nIngen ny beställning eller avgift har skapats. Dela inte denna länk. Entreprenörer bjuds in separat från portalen.`
+  const access = `Här är din personliga länk till din redan beställda åtgärdsuppföljning:\n${portalUrl}\nIngen ny beställning eller avgift har skapats. Dela inte denna länk. Entreprenörer bjuds in separat från åtgärdsuppföljningen.`
   return [
     { kind: 'receipt', dedupeKey: `receipt:${orderId}`, to: buyer.email, subject: 'Beställningsbekräftelse – digital åtgärdsuppföljning', text: receipt },
     { kind: 'invoice', dedupeKey: `invoice:${orderId}`, to: EB_FOLLOW_UP_ADMIN_EMAIL, subject: 'Nytt köp – fakturaunderlag för EB åtgärdsuppföljning', text: invoice },
-    { kind: 'access', dedupeKey: `access:${challengeId}`, to: buyer.email, subject: 'Din personliga åtgärdsportal', text: access },
+    { kind: 'access', dedupeKey: `access:${challengeId}`, to: buyer.email, subject: 'Din personliga åtgärdsuppföljning', text: access },
   ].map(mail => ({ kind: mail.kind, dedupeKey: mail.dedupeKey, ciphertext: encryptEbFollowUpPayload({
     to: mail.to, replyTo: seller.email, subject: mail.subject, text: mail.text,
-    html: `${mail.kind !== 'invoice' ? `<p><a href="${escapeEbFollowUpHtml(portalUrl)}">Öppna din personliga åtgärdsportal</a></p>` : ''}${mail.kind === 'receipt' && buyer.customerType === 'consumer' ? `<p><a href="${escapeEbFollowUpHtml(withdrawalUrl)}">Ångra beställningen</a> · <a href="${escapeEbFollowUpHtml(acceptance?.withdrawalFormUrl ?? EB_FOLLOW_UP_WITHDRAWAL_FORM_URL)}">Konsumentverkets ångerblankett</a></p>` : ''}<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
+    html: `${mail.kind !== 'invoice' ? `<p><a href="${escapeEbFollowUpHtml(portalUrl)}">Öppna åtgärdsuppföljningen</a></p>` : ''}${mail.kind === 'receipt' && buyer.customerType === 'consumer' ? `<p><a href="${escapeEbFollowUpHtml(withdrawalUrl)}">Ångra beställningen</a> · <a href="${escapeEbFollowUpHtml(acceptance?.withdrawalFormUrl ?? EB_FOLLOW_UP_WITHDRAWAL_FORM_URL)}">Konsumentverkets ångerblankett</a></p>` : ''}<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
   } satisfies EbFollowUpEmail) }))
 }
 
@@ -344,7 +344,7 @@ export async function completeEbFollowUpOrder(input: { token: string; input: Rec
       .eq('org_id', context.link.org_id).eq('inspection_id', context.link.inspection_id)
       .eq('follow_up_order_id', context.order.id).eq('email', session.email).is('revoked_at', null).maybeSingle()
     if (accessError || !access || !(Date.parse(access.expires_at) > Date.now())) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
-    return { orderId: context.order.id, portalUrl: session.portalPath, message: 'Din åtgärdsportal är klar. Ingen ny beställning eller avgift har skapats.' }
+    return { orderId: context.order.id, portalUrl: session.portalPath, message: 'Din åtgärdsuppföljning är klar att öppnas. Ingen ny beställning eller avgift har skapats.' }
   }
   const challengeId = session.challengeId ?? ''
   const code = session.code ?? ''
@@ -404,7 +404,7 @@ export async function completeEbFollowUpOrder(input: { token: string; input: Rec
   await setEbCustomerSession({ kind: 'owner', orgId: context.link.org_id, inspectionId: context.link.inspection_id,
     email, portalPath, expiresAt: Date.now() + 8 * 60 * 60_000 })
   return { orderId: String(data.orderId), portalUrl: portalPath,
-    message: data.created ? 'Beställningen är mottagen och åtgärdsuppföljningen är aktiverad. Bekräftelse och fakturaunderlag ligger i e-postkön.' : 'Din åtgärdsportal är klar. Ingen ny beställning eller avgift har skapats.' }
+    message: data.created ? 'Beställningen är klar och åtgärdsuppföljningen är aktiverad. Öppna åtgärdsuppföljningen för att fördela fel och skicka till entreprenören. Bekräftelsen skickas till din e-postadress.' : 'Din åtgärdsuppföljning är klar att öppnas. Ingen ny beställning eller avgift har skapats.' }
 }
 
 export async function withdrawEbFollowUpOrder(input: { orderId: string; actorEmail: string; baseUrl?: string }) {

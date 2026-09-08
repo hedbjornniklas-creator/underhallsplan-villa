@@ -82,6 +82,7 @@ function fixture() {
     } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/eb/remediationPolicy': load('src/lib/eb/remediationPolicy.ts', {}),
+    '@/lib/eb/remediationDefaults': load('src/lib/eb/remediationDefaults.ts', {}),
     '@/lib/eb/reportSnapshot': {}, '@/lib/eb/followUpServer': {},
     '@/lib/eb/ownerAuth': { assertEbRemediationOwnerSession: async () => undefined },
     '@/lib/eb/followUpDelivery': { queueEbFollowUpEmail: async (mail: typeof mails[number]) => {

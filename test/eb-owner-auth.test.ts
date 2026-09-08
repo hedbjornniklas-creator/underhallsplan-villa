@@ -311,6 +311,7 @@ async function protectedFixture() {
     '@/lib/eb/server': { getEbProjectById: () => { f.calls.push('PRIVATE_PROJECT_READ'); throw new Error('PRIVATE_PROJECT_READ') } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => f.admin },
     '@/lib/eb/remediationPolicy': load('src/lib/eb/remediationPolicy.ts', {}),
+    '@/lib/eb/remediationDefaults': load('src/lib/eb/remediationDefaults.ts', {}),
     '@/lib/eb/reportSnapshot': {}, '@/lib/eb/followUpDelivery': {}, '@/lib/eb/followUpServer': {},
     '@/lib/eb/ownerAuth': f.auth,
   })

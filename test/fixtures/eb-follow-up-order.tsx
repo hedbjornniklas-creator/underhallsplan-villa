@@ -35,7 +35,7 @@ createRoot(document.getElementById('root')!).render(
     shareUrl={view === 'report-actions' || view === 'buyer-report' ? '/public-report' : null}
     pdfDownloadUrl={view === 'report-actions' || view === 'buyer-report' ? '/mock-report.pdf' : null}
     pdfStatus={view === 'report-actions' || view === 'buyer-report' ? 'ready' : undefined}
-    followUpEndpoint={view.startsWith('buyer-') ? privateEndpoint : null} /> : <main className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
+    followUpEndpoint={view.startsWith('buyer-') && view !== 'buyer-expired' ? privateEndpoint : null} /> : <main className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
     <h1 className="text-2xl font-semibold">Fastställt utlåtande — lokal testdata</h1>
     <p>Originalrapporten förblir tillgänglig utan köp.</p>
     <EbFollowUpOrder endpoint={privateEndpoint} />

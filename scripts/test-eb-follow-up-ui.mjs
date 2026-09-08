@@ -89,6 +89,49 @@ try {
     assert.doesNotMatch(text, /599 kr|Köp åtgärdsuppföljning|Beställ med betalningsskyldighet|Engångspris|Tillval efter|Testbolaget AB|Vad ingår i priset|Engångskod|Verifiera kod|Bekräfta din e-postadress|För beställaren|Skicka min beställarlänk/)
     for (const name of ['invoiceName', 'name', 'customerType', 'code', 'email']) assert.equal(await page.$(`[name=${name}]`), null, `${name} must not exist without personal access`)
     assert.equal(await page.$('input[type=checkbox]'), null)
+    assert.equal(await page.$('[data-testid=follow-up-toolbar]'), null, 'unavailable or unauthorized reports must not expose a follow-up toolbar entry')
+  }
+  async function assertDisabledToolbar() {
+    await page.waitForSelector('[data-testid=follow-up-toolbar] button')
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] button', node => node.disabled), true)
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] button', node => node.textContent.trim()), 'Åtgärdsuppföljning')
+    assert.match(await page.$eval('[data-testid=follow-up-toolbar]', node => node.textContent), /Aktiveras efter köp/)
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar]', node => Boolean(node.closest('#digital-follow-up'))), false, 'toolbar entry is separate from the purchase panel')
+    const before = posts.length
+    await page.$eval('[data-testid=follow-up-toolbar] button', node => { node.click(); node.click() })
+    assert.equal(posts.length, before); assert.equal(await page.$('dialog[open]'), null, 'disabled header entry must not initiate checkout or access')
+  }
+  async function assertActivePanel() {
+    assert.match(await page.$eval('#digital-follow-up h2', node => node.textContent), /^Åtgärdsuppföljningen är aktiverad$/)
+    assert.doesNotMatch(await page.$eval('#digital-follow-up', node => node.textContent), /599 kr|Beställ med betalningsskyldighet|Engångspris|Tillval efter|Köp åtgärdsuppföljning|portalen/i)
+    assert.equal(await page.$('#digital-follow-up dialog'), null, 'active access must not retain an unused checkout modal')
+    assert.equal(await page.$('[name=invoiceName]'), null); assert.equal(await page.$('input[type=checkbox]'), null)
+    assert.doesNotMatch(await page.$eval('[data-testid=follow-up-toolbar]', node => node.textContent), /Aktiveras efter köp/)
+  }
+  async function assertPrivateLinkNavigationRecovery() {
+    const before = posts.length
+    await page.evaluate(() => {
+      for (const link of document.querySelectorAll('[data-testid=follow-up-toolbar] a, #digital-follow-up > div a')) {
+        link.addEventListener('click', event => event.preventDefault())
+      }
+      const toolbar = document.querySelector('[data-testid=follow-up-toolbar] a')
+      toolbar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ctrlKey: true }))
+    })
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] a', node => node.getAttribute('aria-busy')), 'false', 'modified anchor clicks must not lock the original report')
+    await page.evaluate(() => {
+      const toolbar = document.querySelector('[data-testid=follow-up-toolbar] a')
+      const panel = document.querySelector('#digital-follow-up > div a')
+      toolbar.click(); toolbar.click(); panel.click()
+    })
+    await page.waitForFunction(() => document.querySelector('[data-testid=follow-up-toolbar] a')?.getAttribute('aria-busy') === 'true')
+    assert.equal(await page.$eval('#digital-follow-up > div a', node => node.getAttribute('aria-disabled')), 'true', 'private anchors share navigation busy feedback and guard')
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false })))
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] a', node => node.getAttribute('aria-busy')), 'true', 'only a real bfcache restore resets pending navigation')
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+    await page.waitForFunction(() => document.querySelector('[data-testid=follow-up-toolbar] a')?.getAttribute('aria-busy') === 'false')
+    assert.equal(await page.$eval('#digital-follow-up > div a', node => node.getAttribute('aria-disabled')), 'false')
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] a', node => node.textContent.trim()), 'Åtgärdsuppföljning')
+    assert.equal(posts.length, before, 'direct private links and browser-back recovery never create an access request or new order')
   }
   async function openCheckout() { await page.locator('#digital-follow-up > div button').filter(node => node.textContent.includes('Köp') || node.textContent.includes('Öppna')).click(); await page.waitForSelector('dialog[open]') }
   async function personalAccess({ open = true, view = 'buyer-report' } = {}) {
@@ -110,10 +153,24 @@ try {
     for (const button of await page.$$('button')) if (await button.evaluate((node, expected) => node.textContent.trim() === expected, label)) { await button.click(); return }
     assert.fail(`Missing button: ${label}`)
   }
+  async function assertSafeSharingAndPdf() {
+    const pdfUrl = await page.$eval('a[href="/mock-report.pdf"]', node => node.getAttribute('href'))
+    assert.equal(pdfUrl, '/mock-report.pdf'); assert.doesNotMatch(pdfUrl, /bestallare|atgarder|test-buyer-secret/)
+    await clickButton('Dela utlåtande')
+    await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async value => { window.__copiedReportUrl = value } } }))
+    await clickButton('Kopiera länk'); await page.waitForFunction(() => window.__copiedReportUrl)
+    assert.equal(await page.evaluate(() => window.__copiedReportUrl), `${url}/public-report`, 'the private buyer view must only copy the public, read-only report link')
+    await page.type('input[placeholder="namn@epost.se"]', 'recipient@example.invalid'); await clickButton('Skicka länk')
+    await page.waitForFunction(() => document.body.textContent.includes('Länken skickades till recipient@example.invalid.'))
+    assert.deepEqual(shares.at(-1), { email: 'recipient@example.invalid' }, 'sharing must never carry a buyer or remediation token')
+    await clickButton('Stäng')
+  }
 
   for (const width of [1440, 390]) {
-    await reset(); await page.setViewport({ width, height: 844 }); await personalAccess({ open: false })
+    await reset(); await page.setViewport({ width, height: 844 }); const beforeOfferLoad = offerRequests; await personalAccess({ open: false })
     await page.waitForSelector('#digital-follow-up'); assert.equal(posts.length, 0)
+    assert.equal(offerRequests, beforeOfferLoad + 1, 'toolbar and panel share one offer request')
+    await assertDisabledToolbar()
     assert.equal(await page.$eval('#digital-follow-up > div button', node => node.textContent), 'Köp åtgärdsuppföljning – 599 kr inkl. moms')
     assert.equal(await page.evaluate(() => document.querySelector('#digital-follow-up').parentElement.previousElementSibling === document.querySelector('h1').closest('section')), true, 'prominent buyer offer is directly under the report hero')
     await assertNoOverflow(); await page.screenshot({ path: resolve(output, `buyer-report-${width}.png`), fullPage: true }); await openCheckout()
@@ -147,8 +204,15 @@ try {
     assert.equal(order.action, 'order'); assert.equal(order.customerType, 'consumer'); assert.equal(order.confirmedPriceOre, 59900); assert.equal(order.termsVersion, offer.termsVersion)
     for (const name of ['acceptTerms', 'consumerWithdrawalAcknowledged', 'requestImmediateStart', 'acceptInvoice']) assert.equal(order[name], true)
     assert.equal(['code', 'challengeId', 'email'].some(key => key in order), false); assert.equal(order.invoiceOrgNo, null); assert.equal(await page.$('dialog[open]'), null)
+    await assertActivePanel()
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] a', node => node.getAttribute('href')), portalUrl, 'purchase immediately enables the header link without reload or a second access request')
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] a', node => node.textContent.trim()), 'Åtgärdsuppföljning')
+    assert.notEqual(new URL(page.url()).pathname, portalUrl, 'purchase confirmation stays on the report')
+    assert.equal(posts.filter(post => post.action === 'access').length, 0)
+    await assertPrivateLinkNavigationRecovery()
+    await assertSafeSharingAndPdf(); await page.screenshot({ path: resolve(output, `buyer-active-${width}.png`), fullPage: true })
     await page.emulateMediaType('print'); assert.equal(await page.$eval('#digital-follow-up', node => getComputedStyle(node).display), 'none'); await page.emulateMediaType('screen'); await assertNoOverflow()
-    console.log(`PASS ${width}px: prominent priced buyer box under hero; no auto-open; explicit customer type/four consents; terms/form; focus; duplicate guard; retry; print`)
+    console.log(`PASS ${width}px: one shared offer; disabled header before buy; immediate active header/compact panel after order; anchor navigation busy/bfcache recovery; safe buyer sharing/PDF; consents; duplicate guard; retry; print`)
   }
 
   await reset(); await personalAccess(); await fillBuyer('business')
@@ -239,7 +303,7 @@ try {
     await reset(); offer.available = false; offer.reason = reason
     await personalAccess({ open: false, view: 'buyer-empty' }); assert.equal(await page.$('#digital-follow-up'), null); assert.equal(await page.$('#digital-follow-up-retry'), null); assert.equal(await page.$('#digital-follow-up-access-error'), null)
     await assertNoCheckout(); assert.doesNotMatch(await page.$eval('main', node => node.textContent), /INTERNAL-ERROR/)
-    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('h1').closest('section').nextElementSibling).display), 'none'); assert.equal(posts.length, 0)
+    assert.equal(await page.evaluate(() => document.querySelector('h1').closest('section').nextElementSibling.querySelector('summary')?.textContent), 'Visa innehåll', 'unavailable offers do not leave an empty panel wrapper or spacing'); assert.equal(posts.length, 0)
   }
   console.log('PASS unavailable private service: no sales banner, operational reason, checkout, POST or empty spacing')
   await reset(); offer.available = false; retryable = true; await personalAccess({ open: false }); await page.waitForSelector('#digital-follow-up-retry'); await assertNoCheckout()
@@ -250,23 +314,34 @@ try {
   assert.match(await page.$eval('main', node => node.textContent), /Beställaråtkomsten kunde inte laddas/); assert.match(await page.$eval('#section-summons', node => node.textContent), /Originalrapporten förblir tillgänglig utan köp/)
   failOffer = false; await clickButton('Försök igen'); await page.waitForSelector('#digital-follow-up'); assert.equal(await page.$('dialog[open]'), null)
   const previousRequests = offerRequests; await page.goto(`${url}?view=preview`, { waitUntil: 'networkidle0' }); assert.equal(await page.$('#digital-follow-up'), null); assert.equal(offerRequests, previousRequests)
+  await assertNoCheckout()
+  await page.goto(`${url}?view=buyer-expired`, { waitUntil: 'networkidle0' }); await assertNoCheckout(); assert.equal(offerRequests, previousRequests)
   console.log('PASS load failure: report accessible; retry recovers; internal preview makes no customer request')
   for (const width of [1440, 390]) {
     await reset(); offer.alreadyActive = true; offer.available = false; await page.setViewport({ width, height: 844 }); await personalAccess({ open: false })
-    assert.doesNotMatch(await page.$eval('#digital-follow-up', node => node.textContent), /599 kr|Beställ med betalningsskyldighet/); assert.equal(await page.$('[name=invoiceName]'), null); assert.equal(await page.$('[name=email]'), null)
+    await assertActivePanel()
+    assert.equal(await page.$('[name=email]'), null)
+    assert.equal(await page.$eval('[data-testid=follow-up-toolbar] button', node => node.disabled), false, 'already-purchased access remains enabled when new sales are disabled')
     assert.equal(posts.length, 0); await assertNoOverflow()
-    await page.$eval('#digital-follow-up > div button', node => { node.click(); node.click() })
-    await page.waitForFunction(() => document.querySelector('#digital-follow-up > div button')?.disabled)
+    await page.screenshot({ path: resolve(output, `buyer-revisit-${width}.png`), fullPage: true })
+    await page.evaluate(() => {
+      const toolbar = document.querySelector('[data-testid=follow-up-toolbar] button')
+      const panel = document.querySelector('#digital-follow-up > div button')
+      toolbar.click(); toolbar.click(); panel.click()
+    })
+    await page.waitForFunction(() => document.querySelector('[data-testid=follow-up-toolbar] button')?.disabled && document.querySelector('#digital-follow-up > div button')?.disabled)
+    assert.match(await page.$eval('[data-testid=follow-up-toolbar] button', node => node.textContent), /Öppnar/)
     assert.match(await page.$eval('#digital-follow-up > div button', node => node.textContent), /Öppnar åtgärdsuppföljningen/)
     assert.equal(await page.$('dialog[open]'), null)
     await page.waitForSelector('#mock-private-portal'); assert.equal(new URL(page.url()).pathname, portalUrl); assert.deepEqual(posts, [{ action: 'access' }])
     await personalAccess({ open: false }); await clickButton('Öppna åtgärdsuppföljningen'); await page.waitForSelector('#mock-private-portal')
     assert.deepEqual(posts, [{ action: 'access' }, { action: 'access' }])
-    console.log(`PASS ${width}px existing customer: one click resolves access and opens safe portal; busy feedback; no modal/new order/automatic navigation`)
+    console.log(`PASS ${width}px existing customer: active toolbar and compact panel despite disabled new sales; both share busy/double-click guard; safe access redirect; no modal/new order/automatic navigation`)
   }
-  await reset(); offer.alreadyActive = true; failOrder = true; await personalAccess({ open: false }); await clickButton('Öppna åtgärdsuppföljningen')
+  await reset(); offer.alreadyActive = true; failOrder = true; await personalAccess({ open: false }); await clickButton('Åtgärdsuppföljning')
   await page.waitForSelector('#digital-follow-up > p[role=alert]'); assert.match(await page.$eval('#digital-follow-up > p[role=alert]', node => node.textContent), /Testkonflikt/)
   assert.equal(await page.$('dialog[open]'), null); assert.deepEqual(posts, [{ action: 'access' }]); assert.notEqual(new URL(page.url()).pathname, portalUrl)
+  assert.equal(await page.$eval('[data-testid=follow-up-toolbar] button', node => node.disabled), false)
   failOrder = false; await clickButton('Öppna åtgärdsuppföljningen'); await page.waitForSelector('#mock-private-portal'); assert.deepEqual(posts, [{ action: 'access' }, { action: 'access' }])
   console.log('PASS existing access failure: inline error and explicit retry, no hidden modal or new order')
   assert.deepEqual(errors, [])

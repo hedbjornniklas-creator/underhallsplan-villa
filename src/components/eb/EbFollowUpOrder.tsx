@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { ArrowRight, Camera, Check, CheckCheck, ChevronDown, LoaderCircle, Mail, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { ArrowRight, Camera, Check, CheckCheck, ChevronDown, LoaderCircle, LockKeyhole, Mail, X } from 'lucide-react'
 import { EB_FOLLOW_UP_TERMS_VERSION, type EbFollowUpOffer } from '@/lib/eb/followUp'
 import { EB_FOLLOW_UP_WITHDRAWAL_FORM_URL, getEbFollowUpConsentTexts, getEbFollowUpTermsText, getEbFollowUpWithdrawalFormText } from '@/lib/eb/followUpTerms'
 
@@ -35,7 +35,11 @@ function safePortalUrl(value: unknown) {
   return typeof value === 'string' && /^\/atgarder\/[A-Za-z0-9_-]{20,}$/.test(value) ? value : null
 }
 
-type FollowUpProps = { endpoint: string }
+type FollowUpProps = {
+  endpoint: string
+  // One buyer-session lookup and one order state serve both places in the report.
+  render?: (slots: { toolbarAction: ReactNode; orderPanel: ReactNode }) => ReactNode
+}
 
 export default function EbFollowUpOrder(props: FollowUpProps) {
   // Client navigation between reports must discard the previous report's
@@ -43,7 +47,7 @@ export default function EbFollowUpOrder(props: FollowUpProps) {
   return <CustomerFollowUpOrder key={props.endpoint} {...props} />
 }
 
-function CustomerFollowUpOrder({ endpoint }: FollowUpProps) {
+function CustomerFollowUpOrder({ endpoint, render }: FollowUpProps) {
   const [verified, setVerified] = useState(false)
   const [accessError, setAccessError] = useState(false)
   const [offer, setOffer] = useState<EbFollowUpOffer | null>(null)
@@ -55,13 +59,17 @@ function CustomerFollowUpOrder({ endpoint }: FollowUpProps) {
   const [busy, setBusy] = useState<'order' | 'access' | null>(null)
   const [portalUrl, setPortalUrl] = useState<string | null>(null)
   const busyRef = useRef(false)
+  const navigationPending = useRef(false)
   const retryRef = useRef(false)
   const offerFingerprint = useRef('')
   const mounted = useRef(true)
   const dialog = useRef<HTMLDialogElement>(null)
   const dialogTitle = useRef<HTMLHeadingElement>(null)
+  const panelAccessLink = useRef<HTMLAnchorElement>(null)
   const titleId = useId()
   const descriptionId = useId()
+  const activationHintId = useId()
+  const accessErrorId = useId()
 
   const requireBuyerAccess = useCallback(() => {
     setVerified(false)
@@ -132,6 +140,25 @@ function CustomerFollowUpOrder({ endpoint }: FollowUpProps) {
     void load(controller.signal)
     return () => { mounted.current = false; controller.abort() }
   }, [load])
+
+  useEffect(() => {
+    // The purchase button disappears after activation. Keep keyboard focus at
+    // its replacement without moving the reader to another page or scroll spot.
+    if (portalUrl) panelAccessLink.current?.focus({ preventScroll: true })
+  }, [portalUrl])
+
+  useEffect(() => {
+    const restoreNavigation = (event: PageTransitionEvent) => {
+      // Back may restore the exact DOM and React state from before navigation.
+      if (event.persisted && navigationPending.current) {
+        navigationPending.current = false
+        busyRef.current = false
+        setBusy(null)
+      }
+    }
+    window.addEventListener('pageshow', restoreNavigation)
+    return () => window.removeEventListener('pageshow', restoreNavigation)
+  }, [])
 
   async function retry() {
     if (retryRef.current) return
@@ -232,43 +259,67 @@ function CustomerFollowUpOrder({ endpoint }: FollowUpProps) {
   const termsText = customerOffer?.seller && fields.customerType ? getEbFollowUpTermsText({ seller: customerOffer.seller, customerType: fields.customerType, priceOre: customerOffer.priceOre }) : null
   const consentTexts = fields.customerType && customerOffer ? getEbFollowUpConsentTexts(fields.customerType, customerOffer.priceOre) : null
 
-  if (!customerOffer) {
-    if (accessError) return <div id="digital-follow-up-access-error" role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 print:hidden">
-      <p>Din personliga beställaråtkomst kunde inte bekräftas. Öppna den ursprungliga beställarlänken igen. Om länken har gått ut eller återkallats, kontakta besiktningsföretaget. Du kan fortfarande läsa utlåtandet.</p>
-      <button type="button" disabled={retrying} onClick={() => void retry()} className="mt-2 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline disabled:opacity-60">{retrying ? 'Försöker igen…' : 'Försök igen'}</button>
-    </div>
-    if (termsChanged) return <div id="digital-follow-up-terms-changed" role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 print:hidden">
-      <p>Köpvillkoren har uppdaterats sedan den här sidan laddades. Ladda om sidan för att läsa och godkänna rätt villkor innan du beställer.</p>
-      <button type="button" onClick={() => window.location.reload()} className="mt-2 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline">Ladda om sidan</button>
-    </div>
-    return retryControl
+  function renderLayout(orderPanel: ReactNode, toolbarAction: ReactNode = null) {
+    return render ? render({ toolbarAction, orderPanel }) : orderPanel
   }
 
-  return (
+  function accessControl(toolbar: boolean) {
+    const label = toolbar ? 'Åtgärdsuppföljning' : 'Öppna åtgärdsuppföljningen'
+    const className = `${buttonClass} max-w-full bg-emerald-800 text-white hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800`
+    const content = <>{busy === 'access' ? <LoaderCircle size={17} className="shrink-0 animate-spin" aria-hidden /> : <CheckCheck size={17} className="shrink-0" aria-hidden />}<span>{busy === 'access' ? toolbar ? 'Öppnar…' : 'Öppnar åtgärdsuppföljningen …' : label}</span></>
+    return portalUrl ? <a ref={toolbar ? undefined : panelAccessLink} href={portalUrl} rel="noreferrer" aria-busy={busy === 'access'} aria-disabled={!!busy} className={className} onClick={event => {
+      if (busyRef.current) { event.preventDefault(); return }
+      if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+        navigationPending.current = true
+        busyRef.current = true
+        setBusy('access')
+      }
+    }}>{content}</a> : <button type="button" disabled={!!busy} aria-busy={busy === 'access'} onClick={() => void send('access')} className={className}>{content}</button>
+  }
+
+  if (!customerOffer) {
+    if (accessError) return renderLayout(<div id="digital-follow-up-access-error" role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 print:hidden">
+      <p>Din personliga beställaråtkomst kunde inte bekräftas. Öppna den ursprungliga beställarlänken igen. Om länken har gått ut eller återkallats, kontakta besiktningsföretaget. Du kan fortfarande läsa utlåtandet.</p>
+      <button type="button" disabled={retrying} onClick={() => void retry()} className="mt-2 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline disabled:opacity-60">{retrying ? 'Försöker igen…' : 'Försök igen'}</button>
+    </div>)
+    if (termsChanged) return renderLayout(<div id="digital-follow-up-terms-changed" role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 print:hidden">
+      <p>Köpvillkoren har uppdaterats sedan den här sidan laddades. Ladda om sidan för att läsa och godkänna rätt villkor innan du beställer.</p>
+      <button type="button" onClick={() => window.location.reload()} className="mt-2 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline">Ladda om sidan</button>
+    </div>)
+    return renderLayout(retryControl)
+  }
+
+  const toolbarAction = <div data-testid="follow-up-toolbar" className="flex min-w-0 flex-col items-start gap-1 print:hidden">
+    {accessOnly ? accessControl(true) : <button type="button" disabled aria-describedby={activationHintId} className={`${buttonClass} border border-slate-200 bg-slate-50 text-slate-600`}><LockKeyhole size={16} className="shrink-0" aria-hidden />Åtgärdsuppföljning</button>}
+    {!accessOnly ? <span id={activationHintId} className="text-xs text-slate-500">Aktiveras efter köp</span> : null}
+    {accessOnly && error ? <a href={`#${accessErrorId}`} className="max-w-56 text-xs text-rose-800 underline">Kunde inte öppna. Se meddelandet nedan.</a> : null}
+  </div>
+
+  return renderLayout(
     <section id="digital-follow-up" aria-label="Digital åtgärdsuppföljning" className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm print:hidden">
-      <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+      <div className={`flex flex-col gap-5 p-5 ${accessOnly ? '' : 'sm:p-6'} lg:flex-row lg:items-center lg:justify-between`}>
         <div className="flex min-w-0 items-start gap-3">
           <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><CheckCheck size={25} aria-hidden /></span>
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.13em] text-emerald-700">Tillval efter besiktningen</p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-950">Digital åtgärdsuppföljning</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Skicka felen till entreprenören och följ vilka som anmälts åtgärdade. Samla kommentarer, före- och åtgärdsbilder.</p>
+            {!accessOnly ? <p className="text-xs font-semibold uppercase tracking-[0.13em] text-emerald-700">Tillval efter besiktningen</p> : null}
+            <h2 className={`${accessOnly ? 'text-base' : 'mt-1 text-xl'} font-semibold text-slate-950`}>{accessOnly ? 'Åtgärdsuppföljningen är aktiverad' : 'Digital åtgärdsuppföljning'}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{accessOnly ? 'Öppna åtgärdsuppföljningen för att fördela fel och skicka till entreprenören.' : 'Skicka felen till entreprenören och följ vilka som anmälts åtgärdade. Samla kommentarer, före- och åtgärdsbilder.'}</p>
           </div>
         </div>
         <div className="shrink-0 lg:text-right">
           {!accessOnly ? <><p className="text-xl font-semibold text-slate-950">{priceLabel}</p><p className="mb-3 mt-1 text-xs text-slate-500">Engångspris för denna besiktning.</p></> : null}
-          {portalUrl ? <a href={portalUrl} rel="noreferrer" className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>Öppna åtgärdsuppföljningen<ArrowRight size={17} aria-hidden /></a>
-            : <button type="button" onClick={() => { if (accessOnly) void send('access'); else open() }} disabled={!!busy} className={`${buttonClass} max-w-full bg-emerald-800 text-white hover:bg-emerald-900`}>
-              <span>{busy === 'access' ? 'Öppnar åtgärdsuppföljningen …' : accessOnly ? 'Öppna åtgärdsuppföljningen' : `Köp åtgärdsuppföljning – ${priceLabel}`}</span>{busy === 'access' ? <LoaderCircle size={17} className="shrink-0 animate-spin" aria-hidden /> : <ArrowRight size={17} className="shrink-0" aria-hidden />}
+          {accessOnly ? accessControl(false)
+            : <button type="button" onClick={open} disabled={!!busy} className={`${buttonClass} max-w-full bg-emerald-800 text-white hover:bg-emerald-900`}>
+              <span>Köp åtgärdsuppföljning – {priceLabel}</span><ArrowRight size={17} className="shrink-0" aria-hidden />
             </button>}
         </div>
       </div>
-      {portalUrl ? <div role="status" className="flex items-start gap-2 border-t border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-950"><Check size={18} className="mt-0.5 shrink-0" aria-hidden /><span>{message} Din personliga länk ska inte delas med entreprenören; skicka en separat entreprenörslänk från portalen.</span></div> : null}
-      {!portalUrl ? <div className="border-t border-slate-100 px-5 py-3 text-xs leading-5 text-slate-500 sm:px-6">Utlåtandet är tillgängligt även utan tillvalet. Entreprenörens avbockning är inte ett godkännande av besiktningsmannen.</div> : null}
+      {portalUrl ? <p role="status" className="sr-only">{message}</p> : null}
+      <div className="border-t border-slate-100 px-5 py-3 text-xs leading-5 text-slate-500 sm:px-6">{accessOnly ? 'Din personliga länk ska inte delas. Skicka separata entreprenörslänkar från åtgärdsuppföljningen. ' : 'Utlåtandet är tillgängligt även utan tillvalet. '}Entreprenörens avbockning är inte ett godkännande av besiktningsmannen.</div>
       {retryControl ? <div className="px-5 pb-3 sm:px-6">{retryControl}</div> : null}
-      {accessOnly && error ? <p role="alert" className="mx-5 mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900 sm:mx-6">{error}</p> : null}
+      {accessOnly && error ? <p id={accessErrorId} role="alert" className="mx-5 mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900 sm:mx-6">{error}</p> : null}
 
-      <dialog ref={dialog} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event => { if (busyRef.current) event.preventDefault() }}
+      {!accessOnly ? <dialog ref={dialog} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event => { if (busyRef.current) event.preventDefault() }}
         className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/50">
         <form className="min-w-0 p-5 sm:p-7" onSubmit={event => {
           event.preventDefault()
@@ -327,7 +378,7 @@ function CustomerFollowUpOrder({ endpoint }: FollowUpProps) {
               <legend className="px-1 text-sm font-semibold">Dina godkännanden</legend>
               <label className="flex min-h-11 items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm leading-6"><input name="acceptTerms" type="checkbox" required checked={fields.acceptTerms} onChange={event => change('acceptTerms', event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-800" /><span>{consentTexts.acceptTerms}</span></label>
               {isConsumer ? <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
-                <p>Som konsument har du normalt 14 dagars ångerrätt. Du kan ångra beställningen i din privata åtgärdsportal eller lämna ett tydligt meddelande till säljaren. Omedelbar start innebär inte i sig att ångerrätten upphör.</p>
+                <p>Som konsument har du normalt 14 dagars ångerrätt. Du kan ångra beställningen i din privata åtgärdsuppföljning eller lämna ett tydligt meddelande till säljaren. Omedelbar start innebär inte i sig att ångerrätten upphör.</p>
                 <label className="flex min-h-11 items-start gap-3"><input name="consumerWithdrawalAcknowledged" type="checkbox" required checked={fields.consumerWithdrawalAcknowledged} onChange={event => change('consumerWithdrawalAcknowledged', event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-800" /><span>{consentTexts.consumerWithdrawalAcknowledged}</span></label>
                 <label className="flex min-h-11 items-start gap-3"><input name="requestImmediateStart" type="checkbox" required checked={fields.requestImmediateStart} onChange={event => change('requestImmediateStart', event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-800" /><span>{consentTexts.requestImmediateStart}</span></label>
               </div> : <label className="flex min-h-11 items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm leading-6"><input name="requestImmediateStart" type="checkbox" required checked={fields.requestImmediateStart} onChange={event => change('requestImmediateStart', event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-800" /><span>{consentTexts.requestImmediateStart}</span></label>}
@@ -343,7 +394,8 @@ function CustomerFollowUpOrder({ endpoint }: FollowUpProps) {
             </button>
           </div>
         </form>
-      </dialog>
-    </section>
+      </dialog> : null}
+    </section>,
+    toolbarAction,
   )
 }

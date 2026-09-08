@@ -42,6 +42,7 @@ function actionFixture() {
     sharp: {}, '@/lib/assignments/tokens': { hashAssignmentToken: (value: string) => value },
     '@/lib/assignments/mailer': {}, '@/lib/eb/server': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/eb/reportSnapshot': {}, '@/lib/eb/remediationPolicy': load('src/lib/eb/remediationPolicy.ts', {}),
+    '@/lib/eb/remediationDefaults': load('src/lib/eb/remediationDefaults.ts', {}),
     '@/lib/eb/followUpDelivery': {}, '@/lib/eb/ownerAuth': { assertEbRemediationOwnerSession: async () => undefined },
     '@/lib/eb/followUpServer': { withdrawEbFollowUpOrder: async (input: Record<string, unknown>) => {
       calls.push(input)

@@ -144,7 +144,8 @@ test('private page reuses frozen public renderer; expired buyer link retains rea
 test('already delivered customer URLs redirect to private report without cookies, including expired read-only links', async () => {
   type LegacyApi = { GET: (request: Request, context: { params: Promise<{ token: string }> }) => Promise<Response> }
   class RedirectResponse extends Response {
-    static redirect(url: URL, init: ResponseInit) {
+    static redirect(url: string | URL, statusOrInit: number | ResponseInit = 302) {
+      const init = typeof statusOrInit === 'number' ? { status: statusOrInit } : statusOrInit
       return new Response(null, { ...init, headers: { ...init.headers, Location: url.toString() } })
     }
   }

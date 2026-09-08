@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -13,6 +13,7 @@ import {
   Camera,
   Clock3,
   ImagePlus,
+  Info,
   Loader2,
   Mail,
   MessageSquareText,
@@ -32,6 +33,7 @@ import {
 import type {
   EbRemediationAccessRole,
   EbRemediationAssignee,
+  EbRemediationContractorSuggestion,
   EbRemediationStatus,
   EbRemediationTask,
   EbRemediationWorkspace,
@@ -64,6 +66,14 @@ type AssigneeDraft = {
   email: string
   phone: string
   isActive: boolean
+}
+
+function newAssigneeDraft(suggestion?: EbRemediationContractorSuggestion): AssigneeDraft {
+  return {
+    name: suggestion?.name ?? '', companyName: suggestion?.companyName ?? '',
+    contactName: suggestion?.contactName ?? '', email: suggestion?.email ?? '',
+    phone: suggestion?.phone ?? '', isActive: true,
+  }
 }
 
 const STATUS_OPTIONS: Array<{ value: EbRemediationStatus; label: string }> = [
@@ -139,6 +149,13 @@ function inputClassName() {
   return 'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-100 disabled:text-gray-500'
 }
 
+function PortalHelp({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div role="note" className={`flex items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600 print:hidden ${className}`}>
+    <Info size={15} className="mt-0.5 shrink-0 text-slate-500" aria-hidden />
+    <p>{children}</p>
+  </div>
+}
+
 export default function EbRemediationPortalClient({
   initialWorkspace,
   endpoint,
@@ -162,17 +179,16 @@ export default function EbRemediationPortalClient({
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterAssignee, setFilterAssignee] = useState('all')
-  const [bulkAssigneeId, setBulkAssigneeId] = useState('')
-  const [bulkDueDate, setBulkDueDate] = useState('')
+  const [bulkAssigneeId, setBulkAssigneeId] = useState<string | null>(null)
+  const [bulkDueDate, setBulkDueDate] = useState(initialWorkspace.inspection?.defaultRemedyDeadline ?? '')
+  const [changeBulkDueDate, setChangeBulkDueDate] = useState(false)
+  const [expandedComments, setExpandedComments] = useState<string[]>([])
+  const [selectedSuggestion, setSelectedSuggestion] = useState('')
   const [backNavigationPending, setBackNavigationPending] = useState(false)
-  const [newAssignee, setNewAssignee] = useState<AssigneeDraft>({
-    name: '',
-    companyName: '',
-    contactName: '',
-    email: '',
-    phone: '',
-    isActive: true,
-  })
+  const [newAssignee, setNewAssignee] = useState<AssigneeDraft>(() => newAssigneeDraft(
+    initialWorkspace.access.role === 'customer_owner' && initialWorkspace.assignees.length === 0 && initialWorkspace.contractorSuggestions?.length === 1
+      ? initialWorkspace.contractorSuggestions[0] : undefined
+  ))
   const [assigneeDrafts, setAssigneeDrafts] = useState<Record<string, AssigneeDraft>>(() =>
     Object.fromEntries(initialWorkspace.assignees.map((assignee) => [assignee.id, assigneeDraft(assignee)]))
   )
@@ -187,6 +203,13 @@ export default function EbRemediationPortalClient({
 
   const role = workspace.access.role
   const paid = Boolean(workspace.followUp)
+  const isCustomerOwner = paid && role === 'customer_owner'
+  const contractorSuggestions = isCustomerOwner ? workspace.contractorSuggestions ?? [] : []
+  const defaultRemedyDeadline = workspace.inspection?.defaultRemedyDeadline ?? null
+  const activeAssignees = workspace.assignees.filter((assignee) => assignee.isActive)
+  const soleAssignee = activeAssignees.length === 1 ? activeAssignees[0] : null
+  const effectiveBulkAssigneeId = bulkAssigneeId ?? soleAssignee?.id ?? ''
+  const unassignedTaskIds = workspace.tasks.filter((task) => !task.assigneeId).map((task) => task.id)
   const withdrawalPending = Boolean(workspace.followUp?.withdrawalRequestedAt)
   const canManage = !withdrawalPending && ebRemediationCanManage(internal ? 'internal' : role, paid)
   const canRespond = role === 'assignee' || role === 'contractor_admin'
@@ -318,11 +341,15 @@ export default function EbRemediationPortalClient({
       }),
     [filterAssignee, filterStatus, workspace.tasks]
   )
+  const selectedVisibleTaskIds = selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id))
 
   const createAssignee = async () => {
     const ok = await callAction('create_assignee', newAssignee, 'create-assignee')
     if (ok) {
-      setNewAssignee({ name: '', companyName: '', contactName: '', email: '', phone: '', isActive: true })
+      setNewAssignee(newAssigneeDraft())
+      setSelectedSuggestion('')
+      setBulkAssigneeId(null)
+      showNotice('Mottagaren är tillagd. Tilldela anmärkningar och välj sedan Skicka lista.')
     }
   }
 
@@ -350,6 +377,7 @@ export default function EbRemediationPortalClient({
   }
 
   const assignTasks = async (taskIds: string[], assigneeId: string, dueDate?: string) => {
+    if (taskIds.length === 0) return
     const payload: Record<string, unknown> = {
       taskIds,
       assigneeId: assigneeId || null,
@@ -361,7 +389,11 @@ export default function EbRemediationPortalClient({
       payload,
       `assign-${taskIds.join('-')}`
     )
-    if (ok) setSelectedTaskIds((current) => current.filter((id) => !taskIds.includes(id)))
+    if (ok) {
+      setSelectedTaskIds((current) => current.filter((id) => !taskIds.includes(id)))
+      setChangeBulkDueDate(false)
+      showNotice(`${taskIds.length} ${taskIds.length === 1 ? 'anmärkning uppdaterad' : 'anmärkningar uppdaterade'}. Ingen lista har skickats. Befintliga datum behålls${dueDate !== undefined ? ' för övriga anmärkningar' : ''}.`)
+    }
   }
 
   const changeStatus = async (taskId: string, status: EbRemediationStatus) => {
@@ -471,7 +503,7 @@ export default function EbRemediationPortalClient({
               </Link>
             ) : null}
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase text-emerald-700">Åtgärdsportal</p>
+              <p className="text-xs font-semibold uppercase text-emerald-700">{paid ? 'Åtgärdsuppföljning' : 'Åtgärdsportal'}</p>
               <h1 className="mt-1 truncate text-2xl font-semibold">{workspace.project.title}</h1>
               <p className="mt-1 text-sm text-gray-600">
                 {workspace.project.objectLabel}{workspace.project.address ? ` · ${workspace.project.address}` : ''}
@@ -492,23 +524,24 @@ export default function EbRemediationPortalClient({
             {paid && role === 'customer_owner' ? (
               <a href="#angra-bestallning" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-emerald-700 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={16} />{withdrawalPending ? 'Beställning och registrerad begäran' : withdrawalLabel}</a>
             ) : null}
-            <button type="button" onClick={() => void reload()} disabled={isBusy} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50" title="Uppdatera" aria-label="Uppdatera">
+            <button type="button" onClick={() => void reload()} disabled={isBusy} className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50" title="Hämta senaste uppdateringarna. Sidan uppdateras även automatiskt." aria-label="Uppdatera">
               <RefreshCw size={16} className={busyKey === 'reload' ? 'animate-spin' : ''} />
             </button>
             <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50">
               <Printer size={16} />
-              Skriv ut / spara PDF
+              Skriv ut åtgärdslista
             </button>
+            <PortalHelp className="w-full lg:max-w-md">Uppdatera hämtar senaste informationen. Skriv ut åtgärdslista skriver ut det urval du visar, inte originalutlåtandet.</PortalHelp>
           </div>
         </div>
       </header>
 
       <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-5 sm:px-6 lg:px-8 print:max-w-none print:px-0">
         {paid ? (
-          <section className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <section className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 print:hidden">
             <h2 className="font-semibold">Digital uppföljning av det levererade utlåtandet</h2>
             <p className="mt-1 leading-6">Punkterna och originalbilderna kommer från den fastställda versionen vid beställningen. Uppföljningen ändrar inte utlåtandet och ersätter inte besiktning. Sidan uppdateras automatiskt utan att dina osparade texter försvinner.</p>
-            {role === 'customer_owner' ? <p className="mt-2 text-sm">1. Lägg till utförare. 2. Tilldela punkter. 3. Skicka deras personliga lista. Du kan sedan kommentera och begära komplettering av återrapporteringen.</p> : null}
+            {role === 'customer_owner' ? <p className="mt-2 text-sm">Kontrollera entreprenören, tilldela anmärkningar och välj Skicka lista. Följ sedan återrapporteringen här. Öppna Kommentera när du vill ställa en fråga, bifoga en bild eller begära komplettering.</p> : null}
           </section>
         ) : null}
         <section className="grid grid-cols-2 gap-3 md:grid-cols-5" aria-label="Sammanställning">
@@ -550,16 +583,24 @@ export default function EbRemediationPortalClient({
           <section className="border border-gray-200 bg-white shadow-sm print:hidden">
             <div className="border-b border-gray-200 px-4 py-3">
               <h2 className="text-base font-semibold">Åtgärdas av</h2>
-              <p className="mt-1 text-xs text-gray-600">Skapa en grupp en gång och återanvänd den. E-postadressen får en egen lista med endast gruppens punkter.</p>
+              <PortalHelp className="mt-2">{isCustomerOwner ? 'Kontrollera entreprenörens namn och e-postadress. Lägg till entreprenören och tilldela anmärkningarna. Först när du väljer Skicka lista får mottagaren ett mejl med sina punkter.' : 'Skapa en grupp en gång och återanvänd den. E-postadressen får en egen lista med endast gruppens punkter.'}</PortalHelp>
             </div>
+            {contractorSuggestions.length > 0 ? <div className="border-b border-gray-200 bg-emerald-50/50 px-4 py-3 text-sm">
+              <p className="text-xs leading-5 text-gray-600">Förslag från entreprenaduppgifterna. Kontrollera företag och mottagare; inget skickas automatiskt.</p>
+              {contractorSuggestions.length > 1 || workspace.assignees.length > 0 ? <label className="mt-2 block max-w-xl"><span className="text-xs font-semibold text-gray-700">Hämta entreprenörsuppgifter</span><select aria-label="Hämta entreprenörsuppgifter" value={selectedSuggestion} onChange={(event) => {
+                setSelectedSuggestion(event.target.value)
+                const suggestion = contractorSuggestions[Number(event.target.value)]
+                if (event.target.value !== '' && suggestion) setNewAssignee(newAssigneeDraft(suggestion))
+              }} disabled={isBusy} className={`${inputClassName()} mt-1`}><option value="">Välj entreprenör eller fyll i nedan</option>{contractorSuggestions.map((suggestion, index) => <option key={index} value={index}>{suggestion.name}{suggestion.contactName ? ` · ${suggestion.contactName}` : ''}{suggestion.email ? ` · ${suggestion.email}` : ''}</option>)}</select></label> : <p className="mt-1 text-xs text-emerald-800">Entreprenörens uppgifter är förifyllda nedan. Komplettera det som saknas.</p>}
+            </div> : null}
             <div className="grid gap-3 border-b border-gray-200 bg-gray-50 p-4 md:grid-cols-2 lg:grid-cols-6 lg:items-end">
-              <label><span className="text-xs font-semibold text-gray-700">Åtgärdas av</span><input value={newAssignee.name} onChange={(event) => setNewAssignee((current) => ({ ...current, name: event.target.value }))} placeholder="Exempel: Målare" className={`${inputClassName()} mt-1`} /></label>
+              <label><span className="text-xs font-semibold text-gray-700">{isCustomerOwner ? 'Entreprenör / arbetsområde' : 'Åtgärdas av'}</span><input value={newAssignee.name} onChange={(event) => setNewAssignee((current) => ({ ...current, name: event.target.value }))} placeholder={isCustomerOwner ? 'Entreprenörens namn' : 'Exempel: Målare'} className={`${inputClassName()} mt-1`} /></label>
               <label><span className="text-xs font-semibold text-gray-700">Företag</span><input value={newAssignee.companyName} onChange={(event) => setNewAssignee((current) => ({ ...current, companyName: event.target.value }))} className={`${inputClassName()} mt-1`} /></label>
               <label><span className="text-xs font-semibold text-gray-700">Kontaktperson</span><input value={newAssignee.contactName} onChange={(event) => setNewAssignee((current) => ({ ...current, contactName: event.target.value }))} className={`${inputClassName()} mt-1`} /></label>
               <label><span className="text-xs font-semibold text-gray-700">E-post</span><input type="email" value={newAssignee.email} onChange={(event) => setNewAssignee((current) => ({ ...current, email: event.target.value }))} className={`${inputClassName()} mt-1`} /></label>
               <label><span className="text-xs font-semibold text-gray-700">Telefon</span><input type="tel" value={newAssignee.phone} onChange={(event) => setNewAssignee((current) => ({ ...current, phone: event.target.value }))} className={`${inputClassName()} mt-1`} /></label>
               <button type="button" onClick={() => void createAssignee()} disabled={isBusy} className="inline-flex items-center justify-center gap-2 rounded-md bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-60">
-                {busyKey === 'create-assignee' ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} Lägg till
+                {busyKey === 'create-assignee' ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />} {isCustomerOwner ? 'Lägg till entreprenör' : 'Lägg till'}
               </button>
             </div>
             {workspace.assignees.length > 0 ? (
@@ -582,6 +623,10 @@ export default function EbRemediationPortalClient({
                 })}
               </div>
             ) : null}
+            {isCustomerOwner && soleAssignee && unassignedTaskIds.length > 0 ? <div className="flex flex-col gap-3 border-t border-emerald-200 bg-emerald-50/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm leading-6 text-gray-700">Tilldela samtliga <strong>{unassignedTaskIds.length} ej tilldelade</strong> anmärkningar till <strong>{soleAssignee.name}</strong>. Befintliga tilldelningar och datum behålls.</p>
+              <button type="button" onClick={() => void assignTasks(unassignedTaskIds, soleAssignee.id)} disabled={isBusy} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busyKey?.startsWith('assign-') ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}Tilldela alla ej tilldelade</button>
+            </div> : null}
           </section>
         ) : null}
 
@@ -605,19 +650,37 @@ export default function EbRemediationPortalClient({
           <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 md:flex-row md:items-end md:justify-between print:hidden">
             <div><h2 className="text-base font-semibold">Anmärkningar</h2><p className="mt-1 text-xs text-gray-600">“Anmäld avhjälpt” är entreprenörens uppgift och innebär inte att punkten är godkänd vid besiktning.</p></div>
             <div className="flex flex-wrap gap-2">
-              <label><span className="sr-only">Filtrera status</span><select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)} className={inputClassName()}><option value="all">Alla statusar</option>{STATUS_OPTIONS.filter((option) => !paid || option.value !== 'ready_for_review').map((option) => <option key={option.value} value={option.value}>{statusLabel(option.value, paid)}</option>)}</select></label>
-              {role !== 'assignee' ? <label><span className="sr-only">Filtrera mottagare</span><select value={filterAssignee} onChange={(event) => setFilterAssignee(event.target.value)} className={inputClassName()}><option value="all">Alla utförare</option><option value="unassigned">Ej tilldelade</option>{workspace.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label> : null}
+              <label><span className="sr-only">Filtrera status</span><select aria-label="Filtrera status" value={filterStatus} onChange={(event) => { setFilterStatus(event.target.value); setSelectedTaskIds([]) }} className={inputClassName()}><option value="all">Alla statusar</option>{STATUS_OPTIONS.filter((option) => !paid || option.value !== 'ready_for_review').map((option) => <option key={option.value} value={option.value}>{statusLabel(option.value, paid)}</option>)}</select></label>
+              {role !== 'assignee' ? <label><span className="sr-only">Filtrera mottagare</span><select aria-label="Filtrera mottagare" value={filterAssignee} onChange={(event) => { setFilterAssignee(event.target.value); setSelectedTaskIds([]) }} className={inputClassName()}><option value="all">Alla utförare</option><option value="unassigned">Ej tilldelade</option>{workspace.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label> : null}
             </div>
           </div>
 
-          {canManage && selectedTaskIds.length > 0 ? (
-            <div className="sticky top-0 z-20 flex flex-col gap-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3 md:flex-row md:items-end print:hidden">
-              <p className="self-center text-sm font-semibold text-emerald-900">{selectedTaskIds.length} valda</p>
-              <label className="min-w-56"><span className="text-xs font-semibold text-emerald-900">Åtgärdas av</span><select value={bulkAssigneeId} onChange={(event) => setBulkAssigneeId(event.target.value)} className={`${inputClassName()} mt-1`}><option value="">Ej tilldelad</option>{workspace.assignees.filter((assignee) => assignee.isActive).map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
-              <label><span className="text-xs font-semibold text-emerald-900">Klar senast</span><input type="date" value={bulkDueDate} onChange={(event) => setBulkDueDate(event.target.value)} className={`${inputClassName()} mt-1`} /></label>
-              <button type="button" onClick={() => void assignTasks(selectedTaskIds, bulkAssigneeId, bulkDueDate)} disabled={isBusy} className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{busyKey?.startsWith('assign-') ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {busyKey?.startsWith('assign-') ? 'Tilldelar...' : 'Tilldela'}</button>
+          <div id="remediation-print-summary" className="hidden border-b border-gray-300 px-4 py-3 text-sm print:block">
+            <h2 className="font-semibold">Åtgärdslista</h2>
+            <p>Urval: {filteredTasks.length} av {workspace.tasks.length} anmärkningar. Status: {filterStatus === 'all' ? 'Alla' : statusLabel(filterStatus as EbRemediationStatus, paid)}. Åtgärdas av: {filterAssignee === 'all' ? 'Alla' : filterAssignee === 'unassigned' ? 'Ej tilldelade' : workspace.assignees.find((assignee) => assignee.id === filterAssignee)?.name ?? 'Vald mottagare'}.</p>
+            <p>Detta är en uppföljningslista, inte ett nytt besiktningsutlåtande.</p>
+          </div>
+
+          {canManage ? <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-3 print:hidden">
+            <button type="button" disabled={isBusy || filteredTasks.length === 0} onClick={() => setSelectedTaskIds(filteredTasks.map((task) => task.id))} className="min-h-10 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50">Markera alla i urvalet</button>
+            <button type="button" disabled={isBusy || !filteredTasks.some((task) => !task.assigneeId)} onClick={() => setSelectedTaskIds(filteredTasks.filter((task) => !task.assigneeId).map((task) => task.id))} className="min-h-10 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50">Markera ej tilldelade</button>
+            <button type="button" disabled={isBusy || selectedTaskIds.length === 0} onClick={() => setSelectedTaskIds([])} className="min-h-10 rounded-md px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">Avmarkera</button>
+            <span className="text-xs text-gray-600">{selectedVisibleTaskIds.length} av {filteredTasks.length} i urvalet valda</span>
+            <PortalHelp className="w-full">Markera de anmärkningar du vill hantera tillsammans. Tilldela ändrar ansvarig men skickar ingen lista. Filterbyte rensar markeringarna.</PortalHelp>
+          </div> : null}
+
+          {canManage && selectedVisibleTaskIds.length > 0 ? (
+            <div className="sticky top-0 z-20 space-y-3 border-b border-emerald-200 bg-emerald-50 px-4 py-3 print:hidden">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                <label className="min-w-0 lg:w-64"><span className="text-xs font-semibold text-emerald-900">Åtgärdas av</span><select aria-label="Tilldela till" value={effectiveBulkAssigneeId} onChange={(event) => setBulkAssigneeId(event.target.value)} disabled={isBusy} className={`${inputClassName()} mt-1`}><option value="">Ej tilldelad</option>{activeAssignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label>
+                <div className="min-w-0"><label className="flex min-h-10 items-center gap-2 text-xs font-semibold text-emerald-900"><input type="checkbox" checked={changeBulkDueDate} onChange={(event) => setChangeBulkDueDate(event.target.checked)} disabled={isBusy} className="h-4 w-4" />Ändra sista åtgärdsdatum</label><input aria-label="Sista åtgärdsdatum" type="date" value={bulkDueDate} onChange={(event) => setBulkDueDate(event.target.value)} disabled={!changeBulkDueDate || isBusy} className={inputClassName()} /></div>
+                <button type="button" onClick={() => void assignTasks(selectedVisibleTaskIds, effectiveBulkAssigneeId, changeBulkDueDate ? bulkDueDate : undefined)} disabled={isBusy || (changeBulkDueDate && !bulkDueDate)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">{busyKey?.startsWith('assign-') ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {busyKey?.startsWith('assign-') ? 'Tilldelar...' : 'Tilldela'}</button>
+              </div>
+              <PortalHelp>{changeBulkDueDate ? bulkDueDate ? `Det valda datumet ersätter datumet för de ${selectedVisibleTaskIds.length} valda anmärkningarna.` : 'Välj ett datum eller avmarkera datumändringen för att behålla befintliga datum.' : 'Befintliga datum behålls. Datumet ändras bara om du markerar Ändra sista åtgärdsdatum.'}</PortalHelp>
             </div>
           ) : null}
+
+          {paid ? <PortalHelp className="mx-4 my-3 print:hidden">{defaultRemedyDeadline ? `Frist enligt utlåtandet: ${formatDate(defaultRemedyDeadline)}. Den gäller som utgångspunkt när anmärkningen saknar ett separat datum.` : isCustomerOwner ? 'Sista åtgärdsdatum saknas i utlåtandet. Kom överens med entreprenören om när åtgärderna ska vara klara och ange datumet här.' : 'Sista åtgärdsdatum saknas i utlåtandet. Datumet behöver tas fram genom en gemensam överenskommelse mellan beställaren och entreprenören.'}</PortalHelp> : null}
 
           {filteredTasks.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-gray-600">Inga anmärkningar matchar urvalet.</div>
@@ -628,10 +691,11 @@ export default function EbRemediationPortalClient({
                 const events = workspace.events.filter((event) => event.taskId === task.id)
                 const images = workspace.images.filter((image) => image.taskId === task.id)
                 const checked = selectedTaskIds.includes(task.id)
+                const showResponse = !isCustomerOwner || expandedComments.includes(task.id)
                 return (
-                  <article key={task.id} className="break-inside-avoid px-4 py-4 print:px-0">
+                  <article key={task.id} data-task-id={task.id} className="break-inside-avoid px-4 py-4 print:px-0">
                     <div className="flex items-start gap-3">
-                      {canManage ? <input type="checkbox" checked={checked} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))} className="mt-1 h-4 w-4 rounded border-gray-300 text-emerald-700 print:hidden" aria-label={`Välj ${taskReference(task)}`} /> : null}
+                      {canManage ? <input type="checkbox" checked={checked} disabled={isBusy} onChange={(event) => setSelectedTaskIds((current) => event.target.checked ? [...current, task.id] : current.filter((id) => id !== task.id))} className="mt-1 h-4 w-4 rounded border-gray-300 text-emerald-700 print:hidden" aria-label={`Välj ${taskReference(task)}`} /> : null}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="min-w-0">
@@ -641,24 +705,28 @@ export default function EbRemediationPortalClient({
                               {task.snapshot.disciplineLabel ? <span>Del: {task.snapshot.disciplineLabel}</span> : null}
                               {locationLabel(task) ? <span>Plats: {locationLabel(task)}</span> : null}
                               <span>Besiktning: {formatDate(task.snapshot.inspectionDate)}</span>
-                              <span>Klar senast: {formatDate(task.dueDate)}</span>
+                              <span>Klar senast: {formatDate(task.dueDate ?? defaultRemedyDeadline)}{!task.dueDate && defaultRemedyDeadline ? ' (enligt utlåtandet)' : ''}</span>
                             </div>
                           </div>
                           <div className="flex shrink-0 flex-col gap-2 lg:w-64 print:w-auto">
                             <p className="text-xs font-semibold text-gray-500">Åtgärdas av</p>
                             {canManage ? (
-                              <div className="space-y-1"><select value={task.assigneeId ?? ''} onChange={(event) => void assignTasks([task.id], event.target.value)} disabled={isBusy} aria-busy={busyKey === `assign-${task.id}`} className={inputClassName()}><option value="">Ej tilldelad</option>{workspace.assignees.filter((item) => item.isActive || item.id === task.assigneeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{busyKey === `assign-${task.id}` ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><Loader2 size={12} className="animate-spin" /> Tilldelar...</span> : null}</div>
+                              <>
+                                <div className="space-y-1 print:hidden"><select value={task.assigneeId ?? ''} onChange={(event) => void assignTasks([task.id], event.target.value)} disabled={isBusy} aria-busy={busyKey === `assign-${task.id}`} className={inputClassName()}><option value="">Ej tilldelad</option>{workspace.assignees.filter((item) => item.isActive || item.id === task.assigneeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{busyKey === `assign-${task.id}` ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><Loader2 size={12} className="animate-spin" /> Tilldelar...</span> : null}</div>
+                                <p className="hidden text-sm font-semibold print:block">{assignee?.name ?? 'Ej tilldelad'}</p>
+                              </>
                             ) : <p className="text-sm font-semibold">{assignee?.name ?? 'Ej tilldelad'}</p>}
                           </div>
                         </div>
 
-                        {paid && !isReadOnly ? (
-                          <div className="mt-4 space-y-2 print:hidden">
-                            <label className="block text-xs font-semibold text-gray-700" htmlFor={`comment-${task.id}`}>Kommentar eller beskrivning av utförd åtgärd</label>
+                        {isCustomerOwner && !isReadOnly ? <button type="button" onClick={() => setExpandedComments((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} aria-expanded={showResponse} aria-controls={`comment-panel-${task.id}`} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 print:hidden"><MessageSquareText size={15} />{showResponse ? 'Stäng kommentarsfält' : 'Kommentera'}</button> : null}
+                        {paid && !isReadOnly && showResponse ? (
+                          <div id={`comment-panel-${task.id}`} className="mt-4 space-y-2 print:hidden">
+                            <label className="block text-xs font-semibold text-gray-700" htmlFor={`comment-${task.id}`}>{isCustomerOwner ? 'Kommentar till entreprenören' : 'Kommentar eller beskrivning av utförd åtgärd'}</label>
                             <textarea id={`comment-${task.id}`} rows={3} value={comments[task.id] ?? ''} onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))} disabled={isBusy} className={inputClassName()} placeholder={role === 'customer_owner' ? 'Beskriv din fråga eller vad som behöver kompletteras.' : 'Beskriv utförd åtgärd. Om arbetet inte kan fotograferas: förklara varför och hur det har åtgärdats.'} />
-                            <p className="text-xs leading-5 text-gray-500">{role === 'customer_owner' ? 'En begäran om komplettering är inte ett besiktningsbeslut.' : 'Anmäl åtgärdat med en åtgärdsbild eller en förklarande kommentar när arbetet inte kan fotograferas. Ange skäl om punkten inte kan avhjälpas.'}</p>
+                            <PortalHelp>{isCustomerOwner ? 'Ställ en fråga, bifoga en bild eller förklara vad som behöver kompletteras. En begäran om komplettering är inte ett besiktningsbeslut.' : 'Anmäl åtgärdat med en åtgärdsbild eller en förklarande kommentar när arbetet inte kan fotograferas. Ange skäl om punkten inte kan avhjälpas.'}</PortalHelp>
                             <div className="flex flex-wrap gap-2">
-                              {ebRemediationAllowedStatuses(role, true).filter((status) => status !== task.status).map((status) => (
+                              {ebRemediationAllowedStatuses(role, true).filter((status) => status !== task.status && (!isCustomerOwner || task.status === 'reported_remedied' || task.status === 'cannot_remedy')).map((status) => (
                                 <button key={status} type="button" onClick={() => void changeStatus(task.id, status as EbRemediationStatus)} disabled={isBusy} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold disabled:opacity-50 ${status === 'reported_remedied' ? 'bg-emerald-700 text-white' : 'border border-gray-300 bg-white text-gray-800'}`}>
                                   {busyKey === `status-${task.id}-${status}` ? <Loader2 size={14} className="animate-spin" /> : null}
                                   {status === 'returned' ? 'Begär komplettering' : status === 'in_progress' ? 'Påbörja' : status === 'reported_remedied' ? 'Anmäl åtgärdat' : 'Kan inte avhjälpas'}
@@ -688,7 +756,7 @@ export default function EbRemediationPortalClient({
                           </div>
                         ) : null}
 
-                        {images.length > 0 ? <h3 className="mt-4 text-xs font-semibold text-gray-700">Åtgärdsbilder</h3> : null}
+                        {images.length > 0 ? <h3 className="mt-4 text-xs font-semibold text-gray-700">{paid ? 'Bilder i uppföljningen' : 'Åtgärdsbilder'}</h3> : null}
                         {(images.length > 0 || uploading[task.id]) ? (
                           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
                             {images.map((image) => <a key={image.id} href={image.imageUrl ?? '#'} target="_blank" rel="noreferrer" className="block overflow-hidden border border-gray-200 bg-gray-100"><img src={image.thumbnailUrl ?? image.imageUrl ?? ''} alt="Åtgärdsbild" loading="lazy" className="aspect-square w-full object-cover" /></a>)}
@@ -696,13 +764,13 @@ export default function EbRemediationPortalClient({
                           </div>
                         ) : null}
 
-                        {!internal && !isReadOnly && (canRespond || role === 'customer_owner') ? (
+                        {!internal && !isReadOnly && showResponse && (canRespond || role === 'customer_owner') ? (
                           <div className="mt-4 rounded-md border border-dashed border-emerald-300 bg-emerald-50/40 p-3 print:hidden"
                             onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = isBusy ? 'none' : 'copy' }}
                             onDrop={(event) => { event.preventDefault(); if (!isBusy) void uploadFiles(task.id, Array.from(event.dataTransfer.files)) }}>
                             <p className="mb-2 text-xs font-semibold text-emerald-900">Dra bilder hit eller välj från din enhet</p>
                             <label className={`inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 ${isBusy || Boolean(uploading[task.id]) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-gray-50'}`}>
-                              <ImagePlus size={15} /> Lägg till åtgärdsbilder
+                              <ImagePlus size={15} /> {isCustomerOwner ? 'Bifoga bild' : 'Lägg till åtgärdsbilder'}
                               <input type="file" accept="image/*" multiple disabled={isBusy || Boolean(uploading[task.id])} className="sr-only" onChange={(event) => void uploadImages(task.id, event)} />
                             </label>
                             <label className={`ml-2 inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 ${isBusy ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
@@ -769,7 +837,7 @@ export default function EbRemediationPortalClient({
               </form>}
           </>}
         </section> : null}
-        <p className="pb-8 text-xs leading-5 text-gray-500 print:pb-0">Denna portal är en operativ åtgärdslista. Utlåtandet och dess låsta innehåll ändras inte av kommentarer, bilder, tilldelningar eller statusar här. Formell kontroll sker vid besiktning.</p>
+        <p className="pb-8 text-xs leading-5 text-gray-500 print:pb-0">Åtgärdslistan används för uppföljning. Utlåtandet och dess låsta innehåll ändras inte av kommentarer, bilder, tilldelningar eller statusar här. Formell kontroll sker vid besiktning.</p>
       </div>
     </main>
   )

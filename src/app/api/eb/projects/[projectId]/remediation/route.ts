@@ -39,6 +39,7 @@ function errorResponse(error: unknown) {
     return jsonError('Ange vem som ska åtgärda.', 400)
   }
   if (message === 'EB_REMEDIATION_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress.', 400)
+  if (message === 'EB_REMEDIATION_DATE_INVALID') return jsonError('Ange ett giltigt sista åtgärdsdatum.', 400)
   if (message === 'EB_REMEDIATION_TASK_REQUIRED') return jsonError('Välj minst en anmärkning.', 400)
   if (message.startsWith('MISSING_ENV:')) return jsonError('E-postinställningarna är inte klara.', 503)
   return jsonError(message || 'Kunde inte hantera åtgärdsportalen.', 500)

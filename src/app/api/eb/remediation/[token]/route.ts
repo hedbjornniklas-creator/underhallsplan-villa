@@ -40,6 +40,7 @@ function errorResponse(error: unknown) {
   if (message === 'EB_REMEDIATION_ASSIGNEE_NAME_REQUIRED') return jsonError('Ange vem som ska åtgärda.', 400)
   if (message === 'EB_REMEDIATION_ASSIGNEE_REQUIRED') return jsonError('Välj vem länken gäller.', 400)
   if (message === 'EB_REMEDIATION_EMAIL_INVALID') return jsonError('Ange en giltig e-postadress.', 400)
+  if (message === 'EB_REMEDIATION_DATE_INVALID') return jsonError('Ange ett giltigt sista åtgärdsdatum.', 400)
   if (message === 'EB_REMEDIATION_COMMENT_REQUIRED') return jsonError('Skriv en kommentar.', 400)
   if (message === 'EB_REMEDIATION_COMPLETION_IMAGE_REQUIRED') {
     return jsonError('Lägg till minst en åtgärdsbild innan punkten markeras klar för kontroll.', 400)
