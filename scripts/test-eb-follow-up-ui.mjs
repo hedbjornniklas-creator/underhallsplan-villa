@@ -167,6 +167,23 @@ try {
   }
 
   for (const width of [1440, 390]) {
+    await reset()
+    await page.setViewport({ width, height: 1000 })
+    offerDelay = 2000
+    const before = offerRequests
+    await page.goto(`${url}?view=buyer-report&customer=1`, { waitUntil: 'domcontentloaded' })
+    await page.waitForSelector('#digital-follow-up-loading')
+    await assertNoCheckout()
+    assert.match(await page.$eval('#digital-follow-up-loading', node => node.textContent), /Hämtar åtgärdsuppföljning/)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.screenshot({ path: resolve(output, `loading-${width}.png`), fullPage: true })
+    await page.waitForSelector('#digital-follow-up')
+    assert.equal(await page.$('#digital-follow-up-loading'), null)
+    assert.equal(offerRequests - before, 1)
+    assert.equal(posts.length, 0)
+  }
+
+  for (const width of [1440, 390]) {
     await reset(); await page.setViewport({ width, height: 844 }); const beforeOfferLoad = offerRequests; await personalAccess({ open: false })
     await page.waitForSelector('#digital-follow-up'); assert.equal(posts.length, 0)
     assert.equal(offerRequests, beforeOfferLoad + 1, 'toolbar and panel share one offer request')

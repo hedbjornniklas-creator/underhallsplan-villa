@@ -65,7 +65,7 @@ function fixture(legacy = false) {
   }
   const errors: Record<string, string> = {}
   const failures: Record<string, Error> = {}
-  const state = { clientConfigurationError: false, platformSellerAvailable: true }
+  const state = { clientConfigurationError: false, platformSellerAvailable: true, customerReads: 0, sessionChecks: 0, sessionActive: true }
   const reads: Array<{ table: string; filters: Array<[string, unknown]>; fields: string }> = []
   const admin = { from: (table: string) => {
     assert.ok(table in rows, `Unexpected table: ${table}`)
@@ -104,14 +104,41 @@ function fixture(legacy = false) {
     '@/lib/assignments/tokens': { hashAssignmentToken: (value: string) => `hash:${value}` },
     '@/lib/eb/reportSnapshot': snapshots,
     '@/lib/eb/followUpDelivery': {},
-    '@/lib/eb/followUpCustomer': { resolveEbFollowUpCustomer: async () => ({ email: 'buyer@example.test', source: 'confirmed' }) },
+    '@/lib/eb/followUpCustomer': { resolveEbFollowUpCustomer: async () => { state.customerReads += 1; return { email: 'buyer@example.test', source: 'confirmed' } } },
     '@/lib/eb/followUpSeller': { getEbFollowUpPlatformSeller: () => state.platformSellerAvailable ? seller : null },
     '@/lib/eb/customerSession': { readEbCustomerSession: async () => null },
-    '@/lib/eb/customerLinks': {},
+    '@/lib/eb/customerLinks': { isEbCustomerLinkSessionActive: async () => { state.sessionChecks += 1; return state.sessionActive } },
     '@/lib/eb/followUpTerms': {},
   })
   return { report, snapshot, rows, errors, failures, state, reads, seller, server, offer: () => server.getEbFollowUpOffer(token) }
 }
+
+test('checkout shares buyer lookup within one request, but revalidates the next request', async () => {
+  const f = fixture()
+  const session = { kind: 'report' as const, orgId: 'org', inspectionId: 'inspection', reportLinkId: 'link',
+    personalLinkId: 'personal', email: 'buyer@example.test', expiresAt: Date.now() + 60_000 }
+  const first = await f.server.getEbFollowUpCustomerState(token, session)
+  assert.equal(first.verified, true)
+  assert.equal(first.offer?.available, true)
+  assert.equal(f.state.customerReads, 1)
+  assert.equal(f.state.sessionChecks, 1)
+  f.state.sessionActive = false
+  const second = await f.server.getEbFollowUpCustomerState(token, session)
+  assert.equal(second.verified, false)
+  assert.equal(second.offer, null)
+  assert.equal(f.state.customerReads, 2)
+  assert.equal(f.state.sessionChecks, 2)
+})
+
+test('failed checkout context is classified without repeating database reads', async () => {
+  const f = fixture()
+  f.errors.inspection_report_links = '08006'
+  const result = await f.server.getEbFollowUpCustomerState(token)
+  assert.equal(result.verified, false)
+  assert.equal(result.offer, null)
+  assert.equal(result.retryable, true)
+  assert.equal(f.reads.length, 1)
+})
 
 for (const legacy of [false, true]) {
   test(`old ${legacy ? 'legacy eb_v1' : 'canonical'} delivery without copied lock timestamp remains purchasable`, async () => {

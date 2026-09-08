@@ -123,7 +123,7 @@ export async function getEbFollowUpOfferForInspection(scope: InspectionOfferScop
   return evaluateOffer(() => loadContextForLink(scope))
 }
 
-async function evaluateOffer(load: () => ReturnType<typeof loadContext>): Promise<EbFollowUpOffer> {
+async function evaluateOffer(load: () => ReturnType<typeof loadContext>, customerEmails?: () => Promise<Set<string>>): Promise<EbFollowUpOffer> {
   const base: EbFollowUpOffer = {
     available: false, retryable: false, reason: null, priceOre: EB_FOLLOW_UP_PRICE_ORE, netPriceOre: EB_FOLLOW_UP_NET_PRICE_ORE,
     vatOre: EB_FOLLOW_UP_VAT_ORE, vatRate: EB_FOLLOW_UP_VAT_RATE, termsVersion: EB_FOLLOW_UP_TERMS_VERSION,
@@ -141,7 +141,7 @@ async function evaluateOffer(load: () => ReturnType<typeof loadContext>): Promis
     if (!process.env.ASSIGNMENTS_MAIL_FROM?.trim() || !process.env.RESEND_API_KEY?.trim()) {
       return { ...base, reason: 'E-postutskicken för tjänsten är inte konfigurerade.' }
     }
-    if (!(await eligibleCustomerEmails(context)).size) {
+    if (!(await (customerEmails ? customerEmails() : eligibleCustomerEmails(context))).size) {
       return { ...base, reason: 'Beställarens e-postadress registreras när utlåtandet levereras.' }
     }
     return { ...base, available: true }
@@ -167,13 +167,13 @@ async function eligibleCustomerEmails(context: Awaited<ReturnType<typeof loadCon
   return new Set(customer.email ? [customer.email] : [])
 }
 
-async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext>>, serverSession?: EbCustomerSession): Promise<EbCustomerSession | null> {
+async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext>>, serverSession?: EbCustomerSession, customerEmails?: () => Promise<Set<string>>): Promise<EbCustomerSession | null> {
   const session = serverSession ?? await readEbCustomerSession(context.link.inspection_id)
   if (!session || !Number.isFinite(session.expiresAt) || session.expiresAt <= Date.now()
     || session.orgId !== context.link.org_id || session.inspectionId !== context.link.inspection_id
     || (session.kind === 'report' && session.reportLinkId !== context.link.id)
     || (session.kind === 'owner' && (!context.order || !session.portalPath))
-    || !(await eligibleCustomerEmails(context)).has(session.email)
+    || !(await (customerEmails ? customerEmails() : eligibleCustomerEmails(context))).has(session.email)
     || !(await isEbCustomerLinkSessionActive(session))) return null
   return session
 }
@@ -182,13 +182,22 @@ async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext
 export async function getEbFollowUpCustomerState(token: string, serverSession?: EbCustomerSession) {
   let context: Awaited<ReturnType<typeof loadContext>>
   try { context = await loadContext(token) }
-  catch {
-    const unavailable = await getEbFollowUpOffer(token)
+  catch (error) {
+    // Classify the original failure without repeating the same database reads.
+    const unavailable = await evaluateOffer(async () => { throw error })
     return { verified: false, offer: null, accessAvailable: false, retryable: unavailable.retryable === true }
   }
-  const offer = await evaluateOffer(async () => context)
+  // Share only within this request. Never cache buyer authority across requests.
+  let emails: Promise<Set<string>> | undefined
+  const customerEmails = () => emails ??= eligibleCustomerEmails(context)
+  let offer: EbFollowUpOffer
   let session: EbCustomerSession | null
-  try { session = await customerSessionFor(context, serverSession) }
+  try {
+    ;[offer, session] = await Promise.all([
+      evaluateOffer(async () => context, customerEmails),
+      customerSessionFor(context, serverSession, customerEmails),
+    ])
+  }
   catch { return { verified: false, offer: null, accessAvailable: false, retryable: true } }
   if (session) return { verified: true, offer: { ...offer, reason: offer.available ? null : 'Tjänsten kan inte beställas just nu. Försök igen senare.' } }
   return { verified: false, offer: null, accessAvailable: offer.available || offer.alreadyActive, retryable: offer.retryable === true }
@@ -315,8 +324,6 @@ async function createFrozenTasks(context: Awaited<ReturnType<typeof loadContext>
 function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuyer, seller: EbFollowUpSeller, portalUrl: string, inspectionSummary = '',
   project: EbFollowUpConfirmation['project'] = { title: '', propertyDesignation: '', address: '', customerName: '', inspectionLabel: '', inspectionDate: '', reportNumber: '' }) {
   const acceptance = buyer.acceptanceSnapshot
-  const accepted = acceptance ? `Godkänt: ${acceptance.acceptedAt}\nVillkorsversion: ${acceptance.termsVersion}\nGodkända samtycken:\n${Object.values(acceptance.consentTexts).map(value => `• ${value}`).join('\n')}` : ''
-  const sellerText = `${seller.name}, org.nr ${seller.orgNumber}, ${seller.address}, ${seller.email}${seller.phone ? `, ${seller.phone}` : ''}`
   const confirmation: EbFollowUpConfirmation = {
     version: 1, orderId, buyer, seller, project,
     price: { totalOre: EB_FOLLOW_UP_PRICE_ORE, netOre: EB_FOLLOW_UP_NET_PRICE_ORE,
@@ -324,7 +331,40 @@ function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuye
     withdrawalFormText: buyer.customerType === 'consumer' ? getEbFollowUpWithdrawalFormText(seller) : '',
   }
   const receipt = buildEbFollowUpConfirmationEmail(confirmation, portalUrl)
-  const invoice = `Ett köp av digital åtgärdsuppföljning har skett.\nManuellt fakturaunderlag för beställning ${orderId}.\nBeställt: ${acceptance?.acceptedAt ?? new Date().toISOString()}\n${inspectionSummary}\n599,00 SEK inklusive moms; netto 479,20 SEK; moms 25 % 119,80 SEK.\nSäljare: ${sellerText}\nBeställare: ${buyer.name}, ${buyer.email}.\nKundtyp: ${buyer.customerType === 'consumer' ? 'Privatkund' : buyer.customerType === 'business' ? 'Företag/förening' : 'Ej registrerad på äldre order'}\nBeräknad sista ångerdag: ${acceptance?.withdrawalDeadline ?? 'Ej tillämpligt/ej registrerat'}.\nFakturamottagare: ${buyer.invoiceName}, ${buyer.invoiceAddress}, ${buyer.invoicePostalCode} ${buyer.invoiceCity}${buyer.invoiceOrgNo ? `, org.nr ${buyer.invoiceOrgNo}` : ''}.\nE-post för fakturakontakt: ${buyer.email}.\nTjänsten har aktiverats automatiskt. Ingen faktura har skapats eller skickats av systemet. Fakturering hanteras manuellt av Admin. Kontrollera orderns billing_status och eventuell begäran att frånträda beställningen innan fakturering.\n${accepted}`
+  const acceptedTime = acceptance?.acceptedAt ? new Date(acceptance.acceptedAt) : null
+  const orderedAt = acceptedTime && Number.isFinite(acceptedTime.getTime())
+    ? acceptedTime.toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm', dateStyle: 'short', timeStyle: 'short' }) + ' (svensk tid)' : 'Ej registrerat'
+  const invoiceSections: Array<[string, string[]]> = [
+    ['Att göra', ['Skapa och skicka fakturan manuellt. Tjänsten är aktiverad, men ingen faktura har skapats eller skickats av systemet.',
+      'Kontrollera aktuell faktureringsstatus och eventuell ånger eller avbeställning innan du fakturerar.']],
+    ['Belopp att fakturera', ['Tjänst: Digital åtgärdsuppföljning – en besiktning', 'Att betala: 599,00 kr inklusive moms',
+      'Belopp exklusive moms: 479,20 kr', 'Moms 25 %: 119,80 kr']],
+    ['Fakturamottagare', [buyer.invoiceName, buyer.invoiceAddress, `${buyer.invoicePostalCode} ${buyer.invoiceCity}`,
+      ...(buyer.invoiceOrgNo ? [`Organisationsnummer: ${buyer.invoiceOrgNo}`] : []), `E-post för fakturakontakt: ${buyer.email}`]],
+    ['Beställning och besiktning', [`Beställningsnummer: ${orderId}`, `Beställt: ${orderedAt}`,
+      `Beställare: ${buyer.name}`, `Beställarens e-post: ${buyer.email}`,
+      `Kundtyp: ${buyer.customerType === 'consumer' ? 'Privatkund' : buyer.customerType === 'business' ? 'Företag/förening' : 'Ej registrerad'}`,
+      ...inspectionSummary.split('\n').filter(Boolean)]],
+    ['Säljare', [seller.name, `Organisationsnummer: ${seller.orgNumber}`, seller.address, seller.email, ...(seller.phone ? [seller.phone] : [])]],
+    ['Godkännanden vid beställningen', acceptance ? [
+      `Godkänt: ${orderedAt}`, `Villkorsversion: ${acceptance.termsVersion}`,
+      ...(buyer.customerType === 'consumer' ? [`Beräknad sista ångerdag: ${acceptance.withdrawalDeadline ?? 'Ej registrerad'}`] : []),
+      ...Object.values(acceptance.consentTexts).map(value => `• ${value}`),
+    ] : ['Uppgift saknas för denna äldre beställning.']],
+  ]
+  const invoice = ['Nytt köp – fakturaunderlag', ...invoiceSections.map(([heading, lines]) => `${heading}\n${lines.join('\n')}`)].join('\n\n')
+  // Outlook needs real paragraphs, not CSS white-space to preserve line breaks.
+  const invoiceHtml = `<!doctype html><html lang="sv"><head><meta charset="utf-8"></head><body style="margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 12px;">
+    <!--[if mso]><table role="presentation" width="640"><tr><td><![endif]-->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#ffffff;border-top:4px solid #39775b;">
+    <tr><td style="padding:24px;color:#172b23;"><p style="margin:0 0 12px;color:#39775b;font-weight:bold;">HUSHUB · ADMIN</p>
+    <h1 style="margin:0;font-size:24px;line-height:32px;">Nytt köp – fakturaunderlag</h1></td></tr>
+    ${invoiceSections.map(([heading, lines]) => `<tr><td style="padding:20px 24px;border-top:1px solid #e2e8f0;">
+      <h2 style="margin:0 0 12px;font-size:17px;line-height:24px;color:#172b23;">${escapeEbFollowUpHtml(heading)}</h2>
+      ${lines.map(line => `<p style="margin:0 0 8px;font-size:14px;line-height:22px;color:#334155;word-break:break-word;">${escapeEbFollowUpHtml(line)}</p>`).join('')}
+    </td></tr>`).join('')}
+    </table><!--[if mso]></td></tr></table><![endif]--></td></tr></table></body></html>`
   const access = `Här är din personliga länk till din redan beställda åtgärdsuppföljning:\n${portalUrl}\nIngen ny beställning eller avgift har skapats. Dela inte denna länk. Entreprenörer bjuds in separat från åtgärdsuppföljningen.`
   return [
     { kind: 'receipt', dedupeKey: `receipt:${orderId}`, to: buyer.email, ...receipt },
@@ -332,7 +372,7 @@ function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuye
     { kind: 'access', dedupeKey: `access:${challengeId}`, to: buyer.email, subject: 'Din personliga åtgärdsuppföljning', text: access },
   ].map(mail => ({ kind: mail.kind, dedupeKey: mail.dedupeKey, ciphertext: encryptEbFollowUpPayload({
     to: mail.to, replyTo: seller.email, subject: mail.subject, text: mail.text,
-    html: mail.kind === 'receipt' ? receipt.html : `${mail.kind !== 'invoice' ? `<p><a href="${escapeEbFollowUpHtml(portalUrl)}">Öppna åtgärdsuppföljningen</a></p>` : ''}<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
+    html: mail.kind === 'invoice' ? invoiceHtml : mail.kind === 'receipt' ? receipt.html : `${mail.kind !== 'invoice' ? `<p><a href="${escapeEbFollowUpHtml(portalUrl)}">Öppna åtgärdsuppföljningen</a></p>` : ''}<div style="white-space:pre-line">${escapeEbFollowUpHtml(mail.text)}</div>`,
     ...(mail.kind === 'receipt' ? { confirmationPdf: confirmation } : {}),
   } satisfies EbFollowUpEmail) }))
 }

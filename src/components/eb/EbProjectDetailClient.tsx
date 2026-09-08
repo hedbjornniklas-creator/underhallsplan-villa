@@ -15,6 +15,7 @@ import {
   FileText,
   ListChecks,
   Loader2,
+  LockOpen,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -2860,6 +2861,7 @@ export default function EbProjectDetailClient({
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const [assignmentInspection, setAssignmentInspection] = useState<EbInspectionSummary | null>(null)
   const [deliveryInspection, setDeliveryInspection] = useState<EbInspectionSummary | null>(null)
+  const [deliveryInitialAction, setDeliveryInitialAction] = useState<'delivery' | 'unlock'>('delivery')
   const [assignmentConfirmationByInspection, setAssignmentConfirmationByInspection] = useState<
     Record<string, EbAssignmentConfirmationSummary>
   >(() =>
@@ -3348,13 +3350,26 @@ export default function EbProjectDetailClient({
                                   </p>
                                   <button
                                     type="button"
-                                    onClick={() => setDeliveryInspection(inspection)}
+                                    onClick={() => { setDeliveryInitialAction('delivery'); setDeliveryInspection(inspection) }}
                                     disabled={actionInProgress}
                                     className={inspectionMenuItemClassName({ disabled: actionInProgress })}
                                   >
                                     <Send size={16} />
                                     {isLocked ? 'Leverera och visa status' : 'Fastställ och leverera'}
                                   </button>
+                                  {isLocked ? <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.currentTarget.closest('details')?.removeAttribute('open')
+                                      setDeliveryInitialAction('unlock')
+                                      setDeliveryInspection(inspection)
+                                    }}
+                                    disabled={actionInProgress}
+                                    className={inspectionMenuItemClassName({ disabled: actionInProgress })}
+                                  >
+                                    <LockOpen size={16} />
+                                    Lås upp för redigering
+                                  </button> : null}
 
                                   <div className="my-1 border-t border-gray-100" />
                                   <button
@@ -3448,6 +3463,7 @@ export default function EbProjectDetailClient({
           open={Boolean(deliveryInspection)}
           projectId={currentProject.id}
           inspection={deliveryInspection}
+          initialAction={deliveryInitialAction}
           onClose={() => setDeliveryInspection(null)}
           onProjectUpdated={handleDeliveryProjectUpdated}
           onChanged={() => router.refresh()}

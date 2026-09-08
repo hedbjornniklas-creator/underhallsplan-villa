@@ -155,6 +155,16 @@ test('purchase mail payloads target only the buyer and Admin, never automaticall
   assert.equal(receipt.confirmationPdf.buyer.customerType, 'business')
   assert.equal(receipt.confirmationPdf.withdrawalFormText, '')
   assert.equal(invoice.confirmationPdf, undefined)
+  assert.match(invoice.html, /<h1[^>]*>Nytt köp – fakturaunderlag/)
+  for (const heading of ['Att göra', 'Belopp att fakturera', 'Fakturamottagare', 'Beställning och besiktning', 'Säljare', 'Godkännanden vid beställningen']) {
+    assert.ok(invoice.html.includes(`>${heading}</h2>`))
+  }
+  assert.match(invoice.text, /599,00 kr inklusive moms/)
+  assert.match(invoice.text, /479,20 kr/)
+  assert.match(invoice.text, /119,80 kr/)
+  assert.match(invoice.text, /Fakturamottagare\nBuyer AB\nTestvägen 1\n12345 Teststad/)
+  assert.doesNotMatch(invoice.html, /white-space:pre-line|billing_status/)
+  assert.doesNotMatch(invoice.html, /private-owner/)
   assert.equal(access.confirmationPdf, undefined)
   assert.doesNotMatch(receipt.text, /ångerrätt|ångerdag|Ångra beställningen/)
 })

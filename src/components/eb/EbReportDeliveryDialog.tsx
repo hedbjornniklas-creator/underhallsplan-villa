@@ -191,6 +191,7 @@ export default function EbReportDeliveryDialog({
   open,
   projectId,
   inspection,
+  initialAction = 'delivery',
   onClose,
   onProjectUpdated,
   onChanged,
@@ -198,6 +199,7 @@ export default function EbReportDeliveryDialog({
   open: boolean
   projectId: string
   inspection: EbInspectionSummary | null
+  initialAction?: 'delivery' | 'unlock'
   onClose: () => void
   onProjectUpdated: (project: EbProjectListItem) => void
   onChanged: () => void
@@ -213,6 +215,7 @@ export default function EbReportDeliveryDialog({
   const [unlockReason, setUnlockReason] = useState('')
   const [unlockBusy, setUnlockBusy] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
+  const unlockReasonRef = useRef<HTMLTextAreaElement>(null)
   const recipientsInitializedRef = useRef(false)
   const closeRef = useRef(onClose)
   const mutationBusyRef = useRef(false)
@@ -268,10 +271,16 @@ export default function EbReportDeliveryDialog({
     setRecipientEmail('')
     setExtraRecipients('')
     setResult(null)
-    setUnlockOpen(false)
+    setUnlockOpen(initialAction === 'unlock')
     setUnlockReason('')
     void loadMeta()
-  }, [inspection, loadMeta, open])
+  }, [inspection, loadMeta, open, initialAction])
+
+  useEffect(() => {
+    if (!open || !unlockOpen || loading) return
+    unlockReasonRef.current?.focus()
+    unlockReasonRef.current?.scrollIntoView({ block: 'center' })
+  }, [open, unlockOpen, loading])
 
   useEffect(() => {
     if (!open) return
@@ -771,6 +780,7 @@ export default function EbReportDeliveryDialog({
                     Ange varför utlåtandet öppnas igen. Den publicerade versionen ligger kvar tills en ny fastställs.
                   </p>
                   <textarea
+                    ref={unlockReasonRef}
                     value={unlockReason}
                     onChange={(event) => setUnlockReason(event.target.value)}
                     disabled={unlockBusy}

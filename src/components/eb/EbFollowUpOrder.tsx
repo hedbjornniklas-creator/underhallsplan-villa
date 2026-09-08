@@ -49,6 +49,7 @@ export default function EbFollowUpOrder(props: FollowUpProps) {
 
 function CustomerFollowUpOrder({ endpoint, render }: FollowUpProps) {
   const [verified, setVerified] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [accessError, setAccessError] = useState(false)
   const [offer, setOffer] = useState<EbFollowUpOffer | null>(null)
   const [loadError, setLoadError] = useState(false)
@@ -131,6 +132,7 @@ function CustomerFollowUpOrder({ endpoint, render }: FollowUpProps) {
     } finally {
       clearTimeout(timeout)
       signal?.removeEventListener('abort', abort)
+      if (!signal?.aborted && mounted.current) setInitialLoading(false)
     }
   }, [endpoint, requireBuyerAccess])
 
@@ -278,6 +280,12 @@ function CustomerFollowUpOrder({ endpoint, render }: FollowUpProps) {
   }
 
   if (!customerOffer) {
+    if (initialLoading) return renderLayout(
+      <section id="digital-follow-up-loading" role="status" aria-live="polite" aria-busy="true" className="flex min-h-40 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-8 text-sm text-slate-500 shadow-sm print:hidden">
+        <LoaderCircle size={18} className="shrink-0 animate-spin" aria-hidden />
+        <span>Hämtar åtgärdsuppföljning …</span>
+      </section>
+    )
     if (accessError) return renderLayout(<div id="digital-follow-up-access-error" role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 print:hidden">
       <p>Din personliga beställaråtkomst kunde inte bekräftas. Öppna den ursprungliga beställarlänken igen. Om länken har gått ut eller återkallats, kontakta besiktningsföretaget. Du kan fortfarande läsa utlåtandet.</p>
       <button type="button" disabled={retrying} onClick={() => void retry()} className="mt-2 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline disabled:opacity-60">{retrying ? 'Försöker igen…' : 'Försök igen'}</button>

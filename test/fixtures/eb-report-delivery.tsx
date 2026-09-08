@@ -13,6 +13,7 @@ const noop = () => undefined
 createRoot(document.getElementById('root')!).render(
   <EbToastProvider>
     <EbReportDeliveryDialog open projectId="test-project" inspection={inspection}
+      initialAction={new URLSearchParams(location.search).has('unlock') ? 'unlock' : 'delivery'}
       onClose={noop} onProjectUpdated={noop} onChanged={noop} />
   </EbToastProvider>,
 )
