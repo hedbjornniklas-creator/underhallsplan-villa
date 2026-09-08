@@ -25,6 +25,8 @@ function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : 'Okänt fel.'
   if (message === 'EB_REMEDIATION_CONFLICT') return jsonError('Punkten ändrades av någon annan. Aktuella uppgifter har hämtats. Din osparade text finns kvar; kontrollera läget och försök igen.', 409)
   if (message === 'EB_FOLLOW_UP_ORDER_INACTIVE') return jsonError('Uppföljningen är pausad. Befintlig historik finns kvar.', 403)
+  if (message === 'EB_REMEDIATION_REASSIGNMENT_CONFIRMATION_REQUIRED') return jsonError('En personlig utförarlänk har redan skapats. Välj Byt utförare och bekräfta ändringen.', 409)
+  if (message === 'EB_REMEDIATION_REOPEN_CONFIRMATION_REQUIRED') return jsonError('Bekräfta att den klara punkten ska återöppnas som Ej klar när utföraren ändras.', 409)
   if (message === 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED') return jsonError('Lägg till en åtgärdsbild eller en förklarande kommentar om arbetet inte kan fotograferas.', 400)
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'ORG_MEMBERSHIP_REQUIRED' || message === 'MODULE_ACCESS_REQUIRED') {

@@ -62,6 +62,8 @@ type ApiResponse = {
   error?: string
 }
 
+type PendingAssignment = { tasks: EbRemediationTask[]; assigneeId: string; dueDate?: string }
+
 type AssigneeDraft = {
   name: string
   companyName: string
@@ -238,6 +240,10 @@ export default function EbRemediationPortalClient({
   const [expandedComments, setExpandedComments] = useState<string[]>([])
   const [expandedHistory, setExpandedHistory] = useState<string[]>([])
   const [taskErrors, setTaskErrors] = useState<Record<string, string>>({})
+  const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null)
+  const [reopenCompleted, setReopenCompleted] = useState(false)
+  const [assignmentError, setAssignmentError] = useState('')
+  const assignmentDialogRef = useRef<HTMLDialogElement>(null)
   const [imageSelection, setImageSelection] = useState<{ taskId: string; imageId: string } | null>(null)
   const [selectedSuggestion, setSelectedSuggestion] = useState('')
   const [addingAssignee, setAddingAssignee] = useState(initialWorkspace.assignees.length === 0)
@@ -263,6 +269,7 @@ export default function EbRemediationPortalClient({
   const role = workspace.access.role
   const paid = Boolean(workspace.followUp)
   const isCustomerOwner = paid && role === 'customer_owner'
+  const isPersonalContractor = paid && !internal && ['assignee', 'contractor_admin', 'contractor_viewer'].includes(role)
   const contractorSuggestions = isCustomerOwner ? workspace.contractorSuggestions ?? [] : []
   const defaultRemedyDeadline = workspace.inspection?.defaultRemedyDeadline ?? null
   const activeAssignees = workspace.assignees.filter((assignee) => assignee.isActive)
@@ -274,6 +281,14 @@ export default function EbRemediationPortalClient({
   const canRespond = role === 'assignee' || role === 'contractor_admin'
   const isReadOnly = withdrawalPending || !ebRemediationCanComment(role)
   const isBusy = Boolean(busyKey) || Object.keys(uploading).length > 0
+  const assignmentOpen = pendingAssignment !== null
+  useEffect(() => {
+    if (!assignmentOpen) return
+    const previousFocus = document.activeElement as HTMLElement | null
+    const dialog = assignmentDialogRef.current
+    if (dialog && !dialog.open) dialog.showModal()
+    return () => { dialog?.close(); if (previousFocus?.isConnected) previousFocus.focus() }
+  }, [assignmentOpen])
   const consumerOrder = workspace.followUp?.customerType === 'consumer'
   const businessOrder = workspace.followUp?.customerType === 'business'
   const withdrawalLabel = consumerOrder ? 'Ångra beställningen' : businessOrder ? 'Begär avbeställning' : 'Frånträd beställningen'
@@ -448,23 +463,41 @@ export default function EbRemediationPortalClient({
     }
   }
 
-  const assignTasks = async (taskIds: string[], assigneeId: string, dueDate?: string) => {
+  const hasIssuedLink = (assigneeId: string | null) => Boolean(assigneeId && workspace.accessLinks.some(link =>
+    link.assigneeId === assigneeId && link.role !== 'customer_owner'))
+
+  const openAssignment = (tasks: EbRemediationTask[], assigneeId: string, dueDate?: string) => {
+    setReopenCompleted(false)
+    setAssignmentError('')
+    setPendingAssignment({ tasks, assigneeId, dueDate })
+  }
+
+  const assignTasks = async (taskIds: string[], assigneeId: string, dueDate?: string, reviewed?: PendingAssignment) => {
     if (taskIds.length === 0) return
+    const tasks = reviewed?.tasks ?? workspace.tasks.filter(task => taskIds.includes(task.id))
+    if (paid && !reviewed && tasks.some(task => task.assigneeId !== (assigneeId || null) &&
+      (task.status === 'reported_remedied' || hasIssuedLink(task.assigneeId) || hasIssuedLink(assigneeId)))) {
+      openAssignment(tasks, assigneeId, dueDate)
+      return
+    }
     const payload: Record<string, unknown> = {
       taskIds,
       assigneeId: assigneeId || null,
-      expectedVersions: Object.fromEntries(workspace.tasks.filter((task) => taskIds.includes(task.id)).map((task) => [task.id, task.updatedAt])),
+      expectedVersions: Object.fromEntries(tasks.map((task) => [task.id, task.updatedAt])),
+      ...(reviewed ? { confirmReassignment: true, reopenCompleted } : {}),
     }
     if (dueDate !== undefined) payload.dueDate = dueDate || null
     const ok = await callAction(
       'assign',
       payload,
-      `assign-${taskIds.join('-')}`
+      `assign-${taskIds.join('-')}`,
+      reviewed ? message => setAssignmentError(`${message} Stäng rutan och öppna Byt utförare igen för att kontrollera aktuella uppgifter.`) : undefined
     )
     if (ok) {
       setSelectedTaskIds((current) => current.filter((id) => !taskIds.includes(id)))
       setChangeBulkDueDate(false)
-      showNotice(`${taskIds.length} ${taskIds.length === 1 ? 'anmärkning uppdaterad' : 'anmärkningar uppdaterade'}. Ingen lista har skickats. Befintliga datum behålls${dueDate !== undefined ? ' för övriga anmärkningar' : ''}.`)
+      if (reviewed) setPendingAssignment(null)
+      showNotice(reviewed ? 'Utföraren är ändrad. Historiken är bevarad. Välj Skicka lista för att mejla den nya utföraren.' : `${taskIds.length} ${taskIds.length === 1 ? 'anmärkning uppdaterad' : 'anmärkningar uppdaterade'}. Ingen lista har skickats. Befintliga datum behålls${dueDate !== undefined ? ' för övriga anmärkningar' : ''}.`)
     }
   }
 
@@ -554,6 +587,32 @@ export default function EbRemediationPortalClient({
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-950 print:bg-white">
+      <dialog ref={assignmentDialogRef} aria-labelledby="assignment-dialog-title" onCancel={event => { if (isBusy) event.preventDefault(); else setPendingAssignment(null) }} className="fixed inset-0 m-auto max-h-[90dvh] w-[min(560px,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 text-slate-950 shadow-xl backdrop:bg-slate-950/40 print:hidden">
+        {pendingAssignment ? <form onSubmit={event => {
+          event.preventDefault()
+          void assignTasks(pendingAssignment.tasks.map(task => task.id), pendingAssignment.assigneeId, pendingAssignment.dueDate, pendingAssignment)
+        }}>
+          <h2 id="assignment-dialog-title" className="text-xl font-semibold">Byt utförare</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Kontrollera vilka punkter som flyttas. Den tidigare utföraren förlorar åtkomsten till dem. Den nya utföraren får tillgång via sin personliga lista.</p>
+          <label className="mt-4 block text-sm font-semibold" htmlFor="assignment-target">Ny utförare</label>
+          <select id="assignment-target" disabled={isBusy} value={pendingAssignment.assigneeId} onChange={event => { setPendingAssignment({ ...pendingAssignment, assigneeId: event.target.value }); setReopenCompleted(false) }} className={`${inputClassName()} mt-1`}>
+            <option value="">Ej tilldelad</option>{workspace.assignees.filter(assignee => assignee.isActive).map(assignee => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+          </select>
+          <ul className="mt-3 space-y-2 text-sm">
+            {pendingAssignment.tasks.map(task => <li key={task.id}><span className="font-semibold">{taskReference(task)}</span>: {workspace.assignees.find(assignee => assignee.id === task.assigneeId)?.name ?? 'Ej tilldelad'} → {workspace.assignees.find(assignee => assignee.id === pendingAssignment.assigneeId)?.name ?? 'Ej tilldelad'}{task.assigneeId === (pendingAssignment.assigneeId || null) ? ' (oförändrad utförare)' : ''}</li>)}
+          </ul>
+          <p className="mt-4 text-sm leading-6 text-slate-600">Kommentarer, bilder och historik följer med. {pendingAssignment.dueDate === undefined ? 'Befintliga slutdatum behålls.' : `Valda punkter får slutdatum ${formatDate(pendingAssignment.dueDate)}.`} Inget mejl skickas automatiskt. Välj därefter <strong>Skicka lista</strong> för att meddela den nya utföraren.</p>
+          {pendingAssignment.tasks.some(task => task.status === 'reported_remedied' && task.assigneeId !== (pendingAssignment.assigneeId || null)) ? <label className="mt-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6">
+            <input type="checkbox" checked={reopenCompleted} disabled={isBusy} onChange={event => setReopenCompleted(event.target.checked)} className="mt-1 h-4 w-4 shrink-0" />
+            Jag vill återöppna de klara punkter som byter utförare som Ej klara. Tidigare återrapportering bevaras i historiken.
+          </label> : null}
+          {assignmentError ? <p role="alert" className="mt-4 rounded-md bg-rose-50 p-3 text-sm text-rose-800">{assignmentError}</p> : null}
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button type="submit" disabled={isBusy || Boolean(assignmentError) || !pendingAssignment.tasks.some(task => task.assigneeId !== (pendingAssignment.assigneeId || null)) || (!reopenCompleted && pendingAssignment.tasks.some(task => task.status === 'reported_remedied' && task.assigneeId !== (pendingAssignment.assigneeId || null)))} className="min-h-11 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{isBusy ? 'Sparar...' : 'Bekräfta byte'}</button>
+            <button type="button" disabled={isBusy} onClick={() => setPendingAssignment(null)} className="min-h-11 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50">Avbryt</button>
+          </div>
+        </form> : null}
+      </dialog>
       {notice && !isBusy ? (
         <div className="fixed bottom-4 right-4 z-[300] flex w-[min(360px,calc(100vw-2rem))] items-start gap-3 rounded-md bg-black px-3 py-2 text-sm font-medium leading-5 text-white shadow-2xl print:hidden" role="status">
           <p className="min-w-0 flex-1">{notice}</p>
@@ -755,7 +814,7 @@ export default function EbRemediationPortalClient({
 
         <section className="border border-gray-200 bg-white shadow-sm print:border-0 print:shadow-none">
           <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3 md:flex-row md:items-end md:justify-between print:hidden">
-            <div><h2 className="text-lg font-semibold">Anmärkningar</h2><p className="mt-1 text-xs text-gray-600">{paid ? 'Klar = anmäld klar av entreprenören, inte godkänd vid besiktning.' : '“Anmäld avhjälpt” är entreprenörens uppgift och innebär inte att punkten är godkänd vid besiktning.'}</p></div>
+            <div><h2 className="text-lg font-semibold">Anmärkningar</h2>{!paid ? <p className="mt-1 text-xs text-gray-600">“Anmäld avhjälpt” är entreprenörens uppgift och innebär inte att punkten är godkänd vid besiktning.</p> : null}</div>
             <div className="flex flex-wrap gap-2">
               <label><span className="sr-only">Filtrera status</span><select aria-label="Filtrera status" value={filterStatus} onChange={(event) => { setFilterStatus(event.target.value); setSelectedTaskIds([]); setImageSelection(null) }} className={inputClassName()}><option value="all">Alla anmärkningar</option>{paid ? <><option value="not_done">Ej klara</option><option value="done">Klara</option></> : STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               {role !== 'assignee' ? <label><span className="sr-only">Filtrera mottagare</span><select aria-label="Filtrera mottagare" value={filterAssignee} onChange={(event) => { setFilterAssignee(event.target.value); setSelectedTaskIds([]); setImageSelection(null) }} className={inputClassName()}><option value="all">Alla utförare</option><option value="unassigned">Ej tilldelade</option>{workspace.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}</select></label> : null}
@@ -789,14 +848,14 @@ export default function EbRemediationPortalClient({
           ) : null}
 
           {paid && filteredTasks.length > 0 ? (
-            <div data-testid="remediation-deadline-summary" className="flex items-center gap-1 px-4 py-2 text-sm text-slate-600 print:hidden">
+            <div data-testid="remediation-deadline-summary" className={`flex items-center gap-1 px-4 py-2 text-sm text-slate-600 ${isPersonalContractor ? '' : 'print:hidden'}`}>
               <p>{deadlineSummary.missingCount > 0
                 ? `Åtgärdsdatum saknas för ${deadlineSummary.missingCount} av ${filteredTasks.length} anmärkningar i urvalet.`
                 : deadlineSummary.commonDeadline
                   ? `Klar senast: ${formatDate(deadlineSummary.commonDeadline)}`
                   : 'Olika åtgärdsdatum – se respektive anmärkning.'}</p>
               <PortalHelp label="sista åtgärdsdatum">
-                <p>Sammanfattningen gäller anmärkningarna i det aktuella urvalet. Ett separat angivet datum har företräde framför fristen i utlåtandet. Datumet för varje punkt visas vid Klar senast.</p>
+                <p>Sammanfattningen gäller anmärkningarna i det aktuella urvalet. Ett separat angivet datum har företräde framför fristen i utlåtandet. I utförarens vy visas ett gemensamt datum bara ovanför listan. Vid olika datum visas de vid respektive punkt.</p>
                 {deadlineSummary.missingCount > 0 ? <p className="mt-2">{isCustomerOwner
                   ? 'För punkter som saknar datum: kom överens med entreprenören om när åtgärderna ska vara klara. Markera sedan dessa anmärkningar och välj Ändra sista åtgärdsdatum.'
                   : 'För punkter som saknar datum behöver beställaren och entreprenören komma överens om när åtgärderna ska vara klara.'}</p> : null}
@@ -840,27 +899,27 @@ export default function EbRemediationPortalClient({
                     <div className="border-t border-slate-100 px-4 py-2">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                          <p className="text-xs leading-5 text-slate-600"><span className="font-medium">Klar senast:</span> {formatDate(ebRemediationEffectiveDeadline(task.dueDate, defaultRemedyDeadline))}{!task.dueDate && defaultRemedyDeadline ? ' (enligt utlåtandet)' : ''}</p>
-                          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+                          {!isPersonalContractor || !deadlineSummary.commonDeadline ? <p className="text-xs leading-5 text-slate-600"><span className="font-medium">Klar senast:</span> {formatDate(ebRemediationEffectiveDeadline(task.dueDate, defaultRemedyDeadline))}{!task.dueDate && defaultRemedyDeadline ? ' (enligt utlåtandet)' : ''}</p> : null}
+                          {!isPersonalContractor ? <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                             <label htmlFor={canManage ? `task-assignee-${task.id}` : undefined} className="text-xs text-slate-600">Åtgärdas av:</label>
                             {canManage ? (
                               <>
-                                <div className="min-w-0 max-w-full print:hidden"><select id={`task-assignee-${task.id}`} value={task.assigneeId ?? ''} onChange={(event) => void assignTasks([task.id], event.target.value)} disabled={isBusy} aria-busy={busyKey === `assign-${task.id}`} className="min-h-10 w-44 max-w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm disabled:opacity-50"><option value="">Ej tilldelad</option>{workspace.assignees.filter((item) => item.isActive || item.id === task.assigneeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{busyKey === `assign-${task.id}` ? <span className="ml-2 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><Loader2 size={12} className="animate-spin" /> Tilldelar...</span> : null}</div>
+                                <div className="min-w-0 max-w-full print:hidden">{paid && (hasIssuedLink(task.assigneeId) || task.status === 'reported_remedied') ? <div className="flex items-center gap-2"><span className="text-sm">{assignee?.name ?? 'Ej tilldelad'}</span><button type="button" disabled={isBusy} onClick={() => openAssignment([task], task.assigneeId ?? '')} className="min-h-10 rounded-md border border-slate-300 px-3 py-1 text-sm font-semibold disabled:opacity-50">Byt utförare</button></div> : <select id={`task-assignee-${task.id}`} value={task.assigneeId ?? ''} onChange={(event) => void assignTasks([task.id], event.target.value)} disabled={isBusy} aria-busy={busyKey === `assign-${task.id}`} className="min-h-10 w-44 max-w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm disabled:opacity-50"><option value="">Ej tilldelad</option>{workspace.assignees.filter((item) => item.isActive || item.id === task.assigneeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}{busyKey === `assign-${task.id}` ? <span className="ml-2 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><Loader2 size={12} className="animate-spin" /> Tilldelar...</span> : null}</div>
                                 <p className="hidden text-sm font-semibold print:block">{assignee?.name ?? 'Ej tilldelad'}</p>
                               </>
                             ) : <p className="text-xs font-medium text-slate-800">{assignee?.name ?? 'Ej tilldelad'}</p>}
-                          </div>
+                          </div> : null}
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:ml-auto print:hidden">
                             <button type="button" onClick={() => setExpandedHistory((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} aria-expanded={showHistory} aria-controls={`history-${task.id}`} className="inline-flex min-h-10 items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-950"><MessageSquareText size={14} aria-hidden />Historik ({events.length})<ChevronDown size={13} className={showHistory ? 'rotate-180' : ''} aria-hidden /></button>
-                            {paid && !isReadOnly ? <button type="button" disabled={isBusy} onClick={() => setExpandedComments((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} aria-expanded={showResponse} aria-controls={`comment-panel-${task.id}`} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50">{showResponse ? <X size={15} aria-hidden /> : <Pencil size={15} aria-hidden />}{isCustomerOwner || task.status === 'reported_remedied' ? showResponse ? 'Stäng kommentarsfält' : 'Kommentera' : showResponse ? 'Stäng återrapportering' : 'Rapportera åtgärd'}</button> : null}
+                            {paid && !isReadOnly && canRespond && !isCustomerOwner && task.status !== 'reported_remedied' ? <button type="button" disabled={isBusy} onClick={() => setExpandedComments((current) => current.includes(task.id) ? current.filter((id) => id !== task.id) : [...current, task.id])} aria-expanded={showResponse} aria-controls={`comment-panel-${task.id}`} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50">{showResponse ? <X size={15} aria-hidden /> : <Pencil size={15} aria-hidden />}{showResponse ? 'Stäng återrapportering' : 'Rapportera åtgärd'}</button> : null}
                           </div>
                         </div>
 
-                        {paid && !isReadOnly && showResponse ? (
+                        {paid && !isReadOnly && canRespond && !isCustomerOwner && task.status !== 'reported_remedied' && showResponse ? (
                           <div id={`comment-panel-${task.id}`} className="mt-3 space-y-2 border-t border-slate-100 pt-3 print:hidden">
-                            <label className="block text-xs font-semibold text-gray-700" htmlFor={`comment-${task.id}`}>{isCustomerOwner ? 'Kommentar till entreprenören' : 'Kommentar eller beskrivning av utförd åtgärd'}</label>
-                            <textarea id={`comment-${task.id}`} rows={3} value={comments[task.id] ?? ''} onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))} disabled={isBusy} className={inputClassName()} placeholder={role === 'customer_owner' ? 'Beskriv din fråga eller vad som behöver kompletteras.' : 'Beskriv utförd åtgärd. Om arbetet inte kan fotograferas: förklara varför och hur det har åtgärdats.'} />
-                            <PortalHelp label="kommentarer">{isCustomerOwner ? 'Ställ en fråga, bifoga en bild eller förklara vad som behöver kompletteras. Begär komplettering återför punkten till Ej klar och är inte ett besiktningsbeslut.' : 'Markera klar med en åtgärdsbild eller en förklarande kommentar när arbetet inte kan fotograferas. Om du inte kan åtgärda punkten: lämna den som Ej klar och beskriv hindret i en kommentar.'}</PortalHelp>
+                            <label className="block text-xs font-semibold text-gray-700" htmlFor={`comment-${task.id}`}>Beskrivning av utförd åtgärd</label>
+                            <textarea id={`comment-${task.id}`} rows={3} value={comments[task.id] ?? ''} onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))} disabled={isBusy} className={inputClassName()} placeholder="Beskriv utförd åtgärd. Om arbetet inte kan fotograferas: förklara varför och hur det har åtgärdats." />
+                            <PortalHelp label="klarmarkering">Bifoga en åtgärdsbild eller beskriv utförd åtgärd när arbetet inte kan fotograferas. Beskrivningen sparas tillsammans med klarmarkeringen. Har du frågor, ring beställaren.</PortalHelp>
                           </div>
                         ) : null}
 
@@ -893,7 +952,7 @@ export default function EbRemediationPortalClient({
                         ) : null}
                         </div>
 
-                        {!internal && !isReadOnly && showResponse && (canRespond || role === 'customer_owner') ? (
+                        {!internal && !isReadOnly && showResponse && canRespond && (!paid || (!isCustomerOwner && task.status !== 'reported_remedied')) ? (
                           <div className="mt-4 rounded-md border border-dashed border-emerald-300 bg-emerald-50/40 p-3 print:hidden"
                             onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = isBusy ? 'none' : 'copy' }}
                             onDrop={(event) => { event.preventDefault(); if (!isBusy) void uploadFiles(task.id, Array.from(event.dataTransfer.files)) }}>
@@ -910,7 +969,7 @@ export default function EbRemediationPortalClient({
                           </div>
                         ) : null}
 
-                        {paid && !isReadOnly && showResponse ? <div className="my-3 space-y-3 print:hidden">
+                        {paid && !isReadOnly && canRespond && !isCustomerOwner && task.status !== 'reported_remedied' && showResponse ? <div className="my-3 space-y-3 print:hidden">
                           {taskErrors[task.id] ? <p data-testid="remediation-task-error" role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-6 text-rose-800">{taskErrors[task.id]}</p> : null}
                           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                             {ebRemediationAllowedStatuses(role, true).filter((status) => (status === 'reported_remedied' || status === 'returned') && status !== task.status && (!isCustomerOwner || task.status === 'reported_remedied' || task.status === 'cannot_remedy')).map((status) => (
@@ -919,7 +978,6 @@ export default function EbRemediationPortalClient({
                                 {status === 'returned' ? 'Begär komplettering' : 'Markera klar'}
                               </button>
                             ))}
-                            <button type="button" disabled={isBusy || !(comments[task.id] ?? '').trim()} onClick={() => void addComment(task.id)} className="inline-flex min-h-10 items-center gap-2 py-2 text-sm font-medium text-slate-600 underline underline-offset-4 hover:text-slate-950 disabled:opacity-50">{busyKey === `comment-${task.id}` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} aria-hidden />}{isCustomerOwner ? 'Skicka kommentar' : 'Skicka endast kommentar'}</button>
                           </div>
                         </div> : null}
 

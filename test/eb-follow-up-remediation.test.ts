@@ -67,6 +67,11 @@ function assignmentService() {
     }
     return query
   }, rpc: async (name: string, args: Row) => {
+    if (name === 'eb_assign_remediation_tasks') {
+      const result = await db.query<{ result: Row }>('select eb_assign_remediation_tasks($1,$2,$3,$4,$5) result',
+        [args.p_org_id, args.p_project_id, args.p_tasks, args.p_payload, args.p_actor])
+      return { data: result.rows[0].result, error: null }
+    }
     assert.equal(name, 'eb_apply_remediation_action')
     const result = await db.query<{ result: Row }>('select eb_apply_remediation_action($1,$2,$3,$4,$5,$6,$7) result',
       [args.p_org_id, args.p_project_id, args.p_task_id, args.p_expected_updated_at, args.p_action, args.p_payload, args.p_actor])
@@ -109,6 +114,8 @@ before(async () => {
   await db.exec(migration('2026-09-07_07_eb_follow_up_orders.sql'))
   await db.exec(migration('2026-09-07_08_eb_follow_up_remediation.sql'))
   await db.exec(migration('2026-09-07_08_eb_follow_up_remediation.sql'))
+  await db.exec(migration('2026-09-08_10_eb_follow_up_reassignment.sql'))
+  await db.exec(migration('2026-09-08_10_eb_follow_up_reassignment.sql'))
   await db.query('insert into organizations(id) values($1)', [org])
   await db.query('insert into profiles(id) values($1)', [profile])
   await db.exec(`create function test_reject_outbox() returns trigger language plpgsql as $$
@@ -215,7 +222,7 @@ test('a reassignment immediately removes the previous worker permission and reje
   const next = randomUUID()
   await db.query(`insert into eb_remediation_assignees(id,org_id,eb_project_id,follow_up_order_id,name,normalized_name)
     values($1,$2,$3,$4,'Another','another')`, [next, org, f.project, f.order])
-  await f.action(f.owner, 'assign', { assigneeId: next })
+  await f.action(f.owner, 'assign', { assigneeId: next, confirmReassignment: true })
   await assert.rejects(f.action(f.worker, 'comment', { message: 'Old worker' }), /TASK_NOT_FOUND/)
   await assert.rejects(f.action(f.owner, 'comment', { message: 'Stale owner write' }, before.updated_at), /CONFLICT/)
   assert.equal((await f.current()).remediation_assignee_id, next)
@@ -295,10 +302,12 @@ test('public buyer and internal assignment handlers preserve stored dates throug
       : service.performEbRemediationInternalAction({ orgId: org, projectId: f.project,
         inspectionId: f.inspection, profileId: profile, action: 'assign', payload })
 
-    await assert.rejects(action({ taskIds: [f.task], assigneeId: null }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+    await assert.rejects(action({ taskIds: [f.task], assigneeId: null, confirmReassignment: true,
+      expectedVersions: { [f.task]: new Date((await f.current()).updated_at).toISOString() } }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
     assert.equal(await savedDeadline(), '2026-10-15', 'Changing only the assignee must not erase its deadline')
     assert.equal((await f.current()).remediation_assignee_id, null)
-    await assert.rejects(action({ taskIds: [f.task], assigneeId: f.assignee }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
+    await assert.rejects(action({ taskIds: [f.task], assigneeId: f.assignee, confirmReassignment: true,
+      expectedVersions: { [f.task]: new Date((await f.current()).updated_at).toISOString() } }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
     assert.equal(await savedDeadline(), '2026-10-15')
 
     await assert.rejects(action({ taskIds: [f.task], assigneeId: f.assignee, dueDate: '2026-11-02' }), /TEST_POST_ASSIGN_WORKSPACE_READ/)
@@ -384,6 +393,21 @@ test('retiring activity mail preserves task changes, images and audit history wi
   }
 })
 
+test('paid public handlers reject standalone messages for both buyer and contractor without any writes', async () => {
+  const service = assignmentService()
+  const f = await fixture()
+  const beforeTask = await f.current()
+  const beforeEvents = await f.events()
+  const beforeJobs = await f.jobs()
+  for (const link of [f.owner, f.worker]) {
+    await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${link}`, action: 'comment',
+      payload: { taskId: f.task, message: 'Kan du svara på en fråga?' } }), /EB_REMEDIATION_ACTION_FORBIDDEN/)
+  }
+  assert.deepEqual(await f.current(), beforeTask)
+  assert.deepEqual(await f.events(), beforeEvents)
+  assert.deepEqual(await f.jobs(), beforeJobs)
+})
+
 test('actual contractor handler completes with a submitted explanation, saved explanation or action photo through the atomic RPC', async () => {
   const service = assignmentService()
   for (const evidence of ['submitted', 'saved', 'image']) {
@@ -454,4 +478,81 @@ test('actual legacy handler still requires an action photo even when a comment i
   await assert.rejects(service.performEbRemediationTokenAction({ token: `hash-${f.worker}`, action: 'status',
     payload: { taskId: f.task, status: 'ready_for_review', message: 'En kommentar ersätter inte bildkravet i den äldre portalen.' } }), /COMPLETION_IMAGE_REQUIRED/)
   assert.equal((await f.current()).status, 'assigned')
+})
+
+test('issued or queued contractor links require explicit reassignment confirmation before any write', async () => {
+  const f = await fixture()
+  const before = await f.current()
+  for (const confirmReassignment of [undefined, false, 'true']) {
+    await assert.rejects(f.action(f.owner, 'assign', { assigneeId: null, confirmReassignment }), /REASSIGNMENT_CONFIRMATION_REQUIRED/)
+  }
+  assert.deepEqual(await f.current(), before)
+  assert.equal((await f.events()).length, 0)
+  await f.action(f.owner, 'assign', { assigneeId: null, confirmReassignment: true })
+  // Assigning a new point to an already-issued recipient is also guarded.
+  await assert.rejects(f.action(f.owner, 'assign', { assigneeId: f.assignee }), /REASSIGNMENT_CONFIRMATION_REQUIRED/)
+  assert.equal((await f.current()).remediation_assignee_id, null)
+  await f.action(f.owner, 'assign', { assigneeId: f.assignee, confirmReassignment: true })
+  assert.equal((await f.current()).remediation_assignee_id, f.assignee)
+  assert.equal((await f.jobs()).length, 0, 'Reassignments do not send activity or invitation mail')
+})
+
+test('a completed point changes contractor only with explicit reopening; names, evidence and original numbering survive', async () => {
+  const f = await fixture()
+  await f.action(f.worker, 'status', { status: 'reported_remedied', message: 'Den ursprungliga återrapporteringen.' })
+  const before = await f.current()
+  await assert.rejects(f.action(f.owner, 'assign', { assigneeId: null, confirmReassignment: true }), /REOPEN_CONFIRMATION_REQUIRED/)
+  await assert.rejects(f.action(f.owner, 'assign', { assigneeId: null, confirmReassignment: true, reopenCompleted: 'true' }), /REOPEN_CONFIRMATION_REQUIRED/)
+  assert.deepEqual(await f.current(), before)
+  const next = randomUUID(), nextLink = randomUUID()
+  await db.query(`insert into eb_remediation_assignees(id,org_id,eb_project_id,follow_up_order_id,name,normalized_name)
+    values($1,$2,$3,$4,'Ny byggfirma','ny byggfirma')`, [next, org, f.project, f.order])
+  await f.action(f.owner, 'assign', { assigneeId: next, confirmReassignment: true, reopenCompleted: true })
+  const changed = await f.current()
+  assert.equal(changed.status, 'assigned')
+  assert.equal((changed as unknown as Row).reported_remedied_at, null)
+  assert.deepEqual(changed.note_snapshot, before.note_snapshot)
+  assert.deepEqual(changed.original_images, before.original_images)
+  assert.match(String((await f.events()).at(-1)!.message), /Worker till Ny byggfirma.*återöppnades/)
+  assert.match(String((await f.events())[0].message), /ursprungliga återrapporteringen/)
+  await assert.rejects(f.action(f.worker, 'comment', { message: 'Gammal utförare' }), /TASK_NOT_FOUND/)
+  await db.query(`insert into eb_remediation_access_links(id,org_id,eb_project_id,inspection_id,follow_up_order_id,
+    remediation_assignee_id,role,email,token_hash,expires_at) values($1,$2,$3,$4,$5,$6,'assignee','new@example.test',$7,now()+interval '1 day')`,
+    [nextLink, org, f.project, f.inspection, f.order, next, `hash-${nextLink}`])
+  await f.action(nextLink, 'comment', { message: 'Ny utförare kan nu återrapportera.' })
+  assert.equal((await f.jobs()).length, 0)
+})
+
+test('changing only a date does not reopen a completed point or require a reassignment confirmation', async () => {
+  const f = await fixture()
+  await f.action(f.worker, 'status', { status: 'reported_remedied', message: 'Klart.' })
+  await f.action(f.owner, 'assign', { assigneeId: f.assignee, dueDate: '2026-10-25' })
+  assert.equal((await f.current()).status, 'reported_remedied')
+  assert.ok((await f.current() as unknown as Row).reported_remedied_at)
+})
+
+test('paid bulk reassignment rolls back every point when any reviewed version is stale', async () => {
+  const f = await fixture(), second = randomUUID()
+  await db.query(`insert into eb_remediation_tasks(id,org_id,eb_project_id,inspection_id,follow_up_order_id,
+    remediation_assignee_id,status,note_snapshot,original_images) values($1,$2,$3,$4,$5,$6,'assigned','{}','[]')`,
+    [second, org, f.project, f.inspection, f.order, f.assignee])
+  const rows = (await db.query<Row>('select * from eb_remediation_tasks where id in ($1,$2) order by id', [f.task, second])).rows
+  const tasks = rows.map(row => ({ id: row.id, expectedUpdatedAt: new Date(String(row.updated_at)).toISOString() }))
+  tasks[1].expectedUpdatedAt = '2020-01-01T00:00:00Z'
+  await assert.rejects(db.query('select eb_assign_remediation_tasks($1,$2,$3,$4,$5)',
+    [org, f.project, JSON.stringify(tasks), { assigneeId: null, confirmReassignment: true }, { accessLinkId: f.owner }]), /CONFLICT/)
+  assert.deepEqual((await db.query<Row>('select * from eb_remediation_tasks where id in ($1,$2) order by id', [f.task, second])).rows, rows)
+  assert.equal((await f.events()).length, 0)
+  assert.equal((await f.jobs()).length, 0)
+  const service = assignmentService()
+  await assert.rejects(service.assignEbRemediationTasks({ orgId: org, projectId: f.project, followUpOrderId: f.order,
+    taskIds: [f.task], assigneeId: null, confirmReassignment: true, actor: { accessLinkId: f.owner } }), /CONFLICT/)
+})
+
+test('browser roles cannot call the new bulk RPC directly', async () => {
+  for (const role of ['anon', 'authenticated']) {
+    await db.exec(`set role ${role}`)
+    try { await assert.rejects(db.query("select eb_assign_remediation_tasks(null,null,'[]','{}','{}')"), /permission denied/) }
+    finally { await db.exec('reset role') }
+  }
 })

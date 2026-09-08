@@ -77,3 +77,12 @@ test('an invalid explicit deadline is actionable HTTP400, never a false date rem
   assert.equal(response.status, 400)
   assert.match((await response.json()).error, /giltigt sista åtgärdsdatum/)
 })
+
+test('reassignment and reopening confirmations return actionable conflicts', async () => {
+  const reassignment = await actionError('EB_REMEDIATION_REASSIGNMENT_CONFIRMATION_REQUIRED')
+  assert.equal(reassignment.status, 409)
+  assert.match((await reassignment.json()).error, /Byt utförare/)
+  const reopen = await actionError('EB_REMEDIATION_REOPEN_CONFIRMATION_REQUIRED')
+  assert.equal(reopen.status, 409)
+  assert.match((await reopen.json()).error, /återöppnas som Ej klar/)
+})

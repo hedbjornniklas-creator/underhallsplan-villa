@@ -133,9 +133,19 @@ const server = createServer(async (request, response) => {
     const touched = input.action === 'assign'
       ? workspace.tasks.filter(item => input.payload.taskIds.includes(item.id)) : [task]
     if (input.action === 'assign') {
+      const changed = touched.filter(item => item.assigneeId !== input.payload.assigneeId)
+      const issued = id => id && workspace.accessLinks.some(link => link.assigneeId === id)
+      if (changed.some(item => item.status === 'reported_remedied' || issued(item.assigneeId) || issued(input.payload.assigneeId)) && input.payload.confirmReassignment !== true) {
+        response.statusCode = 409; response.end(JSON.stringify({ error: 'Bekräfta byte av utförare.' })); return
+      }
+      if (changed.some(item => item.status === 'reported_remedied') && input.payload.reopenCompleted !== true) {
+        response.statusCode = 409; response.end(JSON.stringify({ error: 'Bekräfta återöppning.' })); return
+      }
       for (const assigned of touched) {
+        const reopen = assigned.assigneeId !== input.payload.assigneeId && assigned.status === 'reported_remedied'
         assigned.assigneeId = input.payload.assigneeId
-        assigned.status = input.payload.assigneeId ? 'assigned' : 'unassigned'
+        if (!input.payload.assigneeId) assigned.status = 'unassigned'
+        else if (reopen || assigned.status === 'unassigned') assigned.status = 'assigned'
         // Match the server contract: omitting dueDate preserves a task's existing date.
         if (Object.hasOwn(input.payload, 'dueDate')) assigned.dueDate = input.payload.dueDate
       }
@@ -305,12 +315,9 @@ try {
     assert.equal(workspace.tasks[0].dueDate, '2026-09-25')
     await button('Redigera Målare').click()
     await fill('[data-assignee-id="worker"] input[aria-label="E-post"]', 'updated-worker@example.invalid')
-    await button('Kommentera', 'article').click()
-    await page.waitForSelector('#comment-task')
-    assert.equal(await page.$eval('label[for="comment-task"]', node => node.textContent.trim()), 'Kommentar till entreprenören')
-    await readHelp('kommentarer', /Ställ en fråga.*inte ett besiktningsbeslut/, '#comment-panel-task')
-    assert.match(await page.$eval('article', node => node.textContent), /Bifoga bild/)
-    await page.type('#comment-task', 'Kan ni komplettera med en bild på resultatet?')
+    assert.equal(await hasButton('Kommentera'), false)
+    assert.equal(await page.$('#comment-task'), null)
+    assert.equal(await page.$('article input[type=file]'), null)
     const refresh = page.waitForResponse(response => response.url() === `${url}/mock-portal` && response.request().method() === 'GET')
     await page.evaluate(() => window.__portalPoll())
     await refresh
@@ -318,7 +325,6 @@ try {
     assert.ok(reads > 0, 'the registered automatic polling callback fetches the latest workspace')
     assert.equal(posts.length, 1, 'automatic refresh must not invite, reassign or otherwise mutate')
     assert.equal(await page.$eval('[data-assignee-id="worker"] input[aria-label="E-post"]', node => node.value), 'updated-worker@example.invalid', 'automatic refresh retains edited contact data')
-    assert.equal(await page.$eval('#comment-task', node => node.value), 'Kan ni komplettera med en bild på resultatet?', 'automatic refresh retains owner comment draft')
     await button('Spara mottagare').click()
     await page.waitForFunction(() => !document.querySelector('[data-assignee-id="worker"] input[aria-label="E-post"]'))
     assert.match(await page.$eval('[data-assignee-id="worker"]', node => node.textContent), /updated-worker@example.invalid/)
@@ -329,22 +335,13 @@ try {
     await page.waitForFunction(() => document.body.textContent.includes('Den personliga länken är köad'))
     assert.deepEqual(posts.map(post => post.action), ['assign', 'update_assignee', 'send_assignee_link'])
     assert.equal(posts[1].payload.email, 'updated-worker@example.invalid')
-    await chooseImage()
-    await page.waitForFunction(() => !document.querySelector('#comment-task').disabled)
-    assert.equal(workspace.images.length, 1)
-    assert.equal(await page.$eval('#comment-task', node => node.value), 'Kan ni komplettera med en bild på resultatet?', 'owner image upload retains comment draft')
-    await button('Skicka kommentar', 'article').click()
-    await page.waitForFunction(() => document.querySelector('#comment-task')?.value === '' && !document.querySelector('#comment-task').disabled)
-    assert.equal(posts.at(-1).action, 'comment')
-    assert.equal(posts.at(-1).payload.message, 'Kan ni komplettera med en bild på resultatet?')
-    assert.equal(workspace.tasks[0].status, 'assigned', 'owner comment must not mark the defect completed')
     await page.screenshot({ path: resolve(output, `owner-${width}.png`), fullPage: true })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     await button('Ångra beställningen').click()
     assert.equal(await page.$eval('#angra-bestallning', node => node.open), true, 'the withdrawal action opens the relevant order details')
     assert.match(await page.$eval('#withdrawal-review', node => node.textContent), /Testbeställare.*beställning order.*buyer@example.invalid/)
     await button('Avbryt').click()
-    assert.equal(posts.length, 5, 'dismissing withdrawal confirmation must not mutate the order')
+    assert.equal(posts.length, 3, 'dismissing withdrawal confirmation must not mutate the order')
     await button('Ångra beställningen').click()
     await page.screenshot({ path: resolve(output, `withdrawal-review-${width}.png`), fullPage: true })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
@@ -361,6 +358,55 @@ try {
     assert.equal(await page.$('input[aria-label="E-post"]'), null)
     assert.match(await page.$eval('main', node => node.textContent), /Färgsläpp vid fönstret/)
     console.log(`PASS owner ${width}px: readable contact cards, collapsible help, automatic refresh retains drafts, explicit invitation, guarded discreet withdrawal, no overflow`)
+
+    const reassignment = deadlineWorkspace()
+    reassignment.tasks[0].status = 'reported_remedied'
+    reassignment.accessLinks = [{ id: 'issued-link', role: 'assignee', assigneeId: 'worker', sentAt: null,
+      email: 'worker@example.invalid', displayName: 'Målare', createdAt: '2026-09-07T10:00:00Z' }]
+    await load(structuredClone(reassignment))
+    assert.equal(await page.$('[data-task-id="task"] select'), null, 'an issued link removes the instant reassignment select')
+    await button('Byt utförare', '[data-task-id="task"]').click()
+    await page.waitForSelector('dialog[open]')
+    assert.equal(posts.length, 0)
+    assert.match(await page.$eval('dialog[open]', node => node.innerText), /tidigare utföraren förlorar åtkomsten/)
+    await page.select('#assignment-target', 'other-worker')
+    assert.equal(await page.$eval('dialog[open] input[type="checkbox"]', node => node.checked), false)
+    assert.equal(await page.$eval('dialog[open] button[type="submit"]', node => node.disabled), true)
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    assert.equal(posts.length, 0, 'Escape cancels without moving the task')
+    assert.equal(workspace.tasks[0].assigneeId, 'worker')
+    await button('Byt utförare', '[data-task-id="task"]').click()
+    await page.select('#assignment-target', 'other-worker')
+    await page.click('dialog[open] input[type="checkbox"]')
+    await page.screenshot({ path: resolve(output, `owner-reassign-confirm-${width}.png`), fullPage: true })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await button('Bekräfta byte', 'dialog[open]').click()
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    assert.equal(workspace.tasks[0].assigneeId, 'other-worker')
+    assert.equal(workspace.tasks[0].status, 'assigned')
+    assert.equal(posts.length, 1, 'confirming a move never sends an invitation')
+    assert.equal(posts[0].payload.confirmReassignment, true)
+    assert.equal(posts[0].payload.reopenCompleted, true)
+    assert.equal(workspace.tasks[0].dueDate, '2026-09-30')
+
+    await load(structuredClone(reassignment))
+    await button('Markera alla i urvalet').click()
+    await page.select('select[aria-label="Tilldela till"]', 'other-worker')
+    await button('Tilldela').click()
+    await page.waitForSelector('dialog[open]')
+    assert.equal(posts.length, 0, 'bulk changes also wait for explicit confirmation')
+    assert.equal(await page.$$eval('dialog[open] li', nodes => nodes.length), 2)
+    await page.click('dialog[open] input[type="checkbox"]')
+    conflictNext = true
+    await button('Bekräfta byte', 'dialog[open]').click()
+    await page.waitForSelector('dialog[open] [role="alert"]')
+    assert.equal(await page.$eval('dialog[open] button[type="submit"]', node => node.disabled), true)
+    assert.equal(workspace.tasks[0].assigneeId, 'worker', 'a conflict cannot silently transfer ownership')
+    assert.equal(workspace.tasks[0].status, 'reported_remedied')
+    await button('Avbryt', 'dialog[open]').click()
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    console.log(`PASS reassignment ${width}px: issued-link guard, explicit reopening, cancellation, local conflict feedback, bulk guard and no invitation`)
 
     await load(bulkWorkspace())
     assert.equal(await hasButton('Markera alla i urvalet'), true, 'bulk selection is visible before manually selecting a defect')
@@ -505,18 +551,11 @@ try {
     completedForOwner.tasks[0].assigneeId = 'worker'
     completedForOwner.tasks[0].status = 'reported_remedied'
     await load(completedForOwner)
-    assert.equal(await hasButton('Begär komplettering'), false, 'requesting clarification is inside the owner comment form')
-    await button('Kommentera', 'article').click()
-    await page.type('#comment-task', 'Bilden behöver även visa fönstrets nederkant.')
+    assert.equal(await hasButton('Kommentera'), false)
     assert.equal(await hasButton('Markera klar'), false)
-    await button('Begär komplettering', 'article').click()
-    await page.waitForSelector('#comment-task', { hidden: true })
-    assert.equal(posts.at(-1).action, 'status')
-    assert.equal(posts.at(-1).payload.status, 'returned')
-    assert.equal(posts.at(-1).payload.message, 'Bilden behöver även visa fönstrets nederkant.')
-    assert.equal(workspace.tasks[0].status, 'returned')
-    assert.match(await page.$eval('article', node => node.textContent), /Ej klar/)
-    console.log(`PASS owner review ${width}px: requests clarification without inspection approval or contractor completion controls`)
+    assert.equal(await page.$('#comment-task'), null)
+    assert.equal(posts.length, 0)
+    console.log(`PASS owner review ${width}px: read-only completion history without messaging controls`)
 
     const gallery = galleryWorkspace()
     const originalNoteText = gallery.tasks[0].snapshot.noteText
@@ -579,8 +618,9 @@ try {
     await button('Stäng bildvisaren', 'dialog[open]').click()
     await page.waitForSelector('dialog[open]', { hidden: true })
     assert.equal(await page.evaluate(selector => document.activeElement === document.querySelector(selector), galleryButton('task-2')), true)
-    await button('Kommentera', '[data-task-id="task"]').click()
-    await button('Visa åtgärdsbild för SLB1 · Punkt 17', '[data-task-id="task"]').click()
+    await page.click(galleryButton('task'))
+    await button('Nästa bild', 'dialog[open]').click()
+    await button('Nästa bild', 'dialog[open]').click()
     await expectViewerImage('follow-up-first', 'Bild 3 av 3', /Bilder i uppföljningen/)
     await page.keyboard.press('Escape')
     assert.equal(posts.length, 0, 'viewing, navigating, closing and opening reporting must not write or send anything')
@@ -719,6 +759,36 @@ try {
     assert.equal(await page.$$eval('article', nodes => nodes.length), 2)
     assert.equal(await page.$('select[aria-label="Filtrera mottagare"]'), null)
     assert.doesNotMatch(await page.$eval('main', node => node.textContent), /Åtgärdsdatum saknas|Annan entreprenör/)
+    assert.doesNotMatch(await page.$$eval('article', nodes => nodes.map(node => node.innerText).join('\n')), /Åtgärdas av:|Klar senast:/,
+      'personal contractor cards omit the repeated assignee and the date already shown above the list')
+    assert.doesNotMatch(await page.$eval('main', node => node.innerText), /Klar = anmäld klar av entreprenören/)
+    await readHelp('status', /inte att besiktningsmannen har godkänt/)
+    await page.emulateMediaType('print')
+    assert.equal(await page.$eval('[data-testid="remediation-deadline-summary"]', node => node.getClientRects().length > 0), true,
+      'the shared contractor deadline must remain visible in the printed list')
+    await page.emulateMediaType('screen')
+    for (const role of ['contractor_admin', 'contractor_viewer']) {
+      const personalWorkspace = structuredClone(contractorDates)
+      personalWorkspace.access.role = role
+      await load(personalWorkspace)
+      await expectDeadlineSummary('Klar senast: 2026-09-30')
+      assert.doesNotMatch(await page.$$eval('article', nodes => nodes.map(node => node.innerText).join('\n')), /Åtgärdas av:|Klar senast:/)
+    }
+    const personalMixedDates = structuredClone(contractorDates)
+    personalMixedDates.tasks[1].dueDate = '2026-10-05'
+    personalMixedDates.tasks[1].status = 'reported_remedied'
+    await load(personalMixedDates)
+    await expectDeadlineSummary('Olika åtgärdsdatum – se respektive anmärkning.')
+    assert.match(await page.$eval('[data-task-id="task"]', node => node.innerText), /Klar senast: 2026-09-30/)
+    assert.match(await page.$eval('[data-task-id="task-2"]', node => node.innerText), /Klar senast: 2026-10-05/)
+    assert.doesNotMatch(await page.$$eval('article', nodes => nodes.map(node => node.innerText).join('\n')), /Åtgärdas av:/)
+    await page.select('select[aria-label="Filtrera status"]', 'not_done')
+    await expectDeadlineSummary('Klar senast: 2026-09-30')
+    assert.doesNotMatch(await page.$eval('article', node => node.innerText), /Klar senast:/,
+      'a filtered common date moves to the summary, without losing the task deadline')
+    await page.select('select[aria-label="Filtrera status"]', 'all')
+    await expectDeadlineSummary('Olika åtgärdsdatum – se respektive anmärkning.')
+    assert.match(await page.$eval('[data-task-id="task-2"]', node => node.innerText), /Klar senast: 2026-10-05/)
     assert.equal(posts.length, 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     console.log(`PASS deadlines ${width}px: individual dates without a report default, mixed dates/missing counts, effective report fallback, live refresh, status/recipient filters and contractor-scoped summary`)
@@ -786,7 +856,7 @@ try {
     assert.equal(workspace.images.length, 0, 'an explanatory comment alone is sufficient when the work cannot be photographed')
     assert.equal(posts.at(-1).payload.message, 'Åtgärdat, men resultatet kan inte visas med foto.')
     assert.equal(posts.at(-1).payload.expectedUpdatedAt, '2026-09-07T10:00:00.000Z')
-    assert.equal(await hasButton('Kommentera'), true)
+    assert.equal(await hasButton('Kommentera'), false)
     assert.equal(await hasButton('Markera klar'), false)
     await readHelp('status', /inte att besiktningsmannen har godkänt/)
     assert.equal(workspace.tasks[0].snapshot.noteText, initial('assignee').tasks[0].snapshot.noteText)
@@ -794,23 +864,10 @@ try {
 
     await load(initial('assignee'))
     await button('Rapportera åtgärd', 'article').click()
-    await page.type('#comment-task', 'Åtgärden är utförd men går inte att fotografera.')
-    await button('Skicka endast kommentar', 'article').click()
-    await page.waitForFunction(() => document.querySelector('#comment-task')?.value === '' && !document.querySelector('#comment-task').disabled)
-    assert.deepEqual(posts.map(post => post.action), ['comment'])
-    assert.equal(workspace.tasks[0].status, 'assigned', 'sending only a comment must not mark the task completed')
-    assert.equal(await page.$eval('#history-task', node => node.getClientRects().length), 0)
-    await button('Historik (1)', 'article').click()
-    assert.match(await page.$eval('#history-task', node => node.innerText), /Åtgärden är utförd men går inte att fotografera/)
-    assert.equal(posts.length, 1, 'reading the saved explanation does not submit anything else')
-    await button('Historik (1)', 'article').click()
-    await button('Markera klar', 'article').click()
-    await page.waitForSelector('#comment-task', { hidden: true })
-    assert.deepEqual(posts.map(post => post.action), ['comment', 'status'])
-    assert.equal(workspace.tasks[0].status, 'reported_remedied', 'a saved contractor explanation may be reused without retyping it')
-    assert.equal(posts.at(-1).payload.message, '')
-    assert.equal(posts.at(-1).payload.expectedUpdatedAt, '2026-09-07T10:01:00.000Z')
-    console.log(`PASS worker saved comment ${width}px: comment-only preserves status, folded history is read-only and server-verified contractor evidence is reusable`)
+    assert.equal(await hasButton('Skicka endast kommentar'), false)
+    assert.equal(await hasButton('Skicka kommentar'), false)
+    await readHelp('klarmarkering', /ring beställaren/)
+    assert.equal(posts.length, 0)
 
     await load(initial('assignee'))
     await button('Rapportera åtgärd', 'article').click()

@@ -26,6 +26,8 @@ function errorResponse(error: unknown) {
   if (message === 'EB_REMEDIATION_OWNER_LINK_EXPIRED') return jsonError('Länken har gått ut. Ladda om sidan för att begära en ny personlig länk.', 410)
   if (message === 'EB_REMEDIATION_CONFLICT') return jsonError('Punkten ändrades av någon annan. Aktuella uppgifter har hämtats. Din osparade text finns kvar; kontrollera läget och försök igen.', 409)
   if (message === 'EB_FOLLOW_UP_ORDER_INACTIVE') return jsonError('Uppföljningen är pausad. Befintlig historik finns kvar.', 403)
+  if (message === 'EB_REMEDIATION_REASSIGNMENT_CONFIRMATION_REQUIRED') return jsonError('En personlig utförarlänk har redan skapats. Välj Byt utförare och bekräfta ändringen.', 409)
+  if (message === 'EB_REMEDIATION_REOPEN_CONFIRMATION_REQUIRED') return jsonError('Bekräfta att den klara punkten ska återöppnas som Ej klar när utföraren ändras.', 409)
   if (message === 'EB_FOLLOW_UP_WITHDRAWAL_CONFIRMATION_REQUIRED') return jsonError('Kontrollera beställningen och bekräfta att du vill frånträda den.', 400)
   if (message === 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED') return jsonError('Lägg till en åtgärdsbild eller en förklarande kommentar om arbetet inte kan fotograferas.', 400)
   if (message === 'EB_FOLLOW_UP_RATE_LIMITED') return jsonError('Vänta en stund innan du begär en ny länk.', 429)

@@ -1044,6 +1044,8 @@ export async function assignEbRemediationTasks(input: {
   taskIds: string[]
   assigneeId: string | null
   dueDate?: string | null
+  confirmReassignment?: boolean
+  reopenCompleted?: boolean
   actor: Actor
 }) {
   const taskIds = [...new Set(input.taskIds.filter(Boolean))]
@@ -1075,6 +1077,27 @@ export async function assignEbRemediationTasks(input: {
   if (currentError) throw new Error(currentError.message ?? 'Kunde inte läsa valda åtgärdsuppgifter.')
   if ((currentRows ?? []).length !== taskIds.length) throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
   const normalizedDueDate = input.dueDate === undefined ? undefined : normalizeText(input.dueDate)
+
+  if (input.followUpOrderId) {
+    // Confirm against the versions the buyer actually reviewed, never silently
+    // substitute newer assignments while the confirmation dialog was open.
+    for (const current of currentRows ?? []) {
+      if ((input.confirmReassignment && !Object.hasOwn(input.expectedVersions ?? {}, current.id)) ||
+        (input.expectedVersions && Object.hasOwn(input.expectedVersions, current.id) &&
+          input.expectedVersions[current.id] !== current.updated_at)) throw new Error('EB_REMEDIATION_CONFLICT')
+    }
+    const { error } = await admin.rpc('eb_assign_remediation_tasks', {
+      p_org_id: input.orgId, p_project_id: input.projectId,
+      p_tasks: (currentRows ?? []).map(current => ({ id: current.id,
+        expectedUpdatedAt: input.expectedVersions?.[current.id] ?? current.updated_at })),
+      p_payload: { assigneeId: input.assigneeId,
+        ...(normalizedDueDate !== undefined ? { dueDate: normalizedDueDate } : {}),
+        confirmReassignment: input.confirmReassignment === true, reopenCompleted: input.reopenCompleted === true },
+      p_actor: input.actor,
+    })
+    if (error) throw new Error(error.message)
+    return
+  }
 
   for (const current of currentRows ?? []) {
     if (input.expectedVersions && Object.hasOwn(input.expectedVersions, current.id) &&
@@ -1520,7 +1543,8 @@ export async function performEbRemediationTokenAction(input: {
     if (input.payload.confirmed !== true) throw new Error('EB_FOLLOW_UP_WITHDRAWAL_CONFIRMATION_REQUIRED')
     await withdrawEbFollowUpOrder({ orderId: access.follow_up_order_id, actorEmail: access.email, baseUrl: appBaseUrl(input.requestOrigin) })
   } else if (input.action === 'comment') {
-    if (!ebRemediationCanComment(access.role)) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    // Paid follow-up is a completion checklist, not a messaging channel.
+    if (paid || !ebRemediationCanComment(access.role)) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     const taskId = stringValue(input.payload.taskId).trim()
     const task = await requireTask({ orgId: access.org_id, projectId: access.eb_project_id, taskId })
     assertTaskVisibleToAccess(task, access)
@@ -1579,6 +1603,8 @@ export async function performEbRemediationTokenAction(input: {
       taskIds,
       assigneeId: nullableString(input.payload.assigneeId),
       dueDate: ebRemediationAssignmentDueDate(input.payload),
+      confirmReassignment: input.payload.confirmReassignment === true,
+      reopenCompleted: input.payload.reopenCompleted === true,
       actor,
     })
   } else if (input.action === 'create_assignee') {
