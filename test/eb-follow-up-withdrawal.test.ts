@@ -147,8 +147,10 @@ test('owner withdrawal remains visible with read-only history and distinguishes 
     assignees: [], tasks: [], events: [], images: [], originalImages: [], accessLinks: [] }
   const render = () => renderToStaticMarkup(createElement(component.default, { initialWorkspace: workspace, endpoint: '/test' }))
   let html = render()
-  assert.match(html, /href="#angra-bestallning"/)
-  assert.match(html, /id="angra-bestallning"/)
+  assert.doesNotMatch(html.match(/<header[\s\S]*?<\/header>/)?.[0] ?? '', /Ångra beställningen|angra-bestallning/)
+  assert.match(html, /<details(?![^>]*\bopen=)[^>]*id="angra-bestallning"/)
+  assert.match(html, /<\/details><div[^>]*><button[^>]*aria-controls="angra-bestallning"[^>]*>Ångra beställningen<\/button>/,
+    'one plainly labelled withdrawal action stays available outside the collapsed order details')
   assert.match(html, /14 dagars ångerrätt/)
   assert.match(html, /2026-09-22/)
   workspace.followUp.customerType = 'business'
@@ -160,6 +162,7 @@ test('owner withdrawal remains visible with read-only history and distinguishes 
   assert.match(html, /ingen beräknad ångerfrist/)
   workspace.followUp.withdrawalRequestedAt = '2026-09-08T11:00:00Z'
   assert.match(render(), /Din begäran har registrerats/)
+  assert.match(render(), /<details[^>]*open=""[^>]*id="angra-bestallning"/)
   workspace.access.role = 'assignee'
   assert.doesNotMatch(render(), /angra-bestallning|buyer@example\.test/)
 })

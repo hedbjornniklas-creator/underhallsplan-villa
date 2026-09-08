@@ -21,7 +21,13 @@ Ett slutfört köp aktiverar sidhuvudets knapp direkt, utan omladdning. Köpboxe
 
 ## Beställarens arbetsyta
 
-Beställaren ser en översikt med ansvarig, status, datum och bilder. **Kommentera** öppnar kommentarsfält och **Bifoga bild** vid behov; utkast bevaras när fältet stängs eller data uppdateras. **Begär komplettering** visas i kommentarsfältet efter entreprenörens återrapportering. Beställaren kan inte anmäla arbetet åtgärdat. Entreprenören behåller sitt separata arbetsformulär. Små ljusgrå hjälprutor med infoikon förklarar utskrift/uppdatering, mottagare, masshantering, datum och kommentarer. Hjälptexten anpassas efter rollen och följer inte med i utskriften.
+Beställaren ser en översikt med ansvarig, status, datum och bilder. Den köpta tjänsten visar bara **Ej klara** och **Klara**, med totalt antal som vanlig text. Endast lagrad `reported_remedied` räknas som klar; äldre pågående, återlämnade och övriga statusar räknas som ej klara. Ingen data eller historik skrivs om. Entreprenören väljer **Markera klar** direkt, med samma krav på bild eller förklarande kommentar som tidigare. Påbörja och Kan inte avhjälpas är borttagna som separata val i den köpta vyn; ett hinder beskrivs som kommentar och punkten förblir ej klar. Den äldre, ej köpta portalens arbetsstatusar behålls.
+
+**Kommentera** öppnar kommentarsfält och **Bifoga bild** vid behov; utkast bevaras när fältet stängs eller data uppdateras. **Begär komplettering** visas efter entreprenörens återrapportering och återför punkten till Ej klar. Beställaren kan inte markera arbetet klart eller ge besiktningsgodkännande. Små klickbara infoikoner förklarar utskrift, mottagare, masshantering, datum och kommentarer. Hjälpen är dold från början, öppnas med klick/tangentbord och stängs med samma knapp, Escape eller klick utanför. Hjälptexten anpassas efter rollen och följer inte med i utskriften.
+
+Entreprenörer visas som läsbara kontaktkort med antal tilldelade anmärkningar. **Redigera** öppnar tydligt märkta fält och **Spara** sparar kontaktuppgifterna. **Lägg till entreprenör** öppnar det separata formuläret och dess förslag; formuläret är öppet från början endast när mottagarlistan är tom. **Skicka lista** skickar den sparade mottagarens lista utan att upprepa kontaktsparandet.
+
+**Din beställning** är hopfälld längst ned; en diskret, tydligt namngiven textknapp **Ångra beställningen** är åtkomlig även när uppgifterna är hopfällda och öppnar befintlig bekräftelse direkt. Ingen ångerknapp visas längre i sidhuvudet. Informationsinnehåll, ångerfrist, bekräftelsesteg, kvittens och backend är oförändrade. En registrerad begäran öppnar beställningsuppgifterna automatiskt. Befintliga länkar till `#angra-bestallning` öppnar också uppgifterna. Ångerfunktionen göms inte bakom enbart en infoikon: [Konsumentverkets vägledning från juni 2026](https://www.konsumentverket.se/nyhet/lagandring-gor-det-enklare-att-angra-kop-pa-natet/) kräver en tydligt placerad funktion.
 
 **Markera alla i urvalet**, **Markera ej tilldelade** och **Avmarkera** finns synligt ovanför anmärkningarna. Filterbyte rensar markeringarna och endast synliga markerade punkter behandlas. Finns exakt en aktiv entreprenör erbjuds även **Tilldela alla ej tilldelade** med tydligt antal, för samtliga ännu otilldelade punkter. Tidigare tilldelningar och individuella datum lämnas orörda. Tilldelning skickar inget mejl; utskick görs separat med **Skicka lista**.
 
@@ -29,7 +35,7 @@ Entreprenörsförslag visas bara för den öppna, köpta beställarvyn. Rapporte
 
 Den frysta besiktningens `defaultRemedyDeadline` visas som utgångspunkt märkt **enligt utlåtandet** när en anmärkning saknar eget datum. Det är ett ärvt visningsvärde, inte en ändring av lagrade uppgifter eller ett nytt datum beräknat från besiktningsdagen. Det gäller även befintliga beställningar. Om frist saknas visas instruktion om gemensam överenskommelse. I masshanteringen ersätts datum först efter det uttryckliga valet **Ändra sista åtgärdsdatum** och ett ifyllt datum. Utelämnad `dueDate` i API bevarar befintligt datum; explicit `null` behåller sin betydelse som borttagning av individuellt datum. Ingen ny SQL-migrering krävs.
 
-**Skriv ut åtgärdslista** använder webbläsarens utskrift av aktuellt urval, inte originalutlåtandets PDF. Urval och antal framgår i utskriften. **Uppdatera** hämtar senaste data manuellt; den befintliga automatiska uppdateringen var 30:e sekund när sidan är aktiv finns kvar.
+**Skriv ut åtgärdslista** använder webbläsarens utskrift av aktuellt urval, inte originalutlåtandets PDF. Urval och antal framgår i utskriften. Den manuella uppdateringsknappen är borttagen; automatisk uppdatering var 30:e sekund när sidan är aktiv finns kvar och bevarar osparade texter.
 
 ## Avgränsning och åtkomst
 
