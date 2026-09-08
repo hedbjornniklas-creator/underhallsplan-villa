@@ -1,9 +1,10 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Grid2X2, Grid3X3, Square, Trash2, X } from 'lucide-react'
+import { useState } from 'react'
+import { Grid2X2, Grid3X3, Square, Trash2 } from 'lucide-react'
 import type { ActionCaseView } from '@/lib/action-cases/contracts'
+import ActionCaseImageViewer, { actionCaseImageUrl } from './ActionCaseImageViewer'
 
 export default function ActionCaseImageBank({ actionCase, busy, onAccess, onDelete }: {
   actionCase: ActionCaseView
@@ -14,14 +15,7 @@ export default function ActionCaseImageBank({ actionCase, busy, onAccess, onDele
   const images = actionCase.attachments.filter((file) => file.type === 'image')
   const [columns, setColumns] = useState(2)
   const [openedId, setOpenedId] = useState<string | null>(null)
-  const dialog = useRef<HTMLDialogElement>(null)
-  const openedIndex = images.findIndex((image) => image.id === openedId)
-  const opened = images[openedIndex]
-  const url = (id: string) => `/api/action-cases/${actionCase.id}/attachments/${id}`
-  useEffect(() => {
-    if (openedId) dialog.current?.showModal()
-    else dialog.current?.close()
-  }, [openedId])
+  const url = (id: string) => actionCaseImageUrl(actionCase.id, id)
   if (!images.length) return null
   return <section className="mt-5">
     <div className="mb-3 flex items-center justify-between gap-3">
@@ -53,12 +47,6 @@ export default function ActionCaseImageBank({ actionCase, busy, onAccess, onDele
         </article>)}
       </div>
     </div>
-    <dialog ref={dialog} onCancel={() => setOpenedId(null)} onClose={() => setOpenedId(null)} aria-label="Granska bild" className="fixed inset-0 m-auto h-[90dvh] w-[94vw] max-w-6xl rounded-lg bg-slate-950 p-0 text-white backdrop:bg-black/70">
-      {opened ? <div className="flex h-full flex-col">
-        <header className="flex items-center justify-between gap-3 p-3"><p className="min-w-0 truncate text-sm">{openedIndex + 1} / {images.length} · {opened.title || opened.fileName}</p><button type="button" onClick={() => setOpenedId(null)} aria-label="Stäng bild" className="h-11 w-11 shrink-0"><X className="mx-auto" /></button></header>
-        <div className="relative min-h-0 flex-1"><Image src={url(opened.id)} alt={opened.title || opened.fileName} fill unoptimized className="object-contain" /></div>
-        <footer className="flex items-center justify-center gap-6 p-3"><button type="button" disabled={openedIndex <= 0} onClick={() => setOpenedId(images[openedIndex - 1].id)} aria-label="Föregående bild" className="h-11 w-11 disabled:opacity-30"><ChevronLeft className="mx-auto" /></button><a href={url(opened.id)} target="_blank" rel="noreferrer" className="text-sm underline">Öppna original</a><button type="button" disabled={openedIndex >= images.length - 1} onClick={() => setOpenedId(images[openedIndex + 1].id)} aria-label="Nästa bild" className="h-11 w-11 disabled:opacity-30"><ChevronRight className="mx-auto" /></button></footer>
-      </div> : null}
-    </dialog>
+    {openedId && images.some((image) => image.id === openedId) ? <ActionCaseImageViewer caseId={actionCase.id} images={images} openedId={openedId} onOpen={setOpenedId} onClose={() => setOpenedId(null)} /> : null}
   </section>
 }

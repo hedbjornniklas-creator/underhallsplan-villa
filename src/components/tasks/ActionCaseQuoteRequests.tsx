@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { ArrowRight, FileText, Loader2, Mail, Pencil, Plus, Save, Send, Trash2, X } from 'lucide-react'
 import type { ActionCaseQuoteRequest, ActionCaseView } from '@/lib/action-cases/contracts'
 import { normalizeQuoteRequest, REQUEST_REQUIREMENTS, requestSources } from '@/lib/action-cases/quoteRequests'
+import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const secondary = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-40'
@@ -120,7 +121,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
           <label className="block text-sm">Ämne *<input className={input} maxLength={200} value={form.subject} onChange={(e) => set('subject', e.target.value)} /></label>
           <label className="block text-sm">Meddelande till UE<textarea name="message" rows={3} className={`${input} py-2`} maxLength={6000} value={form.message} onChange={(e) => set('message', e.target.value)} /></label>
         </fieldset>
-        <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Bilagor</legend><div className="mt-2 space-y-1">{actionCase.attachments.filter((a) => !privateDocs.has(a.id)).map((a) => <label className="flex min-h-11 items-center gap-3 py-2 text-sm" key={a.id}><input className="h-4 w-4 shrink-0 accent-violet-600" type="checkbox" name="attachment" value={a.id} checked={form.attachmentIds.includes(a.id)} onChange={(e) => toggle('attachmentIds', a.id, e.target.checked)} /><span className="min-w-0 break-words">{a.title || a.fileName}</span></label>)}</div><p className="mt-2 text-xs text-slate-500">{form.attachmentIds.length} valda · högst 5 MB sammanlagt</p></fieldset>
+        <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Bilagor</legend><ActionCaseAttachmentPicker caseId={actionCase.id} files={actionCase.attachments.filter((a) => !privateDocs.has(a.id))} selectedIds={form.attachmentIds} inputName="attachment" disabled={working} onChange={(id, checked) => toggle('attachmentIds', id, checked)} /><p className="mt-2 text-xs text-slate-500">{form.attachmentIds.length} valda · högst 5 MB sammanlagt</p></fieldset>
       </form> : request ? <div className="space-y-5">
         {!current && !locked ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats. Redigera och granska förfrågan igen före utskick.</p> : null}
         {locked && !current ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats efter att utskicket påbörjades. Den sparade förfrågan är oförändrad.</p> : null}

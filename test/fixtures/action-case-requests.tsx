@@ -1,12 +1,19 @@
 import React, { useState } from 'react'
 import ActionCaseRequestSheet, { ActionCaseRequestsPanel } from '@/components/tasks/ActionCaseQuoteRequests'
+import ActionCaseImageBank from '@/components/tasks/ActionCaseImageBank'
 import { useToast } from '@/components/ui/AppToastProvider'
 import { normalizeQuoteRequest } from '@/lib/action-cases/quoteRequests'
 import type { ActionCaseView, ActionCaseQuoteRequest } from '@/lib/action-cases/contracts'
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const initial: ActionCaseView = {
-  id: id(1), title: 'Mindre arbeten efter besiktning', propertyAddress: 'Exempelgatan 12', attachments: [], participants: [], quoteRequests: [],
+  id: id(1), title: 'Mindre arbeten efter besiktning', propertyAddress: 'Exempelgatan 12', participants: [], quoteRequests: [],
+  attachments: [
+    { id: id(31), fileName: 'entre.png', title: 'Entrén', type: 'image' },
+    { id: id(32), fileName: 'fonster.png', title: 'Fönsterbleck på gårdssidan', type: 'image' },
+    { id: id(33), fileName: 'saknad-bild.png', title: null, type: 'image' },
+    { id: id(34), fileName: 'arbetsbeskrivning.pdf', title: 'Arbetsbeskrivning', type: 'document' },
+  ].map((f) => ({ ...f, type: f.type as 'image' | 'document', actionCaseItemId: null, contentType: f.type === 'image' ? 'image/png' : 'application/pdf', fileSizeBytes: 100, grantedParticipantIds: [], createdAt: 'v1' })),
   customerName: 'Testkund', customerEmail: null, customerPhone: null, sourceKind: 'manual', sourceReference: null, description: null, status: 'pricing', siteVisitAt: null, createdAt: 'v1', updatedAt: 'v1',
   items: [1, 2].map((n) => ({
     id: id(n + 10), title: n === 1 ? 'Träpanel vid entrén' : 'Fönsterbleck på gårdssidan', scope: n === 1 ? 'Byt skadade brädor.' : 'Justera anslutningen vid blecket.', status: 'pricing_needed',
@@ -25,6 +32,7 @@ export default function RequestApp() {
     <output hidden data-testid="actions">{JSON.stringify(actions)}</output>
     <output hidden data-testid="requests">{JSON.stringify(actionCase.quoteRequests)}</output>
     <ActionCaseRequestsPanel actionCase={actionCase} busy={busy} onOpen={(requestId) => setEditor({ requestId })} />
+    {new URLSearchParams(location.search).has('bank') ? <ActionCaseImageBank actionCase={actionCase} busy={busy} onAccess={() => undefined} onDelete={() => undefined} /> : null}
     {editor ? <ActionCaseRequestSheet key={`${editor.requestId}:${editor.supplementId}`} {...editor} actionCase={actionCase} busy={busy} onClose={() => setEditor(null)} onSupplement={(r) => setEditor({ requestId: null, supplementId: r.id })} onOpenWork={() => { toast.success('Kalkyl öppnad.'); setEditor(null) }} onAction={async (action, data) => {
       setBusy(true); setActions((a) => [...a, `${action}:${data.operation ?? ''}`])
       await new Promise((resolve) => setTimeout(resolve, 350))

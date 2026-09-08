@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ArrowLeft, Check, FileText, Loader2, Mail, Pencil, Plus, Save, Send, Trash2 } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseItemView, ActionCaseQuote, ActionCaseView } from '@/lib/action-cases/contracts'
 import { normalizeQuote, quoteIsStale, quoteRequestText } from '@/lib/action-cases/quotes'
+import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40'
@@ -19,7 +20,7 @@ type Props = {
   onOpenRequest?: (requestId: string) => void
 }
 
-function QuoteForm({ line, item, attachments, participants, quote, mode, busy, onSave, onCancel }: Props & {
+function QuoteForm({ line, item, caseId, attachments, participants, quote, mode, busy, onSave, onCancel }: Props & {
   quote?: ActionCaseQuote; mode: 'request' | 'offer'
   onSave: (data: Record<string, unknown>) => Promise<boolean>; onCancel: () => void
 }) {
@@ -51,7 +52,7 @@ function QuoteForm({ line, item, attachments, participants, quote, mode, busy, o
       {mode === 'request' ? <>
         {field('requestSubject', 'Ämne *', 'text', requestLocked)}
         <label className="block text-xs font-semibold text-slate-600">Meddelande *<textarea name="requestBody" rows={9} className={`${input} py-2`} disabled={requestLocked} value={form.requestBody} onChange={(e) => set('requestBody', e.target.value)} /></label>
-        <fieldset disabled={requestLocked}><legend className="text-sm font-semibold">Bifoga från uppdraget</legend><div className="mt-2 max-h-48 overflow-y-auto divide-y divide-slate-100">{attachments.filter((a) => !quoteDocuments.includes(a.id)).map((a) => <label className="flex min-h-11 items-center gap-2 py-2 text-sm" key={a.id}><input className="h-4 w-4 shrink-0 accent-violet-600" type="checkbox" name="requestAttachmentIds" value={a.id} checked={form.requestAttachmentIds.includes(a.id)} onChange={(e) => toggle('requestAttachmentIds', a.id, e.target.checked)} /><span className="min-w-0 break-words">{a.title || a.fileName}</span></label>)}</div>{!attachments.length ? <p className="mt-2 text-sm text-slate-500">Inga filer i uppdraget.</p> : null}</fieldset>
+        <fieldset disabled={requestLocked}><legend className="text-sm font-semibold">Bifoga från uppdraget</legend><ActionCaseAttachmentPicker caseId={caseId} files={attachments.filter((a) => !quoteDocuments.includes(a.id))} selectedIds={form.requestAttachmentIds} inputName="requestAttachmentIds" disabled={busy || requestLocked} onChange={(id, checked) => toggle('requestAttachmentIds', id, checked)} /></fieldset>
       </> : <>
         <div className="grid gap-3 sm:grid-cols-2">{field('amount', 'Offertbelopp exkl. moms, kr', 'number')}{field('validUntil', 'Giltig till', 'date')}{field('availableFrom', 'Kan utföras från', 'date')}</div>
         <label className="block text-xs font-semibold text-slate-600">Offertens omfattning<textarea name="offeredScope" rows={3} className={`${input} py-2`} value={form.offeredScope} onChange={(e) => set('offeredScope', e.target.value)} /></label>
