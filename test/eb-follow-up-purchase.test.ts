@@ -47,7 +47,8 @@ before(async () => {
     create table eb_projects(id uuid primary key,org_id uuid references organizations);
     create table inspections(id uuid primary key);
     create table eb_notes(id uuid primary key,org_id uuid references organizations,eb_project_id uuid references eb_projects,
-      inspection_id uuid references inspections,trade_group text,responsible_party text,note_text text);
+      inspection_id uuid references inspections,trade_group text,responsible_party text,note_text text,
+      source_note_id uuid references eb_notes(id) on delete set null);
     create table inspection_report_links(id uuid primary key,org_id uuid references organizations,
       inspection_id uuid references inspections,snapshot_payload jsonb,token_hash text,revoked_at timestamptz,created_at timestamptz default now());
     create table eb_inspection_details(org_id uuid,eb_project_id uuid,inspection_id uuid);
@@ -69,6 +70,8 @@ before(async () => {
   await db.exec(read('docs/db/2026-09-08_05_eb_follow_up_customer_links.sql'))
   await db.exec(read('docs/db/2026-09-08_06_eb_follow_up_acceptance.sql'))
   await db.exec(read('docs/db/2026-09-08_06_eb_follow_up_acceptance.sql'))
+  await db.exec(read('docs/db/2026-09-08_07_eb_follow_up_note_lookup.sql'))
+  await db.exec(read('docs/db/2026-09-08_07_eb_follow_up_note_lookup.sql'))
   await db.query('insert into organizations(id) values($1)', [org])
   await db.exec(`create function test_reject_follow_up_email() returns trigger language plpgsql as $$
     begin if current_setting('test.reject_follow_up_email',true)='yes' then raise exception 'TEST_QUEUE_FAILURE'; end if; return new;end $$;
@@ -92,18 +95,19 @@ async function fixture() {
       [id, org, inspection, link, email, hash(id, '123456'), eligible, eligible ? 'encrypted-code' : null])).rows[0].result
   const verify = async (code = '123456', id = challenge) =>
     (await db.query<{ result: { verified: boolean; email?: string } }>('select eb_verify_follow_up_challenge($1,$2,$3) result', [id, link, hash(id, code)])).rows[0].result
-  const complete = async (id = challenge, email = 'buyer@example.test', create = true, terms: string | null = shared.EB_FOLLOW_UP_TERMS_VERSION, buyerExtra: Record<string, unknown> = {}) => {
+  const defaultTasks = [{ noteId: note, snapshot: { originalNoteId: note, noteText: 'Published original' }, images: [{ filePath: `frozen/${challenge}/photo.jpg`, storageBucket: 'eb-follow-up-originals' }] }]
+  const complete = async (id = challenge, email = 'buyer@example.test', create = true, terms: string | null = shared.EB_FOLLOW_UP_TERMS_VERSION, buyerExtra: Record<string, unknown> = {}, tasks = defaultTasks) => {
     const owner = randomUUID()
     return (await db.query<{ result: { orderId: string; encryptedResult: string; created: boolean } }>(
       'select eb_complete_follow_up_order($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) result', [
         id, link, id, project, { name: 'Buyer', email, invoiceName: 'Buyer', invoiceAddress: 'Street1', invoicePostalCode: '12345', invoiceCity: 'City', customerType: 'consumer', acceptanceSnapshot: acceptance(), ...buyerExtra },
         { name: 'Seller', email: 'seller@example.test' },
-        [{ noteId: note, snapshot: { originalNoteId: note, noteText: 'Published original' }, images: [{ filePath: `frozen/${id}/photo.jpg`, storageBucket: 'eb-follow-up-originals' }] }],
+        tasks,
         { id: owner, tokenHash: `hash-${owner}`, expiresAt: new Date(Date.now()+180*86400_000).toISOString(), encryptedResult: `encrypted-url:${owner}` },
         ['receipt','invoice','access'].map(kind => ({ kind, dedupeKey: `${kind}:${id}`, ciphertext: `encrypted-${kind}` })), create, terms,
       ])).rows[0].result
   }
-  return { inspection, project, link, note, challenge, snapshot, request, verify, complete }
+  return { inspection, project, link, note, challenge, snapshot, defaultTasks, request, verify, complete }
 }
 
 test('fixed inclusive price and all four explicit consumer consents are validated before purchase', () => {
@@ -187,6 +191,59 @@ test('personal buyer link authorizes the real atomic purchase with current conse
   assert.equal((await f.complete()).created,false)
   const saved = (await db.query<{ buyer_snapshot: { acceptanceSnapshot: { termsVersion: string } } }>('select buyer_snapshot from eb_follow_up_orders where id=$1',[result.orderId])).rows[0]
   assert.equal(saved.buyer_snapshot.acceptanceSnapshot.termsVersion,'2026-09-08.2')
+})
+
+test('paid task lookup uses the requested note ID, not its nullable or unrelated source_note_id column', async () => {
+  for (const linkedSource of [false, true]) {
+    const f = await fixture(), historical = await fixture()
+    const decoy = randomUUID()
+    // A column-to-column comparison would select this decoy instead of f.note.
+    await db.query('insert into eb_notes(id,org_id,eb_project_id,inspection_id,source_note_id,note_text) values($1,$2,$3,$4,$1,$5)',
+      [decoy, org, f.project, f.inspection, 'Unrelated self-referencing note'])
+    await db.query('update eb_notes set source_note_id=$1 where id=$2', [linkedSource ? historical.note : null, f.note])
+    await f.request(); await f.verify()
+    const result = await f.complete()
+    const rows = (await db.query<{ eb_note_id: string; original_note_id: string; note_snapshot: unknown }>(
+      'select eb_note_id,original_note_id,note_snapshot from eb_remediation_tasks where follow_up_order_id=$1', [result.orderId])).rows
+    assert.deepEqual(rows, [{ eb_note_id: f.note, original_note_id: f.note,
+      note_snapshot: { originalNoteId: f.note, noteText: 'Published original' } }])
+    assert.equal((await f.complete()).created, false)
+    assert.equal((await db.query("select id from eb_follow_up_email_outbox where order_id=$1 and kind='invoice'", [result.orderId])).rows.length, 1)
+  }
+})
+
+test('live note lookup stays inspection-scoped and deleted source notes retain independent paid evidence', async () => {
+  for (const scenario of ['other_inspection', 'deleted_before', 'deleted_after']) {
+    const f = await fixture(), other = await fixture()
+    const requestedId = scenario === 'other_inspection' ? other.note : f.note
+    const tasks = [{ ...f.defaultTasks[0], noteId: requestedId,
+      snapshot: { originalNoteId: requestedId, noteText: 'Published original' } }]
+    if (scenario === 'deleted_before') await db.query('delete from eb_notes where id=$1', [f.note])
+    await f.request(); await f.verify()
+    const result = await f.complete(f.challenge, 'buyer@example.test', true, shared.EB_FOLLOW_UP_TERMS_VERSION, {}, tasks)
+    if (scenario === 'deleted_after') await db.query('delete from eb_notes where id=$1', [f.note])
+    const rows = (await db.query<{ eb_note_id: string | null; original_note_id: string; note_snapshot: unknown; original_images: unknown }>(
+      'select eb_note_id,original_note_id,note_snapshot,original_images from eb_remediation_tasks where follow_up_order_id=$1', [result.orderId])).rows
+    assert.deepEqual(rows, [{ eb_note_id: null, original_note_id: requestedId,
+      note_snapshot: tasks[0].snapshot, original_images: tasks[0].images }], scenario)
+    assert.equal((await db.query('select id from eb_notes where id=$1', [other.note])).rows.length, 1)
+  }
+})
+
+test('duplicate frozen note IDs still roll back order, tasks, access and invoice atomically', async () => {
+  const f = await fixture()
+  await f.request(); await f.verify()
+  await assert.rejects(f.complete(f.challenge, 'buyer@example.test', true, shared.EB_FOLLOW_UP_TERMS_VERSION, {},
+    [f.defaultTasks[0], f.defaultTasks[0]]), (error: unknown) => {
+    const failure = error as { code?: string; constraint?: string }
+    return failure.code === '23505' && failure.constraint === 'eb_remediation_tasks_order_note_unique_idx'
+  })
+  for (const table of ['eb_follow_up_orders', 'eb_remediation_tasks', 'eb_remediation_access_links']) {
+    assert.equal((await db.query(`select id from ${table} where inspection_id=$1`, [f.inspection])).rows.length, 0)
+  }
+  assert.equal((await db.query("select id from eb_follow_up_email_outbox where order_id=$1 and kind in ('receipt','invoice')", [f.challenge])).rows.length, 0)
+  assert.equal((await f.complete()).created, true)
+  assert.equal((await f.complete()).created, false)
 })
 
 test('incorrect verification attempts are committed and a correct sixth attempt cannot bypass the cap', async () => {

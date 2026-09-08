@@ -8,7 +8,7 @@ create or replace function public.eb_complete_follow_up_order(
   p_buyer jsonb,p_seller jsonb,p_tasks jsonb,p_access jsonb,p_emails jsonb,p_create boolean,p_terms_version text
 ) returns jsonb language plpgsql security definer set search_path = public as $$
 declare c eb_follow_up_challenges; r inspection_report_links; o eb_follow_up_orders;
-  task jsonb; mail jsonb; task_id uuid; created boolean := false; source_note_id uuid;
+  task jsonb; mail jsonb; task_id uuid; created boolean := false; v_source_note_id uuid;
 begin
   select * into c from eb_follow_up_challenges where id=p_challenge_id and report_link_id=p_report_link_id for update;
   if not found or not c.eligible or c.verified_at is null or c.expires_at <= now() then
@@ -35,11 +35,11 @@ begin
         p_buyer,p_seller,p_terms_version,true,true,true) returning * into o;
     created := true;
     for task in select value from jsonb_array_elements(p_tasks) loop
-      source_note_id := (task->>'noteId')::uuid;
+      v_source_note_id := (task->>'noteId')::uuid;
       insert into eb_remediation_tasks(org_id,eb_project_id,inspection_id,eb_note_id,original_note_id,
         follow_up_order_id,assignment_managed_by,note_snapshot,original_images)
         values(c.org_id,p_project_id,c.inspection_id,
-          (select id from eb_notes where id=source_note_id and inspection_id=c.inspection_id),source_note_id,
+          (select source_note.id from eb_notes as source_note where source_note.id=v_source_note_id and source_note.inspection_id=c.inspection_id),v_source_note_id,
           o.id,'contractor',task->'snapshot',coalesce(task->'images','[]'::jsonb)) returning id into task_id;
       insert into eb_remediation_events(org_id,eb_project_id,task_id,event_type,actor_name,actor_email,metadata)
         values(c.org_id,p_project_id,task_id,'task_created',p_buyer->>'name',c.email,
@@ -65,4 +65,3 @@ end $$;
 revoke all on function public.eb_complete_follow_up_order(uuid,uuid,uuid,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,boolean,text) from public,anon,authenticated;
 grant execute on function public.eb_complete_follow_up_order(uuid,uuid,uuid,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,boolean,text) to service_role;
 commit;
-
