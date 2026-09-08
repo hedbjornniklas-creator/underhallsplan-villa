@@ -148,6 +148,7 @@ export default async function PublicReportPage({
         shareEndpoint={shareEndpoint}
         shareUrl={shareUrl}
         deliveryDocuments={deliveryDocuments}
+        followUpEndpoint={`/api/reports/public/${encodeURIComponent(normalizedToken)}/follow-up`}
       />
     )
   }

@@ -13,7 +13,8 @@ import {
   List,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import EbFollowUpOrder from '@/components/eb/EbFollowUpOrder'
 import PublicReportPdfDownload, {
   type PublicReportPdfStatus,
 } from '@/components/report/PublicReportPdfDownload'
@@ -62,6 +63,7 @@ type EbPublicReportSnapshotViewProps = {
   pdfStatusEndpoint?: string | null
   pdfError?: string | null
   deliveryDocuments?: EbPublicDeliveryDocumentLink[]
+  followUpEndpoint?: string | null
 }
 
 type PublicImage = {
@@ -1326,6 +1328,7 @@ export default function EbPublicReportSnapshotView({
   pdfStatus = 'pending',
   pdfStatusEndpoint = null,
   deliveryDocuments = [],
+  followUpEndpoint = null,
 }: EbPublicReportSnapshotViewProps) {
   const notes = useMemo(() => sortNotes(report.notes), [report.notes])
   const headings = useMemo(
@@ -1561,19 +1564,28 @@ export default function EbPublicReportSnapshotView({
 
           <article className="space-y-4">
             {visibleSections.map((section) => (
-              <SectionShell key={section.key} section={section}>
-                <SectionContent
-                  report={report}
-                  section={section}
-                  notes={notes}
-                  headingsByNoteId={headingsByNoteId}
-                  trailingHeadings={trailingHeadings}
-                  hasPhotoAppendix={imageData.images.length > 0}
-                  noteImagesByNoteId={imageData.noteImagesByNoteId}
-                  onOpenImage={openImage}
-                />
-              </SectionShell>
+              <Fragment key={section.key}>
+                <SectionShell section={section}>
+                  <SectionContent
+                    report={report}
+                    section={section}
+                    notes={notes}
+                    headingsByNoteId={headingsByNoteId}
+                    trailingHeadings={trailingHeadings}
+                    hasPhotoAppendix={imageData.images.length > 0}
+                    noteImagesByNoteId={imageData.noteImagesByNoteId}
+                    onOpenImage={openImage}
+                  />
+                </SectionShell>
+                {section.key === 'defects_appendices' && followUpEndpoint && notes.length > 0 ? (
+                  <EbFollowUpOrder endpoint={followUpEndpoint} />
+                ) : null}
+              </Fragment>
             ))}
+
+            {followUpEndpoint && notes.length > 0 && !visibleSections.some(section => section.key === 'defects_appendices') ? (
+              <EbFollowUpOrder endpoint={followUpEndpoint} />
+            ) : null}
 
             <Signature report={report} hasImages={imageData.images.length > 0} />
             <PhotoAppendix groups={imageData.groups} images={imageData.images} onOpen={openImage} />

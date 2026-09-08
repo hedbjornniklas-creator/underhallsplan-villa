@@ -14,6 +14,9 @@ function jsonError(message: string, status: number) {
 
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : 'Okänt fel.'
+  if (message === 'EB_REMEDIATION_CONFLICT') return jsonError('Punkten ändrades av någon annan. Aktuella uppgifter har hämtats. Din osparade text finns kvar; kontrollera läget och försök igen.', 409)
+  if (message === 'EB_FOLLOW_UP_ORDER_INACTIVE') return jsonError('Uppföljningen är pausad. Befintlig historik finns kvar.', 403)
+  if (message === 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED') return jsonError('Lägg till en åtgärdsbild eller en förklarande kommentar om arbetet inte kan fotograferas.', 400)
   if (message === 'EB_REMEDIATION_ACCESS_NOT_FOUND') return jsonError('Länken hittades inte.', 404)
   if (message === 'EB_REMEDIATION_ACCESS_REVOKED') return jsonError('Länken har återkallats.', 410)
   if (message === 'EB_REMEDIATION_ACCESS_EXPIRED') return jsonError('Länken har gått ut.', 410)

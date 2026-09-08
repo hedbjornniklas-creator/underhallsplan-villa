@@ -4,6 +4,10 @@ import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { getEbProjectById, type EbProjectListItem } from '@/lib/eb/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { ebRemediationAllowedStatuses, ebRemediationCanComment, ebRemediationCanManage } from '@/lib/eb/remediationPolicy'
+import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
+import { queueEbFollowUpEmail } from '@/lib/eb/followUpDelivery'
+import { requestEbFollowUpOwnerRenewal, withdrawEbFollowUpOrder } from '@/lib/eb/followUpServer'
 
 export const EB_REMEDIATION_IMAGE_BUCKET = 'eb-remediation-images'
 export const EB_REMEDIATION_MAX_IMAGE_BYTES = 15 * 1024 * 1024
@@ -17,7 +21,7 @@ export type EbRemediationStatus =
   | 'reported_remedied'
   | 'cannot_remedy'
 
-export type EbRemediationAccessRole = 'contractor_admin' | 'contractor_viewer' | 'assignee'
+export type EbRemediationAccessRole = 'contractor_admin' | 'contractor_viewer' | 'assignee' | 'customer_owner'
 
 export type EbRemediationAssignee = {
   id: string
@@ -50,7 +54,8 @@ export type EbRemediationTaskSnapshot = {
 export type EbRemediationTask = {
   id: string
   inspectionId: string
-  noteId: string
+  noteId: string | null
+  followUpOrderId: string | null
   assigneeId: string | null
   assignmentManagedBy: 'inspection' | 'contractor'
   status: EbRemediationStatus
@@ -87,6 +92,7 @@ export type EbRemediationImage = {
 
 export type EbRemediationAccessLink = {
   id: string
+  followUpOrderId: string | null
   inspectionId: string | null
   assigneeId: string | null
   role: EbRemediationAccessRole
@@ -123,11 +129,19 @@ export type EbRemediationWorkspace = {
     email: string | null
     assigneeId: string | null
     expiresAt: string | null
+    followUpOrderId: string | null
   }
+  followUp: {
+    id: string
+    acceptedAt: string | null
+    withdrawalRequestedAt: string | null
+    status: string
+  } | null
   assignees: EbRemediationAssignee[]
   tasks: EbRemediationTask[]
   events: EbRemediationEvent[]
   images: EbRemediationImage[]
+  originalImages: EbRemediationImage[]
   accessLinks: EbRemediationAccessLink[]
 }
 
@@ -140,6 +154,7 @@ type Actor = {
 
 type RemediationAccessRow = {
   id: string
+  follow_up_order_id: string | null
   org_id: string
   eb_project_id: string
   inspection_id: string | null
@@ -156,8 +171,10 @@ type RemediationAccessRow = {
 
 type RemediationTaskRow = {
   id: string
+  follow_up_order_id: string | null
+  original_images: Array<Record<string, unknown>> | null
   inspection_id: string
-  eb_note_id: string
+  eb_note_id: string | null
   remediation_assignee_id: string | null
   assignment_managed_by: 'inspection' | 'contractor'
   status: EbRemediationStatus
@@ -261,6 +278,7 @@ function mapTask(row: RemediationTaskRow): EbRemediationTask {
     id: row.id,
     inspectionId: row.inspection_id,
     noteId: row.eb_note_id,
+    followUpOrderId: row.follow_up_order_id ?? null,
     assigneeId: row.remediation_assignee_id ?? null,
     assignmentManagedBy: row.assignment_managed_by,
     status: row.status,
@@ -276,6 +294,7 @@ function mapTask(row: RemediationTaskRow): EbRemediationTask {
 function mapAccessLink(row: RemediationAccessRow): EbRemediationAccessLink {
   return {
     id: row.id,
+    followUpOrderId: row.follow_up_order_id ?? null,
     inspectionId: row.inspection_id ?? null,
     assigneeId: row.remediation_assignee_id ?? null,
     role: row.role,
@@ -310,38 +329,9 @@ async function loadActorForProfile(profileId: string): Promise<Actor> {
   }
 }
 
-async function insertEvent(input: {
-  orgId: string
-  projectId: string
-  taskId: string
-  eventType: string
-  actor?: Actor | null
-  message?: string | null
-  fromStatus?: EbRemediationStatus | null
-  toStatus?: EbRemediationStatus | null
-  metadata?: Record<string, unknown>
-}) {
-  const admin = createSupabaseAdminClient()
-  const { error } = await admin.from('eb_remediation_events').insert({
-    org_id: input.orgId,
-    eb_project_id: input.projectId,
-    task_id: input.taskId,
-    event_type: input.eventType,
-    actor_access_link_id: input.actor?.accessLinkId ?? null,
-    actor_profile_id: input.actor?.profileId ?? null,
-    actor_name: normalizeText(input.actor?.name),
-    actor_email: normalizeEmail(input.actor?.email),
-    message: normalizeText(input.message),
-    from_status: input.fromStatus ?? null,
-    to_status: input.toStatus ?? null,
-    metadata: input.metadata ?? {},
-  })
-  if (error) throw new Error(error.message ?? 'Kunde inte spara åtgärdshistorik.')
-}
-
 async function syncRemediationTasks(project: EbProjectListItem) {
   const admin = createSupabaseAdminClient()
-  const [notesResult, disciplinesResult, tasksResult] = await Promise.all([
+  const [notesResult, disciplinesResult, tasksResult, ordersResult] = await Promise.all([
     admin
       .from('eb_notes')
       .select(
@@ -361,7 +351,10 @@ async function syncRemediationTasks(project: EbProjectListItem) {
         'id,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
       )
       .eq('org_id', project.orgId)
-      .eq('eb_project_id', project.id),
+      .eq('eb_project_id', project.id)
+      .is('follow_up_order_id', null),
+    admin.from('eb_follow_up_orders').select('inspection_id')
+      .eq('org_id', project.orgId).eq('eb_project_id', project.id),
   ])
 
   if (notesResult.error) throw new Error(notesResult.error.message ?? 'Kunde inte läsa EB-noteringar.')
@@ -369,6 +362,8 @@ async function syncRemediationTasks(project: EbProjectListItem) {
     throw new Error(disciplinesResult.error.message ?? 'Kunde inte läsa besiktningsfack.')
   }
   if (tasksResult.error) throw new Error(tasksResult.error.message ?? 'Kunde inte läsa åtgärdsuppgifter.')
+  if (ordersResult.error) throw new Error(ordersResult.error.message ?? 'Kunde inte läsa digital uppföljning.')
+  const purchasedInspections = new Set((ordersResult.data ?? []).map((order) => order.inspection_id))
 
   const notes = (notesResult.data ?? []) as NoteSourceRow[]
   const existingTasks = (tasksResult.data ?? []) as RemediationTaskRow[]
@@ -384,6 +379,8 @@ async function syncRemediationTasks(project: EbProjectListItem) {
   const updates: Array<{ id: string; values: Record<string, unknown> }> = []
 
   for (const note of notes) {
+    // An order freezes the entire inspection, including the set of notes. Never import later notes.
+    if (purchasedInspections.has(note.inspection_id)) continue
     const inspection = inspectionById.get(note.inspection_id)
     if (!inspection) continue
     const discipline = note.discipline_id ? disciplineById.get(note.discipline_id) : null
@@ -437,22 +434,11 @@ async function syncRemediationTasks(project: EbProjectListItem) {
   }
 
   if (inserts.length > 0) {
-    const { error } = await admin
-      .from('eb_remediation_tasks')
-      .upsert(inserts, { onConflict: 'eb_note_id', ignoreDuplicates: true })
-    if (error) throw new Error(error.message ?? 'Kunde inte skapa åtgärdsuppgifter.')
-
-    const insertedNoteIds = inserts.map((row) => String(row.eb_note_id))
-    const { data: createdTasks, error: createdTasksError } = await admin
-      .from('eb_remediation_tasks')
-      .select('id')
-      .eq('org_id', project.orgId)
-      .eq('eb_project_id', project.id)
-      .in('eb_note_id', insertedNoteIds)
-    if (createdTasksError) {
-      throw new Error(createdTasksError.message ?? 'Kunde inte läsa skapade åtgärdsuppgifter.')
-    }
-    for (const task of createdTasks ?? []) {
+    for (const values of inserts) {
+      const { data: task, error } = await admin.from('eb_remediation_tasks')
+        .insert(values).select('id').single()
+      if (error?.code === '23505') continue
+      if (error || !task) throw new Error(error?.message ?? 'Kunde inte skapa åtgärdsuppgifter.')
       const { error: eventError } = await admin.from('eb_remediation_events').insert({
         org_id: project.orgId,
         eb_project_id: project.id,
@@ -481,6 +467,15 @@ async function syncRemediationTasks(project: EbProjectListItem) {
   }
 }
 
+async function requireFollowUpOrder(input: { orgId: string; projectId: string; orderId: string }) {
+  const { data, error } = await createSupabaseAdminClient().from('eb_follow_up_orders')
+    .select('id,inspection_id,report_snapshot,status,accepted_at,withdrawal_requested_at')
+    .eq('id', input.orderId).eq('org_id', input.orgId).eq('eb_project_id', input.projectId).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data || data.status !== 'active') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+  return data
+}
+
 async function loadWorkspace(input: {
   project: EbProjectListItem
   inspectionId?: string | null
@@ -489,13 +484,30 @@ async function loadWorkspace(input: {
 }): Promise<EbRemediationWorkspace> {
   const { project } = input
   const access = input.access ?? null
+  const orderId = access?.follow_up_order_id ?? null
+  const admin = createSupabaseAdminClient()
+  const order = orderId ? await requireFollowUpOrder({ orgId: project.orgId, projectId: project.id, orderId }) : null
+  if (order && access?.inspection_id !== order.inspection_id) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+  const frozenReport = order ? getEbInspectionReportFromSnapshot(order.report_snapshot) : null
+  if (order && !frozenReport) throw new Error('EB_REMEDIATION_ORDER_INVALID')
+  const displayedProject = frozenReport?.project ?? project
+  const followUp = order ? {
+    id: order.id, acceptedAt: order.accepted_at,
+    withdrawalRequestedAt: order.withdrawal_requested_at, status: order.status,
+  } : null
   const state = input.state ?? 'open'
   const inspectionId = access?.inspection_id ?? normalizeText(input.inspectionId)
   const inspection = inspectionId
     ? project.inspections.find((item) => item.inspectionId === inspectionId) ?? null
     : null
   if (inspectionId && !inspection) throw new Error('EB_INSPECTION_NOT_FOUND')
-  const inspectionSummary = inspection
+  const inspectionSummary = frozenReport ? {
+    id: frozenReport.inspection.inspectionId,
+    variant: frozenReport.inspection.variant,
+    variantLabel: frozenReport.inspection.variantLabel,
+    sequenceNo: frozenReport.inspection.sequenceNo,
+    date: frozenReport.inspection.date,
+  } : inspection
     ? {
         id: inspection.inspectionId,
         variant: inspection.variant,
@@ -509,11 +521,11 @@ async function loadWorkspace(input: {
       state,
       project: {
         id: project.id,
-        title: project.title,
-        objectLabel: projectObjectLabel(project),
-        address: projectAddress(project),
-        contractorName: project.contractorName,
-        contractorEmail: project.contractorEmail,
+        title: displayedProject.title,
+        objectLabel: projectObjectLabel(displayedProject),
+        address: projectAddress(displayedProject),
+        contractorName: orderId ? null : project.contractorName,
+        contractorEmail: orderId ? null : project.contractorEmail,
       },
       inspection: inspectionSummary,
       access: {
@@ -523,21 +535,23 @@ async function loadWorkspace(input: {
         email: access.email,
         assigneeId: access.remediation_assignee_id ?? null,
         expiresAt: access.expires_at,
+        followUpOrderId: orderId,
       },
+      followUp,
       assignees: [],
       tasks: [],
       events: [],
       images: [],
+      originalImages: [],
       accessLinks: [],
     }
   }
-  if (!access || state === 'open') await syncRemediationTasks(project)
+  if (!orderId && (!access || state === 'open')) await syncRemediationTasks(project)
 
-  const admin = createSupabaseAdminClient()
   let tasksQuery = admin
     .from('eb_remediation_tasks')
     .select(
-      'id,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
+      'id,follow_up_order_id,original_images,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
     )
     .eq('org_id', project.orgId)
     .eq('eb_project_id', project.id)
@@ -546,7 +560,7 @@ async function loadWorkspace(input: {
   let linksQuery = admin
     .from('eb_remediation_access_links')
     .select(
-      'id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
+      'id,follow_up_order_id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
     )
     .eq('org_id', project.orgId)
     .eq('eb_project_id', project.id)
@@ -555,14 +569,21 @@ async function loadWorkspace(input: {
     tasksQuery = tasksQuery.eq('inspection_id', inspectionId)
     linksQuery = linksQuery.eq('inspection_id', inspectionId)
   }
+  let assigneesQuery = admin.from('eb_remediation_assignees')
+    .select('id,name,company_name,contact_name,email,phone,is_active,created_at,updated_at')
+    .eq('org_id', project.orgId).eq('eb_project_id', project.id)
+    .order('is_active', { ascending: false }).order('name', { ascending: true })
+  // Legacy project-wide links must never inherit the purchased service's private workspace.
+  tasksQuery = orderId ? tasksQuery.eq('follow_up_order_id', orderId) : tasksQuery.is('follow_up_order_id', null)
+  linksQuery = orderId ? linksQuery.eq('follow_up_order_id', orderId) : linksQuery.is('follow_up_order_id', null)
+  assigneesQuery = orderId ? assigneesQuery.eq('follow_up_order_id', orderId) : assigneesQuery.is('follow_up_order_id', null)
+  if (access && (access.role === 'assignee' || (orderId && access.role !== 'customer_owner'))) {
+    if (!access?.remediation_assignee_id) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    tasksQuery = tasksQuery.eq('remediation_assignee_id', access.remediation_assignee_id)
+    assigneesQuery = assigneesQuery.eq('id', access.remediation_assignee_id)
+  }
   const [assigneesResult, tasksResult, linksResult] = await Promise.all([
-    admin
-      .from('eb_remediation_assignees')
-      .select('id,name,company_name,contact_name,email,phone,is_active,created_at,updated_at')
-      .eq('org_id', project.orgId)
-      .eq('eb_project_id', project.id)
-      .order('is_active', { ascending: false })
-      .order('name', { ascending: true }),
+    assigneesQuery,
     tasksQuery,
     linksQuery,
   ])
@@ -573,7 +594,13 @@ async function loadWorkspace(input: {
   if (tasksResult.error) throw new Error(tasksResult.error.message ?? 'Kunde inte läsa åtgärdsuppgifter.')
   if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte läsa åtkomstlänkar.')
 
-  let tasks = ((tasksResult.data ?? []) as RemediationTaskRow[]).map(mapTask)
+  const taskRows = [...((tasksResult.data ?? []) as RemediationTaskRow[])]
+  if (frozenReport) {
+    const noteOrder = new Map(frozenReport.notes.map((note, index) => [note.id, index]))
+    const position = (task: RemediationTaskRow) => noteOrder.get(String(task.note_snapshot?.originalNoteId ?? task.eb_note_id)) ?? Number.MAX_SAFE_INTEGER
+    taskRows.sort((a, b) => position(a) - position(b))
+  }
+  let tasks = taskRows.map(mapTask)
   let assignees = (
     (assigneesResult.data ?? []) as Array<{
       id: string
@@ -598,7 +625,7 @@ async function loadWorkspace(input: {
     updatedAt: row.updated_at ?? null,
   }))
 
-  if (access?.role === 'assignee') {
+  if (access && (access.role === 'assignee' || (orderId && access.role !== 'customer_owner'))) {
     tasks = tasks.filter((task) => task.assigneeId === access.remediation_assignee_id)
     assignees = assignees.filter((assignee) => assignee.id === access.remediation_assignee_id)
   }
@@ -635,8 +662,20 @@ async function loadWorkspace(input: {
     file_size_bytes: number | null
     created_at: string
   }>
+  const originalRows = ((tasksResult.data ?? []) as RemediationTaskRow[])
+    .filter((task) => taskIds.includes(task.id))
+    .flatMap((task) => (task.original_images ?? []).flatMap((image) => {
+      if (typeof image.filePath !== 'string' || typeof image.storageBucket !== 'string') return []
+      return [{
+        id: String(image.id), task_id: task.id, storage_bucket: image.storageBucket,
+        file_path: image.filePath,
+        thumbnail_file_path: typeof image.thumbnailFilePath === 'string' ? image.thumbnailFilePath : null,
+        file_name: typeof image.fileName === 'string' ? image.fileName : null,
+        content_type: null, file_size_bytes: null, created_at: task.created_at ?? '',
+      }]
+    }))
   const pathsByBucket = new Map<string, Set<string>>()
-  for (const row of imageRows) {
+  for (const row of [...imageRows, ...originalRows]) {
     const bucket = row.storage_bucket || EB_REMEDIATION_IMAGE_BUCKET
     const paths = pathsByBucket.get(bucket) ?? new Set<string>()
     paths.add(row.file_path)
@@ -653,7 +692,7 @@ async function loadWorkspace(input: {
       })
     })
   )
-  const images: EbRemediationImage[] = imageRows.map((row) => {
+  const mapImage = (row: typeof imageRows[number]): EbRemediationImage => {
     const bucket = row.storage_bucket || EB_REMEDIATION_IMAGE_BUCKET
     const imageUrl = signedUrls.get(`${bucket}:${row.file_path}`) ?? null
     return {
@@ -669,22 +708,24 @@ async function loadWorkspace(input: {
           : null) ?? imageUrl,
       createdAt: row.created_at,
     }
-  })
+  }
+  const images = imageRows.map(mapImage)
+  const originalImages = originalRows.map(mapImage)
 
-  const canManageLinks = !access || access.role === 'contractor_admin'
+  const canManageLinks = ebRemediationCanManage(access?.role ?? 'internal', Boolean(orderId))
   const links = canManageLinks
-    ? ((linksResult.data ?? []) as RemediationAccessRow[]).map(mapAccessLink)
+    ? ((linksResult.data ?? []) as RemediationAccessRow[]).filter((link) => !orderId || link.role !== 'customer_owner').map(mapAccessLink)
     : []
 
   return {
     state,
     project: {
       id: project.id,
-      title: project.title,
-      objectLabel: projectObjectLabel(project),
-      address: projectAddress(project),
-      contractorName: project.contractorName,
-      contractorEmail: project.contractorEmail,
+      title: displayedProject.title,
+      objectLabel: projectObjectLabel(displayedProject),
+      address: projectAddress(displayedProject),
+      contractorName: orderId ? null : project.contractorName,
+      contractorEmail: orderId ? null : project.contractorEmail,
     },
     inspection: inspectionSummary,
     access: {
@@ -694,7 +735,9 @@ async function loadWorkspace(input: {
       email: access?.email ?? null,
       assigneeId: access?.remediation_assignee_id ?? null,
       expiresAt: access?.expires_at ?? null,
+      followUpOrderId: orderId,
     },
+    followUp,
     assignees,
     tasks,
     events: (
@@ -714,13 +757,14 @@ async function loadWorkspace(input: {
       taskId: row.task_id,
       eventType: row.event_type,
       actorName: row.actor_name ?? null,
-      actorEmail: row.actor_email ?? null,
+      actorEmail: orderId && access?.role !== 'customer_owner' ? null : row.actor_email ?? null,
       message: row.message ?? null,
       fromStatus: row.from_status ?? null,
       toStatus: row.to_status ?? null,
       createdAt: row.created_at,
     })),
     images,
+    originalImages,
     accessLinks: links,
   }
 }
@@ -740,7 +784,7 @@ async function resolveAccessToken(token: string) {
   const { data, error } = await admin
     .from('eb_remediation_access_links')
     .select(
-      'id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
+      'id,follow_up_order_id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
     )
     .eq('token_hash', hashAssignmentToken(token))
     .maybeSingle()
@@ -773,6 +817,7 @@ export async function getEbRemediationWorkspaceByToken(
 export async function createEbRemediationAssignee(input: {
   orgId: string
   projectId: string
+  followUpOrderId?: string | null
   profileId?: string | null
   name: string
   companyName?: string | null
@@ -794,6 +839,7 @@ export async function createEbRemediationAssignee(input: {
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .eq('normalized_name', normalizedName)
+    .filter('follow_up_order_id', input.followUpOrderId ? 'eq' : 'is', input.followUpOrderId ?? null)
     .maybeSingle()
   if (existingError) throw new Error(existingError.message ?? 'Kunde inte kontrollera Åtgärdas av.')
   if (existing) {
@@ -813,6 +859,7 @@ export async function createEbRemediationAssignee(input: {
   const values = {
     org_id: input.orgId,
     eb_project_id: input.projectId,
+    follow_up_order_id: input.followUpOrderId ?? null,
     name,
     normalized_name: normalizedName,
     company_name: normalizeText(input.companyName),
@@ -835,6 +882,7 @@ export async function createEbRemediationAssignee(input: {
       .eq('org_id', input.orgId)
       .eq('eb_project_id', input.projectId)
       .eq('normalized_name', normalizedName)
+      .filter('follow_up_order_id', input.followUpOrderId ? 'eq' : 'is', input.followUpOrderId ?? null)
       .maybeSingle()
     if (concurrent) {
       return {
@@ -867,6 +915,7 @@ export async function createEbRemediationAssignee(input: {
 export async function updateEbRemediationAssignee(input: {
   orgId: string
   projectId: string
+  followUpOrderId?: string | null
   profileId?: string | null
   assigneeId: string
   name: string
@@ -881,7 +930,7 @@ export async function updateEbRemediationAssignee(input: {
   const email = input.email ? normalizeEmail(input.email) : null
   if (input.email && !email) throw new Error('EB_REMEDIATION_EMAIL_INVALID')
   const admin = createSupabaseAdminClient()
-  const { error } = await admin
+  const { data, error } = await admin
     .from('eb_remediation_assignees')
     .update({
       name,
@@ -896,7 +945,10 @@ export async function updateEbRemediationAssignee(input: {
     .eq('id', input.assigneeId)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
+    .filter('follow_up_order_id', input.followUpOrderId ? 'eq' : 'is', input.followUpOrderId ?? null)
+    .select('id').maybeSingle()
   if (error) throw new Error(error.message ?? 'Kunde inte uppdatera Åtgärdas av.')
+  if (!data) throw new Error('EB_REMEDIATION_ASSIGNEE_NOT_FOUND')
 }
 
 async function requireTask(input: { orgId: string; projectId: string; taskId: string }) {
@@ -904,7 +956,7 @@ async function requireTask(input: { orgId: string; projectId: string; taskId: st
   const { data, error } = await admin
     .from('eb_remediation_tasks')
     .select(
-      'id,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
+      'id,follow_up_order_id,original_images,inspection_id,eb_note_id,remediation_assignee_id,assignment_managed_by,status,due_date,included,note_snapshot,reported_remedied_at,created_at,updated_at'
     )
     .eq('id', input.taskId)
     .eq('org_id', input.orgId)
@@ -915,10 +967,27 @@ async function requireTask(input: { orgId: string; projectId: string; taskId: st
   return data as RemediationTaskRow
 }
 
+async function applyTaskAction(input: {
+  orgId: string; projectId: string; taskId: string; action: string
+  expectedUpdatedAt?: string | null; payload: Record<string, unknown>; actor: Actor
+}) {
+  const task = await requireTask(input)
+  const { data, error } = await createSupabaseAdminClient().rpc('eb_apply_remediation_action', {
+    p_org_id: input.orgId, p_project_id: input.projectId, p_task_id: input.taskId,
+    p_expected_updated_at: input.expectedUpdatedAt === undefined ? task.updated_at : input.expectedUpdatedAt,
+    p_action: input.action, p_payload: input.payload, p_actor: input.actor,
+  })
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('EB_REMEDIATION_CONFLICT')
+  return data
+}
+
 export async function assignEbRemediationTasks(input: {
   orgId: string
   projectId: string
   inspectionId?: string | null
+  followUpOrderId?: string | null
+  expectedVersions?: Record<string, string | null>
   taskIds: string[]
   assigneeId: string | null
   dueDate?: string | null
@@ -936,6 +1005,7 @@ export async function assignEbRemediationTasks(input: {
       .eq('org_id', input.orgId)
       .eq('eb_project_id', input.projectId)
       .eq('is_active', true)
+      .filter('follow_up_order_id', input.followUpOrderId ? 'eq' : 'is', input.followUpOrderId ?? null)
       .maybeSingle()
     if (error || !assignee) throw new Error('EB_REMEDIATION_ASSIGNEE_NOT_FOUND')
   }
@@ -946,6 +1016,7 @@ export async function assignEbRemediationTasks(input: {
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .in('id', taskIds)
+    .filter('follow_up_order_id', input.followUpOrderId ? 'eq' : 'is', input.followUpOrderId ?? null)
   if (input.inspectionId) currentRowsQuery = currentRowsQuery.eq('inspection_id', input.inspectionId)
   const { data: currentRows, error: currentError } = await currentRowsQuery
   if (currentError) throw new Error(currentError.message ?? 'Kunde inte läsa valda åtgärdsuppgifter.')
@@ -953,6 +1024,8 @@ export async function assignEbRemediationTasks(input: {
   const normalizedDueDate = input.dueDate === undefined ? undefined : normalizeText(input.dueDate)
 
   for (const current of currentRows ?? []) {
+    if (input.expectedVersions && Object.hasOwn(input.expectedVersions, current.id) &&
+        input.expectedVersions[current.id] !== current.updated_at) throw new Error('EB_REMEDIATION_CONFLICT')
     const currentStatus = current.status as EbRemediationStatus
     const nextStatus: EbRemediationStatus = input.assigneeId
       ? currentStatus === 'unassigned'
@@ -966,35 +1039,14 @@ export async function assignEbRemediationTasks(input: {
       (normalizedDueDate === undefined || normalizeText(current.due_date) === normalizedDueDate)
     if (assignmentUnchanged) continue
 
-    const values: Record<string, unknown> = {
-      remediation_assignee_id: input.assigneeId,
-      assignment_managed_by: 'contractor',
-      status: nextStatus,
-    }
-    if (normalizedDueDate !== undefined) values.due_date = normalizedDueDate
-    const { data: updatedTask, error } = await admin
-      .from('eb_remediation_tasks')
-      .update(values)
-      .eq('id', current.id)
-      .eq('org_id', input.orgId)
-      .eq('eb_project_id', input.projectId)
-      .eq('updated_at', current.updated_at)
-      .select('id')
-      .maybeSingle()
-    if (error) throw new Error(error.message ?? 'Kunde inte tilldela åtgärdsuppgiften.')
-    if (!updatedTask) continue
-    await insertEvent({
+    await applyTaskAction({
       orgId: input.orgId,
       projectId: input.projectId,
       taskId: current.id,
-      eventType: 'assigned',
+      action: 'assign',
+      expectedUpdatedAt: input.expectedVersions?.[current.id] ?? current.updated_at,
       actor: input.actor,
-      fromStatus: currentStatus,
-      toStatus: nextStatus,
-      metadata: {
-        fromAssigneeId: current.remediation_assignee_id ?? null,
-        toAssigneeId: input.assigneeId,
-      },
+      payload: { assigneeId: input.assigneeId, ...(normalizedDueDate !== undefined ? { dueDate: normalizedDueDate } : {}) },
     })
   }
 }
@@ -1004,36 +1056,13 @@ export async function changeEbRemediationTaskStatus(input: {
   projectId: string
   taskId: string
   status: EbRemediationStatus
+  message?: string | null
+  expectedUpdatedAt?: string | null
   actor: Actor
 }) {
   if (!STATUS_VALUES.has(input.status)) throw new Error('EB_REMEDIATION_STATUS_INVALID')
-  const task = await requireTask(input)
-  if (task.status === input.status) return
-  const admin = createSupabaseAdminClient()
-  const reported = input.status === 'reported_remedied'
-  const { data: updatedTask, error } = await admin
-    .from('eb_remediation_tasks')
-    .update({
-      status: input.status,
-      reported_remedied_at: reported ? new Date().toISOString() : null,
-      reported_remedied_by_access_id: reported ? input.actor.accessLinkId ?? null : null,
-    })
-    .eq('id', input.taskId)
-    .eq('org_id', input.orgId)
-    .eq('eb_project_id', input.projectId)
-    .eq('updated_at', task.updated_at)
-    .select('id')
-    .maybeSingle()
-  if (error) throw new Error(error.message ?? 'Kunde inte uppdatera status.')
-  if (!updatedTask) return
-  await insertEvent({
-    orgId: input.orgId,
-    projectId: input.projectId,
-    taskId: input.taskId,
-    eventType: 'status_changed',
-    actor: input.actor,
-    fromStatus: task.status,
-    toStatus: input.status,
+  await applyTaskAction({
+    ...input, action: 'status', payload: { status: input.status, message: normalizeText(input.message) },
   })
 }
 
@@ -1042,18 +1071,13 @@ export async function addEbRemediationComment(input: {
   projectId: string
   taskId: string
   message: string
+  expectedUpdatedAt?: string | null
   actor: Actor
 }) {
-  await requireTask(input)
   const message = normalizeText(input.message)
   if (!message) throw new Error('EB_REMEDIATION_COMMENT_REQUIRED')
-  await insertEvent({
-    orgId: input.orgId,
-    projectId: input.projectId,
-    taskId: input.taskId,
-    eventType: 'comment',
-    actor: input.actor,
-    message,
+  await applyTaskAction({
+    ...input, action: 'comment', payload: { message },
   })
 }
 
@@ -1083,6 +1107,7 @@ export async function issueEbRemediationAccessLink(input: {
   orgId: string
   projectId: string
   inspectionId?: string | null
+  followUpOrderId?: string | null
   profileId?: string | null
   role: EbRemediationAccessRole
   displayName?: string | null
@@ -1092,17 +1117,23 @@ export async function issueEbRemediationAccessLink(input: {
   sendEmail?: boolean
 }) {
   const project = await requireProject(input.orgId, input.projectId)
+  const orderId = input.followUpOrderId ?? null
+  const order = orderId ? await requireFollowUpOrder({ orgId: input.orgId, projectId: input.projectId, orderId }) : null
+  if (order?.withdrawal_requested_at) throw new Error('EB_FOLLOW_UP_ORDER_INACTIVE')
   const inspectionId = normalizeText(input.inspectionId)
+  if (order && order.inspection_id !== inspectionId) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+  // Owner links are created/recovered only by the verified purchase flow.
+  if (input.role === 'customer_owner') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
   const inspection = inspectionId
     ? project.inspections.find((item) => item.inspectionId === inspectionId) ?? null
     : null
   if (inspectionId && !inspection) throw new Error('EB_INSPECTION_NOT_FOUND')
   const email = normalizeEmail(input.email)
   if (!email) throw new Error('EB_REMEDIATION_EMAIL_INVALID')
-  const assigneeId = input.role === 'assignee' ? normalizeText(input.assigneeId) : null
-  if (input.role === 'assignee' && !assigneeId) throw new Error('EB_REMEDIATION_ASSIGNEE_REQUIRED')
+  const assigneeId = input.role === 'assignee' || orderId ? normalizeText(input.assigneeId) : null
+  if ((input.role === 'assignee' || orderId) && !assigneeId) throw new Error('EB_REMEDIATION_ASSIGNEE_REQUIRED')
   const baseUrl = appBaseUrl(input.requestOrigin)
-  const fromAddress = input.sendEmail === false ? null : mailFromAddress()
+  const fromAddress = input.sendEmail === false || orderId ? null : mailFromAddress()
 
   const admin = createSupabaseAdminClient()
   if (assigneeId) {
@@ -1112,8 +1143,16 @@ export async function issueEbRemediationAccessLink(input: {
       .eq('id', assigneeId)
       .eq('org_id', input.orgId)
       .eq('eb_project_id', input.projectId)
+      .filter('follow_up_order_id', orderId ? 'eq' : 'is', orderId)
       .maybeSingle()
     if (error || !assignee) throw new Error('EB_REMEDIATION_ASSIGNEE_NOT_FOUND')
+    if (orderId) {
+      const { data: assignedTasks, error: assignedError } = await admin.from('eb_remediation_tasks')
+        .select('id').eq('follow_up_order_id', orderId).eq('remediation_assignee_id', assigneeId)
+        .eq('included', true).limit(1)
+      if (assignedError) throw new Error(assignedError.message)
+      if (!assignedTasks?.length) throw new Error('EB_REMEDIATION_TASK_REQUIRED')
+    }
   }
 
   let activeQuery = admin
@@ -1122,6 +1161,7 @@ export async function issueEbRemediationAccessLink(input: {
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
     .eq('role', input.role)
+    .filter('follow_up_order_id', orderId ? 'eq' : 'is', orderId)
     .is('revoked_at', null)
   activeQuery = inspectionId
     ? activeQuery.eq('inspection_id', inspectionId)
@@ -1143,6 +1183,7 @@ export async function issueEbRemediationAccessLink(input: {
     .insert({
       org_id: input.orgId,
       eb_project_id: input.projectId,
+      follow_up_order_id: orderId,
       inspection_id: inspectionId,
       remediation_assignee_id: assigneeId,
       role: input.role,
@@ -1153,7 +1194,7 @@ export async function issueEbRemediationAccessLink(input: {
       created_by: input.profileId ?? null,
     })
     .select(
-      'id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
+      'id,follow_up_order_id,org_id,eb_project_id,inspection_id,remediation_assignee_id,role,display_name,email,expires_at,revoked_at,last_used_at,sent_at,created_at'
     )
     .single()
   if (insertError || !link) throw new Error(insertError?.message ?? 'Kunde inte skapa åtkomstlänk.')
@@ -1171,6 +1212,14 @@ export async function issueEbRemediationAccessLink(input: {
     const text = `${recipient},\n\nDu har fått tillgång till ${roleText} för ${scopeLabel}.\n\nÖppna åtgärdslistan: ${accessUrl}\n\nLänken är personlig och ska inte vidarebefordras.`
     const html = `<p>${escapeHtml(recipient)},</p><p>Du har fått tillgång till ${escapeHtml(roleText)} för <strong>${escapeHtml(scopeLabel)}</strong>.</p><p><a href="${escapeHtml(accessUrl)}">Öppna åtgärdslistan</a></p><p>Länken är personlig och ska inte vidarebefordras.</p>`
 
+    if (orderId) {
+      try {
+        await queueEbFollowUpEmail({ orderId, dedupeKey: `access:${link.id}`, to: email, subject, html, text })
+      } catch (error) {
+        await admin.from('eb_remediation_access_links').update({ revoked_at: new Date().toISOString() }).eq('id', link.id)
+        throw error
+      }
+    } else {
     const { data: messageRow, error: messageError } = await admin
       .from('outbound_messages')
       .insert({
@@ -1228,6 +1277,7 @@ export async function issueEbRemediationAccessLink(input: {
         .eq('id', link.id)
       throw new Error(`Länken skapades men kunde inte skickas: ${message}`)
     }
+    }
   }
 
   if (previousLinkIds.length > 0) {
@@ -1251,6 +1301,7 @@ export async function revokeEbRemediationAccessLink(input: {
   orgId: string
   projectId: string
   inspectionId?: string | null
+  followUpOrderId?: string | null
   linkId: string
 }) {
   const admin = createSupabaseAdminClient()
@@ -1260,6 +1311,8 @@ export async function revokeEbRemediationAccessLink(input: {
     .eq('id', input.linkId)
     .eq('org_id', input.orgId)
     .eq('eb_project_id', input.projectId)
+    .filter('follow_up_order_id', input.followUpOrderId ? 'eq' : 'is', input.followUpOrderId ?? null)
+    .neq('role', 'customer_owner')
   if (input.inspectionId) revokeQuery = revokeQuery.eq('inspection_id', input.inspectionId)
   const { data, error } = await revokeQuery.select('id')
     .maybeSingle()
@@ -1281,12 +1334,22 @@ function assertOpenAccess(access: RemediationAccessRow) {
 }
 
 function assertTaskVisibleToAccess(task: RemediationTaskRow, access: RemediationAccessRow) {
+  if (!task.included || (task.follow_up_order_id ?? null) !== (access.follow_up_order_id ?? null)) {
+    throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
+  }
   if (access.inspection_id && task.inspection_id !== access.inspection_id) {
     throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
   }
-  if (access.role === 'assignee' && task.remediation_assignee_id !== access.remediation_assignee_id) {
+  if ((access.role === 'assignee' || (access.follow_up_order_id && access.role !== 'customer_owner')) &&
+      (!access.remediation_assignee_id || task.remediation_assignee_id !== access.remediation_assignee_id)) {
     throw new Error('EB_REMEDIATION_TASK_NOT_FOUND')
   }
+}
+
+function versionPayload(value: unknown): Record<string, string | null> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string | null] =>
+    typeof entry[1] === 'string' || entry[1] === null))
 }
 
 export async function performEbRemediationTokenAction(input: {
@@ -1297,10 +1360,26 @@ export async function performEbRemediationTokenAction(input: {
 }) {
   const access = await resolveAccessToken(input.token)
   if (!access) throw new Error('EB_REMEDIATION_ACCESS_NOT_FOUND')
+  if (input.action === 'renew_owner_link') {
+    if (access.role !== 'customer_owner' || !access.follow_up_order_id || access.revoked_at) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    await requestEbFollowUpOwnerRenewal({ accessToken: input.token, baseUrl: appBaseUrl(input.requestOrigin) })
+    return getEbRemediationWorkspaceByToken(input.token)
+  }
   assertOpenAccess(access)
+  const paid = Boolean(access.follow_up_order_id)
+  if (access.follow_up_order_id) {
+    const order = await requireFollowUpOrder({ orgId: access.org_id, projectId: access.eb_project_id, orderId: access.follow_up_order_id })
+    if (access.inspection_id !== order.inspection_id) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    if (order.withdrawal_requested_at && input.action !== 'withdraw_order') throw new Error('EB_FOLLOW_UP_ORDER_INACTIVE')
+  }
+  const canManage = ebRemediationCanManage(access.role, paid)
   const actor = actorFromAccess(access)
 
-  if (input.action === 'comment') {
+  if (input.action === 'withdraw_order') {
+    if (access.role !== 'customer_owner' || !access.follow_up_order_id) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    await withdrawEbFollowUpOrder({ orderId: access.follow_up_order_id, actorEmail: access.email, baseUrl: appBaseUrl(input.requestOrigin) })
+  } else if (input.action === 'comment') {
+    if (!ebRemediationCanComment(access.role)) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     const taskId = stringValue(input.payload.taskId).trim()
     const task = await requireTask({ orgId: access.org_id, projectId: access.eb_project_id, taskId })
     assertTaskVisibleToAccess(task, access)
@@ -1309,6 +1388,7 @@ export async function performEbRemediationTokenAction(input: {
       projectId: access.eb_project_id,
       taskId,
       message: stringValue(input.payload.message),
+      expectedUpdatedAt: nullableString(input.payload.expectedUpdatedAt) ?? task.updated_at,
       actor,
     })
   } else if (input.action === 'status') {
@@ -1316,21 +1396,14 @@ export async function performEbRemediationTokenAction(input: {
     const status = stringValue(input.payload.status) as EbRemediationStatus
     const task = await requireTask({ orgId: access.org_id, projectId: access.eb_project_id, taskId })
     assertTaskVisibleToAccess(task, access)
-    const allowed =
-      access.role === 'assignee'
-        ? new Set<EbRemediationStatus>(['in_progress', 'ready_for_review', 'cannot_remedy'])
-        : access.role === 'contractor_admin'
-          ? new Set<EbRemediationStatus>([
-              'assigned',
-              'in_progress',
-              'ready_for_review',
-              'returned',
-              'reported_remedied',
-              'cannot_remedy',
-            ])
-          : new Set<EbRemediationStatus>()
+    const allowed = new Set(ebRemediationAllowedStatuses(access.role, paid))
     if (!allowed.has(status)) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
-    if (access.role === 'assignee' && status === 'ready_for_review') {
+    const message = nullableString(input.payload.message)
+    if (paid && (access.role === 'customer_owner' || status === 'cannot_remedy') && !message) {
+      throw new Error('EB_REMEDIATION_COMMENT_REQUIRED')
+    }
+    if ((!paid && access.role === 'assignee' && status === 'ready_for_review') ||
+        (paid && status === 'reported_remedied' && !message)) {
       const admin = createSupabaseAdminClient()
       const { count, error } = await admin
         .from('eb_remediation_images')
@@ -1339,17 +1412,19 @@ export async function performEbRemediationTokenAction(input: {
         .eq('eb_project_id', access.eb_project_id)
         .eq('task_id', taskId)
       if (error) throw new Error(error.message ?? 'Kunde inte kontrollera åtgärdsbilder.')
-      if (!count) throw new Error('EB_REMEDIATION_COMPLETION_IMAGE_REQUIRED')
+      if (!count) throw new Error(paid ? 'EB_REMEDIATION_COMPLETION_EVIDENCE_REQUIRED' : 'EB_REMEDIATION_COMPLETION_IMAGE_REQUIRED')
     }
     await changeEbRemediationTaskStatus({
       orgId: access.org_id,
       projectId: access.eb_project_id,
       taskId,
       status,
+      message,
+      expectedUpdatedAt: nullableString(input.payload.expectedUpdatedAt) ?? task.updated_at,
       actor,
     })
   } else if (input.action === 'assign') {
-    if (access.role !== 'contractor_admin') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    if (!canManage) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     const taskIds = Array.isArray(input.payload.taskIds)
       ? input.payload.taskIds.map((value) => stringValue(value).trim()).filter(Boolean)
       : []
@@ -1357,16 +1432,19 @@ export async function performEbRemediationTokenAction(input: {
       orgId: access.org_id,
       projectId: access.eb_project_id,
       inspectionId: access.inspection_id,
+      followUpOrderId: access.follow_up_order_id,
+      expectedVersions: versionPayload(input.payload.expectedVersions),
       taskIds,
       assigneeId: nullableString(input.payload.assigneeId),
       dueDate: nullableString(input.payload.dueDate),
       actor,
     })
   } else if (input.action === 'create_assignee') {
-    if (access.role !== 'contractor_admin') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    if (!canManage) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     await createEbRemediationAssignee({
       orgId: access.org_id,
       projectId: access.eb_project_id,
+      followUpOrderId: access.follow_up_order_id,
       name: stringValue(input.payload.name),
       companyName: nullableString(input.payload.companyName),
       contactName: nullableString(input.payload.contactName),
@@ -1374,10 +1452,11 @@ export async function performEbRemediationTokenAction(input: {
       phone: nullableString(input.payload.phone),
     })
   } else if (input.action === 'update_assignee') {
-    if (access.role !== 'contractor_admin') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    if (!canManage) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     await updateEbRemediationAssignee({
       orgId: access.org_id,
       projectId: access.eb_project_id,
+      followUpOrderId: access.follow_up_order_id,
       assigneeId: stringValue(input.payload.assigneeId),
       name: stringValue(input.payload.name),
       companyName: nullableString(input.payload.companyName),
@@ -1387,7 +1466,7 @@ export async function performEbRemediationTokenAction(input: {
       isActive: typeof input.payload.isActive === 'boolean' ? input.payload.isActive : true,
     })
   } else if (input.action === 'send_assignee_link') {
-    if (access.role !== 'contractor_admin') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    if (!canManage) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     const assigneeId = stringValue(input.payload.assigneeId)
     const admin = createSupabaseAdminClient()
     const { data: assignee, error } = await admin
@@ -1396,12 +1475,14 @@ export async function performEbRemediationTokenAction(input: {
       .eq('id', assigneeId)
       .eq('org_id', access.org_id)
       .eq('eb_project_id', access.eb_project_id)
+      .filter('follow_up_order_id', access.follow_up_order_id ? 'eq' : 'is', access.follow_up_order_id ?? null)
       .maybeSingle()
     if (error || !assignee) throw new Error('EB_REMEDIATION_ASSIGNEE_NOT_FOUND')
     await issueEbRemediationAccessLink({
       orgId: access.org_id,
       projectId: access.eb_project_id,
       inspectionId: access.inspection_id,
+      followUpOrderId: access.follow_up_order_id,
       role: 'assignee',
       assigneeId,
       displayName: assignee.contact_name ?? assignee.name,
@@ -1410,11 +1491,12 @@ export async function performEbRemediationTokenAction(input: {
       sendEmail: true,
     })
   } else if (input.action === 'revoke_link') {
-    if (access.role !== 'contractor_admin') throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
+    if (!canManage) throw new Error('EB_REMEDIATION_ACTION_FORBIDDEN')
     await revokeEbRemediationAccessLink({
       orgId: access.org_id,
       projectId: access.eb_project_id,
       inspectionId: access.inspection_id,
+      followUpOrderId: access.follow_up_order_id,
       linkId: stringValue(input.payload.linkId),
     })
   } else {
@@ -1466,6 +1548,7 @@ export async function performEbRemediationInternalAction(input: {
       orgId: input.orgId,
       projectId: input.projectId,
       inspectionId: input.inspectionId,
+      expectedVersions: versionPayload(input.payload.expectedVersions),
       taskIds,
       assigneeId: nullableString(input.payload.assigneeId),
       dueDate: nullableString(input.payload.dueDate),
@@ -1482,6 +1565,8 @@ export async function performEbRemediationInternalAction(input: {
       projectId: input.projectId,
       taskId,
       status: stringValue(input.payload.status) as EbRemediationStatus,
+      expectedUpdatedAt: nullableString(input.payload.expectedUpdatedAt) ?? task.updated_at,
+      message: nullableString(input.payload.message),
       actor,
     })
   } else if (input.action === 'comment') {
@@ -1495,6 +1580,7 @@ export async function performEbRemediationInternalAction(input: {
       projectId: input.projectId,
       taskId,
       message: stringValue(input.payload.message),
+      expectedUpdatedAt: nullableString(input.payload.expectedUpdatedAt) ?? task.updated_at,
       actor,
     })
   } else if (input.action === 'send_admin_link' || input.action === 'send_viewer_link') {
@@ -1608,34 +1694,25 @@ export async function uploadEbRemediationImageByToken(input: {
   }
 
   try {
-    const { data: imageRow, error: imageError } = await admin
-      .from('eb_remediation_images')
-      .insert({
-        org_id: access.org_id,
-        eb_project_id: access.eb_project_id,
-        task_id: input.taskId,
-        storage_bucket: EB_REMEDIATION_IMAGE_BUCKET,
-        file_path: originalPath,
-        thumbnail_file_path: storedThumbnailPath,
-        file_name: input.file.name,
-        content_type: input.file.type || null,
-        file_size_bytes: input.file.size,
-        uploaded_by_access_link_id: access.id,
-      })
-      .select('id')
-      .single()
-    if (imageError || !imageRow) throw new Error(imageError?.message ?? 'Kunde inte registrera bilden.')
-    await insertEvent({
+    await applyTaskAction({
       orgId: access.org_id,
       projectId: access.eb_project_id,
       taskId: input.taskId,
-      eventType: 'photo_added',
+      action: 'image',
+      expectedUpdatedAt: task.updated_at,
       actor: actorFromAccess(access),
-      metadata: { imageId: imageRow.id, fileName: input.file.name },
+      payload: { id, storageBucket: EB_REMEDIATION_IMAGE_BUCKET, filePath: originalPath,
+        thumbnailFilePath: storedThumbnailPath, fileName: input.file.name,
+        contentType: input.file.type || null, fileSizeBytes: input.file.size },
     })
-    return imageRow.id as string
+    return id
   } catch (error) {
-    await storage.remove([originalPath, ...(storedThumbnailPath ? [storedThumbnailPath] : [])])
+    // A lost RPC response can follow a successful commit. Never remove an image
+    // that history already references, nor delete when commit state is unknown.
+    const committed = await admin.from('eb_remediation_images').select('id')
+      .eq('id', id).eq('task_id', input.taskId).maybeSingle()
+    if (committed.data) return id
+    if (!committed.error) await storage.remove([originalPath, ...(storedThumbnailPath ? [storedThumbnailPath] : [])])
     throw error
   }
 }

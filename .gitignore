@@ -154,6 +154,8 @@ vite.config.ts.timestamp-*
 /tmp/renoapp-completion-ui/
 /tmp/renoapp-cases-list-ui/
 /tmp/renoapp-rules-ui/
+/tmp/eb-follow-up-ui/
+/tmp/eb-follow-up-portal-ui/
 
 # next.js
 /.next/

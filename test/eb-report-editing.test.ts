@@ -233,6 +233,7 @@ test('a locked historical report keeps its stored section mode and text without 
 type SectionRenderer = ComponentType<{ report: EbInspectionReport; section: EbReportDraftSection }>
 const rendererDependencies = { ...pureDependencies, 'next/link': { default: () => null }, 'next/navigation': {},
   '@/components/eb/EbReportDeliveryDialog': { default: () => null }, '@/components/eb/EbToastProvider': {},
+  '@/components/eb/EbFollowUpOrder': { default: () => null },
   '@/components/report/PublicReportPdfDownload': { default: () => null }, '@/components/report/ReportShareButton': { default: () => null } }
 const pdf = load<{ SummonsReport: SectionRenderer; TestingDocumentationReport: SectionRenderer }>(
   'src/components/eb/EbInspectionReportView.tsx', rendererDependencies, ['SummonsReport', 'TestingDocumentationReport'])

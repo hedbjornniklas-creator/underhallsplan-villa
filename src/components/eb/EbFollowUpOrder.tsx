@@ -1,0 +1,242 @@
+'use client'
+
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { ArrowRight, Camera, Check, CheckCheck, ChevronDown, LoaderCircle, Mail, ShieldCheck, X } from 'lucide-react'
+import type { EbFollowUpOffer } from '@/lib/eb/followUp'
+
+type OrderFields = {
+  email: string
+  code: string
+  name: string
+  invoiceName: string
+  invoiceOrgNo: string
+  invoiceAddress: string
+  invoicePostalCode: string
+  invoiceCity: string
+  acceptTerms: boolean
+  requestImmediateStart: boolean
+  acceptInvoice: boolean
+}
+
+const emptyFields: OrderFields = {
+  email: '', code: '', name: '', invoiceName: '', invoiceOrgNo: '', invoiceAddress: '',
+  invoicePostalCode: '', invoiceCity: '', acceptTerms: false, requestImmediateStart: false, acceptInvoice: false,
+}
+const inputClass = 'min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal text-slate-950 focus:border-emerald-700 focus:outline-2 focus:outline-emerald-700 disabled:bg-slate-50'
+const buttonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60'
+
+function money(ore: number) {
+  return `${(ore / 100).toLocaleString('sv-SE', { maximumFractionDigits: 2 })} kr`
+}
+
+function safePortalUrl(value: unknown) {
+  return typeof value === 'string' && /^\/atgarder\/[A-Za-z0-9_-]{20,}$/.test(value) ? value : null
+}
+
+export default function EbFollowUpOrder({ endpoint }: { endpoint: string }) {
+  const [offer, setOffer] = useState<EbFollowUpOffer | null>(null)
+  const [loadError, setLoadError] = useState(false)
+  const [fields, setFields] = useState<OrderFields>(emptyFields)
+  const [challengeId, setChallengeId] = useState<string | null>(null)
+  const [challengeEmail, setChallengeEmail] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'code' | 'order' | 'access' | null>(null)
+  const [portalUrl, setPortalUrl] = useState<string | null>(null)
+  const [accessOnly, setAccessOnly] = useState(false)
+  const busyRef = useRef(false)
+  const mounted = useRef(true)
+  const dialog = useRef<HTMLDialogElement>(null)
+  const emailInput = useRef<HTMLInputElement>(null)
+  const codeInput = useRef<HTMLInputElement>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch(endpoint, { cache: 'no-store', signal, credentials: 'same-origin' })
+      const payload = await response.json()
+      if (!response.ok || !payload.offer) throw new Error('OFFER_UNAVAILABLE')
+      if (!signal?.aborted) { setOffer(payload.offer); setLoadError(false) }
+    } catch {
+      if (!signal?.aborted) setLoadError(true)
+    }
+  }, [endpoint])
+
+  useEffect(() => {
+    mounted.current = true
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => { mounted.current = false; controller.abort() }
+  }, [load])
+
+  function change<K extends keyof OrderFields>(key: K, value: OrderFields[K]) {
+    setFields(current => ({ ...current, [key]: value }))
+    if (key === 'email') { setChallengeId(null); setChallengeEmail(''); setMessage('') }
+  }
+
+  function open(mode: 'purchase' | 'access') {
+    setAccessOnly(mode === 'access')
+    setError(null)
+    dialog.current?.showModal()
+    emailInput.current?.focus()
+  }
+
+  async function send(action: 'request_code' | 'order' | 'access') {
+    if (busyRef.current || !offer) return
+    if (action !== 'request_code' && (!challengeId || challengeEmail !== fields.email.trim().toLowerCase())) {
+      setError('Begär först en kod till din e-postadress.')
+      return
+    }
+    busyRef.current = true
+    setBusy(action === 'request_code' ? 'code' : action)
+    setError(null)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 45_000)
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify(action === 'request_code' ? { action, email: fields.email.trim() } : {
+          action, challengeId, ...fields, code: fields.code.trim(), termsVersion: offer.termsVersion,
+          confirmedPriceOre: offer.priceOre,
+        }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Begäran kunde inte slutföras. Försök igen.')
+      if (!mounted.current) return
+      if (action === 'request_code') {
+        if (typeof payload.challengeId !== 'string') throw new Error('Koden kunde inte begäras. Försök igen.')
+        setChallengeId(payload.challengeId)
+        setChallengeEmail(fields.email.trim().toLowerCase())
+        setFields(current => ({ ...current, code: '' }))
+        setMessage(payload.message || 'Om adressen stämmer med beställarens uppgifter skickas en engångskod. Kontrollera även skräpposten.')
+        requestAnimationFrame(() => codeInput.current?.focus())
+      } else {
+        const nextUrl = safePortalUrl(payload.portalUrl)
+        if (!nextUrl) throw new Error('Begäran har tagits emot, men åtkomstlänken kunde inte visas. Försök igen eller kontrollera din e-post.')
+        setPortalUrl(nextUrl)
+        setMessage(payload.message || (action === 'access' ? 'Din privata åtgärdsuppföljning är öppnad.' : 'Beställningen är sparad och åtgärdsuppföljningen är aktiverad.'))
+        setOffer(current => current ? { ...current, alreadyActive: true } : current)
+        dialog.current?.close()
+      }
+    } catch (cause) {
+      if (mounted.current) setError(controller.signal.aborted
+        ? 'Svaret tog för lång tid. Försök igen. En upprepad beställning av samma tjänst skapar ingen extra kostnad.'
+        : cause instanceof Error ? cause.message : 'Begäran kunde inte slutföras. Försök igen.')
+    } finally {
+      clearTimeout(timeout)
+      busyRef.current = false
+      if (mounted.current) setBusy(null)
+    }
+  }
+
+  if (!offer) {
+    return loadError ? <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 print:hidden">
+      Åtgärdsuppföljning kunde inte hämtas. <button type="button" onClick={() => void load()} className="ml-1 font-semibold text-emerald-800 underline">Försök igen</button>
+    </div> : null
+  }
+  // An unavailable offer must not make reading the report depend on billing setup.
+  if (!offer.available && !offer.alreadyActive) return null
+
+  const priceLabel = `${money(offer.priceOre)} inkl. moms`
+  const verifiedEmailUnchanged = challengeId !== null && challengeEmail === fields.email.trim().toLowerCase()
+
+  return (
+    <section id="digital-follow-up" aria-label="Digital åtgärdsuppföljning" className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm print:hidden">
+      <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><CheckCheck size={25} aria-hidden /></span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.13em] text-emerald-700">Tillval efter besiktningen</p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-950">Följ upp felen på ett ställe</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Skicka felen till entreprenören och följ vilka som anmälts åtgärdade. Samla kommentarer, före- och åtgärdsbilder utan att ändra utlåtandet.</p>
+          </div>
+        </div>
+        <div className="shrink-0 lg:text-right">
+          {!offer.alreadyActive ? <><p className="text-xl font-semibold text-slate-950">{priceLabel}</p><p className="mb-3 mt-1 text-xs text-slate-500">Engångspris för denna besiktning. Ingen prenumeration.</p></> : null}
+          {portalUrl ? <a href={portalUrl} rel="noreferrer" className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>Öppna åtgärdsuppföljningen<ArrowRight size={17} aria-hidden /></a>
+            : <button type="button" onClick={() => open(offer.alreadyActive ? 'access' : 'purchase')} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
+              {offer.alreadyActive ? 'Öppna åtgärdsuppföljningen' : 'Se vad som ingår'}<ArrowRight size={17} aria-hidden />
+            </button>}
+        </div>
+      </div>
+      {portalUrl ? <div role="status" className="flex items-start gap-2 border-t border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-950"><Check size={18} className="mt-0.5 shrink-0" aria-hidden /><span>{message} Din personliga länk ska inte delas med entreprenören; skicka en separat entreprenörslänk från portalen.</span></div> : null}
+      {!portalUrl ? <div className="border-t border-slate-100 px-5 py-3 text-xs leading-5 text-slate-500 sm:px-6">Utlåtandet är tillgängligt även utan tillvalet. Entreprenörens avbockning är inte ett godkännande av besiktningsmannen.</div> : null}
+
+      <dialog ref={dialog} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event => { if (busyRef.current) event.preventDefault() }}
+        className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/50">
+        <form className="min-w-0 p-5 sm:p-7" onSubmit={event => { event.preventDefault(); void send(verifiedEmailUnchanged ? accessOnly ? 'access' : 'order' : 'request_code') }}>
+          <div className="flex items-start justify-between gap-4">
+            <h2 id={titleId} className="text-xl font-semibold">{accessOnly ? 'Öppna din åtgärdsuppföljning' : 'Digital åtgärdsuppföljning'}</h2>
+            <button type="button" disabled={!!busy} aria-label="Stäng" onClick={() => dialog.current?.close()} className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"><X size={19} aria-hidden /></button>
+          </div>
+          <p id={descriptionId} className="mt-3 text-sm leading-6 text-slate-600">{accessOnly ? 'Bekräfta beställarens e-postadress för att få en privat länk. Ingen ny beställning görs.' : 'Ett tillval för den här besiktningen. Du får en egen översikt och kan bjuda in entreprenörer via personliga länkar.'}</p>
+          {!accessOnly ? <>
+            <div className="my-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="text-2xl font-semibold text-emerald-950">{priceLabel}</p>
+              <p className="mt-1 text-xs text-emerald-900">{money(offer.netPriceOre)} + {money(offer.vatOre)} moms ({offer.vatRate} %). Betalas mot faktura.</p>
+              <details className="group mt-4 text-sm">
+                <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 font-semibold text-emerald-950 focus-visible:outline-2 focus-visible:outline-emerald-700 [&::-webkit-details-marker]:hidden">Vad ingår i priset?<ChevronDown size={17} className="transition-transform group-open:rotate-180" aria-hidden /></summary>
+                <ul className="mt-2 space-y-3 text-emerald-950">
+                  <li className="flex items-start gap-2"><CheckCheck size={18} className="mt-0.5 shrink-0" aria-hidden /><span>En gemensam lista med besiktningens fel, med tilldelning till rätt entreprenör.</span></li>
+                  <li className="flex items-start gap-2"><Camera size={18} className="mt-0.5 shrink-0" aria-hidden /><span>Entreprenören rapporterar åtgärder med bilder och kommentarer direkt från mobilen.</span></li>
+                  <li className="flex items-start gap-2"><Mail size={18} className="mt-0.5 shrink-0" aria-hidden /><span>Översikt, historik och mejl när uppföljningen uppdateras.</span></li>
+                </ul>
+                <p className="mt-3 leading-6">Ingen manuell kontroll av besiktningsman eller efterbesiktning ingår. ”Anmält åtgärdat” är entreprenörens uppgift, inte ett besiktningsgodkännande.</p>
+              </details>
+            </div>
+          </> : null}
+
+          <fieldset disabled={!!busy} className="mt-5 min-w-0 space-y-4 disabled:opacity-70">
+            <legend className="mb-3 flex items-center gap-2 text-sm font-semibold"><ShieldCheck size={18} className="text-emerald-700" aria-hidden />Bekräfta din e-postadress</legend>
+            <label className="grid min-w-0 gap-1.5 text-sm font-semibold">Beställarens e-postadress
+              <input ref={emailInput} name="email" type="email" autoComplete="email" maxLength={254} required value={fields.email} onChange={event => change('email', event.target.value)} className={inputClass} />
+            </label>
+            <p className="text-xs leading-5 text-slate-500">Ange adressen som besiktningsmannen har registrerat för beställaren. Kontakt- och fakturauppgifter visas inte för andra som har rapportlänken.</p>
+            {verifiedEmailUnchanged ? <>
+              <p role="status" className="rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-700">{message}</p>
+              <label className="grid gap-1.5 text-sm font-semibold">Engångskod från mejlet
+                <input ref={codeInput} name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={fields.code} onChange={event => change('code', event.target.value.replace(/\D/g, ''))} className={`${inputClass} tracking-[0.25em]`} />
+              </label>
+              <button type="button" onClick={() => void send('request_code')} className="min-h-10 text-sm font-semibold text-emerald-800 underline">Skicka en ny kod</button>
+            </> : null}
+          </fieldset>
+
+          {verifiedEmailUnchanged && !accessOnly ? <fieldset disabled={!!busy} className="mt-5 min-w-0 space-y-4 border-t border-slate-200 pt-5 disabled:opacity-70">
+            <legend className="px-1 text-sm font-semibold">Beställning och faktura</legend>
+            <label className="grid gap-1.5 text-sm font-semibold">Ditt namn<input name="name" autoComplete="name" maxLength={150} required value={fields.name} onChange={event => change('name', event.target.value)} className={inputClass} /></label>
+            <label className="grid gap-1.5 text-sm font-semibold">Fakturamottagarens namn<input name="invoiceName" autoComplete="billing organization" maxLength={160} required value={fields.invoiceName} onChange={event => change('invoiceName', event.target.value)} className={inputClass} /></label>
+            <label className="grid gap-1.5 text-sm font-semibold">Organisationsnummer <span className="font-normal text-slate-500">Frivilligt, för företag eller förening</span><input name="invoiceOrgNo" maxLength={32} value={fields.invoiceOrgNo} onChange={event => change('invoiceOrgNo', event.target.value)} className={inputClass} /></label>
+            <label className="grid gap-1.5 text-sm font-semibold">Fakturaadress<input name="invoiceAddress" autoComplete="billing street-address" maxLength={200} required value={fields.invoiceAddress} onChange={event => change('invoiceAddress', event.target.value)} className={inputClass} /></label>
+            <div className="grid min-w-0 grid-cols-[1fr_2fr] gap-3">
+              <label className="grid min-w-0 gap-1.5 text-sm font-semibold">Postnummer<input name="invoicePostalCode" autoComplete="billing postal-code" maxLength={20} required value={fields.invoicePostalCode} onChange={event => change('invoicePostalCode', event.target.value)} className={inputClass} /></label>
+              <label className="grid min-w-0 gap-1.5 text-sm font-semibold">Ort<input name="invoiceCity" autoComplete="billing address-level2" maxLength={100} required value={fields.invoiceCity} onChange={event => change('invoiceCity', event.target.value)} className={inputClass} /></label>
+            </div>
+            <p className="break-words text-xs leading-5 text-slate-500">Bekräftelsen och uppgifter om faktureringen skickas till den verifierade adressen {challengeEmail}.</p>
+            <details className="rounded-lg border border-slate-200 p-3 text-sm">
+              <summary className="min-h-10 cursor-pointer font-semibold">Tjänstens omfattning och köpvillkor</summary>
+              <div className="mt-2 space-y-3 leading-6 text-slate-700">
+                <p className="whitespace-pre-wrap">{offer.serviceDescription}</p>
+                <p>Priset är {priceLabel} för denna besiktning. Det är ett engångsköp utan prenumeration. Ursprungliga utlåtanden och bilder ändras inte av uppföljningen.</p>
+                <p>Som privatkund har du som huvudregel 14 dagars ångerrätt. Begäran om omedelbar aktivering tar inte i sig bort ångerrätten. Du kan meddela att du ångrar beställningen från din privata åtgärdsportal eller kontakta säljaren.</p>
+                {offer.seller ? <div className="border-t border-slate-200 pt-3"><p className="font-semibold">Säljare: {offer.seller.name}</p><p>Org.nr {offer.seller.orgNumber}</p><p className="whitespace-pre-wrap">{offer.seller.address}</p><a className="break-all text-emerald-800 underline" href={`mailto:${offer.seller.email}`}>{offer.seller.email}</a>{offer.seller.phone ? <p>{offer.seller.phone}</p> : null}</div> : null}
+                <p className="text-xs text-slate-500">Villkorsversion: {offer.termsVersion}</p>
+              </div>
+            </details>
+            <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" required checked={fields.acceptTerms} onChange={event => change('acceptTerms', event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-800" /><span>Jag har läst och godkänner tjänstens omfattning och köpvillkor.</span></label>
+            <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" required checked={fields.requestImmediateStart} onChange={event => change('requestImmediateStart', event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-800" /><span>Jag begär att den digitala åtgärdsuppföljningen aktiveras direkt.</span></label>
+            <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" required checked={fields.acceptInvoice} onChange={event => change('acceptInvoice', event.target.checked)} className="mt-1 size-4 shrink-0 accent-emerald-800" /><span>Jag godkänner betalningsskyldigheten på {priceLabel} mot faktura och har rätt att beställa för angiven fakturamottagare.</span></label>
+          </fieldset> : null}
+          {error ? <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900">{error}</p> : null}
+          <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <button type="button" disabled={!!busy} onClick={() => dialog.current?.close()} className={`${buttonClass} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`}>Avbryt</button>
+            <button type="submit" disabled={!!busy || (!accessOnly && !offer.available)} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
+              {busy ? <LoaderCircle size={18} className="animate-spin" aria-hidden /> : verifiedEmailUnchanged ? <Check size={18} aria-hidden /> : <Mail size={18} aria-hidden />}
+              {busy === 'code' ? 'Skickar kod …' : busy === 'order' ? 'Sparar beställning …' : busy === 'access' ? 'Öppnar …' : !verifiedEmailUnchanged ? 'Skicka engångskod' : accessOnly ? 'Öppna utan ny beställning' : `Beställ för ${priceLabel}`}
+            </button>
+          </div>
+        </form>
+      </dialog>
+    </section>
+  )
+}
