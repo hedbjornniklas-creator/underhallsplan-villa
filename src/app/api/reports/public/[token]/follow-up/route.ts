@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { completeEbFollowUpOrder, getEbFollowUpCustomerState, requestEbFollowUpCustomerLink } from '@/lib/eb/followUpServer'
+import { requestEbFollowUpCustomerLink } from '@/lib/eb/followUpServer'
 import { assertEbCustomerRequestOrigin } from '@/lib/eb/customerSession'
 
 export const runtime = 'nodejs'
@@ -28,9 +28,10 @@ function failure(error: unknown) {
   return NextResponse.json({ error: message }, { status, headers: noStore })
 }
 
-export async function GET(_request: Request, context: Context) {
-  const { token } = await context.params
-  return NextResponse.json(await getEbFollowUpCustomerState(token), { headers: noStore })
+export async function GET() {
+  // Reading URLs never unlock an offer, including in a browser with a buyer
+  // cookie. The personal-token endpoint is the only active checkout surface.
+  return NextResponse.json({ verified: false, offer: null, accessAvailable: false, retryable: false }, { headers: noStore })
 }
 
 export async function POST(request: Request, context: Context) {
@@ -47,7 +48,7 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json(await requestEbFollowUpCustomerLink({ token, email: payload.email, baseUrl }), { headers: noStore })
     }
     if (payload.action === 'order' || payload.action === 'access') {
-      return NextResponse.json(await completeEbFollowUpOrder({ token, input: payload, baseUrl }), { headers: noStore })
+      return failure(new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED'))
     }
     return NextResponse.json({ error: 'Okänd åtgärd.' }, { status: 400, headers: noStore })
   } catch (error) {

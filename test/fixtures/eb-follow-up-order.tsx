@@ -5,6 +5,7 @@ import EbPublicReportSnapshotView from '../../src/components/eb/EbPublicReportSn
 import type { EbInspectionReport } from '../../src/lib/eb/server'
 
 const view = new URLSearchParams(location.search).get('view')
+const privateEndpoint = '/api/eb/customer/test-buyer-secret-with-more-than-20-characters/follow-up'
 const report = {
   project: { title: 'Lokal testvilla', address: 'Testgatan 1', postalCode: '12345', city: 'Teststad',
     standardAgreement: 'Konsumententreprenad', notePrefix: 'Fel' },
@@ -14,30 +15,29 @@ const report = {
     { key: 'summons', title: 'Kallelse', isRelevant: true, contentMode: 'editable', text: 'Originalrapporten förblir tillgänglig utan köp.' },
     ...(view === 'report-no-defects' ? [] : [{ key: 'defects_appendices', title: 'Fel och noteringar', isRelevant: true, text: '' }]),
   ] },
-  notes: view === 'report-empty' ? [] : [{ id: 'test-note', noteNumber: 1, sortOrder: 1, noteText: 'En syntetisk notering för UI-testet.' }],
+  notes: view === 'buyer-empty' ? [] : [{ id: 'test-note', noteNumber: 1, sortOrder: 1, noteText: 'En syntetisk notering för UI-testet.' }],
   markers: [], checkpoints: [], images: [],
   branding: { footer: { companyLines: ['Testföretag'], contactLines: [] }, besiktAppLogoUrl: '/test-logo.svg' },
 } as unknown as EbInspectionReport
 
 function SwitchingReport() {
-  const [endpoint, setEndpoint] = useState('/mock-follow-up')
+  const [endpoint, setEndpoint] = useState(privateEndpoint)
   return <main className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
     <h1>Rapportbyte — lokal testdata</h1>
-    <button type="button" onClick={() => setEndpoint('/mock-follow-up-other')}>Byt testrapport</button>
+    <button type="button" onClick={() => setEndpoint(privateEndpoint.replace('test-buyer-', 'other-buyer-'))}>Byt testrapport</button>
     <EbFollowUpOrder endpoint={endpoint} />
   </main>
 }
 
 createRoot(document.getElementById('root')!).render(
   view === 'switch-report' ? <SwitchingReport /> : view ? <EbPublicReportSnapshotView report={report}
-    shareEndpoint={view === 'report-actions' ? '/mock-share' : null}
-    shareUrl={view === 'report-actions' ? '/public-report' : null}
-    pdfDownloadUrl={view === 'report-actions' ? '/mock-report.pdf' : null}
-    pdfStatus={view === 'report-actions' ? 'ready' : undefined}
-    customerAutoOpen={new URLSearchParams(location.search).get('customer') === '1'}
-    followUpEndpoint={view === 'preview' ? null : '/mock-follow-up'} /> : <main className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
+    shareEndpoint={view === 'report-actions' || view === 'buyer-report' ? '/mock-share' : null}
+    shareUrl={view === 'report-actions' || view === 'buyer-report' ? '/public-report' : null}
+    pdfDownloadUrl={view === 'report-actions' || view === 'buyer-report' ? '/mock-report.pdf' : null}
+    pdfStatus={view === 'report-actions' || view === 'buyer-report' ? 'ready' : undefined}
+    followUpEndpoint={view.startsWith('buyer-') ? privateEndpoint : null} /> : <main className="mx-auto max-w-5xl space-y-6 p-4 sm:p-8">
     <h1 className="text-2xl font-semibold">Fastställt utlåtande — lokal testdata</h1>
     <p>Originalrapporten förblir tillgänglig utan köp.</p>
-    <EbFollowUpOrder endpoint="/mock-follow-up" autoOpen={new URLSearchParams(location.search).get('customer') === '1'} />
+    <EbFollowUpOrder endpoint={privateEndpoint} />
   </main>,
 )

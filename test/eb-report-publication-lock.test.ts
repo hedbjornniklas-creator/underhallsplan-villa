@@ -304,7 +304,7 @@ function routeFixture(options: FixtureOptions = {}) {
       '@/lib/eb/customerLinks': { issueEbCustomerLink: async (input: Row) => {
         assert.equal(input.publicToken, 'new-public-token')
         assert.equal(input.email, deliveryCustomer.email)
-        return 'https://hushub.test/api/eb/customer/private-buyer-secret'
+        return 'https://hushub.test/rapport/bestallare/private-buyer-secret'
       } },
       '@/lib/eb/server': {
         getEbProjectById: async () => structuredClone(live.project),
@@ -377,7 +377,7 @@ test('send-and-lock persists publication before mail and later delivery metadata
   assert.deepEqual(f.events, ['stage', 'lock', 'publish', 'register-customer', 'revoke-previous', 'outbound', 'send', 'delivery-metadata', 'schedule-pdf'])
 })
 
-test('EB delivery sends customer management entry only to the designated address, not every report recipient', async () => {
+test('EB delivers one report link per recipient: private for the buyer, read-only for all other parties', async () => {
   for (const deliveryCustomer of ['buyer@example.test', 'extra-customer@example.test']) {
     const f = routeFixture({ deliveryCustomer, primaryRecipient: deliveryCustomer, establishedCustomer: true,
       extraRecipients: ['contractor@example.test', 'other-recipient@example.test'] })
@@ -388,11 +388,17 @@ test('EB delivery sends customer management entry only to the designated address
     assert.doesNotMatch(body.publicLink, /customer=/, 'Shared/public API output must remain a plain report URL')
     for (const message of f.sentMessages) {
       const content = String(message.html) + String(message.text)
+      assert.equal((String(message.html).match(/<a href=/g) ?? []).length, 1)
+      assert.equal((String(message.text).match(/https:\/\//g) ?? []).length, 1)
+      assert.match(content, /Öppna utlåtandet/)
+      assert.doesNotMatch(content, /Hantera din besiktning/)
       if (message.to === deliveryCustomer) {
-        assert.match(content, /Hantera din besiktning/)
-        assert.match(content, /\/api\/eb\/customer\/private-buyer-secret/)
+        assert.match(content, /\/rapport\/bestallare\/private-buyer-secret/)
+        assert.doesNotMatch(content, /\/rapport\/new-public-token/)
+        assert.match(content, /personliga länk/)
       } else {
         assert.doesNotMatch(content, /Hantera din besiktning|customer=|private-buyer-secret/)
+        assert.match(content, /\/rapport\/new-public-token/)
       }
     }
   }
@@ -512,7 +518,7 @@ test('first delivery uses the explicitly entered customer without any assignment
   assert.equal((await f.post('send_and_lock')).status, 200)
   assert.deepEqual(f.customer(), { email: 'new.customer@example.test', established: true, purchased: false })
   assert.equal(f.sentMessages[0].to, 'new.customer@example.test')
-  assert.match(String(f.sentMessages[0].text), /Hantera din besiktning/)
+  assert.match(String(f.sentMessages[0].text), /personliga länk/)
   assert.doesNotMatch(String(f.sentMessages[1].text), /Hantera din besiktning|customer=/)
   assert.equal(snapshotReport(f.created().snapshot_payload).report.project.clientEmail, null,
     'Registering the delivery customer must not modify the frozen report facts')
@@ -553,7 +559,7 @@ test('established and purchased customers cannot be replaced during resend, but 
   const extra = routeFixture({ frozen: true, deliveryCustomer: 'owner@example.test', establishedCustomer: true,
     purchased: true, primaryRecipient: 'owner@example.test', extraRecipients: ['contractor@example.test'] })
   assert.equal((await extra.post('resend')).status, 200)
-  assert.match(String(extra.sentMessages[0].text), /Hantera din besiktning/)
+  assert.match(String(extra.sentMessages[0].text), /personliga länk/)
   assert.doesNotMatch(String(extra.sentMessages[1].text), /Hantera din besiktning|customer=/)
   assert.equal(extra.customer().purchased, true)
 })

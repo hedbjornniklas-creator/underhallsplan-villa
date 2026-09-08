@@ -165,9 +165,10 @@ async function eligibleCustomerEmails(context: Awaited<ReturnType<typeof loadCon
   return new Set(customer.email ? [customer.email] : [])
 }
 
-async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext>>): Promise<EbCustomerSession | null> {
-  const session = await readEbCustomerSession(context.link.inspection_id)
-  if (!session || session.orgId !== context.link.org_id || session.inspectionId !== context.link.inspection_id
+async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext>>, serverSession?: EbCustomerSession): Promise<EbCustomerSession | null> {
+  const session = serverSession ?? await readEbCustomerSession(context.link.inspection_id)
+  if (!session || !Number.isFinite(session.expiresAt) || session.expiresAt <= Date.now()
+    || session.orgId !== context.link.org_id || session.inspectionId !== context.link.inspection_id
     || (session.kind === 'report' && session.reportLinkId !== context.link.id)
     || (session.kind === 'owner' && (!context.order || !session.portalPath))
     || !(await eligibleCustomerEmails(context)).has(session.email)
@@ -176,7 +177,7 @@ async function customerSessionFor(context: Awaited<ReturnType<typeof loadContext
 }
 
 /** Public recipients see only a neutral entry. Price, purchase state and seller details require verified identity. */
-export async function getEbFollowUpCustomerState(token: string) {
+export async function getEbFollowUpCustomerState(token: string, serverSession?: EbCustomerSession) {
   let context: Awaited<ReturnType<typeof loadContext>>
   try { context = await loadContext(token) }
   catch {
@@ -185,7 +186,7 @@ export async function getEbFollowUpCustomerState(token: string) {
   }
   const offer = await evaluateOffer(async () => context)
   let session: EbCustomerSession | null
-  try { session = await customerSessionFor(context) }
+  try { session = await customerSessionFor(context, serverSession) }
   catch { return { verified: false, offer: null, accessAvailable: false, retryable: true } }
   if (session) return { verified: true, offer: { ...offer, reason: offer.available ? null : 'Tjänsten kan inte beställas just nu. Försök igen senare.' } }
   return { verified: false, offer: null, accessAvailable: offer.available || offer.alreadyActive, retryable: offer.retryable === true }
@@ -328,10 +329,12 @@ function orderEmails(orderId: string, challengeId: string, buyer: EbFollowUpBuye
   } satisfies EbFollowUpEmail) }))
 }
 
-export async function completeEbFollowUpOrder(input: { token: string; input: Record<string, unknown>; baseUrl?: string }) {
+export async function completeEbFollowUpOrder(input: { token: string; input: Record<string, unknown>; baseUrl?: string; customerSession?: EbCustomerSession }) {
   const payload = input.input
   const context = await loadContext(input.token)
-  const session = await customerSessionFor(context)
+  // customerSession is an internal server argument from the private bearer route,
+  // never a field read from the user-supplied input payload.
+  const session = await customerSessionFor(context, input.customerSession)
   if (!session) throw new Error('EB_FOLLOW_UP_VERIFICATION_REQUIRED')
   // Return verified existing access without creating an order, a new invoice or another access email.
   if (session.kind === 'owner' && context.order && session.portalPath && ['access', 'order'].includes(String(payload.action))) {

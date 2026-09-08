@@ -68,7 +68,10 @@ function reportFixture(): EbInspectionReport {
 }
 
 type PublicPage = {
-  default: (props: { params: Promise<{ token: string }>; searchParams?: Promise<{ pdf?: string }> }) => Promise<ReactElement<Record<string, unknown>>>
+  default: (props: { params: Promise<{ token: string }>; searchParams?: Promise<{ pdf?: string; customer?: string }> }) => Promise<ReactElement<Record<string, unknown>>>
+}
+type ReportContent = {
+  default: (props: { publicToken: string; isPdfRender?: boolean; buyerFollowUpEndpoint?: string; buyerAccessExpired?: boolean }) => Promise<ReactElement<Record<string, unknown>>>
 }
 
 function publicPageFixture() {
@@ -79,7 +82,7 @@ function publicPageFixture() {
   const payload = { ...snapshots.createEbReportSnapshotPayloadV1(original), report: original }
   const reads: string[] = []
   const publicView = () => createElement('main', null, 'Det kostnadsfria utlåtandet')
-  const page = load<PublicPage>('src/app/rapport/[token]/page.tsx', {
+  const content = load<ReportContent>('src/components/report/PublicReportPageContent.tsx', {
     'next/link': { __esModule: true, default: () => null },
     'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') }, redirect: () => { throw new Error('UNEXPECTED_LOGIN') } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ from: (table: string) => {
@@ -104,7 +107,15 @@ function publicPageFixture() {
     '@/components/eb/EbPublicReportSnapshotView': { __esModule: true, default: publicView },
     '@/components/tu/TuPublicReportSnapshotView': { __esModule: true, default: () => null },
   })
-  return { page, state, payload, original, reads, publicView }
+  const wrapper = load<PublicPage>('src/app/rapport/[token]/page.tsx', {
+    '@/components/report/PublicReportPageContent': { __esModule: true, default: content.default },
+  })
+  const page: PublicPage = { default: async props => {
+    const element = await wrapper.default(props)
+    assert.equal(element.type, content.default)
+    return content.default(element.props as Parameters<ReportContent['default']>[0])
+  } }
+  return { page, content, state, payload, original, reads, publicView }
 }
 
 test('a valid report bearer link still opens the full free report without an account or a purchase', async () => {
@@ -126,6 +137,30 @@ test('public report props redact billing and private contacts even from old snap
   assert.equal(f.original.project.invoiceName, secret)
   assert.equal(f.original.inspection.invoiceEmail, secret)
   assert.equal(f.original.notes[0].noteText, 'FASTSTÄLLT FEL')
+})
+
+test('the public route cannot enable buyer controls through customer=1 and never reads ambient buyer sessions', async () => {
+  const f = publicPageFixture()
+  const element = await f.page.default({ params: Promise.resolve({ token }), searchParams: Promise.resolve({ customer: '1' }) })
+  assert.equal(element.props.followUpEndpoint, undefined)
+  assert.equal(element.props.customerAutoOpen, undefined)
+  assert.deepEqual(f.reads, ['inspection_report_links'])
+})
+
+test('buyer report reuses the same frozen content and only clean public URLs for sharing, PDF and documents', async () => {
+  const f = publicPageFixture()
+  const endpoint = '/api/eb/customer/private-buyer-secret/follow-up'
+  const ordinary = await f.page.default({ params: Promise.resolve({ token }) })
+  const buyer = await f.content.default({ publicToken: token, buyerFollowUpEndpoint: endpoint })
+  assert.deepEqual(buyer.props.report, ordinary.props.report)
+  assert.equal(buyer.props.followUpEndpoint, endpoint)
+  for (const key of ['shareUrl', 'shareEndpoint', 'pdfDownloadUrl', 'pdfStatusEndpoint', 'deliveryDocuments']) {
+    assert.deepEqual(buyer.props[key], ordinary.props[key])
+    assert.doesNotMatch(JSON.stringify(buyer.props[key]), /private-buyer-secret|customer=1/)
+  }
+  const expired = await f.content.default({ publicToken: token, buyerFollowUpEndpoint: endpoint, buyerAccessExpired: true })
+  assert.match(renderToStaticMarkup(expired), /beställarlänk har gått ut/)
+  assert.doesNotMatch(JSON.stringify(expired.props), /private-buyer-secret/)
 })
 
 test('unknown or revoked free report links never disclose report or follow-up content', async () => {
@@ -210,23 +245,24 @@ function orderRouteFixture() {
   return { api, calls, state, context, post }
 }
 
-test('purchase HTTP boundary keeps GET read-only and link requests do not order or expose old OTP endpoints', async () => {
+test('legacy reading endpoint never unlocks an offer or order; old link recovery remains non-purchasing', async () => {
   const f = orderRouteFixture()
-  const response = await f.api.GET(new Request('https://hushub.test/offer'), f.context)
+  const response = await f.api.GET()
   assert.equal(response.status, 200)
   assert.match(response.headers.get('Cache-Control') ?? '', /no-store/)
-  assert.deepEqual(await response.json(), { verified: false, offer: null, accessAvailable: true })
-  assert.deepEqual(f.calls, [{ name: 'offer', input: token }])
+  assert.deepEqual(await response.json(), { verified: false, offer: null, accessAvailable: false, retryable: false })
+  assert.equal(f.calls.length, 0)
   for (const action of ['request_code', 'verify_code']) assert.equal((await f.post({ action })).status, 400)
   const code = await f.post({ action: 'request_link', email: 'buyer@example.test' })
   assert.equal(code.status, 200)
-  assert.equal(f.calls[1].name, 'request_link')
+  assert.equal(f.calls[0].name, 'request_link')
   assert.equal(f.calls.some(call => call.name === 'complete'), false)
   const input = { action: 'order', challengeId: 'challenge', code: '123456', confirmedPriceOre: 59900,
     acceptTerms: true, requestImmediateStart: true, acceptInvoice: true, termsVersion: '2026-09-07' }
   const result = await f.post(input)
-  assert.equal(result.status, 200)
-  assert.deepEqual(f.calls[2], { name: 'complete', input: { token, input, baseUrl: 'https://hushub.test' } })
+  assert.equal(result.status, 401)
+  assert.equal((await f.post({ action: 'access' })).status, 401)
+  assert.equal(f.calls.length, 1, 'An ambient buyer cookie must not route public-link requests into checkout')
   assert.match(result.headers.get('Cache-Control') ?? '', /private/)
 })
 
@@ -236,13 +272,10 @@ test('purchase HTTP input/error paths reject oversized or malformed requests and
     assert.equal((await f.post(input)).status, status)
   }
   assert.equal(f.calls.length, 0)
-  for (const [error, status] of [
-    ['EB_FOLLOW_UP_VERIFICATION_REQUIRED', 401], ['EB_FOLLOW_UP_CONSENT_REQUIRED', 400],
-    ['EB_FOLLOW_UP_OFFER_CHANGED', 409], [`DATABASE_ERROR:${secret}`, 503],
-  ] as const) {
+  for (const error of ['EB_FOLLOW_UP_VERIFICATION_REQUIRED', `DATABASE_ERROR:${secret}`]) {
     f.state.fail = error
     const response = await f.post({ action: 'order' })
-    assert.equal(response.status, status)
+    assert.equal(response.status, 401)
     assert.doesNotMatch(await response.text(), /PRIVATE-BILLING|DATABASE_ERROR/)
     assert.match(response.headers.get('Cache-Control') ?? '', /no-store/)
   }

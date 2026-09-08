@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer-core'
 import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 
-// Synthetic data only. A mock personal-link landing sets an HttpOnly cookie;
+// Synthetic data only. The private endpoint renews a session from its bearer;
 // no real email, database, purchase or external browser request is used.
 const require = createRequire(import.meta.url)
 const { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -28,35 +28,34 @@ const offer = { available: true, reason: null, retryable: false, alreadyActive: 
 const initialOffer = structuredClone(offer)
 const portalUrl = '/atgarder/test-only-private-token-with-more-than-20-characters'
 const posts = [], shares = []
-let failOrder = false, failOffer = false, failLink = false, accessAvailable = true, retryable = false
-let sessionValid = true, leakPublicOffer = false, nonJsonUnauthorized = false
-let offerRequests = 0, offerDelay = 0, failedLinkRequests = 0
+let failOrder = false, failOffer = false, failTransport = false, retryable = false, transientLookup = false
+let sessionValid = true, buyerValid = true, leakUnauthorizedOffer = false, nonJsonUnauthorized = false
+let offerRequests = 0, offerDelay = 0, failedOrderRequests = 0, sessionRenewals = 0
 const server = createServer(async (request, response) => {
   const route = new URL(request.url, 'http://127.0.0.1').pathname
-  if (route === '/mock-buyer-link') {
-    sessionValid = true
-    response.writeHead(303, { 'Set-Cookie': 'mock-customer-session=personal-link; HttpOnly; SameSite=Strict; Path=/', Location: '/?customer=1', 'Cache-Control': 'no-store' })
-    response.end(); return
-  }
   if (route === '/mock-share') {
     let body = ''; for await (const chunk of request) body += chunk
     shares.push(JSON.parse(body)); response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ ok: true })); return
   }
   if (route === '/mock-report.pdf') { response.setHeader('Content-Type', 'application/pdf'); response.end('%PDF-1.4\n% Synthetic fixture\n%%EOF'); return }
-  if (route === '/mock-follow-up' || route === '/mock-follow-up-other') {
+  if (route === portalUrl) { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end('<main id="mock-private-portal">Privat testportal</main>'); return }
+  if (/^\/api\/eb\/customer\/[^/]+\/follow-up$/.test(route)) {
     response.setHeader('Content-Type', 'application/json'); response.setHeader('Cache-Control', 'no-store')
-    const verified = route !== '/mock-follow-up-other' && sessionValid && /(?:^|;\s*)mock-customer-session=personal-link(?:;|$)/.test(request.headers.cookie ?? '')
+    const verified = !route.includes('/other-buyer-') && buyerValid
+    if (verified && !sessionValid) {
+      sessionValid = true; sessionRenewals += 1
+      response.setHeader('Set-Cookie', 'mock-customer-session=personal-link; HttpOnly; SameSite=Strict; Path=/')
+    }
     if (request.method === 'GET') {
       offerRequests += 1
       if (offerDelay) await new Promise(ok => setTimeout(ok, offerDelay))
       response.statusCode = failOffer ? 503 : 200
-      response.end(JSON.stringify(failOffer ? { error: 'Unavailable' } : { verified, offer: verified || leakPublicOffer ? offer : null, accessAvailable, retryable })); return
+      response.end(JSON.stringify(failOffer ? { error: 'Unavailable' } : transientLookup ? { verified: false, offer: null, retryable: true } : { verified, offer: verified || leakUnauthorizedOffer ? offer : null, accessAvailable: verified, retryable })); return
     }
     let body = ''; for await (const chunk of request) body += chunk
     const payload = JSON.parse(body); posts.push(payload)
     await new Promise(ok => setTimeout(ok, 350))
-    if (payload.action === 'request_link') response.end(JSON.stringify({ message: 'Om adressen stämmer skickas en personlig beställarlänk. Ingen beställning görs.', ...(leakPublicOffer ? { verified: true, offer } : {}) }))
-    else if (!verified) { response.statusCode = 401; response.end(nonJsonUnauthorized ? '<html>Unauthorized</html>' : JSON.stringify({ error: 'Personlig beställarlänk krävs.' })) }
+    if (!verified) { response.statusCode = 401; response.end(nonJsonUnauthorized ? '<html>Unauthorized</html>' : JSON.stringify({ error: 'Personlig beställarlänk krävs.' })) }
     else if (failOrder) { response.statusCode = 409; response.end(JSON.stringify({ error: 'Testkonflikt — försök igen.' })) }
     else { offer.alreadyActive = true; response.end(JSON.stringify({ portalUrl, message: payload.action === 'access' ? 'Teståtkomsten är öppnad.' : 'Testbeställningen är sparad.' })) }
     return
@@ -74,7 +73,7 @@ try {
   await page.setRequestInterception(true)
   page.on('request', request => {
     if (new URL(request.url()).hostname !== '127.0.0.1') return request.abort()
-    if (failLink && request.method() === 'POST' && request.postData()?.includes('request_link')) { failedLinkRequests += 1; return request.abort('failed') }
+    if (failTransport && request.method() === 'POST' && request.postData()?.includes('order')) { failedOrderRequests += 1; return request.abort('failed') }
     return request.continue()
   })
   const errors = []; page.on('pageerror', error => { errors.push(error.message); console.error(error.message) })
@@ -82,17 +81,21 @@ try {
   async function reset() {
     await page.deleteCookie({ name: 'mock-customer-session', url }); posts.length = 0; shares.length = 0
     Object.assign(offer, structuredClone(initialOffer))
-    failOrder = false; failOffer = false; failLink = false; accessAvailable = true; retryable = false
-    sessionValid = true; leakPublicOffer = false; nonJsonUnauthorized = false; offerDelay = 0; failedLinkRequests = 0
+    failOrder = false; failOffer = false; failTransport = false; retryable = false; transientLookup = false
+    sessionValid = true; buyerValid = true; leakUnauthorizedOffer = false; nonJsonUnauthorized = false; offerDelay = 0; failedOrderRequests = 0; sessionRenewals = 0
   }
   async function assertNoCheckout() {
     const text = await page.$eval('main', node => node.textContent)
-    assert.doesNotMatch(text, /599 kr|Köp åtgärdsuppföljning|Beställ med betalningsskyldighet|Engångspris|Tillval efter|Testbolaget AB|Vad ingår i priset|Engångskod|Verifiera kod|Bekräfta din e-postadress/)
-    for (const name of ['invoiceName', 'name', 'customerType', 'code']) assert.equal(await page.$(`[name=${name}]`), null, `${name} must not exist without personal access`)
+    assert.doesNotMatch(text, /599 kr|Köp åtgärdsuppföljning|Beställ med betalningsskyldighet|Engångspris|Tillval efter|Testbolaget AB|Vad ingår i priset|Engångskod|Verifiera kod|Bekräfta din e-postadress|För beställaren|Skicka min beställarlänk/)
+    for (const name of ['invoiceName', 'name', 'customerType', 'code', 'email']) assert.equal(await page.$(`[name=${name}]`), null, `${name} must not exist without personal access`)
     assert.equal(await page.$('input[type=checkbox]'), null)
   }
-  async function openEntry() { await page.locator('#digital-follow-up button').filter(node => node.textContent.includes('För beställaren')).click(); await page.waitForSelector('dialog[open]') }
-  async function personalAccess() { await page.goto(`${url}/mock-buyer-link`, { waitUntil: 'networkidle0' }); await page.waitForSelector('dialog[open]') }
+  async function openCheckout() { await page.locator('#digital-follow-up > div button').filter(node => node.textContent.includes('Köp') || node.textContent.includes('Öppna')).click(); await page.waitForSelector('dialog[open]') }
+  async function personalAccess({ open = true, view = 'buyer-report' } = {}) {
+    await page.goto(`${url}?view=${view}&customer=1`, { waitUntil: 'networkidle0' })
+    assert.equal(await page.$('dialog[open]'), null, 'arrival never opens checkout automatically')
+    if (open) { await page.waitForSelector('#digital-follow-up'); await openCheckout() }
+  }
   async function fillBuyer(customerType = 'consumer') {
     await page.select('[name=customerType]', customerType)
     for (const [name, value] of Object.entries({ name: 'Testkund', invoiceName: 'Testkund', invoiceAddress: 'Testvägen 1', invoicePostalCode: '12345', invoiceCity: 'Teststad' })) await page.type(`[name=${name}]`, value)
@@ -109,19 +112,13 @@ try {
   }
 
   for (const width of [1440, 390]) {
-    await reset(); await page.setViewport({ width, height: 844 }); await page.goto(url, { waitUntil: 'networkidle0' }); await page.waitForSelector('#digital-follow-up')
-    await assertNoCheckout(); await openEntry(); assert.equal(await page.evaluate(() => document.activeElement.name), 'email')
-    await page.type('[name=email]', 'customer@example.invalid'); await submitTwice(); await page.keyboard.press('Escape')
-    assert.notEqual(await page.$('dialog[open]'), null, 'busy requests prevent accidental dismissal')
-    await page.waitForSelector('[role=status]'); await page.waitForFunction(() => !document.querySelector('button[type=submit]')?.disabled)
-    assert.deepEqual(posts, [{ action: 'request_link', email: 'customer@example.invalid' }], 'requesting a link neither verifies nor orders')
-    await assertNoCheckout(); await assertNoOverflow(); await page.screenshot({ path: resolve(output, `entry-${width}.png`) })
-    await page.keyboard.press('Escape'); assert.equal(await page.$('dialog[open]'), null)
-    await personalAccess()
+    await reset(); await page.setViewport({ width, height: 844 }); await personalAccess({ open: false })
+    await page.waitForSelector('#digital-follow-up'); assert.equal(posts.length, 0)
+    assert.equal(await page.$eval('#digital-follow-up > div button', node => node.textContent), 'Köp åtgärdsuppföljning – 599 kr inkl. moms')
+    assert.equal(await page.evaluate(() => document.querySelector('#digital-follow-up').parentElement.previousElementSibling === document.querySelector('h1').closest('section')), true, 'prominent buyer offer is directly under the report hero')
+    await assertNoOverflow(); await page.screenshot({ path: resolve(output, `buyer-report-${width}.png`), fullPage: true }); await openCheckout()
     assert.equal(await page.$('[name=email]'), null, 'a personal link opens checkout without email verification'); assert.equal(await page.$('[name=code]'), null)
     assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('dialog h2')), true)
-    assert.equal(await page.evaluate(() => document.cookie.includes('mock-customer-session')), false)
-    assert.equal((await page.cookies()).find(cookie => cookie.name === 'mock-customer-session')?.httpOnly, true)
     assert.equal(await page.$eval('[name=customerType]', node => node.value), '', 'customer type must be chosen explicitly')
     assert.equal(await page.$('input[type=checkbox]'), null); assert.equal(await page.$eval('button[type=submit]', node => node.disabled), true)
     await page.screenshot({ path: resolve(output, `checkout-start-${width}.png`) }); await fillBuyer()
@@ -151,7 +148,7 @@ try {
     for (const name of ['acceptTerms', 'consumerWithdrawalAcknowledged', 'requestImmediateStart', 'acceptInvoice']) assert.equal(order[name], true)
     assert.equal(['code', 'challengeId', 'email'].some(key => key in order), false); assert.equal(order.invoiceOrgNo, null); assert.equal(await page.$('dialog[open]'), null)
     await page.emulateMediaType('print'); assert.equal(await page.$eval('#digital-follow-up', node => getComputedStyle(node).display), 'none'); await page.emulateMediaType('screen'); await assertNoOverflow()
-    console.log(`PASS ${width}px: no OTP; personal-link checkout; explicit customer type; four separate unchecked consents; terms/form; price; focus; duplicate guard; retry; print`)
+    console.log(`PASS ${width}px: prominent priced buyer box under hero; no auto-open; explicit customer type/four consents; terms/form; focus; duplicate guard; retry; print`)
   }
 
   await reset(); await personalAccess(); await fillBuyer('business')
@@ -165,8 +162,12 @@ try {
   console.log('PASS business: own terms/three consents; no consumer form; changing customer type invalidates prior consent')
 
   for (const width of [1440, 390]) {
-    await reset(); await page.setViewport({ width, height: 844 }); await page.goto(`${url}?view=report-actions&customer=1`, { waitUntil: 'networkidle0' }); await page.waitForSelector('dialog[open]')
-    await assertNoCheckout(); await page.keyboard.press('Escape'); assert.equal(await page.$$eval('#digital-follow-up', nodes => nodes.length), 1)
+    await reset(); await page.setViewport({ width, height: 844 })
+    await page.setCookie({ name: 'mock-customer-session', value: 'personal-link', url, httpOnly: true })
+    const beforePublic = offerRequests
+    await page.goto(`${url}?view=report-actions&customer=1`, { waitUntil: 'networkidle0' })
+    await assertNoCheckout(); assert.equal(await page.$('dialog[open]'), null); assert.equal(await page.$('#digital-follow-up'), null)
+    assert.equal(offerRequests, beforePublic, 'public reports never fetch a buyer offer, even with an ambient buyer cookie and customer flag')
     assert.match(await page.$eval('#section-summons', node => node.textContent), /Originalrapporten förblir tillgänglig utan köp/)
     const pdf = await page.$eval('a[href="/mock-report.pdf"]', async node => { const response = await fetch(node.href); return { status: response.status, content: await response.text() } })
     assert.equal(pdf.status, 200); assert.match(pdf.content, /^%PDF/)
@@ -176,19 +177,27 @@ try {
     await clickButton('Kopiera länk'); await page.waitForFunction(() => window.__copiedReportUrl); assert.equal(await page.evaluate(() => window.__copiedReportUrl), `${url}/public-report`)
     await clickButton('Stäng'); await assertNoCheckout(); await assertNoOverflow(); assert.equal(posts.length, 0)
     await page.screenshot({ path: resolve(output, `public-report-${width}.png`), fullPage: true })
-    console.log(`PASS ${width}px public report: neutral entry; report/PDF/sharing accessible; copied link excludes private access`)
+    console.log(`PASS ${width}px public report: no offer/entry/fetch even with buyer cookie; report/PDF/sharing accessible; clean copied URL`)
   }
 
-  await reset(); leakPublicOffer = true; await page.goto(url, { waitUntil: 'networkidle0' }); await assertNoCheckout(); await openEntry()
-  await page.type('[name=email]', 'customer@example.invalid'); await page.$eval('button[type=submit]', node => node.click()); await page.waitForSelector('[role=status]'); await assertNoCheckout()
-  console.log('PASS fail-closed: public offer and request-link response cannot unlock checkout')
-  await reset(); failLink = true; await page.goto(url, { waitUntil: 'networkidle0' }); await openEntry()
-  await page.type('[name=email]', 'customer@example.invalid'); await page.$eval('button[type=submit]', node => { node.click(); node.click() }); await page.waitForSelector('[role=alert]')
-  assert.equal(failedLinkRequests, 1); assert.equal(posts.length, 0); assert.equal(await page.$eval('[name=email]', node => node.value), 'customer@example.invalid')
-  assert.match(await page.$eval('[role=alert]', node => node.textContent), /Anslutningen avbröts/); await assertNoCheckout()
-  failLink = false; await page.$eval('button[type=submit]', node => node.click()); await page.waitForSelector('[role=status]')
-  assert.equal(posts.length, 1); assert.equal(failedLinkRequests, 1); await assertNoCheckout()
-  console.log('PASS link network failure: input retained, no duplicate request, retry remains non-purchasing')
+  await reset(); buyerValid = false; leakUnauthorizedOffer = true; await personalAccess({ open: false }); await assertNoCheckout()
+  assert.notEqual(await page.$('#digital-follow-up-access-error'), null)
+  console.log('PASS fail-closed: an unauthorized private response never reveals an accidentally included offer')
+  await reset(); await personalAccess(); await fillBuyer(); await consent(); failTransport = true
+  await page.$eval('button[type=submit]', node => { node.click(); node.click() }); await page.waitForSelector('[role=alert]')
+  assert.equal(failedOrderRequests, 1); assert.equal(posts.length, 0); assert.equal(await page.$eval('[name=name]', node => node.value), 'Testkund')
+  assert.match(await page.$eval('[role=alert]', node => node.textContent), /Anslutningen avbröts/)
+  assert.equal(await page.$$eval('input[type=checkbox]', nodes => nodes.filter(node => node.checked).length), 4)
+  failTransport = false; await page.$eval('button[type=submit]', node => node.click()); await page.waitForSelector(`a[href="${portalUrl}"]`)
+  assert.equal(posts.length, 1); assert.equal(failedOrderRequests, 1)
+  console.log('PASS transport failure: buyer fields/consents retained; one guarded request and deliberate retry')
+  await reset(); await personalAccess(); await fillBuyer(); await consent(); sessionValid = false
+  await page.$eval('button[type=submit]', node => node.click()); await page.waitForSelector(`a[href="${portalUrl}"]`)
+  assert.equal(sessionRenewals, 1); assert.equal(posts.length, 1)
+  assert.equal(posts[0].name, 'Testkund'); assert.equal(posts[0].consumerWithdrawalAcknowledged, true)
+  assert.equal(await page.$('[name=email]'), null); assert.equal(await page.evaluate(() => document.cookie.includes('mock-customer-session')), false)
+  assert.equal((await page.cookies()).find(cookie => cookie.name === 'mock-customer-session')?.httpOnly, true)
+  console.log('PASS short session expiry: private bearer transparently renews session and submits existing fields/consents without email or re-entry')
   await reset(); offer.retryable = true; await personalAccess(); await fillBuyer(); await consent()
   await page.locator('button[aria-label="Stäng"]').click()
   offer.priceOre = 69900; offer.seller.name = 'Nytt testbolag AB'
@@ -199,50 +208,66 @@ try {
   assert.match(await page.$eval('[data-testid=follow-up-terms]', node => node.textContent), /Nytt testbolag AB/)
   assert.equal(await page.$eval('[name=name]', node => node.value), 'Testkund'); assert.equal(posts.length, 0)
   console.log('PASS changed offer: refreshed seller/price invalidates all consents while retaining buyer draft')
-  await reset(); offer.termsVersion = '2099-new-version'; await personalAccess(); await assertNoCheckout()
-  assert.match(await page.$eval('dialog[open]', node => node.textContent), /Köpvillkoren har uppdaterats/)
+  await reset(); offer.retryable = true; await personalAccess(); await fillBuyer(); await consent(); await page.locator('button[aria-label="Stäng"]').click()
+  transientLookup = true
+  await page.$eval('#digital-follow-up-retry button', node => node.click()); await page.waitForFunction(() => !document.querySelector('#digital-follow-up-retry button')?.disabled)
+  assert.equal(await page.$('#digital-follow-up-access-error'), null); await openCheckout()
+  assert.equal(await page.$eval('[name=name]', node => node.value), 'Testkund'); assert.equal(await page.$$eval('input[type=checkbox]', nodes => nodes.filter(node => node.checked).length), 4)
+  assert.equal(posts.length, 0)
+  await personalAccess({ open: false }); await assertNoCheckout(); assert.notEqual(await page.$('#digital-follow-up-retry'), null); assert.equal(await page.$('#digital-follow-up-access-error'), null)
+  transientLookup = false; offer.retryable = false; await clickButton('Försök igen'); await page.waitForSelector('#digital-follow-up'); assert.equal(await page.$('dialog[open]'), null)
+  console.log('PASS retryable verified:false: existing draft/consents remain intact; first load shows retry, never expired-link guidance')
+  await reset(); offer.termsVersion = '2099-new-version'; await personalAccess({ open: false }); await assertNoCheckout()
+  assert.match(await page.$eval('#digital-follow-up-terms-changed', node => node.textContent), /Köpvillkoren har uppdaterats/)
   assert.equal(await page.$('button[type=submit]'), null); assert.equal(posts.length, 0)
   assert.equal(await page.$$eval('button', nodes => nodes.some(node => node.textContent === 'Ladda om sidan')), true)
   console.log('PASS newer server terms: stale client cannot display/approve old wording under the new version; explicit reload required')
-  await reset(); await personalAccess(); await fillBuyer(); await consent(); sessionValid = false; nonJsonUnauthorized = true
-  await page.$eval('button[type=submit]', node => node.click()); await page.waitForSelector('[name=email]'); await assertNoCheckout()
-  assert.match(await page.$eval('[role=alert]', node => node.textContent), /beställaråtkomst har gått ut/); assert.equal(posts.filter(post => post.action === 'order').length, 1)
-  await personalAccess(); await page.select('[name=customerType]', 'consumer'); assert.equal(await page.$$eval('input[type=checkbox]', nodes => nodes.filter(node => node.checked).length), 0)
+  await reset(); await personalAccess(); await fillBuyer(); await consent(); buyerValid = false; nonJsonUnauthorized = true
+  await page.$eval('button[type=submit]', node => node.click()); await page.waitForSelector('#digital-follow-up-access-error'); await assertNoCheckout()
+  assert.match(await page.$eval('#digital-follow-up-access-error', node => node.textContent), /gått ut eller återkallats, kontakta besiktningsföretaget/); assert.equal(posts.filter(post => post.action === 'order').length, 1)
+  assert.equal(await page.$('dialog[open]'), null)
+  buyerValid = true; await clickButton('Försök igen'); await page.waitForSelector('#digital-follow-up'); await openCheckout()
+  assert.equal(await page.$eval('[name=name]', node => node.value), 'Testkund'); assert.equal(await page.$$eval('input[type=checkbox]', nodes => nodes.filter(node => node.checked).length), 0)
   assert.equal(posts.filter(post => post.action === 'order').length, 1)
-  console.log('PASS expired private session: non-JSON 401 hides checkout; renewed access needs fresh consent and never orders')
+  console.log('PASS genuinely invalid bearer: non-JSON 401 hides checkout; private guidance/retry; renewed authority clears consents and never orders')
   await reset(); await personalAccess(); await page.goto(`${url}?view=switch-report`, { waitUntil: 'networkidle0' })
   await page.locator('#digital-follow-up button').filter(node => node.textContent.includes('Köp')).click(); await fillBuyer(); await page.locator('button[aria-label="Stäng"]').click(); offerDelay = 500
-  await clickButton('Byt testrapport'); await assertNoCheckout(); await page.waitForSelector('#digital-follow-up'); await openEntry()
-  assert.equal(await page.$eval('[name=email]', node => node.value), ''); await assertNoCheckout()
+  await clickButton('Byt testrapport'); await assertNoCheckout(); await page.waitForSelector('#digital-follow-up-access-error'); await assertNoCheckout()
   console.log('PASS report navigation: previous private view and draft disappear immediately')
 
   for (const reason of ['INTERNAL-ERROR-SENTINEL', null]) {
-    await reset(); accessAvailable = false; offer.available = false; offer.reason = reason
-    await page.goto(`${url}?view=report-empty`, { waitUntil: 'networkidle0' }); assert.equal(await page.$('#digital-follow-up'), null); assert.equal(await page.$('#digital-follow-up-retry'), null)
+    await reset(); offer.available = false; offer.reason = reason
+    await personalAccess({ open: false, view: 'buyer-empty' }); assert.equal(await page.$('#digital-follow-up'), null); assert.equal(await page.$('#digital-follow-up-retry'), null); assert.equal(await page.$('#digital-follow-up-access-error'), null)
     await assertNoCheckout(); assert.doesNotMatch(await page.$eval('main', node => node.textContent), /INTERNAL-ERROR/)
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('h1').closest('section').nextElementSibling).display), 'none'); assert.equal(posts.length, 0)
   }
-  console.log('PASS unavailable public access: no offer, operational reason, checkout, POST or empty spacing')
-  await reset(); offer.available = false; offer.reason = 'INTERNAL-ERROR-SENTINEL'; await personalAccess(); await assertNoCheckout()
-  assert.match(await page.$eval('dialog[open]', node => node.textContent), /är inte tillgänglig för den här rapporten/); assert.doesNotMatch(await page.$eval('dialog[open]', node => node.textContent), /INTERNAL-ERROR/)
-  assert.equal(await page.$('button[type=submit]'), null); assert.equal(posts.length, 0)
-  console.log('PASS private unavailable offer: neutral message, no checkout or leaked operational reason')
-  await reset(); accessAvailable = false; retryable = true; await page.goto(`${url}?view=report`, { waitUntil: 'networkidle0' }); await page.waitForSelector('#digital-follow-up-retry'); await assertNoCheckout()
-  const beforeRetry = offerRequests; accessAvailable = true; retryable = false; offerDelay = 350
-  await page.$eval('#digital-follow-up-retry button', node => { node.click(); node.click() }); await page.waitForSelector('#digital-follow-up'); await assertNoCheckout(); assert.equal(offerRequests, beforeRetry + 1); assert.equal(posts.length, 0)
-  console.log('PASS transient failure: one retry request; recovery shows only neutral entry')
-  await reset(); failOffer = true; await page.goto(`${url}?view=report`, { waitUntil: 'networkidle0' })
+  console.log('PASS unavailable private service: no sales banner, operational reason, checkout, POST or empty spacing')
+  await reset(); offer.available = false; retryable = true; await personalAccess({ open: false }); await page.waitForSelector('#digital-follow-up-retry'); await assertNoCheckout()
+  const beforeRetry = offerRequests; offer.available = true; retryable = false; offerDelay = 350
+  await page.$eval('#digital-follow-up-retry button', node => { node.click(); node.click() }); await page.waitForSelector('#digital-follow-up'); assert.equal(await page.$('dialog[open]'), null); assert.equal(offerRequests, beforeRetry + 1); assert.equal(posts.length, 0)
+  console.log('PASS transient private failure: one retry request; recovery restores box without auto-opening checkout')
+  await reset(); failOffer = true; await personalAccess({ open: false })
   assert.match(await page.$eval('main', node => node.textContent), /Beställaråtkomsten kunde inte laddas/); assert.match(await page.$eval('#section-summons', node => node.textContent), /Originalrapporten förblir tillgänglig utan köp/)
-  failOffer = false; await clickButton('Försök igen'); await page.waitForSelector('#digital-follow-up'); await assertNoCheckout()
+  failOffer = false; await clickButton('Försök igen'); await page.waitForSelector('#digital-follow-up'); assert.equal(await page.$('dialog[open]'), null)
   const previousRequests = offerRequests; await page.goto(`${url}?view=preview`, { waitUntil: 'networkidle0' }); assert.equal(await page.$('#digital-follow-up'), null); assert.equal(offerRequests, previousRequests)
   console.log('PASS load failure: report accessible; retry recovers; internal preview makes no customer request')
   for (const width of [1440, 390]) {
-    await reset(); offer.alreadyActive = true; offer.available = false; await page.setViewport({ width, height: 844 }); await personalAccess()
-    assert.doesNotMatch(await page.$eval('dialog[open]', node => node.textContent), /599 kr|Beställ med betalningsskyldighet/); assert.equal(await page.$('[name=invoiceName]'), null); assert.equal(await page.$('[name=email]'), null)
-    await submitTwice(); await page.waitForSelector(`a[href="${portalUrl}"]`); assert.deepEqual(posts, [{ action: 'access' }])
-    await page.goto(`${url}?customer=1`, { waitUntil: 'networkidle0' }); await page.waitForSelector('dialog[open]'); await page.$eval('button[type=submit]', node => node.click()); await page.waitForSelector(`a[href="${portalUrl}"]`)
-    assert.deepEqual(posts, [{ action: 'access' }, { action: 'access' }]); await assertNoOverflow()
-    console.log(`PASS ${width}px existing customer: no code/price/billing/new order; private cookie recovery`)
+    await reset(); offer.alreadyActive = true; offer.available = false; await page.setViewport({ width, height: 844 }); await personalAccess({ open: false })
+    assert.doesNotMatch(await page.$eval('#digital-follow-up', node => node.textContent), /599 kr|Beställ med betalningsskyldighet/); assert.equal(await page.$('[name=invoiceName]'), null); assert.equal(await page.$('[name=email]'), null)
+    assert.equal(posts.length, 0); await assertNoOverflow()
+    await page.$eval('#digital-follow-up > div button', node => { node.click(); node.click() })
+    await page.waitForFunction(() => document.querySelector('#digital-follow-up > div button')?.disabled)
+    assert.match(await page.$eval('#digital-follow-up > div button', node => node.textContent), /Öppnar åtgärdsuppföljningen/)
+    assert.equal(await page.$('dialog[open]'), null)
+    await page.waitForSelector('#mock-private-portal'); assert.equal(new URL(page.url()).pathname, portalUrl); assert.deepEqual(posts, [{ action: 'access' }])
+    await personalAccess({ open: false }); await clickButton('Öppna åtgärdsuppföljningen'); await page.waitForSelector('#mock-private-portal')
+    assert.deepEqual(posts, [{ action: 'access' }, { action: 'access' }])
+    console.log(`PASS ${width}px existing customer: one click resolves access and opens safe portal; busy feedback; no modal/new order/automatic navigation`)
   }
+  await reset(); offer.alreadyActive = true; failOrder = true; await personalAccess({ open: false }); await clickButton('Öppna åtgärdsuppföljningen')
+  await page.waitForSelector('#digital-follow-up > p[role=alert]'); assert.match(await page.$eval('#digital-follow-up > p[role=alert]', node => node.textContent), /Testkonflikt/)
+  assert.equal(await page.$('dialog[open]'), null); assert.deepEqual(posts, [{ action: 'access' }]); assert.notEqual(new URL(page.url()).pathname, portalUrl)
+  failOrder = false; await clickButton('Öppna åtgärdsuppföljningen'); await page.waitForSelector('#mock-private-portal'); assert.deepEqual(posts, [{ action: 'access' }, { action: 'access' }])
+  console.log('PASS existing access failure: inline error and explicit retry, no hidden modal or new order')
   assert.deepEqual(errors, [])
 } finally { await browser?.close(); await new Promise(ok => server.close(ok)) }

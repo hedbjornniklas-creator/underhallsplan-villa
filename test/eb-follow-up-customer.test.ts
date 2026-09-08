@@ -203,23 +203,31 @@ test('delivery initialization normalizes synchronous and asynchronous RPC failur
   }
 })
 
-test('management links and copy are recipient-specific; normal and shared emails contain only a reading link', () => {
+test('each delivery email has one recipient-specific report button; sharing never exposes a buyer link', () => {
   const input = { orgName: 'Inspector', customerName: 'Customer', propertyAddress: 'Street', inspectionDate: '2026-09-08', detailsUrl: 'https://example.test/rapport/token' }
   const matching = customer.ebFollowUpCustomerEntryUrl(input.detailsUrl, 'BUYER@example.test', 'buyer@example.test')
   assert.equal(matching, `${input.detailsUrl}?customer=1`)
   assert.equal(customer.ebFollowUpCustomerEntryUrl(`${input.detailsUrl}?arbitrary=value#secret`, 'buyer@example.test', 'buyer@example.test'), matching)
   for (const recipient of ['contractor@example.test', 'broker@example.test']) {
-    const other = templates.buildInspectionReportDeliveryEmail({ ...input,
-      customerManagementUrl: customer.ebFollowUpCustomerEntryUrl(input.detailsUrl, recipient, 'buyer@example.test') })
+    assert.equal(customer.ebFollowUpCustomerEntryUrl(input.detailsUrl, recipient, 'buyer@example.test'), null)
+    const other = templates.buildInspectionReportDeliveryEmail(input)
     assert.doesNotMatch(other.html + other.text, /customer=|Hantera din besiktning/)
+    assert.equal((other.html.match(/<a href=/g) ?? []).length, 1)
+    assert.equal((other.text.match(/https:\/\//g) ?? []).length, 1)
+    assert.doesNotMatch(other.html + other.text, /personliga länk|beställarfunktionerna/)
   }
   assert.equal(customer.ebFollowUpCustomerEntryUrl(input.detailsUrl, 'buyer@example.test', null), null)
-  const privateLink = 'https://example.test/api/eb/customer/separate-private-buyer-token'
-  const intended = templates.buildInspectionReportDeliveryEmail({ ...input, customerManagementUrl: privateLink })
-  assert.match(intended.html, /Hantera din besiktning/)
+  const privateLink = 'https://example.test/rapport/bestallare/separate-private-buyer-token'
+  const intended = templates.buildInspectionReportDeliveryEmail({ ...input, detailsUrl: privateLink,
+    personalReportLink: true, reportLinkLabel: 'Öppna utlåtandet' })
+  assert.match(intended.html, /Öppna utlåtandet/)
+  assert.doesNotMatch(intended.html + intended.text, /Hantera din besiktning/)
+  assert.equal((intended.html.match(/<a href=/g) ?? []).length, 1)
+  assert.equal((intended.text.match(/https:\/\//g) ?? []).length, 1)
+  assert.ok(!intended.html.includes(input.detailsUrl) && !intended.text.includes(input.detailsUrl))
   assert.ok(intended.text.includes(privateLink))
-  assert.match(intended.text, /personliga beställarlänk/)
-  assert.match(intended.text, /Dela inte denna länk/)
+  assert.match(intended.text, /personliga länk/)
+  assert.match(intended.text, /Vidarebefordra inte den personliga länken/)
   assert.doesNotMatch(intended.text, /verifiera din e-postadress|engångskod/)
   const shared = templates.buildInspectionReportShareEmail(input)
   assert.doesNotMatch(shared.html + shared.text, /customer=|Hantera din besiktning/)

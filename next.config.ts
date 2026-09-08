@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
       { source: '/atgarder/:path*', headers: privateBearerHeaders },
       { source: '/api/eb/remediation/:path*', headers: privateBearerHeaders },
       { source: '/api/eb/customer/:path*', headers: privateBearerHeaders },
+      { source: '/rapport/bestallare/:path*', headers: privateBearerHeaders },
     ]
   },
   images: {

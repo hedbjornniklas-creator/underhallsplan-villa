@@ -118,13 +118,11 @@ try {
   await page.locator('[data-flow-id="action-type:electrical"] button[aria-label^="Öppna "]').click()
   await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Redigera"])').click()
   await page.screenshot({ path: resolve(output, 'admin-1440.png') })
-  await page.locator('::-p-xpath(//aside//button[normalize-space(.)="Skapa kopia"])').click()
-  await page.waitForFunction(() => !document.querySelector('aside'))
-  assert.equal(writes.length, 2)
-  assert.ok(Object.keys(writes[1].input).every(key => !key.startsWith('implies')))
-  assert.equal(writes[1].input.contractorRequirement, 'authorized_electrician')
+  assert.equal(await page.$('::-p-xpath(//aside//button[normalize-space(.)="Radera överallt"])'), null)
+  assert.equal(await page.$('::-p-xpath(//aside//button[normalize-space(.)="Skapa kopia"])'), null)
+  assert.equal(writes.length, 1)
   assert.deepEqual(errors, [])
-  console.log('PASS admin: no classification controls, save/copy omit retired fields, risk and linked requirements preserved')
+  console.log('PASS admin: no classification controls or global delete/clone, save omits retired fields, risk and linked requirements preserved')
 } catch (error) {
   await page?.screenshot({ path: resolve(output, 'failure.png'), fullPage: true })
   throw error

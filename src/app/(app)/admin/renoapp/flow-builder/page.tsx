@@ -4,7 +4,8 @@ import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import RenoAppAiFlowDrawer from '@/components/renoapp/admin/RenoAppAiFlowDrawer'
 import RenoAppFlowCanvas from '@/components/renoapp/admin/RenoAppFlowCanvas'
-import { canChooseFlowTarget, flowQuestionId, flowTarget, type FlowNode, type FlowNodeTone, type FlowSource } from '@/lib/renoapp/flowEditor'
+import { type FlowNode, type FlowNodeTone, type FlowSource } from '@/lib/renoapp/flowEditor'
+import { requestFlowEdit } from '@/lib/renoapp/flowEditorClient'
 
 type ActionTypeItem = {
   id: string
@@ -595,7 +596,7 @@ function FlowBuilderHelpSection() {
         <div>
           <h3 className="font-semibold text-stone-900">Objekt och kopplingar</h3>
           <p className="mt-1">
-            Ett objekt kan återanvändas i flera flöden. Ta bort från flödet tar bara bort kopplingen, medan radera överallt tar bort själva objektet.
+            Ett objekt kan återanvändas i flera flöden. Kopiering lägger till en koppling till samma objekt med dess underfunktioner. Ta bort från flödet tar bara bort den valda kopplingen. Originalet finns kvar.
           </p>
         </div>
       </div>
@@ -1314,7 +1315,6 @@ export default function RenoAppFlowBuilderPage() {
     return null
   }, [activeNode, questionMap])
 
-  const isCreatingActionType = activeNode?.ref.type === 'actionType' && !actionTypeDraft.id
 
   const canEditNode = Boolean(
     activeNode &&
@@ -1355,44 +1355,7 @@ export default function RenoAppFlowBuilderPage() {
     return []
   }, [activeNode])
 
-  const canRemoveConnection = Boolean(
-    activeNode &&
-      (activeNode.ref.type === 'rootQuestion' ||
-        activeNode.ref.type === 'rootRequirement' ||
-        activeNode.ref.type === 'rootParticipant' ||
-        activeNode.ref.type === 'optionQuestionTrigger' ||
-        activeNode.ref.type === 'optionDocumentTrigger' ||
-        activeNode.ref.type === 'optionParticipantTrigger' ||
-        activeNode.ref.type === 'optionReviewFlagTrigger' ||
-        activeNode.ref.type === 'actionTypeReviewFlag' ||
-        activeNode.ref.type === 'documentReviewFlag' ||
-        activeNode.ref.type === 'participantReviewFlag')
-  )
-
-  const canDeleteOption = activeNode?.ref.type === 'option'
-
-  const canDuplicateNode = Boolean(
-    activeNode &&
-      activeNode.ref.type !== 'status' &&
-      !isCreatingActionType
-  )
-
-  const canDeleteObject = Boolean(
-    activeNode &&
-      (activeNode.ref.type === 'actionType' ||
-        activeNode.ref.type === 'rootQuestion' ||
-        activeNode.ref.type === 'question' ||
-        activeNode.ref.type === 'optionQuestionTrigger' ||
-        activeNode.ref.type === 'rootRequirement' ||
-        activeNode.ref.type === 'optionDocumentTrigger' ||
-        activeNode.ref.type === 'rootParticipant' ||
-        activeNode.ref.type === 'optionParticipantTrigger' ||
-        activeNode.ref.type === 'optionReviewFlagTrigger' ||
-        activeNode.ref.type === 'actionTypeReviewFlag' ||
-        activeNode.ref.type === 'documentReviewFlag' ||
-        activeNode.ref.type === 'participantReviewFlag') &&
-      !isCreatingActionType
-  )
+  const canRemoveConnection = Boolean(activeNode?.source)
 
   const existingAddOptions = useMemo(() => {
     if (!addType) return []
@@ -1635,461 +1598,21 @@ export default function RenoAppFlowBuilderPage() {
   }
 
   const removeConnection = async (node = activeNode) => {
-    if (!node || nodeActionInFlight.current) return
+    if (!node?.source || nodeActionInFlight.current) return
     nodeActionInFlight.current = true
     setModalSaving(true)
     setModalError(null)
-    const ref = node.ref
-
+    const edit = { source: node.source, operation: 'remove' as const }
     try {
-      if (ref.type === 'rootQuestion') {
-        const link = rootQuestions.find((item) => item.questionId === ref.questionId)
-        const response = await fetch('/api/renoapp/admin/action-type-questions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actionTypeId: ref.actionTypeId, questionId: ref.questionId, isEnabled: false, isRequired: link?.isRequired ?? true, sortOrder: link?.sortOrder ?? 100 }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort frågekopplingen.')
-      } else if (ref.type === 'rootRequirement') {
-        const link = rootRequirements.find((item) => item.documentTypeId === ref.documentTypeId)
-        const response = await fetch('/api/renoapp/admin/requirements', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actionTypeId: ref.actionTypeId, documentTypeId: ref.documentTypeId, isEnabled: false, isRequired: link?.isRequired ?? true, note: null, sortOrder: link?.sortOrder ?? 100 }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort dokumentkopplingen.')
-      } else if (ref.type === 'rootParticipant') {
-        const link = rootParticipants.find((item) => item.participantRoleId === ref.participantRoleId)
-        const response = await fetch('/api/renoapp/admin/action-type-participants', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actionTypeId: ref.actionTypeId, participantRoleId: ref.participantRoleId, isEnabled: false, isRequired: link?.isRequired ?? true, sortOrder: link?.sortOrder ?? 100 }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort medverkandekopplingen.')
-      } else if (ref.type === 'optionQuestionTrigger') {
-        await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => triggers.filter((trigger) => !(trigger.triggerType === 'question' && trigger.questionId === ref.targetQuestionId)))
-      } else if (ref.type === 'optionDocumentTrigger') {
-        await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => triggers.filter((trigger) => !(trigger.triggerType === 'document' && trigger.documentTypeId === ref.targetDocumentTypeId)))
-      } else if (ref.type === 'optionParticipantTrigger') {
-        await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => triggers.filter((trigger) => !(trigger.triggerType === 'participant_role' && trigger.participantRoleId === ref.targetParticipantRoleId)))
-      } else if (ref.type === 'optionReviewFlagTrigger') {
-        await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => triggers.filter((trigger) => !(trigger.triggerType === 'review_flag' && trigger.reviewFlagId === ref.targetReviewFlagId)))
-      } else if (ref.type === 'actionTypeReviewFlag') {
-        await saveReviewFlagLink({ actionTypeId: ref.actionTypeId, reviewFlagId: ref.targetReviewFlagId, isEnabled: false })
-      } else if (ref.type === 'documentReviewFlag') {
-        await saveReviewFlagLink({ documentTypeId: ref.documentTypeId, reviewFlagId: ref.targetReviewFlagId, isEnabled: false })
-      } else if (ref.type === 'participantReviewFlag') {
-        await saveReviewFlagLink({ participantRoleId: ref.participantRoleId, reviewFlagId: ref.targetReviewFlagId, isEnabled: false })
-      }
-
+      const preview = await requestFlowEdit(edit)
+      const warning = preview.shared ? '\nSamma överordnade kort är delat. Kopplingen tas bort i alla flöden som använder det.' : ''
+      if (!window.confirm(`Ta bort kopplingen till "${preview.itemLabel}" från "${preview.fromLabel}"? Originalet, svaren och underfunktionerna finns kvar.${warning}`)) return
+      await requestFlowEdit(edit, preview.version)
       await loadData(selectedActionTypeId)
       closeModal()
-    } catch (removeError) {
-      setModalError(removeError instanceof Error ? removeError.message : 'Kunde inte ta bort kopplingen.')
-    } finally {
-      nodeActionInFlight.current = false
-      setModalSaving(false)
-    }
-  }
-
-  const deleteOptionNode = async (node = activeNode) => {
-    if (!node || node.ref.type !== 'option' || nodeActionInFlight.current) return
-    nodeActionInFlight.current = true
-    const ref = node.ref
-    setModalSaving(true)
-    setModalError(null)
-
-    try {
-      const question = questionMap.get(ref.questionId)
-      if (!question) throw new Error('Frågan kunde inte hittas.')
-      await persistQuestionWithOptions({
-        ...question,
-        options: question.options.filter((item) => item.id !== ref.optionId),
-      })
+    } catch (error) {
+      setModalError(error instanceof Error ? error.message : 'Kunde inte ta bort kopplingen.')
       await loadData(selectedActionTypeId)
-      closeModal()
-    } catch (deleteError) {
-      setModalError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera svarsalternativet.')
-    } finally {
-      nodeActionInFlight.current = false
-      setModalSaving(false)
-    }
-  }
-
-  const linkCopiedNode = async (source: FlowNode, destination: FlowNode, type: QuestionOptionTriggerItem['triggerType'], id: string) => {
-    const target = flowTarget(destination)
-    if (!target) throw new Error('Den valda kopplingen är inte giltig.')
-    const ids = { questionId: type === 'question' ? id : null, documentTypeId: type === 'document' ? id : null,
-      participantRoleId: type === 'participant_role' ? id : null, reviewFlagId: type === 'review_flag' ? id : null }
-    if (destination.ref.type === 'option') {
-      await updateOptionTriggers(destination.ref.questionId, destination.ref.optionId, triggers => [
-        ...triggers, { ...ids, id: `new-${Date.now()}`, triggerType: type, isActive: true,
-          sortOrder: Math.max(0, ...triggers.map(item => item.sortOrder)) + 10 },
-      ])
-    } else if (type === 'review_flag') {
-      await saveReviewFlagLink({ reviewFlagId: id, actionTypeId: target.kind === 'action' ? target.id : null,
-        documentTypeId: target.kind === 'document' ? target.id : null, participantRoleId: target.kind === 'participant' ? target.id : null })
-    } else if (target.kind === 'action') {
-      const ref = source.ref
-      const link = ref.type === 'rootQuestion' ? rootQuestions.find(item => item.questionId === ref.questionId)
-        : ref.type === 'rootRequirement' ? rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)
-        : ref.type === 'rootParticipant' ? rootParticipants.find(item => item.participantRoleId === ref.participantRoleId) : undefined
-      const endpoint = type === 'question' ? 'action-type-questions' : type === 'document' ? 'requirements' : 'action-type-participants'
-      const response = await fetch(`/api/renoapp/admin/${endpoint}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...ids, actionTypeId: target.id, isEnabled: true, isRequired: link?.isRequired ?? true,
-          sortOrder: (link?.sortOrder ?? 100) + 10,
-          ...(type === 'document' ? { note: link && 'note' in link ? link.note : null, phase: link && 'phase' in link ? link.phase : undefined } : {}) }),
-      })
-      const payload = await readJson<{ error?: string }>(response)
-      if (!response.ok) throw new Error(payload.error ?? 'Kopian skapades men kunde inte kopplas till den valda platsen.')
-    } else throw new Error('Den valda kopplingen är inte giltig.')
-  }
-
-  const duplicateActiveNode = async (node = activeNode, destination?: FlowNode) => {
-    if (!node || nodeActionInFlight.current) {
-      if (destination) throw new Error('En annan ändring pågår. Försök igen när den är klar.')
-      return
-    }
-    nodeActionInFlight.current = true
-    setModalSaving(true)
-    setModalError(null)
-
-    try {
-      const ref = node.ref
-      if (destination) {
-        if (!canChooseFlowTarget(node, destination, 'copy')) throw new Error('Kortet kan inte kopieras till den valda platsen.')
-        if (destination.kind === 'option') {
-          const link = ref.type === 'rootQuestion' ? rootQuestions.find(item => item.questionId === ref.questionId)
-            : ref.type === 'rootRequirement' ? rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)
-            : ref.type === 'rootParticipant' ? rootParticipants.find(item => item.participantRoleId === ref.participantRoleId) : undefined
-          if (link && (!link.isRequired || ('note' in link && link.note)
-            || ('phase' in link && link.phase && ref.type === 'rootRequirement' && link.phase !== documentTypeMap.get(ref.documentTypeId)?.defaultPhase))) {
-            throw new Error('Kopplingen har egna inställningar för obligatoriskt krav, fas eller anteckning som inte kan kopieras till ett svar. Inga ändringar har gjorts.')
-          }
-        }
-      }
-      if (ref.type === 'option') {
-        const option = questionMap.get(ref.questionId)?.options.find((item) => item.id === ref.optionId)
-        const question = questionMap.get(destination ? flowQuestionId(destination) ?? '' : ref.questionId)
-        if (!question || !option) throw new Error('Svarsalternativet kunde inte hittas.')
-        await persistQuestionWithOptions({
-          ...question,
-          options: [
-            ...question.options,
-            {
-              ...option,
-              id: `new-${Date.now()}`,
-              key: '',
-              label: `${option.label} (kopia)`,
-              sortOrder: Math.max(0, ...question.options.map((item) => item.sortOrder)) + 10,
-              triggers: option.triggers.map((trigger, index) => ({
-                ...trigger,
-                id: `new-trigger-${Date.now()}-${index}`,
-              })),
-            },
-          ],
-        })
-      } else if (ref.type === 'actionType' && selectedAction) {
-        const response = await fetch('/api/renoapp/admin/action-types', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: null,
-            key: `${selectedAction.key}-kopia-${Date.now()}`,
-            label: `${selectedAction.label} (kopia)`,
-            description: selectedAction.description ?? null,
-            categoryId: selectedAction.categoryId,
-            riskLevel: selectedAction.riskLevel,
-            contractorRequirement: selectedAction.contractorRequirement,
-            sortOrder: selectedAction.sortOrder + 10,
-            isActive: selectedAction.isActive,
-          }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte duplicera renoveringstypen.')
-      } else if (ref.type === 'rootQuestion' || ref.type === 'question' || ref.type === 'optionQuestionTrigger') {
-        const questionId =
-          ref.type === 'rootQuestion' ? ref.questionId : ref.type === 'question' ? ref.questionId : ref.targetQuestionId
-        const question = questionMap.get(questionId)
-        if (!question) throw new Error('Frågan kunde inte hittas.')
-        const response = await fetch('/api/renoapp/admin/questions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            question: {
-              ...question,
-              id: null,
-              key: '',
-              label: `${question.label} (kopia)`,
-              sortOrder: question.sortOrder + 10,
-            },
-            options: question.options.map((option) => ({
-              ...option,
-              id: null,
-              key: '',
-              sortOrder: option.sortOrder,
-              triggers: option.triggers.map((trigger) => ({
-                ...trigger,
-                id: null,
-              })),
-            })),
-          }),
-        })
-        const payload = await readJson<{ item?: QuestionItem; error?: string }>(response)
-        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera frågan.')
-        if (destination) {
-          await linkCopiedNode(node, destination, 'question', payload.item.id)
-        } else if (ref.type === 'rootQuestion') {
-          const linkResponse = await fetch('/api/renoapp/admin/action-type-questions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              actionTypeId: ref.actionTypeId,
-              questionId: payload.item.id,
-              isEnabled: true,
-              isRequired: rootQuestions.find(item => item.questionId === ref.questionId)?.isRequired ?? true,
-              sortOrder: (rootQuestions.find(item => item.questionId === ref.questionId)?.sortOrder ?? 100) + 10,
-            }),
-          })
-          const linkPayload = await readJson<{ error?: string }>(linkResponse)
-          if (!linkResponse.ok) throw new Error(linkPayload.error ?? 'Kunde inte koppla den duplicerade frågan.')
-        } else if (ref.type === 'optionQuestionTrigger') {
-          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
-            ...triggers,
-            {
-              id: `new-${Date.now()}`,
-              triggerType: 'question',
-              questionId: payload.item!.id,
-              documentTypeId: null,
-              participantRoleId: null,
-              reviewFlagId: null,
-              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
-              isActive: true,
-            },
-          ])
-        }
-      } else if (ref.type === 'rootRequirement' || ref.type === 'optionDocumentTrigger') {
-        const documentTypeId = ref.type === 'rootRequirement' ? ref.documentTypeId : ref.targetDocumentTypeId
-        const documentType = documentTypeMap.get(documentTypeId)
-        if (!documentType) throw new Error('Underlaget kunde inte hittas.')
-        const response = await fetch('/api/renoapp/admin/document-types', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...documentType,
-            id: null,
-            key: '',
-            label: `${documentType.label} (kopia)`,
-            sortOrder: documentType.sortOrder + 10,
-          }),
-        })
-        const payload = await readJson<{ item?: DocumentTypeItem; error?: string }>(response)
-        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera underlaget.')
-        if (destination) {
-          await linkCopiedNode(node, destination, 'document', payload.item.id)
-        } else if (ref.type === 'rootRequirement') {
-          const linkResponse = await fetch('/api/renoapp/admin/requirements', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              actionTypeId: ref.actionTypeId,
-              documentTypeId: payload.item.id,
-              isEnabled: true,
-              isRequired: rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.isRequired ?? true,
-              note: rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.note ?? null,
-              phase: rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.phase,
-              sortOrder: (rootRequirements.find(item => item.documentTypeId === ref.documentTypeId)?.sortOrder ?? 100) + 10,
-            }),
-          })
-          const linkPayload = await readJson<{ error?: string }>(linkResponse)
-          if (!linkResponse.ok) throw new Error(linkPayload.error ?? 'Kunde inte koppla det duplicerade underlaget.')
-        } else {
-          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
-            ...triggers,
-            {
-              id: `new-${Date.now()}`,
-              triggerType: 'document',
-              questionId: null,
-              documentTypeId: payload.item!.id,
-              participantRoleId: null,
-              reviewFlagId: null,
-              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
-              isActive: true,
-            },
-          ])
-        }
-      } else if (ref.type === 'rootParticipant' || ref.type === 'optionParticipantTrigger') {
-        const participantRoleId = ref.type === 'rootParticipant' ? ref.participantRoleId : ref.targetParticipantRoleId
-        const participant = participantRoleMap.get(participantRoleId)
-        if (!participant) throw new Error('Medverkandetypen kunde inte hittas.')
-        const response = await fetch('/api/renoapp/admin/participants', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...participant,
-            id: null,
-            key: '',
-            label: `${participant.label} (kopia)`,
-            sortOrder: participant.sortOrder + 10,
-          }),
-        })
-        const payload = await readJson<{ item?: ParticipantRoleItem; error?: string }>(response)
-        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera medverkandetypen.')
-        if (destination) {
-          await linkCopiedNode(node, destination, 'participant_role', payload.item.id)
-        } else if (ref.type === 'rootParticipant') {
-          const linkResponse = await fetch('/api/renoapp/admin/action-type-participants', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              actionTypeId: ref.actionTypeId,
-              participantRoleId: payload.item.id,
-              isEnabled: true,
-              isRequired: rootParticipants.find(item => item.participantRoleId === ref.participantRoleId)?.isRequired ?? true,
-              sortOrder: (rootParticipants.find(item => item.participantRoleId === ref.participantRoleId)?.sortOrder ?? 100) + 10,
-            }),
-          })
-          const linkPayload = await readJson<{ error?: string }>(linkResponse)
-          if (!linkResponse.ok) throw new Error(linkPayload.error ?? 'Kunde inte koppla den duplicerade medverkandetypen.')
-        } else {
-          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
-            ...triggers,
-            {
-              id: `new-${Date.now()}`,
-              triggerType: 'participant_role',
-              questionId: null,
-              documentTypeId: null,
-              participantRoleId: payload.item!.id,
-              reviewFlagId: null,
-              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
-              isActive: true,
-            },
-          ])
-        }
-      } else if (
-        ref.type === 'optionReviewFlagTrigger' ||
-        ref.type === 'actionTypeReviewFlag' ||
-        ref.type === 'documentReviewFlag' ||
-        ref.type === 'participantReviewFlag'
-      ) {
-        const flag = reviewFlagMap.get(ref.targetReviewFlagId)
-        if (!flag) throw new Error('Flaggan kunde inte hittas.')
-        const response = await fetch('/api/renoapp/admin/review-flags', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...flag,
-            id: null,
-            key: '',
-            label: `${flag.label} (kopia)`,
-            sortOrder: flag.sortOrder + 10,
-          }),
-        })
-        const payload = await readJson<{ item?: ReviewFlagItem; error?: string }>(response)
-        if (!response.ok || !payload.item) throw new Error(payload.error ?? 'Kunde inte duplicera flaggan.')
-        if (destination) {
-          await linkCopiedNode(node, destination, 'review_flag', payload.item.id)
-        } else if (ref.type === 'optionReviewFlagTrigger') {
-          await updateOptionTriggers(ref.questionId, ref.optionId, (triggers) => [
-            ...triggers,
-            {
-              id: `new-${Date.now()}`,
-              triggerType: 'review_flag',
-              questionId: null,
-              documentTypeId: null,
-              participantRoleId: null,
-              reviewFlagId: payload.item!.id,
-              sortOrder: Math.max(0, ...triggers.map((item) => item.sortOrder)) + 10,
-              isActive: true,
-            },
-          ])
-        } else if (ref.type === 'actionTypeReviewFlag') {
-          await saveReviewFlagLink({ actionTypeId: ref.actionTypeId, reviewFlagId: payload.item.id })
-        } else if (ref.type === 'documentReviewFlag') {
-          await saveReviewFlagLink({ documentTypeId: ref.documentTypeId, reviewFlagId: payload.item.id })
-        } else if (ref.type === 'participantReviewFlag') {
-          await saveReviewFlagLink({ participantRoleId: ref.participantRoleId, reviewFlagId: payload.item.id })
-        }
-      }
-
-      await loadData(selectedActionTypeId)
-      closeModal()
-    } catch (duplicateError) {
-      if (destination) throw duplicateError
-      setModalError(duplicateError instanceof Error ? duplicateError.message : 'Kunde inte duplicera objektet.')
-    } finally {
-      nodeActionInFlight.current = false
-      setModalSaving(false)
-    }
-  }
-
-  const deleteActiveObject = async (node = activeNode) => {
-    if (!node || nodeActionInFlight.current) return
-    nodeActionInFlight.current = true
-    setModalSaving(true)
-    setModalError(null)
-
-    try {
-      const ref = node.ref
-      if (ref.type === 'actionType') {
-        const response = await fetch('/api/renoapp/admin/action-types', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: ref.actionTypeId }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera renoveringstypen.')
-      } else if (ref.type === 'rootQuestion' || ref.type === 'question' || ref.type === 'optionQuestionTrigger') {
-        const questionId =
-          ref.type === 'rootQuestion' ? ref.questionId : ref.type === 'question' ? ref.questionId : ref.targetQuestionId
-        const response = await fetch('/api/renoapp/admin/questions', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: questionId }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera frågan.')
-      } else if (ref.type === 'rootRequirement' || ref.type === 'optionDocumentTrigger') {
-        const documentTypeId = ref.type === 'rootRequirement' ? ref.documentTypeId : ref.targetDocumentTypeId
-        const response = await fetch('/api/renoapp/admin/document-types', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: documentTypeId }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera underlaget.')
-      } else if (ref.type === 'rootParticipant' || ref.type === 'optionParticipantTrigger') {
-        const participantRoleId = ref.type === 'rootParticipant' ? ref.participantRoleId : ref.targetParticipantRoleId
-        const response = await fetch('/api/renoapp/admin/participants', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: participantRoleId }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera medverkandetypen.')
-      } else if (
-        ref.type === 'optionReviewFlagTrigger' ||
-        ref.type === 'actionTypeReviewFlag' ||
-        ref.type === 'documentReviewFlag' ||
-        ref.type === 'participantReviewFlag'
-      ) {
-        const response = await fetch('/api/renoapp/admin/review-flags', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: ref.targetReviewFlagId }),
-        })
-        const payload = await readJson<{ error?: string }>(response)
-        if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera flaggan.')
-      }
-
-      await loadData(selectedActionTypeId)
-      closeModal()
-    } catch (deleteError) {
-      setModalError(deleteError instanceof Error ? deleteError.message : 'Kunde inte radera objektet.')
     } finally {
       nodeActionInFlight.current = false
       setModalSaving(false)
@@ -2612,29 +2135,6 @@ export default function RenoAppFlowBuilderPage() {
                 : toggleNode(id)}
               onOpen={openNodeModal}
               onReload={() => loadData(selectedActionTypeId)}
-              onCopy={async (node, destination) => {
-                if (destination) { await duplicateActiveNode(node, destination); return }
-                const message = node.kind === 'root'
-                  ? 'Skapa en kopia av renoveringstypens inställningar utan kopplingar?'
-                  : node.kind === 'question' || node.kind === 'option'
-                    ? 'Skapa en kopia här? Frågans svar kopieras, men redan kopplade underlag, medverkande och följdfrågor är fortsatt delade.'
-                    : `Skapa en fristående kopia av "${node.title}" på samma plats?`
-                if (!window.confirm(message)) return
-                openNodeModal(node)
-                await duplicateActiveNode(node)
-              }}
-              onRemove={node => {
-                const message = node.kind === 'root'
-                  ? 'Radera renoveringstypen överallt? Alla dess flödeskopplingar tas bort.'
-                  : node.kind === 'option'
-                    ? 'Radera detta svar och dess kopplingar? Detta gäller alla flöden som använder frågan.'
-                    : 'Ta bort denna koppling? Själva frågan eller underlaget finns kvar. Kopplingar på delade svar, underlag och medverkande ändras i alla flöden som använder dem.'
-                if (!window.confirm(message)) return
-                openNodeModal(node)
-                if (node.kind === 'root') void deleteActiveObject(node)
-                else if (node.kind === 'option') void deleteOptionNode(node)
-                else void removeConnection(node)
-              }}
             /> : null}
           </>
         )}
@@ -2669,10 +2169,7 @@ export default function RenoAppFlowBuilderPage() {
                 {canEditNode ? <button type="button" onClick={() => setModalMode('edit')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'edit' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Redigera</button> : null}
                 {addableTypes.length > 0 ? <button type="button" onClick={() => setModalMode('add')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'add' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Lägg till</button> : null}
                 <button type="button" onClick={() => setModalMode('summary')} className={cn('rounded-md border px-3 py-2 text-sm font-semibold', modalMode === 'summary' ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-300 bg-white text-stone-800 hover:bg-stone-100')}>Översikt</button>
-                {canDuplicateNode ? <button type="button" onClick={() => { if (window.confirm('Skapa en fristående kopia av detta objekt?')) void duplicateActiveNode() }} className="rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50">Skapa kopia</button> : null}
-                {canDeleteOption ? <button type="button" onClick={() => { if (window.confirm('Radera detta svarsalternativ?')) void deleteOptionNode() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Radera svar</button> : null}
-                {canDeleteObject ? <button type="button" onClick={() => { if (window.confirm('Radera objektet överallt? Detta påverkar alla flöden och kopplingar som använder det.')) void deleteActiveObject() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Radera överallt</button> : null}
-                {canRemoveConnection ? <button type="button" onClick={() => { if (window.confirm('Ta bort denna koppling från det här flödet? Själva objektet finns kvar i systemet.')) void removeConnection() }} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Ta bort från flödet</button> : null}
+                {canRemoveConnection ? <button type="button" onClick={() => void removeConnection()} className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Ta bort från flödet</button> : null}
               </div>
 
               {modalMode === 'summary' ? renderOverview() : null}
@@ -2977,7 +2474,7 @@ export default function RenoAppFlowBuilderPage() {
                               <div className="flex shrink-0 gap-2">
                                 <button type="button" onClick={() => { setExistingTargetId(item.id); setAddPreviewQuestionId(item.id) }} className="rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-800 hover:bg-stone-100">Välj</button>
                                 <button type="button" onClick={() => setAddPreviewQuestionId(item.id)} className="rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-stone-800 hover:bg-stone-100">Öppna</button>
-                                <button type="button" onClick={() => { setDuplicateQuestionSourceId(item.id); setQuestionDraft(createDuplicateQuestionDraft(item)); setQuestionOptionDrafts(createQuestionOptionDraftsFromQuestion(item)); setAddMode('new') }} className="rounded-md border border-sky-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50">Skapa kopia</button>
+                                <button type="button" onClick={() => { setDuplicateQuestionSourceId(item.id); setQuestionDraft(createDuplicateQuestionDraft(item)); setQuestionOptionDrafts(createQuestionOptionDraftsFromQuestion(item)); setAddMode('new') }} className="rounded-md border border-sky-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50">Ny fråga utifrån denna</button>
                               </div>
                             </div>
                           </div>

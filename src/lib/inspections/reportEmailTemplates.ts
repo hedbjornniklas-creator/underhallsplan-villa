@@ -6,8 +6,9 @@ type BuildInspectionReportDeliveryEmailInput = {
   propertyAddress: string | null
   inspectionDate: string | null
   detailsUrl: string
-  /** EB-only, recipient-specific entry. Never grants authorization by itself. */
-  customerManagementUrl?: string | null
+  /** EB buyer-only: detailsUrl is a private bearer link, not a second CTA. */
+  personalReportLink?: boolean
+  reportLinkLabel?: string
 }
 
 type BuildInspectionReportDeliveryEmailResult = {
@@ -87,21 +88,14 @@ export function buildInspectionReportDeliveryEmail(
   const subject = `Besiktningsutlåtande - ${orgName}`
   const ctaButton = buildBulletproofButton({
     href: input.detailsUrl,
-    label: 'Öppna besiktningsutlåtande',
+    label: input.reportLinkLabel ?? 'Öppna besiktningsutlåtande',
     width: 290,
     backgroundColor: '#3730a3',
     textColor: '#ffffff',
     borderColor: '#312e81',
   })
-  const customerManagement = input.customerManagementUrl
-    ? `<div style="margin-top:20px;">${buildBulletproofButton({
-        href: input.customerManagementUrl,
-        label: 'Hantera din besiktning',
-        width: 260,
-        backgroundColor: '#ffffff',
-        textColor: '#3730a3',
-        borderColor: '#3730a3',
-      })}<p style="margin:10px 0 0;font-size:12px;line-height:1.5;color:#4b5563;">Detta är din personliga beställarlänk. Du kan läsa villkoren och beställa åtgärdsuppföljning. Att öppna länken skapar ingen beställning. Dela inte denna länk; använd Dela utlåtande för att dela själva rapporten.</p></div>`
+  const personalLinkNotice = input.personalReportLink
+    ? '<p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#4b5563;">Detta är din personliga länk till utlåtandet och beställarfunktionerna. Att öppna länken skapar ingen beställning. Använd ”Dela utlåtande” på sidan om du vill skicka utlåtandet vidare. Vidarebefordra inte den personliga länken.</p>'
     : ''
 
   const html = `
@@ -147,7 +141,7 @@ export function buildInspectionReportDeliveryEmail(
                 <p style="margin:0;font-size:12px;line-height:1.5;color:#4b5563;">
                   På sidan kan du läsa, skriva ut och spara utlåtandet.
                 </p>
-                ${customerManagement}
+                ${personalLinkNotice}
               </td>
             </tr>
           </table>
@@ -163,10 +157,10 @@ export function buildInspectionReportDeliveryEmail(
     `Besiktningsutlåtandet är nu tillgängligt.\n` +
     `Adress: ${propertyAddress}\n` +
     `Besiktningsdag: ${inspectionDate}\n\n` +
-    `Öppna besiktningsutlåtande: ${input.detailsUrl}\n\n` +
+    `${input.reportLinkLabel ?? 'Öppna besiktningsutlåtande'}: ${input.detailsUrl}\n\n` +
     `På sidan kan du läsa, skriva ut och spara utlåtandet.` +
-    (input.customerManagementUrl
-      ? `\n\nHantera din besiktning: ${input.customerManagementUrl}\nDetta är din personliga beställarlänk. Du kan läsa villkoren och beställa åtgärdsuppföljning. Att öppna länken skapar ingen beställning. Dela inte denna länk; använd Dela utlåtande för att dela själva rapporten.`
+    (input.personalReportLink
+      ? '\n\nDetta är din personliga länk till utlåtandet och beställarfunktionerna. Att öppna länken skapar ingen beställning. Använd ”Dela utlåtande” på sidan om du vill skicka utlåtandet vidare. Vidarebefordra inte den personliga länken.'
       : '')
 
   return { subject, html, text }

@@ -11,7 +11,7 @@ const commonModule = { exports: {} } as { exports: typeof import('../src/lib/ren
 new Function('module', 'exports', ts.transpileModule(read('src/lib/renoapp/flowEditor.ts'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText)(commonModule, commonModule.exports)
-const { canDropFlowNode, canChooseFlowTarget, flattenFlow, flowSubtreeIds, flowTarget, parseFlowMove } = commonModule.exports
+const { canDropFlowNode, canChooseFlowTarget, flattenFlow, flowSubtreeIds, flowTarget, parseFlowMove, parseFlowEdit } = commonModule.exports
 const sql = read('docs/db/2026-09-08_03_renoapp_flow_editor.sql')
 const db = new PGlite()
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -46,6 +46,8 @@ before(async () => {
   `)
   await db.exec(sql)
   await db.exec(sql)
+  await db.exec(read('docs/db/2026-09-08_08_renoapp_flow_reuse.sql'))
+  await db.exec(read('docs/db/2026-09-08_08_renoapp_flow_reuse.sql'))
 })
 after(() => db.close())
 beforeEach(async () => {
@@ -71,6 +73,111 @@ async function move(kind: string, sourceId: string, parentId: string, targetKind
     [kind, sourceId, parentId, targetKind, targetId, version ?? null, Boolean(version)])
   return result.rows[0].result
 }
+
+async function edit(operation: string, kind: string, sourceId: string, parentId: string, targetKind: string | null = null, targetId: string | null = null, version?: string) {
+  const result = await db.query<{ result: { version: string; saved?: boolean; shared: boolean } }>(
+    'select renoapp_edit_flow_connection($1,$2,$3,$4,$5,$6,$7,$8) as result',
+    [operation,kind,sourceId,parentId,targetKind,targetId,version ?? null,Boolean(version)])
+  return result.rows[0].result
+}
+
+async function definitions() {
+  const tables=['renovation_action_types','renovation_document_types','renoapp_participant_roles','renoapp_review_flags',
+    'renoapp_apply_questions','renoapp_apply_question_options','renovation_cases']
+  return Promise.all(tables.map(async table=>(await db.query(`select * from ${table} order by id`)).rows))
+}
+
+test('reusing a multi-level question adds only one reference; unlinking retains its complete branch', async () => {
+  await db.exec(`insert into renoapp_apply_option_triggers (id,option_id,trigger_type,question_id) values ('${id(21)}','${id(8)}','question','${id(7)}');
+    insert into renoapp_apply_option_triggers (id,option_id,trigger_type,document_type_id) values ('${id(22)}','${id(10)}','document','${id(3)}');
+    insert into renoapp_apply_option_triggers (id,option_id,trigger_type,participant_role_id) values ('${id(23)}','${id(10)}','participant_role','${id(4)}');`)
+  const before=await definitions()
+  const descendants=async()=>(await db.query('select * from renoapp_apply_option_triggers where option_id=$1 order by id',[id(10)])).rows
+  const branch=await descendants()
+  const preview=await edit('copy','option_trigger',id(21),id(8),'option',id(9))
+  assert.equal((await db.query('select * from renoapp_apply_option_triggers')).rows.length,3)
+  await edit('copy','option_trigger',id(21),id(8),'option',id(9),preview.version)
+  const links=(await db.query<{id:string;question_id:string}>('select id,question_id from renoapp_apply_option_triggers where question_id=$1 order by id',[id(7)])).rows
+  assert.equal(links.length,2)
+  assert.ok(links.every(link=>link.question_id===id(7)))
+  assert.deepEqual(await definitions(),before)
+  assert.deepEqual(await descendants(),branch)
+  const copied=links.find(link=>link.id!==id(21))!
+  const removal=await edit('remove','option_trigger',copied.id,id(9))
+  await edit('remove','option_trigger',copied.id,id(9),null,null,removal.version)
+  assert.deepEqual(await definitions(),before)
+  assert.deepEqual(await descendants(),branch)
+  assert.equal((await db.query('select * from renoapp_apply_option_triggers where id=$1',[id(21)])).rows.length,1)
+})
+
+for (const [kind, sourceId, targetKind, targetId] of [
+  ['action_question',11,'option',10],['action_document',12,'option',8],['action_participant',13,'option',8],
+  ['flag_link',14,'option',8],['flag_link',14,'document',3],['flag_link',14,'participant',4],
+  ['action_question',11,'action',2],['action_document',12,'action',2],['action_participant',13,'action',2],['flag_link',14,'action',2],
+] as const) test(`reuses ${kind} at ${targetKind} without cloning or removing its source`,async()=>{
+  const before=await definitions()
+  type Connection = { child_id: string; child_kind: string; is_required: boolean }
+  const source=(await db.query<Connection>('select * from renoapp_flow_connections where id=$1',[id(sourceId)])).rows[0]
+  const preview=await edit('copy',kind,id(sourceId),id(1),targetKind,id(targetId))
+  await edit('copy',kind,id(sourceId),id(1),targetKind,id(targetId),preview.version)
+  assert.deepEqual((await db.query('select * from renoapp_flow_connections where id=$1',[id(sourceId)])).rows[0],source)
+  const target=(await db.query<Connection>('select * from renoapp_flow_connections where parent_kind=$1 and parent_id=$2',[targetKind,id(targetId)])).rows[0]
+  assert.equal(target.child_id,source.child_id)
+  assert.equal(target.child_kind,source.child_kind)
+  assert.equal(target.is_required,source.is_required)
+  assert.deepEqual(await definitions(),before)
+})
+
+for (const [kind,sourceId] of [['action_question',11],['action_document',12],['action_participant',13],['flag_link',14]] as const) {
+  test(`removing ${kind} changes only the selected connection`,async()=>{
+    const before=await definitions()
+    const all=(await db.query<{id:string}>('select * from renoapp_flow_connections order by id')).rows
+    const preview=await edit('remove',kind,id(sourceId),id(1))
+    assert.equal(preview.shared,false)
+    assert.deepEqual((await db.query('select * from renoapp_flow_connections order by id')).rows,all)
+    await edit('remove',kind,id(sourceId),id(1),null,null,preview.version)
+    assert.deepEqual((await db.query('select * from renoapp_flow_connections order by id')).rows,all.filter(row=>row.id!==id(sourceId)))
+    assert.deepEqual(await definitions(),before)
+  })
+}
+
+for(const [name,mutation,kind,sourceId,targetKind,targetId,expected] of [
+  ['duplicate',`insert into renoapp_apply_option_triggers(option_id,trigger_type,document_type_id) values ('${id(8)}','document','${id(3)}')`,'action_document',12,'option',8,'DUPLICATE'],
+  ['same parent','','action_document',12,'action',1,'SAME_PARENT'],
+  ['self cycle','','action_question',11,'option',8,'CYCLE'],
+  ['indirect cycle',`insert into renoapp_apply_option_triggers(option_id,trigger_type,question_id) values ('${id(8)}','question','${id(7)}')`,'action_question',11,'option',10,'CYCLE'],
+  ['custom settings',"update renovation_action_document_requirements set note='Keep this'",'action_document',12,'option',8,'CUSTOM_SETTINGS'],
+  ['invalid target','','action_document',12,'participant',4,'INVALID_TARGET'],
+] as const) test(`reuse refuses ${name} without changes`,async()=>{
+  if(mutation)await db.exec(mutation)
+  const before=(await db.query('select * from renoapp_flow_connections order by id')).rows
+  await db.exec('savepoint invalid_copy')
+  await assert.rejects(edit('copy',kind,id(sourceId),id(1),targetKind,id(targetId)),new RegExp(`FLOW_MOVE_${expected}`))
+  await db.exec('rollback to savepoint invalid_copy')
+  assert.deepEqual((await db.query('select * from renoapp_flow_connections order by id')).rows,before)
+})
+
+test('confirmed version is bound to the operation, source and destination',async()=>{
+  const preview=await edit('copy','action_document',id(12),id(1),'option',id(8))
+  for(const [operation,targetKind,targetId] of [['copy','option',id(9)],['move','option',id(8)],['remove',null,null]] as const){
+    await db.exec('savepoint wrong_operation')
+    await assert.rejects(edit(operation,'action_document',id(12),id(1),targetKind,targetId,preview.version),/FLOW_MOVE_STALE/)
+    await db.exec('rollback to savepoint wrong_operation')
+  }
+  const removal=await edit('remove','action_document',id(12),id(1))
+  await db.exec("update renoapp_apply_questions set label='Changed'")
+  await assert.rejects(edit('remove','action_document',id(12),id(1),null,null,removal.version),/FLOW_MOVE_STALE/)
+})
+
+test('reuse endpoint is not granted to browser roles and parses removal without a target',async()=>{
+  for(const role of ['anon','authenticated'])assert.equal((await db.query<{allowed:boolean}>(`select has_function_privilege('${role}', 'renoapp_edit_flow_connection(text,text,uuid,uuid,text,uuid,text,boolean)', 'execute') as allowed`)).rows[0].allowed,false)
+  const source={kind:'action_question',id:id(11),parentId:id(1)}
+  assert.equal(parseFlowEdit({operation:'remove',source}).operation,'remove')
+  assert.throws(()=>parseFlowEdit({operation:'remove',source,apply:true}),/FLOW_MOVE_INVALID/)
+  assert.throws(()=>parseFlowEdit({operation:'remove',source,target:{kind:'action',id:id(1)}}),/FLOW_MOVE_INVALID/)
+  assert.throws(()=>parseFlowEdit({operation:'delete',source}),/FLOW_MOVE_INVALID/)
+  assert.throws(()=>parseFlowEdit({operation:'copy',source}),/FLOW_MOVE_INVALID/)
+})
 
 test('preview does not mutate, move preserves the child and existing case data', async () => {
   const preview = await move('action_document', id(12), id(1), 'option', id(8))
@@ -201,7 +308,7 @@ test('canvas targets distinguish move/copy and exclude loops through shared desc
   const option = node('yes','option',{type:'option',questionId:id(6),optionId:id(8)},[nextQuestion])
   const question: FlowNode = {...node('question','question',{type:'rootQuestion',actionTypeId:id(1),questionId:id(6)},[option]),source:{kind:'action_question',id:id(11),parentId:id(1)}}
   const descendantAnswer = node('other-occurrence','option',{type:'option',questionId:id(7),optionId:id(10)})
-  assert.equal(canChooseFlowTarget(doc,root,'copy'),true)
+  assert.equal(canChooseFlowTarget(doc,root,'copy'),false)
   assert.equal(canChooseFlowTarget(doc,root,'move'),false)
   assert.equal(canChooseFlowTarget(doc,option,'copy'),true)
   assert.equal(canChooseFlowTarget(doc,question,'copy'),false)
@@ -209,7 +316,7 @@ test('canvas targets distinguish move/copy and exclude loops through shared desc
     assert.equal(canChooseFlowTarget(question,option,operation),false)
     assert.equal(canChooseFlowTarget(question,descendantAnswer,operation),false)
   }
-  assert.equal(canChooseFlowTarget(option,question,'copy'),true)
+  assert.equal(canChooseFlowTarget(option,question,'copy'),false)
   assert.equal(canChooseFlowTarget(option,nextQuestion,'copy'),false)
   assert.equal(canChooseFlowTarget(option,question,'move'),false)
 })
@@ -219,7 +326,7 @@ test('route authorizes before RPC and sends preview/apply to the transactional f
   const routeModule={exports:{}} as {exports:typeof import('../src/app/api/renoapp/admin/flow-move/route')}
   let denied: string | null='MODULE_ACCESS_REQUIRED', calls=0, rpcError: unknown=null
   const dependencies: Record<string,unknown>={
-    'next/server':require('next/server'), '@/lib/renoapp/flowEditor':{parseFlowMove},
+    'next/server':require('next/server'), '@/lib/renoapp/flowEditor':{parseFlowEdit},
     '@/lib/renoapp/brfAdminAccess':{requireBrfAdminContext:async()=>{if(denied)throw new Error(denied)}},
     '@/lib/supabase/admin':{createSupabaseAdminClient:()=>({rpc:async(name:string,args:Record<string,unknown>)=>{
       calls++; assert.equal(name,'renoapp_move_flow_connection'); assert.equal(args.p_apply,false)
@@ -236,4 +343,46 @@ test('route authorizes before RPC and sends preview/apply to the transactional f
   assert.equal((await routeModule.exports.POST(request())).status,503)
   rpcError={message:'FLOW_MOVE_STALE'}
   assert.equal((await routeModule.exports.POST(request())).status,409)
+})
+
+test('copy and removal authorize and validate before using only the reference-edit RPC', async () => {
+  const require=createRequire(import.meta.url)
+  const routeModule={exports:{}} as {exports:typeof import('../src/app/api/renoapp/admin/flow-move/route')}
+  let denied=true, rpcError: unknown=null
+  const calls: {name:string;args:Record<string,unknown>}[]=[]
+  const dependencies: Record<string,unknown>={
+    'next/server':require('next/server'), '@/lib/renoapp/flowEditor':{parseFlowEdit},
+    '@/lib/renoapp/brfAdminAccess':{requireBrfAdminContext:async()=>{if(denied)throw new Error('ADMIN_REQUIRED')}},
+    '@/lib/supabase/admin':{createSupabaseAdminClient:()=>({rpc:async(name:string,args:Record<string,unknown>)=>{
+      calls.push({name,args});return {data:{version:'a'.repeat(32),saved:args.p_apply},error:rpcError}
+    }})},
+  }
+  const compiled=ts.transpileModule(read('src/app/api/renoapp/admin/flow-move/route.ts'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
+  new Function('require','module','exports',compiled)((name:string)=>{assert.ok(name in dependencies);return dependencies[name]},routeModule,routeModule.exports)
+  const request=(body:unknown)=>new Request('http://localhost/api/renoapp/admin/flow-move',{method:'POST',body:JSON.stringify(body)})
+  const source={kind:'action_question',id:id(11),parentId:id(1)}
+  for(const operation of ['copy','remove'] as const){
+    const body={operation,source,...(operation==='copy'?{target:{kind:'option',id:id(10)}}:{})}
+    const before=calls.length
+    denied=true
+    assert.equal((await routeModule.exports.POST(request(body))).status,403)
+    assert.equal(calls.length,before)
+    denied=false
+    assert.equal((await routeModule.exports.POST(request({...body,apply:true}))).status,400)
+    assert.equal(calls.length,before)
+    assert.equal((await routeModule.exports.POST(request({...body,apply:true,version:'a'.repeat(32)}))).status,200)
+    assert.equal(calls.at(-1)!.name,'renoapp_edit_flow_connection')
+    assert.equal(calls.at(-1)!.args.p_operation,operation)
+    assert.equal(calls.at(-1)!.args.p_source_id,source.id)
+    assert.equal(calls.at(-1)!.args.p_target_id,operation==='copy'?id(10):null)
+  }
+  const body={operation:'copy',source,target:{kind:'option',id:id(10)}}
+  for(const [error,status] of [[{code:'PGRST202'},503],[{message:'FLOW_MOVE_DUPLICATE'},409],[{message:'FLOW_MOVE_CYCLE'},409],[{message:'FLOW_MOVE_STALE'},409],[{code:'23505',message:'private database details'},500]] as const){
+    rpcError=error
+    const before=calls.length
+    const response=await routeModule.exports.POST(request(body))
+    assert.equal(response.status,status)
+    assert.equal(calls.length,before+1)
+    assert.doesNotMatch(await response.text(),/private database details/)
+  }
 })

@@ -656,12 +656,12 @@ export default function EbRemediationPortalClient({
                           <div className="mt-4 space-y-2 print:hidden">
                             <label className="block text-xs font-semibold text-gray-700" htmlFor={`comment-${task.id}`}>Kommentar eller beskrivning av utförd åtgärd</label>
                             <textarea id={`comment-${task.id}`} rows={3} value={comments[task.id] ?? ''} onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))} disabled={isBusy} className={inputClassName()} placeholder={role === 'customer_owner' ? 'Beskriv din fråga eller vad som behöver kompletteras.' : 'Beskriv utförd åtgärd. Om arbetet inte kan fotograferas: förklara varför och hur det har åtgärdats.'} />
-                            <p className="text-xs leading-5 text-gray-500">{role === 'customer_owner' ? 'En begäran om komplettering är inte ett besiktningsbeslut.' : 'Anmäl avhjälpt med en åtgärdsbild eller en förklarande kommentar när arbetet inte kan fotograferas. Ange skäl om punkten inte kan avhjälpas.'}</p>
+                            <p className="text-xs leading-5 text-gray-500">{role === 'customer_owner' ? 'En begäran om komplettering är inte ett besiktningsbeslut.' : 'Anmäl åtgärdat med en åtgärdsbild eller en förklarande kommentar när arbetet inte kan fotograferas. Ange skäl om punkten inte kan avhjälpas.'}</p>
                             <div className="flex flex-wrap gap-2">
                               {ebRemediationAllowedStatuses(role, true).filter((status) => status !== task.status).map((status) => (
                                 <button key={status} type="button" onClick={() => void changeStatus(task.id, status as EbRemediationStatus)} disabled={isBusy} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold disabled:opacity-50 ${status === 'reported_remedied' ? 'bg-emerald-700 text-white' : 'border border-gray-300 bg-white text-gray-800'}`}>
                                   {busyKey === `status-${task.id}-${status}` ? <Loader2 size={14} className="animate-spin" /> : null}
-                                  {status === 'returned' ? 'Begär komplettering' : status === 'in_progress' ? 'Påbörja' : status === 'reported_remedied' ? 'Anmäl avhjälpt' : 'Kan inte avhjälpas'}
+                                  {status === 'returned' ? 'Begär komplettering' : status === 'in_progress' ? 'Påbörja' : status === 'reported_remedied' ? 'Anmäl åtgärdat' : 'Kan inte avhjälpas'}
                                 </button>
                               ))}
                               <button type="button" disabled={isBusy || !(comments[task.id] ?? '').trim()} onClick={() => void addComment(task.id)} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold disabled:opacity-50"><Send size={14} /> Skicka kommentar</button>

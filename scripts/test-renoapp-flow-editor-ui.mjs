@@ -48,17 +48,25 @@ const server = createServer(async(request,response)=>{
       let body='';for await(const chunk of request)body+=chunk
       const input=JSON.parse(body);writes.push({key,input})
       if(key==='flow-move'){
-        if(moveFailure){response.writeHead(moveFailure);response.end(JSON.stringify({error:moveFailure===503?'Databasuppdateringen för flytt av kort behöver köras först.':'Flödet har ändrats. Ladda om flödesbyggaren och försök igen.'}));return}
-        const old = input.source.kind==='action_document' ? requirements.find(item=>item.id===input.source.id)
-          : [...yes.triggers,...no.triggers].find(item=>item.id===input.source.id)
-        if(!old){response.writeHead(409);response.end(JSON.stringify({error:'Flödet har ändrats.'}));return}
+        const operation=input.operation??'move'
+        const failure=operation==='move'?moveFailure:(operation==='copy'&&input.apply&&copyFailure?500:null)
+        if(failure){response.writeHead(failure);response.end(JSON.stringify({error:failure===503?'Databasuppdateringen för flödeskopplingar behöver köras först.':failure===500?'Kopplingen kunde inte skapas.':'Flödet har ändrats. Ladda om flödesbyggaren och försök igen.'}));return}
+        const data=responses(),options=data.questions.items.flatMap(q=>q.options)
+        const owner=input.source.kind==='action_document' ? data.requirements.actionTypes.find(a=>a.actionType.id===input.source.parentId)
+          : options.find(o=>o.id===input.source.parentId)
+        const connections=input.source.kind==='action_document'?owner?.requirements:owner?.triggers
+        const original=connections?.find(item=>item.id===input.source.id)
+        if(!original){response.writeHead(409);response.end(JSON.stringify({error:'Flödet har ändrats.'}));return}
+        const child=original.questionId ? data.questions.items.find(q=>q.id===original.questionId)
+          : data['document-types'].items.find(d=>d.id===original.documentTypeId)
+        const target=options.find(o=>o.id===input.target?.id)
+        const parentLabel=option=>data.questions.items.find(q=>q.options.some(o=>o.id===option.id)).label+' / '+option.label
+        const fromLabel=input.source.kind==='action_document'?owner.actionType.label:parentLabel(owner)
         if(input.apply){
-          if(input.source.kind==='action_document')requirements.splice(requirements.findIndex(item=>item.id===input.source.id),1)
-          else for(const option of [yes,no]) option.triggers=option.triggers.filter(item=>item.id!==input.source.id)
-          const target=[yes,no].find(item=>item.id===input.target.id)
-          target.triggers.push({id:id(sequence++),triggerType:'document',documentTypeId:doc.id,questionId:null,participantRoleId:null,reviewFlagId:null,isActive:true,sortOrder:100})
+          if(operation!=='copy')connections.splice(connections.findIndex(item=>item.id===input.source.id),1)
+          if(operation!=='remove')target.triggers.push({...original,id:id(sequence++),triggerType:original.triggerType??'document',isActive:true})
         }
-        response.end(JSON.stringify({version:'a'.repeat(32),itemLabel:doc.label,fromLabel:input.source.kind==='action_document'?'Riva vägg':`${question.label} / ${input.source.parentId===no.id?'Nej':'Ja'}`,toLabel:`${question.label} / ${input.target.id===no.id?'Nej':'Ja'}`,shared:true,saved:input.apply}));return
+        response.end(JSON.stringify({version:'a'.repeat(32),itemLabel:child.label,fromLabel,toLabel:target?parentLabel(target):null,shared:true,saved:input.apply}));return
       }
       if(key==='document-types'){
         if(copyFailure){response.writeHead(500);response.end(JSON.stringify({error:'Kopian kunde inte skapas.'}));return}
@@ -181,7 +189,7 @@ try{
   console.log('PASS position-only drag: edges follow, no configuration writes, position survives reload')
 
   // Copy/remove on the canvas must affect the selected document, not the last opened node.
-  await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
+  await page.locator(`${rootDoc} button[aria-label="Kopiera till en annan plats"]`).click()
   assert.equal(writes.length,0)
   assert.equal(await page.$('dialog[open]'),null)
   await page.locator(`${questionNode} button[aria-label="Expandera"]`).click()
@@ -189,47 +197,46 @@ try{
   assert.equal(await page.$eval(answerNode(yes),node=>node.dataset.flowTarget),'true')
   await page.keyboard.press('Escape')
   assert.equal(writes.length,0)
-  await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
-  await clickTarget(rootNode)
-  assert.equal(writes.length,0)
-  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Avbryt"])').click()
-  assert.equal(writes.length,0)
-  await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
-  await clickTarget(rootNode)
-  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Skapa kopia"])').click()
-  await page.waitForFunction(()=>[...document.querySelectorAll('[data-flow-id]')].some(node=>node.textContent.includes('(kopia)')))
-  const copied=docs.at(-1)
-  assert.equal(copied.label,`${doc.label} (kopia)`)
-  assert.equal(requirements.length,2)
-  const copiedSelector=`[data-flow-id="root-document:${copied.id}"]`
-  await page.locator(`${copiedSelector} button[aria-label="Ta bort från flödet"]`).click()
-  await page.waitForSelector(copiedSelector,{hidden:true})
-  assert.equal(requirements.length,1);assert.equal(docs.length,2)
-  console.log('PASS copy/remove: selected card copied, only its connection removed, shared object retained')
-
-  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
-  await page.waitForSelector(answerNode(yes))
-  await page.locator('button[aria-label="Återställ kortens placering"]').click()
-  // Copy directly to an answer, retaining the original and choosing the target on the canvas.
-  const beforeCopy=writes.length
-  await page.locator(`${rootDoc} button[aria-label="Skapa kopia"]`).click()
+  await page.locator(`${rootDoc} button[aria-label="Kopiera till en annan plats"]`).click()
+  assert.equal(await page.$eval(rootNode,node=>node.dataset.flowTarget),'false')
   assert.equal(await page.$eval(questionNode,node=>node.dataset.flowTarget),'false')
   assert.equal(await page.$eval(answerNode(yes),node=>node.dataset.flowTarget),'true')
   await page.screenshot({path:resolve(output,'copy-targets.png')})
   await clickTarget(answerNode(yes))
-  assert.equal(writes.length,beforeCopy)
-  assert.match(await page.$eval('dialog',node=>node.textContent),/TillPåverkas vatteninstallationer\? \/ Ja/)
-  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Skapa kopia"])').click()
-  await page.waitForFunction(()=>[...document.querySelectorAll('[data-flow-id]')].some(node=>node.dataset.flowId.startsWith('document:')&&node.textContent.includes('(kopia)')))
-  const answerCopy=docs.at(-1)
+  assert.equal(writes.length,1);assert.equal(writes[0].input.apply,false)
+  assert.equal(docs.length,1);assert.equal(yes.triggers.length,0)
+  assert.match(await page.$eval('dialog',node=>node.textContent),/Ingen ny fråge- eller underlagsdefinition/)
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Avbryt"])').click()
+  assert.equal(yes.triggers.length,0)
+  await page.locator(`${rootDoc} button[aria-label="Kopiera till en annan plats"]`).click()
+  await clickTarget(answerNode(yes))
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Koppla hit"])').click()
+  await page.waitForSelector(triggerDoc(yes))
   assert.equal(requirements[0].documentTypeId,doc.id)
-  assert.equal(yes.triggers[0].documentTypeId,answerCopy.id)
-  assert.notEqual(answerCopy.id,doc.id)
-  const answerCopySelector=`[data-flow-id="document:${yes.id}:${answerCopy.id}"]`
-  await page.locator(`${answerCopySelector} button[aria-label="Ta bort från flödet"]`).click()
-  await page.waitForSelector(answerCopySelector,{hidden:true})
-  assert.equal(requirements.length,1);assert.equal(yes.triggers.length,0)
-  console.log('PASS click-to-copy: no list, no writes before confirmation, chosen answer receives new object, original retained')
+  assert.equal(yes.triggers[0].documentTypeId,doc.id)
+  assert.equal(docs.length,1)
+  // Root and answer cards are definitions, not unlinkable occurrences.
+  for(const selector of [rootNode,answerNode(yes)]){
+    assert.equal(await page.$(`${selector} button[aria-label="Ta bort från flödet"]`),null)
+    assert.equal(await page.$(`${selector} button[aria-label="Kopiera till en annan plats"]`),null)
+  }
+  // Once connected, the same target is no longer offered.
+  await page.locator(`${rootDoc} button[aria-label="Kopiera till en annan plats"]`).click()
+  assert.equal(await page.$eval(answerNode(yes),node=>node.dataset.flowTarget),'false')
+  await page.keyboard.press('Escape')
+  await page.locator(`${triggerDoc(yes)} button[aria-label="Ta bort från flödet"]`).click()
+  await page.waitForSelector('dialog[open]')
+  assert.equal(yes.triggers.length,1)
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Avbryt"])').click()
+  assert.equal(yes.triggers.length,1)
+  await page.locator(`${triggerDoc(yes)} button[aria-label="Ta bort från flödet"]`).click()
+  await page.waitForSelector('dialog[open]')
+  await page.screenshot({path:resolve(output,'unlink-confirmation.png')})
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Ta bort kopplingen"])').click()
+  await page.waitForSelector(triggerDoc(yes),{hidden:true})
+  assert.equal(requirements.length,1);assert.equal(yes.triggers.length,0);assert.equal(docs.length,1)
+  assert.ok(writes.every(write=>write.key==='flow-move'))
+  console.log('PASS copy/remove: existing entity reused, no definition writes, duplicate targets excluded, removal affects only connection')
 
   await page.locator(`${questionNode} button[aria-label="Flytta koppling"]`).click()
   assert.equal(await page.$eval(answerNode(yes),node=>node.dataset.flowTarget),'false')
@@ -300,13 +307,13 @@ try{
   assert.equal(writes.length,count+1);assert.equal(no.triggers.length,1)
   assert.deepEqual(errors,[])
   console.log('PASS missing migration: clear error, no configuration changes')
-  copyFailure=true
   const beforeFailedCopy=writes.length
-  await page.locator(`${triggerDoc(no)} button[aria-label="Skapa kopia"]`).click()
+  await page.locator(`${triggerDoc(no)} button[aria-label="Kopiera till en annan plats"]`).click()
   await clickTarget(answerNode(yes))
-  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Skapa kopia"])').click()
-  await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent.includes('Kopian kunde inte skapas'))
-  assert.equal(writes.length,beforeFailedCopy+1);assert.equal(no.triggers.length,1);assert.equal(yes.triggers.length,0)
+  copyFailure=true
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Koppla hit"])').click()
+  await page.waitForFunction(()=>document.querySelector('[role="status"]')?.textContent.includes('Kopplingen kunde inte skapas'))
+  assert.equal(writes.length,beforeFailedCopy+2);assert.equal(no.triggers.length,1);assert.equal(yes.triggers.length,0)
   console.log('PASS failed copy: original retained, no link or blind retry, error displayed')
 
   // Regression for the kitchen branch in the reported screenshot.
@@ -345,5 +352,40 @@ try{
   assert.equal(writes.length,writesBeforeLayout)
   assert.deepEqual(errors,[])
   console.log('PASS compact kitchen layout: content-sized cards, clustered answers, no overlap or configuration writes')
+
+  // Reuse the reported question with its complete branch, then unlink that occurrence.
+  copyFailure=false
+  const beforeKitchen=structuredClone(fixture)
+  const wallSelector=`[data-flow-id^="question:"][data-flow-id$=":${id(140)}"]`
+  const recipient=`[data-flow-id="option:${id(101)}:${id(110)}"]`
+  await page.setViewport({width:1440,height:1100})
+  await page.locator('button[aria-label="Visa hela flödet"]').click()
+  await page.locator(`${wallSelector} button[aria-label="Kopiera till en annan plats"]`).click()
+  await clickTarget(recipient)
+  assert.deepEqual(fixture,beforeKitchen)
+  await page.screenshot({path:resolve(output,'reuse-question-confirmation.png')})
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Koppla hit"])').click()
+  await page.waitForFunction(selector=>document.querySelectorAll(selector).length===2,{},wallSelector)
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
+  await page.waitForFunction(()=>document.querySelectorAll('[data-flow-id]').length===33)
+  assert.equal(fixture.questions.items.length,beforeKitchen.questions.items.length)
+  assert.deepEqual(fixture.questions.items.find(q=>q.id===id(140)),beforeKitchen.questions.items.find(q=>q.id===id(140)))
+  assert.equal((await page.$$(`[data-flow-id="document:${id(141)}:${id(200)}"]`)).length,2)
+  await page.screenshot({path:resolve(output,'reused-question-branch.png')})
+  const occurrences=await page.$$(wallSelector)
+  let copiedOccurrence
+  for(const card of occurrences)if(await card.evaluate((node,parent)=>node.closest('.react-flow__node').dataset.id.includes(parent),id(110)))copiedOccurrence=card
+  assert.ok(copiedOccurrence)
+  await (await copiedOccurrence.$('button[aria-label="Ta bort från flödet"]')).click()
+  await page.waitForSelector('dialog[open]')
+  await page.locator('::-p-xpath(//dialog//button[normalize-space(.)="Ta bort kopplingen"])').click()
+  await page.waitForFunction(()=>document.querySelectorAll('[data-flow-id]').length===29)
+  await page.reload({waitUntil:'networkidle0'})
+  await page.locator('::-p-xpath(//button[normalize-space(.)="Expandera alla"])').click()
+  await page.waitForFunction(()=>document.querySelectorAll('[data-flow-id]').length===29)
+  assert.deepEqual(fixture,beforeKitchen)
+  assert.ok(writes.every(write=>write.key==='flow-move'))
+  assert.deepEqual(errors,[])
+  console.log('PASS question reuse: same question/answers/descendants at two places, unlink/reload retain all original data')
 }catch(error){await page?.screenshot({path:resolve(output,'failure.png'),fullPage:true});throw error}
 finally{await browser?.close();await new Promise(done=>server.close(done))}

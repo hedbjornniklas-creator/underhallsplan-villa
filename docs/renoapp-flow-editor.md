@@ -5,9 +5,13 @@
 1. Run the complete `docs/db/2026-09-08_03_renoapp_flow_editor.sql` in Supabase.
    This adds one restricted view and one service-role-only transactional function.
    It does not migrate case data or change any existing flow automatically.
-2. Deploy the application. Existing editor actions remain available. If the new RPC
-   is missing, reconnection displays an error and never falls back to separate writes.
-3. Test with a disposable renovation type: move a requirement from the root to an
+2. Run the complete `docs/db/2026-09-08_08_renoapp_flow_reuse.sql`. It adds a shared
+   transactional function for move/copy/unlink and preserves the existing move RPC.
+   No definitions, links or case data are changed by the migration. Old independent
+   copies are not merged or removed automatically.
+3. Deploy the application. If the required RPC is missing, the operation displays
+   an error and never falls back to creating definitions or separate writes.
+4. Test with a disposable renovation type: move a requirement from the root to an
    answer, then from Yes to No; cancel a preview; copy and remove a card. Reload and
    verify both the diagram and the applicant questions/requirements.
 
@@ -35,39 +39,42 @@
 - Questions, documents and participants can move between action roots and answers.
   Flags can also move to documents and participants. The selected renovation type
   defines which destinations are visible in the diagram.
-- Answer cards can be positioned, copied and deleted but cannot be reassigned to
-  another question. This protects the meaning of stored applicant answers. Move the
-  whole question instead. The action root cannot be reparented.
-- Copy and removal reuse existing editor services. Removing a linked card removes
-  its connection, not the reusable object. Removing an answer affects every use of
-  its question. Deleting an action root is explicitly confirmed as a global deletion.
-  Global deletion of other objects remains in the editor panel.
-- Existing copy semantics are retained: a question copy includes its own answer
-  options, but downstream targets remain shared. An action-root copy copies settings
-  without links; the confirmation states this. This is not a deep subtree clone.
-  A canvas copy is attached directly to the selected recipient, leaving the source
-  untouched. Answers may be copied to questions; other linked cards use the same
-  recipient types as moves. Descendants are excluded to prevent recursive copies.
-  Copying retains existing create/link services and requires no additional SQL.
+- Copy adds one connection to the existing question/document/participant/flag.
+  Its full branch follows by reference, including the same question, answer and
+  downstream object IDs. There is no new definition, key or "(kopia)" label.
+  Existing connections remain intact. Changing the shared definition or its
+  descendants affects all uses; the confirmation states this explicitly.
+- Removal deletes only the selected connection row, never a definition, answer or
+  descendant. Both canvas and editor-panel removal use the same guarded RPC.
+  If the parent is shared, removing its outgoing connection affects all occurrences
+  of that parent, not just one drawing. The confirmation warns about this scope.
+- Root and answer cards have no independently removable parent connection. They
+  can be positioned and edited, but no longer expose copy/delete icons. Reuse or
+  move the whole question. Global deletion and independent object cloning are not
+  offered in the flow editor toolbar; reusable definitions have separate catalog pages.
+- Copy uses the same destination types as move. Existing direct connections and
+  recursive descendants cannot be chosen. Server validation is authoritative.
 
 ## Safety and limitations
 
 The database validates source identity, parent identity, active targets, duplicate
 connections and recursive question cycles. BRF-specific overrides are not moveable
 through this editor. Custom per-link settings which answer triggers cannot represent
-(optional requirements, custom phase, notes) block that move rather than disappearing.
+(optional requirements, custom phase, notes) block move/copy rather than disappearing.
 
 Preview is read-only. Apply locks the configuration tables for a short transaction,
-compares their current fingerprint with the confirmed preview, inserts the destination
-and removes the source atomically. A conflict, timeout or error rolls back the move.
+compares their fingerprint and the operation/source/target with the confirmed preview.
+Move inserts the destination and removes the source; copy only inserts; unlink only
+removes the selected source connection. All operations are atomic. A conflict,
+timeout or error rolls back the operation.
 The UI does not blindly retry uncertain writes; it reloads configuration.
 
 Shared question/answer/document/participant connections are global configuration.
-Confirmation warns that every flow using these parents is affected. The move does
+Confirmation warns that every flow using these parents is affected. The editor does
 not write case records or send completion emails. This is not per-case versioning:
 existing application behavior for resolving updated configuration remains unchanged.
 
-The transaction and optimistic guard apply to the new move operation. Other existing
+The transaction and optimistic guard apply to move, copy and unlink. Other existing
 editor/AI actions have their existing persistence behavior, not a newly added transaction.
 No production migration or live administrative mutation is run by the automated tests.
 
@@ -80,6 +87,7 @@ No production migration or live administrative mutation is run by the automated 
   endpoints; actual pointer dragging, line movement, local persistence, copy/removal,
   click-to-move/copy, destination highlighting, cancel/Escape, missing migration,
   failed copy and stale apply; desktop/tablet/mobile screenshots including a dense
-  kitchen fixture with long questions and nearby requirements.
+  kitchen fixture. Reusing a complete question branch, unlinking and reloading must
+  leave the original definitions, answers and descendants unchanged.
 - `node scripts/test-renoapp-classification-ui.mjs`: existing board-summary and admin
   editor regression coverage.

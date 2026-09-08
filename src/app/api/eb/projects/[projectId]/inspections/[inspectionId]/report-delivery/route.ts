@@ -893,7 +893,7 @@ export async function POST(
     const publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(createdLink.token)}`
     let reportLockedAt = inspection.reportLockedAt
     let customerEmail: string | null = null
-    let customerManagementUrl: string | null = null
+    let personalReportUrl: string | null = null
     let publicationPersisted = false
 
     try {
@@ -922,10 +922,10 @@ export async function POST(
           throw new Error('EB_DELIVERY_CUSTOMER_CHANGED')
         }
         customerEmail = registeredCustomer.email
-        customerManagementUrl = await issueEbCustomerLink({
+        personalReportUrl = await issueEbCustomerLink({
           publicToken: createdLink.token, email: registeredCustomer.email!, baseUrl: publicBaseUrl,
         })
-        if (!customerManagementUrl) throw new Error('EB_DELIVERY_CUSTOMER_CHANGED')
+        if (!personalReportUrl) throw new Error('EB_DELIVERY_CUSTOMER_CHANGED')
       }
       if (!sendingFrozenRevision) {
         await revokeOlderReportLinks(admin, {
@@ -970,7 +970,11 @@ export async function POST(
       for (const recipient of recipients) {
         const emailContent = buildInspectionReportDeliveryEmail({
           ...emailInput,
-          customerManagementUrl: recipient === customerEmail ? customerManagementUrl : null,
+          // Each recipient gets one report button. The personal bearer link must
+          // never be sent to another address in the distribution list.
+          detailsUrl: recipient === customerEmail ? personalReportUrl! : publicLink,
+          personalReportLink: recipient === customerEmail,
+          reportLinkLabel: 'Öppna utlåtandet',
         })
         let messageId: string | null = null
         try {

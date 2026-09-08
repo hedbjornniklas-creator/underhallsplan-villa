@@ -1,12 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { ArrowRight, Camera, Check, CheckCheck, ChevronDown, LoaderCircle, Mail, ShieldCheck, X } from 'lucide-react'
+import { ArrowRight, Camera, Check, CheckCheck, ChevronDown, LoaderCircle, Mail, X } from 'lucide-react'
 import { EB_FOLLOW_UP_TERMS_VERSION, type EbFollowUpOffer } from '@/lib/eb/followUp'
 import { EB_FOLLOW_UP_WITHDRAWAL_FORM_URL, getEbFollowUpConsentTexts, getEbFollowUpTermsText, getEbFollowUpWithdrawalFormText } from '@/lib/eb/followUpTerms'
 
 type OrderFields = {
-  email: string
   customerType: '' | 'consumer' | 'business'
   name: string
   invoiceName: string
@@ -21,7 +20,7 @@ type OrderFields = {
 }
 
 const emptyFields: OrderFields = {
-  email: '', customerType: '', name: '', invoiceName: '', invoiceOrgNo: '', invoiceAddress: '',
+  customerType: '', name: '', invoiceName: '', invoiceOrgNo: '', invoiceAddress: '',
   invoicePostalCode: '', invoiceCity: '', acceptTerms: false, consumerWithdrawalAcknowledged: false,
   requestImmediateStart: false, acceptInvoice: false,
 }
@@ -36,7 +35,7 @@ function safePortalUrl(value: unknown) {
   return typeof value === 'string' && /^\/atgarder\/[A-Za-z0-9_-]{20,}$/.test(value) ? value : null
 }
 
-type FollowUpProps = { endpoint: string; autoOpen?: boolean }
+type FollowUpProps = { endpoint: string }
 
 export default function EbFollowUpOrder(props: FollowUpProps) {
   // Client navigation between reports must discard the previous report's
@@ -44,26 +43,23 @@ export default function EbFollowUpOrder(props: FollowUpProps) {
   return <CustomerFollowUpOrder key={props.endpoint} {...props} />
 }
 
-function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
+function CustomerFollowUpOrder({ endpoint }: FollowUpProps) {
   const [verified, setVerified] = useState(false)
-  const [accessAvailable, setAccessAvailable] = useState(false)
+  const [accessError, setAccessError] = useState(false)
   const [offer, setOffer] = useState<EbFollowUpOffer | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [fields, setFields] = useState<OrderFields>(emptyFields)
   const [message, setMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'link' | 'order' | 'access' | null>(null)
+  const [busy, setBusy] = useState<'order' | 'access' | null>(null)
   const [portalUrl, setPortalUrl] = useState<string | null>(null)
-  const autoOpened = useRef(false)
   const busyRef = useRef(false)
   const retryRef = useRef(false)
   const offerFingerprint = useRef('')
   const mounted = useRef(true)
   const dialog = useRef<HTMLDialogElement>(null)
-  const emailInput = useRef<HTMLInputElement>(null)
   const dialogTitle = useRef<HTMLHeadingElement>(null)
-  const pendingFocus = useRef<'email' | 'title' | null>(null)
   const titleId = useId()
   const descriptionId = useId()
 
@@ -72,12 +68,14 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
     setOffer(null)
     offerFingerprint.current = ''
     setPortalUrl(null)
-    setAccessAvailable(true)
+    setAccessError(true)
+    setLoadError(false)
     setMessage('')
     // Keep the draft only in this component, hidden until private access returns.
-    // A renewed checkout requires renewed consent; no draft is persisted.
+    // Only a genuinely invalid buyer link clears consent. The private API
+    // transparently renews its short-lived session while the link is valid.
     setFields(current => ({ ...current, acceptTerms: false, consumerWithdrawalAcknowledged: false, requestImmediateStart: false, acceptInvoice: false }))
-    pendingFocus.current = 'email'
+    dialog.current?.close()
   }, [])
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -88,16 +86,22 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
     if (signal?.aborted) abort()
     try {
       const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal, credentials: 'same-origin' })
-      if (response.status === 401) {
+      if ([401, 403, 410].includes(response.status)) {
         if (!signal?.aborted && mounted.current) { requireBuyerAccess(); setLoadError(false) }
         return
       }
       const payload = await response.json()
       if (!response.ok) throw new Error('ACCESS_UNAVAILABLE')
       if (!signal?.aborted && mounted.current) {
-        // Only the server session may unlock customer information. A public
-        // response never becomes an offer, even if it accidentally includes one.
+        // Only a validated buyer-link response may unlock customer information.
+        // Even an accidentally included offer is ignored without that authority.
         const isVerified = payload.verified === true
+        if (!isVerified) {
+          // A retryable backend lookup failure says nothing about the buyer's
+          // authority. Preserve the existing draft and acknowledgments.
+          if (payload.retryable === true) { setLoadError(true); return }
+          requireBuyerAccess(); return
+        }
         const nextOffer = isVerified ? payload.offer ?? null : null
         const nextFingerprint = nextOffer ? JSON.stringify({
           termsVersion: nextOffer.termsVersion, serviceDescription: nextOffer.serviceDescription,
@@ -109,8 +113,8 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
         }
         offerFingerprint.current = nextFingerprint
         setVerified(isVerified)
+        setAccessError(false)
         setOffer(nextOffer)
-        setAccessAvailable(isVerified || payload.accessAvailable === true)
         setLoadError(payload.retryable === true || (isVerified && payload.offer?.retryable === true))
         if (!isVerified) setPortalUrl(null)
       }
@@ -129,21 +133,6 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
     return () => { mounted.current = false; controller.abort() }
   }, [load])
 
-  useEffect(() => {
-    if (!autoOpen || autoOpened.current || !accessAvailable || !dialog.current) return
-    autoOpened.current = true
-    dialog.current.showModal()
-    if (!verified) emailInput.current?.focus()
-    else dialogTitle.current?.focus()
-  }, [autoOpen, accessAvailable, verified])
-
-  useEffect(() => {
-    if (busy || !dialog.current?.open || !pendingFocus.current) return
-    const target = pendingFocus.current === 'email' ? emailInput.current : dialogTitle.current
-    target?.focus()
-    pendingFocus.current = null
-  }, [busy, verified])
-
   async function retry() {
     if (retryRef.current) return
     retryRef.current = true
@@ -157,9 +146,6 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
 
   function change<K extends keyof OrderFields>(key: K, value: OrderFields[K]) {
     setFields(current => ({ ...current, [key]: value }))
-    if (key === 'email') {
-      setMessage(''); setError(null)
-    }
     if (key === 'customerType') {
       setFields(current => ({ ...current, acceptTerms: false, consumerWithdrawalAcknowledged: false, requestImmediateStart: false, acceptInvoice: false, invoiceOrgNo: '' }))
       setError(null)
@@ -167,16 +153,14 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
   }
 
   function open() {
-    if (!accessAvailable) return
+    if (!verified || !offer || (!offer.available && !offer.alreadyActive)) return
     setError(null)
     dialog.current?.showModal()
-    if (!verified) emailInput.current?.focus()
-    else dialogTitle.current?.focus()
+    dialogTitle.current?.focus()
   }
 
-  async function send(action: 'request_link' | 'order' | 'access') {
-    if (busyRef.current || !accessAvailable) return
-    if ((action === 'order' || action === 'access') && (!verified || !offer)) return
+  async function send(action: 'order' | 'access') {
+    if (busyRef.current || !verified || !offer) return
     if (action === 'order' && (!offer?.available || offer.alreadyActive || !offer.seller)) return
     if (action === 'order' && offer?.termsVersion !== EB_FOLLOW_UP_TERMS_VERSION) return
     if (action === 'access' && !offer?.alreadyActive) return
@@ -185,15 +169,14 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
       return
     }
     busyRef.current = true
-    setBusy(action === 'request_link' ? 'link' : action)
+    setBusy(action)
     setError(null)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 45_000)
     try {
       const response = await fetch(endpoint, {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
-        body: JSON.stringify(action === 'request_link' ? { action, email: fields.email.trim() }
-          : action === 'access' ? { action }
+        body: JSON.stringify(action === 'access' ? { action }
           : {
             action, customerType: fields.customerType, name: fields.name, invoiceName: fields.invoiceName, invoiceOrgNo: fields.customerType === 'business' ? fields.invoiceOrgNo : null,
             invoiceAddress: fields.invoiceAddress, invoicePostalCode: fields.invoicePostalCode, invoiceCity: fields.invoiceCity,
@@ -203,26 +186,23 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
           }),
       })
       if (!mounted.current) return
-      // Fail closed on an expired session even if a proxy returns a non-JSON
-      // error page. Requesting a personal link never unlocks customer data.
-      if (response.status === 401 && (action === 'order' || action === 'access')) {
+      // The API renews an expired session from a still-valid buyer link. These
+      // statuses therefore mean genuine loss of authority, not cookie expiry.
+      if ([401, 403, 410].includes(response.status)) {
         requireBuyerAccess()
-        throw new Error('Din beställaråtkomst har gått ut. Öppna din personliga beställarlänk igen eller begär en ny.')
+        return
       }
       const payload = await response.json()
       if (!response.ok) {
         throw new Error(payload.error || 'Begäran kunde inte slutföras. Försök igen.')
       }
-      if (action === 'request_link') {
-        setMessage(payload.message || 'Om adressen stämmer med beställarens uppgifter skickas en personlig beställarlänk. Kontrollera även skräpposten. Ingen beställning görs när länken begärs.')
-      } else {
-        const nextUrl = safePortalUrl(payload.portalUrl)
-        if (!nextUrl) throw new Error('Begäran har tagits emot, men åtkomstlänken kunde inte visas. Försök igen eller kontrollera din e-post.')
-        setPortalUrl(nextUrl)
-        setMessage(payload.message || (action === 'access' ? 'Din privata åtgärdsuppföljning är öppnad.' : 'Beställningen är sparad och åtgärdsuppföljningen är aktiverad.'))
-        setOffer(current => current ? { ...current, alreadyActive: true } : current)
-        dialog.current?.close()
-      }
+      const nextUrl = safePortalUrl(payload.portalUrl)
+      if (!nextUrl) throw new Error('Begäran har tagits emot, men åtkomstlänken kunde inte visas. Försök igen eller kontrollera din e-post.')
+      setPortalUrl(nextUrl)
+      setMessage(payload.message || (action === 'access' ? 'Din privata åtgärdsuppföljning är öppnad.' : 'Beställningen är sparad och åtgärdsuppföljningen är aktiverad.'))
+      setOffer(current => current ? { ...current, alreadyActive: true } : current)
+      dialog.current?.close()
+      if (action === 'access') window.location.assign(nextUrl)
     } catch (cause) {
       if (mounted.current) setError(controller.signal.aborted
         ? action === 'order'
@@ -243,7 +223,6 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
         {retrying ? <><LoaderCircle size={14} className="animate-spin" aria-hidden />Försöker igen…</> : 'Försök igen'}
       </button>
     </div> : null
-  if (!accessAvailable && !verified) return retryControl
   const termsChanged = verified && offer?.available && !offer.alreadyActive && offer.termsVersion !== EB_FOLLOW_UP_TERMS_VERSION
   const customerOffer = verified && offer && ((offer.available && offer.seller && !termsChanged) || offer.alreadyActive) ? offer : null
   const accessOnly = customerOffer?.alreadyActive === true
@@ -253,12 +232,20 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
   const termsText = customerOffer?.seller && fields.customerType ? getEbFollowUpTermsText({ seller: customerOffer.seller, customerType: fields.customerType, priceOre: customerOffer.priceOre }) : null
   const consentTexts = fields.customerType && customerOffer ? getEbFollowUpConsentTexts(fields.customerType, customerOffer.priceOre) : null
 
+  if (!customerOffer) {
+    if (accessError) return <div id="digital-follow-up-access-error" role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 print:hidden">
+      <p>Din personliga beställaråtkomst kunde inte bekräftas. Öppna den ursprungliga beställarlänken igen. Om länken har gått ut eller återkallats, kontakta besiktningsföretaget. Du kan fortfarande läsa utlåtandet.</p>
+      <button type="button" disabled={retrying} onClick={() => void retry()} className="mt-2 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline disabled:opacity-60">{retrying ? 'Försöker igen…' : 'Försök igen'}</button>
+    </div>
+    if (termsChanged) return <div id="digital-follow-up-terms-changed" role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 print:hidden">
+      <p>Köpvillkoren har uppdaterats sedan den här sidan laddades. Ladda om sidan för att läsa och godkänna rätt villkor innan du beställer.</p>
+      <button type="button" onClick={() => window.location.reload()} className="mt-2 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline">Ladda om sidan</button>
+    </div>
+    return retryControl
+  }
+
   return (
-    <section id="digital-follow-up" aria-label={customerOffer ? 'Digital åtgärdsuppföljning' : 'För beställaren'} className={customerOffer ? 'overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm print:hidden' : 'print:hidden'}>
-      {!customerOffer ? <>
-        <button type="button" onClick={open} className="inline-flex min-h-11 items-center gap-1.5 text-xs font-medium text-slate-600 underline underline-offset-4 hover:text-slate-900"><ShieldCheck size={15} aria-hidden />För beställaren</button>
-        {retryControl}
-      </> : <>
+    <section id="digital-follow-up" aria-label="Digital åtgärdsuppföljning" className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-sm print:hidden">
       <div className="flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800"><CheckCheck size={25} aria-hidden /></span>
@@ -271,28 +258,27 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
         <div className="shrink-0 lg:text-right">
           {!accessOnly ? <><p className="text-xl font-semibold text-slate-950">{priceLabel}</p><p className="mb-3 mt-1 text-xs text-slate-500">Engångspris för denna besiktning.</p></> : null}
           {portalUrl ? <a href={portalUrl} rel="noreferrer" className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>Öppna åtgärdsuppföljningen<ArrowRight size={17} aria-hidden /></a>
-            : <button type="button" onClick={open} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
-              {accessOnly ? 'Öppna åtgärdsuppföljningen' : 'Köp åtgärdsuppföljning'}<ArrowRight size={17} aria-hidden />
+            : <button type="button" onClick={() => { if (accessOnly) void send('access'); else open() }} disabled={!!busy} className={`${buttonClass} max-w-full bg-emerald-800 text-white hover:bg-emerald-900`}>
+              <span>{busy === 'access' ? 'Öppnar åtgärdsuppföljningen …' : accessOnly ? 'Öppna åtgärdsuppföljningen' : `Köp åtgärdsuppföljning – ${priceLabel}`}</span>{busy === 'access' ? <LoaderCircle size={17} className="shrink-0 animate-spin" aria-hidden /> : <ArrowRight size={17} className="shrink-0" aria-hidden />}
             </button>}
         </div>
       </div>
       {portalUrl ? <div role="status" className="flex items-start gap-2 border-t border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-950"><Check size={18} className="mt-0.5 shrink-0" aria-hidden /><span>{message} Din personliga länk ska inte delas med entreprenören; skicka en separat entreprenörslänk från portalen.</span></div> : null}
       {!portalUrl ? <div className="border-t border-slate-100 px-5 py-3 text-xs leading-5 text-slate-500 sm:px-6">Utlåtandet är tillgängligt även utan tillvalet. Entreprenörens avbockning är inte ett godkännande av besiktningsmannen.</div> : null}
       {retryControl ? <div className="px-5 pb-3 sm:px-6">{retryControl}</div> : null}
-      </>}
+      {accessOnly && error ? <p role="alert" className="mx-5 mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900 sm:mx-6">{error}</p> : null}
 
       <dialog ref={dialog} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={event => { if (busyRef.current) event.preventDefault() }}
         className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-950 shadow-2xl backdrop:bg-slate-950/50">
         <form className="min-w-0 p-5 sm:p-7" onSubmit={event => {
           event.preventDefault()
-          if (!verified) void send('request_link')
-          else if (customerOffer) void send(accessOnly ? 'access' : 'order')
+          void send(accessOnly ? 'access' : 'order')
         }}>
           <div className="flex items-start justify-between gap-4">
-            <h2 ref={dialogTitle} id={titleId} tabIndex={-1} className="text-xl font-semibold focus:outline-none">{!customerOffer ? 'För beställaren' : accessOnly ? 'Öppna din åtgärdsuppföljning' : 'Digital åtgärdsuppföljning'}</h2>
+            <h2 ref={dialogTitle} id={titleId} tabIndex={-1} className="text-xl font-semibold focus:outline-none">{accessOnly ? 'Öppna din åtgärdsuppföljning' : 'Digital åtgärdsuppföljning'}</h2>
             <button type="button" disabled={!!busy} aria-label="Stäng" onClick={() => dialog.current?.close()} className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"><X size={19} aria-hidden /></button>
           </div>
-          <p id={descriptionId} className="mt-3 text-sm leading-6 text-slate-600">{!verified ? 'Öppna din personliga beställarlänk från besiktningsföretaget för att beställa. Saknar du länken kan du begära den här. Utlåtandet kan alltid läsas och delas utan att beställa.' : termsChanged ? 'Köpvillkoren har uppdaterats sedan den här sidan laddades. Ladda om sidan för att läsa och godkänna rätt villkor innan du beställer.' : !customerOffer ? 'Åtgärdsuppföljning är inte tillgänglig för den här rapporten just nu.' : accessOnly ? 'Öppna din privata åtgärdsuppföljning. Ingen ny beställning eller kostnad tillkommer.' : 'Ett tillval för den här besiktningen. Kontrollera beställningen och godkänn omfattning, villkor och betalning. Inga godkännanden är förvalda.'}</p>
+          <p id={descriptionId} className="mt-3 text-sm leading-6 text-slate-600">{accessOnly ? 'Öppna din privata åtgärdsuppföljning. Ingen ny beställning eller kostnad tillkommer.' : 'Ett tillval för den här besiktningen. Kontrollera beställningen och godkänn omfattning, villkor och betalning. Inga godkännanden är förvalda.'}</p>
           {customerOffer && !accessOnly ? <>
             <div className="my-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
               <p className="text-2xl font-semibold text-emerald-950">{priceLabel}</p>
@@ -308,15 +294,6 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
               </details>
             </div>
           </> : null}
-
-          {!verified ? <fieldset disabled={!!busy} className="mt-5 min-w-0 space-y-4 disabled:opacity-70">
-            <legend className="mb-3 flex items-center gap-2 text-sm font-semibold"><ShieldCheck size={18} className="text-emerald-700" aria-hidden />Personlig beställarlänk</legend>
-            <label className="grid min-w-0 gap-1.5 text-sm font-semibold">Beställarens e-postadress
-              <input ref={emailInput} name="email" type="email" autoComplete="email" maxLength={254} required value={fields.email} onChange={event => change('email', event.target.value)} className={inputClass} />
-            </label>
-            <p className="text-xs leading-5 text-slate-500">Ange adressen som besiktningsmannen har registrerat för beställaren. Kontakt- och fakturauppgifter visas inte för andra som har rapportlänken.</p>
-            {message ? <p role="status" className="rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-700">{message}</p> : null}
-          </fieldset> : null}
 
           {customerOffer && !accessOnly ? <fieldset disabled={!!busy} className="mt-5 min-w-0 space-y-4 border-t border-slate-200 pt-5 disabled:opacity-70">
             <legend className="px-1 text-sm font-semibold">Beställning och faktura</legend>
@@ -359,12 +336,11 @@ function CustomerFollowUpOrder({ endpoint, autoOpen = false }: FollowUpProps) {
           </fieldset> : null}
           {error ? <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-900">{error}</p> : null}
           <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
-            <button type="button" disabled={!!busy} onClick={() => dialog.current?.close()} className={`${buttonClass} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`}>{verified && !customerOffer ? 'Stäng' : 'Avbryt'}</button>
-            {termsChanged ? <button type="button" onClick={() => window.location.reload()} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>Ladda om sidan</button> : verified && !customerOffer && loadError ? <button type="button" disabled={retrying} onClick={() => void retry()} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>{retrying ? 'Försöker igen…' : 'Försök igen'}</button> : null}
-            {!verified || customerOffer ? <button type="submit" disabled={!!busy || (verified && !accessOnly && !consentComplete)} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
-              {busy ? <LoaderCircle size={18} className="animate-spin" aria-hidden /> : verified ? <Check size={18} aria-hidden /> : <Mail size={18} aria-hidden />}
-              {busy === 'link' ? 'Skickar länk …' : busy === 'order' ? 'Sparar beställning …' : busy === 'access' ? 'Öppnar …' : !verified ? 'Skicka min beställarlänk' : accessOnly ? 'Öppna utan ny beställning' : `Beställ med betalningsskyldighet – ${priceLabel}`}
-            </button> : null}
+            <button type="button" disabled={!!busy} onClick={() => dialog.current?.close()} className={`${buttonClass} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`}>Avbryt</button>
+            <button type="submit" disabled={!!busy || (!accessOnly && !consentComplete)} className={`${buttonClass} bg-emerald-800 text-white hover:bg-emerald-900`}>
+              {busy ? <LoaderCircle size={18} className="animate-spin" aria-hidden /> : <Check size={18} aria-hidden />}
+              {busy === 'order' ? 'Sparar beställning …' : busy === 'access' ? 'Öppnar …' : accessOnly ? 'Öppna utan ny beställning' : `Beställ med betalningsskyldighet – ${priceLabel}`}
+            </button>
           </div>
         </form>
       </dialog>

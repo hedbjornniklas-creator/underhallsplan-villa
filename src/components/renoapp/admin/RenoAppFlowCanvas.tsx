@@ -3,8 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { ReactFlow, ReactFlowProvider, Handle, Position, useNodesState, useReactFlow, type Node, type NodeProps, type NodeChange } from '@xyflow/react'
 import { Copy, GripVertical, Maximize, Minus, MoveRight, Plus, RotateCcw, Trash2, RefreshCw, CornerDownRight, X } from 'lucide-react'
-import { canChooseFlowTarget, flattenFlow, flowSubtreeIds, flowTarget, type FlowNode, type FlowMove, type FlowMovePreview } from '@/lib/renoapp/flowEditor'
+import { canChooseFlowTarget, flattenFlow, flowSubtreeIds, flowTarget, type FlowNode, type FlowEdit, type FlowMovePreview } from '@/lib/renoapp/flowEditor'
 import { FLOW_CARD_WIDTH, FLOW_CARD_INITIAL_HEIGHT, FLOW_LAYOUT_VERSION, layoutFlow } from '@/lib/renoapp/flowLayout'
+import { requestFlowEdit } from '@/lib/renoapp/flowEditorClient'
 import '@xyflow/react/dist/style.css'
 
 type DiagramNode = Node<{ item: FlowNode; expanded: boolean }, 'flowCard'>
@@ -14,8 +15,6 @@ type Props = {
   disabled: boolean
   onToggle: (id: string) => void
   onOpen: (node: FlowNode) => void
-  onCopy: (node: FlowNode, destination?: FlowNode) => Promise<void>
-  onRemove: (node: FlowNode) => void
   onReload: () => Promise<void>
 }
 type PositionMap = Record<string, { x: number; y: number }>
@@ -29,7 +28,8 @@ const iconButtonClass = 'nodrag nopan inline-flex shrink-0 items-center justify-
 const buttonClass = `${iconButtonClass} h-7 w-7`
 const cardButtonClass = `${iconButtonClass} h-6 w-6`
 type Selection = { operation: 'move' | 'copy'; source: FlowNode; sourceId: string }
-const Actions = createContext<Pick<Props, 'onOpen' | 'onRemove' | 'onToggle' | 'disabled'> & {
+const Actions = createContext<Pick<Props, 'onOpen' | 'onToggle' | 'disabled'> & {
+  onRemove: (node: FlowNode) => void
   highlighted: string | null
   selection: Selection | null
   targetIds: Set<string>
@@ -53,9 +53,9 @@ function FlowCard({ id, data, selected }: NodeProps<DiagramNode>) {
       </span>
       <div className="flex shrink-0">
         {!choosing && item.source ? <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Flytta koppling" aria-label="Flytta koppling" onClick={() => actions.choose(id, item, 'move')}><MoveRight size={15} /></button> : null}
-        {!choosing && editable ? <>
-          <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Skapa kopia" aria-label="Skapa kopia" onClick={() => actions.choose(id, item, 'copy')}><Copy size={15} /></button>
-          <button type="button" className={cardButtonClass} disabled={actions.disabled} title={item.kind === 'root' ? 'Radera renoveringstyp överallt' : 'Ta bort från flödet'} aria-label={item.kind === 'root' ? 'Radera renoveringstyp överallt' : 'Ta bort från flödet'} onClick={() => actions.onRemove(item)}><Trash2 size={15} /></button>
+        {!choosing && item.source ? <>
+          <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Kopiera till en annan plats" aria-label="Kopiera till en annan plats" onClick={() => actions.choose(id, item, 'copy')}><Copy size={15} /></button>
+          <button type="button" className={cardButtonClass} disabled={actions.disabled} title="Ta bort från flödet" aria-label="Ta bort från flödet" onClick={() => actions.onRemove(item)}><Trash2 size={15} /></button>
         </> : null}
         {item.children.length ? <button type="button" className={`${cardButtonClass} relative z-20`} disabled={actions.disabled} title={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-label={data.expanded ? 'Fäll ihop' : 'Expandera'} aria-expanded={data.expanded} onClick={() => actions.onToggle(item.id)}>{data.expanded ? <Minus size={15} /> : <Plus size={15} />}</button> : null}
       </div>
@@ -81,17 +81,6 @@ function readPositions(key: string): PositionMap {
       && Number.isFinite(position.x) && Number.isFinite(position.y)
       && Math.abs(position.x) < 100_000 && Math.abs(position.y) < 100_000))
   } catch { return {} }
-}
-
-async function requestMove(move: FlowMove, version?: string) {
-  const response = await fetch('/api/renoapp/admin/flow-move', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...move, apply: Boolean(version), version }),
-  })
-  const result = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(result.error ?? 'Kunde inte bekräfta flytten. Ladda om flödet.')
-  if (!result.version || !result.itemLabel) throw new Error('Svaret kunde inte bekräftas. Ladda om flödet.')
-  return result as FlowMovePreview
 }
 
 function Canvas(props: Props) {
@@ -123,8 +112,7 @@ function Canvas(props: Props) {
   const [fitAfterChange, setFitAfterChange] = useState(false)
   const operationInFlight = useRef(false)
   const [choice, setChoice] = useState<Selection | null>(null)
-  const [preview, setPreview] = useState<{ move: FlowMove; result: FlowMovePreview; destinationNodeId: string } | null>(null)
-  const [copyPreview, setCopyPreview] = useState<{ source: FlowNode; destination: FlowNode; toLabel: string } | null>(null)
+  const [preview, setPreview] = useState<{ edit: FlowEdit; result: FlowMovePreview; destinationNodeId?: string } | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const dragStart = useRef<{ id: string; position: { x: number; y: number }; movingIds: Set<string>; positions: PositionMap } | null>(null)
   const allOccurrences = useMemo(() => flattenFlow(root, null), [root])
@@ -160,8 +148,8 @@ function Canvas(props: Props) {
   }, [graph, occurrences, storageKey, setNodes])
 
   useEffect(() => {
-    if ((preview || copyPreview) && !dialog.current?.open) dialog.current?.showModal()
-  }, [preview, copyPreview])
+    if (preview && !dialog.current?.open) dialog.current?.showModal()
+  }, [preview])
 
   useEffect(() => {
     if (!choice) return
@@ -206,69 +194,48 @@ function Canvas(props: Props) {
       && cursor.x >= target.position.x && cursor.x <= target.position.x + FLOW_CARD_WIDTH
       && cursor.y >= target.position.y && cursor.y <= target.position.y + (cardHeights[target.id] ?? FLOW_CARD_INITIAL_HEIGHT)) ?? null
   }
-  const prepareMove = async (source: FlowNode, destination: FlowNode) => {
-    const target = flowTarget(destination)
-    if (!source.source || !target || operationInFlight.current) return
+  const prepareEdit = async (source: FlowNode, destination: FlowNode | null, operation: FlowEdit['operation']) => {
+    const target = destination && flowTarget(destination)
+    if (!source.source || (operation !== 'remove' && !target) || operationInFlight.current) return
     operationInFlight.current = true
     setBusy(true)
     setNotice(null)
     setChoice(null)
-    const move = { source: source.source, target }
-    try { setPreview({ move, result: await requestMove(move), destinationNodeId: destination.id }); setChoice(null) }
-    catch (error) { setNotice(error instanceof Error ? error.message : 'Kunde inte förbereda flytten.'); setChoice(null) }
-    finally { setBusy(false); operationInFlight.current = false }
+    const edit: FlowEdit = operation === 'remove' ? { source: source.source, operation }
+      : { source: source.source, target: target!, operation }
+    try {
+      setPreview({ edit, result: await requestFlowEdit(edit), destinationNodeId: destination?.id })
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Kunde inte förbereda ändringen.')
+    } finally { setBusy(false); operationInFlight.current = false }
   }
-  const applyMove = async () => {
+  const applyEdit = async () => {
     if (!preview || operationInFlight.current) return
     operationInFlight.current = true
     setBusy(true)
     try {
-      await requestMove(preview.move, preview.result.version)
-      if (preview.destinationNodeId !== root.id && !expandedIds.includes(preview.destinationNodeId)) {
+      await requestFlowEdit(preview.edit, preview.result.version)
+      if (preview.destinationNodeId && preview.destinationNodeId !== root.id && !expandedIds.includes(preview.destinationNodeId)) {
         props.onToggle(preview.destinationNodeId)
       }
-      setNotice('Kopplingen har flyttats.')
+      setNotice(preview.edit.operation === 'copy' ? 'Kortet har kopplats till den nya platsen. Originalet finns kvar.'
+        : preview.edit.operation === 'remove' ? 'Kopplingen har tagits bort. Originalet och dess underfunktioner finns kvar.'
+        : 'Kopplingen har flyttats.')
       setFitAfterChange(true)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Kunde inte bekräfta flytten. Ladda om flödet.')
+      setNotice(error instanceof Error ? error.message : 'Ändringen kunde inte bekräftas. Ladda om flödet.')
     } finally {
       setPreview(null)
-      await onReload()
-      setBusy(false)
-      operationInFlight.current = false
-    }
-  }
-  const applyCopy = async () => {
-    if (!copyPreview || operationInFlight.current) return
-    operationInFlight.current = true
-    setBusy(true)
-    try {
-      await props.onCopy(copyPreview.source, copyPreview.destination)
-      if (copyPreview.destination.id !== root.id && !expandedIds.includes(copyPreview.destination.id)) props.onToggle(copyPreview.destination.id)
-      setNotice('Kopian har lagts till. Originalet finns kvar.')
-      setFitAfterChange(true)
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Kopian kunde inte kopplas. Ladda om flödet.')
-      await onReload()
-    } finally {
-      setCopyPreview(null)
-      setBusy(false)
-      operationInFlight.current = false
+      try { await onReload() } finally { setBusy(false); operationInFlight.current = false }
     }
   }
   const targetIds = new Set(choice ? occurrences.filter(row => canChooseFlowTarget(choice.source, row.node, choice.operation)).map(row => row.id) : [])
   const selectTarget = (id: string) => {
     if (!choice || !targetIds.has(id) || disabled || operationInFlight.current) return
     const target = occurrences.find(row => row.id === id)!
-    if (choice.operation === 'move') void prepareMove(choice.source, target.node)
-    else {
-      const parent = occurrences.find(row => row.id === target.parentId)
-      setCopyPreview({ source: choice.source, destination: target.node,
-        toLabel: target.node.kind === 'option' ? `${parent?.node.title} / ${target.node.title}` : target.node.title })
-      setChoice(null)
-    }
+    void prepareEdit(choice.source, target.node, choice.operation)
   }
-  const locked = disabled || busy || Boolean(preview || copyPreview)
+  const locked = disabled || busy || Boolean(preview)
 
   return <section className="min-w-0" aria-label="Flödesdiagram">
     {choice ? <div role="status" className="mb-2 flex flex-col gap-2 rounded-md border border-emerald-600 bg-emerald-50 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
@@ -296,9 +263,8 @@ function Canvas(props: Props) {
       <button type="button" className={buttonClass} disabled={locked || Boolean(choice)} aria-label="Ladda om flödet" title="Ladda om flödet" onClick={() => void onReload()}><RefreshCw size={17} /></button>
     </div>
     <div className="h-[min(72vh,820px)] min-h-[480px] w-full overflow-hidden rounded-md border border-stone-200 bg-stone-50">
-      <Actions.Provider value={{ ...props, disabled: locked, highlighted, selection: choice, targetIds, selectTarget,
+      <Actions.Provider value={{ ...props, disabled: locked, highlighted, selection: choice, targetIds, selectTarget, onRemove: node => { void prepareEdit(node, null, 'remove') },
         choose: (id, node, operation) => {
-          if (operation === 'copy' && node.kind === 'root') { void props.onCopy(node); return }
           setNotice(null); setChoice({ operation, source: node, sourceId: id })
         } }}>
         <ReactFlow<DiagramNode> nodes={nodes} edges={graph.edges} nodeTypes={nodeTypes} onNodesChange={handleNodesChange}
@@ -324,7 +290,7 @@ function Canvas(props: Props) {
             const target = findDropTarget(event, node)
             if (target) {
               restoreDrag()
-              if (canChooseFlowTarget(node.data.item, target.data.item, 'move')) void prepareMove(node.data.item, target.data.item)
+              if (canChooseFlowTarget(node.data.item, target.data.item, 'move')) void prepareEdit(node.data.item, target.data.item, 'move')
               else setNotice(node.data.item.kind === 'option' ? 'Svarsalternativ hör till sin fråga. Flytta hela frågan för att behålla svarens betydelse.' : 'Kortet kan inte flyttas till den kopplingen.')
               return
             }
@@ -343,30 +309,25 @@ function Canvas(props: Props) {
         />
       </Actions.Provider>
     </div>
-    {preview || copyPreview ? <dialog ref={dialog} aria-labelledby="flow-move-heading" onCancel={event => {
-      event.preventDefault(); if (!busy) { setPreview(null); setCopyPreview(null) }
+    {preview ? <dialog ref={dialog} aria-labelledby="flow-move-heading" onCancel={event => {
+      event.preventDefault(); if (!busy) setPreview(null)
     }} className="fixed inset-0 m-auto max-h-[90vh] w-[min(560px,calc(100vw-32px))] overflow-auto rounded-md border border-stone-300 bg-white p-6 text-stone-900 shadow-xl backdrop:bg-black/30">
-      <h2 id="flow-move-heading" className="text-lg font-semibold">{copyPreview ? 'Kopiera kort' : 'Flytta koppling'}</h2>
-      {preview ? <>
-        <p className="mt-3 break-words font-semibold">{preview.result.itemLabel}</p>
-        <dl className="mt-4 grid grid-cols-[48px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-          <dt className="text-stone-500">Från</dt><dd className="break-words">{preview.result.fromLabel}</dd>
-          <dt className="text-stone-500">Till</dt><dd className="break-words">{preview.result.toLabel}</dd>
-        </dl>
-        <p className="mt-4 text-sm">Detta ändrar när kortet ingår i ansökningsflödet. Kortets underliggande kopplingar följer med.</p>
-        {preview.result.shared ? <p className="mt-3 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm">Frågor, svar och underlag är delade. Ändringen gäller i alla renoveringsflöden som använder den gamla eller nya kopplingen.</p> : null}
-      </> : <>
-        <p className="mt-3 break-words font-semibold">{copyPreview!.source.title}</p>
-        <dl className="mt-4 grid grid-cols-[48px_minmax(0,1fr)] gap-3 text-sm"><dt className="text-stone-500">Till</dt><dd className="break-words">{copyPreview!.toLabel}</dd></dl>
-        <p className="mt-4 text-sm">En ny kopia skapas här. Originalet och dess kopplingar finns kvar.</p>
-        {['question', 'option'].includes(copyPreview!.source.kind) ? <p className="mt-3 text-sm">Svar och deras kopplingar kopieras. Redan kopplade underlag, medverkande och följdfrågor är fortsatt delade.</p> : null}
-        {copyPreview!.destination.kind !== 'root' ? <p className="mt-3 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm">Kopian läggs till i alla renoveringsflöden som använder det mottagande kortet.</p> : null}
-      </>}
+      <h2 id="flow-move-heading" className="text-lg font-semibold">{preview.edit.operation === 'copy' ? 'Kopiera till en annan plats' : preview.edit.operation === 'remove' ? 'Ta bort från flödet' : 'Flytta koppling'}</h2>
+      <p className="mt-3 break-words font-semibold">{preview.result.itemLabel}</p>
+      <dl className="mt-4 grid grid-cols-[48px_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+        <dt className="text-stone-500">Från</dt><dd className="break-words">{preview.result.fromLabel}</dd>
+        {preview.edit.operation !== 'remove' ? <><dt className="text-stone-500">Till</dt><dd className="break-words">{preview.result.toLabel}</dd></> : null}
+      </dl>
+      <p className="mt-4 text-sm">{preview.edit.operation === 'copy'
+        ? 'Samma kort med alla svar och underfunktioner kopplas till den nya platsen. Ingen ny fråge- eller underlagsdefinition skapas. Den befintliga kopplingen finns kvar.'
+        : preview.edit.operation === 'remove'
+          ? 'Endast den valda kopplingen tas bort. Originalet, dess svar och underfunktioner finns kvar i databasen och på andra platser där de är kopplade.'
+          : 'Detta ändrar när kortet ingår i ansökningsflödet. Kortets underliggande kopplingar följer med.'}</p>
+      {preview.edit.operation === 'copy' ? <p className="mt-3 text-sm">Ändringar i själva kortet och dess underfunktioner gäller på alla platser där samma kort används.</p> : null}
+      {preview.result.shared ? <p className="mt-3 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm">Frågor och svar är delade. Kopplingsändringen gäller i alla renoveringsflöden som använder {preview.edit.operation === 'copy' ? 'det mottagande kortet' : preview.edit.operation === 'remove' ? 'samma överordnade kort' : 'den gamla eller nya kopplingen'}.</p> : null}
       <div className="mt-6 flex justify-end gap-2">
-        <button type="button" autoFocus disabled={busy} className="rounded border border-stone-300 px-4 py-2 text-sm disabled:opacity-50" onClick={() => { setPreview(null); setCopyPreview(null) }}>Avbryt</button>
-        <button type="button" disabled={busy} className="rounded bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => {
-          if (preview) void applyMove(); else void applyCopy()
-        }}>{busy ? 'Bearbetar...' : preview ? 'Flytta koppling' : 'Skapa kopia'}</button>
+        <button type="button" autoFocus disabled={busy} className="rounded border border-stone-300 px-4 py-2 text-sm disabled:opacity-50" onClick={() => setPreview(null)}>Avbryt</button>
+        <button type="button" disabled={busy} className="rounded bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" onClick={() => void applyEdit()}>{busy ? 'Bearbetar...' : preview.edit.operation === 'copy' ? 'Koppla hit' : preview.edit.operation === 'remove' ? 'Ta bort kopplingen' : 'Flytta koppling'}</button>
       </div>
     </dialog> : null}
   </section>

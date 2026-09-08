@@ -23,6 +23,10 @@ export type FlowSource = {
   parentId: string
 }
 export type FlowMove = { source: FlowSource; target: FlowTarget }
+export type FlowEdit = { source: FlowSource } & (
+  | { operation: 'move' | 'copy'; target: FlowTarget }
+  | { operation: 'remove'; target?: never }
+)
 export type FlowMovePreview = {
   version: string
   itemLabel: string
@@ -69,21 +73,28 @@ export function flowQuestionId(node: FlowNode): string | null {
 }
 
 export function canChooseFlowTarget(source: FlowNode, target: FlowNode, operation: 'move' | 'copy') {
-  if (operation === 'move' && !canDropFlowNode(source, target)) return false
-  const destination = flowTarget(target)
-  if (operation === 'copy') {
-    if (source.kind === 'option') {
-      if (!flowQuestionId(target)) return false
-    } else if (!source.source || !destination
-      || !['question', 'document', 'participant', 'flag'].includes(source.kind)
-      || (['document', 'participant'].includes(destination.kind) && source.kind !== 'flag')) return false
-  }
+  if (!['move', 'copy'].includes(operation) || !canDropFlowNode(source, target)) return false
+  // Reuse links to the same entity, not a new definition. An existing direct
+  // child already satisfies the connection, regardless of its visual occurrence.
+  if (target.children.some(child => flowEntityKey(child) === flowEntityKey(source))) return false
   // Shared questions can be drawn more than once. Exclude descendants by entity,
   // not only by their visual occurrence, so a copied branch cannot loop back.
   const targetQuestion = flowQuestionId(target) ?? (target.ref.type === 'option' ? target.ref.questionId : null)
   if (!targetQuestion) return true
   const containsQuestion = (node: FlowNode): boolean => flowQuestionId(node) === targetQuestion || node.children.some(containsQuestion)
   return !containsQuestion(source)
+}
+
+function flowEntityKey(node: FlowNode): string {
+  const ref = node.ref
+  const question = flowQuestionId(node)
+  if (question) return `question:${question}`
+  if (ref.type === 'rootRequirement') return `document:${ref.documentTypeId}`
+  if (ref.type === 'optionDocumentTrigger') return `document:${ref.targetDocumentTypeId}`
+  if (ref.type === 'rootParticipant') return `participant:${ref.participantRoleId}`
+  if (ref.type === 'optionParticipantTrigger') return `participant:${ref.targetParticipantRoleId}`
+  if ('targetReviewFlagId' in ref) return `flag:${ref.targetReviewFlagId}`
+  return node.id
 }
 
 export type FlowOccurrence = { id: string; node: FlowNode; parentId: string | null }
@@ -115,18 +126,32 @@ export function flowSubtreeIds(rows: FlowOccurrence[], rootId: string) {
 }
 
 export function parseFlowMove(value: unknown): FlowMove & { version: string | null; apply: boolean } {
+  const edit = parseFlowEdit(value)
+  if (edit.operation !== 'move') throw new Error('FLOW_MOVE_INVALID')
+  return { source: edit.source, target: edit.target, version: edit.version, apply: edit.apply }
+}
+
+export function parseFlowEdit(value: unknown): FlowEdit & { version: string | null; apply: boolean } {
   if (!value || typeof value !== 'object') throw new Error('FLOW_MOVE_INVALID')
   const body = value as Record<string, unknown>
+  const operation = body.operation === undefined ? 'move' : body.operation
   const source = body.source as Partial<FlowSource> | null
   const target = body.target as Partial<FlowTarget> | null
   const uuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-  if (!source || !target || !uuid(source.id) || !uuid(source.parentId) || !uuid(target.id)
+  if ((operation !== 'move' && operation !== 'copy' && operation !== 'remove')
+    || !source || !uuid(source.id) || !uuid(source.parentId)
     || !['action_question', 'action_document', 'action_participant', 'option_trigger', 'flag_link'].includes(source.kind ?? '')
-    || !['action', 'option', 'document', 'participant'].includes(target.kind ?? '')
     || (body.apply !== undefined && typeof body.apply !== 'boolean')
     || (body.apply === true && (typeof body.version !== 'string' || !/^[a-f0-9]{32}$/.test(body.version)))) {
     throw new Error('FLOW_MOVE_INVALID')
   }
-  return { source: source as FlowSource, target: target as FlowTarget, apply: body.apply === true,
+  const common = { source: source as FlowSource, apply: body.apply === true,
     version: typeof body.version === 'string' ? body.version : null }
+  if (operation === 'remove') {
+    if (body.target !== undefined) throw new Error('FLOW_MOVE_INVALID')
+    return { ...common, operation }
+  }
+  if ((operation !== 'move' && operation !== 'copy') || !target || !uuid(target.id)
+    || !['action', 'option', 'document', 'participant'].includes(target.kind ?? '')) throw new Error('FLOW_MOVE_INVALID')
+  return { ...common, operation, target: target as FlowTarget }
 }
