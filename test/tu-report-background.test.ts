@@ -3,6 +3,8 @@ import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { parseTuAnalysisBackgroundState, tuAnalysisBackgroundPayload, tuAnalysisFailureMessage } from '../src/lib/tu/analysisBackground.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { shouldRejectGeneratedAnalysisItem } from '../src/lib/tu/analysis.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { normalizeTuReportProviderResponse, parseTuReportBackgroundState, tuReportBackgroundPayload, tuReportProviderFailureMessage } from '../src/lib/tu/reportDraftBackground.ts'
 
 test('keeps image-batch progress in a resumable analysis state', () => {
@@ -37,6 +39,24 @@ test('does not expose technical analysis errors to users', () => {
     tuAnalysisFailureMessage(new Error('OPENAI_INCOMPLETE_RESPONSE')),
     'AI-svaret blev ofullständigt. Försök igen.'
   )
+})
+
+test('rejects only incomplete internal conflict markers during automatic approval', () => {
+  assert.equal(shouldRejectGeneratedAnalysisItem({
+    itemType: 'evidence_conflict',
+    earlierSourceObservationIds: ['earlier'],
+    laterSourceObservationIds: [],
+  }), true)
+  assert.equal(shouldRejectGeneratedAnalysisItem({
+    itemType: 'evidence_conflict',
+    earlierSourceObservationIds: ['earlier'],
+    laterSourceObservationIds: ['later'],
+  }), false)
+  assert.equal(shouldRejectGeneratedAnalysisItem({
+    itemType: 'current_assessment',
+    earlierSourceObservationIds: [],
+    laterSourceObservationIds: [],
+  }), false)
 })
 
 test('accepts persisted pending report jobs with a valid provider id', () => {

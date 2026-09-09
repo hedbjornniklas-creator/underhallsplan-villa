@@ -9,6 +9,7 @@ import {
 import {
   isTuAnalysisCertainty,
   isTuAnalysisReviewStatus,
+  shouldRejectGeneratedAnalysisItem,
   type TuAnalysisResponse,
 } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
@@ -199,37 +200,48 @@ export async function POST(request: Request, context: RouteContext) {
       ) {
         return jsonError('Den aktuella samlade bedömningen saknar verifierbara källor.', 409)
       }
-      if (workflow.items.some((item) => (
-        item.itemType === 'evidence_conflict'
-        && (item.earlierSourceObservationIds.length === 0 || item.laterSourceObservationIds.length === 0)
-      ))) {
-        return jsonError('AI:n kunde inte lösa en motsägelse mot tydliga tidigare och senare källor.', 409)
-      }
       const now = new Date().toISOString()
-      const [{ error: itemError }, { error: workflowError }] = await Promise.all([
-        admin
+      const { error: itemError } = await admin
+        .from('tu_ai_analysis_items')
+        .update({
+          review_status: 'accepted',
+          reviewed_by: orgContext.userId,
+          reviewed_at: now,
+        })
+        .eq('org_id', orgContext.orgId)
+        .eq('inspection_id', inspectionId)
+        .eq('run_id', workflow.run.id)
+      if (itemError) throw new Error(itemError.message)
+
+      const rejectedItemIds = workflow.items
+        .filter(shouldRejectGeneratedAnalysisItem)
+        .map((item) => item.id)
+      if (rejectedItemIds.length > 0) {
+        const { error: rejectError } = await admin
           .from('tu_ai_analysis_items')
           .update({
-            review_status: 'accepted',
+            review_status: 'rejected',
             reviewed_by: orgContext.userId,
             reviewed_at: now,
           })
           .eq('org_id', orgContext.orgId)
           .eq('inspection_id', inspectionId)
-          .eq('run_id', workflow.run.id),
-        admin
-          .from('tu_analysis_workflows')
-          .update({
-            status: 'analysis_approved',
-            analysis_approved_at: now,
-            analysis_approved_by: orgContext.userId,
-            analysis_stale_at: null,
-          })
-          .eq('org_id', orgContext.orgId)
-          .eq('inspection_id', inspectionId)
-          .eq('current_analysis_run_id', workflow.run.id),
-      ])
-      if (itemError) throw new Error(itemError.message)
+          .eq('run_id', workflow.run.id)
+          .in('id', rejectedItemIds)
+        if (rejectError) throw new Error(rejectError.message)
+      }
+
+      const { error: workflowError } = await admin
+        .from('tu_analysis_workflows')
+        .update({
+          status: 'analysis_approved',
+          analysis_approved_at: now,
+          analysis_approved_by: orgContext.userId,
+          analysis_stale_at: null,
+        })
+        .eq('org_id', orgContext.orgId)
+        .eq('inspection_id', inspectionId)
+        .eq('current_analysis_run_id', workflow.run.id)
       if (workflowError) throw new Error(workflowError.message)
       return stateResponse(orgContext.orgId, inspectionId)
     }

@@ -176,6 +176,17 @@ export type TuAnalysisResponse = {
   error?: string
 }
 
+export function shouldRejectGeneratedAnalysisItem(item: Pick<
+  TuAnalysisItem,
+  'itemType' | 'earlierSourceObservationIds' | 'laterSourceObservationIds'
+>) {
+  return item.itemType === 'evidence_conflict'
+    && (
+      item.earlierSourceObservationIds.length === 0
+      || item.laterSourceObservationIds.length === 0
+    )
+}
+
 export function isTuAnalysisWorkflowStatus(value: unknown): value is TuAnalysisWorkflowStatus {
   return (
     value === 'in_progress'
