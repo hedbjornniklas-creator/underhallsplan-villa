@@ -21,6 +21,44 @@ import {
 } from '@/lib/tu/controlPlan'
 import type { TuEvidenceResponse, TuObservation } from '@/lib/tu/evidence'
 
+const PRIMARY_RESULT_OPTIONS: Array<{
+  value: Extract<TuVerificationStatus, 'verified' | 'partially_verified' | 'remaining_condition' | 'not_verifiable'>
+  label: string
+}> = [
+  { value: 'verified', label: 'Verifierad' },
+  { value: 'partially_verified', label: 'Delvis verifierad' },
+  { value: 'remaining_condition', label: 'Kvarstående' },
+  { value: 'not_verifiable', label: 'Kunde inte verifieras' },
+]
+
+function isSelectedResult(current: TuVerificationStatus, option: TuVerificationStatus) {
+  if (option === 'verified') return current === 'verified' || current === 'consistent'
+  if (option === 'not_verifiable') {
+    return current === 'not_verifiable'
+      || current === 'reported_not_verifiable'
+      || current === 'inaccessible'
+  }
+  return current === option
+}
+
+function resultNeedsNote(value: TuVerificationStatus) {
+  return value === 'partially_verified'
+    || value === 'remaining_condition'
+    || value === 'not_verifiable'
+    || value === 'reported_not_verifiable'
+    || value === 'inaccessible'
+}
+
+function resultNotePlaceholder(value: TuVerificationStatus) {
+  if (value === 'partially_verified') return 'Beskriv vad som kunde verifieras och vad som återstår.'
+  if (value === 'remaining_condition') return 'Beskriv vilket förhållande som finns kvar.'
+  if (value === 'not_verifiable' || value === 'reported_not_verifiable' || value === 'inaccessible') {
+    return 'Beskriv varför kontrollpunkten inte kunde verifieras.'
+  }
+  if (value === 'not_applicable') return 'Beskriv vid behov varför kontrollpunkten inte är aktuell.'
+  return 'Komplettera vid behov med en kort iakttagelse.'
+}
+
 function statusLabel(value: TuVerificationStatus) {
   return TU_VERIFICATION_STATUS_OPTIONS.find((option) => option.value === value)?.label
     ?? 'Inte kontrollerad'
@@ -29,7 +67,7 @@ function statusLabel(value: TuVerificationStatus) {
 function statusTone(value: TuVerificationStatus) {
   if (value === 'verified' || value === 'consistent') return 'bg-emerald-50 text-emerald-800'
   if (value === 'remaining_condition' || value === 'partially_verified') return 'bg-amber-50 text-amber-900'
-  if (value === 'reported_not_verifiable' || value === 'inaccessible') return 'bg-sky-50 text-sky-900'
+  if (value === 'not_verifiable' || value === 'reported_not_verifiable' || value === 'inaccessible') return 'bg-sky-50 text-sky-900'
   if (value === 'not_applicable') return 'bg-gray-100 text-gray-600'
   return 'bg-violet-50 text-violet-800'
 }
@@ -71,6 +109,8 @@ export default function TuPostDamageFieldChecklist({
   )
   const selected = visibleItems.find((item) => item.id === selectedId) ?? null
   const completedCount = visibleItems.filter((item) => item.verificationStatus !== 'not_checked').length
+  const noteRequired = resultNeedsNote(verificationStatus)
+  const resultIncomplete = verificationStatus === 'not_checked' || (noteRequired && !inspectorNote.trim())
 
   useEffect(() => {
     if (!selected) return
@@ -173,7 +213,8 @@ export default function TuPostDamageFieldChecklist({
               <ClipboardCheck size={18} aria-hidden />
             </span>
             <div>
-              <h2 className="text-sm font-semibold text-gray-950">Kontrollplan</h2>
+              <p className="text-[11px] font-semibold uppercase text-violet-700">Nästa steg</p>
+              <h2 className="text-sm font-semibold text-gray-950">Registrera kontrollresultat</h2>
               <p className="text-xs text-gray-500">{completedCount} av {visibleItems.length} punkter kontrollerade</p>
             </div>
           </div>
@@ -244,29 +285,56 @@ export default function TuPostDamageFieldChecklist({
                   <p className="mt-1 text-sm leading-6 text-gray-800">{selected.verificationMethod}</p>
                 </div>
               ) : null}
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-gray-900">Kontrollresultat</span>
-                <select
-                  value={verificationStatus}
-                  onChange={(event) => setVerificationStatus(event.target.value as TuVerificationStatus)}
+              <fieldset>
+                <legend className="mb-2 text-sm font-semibold text-gray-900">Kontrollresultat</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {PRIMARY_RESULT_OPTIONS.map((option) => {
+                    const selectedResult = isSelectedResult(verificationStatus, option.value)
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setVerificationStatus(option.value)}
+                        disabled={locked || saving}
+                        aria-pressed={selectedResult}
+                        className={`min-h-11 rounded-md border px-3 py-2 text-sm font-semibold transition ${selectedResult
+                          ? 'border-violet-600 bg-violet-50 text-violet-950 ring-1 ring-violet-200'
+                          : 'border-gray-200 bg-white text-gray-700 hover:border-violet-200 hover:bg-violet-50/50'} disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVerificationStatus('not_applicable')}
                   disabled={locked || saving}
-                  className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                  aria-pressed={verificationStatus === 'not_applicable'}
+                  className={`mt-2 min-h-9 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${verificationStatus === 'not_applicable'
+                    ? 'border-gray-500 bg-gray-100 text-gray-900'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'} disabled:cursor-not-allowed disabled:opacity-60`}
                 >
-                  {TU_VERIFICATION_STATUS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
+                  Inte aktuell
+                </button>
+                {verificationStatus === 'not_checked' ? (
+                  <p className="mt-2 text-xs text-amber-800">Välj resultat för kontrollpunkten.</p>
+                ) : null}
+              </fieldset>
               <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-gray-900">Notering <span className="font-normal text-gray-500">(valfritt)</span></span>
+                <span className="mb-1 block text-sm font-semibold text-gray-900">Notering <span className="font-normal text-gray-500">({noteRequired ? 'obligatorisk' : 'valfri'})</span></span>
                 <textarea
                   value={inspectorNote}
                   onChange={(event) => setInspectorNote(event.target.value)}
                   disabled={locked || saving}
                   rows={5}
-                  placeholder="Skriv kort vad som kunde verifieras, vad som inte var åtkomligt eller vad som återstår."
+                  required={noteRequired}
+                  placeholder={resultNotePlaceholder(verificationStatus)}
                   className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
                 />
+                {noteRequired && !inspectorNote.trim() ? (
+                  <span className="mt-1 block text-xs text-amber-800">Förklara resultatet innan det sparas.</span>
+                ) : null}
               </label>
               <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-800">
                 <input
@@ -337,7 +405,7 @@ export default function TuPostDamageFieldChecklist({
               <button
                 type="button"
                 onClick={() => void saveResult()}
-                disabled={locked || saving}
+                disabled={locked || saving || resultIncomplete}
                 className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Save size={16} aria-hidden />}

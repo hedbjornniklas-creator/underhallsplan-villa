@@ -651,7 +651,7 @@ async function createEditorialPlan(input: {
         'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
         'En rapportdel med isRequired true ska planeras med relevant källstöd när sådant finns. Om stöd verkligen saknas ska den utelämnas och få en tydlig internalWarning.',
         'Om en controlPlan finns ska den användas för att hålla rapporten till kontrollens huvudfråga. En tidigare rekommendation eller uppgift om utförd åtgärd är kontext, inte ett eget verifierat kontrollresultat.',
-        'Kontrollstatus reported_not_verifiable betyder att utförandet uppges vara gjort men inte kunde verifieras. Skriv aldrig om detta till en verifierad åtgärd.',
+        'Kontrollstatus not_verifiable betyder att kontrollpunkten inte kunde verifieras. reported_not_verifiable betyder att utförandet uppges vara gjort men inte kunde verifieras. Skriv aldrig om någon av dessa statusar till en verifierad åtgärd.',
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Använd endast id:n och field keys som finns i JSON-underlaget.',
         'internalWarnings är för besiktningsmannens granskning och ska aldrig bli rapporttext.',
       ].join('\n'),

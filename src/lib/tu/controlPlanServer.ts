@@ -49,6 +49,7 @@ type JsonRecord = Record<string, unknown>
 type CaseRow = {
   damage_types: unknown
   remediation_stage: string | null
+  remediation_stage_other: string | null
   main_question: string | null
   status: string
   current_plan_run_id: string | null
@@ -138,6 +139,7 @@ type ControlPlanDraft = {
 const CASE_COLUMNS = [
   'damage_types',
   'remediation_stage',
+  'remediation_stage_other',
   'main_question',
   'status',
   'current_plan_run_id',
@@ -228,6 +230,7 @@ function mapCase(row: CaseRow | null): TuPostDamageCase {
   return {
     damageTypes: stringArray(row?.damage_types).filter(isTuDamageType),
     remediationStage: isTuRemediationStage(row?.remediation_stage) ? row.remediation_stage : null,
+    remediationStageOther: nullableText(row?.remediation_stage_other),
     mainQuestion: nullableText(row?.main_question),
     status,
     currentPlanRunId: row?.current_plan_run_id ?? null,
@@ -562,6 +565,7 @@ export async function saveTuPostDamageCase(input: {
   userId: string
   damageTypes: TuDamageType[]
   remediationStage: TuRemediationStage | null
+  remediationStageOther: string | null
   mainQuestion: string | null
 }) {
   const investigation = await assertPostDamageInvestigation({ ...input, editable: true })
@@ -571,6 +575,9 @@ export async function saveTuPostDamageCase(input: {
     inspection_id: input.inspectionId,
     damage_types: [...new Set(input.damageTypes.filter(isTuDamageType))],
     remediation_stage: isTuRemediationStage(input.remediationStage) ? input.remediationStage : null,
+    remediation_stage_other: input.remediationStage === 'other'
+      ? nullableText(input.remediationStageOther)
+      : null,
     main_question: nullableText(input.mainQuestion) ?? investigation.scopeDescription,
     updated_by: input.userId,
   }
@@ -669,6 +676,7 @@ export async function createTuControlPlanRun(input: {
     control: {
       damageTypes: existingCase.damageTypes,
       remediationStage: existingCase.remediationStage,
+      remediationStageOther: existingCase.remediationStageOther,
       mainQuestion,
     },
     documents: documents.map(sourceDocumentSnapshot),
@@ -719,6 +727,7 @@ export async function createTuControlPlanRun(input: {
       inspection_id: input.inspectionId,
       damage_types: existingCase.damageTypes,
       remediation_stage: existingCase.remediationStage,
+      remediation_stage_other: existingCase.remediationStageOther,
       main_question: caseData ? existingCase.mainQuestion : mainQuestion,
       status: 'plan_processing',
       current_plan_run_id: runId,

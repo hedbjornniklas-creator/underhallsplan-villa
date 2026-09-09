@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -19,6 +19,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
+import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import {
   TU_CONTROL_PLAN_UPDATED_EVENT,
   TU_DAMAGE_TYPE_OPTIONS,
@@ -75,6 +76,18 @@ type ItemDraft = {
   description: string
   verificationMethod: string
   priority: TuVerificationPriority
+}
+
+type CaseSavePayload = {
+  target: 'case'
+  damageTypes: TuDamageType[]
+  remediationStage: TuRemediationStage | null
+  remediationStageOther: string | null
+  mainQuestion: string
+}
+
+function caseSaveKey(payload: CaseSavePayload) {
+  return JSON.stringify(payload)
 }
 
 function itemDraft(item: TuVerificationItem): ItemDraft {
@@ -285,15 +298,30 @@ export default function TuPostDamagePreparationWorkspace({
   const [preparation, setPreparation] = useState<TuControlPlanState | null>(externalPreparation)
   const [damageTypes, setDamageTypes] = useState<TuDamageType[]>([])
   const [remediationStage, setRemediationStage] = useState<TuRemediationStage | ''>('')
+  const [remediationStageOther, setRemediationStageOther] = useState('')
   const [mainQuestion, setMainQuestion] = useState(scopeDescription ?? '')
   const [actionBusy, setActionBusy] = useState<string | null>(null)
+  const [documentDropActive, setDocumentDropActive] = useState(false)
+  const lastSavedCaseKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     setPreparation(externalPreparation)
     if (!externalPreparation) return
-    setDamageTypes(externalPreparation.case.damageTypes)
-    setRemediationStage(externalPreparation.case.remediationStage ?? '')
-    setMainQuestion(externalPreparation.case.mainQuestion ?? scopeDescription ?? '')
+    const nextDamageTypes = externalPreparation.case.damageTypes
+    const nextRemediationStage = externalPreparation.case.remediationStage ?? ''
+    const nextRemediationStageOther = externalPreparation.case.remediationStageOther ?? ''
+    const nextMainQuestion = externalPreparation.case.mainQuestion ?? scopeDescription ?? ''
+    setDamageTypes(nextDamageTypes)
+    setRemediationStage(nextRemediationStage)
+    setRemediationStageOther(nextRemediationStageOther)
+    setMainQuestion(nextMainQuestion)
+    lastSavedCaseKeyRef.current = caseSaveKey({
+      target: 'case',
+      damageTypes: nextDamageTypes,
+      remediationStage: nextRemediationStage || null,
+      remediationStageOther: nextRemediationStage === 'other' ? nextRemediationStageOther.trim() || null : null,
+      mainQuestion: nextMainQuestion,
+    })
   }, [externalPreparation, scopeDescription])
 
   const sourceDocuments = useMemo(
@@ -331,33 +359,56 @@ export default function TuPostDamagePreparationWorkspace({
     return responsePayload(response, fallback)
   }
 
-  const saveCase = async () => {
-    setActionBusy('case')
-    try {
-      const payload = await callPreparation('PATCH', {
-        target: 'case',
-        damageTypes,
-        remediationStage: remediationStage || null,
-        mainQuestion,
-      }, 'Kunde inte spara kontrollens förutsättningar.')
+  const caseDraftPayload = useMemo<CaseSavePayload>(() => ({
+    target: 'case',
+    damageTypes,
+    remediationStage: remediationStage || null,
+    remediationStageOther: remediationStage === 'other' ? remediationStageOther.trim() || null : null,
+    mainQuestion,
+  }), [damageTypes, mainQuestion, remediationStage, remediationStageOther])
+  const caseDraftKey = useMemo(() => caseSaveKey(caseDraftPayload), [caseDraftPayload])
+  const caseAutosave = useAutosaveQueue<CaseSavePayload, TuControlPlanResponse>({
+    save: (payload) => callPreparation(
+      'PATCH',
+      payload,
+      'Kunde inte autospara kontrollens förutsättningar.'
+    ),
+    mergePayload: (_previous, next) => next,
+    onSaved: (payload, savedPayload) => {
+      lastSavedCaseKeyRef.current = caseSaveKey(savedPayload)
       publishState(payload.preparation ?? null)
-      toast.success('Kontrollens förutsättningar har sparats.')
-    } catch (error) {
-      toast.error(error, 'Kunde inte spara kontrollens förutsättningar.')
-    } finally {
-      setActionBusy(null)
-    }
-  }
+    },
+    onError: (error) => {
+      toast.error(error, 'Kunde inte autospara kontrollens förutsättningar.')
+    },
+  })
+  const caseDescriptionMissing = remediationStage === 'other' && !remediationStageOther.trim()
+  const caseHasUnsavedChanges = caseDraftKey !== lastSavedCaseKeyRef.current
+  const enqueueCaseSave = caseAutosave.enqueue
+
+  useEffect(() => {
+    if (locked || loading || processing || caseDescriptionMissing || !caseHasUnsavedChanges) return
+    const timer = window.setTimeout(() => {
+      void enqueueCaseSave(caseDraftPayload).catch(() => undefined)
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [
+    caseDescriptionMissing,
+    caseDraftKey,
+    caseDraftPayload,
+    caseHasUnsavedChanges,
+    enqueueCaseSave,
+    loading,
+    locked,
+    processing,
+  ])
 
   const startPlan = async () => {
     setActionBusy('generate')
     try {
-      const casePayload = await callPreparation('PATCH', {
-        target: 'case',
-        damageTypes,
-        remediationStage: remediationStage || null,
-        mainQuestion,
-      }, 'Kunde inte spara kontrollens förutsättningar.')
+      const casePayload = await enqueueCaseSave(caseDraftPayload)
+      if (!casePayload) throw new Error('Kunde inte spara kontrollens förutsättningar.')
+      lastSavedCaseKeyRef.current = caseDraftKey
       publishState(casePayload.preparation ?? null)
 
       const payload = await callPreparation('POST', {
@@ -424,16 +475,56 @@ export default function TuPostDamagePreparationWorkspace({
     }
   }
 
-  const uploadSourceDocument = async (file: File | null) => {
-    if (!file) return
-    const uploaded = await onUploadDocument(file, {
-      useInAnalysis: true,
-      analysisSourceRole: 'prior_report',
+  const uploadSourceDocuments = async (files: File[]) => {
+    const acceptedFiles = files.filter((file) => {
+      const name = file.name.toLowerCase()
+      return file.type === 'application/pdf'
+        || file.type === 'text/plain'
+        || name.endsWith('.pdf')
+        || name.endsWith('.txt')
     })
-    if (uploaded) {
-      publishState(preparation)
-      toast.success('Underlaget har laddats upp och valts för analys.')
+    if (acceptedFiles.length === 0) {
+      toast.error('Välj dokument i PDF- eller textformat.')
+      return
     }
+
+    let uploadedCount = 0
+    for (const file of acceptedFiles) {
+      const uploaded = await onUploadDocument(file, {
+        useInAnalysis: true,
+        analysisSourceRole: 'prior_report',
+      })
+      if (uploaded) uploadedCount += 1
+    }
+    if (uploadedCount > 0) {
+      publishState(preparation)
+      toast.success(uploadedCount === 1
+        ? 'Underlaget har laddats upp och valts för analys.'
+        : `${uploadedCount} underlag har laddats upp och valts för analys.`)
+    }
+    if (acceptedFiles.length < files.length) {
+      toast.info('Filer som inte var PDF eller text hoppades över.')
+    }
+  }
+
+  const handleDocumentDragOver = (event: DragEvent<HTMLElement>) => {
+    if (locked || documentBusy || processing || !event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDocumentDropActive(true)
+  }
+
+  const handleDocumentDragLeave = (event: DragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return
+    setDocumentDropActive(false)
+  }
+
+  const handleDocumentDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    setDocumentDropActive(false)
+    if (locked || documentBusy || processing) return
+    void uploadSourceDocuments(Array.from(event.dataTransfer.files))
   }
 
   if (loading && !preparation) {
@@ -499,42 +590,70 @@ export default function TuPostDamagePreparationWorkspace({
               })}
             </div>
           </fieldset>
-          <div className="grid gap-3 md:grid-cols-[minmax(210px,0.35fr)_minmax(0,1fr)]">
+          <div className="grid items-start gap-3 md:grid-cols-[minmax(210px,0.35fr)_minmax(0,1fr)]">
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Kontrollskede <span className="font-normal text-gray-500">(valfritt)</span></span>
+              <span className="mb-1 block text-xs font-medium text-gray-700">Skede vid kontroll <span className="font-normal text-gray-500">(valfritt)</span></span>
               <select
                 value={remediationStage}
-                onChange={(event) => setRemediationStage(event.target.value as TuRemediationStage | '')}
+                onChange={(event) => {
+                  const nextStage = event.target.value as TuRemediationStage | ''
+                  setRemediationStage(nextStage)
+                  if (nextStage !== 'other') setRemediationStageOther('')
+                }}
                 disabled={locked || processing}
                 className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
               >
-                <option value="">Inte valt</option>
+                <option value="">Välj skede</option>
                 {TU_REMEDIATION_STAGE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
+              {remediationStage === 'other' ? (
+                <input
+                  value={remediationStageOther}
+                  onChange={(event) => setRemediationStageOther(event.target.value)}
+                  disabled={locked || processing}
+                  maxLength={200}
+                  required
+                  placeholder="Beskriv skedet"
+                  className="mt-2 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                />
+              ) : null}
             </label>
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Vad ska kontrollen besvara?</span>
-              <input
+              <span className="mb-1 block text-xs font-medium text-gray-700">Vad ska kontrolleras?</span>
+              <textarea
                 value={mainQuestion}
                 onChange={(event) => setMainQuestion(event.target.value)}
                 disabled={locked || processing}
                 placeholder="Exempel: Bedöm om dokumenterade åtgärder kan verifieras före återställning."
-                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                rows={4}
+                className="min-h-24 w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
               />
+              <span className="mt-1 block text-xs text-gray-500">Förifylls från uppdragets omfattning och kan anpassas inför kontrollen.</span>
             </label>
           </div>
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => void saveCase()}
-              disabled={locked || processing || actionBusy === 'case'}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:text-gray-400"
-            >
-              {actionBusy === 'case' ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Save size={15} aria-hidden />}
-              Spara inriktning
-            </button>
+          <div className="flex min-h-6 items-center justify-end gap-2 text-xs font-medium" aria-live="polite">
+            {caseDescriptionMissing ? (
+              <span className="text-amber-800">Beskriv skedet för att spara.</span>
+            ) : caseAutosave.status === 'saving' ? (
+              <span className="inline-flex items-center gap-1.5 text-gray-600"><Loader2 size={14} className="animate-spin" aria-hidden /> Sparar...</span>
+            ) : caseAutosave.status === 'error' ? (
+              <>
+                <span className="text-rose-700">Kunde inte spara.</span>
+                <button
+                  type="button"
+                  onClick={() => void enqueueCaseSave(caseDraftPayload).catch(() => undefined)}
+                  className="font-semibold text-violet-800 underline decoration-violet-300 underline-offset-2"
+                >
+                  Försök igen
+                </button>
+              </>
+            ) : caseHasUnsavedChanges ? (
+              <span className="text-gray-500">Osparade ändringar</span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-emerald-700"><Check size={14} aria-hidden /> Sparat automatiskt</span>
+            )}
           </div>
         </div>
 
@@ -557,30 +676,38 @@ export default function TuPostDamagePreparationWorkspace({
               ref={fileInputRef}
               type="file"
               accept={AI_DOCUMENT_ACCEPT}
+              multiple
               className="hidden"
               onChange={(event) => {
-                const file = event.target.files?.[0] ?? null
+                const files = Array.from(event.target.files ?? [])
                 event.target.value = ''
-                void uploadSourceDocument(file)
+                void uploadSourceDocuments(files)
               }}
             />
           </div>
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={handleDocumentDragOver}
+            onDragOver={handleDocumentDragOver}
+            onDragLeave={handleDocumentDragLeave}
+            onDrop={handleDocumentDrop}
+            disabled={locked || documentBusy || processing}
+            className={`flex min-h-24 w-full flex-col items-center justify-center rounded-md border border-dashed px-4 text-center text-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${documentDropActive
+              ? 'border-violet-600 bg-violet-100 text-violet-950 ring-2 ring-violet-200'
+              : 'border-violet-200 bg-violet-50/40 text-gray-600 hover:border-violet-400 hover:bg-violet-50'}`}
+          >
+            {documentBusy ? <Loader2 size={22} className="mb-2 animate-spin text-violet-700" aria-hidden /> : <Upload size={22} className="mb-2 text-violet-600" aria-hidden />}
+            <span className="font-semibold">{documentDropActive ? 'Släpp dokumenten här' : 'Dra dokument hit eller välj filer'}</span>
+            <span className="mt-1 text-xs text-gray-500">PDF och textfiler</span>
+          </button>
 
           {documentsLoading ? (
             <div className="flex items-center gap-2 py-3 text-sm text-gray-600">
               <Loader2 size={16} className="animate-spin text-violet-700" aria-hidden /> Hämtar dokument...
             </div>
-          ) : documents.length === 0 ? (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={locked}
-              className="flex min-h-28 w-full flex-col items-center justify-center rounded-md border border-dashed border-violet-200 bg-violet-50/40 px-4 text-center text-sm text-gray-600 transition hover:border-violet-400 hover:bg-violet-50"
-            >
-              <Upload size={22} className="mb-2 text-violet-600" aria-hidden />
-              Lägg till tidigare utlåtande, åtgärdsbeskrivning eller mätprotokoll
-            </button>
-          ) : (
+          ) : documents.length > 0 ? (
             <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
               {documents.map((document) => {
                 const pendingTarget = documentActionTargets[document.id]
@@ -693,7 +820,7 @@ export default function TuPostDamagePreparationWorkspace({
                 )
               })}
             </div>
-          )}
+          ) : null}
 
           {documentError ? (
             <div role="alert" className="flex gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
@@ -713,7 +840,7 @@ export default function TuPostDamagePreparationWorkspace({
             <button
               type="button"
               onClick={() => void startPlan()}
-              disabled={locked || processing || documentBusy || sourceDocuments.length === 0 || unreadableSourceCount > 0 || actionBusy === 'generate'}
+              disabled={locked || processing || documentBusy || caseDescriptionMissing || sourceDocuments.length === 0 || unreadableSourceCount > 0 || actionBusy === 'generate'}
               className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {processing || actionBusy === 'generate'

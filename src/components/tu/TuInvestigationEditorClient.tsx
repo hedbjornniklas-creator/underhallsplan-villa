@@ -1708,8 +1708,8 @@ export default function TuInvestigationEditorClient({
   }
 
   const deleteImage = async (imageId: string) => {
-    if (locked || imageBusy || imageActionIds.has(imageId)) return
-    if (!confirm('Ta bort bilden?')) return
+    if (locked || imageBusy || imageActionIds.has(imageId)) return false
+    if (!confirm('Ta bort bilden?')) return false
     setImageActionTarget(imageId, 'delete')
     setImageBusy(true)
     setImageError(null)
@@ -1726,8 +1726,10 @@ export default function TuInvestigationEditorClient({
         imagesRef.current = next
         return next
       })
+      return true
     } catch (deleteError) {
       setImageError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort bild.')
+      return false
     } finally {
       setImageBusy(false)
       setImageActionTarget(imageId, null)
@@ -2212,20 +2214,21 @@ export default function TuInvestigationEditorClient({
           />
         ) : aiWorkflowEnabled && workspaceView === 'field' ? (
           <div className="space-y-4">
-            {postDamageWorkflowEnabled ? (
-              <TuPostDamageFieldChecklist
-                inspectionId={investigation.inspectionId}
-                preparation={workflowState.preparation}
-                locked={locked}
-              />
-            ) : null}
             <TuFieldLogWorkspace
               inspectionId={investigation.inspectionId}
               locked={locked}
               images={images}
               queue={fieldQueue}
               onPreviewImage={setPreviewImageId}
+              onDeleteImage={deleteImage}
               onOpenEvidence={() => setWorkspaceView('evidence')}
+              nextStep={postDamageWorkflowEnabled ? (
+                <TuPostDamageFieldChecklist
+                  inspectionId={investigation.inspectionId}
+                  preparation={workflowState.preparation}
+                  locked={locked}
+                />
+              ) : null}
             />
           </div>
         ) : aiWorkflowEnabled && workspaceView === 'evidence' ? (

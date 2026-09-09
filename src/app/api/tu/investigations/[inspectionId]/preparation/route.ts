@@ -183,12 +183,22 @@ export async function PATCH(request: Request, context: RouteContext) {
           ? body.remediationStage
           : undefined
       if (remediationStage === undefined) return jsonError('Ogiltigt kontrollskede.', 400)
+      const remediationStageOther = remediationStage === 'other'
+        ? nullableText(body.remediationStageOther)
+        : null
+      if (remediationStage === 'other' && !remediationStageOther) {
+        return jsonError('Beskriv det andra kontrollskedet.', 400)
+      }
+      if (remediationStageOther && remediationStageOther.length > 200) {
+        return jsonError('Beskrivningen av kontrollskedet får vara högst 200 tecken.', 400)
+      }
       const preparation = await saveTuPostDamageCase({
         orgId: orgContext.orgId,
         inspectionId,
         userId: orgContext.userId,
         damageTypes,
         remediationStage,
+        remediationStageOther,
         mainQuestion: nullableText(body.mainQuestion),
       })
       return NextResponse.json({ preparation } satisfies TuControlPlanResponse)
@@ -215,6 +225,16 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
       if ('verificationStatus' in body) {
         if (!isTuVerificationStatus(body.verificationStatus)) return jsonError('Ogiltigt kontrollresultat.', 400)
+        const noteRequired = [
+          'partially_verified',
+          'remaining_condition',
+          'not_verifiable',
+          'reported_not_verifiable',
+          'inaccessible',
+        ].includes(body.verificationStatus)
+        if (noteRequired && !nullableText(body.inspectorNote)) {
+          return jsonError('Beskriv kontrollresultatet i noteringen.', 400)
+        }
         patch.verificationStatus = body.verificationStatus
       }
       const item = await updateTuVerificationItem({

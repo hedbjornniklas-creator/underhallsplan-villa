@@ -30,6 +30,7 @@ export type TuVerificationStatus =
   | 'verified'
   | 'consistent'
   | 'reported_not_verifiable'
+  | 'not_verifiable'
   | 'partially_verified'
   | 'remaining_condition'
   | 'inaccessible'
@@ -78,6 +79,7 @@ export type TuVerificationItem = {
 export type TuPostDamageCase = {
   damageTypes: TuDamageType[]
   remediationStage: TuRemediationStage | null
+  remediationStageOther: string | null
   mainQuestion: string | null
   status: TuPostDamageCaseStatus
   currentPlanRunId: string | null
@@ -139,7 +141,7 @@ export const TU_DAMAGE_TYPE_OPTIONS: Array<{ value: TuDamageType; label: string 
 
 export const TU_REMEDIATION_STAGE_OPTIONS: Array<{ value: TuRemediationStage; label: string }> = [
   { value: 'after_demolition', label: 'Efter rivning' },
-  { value: 'after_remediation', label: 'Efter sanering eller uttorkning' },
+  { value: 'after_remediation', label: 'Efter sanering/uttorkning' },
   { value: 'before_restoration', label: 'Före återställning' },
   { value: 'after_completion', label: 'Efter färdigställande' },
   { value: 'other', label: 'Annat skede' },
@@ -150,6 +152,7 @@ export const TU_VERIFICATION_STATUS_OPTIONS: Array<{ value: TuVerificationStatus
   { value: 'verified', label: 'Verifierad' },
   { value: 'consistent', label: 'Förenlig med synligt utförande' },
   { value: 'reported_not_verifiable', label: 'Uppges utförd, kan inte verifieras' },
+  { value: 'not_verifiable', label: 'Kunde inte verifieras' },
   { value: 'partially_verified', label: 'Delvis verifierad' },
   { value: 'remaining_condition', label: 'Kvarstående förhållande' },
   { value: 'inaccessible', label: 'Inte åtkomlig' },

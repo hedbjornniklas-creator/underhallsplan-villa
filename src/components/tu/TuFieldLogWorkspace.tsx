@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Camera,
   Check,
@@ -10,9 +10,9 @@ import {
   Loader2,
   MapPin,
   Mic,
-  Plus,
   RefreshCw,
   Ruler,
+  Trash2,
   X,
 } from 'lucide-react'
 import TuFieldEntryComposer from '@/components/tu/TuFieldEntryComposer'
@@ -40,7 +40,9 @@ type Props = {
   images: FieldImage[]
   queue: TuFieldQueueController
   onPreviewImage: (imageId: string) => void
+  onDeleteImage: (imageId: string) => Promise<boolean>
   onOpenEvidence: () => void
+  nextStep?: ReactNode
 }
 
 type TimelineItem =
@@ -84,16 +86,16 @@ export default function TuFieldLogWorkspace({
   images,
   queue,
   onPreviewImage,
+  onDeleteImage,
   onOpenEvidence,
+  nextStep,
 }: Props) {
   const [observations, setObservations] = useState<TuObservation[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [composerVisible, setComposerVisible] = useState(true)
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null)
   const [measurementDialogOpen, setMeasurementDialogOpen] = useState(false)
-
-  const composerRef = useRef<HTMLDivElement>(null)
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null)
 
   const loadObservations = useCallback(async () => {
     setLoadError(null)
@@ -112,17 +114,6 @@ export default function TuFieldLogWorkspace({
   useEffect(() => {
     void loadObservations()
   }, [loadObservations, queue.completedRevision])
-
-  useEffect(() => {
-    const composer = composerRef.current
-    if (!composer || typeof IntersectionObserver === 'undefined') return
-
-    const observer = new IntersectionObserver(([entry]) => {
-      setComposerVisible(entry.isIntersecting)
-    })
-    observer.observe(composer)
-    return () => observer.disconnect()
-  }, [])
 
   const serverImageById = useMemo(
     () => new Map(images.map((image) => [image.id, image])),
@@ -168,9 +159,13 @@ export default function TuFieldLogWorkspace({
     )
   }, [images, linkedImageIds, observations, queue.items, queuedServerImageIds])
 
-  const focusComposer = () => {
-    composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    window.setTimeout(() => document.getElementById('tu-field-entry-composer-note')?.focus({ preventScroll: true }), 350)
+  const deleteLooseImage = async (imageId: string) => {
+    setDeletingImageId(imageId)
+    try {
+      await onDeleteImage(imageId)
+    } finally {
+      setDeletingImageId(null)
+    }
   }
 
   const renderQueueStatus = () => {
@@ -371,7 +366,7 @@ export default function TuFieldLogWorkspace({
   }
 
   return (
-    <section className="space-y-4 pb-24 md:pb-4">
+    <section className="space-y-4 pb-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase text-violet-700">Steg 1</p>
@@ -380,16 +375,6 @@ export default function TuFieldLogWorkspace({
             Lägg in fakta i den ordning de kommer. Sorteringen görs när dokumentationen är klar.
           </p>
         </div>
-        {!locked ? (
-          <button
-            type="button"
-            onClick={() => setMeasurementDialogOpen(true)}
-            className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm hover:bg-violet-50"
-          >
-            <Ruler size={16} aria-hidden />
-            Ny mätning
-          </button>
-        ) : null}
       </div>
 
       {renderQueueStatus()}
@@ -397,9 +382,11 @@ export default function TuFieldLogWorkspace({
       <TuFieldEntryComposer
         locked={locked}
         queue={queue}
-        containerRef={composerRef}
         composerId="tu-field-entry-composer"
+        onOpenMeasurement={() => setMeasurementDialogOpen(true)}
       />
+
+      {nextStep}
 
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 pb-2">
         <div>
@@ -444,7 +431,21 @@ export default function TuFieldLogWorkspace({
                     <ImageIcon size={12} aria-hidden />
                     Osorterad bild
                   </span>
-                  <span className="text-xs text-gray-500">{formatTimestamp(timelineItem.timestamp)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">{formatTimestamp(timelineItem.timestamp)}</span>
+                    <button
+                      type="button"
+                      onClick={() => void deleteLooseImage(timelineItem.image.id)}
+                      disabled={locked || deletingImageId === timelineItem.image.id}
+                      className="inline-flex size-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                      aria-label="Ta bort osorterad bild"
+                      title="Ta bort bild"
+                    >
+                      {deletingImageId === timelineItem.image.id
+                        ? <Loader2 size={15} className="animate-spin" aria-hidden />
+                        : <Trash2 size={15} aria-hidden />}
+                    </button>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -478,27 +479,6 @@ export default function TuFieldLogWorkspace({
           <ChevronRight size={15} aria-hidden />
         </button>
       </div>
-
-      {!composerVisible && !locked ? (
-        <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-30 flex overflow-hidden rounded-md bg-violet-700 text-white shadow-lg md:hidden">
-          <button
-            type="button"
-            onClick={focusComposer}
-            className="inline-flex h-12 items-center gap-2 border-r border-violet-500 px-3 text-sm font-semibold hover:bg-violet-800"
-          >
-            <Plus size={18} aria-hidden />
-            Anteckning
-          </button>
-          <button
-            type="button"
-            onClick={() => setMeasurementDialogOpen(true)}
-            className="inline-flex h-12 items-center gap-2 px-3 text-sm font-semibold hover:bg-violet-800"
-          >
-            <Ruler size={18} aria-hidden />
-            Mätning
-          </button>
-        </div>
-      ) : null}
 
       {measurementDialogOpen ? (
         <TuQuickMeasurementDialog

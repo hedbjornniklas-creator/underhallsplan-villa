@@ -9,6 +9,7 @@ import {
   MapPin,
   Mic,
   Paperclip,
+  Ruler,
   Send,
   Square,
   X,
@@ -24,6 +25,7 @@ type Props = {
   containerRef?: Ref<HTMLDivElement>
   composerId?: string
   onQueued?: () => void
+  onOpenMeasurement?: () => void
 }
 
 function formatDuration(seconds: number) {
@@ -48,6 +50,7 @@ export default function TuFieldEntryComposer({
   containerRef,
   composerId = 'tu-field-entry-composer',
   onQueued,
+  onOpenMeasurement,
 }: Props) {
   const [composerError, setComposerError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -66,7 +69,6 @@ export default function TuFieldEntryComposer({
   const attachedCameraInputRef = useRef<HTMLInputElement>(null)
   const attachedGalleryInputRef = useRef<HTMLInputElement>(null)
   const looseCameraInputRef = useRef<HTMLInputElement>(null)
-  const looseGalleryInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -227,7 +229,7 @@ export default function TuFieldEntryComposer({
             <p className="text-xs font-semibold uppercase text-violet-700">Ny fältpost</p>
             <h3 className="mt-1 text-base font-semibold text-gray-950">Anteckning, röst och bilder hör ihop här</h3>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <button
               type="button"
               onClick={() => attachedCameraInputRef.current?.click()}
@@ -239,28 +241,49 @@ export default function TuFieldEntryComposer({
             </button>
             <button
               type="button"
-              onClick={() => looseCameraInputRef.current?.click()}
-              disabled={locked}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-            >
-              <ImageIcon size={17} aria-hidden />
-              Foto utan anteckning
-            </button>
-            <button
-              type="button"
-              onClick={() => looseGalleryInputRef.current?.click()}
+              onClick={() => attachedGalleryInputRef.current?.click()}
               disabled={locked}
               className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
             >
               <Images size={17} aria-hidden />
-              Välj bilder
+              Välj bild
+            </button>
+            <button
+              type="button"
+              onClick={recording ? stopRecording : () => void startRecording()}
+              disabled={locked || Boolean(capturedAudio)}
+              className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold shadow-sm transition disabled:opacity-50 ${recording
+                ? 'border-rose-600 bg-rose-600 text-white'
+                : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'}`}
+            >
+              {recording ? <Square size={15} fill="currentColor" aria-hidden /> : <Mic size={17} aria-hidden />}
+              {recording ? `Stoppa ${formatDuration(recordingSeconds)}` : 'Röstanteckning'}
+            </button>
+            {onOpenMeasurement ? (
+              <button
+                type="button"
+                onClick={onOpenMeasurement}
+                disabled={locked}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Ruler size={17} aria-hidden />
+                Mätning
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => looseCameraInputRef.current?.click()}
+              disabled={locked}
+              className="col-span-2 inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50 sm:col-span-1"
+            >
+              <ImageIcon size={17} aria-hidden />
+              Foto utan anteckning
             </button>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_250px]">
-        <div className="space-y-4 p-4">
+      <div className="space-y-4 p-4">
           <label className="block">
             <span className="mb-1.5 flex items-center gap-1 text-sm font-medium text-gray-700">
               <MapPin size={14} aria-hidden />
@@ -328,17 +351,7 @@ export default function TuFieldEntryComposer({
                 ))}
               </div>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => attachedGalleryInputRef.current?.click()}
-              disabled={locked}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-dashed border-violet-300 px-3 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50"
-            >
-              <Images size={16} aria-hidden />
-              Välj bilder från enheten
-            </button>
-          )}
+          ) : null}
 
           {capturedAudio ? (
             <div className="flex flex-wrap items-center gap-3 rounded-md border border-violet-200 bg-violet-50 p-3">
@@ -376,31 +389,6 @@ export default function TuFieldEntryComposer({
               Lägg till i fältloggen
             </button>
           </div>
-        </div>
-
-        <div className="flex flex-col items-center justify-center border-t border-gray-200 bg-gray-50 p-5 lg:border-l lg:border-t-0">
-          <button
-            type="button"
-            onClick={recording ? stopRecording : () => void startRecording()}
-            disabled={locked || Boolean(capturedAudio)}
-            className={`inline-flex h-24 w-24 items-center justify-center rounded-full text-white shadow-md transition ${
-              recording
-                ? 'bg-rose-600 ring-8 ring-rose-100'
-                : 'bg-violet-700 hover:bg-violet-800 disabled:bg-gray-300'
-            }`}
-            aria-label={recording ? 'Stoppa röstinspelning' : 'Starta röstinspelning'}
-          >
-            {recording ? <Square size={30} fill="currentColor" aria-hidden /> : <Mic size={34} aria-hidden />}
-          </button>
-          <div className="mt-3 text-center">
-            <div className="text-sm font-semibold text-gray-950">
-              {recording ? `Spelar in ${formatDuration(recordingSeconds)}` : capturedAudio ? 'Inspelning klar' : 'Röstanteckning'}
-            </div>
-            <p className="mt-1 text-xs leading-5 text-gray-500">
-              {recording ? 'Tryck igen för att stoppa.' : 'Transkriberas efter att posten sparats.'}
-            </p>
-          </div>
-        </div>
       </div>
 
       <input
@@ -436,18 +424,6 @@ export default function TuFieldEntryComposer({
           event.currentTarget.value = ''
         }}
       />
-      <input
-        ref={looseGalleryInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          void enqueueLooseFiles(Array.from(event.currentTarget.files ?? []))
-          event.currentTarget.value = ''
-        }}
-      />
-
       {localPreviewUrl ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-gray-950/90 p-3" role="dialog" aria-modal="true" aria-label="Bildförhandsvisning">
           <button

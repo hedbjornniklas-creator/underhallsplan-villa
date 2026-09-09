@@ -901,7 +901,7 @@ async function synthesizeInspection(input: {
       'En bildanalys visar endast synliga bildfakta och får inte ensam bevisa dolda förhållanden eller skadeorsak.',
       'Besiktningsmannens egna bilder dokumenterar observationerna och ska inte behandlas som ett fristående externt bildmaterial.',
       'Om underlaget innehåller en godkänd controlPlan är den bakgrund och arbetsdisposition. Skilj dess tidigare uppgifter, rekommendationer, åtgärdspåståenden och kontrollkrav från besiktningsmannens egna resultat.',
-      'Ett verificationStatus i controlPlan beskriver besiktningsmannens registrerade kontrollresultat. not_checked är inte bevisning. reported_not_verifiable får aldrig skrivas om till verifierad åtgärd.',
+      'Ett verificationStatus i controlPlan beskriver besiktningsmannens registrerade kontrollresultat. not_checked är inte bevisning. not_verifiable och reported_not_verifiable får aldrig skrivas om till en verifierad åtgärd.',
       'Koppla kontrollplanens sakfrågor till hela fältunderlaget semantiskt. Dra inte en slutsats enbart för att en tidigare rapport eller åtgärdsredovisning påstår något.',
       'Beskriv inte ett utförande som felaktigt, otillåtet eller inte fackmässigt utan dokumenterad iakttagelse och angiven bedömningsgrund.',
       'Informationsluckor beskriver saknad information. Rekommenderade fortsatta kontroller beskriver nästa handling. Blanda inte ihop dessa kategorier.',
