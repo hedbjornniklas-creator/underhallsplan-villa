@@ -4,6 +4,8 @@ import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { TU_STANDARD_REPORT_TEMPLATES } from '../src/lib/tu/reportTemplates.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { summarizeTuControlPlanReview } from '../src/lib/tu/controlPlan.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { deriveTuWorkflowSteps } from '../src/lib/tu/workflow.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { resolveTuWorkflowProfile } from '../src/lib/tu/workflowProfiles.ts'
@@ -65,4 +67,26 @@ test('seeds a general AI-assisted post-damage report template', () => {
     'Rekommenderad fortsatt hantering',
   ])
   assert.ok(template.sections?.every((section) => section.isRequired && !section.allowDelete))
+})
+
+test('requires every control-plan item to be reviewed before approval', () => {
+  assert.deepEqual(summarizeTuControlPlanReview([
+    { reviewStatus: 'accepted' },
+    { reviewStatus: 'rejected' },
+    { reviewStatus: 'pending' },
+  ]), {
+    accepted: 1,
+    rejected: 1,
+    pending: 1,
+    canApprove: false,
+  })
+
+  assert.equal(summarizeTuControlPlanReview([
+    { reviewStatus: 'accepted' },
+    { reviewStatus: 'rejected' },
+  ]).canApprove, true)
+
+  assert.equal(summarizeTuControlPlanReview([
+    { reviewStatus: 'rejected' },
+  ]).canApprove, false)
 })

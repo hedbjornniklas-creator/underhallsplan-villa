@@ -23,7 +23,7 @@ import {
   TU_CONTROL_PLAN_UPDATED_EVENT,
   TU_DAMAGE_TYPE_OPTIONS,
   TU_REMEDIATION_STAGE_OPTIONS,
-  TU_VERIFICATION_STATUS_OPTIONS,
+  summarizeTuControlPlanReview,
   type TuControlPlanResponse,
   type TuControlPlanState,
   type TuDamageType,
@@ -31,7 +31,6 @@ import {
   type TuVerificationItem,
   type TuVerificationPriority,
   type TuVerificationReviewStatus,
-  type TuVerificationStatus,
 } from '@/lib/tu/controlPlan'
 import {
   TU_DOCUMENT_SOURCE_ROLE_OPTIONS,
@@ -76,9 +75,6 @@ type ItemDraft = {
   description: string
   verificationMethod: string
   priority: TuVerificationPriority
-  verificationStatus: TuVerificationStatus
-  needsFollowUp: boolean
-  inspectorNote: string
 }
 
 function itemDraft(item: TuVerificationItem): ItemDraft {
@@ -87,9 +83,6 @@ function itemDraft(item: TuVerificationItem): ItemDraft {
     description: item.description,
     verificationMethod: item.verificationMethod ?? '',
     priority: item.priority,
-    verificationStatus: item.verificationStatus,
-    needsFollowUp: item.needsFollowUp,
-    inspectorNote: item.inspectorNote ?? '',
   }
 }
 
@@ -219,42 +212,7 @@ function ControlPlanItem({
                 <option value="low">Låg</option>
               </select>
             </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Resultat på plats</span>
-              <select
-                value={draft.verificationStatus}
-                onChange={(event) => setDraft((current) => ({ ...current, verificationStatus: event.target.value as TuVerificationStatus }))}
-                disabled={locked || busy}
-                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-              >
-                {TU_VERIFICATION_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Besiktningsmannens notering <span className="font-normal text-gray-500">(valfritt)</span></span>
-              <textarea
-                value={draft.inspectorNote}
-                onChange={(event) => setDraft((current) => ({ ...current, inspectorNote: event.target.value }))}
-                disabled={locked || busy}
-                rows={2}
-                placeholder="Komplettera kontrollresultatet vid behov."
-                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-              />
-            </label>
           </div>
-
-          <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-800">
-            <input
-              type="checkbox"
-              checked={draft.needsFollowUp}
-              onChange={(event) => setDraft((current) => ({ ...current, needsFollowUp: event.target.checked }))}
-              disabled={locked || busy}
-              className="size-4 rounded border-gray-300 text-violet-700 focus:ring-violet-500"
-            />
-            Behöver följas upp
-          </label>
 
           <details className="rounded-md bg-gray-50 px-3 py-2">
             <summary className="cursor-pointer text-xs font-semibold text-gray-700">Visa källstöd ({item.sourceReferences.length})</summary>
@@ -273,26 +231,33 @@ function ControlPlanItem({
             </div>
           </details>
 
-          <div className="flex flex-wrap justify-between gap-2 border-t border-gray-100 pt-3">
-            {!planApproved ? <button
-              type="button"
-              onClick={() => void save(item.reviewStatus === 'rejected' ? 'pending' : 'rejected')}
-              disabled={locked || planApproved || busy}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
-            >
-              {item.reviewStatus === 'rejected' ? <RefreshCw size={15} aria-hidden /> : <CircleX size={15} aria-hidden />}
-              {item.reviewStatus === 'rejected' ? 'Återställ punkt' : 'Ta bort från planen'}
-            </button> : <span />}
-            <button
-              type="button"
-              onClick={() => void save('accepted')}
-              disabled={locked || busy || !draft.title.trim() || !draft.description.trim()}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Save size={15} aria-hidden />}
-              {planApproved ? 'Spara kontrollresultat' : item.reviewStatus === 'accepted' ? 'Spara ändringar' : 'Behåll i planen'}
-            </button>
-          </div>
+          {planApproved ? (
+            <div className="flex items-center gap-2 border-t border-gray-100 pt-3 text-xs font-medium text-gray-600">
+              <ArrowRight size={15} className="shrink-0 text-violet-700" aria-hidden />
+              Resultat, noteringar och kopplade fältposter registreras under Dokumentera på plats.
+            </div>
+          ) : (
+            <div className="flex flex-wrap justify-between gap-2 border-t border-gray-100 pt-3">
+              <button
+                type="button"
+                onClick={() => void save(item.reviewStatus === 'rejected' ? 'pending' : 'rejected')}
+                disabled={locked || busy}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+              >
+                {item.reviewStatus === 'rejected' ? <RefreshCw size={15} aria-hidden /> : <CircleX size={15} aria-hidden />}
+                {item.reviewStatus === 'rejected' ? 'Återställ punkt' : 'Ta bort från planen'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void save('accepted')}
+                disabled={locked || busy || !draft.title.trim() || !draft.description.trim()}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                {busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Save size={15} aria-hidden />}
+                {item.reviewStatus === 'accepted' ? 'Spara ändringar' : 'Behåll i planen'}
+              </button>
+            </div>
+          )}
         </div>
       ) : null}
     </article>
@@ -348,8 +313,7 @@ export default function TuPostDamagePreparationWorkspace({
     || preparation?.run?.status === 'processing'
   const approved = preparation?.case.status === 'plan_approved' && !preparation.case.planStaleAt
   const planReady = preparation?.run?.status === 'completed' && preparation.items.length > 0
-  const acceptedCount = preparation?.items.filter((item) => item.reviewStatus === 'accepted').length ?? 0
-  const rejectedCount = preparation?.items.filter((item) => item.reviewStatus === 'rejected').length ?? 0
+  const reviewSummary = summarizeTuControlPlanReview(preparation?.items ?? [])
 
   const publishState = (next: TuControlPlanState | null) => {
     if (next) setPreparation(next)
@@ -440,6 +404,7 @@ export default function TuPostDamagePreparationWorkspace({
       const payload = await callPreparation('POST', { action: 'approve' }, 'Kunde inte godkänna kontrollplanen.')
       publishState(payload.preparation ?? null)
       toast.success('Kontrollplanen är klar att använda på plats.')
+      onOpenField()
     } catch (error) {
       toast.error(error, 'Kunde inte godkänna kontrollplanen.')
     } finally {
@@ -778,7 +743,7 @@ export default function TuPostDamagePreparationWorkspace({
           <div className="space-y-5 px-4 py-5 sm:px-5">
             <div>
               <h3 className="text-sm font-semibold text-gray-950">3. Granska kontrollplanen</h3>
-              <p className="mt-1 text-sm text-gray-600">AI-förslagen är inte beslut. Ta bort irrelevanta punkter och justera det som ska kontrolleras på plats.</p>
+              <p className="mt-1 text-sm text-gray-600">Bestäm vad som ska kontrolleras på plats. Behåll eller ta bort varje AI-förslag. Kontrollresultaten fylls i i nästa steg.</p>
             </div>
 
             {preparation?.case.planStaleAt ? (
@@ -814,8 +779,9 @@ export default function TuPostDamagePreparationWorkspace({
 
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-gray-500">
               <span>{preparation?.items.length ?? 0} föreslagna punkter</span>
-              <span>{acceptedCount} behållna</span>
-              {rejectedCount > 0 ? <span>{rejectedCount} bortvalda</span> : null}
+              <span>{reviewSummary.accepted} behållna</span>
+              {reviewSummary.rejected > 0 ? <span>{reviewSummary.rejected} bortvalda</span> : null}
+              {reviewSummary.pending > 0 ? <span className="text-amber-800">{reviewSummary.pending} kvar att granska</span> : null}
             </div>
 
             <div className="space-y-2">
@@ -835,8 +801,12 @@ export default function TuPostDamagePreparationWorkspace({
             <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xl text-sm text-gray-600">
                 {approved
-                  ? 'Planen är låst som utgångspunkt för platskontrollen. Resultat och kompletteringar kan fortfarande registreras.'
-                  : 'När planen godkänns räknas kvarvarande punkter som behållna. Bortvalda punkter används inte i analysen.'}
+                  ? 'Planen är låst som utgångspunkt. Resultat och kompletteringar registreras under Dokumentera på plats.'
+                  : reviewSummary.pending > 0
+                    ? `Ta ställning till ${reviewSummary.pending} ${reviewSummary.pending === 1 ? 'punkt' : 'punkter'} innan planen kan godkännas.`
+                    : reviewSummary.accepted === 0
+                      ? 'Behåll minst en kontrollpunkt för att kunna fortsätta.'
+                      : 'Alla punkter är genomgångna. Godkänn planen för att börja dokumentera på plats.'}
               </p>
               <div className="flex shrink-0 flex-wrap gap-2">
                 {approved ? (
@@ -853,11 +823,11 @@ export default function TuPostDamagePreparationWorkspace({
                   <button
                     type="button"
                     onClick={() => void approvePlan()}
-                    disabled={locked || actionBusy === 'approve' || Boolean(preparation?.case.planStaleAt)}
+                    disabled={locked || actionBusy === 'approve' || Boolean(preparation?.case.planStaleAt) || !reviewSummary.canApprove}
                     className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
                     {actionBusy === 'approve' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <CheckCircle2 size={16} aria-hidden />}
-                    Godkänn kontrollplan
+                    Godkänn plan och börja dokumentera
                   </button>
                 )}
                 {approved ? (
@@ -866,7 +836,7 @@ export default function TuPostDamagePreparationWorkspace({
                     onClick={onOpenField}
                     className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
                   >
-                    Dokumentera på plats
+                    Fortsätt dokumentera
                     <ArrowRight size={16} aria-hidden />
                   </button>
                 ) : null}

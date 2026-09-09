@@ -74,6 +74,12 @@ function mapError(error: unknown) {
   if (message === 'TU_CONTROL_PLAN_NOT_READY') {
     return jsonError('Kontrollplanen måste vara färdig innan den kan godkännas.', 409)
   }
+  if (message === 'TU_CONTROL_PLAN_ITEMS_PENDING') {
+    return jsonError('Granska varje kontrollpunkt och välj Behåll eller Ta bort innan planen godkänns.', 409)
+  }
+  if (message === 'TU_CONTROL_PLAN_HAS_NO_ACCEPTED_ITEMS') {
+    return jsonError('Behåll minst en kontrollpunkt innan planen godkänns.', 409)
+  }
   if (message === 'TU_CONTROL_PLAN_TITLE_REQUIRED') return jsonError('Kontrollpunkten måste ha en rubrik.', 400)
   if (message === 'TU_CONTROL_PLAN_DESCRIPTION_REQUIRED') return jsonError('Kontrollpunkten måste ha en beskrivning.', 400)
   if (message === 'TU_CONTROL_PLAN_ITEM_NOT_FOUND') return jsonError('Kontrollpunkten hittades inte.', 404)

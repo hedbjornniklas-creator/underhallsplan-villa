@@ -103,6 +103,30 @@ export type TuControlPlanResponse = {
   error?: string
 }
 
+export type TuControlPlanReviewSummary = {
+  accepted: number
+  rejected: number
+  pending: number
+  canApprove: boolean
+}
+
+export function summarizeTuControlPlanReview(
+  items: Array<Pick<TuVerificationItem, 'reviewStatus'>>
+): TuControlPlanReviewSummary {
+  const summary = items.reduce(
+    (current, item) => {
+      current[item.reviewStatus] += 1
+      return current
+    },
+    { accepted: 0, rejected: 0, pending: 0 }
+  )
+
+  return {
+    ...summary,
+    canApprove: summary.pending === 0 && summary.accepted > 0,
+  }
+}
+
 export const TU_DAMAGE_TYPE_OPTIONS: Array<{ value: TuDamageType; label: string }> = [
   { value: 'fire_smoke', label: 'Brand och rök' },
   { value: 'moisture_water', label: 'Fukt och vatten' },

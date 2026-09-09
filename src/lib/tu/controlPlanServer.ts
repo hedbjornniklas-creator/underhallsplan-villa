@@ -14,6 +14,7 @@ import {
   isTuVerificationPriority,
   isTuVerificationReviewStatus,
   isTuVerificationStatus,
+  summarizeTuControlPlanReview,
   type TuControlPlanRun,
   type TuControlPlanSourceReference,
   type TuControlPlanState,
@@ -1232,19 +1233,16 @@ export async function approveTuControlPlan(input: {
   if (!state.run || state.run.status !== 'completed' || state.items.length === 0) {
     throw new Error('TU_CONTROL_PLAN_NOT_READY')
   }
+  const reviewSummary = summarizeTuControlPlanReview(state.items)
+  if (reviewSummary.pending > 0) {
+    throw new Error('TU_CONTROL_PLAN_ITEMS_PENDING')
+  }
+  if (reviewSummary.accepted === 0) {
+    throw new Error('TU_CONTROL_PLAN_HAS_NO_ACCEPTED_ITEMS')
+  }
   const admin = createSupabaseAdminClient()
   const now = new Date().toISOString()
-  const { error: itemsError } = await admin
-    .from('tu_verification_items')
-    .update({ review_status: 'accepted', reviewed_by: input.userId, reviewed_at: now })
-    .eq('org_id', input.orgId)
-    .eq('inspection_id', input.inspectionId)
-    .eq('run_id', state.run.id)
-    .eq('review_status', 'pending')
-  if (itemsError) throw new Error(itemsError.message)
 
-  // Item updates deliberately invalidate a previous approval. Persist the
-  // approval only after every item has reached its final review state.
   const { error: caseError } = await admin
     .from('tu_post_damage_cases')
     .update({
