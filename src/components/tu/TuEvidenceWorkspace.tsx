@@ -1645,7 +1645,7 @@ export default function TuEvidenceWorkspace({
                       className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-800 transition hover:bg-gray-50 disabled:text-gray-400"
                     >
                       {imageBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}
-                      {imageBusy ? 'Laddar...' : 'Ladda upp'}
+                      {imageBusy ? 'Laddar...' : 'Ladda upp bilder'}
                     </button>
                   ) : null}
                   <button

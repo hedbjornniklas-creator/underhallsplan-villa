@@ -246,7 +246,7 @@ export default function TuFieldEntryComposer({
               className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
             >
               <Images size={17} aria-hidden />
-              Välj bild
+              Välj bilder
             </button>
             <button
               type="button"
