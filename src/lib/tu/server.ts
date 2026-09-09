@@ -27,6 +27,10 @@ import type {
   TuReportTemplateOption,
   TuReportTemplateSectionOption,
 } from '@/lib/tu/reportTemplates'
+import {
+  resolveTuWorkflowProfile,
+  type TuWorkflowProfile,
+} from '@/lib/tu/workflowProfiles'
 
 export type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 export type { TuReportTemplateOption, TuReportTemplateSectionOption } from '@/lib/tu/reportTemplates'
@@ -134,6 +138,7 @@ export type TuInvestigationDetails = TuInspectionSummary & {
   reportTemplateVersion: number | null
   reportTemplateAppliedAt: string | null
   reportAuthoringMode: TuReportAuthoringMode
+  reportWorkflowProfile: TuWorkflowProfile
   inspection: {
     id: string
     status: string | null
@@ -194,6 +199,7 @@ type TuDetailRow = {
   report_template_version?: number | null
   report_template_applied_at?: string | null
   report_authoring_mode?: string | null
+  report_workflow_profile?: string | null
   report_locked_at: string | null
   created_by: string | null
   created_at: string | null
@@ -273,6 +279,7 @@ type TuReportTemplateRow = {
   document_title: string
   project_type: string
   authoring_mode: string | null
+  workflow_profile: string | null
   version: number | null
   sort_order: number | null
   is_active: boolean | null
@@ -567,6 +574,7 @@ function mapTuReportTemplate(row: TuReportTemplateRow): TuReportTemplateOption |
     documentTitle,
     projectType,
     authoringMode: resolveTuReportAuthoringMode(row.authoring_mode, row.key),
+    workflowProfile: resolveTuWorkflowProfile(row.workflow_profile, row.key),
     version: row.version ?? 1,
     sortOrder: row.sort_order ?? 100,
     isActive: Boolean(row.is_active),
@@ -599,7 +607,7 @@ export async function listTuReportTemplateOptions(): Promise<TuReportTemplateOpt
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const { data, error } = await admin
     .from('settings_tu_report_templates')
-    .select('id,key,title,description,document_title,project_type,authoring_mode,version,sort_order,is_active,is_system')
+    .select('id,key,title,description,document_title,project_type,authoring_mode,workflow_profile,version,sort_order,is_active,is_system')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .order('title', { ascending: true })
@@ -621,7 +629,7 @@ async function getActiveTuReportTemplateByKey(key: string): Promise<TuReportTemp
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const { data: templateData, error: templateError } = await admin
     .from('settings_tu_report_templates')
-    .select('id,key,title,description,document_title,project_type,authoring_mode,version,sort_order,is_active,is_system')
+    .select('id,key,title,description,document_title,project_type,authoring_mode,workflow_profile,version,sort_order,is_active,is_system')
     .eq('key', templateKey)
     .eq('is_active', true)
     .maybeSingle()
@@ -1189,6 +1197,7 @@ async function createTuDetail(input: {
       report_template_version: input.reportTemplate?.version ?? null,
       report_template_applied_at: input.reportTemplate ? new Date().toISOString() : null,
       report_authoring_mode: input.reportTemplate?.authoringMode ?? 'standard',
+      report_workflow_profile: input.reportTemplate?.workflowProfile ?? 'field_report',
       property_object_type: objectType,
       scope_description: cleanText(input.scopeDescription),
       brf_name: objectType === 'apartment' ? cleanText(input.brfName) : null,
@@ -1467,7 +1476,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1522,7 +1531,7 @@ export async function getTuInvestigationById(input: {
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
@@ -1591,6 +1600,10 @@ export async function getTuInvestigationById(input: {
     reportTemplateAppliedAt: detail.report_template_applied_at ?? null,
     reportAuthoringMode: resolveTuReportAuthoringMode(
       detail.report_authoring_mode,
+      detail.report_template_key
+    ),
+    reportWorkflowProfile: resolveTuWorkflowProfile(
+      detail.report_workflow_profile,
       detail.report_template_key
     ),
     inspection: {

@@ -17,6 +17,7 @@ import {
   type TuAnalysisWorkflow,
 } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
+import { getApprovedTuControlPlanSnapshot } from '@/lib/tu/controlPlanServer'
 import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
@@ -522,6 +523,12 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
   if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) {
     throw new Error('TU_ANALYSIS_TEMPLATE_NOT_SUPPORTED')
   }
+  const controlPlan = investigation.reportWorkflowProfile === 'post_damage_review'
+    ? await getApprovedTuControlPlanSnapshot(input)
+    : null
+  if (investigation.reportWorkflowProfile === 'post_damage_review' && !controlPlan) {
+    throw new Error('TU_CONTROL_PLAN_NOT_APPROVED')
+  }
   const sourceImages = images.filter(isTuAnalysisSourceImage)
   const sourceImageIds = new Set(sourceImages.map((image) => image.id))
   const imageById = new Map(sourceImages.map((image) => [image.id, image]))
@@ -536,6 +543,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         title: investigation.reportTemplateTitle,
         version: investigation.reportTemplateVersion,
         authoringMode: investigation.reportAuthoringMode,
+        workflowProfile: investigation.reportWorkflowProfile,
       },
       assignment: {
         title: investigation.title,
@@ -563,6 +571,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
       })),
       chronologyInstruction:
         'Observationerna är sorterade äldst till nyast. En senare uppgift kan komplettera eller ersätta en preliminär uppfattning, men är inte automatiskt mer tillförlitlig.',
+      controlPlan,
       observations: chronologicalObservations.map((observation, index) => ({
         id: observation.id,
         sequence: index + 1,
@@ -891,6 +900,9 @@ async function synthesizeInspection(input: {
       'En teknisk hypotes ska ha certainty probable eller uncertain och redovisa både stöd och motsägelser.',
       'En bildanalys visar endast synliga bildfakta och får inte ensam bevisa dolda förhållanden eller skadeorsak.',
       'Besiktningsmannens egna bilder dokumenterar observationerna och ska inte behandlas som ett fristående externt bildmaterial.',
+      'Om underlaget innehåller en godkänd controlPlan är den bakgrund och arbetsdisposition. Skilj dess tidigare uppgifter, rekommendationer, åtgärdspåståenden och kontrollkrav från besiktningsmannens egna resultat.',
+      'Ett verificationStatus i controlPlan beskriver besiktningsmannens registrerade kontrollresultat. not_checked är inte bevisning. reported_not_verifiable får aldrig skrivas om till verifierad åtgärd.',
+      'Koppla kontrollplanens sakfrågor till hela fältunderlaget semantiskt. Dra inte en slutsats enbart för att en tidigare rapport eller åtgärdsredovisning påstår något.',
       'Beskriv inte ett utförande som felaktigt, otillåtet eller inte fackmässigt utan dokumenterad iakttagelse och angiven bedömningsgrund.',
       'Informationsluckor beskriver saknad information. Rekommenderade fortsatta kontroller beskriver nästa handling. Blanda inte ihop dessa kategorier.',
       'Varje analysresultat måste ha minst ett giltigt sourceObservationId, sourceImageId eller sourceMeasurementId. Saknas källa ska resultatet inte skapas.',

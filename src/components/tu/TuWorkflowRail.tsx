@@ -9,11 +9,13 @@ import {
   ClipboardCheck,
   FileCheck2,
   FileText,
+  Files,
   Mic,
 } from 'lucide-react'
 import type { TuWorkflowStep, TuWorkspaceView } from '@/lib/tu/workflow'
 
 const ICONS = {
+  preparation: Files,
   field: Mic,
   evidence: ClipboardCheck,
   assessment: BrainCircuit,
@@ -58,7 +60,7 @@ export default function TuWorkflowRail({
       <details className="group rounded-md border border-gray-200 bg-white shadow-sm lg:hidden">
         <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase text-violet-700">Steg {currentStep.number} av 5</p>
+            <p className="text-[11px] font-semibold uppercase text-violet-700">Steg {currentStep.number} av {steps.length}</p>
             <p className="truncate text-sm font-semibold text-gray-950">{currentStep.title}</p>
             <p className="truncate text-xs text-gray-500">{loading ? 'Hämtar status…' : currentStep.statusText}</p>
           </div>

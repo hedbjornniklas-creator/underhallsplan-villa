@@ -1,7 +1,9 @@
 import type { TuAnalysisValidation, TuAnalysisWorkflow } from '@/lib/tu/analysis'
+import type { TuControlPlanState } from '@/lib/tu/controlPlan'
 import type { TuWholeReportDraftState } from '@/lib/tu/reportDraft'
+import type { TuWorkflowProfile } from '@/lib/tu/workflowProfiles'
 
-export type TuWorkspaceView = 'field' | 'evidence' | 'assessment' | 'report' | 'delivery'
+export type TuWorkspaceView = 'preparation' | 'field' | 'evidence' | 'assessment' | 'report' | 'delivery'
 
 export type TuWorkflowStepState = 'not_started' | 'in_progress' | 'needs_attention' | 'complete'
 
@@ -26,6 +28,8 @@ export type TuDeliveryWorkflowState = {
 }
 
 export type TuWorkflowSource = {
+  workflowProfile: TuWorkflowProfile
+  preparation: TuControlPlanState | null
   validation: TuAnalysisValidation | null
   workflow: TuAnalysisWorkflow | null
   reportDraft: TuWholeReportDraftState | null
@@ -39,6 +43,7 @@ export type TuWorkflowSource = {
 }
 
 export const TU_WORKSPACE_ORDER: TuWorkspaceView[] = [
+  'preparation',
   'field',
   'evidence',
   'assessment',
@@ -82,6 +87,37 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
       && (source.delivery?.sentCount ?? 0) > 0
       && locked
     )
+
+  const preparationRequired = source.workflowProfile === 'post_damage_review'
+  const preparation = source.preparation
+  const preparationRun = preparation?.run ?? null
+  const pendingControlItems = preparation?.items.filter((item) => item.reviewStatus === 'pending').length ?? 0
+  let preparationStatus: TuWorkflowStepState = 'not_started'
+  let preparationStatusText = 'Lägg till tidigare underlag'
+  let preparationBlockers = 1
+  if (preparationRun?.status === 'queued' || preparationRun?.status === 'processing') {
+    preparationStatus = 'in_progress'
+    preparationStatusText = preparationRun.progressMessage || 'Kontrollplanen skapas i bakgrunden'
+  } else if (preparationRun?.status === 'failed' || preparationRun?.status === 'cancelled') {
+    preparationStatus = 'needs_attention'
+    preparationStatusText = 'Kontrollplanen behöver skapas om'
+  } else if (preparation?.case.planStaleAt) {
+    preparationStatus = 'needs_attention'
+    preparationStatusText = 'Underlaget ändrades · kontrollplanen är inaktuell'
+  } else if (preparation?.case.status === 'plan_ready') {
+    preparationStatus = 'needs_attention'
+    preparationStatusText = pendingControlItems > 0
+      ? `${pendingControlItems} kontrollpunkter behöver granskas`
+      : 'Kontrollplanen behöver godkännas'
+    preparationBlockers = Math.max(1, pendingControlItems)
+  } else if (preparation?.case.status === 'plan_approved') {
+    preparationStatus = 'complete'
+    preparationStatusText = `${preparation.items.filter((item) => item.reviewStatus === 'accepted').length} kontrollpunkter klara`
+    preparationBlockers = 0
+  } else if ((preparation?.readableSourceDocumentCount ?? 0) > 0) {
+    preparationStatus = 'in_progress'
+    preparationStatusText = `${preparation?.readableSourceDocumentCount ?? 0} underlag redo för analys`
+  }
 
   let fieldStatus: TuWorkflowStepState = 'not_started'
   let fieldStatusText = 'Lägg till den första fältposten'
@@ -203,10 +239,21 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
       : 'Den fastställda revisionen är levererad'
   }
 
-  return [
+  const steps: Array<Omit<TuWorkflowStep, 'number'>> = []
+  if (preparationRequired) {
+    steps.push({
+      id: 'preparation',
+      title: 'Förbered kontrollen',
+      shortTitle: 'Förbered',
+      description: 'Underlag och kontrollplan',
+      status: preparationStatus,
+      statusText: preparationStatusText,
+      blockerCount: preparationBlockers,
+    })
+  }
+  steps.push(
     {
       id: 'field',
-      number: 1,
       title: 'Dokumentera på plats',
       shortTitle: 'Dokumentera',
       description: 'Anteckningar, röst och bilder',
@@ -216,7 +263,6 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     },
     {
       id: 'evidence',
-      number: 2,
       title: 'Sortera och granska',
       shortTitle: 'Granska underlag',
       description: 'Kontrollera fakta och kopplingar',
@@ -226,7 +272,6 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     },
     {
       id: 'assessment',
-      number: 3,
       title: 'Skapa utlåtandet',
       shortTitle: 'Skapa',
       description: 'Samlad analys och sammanhållet textförslag',
@@ -236,7 +281,6 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     },
     {
       id: 'report',
-      number: 4,
       title: 'Granska utlåtandet',
       shortTitle: 'Utlåtande',
       description: 'Redigera och slutgranska texten',
@@ -246,13 +290,13 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     },
     {
       id: 'delivery',
-      number: 5,
       title: 'Fastställ och leverera',
       shortTitle: 'Leverera',
       description: 'Skapa revision, PDF och skicka',
       status: deliveryStatus,
       statusText: deliveryStatusText,
       blockerCount: 0,
-    },
-  ]
+    }
+  )
+  return steps.map((step, index) => ({ ...step, number: index + 1 }))
 }

@@ -7,6 +7,8 @@ import {
   isTuAnalysisRunStatus,
 } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
+import { getApprovedTuControlPlanSnapshot } from '@/lib/tu/controlPlanServer'
+import { tuDocumentAnalysisSourceRoleLabel } from '@/lib/tu/documents'
 import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import {
@@ -311,6 +313,12 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) {
     throw new Error('TU_REPORT_DRAFT_TEMPLATE_NOT_SUPPORTED')
   }
+  const controlPlan = investigation.reportWorkflowProfile === 'post_damage_review'
+    ? await getApprovedTuControlPlanSnapshot(input)
+    : null
+  if (investigation.reportWorkflowProfile === 'post_damage_review' && !controlPlan) {
+    throw new Error('TU_CONTROL_PLAN_NOT_APPROVED')
+  }
   const sourceImages = images.filter(isTuAnalysisSourceImage)
   const sourceImageIds = new Set(sourceImages.map((image) => image.id))
 
@@ -346,6 +354,21 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   addSourceField('object.cadastralId', 'Fastighetsbeteckning', investigation.cadastralId)
   addSourceField('object.brfName', 'Bostadsrättsförening', investigation.brfName)
   addSourceField('object.apartmentNumber', 'Lägenhetsnummer', investigation.apartmentNumber)
+  if (controlPlan) {
+    addSourceField('controlPlan.mainQuestion', 'Kontrollens huvudfråga', controlPlan.mainQuestion)
+    for (const document of controlPlan.documents) {
+      addSourceField(
+        `controlPlan.document.${document.id}`,
+        'Tidigare underlag',
+        [
+          document.title || document.fileName,
+          document.documentDate,
+          document.sourceParty,
+          tuDocumentAnalysisSourceRoleLabel(document.sourceRole),
+        ].filter(Boolean).join(' · ')
+      )
+    }
+  }
   for (const image of sourceImages) {
     addSourceField(`image.${image.id}.caption`, 'Bildtext', image.caption)
   }
@@ -468,6 +491,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
         title: investigation.reportTemplateTitle,
         version: investigation.reportTemplateVersion,
         authoringMode: investigation.reportAuthoringMode,
+        workflowProfile: investigation.reportWorkflowProfile,
       },
       assignment: {
         title: investigation.title,
@@ -489,6 +513,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
       },
       sections,
       sourceFields,
+      controlPlan,
       evidence,
       approvedAnalysis: {
         runId: workflow.current_analysis_run_id,
@@ -625,6 +650,8 @@ async function createEditorialPlan(input: {
         'Placera varje sakuppgift i en primär rapportdel. Undvik att planera samma resonemang i flera delar.',
         'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
         'En rapportdel med isRequired true ska planeras med relevant källstöd när sådant finns. Om stöd verkligen saknas ska den utelämnas och få en tydlig internalWarning.',
+        'Om en controlPlan finns ska den användas för att hålla rapporten till kontrollens huvudfråga. En tidigare rekommendation eller uppgift om utförd åtgärd är kontext, inte ett eget verifierat kontrollresultat.',
+        'Kontrollstatus reported_not_verifiable betyder att utförandet uppges vara gjort men inte kunde verifieras. Skriv aldrig om detta till en verifierad åtgärd.',
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Använd endast id:n och field keys som finns i JSON-underlaget.',
         'internalWarnings är för besiktningsmannens granskning och ska aldrig bli rapporttext.',
       ].join('\n'),
@@ -715,6 +742,7 @@ async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
         'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
         'Bevara relevanta manuella texter när de stöds av de valda källorna, men redigera helheten till konsekvent språk och disposition.',
+        'När rapportmallen gäller kontroll efter skadeåtgärd ska texten beskriva vad som faktiskt kunde iakttas eller verifieras och tydligt skilja detta från uppgifter i tidigare handlingar.',
         'Skriv endast rapportdelar där include är true. För övriga sectionId ska paragraphs vara en tom array.',
         'Följ varje rapportsdels aiInstruction och editorialPurpose. Skriv inte rubriken i texten.',
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget.',

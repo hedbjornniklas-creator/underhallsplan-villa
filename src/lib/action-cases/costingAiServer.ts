@@ -8,6 +8,28 @@ type Context = { orgId: string; userId: string }
 type Json = Record<string, unknown>
 const MODEL = process.env.OPENAI_ACTION_CASE_MODEL?.trim() || 'gpt-5.4-mini'
 
+function diagnosticIdentifier(value: unknown) {
+  return typeof value === 'string' && /^[a-zA-Z0-9_.:-]{1,160}$/.test(value) ? value : null
+}
+
+async function throwProviderError(response: Response): Promise<never> {
+  const body = await response.json().catch(() => null) as { error?: { code?: unknown; type?: unknown } } | null
+  const providerCode = diagnosticIdentifier(body?.error?.code)
+  const providerType = diagnosticIdentifier(body?.error?.type)
+  // Never log the upstream message or request body: either may contain customer data.
+  console.error('[action-case-costing] OpenAI request failed', {
+    status: response.status, model: MODEL, providerCode, providerType,
+    requestId: diagnosticIdentifier(response.headers.get('x-request-id')),
+  })
+  if (providerCode === 'credit_balance_exhausted') throw new Error('ACTION_CASE_AI_CREDIT_BALANCE')
+  if (providerType === 'insufficient_quota' || [
+    'insufficient_quota', 'organization_spend_limit_exceeded', 'project_spend_limit_exceeded',
+    'organization_usage_limit_exceeded', 'billing_hard_limit_reached',
+  ].includes(providerCode ?? '')) throw new Error('ACTION_CASE_AI_QUOTA_EXCEEDED')
+  if ([401, 403].includes(response.status) || providerCode === 'model_not_found') throw new Error('ACTION_CASE_AI_ACCESS_FAILED')
+  throw new Error(response.status === 429 ? 'ACTION_CASE_AI_RATE_LIMIT' : 'ACTION_CASE_AI_FAILED')
+}
+
 export async function generateActionCaseCosts(context: Context, payload: Json) {
   const admin = createSupabaseAdminClient()
   const { data: item, error } = await admin.from('action_case_items').select('id,title,scope,updated_at')
@@ -18,7 +40,7 @@ export async function generateActionCaseCosts(context: Context, payload: Json) {
   const { count, error: schemaError } = await admin.from('action_case_cost_suggestions').select('id', { count: 'exact', head: true })
     .eq('org_id', context.orgId).gte('created_at', new Date(Date.now() - 600_000).toISOString())
   if (schemaError) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
-  if ((count ?? 0) >= 10) throw new Error('ACTION_CASE_AI_RATE_LIMIT')
+  if ((count ?? 0) >= 10) throw new Error('ACTION_CASE_AI_ORG_LIMIT')
   const { data: costs, error: costsError } = await admin.from('action_case_cost_lines')
     .select('category,description,quantity,unit,notes').eq('action_case_item_id', item.id).eq('org_id', context.orgId).order('sort_order')
   if (costsError) throw new Error('ACTION_CASES_READ_FAILED')
@@ -68,12 +90,14 @@ export async function generateActionCaseCosts(context: Context, payload: Json) {
     if (caught instanceof Error && ['TimeoutError', 'AbortError'].includes(caught.name)) throw new Error('ACTION_CASE_AI_TIMEOUT')
     throw new Error('ACTION_CASE_AI_FAILED')
   }
-  if (!response.ok) throw new Error(response.status === 429 ? 'ACTION_CASE_AI_RATE_LIMIT' : 'ACTION_CASE_AI_FAILED')
-  const body = await response.json() as { status?: string; output?: Array<{ content?: Array<{ type: string; text?: string }> }> }
-  const content = body.output?.flatMap((entry) => entry.content ?? []) ?? []
-  if (body.status !== 'completed' || content.some((entry) => entry.type === 'refusal')) throw new Error('ACTION_CASE_AI_INVALID')
+  if (!response.ok) await throwProviderError(response)
   let parsed: ReturnType<typeof parseCostSuggestions>
-  try { parsed = parseCostSuggestions(JSON.parse(content.filter((entry) => entry.type === 'output_text').map((entry) => entry.text ?? '').join(''))) }
+  try {
+    const body = await response.json() as { status?: string; output?: Array<{ content?: Array<{ type: string; text?: string }> }> }
+    const content = body.output?.flatMap((entry) => entry.content ?? []) ?? []
+    if (body.status !== 'completed' || content.some((entry) => entry.type === 'refusal')) throw new Error('ACTION_CASE_AI_INVALID')
+    parsed = parseCostSuggestions(JSON.parse(content.filter((entry) => entry.type === 'output_text').map((entry) => entry.text ?? '').join('')))
+  }
   catch { throw new Error('ACTION_CASE_AI_INVALID') }
   const { error: saveError } = await admin.from('action_case_cost_suggestions').insert({
     org_id: context.orgId, action_case_id: payload.caseId, action_case_item_id: item.id,

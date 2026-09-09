@@ -8,6 +8,10 @@ import {
   type TuReportAuthoringMode,
 } from '@/lib/tu/authoring'
 import { TU_STANDARD_REPORT_TEMPLATES } from '@/lib/tu/reportTemplates'
+import {
+  tuWorkflowProfileLabel,
+  type TuWorkflowProfile,
+} from '@/lib/tu/workflowProfiles'
 
 type TemplateRow = {
   id: string
@@ -17,6 +21,7 @@ type TemplateRow = {
   document_title: string
   project_type: string
   authoring_mode: TuReportAuthoringMode
+  workflow_profile: TuWorkflowProfile
   version: number
   sort_order: number
   is_active: boolean
@@ -52,6 +57,7 @@ type TemplateDraft = {
   document_title: string
   project_type: string
   authoring_mode: TuReportAuthoringMode
+  workflow_profile: TuWorkflowProfile
   version: number
   sort_order: number
   is_active: boolean
@@ -101,7 +107,7 @@ type SettingsClient = {
 }
 
 const TEMPLATE_COLUMNS =
-  'id,key,title,description,document_title,project_type,authoring_mode,version,sort_order,is_active,is_system'
+  'id,key,title,description,document_title,project_type,authoring_mode,workflow_profile,version,sort_order,is_active,is_system'
 
 const SECTION_COLUMNS =
   'id,template_id,template_section_key,section_type_key,title_override,default_content,ai_instruction,sort_order,is_required,include_in_toc,allow_delete'
@@ -113,6 +119,7 @@ const EMPTY_TEMPLATE_DRAFT: TemplateDraft = {
   document_title: '',
   project_type: '',
   authoring_mode: 'standard',
+  workflow_profile: 'field_report',
   version: 1,
   sort_order: 100,
   is_active: true,
@@ -150,6 +157,7 @@ function templatePayload(draft: TemplateDraft) {
     document_title: draft.document_title.trim(),
     project_type: draft.project_type.trim(),
     authoring_mode: draft.authoring_mode,
+    workflow_profile: draft.workflow_profile,
     version: Number.isFinite(draft.version) && draft.version > 0 ? draft.version : 1,
     sort_order: Number.isFinite(draft.sort_order) ? draft.sort_order : 100,
     is_active: draft.is_active,
@@ -181,6 +189,7 @@ function templateToDraft(template: TemplateRow): TemplateDraft {
     document_title: template.document_title,
     project_type: template.project_type,
     authoring_mode: template.authoring_mode,
+    workflow_profile: template.workflow_profile,
     version: template.version,
     sort_order: template.sort_order,
     is_active: template.is_active,
@@ -240,6 +249,33 @@ function AuthoringModeControl({
         Ändringen gäller nya utredningar. Befintliga utredningar behåller arbetssättet de skapades med.
       </p>
     </fieldset>
+  )
+}
+
+function WorkflowProfileControl({
+  value,
+  onChange,
+}: {
+  value: TuWorkflowProfile
+  onChange: (value: TuWorkflowProfile) => void
+}) {
+  return (
+    <label className="text-sm md:col-span-2">
+      <span className="mb-1 block text-gray-600">Arbetsflöde</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as TuWorkflowProfile)}
+        className="w-full rounded border border-gray-300 bg-white px-2 py-2"
+      >
+        {(['field_report', 'post_damage_review'] as const).map((profile) => (
+          <option key={profile} value={profile}>{tuWorkflowProfileLabel(profile)}</option>
+        ))}
+      </select>
+      <span className="mt-1.5 block text-xs leading-5 text-gray-500">
+        Kontroll efter skadeåtgärd får ett extra förberedelsesteg för källdokument och kontrollplan.
+        Valet kopieras till nya utredningar och kan inte ändras i efterhand.
+      </span>
+    </label>
   )
 }
 
@@ -356,6 +392,7 @@ export default function TuReportTemplatesAdminPanel() {
       document_title: template.documentTitle,
       project_type: template.projectType,
       authoring_mode: template.authoringMode,
+      workflow_profile: template.workflowProfile,
       version: template.version,
       sort_order: template.sortOrder,
       is_active: template.isActive,
@@ -825,6 +862,14 @@ export default function TuReportTemplatesAdminPanel() {
                 ))
               }
             />
+            <WorkflowProfileControl
+              value={templateDraft.workflow_profile}
+              onChange={(workflowProfile) =>
+                setTemplateDraft((current) => (
+                  current ? { ...current, workflow_profile: workflowProfile } : current
+                ))
+              }
+            />
             <label className="text-sm md:col-span-2">
               <div className="mb-1 text-gray-600">Beskrivning</div>
               <textarea
@@ -1092,6 +1137,14 @@ export default function TuReportTemplatesAdminPanel() {
                   onChange={(authoringMode) =>
                     setTemplateDraft((current) => (
                       current ? { ...current, authoring_mode: authoringMode } : current
+                    ))
+                  }
+                />
+                <WorkflowProfileControl
+                  value={templateDraft.workflow_profile}
+                  onChange={(workflowProfile) =>
+                    setTemplateDraft((current) => (
+                      current ? { ...current, workflow_profile: workflowProfile } : current
                     ))
                   }
                 />

@@ -13,6 +13,12 @@ import {
   type TuWholeReportDraftState,
 } from '@/lib/tu/reportDraft'
 import {
+  TU_CONTROL_PLAN_UPDATED_EVENT,
+  type TuControlPlanResponse,
+  type TuControlPlanState,
+} from '@/lib/tu/controlPlan'
+import type { TuWorkflowProfile } from '@/lib/tu/workflowProfiles'
+import {
   deriveTuWorkflowSteps,
   type TuDeliveryWorkflowState,
 } from '@/lib/tu/workflow'
@@ -29,6 +35,7 @@ type DeliveryResponse = {
 type Options = {
   inspectionId: string
   enabled: boolean
+  workflowProfile: TuWorkflowProfile
   refreshToken: number
   queue: { total: number; failed: number }
   reportFilledSectionCount: number
@@ -44,12 +51,14 @@ async function jsonOrError<T>(response: Response, fallback: string): Promise<T> 
 export function useTuWorkflowState({
   inspectionId,
   enabled,
+  workflowProfile,
   refreshToken,
   queue,
   reportFilledSectionCount,
   reportSectionCount,
 }: Options) {
   const [validation, setValidation] = useState<TuAnalysisValidation | null>(null)
+  const [preparation, setPreparation] = useState<TuControlPlanState | null>(null)
   const [workflow, setWorkflow] = useState<TuAnalysisWorkflow | null>(null)
   const [reportDraft, setReportDraft] = useState<TuWholeReportDraftState | null>(null)
   const [delivery, setDelivery] = useState<TuDeliveryWorkflowState | null>(null)
@@ -60,16 +69,24 @@ export function useTuWorkflowState({
     if (!enabled) return
     if (!silent) setLoading(true)
     try {
-      const [analysisResponse, reportResponse, deliveryResponse] = await Promise.all([
+      const preparationRequest = workflowProfile === 'post_damage_review'
+        ? fetch(`/api/tu/investigations/${inspectionId}/preparation`, { cache: 'no-store' })
+        : Promise.resolve(null)
+      const [analysisResponse, reportResponse, deliveryResponse, preparationResponse] = await Promise.all([
         fetch(`/api/tu/investigations/${inspectionId}/analysis`, { cache: 'no-store' }),
         fetch(`/api/tu/investigations/${inspectionId}/report-draft`, { cache: 'no-store' }),
         fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, { cache: 'no-store' }),
+        preparationRequest,
       ])
-      const [analysisPayload, reportPayload, deliveryPayload] = await Promise.all([
+      const [analysisPayload, reportPayload, deliveryPayload, preparationPayload] = await Promise.all([
         jsonOrError<TuAnalysisResponse>(analysisResponse, 'Kunde inte hämta arbetsflödets analysstatus.'),
         jsonOrError<TuWholeReportDraftResponse>(reportResponse, 'Kunde inte hämta utlåtandeförslaget.'),
         jsonOrError<DeliveryResponse>(deliveryResponse, 'Kunde inte hämta leveransstatus.'),
+        preparationResponse
+          ? jsonOrError<TuControlPlanResponse>(preparationResponse, 'Kunde inte hämta kontrollplanen.')
+          : Promise.resolve({} as TuControlPlanResponse),
       ])
+      setPreparation(preparationPayload.preparation ?? null)
       setValidation(analysisPayload.validation ?? null)
       setWorkflow(analysisPayload.workflow ?? null)
       setReportDraft(reportPayload.draft ?? null)
@@ -87,7 +104,7 @@ export function useTuWorkflowState({
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [enabled, inspectionId])
+  }, [enabled, inspectionId, workflowProfile])
 
   useEffect(() => {
     void refresh()
@@ -98,9 +115,11 @@ export function useTuWorkflowState({
     const handleUpdate = () => void refresh(true)
     window.addEventListener(TU_ANALYSIS_UPDATED_EVENT, handleUpdate)
     window.addEventListener(TU_REPORT_DRAFT_UPDATED_EVENT, handleUpdate)
+    window.addEventListener(TU_CONTROL_PLAN_UPDATED_EVENT, handleUpdate)
     return () => {
       window.removeEventListener(TU_ANALYSIS_UPDATED_EVENT, handleUpdate)
       window.removeEventListener(TU_REPORT_DRAFT_UPDATED_EVENT, handleUpdate)
+      window.removeEventListener(TU_CONTROL_PLAN_UPDATED_EVENT, handleUpdate)
     }
   }, [enabled, refresh])
 
@@ -109,6 +128,8 @@ export function useTuWorkflowState({
     || workflow?.run?.status === 'processing'
     || reportDraft?.run?.status === 'queued'
     || reportDraft?.run?.status === 'processing'
+    || preparation?.run?.status === 'queued'
+    || preparation?.run?.status === 'processing'
 
   useEffect(() => {
     if (!enabled || !processing) return
@@ -117,6 +138,8 @@ export function useTuWorkflowState({
   }, [enabled, processing, refresh])
 
   const steps = useMemo(() => deriveTuWorkflowSteps({
+    workflowProfile,
+    preparation,
     validation,
     workflow,
     reportDraft,
@@ -124,7 +147,7 @@ export function useTuWorkflowState({
     queue,
     reportFilledSectionCount,
     reportSectionCount,
-  }), [delivery, queue, reportDraft, reportFilledSectionCount, reportSectionCount, validation, workflow])
+  }), [delivery, preparation, queue, reportDraft, reportFilledSectionCount, reportSectionCount, validation, workflow, workflowProfile])
 
-  return { validation, workflow, reportDraft, delivery, steps, loading, error, refresh }
+  return { preparation, validation, workflow, reportDraft, delivery, steps, loading, error, refresh }
 }

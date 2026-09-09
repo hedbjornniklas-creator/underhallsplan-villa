@@ -1,0 +1,880 @@
+'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  CircleX,
+  ExternalLink,
+  FileText,
+  Files,
+  Loader2,
+  RefreshCw,
+  Save,
+  Sparkles,
+  Trash2,
+  Upload,
+} from 'lucide-react'
+import { useToast } from '@/components/ui/AppToastProvider'
+import {
+  TU_CONTROL_PLAN_UPDATED_EVENT,
+  TU_DAMAGE_TYPE_OPTIONS,
+  TU_REMEDIATION_STAGE_OPTIONS,
+  TU_VERIFICATION_STATUS_OPTIONS,
+  type TuControlPlanResponse,
+  type TuControlPlanState,
+  type TuDamageType,
+  type TuRemediationStage,
+  type TuVerificationItem,
+  type TuVerificationPriority,
+  type TuVerificationReviewStatus,
+  type TuVerificationStatus,
+} from '@/lib/tu/controlPlan'
+import {
+  TU_DOCUMENT_SOURCE_ROLE_OPTIONS,
+  isTuDocumentAiReadable,
+  type TuDocumentAnalysisSourceRole,
+  type TuInvestigationDocument,
+} from '@/lib/tu/documents'
+
+const AI_DOCUMENT_ACCEPT = '.pdf,.txt,application/pdf,text/plain'
+
+type DocumentActionTarget = 'include' | 'analysis' | 'metadata' | 'delete'
+
+type Props = {
+  inspectionId: string
+  scopeDescription: string | null
+  locked: boolean
+  preparation: TuControlPlanState | null
+  loading: boolean
+  documents: TuInvestigationDocument[]
+  documentsLoading: boolean
+  documentBusy: boolean
+  documentError: string | null
+  documentActionTargets: Record<string, DocumentActionTarget>
+  onUploadDocument: (
+    file: File,
+    options: {
+      useInAnalysis: boolean
+      analysisSourceRole: TuDocumentAnalysisSourceRole
+    }
+  ) => Promise<TuInvestigationDocument | null>
+  onPatchDocument: (
+    documentId: string,
+    patch: Record<string, unknown>,
+    target: DocumentActionTarget
+  ) => Promise<TuInvestigationDocument | null>
+  onDeleteDocument: (documentId: string) => Promise<boolean>
+  onOpenField: () => void
+}
+
+type ItemDraft = {
+  title: string
+  description: string
+  verificationMethod: string
+  priority: TuVerificationPriority
+  verificationStatus: TuVerificationStatus
+  needsFollowUp: boolean
+  inspectorNote: string
+}
+
+function itemDraft(item: TuVerificationItem): ItemDraft {
+  return {
+    title: item.title,
+    description: item.description,
+    verificationMethod: item.verificationMethod ?? '',
+    priority: item.priority,
+    verificationStatus: item.verificationStatus,
+    needsFollowUp: item.needsFollowUp,
+    inspectorNote: item.inspectorNote ?? '',
+  }
+}
+
+async function responsePayload(response: Response, fallback: string) {
+  const payload = await response.json().catch(() => ({})) as TuControlPlanResponse
+  if (!response.ok) throw new Error(payload.error || fallback)
+  return payload
+}
+
+function formatDocumentDate(value: string | null) {
+  if (!value) return null
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('sv-SE')
+}
+
+function reviewLabel(status: TuVerificationReviewStatus) {
+  if (status === 'accepted') return 'Ingår i planen'
+  if (status === 'rejected') return 'Bortvald'
+  return 'Inte granskad'
+}
+
+function ControlPlanItem({
+  item,
+  documentById,
+  locked,
+  planApproved,
+  busy,
+  onSave,
+}: {
+  item: TuVerificationItem
+  documentById: Map<string, TuInvestigationDocument>
+  locked: boolean
+  planApproved: boolean
+  busy: boolean
+  onSave: (patch: Record<string, unknown>) => Promise<void>
+}) {
+  const [draft, setDraft] = useState(() => itemDraft(item))
+  const [open, setOpen] = useState(item.reviewStatus === 'pending')
+
+  const save = async (reviewStatus?: TuVerificationReviewStatus) => {
+    await onSave({ ...draft, reviewStatus: reviewStatus ?? item.reviewStatus })
+  }
+
+  return (
+    <article className={`rounded-md border transition ${
+      item.reviewStatus === 'rejected'
+        ? 'border-gray-200 bg-gray-50 opacity-70'
+        : item.reviewStatus === 'accepted'
+          ? 'border-emerald-200 bg-white'
+          : 'border-amber-200 bg-white'
+    }`}>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-start gap-3 px-3 py-3 text-left sm:px-4"
+        aria-expanded={open}
+      >
+        <span className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md ${
+          item.reviewStatus === 'accepted'
+            ? 'bg-emerald-50 text-emerald-700'
+            : item.reviewStatus === 'rejected'
+              ? 'bg-gray-100 text-gray-500'
+              : 'bg-amber-50 text-amber-800'
+        }`}>
+          {item.reviewStatus === 'accepted'
+            ? <Check size={17} aria-hidden />
+            : item.reviewStatus === 'rejected'
+              ? <CircleX size={17} aria-hidden />
+              : <span className="text-xs font-semibold">{Math.max(1, Math.round(item.sortOrder / 10))}</span>}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold leading-5 text-gray-950">{item.title}</span>
+            {item.priority === 'high' ? (
+              <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700">Hög prioritet</span>
+            ) : null}
+          </span>
+          <span className="mt-1 block text-xs text-gray-500">
+            {item.category} · {reviewLabel(item.reviewStatus)}
+          </span>
+        </span>
+        <ChevronDown size={17} className={`mt-1 shrink-0 text-gray-500 transition ${open ? 'rotate-180' : ''}`} aria-hidden />
+      </button>
+
+      {open ? (
+        <div className="space-y-4 border-t border-gray-100 px-3 py-4 sm:px-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Kontrollpunkt</span>
+              <input
+                value={draft.title}
+                onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                disabled={locked || planApproved || busy}
+                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Vad ska kontrolleras?</span>
+              <textarea
+                value={draft.description}
+                onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                disabled={locked || planApproved || busy}
+                rows={3}
+                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Kontrollmetod</span>
+              <textarea
+                value={draft.verificationMethod}
+                onChange={(event) => setDraft((current) => ({ ...current, verificationMethod: event.target.value }))}
+                disabled={locked || planApproved || busy}
+                rows={2}
+                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Prioritet</span>
+              <select
+                value={draft.priority}
+                onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value as TuVerificationPriority }))}
+                disabled={locked || planApproved || busy}
+                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              >
+                <option value="high">Hög</option>
+                <option value="normal">Normal</option>
+                <option value="low">Låg</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Resultat på plats</span>
+              <select
+                value={draft.verificationStatus}
+                onChange={(event) => setDraft((current) => ({ ...current, verificationStatus: event.target.value as TuVerificationStatus }))}
+                disabled={locked || busy}
+                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              >
+                {TU_VERIFICATION_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Besiktningsmannens notering <span className="font-normal text-gray-500">(valfritt)</span></span>
+              <textarea
+                value={draft.inspectorNote}
+                onChange={(event) => setDraft((current) => ({ ...current, inspectorNote: event.target.value }))}
+                disabled={locked || busy}
+                rows={2}
+                placeholder="Komplettera kontrollresultatet vid behov."
+                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              />
+            </label>
+          </div>
+
+          <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-800">
+            <input
+              type="checkbox"
+              checked={draft.needsFollowUp}
+              onChange={(event) => setDraft((current) => ({ ...current, needsFollowUp: event.target.checked }))}
+              disabled={locked || busy}
+              className="size-4 rounded border-gray-300 text-violet-700 focus:ring-violet-500"
+            />
+            Behöver följas upp
+          </label>
+
+          <details className="rounded-md bg-gray-50 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-semibold text-gray-700">Visa källstöd ({item.sourceReferences.length})</summary>
+            <div className="mt-2 space-y-2">
+              {item.sourceReferences.map((reference, index) => {
+                const document = documentById.get(reference.documentId)
+                return (
+                  <blockquote key={`${reference.documentId}:${reference.page ?? 'x'}:${index}`} className="border-l-2 border-violet-300 pl-3 text-xs leading-5 text-gray-600">
+                    <p className="font-semibold text-gray-800">
+                      {document?.title || document?.fileName || 'Källdokument'}{reference.page ? `, sida ${reference.page}` : ''}
+                    </p>
+                    <p>”{reference.excerpt}”</p>
+                  </blockquote>
+                )
+              })}
+            </div>
+          </details>
+
+          <div className="flex flex-wrap justify-between gap-2 border-t border-gray-100 pt-3">
+            {!planApproved ? <button
+              type="button"
+              onClick={() => void save(item.reviewStatus === 'rejected' ? 'pending' : 'rejected')}
+              disabled={locked || planApproved || busy}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+            >
+              {item.reviewStatus === 'rejected' ? <RefreshCw size={15} aria-hidden /> : <CircleX size={15} aria-hidden />}
+              {item.reviewStatus === 'rejected' ? 'Återställ punkt' : 'Ta bort från planen'}
+            </button> : <span />}
+            <button
+              type="button"
+              onClick={() => void save('accepted')}
+              disabled={locked || busy || !draft.title.trim() || !draft.description.trim()}
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Save size={15} aria-hidden />}
+              {planApproved ? 'Spara kontrollresultat' : item.reviewStatus === 'accepted' ? 'Spara ändringar' : 'Behåll i planen'}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </article>
+  )
+}
+
+export default function TuPostDamagePreparationWorkspace({
+  inspectionId,
+  scopeDescription,
+  locked,
+  preparation: externalPreparation,
+  loading,
+  documents,
+  documentsLoading,
+  documentBusy,
+  documentError,
+  documentActionTargets,
+  onUploadDocument,
+  onPatchDocument,
+  onDeleteDocument,
+  onOpenField,
+}: Props) {
+  const toast = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [preparation, setPreparation] = useState<TuControlPlanState | null>(externalPreparation)
+  const [damageTypes, setDamageTypes] = useState<TuDamageType[]>([])
+  const [remediationStage, setRemediationStage] = useState<TuRemediationStage | ''>('')
+  const [mainQuestion, setMainQuestion] = useState(scopeDescription ?? '')
+  const [actionBusy, setActionBusy] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPreparation(externalPreparation)
+    if (!externalPreparation) return
+    setDamageTypes(externalPreparation.case.damageTypes)
+    setRemediationStage(externalPreparation.case.remediationStage ?? '')
+    setMainQuestion(externalPreparation.case.mainQuestion ?? scopeDescription ?? '')
+  }, [externalPreparation, scopeDescription])
+
+  const sourceDocuments = useMemo(
+    () => documents.filter((document) => document.useInAnalysis),
+    [documents]
+  )
+  const unreadableSourceCount = useMemo(
+    () => sourceDocuments.filter((document) => !isTuDocumentAiReadable(document)).length,
+    [sourceDocuments]
+  )
+  const documentById = useMemo(
+    () => new Map(documents.map((document) => [document.id, document])),
+    [documents]
+  )
+  const processing = actionBusy === 'generate'
+    || preparation?.run?.status === 'queued'
+    || preparation?.run?.status === 'processing'
+  const approved = preparation?.case.status === 'plan_approved' && !preparation.case.planStaleAt
+  const planReady = preparation?.run?.status === 'completed' && preparation.items.length > 0
+  const acceptedCount = preparation?.items.filter((item) => item.reviewStatus === 'accepted').length ?? 0
+  const rejectedCount = preparation?.items.filter((item) => item.reviewStatus === 'rejected').length ?? 0
+
+  const publishState = (next: TuControlPlanState | null) => {
+    if (next) setPreparation(next)
+    window.dispatchEvent(new CustomEvent(TU_CONTROL_PLAN_UPDATED_EVENT, {
+      detail: { inspectionId, preparation: next },
+    }))
+  }
+
+  const callPreparation = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, fallback: string) => {
+    const response = await fetch(`/api/tu/investigations/${inspectionId}/preparation`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return responsePayload(response, fallback)
+  }
+
+  const saveCase = async () => {
+    setActionBusy('case')
+    try {
+      const payload = await callPreparation('PATCH', {
+        target: 'case',
+        damageTypes,
+        remediationStage: remediationStage || null,
+        mainQuestion,
+      }, 'Kunde inte spara kontrollens förutsättningar.')
+      publishState(payload.preparation ?? null)
+      toast.success('Kontrollens förutsättningar har sparats.')
+    } catch (error) {
+      toast.error(error, 'Kunde inte spara kontrollens förutsättningar.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  const startPlan = async () => {
+    setActionBusy('generate')
+    try {
+      const casePayload = await callPreparation('PATCH', {
+        target: 'case',
+        damageTypes,
+        remediationStage: remediationStage || null,
+        mainQuestion,
+      }, 'Kunde inte spara kontrollens förutsättningar.')
+      publishState(casePayload.preparation ?? null)
+
+      const payload = await callPreparation('POST', {
+        action: preparation?.run?.status === 'failed' ? 'retry' : 'generate',
+      }, 'Kunde inte starta kontrollplanen.')
+      publishState(payload.preparation ?? null)
+      toast.info('AI läser underlagen i bakgrunden. Du kan lämna sidan under tiden.')
+    } catch (error) {
+      toast.error(error, 'Kunde inte starta kontrollplanen.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  const saveItem = async (itemId: string, patch: Record<string, unknown>) => {
+    setActionBusy(`item:${itemId}`)
+    try {
+      const payload = await callPreparation('PATCH', { target: 'item', itemId, ...patch }, 'Kunde inte spara kontrollpunkten.')
+      if (payload.item) {
+        const next = preparation
+          ? {
+              ...preparation,
+              case: preparation.case.status === 'plan_approved'
+                ? { ...preparation.case, status: 'plan_ready' as const, planApprovedAt: null }
+                : preparation.case,
+              items: preparation.items.map((item) => item.id === payload.item?.id
+                ? { ...payload.item, observationIds: item.observationIds }
+                : item),
+            }
+          : null
+        publishState(next)
+      }
+      toast.success('Kontrollpunkten har sparats.')
+    } catch (error) {
+      toast.error(error, 'Kunde inte spara kontrollpunkten.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  const approvePlan = async () => {
+    setActionBusy('approve')
+    try {
+      const payload = await callPreparation('POST', { action: 'approve' }, 'Kunde inte godkänna kontrollplanen.')
+      publishState(payload.preparation ?? null)
+      toast.success('Kontrollplanen är klar att använda på plats.')
+    } catch (error) {
+      toast.error(error, 'Kunde inte godkänna kontrollplanen.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  const reopenPlan = async () => {
+    setActionBusy('reopen')
+    try {
+      const payload = await callPreparation('POST', { action: 'reopen' }, 'Kunde inte öppna kontrollplanen.')
+      publishState(payload.preparation ?? null)
+    } catch (error) {
+      toast.error(error, 'Kunde inte öppna kontrollplanen.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  const uploadSourceDocument = async (file: File | null) => {
+    if (!file) return
+    const uploaded = await onUploadDocument(file, {
+      useInAnalysis: true,
+      analysisSourceRole: 'prior_report',
+    })
+    if (uploaded) {
+      publishState(preparation)
+      toast.success('Underlaget har laddats upp och valts för analys.')
+    }
+  }
+
+  if (loading && !preparation) {
+    return (
+      <section className="rounded-lg border border-violet-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3 text-sm text-gray-600">
+          <Loader2 size={18} className="animate-spin text-violet-700" aria-hidden />
+          Hämtar förberedelsen...
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-violet-200 bg-white shadow-sm">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 sm:px-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+            <Files size={21} aria-hidden />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-gray-950">Förbered kontrollen</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
+              Lägg in tidigare underlag. AI sammanställer vad som behöver kontrolleras utan att tolka en rekommendation som en utförd åtgärd.
+            </p>
+          </div>
+        </div>
+        {approved ? (
+          <span className="inline-flex h-8 items-center gap-2 rounded-md bg-emerald-50 px-3 text-xs font-semibold text-emerald-800">
+            <CheckCircle2 size={15} aria-hidden />
+            Kontrollplan klar
+          </span>
+        ) : null}
+      </header>
+
+      <div className="divide-y divide-gray-200">
+        <div className="space-y-4 px-4 py-5 sm:px-5">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-950">1. Kontrollens inriktning</h3>
+            <p className="mt-1 text-sm text-gray-600">Välj det som är känt. Alla val kan lämnas tomma och kompletteras senare.</p>
+          </div>
+          <fieldset>
+            <legend className="mb-2 text-xs font-medium text-gray-700">Skadetyp <span className="font-normal text-gray-500">(valfritt)</span></legend>
+            <div className="flex flex-wrap gap-2">
+              {TU_DAMAGE_TYPE_OPTIONS.map((option) => {
+                const selected = damageTypes.includes(option.value)
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setDamageTypes((current) => selected
+                      ? current.filter((value) => value !== option.value)
+                      : [...current, option.value])}
+                    disabled={locked || processing}
+                    aria-pressed={selected}
+                    className={`h-9 rounded-md border px-3 text-sm font-medium transition ${selected
+                      ? 'border-violet-600 bg-violet-50 text-violet-900'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-violet-200 hover:bg-violet-50/50'} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+          <div className="grid gap-3 md:grid-cols-[minmax(210px,0.35fr)_minmax(0,1fr)]">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Kontrollskede <span className="font-normal text-gray-500">(valfritt)</span></span>
+              <select
+                value={remediationStage}
+                onChange={(event) => setRemediationStage(event.target.value as TuRemediationStage | '')}
+                disabled={locked || processing}
+                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              >
+                <option value="">Inte valt</option>
+                {TU_REMEDIATION_STAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Vad ska kontrollen besvara?</span>
+              <input
+                value={mainQuestion}
+                onChange={(event) => setMainQuestion(event.target.value)}
+                disabled={locked || processing}
+                placeholder="Exempel: Bedöm om dokumenterade åtgärder kan verifieras före återställning."
+                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+              />
+            </label>
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void saveCase()}
+              disabled={locked || processing || actionBusy === 'case'}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:text-gray-400"
+            >
+              {actionBusy === 'case' ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Save size={15} aria-hidden />}
+              Spara inriktning
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4 px-4 py-5 sm:px-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-950">2. Underlag för kontrollplanen</h3>
+              <p className="mt-1 text-sm text-gray-600">PDF och text kan läsas av AI. Leveransbilagor hanteras senare i utlåtandet.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={locked || documentBusy || processing}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {documentBusy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+              Lägg till underlag
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={AI_DOCUMENT_ACCEPT}
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null
+                event.target.value = ''
+                void uploadSourceDocument(file)
+              }}
+            />
+          </div>
+
+          {documentsLoading ? (
+            <div className="flex items-center gap-2 py-3 text-sm text-gray-600">
+              <Loader2 size={16} className="animate-spin text-violet-700" aria-hidden /> Hämtar dokument...
+            </div>
+          ) : documents.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={locked}
+              className="flex min-h-28 w-full flex-col items-center justify-center rounded-md border border-dashed border-violet-200 bg-violet-50/40 px-4 text-center text-sm text-gray-600 transition hover:border-violet-400 hover:bg-violet-50"
+            >
+              <Upload size={22} className="mb-2 text-violet-600" aria-hidden />
+              Lägg till tidigare utlåtande, åtgärdsbeskrivning eller mätprotokoll
+            </button>
+          ) : (
+            <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
+              {documents.map((document) => {
+                const pendingTarget = documentActionTargets[document.id]
+                const readable = isTuDocumentAiReadable(document)
+                return (
+                  <div key={document.id} className={`grid gap-3 px-3 py-3 transition md:grid-cols-[minmax(0,1fr)_190px_150px_auto] md:items-center ${pendingTarget ? 'bg-violet-50/50' : ''}`}>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">
+                        {pendingTarget ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <FileText size={16} aria-hidden />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-gray-950">{document.title || document.fileName || 'Dokument'}</p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {document.documentDate ? formatDocumentDate(document.documentDate) : 'Datum saknas'}
+                          {!readable ? ' · kan inte läsas av AI' : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <select
+                      value={document.analysisSourceRole}
+                      onChange={(event) => void onPatchDocument(document.id, {
+                        analysisSourceRole: event.target.value,
+                      }, 'metadata').then(() => publishState(preparation))}
+                      disabled={locked || processing || Boolean(pendingTarget)}
+                      aria-label="Dokumentets roll"
+                      className="h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-xs text-gray-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                    >
+                      {TU_DOCUMENT_SOURCE_ROLE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <label className="inline-flex min-h-9 items-center gap-2 text-xs font-semibold text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={document.useInAnalysis}
+                        onChange={(event) => void onPatchDocument(document.id, {
+                          useInAnalysis: event.target.checked,
+                        }, 'analysis').then(() => publishState(preparation))}
+                        disabled={locked || processing || Boolean(pendingTarget) || (!readable && !document.useInAnalysis)}
+                        className="size-4 rounded border-gray-300 text-violet-700 focus:ring-violet-500"
+                      />
+                      Använd i analysen
+                    </label>
+                    <div className="flex justify-end gap-1">
+                      {document.signedUrl ? (
+                        <a
+                          href={document.signedUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label="Öppna dokument"
+                          title="Öppna dokument"
+                          className="inline-flex size-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
+                        >
+                          <ExternalLink size={15} aria-hidden />
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void onDeleteDocument(document.id).then((deleted) => {
+                          if (deleted) publishState(preparation)
+                        })}
+                        disabled={locked || processing || Boolean(pendingTarget)}
+                        aria-label="Ta bort dokument"
+                        title="Ta bort dokument"
+                        className="inline-flex size-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-300"
+                      >
+                        <Trash2 size={15} aria-hidden />
+                      </button>
+                    </div>
+                    <details className="md:col-span-4 md:ml-11">
+                      <summary className="cursor-pointer text-xs font-semibold text-violet-800">
+                        Källuppgifter
+                      </summary>
+                      <div className="mt-3 grid gap-3 rounded-md bg-gray-50 p-3 sm:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-medium text-gray-700">Uppgiftslämnare <span className="font-normal text-gray-500">(valfritt)</span></span>
+                          <input
+                            key={`${document.id}:party:${document.sourceParty ?? ''}`}
+                            defaultValue={document.sourceParty ?? ''}
+                            onBlur={(event) => {
+                              const sourceParty = event.currentTarget.value.trim()
+                              if (sourceParty === (document.sourceParty ?? '')) return
+                              void onPatchDocument(document.id, { sourceParty }, 'metadata')
+                                .then(() => publishState(preparation))
+                            }}
+                            disabled={locked || processing || Boolean(pendingTarget)}
+                            placeholder="Exempel: fastighetsägaren eller entreprenören"
+                            className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-medium text-gray-700">Dokumentdatum <span className="font-normal text-gray-500">(valfritt)</span></span>
+                          <input
+                            key={`${document.id}:date:${document.documentDate ?? ''}`}
+                            type="date"
+                            defaultValue={document.documentDate ?? ''}
+                            onBlur={(event) => {
+                              const documentDate = event.currentTarget.value || null
+                              if (documentDate === document.documentDate) return
+                              void onPatchDocument(document.id, { documentDate }, 'metadata')
+                                .then(() => publishState(preparation))
+                            }}
+                            disabled={locked || processing || Boolean(pendingTarget)}
+                            className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                          />
+                        </label>
+                      </div>
+                    </details>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {documentError ? (
+            <div role="alert" className="flex gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden />
+              {documentError}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+            <p className="text-sm text-gray-600">
+              {sourceDocuments.length === 0
+                ? 'Välj minst ett läsbart dokument.'
+                : unreadableSourceCount > 0
+                  ? `${unreadableSourceCount} valt dokument kan inte läsas av AI.`
+                  : `${sourceDocuments.length} dokument valda för gemensam analys.`}
+            </p>
+            <button
+              type="button"
+              onClick={() => void startPlan()}
+              disabled={locked || processing || documentBusy || sourceDocuments.length === 0 || unreadableSourceCount > 0 || actionBusy === 'generate'}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {processing || actionBusy === 'generate'
+                ? <Loader2 size={16} className="animate-spin" aria-hidden />
+                : planReady ? <RefreshCw size={16} aria-hidden /> : <Sparkles size={16} aria-hidden />}
+              {processing ? 'Skapar kontrollplan...' : planReady ? 'Skapa om kontrollplanen' : 'Skapa kontrollplan'}
+            </button>
+          </div>
+
+          {processing ? (
+            <div role="status" className="flex gap-3 rounded-md border border-violet-200 bg-violet-50 px-3 py-3 text-sm text-violet-950">
+              <Loader2 size={18} className="mt-0.5 shrink-0 animate-spin" aria-hidden />
+              <div>
+                <p className="font-semibold">AI arbetar i bakgrunden</p>
+                <p className="mt-0.5 text-violet-800">{preparation?.run?.progressMessage || 'Läser samtliga dokument tillsammans.'}</p>
+              </div>
+            </div>
+          ) : preparation?.run?.status === 'failed' ? (
+            <div className="flex gap-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-800">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden />
+              <span>{preparation.run.errorMessage || 'Kontrollplanen kunde inte skapas. Försök igen.'}</span>
+            </div>
+          ) : null}
+        </div>
+
+        {planReady ? (
+          <div className="space-y-5 px-4 py-5 sm:px-5">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-950">3. Granska kontrollplanen</h3>
+              <p className="mt-1 text-sm text-gray-600">AI-förslagen är inte beslut. Ta bort irrelevanta punkter och justera det som ska kontrolleras på plats.</p>
+            </div>
+
+            {preparation?.case.planStaleAt ? (
+              <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden />
+                Underlaget har ändrats. Skapa om planen innan den används.
+              </div>
+            ) : null}
+
+            {preparation?.case.conflicts.length ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+                <p className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+                  <AlertTriangle size={17} aria-hidden /> Motstridiga uppgifter
+                </p>
+                <ul className="mt-2 space-y-1 text-sm leading-5 text-amber-900">
+                  {preparation.case.conflicts.map((conflict) => <li key={conflict}>• {conflict}</li>)}
+                </ul>
+              </div>
+            ) : null}
+
+            {preparation?.case.essentialQuestions.length ? (
+              <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-3">
+                <p className="text-sm font-semibold text-sky-950">Behöver bekräftas före eller vid besöket</p>
+                <ol className="mt-2 space-y-1 text-sm leading-5 text-sky-900">
+                  {preparation.case.essentialQuestions.map((question, index) => <li key={question}>{index + 1}. {question}</li>)}
+                </ol>
+              </div>
+            ) : null}
+
+            {preparation?.case.overview ? (
+              <p className="border-l-2 border-violet-300 pl-3 text-sm leading-6 text-gray-700">{preparation.case.overview}</p>
+            ) : null}
+
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-gray-500">
+              <span>{preparation?.items.length ?? 0} föreslagna punkter</span>
+              <span>{acceptedCount} behållna</span>
+              {rejectedCount > 0 ? <span>{rejectedCount} bortvalda</span> : null}
+            </div>
+
+            <div className="space-y-2">
+              {preparation?.items.map((item) => (
+                <ControlPlanItem
+                  key={`${item.id}:${item.updatedAt ?? ''}:${item.reviewStatus}`}
+                  item={item}
+                  documentById={documentById}
+                  locked={locked}
+                  planApproved={approved}
+                  busy={actionBusy === `item:${item.id}`}
+                  onSave={(patch) => saveItem(item.id, patch)}
+                />
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="max-w-xl text-sm text-gray-600">
+                {approved
+                  ? 'Planen är låst som utgångspunkt för platskontrollen. Resultat och kompletteringar kan fortfarande registreras.'
+                  : 'När planen godkänns räknas kvarvarande punkter som behållna. Bortvalda punkter används inte i analysen.'}
+              </p>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {approved ? (
+                  <button
+                    type="button"
+                    onClick={() => void reopenPlan()}
+                    disabled={locked || actionBusy === 'reopen'}
+                    className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                  >
+                    {actionBusy === 'reopen' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <RefreshCw size={16} aria-hidden />}
+                    Ändra planen
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void approvePlan()}
+                    disabled={locked || actionBusy === 'approve' || Boolean(preparation?.case.planStaleAt)}
+                    className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    {actionBusy === 'approve' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <CheckCircle2 size={16} aria-hidden />}
+                    Godkänn kontrollplan
+                  </button>
+                )}
+                {approved ? (
+                  <button
+                    type="button"
+                    onClick={onOpenField}
+                    className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+                  >
+                    Dokumentera på plats
+                    <ArrowRight size={16} aria-hidden />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}

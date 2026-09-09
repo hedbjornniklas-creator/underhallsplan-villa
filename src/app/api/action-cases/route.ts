@@ -19,6 +19,7 @@ import {
   applyActionCaseCostSuggestions,
 } from '@/lib/action-cases/server'
 import { generateActionCaseCosts } from '@/lib/action-cases/costingAiServer'
+import { scheduleActionCaseAiAdminAlert } from '@/lib/action-cases/costingAiAlerts'
 import { handleQuoteAction, sendQuoteRequest } from '@/lib/action-cases/quotesServer'
 import { handleRequestAction, sendGroupedRequest } from '@/lib/action-cases/quoteRequestsServer'
 
@@ -67,17 +68,30 @@ function errorResponse(error: unknown) {
     ACTION_CASE_QUOTE_SEND_FAILED: [502, 'Kunde inte bekräfta utskicket. Försök igen med samma förfrågan för att undvika dubbelutskick.'],
   }
   if (quoteErrors[code]) return NextResponse.json({ error: quoteErrors[code][1], code }, { status: quoteErrors[code][0] })
+  const aiServiceErrors: Record<string, number> = {
+    ACTION_CASE_AI_NOT_CONFIGURED: 503,
+    ACTION_CASE_AI_CREDIT_BALANCE: 503,
+    ACTION_CASE_AI_QUOTA_EXCEEDED: 503,
+    ACTION_CASE_AI_ACCESS_FAILED: 503,
+    ACTION_CASE_AI_ORG_LIMIT: 429,
+    ACTION_CASE_AI_TIMEOUT: 504,
+    ACTION_CASE_AI_RATE_LIMIT: 429,
+    ACTION_CASE_AI_INVALID: 502,
+    ACTION_CASE_AI_FAILED: 502,
+    ACTION_CASE_AI_SAVE_FAILED: 500,
+  }
+  if (aiServiceErrors[code]) {
+    scheduleActionCaseAiAdminAlert(code)
+    return NextResponse.json({
+      error: 'Kalkylförslaget kunde inte skapas just nu. Försök igen senare. Dina befintliga kalkylrader är kvar.',
+      code: 'ACTION_CASE_AI_UNAVAILABLE',
+    }, { status: aiServiceErrors[code] })
+  }
   const aiErrors: Record<string, [number, string]> = {
     ACTION_CASE_AI_SCOPE_REQUIRED: [400, 'Spara arbetets omfattning innan du skapar ett kalkylförslag.'],
     ACTION_CASE_AI_SCOPE_TOO_LONG: [400, 'Underlaget är för stort. Avgränsa åtgärdens omfattning.'],
     ACTION_CASE_AI_STALE: [409, 'Omfattningen eller kalkylen har ändrats. Skapa ett nytt förslag.'],
     ACTION_CASE_AI_NOT_FOUND: [404, 'Förslaget finns inte längre. Uppdatera ärendet.'],
-    ACTION_CASE_AI_NOT_CONFIGURED: [503, 'AI-tjänsten är inte konfigurerad för kalkyler ännu.'],
-    ACTION_CASE_AI_TIMEOUT: [504, 'AI-förslaget tog för lång tid. Inga kalkylrader ändrades. Försök igen.'],
-    ACTION_CASE_AI_RATE_LIMIT: [429, 'AI-tjänsten är upptagen. Vänta en stund och försök igen.'],
-    ACTION_CASE_AI_INVALID: [502, 'AI kunde inte skapa ett användbart förslag. Inga kalkylrader ändrades. Försök igen.'],
-    ACTION_CASE_AI_FAILED: [502, 'Kalkylförslaget kunde inte skapas. Försök igen.'],
-    ACTION_CASE_AI_SAVE_FAILED: [500, 'AI-förslaget kunde inte sparas. Inga kalkylrader ändrades.'],
   }
   if (aiErrors[code]) return NextResponse.json({ error: aiErrors[code][1], code }, { status: aiErrors[code][0] })
   return NextResponse.json({ error: 'Åtgärdsärendet kunde inte hanteras just nu.', code }, { status: 500 })

@@ -7,6 +7,8 @@ import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
+import TuPostDamagePreparationWorkspace from '@/components/tu/TuPostDamagePreparationWorkspace'
+import TuPostDamageFieldChecklist from '@/components/tu/TuPostDamageFieldChecklist'
 import TuPrintActions from '@/components/tu/TuPrintActions'
 import TuReportReviewDrawer from '@/components/tu/TuReportReviewDrawer'
 import TuWorkflowRail from '@/components/tu/TuWorkflowRail'
@@ -15,6 +17,7 @@ import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueu
 import { useTuWorkflowState } from '@/hooks/useTuWorkflowState'
 import { supabase } from '@/lib/supabaseClient'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
+import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type { TuWorkspaceView } from '@/lib/tu/workflow'
 import type {
@@ -34,7 +37,7 @@ const MAX_IMAGE_UPLOAD_BYTES = 15 * 1024 * 1024
 type TuImageSectionKey = 'bank' | 'appendix' | 'cover'
 type TuImageViewCount = 9 | 4 | 1
 type TuImageActionTarget = TuImageSectionKey | 'delete' | 'reorder'
-type TuDocumentActionTarget = 'include' | 'delete'
+type TuDocumentActionTarget = 'include' | 'analysis' | 'metadata' | 'delete'
 type AppendixImageOrderUpdate = { id: string; sortOrder: number }
 
 type TuInvestigationImage = {
@@ -63,23 +66,6 @@ type ImageApiResponse = {
   }
   error?: string
   detail?: string
-}
-
-type TuInvestigationDocument = {
-  id: string
-  inspectionId: string
-  orgId: string
-  storageBucket: string
-  filePath: string
-  fileName: string | null
-  title: string | null
-  contentType: string | null
-  fileSizeBytes: number | null
-  includeInDelivery: boolean
-  uploadedBy: string | null
-  createdAt: string | null
-  updatedAt: string | null
-  signedUrl: string | null
 }
 
 type DocumentApiResponse = {
@@ -788,9 +774,10 @@ export default function TuInvestigationEditorClient({
     initialInvestigation.reportAuthoringMode,
     initialInvestigation.reportTemplateKey
   )
+  const postDamageWorkflowEnabled = initialInvestigation.reportWorkflowProfile === 'post_damage_review'
   const locked = Boolean(investigation.reportLockedAt)
   const [workspaceView, setWorkspaceView] = useState<TuWorkspaceView>(
-    aiWorkflowEnabled ? 'field' : 'report'
+    postDamageWorkflowEnabled ? 'preparation' : aiWorkflowEnabled ? 'field' : 'report'
   )
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
     setImages((current) => upsertImages(current, [image]))
@@ -1362,6 +1349,7 @@ export default function TuInvestigationEditorClient({
   const workflowState = useTuWorkflowState({
     inspectionId: investigation.inspectionId,
     enabled: aiWorkflowEnabled,
+    workflowProfile: investigation.reportWorkflowProfile,
     refreshToken: fieldQueue.completedRevision,
     queue: {
       total: fieldQueue.counts.total,
@@ -2043,14 +2031,26 @@ export default function TuInvestigationEditorClient({
     )
   }
 
-  const uploadDocument = async (file: File | null | undefined) => {
-    if (locked || !file) return
+  const uploadDocument = async (
+    file: File | null | undefined,
+    options?: {
+      useInAnalysis?: boolean
+      analysisSourceRole?: TuDocumentAnalysisSourceRole
+    }
+  ): Promise<TuInvestigationDocument | null> => {
+    if (locked || !file) return null
 
     setDocumentBusy(true)
     setDocumentError(null)
     try {
       const formData = new FormData()
       formData.set('file', file)
+      if (options?.useInAnalysis !== undefined) {
+        formData.set('useInAnalysis', String(options.useInAnalysis))
+      }
+      if (options?.analysisSourceRole) {
+        formData.set('analysisSourceRole', options.analysisSourceRole)
+      }
 
       const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/documents`, {
         method: 'POST',
@@ -2061,16 +2061,18 @@ export default function TuInvestigationEditorClient({
         throw new Error(payload.error ?? 'Kunde inte ladda upp dokument.')
       }
       setDocuments((current) => upsertDocument(current, payload.document as TuInvestigationDocument))
+      return payload.document as TuInvestigationDocument
     } catch (uploadError) {
       setDocumentError(uploadError instanceof Error ? uploadError.message : 'Kunde inte ladda upp dokument.')
+      return null
     } finally {
       setDocumentBusy(false)
     }
   }
 
-  const deleteDocument = async (documentId: string) => {
-    if (locked || documentBusy || documentActionTargets[documentId]) return
-    if (!confirm('Ta bort dokumentet?')) return
+  const deleteDocument = async (documentId: string): Promise<boolean> => {
+    if (locked || documentBusy || documentActionTargets[documentId]) return false
+    if (!confirm('Ta bort dokumentet?')) return false
 
     setDocumentActionTarget(documentId, 'delete')
     setDocumentBusy(true)
@@ -2084,18 +2086,24 @@ export default function TuInvestigationEditorClient({
       const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort dokument.')
       setDocuments((current) => current.filter((document) => document.id !== documentId))
+      return true
     } catch (deleteError) {
       setDocumentError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort dokument.')
+      return false
     } finally {
       setDocumentBusy(false)
       setDocumentActionTarget(documentId, null)
     }
   }
 
-  const patchDocument = async (documentId: string, patch: Record<string, unknown>) => {
-    if (locked || documentBusy || documentActionTargets[documentId]) return
+  const patchDocument = async (
+    documentId: string,
+    patch: Record<string, unknown>,
+    target: TuDocumentActionTarget = 'include'
+  ): Promise<TuInvestigationDocument | null> => {
+    if (locked || documentBusy || documentActionTargets[documentId]) return null
 
-    setDocumentActionTarget(documentId, 'include')
+    setDocumentActionTarget(documentId, target)
     setDocumentBusy(true)
     setDocumentError(null)
     try {
@@ -2107,8 +2115,10 @@ export default function TuInvestigationEditorClient({
       const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
       if (!response.ok || !payload.document) throw new Error(payload.error ?? 'Kunde inte spara dokument.')
       setDocuments((current) => upsertDocument(current, payload.document as TuInvestigationDocument))
+      return payload.document as TuInvestigationDocument
     } catch (patchError) {
       setDocumentError(patchError instanceof Error ? patchError.message : 'Kunde inte spara dokument.')
+      return null
     } finally {
       setDocumentBusy(false)
       setDocumentActionTarget(documentId, null)
@@ -2183,15 +2193,41 @@ export default function TuInvestigationEditorClient({
             </div>
           ) : null}
 
-        {aiWorkflowEnabled && workspaceView === 'field' ? (
-          <TuFieldLogWorkspace
+        {postDamageWorkflowEnabled && workspaceView === 'preparation' ? (
+          <TuPostDamagePreparationWorkspace
             inspectionId={investigation.inspectionId}
+            scopeDescription={investigation.scopeDescription}
             locked={locked}
-            images={images}
-            queue={fieldQueue}
-            onPreviewImage={setPreviewImageId}
-            onOpenEvidence={() => setWorkspaceView('evidence')}
+            preparation={workflowState.preparation}
+            loading={workflowState.loading}
+            documents={documents}
+            documentsLoading={documentsLoading}
+            documentBusy={documentBusy}
+            documentError={documentError}
+            documentActionTargets={documentActionTargets}
+            onUploadDocument={uploadDocument}
+            onPatchDocument={patchDocument}
+            onDeleteDocument={deleteDocument}
+            onOpenField={() => setWorkspaceView('field')}
           />
+        ) : aiWorkflowEnabled && workspaceView === 'field' ? (
+          <div className="space-y-4">
+            {postDamageWorkflowEnabled ? (
+              <TuPostDamageFieldChecklist
+                inspectionId={investigation.inspectionId}
+                preparation={workflowState.preparation}
+                locked={locked}
+              />
+            ) : null}
+            <TuFieldLogWorkspace
+              inspectionId={investigation.inspectionId}
+              locked={locked}
+              images={images}
+              queue={fieldQueue}
+              onPreviewImage={setPreviewImageId}
+              onOpenEvidence={() => setWorkspaceView('evidence')}
+            />
+          </div>
         ) : aiWorkflowEnabled && workspaceView === 'evidence' ? (
           <TuEvidenceWorkspace
             inspectionId={investigation.inspectionId}
@@ -2237,7 +2273,9 @@ export default function TuInvestigationEditorClient({
             <TuPrintActions
               inspectionId={investigation.inspectionId}
               finalizationBlockedReason={finalizationBlockedReason}
-              stageLabel={aiWorkflowEnabled ? 'Steg 5' : 'Leverans'}
+              stageLabel={aiWorkflowEnabled
+                ? `Steg ${workflowState.steps.find((step) => step.id === 'delivery')?.number ?? workflowState.steps.length}`
+                : 'Leverans'}
               onStatusChange={handleDeliveryStatusChange}
               onOpenEvidence={aiWorkflowEnabled ? () => setWorkspaceView('evidence') : undefined}
               onOpenReport={() => setWorkspaceView('report')}
@@ -2249,7 +2287,9 @@ export default function TuInvestigationEditorClient({
         <div className="flex flex-col gap-4 rounded-lg border border-violet-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase text-violet-700">
-              {aiWorkflowEnabled ? 'Steg 4' : 'Slutgranskning'}
+              {aiWorkflowEnabled
+                ? `Steg ${workflowState.steps.find((step) => step.id === 'report')?.number ?? 4}`
+                : 'Slutgranskning'}
             </p>
             <h2 className="mt-1 text-xl font-semibold text-gray-950">Granska utlåtandet</h2>
             <p className="mt-1 max-w-2xl text-sm text-gray-600">

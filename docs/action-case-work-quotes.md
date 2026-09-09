@@ -42,12 +42,22 @@ Only explicitly selected files from the same organization and case are attached,
 
 The first send freezes the exact message and attachment bytes. A stable provider idempotency key is reused on retries. A lease blocks simultaneous sends; uncertain results remain visible and retryable. After 23 hours an uncertain request requires administrator verification instead of an automatic new send, keeping retries inside [Resend's documented 24-hour retention window](https://resend.com/docs/dashboard/emails/idempotency-keys). Inspect the provider log using the stable `action-case-rfq-<quote-id>` key before deciding whether a new request is appropriate. Never clear the recorded payload simply to retry. Sent requests cannot be edited or deleted through the quote workflow.
 
+## AI Service Alerts
+
+AI service failures in the action-case calculation return the same generic Swedish message and `ACTION_CASE_AI_UNAVAILABLE`, using the existing client toast. Billing, quota and configuration details remain server-side. Input validation and stale-suggestion messages remain actionable.
+
+Credit exhaustion, account quota, access failures and a missing OpenAI key schedule an administrator email to `jn@hedbjorn.se` using the existing `sendAssignmentEmail` and Next.js `after` background mechanism. Existing `RESEND_API_KEY` and `ASSIGNMENTS_MAIL_FROM` are required. No migration or new credential is needed. No customer information, prompts, credentials or raw provider messages are emailed.
+
+The message and provider idempotency key are deterministic per error type, environment, model, sender and fixed six-hour UTC window. Repeated requests, including from different server instances, reuse the same key and payload within [Resend's 24-hour idempotency window](https://resend.com/docs/dashboard/emails/idempotency-keys). No additional email is delivered for each click. If the fault recurs in a new window, it can send a new reminder; there is no scheduled polling. Transient failures and user validation errors do not send admin emails.
+
+Notification failure is logged without changing the user response. A subsequent occurrence retries the same message within the window. This notification is best-effort, not a durable outbox: if there are no further requests after a failed send, automatic retry does not occur. Do not claim to the user that an email was delivered. Tests use a mocked mailer and send no real emails.
+
 ## Verification
 
 Run:
 
 ```sh
-node --test test/action-cases-domain.test.mjs test/action-cases-costing.test.mjs test/action-cases-costing-ai.test.mjs test/action-cases-quotes.test.mjs test/action-cases-quotes-mail.test.mjs test/action-cases-grouped-requests.test.mjs
+node --test test/action-cases-domain.test.mjs test/action-cases-costing.test.mjs test/action-cases-costing-ai.test.mjs test/action-cases-costing-ai-alerts.test.mjs test/action-cases-quotes.test.mjs test/action-cases-quotes-mail.test.mjs test/action-cases-grouped-requests.test.mjs
 node scripts/test-action-case-costing-ui.mjs
 npx tsc --noEmit --incremental false
 npm run build

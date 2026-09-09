@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { isTuDocumentAnalysisSourceRole } from '@/lib/tu/documents'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -70,13 +71,17 @@ type TuDocumentRow = {
   content_type: string | null
   file_size_bytes: number | null
   include_in_delivery: boolean | null
+  use_in_analysis: boolean | null
+  analysis_source_role: string | null
+  source_party: string | null
+  document_date: string | null
   uploaded_by: string | null
   created_at: string | null
   updated_at: string | null
 }
 
 const DOCUMENT_COLUMNS =
-  'id,inspection_id,org_id,storage_bucket,file_path,file_name,title,content_type,file_size_bytes,include_in_delivery,uploaded_by,created_at,updated_at'
+  'id,inspection_id,org_id,storage_bucket,file_path,file_name,title,content_type,file_size_bytes,include_in_delivery,use_in_analysis,analysis_source_role,source_party,document_date,uploaded_by,created_at,updated_at'
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -121,6 +126,15 @@ function normalizeBoolean(value: unknown) {
   if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true
   if (normalized === 'false' || normalized === '0' || normalized === 'no') return false
   return null
+}
+
+function normalizeDate(value: unknown) {
+  const normalized = cleanText(value)
+  if (!normalized) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized) || Number.isNaN(Date.parse(`${normalized}T00:00:00Z`))) {
+    return undefined
+  }
+  return normalized
 }
 
 function normalizeFileExtension(file: File) {
@@ -183,6 +197,12 @@ async function mapDocument(row: TuDocumentRow, admin: TuDocumentSupabaseClient) 
     contentType: row.content_type,
     fileSizeBytes: row.file_size_bytes,
     includeInDelivery: row.include_in_delivery === true,
+    useInAnalysis: row.use_in_analysis === true,
+    analysisSourceRole: isTuDocumentAnalysisSourceRole(row.analysis_source_role)
+      ? row.analysis_source_role
+      : 'other',
+    sourceParty: row.source_party,
+    documentDate: row.document_date,
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -266,6 +286,14 @@ export async function POST(
     const validationError = validateFile(fileEntry, contentType)
     if (validationError) return jsonError(validationError, 400)
 
+    const useInAnalysis = normalizeBoolean(formData.get('useInAnalysis')) ?? false
+    const requestedSourceRole = cleanText(formData.get('analysisSourceRole'))
+    const analysisSourceRole = isTuDocumentAnalysisSourceRole(requestedSourceRole)
+      ? requestedSourceRole
+      : 'other'
+    const documentDate = normalizeDate(formData.get('documentDate'))
+    if (documentDate === undefined) return jsonError('Ogiltigt dokumentdatum.', 400)
+
     const fileName = safeStoredFileName(fileEntry, extension)
     const filePath = `${inspectionId}/documents/${fileName}`
     uploadedPath = filePath
@@ -290,6 +318,10 @@ export async function POST(
         content_type: contentType,
         file_size_bytes: fileEntry.size,
         include_in_delivery: false,
+        use_in_analysis: useInAnalysis,
+        analysis_source_role: analysisSourceRole,
+        source_party: cleanText(formData.get('sourceParty')),
+        document_date: documentDate,
         uploaded_by: orgContext.userId,
       })
       .select(DOCUMENT_COLUMNS)
@@ -337,6 +369,24 @@ export async function PATCH(
     }
     if ('title' in body) {
       patch.title = cleanText(body.title)
+    }
+    if ('useInAnalysis' in body || 'use_in_analysis' in body) {
+      const useInAnalysis = normalizeBoolean(body.useInAnalysis ?? body.use_in_analysis)
+      if (useInAnalysis === null) return jsonError('Ogiltigt värde för analysunderlag.', 400)
+      patch.use_in_analysis = useInAnalysis
+    }
+    if ('analysisSourceRole' in body || 'analysis_source_role' in body) {
+      const role = cleanText(body.analysisSourceRole ?? body.analysis_source_role)
+      if (!isTuDocumentAnalysisSourceRole(role)) return jsonError('Ogiltig typ av källdokument.', 400)
+      patch.analysis_source_role = role
+    }
+    if ('sourceParty' in body || 'source_party' in body) {
+      patch.source_party = cleanText(body.sourceParty ?? body.source_party)
+    }
+    if ('documentDate' in body || 'document_date' in body) {
+      const documentDate = normalizeDate(body.documentDate ?? body.document_date)
+      if (documentDate === undefined) return jsonError('Ogiltigt dokumentdatum.', 400)
+      patch.document_date = documentDate
     }
     if (Object.keys(patch).length === 0) return jsonError('Ingen ändring angiven.', 400)
 

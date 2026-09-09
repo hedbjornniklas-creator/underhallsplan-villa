@@ -1,4 +1,5 @@
 import type { TuReportAuthoringMode } from '@/lib/tu/authoring'
+import type { TuWorkflowProfile } from '@/lib/tu/workflowProfiles'
 
 export type TuReportTemplateSectionOption = {
   id?: string
@@ -22,6 +23,7 @@ export type TuReportTemplateOption = {
   documentTitle: string
   projectType: string
   authoringMode: TuReportAuthoringMode
+  workflowProfile: TuWorkflowProfile
   version: number
   sortOrder: number
   isActive: boolean
@@ -37,6 +39,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     documentTitle: 'Teknisk utredning',
     projectType: 'Fördjupad teknisk utredning',
     authoringMode: 'standard',
+    workflowProfile: 'field_report',
     version: 1,
     sortOrder: 100,
     isActive: true,
@@ -141,6 +144,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     documentTitle: 'Tekniskt statusutlåtande',
     projectType: 'Fastighetsbesiktning',
     authoringMode: 'standard',
+    workflowProfile: 'field_report',
     version: 1,
     sortOrder: 200,
     isActive: true,
@@ -215,6 +219,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     documentTitle: 'Kort tekniskt utlåtande',
     projectType: 'Kort tekniskt utlåtande',
     authoringMode: 'standard',
+    workflowProfile: 'field_report',
     version: 1,
     sortOrder: 300,
     isActive: true,
@@ -269,6 +274,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     documentTitle: 'Fuktskadeutredning',
     projectType: 'Fuktskadeutredning',
     authoringMode: 'ai_assisted',
+    workflowProfile: 'field_report',
     version: 2,
     sortOrder: 150,
     isActive: true,
@@ -313,6 +319,66 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
         titleOverride: 'Rekommenderad fortsatt hantering',
         aiInstruction:
           'Ange endast fortsatta kontroller eller åtgärder som följer proportionerligt av den tekniska bedömningen. Utse inte juridiskt ansvarig part.',
+        sortOrder: 400,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+    ],
+  },
+  {
+    key: 'post_damage_remediation_review',
+    title: 'Teknisk kontroll efter skadeåtgärd',
+    description:
+      'AI-stödd kontroll efter rivning, sanering, uttorkning eller annan skadeåtgärd. Tidigare underlag omvandlas till en granskningsbar kontrollplan före platsbesöket.',
+    documentTitle: 'Teknisk kontroll efter skadeåtgärd',
+    projectType: 'Teknisk kontroll efter skadeåtgärd',
+    authoringMode: 'ai_assisted',
+    workflowProfile: 'post_damage_review',
+    version: 1,
+    sortOrder: 175,
+    isActive: true,
+    isSystem: true,
+    sections: [
+      {
+        templateSectionKey: 'scope_basis_boundaries',
+        sectionTypeKey: 'assignment_scope',
+        titleOverride: 'Uppdrag, underlag och avgränsning',
+        aiInstruction:
+          'Beskriv kontrollens fråga, vilket tidigare underlag som varit relevant, kontrollens skede och de avgränsningar som faktiskt påverkar slutsatsen. Skilj tydligt på tidigare uppgifter, rekommendationer, påstått utförda åtgärder och besiktningsmannens egen kontroll.',
+        sortOrder: 100,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'review_execution_observations',
+        sectionTypeKey: 'observed_execution',
+        titleOverride: 'Genomförande och iakttagelser',
+        aiInstruction:
+          'Redovisa hur kontrollen genomfördes och de egna iakttagelser, mätningar och åtkomstbegränsningar som behövs för att besvara kontrollfrågan. Använd kontrollplanen som disposition men skriv inte interna kontrollstatusar eller dokumentreferenser som rapportadministration.',
+        sortOrder: 200,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'review_assessment_conclusion',
+        sectionTypeKey: 'technical_assessment',
+        titleOverride: 'Teknisk bedömning',
+        aiInstruction:
+          'Väg samman tidigare underlag med den egna kontrollen och besvara huvudfrågan. Skilj mellan verifierat, synligt förenligt med uppgivet utförande, uppgivet men inte verifierbart, delvis verifierat och kvarstående förhållande. Använd inte godkänd eller underkänd om uppdraget inte uttryckligen kräver en sådan formell prövning.',
+        sortOrder: 300,
+        isRequired: true,
+        includeInToc: true,
+        allowDelete: false,
+      },
+      {
+        templateSectionKey: 'review_recommended_follow_up',
+        sectionTypeKey: 'recommended_actions',
+        titleOverride: 'Rekommenderad fortsatt hantering',
+        aiInstruction:
+          'Ange endast proportionerliga fortsatta kontroller, kompletteringar eller åtgärder som följer av den samlade bedömningen. Skilj återstående kontrollbehov från konstaterade brister och undvik juridiska slutsatser eller ansvarsfördelning.',
         sortOrder: 400,
         isRequired: true,
         includeInToc: true,
