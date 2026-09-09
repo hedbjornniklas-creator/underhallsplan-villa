@@ -399,6 +399,7 @@ export default function TuEvidenceWorkspace({
   const [observationFilter, setObservationFilter] = useState<ObservationFilter>('needs_review')
   const [observationSearch, setObservationSearch] = useState('')
   const [imagePickerOpen, setImagePickerOpen] = useState(false)
+  const [imageDropActive, setImageDropActive] = useState(false)
   const [supplementOpen, setSupplementOpen] = useState(false)
   const [measurementEditorOpen, setMeasurementEditorOpen] = useState(false)
   const [fieldEntryDialogOpen, setFieldEntryDialogOpen] = useState(false)
@@ -410,6 +411,7 @@ export default function TuEvidenceWorkspace({
     () => new Set()
   )
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const imageDropDepthRef = useRef(0)
   const formRef = useRef(form)
   const serverObservationsRef = useRef(new Map<string, TuObservation>())
   const observationSavePromisesRef = useRef(
@@ -945,7 +947,43 @@ export default function TuEvidenceWorkspace({
       reviewStatus: current.id && current.reviewStatus === 'reviewed' ? 'draft' : current.reviewStatus,
       imageIds: [...new Set([...current.imageIds, ...uploadedImageIds])],
     }))
-    setSavedMessage('Bilden är uppladdad och kopplad. Spara fältposten för att behålla kopplingen.')
+    setSavedMessage(
+      `${uploadedImageIds.length} bild${uploadedImageIds.length === 1 ? '' : 'er'} är uppladdad${uploadedImageIds.length === 1 ? '' : 'e'} och kopplad${uploadedImageIds.length === 1 ? '' : 'e'}. Spara fältposten för att behålla kopplingen.`
+    )
+  }
+
+  const hasDroppedFiles = (event: React.DragEvent<HTMLElement>) => (
+    Array.from(event.dataTransfer.types).includes('Files')
+  )
+
+  const handleImageDragEnter = (event: React.DragEvent<HTMLElement>) => {
+    if (locked || imageBusy || !hasDroppedFiles(event)) return
+    event.preventDefault()
+    imageDropDepthRef.current += 1
+    setImageDropActive(true)
+  }
+
+  const handleImageDragLeave = (event: React.DragEvent<HTMLElement>) => {
+    if (!hasDroppedFiles(event)) return
+    event.preventDefault()
+    imageDropDepthRef.current = Math.max(0, imageDropDepthRef.current - 1)
+    if (imageDropDepthRef.current === 0) setImageDropActive(false)
+  }
+
+  const handleImageDragOver = (event: React.DragEvent<HTMLElement>) => {
+    if (locked || imageBusy || !hasDroppedFiles(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+
+  const handleImageDrop = (event: React.DragEvent<HTMLElement>) => {
+    if (!hasDroppedFiles(event)) return
+    event.preventDefault()
+    imageDropDepthRef.current = 0
+    setImageDropActive(false)
+    if (locked || imageBusy) return
+    const files = Array.from(event.dataTransfer.files)
+    if (files.length > 0) void uploadAndLinkImages(files)
   }
 
   const setImageSectionWithFeedback = async (imageId: string, sectionKey: 'bank' | 'appendix' | 'cover') => {
@@ -1149,7 +1187,6 @@ export default function TuEvidenceWorkspace({
               ref={imageInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               multiple
               className="hidden"
               onChange={(event) => {
@@ -1629,25 +1666,19 @@ export default function TuEvidenceWorkspace({
                     </label>
                   ) : null}
 
-            <div className="mt-5 border-t border-gray-200 pt-4">
+            <div
+              className="mt-5 border-t border-gray-200 pt-4"
+              onDragEnter={handleImageDragEnter}
+              onDragLeave={handleImageDragLeave}
+              onDragOver={handleImageDragOver}
+              onDrop={handleImageDrop}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h4 className="text-sm font-semibold text-gray-950">Bilder</h4>
                   <p className="text-xs text-gray-600">{form.imageIds.length} kopplade · {images.length} i bildbanken</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {imagePickerOpen ? (
-                    <button
-                      type="button"
-                      onClick={() => imageInputRef.current?.click()}
-                      disabled={locked || imageBusy}
-                      aria-busy={imageBusy}
-                      className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-800 transition hover:bg-gray-50 disabled:text-gray-400"
-                    >
-                      {imageBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <Upload size={14} aria-hidden />}
-                      {imageBusy ? 'Laddar...' : 'Ladda upp bilder'}
-                    </button>
-                  ) : null}
                   <button
                     type="button"
                     onClick={() => setImagePickerOpen((current) => !current)}
@@ -1658,10 +1689,26 @@ export default function TuEvidenceWorkspace({
                   </button>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={locked || imageBusy}
+                aria-busy={imageBusy}
+                className={`mt-3 flex min-h-16 w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 text-sm font-semibold transition ${
+                  imageDropActive
+                    ? 'border-violet-600 bg-violet-100 text-violet-950'
+                    : 'border-violet-300 bg-violet-50/40 text-violet-800 hover:border-violet-500 hover:bg-violet-50'
+                } disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-400`}
+              >
+                {imageBusy ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+                {imageBusy
+                  ? 'Laddar upp och kopplar bilder...'
+                  : imageDropActive
+                    ? 'Släpp bilderna här'
+                    : 'Dra bilder hit eller välj flera från datorn'}
+              </button>
               {images.length === 0 ? (
-                <div className="mt-3 rounded-md border border-dashed border-gray-300 px-3 py-5 text-center text-sm text-gray-600">
-                  Bildbanken är tom.
-                </div>
+                <p className="mt-3 text-center text-xs text-gray-500">Bildbanken är tom.</p>
               ) : !imagePickerOpen && linkedImages.length === 0 ? (
                 <button
                   type="button"
