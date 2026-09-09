@@ -21,6 +21,13 @@ import {
   parseTuReportEditorialPlan,
   type TuReportEditorialPlan,
 } from '@/lib/tu/reportEditorial'
+import {
+  normalizeTuReportProviderResponse,
+  parseTuReportBackgroundState,
+  tuReportBackgroundPayload,
+  tuReportProviderFailureMessage,
+  type TuReportBackgroundState,
+} from '@/lib/tu/reportDraftBackground'
 import { validateTuReportSections } from '@/lib/tu/reportGroundingServer'
 import type {
   TuWholeReportDraftRun,
@@ -36,6 +43,11 @@ const TU_REPORT_MODEL =
 const RULESET_KEY = 'tu_ai_assisted_report_v1'
 const RULESET_VERSION = 1
 const STALE_RUN_MINUTES = 12
+const PROVIDER_CREATE_TIMEOUT_MS = 30_000
+const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
+const PROVIDER_MAX_JOB_AGE_MS = 8 * 60 * 1_000
+const EDITORIAL_MAX_OUTPUT_TOKENS = 24_000
+const REPORT_MAX_OUTPUT_TOKENS = 32_000
 const NON_EDITABLE_SECTION_KEYS = new Set(['assignment_parties', 'signature'])
 
 type JsonRecord = Record<string, unknown>
@@ -76,6 +88,10 @@ type SuggestionRow = {
 }
 
 type OpenAiResponse = {
+  id?: string
+  status?: string
+  incomplete_details?: unknown
+  error?: unknown
   output_text?: string
   output?: Array<{ content?: Array<{ type?: string; text?: string }> }>
 }
@@ -599,7 +615,12 @@ export async function createTuWholeReportDraftRun(input: {
 function parseGeneratedReport(payload: OpenAiResponse): GeneratedReport {
   const text = responseText(payload)
   if (!text) throw new Error('OPENAI_EMPTY_RESPONSE')
-  const parsed = JSON.parse(text) as JsonRecord
+  let parsed: JsonRecord
+  try {
+    parsed = JSON.parse(text) as JsonRecord
+  } catch {
+    throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
+  }
   const sections = Array.isArray(parsed.sections)
     ? parsed.sections.map(record).map((section) => ({
         sectionId: cleanText(section.sectionId),
@@ -623,18 +644,10 @@ function parseGeneratedReport(payload: OpenAiResponse): GeneratedReport {
   }
 }
 
-async function createEditorialPlan(input: {
-  apiKey: string
-  snapshot: JsonRecord
-}): Promise<TuReportEditorialPlan> {
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${input.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+function editorialRequestBody(snapshot: JsonRecord) {
+  return {
       model: TU_REPORT_MODEL,
+      background: true,
       store: false,
       reasoning: { effort: 'high' },
       instructions: [
@@ -655,7 +668,7 @@ async function createEditorialPlan(input: {
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Använd endast id:n och field keys som finns i JSON-underlaget.',
         'internalWarnings är för besiktningsmannens granskning och ska aldrig bli rapporttext.',
       ].join('\n'),
-      input: JSON.stringify(input.snapshot, null, 2),
+      input: JSON.stringify(snapshot, null, 2),
       text: {
         format: {
           type: 'json_schema',
@@ -698,35 +711,29 @@ async function createEditorialPlan(input: {
           },
         },
       },
-      max_output_tokens: 9000,
-    }),
-  })
-  if (!response.ok) {
-    const detail = await response.text()
-    console.error('[tu.report-draft] OpenAI editorial planning failed', {
-      status: response.status,
-      detail: detail.slice(0, 800),
-    })
-    throw new Error(`OPENAI_REQUEST_FAILED:${response.status}`)
+      max_output_tokens: EDITORIAL_MAX_OUTPUT_TOKENS,
   }
-  const payload = await response.json() as OpenAiResponse
+}
+
+function parseEditorialPlan(payload: OpenAiResponse, snapshot: JsonRecord): TuReportEditorialPlan {
   const text = responseText(payload)
   if (!text) throw new Error('OPENAI_EMPTY_RESPONSE')
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
+  }
   return parseTuReportEditorialPlan({
-    value: JSON.parse(text),
-    snapshot: input.snapshot,
+    value,
+    snapshot,
   })
 }
 
-async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${input.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+function reportRequestBody(snapshot: JsonRecord) {
+  return {
       model: TU_REPORT_MODEL,
+      background: true,
       store: false,
       reasoning: { effort: 'high' },
       instructions: [
@@ -751,7 +758,7 @@ async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
         'Ett stycke utan källor får inte skapas. Skriv i stället en varning på rapportdelen och lämna paragraphs tom.',
         'Skriv koncist, precist och proportionerligt. Textens omfattning ska styras av huvudfrågan och underlaget, inte av antalet tillgängliga fakta.',
       ].join('\n'),
-      input: JSON.stringify(input.snapshot, null, 2),
+      input: JSON.stringify(snapshot, null, 2),
       text: {
         format: {
           type: 'json_schema',
@@ -805,87 +812,122 @@ async function generateReport(input: { apiKey: string; snapshot: JsonRecord }) {
           },
         },
       },
-      max_output_tokens: 16000,
-    }),
-  })
+      max_output_tokens: REPORT_MAX_OUTPUT_TOKENS,
+  }
+}
+
+async function startBackgroundResponse(input: {
+  apiKey: string
+  body: JsonRecord
+  operation: 'editorial' | 'writer'
+}) {
+  let response: Response
+  try {
+    response = await fetch(OPENAI_RESPONSES_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(PROVIDER_CREATE_TIMEOUT_MS),
+      body: JSON.stringify(input.body),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new Error('OPENAI_REQUEST_TIMEOUT')
+    }
+    throw new Error('OPENAI_REQUEST_FAILED')
+  }
   if (!response.ok) {
     const detail = await response.text()
-    console.error('[tu.report-draft] OpenAI request failed', {
+    console.error(`[tu.report-draft] OpenAI ${input.operation} start failed`, {
       status: response.status,
       detail: detail.slice(0, 800),
     })
     throw new Error(`OPENAI_REQUEST_FAILED:${response.status}`)
   }
-  return parseGeneratedReport(await response.json() as OpenAiResponse)
+  const payload = await response.json() as OpenAiResponse
+  const envelope = normalizeTuReportProviderResponse(payload)
+  if (envelope.status === 'failed' || envelope.status === 'incomplete' || envelope.status === 'cancelled') {
+    throw new Error(tuReportProviderFailureMessage(payload))
+  }
+  return envelope
 }
 
-export async function runTuWholeReportDraft(input: {
+async function retrieveBackgroundResponse(input: { apiKey: string; responseId: string }) {
+  let response: Response
+  try {
+    response = await fetch(`${OPENAI_RESPONSES_URL}/${encodeURIComponent(input.responseId)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${input.apiKey}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROVIDER_RETRIEVE_TIMEOUT_MS),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new Error('OPENAI_RETRIEVE_TIMEOUT')
+    }
+    throw new Error('OPENAI_RETRIEVE_FAILED')
+  }
+  if (!response.ok) {
+    console.error('[tu.report-draft] OpenAI status retrieval failed', { status: response.status })
+    throw new Error(response.status === 404 ? 'OPENAI_RESPONSE_NOT_FOUND' : 'OPENAI_RETRIEVE_FAILED')
+  }
+  const payload = await response.json() as OpenAiResponse
+  const envelope = normalizeTuReportProviderResponse(payload)
+  if (envelope.responseId !== input.responseId) throw new Error('OPENAI_INVALID_RESPONSE')
+  return { payload, envelope }
+}
+
+function publicRunFailureMessage(error: unknown) {
+  const code = error instanceof Error ? error.message : ''
+  if (code === 'OPENAI_EMPTY_RESPONSE' || code === 'OPENAI_INCOMPLETE_REPORT_DRAFT') {
+    return 'AI-svaret blev ofullständigt. Försök igen.'
+  }
+  if (code === 'OPENAI_RESPONSE_NOT_FOUND') {
+    return 'AI-körningen kunde inte återupptas. Försök igen.'
+  }
+  if (code === 'OPENAI_REQUEST_TIMEOUT') {
+    return 'AI-körningen kunde inte startas inom tidsgränsen. Försök igen.'
+  }
+  if (code === 'OPENAI_API_KEY_MISSING') {
+    return 'AI-funktionen är inte tillgänglig just nu. Kontakta systemadministratören.'
+  }
+  if (code.startsWith('AI-')) return code
+  return 'Utlåtandet kunde inte skapas just nu. Försök igen.'
+}
+
+async function failReportDraftRun(input: {
+  runId: string
+  error: unknown
+  source: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const now = new Date().toISOString()
+  const message = publicRunFailureMessage(input.error)
+  await admin.from('tu_ai_runs').update({
+    status: 'failed',
+    error_message: message,
+    progress_stage: 'failed',
+    progress_message: message,
+    heartbeat_at: now,
+    completed_at: now,
+  }).eq('id', input.runId).in('status', ['queued', 'processing'])
+  console.error(`[tu.report-draft] ${input.source}`, { runId: input.runId, error: input.error })
+}
+
+async function finalizeTuWholeReportDraft(input: {
   orgId: string
   inspectionId: string
   runId: string
+  snapshot: JsonRecord
+  editorialPlan: TuReportEditorialPlan
+  generated: GeneratedReport
+  progressTotal: number | null
 }) {
   const admin = createSupabaseAdminClient()
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    const now = new Date().toISOString()
-    await admin.from('tu_ai_runs').update({
-      status: 'failed',
-      error_message: 'OPENAI_API_KEY_MISSING',
-      progress_stage: 'failed',
-      progress_message: 'Rapportutkastet kunde inte starta eftersom AI-konfigurationen saknas.',
-      heartbeat_at: now,
-      completed_at: now,
-    }).eq('id', input.runId).in('status', ['queued', 'processing'])
-    return
-  }
-
-  const startedAt = new Date().toISOString()
-  const { data: claimed, error: claimError } = await admin
-    .from('tu_ai_runs')
-    .update({
-      status: 'processing',
-      started_at: startedAt,
-      completed_at: null,
-      error_message: null,
-      progress_stage: 'preparing',
-      progress_current: 0,
-      progress_message: 'Förbereder godkänd analys och rapportens disposition.',
-      heartbeat_at: startedAt,
-    })
-    .eq('id', input.runId)
-    .eq('org_id', input.orgId)
-    .eq('inspection_id', input.inspectionId)
-    .eq('operation', 'report_draft')
-    .eq('status', 'queued')
-    .select('id,input_snapshot,attempt_count,progress_total')
-    .maybeSingle()
-  if (claimError) throw new Error(claimError.message)
-  if (!claimed) return
-  const run = claimed as {
-    input_snapshot: unknown
-    attempt_count: number | null
-    progress_total: number | null
-  }
-
-  const updateProgress = async (stage: 'synthesizing' | 'saving', message: string) => {
-    const { error } = await admin.from('tu_ai_runs').update({
-      progress_stage: stage,
-      progress_message: message,
-      heartbeat_at: new Date().toISOString(),
-    }).eq('id', input.runId).eq('status', 'processing')
-    if (error) throw new Error(error.message)
-  }
-
+  const { snapshot, editorialPlan, generated } = input
   try {
-    await admin.from('tu_ai_runs').update({
-      attempt_count: (run.attempt_count ?? 0) + 1,
-    }).eq('id', input.runId)
-    const snapshot = record(run.input_snapshot)
-    await updateProgress('synthesizing', 'Väljer relevant material utifrån uppdragets huvudfråga.')
-    const editorialPlan = await createEditorialPlan({ apiKey, snapshot })
-    const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan: editorialPlan })
-    await updateProgress('synthesizing', 'Skriver rapporten i besiktningsmannens röst.')
-    const generated = await generateReport({ apiKey, snapshot: writerSnapshot })
     const expectedSections = Array.isArray(snapshot.sections) ? snapshot.sections.map(record) : []
     const expectedIds = expectedSections.map((section) => cleanText(section.id)).filter(Boolean)
     const generatedIds = generated.sections.map((section) => section.sectionId)
@@ -929,7 +971,13 @@ export async function runTuWholeReportDraft(input: {
       }
     })
 
-    await updateProgress('saving', 'Sparar hela rapportutkastet för din granskning.')
+    const savingAt = new Date().toISOString()
+    const { error: progressError } = await admin.from('tu_ai_runs').update({
+      progress_stage: 'saving',
+      progress_message: 'Sparar hela rapportutkastet för din granskning.',
+      heartbeat_at: savingAt,
+    }).eq('id', input.runId).eq('status', 'processing')
+    if (progressError) throw new Error(progressError.message)
     const { error: deleteError } = await admin.from('tu_ai_suggestions')
       .delete()
       .eq('run_id', input.runId)
@@ -940,7 +988,7 @@ export async function runTuWholeReportDraft(input: {
     if (insertError) throw new Error(insertError.message)
 
     const completedAt = new Date().toISOString()
-    const total = run.progress_total ?? rows.length
+    const total = input.progressTotal ?? rows.length
     const blockedSectionCount = validatedSections
       .filter((section) => section.groundingStatus === 'blocked').length
     const needsSourceSectionCount = validatedSections
@@ -985,20 +1033,305 @@ export async function runTuWholeReportDraft(input: {
     }).eq('id', input.runId).eq('status', 'processing')
     if (completeError) throw new Error(completeError.message)
   } catch (error) {
-    const message = error instanceof Error ? error.message.slice(0, 1200) : 'TU_REPORT_DRAFT_FAILED'
-    const now = new Date().toISOString()
-    await admin.from('tu_ai_runs').update({
-      status: 'failed',
-      error_message: message,
-      progress_stage: 'failed',
-      progress_message: 'Rapportutkastet kunde inte slutföras. Försök igen.',
-      heartbeat_at: now,
-      completed_at: now,
-    }).eq('id', input.runId).in('status', ['queued', 'processing'])
-    console.error('[tu.report-draft] Whole report generation failed', {
-      inspectionId: input.inspectionId,
-      runId: input.runId,
-      error,
-    })
+    await failReportDraftRun({ runId: input.runId, error, source: 'Report finalization failed' })
   }
+}
+
+async function savePendingProviderRun(input: {
+  runId: string
+  stage: 'editorial_pending' | 'writer_pending'
+  envelope: { responseId: string }
+  editorialPlan: TuReportEditorialPlan | null
+}) {
+  const admin = createSupabaseAdminClient()
+  const now = new Date().toISOString()
+  const isEditorial = input.stage === 'editorial_pending'
+  const { error } = await admin.from('tu_ai_runs').update({
+    status: 'processing',
+    output_payload: tuReportBackgroundPayload({
+      stage: input.stage,
+      responseId: input.envelope.responseId,
+      submittedAt: now,
+      editorialPlan: input.editorialPlan,
+      generatedReport: null,
+    }),
+    progress_stage: isEditorial ? 'preparing' : 'synthesizing',
+    progress_message: isEditorial
+      ? 'AI:n planerar rapportens innehåll och avgränsning.'
+      : 'AI:n skriver rapportens delar som en sammanhängande helhet.',
+    heartbeat_at: now,
+  }).eq('id', input.runId).eq('status', 'processing')
+  if (error) throw new Error(error.message)
+}
+
+export async function runTuWholeReportDraft(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) {
+    await failReportDraftRun({
+      runId: input.runId,
+      error: new Error('OPENAI_API_KEY_MISSING'),
+      source: 'AI configuration missing',
+    })
+    return
+  }
+
+  const startedAt = new Date().toISOString()
+  const { data: claimed, error: claimError } = await admin
+    .from('tu_ai_runs')
+    .update({
+      status: 'processing',
+      started_at: startedAt,
+      completed_at: null,
+      error_message: null,
+      progress_stage: 'preparing',
+      progress_message: 'Förbereder nästa steg i rapportskrivningen.',
+      heartbeat_at: startedAt,
+    })
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'report_draft')
+    .eq('status', 'queued')
+    .select('id,input_snapshot,output_payload,attempt_count,progress_total')
+    .maybeSingle()
+  if (claimError) throw new Error(claimError.message)
+  if (!claimed) return
+  const run = claimed as {
+    input_snapshot: unknown
+    output_payload: unknown
+    attempt_count: number | null
+    progress_total: number | null
+  }
+
+  try {
+    await admin.from('tu_ai_runs').update({
+      attempt_count: (run.attempt_count ?? 0) + 1,
+    }).eq('id', input.runId)
+    const snapshot = record(run.input_snapshot)
+    const workflow = parseTuReportBackgroundState(run.output_payload)
+
+    if (!workflow) {
+      const envelope = await startBackgroundResponse({
+        apiKey,
+        body: editorialRequestBody(snapshot),
+        operation: 'editorial',
+      })
+      await savePendingProviderRun({
+        runId: input.runId,
+        stage: 'editorial_pending',
+        envelope,
+        editorialPlan: null,
+      })
+      return
+    }
+
+    if (workflow.stage === 'editorial_ready') {
+      const editorialPlan = parseTuReportEditorialPlan({
+        value: workflow.editorialPlan,
+        snapshot,
+      })
+      const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan: editorialPlan })
+      const envelope = await startBackgroundResponse({
+        apiKey,
+        body: reportRequestBody(writerSnapshot),
+        operation: 'writer',
+      })
+      await savePendingProviderRun({
+        runId: input.runId,
+        stage: 'writer_pending',
+        envelope,
+        editorialPlan,
+      })
+      return
+    }
+
+    if (workflow.stage === 'writer_ready') {
+      const editorialPlan = parseTuReportEditorialPlan({
+        value: workflow.editorialPlan,
+        snapshot,
+      })
+      const generated = workflow.generatedReport as GeneratedReport
+      await finalizeTuWholeReportDraft({
+        ...input,
+        snapshot,
+        editorialPlan,
+        generated,
+        progressTotal: run.progress_total,
+      })
+      return
+    }
+
+    throw new Error('TU_REPORT_DRAFT_INVALID_BACKGROUND_STATE')
+  } catch (error) {
+    await failReportDraftRun({ runId: input.runId, error, source: 'Background stage start failed' })
+  }
+}
+
+function pendingProgressMessage(workflow: TuReportBackgroundState) {
+  return workflow.stage === 'editorial_pending'
+    ? 'AI:n planerar rapportens innehåll och avgränsning.'
+    : 'AI:n skriver rapportens delar som en sammanhängande helhet.'
+}
+
+export async function pollTuWholeReportDraft(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.from('tu_ai_runs')
+    .select('id,status,input_snapshot,output_payload,heartbeat_at')
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'report_draft')
+    .eq('status', 'processing')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return
+
+  const workflow = parseTuReportBackgroundState((data as { output_payload: unknown }).output_payload)
+  const expectedHeartbeat = cleanText((data as { heartbeat_at?: unknown }).heartbeat_at)
+  if (
+    !workflow
+    || (workflow.stage !== 'editorial_pending' && workflow.stage !== 'writer_pending')
+    || !workflow.responseId
+    || !workflow.submittedAt
+  ) return
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) {
+    await failReportDraftRun({
+      runId: input.runId,
+      error: new Error('OPENAI_API_KEY_MISSING'),
+      source: 'AI configuration missing while polling',
+    })
+    return
+  }
+  if (Date.now() - Date.parse(workflow.submittedAt) > PROVIDER_MAX_JOB_AGE_MS) {
+    await failReportDraftRun({
+      runId: input.runId,
+      error: new Error('AI-körningen tog för lång tid. Försök igen.'),
+      source: 'Provider deadline exceeded',
+    })
+    return
+  }
+
+  let provider: Awaited<ReturnType<typeof retrieveBackgroundResponse>>
+  try {
+    provider = await retrieveBackgroundResponse({ apiKey, responseId: workflow.responseId })
+  } catch (pollError) {
+    if (pollError instanceof Error && pollError.message === 'OPENAI_RESPONSE_NOT_FOUND') {
+      await failReportDraftRun({ runId: input.runId, error: pollError, source: 'Provider response missing' })
+      return
+    }
+    console.error('[tu.report-draft] Provider status temporarily unavailable', {
+      runId: input.runId,
+      error: pollError,
+    })
+    await admin.from('tu_ai_runs').update({
+      progress_message: 'AI:n arbetar vidare. Status kontrolleras automatiskt igen.',
+      heartbeat_at: new Date().toISOString(),
+    }).eq('id', input.runId).eq('status', 'processing')
+    return
+  }
+
+  if (provider.envelope.status === 'queued' || provider.envelope.status === 'in_progress') {
+    await admin.from('tu_ai_runs').update({
+      progress_message: pendingProgressMessage(workflow),
+      heartbeat_at: new Date().toISOString(),
+    }).eq('id', input.runId).eq('status', 'processing')
+    return
+  }
+  if (
+    provider.envelope.status === 'failed'
+    || provider.envelope.status === 'incomplete'
+    || provider.envelope.status === 'cancelled'
+  ) {
+    await failReportDraftRun({
+      runId: input.runId,
+      error: new Error(tuReportProviderFailureMessage(provider.payload)),
+      source: `Provider ended with ${provider.envelope.status}`,
+    })
+    return
+  }
+
+  try {
+    const snapshot = record((data as { input_snapshot: unknown }).input_snapshot)
+    const now = new Date().toISOString()
+    if (workflow.stage === 'editorial_pending') {
+      const editorialPlan = parseEditorialPlan(provider.payload, snapshot)
+      const { data: readyData, error: readyError } = await admin.from('tu_ai_runs').update({
+        status: 'queued',
+        output_payload: tuReportBackgroundPayload({
+          stage: 'editorial_ready',
+          responseId: null,
+          submittedAt: null,
+          editorialPlan,
+          generatedReport: null,
+        }),
+        progress_stage: 'queued',
+        progress_message: 'Dispositionen är klar. Rapporttexten förbereds.',
+        heartbeat_at: now,
+      })
+        .eq('id', input.runId)
+        .eq('status', 'processing')
+        .eq('heartbeat_at', expectedHeartbeat)
+        .select('id')
+        .maybeSingle()
+      if (readyError) throw new Error(readyError.message)
+      if (!readyData) return
+      await runTuWholeReportDraft(input)
+      return
+    }
+
+    const generated = parseGeneratedReport(provider.payload)
+    const { data: readyData, error: readyError } = await admin.from('tu_ai_runs').update({
+      status: 'queued',
+      output_payload: tuReportBackgroundPayload({
+        stage: 'writer_ready',
+        responseId: null,
+        submittedAt: null,
+        editorialPlan: workflow.editorialPlan,
+        generatedReport: generated,
+      }),
+      progress_stage: 'queued',
+      progress_message: 'Rapporttexten är klar och kvalitetskontrolleras.',
+      heartbeat_at: now,
+    })
+      .eq('id', input.runId)
+      .eq('status', 'processing')
+      .eq('heartbeat_at', expectedHeartbeat)
+      .select('id')
+      .maybeSingle()
+    if (readyError) throw new Error(readyError.message)
+    if (!readyData) return
+    await runTuWholeReportDraft(input)
+  } catch (parseError) {
+    await failReportDraftRun({ runId: input.runId, error: parseError, source: 'Provider result parsing failed' })
+  }
+}
+
+export async function advanceTuWholeReportDraft(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.from('tu_ai_runs')
+    .select('status')
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'report_draft')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const status = cleanText((data as { status?: unknown } | null)?.status)
+  if (status === 'queued') return runTuWholeReportDraft(input)
+  if (status === 'processing') return pollTuWholeReportDraft(input)
 }

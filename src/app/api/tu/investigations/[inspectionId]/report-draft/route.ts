@@ -2,15 +2,15 @@ import { after, NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type { TuWholeReportDraftResponse } from '@/lib/tu/reportDraft'
 import {
+  advanceTuWholeReportDraft,
   createTuWholeReportDraftRun,
   getTuWholeReportDraftState,
-  runTuWholeReportDraft,
 } from '@/lib/tu/reportDraftServer'
 import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300
+export const maxDuration = 60
 
 type RouteContext = { params: Promise<{ inspectionId: string }> }
 
@@ -78,11 +78,41 @@ async function stateResponse(orgId: string, inspectionId: string, status = 200) 
   return NextResponse.json({ draft } satisfies TuWholeReportDraftResponse, { status })
 }
 
+async function advanceInBackground(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  try {
+    await advanceTuWholeReportDraft(input)
+  } catch (error) {
+    console.error('[tu.report-draft] Background advancement failed', {
+      inspectionId: input.inspectionId,
+      runId: input.runId,
+      error,
+    })
+  }
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
     const { orgContext } = await requireInvestigation(inspectionId)
-    return stateResponse(orgContext.orgId, inspectionId)
+    const draft = await getTuWholeReportDraftState({
+      orgId: orgContext.orgId,
+      inspectionId,
+    })
+    const activeRun = draft.run
+    if (activeRun?.status === 'queued' || activeRun?.status === 'processing') {
+      after(async () => {
+        await advanceInBackground({
+          orgId: orgContext.orgId,
+          inspectionId,
+          runId: activeRun.id,
+        })
+      })
+    }
+    return NextResponse.json({ draft } satisfies TuWholeReportDraftResponse)
   } catch (error) {
     const mapped = mapError(error)
     if (mapped) return mapped
@@ -106,7 +136,7 @@ export async function POST(request: Request, context: RouteContext) {
       userId: orgContext.userId,
     })
     after(async () => {
-      await runTuWholeReportDraft({
+      await advanceInBackground({
         orgId: orgContext.orgId,
         inspectionId,
         runId,
