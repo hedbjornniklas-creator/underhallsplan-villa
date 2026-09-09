@@ -691,8 +691,14 @@ export default function TuAssignmentsPage() {
                                 type="button"
                                 onClick={() => void handleSend(item)}
                                 disabled={!sendEnabled || Boolean(actionState)}
-                                title={sendEnabled ? 'Skicka uppdragsbekräftelse' : 'Kan inte skickas i denna status'}
-                                aria-label="Skicka uppdragsbekräftelse"
+                                title={sendEnabled
+                                  ? item.status === 'sent'
+                                    ? 'Skicka om uppdragsbekräftelse'
+                                    : 'Skicka uppdragsbekräftelse'
+                                  : 'Kan inte skickas i denna status'}
+                                aria-label={item.status === 'sent'
+                                  ? 'Skicka om uppdragsbekräftelse'
+                                  : 'Skicka uppdragsbekräftelse'}
                                 className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-45"
                               >
                                 <Mail size={13} />
