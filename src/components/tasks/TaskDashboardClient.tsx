@@ -882,7 +882,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   onDrilldown={openAnalyticsDrilldown}
                 />
               ) : workspaceView === 'action_cases' ? (
-                <ActionCaseWorkspace initialWorkspace={initialActionCases} initialError={initialActionCasesError} />
+                <ActionCaseWorkspace initialWorkspace={initialActionCases} initialError={initialActionCasesError} people={workspace.people} />
               ) : (
                 <>
                   <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">

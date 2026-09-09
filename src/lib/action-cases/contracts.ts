@@ -75,6 +75,7 @@ export type ActionCaseCostLineView = {
 }
 
 export type ActionCaseQuote = {
+  delivery?: import('./rfqDelivery').RfqDelivery | null
   packageGroupKey?: string | null
   id: string
   requestId?: string | null
@@ -114,6 +115,7 @@ export type ActionCaseRequestLine = {
 }
 
 export type ActionCaseQuoteRequest = {
+  delivery?: import('./rfqDelivery').RfqDelivery | null
   pricePresentation?: 'grouped' | 'itemized'
   id: string
   supplierName: string

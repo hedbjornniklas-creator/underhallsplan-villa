@@ -24,6 +24,7 @@ import { handleQuoteAction, sendQuoteRequest } from '@/lib/action-cases/quotesSe
 import { handleRequestAction, sendGroupedRequest } from '@/lib/action-cases/quoteRequestsServer'
 import { handleWorkPartAction } from '@/lib/action-cases/workPartsServer'
 import { handleQuotePackageAction } from '@/lib/action-cases/quotePackagesServer'
+import { revokeRfqDelivery } from '@/lib/action-cases/rfqDeliveryServer'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -50,6 +51,11 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {
+    ACTION_CASE_RFQ_COPY_FAILED: [502, 'Underlaget kunde inte förberedas. Dina val är kvar. Försök igen.'],
+    ACTION_CASE_RFQ_CONFIG: [503, 'Utskicket kunde inte förberedas just nu. Kontakta administratören.'],
+    ACTION_CASE_RFQ_ACCESS_CLOSED: [409, 'Länken har stängts. Skapa en ny förfrågan för ett nytt utskick.'],
+    ACTION_CASE_RFQ_NOT_FOUND: [404, 'Offertunderlaget kunde inte hittas.'],
+    ACTION_CASE_RFQ_FAILED: [503, 'Offertunderlaget kunde inte hanteras just nu. Försök igen.'],
     ACTION_CASE_WORK_PART_INVALID: [400, 'Kontrollera arbetsdelens namn och valda kalkylrader.'],
     ACTION_CASE_PACKAGE_INVALID: [400, 'Kontrollera grupppris, omfattning och valda kalkylrader.'],
     ACTION_CASE_PACKAGE_ALLOCATION_REQUIRED: [409, 'Bekräfta ett separat pris för arbetsdelen. Ett gemensamt paketpris får inte delas upp automatiskt.'],
@@ -83,7 +89,6 @@ function errorResponse(error: unknown) {
     ACTION_CASE_QUOTE_MAIL_CONFIG: [503, 'Mejltjänsten behöver konfigureras innan offertförfrågningar kan skickas.'],
     ACTION_CASE_QUOTE_REPLY_REQUIRED: [400, 'Din profil behöver en e-postadress för offertsvaret.'],
     ACTION_CASE_QUOTE_PRIVATE_DOCUMENT: [400, 'Offertdokument från UE får inte bifogas i en offertförfrågan.'],
-    ACTION_CASE_QUOTE_FILES_TOO_LARGE: [400, 'Bilagorna får tillsammans vara högst 5 MB i en offertförfrågan.'],
     ACTION_CASE_QUOTE_SEND_BUSY: [409, 'Förfrågan håller redan på att skickas. Vänta en stund.'],
     ACTION_CASE_QUOTE_SEND_UNKNOWN: [409, 'Utskickets status behöver kontrolleras innan en ny förfrågan skickas. Kontakta administratören.'],
     ACTION_CASE_QUOTE_SEND_FAILED: [502, 'Kunde inte bekräfta utskicket. Försök igen med samma förfrågan för att undvika dubbelutskick.'],
@@ -152,11 +157,12 @@ export async function POST(request: Request) {
     else if (action === 'generate_cost_suggestions') await generateActionCaseCosts(ctx, payload)
     else if (action === 'apply_cost_suggestions') await applyActionCaseCostSuggestions(ctx, payload)
     else if (action === 'work_quote') await handleQuoteAction(ctx, payload)
-    else if (action === 'send_quote_request') await sendQuoteRequest(ctx, payload)
+    else if (action === 'send_quote_request') await sendQuoteRequest(ctx, payload, new URL(request.url).origin)
     else if (action === 'quote_request') await handleRequestAction(ctx, payload)
     else if (action === 'work_part') await handleWorkPartAction(ctx, payload)
     else if (action === 'quote_package') await handleQuotePackageAction(ctx, payload)
-    else if (action === 'send_grouped_quote_request') await sendGroupedRequest(ctx, payload)
+    else if (action === 'send_grouped_quote_request') await sendGroupedRequest(ctx, payload, new URL(request.url).origin)
+    else if (action === 'revoke_rfq_delivery') await revokeRfqDelivery(ctx, payload)
     else throw new Error('ACTION_CASE_ACTION_INVALID')
     return NextResponse.json({ workspace: await getActionCaseWorkspace(ctx), accessUrl, upload, itemId })
   } catch (error) { return errorResponse(error) }

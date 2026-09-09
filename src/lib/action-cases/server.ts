@@ -10,6 +10,7 @@ import { normalizeCostLine } from './costing'
 import { mapQuote, QUOTE_VIEW_COLUMNS, quoteIsStale } from './quotes'
 import { mapQuoteRequest, REQUEST_VIEW_COLUMNS } from './quoteRequests'
 import { mapQuotePackage, PACKAGE_VIEW_COLUMNS } from './quotePackages'
+import { mapRfqDelivery, RFQ_DELIVERY_COLUMNS } from './rfqDelivery'
 import { calculateActionCaseCostTotals } from './domain'
 import { createQuoteWorkLine } from './quotesServer'
 
@@ -160,6 +161,11 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     : { data: [], error: null }
   if (packageError && !['42P01', 'PGRST205'].includes(packageError.code)) throw new Error('ACTION_CASES_READ_FAILED')
   const packages = (packageRows ?? []) as unknown as Record<string, unknown>[]
+  const { data: deliveryRows, error: deliveryError } = caseIds.length
+    ? await admin.from('action_case_rfq_deliveries').select(RFQ_DELIVERY_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds)
+    : { data: [], error: null }
+  if (deliveryError && !['42P01', 'PGRST205'].includes(deliveryError.code)) throw new Error('ACTION_CASES_READ_FAILED')
+  const deliveries = (deliveryRows ?? []) as unknown as Record<string, unknown>[]
   const { data: quotes, error: quoteError } = caseIds.length
     ? await admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS + (requestError ? '' : ',request_id') + (packageError ? '' : ',package_request_id')).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
     : { data: [], error: null }
@@ -178,6 +184,8 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     line.quotes = (quotes as unknown as Record<string, unknown>[] | null)?.filter((q) => q.cost_line_id === row.id &&
       (!q.package_request_id || packages.some((price) => price.quote_id === q.id && price.state === 'active'))).map(mapQuote) ?? []
     for (const q of line.quotes) {
+      const delivery = deliveries.find((d) => d.quote_id === q.id)
+      q.delivery = delivery ? mapRfqDelivery(delivery) : null
       const packagePrice = packages.find((price) => price.quote_id === q.id && price.state === 'active')
       if (packagePrice) {
         q.packageGroupKey = String(packagePrice.group_key)
@@ -274,7 +282,10 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     items: itemsByCase.get(row.id) ?? [],
     participants: participantsByCase.get(row.id) ?? [],
     attachments: attachmentsByCase.get(row.id) ?? [],
-    quoteRequests: (requestRows as unknown as Record<string, unknown>[] | null)?.filter((r) => r.action_case_id === row.id).map(mapQuoteRequest) ?? [],
+    quoteRequests: (requestRows as unknown as Record<string, unknown>[] | null)?.filter((r) => r.action_case_id === row.id).map((r) => {
+      const delivery = deliveries.find((d) => d.request_id === r.id)
+      return { ...mapQuoteRequest(r), delivery: delivery ? mapRfqDelivery(delivery) : null }
+    }) ?? [],
     quotePackages: packages.filter((price) => price.action_case_id === row.id).map(mapQuotePackage),
   }))
 

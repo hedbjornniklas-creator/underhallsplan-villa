@@ -8,6 +8,8 @@ import { normalizeQuoteRequest, REQUEST_REQUIREMENTS, requestSources } from '@/l
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
 import ActionCaseGroupPrices from './ActionCaseGroupPrices'
 import { defaultRequestAttachments, quoteDocumentIds, reconcileRequestAttachments } from '@/lib/action-cases/scopeAttachments'
+import type { TaskPerson } from '@/lib/tasks/contracts'
+import ActionCaseRfqDelivery from './ActionCaseRfqDelivery'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const secondary = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-40'
@@ -25,6 +27,7 @@ export function ActionCaseRequestsPanel({ actionCase, busy, onOpen }: { actionCa
 type Props = {
   actionCase: ActionCaseView; requestId: string | null; preselectedLineId?: string; preselectedLineIds?: string[]; supplementId?: string
   busy: boolean; onClose: () => void
+  people?: TaskPerson[]
   onAction: (action: string, data: Record<string, unknown>) => Promise<boolean>
   onSupplement: (request: ActionCaseQuoteRequest) => void
   onOpenWork: (itemId: string, costLineId: string) => void
@@ -49,7 +52,7 @@ function ResponseForm({ request, actionCase, busy, onSave, onCancel }: { request
   </form>
 }
 
-export default function ActionCaseRequestSheet({ actionCase, requestId, preselectedLineId, preselectedLineIds, supplementId, busy, onClose, onAction, onSupplement, onOpenWork }: Props) {
+export default function ActionCaseRequestSheet({ actionCase, requestId, preselectedLineId, preselectedLineIds, supplementId, busy, people = [], onClose, onAction, onSupplement, onOpenWork }: Props) {
   const [id] = useState(() => requestId ?? crypto.randomUUID())
   const request = actionCase.quoteRequests?.find((r) => r.id === id)
   const base = request ?? actionCase.quoteRequests?.find((r) => r.id === supplementId)
@@ -80,6 +83,10 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   const [priceEditing, setPriceEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [recipientId, setRecipientId] = useState('')
+  const [openedAt] = useState(Date.now)
+  const contacts = people.filter((person) => person.isActive)
+  const caseContacts = actionCase.participants.filter((p) => p.role === 'subcontractor' && !contacts.some((person) => person.email && p.email && person.email.toLowerCase() === p.email.toLowerCase()))
   const [pending, setPending] = useState(false)
   const inFlight = useRef(false), dialog = useRef<HTMLDivElement>(null)
   const working = busy || pending
@@ -104,8 +111,6 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     setDirty(true)
   }
   let valid = selectedLines.length === form.selectedIds.length
-  const attachmentBytes = actionCase.attachments.filter((file) => form.attachmentIds.includes(file.id)).reduce((sum, file) => sum + file.fileSizeBytes, 0)
-  if (attachmentBytes > 5 * 1024 * 1024) valid = false
   try { normalizeQuoteRequest({ ...form, lines: selectedLines }); } catch { valid = false }
   const current = request && request.lines.every((line) => sources.some((s) => s.costLineId === line.costLineId && s.itemId === line.itemId && s.scope === line.scope && s.itemTitle === line.itemTitle && s.description === line.description && (s.workPartId ?? null) === (line.workPartId ?? null) && (s.workPartTitle ?? '') === (line.workPartTitle ?? '') && (s.workPartScope ?? '') === (line.workPartScope ?? '')))
   const close = () => { if (!working && (!(dirty || responseEditing || priceEditing) || window.confirm('Stäng utan att spara ändringarna?'))) onClose() }
@@ -123,7 +128,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   useEffect(() => { if (!editing && !responseEditing && !priceEditing) dialog.current?.querySelector<HTMLElement>('[data-request-content]')?.scrollTo({ top: 0 }) }, [editing, responseEditing, priceEditing])
   const requestPreview = request ? <><div><h3 className="font-semibold">{request.sentAt ? 'Skickad förfrågan' : 'Förhandsgranska förfrågan'}</h3><p className="mt-2 break-words text-sm">Till: {request.supplierName} &lt;{request.supplierEmail}&gt;</p><p className="mt-2 break-words font-semibold">{request.subject}</p></div>
         <p data-testid="request-body" className="whitespace-pre-wrap break-words text-sm leading-6">{request.body}</p>
-        <div className="border-t border-slate-200 pt-4"><h4 className="text-sm font-semibold">Bilagor ({request.attachmentIds.length})</h4><ul>{request.attachmentIds.map((id) => <li key={id}><a className="inline-flex min-h-11 items-center gap-2 break-all text-sm text-violet-700 underline" href={`/api/action-cases/${actionCase.id}/attachments/${id}`} target="_blank" rel="noreferrer"><FileText size={16} className="shrink-0" />{actionCase.attachments.find((a) => a.id === id)?.fileName ?? 'Filen är inte längre tillgänglig'}</a></li>)}</ul></div></> : null
+        <div className="border-t border-slate-200 pt-4"><h4 className="text-sm font-semibold">Bilagor ({request.delivery?.files.length ?? request.attachmentIds.length})</h4><ul>{(request.delivery?.files ?? request.attachmentIds.map((id) => ({ id, fileName: actionCase.attachments.find((a) => a.id === id)?.fileName ?? 'Filen är inte längre tillgänglig' }))).map((file) => <li key={file.id}><a className="inline-flex min-h-11 items-center gap-2 break-all text-sm text-violet-700 underline" href={request.delivery ? `/api/action-cases/${actionCase.id}/rfq/${request.delivery.id}/files/${file.id}` : `/api/action-cases/${actionCase.id}/attachments/${file.id}`} target="_blank" rel="noreferrer"><FileText size={16} className="shrink-0" />{file.fileName}</a></li>)}</ul></div></> : null
   if (typeof document === 'undefined') return null
   return createPortal(<div className="fixed inset-0 z-[70] flex justify-end bg-black/40"><div ref={dialog} role="dialog" aria-busy={working} aria-modal="true" aria-labelledby="group-request-title" tabIndex={-1} className="flex h-dvh w-full max-w-3xl flex-col bg-white text-slate-950 shadow-2xl outline-none" onKeyDown={(e) => {
     e.stopPropagation()
@@ -139,8 +144,12 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
       {editing ? <form id="group-request-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); if (!valid || working) return; void run('quote_request', { ...form, operation: 'save', lines: selectedLines, expectedUpdatedAt: expected }).then((ok) => { if (ok) { setDirty(false); setEditing(false) } }) }}>
         <fieldset disabled={working} className="space-y-4">
           <legend className="mb-3 font-semibold">Mottagare</legend>
-          {actionCase.participants.some((p) => p.role === 'subcontractor') ? <label className="block text-sm">Befintlig UE<select className={input} defaultValue="" disabled={Boolean(form.supplementsId)} onChange={(e) => { const p = actionCase.participants.find((p) => p.id === e.target.value); if (p) { set('supplierName', p.companyName || p.name); set('supplierEmail', p.email ?? '') } }}><option value="">Välj kontakt</option>{actionCase.participants.filter((p) => p.role === 'subcontractor').map((p) => <option key={p.id} value={p.id}>{p.companyName || p.name}</option>)}</select></label> : null}
-          <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Företag / namn *<input name="supplierName" className={input} maxLength={200} value={form.supplierName} onChange={(e) => set('supplierName', e.target.value)} /></label><label className="text-sm">E-post *<input name="supplierEmail" className={input} type="email" maxLength={254} disabled={Boolean(form.supplementsId)} value={form.supplierEmail} onChange={(e) => set('supplierEmail', e.target.value)} /></label></div>
+          <label className="block text-sm">Kontakt i Uppdrag<select name="recipientContact" className={input} value={recipientId} disabled={Boolean(form.supplementsId)} onChange={(e) => {
+            setRecipientId(e.target.value)
+            const person = contacts.find((p) => `${p.kind}:${p.id}` === e.target.value) ?? caseContacts.find((p) => `case:${p.id}` === e.target.value)
+            if (person) { set('supplierName', person.companyName || person.name); set('supplierEmail', person.email ?? '') }
+          }}><option value="">Annan mottagare</option>{(['profile', 'contact'] as const).map((kind) => <optgroup key={kind} label={kind === 'profile' ? 'Interna personer' : 'Externa kontakter'}>{contacts.filter((p) => p.kind === kind).map((p) => <option key={p.id} value={`${kind}:${p.id}`}>{p.name}{p.companyName ? ` · ${p.companyName}` : ''} · {p.email || 'E-post saknas'}</option>)}</optgroup>)}{caseContacts.length ? <optgroup label="UE i detta ärende">{caseContacts.map((p) => <option key={p.id} value={`case:${p.id}`}>{p.companyName || p.name} · {p.email || 'E-post saknas'}</option>)}</optgroup> : null}</select></label>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Företag / namn *<input name="supplierName" required className={input} maxLength={200} value={form.supplierName} onChange={(e) => { setRecipientId(''); set('supplierName', e.target.value) }} /></label><label className="text-sm">E-post *<input name="supplierEmail" required className={input} type="email" maxLength={254} disabled={Boolean(form.supplementsId)} value={form.supplierEmail} onChange={(e) => { setRecipientId(''); set('supplierEmail', e.target.value) }} /></label></div>
         </fieldset>
         <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Arbeten att begära pris på *</legend>
           {sources.length ? <label className="mt-2 flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" className="h-4 w-4 shrink-0 accent-violet-600" checked={sources.every((line) => form.selectedIds.includes(line.costLineId))} onChange={(e) => selectWork(sources.map((line) => line.costLineId), e.target.checked)} />Välj alla arbeten</label> : null}
@@ -171,8 +180,9 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
           <label className="block text-sm">Ämne *<input className={input} maxLength={200} value={form.subject} onChange={(e) => set('subject', e.target.value)} /></label>
           <label className="block text-sm">Meddelande till UE<textarea name="message" rows={3} className={`${input} py-2`} maxLength={6000} value={form.message} onChange={(e) => set('message', e.target.value)} /></label>
         </fieldset>
-        <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Bilagor</legend><ActionCaseAttachmentPicker caseId={actionCase.id} files={actionCase.attachments.filter((a) => !a.isQuoteDocument && !privateDocs.has(a.id))} selectedIds={form.attachmentIds} inputName="attachment" disabled={working} onChange={(id, checked) => toggle('attachmentIds', id, checked)} /><p className="mt-2 text-xs text-slate-500">{form.attachmentIds.length} valda · högst 30 filer och 5 MB sammanlagt</p>{form.attachmentIds.length > 30 || attachmentBytes > 5 * 1024 * 1024 ? <p role="status" className="mt-2 text-sm text-amber-800">Bilagorna överstiger gränsen på 30 filer eller 5 MB. Välj färre eller mindre filer före förhandsgranskningen.</p> : null}</fieldset>
+        <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Bilder och dokument</legend><ActionCaseAttachmentPicker caseId={actionCase.id} files={actionCase.attachments.filter((a) => !a.isQuoteDocument && !privateDocs.has(a.id))} selectedIds={form.attachmentIds} inputName="attachment" disabled={working} onChange={(id, checked) => toggle('attachmentIds', id, checked)} /><p className="mt-2 text-xs text-slate-500">{form.attachmentIds.length} valda · högst 30 filer</p>{form.attachmentIds.length > 30 ? <p role="status" className="mt-2 text-sm text-amber-800">Välj högst 30 filer före förhandsgranskningen.</p> : null}</fieldset>
       </form> : request ? <div className="space-y-5">
+        {request.delivery ? <ActionCaseRfqDelivery delivery={request.delivery} busy={working} onRevoke={() => run('revoke_rfq_delivery', { deliveryId: request.delivery!.id })} /> : null}
         {!current && !locked ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats. Redigera och granska förfrågan igen före utskick.</p> : null}
         {locked && !current ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats efter att utskicket påbörjades. Den sparade förfrågan är oförändrad.</p> : null}
         {request.sentAt ? <details className="border-b border-slate-200 pb-4"><summary className="cursor-pointer text-sm font-semibold">Visa skickad förfrågan</summary><div className="mt-4 space-y-5">{requestPreview}</div></details> : requestPreview}
@@ -191,7 +201,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
       {editing ? <><button className={secondary} disabled={working} onClick={() => { if (request) { setEditing(false); setDirty(false) } else close() }}>Avbryt</button><button className={primary} form="group-request-form" type="submit" disabled={working || !valid}>{working ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}Spara och förhandsgranska</button></> : request ? <>
         {!locked ? <><button className={secondary} disabled={working} title="Ta bort utkast" aria-label="Ta bort utkast" onClick={() => setDeleting(true)}><Trash2 size={16} /></button><button className={secondary} disabled={working} onClick={() => { setForm({ requestId: request.id, supplierName: request.supplierName, supplierEmail: request.supplierEmail, subject: request.subject, message: request.message, selectedIds: request.lines.map((l) => l.costLineId), pricePresentation: request.pricePresentation ?? 'itemized', requirementKeys: request.requirements.map((r) => r.key), otherRequirements: request.otherRequirements, attachmentIds: request.attachmentIds, supplementsId: request.supplementsId }); setAttachmentOverrides(savedOverrides(request)); setExpected(request.updatedAt); setEditing(true) }}><Pencil size={16} />Redigera</button></> : <button className={secondary} disabled={working || responseEditing || priceEditing} onClick={() => onSupplement(request)}><Plus size={16} />Komplettera</button>}
-        {!request.sentAt ? <button className={primary} disabled={working || (!locked && !current)} onClick={() => void run('send_grouped_quote_request', { confirmSend: true, expectedUpdatedAt: request.updatedAt })}>{working ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}{locked ? 'Försök skicka igen' : 'Skicka förfrågan'}</button> : <button className={secondary} disabled={working} onClick={close}>Stäng</button>}
+        {!request.sentAt ? <button className={primary} disabled={working || (!locked && !current) || Boolean(request.delivery && (request.delivery.revokedAt || Date.parse(request.delivery.expiresAt) <= openedAt))} onClick={() => void run('send_grouped_quote_request', { confirmSend: true, expectedUpdatedAt: request.updatedAt })}>{working ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}{working ? 'Förbereder och skickar...' : locked ? 'Försök skicka igen' : 'Skicka förfrågan'}</button> : <button className={secondary} disabled={working} onClick={close}>Stäng</button>}
       </> : null}
     </footer>
   </div></div>, document.body)

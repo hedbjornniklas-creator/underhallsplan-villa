@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { normalizeQuoteRequest } from './quoteRequests'
 import { normalizeQuote, quoteId } from './quotes'
-import { prepareRequestEmail } from './quotesServer'
+import { claimRfqDelivery } from './rfqDeliveryServer'
 import { normalizePackageAmount } from './quotePackages'
 
 type Context = { orgId: string; userId: string }
@@ -48,18 +48,15 @@ export async function handleRequestAction(context: Context, payload: Payload) {
   throw new Error('ACTION_CASE_REQUEST_INVALID')
 }
 
-export async function sendGroupedRequest(context: Context, payload: Payload) {
+export async function sendGroupedRequest(context: Context, payload: Payload, requestOrigin?: string) {
   if (payload.confirmSend !== true) throw new Error('ACTION_CASE_QUOTE_CONFIRM_REQUIRED')
   const id = quoteId(payload.requestId), caseId = quoteId(payload.caseId)
   const { data: r, error } = await createSupabaseAdminClient().from('action_case_quote_requests').select('*').eq('id', id).eq('org_id', context.orgId).eq('action_case_id', caseId).maybeSingle()
   if (error || !r) throw new Error('ACTION_CASE_REQUEST_NOT_FOUND')
   if (r.sent_at) return
-  let email: Email | null = null
-  if (!r.email_payload) {
-    if (payload.expectedUpdatedAt !== r.updated_at) throw new Error('ACTION_CASE_QUOTE_STALE')
-    email = await prepareRequestEmail(context, caseId, { supplierEmail: r.supplier_email, subject: r.subject, body: r.body, attachmentIds: r.attachment_ids, idempotencyKey: `action-case-group-rfq-${id}` })
-  }
-  const claim = await writeRequest(context, payload, 'claim_send', { expectedUpdatedAt: r.updated_at, emailPayload: email })
+  if (!r.email_payload && payload.expectedUpdatedAt !== r.updated_at) throw new Error('ACTION_CASE_QUOTE_STALE')
+  const claim = await claimRfqDelivery(context, { kind: 'request', id, caseId, version: r.updated_at, emailPayload: r.email_payload,
+    supplierEmail: r.supplier_email, subject: r.subject, body: r.body, attachmentIds: r.attachment_ids, requestOrigin })
   if (claim.alreadySent) return
   let sent: Awaited<ReturnType<typeof sendAssignmentEmail>>
   try { sent = await sendAssignmentEmail(claim.payload as Email) }

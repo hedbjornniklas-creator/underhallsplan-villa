@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
 import * as domain from '../src/lib/action-cases/domain.ts'
+import * as rfq from '../src/lib/action-cases/rfqDelivery.ts'
 
 function compile(name, dependencies) {
   const code = ts.transpileModule(readFileSync(new URL(`../src/lib/action-cases/${name}.ts`, import.meta.url), 'utf8'), {
@@ -28,6 +29,7 @@ async function workspace({ legacy = false, packageState = 'active', stalePart = 
     action_case_work_quotes: [{ id: id(6), cost_line_id: id(3), amount: 900, supplier_name: 'UE', scope_snapshot: 'Build wall', description_snapshot: 'Build', checked: true, package_request_id: regular || legacy ? null : id(4), request_id: regular || legacy ? id(4) : null, updated_at: stamp },
       ...(!regular && !legacy ? [{ id: id(8), cost_line_id: id(3), package_request_id: id(4), amount: 700, checked: true, scope_snapshot: 'Build wall', description_snapshot: 'Build', updated_at: stamp }] : [])],
     action_case_quote_packages: regular || legacy ? [] : [{ request_id: id(4), group_key: `${id(2)}:${id(5)}`, action_case_id: id(1), action_case_item_id: id(2), work_part_id: id(5), quote_id: id(6), anchor_line_id: id(3), amount: 900, covered_line_ids: [], state: packageState, updated_at: stamp }],
+    action_case_rfq_deliveries: [{ id: id(21), request_id: id(4), quote_id: null, expires_at: '2099-01-01', created_at: stamp, revoked_at: null, files: [{ id: id(22), fileName: 'sent-original.jpg', fileSizeBytes: 6000000, type: 'image', contentType: 'image/jpeg', path: 'private/frozen/copy' }] }],
   }
   Object.assign(tables.action_case_quote_requests[0].lines[0], sourcePatch)
   if (omitPart) for (const key of ['workPartId', 'workPartTitle', 'workPartScope']) delete tables.action_case_quote_requests[0].lines[0][key]
@@ -35,7 +37,7 @@ async function workspace({ legacy = false, packageState = 'active', stalePart = 
   const admin = { from(table) {
     let columns = ''
     const record = { table, filters: [] }; reads.push(record)
-    const result = () => legacy && ['action_case_work_parts', 'action_case_quote_packages'].includes(table)
+    const result = () => legacy && ['action_case_work_parts', 'action_case_quote_packages', 'action_case_rfq_deliveries'].includes(table)
       ? { data: null, error: { code: '42P01' } }
       : legacy && table === 'action_case_quote_requests' && columns.includes('price_presentation')
         ? { data: null, error: { code: '42703' } }
@@ -49,7 +51,7 @@ async function workspace({ legacy = false, packageState = 'active', stalePart = 
     return chain
   } }
   const server = compile('server', { '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin }, './quotes': quotes,
-    './quoteRequests': requests, './quotePackages': packages, './domain': domain })
+    './quoteRequests': requests, './quotePackages': packages, './domain': domain, './rfqDelivery': rfq })
   const data = await server.getActionCaseWorkspace({ orgId: id(9), userId: id(10) })
   return { data, reads }
 }
@@ -64,6 +66,9 @@ test('active group anchors retain their price without masquerading as independen
   assert.equal(line.quotes[0].requestId, id(4))
   assert.equal(data.cases[0].quotePackages.length, 1)
   assert.equal(item.workParts[0].title, 'Carpentry')
+  assert.equal(data.cases[0].quoteRequests[0].delivery.files[0].fileName, 'sent-original.jpg')
+  assert.equal(data.cases[0].quoteRequests[0].delivery.files[0].path, undefined)
+  assert.equal(data.cases[0].items[0].costLines[0].quotes[0].delivery, null)
   assert.ok(reads.filter((read) => ['action_case_work_parts', 'action_case_quote_packages'].includes(read.table)).every((read) => read.filters.some(([key, value]) => key === 'org_id' && value === id(9))))
 })
 
@@ -73,6 +78,7 @@ test('old schemas load legacy requests without requiring new grouping columns', 
   assert.deepEqual(data.cases[0].items[0].workParts, [])
   assert.deepEqual(data.cases[0].quotePackages, [])
   assert.equal(data.cases[0].items[0].costLines[0].unitCost, 900)
+  assert.equal(data.cases[0].quoteRequests[0].delivery, null)
 })
 
 test('changed work-part scope invalidates previously selected itemized prices in the read model', async () => {

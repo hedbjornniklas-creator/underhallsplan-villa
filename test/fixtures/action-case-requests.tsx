@@ -6,9 +6,17 @@ import { groupRequestLines, normalizeQuoteRequest, requestSources } from '@/lib/
 import { normalizeQuotePackageAction } from '@/lib/action-cases/quotePackages'
 import { normalizeQuote } from '@/lib/action-cases/quotes'
 import type { ActionCaseCostLineView, ActionCaseView, ActionCaseQuote, ActionCaseQuoteRequest } from '@/lib/action-cases/contracts'
+import type { TaskPerson } from '@/lib/tasks/contracts'
+import ActionCaseRfqFiles from '@/components/tasks/ActionCaseRfqFiles'
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const version = '2026-09-09T08:00:00.000Z'
+const people: TaskPerson[] = [
+  { id: id(81), kind: 'profile', name: 'Intern kontakt', companyName: null, email: 'internal@example.test', isActive: true },
+  { id: id(82), kind: 'contact', name: 'Anna Exempel', companyName: 'Exempelbygg AB', email: 'anna@example.test', isActive: true },
+  { id: id(83), kind: 'contact', name: 'Utan e-post', companyName: null, email: null, isActive: true },
+  { id: id(84), kind: 'contact', name: 'Inaktiv kontakt', companyName: null, email: 'inactive@example.test', isActive: false },
+].map((p) => ({ ...p, kind: p.kind as TaskPerson['kind'], phone: null, whatsappNumber: null }))
 export const requestFixture: ActionCaseView = {
   id: id(1), title: 'Mindre arbeten efter besiktning', propertyAddress: 'Exempelgatan 12', participants: [], quoteRequests: [],
   attachments: [
@@ -62,7 +70,7 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
   const [actionCase, setCase] = useState<ActionCaseView>(() => {
     const params = new URLSearchParams(location.search)
     const initial = initialCase ?? (params.has('savedPackage') ? savedPackageFixture(params.has('expired')) : requestFixture)
-    return { ...initial, items: initial.items.map((item, n) => ({ ...item,
+    return { ...initial, attachments: initial.attachments.map((file) => ({ ...file, fileSizeBytes: params.has('largeFiles') ? 6000000 : file.fileSizeBytes })), items: initial.items.map((item, n) => ({ ...item,
       ...(params.has('scope') && !initialCase ? { scopeAttachmentIds: [id(n === 0 ? 31 : 32), id(34)] } : {}),
       ...(params.has('parts') && !initialCase ? {
         workParts: [{ id: id(41 + n), title: n === 0 ? 'Panel och målning' : 'Bleckarbete', scope: n === 0 ? 'Montera panel och måla två gånger.' : 'Täta bleckets anslutningar.', sortOrder: 100, updatedAt: version }],
@@ -87,6 +95,7 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
   const originalPackageLines = useRef(new Map<string, ActionCaseCostLineView[]>())
   const packageFailure = useRef(new URLSearchParams(location.search).has('packageFail'))
   const toast = useToast()
+  if (new URLSearchParams(location.search).has('publicRfq')) return <main className="mx-auto max-w-5xl p-5"><h1 className="text-2xl font-semibold">Offertunderlag</h1><ActionCaseRfqFiles token={'A'.repeat(43)} files={requestFixture.attachments} /></main>
   return <main className="mx-auto max-w-5xl p-4"><h1 className="mb-5 text-xl font-semibold">{actionCase.title}</h1>
     <output hidden data-testid="actions">{JSON.stringify(actions)}</output>
     <output hidden data-testid="request-payloads">{JSON.stringify(payloads)}</output>
@@ -94,7 +103,7 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
     <output hidden data-testid="request-case">{JSON.stringify(actionCase)}</output>
     <ActionCaseRequestsPanel actionCase={actionCase} busy={busy} onOpen={(requestId) => setEditor({ requestId })} />
     {new URLSearchParams(location.search).has('bank') ? <ActionCaseImageBank actionCase={actionCase} busy={busy} onAccess={() => undefined} onDelete={() => undefined} /> : null}
-    {editor ? <ActionCaseRequestSheet key={`${editor.requestId}:${editor.supplementId}`} {...editor} actionCase={actionCase} busy={busy} onClose={() => { setEditor(null); onClose?.() }} onSupplement={(r) => setEditor({ requestId: null, supplementId: r.id })} onOpenWork={() => { toast.success('Kalkyl öppnad.'); setEditor(null) }} onAction={async (action, data) => {
+    {editor ? <ActionCaseRequestSheet key={`${editor.requestId}:${editor.supplementId}`} {...editor} people={people} actionCase={actionCase} busy={busy} onClose={() => { setEditor(null); onClose?.() }} onSupplement={(r) => setEditor({ requestId: null, supplementId: r.id })} onOpenWork={() => { toast.success('Kalkyl öppnad.'); setEditor(null) }} onAction={async (action, data) => {
       setBusy(true); setActions((a) => [...a, `${action}:${data.operation ?? ''}`])
       setPayloads((current) => [...current, { action, data }])
       await new Promise((resolve) => setTimeout(resolve, 350))
@@ -141,13 +150,15 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
             quoteRequests: current.quoteRequests!.map((row) => row.id === request.id ? { ...row, updatedAt } : row),
           }))
         }
+      } else if (action === 'revoke_rfq_delivery') {
+        setCase((c) => ({ ...c, quoteRequests: c.quoteRequests!.map((r) => r.delivery && r.delivery.id === data.deliveryId ? { ...r, delivery: { ...r.delivery, revokedAt: new Date().toISOString() } } : r) }))
       } else if (action === 'quote_request' && data.operation === 'save') {
         const normalized = normalizeQuoteRequest(data)
         const row: ActionCaseQuoteRequest = { ...normalized, responseMode: 'pending', responseNotes: '', responseDocumentId: null, packageAmount: null, firstAttemptAt: null, deliveryStatus: 'draft', sentAt: null, updatedAt: new Date().toISOString() }
         setCase((c) => ({ ...c, quoteRequests: [...c.quoteRequests!.filter((r) => r.id !== row.id), row] }))
       } else if (action === 'quote_request' && data.operation === 'delete') setCase((c) => ({ ...c, quoteRequests: c.quoteRequests!.filter((r) => r.id !== data.requestId) }))
       else if ((action === 'quote_request' && data.operation === 'response') || action === 'send_grouped_quote_request') setCase((c) => ({ ...c, quoteRequests: c.quoteRequests!.map((r) => r.id !== data.requestId ? r : {
-        ...r, ...(data.operation === 'response' ? { responseMode: data.responseMode as ActionCaseQuoteRequest['responseMode'], packageAmount: data.packageAmount === '' ? null : Number(data.packageAmount), responseNotes: String(data.responseNotes), responseDocumentId: String(data.responseDocumentId || '') || null } : { sentAt: new Date().toISOString(), firstAttemptAt: new Date().toISOString(), deliveryStatus: 'sent' as const }), updatedAt: new Date().toISOString(),
+        ...r, ...(data.operation === 'response' ? { responseMode: data.responseMode as ActionCaseQuoteRequest['responseMode'], packageAmount: data.packageAmount === '' ? null : Number(data.packageAmount), responseNotes: String(data.responseNotes), responseDocumentId: String(data.responseDocumentId || '') || null } : { sentAt: new Date().toISOString(), firstAttemptAt: new Date().toISOString(), deliveryStatus: 'sent' as const, delivery: { id: id(91), expiresAt: '2099-12-31', revokedAt: null, createdAt: version, files: c.attachments.filter((f) => r.attachmentIds.includes(f.id)) } }), updatedAt: new Date().toISOString(),
       }) }))
       else throw new Error(`Unsupported synthetic request action: ${action}:${String(data.operation)}`)
       setBusy(false); toast.success('Förfrågan uppdaterades.'); return true

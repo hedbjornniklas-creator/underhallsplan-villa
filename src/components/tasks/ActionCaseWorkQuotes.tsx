@@ -8,6 +8,7 @@ import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
 import { defaultRequestAttachments } from '@/lib/action-cases/scopeAttachments'
 import ActionCaseDirectCostFields, { canEditDirectWork } from './ActionCaseDirectCostFields'
 import { coveringQuoteForLine, groupPriceForLine, groupPriceUsability } from './actionCaseGroupPricing'
+import ActionCaseRfqDelivery from './ActionCaseRfqDelivery'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const button = 'inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40'
@@ -45,7 +46,7 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
   const mayCover = (l: ActionCaseCostLineView) => l.category === 'other' || form[l.category === 'material' ? 'materials' : l.category === 'transport' ? 'travel' : 'waste'] === 'included'
   let valid = false
   try { normalizeQuote(form); valid = mode === 'offer' || Boolean(form.supplierEmail.trim() && form.requestSubject.trim() && form.requestBody.trim()) } catch { /* Form remains editable. */ }
-  const tooLarge = mode === 'request' && (form.requestAttachmentIds.length > 30 || attachments.filter((file) => form.requestAttachmentIds.includes(file.id)).reduce((sum, file) => sum + file.fileSizeBytes, 0) > 5 * 1024 * 1024)
+  const tooLarge = mode === 'request' && form.requestAttachmentIds.length > 30
   if (tooLarge) valid = false
   const field = (key: 'supplierName' | 'supplierEmail' | 'amount' | 'validUntil' | 'availableFrom' | 'requestSubject', label: string, type = 'text', disabled = false) => <label className="min-w-0 text-xs font-semibold text-slate-600">{label}<input name={key} type={type} step={type === 'number' ? '0.01' : undefined} min={type === 'number' ? '0' : undefined} className={input} value={form[key]} disabled={disabled} onChange={(e) => set(key, e.target.value)} /></label>
   return <form className="space-y-4 py-4" onSubmit={(e) => { e.preventDefault(); if (valid && !busy) void onSave(form).then((saved) => { if (saved) onCancel() }) }}>
@@ -57,7 +58,7 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
       {mode === 'request' ? <>
         {field('requestSubject', 'Ämne *', 'text', requestLocked)}
         <label className="block text-xs font-semibold text-slate-600">Meddelande *<textarea name="requestBody" rows={9} className={`${input} py-2`} disabled={requestLocked} value={form.requestBody} onChange={(e) => set('requestBody', e.target.value)} /></label>
-        <fieldset disabled={requestLocked}><legend className="text-sm font-semibold">Bifoga från uppdraget</legend><ActionCaseAttachmentPicker caseId={caseId} files={attachments.filter((a) => !a.isQuoteDocument && !quoteDocuments.includes(a.id))} selectedIds={form.requestAttachmentIds} inputName="requestAttachmentIds" disabled={busy || requestLocked} onChange={(id, checked) => toggle('requestAttachmentIds', id, checked)} />{tooLarge ? <p role="status" className="mt-2 text-sm text-amber-800">Bilagorna överstiger gränsen på 30 filer eller 5 MB. Välj färre eller mindre filer.</p> : null}</fieldset>
+        <fieldset disabled={requestLocked}><legend className="text-sm font-semibold">Bifoga från uppdraget</legend><ActionCaseAttachmentPicker caseId={caseId} files={attachments.filter((a) => !a.isQuoteDocument && !quoteDocuments.includes(a.id))} selectedIds={form.requestAttachmentIds} inputName="requestAttachmentIds" disabled={busy || requestLocked} onChange={(id, checked) => toggle('requestAttachmentIds', id, checked)} />{tooLarge ? <p role="status" className="mt-2 text-sm text-amber-800">Välj högst 30 filer.</p> : null}</fieldset>
       </> : <>
         <div className="grid gap-3 sm:grid-cols-2">{field('amount', 'Offertbelopp exkl. moms, kr', 'number')}{field('validUntil', 'Giltig till', 'date')}{field('availableFrom', 'Kan utföras från', 'date')}</div>
         <label className="block text-xs font-semibold text-slate-600">Offertens omfattning<textarea name="offeredScope" rows={3} className={`${input} py-2`} value={form.offeredScope} onChange={(e) => set('offeredScope', e.target.value)} /></label>
@@ -79,6 +80,7 @@ export default function ActionCaseWorkQuotes(props: Props) {
   const { line, item, attachments, busy, onAction, onEditing, caseId } = props
   const [editor, setEditor] = useState<{ quote?: ActionCaseQuote; mode: 'request' | 'offer' } | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [openedAt] = useState(Date.now)
   const [view, setView] = useState<'direct' | 'quotes'>(line.pricingMethod ?? 'direct')
   const [directEditing, setDirectEditing] = useState(false)
   const [markupDraft, setMarkupDraft] = useState<{ value: string; expectedLineUpdatedAt?: string } | null>(null)
@@ -149,10 +151,11 @@ export default function ActionCaseWorkQuotes(props: Props) {
           <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-semibold">Förhandsgranska förfrågan</h4><button className={button} disabled={controlsBusy} onClick={() => setPreviewId(null)}><ArrowLeft size={16} />Stäng</button></div>
           <p className="mt-3 break-words text-sm"><strong>Till:</strong> {preview.supplierName} &lt;{preview.supplierEmail || 'E-post saknas'}&gt;</p>
           <p className="mt-2 break-words text-sm font-semibold">{preview.requestSubject}</p><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6">{preview.requestBody}</p>
-          <p className="mt-3 text-xs font-semibold text-slate-600">Bilagor ({preview.requestAttachmentIds.length})</p><ul className="mt-1 text-sm text-slate-600">{preview.requestAttachmentIds.map((id) => <li className="break-words" key={id}>{attachments.find((a) => a.id === id)?.fileName || 'Filen är inte längre tillgänglig'}</li>)}</ul>
+          <p className="mt-3 text-xs font-semibold text-slate-600">Bilagor ({preview.delivery?.files.length ?? preview.requestAttachmentIds.length})</p><ul className="mt-1 text-sm text-slate-600">{(preview.delivery?.files ?? preview.requestAttachmentIds.map((id) => ({ id, fileName: attachments.find((a) => a.id === id)?.fileName || 'Filen är inte längre tillgänglig' }))).map((file) => <li className="break-words" key={file.id}>{preview.delivery && caseId ? <a className="inline-flex min-h-11 items-center text-violet-700 underline" href={`/api/action-cases/${caseId}/rfq/${preview.delivery.id}/files/${file.id}`} target="_blank" rel="noreferrer">{file.fileName}</a> : file.fileName}</li>)}</ul>
+          {preview.delivery ? <ActionCaseRfqDelivery delivery={preview.delivery} busy={controlsBusy} onRevoke={() => onAction('revoke_rfq_delivery', { deliveryId: preview.delivery!.id })} /> : null}
           <p role="status" className="mt-3 text-sm text-slate-600">{deliveryLabels[preview.deliveryStatus]}{preview.sentAt ? ` · ${new Date(preview.sentAt).toLocaleString('sv-SE')}` : ''}</p>
           <div className="mt-3 flex flex-wrap gap-2">{preview.deliveryStatus === 'draft' ? <button className={button} disabled={controlsBusy} onClick={() => { edit({ quote: preview, mode: 'request' }); setPreviewId(null) }}><Pencil size={16} />Redigera förfrågan</button> : null}
-            {!preview.sentAt ? <button className={primary} disabled={controlsBusy || !preview.supplierEmail || !preview.requestBody || quoteIsStale(preview, item.scope, line.description)} onClick={() => void onAction('send_quote_request', { costLineId: line.id, quoteId: preview.id, expectedQuoteUpdatedAt: preview.updatedAt, confirmSend: true })}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{preview.deliveryStatus === 'draft' ? 'Skicka förfrågan' : 'Försök skicka igen'}</button> : null}</div>
+            {!preview.sentAt ? <button className={primary} disabled={controlsBusy || !preview.supplierEmail || !preview.requestBody || quoteIsStale(preview, item.scope, line.description) || Boolean(preview.delivery && (preview.delivery.revokedAt || Date.parse(preview.delivery.expiresAt) <= openedAt))} onClick={() => void onAction('send_quote_request', { costLineId: line.id, quoteId: preview.id, expectedQuoteUpdatedAt: preview.updatedAt, confirmSend: true })}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{busy ? 'Förbereder och skickar...' : preview.deliveryStatus === 'draft' ? 'Skicka förfrågan' : 'Försök skicka igen'}</button> : null}</div>
         </section> : null}
         {line.pricingMethod === 'quotes' ? <form className="mt-4 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-4" onSubmit={(event) => {
           event.preventDefault()

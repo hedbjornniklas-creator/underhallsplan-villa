@@ -28,10 +28,12 @@ import ActionCaseImageBank from './ActionCaseImageBank'
 import ActionCaseItemSheet from './ActionCaseItemSheet'
 import ActionCaseRequestSheet, { ActionCaseRequestsPanel } from './ActionCaseQuoteRequests'
 import { actionCaseItemCompletion, actionCaseCostCoverage } from '@/lib/action-cases/domain'
+import type { TaskPerson } from '@/lib/tasks/contracts'
 
 type Props = {
   initialWorkspace: Workspace | null
   initialError: string | null
+  people?: TaskPerson[]
 }
 
 const CASE_STATUS: Record<ActionCaseView['status'], string> = {
@@ -287,12 +289,13 @@ function CaseDocuments({
 }
 
 function costActionMessage(name: string, payload: Record<string, unknown>) {
+  if (name === 'revoke_rfq_delivery') return 'Länken till offertunderlaget har återkallats.'
   if (name === 'work_part') return ({ save: 'Arbetsdelen sparades.', delete: 'Arbetsdelen togs bort. Kalkylraderna är kvar.', move_lines: 'Valda rader flyttades.', bulk_update: 'Valda kalkylvärden sparades.' } as Record<string, string>)[String(payload.operation)] ?? 'Kalkylen uppdaterades.'
   if (name === 'work_quote') return payload.operation === 'select' ? 'Offerten används i kalkylen. Ingen beställning har skickats.' : payload.operation === 'save' ? 'Offerten sparades. Välj den för att använda priset i kalkylen.' : 'Prisunderlaget uppdaterades.'
   return ({ send_quote_request: 'Offertförfrågan har skickats.', generate_cost_suggestions: 'Kalkylförslaget är klart för granskning.', apply_cost_suggestions: 'Valda rader lades till i kalkylen.', delete_cost_line: 'Kalkylraden togs bort.' } as Record<string, string>)[name] ?? 'Kalkylraden sparades.'
 }
 
-export default function ActionCaseWorkspace({ initialWorkspace, initialError }: Props) {
+export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [] }: Props) {
   const toast = useToast()
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [error, setError] = useState(initialError)
@@ -321,7 +324,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       return result as ActionResult
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
-      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'delete_attachment'].includes(name)) {
+      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'delete_attachment', 'revoke_rfq_delivery'].includes(name)) {
         await fetch('/api/action-cases').then(async (response) => {
           if (response.ok) { const result = await response.json(); setWorkspace(result.workspace) }
         }).catch(() => undefined)
@@ -366,10 +369,11 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, costActionMessage(name, payload)))}
     /> : null}
     {selectedCase && requestEditor ? <ActionCaseRequestSheet key={`${selectedCase.id}:${requestEditor.requestId ?? requestEditor.supplementId ?? 'new'}:${requestEditor.preselectedLineIds?.join(',') ?? ''}`}
+      people={people}
       actionCase={selectedCase} {...requestEditor} busy={busy} onClose={() => setRequestEditor(null)}
       onSupplement={(request) => setRequestEditor({ requestId: null, supplementId: request.id })}
       onOpenWork={(itemId, costLineId) => { setRequestEditor(null); setSelectedItemId(itemId); setInitialCostLineId(costLineId) }}
-      onAction={async (name, data) => Boolean(await action(name, data, name === 'quote_package' ? data.operation === 'accept' ? 'Grupppriset används i kalkylen. Ingen beställning har skickats.' : 'Tidigare prisunderlag har återställts.' : name === 'send_grouped_quote_request' ? 'Den samlade offertförfrågan har skickats.' : data.operation === 'response' ? 'Prisvillkoren har sparats.' : data.operation === 'delete' ? 'Utkastet togs bort.' : 'Förfrågan är sparad. Granska den före utskick.'))}
+      onAction={async (name, data) => Boolean(await action(name, data, name === 'revoke_rfq_delivery' ? 'Länken till offertunderlaget har återkallats.' : name === 'quote_package' ? data.operation === 'accept' ? 'Grupppriset används i kalkylen. Ingen beställning har skickats.' : 'Tidigare prisunderlag har återställts.' : name === 'send_grouped_quote_request' ? 'Den samlade offertförfrågan har skickats.' : data.operation === 'response' ? 'Prisvillkoren har sparats.' : data.operation === 'delete' ? 'Utkastet togs bort.' : 'Förfrågan är sparad. Granska den före utskick.'))}
     /> : null}
   </>
 }
