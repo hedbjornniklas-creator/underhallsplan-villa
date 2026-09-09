@@ -85,6 +85,7 @@ export type EnqueueMeasurementInput = {
   method?: string | null
   instrument?: string | null
   note?: string | null
+  files?: File[]
 }
 
 type UseTuFieldQueueOptions = {
@@ -410,6 +411,9 @@ export function useTuFieldQueue({
           instrument: measurement.instrument,
           note: measurement.note,
           measuredAt: measurement.measuredAt,
+          imageIds: queueItem.images
+            .map((image) => image.serverImageId)
+            .filter((id): id is string => Boolean(id)),
         }),
       })
       const payload = (await response.json().catch(() => ({}))) as MeasurementApiResponse
@@ -606,7 +610,7 @@ export function useTuFieldQueue({
         activeStep: null,
         attempts: 0,
         error: null,
-        images: [],
+        images: (input.files ?? []).map(queuedImage),
         audio: null,
         measurement,
       }

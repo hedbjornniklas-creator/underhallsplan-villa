@@ -27,6 +27,11 @@ function uuid(value: unknown) {
   return UUID_PATTERN.test(normalized) ? normalized : null
 }
 
+function imageIds(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.map(uuid).filter((item): item is string => Boolean(item)))]
+}
+
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   const normalized = message.toLowerCase()
@@ -37,6 +42,7 @@ function mapError(error: unknown) {
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_OBSERVATION_NOT_FOUND') return jsonError('Observationen hittades inte.', 404)
   if (message === 'TU_MEASUREMENT_NOT_FOUND') return jsonError('Mätvärdet hittades inte.', 404)
+  if (message === 'TU_OBSERVATION_IMAGE_INVALID') return jsonError('En vald bild tillhör inte utredningen.', 400)
   if (message === 'TU_OBSERVATION_ID_CONFLICT' || message === 'TU_MEASUREMENT_ID_CONFLICT') {
     return jsonError('Det lokala fältunderlaget kunde inte identifieras säkert.', 409)
   }
@@ -83,6 +89,7 @@ export async function POST(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const values = measurementValues(body)
     if (!values) return jsonError('Ange typ och mätvärde.', 400)
+    const linkedImageIds = imageIds(body.imageIds)
 
     const createFieldEntry = body.createFieldEntry === true
     const clientObservationId = uuid(body.clientObservationId)
@@ -116,6 +123,7 @@ export async function POST(
             includeInReport: true,
             observedAt: values.measuredAt,
           },
+          imageIds: linkedImageIds,
         })
       }
       values.observationId = clientObservationId

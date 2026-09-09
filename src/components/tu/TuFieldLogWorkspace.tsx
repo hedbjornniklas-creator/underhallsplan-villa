@@ -314,6 +314,22 @@ export default function TuFieldLogWorkspace({
           ) : (
             <p className="mt-1 text-xs text-gray-500">Instrument och metod kan kompletteras vid granskningen.</p>
           )}
+          {linkedImages.length > 0 ? (
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {linkedImages.map((image) => (
+                <button
+                  key={image.id}
+                  type="button"
+                  onClick={() => onPreviewImage(image.id)}
+                  className="aspect-square overflow-hidden rounded-md bg-gray-100"
+                  aria-label="Visa mätbild i full storlek"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image.publicUrl} alt={image.caption ?? 'Mätbild'} className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          ) : null}
         </article>
       )
     }

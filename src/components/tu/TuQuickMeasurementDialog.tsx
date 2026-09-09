@@ -1,8 +1,11 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, Loader2, Ruler, Save, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Camera, ChevronDown, Images, Loader2, Paperclip, Ruler, Save, X } from 'lucide-react'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
+
+const MAX_IMAGE_FILES = 20
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 type Props = {
   locked: boolean
@@ -34,8 +37,38 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
   const [method, setMethod] = useState('')
   const [instrument, setInstrument] = useState('')
   const [note, setNote] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [previewUrls, setPreviewUrls] = useState<string[]>([])
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const nextUrls = files.map((file) => URL.createObjectURL(file))
+    setPreviewUrls(nextUrls)
+    return () => nextUrls.forEach((url) => URL.revokeObjectURL(url))
+  }, [files])
+
+  const addFiles = (nextFiles: File[]) => {
+    const combined = [...files, ...nextFiles]
+    if (nextFiles.some((file) => !file.type.startsWith('image/'))) {
+      setError('Endast bildfiler kan läggas till.')
+      return
+    }
+    if (combined.length > MAX_IMAGE_FILES) {
+      setError(`Du kan koppla högst ${MAX_IMAGE_FILES} bilder till en mätning.`)
+      return
+    }
+    const tooLarge = nextFiles.find((file) => file.size > MAX_IMAGE_BYTES)
+    if (tooLarge) {
+      setError(`${tooLarge.name} är större än 15 MB.`)
+      return
+    }
+    setError(null)
+    setFiles(combined)
+  }
 
   const save = async () => {
     if (locked || saving) return
@@ -54,6 +87,7 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
         method,
         instrument,
         note,
+        files,
       })
       onQueued?.()
       onClose()
@@ -154,6 +188,78 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
             />
           </label>
 
+          <div className="rounded-md border border-gray-200 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">Bilder från mätningen</p>
+                <p className="mt-0.5 text-xs text-gray-500">Dokumentera mätpunkten, instrumentet eller displayen.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={locked || saving}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Camera size={16} aria-hidden />
+                  Ta foto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  disabled={locked || saving}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <Images size={16} aria-hidden />
+                  Välj bilder
+                </button>
+              </div>
+            </div>
+
+            {files.length > 0 ? (
+              <div className="mt-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-gray-600">
+                    {files.length} kopplad bild{files.length === 1 ? '' : 'er'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-violet-800 disabled:opacity-50"
+                  >
+                    <Paperclip size={13} aria-hidden />
+                    Lägg till fler
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {previewUrls.map((url, index) => (
+                    <div key={url} className="relative aspect-square overflow-hidden rounded-md bg-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewUrl(url)}
+                        className="h-full w-full"
+                        aria-label="Visa vald mätbild i full storlek"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="Vald mätbild" className="h-full w-full object-cover" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}
+                        disabled={saving}
+                        className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-950/75 text-white disabled:opacity-50"
+                        aria-label="Ta bort vald mätbild"
+                      >
+                        <X size={14} aria-hidden />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           <details className="group rounded-md border border-gray-200">
             <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold text-gray-800 [&::-webkit-details-marker]:hidden">
               Fler uppgifter
@@ -195,6 +301,29 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
           </details>
         </div>
 
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => {
+            addFiles(Array.from(event.currentTarget.files ?? []))
+            event.currentTarget.value = ''
+          }}
+        />
+        <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            addFiles(Array.from(event.currentTarget.files ?? []))
+            event.currentTarget.value = ''
+          }}
+        />
+
         <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
           <span className="hidden text-xs text-gray-500 sm:block">Sparas lokalt och synkas i bakgrunden.</span>
           <button
@@ -209,6 +338,26 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
           </button>
         </div>
       </div>
+
+      {previewUrl ? (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-gray-950/90 p-3"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Förhandsvisning av mätbild"
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewUrl(null)}
+            className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-950 shadow"
+            aria-label="Stäng bildförhandsvisning"
+          >
+            <X size={20} aria-hidden />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={previewUrl} alt="Mätbild i full storlek" className="max-h-full max-w-full object-contain" />
+        </div>
+      ) : null}
     </div>
   )
 }
