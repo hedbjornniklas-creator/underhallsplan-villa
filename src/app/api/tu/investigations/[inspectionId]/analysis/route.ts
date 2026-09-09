@@ -1,10 +1,10 @@
 import { NextResponse, after } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
+  advanceTuInspectionAnalysis,
   createTuInspectionAnalysisRun,
   getTuAnalysisValidation,
   getTuAnalysisWorkflow,
-  runTuInspectionAnalysis,
 } from '@/lib/tu/analysisServer'
 import {
   isTuAnalysisCertainty,
@@ -16,7 +16,7 @@ import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300
+export const maxDuration = 60
 
 type RouteContext = { params: Promise<{ inspectionId: string }> }
 
@@ -78,11 +78,41 @@ async function stateResponse(orgId: string, inspectionId: string, status = 200) 
   return NextResponse.json({ workflow, validation } satisfies TuAnalysisResponse, { status })
 }
 
+async function advanceInBackground(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  try {
+    await advanceTuInspectionAnalysis(input)
+  } catch (error) {
+    console.error('[tu.analysis] Background advancement failed', {
+      inspectionId: input.inspectionId,
+      runId: input.runId,
+      error,
+    })
+  }
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
     const { orgContext } = await requireInvestigation(inspectionId)
-    return stateResponse(orgContext.orgId, inspectionId)
+    const [workflow, validation] = await Promise.all([
+      getTuAnalysisWorkflow({ orgId: orgContext.orgId, inspectionId }),
+      getTuAnalysisValidation({ orgId: orgContext.orgId, inspectionId }),
+    ])
+    const activeRun = workflow.run
+    if (activeRun?.status === 'queued' || activeRun?.status === 'processing') {
+      after(async () => {
+        await advanceInBackground({
+          orgId: orgContext.orgId,
+          inspectionId,
+          runId: activeRun.id,
+        })
+      })
+    }
+    return NextResponse.json({ workflow, validation } satisfies TuAnalysisResponse)
   } catch (error) {
     const mapped = mapError(error)
     if (mapped) return mapped
@@ -128,7 +158,7 @@ export async function POST(request: Request, context: RouteContext) {
         userId: orgContext.userId,
       })
       after(async () => {
-        await runTuInspectionAnalysis({
+        await advanceInBackground({
           orgId: orgContext.orgId,
           inspectionId,
           runId,

@@ -16,11 +16,21 @@ import {
   type TuAnalysisValidation,
   type TuAnalysisWorkflow,
 } from '@/lib/tu/analysis'
+import {
+  parseTuAnalysisBackgroundState,
+  tuAnalysisFailureMessage,
+  tuAnalysisBackgroundPayload,
+  type TuAnalysisBackgroundState,
+} from '@/lib/tu/analysisBackground'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { getApprovedTuControlPlanSnapshot } from '@/lib/tu/controlPlanServer'
 import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
+import {
+  normalizeTuReportProviderResponse,
+  tuReportProviderFailureMessage,
+} from '@/lib/tu/reportDraftBackground'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
@@ -36,6 +46,10 @@ const RULESET_VERSION = 1
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
+const PROVIDER_CREATE_TIMEOUT_MS = 30_000
+const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
+const PROVIDER_MAX_JOB_AGE_MS = 8 * 60 * 1_000
+const SYNTHESIS_MAX_OUTPUT_TOKENS = 24_000
 
 type JsonRecord = Record<string, unknown>
 
@@ -91,6 +105,10 @@ type ItemRow = {
 }
 
 type OpenAiResponse = {
+  id?: string
+  status?: string
+  incomplete_details?: unknown
+  error?: unknown
   output_text?: string
   output?: Array<{
     content?: Array<{ type?: string; text?: string }>
@@ -320,22 +338,16 @@ function responseText(payload: OpenAiResponse) {
     ?.text?.trim() ?? ''
 }
 
-async function structuredOpenAiRequest(input: {
-  apiKey: string
+function structuredOpenAiRequestBody(input: {
   instructions: string
   content: unknown
   schemaName: string
   schema: JsonRecord
   maxOutputTokens: number
 }) {
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${input.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  return {
       model: TU_ANALYSIS_MODEL,
+      background: true,
       store: false,
       reasoning: { effort: 'high' },
       instructions: input.instructions,
@@ -349,20 +361,76 @@ async function structuredOpenAiRequest(input: {
         },
       },
       max_output_tokens: input.maxOutputTokens,
-    }),
-  })
+  }
+}
+
+function parseStructuredResponse(payload: OpenAiResponse) {
+  const text = responseText(payload)
+  if (!text) throw new Error('OPENAI_EMPTY_RESPONSE')
+  try {
+    return JSON.parse(text) as JsonRecord
+  } catch {
+    throw new Error('OPENAI_INCOMPLETE_RESPONSE')
+  }
+}
+
+async function startStructuredOpenAiRequest(input: { apiKey: string; body: JsonRecord }) {
+  let response: Response
+  try {
+    response = await fetch(OPENAI_RESPONSES_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${input.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(PROVIDER_CREATE_TIMEOUT_MS),
+      body: JSON.stringify(input.body),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new Error('OPENAI_REQUEST_TIMEOUT')
+    }
+    throw new Error('OPENAI_REQUEST_FAILED')
+  }
   if (!response.ok) {
     const detail = await response.text()
-    console.error('[tu.analysis] OpenAI request failed', {
+    console.error('[tu.analysis] OpenAI background start failed', {
       status: response.status,
       detail: detail.slice(0, 800),
     })
     throw new Error(`OPENAI_REQUEST_FAILED:${response.status}`)
   }
   const payload = await response.json() as OpenAiResponse
-  const text = responseText(payload)
-  if (!text) throw new Error('OPENAI_EMPTY_RESPONSE')
-  return JSON.parse(text) as JsonRecord
+  const envelope = normalizeTuReportProviderResponse(payload)
+  if (envelope.status === 'failed' || envelope.status === 'incomplete' || envelope.status === 'cancelled') {
+    throw new Error(tuReportProviderFailureMessage(payload))
+  }
+  return envelope
+}
+
+async function retrieveStructuredOpenAiResponse(input: { apiKey: string; responseId: string }) {
+  let response: Response
+  try {
+    response = await fetch(`${OPENAI_RESPONSES_URL}/${encodeURIComponent(input.responseId)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${input.apiKey}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(PROVIDER_RETRIEVE_TIMEOUT_MS),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new Error('OPENAI_RETRIEVE_TIMEOUT')
+    }
+    throw new Error('OPENAI_RETRIEVE_FAILED')
+  }
+  if (!response.ok) {
+    console.error('[tu.analysis] OpenAI status retrieval failed', { status: response.status })
+    throw new Error(response.status === 404 ? 'OPENAI_RESPONSE_NOT_FOUND' : 'OPENAI_RETRIEVE_FAILED')
+  }
+  const payload = await response.json() as OpenAiResponse
+  const envelope = normalizeTuReportProviderResponse(payload)
+  if (envelope.responseId !== input.responseId) throw new Error('OPENAI_INVALID_RESPONSE')
+  return { payload, envelope }
 }
 
 export async function getTuAnalysisValidation(input: {
@@ -736,11 +804,8 @@ async function imageDataUrl(image: TuInvestigationImage) {
   return `data:image/jpeg;base64,${optimized.toString('base64')}`
 }
 
-async function analyzeImageBatch(input: {
-  apiKey: string
-  images: TuInvestigationImage[]
-}) {
-  const loaded = await Promise.all(input.images.map(async (image) => {
+async function prepareImageBatch(images: TuInvestigationImage[]) {
+  const loaded = await Promise.all(images.map(async (image) => {
     try {
       return { image, dataUrl: await imageDataUrl(image), error: null }
     } catch (error) {
@@ -762,9 +827,11 @@ async function analyzeImageBatch(input: {
       quality: 'unusable',
       relevance: 'low',
       possibleDuplicateImageIds: [],
-      warnings: [`Bilden kunde inte analyseras: ${item.error}`],
+      warnings: ['Bilden kunde inte läsas och analyserades därför inte.'],
     }))
-  if (available.length === 0) return failed
+  if (available.length === 0) {
+    return { body: null, availableImageIds: [] as string[], failed }
+  }
 
   const content: Array<JsonRecord> = [{
     type: 'input_text',
@@ -779,8 +846,7 @@ async function analyzeImageBatch(input: {
     content.push({ type: 'input_text', text: `imageId: ${item.image.id}` })
     content.push({ type: 'input_image', image_url: item.dataUrl, detail: 'low' })
   }
-  const parsed = await structuredOpenAiRequest({
-    apiKey: input.apiKey,
+  const body = structuredOpenAiRequestBody({
     instructions: 'Du är ett visuellt dokumentationsstöd för en svensk teknisk utredning. Du beskriver synliga fakta, inte diagnoser.',
     content: [{ role: 'user', content }],
     schemaName: 'tu_inspection_image_analysis',
@@ -816,7 +882,15 @@ async function analyzeImageBatch(input: {
     },
     maxOutputTokens: 2400,
   })
-  const allowedIds = new Set(available.map((item) => item.image.id))
+  return {
+    body,
+    availableImageIds: available.map((item) => item.image.id),
+    failed,
+  }
+}
+
+function parseImageBatch(parsed: JsonRecord, availableImageIds: string[]) {
+  const allowedIds = new Set(availableImageIds)
   const results = Array.isArray(parsed.images) ? parsed.images : []
   const mapped: ImageAnalysis[] = results
     .map(record)
@@ -831,10 +905,10 @@ async function analyzeImageBatch(input: {
       warnings: stringArray(item.warnings),
     }))
   const returnedIds = new Set(mapped.map((item) => item.imageId))
-  for (const item of available) {
-    if (!returnedIds.has(item.image.id)) {
+  for (const imageId of availableImageIds) {
+    if (!returnedIds.has(imageId)) {
       mapped.push({
-        imageId: item.image.id,
+        imageId,
         visibleFacts: [],
         quality: 'unusable',
         relevance: 'low',
@@ -843,7 +917,7 @@ async function analyzeImageBatch(input: {
       })
     }
   }
-  return [...mapped, ...failed]
+  return mapped
 }
 
 function parseAnalysisDraft(value: JsonRecord): AnalysisDraft {
@@ -870,13 +944,11 @@ function parseAnalysisDraft(value: JsonRecord): AnalysisDraft {
   }
 }
 
-async function synthesizeInspection(input: {
-  apiKey: string
+function synthesisRequestBody(input: {
   snapshot: JsonRecord
   imageAnalyses: ImageAnalysis[]
 }) {
-  const parsed = await structuredOpenAiRequest({
-    apiKey: input.apiKey,
+  return structuredOpenAiRequestBody({
     instructions: [
       'Du analyserar ett samlat besiktningsunderlag för en svensk teknisk utredning. Rapportmallens titel, projekttyp och sektionsinstruktioner anger utredningens fackliga inriktning.',
       'AI-resultatet är ett granskningsunderlag, aldrig ett färdigt utlåtande.',
@@ -978,140 +1050,52 @@ async function synthesizeInspection(input: {
       required: ['overview', 'timelineSummary', 'warnings', 'items'],
       additionalProperties: false,
     },
-    maxOutputTokens: 9000,
+    maxOutputTokens: SYNTHESIS_MAX_OUTPUT_TOKENS,
   })
-  return parseAnalysisDraft(parsed)
 }
 
-export async function runTuInspectionAnalysis(input: {
+async function failInspectionAnalysis(input: { runId: string; error: unknown; source: string }) {
+  const admin = createSupabaseAdminClient()
+  const now = new Date().toISOString()
+  const message = tuAnalysisFailureMessage(input.error)
+  await admin.from('tu_ai_runs').update({
+    status: 'failed',
+    error_message: message,
+    progress_stage: 'failed',
+    progress_message: message,
+    heartbeat_at: now,
+    completed_at: now,
+  }).eq('id', input.runId).in('status', ['queued', 'processing'])
+  console.error(`[tu.analysis] ${input.source}`, { runId: input.runId, error: input.error })
+}
+
+function storedImageAnalyses(value: unknown): ImageAnalysis[] {
+  return (Array.isArray(value) ? value : []).map(record).map((item): ImageAnalysis => ({
+    imageId: cleanText(item.imageId),
+    visibleFacts: stringArray(item.visibleFacts),
+    quality: item.quality === 'good' || item.quality === 'limited' ? item.quality : 'unusable',
+    relevance: item.relevance === 'high' || item.relevance === 'medium' ? item.relevance : 'low',
+    possibleDuplicateImageIds: stringArray(item.possibleDuplicateImageIds),
+    warnings: stringArray(item.warnings),
+  })).filter((item) => item.imageId)
+}
+
+async function finalizeTuInspectionAnalysis(input: {
   orgId: string
   inspectionId: string
   runId: string
+  snapshot: JsonRecord
+  images: TuInvestigationImage[]
+  selectedImages: TuInvestigationImage[]
+  imageAnalyses: ImageAnalysis[]
+  analysis: AnalysisDraft
 }) {
-  const apiKey = process.env.OPENAI_API_KEY
   const admin = createSupabaseAdminClient()
-  if (!apiKey) {
-    const now = new Date().toISOString()
-    const message = 'OPENAI_API_KEY_MISSING'
-    const { error } = await admin
-      .from('tu_ai_runs')
-      .update({
-        status: 'failed',
-        error_message: message,
-        progress_stage: 'failed',
-        progress_message: 'Analysen kunde inte starta eftersom AI-konfigurationen saknas.',
-        heartbeat_at: now,
-        completed_at: now,
-      })
-      .eq('id', input.runId)
-      .eq('org_id', input.orgId)
-      .eq('inspection_id', input.inspectionId)
-      .in('status', ['queued', 'processing'])
-    if (error) throw new Error(error.message)
-    return
-  }
-  const startedAt = new Date().toISOString()
-  const { data: claimed, error: claimError } = await admin
-    .from('tu_ai_runs')
-    .update({
-      status: 'processing',
-      started_at: startedAt,
-      completed_at: null,
-      error_message: null,
-      progress_stage: 'preparing',
-      progress_current: 0,
-      progress_message: 'Förbereder observationer, mätvärden och bilder.',
-      heartbeat_at: startedAt,
-    })
-    .eq('id', input.runId)
-    .eq('org_id', input.orgId)
-    .eq('inspection_id', input.inspectionId)
-    .eq('operation', 'inspection_analysis')
-    .eq('status', 'queued')
-    .select('id,input_snapshot,attempt_count')
-    .maybeSingle()
-  if (claimError) throw new Error(claimError.message)
-  if (!claimed) return
-  const claimedRun = claimed as { id: string; input_snapshot: unknown; attempt_count: number | null }
-  const runStillProcessing = async () => {
-    const { data, error } = await admin
-      .from('tu_ai_runs')
-      .select('status')
-      .eq('id', input.runId)
-      .eq('org_id', input.orgId)
-      .eq('inspection_id', input.inspectionId)
-      .maybeSingle()
-    if (error) throw new Error(error.message)
-    return (data as { status?: string } | null)?.status === 'processing'
-  }
-  const updateProgress = async (progress: {
-    stage: 'preparing' | 'analyzing_images' | 'synthesizing' | 'saving'
-    current?: number
-    total?: number
-    message: string
-  }) => {
-    const { error } = await admin
-      .from('tu_ai_runs')
-      .update({
-        progress_stage: progress.stage,
-        progress_current: progress.current,
-        progress_total: progress.total,
-        progress_message: progress.message,
-        heartbeat_at: new Date().toISOString(),
-      })
-      .eq('id', input.runId)
-      .eq('org_id', input.orgId)
-      .eq('inspection_id', input.inspectionId)
-      .eq('status', 'processing')
-    if (error) throw new Error(error.message)
-  }
-  const { error: attemptError } = await admin
-    .from('tu_ai_runs')
-    .update({ attempt_count: (claimedRun.attempt_count ?? 0) + 1 })
-    .eq('id', input.runId)
-  if (attemptError) throw new Error(attemptError.message)
-
+  const { snapshot, images, selectedImages, imageAnalyses, analysis } = input
   try {
-    const snapshot = record(claimedRun.input_snapshot)
-    const images = (await listTuInvestigationImages({ orgId: input.orgId, inspectionId: input.inspectionId }))
-      .filter(isTuAnalysisSourceImage)
-    const maxImages = configuredMaxImages()
-    const selectedImages = images.slice(0, maxImages)
-    const imageAnalyses: ImageAnalysis[] = []
-    if (selectedImages.length > 0) {
-      await updateProgress({
-        stage: 'analyzing_images',
-        current: 0,
-        total: selectedImages.length,
-        message: `Analyserar bilder 0 av ${selectedImages.length}.`,
-      })
-    }
-    for (let index = 0; index < selectedImages.length; index += IMAGE_BATCH_SIZE) {
-      if (!await runStillProcessing()) return
-      const batch = selectedImages.slice(index, index + IMAGE_BATCH_SIZE)
-      imageAnalyses.push(...await analyzeImageBatch({
-        apiKey,
-        images: batch,
-      }))
-      const completedImages = Math.min(index + batch.length, selectedImages.length)
-      await updateProgress({
-        stage: 'analyzing_images',
-        current: completedImages,
-        total: selectedImages.length,
-        message: `Analyserar bilder ${completedImages} av ${selectedImages.length}.`,
-      })
-    }
-    if (!await runStillProcessing()) return
-    await updateProgress({
-      stage: 'synthesizing',
-      current: selectedImages.length,
-      total: selectedImages.length,
-      message: 'Sammanställer observationer, mätvärden och bildiakttagelser.',
-    })
-    const analysis = await synthesizeInspection({ apiKey, snapshot, imageAnalyses })
     if (images.length > selectedImages.length) {
       analysis.warnings.push(
-        `${images.length - selectedImages.length} bilder analyserades inte eftersom bildgränsen är ${maxImages}.`
+        `${images.length - selectedImages.length} bilder analyserades inte eftersom bildgränsen är ${configuredMaxImages()}.`
       )
     }
 
@@ -1200,13 +1184,15 @@ export async function runTuInspectionAnalysis(input: {
       throw new Error('OPENAI_ANALYSIS_UNGROUNDED_CURRENT_ASSESSMENT')
     }
 
-    if (!await runStillProcessing()) return
-    await updateProgress({
-      stage: 'saving',
-      current: selectedImages.length,
-      total: selectedImages.length,
-      message: 'Sparar analysresultatet för granskning.',
-    })
+    const savingAt = new Date().toISOString()
+    const { error: progressError } = await admin.from('tu_ai_runs').update({
+      progress_stage: 'saving',
+      progress_current: selectedImages.length,
+      progress_total: selectedImages.length,
+      progress_message: 'Sparar analysresultatet för granskning.',
+      heartbeat_at: savingAt,
+    }).eq('id', input.runId).eq('status', 'processing')
+    if (progressError) throw new Error(progressError.message)
 
     const { error: deleteError } = await admin
       .from('tu_ai_analysis_items')
@@ -1252,30 +1238,327 @@ export async function runTuInspectionAnalysis(input: {
       .eq('status', 'analysis_processing')
     if (workflowError) throw new Error(workflowError.message)
   } catch (error) {
-    const rawMessage = error instanceof Error ? error.message.slice(0, 1200) : 'TU_ANALYSIS_FAILED'
-    const message = rawMessage === 'OPENAI_ANALYSIS_MISSING_CURRENT_ASSESSMENT'
-      ? 'AI-analysen saknade en aktuell samlad bedömning och stoppades före granskning.'
-      : rawMessage === 'OPENAI_ANALYSIS_UNGROUNDED_CURRENT_ASSESSMENT'
-        ? 'AI-analysens samlade bedömning saknade verifierbara källor och stoppades före granskning.'
-        : rawMessage
-    await admin
-      .from('tu_ai_runs')
-      .update({
-        status: 'failed',
-        error_message: message,
-        progress_stage: 'failed',
-        progress_message: 'Analysen kunde inte slutföras. Öppna Analys och försök igen.',
-        heartbeat_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', input.runId)
-      .eq('org_id', input.orgId)
-      .eq('inspection_id', input.inspectionId)
-      .in('status', ['queued', 'processing'])
-    console.error('[tu.analysis] Inspection analysis failed', {
-      inspectionId: input.inspectionId,
-      runId: input.runId,
-      error,
-    })
+    await failInspectionAnalysis({ runId: input.runId, error, source: 'Analysis finalization failed' })
   }
+}
+
+async function persistAnalysisBackgroundState(input: {
+  runId: string
+  state: Omit<TuAnalysisBackgroundState, 'version'>
+  progressStage: 'queued' | 'analyzing_images' | 'synthesizing'
+  progressCurrent: number
+  progressTotal: number
+  progressMessage: string
+  status: 'queued' | 'processing'
+}) {
+  const admin = createSupabaseAdminClient()
+  const now = new Date().toISOString()
+  const { error } = await admin.from('tu_ai_runs').update({
+    status: input.status,
+    output_payload: tuAnalysisBackgroundPayload(input.state),
+    progress_stage: input.progressStage,
+    progress_current: input.progressCurrent,
+    progress_total: input.progressTotal,
+    progress_message: input.progressMessage,
+    heartbeat_at: now,
+  }).eq('id', input.runId).eq('status', 'processing')
+  if (error) throw new Error(error.message)
+}
+
+export async function runTuInspectionAnalysis(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) {
+    await failInspectionAnalysis({
+      runId: input.runId,
+      error: new Error('OPENAI_API_KEY_MISSING'),
+      source: 'AI configuration missing',
+    })
+    return
+  }
+
+  const startedAt = new Date().toISOString()
+  const { data: claimed, error: claimError } = await admin.from('tu_ai_runs').update({
+    status: 'processing',
+    started_at: startedAt,
+    completed_at: null,
+    error_message: null,
+    progress_stage: 'preparing',
+    progress_message: 'Förbereder nästa steg i analysen.',
+    heartbeat_at: startedAt,
+  })
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'inspection_analysis')
+    .eq('status', 'queued')
+    .select('id,input_snapshot,output_payload,attempt_count')
+    .maybeSingle()
+  if (claimError) throw new Error(claimError.message)
+  if (!claimed) return
+  const run = claimed as {
+    input_snapshot: unknown
+    output_payload: unknown
+    attempt_count: number | null
+  }
+
+  try {
+    await admin.from('tu_ai_runs').update({
+      attempt_count: (run.attempt_count ?? 0) + 1,
+    }).eq('id', input.runId)
+    const snapshot = record(run.input_snapshot)
+    const images = (await listTuInvestigationImages(input)).filter(isTuAnalysisSourceImage)
+    const selectedImages = images.slice(0, configuredMaxImages())
+    const workflow = parseTuAnalysisBackgroundState(run.output_payload)
+    const imageAnalyses = storedImageAnalyses(workflow?.imageAnalyses)
+
+    if (workflow?.stage === 'synthesis_ready') {
+      await finalizeTuInspectionAnalysis({
+        ...input,
+        snapshot,
+        images,
+        selectedImages,
+        imageAnalyses,
+        analysis: parseAnalysisDraft(record(workflow.analysisDraft)),
+      })
+      return
+    }
+
+    const nextImageIndex = workflow?.stage === 'image_batch_ready'
+      ? workflow.nextImageIndex
+      : 0
+    if (nextImageIndex < selectedImages.length) {
+      const batch = selectedImages.slice(nextImageIndex, nextImageIndex + IMAGE_BATCH_SIZE)
+      const prepared = await prepareImageBatch(batch)
+      const completedIndex = Math.min(nextImageIndex + batch.length, selectedImages.length)
+      const accumulated = [...imageAnalyses, ...prepared.failed]
+      if (!prepared.body) {
+        await persistAnalysisBackgroundState({
+          runId: input.runId,
+          state: {
+            stage: 'image_batch_ready',
+            responseId: null,
+            submittedAt: null,
+            nextImageIndex: completedIndex,
+            batchImageIds: [],
+            imageAnalyses: accumulated,
+            analysisDraft: null,
+          },
+          status: 'queued',
+          progressStage: 'queued',
+          progressCurrent: completedIndex,
+          progressTotal: selectedImages.length,
+          progressMessage: `Förbereder nästa bilder, ${completedIndex} av ${selectedImages.length} hanterade.`,
+        })
+        return
+      }
+      const envelope = await startStructuredOpenAiRequest({ apiKey, body: prepared.body })
+      await persistAnalysisBackgroundState({
+        runId: input.runId,
+        state: {
+          stage: 'image_batch_pending',
+          responseId: envelope.responseId,
+          submittedAt: new Date().toISOString(),
+          nextImageIndex: completedIndex,
+          batchImageIds: prepared.availableImageIds,
+          imageAnalyses: accumulated,
+          analysisDraft: null,
+        },
+        status: 'processing',
+        progressStage: 'analyzing_images',
+        progressCurrent: nextImageIndex,
+        progressTotal: selectedImages.length,
+        progressMessage: `Analyserar bilder ${nextImageIndex + 1}-${completedIndex} av ${selectedImages.length}.`,
+      })
+      return
+    }
+
+    const envelope = await startStructuredOpenAiRequest({
+      apiKey,
+      body: synthesisRequestBody({ snapshot, imageAnalyses }),
+    })
+    await persistAnalysisBackgroundState({
+      runId: input.runId,
+      state: {
+        stage: 'synthesis_pending',
+        responseId: envelope.responseId,
+        submittedAt: new Date().toISOString(),
+        nextImageIndex: selectedImages.length,
+        batchImageIds: [],
+        imageAnalyses,
+        analysisDraft: null,
+      },
+      status: 'processing',
+      progressStage: 'synthesizing',
+      progressCurrent: selectedImages.length,
+      progressTotal: selectedImages.length,
+      progressMessage: 'Sammanställer observationer, mätvärden och bildiakttagelser.',
+    })
+  } catch (error) {
+    await failInspectionAnalysis({ runId: input.runId, error, source: 'Background stage start failed' })
+  }
+}
+
+export async function pollTuInspectionAnalysis(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.from('tu_ai_runs')
+    .select('status,input_snapshot,output_payload,heartbeat_at,progress_total')
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'inspection_analysis')
+    .eq('status', 'processing')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) return
+
+  const row = data as {
+    input_snapshot: unknown
+    output_payload: unknown
+    heartbeat_at: string | null
+    progress_total: number | null
+  }
+  const workflow = parseTuAnalysisBackgroundState(row.output_payload)
+  if (
+    !workflow
+    || (workflow.stage !== 'image_batch_pending' && workflow.stage !== 'synthesis_pending')
+    || !workflow.responseId
+    || !workflow.submittedAt
+  ) return
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (!apiKey) {
+    await failInspectionAnalysis({
+      runId: input.runId,
+      error: new Error('OPENAI_API_KEY_MISSING'),
+      source: 'AI configuration missing while polling',
+    })
+    return
+  }
+  if (Date.now() - Date.parse(workflow.submittedAt) > PROVIDER_MAX_JOB_AGE_MS) {
+    await failInspectionAnalysis({
+      runId: input.runId,
+      error: new Error('AI-körningen tog för lång tid. Försök igen.'),
+      source: 'Provider deadline exceeded',
+    })
+    return
+  }
+
+  let provider: Awaited<ReturnType<typeof retrieveStructuredOpenAiResponse>>
+  try {
+    provider = await retrieveStructuredOpenAiResponse({ apiKey, responseId: workflow.responseId })
+  } catch (pollError) {
+    if (pollError instanceof Error && pollError.message === 'OPENAI_RESPONSE_NOT_FOUND') {
+      await failInspectionAnalysis({ runId: input.runId, error: pollError, source: 'Provider response missing' })
+      return
+    }
+    console.error('[tu.analysis] Provider status temporarily unavailable', {
+      runId: input.runId,
+      error: pollError,
+    })
+    await admin.from('tu_ai_runs').update({
+      progress_message: 'AI:n arbetar vidare. Status kontrolleras automatiskt igen.',
+      heartbeat_at: new Date().toISOString(),
+    }).eq('id', input.runId).eq('status', 'processing')
+    return
+  }
+
+  if (provider.envelope.status === 'queued' || provider.envelope.status === 'in_progress') {
+    await admin.from('tu_ai_runs').update({
+      progress_message: workflow.stage === 'image_batch_pending'
+        ? `Analyserar bilder upp till ${workflow.nextImageIndex} av ${row.progress_total ?? workflow.nextImageIndex}.`
+        : 'Sammanställer observationer, mätvärden och bildiakttagelser.',
+      heartbeat_at: new Date().toISOString(),
+    }).eq('id', input.runId).eq('status', 'processing')
+    return
+  }
+  if (
+    provider.envelope.status === 'failed'
+    || provider.envelope.status === 'incomplete'
+    || provider.envelope.status === 'cancelled'
+  ) {
+    await failInspectionAnalysis({
+      runId: input.runId,
+      error: new Error(tuReportProviderFailureMessage(provider.payload)),
+      source: `Provider ended with ${provider.envelope.status}`,
+    })
+    return
+  }
+
+  try {
+    const expectedHeartbeat = cleanText(row.heartbeat_at)
+    const now = new Date().toISOString()
+    const imageAnalyses = storedImageAnalyses(workflow.imageAnalyses)
+    const parsed = parseStructuredResponse(provider.payload)
+    const nextState: Omit<TuAnalysisBackgroundState, 'version'> = workflow.stage === 'image_batch_pending'
+      ? {
+          stage: 'image_batch_ready',
+          responseId: null,
+          submittedAt: null,
+          nextImageIndex: workflow.nextImageIndex,
+          batchImageIds: [],
+          imageAnalyses: [
+            ...imageAnalyses,
+            ...parseImageBatch(parsed, workflow.batchImageIds),
+          ],
+          analysisDraft: null,
+        }
+      : {
+          stage: 'synthesis_ready',
+          responseId: null,
+          submittedAt: null,
+          nextImageIndex: workflow.nextImageIndex,
+          batchImageIds: [],
+          imageAnalyses,
+          analysisDraft: parseAnalysisDraft(parsed),
+        }
+    const progressCurrent = nextState.nextImageIndex
+    const { data: readyData, error: readyError } = await admin.from('tu_ai_runs').update({
+      status: 'queued',
+      output_payload: tuAnalysisBackgroundPayload(nextState),
+      progress_stage: 'queued',
+      progress_current: progressCurrent,
+      progress_message: nextState.stage === 'image_batch_ready'
+        ? `${progressCurrent} av ${row.progress_total ?? progressCurrent} bilder analyserade.`
+        : 'Helhetsanalysen är klar och kvalitetskontrolleras.',
+      heartbeat_at: now,
+    })
+      .eq('id', input.runId)
+      .eq('status', 'processing')
+      .eq('heartbeat_at', expectedHeartbeat)
+      .select('id')
+      .maybeSingle()
+    if (readyError) throw new Error(readyError.message)
+    if (!readyData) return
+    await runTuInspectionAnalysis(input)
+  } catch (parseError) {
+    await failInspectionAnalysis({ runId: input.runId, error: parseError, source: 'Provider result parsing failed' })
+  }
+}
+
+export async function advanceTuInspectionAnalysis(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.from('tu_ai_runs')
+    .select('status')
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'inspection_analysis')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const status = cleanText((data as { status?: unknown } | null)?.status)
+  if (status === 'queued') return runTuInspectionAnalysis(input)
+  if (status === 'processing') return pollTuInspectionAnalysis(input)
 }

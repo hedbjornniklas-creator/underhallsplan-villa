@@ -1,7 +1,43 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { parseTuAnalysisBackgroundState, tuAnalysisBackgroundPayload, tuAnalysisFailureMessage } from '../src/lib/tu/analysisBackground.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { normalizeTuReportProviderResponse, parseTuReportBackgroundState, tuReportBackgroundPayload, tuReportProviderFailureMessage } from '../src/lib/tu/reportDraftBackground.ts'
+
+test('keeps image-batch progress in a resumable analysis state', () => {
+  const payload = tuAnalysisBackgroundPayload({
+    stage: 'image_batch_pending',
+    responseId: 'resp_imagebatch1',
+    submittedAt: '2026-09-09T15:00:00.000Z',
+    nextImageIndex: 8,
+    batchImageIds: ['image-1', 'image-2'],
+    imageAnalyses: [{ imageId: 'image-0' }],
+    analysisDraft: null,
+  })
+
+  assert.deepEqual(parseTuAnalysisBackgroundState(payload), {
+    version: 1,
+    stage: 'image_batch_pending',
+    responseId: 'resp_imagebatch1',
+    submittedAt: '2026-09-09T15:00:00.000Z',
+    nextImageIndex: 8,
+    batchImageIds: ['image-1', 'image-2'],
+    imageAnalyses: [{ imageId: 'image-0' }],
+    analysisDraft: null,
+  })
+})
+
+test('does not expose technical analysis errors to users', () => {
+  assert.equal(
+    tuAnalysisFailureMessage(new Error('Unterminated string in JSON at position 4955')),
+    'Utlåtandet kunde inte förberedas just nu. Försök igen.'
+  )
+  assert.equal(
+    tuAnalysisFailureMessage(new Error('OPENAI_INCOMPLETE_RESPONSE')),
+    'AI-svaret blev ofullständigt. Försök igen.'
+  )
+})
 
 test('accepts persisted pending report jobs with a valid provider id', () => {
   const payload = tuReportBackgroundPayload({
