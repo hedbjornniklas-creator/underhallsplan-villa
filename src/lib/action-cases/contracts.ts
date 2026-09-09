@@ -23,6 +23,7 @@ export type ActionItemStatus =
   | 'cancelled'
 
 export type ActionCaseItemView = {
+  scopeAttachmentIds?: string[] | null
   id: string
   title: string
   scope: string | null
@@ -141,6 +142,7 @@ export type ActionCaseParticipantView = {
 }
 
 export type ActionCaseAttachmentView = {
+  isQuoteDocument?: boolean
   id: string
   actionCaseItemId: string | null
   type: 'image' | 'document'

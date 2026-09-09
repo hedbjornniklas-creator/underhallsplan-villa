@@ -29,9 +29,14 @@ function App() {
   const [actions, setActions] = useState<string[]>([])
   const toast = useToast()
   const update = (value: Partial<ActionCaseItemView>) => setItem((current) => ({ ...current, ...value, updatedAt: crypto.randomUUID() }))
-  return <main><h1>Test av åtgärdskalkyl</h1><button onClick={() => setOpen(true)}>Öppna åtgärd</button><output hidden data-testid="actions">{JSON.stringify(actions)}</output>
-    {open ? <ActionCaseItemSheet item={item} busy={busy} caseId="test-case" attachments={[{ id: '00000000-0000-4000-8000-000000000008', actionCaseItemId: null, type: 'image', title: 'Entré', fileName: 'entre.jpg', contentType: 'image/jpeg', fileSizeBytes: 100, grantedParticipantIds: [], createdAt: 'v1' }]} onClose={() => setOpen(false)} onSave={async (payload) => {
-      setBusy(true); await new Promise((resolve) => setTimeout(resolve, 150)); update(payload); setBusy(false); toast.success('Åtgärden sparades.'); return true
+  return <main><h1>Test av åtgärdskalkyl</h1><button onClick={() => setOpen(true)}>Öppna åtgärd</button><output hidden data-testid="actions">{JSON.stringify(actions)}</output><output hidden data-testid="item">{JSON.stringify(item)}</output>
+    {open ? <ActionCaseItemSheet item={item} busy={busy} caseId="test-case" attachments={[
+      { id: '00000000-0000-4000-8000-000000000008', actionCaseItemId: null, type: 'image', title: 'Entré', fileName: 'entre.jpg', contentType: 'image/jpeg', fileSizeBytes: 100, grantedParticipantIds: [], createdAt: 'v1' },
+      ...(new URLSearchParams(location.search).has('scope') ? [{ id: '00000000-0000-4000-8000-000000000009', actionCaseItemId: null, type: 'document' as const, title: 'Arbetsbeskrivning', fileName: 'arbetsbeskrivning.pdf', contentType: 'application/pdf', fileSizeBytes: 100, grantedParticipantIds: [], createdAt: 'v1' }] : []),
+    ]} onClose={() => setOpen(false)} onSave={async (payload) => {
+      setBusy(true); await new Promise((resolve) => setTimeout(resolve, 150)); setBusy(false)
+      if (new URLSearchParams(location.search).has('saveFail')) { toast.error('Filvalet kunde inte sparas.'); return false }
+      update(payload); toast.success('Åtgärden sparades.'); return true
     }} onCostAction={async (name, payload) => {
       setActions((current) => [...current, name]); setBusy(true)
       await new Promise((resolve) => setTimeout(resolve, 500))

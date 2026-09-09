@@ -10,11 +10,12 @@ type Props = {
   files: ActionCaseAttachmentView[]
   selectedIds: string[]
   inputName: string
+  selectionLabel?: string
   disabled: boolean
   onChange: (id: string, checked: boolean) => void
 }
 
-export default function ActionCaseAttachmentPicker({ caseId, files, selectedIds, inputName, disabled, onChange }: Props) {
+export default function ActionCaseAttachmentPicker({ caseId, files, selectedIds, inputName, selectionLabel, disabled, onChange }: Props) {
   const [openedId, setOpenedId] = useState<string | null>(null)
   const images = caseId ? files.filter((file) => file.type === 'image') : []
   const documents = files.filter((file) => !caseId || file.type !== 'image')
@@ -30,6 +31,6 @@ export default function ActionCaseAttachmentPicker({ caseId, files, selectedIds,
       <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3 py-2 text-sm"><input name={inputName} type="checkbox" value={file.id} className="h-4 w-4 shrink-0 accent-violet-600" disabled={disabled} checked={selectedIds.includes(file.id)} onChange={(e) => onChange(file.id, e.target.checked)} /><FileText size={18} className="shrink-0 text-slate-500" /><span className="min-w-0 break-words">{file.title || file.fileName}</span></label>
       {caseId ? <a className="inline-flex min-h-11 shrink-0 items-center text-sm text-violet-700 underline" aria-label={`Öppna ${file.fileName}`} href={actionCaseImageUrl(caseId, file.id)} target="_blank" rel="noreferrer">Öppna</a> : null}
     </li>)}</ul> : null}
-    {caseId && openedId && images.some((image) => image.id === openedId) ? <ActionCaseImageViewer caseId={caseId} images={images} openedId={openedId} onOpen={setOpenedId} onClose={() => setOpenedId(null)} selection={{ selectedIds, disabled, onChange }} /> : null}
+    {caseId && openedId && images.some((image) => image.id === openedId) ? <ActionCaseImageViewer caseId={caseId} images={images} openedId={openedId} onOpen={setOpenedId} onClose={() => setOpenedId(null)} selection={{ selectedIds, disabled, onChange, label: selectionLabel }} /> : null}
   </div>
 }

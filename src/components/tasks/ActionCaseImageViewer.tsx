@@ -23,7 +23,7 @@ type Props = {
   openedId: string
   onOpen: (id: string) => void
   onClose: () => void
-  selection?: { selectedIds: string[]; disabled: boolean; onChange: (id: string, checked: boolean) => void }
+  selection?: { selectedIds: string[]; disabled: boolean; onChange: (id: string, checked: boolean) => void; label?: string }
 }
 
 export default function ActionCaseImageViewer({ caseId, images, openedId, onOpen, onClose, selection }: Props) {
@@ -54,7 +54,7 @@ export default function ActionCaseImageViewer({ caseId, images, openedId, onOpen
       <header className="flex shrink-0 items-center justify-between gap-3 p-3"><p className="min-w-0 break-words text-sm">{index + 1} / {images.length} · {opened.title || opened.fileName}</p><button type="button" onClick={onClose} aria-label="Stäng bild" title="Stäng bild" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-white/10"><X /></button></header>
       <div className="relative min-h-0 flex-1"><ActionCaseAttachmentImage key={opened.id} caseId={caseId} file={opened} eager /></div>
       <footer className="flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-2 p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-        {selection ? <label className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-3 text-sm"><input type="checkbox" className="h-5 w-5 accent-violet-600" disabled={selection.disabled} checked={selection.selectedIds.includes(opened.id)} onChange={(e) => selection.onChange(opened.id, e.target.checked)} />Bifoga bilden</label> : null}
+        {selection ? <label className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-3 text-sm"><input type="checkbox" className="h-5 w-5 accent-violet-600" disabled={selection.disabled} checked={selection.selectedIds.includes(opened.id)} onChange={(e) => selection.onChange(opened.id, e.target.checked)} />{selection.label || 'Bifoga bilden'}</label> : null}
         <button type="button" disabled={index <= 0} onClick={() => onOpen(images[index - 1].id)} aria-label="Föregående bild" title="Föregående bild" className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronLeft /></button>
         <a href={actionCaseImageUrl(caseId, opened.id)} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-sm underline">Öppna original</a>
         <button type="button" disabled={index >= images.length - 1} onClick={() => onOpen(images[index + 1].id)} aria-label="Nästa bild" title="Nästa bild" className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronRight /></button>

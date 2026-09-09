@@ -23,7 +23,9 @@ const initial: ActionCaseView = {
 }
 
 export default function RequestApp() {
-  const [actionCase, setCase] = useState(initial)
+  const [actionCase, setCase] = useState(() => new URLSearchParams(location.search).has('scope') ? {
+    ...initial, items: initial.items.map((item, n) => ({ ...item, scopeAttachmentIds: [id(n === 0 ? 31 : 32), id(34)] })),
+  } : initial)
   const [editor, setEditor] = useState<{ requestId: string | null; supplementId?: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [actions, setActions] = useState<string[]>([])

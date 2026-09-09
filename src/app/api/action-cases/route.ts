@@ -88,6 +88,10 @@ function errorResponse(error: unknown) {
     }, { status: aiServiceErrors[code] })
   }
   const aiErrors: Record<string, [number, string]> = {
+    ACTION_CASE_SCOPE_ATTACHMENTS_INVALID: [400, 'Filvalet kunde inte sparas. Välj högst 50 tillgängliga filer från detta uppdrag.'],
+    ACTION_CASE_ITEM_STALE: [409, 'Åtgärden har ändrats sedan den öppnades. Öppna den igen innan du sparar.'],
+    ACTION_CASE_AI_FILES_TOO_LARGE: [400, 'Det valda underlaget är för stort för AI. Välj högst 20 filer och sammanlagt högst 25 MB under Omfattning.'],
+    ACTION_CASE_AI_FILE_UNREADABLE: [400, 'En vald fil kunde inte läsas. Kontrollera bilder och dokument under Omfattning och försök igen.'],
     ACTION_CASE_AI_SCOPE_REQUIRED: [400, 'Spara arbetets omfattning innan du skapar ett kalkylförslag.'],
     ACTION_CASE_AI_SCOPE_TOO_LONG: [400, 'Underlaget är för stort. Avgränsa åtgärdens omfattning.'],
     ACTION_CASE_AI_STALE: [409, 'Omfattningen eller kalkylen har ändrats. Skapa ett nytt förslag.'],

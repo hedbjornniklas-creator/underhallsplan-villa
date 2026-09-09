@@ -5,6 +5,7 @@ import { ArrowLeft, Check, FileText, Loader2, Mail, Pencil, Plus, Save, Send, Tr
 import type { ActionCaseCostLineView, ActionCaseItemView, ActionCaseQuote, ActionCaseView } from '@/lib/action-cases/contracts'
 import { normalizeQuote, quoteIsStale, quoteRequestText } from '@/lib/action-cases/quotes'
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
+import { defaultRequestAttachments } from '@/lib/action-cases/scopeAttachments'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40'
@@ -31,7 +32,7 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
     materials: quote?.materials ?? 'unspecified', travel: quote?.travel ?? 'unspecified', waste: quote?.waste ?? 'unspecified',
     coveredLineIds: quote?.coveredLineIds ?? [], documentId: quote?.documentId ?? '', checked: quote?.checked ?? false,
     requestSubject: quote?.requestSubject || `Offertförfrågan: ${line.description}`.slice(0, 200),
-    requestBody: quote?.requestBody || quoteRequestText(line.description), requestAttachmentIds: quote?.requestAttachmentIds ?? [],
+    requestBody: quote?.requestBody || quoteRequestText(line.description), requestAttachmentIds: quote?.requestAttachmentIds ?? (mode === 'request' ? defaultRequestAttachments([item], attachments, new Set(item.costLines.flatMap((l) => (l.quotes ?? []).flatMap((q) => q.documentId ? [q.documentId] : [])))) : []),
     expectedUpdatedAt: quote?.updatedAt,
   }))
   const requestLocked = Boolean(quote && quote.deliveryStatus !== 'draft')
@@ -42,6 +43,8 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
   const mayCover = (l: ActionCaseCostLineView) => l.category === 'other' || form[l.category === 'material' ? 'materials' : l.category === 'transport' ? 'travel' : 'waste'] === 'included'
   let valid = false
   try { normalizeQuote(form); valid = mode === 'offer' || Boolean(form.supplierEmail.trim() && form.requestSubject.trim() && form.requestBody.trim()) } catch { /* Form remains editable. */ }
+  const tooLarge = mode === 'request' && (form.requestAttachmentIds.length > 30 || attachments.filter((file) => form.requestAttachmentIds.includes(file.id)).reduce((sum, file) => sum + file.fileSizeBytes, 0) > 5 * 1024 * 1024)
+  if (tooLarge) valid = false
   const field = (key: 'supplierName' | 'supplierEmail' | 'amount' | 'validUntil' | 'availableFrom' | 'requestSubject', label: string, type = 'text', disabled = false) => <label className="min-w-0 text-xs font-semibold text-slate-600">{label}<input name={key} type={type} step={type === 'number' ? '0.01' : undefined} min={type === 'number' ? '0' : undefined} className={input} value={form[key]} disabled={disabled} onChange={(e) => set(key, e.target.value)} /></label>
   return <form className="space-y-4 py-4" onSubmit={(e) => { e.preventDefault(); if (valid && !busy) void onSave(form).then((saved) => { if (saved) onCancel() }) }}>
     <h4 className="font-semibold">{mode === 'request' ? 'Offertförfrågan' : 'Registrera offert'}</h4>
@@ -52,7 +55,7 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
       {mode === 'request' ? <>
         {field('requestSubject', 'Ämne *', 'text', requestLocked)}
         <label className="block text-xs font-semibold text-slate-600">Meddelande *<textarea name="requestBody" rows={9} className={`${input} py-2`} disabled={requestLocked} value={form.requestBody} onChange={(e) => set('requestBody', e.target.value)} /></label>
-        <fieldset disabled={requestLocked}><legend className="text-sm font-semibold">Bifoga från uppdraget</legend><ActionCaseAttachmentPicker caseId={caseId} files={attachments.filter((a) => !quoteDocuments.includes(a.id))} selectedIds={form.requestAttachmentIds} inputName="requestAttachmentIds" disabled={busy || requestLocked} onChange={(id, checked) => toggle('requestAttachmentIds', id, checked)} /></fieldset>
+        <fieldset disabled={requestLocked}><legend className="text-sm font-semibold">Bifoga från uppdraget</legend><ActionCaseAttachmentPicker caseId={caseId} files={attachments.filter((a) => !a.isQuoteDocument && !quoteDocuments.includes(a.id))} selectedIds={form.requestAttachmentIds} inputName="requestAttachmentIds" disabled={busy || requestLocked} onChange={(id, checked) => toggle('requestAttachmentIds', id, checked)} />{tooLarge ? <p role="status" className="mt-2 text-sm text-amber-800">Bilagorna överstiger gränsen på 30 filer eller 5 MB. Välj färre eller mindre filer.</p> : null}</fieldset>
       </> : <>
         <div className="grid gap-3 sm:grid-cols-2">{field('amount', 'Offertbelopp exkl. moms, kr', 'number')}{field('validUntil', 'Giltig till', 'date')}{field('availableFrom', 'Kan utföras från', 'date')}</div>
         <label className="block text-xs font-semibold text-slate-600">Offertens omfattning<textarea name="offeredScope" rows={3} className={`${input} py-2`} value={form.offeredScope} onChange={(e) => set('offeredScope', e.target.value)} /></label>

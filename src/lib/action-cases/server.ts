@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import type { ActionCaseAttachmentView, ActionCaseCostLineView, ActionCaseItemView, ActionCaseParticipantView, ActionCasePortal, ActionCaseView, ActionCaseWorkspace } from './contracts'
+import { parseScopeAttachmentIds } from './scopeAttachments'
 import { filterActionCasePortalItems } from './domain'
 import { normalizeCostLine } from './costing'
 import { mapQuote, QUOTE_VIEW_COLUMNS, quoteIsStale } from './quotes'
@@ -65,6 +66,7 @@ function mapItem(row: Record<string, unknown>, costLines: ActionCaseCostLineView
     id: String(row.id),
     title: String(row.title),
     scope: row.scope ? String(row.scope) : null,
+    scopeAttachmentIds: Array.isArray(row.scope_attachment_ids) ? row.scope_attachment_ids as string[] : null,
     status: row.status as ActionCaseItemView['status'],
     sortOrder: Number(row.sort_order),
     ownLaborReady: Boolean(row.own_labor_ready),
@@ -197,11 +199,16 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     grantIdsByAttachment.set(row.attachment_id, list)
   }
   const attachmentsByCase = new Map<string, ActionCaseAttachmentView[]>()
+  const privateDocumentIds = new Set([
+    ...((quotes ?? []) as unknown as Record<string, unknown>[]).map((quote) => quote.document_id),
+    ...(requestRows ?? []).map((request) => request.response_document_id),
+  ].filter(Boolean))
   for (const row of attachments ?? []) {
     const list = attachmentsByCase.get(row.action_case_id) ?? []
     list.push({
       id: row.id,
       actionCaseItemId: row.action_case_item_id,
+      isQuoteDocument: privateDocumentIds.has(row.id),
       type: row.attachment_type,
       title: row.title,
       fileName: row.file_name,
@@ -630,6 +637,17 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
   const patch: Record<string, unknown> = { updated_by: context.userId }
   if ('title' in payload) patch.title = text(payload.title)
   if ('scope' in payload) patch.scope = nullableText(payload.scope)
+  if ('scopeAttachmentIds' in payload) {
+    if (!('scope_attachment_ids' in existing)) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
+    if (!payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
+    const ids = parseScopeAttachmentIds(payload.scopeAttachmentIds)
+    if (ids.length) {
+      const { data: files, error: fileError } = await admin.from('action_case_attachments').select('id')
+        .eq('org_id', context.orgId).eq('action_case_id', existing.action_case_id).in('id', ids)
+      if (fileError || files?.length !== ids.length) throw new Error('ACTION_CASE_SCOPE_ATTACHMENTS_INVALID')
+    }
+    patch.scope_attachment_ids = ids
+  }
   if ('status' in payload) patch.status = text(payload.status)
   for (const [input, column] of [
     ['ownLaborReady', 'own_labor_ready'],
@@ -656,6 +674,8 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
   let update = admin.from('action_case_items').update(patch).eq('id', itemId).eq('org_id', context.orgId)
   if (payload.expectedUpdatedAt) update = update.eq('updated_at', text(payload.expectedUpdatedAt))
   const { data: updated, error } = await update.select('id').maybeSingle()
+  if (error?.message?.includes('ACTION_CASE_SCOPE_ATTACHMENTS_INVALID')) throw new Error('ACTION_CASE_SCOPE_ATTACHMENTS_INVALID')
+  if (!error && !updated && payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
   if (error || !updated) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
 
   const { data: siblings } = await admin

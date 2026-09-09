@@ -6,6 +6,7 @@ import { ArrowRight, FileText, Loader2, Mail, Pencil, Plus, Save, Send, Trash2, 
 import type { ActionCaseQuoteRequest, ActionCaseView } from '@/lib/action-cases/contracts'
 import { normalizeQuoteRequest, REQUEST_REQUIREMENTS, requestSources } from '@/lib/action-cases/quoteRequests'
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
+import { defaultRequestAttachments, quoteDocumentIds, reconcileRequestAttachments } from '@/lib/action-cases/scopeAttachments'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const secondary = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-40'
@@ -52,13 +53,23 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   const request = actionCase.quoteRequests?.find((r) => r.id === id)
   const base = request ?? actionCase.quoteRequests?.find((r) => r.id === supplementId)
   const sources = requestSources(actionCase)
+  const privateDocs = quoteDocumentIds(actionCase)
+  const defaultsFor = (lineIds: string[]) => defaultRequestAttachments(
+    actionCase.items.filter((item) => sources.some((source) => source.itemId === item.id && lineIds.includes(source.costLineId))),
+    actionCase.attachments, privateDocs,
+  )
+  const savedOverrides = (saved: ActionCaseQuoteRequest | undefined) => saved ? Object.fromEntries([
+    ...defaultsFor(saved.lines.map((line) => line.costLineId)).map((id) => [id, false] as const),
+    ...saved.attachmentIds.map((id) => [id, true] as const),
+  ]) : {}
+  const [attachmentOverrides, setAttachmentOverrides] = useState<Record<string, boolean>>(() => savedOverrides(request))
   const [form, setForm] = useState(() => ({
     requestId: id, supplierName: base?.supplierName ?? '', supplierEmail: base?.supplierEmail ?? '',
     subject: request?.subject ?? `${supplementId ? 'Komplettering: ' : ''}Offertförfrågan: ${actionCase.title}`.slice(0, 200),
     message: request?.message ?? `Objekt: ${actionCase.propertyAddress}`,
     selectedIds: request?.lines.map((l) => l.costLineId) ?? (preselectedLineId ? [preselectedLineId] : []),
     requirementKeys: base?.requirements.map((r) => r.key) ?? [], otherRequirements: base?.otherRequirements ?? '',
-    attachmentIds: request?.attachmentIds ?? [], supplementsId: request?.supplementsId ?? supplementId ?? null,
+    attachmentIds: request?.attachmentIds ?? defaultsFor(preselectedLineId ? [preselectedLineId] : []), supplementsId: request?.supplementsId ?? supplementId ?? null,
   }))
   const [expected, setExpected] = useState(request?.updatedAt)
   const [editing, setEditing] = useState(!request)
@@ -70,10 +81,20 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   const working = busy || pending
   const locked = Boolean(request?.firstAttemptAt)
   const set = (key: string, value: unknown) => { setForm((f) => ({ ...f, [key]: value })); setDirty(true) }
-  const toggle = (key: 'selectedIds' | 'requirementKeys' | 'attachmentIds', value: string, checked: boolean) => set(key, checked ? [...form[key], value] : form[key].filter((id) => id !== value))
-  const privateDocs = new Set([...actionCase.items.flatMap((i) => i.costLines.flatMap((l) => (l.quotes ?? []).map((q) => q.documentId))), ...(actionCase.quoteRequests ?? []).map((r) => r.responseDocumentId)].filter(Boolean))
+  const toggle = (key: 'selectedIds' | 'requirementKeys' | 'attachmentIds', value: string, checked: boolean) => {
+    if (key === 'attachmentIds') setAttachmentOverrides((current) => ({ ...current, [value]: checked }))
+    setForm((current) => {
+      const ids = checked ? [...new Set([...current[key], value])] : current[key].filter((id) => id !== value)
+      return { ...current, [key]: ids, ...(key === 'selectedIds' ? {
+        attachmentIds: reconcileRequestAttachments(current.attachmentIds, defaultsFor(current.selectedIds), defaultsFor(ids), attachmentOverrides),
+      } : {}) }
+    })
+    setDirty(true)
+  }
   const selectedLines = sources.filter((l) => form.selectedIds.includes(l.costLineId))
   let valid = selectedLines.length === form.selectedIds.length
+  const attachmentBytes = actionCase.attachments.filter((file) => form.attachmentIds.includes(file.id)).reduce((sum, file) => sum + file.fileSizeBytes, 0)
+  if (attachmentBytes > 5 * 1024 * 1024) valid = false
   try { normalizeQuoteRequest({ ...form, lines: selectedLines }); } catch { valid = false }
   const current = request && request.lines.every((line) => sources.some((s) => s.costLineId === line.costLineId && s.itemId === line.itemId && s.scope === line.scope && s.itemTitle === line.itemTitle && s.description === line.description))
   const close = () => { if (!working && (!(dirty || responseEditing) || window.confirm('Stäng utan att spara ändringarna?'))) onClose() }
@@ -121,7 +142,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
           <label className="block text-sm">Ämne *<input className={input} maxLength={200} value={form.subject} onChange={(e) => set('subject', e.target.value)} /></label>
           <label className="block text-sm">Meddelande till UE<textarea name="message" rows={3} className={`${input} py-2`} maxLength={6000} value={form.message} onChange={(e) => set('message', e.target.value)} /></label>
         </fieldset>
-        <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Bilagor</legend><ActionCaseAttachmentPicker caseId={actionCase.id} files={actionCase.attachments.filter((a) => !privateDocs.has(a.id))} selectedIds={form.attachmentIds} inputName="attachment" disabled={working} onChange={(id, checked) => toggle('attachmentIds', id, checked)} /><p className="mt-2 text-xs text-slate-500">{form.attachmentIds.length} valda · högst 5 MB sammanlagt</p></fieldset>
+        <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Bilagor</legend><ActionCaseAttachmentPicker caseId={actionCase.id} files={actionCase.attachments.filter((a) => !a.isQuoteDocument && !privateDocs.has(a.id))} selectedIds={form.attachmentIds} inputName="attachment" disabled={working} onChange={(id, checked) => toggle('attachmentIds', id, checked)} /><p className="mt-2 text-xs text-slate-500">{form.attachmentIds.length} valda · högst 30 filer och 5 MB sammanlagt</p>{form.attachmentIds.length > 30 || attachmentBytes > 5 * 1024 * 1024 ? <p role="status" className="mt-2 text-sm text-amber-800">Bilagorna överstiger gränsen på 30 filer eller 5 MB. Välj färre eller mindre filer före förhandsgranskningen.</p> : null}</fieldset>
       </form> : request ? <div className="space-y-5">
         {!current && !locked ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats. Redigera och granska förfrågan igen före utskick.</p> : null}
         {locked && !current ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats efter att utskicket påbörjades. Den sparade förfrågan är oförändrad.</p> : null}
@@ -139,7 +160,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     </div>
     <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
       {editing ? <><button className={secondary} disabled={working} onClick={() => { if (request) { setEditing(false); setDirty(false) } else close() }}>Avbryt</button><button className={primary} form="group-request-form" type="submit" disabled={working || !valid}>{working ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}Spara och förhandsgranska</button></> : request ? <>
-        {!locked ? <><button className={secondary} disabled={working} title="Ta bort utkast" aria-label="Ta bort utkast" onClick={() => setDeleting(true)}><Trash2 size={16} /></button><button className={secondary} disabled={working} onClick={() => { setForm({ requestId: request.id, supplierName: request.supplierName, supplierEmail: request.supplierEmail, subject: request.subject, message: request.message, selectedIds: request.lines.map((l) => l.costLineId), requirementKeys: request.requirements.map((r) => r.key), otherRequirements: request.otherRequirements, attachmentIds: request.attachmentIds, supplementsId: request.supplementsId }); setExpected(request.updatedAt); setEditing(true) }}><Pencil size={16} />Redigera</button></> : <button className={secondary} disabled={working || responseEditing} onClick={() => onSupplement(request)}><Plus size={16} />Komplettera</button>}
+        {!locked ? <><button className={secondary} disabled={working} title="Ta bort utkast" aria-label="Ta bort utkast" onClick={() => setDeleting(true)}><Trash2 size={16} /></button><button className={secondary} disabled={working} onClick={() => { setForm({ requestId: request.id, supplierName: request.supplierName, supplierEmail: request.supplierEmail, subject: request.subject, message: request.message, selectedIds: request.lines.map((l) => l.costLineId), requirementKeys: request.requirements.map((r) => r.key), otherRequirements: request.otherRequirements, attachmentIds: request.attachmentIds, supplementsId: request.supplementsId }); setAttachmentOverrides(savedOverrides(request)); setExpected(request.updatedAt); setEditing(true) }}><Pencil size={16} />Redigera</button></> : <button className={secondary} disabled={working || responseEditing} onClick={() => onSupplement(request)}><Plus size={16} />Komplettera</button>}
         {!request.sentAt ? <button className={primary} disabled={working || (!locked && !current)} onClick={() => void run('send_grouped_quote_request', { confirmSend: true, expectedUpdatedAt: request.updatedAt })}>{working ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}{locked ? 'Försök skicka igen' : 'Skicka förfrågan'}</button> : <button className={secondary} disabled={working} onClick={close}>Stäng</button>}
       </> : null}
     </footer>

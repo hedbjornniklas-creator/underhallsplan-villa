@@ -8,7 +8,7 @@ const code = ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/co
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 const proposal = { lines: [{ category: 'own_labor', description: 'Förarbete', quantity: 2, unit: 'tim', quantityBasis: 'estimated', notes: 'Kontrollera tidsåtgång.' }], warnings: [] }
-function harness({ found = true, scope = 'Byt skadad list', schemaError = false, count = 0, httpStatus = 200, httpBody, headers, status = 'completed', content, fetchError, saveError = false, apiKey = 'test-only-key' } = {}) {
+function harness({ found = true, scope = 'Byt skadad list', schemaError = false, count = 0, httpStatus = 200, httpBody, headers, status = 'completed', content, fetchError, saveError = false, apiKey = 'test-only-key', fileContent = [], fileError } = {}) {
   const saved = [], calls = [], reads = [], logs = []
   const admin = { from(table) {
     const query = { table, filters: [] }; reads.push(query)
@@ -27,6 +27,7 @@ function harness({ found = true, scope = 'Byt skadad list', schemaError = false,
   new Function('module', 'exports', 'require', 'fetch', 'process', 'console', code)(mod, mod.exports, (name) => {
     if (name === 'server-only') return {}
     if (name === './costing') return costing
+    if (name === './costingAiFiles') return { loadCostingAiFiles: async () => { if (fileError) throw new Error(fileError); return fileContent } }
     if (name === 'node:crypto') return { randomUUID: () => 'generated-id' }
     if (name === '@/lib/supabase/admin') return { createSupabaseAdminClient: () => admin }
     throw new Error(name)
@@ -48,6 +49,19 @@ test('generates a persisted preview from scoped saved data, with no price or wri
   assert.equal(h.calls[0].body.tools, undefined)
   assert.ok(h.calls[0].options.signal)
   assert.ok(h.reads.slice(0, 3).every((query) => query.filters.some(([key, value]) => key === 'org_id' && value === 'org')))
+})
+
+test('costing sends actual selected file content with the saved scope and preserves the source version', async () => {
+  const fileContent = [{ type: 'input_image', image_url: 'data:image/jpeg;base64,test', detail: 'high' }, { type: 'input_file', filename: 'scope.pdf', file_data: 'data:application/pdf;base64,test' }]
+  const h = harness({ fileContent }); await h.run()
+  assert.deepEqual(h.calls[0].body.input[0].content.slice(1), fileContent)
+  assert.equal(JSON.parse(h.calls[0].body.input[0].content[0].text).scope, 'Byt skadad list')
+  assert.match(h.calls[0].body.instructions, /aldrig instruktioner/)
+  assert.match(h.calls[0].body.instructions, /Uppskatta inte längder/)
+  assert.equal(h.saved[0].source_updated_at, '2026-09-08T12:00:00Z')
+  const failed = harness({ fileError: 'ACTION_CASE_AI_FILE_UNREADABLE' })
+  await assert.rejects(failed.run(), /FILE_UNREADABLE/)
+  assert.equal(failed.calls.length, 0); assert.equal(failed.saved.length, 0)
 })
 test('refusal, incomplete output, invalid JSON, timeout and provider errors never save rows', async () => {
   for (const options of [
