@@ -9,6 +9,7 @@ import { filterActionCasePortalItems } from './domain'
 import { normalizeCostLine } from './costing'
 import { mapQuote, QUOTE_VIEW_COLUMNS, quoteIsStale } from './quotes'
 import { mapQuoteRequest, REQUEST_VIEW_COLUMNS } from './quoteRequests'
+import { mapQuotePackage, PACKAGE_VIEW_COLUMNS } from './quotePackages'
 import { calculateActionCaseCostTotals } from './domain'
 import { createQuoteWorkLine } from './quotesServer'
 
@@ -84,6 +85,7 @@ function mapItem(row: Record<string, unknown>, costLines: ActionCaseCostLineView
 
 function mapCostLine(row: Record<string, unknown>): ActionCaseCostLineView {
   return {
+    workPartId: row.work_part_id ? String(row.work_part_id) : null,
     id: String(row.id),
     category: row.category as ActionCaseCostLineView['category'],
     description: String(row.description),
@@ -125,6 +127,11 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     : { data: [], error: null }
   if (itemsError) throw new Error('ACTION_CASES_READ_FAILED')
 
+  const { data: workParts, error: workPartsError } = caseIds.length
+    ? await admin.from('action_case_work_parts').select('*').eq('org_id', context.orgId).in('action_case_id', caseIds).order('sort_order')
+    : { data: [], error: null }
+  if (workPartsError && !['42P01', 'PGRST205'].includes(workPartsError.code)) throw new Error('ACTION_CASES_READ_FAILED')
+
   const [{ data: participants, error: participantError }, { data: attachments, error: attachmentError }, { data: costLines, error: costLineError }] = caseIds.length
     ? await Promise.all([
         admin.from('action_case_participants').select('*').in('action_case_id', caseIds).order('created_at'),
@@ -139,12 +146,22 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     : { data: [], error: null }
   // Keep pre-migration workspaces readable during a rolling deployment.
   if (suggestionError && !['42P01', 'PGRST205'].includes(suggestionError.code)) throw new Error('ACTION_CASES_READ_FAILED')
-  const { data: requestRows, error: requestError } = caseIds.length
+  let { data: requestRows, error: requestError } = caseIds.length
     ? await admin.from('action_case_quote_requests').select(REQUEST_VIEW_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false })
     : { data: [], error: null }
+  if (requestError && ['42703', 'PGRST204'].includes(requestError.code)) {
+    const legacyColumns = 'id,action_case_id,supplier_name,supplier_email,subject,message,requirements,other_requirements,lines,attachment_ids,body,supplements_id,response_mode,package_amount,response_notes,response_document_id,delivery_status,sent_at,first_attempt_at,updated_at'
+    const legacy = await admin.from('action_case_quote_requests').select(legacyColumns).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false })
+    requestRows = legacy.data?.map((row) => ({ ...row, price_presentation: 'itemized' })) ?? null; requestError = legacy.error
+  }
   if (requestError && !['42P01', 'PGRST205'].includes(requestError.code)) throw new Error('ACTION_CASES_READ_FAILED')
+  const { data: packageRows, error: packageError } = caseIds.length
+    ? await admin.from('action_case_quote_packages').select(`${PACKAGE_VIEW_COLUMNS},action_case_id`).eq('org_id', context.orgId).in('action_case_id', caseIds)
+    : { data: [], error: null }
+  if (packageError && !['42P01', 'PGRST205'].includes(packageError.code)) throw new Error('ACTION_CASES_READ_FAILED')
+  const packages = (packageRows ?? []) as unknown as Record<string, unknown>[]
   const { data: quotes, error: quoteError } = caseIds.length
-    ? await admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS + (requestError ? '' : ',request_id')).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
+    ? await admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS + (requestError ? '' : ',request_id') + (packageError ? '' : ',package_request_id')).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
     : { data: [], error: null }
   if (quoteError && !['42P01', 'PGRST205'].includes(quoteError.code)) throw new Error('ACTION_CASES_READ_FAILED')
 
@@ -158,9 +175,25 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
   for (const row of costLines ?? []) {
     const list = costLinesByItem.get(row.action_case_item_id) ?? []
     const line = mapCostLine(row)
-    line.quotes = (quotes as unknown as Record<string, unknown>[] | null)?.filter((q) => q.cost_line_id === row.id).map(mapQuote) ?? []
+    line.quotes = (quotes as unknown as Record<string, unknown>[] | null)?.filter((q) => q.cost_line_id === row.id &&
+      (!q.package_request_id || packages.some((price) => price.quote_id === q.id && price.state === 'active'))).map(mapQuote) ?? []
     for (const q of line.quotes) {
-      q.separatePricesConfirmed = !q.requestId || requestRows?.some((r) => r.id === q.requestId && r.response_mode === 'itemized' && r.sent_at) === true
+      const packagePrice = packages.find((price) => price.quote_id === q.id && price.state === 'active')
+      if (packagePrice) {
+        q.packageGroupKey = String(packagePrice.group_key)
+        q.requestId = String(packagePrice.request_id)
+        q.separatePricesConfirmed = true
+      } else if (q.requestId) {
+        const request = requestRows?.find((r) => r.id === q.requestId)
+        const source = (request?.lines as Array<Record<string, unknown>> | undefined)?.find((source) => source.costLineId === row.id)
+        const item = items?.find((item) => item.id === row.action_case_item_id)
+        const matchingSource = source && item && source.itemId === item.id && source.itemTitle === item.title &&
+          source.scope === (item.scope ?? '') && source.description === row.description
+        const part = (workParts as Record<string, unknown>[] | null)?.find((part) => part.id === line.workPartId)
+        const matchingPart = source && (source.workPartId ?? null) === (line.workPartId ?? null) &&
+          (source.workPartTitle ?? '') === (part?.title ?? '') && (source.workPartScope ?? '') === (part?.scope ?? '')
+        q.separatePricesConfirmed = Boolean(request?.response_mode === 'itemized' && request.sent_at && matchingSource && matchingPart)
+      } else q.separatePricesConfirmed = true
     }
     list.push(line)
     costLinesByItem.set(row.action_case_item_id, list)
@@ -169,6 +202,10 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
   for (const row of items ?? []) {
     const list = itemsByCase.get(row.action_case_id) ?? []
     const view = mapItem(row, costLinesByItem.get(row.id) ?? [])
+    view.workParts = ((workParts ?? []) as Record<string, unknown>[]).filter((part) => part.action_case_item_id === row.id).map((part) => ({
+      id: String(part.id), title: String(part.title), scope: part.scope ? String(part.scope) : null,
+      sortOrder: Number(part.sort_order), updatedAt: String(part.updated_at),
+    }))
     for (const line of view.costLines) {
       if (line.pricingMethod !== 'quotes') continue
       const selected = line.quotes?.find((q) => q.id === line.selectedQuoteId)
@@ -238,6 +275,7 @@ export async function getActionCaseWorkspace(context: Context): Promise<ActionCa
     participants: participantsByCase.get(row.id) ?? [],
     attachments: attachmentsByCase.get(row.id) ?? [],
     quoteRequests: (requestRows as unknown as Record<string, unknown>[] | null)?.filter((r) => r.action_case_id === row.id).map(mapQuoteRequest) ?? [],
+    quotePackages: packages.filter((price) => price.action_case_id === row.id).map(mapQuotePackage),
   }))
 
   for (const view of views) {
@@ -514,10 +552,18 @@ export async function deleteActionCaseAttachment(context: Context, payload: Reco
   const admin = createSupabaseAdminClient()
   const { data: attachment } = await admin.from('action_case_attachments').select('storage_bucket,file_path,file_name').eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
   if (!attachment) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
+  // Let database references protect historical quote documents before touching storage.
+  const { data: deleted, error } = await admin.from('action_case_attachments').delete().eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).select('id').maybeSingle()
+  if (error) {
+    if (error.code === '23503' || error.message?.includes('ACTION_CASE_PACKAGE_USE_RPC') || error.message?.includes('ACTION_CASE_PACKAGE_REMOVE_FIRST')) throw new Error('ACTION_CASE_FILE_IN_USE')
+    throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
+  }
+  if (!deleted) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
   const { error: storageError } = await admin.storage.from(attachment.storage_bucket).remove([attachment.file_path])
-  if (storageError) throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
-  const { error } = await admin.from('action_case_attachments').delete().eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId)
-  if (error) throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
+  if (storageError) {
+    console.error('ACTION_CASE_FILE_STORAGE_CLEANUP_FAILED', { orgId: context.orgId, caseId, attachmentId, bucket: attachment.storage_bucket, path: attachment.file_path, error: storageError.message })
+    throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
+  }
   await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId, event_type: 'attachment_deleted', message: `Filen togs bort: ${attachment.file_name}.`, performed_by: context.userId })
 }
 

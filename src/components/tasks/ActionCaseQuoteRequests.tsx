@@ -6,6 +6,7 @@ import { ArrowRight, FileText, Loader2, Mail, Pencil, Plus, Save, Send, Trash2, 
 import type { ActionCaseQuoteRequest, ActionCaseView } from '@/lib/action-cases/contracts'
 import { normalizeQuoteRequest, REQUEST_REQUIREMENTS, requestSources } from '@/lib/action-cases/quoteRequests'
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
+import ActionCaseGroupPrices from './ActionCaseGroupPrices'
 import { defaultRequestAttachments, quoteDocumentIds, reconcileRequestAttachments } from '@/lib/action-cases/scopeAttachments'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
@@ -22,7 +23,7 @@ export function ActionCaseRequestsPanel({ actionCase, busy, onOpen }: { actionCa
 }
 
 type Props = {
-  actionCase: ActionCaseView; requestId: string | null; preselectedLineId?: string; supplementId?: string
+  actionCase: ActionCaseView; requestId: string | null; preselectedLineId?: string; preselectedLineIds?: string[]; supplementId?: string
   busy: boolean; onClose: () => void
   onAction: (action: string, data: Record<string, unknown>) => Promise<boolean>
   onSupplement: (request: ActionCaseQuoteRequest) => void
@@ -48,11 +49,12 @@ function ResponseForm({ request, actionCase, busy, onSave, onCancel }: { request
   </form>
 }
 
-export default function ActionCaseRequestSheet({ actionCase, requestId, preselectedLineId, supplementId, busy, onClose, onAction, onSupplement, onOpenWork }: Props) {
+export default function ActionCaseRequestSheet({ actionCase, requestId, preselectedLineId, preselectedLineIds, supplementId, busy, onClose, onAction, onSupplement, onOpenWork }: Props) {
   const [id] = useState(() => requestId ?? crypto.randomUUID())
   const request = actionCase.quoteRequests?.find((r) => r.id === id)
   const base = request ?? actionCase.quoteRequests?.find((r) => r.id === supplementId)
   const sources = requestSources(actionCase)
+  const initialLineIds = preselectedLineIds ?? (preselectedLineId ? [preselectedLineId] : [])
   const privateDocs = quoteDocumentIds(actionCase)
   const defaultsFor = (lineIds: string[]) => defaultRequestAttachments(
     actionCase.items.filter((item) => sources.some((source) => source.itemId === item.id && lineIds.includes(source.costLineId))),
@@ -67,13 +69,15 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     requestId: id, supplierName: base?.supplierName ?? '', supplierEmail: base?.supplierEmail ?? '',
     subject: request?.subject ?? `${supplementId ? 'Komplettering: ' : ''}Offertförfrågan: ${actionCase.title}`.slice(0, 200),
     message: request?.message ?? `Objekt: ${actionCase.propertyAddress}`,
-    selectedIds: request?.lines.map((l) => l.costLineId) ?? (preselectedLineId ? [preselectedLineId] : []),
+    selectedIds: request?.lines.map((l) => l.costLineId) ?? initialLineIds,
+    pricePresentation: request?.pricePresentation ?? (request ? 'itemized' : 'grouped'),
     requirementKeys: base?.requirements.map((r) => r.key) ?? [], otherRequirements: base?.otherRequirements ?? '',
-    attachmentIds: request?.attachmentIds ?? defaultsFor(preselectedLineId ? [preselectedLineId] : []), supplementsId: request?.supplementsId ?? supplementId ?? null,
+    attachmentIds: request?.attachmentIds ?? defaultsFor(initialLineIds), supplementsId: request?.supplementsId ?? supplementId ?? null,
   }))
   const [expected, setExpected] = useState(request?.updatedAt)
   const [editing, setEditing] = useState(!request)
   const [responseEditing, setResponseEditing] = useState(false)
+  const [priceEditing, setPriceEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [pending, setPending] = useState(false)
@@ -92,12 +96,19 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     setDirty(true)
   }
   const selectedLines = sources.filter((l) => form.selectedIds.includes(l.costLineId))
+  const selectWork = (ids: string[], checked: boolean) => {
+    setForm((current) => {
+      const next = checked ? [...new Set([...current.selectedIds, ...ids])] : current.selectedIds.filter((id) => !ids.includes(id))
+      return { ...current, selectedIds: next, attachmentIds: reconcileRequestAttachments(current.attachmentIds, defaultsFor(current.selectedIds), defaultsFor(next), attachmentOverrides) }
+    })
+    setDirty(true)
+  }
   let valid = selectedLines.length === form.selectedIds.length
   const attachmentBytes = actionCase.attachments.filter((file) => form.attachmentIds.includes(file.id)).reduce((sum, file) => sum + file.fileSizeBytes, 0)
   if (attachmentBytes > 5 * 1024 * 1024) valid = false
   try { normalizeQuoteRequest({ ...form, lines: selectedLines }); } catch { valid = false }
-  const current = request && request.lines.every((line) => sources.some((s) => s.costLineId === line.costLineId && s.itemId === line.itemId && s.scope === line.scope && s.itemTitle === line.itemTitle && s.description === line.description))
-  const close = () => { if (!working && (!(dirty || responseEditing) || window.confirm('Stäng utan att spara ändringarna?'))) onClose() }
+  const current = request && request.lines.every((line) => sources.some((s) => s.costLineId === line.costLineId && s.itemId === line.itemId && s.scope === line.scope && s.itemTitle === line.itemTitle && s.description === line.description && (s.workPartId ?? null) === (line.workPartId ?? null) && (s.workPartTitle ?? '') === (line.workPartTitle ?? '') && (s.workPartScope ?? '') === (line.workPartScope ?? '')))
+  const close = () => { if (!working && (!(dirty || responseEditing || priceEditing) || window.confirm('Stäng utan att spara ändringarna?'))) onClose() }
   const run = async (name: string, data: Record<string, unknown>) => {
     if (inFlight.current) return false
     inFlight.current = true; setPending(true)
@@ -109,7 +120,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     document.body.style.overflow = 'hidden'; dialog.current?.focus()
     return () => { document.body.style.overflow = overflow; previous?.focus() }
   }, [])
-  useEffect(() => { if (!editing && !responseEditing) dialog.current?.querySelector<HTMLElement>('[data-request-content]')?.scrollTo({ top: 0 }) }, [editing, responseEditing])
+  useEffect(() => { if (!editing && !responseEditing && !priceEditing) dialog.current?.querySelector<HTMLElement>('[data-request-content]')?.scrollTo({ top: 0 }) }, [editing, responseEditing, priceEditing])
   const requestPreview = request ? <><div><h3 className="font-semibold">{request.sentAt ? 'Skickad förfrågan' : 'Förhandsgranska förfrågan'}</h3><p className="mt-2 break-words text-sm">Till: {request.supplierName} &lt;{request.supplierEmail}&gt;</p><p className="mt-2 break-words font-semibold">{request.subject}</p></div>
         <p data-testid="request-body" className="whitespace-pre-wrap break-words text-sm leading-6">{request.body}</p>
         <div className="border-t border-slate-200 pt-4"><h4 className="text-sm font-semibold">Bilagor ({request.attachmentIds.length})</h4><ul>{request.attachmentIds.map((id) => <li key={id}><a className="inline-flex min-h-11 items-center gap-2 break-all text-sm text-violet-700 underline" href={`/api/action-cases/${actionCase.id}/attachments/${id}`} target="_blank" rel="noreferrer"><FileText size={16} className="shrink-0" />{actionCase.attachments.find((a) => a.id === id)?.fileName ?? 'Filen är inte längre tillgänglig'}</a></li>)}</ul></div></> : null
@@ -132,9 +143,27 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
           <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Företag / namn *<input name="supplierName" className={input} maxLength={200} value={form.supplierName} onChange={(e) => set('supplierName', e.target.value)} /></label><label className="text-sm">E-post *<input name="supplierEmail" className={input} type="email" maxLength={254} disabled={Boolean(form.supplementsId)} value={form.supplierEmail} onChange={(e) => set('supplierEmail', e.target.value)} /></label></div>
         </fieldset>
         <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Arbeten att begära pris på *</legend>
-          {actionCase.items.map((item) => { const rows = sources.filter((s) => s.itemId === item.id); return rows.length ? <div key={item.id} className="mt-3 border-b border-slate-100 pb-3"><strong className="text-sm">{item.title}</strong>{rows.map((line) => <label className="mt-1 flex min-h-11 items-center gap-3 text-sm" key={line.costLineId}><input className="h-4 w-4 shrink-0 accent-violet-600" type="checkbox" name="workLine" value={line.costLineId} checked={form.selectedIds.includes(line.costLineId)} onChange={(e) => toggle('selectedIds', line.costLineId, e.target.checked)} /><span className="min-w-0 break-words">{line.description}</span></label>)}</div> : null })}
+          {sources.length ? <label className="mt-2 flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" className="h-4 w-4 shrink-0 accent-violet-600" checked={sources.every((line) => form.selectedIds.includes(line.costLineId))} onChange={(e) => selectWork(sources.map((line) => line.costLineId), e.target.checked)} />Välj alla arbeten</label> : null}
+          {actionCase.items.map((item) => {
+            const rows = sources.filter((s) => s.itemId === item.id)
+            const parts = [null, ...(item.workParts ?? [])]
+            return rows.length ? <section key={item.id} className="mt-3 border-b border-slate-200 pb-3">
+              <label className="flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" className="h-4 w-4 shrink-0 accent-violet-600" checked={rows.every((line) => form.selectedIds.includes(line.costLineId))} onChange={(e) => selectWork(rows.map((line) => line.costLineId), e.target.checked)} /><span className="min-w-0 break-words">{item.title}</span></label>
+              {parts.map((part) => {
+                const partRows = rows.filter((line) => (line.workPartId ?? null) === (part?.id ?? null))
+                return partRows.length ? <div key={part?.id ?? 'unassigned'} className="ml-7">
+                  {part ? <label className="flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" className="h-4 w-4 shrink-0 accent-violet-600" checked={partRows.every((line) => form.selectedIds.includes(line.costLineId))} onChange={(e) => selectWork(partRows.map((line) => line.costLineId), e.target.checked)} /><span className="min-w-0 break-words">{part.title}</span></label> : null}
+                  {partRows.map((line) => <label className="flex min-h-11 items-center gap-3 py-1 text-sm text-slate-600" key={line.costLineId}><input className="h-4 w-4 shrink-0 accent-violet-600" type="checkbox" name="workLine" value={line.costLineId} checked={form.selectedIds.includes(line.costLineId)} onChange={(e) => toggle('selectedIds', line.costLineId, e.target.checked)} /><span className="min-w-0 break-words">{line.description}</span></label>)}
+                </div> : null
+              })}
+            </section> : null
+          })}
           {!sources.length ? <p className="mt-3 text-sm text-amber-800">Det saknas arbetsrader i åtgärdernas kalkyler.</p> : null}
           {form.selectedIds.some((id) => !sources.some((s) => s.costLineId === id)) ? <p className="mt-3 text-sm text-amber-800">Ett tidigare valt arbete finns inte längre tillgängligt. <button type="button" className="underline" onClick={() => set('selectedIds', form.selectedIds.filter((id) => sources.some((s) => s.costLineId === id)))}>Ta bort otillgängliga val</button></p> : null}
+        </fieldset>
+        <fieldset disabled={working} className="border-t border-slate-200 pt-4"><legend className="font-semibold">Begär pris</legend>
+          <label className="mt-2 flex min-h-11 items-center gap-3 text-sm"><input type="radio" name="pricePresentation" className="h-4 w-4 accent-violet-600" value="grouped" checked={form.pricePresentation === 'grouped'} onChange={() => set('pricePresentation', 'grouped')} />Samlat per åtgärd eller arbetsdel</label>
+          <label className="flex min-h-11 items-center gap-3 text-sm"><input type="radio" name="pricePresentation" className="h-4 w-4 accent-violet-600" value="itemized" checked={form.pricePresentation === 'itemized'} onChange={() => set('pricePresentation', 'itemized')} />Separat per arbetsmoment</label>
         </fieldset>
         {(['included', 'separate'] as const).map((kind) => <fieldset disabled={working} className="border-t border-slate-200 pt-4" key={kind}><legend className="font-semibold">{kind === 'included' ? 'Önskas ingå i offererat pris' : 'Separata prisuppgifter'}</legend><div className="mt-2 grid gap-x-4 sm:grid-cols-2">{REQUEST_REQUIREMENTS.filter((r) => r.kind === kind).map((r) => <label className="flex min-h-11 items-center gap-3 py-2 text-sm" key={r.key}><input className="h-4 w-4 shrink-0 accent-violet-600" type="checkbox" name="requirement" value={r.key} checked={form.requirementKeys.includes(r.key)} onChange={(e) => toggle('requirementKeys', r.key, e.target.checked)} /><span>{r.label}</span></label>)}</div></fieldset>)}
         <fieldset disabled={working} className="space-y-4 border-t border-slate-200 pt-4">
@@ -147,12 +176,13 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
         {!current && !locked ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats. Redigera och granska förfrågan igen före utskick.</p> : null}
         {locked && !current ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats efter att utskicket påbörjades. Den sparade förfrågan är oförändrad.</p> : null}
         {request.sentAt ? <details className="border-b border-slate-200 pb-4"><summary className="cursor-pointer text-sm font-semibold">Visa skickad förfrågan</summary><div className="mt-4 space-y-5">{requestPreview}</div></details> : requestPreview}
-        {request.sentAt ? <section className="border-t border-slate-200 pt-4" aria-label="Offertsvar"><header className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Offertsvar</h3><button className={secondary} disabled={working || responseEditing} onClick={() => setResponseEditing(true)}><Pencil size={16} />Registrera prisvillkor</button></header>
+        {request.sentAt ? <section className="border-t border-slate-200 pt-4" aria-label="Offertsvar"><header className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Offertsvar</h3><button className={secondary} disabled={working || responseEditing || priceEditing || actionCase.quotePackages?.some((price) => price.requestId === request.id && price.state === 'active')} onClick={() => setResponseEditing(true)}><Pencil size={16} />{request.pricePresentation === 'grouped' ? 'Offertuppgifter' : 'Registrera prisvillkor'}</button></header>
           {responseEditing ? <ResponseForm request={request} actionCase={actionCase} busy={working} onSave={(data) => run('quote_request', data)} onCancel={() => setResponseEditing(false)} /> : <>
-            <p className={`mt-3 text-sm ${request.responseMode === 'itemized' ? 'text-slate-700' : 'text-amber-800'}`}>{request.responseMode === 'itemized' ? 'Delpriser gäller vid separat beställning.' : request.responseMode === 'package' ? `Paketpris: ${request.packageAmount === null ? 'belopp saknas' : money(request.packageAmount)}. Behöver specificeras innan delpriser används i kalkylen.` : 'Bekräfta om delpriserna gäller vid separat beställning innan de används i kalkylen.'}</p>
+            {request.pricePresentation !== 'grouped' || request.responseMode !== 'pending' ? <p className={`mt-3 text-sm ${request.responseMode === 'itemized' ? 'text-slate-700' : 'text-amber-800'}`}>{request.responseMode === 'itemized' ? 'Delpriser gäller vid separat beställning.' : request.responseMode === 'package' ? `Gemensamt paketpris: ${request.packageAmount === null ? 'belopp saknas' : money(request.packageAmount)}. Inte ett fristående delpris.` : 'Bekräfta om delpriserna gäller vid separat beställning innan de används i kalkylen.'}</p> : null}
             {request.responseNotes ? <p className="mt-3 whitespace-pre-wrap break-words text-sm">{request.responseNotes}</p> : null}
             {request.responseDocumentId ? <a className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm text-violet-700 underline" href={`/api/action-cases/${actionCase.id}/attachments/${request.responseDocumentId}`} target="_blank" rel="noreferrer"><FileText size={16} />Öppna offertdokument</a> : null}
-            <ul className="mt-3 divide-y divide-slate-200">{request.lines.map((s) => { const item = actionCase.items.find((i) => i.id === s.itemId), line = item?.costLines.find((l) => l.id === s.costLineId), quote = line?.quotes?.find((q) => q.requestId === request.id); return <li className="flex flex-wrap items-center justify-between gap-2 py-3" key={s.costLineId}><div className="min-w-0"><strong className="block break-words text-sm">{s.itemTitle}: {s.description}</strong><p className="mt-1 text-xs text-slate-500">{quote?.amount == null ? 'Pris saknas' : `${money(quote.amount)} · ${quote.checked ? 'Kontrollerat' : 'Ej kontrollerat'}`}</p></div><button className={secondary} disabled={working || !line} onClick={() => onOpenWork(s.itemId, s.costLineId)}>Öppna kalkyl<ArrowRight size={16} /></button></li> })}</ul>
+            <ActionCaseGroupPrices actionCase={actionCase} request={request} busy={working} onEditing={setPriceEditing} onAction={run} />
+            <details className="mt-3 border-t border-slate-200 pt-3" open={request.pricePresentation !== 'grouped' || undefined}><summary className="min-h-11 cursor-pointer text-sm font-semibold">Enskilda radpriser</summary><ul className="divide-y divide-slate-200">{request.lines.map((s) => { const item = actionCase.items.find((i) => i.id === s.itemId), line = item?.costLines.find((l) => l.id === s.costLineId), quote = line?.quotes?.find((q) => q.requestId === request.id); return <li className="flex flex-wrap items-center justify-between gap-2 py-3" key={s.costLineId}><div className="min-w-0"><strong className="block break-words text-sm">{s.itemTitle}: {s.description}</strong><p className="mt-1 text-xs text-slate-500">{line?.coveredByQuoteId || quote?.packageGroupKey ? 'Ingår i grupppris' : quote?.amount == null ? 'Pris saknas' : `${money(quote.amount)} · ${quote.checked ? 'Kontrollerat' : 'Ej kontrollerat'}`}</p></div><button className={secondary} disabled={working || priceEditing || !line} onClick={() => onOpenWork(s.itemId, s.costLineId)}>Öppna kalkyl<ArrowRight size={16} /></button></li> })}</ul></details>
           </>}
         </section> : null}
         {deleting ? <div className="flex flex-wrap items-center gap-2 text-sm"><span>Ta bort utkastet?</span><button className={secondary} disabled={working} onClick={() => setDeleting(false)}>Avbryt</button><button className={secondary} disabled={working} onClick={() => void run('quote_request', { operation: 'delete', expectedUpdatedAt: request.updatedAt }).then((ok) => { if (ok) onClose() })}><Trash2 size={16} />Ta bort</button></div> : null}
@@ -160,7 +190,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     </div>
     <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
       {editing ? <><button className={secondary} disabled={working} onClick={() => { if (request) { setEditing(false); setDirty(false) } else close() }}>Avbryt</button><button className={primary} form="group-request-form" type="submit" disabled={working || !valid}>{working ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}Spara och förhandsgranska</button></> : request ? <>
-        {!locked ? <><button className={secondary} disabled={working} title="Ta bort utkast" aria-label="Ta bort utkast" onClick={() => setDeleting(true)}><Trash2 size={16} /></button><button className={secondary} disabled={working} onClick={() => { setForm({ requestId: request.id, supplierName: request.supplierName, supplierEmail: request.supplierEmail, subject: request.subject, message: request.message, selectedIds: request.lines.map((l) => l.costLineId), requirementKeys: request.requirements.map((r) => r.key), otherRequirements: request.otherRequirements, attachmentIds: request.attachmentIds, supplementsId: request.supplementsId }); setAttachmentOverrides(savedOverrides(request)); setExpected(request.updatedAt); setEditing(true) }}><Pencil size={16} />Redigera</button></> : <button className={secondary} disabled={working || responseEditing} onClick={() => onSupplement(request)}><Plus size={16} />Komplettera</button>}
+        {!locked ? <><button className={secondary} disabled={working} title="Ta bort utkast" aria-label="Ta bort utkast" onClick={() => setDeleting(true)}><Trash2 size={16} /></button><button className={secondary} disabled={working} onClick={() => { setForm({ requestId: request.id, supplierName: request.supplierName, supplierEmail: request.supplierEmail, subject: request.subject, message: request.message, selectedIds: request.lines.map((l) => l.costLineId), pricePresentation: request.pricePresentation ?? 'itemized', requirementKeys: request.requirements.map((r) => r.key), otherRequirements: request.otherRequirements, attachmentIds: request.attachmentIds, supplementsId: request.supplementsId }); setAttachmentOverrides(savedOverrides(request)); setExpected(request.updatedAt); setEditing(true) }}><Pencil size={16} />Redigera</button></> : <button className={secondary} disabled={working || responseEditing || priceEditing} onClick={() => onSupplement(request)}><Plus size={16} />Komplettera</button>}
         {!request.sentAt ? <button className={primary} disabled={working || (!locked && !current)} onClick={() => void run('send_grouped_quote_request', { confirmSend: true, expectedUpdatedAt: request.updatedAt })}>{working ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}{locked ? 'Försök skicka igen' : 'Skicka förfrågan'}</button> : <button className={secondary} disabled={working} onClick={close}>Stäng</button>}
       </> : null}
     </footer>

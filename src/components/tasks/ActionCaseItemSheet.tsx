@@ -9,6 +9,9 @@ import { normalizeCostLine } from '@/lib/action-cases/costing'
 import ActionCaseWorkQuotes from './ActionCaseWorkQuotes'
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
 import { scopeAttachmentIds } from '@/lib/action-cases/scopeAttachments'
+import ActionCaseDirectCostFields, { canEditDirectWork } from './ActionCaseDirectCostFields'
+import { ActionCaseWorkParts, ActionCaseWorkSelection, getWorkPartId, UNASSIGNED_WORK } from './ActionCaseWorkParts'
+import { coveringQuoteForLine, groupPriceForLine } from './actionCaseGroupPricing'
 
 type Props = {
   item: ActionCaseItemView
@@ -16,7 +19,7 @@ type Props = {
   attachments?: ActionCaseView['attachments']
   participants?: ActionCaseView['participants']
   initialCostLineId?: string
-  onRequest?: (costLineId: string) => void
+  onRequest?: (costLineIds: string[]) => void
   onOpenRequest?: (requestId: string) => void
   busy: boolean
   onClose: () => void
@@ -117,7 +120,16 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   const [pending, setPending] = useState(false)
   const [quoteLineId, setQuoteLineId] = useState<string | null>(initialCostLineId ?? null)
   const [quoteEditing, setQuoteEditing] = useState(false)
+  const [directDraftLineId, setDirectDraftLineId] = useState<string | null>(null)
+  const [partFilter, setPartFilter] = useState('')
+  const [partEditing, setPartEditing] = useState(false)
+  const [bulkEditing, setBulkEditing] = useState(false)
+  const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([])
+  const parts = [...(item.workParts ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title, 'sv'))
+  const activePartFilter = partFilter === UNASSIGNED_WORK || parts.some((part) => part.id === partFilter) ? partFilter : ''
+  const filterParts = (id: string) => { setPartFilter(id); setSelectedWorkIds([]); setQuoteLineId(null) }
   const working = busy || pending
+  const costDirty = Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || partEditing || bulkEditing
   const dirty = title !== item.title || scope !== (item.scope ?? '') || selectedFiles.length !== savedFiles.length || selectedFiles.some((id) => !savedFiles.includes(id))
   const totals = calculateActionCaseCostTotals(item.costLines)
   const coverage = actionCaseCostCoverage(item.costLines)
@@ -130,13 +142,13 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
     return () => { document.body.style.overflow = overflow; previous?.focus() }
   }, [])
   const run = async (work: () => Promise<boolean>) => {
-    if (inFlight.current) return false
+    if (busy || inFlight.current) return false
     inFlight.current = true; setPending(true)
     try { return await work() } finally { inFlight.current = false; setPending(false) }
   }
   const close = () => {
     if (working) return
-    if ((dirty || editing || quoteEditing) && !window.confirm('Stäng utan att spara ändringarna?')) return
+    if ((dirty || costDirty) && !window.confirm('Stäng utan att spara ändringarna?')) return
     onClose()
   }
   const generate = () => void run(async () => {
@@ -159,7 +171,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
         <button type="button" className={`${secondary} h-11 w-11 px-0`} aria-label="Stäng åtgärd" title="Stäng" disabled={working} onClick={close}><X size={20} /></button>
       </header>
       <nav aria-label="Åtgärdens innehåll" className="grid shrink-0 grid-cols-2 gap-1 border-b border-slate-200 p-2">
-        {([['scope', 'Omfattning'], ['cost', 'Kalkyl']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} disabled={(Boolean(editing) || quoteEditing || working) && tab !== key} onClick={() => setTab(key)} className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${tab === key ? 'bg-violet-50 text-violet-800' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}
+        {([['scope', 'Omfattning'], ['cost', 'Kalkyl']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} disabled={(costDirty || working) && tab !== key} onClick={() => setTab(key)} className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${tab === key ? 'bg-violet-50 text-violet-800' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {tab === 'scope' ? <fieldset disabled={working} className="space-y-5">
@@ -171,34 +183,45 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
             {selectedFiles.some((id) => !attachments.some((file) => file.id === id)) ? <p role="status" className="mt-3 text-sm text-amber-800">En vald fil finns inte längre. <button type="button" className="underline" onClick={() => setSelectedFiles((ids) => ids.filter((id) => attachments.some((file) => file.id === id)))}>Ta bort otillgängliga val</button></p> : null}
           </section>
         </fieldset> : <>
-          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Kalkylunderlag</h3><button type="button" className={primary} disabled={working || dirty || !scope.trim() || Boolean(editing)} onClick={generate}>{generating ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}{generating ? 'Skapar förslag…' : item.costSuggestion ? 'Nytt AI-förslag' : 'Föreslå kalkyl med AI'}</button></div>
+          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Kalkylunderlag</h3><button type="button" className={primary} disabled={working || dirty || !scope.trim() || costDirty} onClick={generate}>{generating ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}{generating ? 'Skapar förslag…' : item.costSuggestion ? 'Nytt AI-förslag' : 'Föreslå kalkyl med AI'}</button></div>
           {dirty ? <p className="mt-3 text-sm text-amber-800">Omfattningen har osparade ändringar.</p> : !scope.trim() ? <p className="mt-3 text-sm text-amber-800">Arbetets omfattning saknas.</p> : null}
           {generating ? <p role="status" aria-live="polite" className="mt-3 flex items-center gap-2 text-sm text-violet-800"><Loader2 size={16} className="shrink-0 animate-spin" />AI bearbetar omfattningen. Befintliga kalkylrader är oförändrade.</p> : null}
-          {item.costSuggestion && !generating ? <Proposal key={item.costSuggestion.id} proposal={item.costSuggestion} stale={stale || dirty} busy={working || Boolean(editing) || quoteEditing} onApply={(lineIds) => run(() => onCostAction('apply_cost_suggestions', { suggestionId: item.costSuggestion!.id, lineIds }))} /> : null}
+          {item.costSuggestion && !generating ? <Proposal key={item.costSuggestion.id} proposal={item.costSuggestion} stale={stale || dirty} busy={working || costDirty} onApply={(lineIds) => run(() => onCostAction('apply_cost_suggestions', { suggestionId: item.costSuggestion!.id, lineIds }))} /> : null}
           <div className="mt-5 space-y-6">{groups.map((group) => {
-            const lines = item.costLines.filter((line) => (group.categories as readonly string[]).includes(line.category))
+            const groupLines = item.costLines.filter((line) => (group.categories as readonly string[]).includes(line.category))
+            const lines = group.key === 'own_labor' && activePartFilter ? groupLines.filter((line) => activePartFilter === UNASSIGNED_WORK ? !getWorkPartId(line) : getWorkPartId(line) === activePartFilter) : groupLines
             const Icon = group.icon
-            const groupTotals = calculateActionCaseCostTotals(lines)
+            const groupTotals = calculateActionCaseCostTotals(groupLines)
             const isEditing = editing && (group.categories as readonly string[]).includes(editing.category)
             const noNeed = item[group.ready]
             return <section key={group.key} className="border-t border-slate-200 pt-4">
-              <header className="flex flex-wrap items-center gap-2"><Icon size={18} className="text-slate-500" /><h3 className="mr-auto font-semibold">{group.title} <span className="font-normal text-slate-400">{lines.length}</span></h3>
-                {lines.length > 0 ? <span className="text-xs text-slate-600">{lines.every((line) => line.coveredByQuoteId) ? 'Ingår i offert' : `Kostnad ${amount(groupTotals.internalCost)}`}</span> : <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" disabled={working || dirty} className="h-4 w-4 accent-violet-600" checked={noNeed} onChange={(e) => void run(() => onSave(group.key === 'own_labor' ? { ownLaborReady: e.target.checked, requiresSubcontractor: false } : { [group.ready]: e.target.checked }))} />Ej aktuellt</label>}
-                <button type="button" className={`${secondary} h-11 w-11 px-0`} disabled={working || Boolean(editing) || quoteEditing} aria-label={`Lägg till ${group.title.toLowerCase()}`} title={`Lägg till ${group.title.toLowerCase()}`} onClick={() => setEditing({ category: group.key })}><Plus size={17} /></button>
+              <header className="flex flex-wrap items-center gap-2"><Icon size={18} className="text-slate-500" /><h3 className="mr-auto font-semibold">{group.title} <span className="font-normal text-slate-400">{groupLines.length}</span></h3>
+                {groupLines.length > 0 ? <span className="text-xs text-slate-600">{groupLines.every((line) => line.coveredByQuoteId) ? 'Ingår i offert' : `Kostnad ${amount(groupTotals.internalCost)}`}</span> : <label className="flex min-h-11 items-center gap-2 text-xs text-slate-600"><input type="checkbox" disabled={working || dirty || costDirty} className="h-4 w-4 accent-violet-600" checked={noNeed} onChange={(e) => void run(() => onSave(group.key === 'own_labor' ? { ownLaborReady: e.target.checked, requiresSubcontractor: false } : { [group.ready]: e.target.checked }))} />Ej aktuellt</label>}
+                <button type="button" className={`${secondary} h-11 w-11 px-0`} disabled={working || dirty || costDirty} aria-label={`Lägg till ${group.title.toLowerCase()}`} title={`Lägg till ${group.title.toLowerCase()}`} onClick={() => { filterParts(''); setEditing({ category: group.key }) }}><Plus size={17} /></button>
               </header>
-              {!lines.length && !isEditing ? <p className="py-3 text-sm text-slate-400">{noNeed ? 'Ej aktuellt' : 'Inga kalkylrader'}</p> : null}
-              <div className="divide-y divide-slate-100">{lines.map((line) => <div key={line.id} className="py-3">
-                <div className="flex items-start gap-2"><div className="min-w-0 flex-1 break-words"><strong className="text-sm">{line.description}</strong>{line.coveredByQuoteId ? <p className="mt-1 text-xs font-semibold text-violet-700">Ingår i vald offert · räknas inte separat</p> : null}<p className="mt-1 text-xs text-slate-500">{line.quantity ?? '?'} {line.unit} × {line.unitCost === null ? 'Pris saknas' : money.format(line.unitCost)} · {line.markupPercent} % påslag</p><p className={`mt-1 text-xs ${line.verified ? 'text-emerald-700' : 'text-amber-800'}`}>{line.verified ? 'Kontrollerad' : 'Ej kontrollerad'} · {basisLabels[line.quantityBasis]} · {sourceLabels[line.priceSource]}</p></div>
-                  <button type="button" className={`${secondary} h-11 w-11 px-0`} disabled={working || Boolean(editing) || quoteEditing || Boolean(line.coveredByQuoteId)} title={line.coveredByQuoteId ? "Ingår i vald offert" : "Redigera kalkylrad"} aria-label={`Redigera ${line.description}`} onClick={() => line.pricingMethod === 'quotes' ? setQuoteLineId(line.id) : setEditing({ category: line.category, line })}><Pencil size={16} /></button>
-                  <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40" disabled={working || Boolean(editing) || quoteEditing || Boolean(line.coveredByQuoteId) || Boolean(line.quotes?.some((q) => q.deliveryStatus !== 'draft'))} title={line.coveredByQuoteId ? "Ingår i vald offert" : line.quotes?.some((q) => q.deliveryStatus !== 'draft') ? "Har en påbörjad offertförfrågan" : "Ta bort kalkylrad"} aria-label={`Ta bort ${line.description}`} onClick={() => setDeleting(line.id)}><Trash2 size={16} /></button>
+              {group.key === 'own_labor' ? <>
+                <ActionCaseWorkParts parts={parts} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || bulkEditing} filter={activePartFilter} onFilter={filterParts} onEditing={setPartEditing} onAction={(payload) => run(() => onCostAction('work_part', payload))} />
+                <ActionCaseWorkSelection lines={lines} selectedIds={selectedWorkIds} parts={parts} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || partEditing} onSelect={setSelectedWorkIds} onEditing={setBulkEditing} onAction={(payload) => run(() => onCostAction('work_part', payload))} onRequest={onRequest ? (ids) => { if (!working && !dirty && !costDirty && ids.length <= 30) onRequest(ids) } : undefined} />
+              </> : null}
+              {!lines.length && !isEditing ? <p className="py-3 text-sm text-slate-400">{group.key === 'own_labor' && activePartFilter ? 'Inga arbeten i denna arbetsdel' : noNeed ? 'Ej aktuellt' : 'Inga kalkylrader'}</p> : null}
+              <div className="divide-y divide-slate-100">{lines.map((line) => {
+                const groupQuote = groupPriceForLine(line, item)
+                const coveringQuote = coveringQuoteForLine(line, item)
+                const requestId = (groupQuote ?? coveringQuote)?.requestId
+                const deleteLocked = Boolean(groupQuote || line.coveredByQuoteId || line.quotes?.some((quote) => quote.deliveryStatus !== 'draft'))
+                return <div key={line.id} className="py-3">
+                <div className="flex items-start gap-2">{group.key === 'own_labor' ? <label className="flex min-h-11 min-w-11 shrink-0 items-center justify-center" title={`Välj ${line.description}`}><input type="checkbox" className="h-4 w-4 accent-violet-600" aria-label={`Välj ${line.description}`} checked={selectedWorkIds.includes(line.id)} disabled={working || dirty || costDirty} onChange={(event) => setSelectedWorkIds((ids) => event.target.checked ? [...new Set([...ids, line.id])] : ids.filter((id) => id !== line.id))} /></label> : null}<div className="min-w-0 flex-1 break-words"><strong className="text-sm">{line.description}</strong>{group.key === 'own_labor' && parts.length ? <p className="mt-1 text-xs font-semibold text-slate-500">{parts.find((part) => part.id === getWorkPartId(line))?.title ?? 'Utan arbetsdel'}</p> : null}{line.coveredByQuoteId || groupQuote ? <p className="mt-1 text-xs font-semibold text-violet-700">{groupQuote ? 'Ingår i grupppris' : 'Ingår i vald offert'} · {line.coveredByQuoteId ? 'räknas inte separat' : 'gruppens belopp'}</p> : null}<p className="mt-1 text-xs text-slate-500">{line.quantity ?? '?'} {line.unit} × {line.unitCost === null ? 'Pris saknas' : money.format(line.unitCost)} · {line.markupPercent} % påslag</p><p className={`mt-1 text-xs ${line.verified ? 'text-emerald-700' : 'text-amber-800'}`}>{line.verified ? 'Kontrollerad' : 'Ej kontrollerad'} · {basisLabels[line.quantityBasis]} · {sourceLabels[line.priceSource]}</p></div>
+                  <button type="button" className={`${secondary} h-11 w-11 px-0`} disabled={working || dirty || costDirty || Boolean(line.coveredByQuoteId)} title={groupQuote ? 'Visa grupppris' : line.coveredByQuoteId ? 'Ingår i vald offert' : 'Redigera kalkylrad'} aria-label={groupQuote ? `Visa grupppris för ${line.description}` : `Redigera ${line.description}`} onClick={() => { if (groupQuote || line.pricingMethod === 'quotes') setQuoteLineId(line.id); else { setQuoteLineId(null); setEditing({ category: line.category, line }) } }}>{groupQuote ? <Mail size={16} /> : <Pencil size={16} />}</button>
+                  <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40" disabled={working || dirty || costDirty || deleteLocked} title={groupQuote ? 'Ingår i grupppris' : line.coveredByQuoteId ? 'Ingår i vald offert' : line.quotes?.some((q) => q.deliveryStatus !== 'draft') ? 'Har en påbörjad offertförfrågan' : 'Ta bort kalkylrad'} aria-label={`Ta bort ${line.description}`} onClick={() => setDeleting(line.id)}><Trash2 size={16} /></button>
                 </div>
-                {['own_labor', 'subcontractor'].includes(line.category) ? <button type="button" className={`${secondary} mt-3`} disabled={working || Boolean(editing) || quoteEditing || dirty} aria-expanded={quoteLineId === line.id} onClick={() => setQuoteLineId(quoteLineId === line.id ? null : line.id)}><Mail size={16} />{quoteLineId === line.id ? 'Dölj prisunderlag' : 'Timmar / offerter'}</button> : null}
-                {quoteLineId === line.id ? <ActionCaseWorkQuotes key={line.id} line={line} item={item} caseId={caseId} attachments={attachments} participants={participants} busy={working || dirty} onEditing={setQuoteEditing} onRequest={onRequest} onOpenRequest={onOpenRequest} onAction={(name, payload) => run(() => onCostAction(name, payload))} /> : null}
+                {quoteLineId !== line.id && (canEditDirectWork(line) || directDraftLineId === line.id) ? <ActionCaseDirectCostFields line={line} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || partEditing || bulkEditing || Boolean(directDraftLineId && directDraftLineId !== line.id)} onEditing={(value) => setDirectDraftLineId(value ? line.id : null)} onSave={(payload) => run(() => onCostAction('work_part', payload))} /> : null}
+                {['own_labor', 'subcontractor'].includes(line.category) ? groupQuote || line.coveredByQuoteId ? <button type="button" className={`${secondary} mt-3`} disabled={working || costDirty || dirty || !requestId || !onOpenRequest} onClick={() => { if (requestId) onOpenRequest?.(requestId) }}><Mail size={16} />{groupQuote ? 'Öppna grupppris' : 'Öppna offertförfrågan'}</button> : <button type="button" className={`${secondary} mt-3`} disabled={working || costDirty || dirty} aria-expanded={quoteLineId === line.id} onClick={() => setQuoteLineId(quoteLineId === line.id ? null : line.id)}><Mail size={16} />{quoteLineId === line.id ? 'Dölj prisunderlag' : 'Timmar / offerter'}</button> : null}
+                {quoteLineId === line.id ? <ActionCaseWorkQuotes key={line.id} line={line} item={item} caseId={caseId} attachments={attachments} participants={participants} busy={working || dirty || Boolean(editing) || Boolean(directDraftLineId) || partEditing || bulkEditing} onEditing={setQuoteEditing} onRequest={onRequest} onOpenRequest={onOpenRequest} onAction={(name, payload) => run(() => onCostAction(name, payload))} /> : null}
                 {line.notes ? <p className="mt-2 break-words text-xs leading-5 text-slate-600">{line.notes}</p> : null}
                 {line.sourceUrl && /^https?:\/\//i.test(line.sourceUrl) ? <a href={line.sourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-violet-700 underline">Öppna priskälla</a> : null}
-                {deleting === line.id ? <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span>Ta bort raden?</span><button type="button" disabled={working} className={secondary} onClick={() => setDeleting(null)}>Avbryt</button><button type="button" disabled={working} className={`${secondary} text-rose-700`} onClick={() => void run(() => onCostAction('delete_cost_line', { costLineId: line.id })).then((saved) => { if (saved) setDeleting(null) })}>{working ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Ta bort</button></div> : null}
-              </div>)}</div>
-              {isEditing ? <CostLineForm key={editing.line?.id ?? `new-${editing.category}`} initial={editing.line} category={editing.category} busy={working} onCancel={() => setEditing(null)} onSave={(payload) => run(async () => { const saved = await onCostAction(editing.line ? 'update_cost_line' : 'create_cost_line', payload); if (saved && payload.pricingMethod === 'quotes') setQuoteLineId(String(payload.costLineId)); return saved })} /> : null}
+                {deleting === line.id && !deleteLocked ? <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span>Ta bort raden?</span><button type="button" disabled={working} className={secondary} onClick={() => setDeleting(null)}>Avbryt</button><button type="button" disabled={working || dirty || costDirty} className={`${secondary} text-rose-700`} onClick={() => void run(() => onCostAction('delete_cost_line', { costLineId: line.id })).then((saved) => { if (saved) { setDeleting(null); setSelectedWorkIds((ids) => ids.filter((id) => id !== line.id)); if (quoteLineId === line.id) setQuoteLineId(null) } })}>{working ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Ta bort</button></div> : null}
+              </div>})}</div>
+              {isEditing ? <CostLineForm key={editing.line?.id ?? `new-${editing.category}`} initial={editing.line} category={editing.category} busy={working || dirty} onCancel={() => setEditing(null)} onSave={(payload) => run(async () => { const saved = await onCostAction(editing.line ? 'update_cost_line' : 'create_cost_line', payload); if (saved && payload.pricingMethod === 'quotes') setQuoteLineId(String(payload.costLineId)); return saved })} /> : null}
             </section>
           })}</div>
         </>}

@@ -33,6 +33,7 @@ function harness({ group = false, quote = {}, quoteDocument = false, groupDocume
     if (name === './costing') return costing
     if (name === './quotesServer') return mod.exports
     if (name === './quoteRequests') return {}
+    if (name === './quotePackages') return {}
     if (name === '@/lib/supabase/admin') return { createSupabaseAdminClient: () => admin }
     if (name === '@/lib/assignments/mailer') return { async sendAssignmentEmail(payload) { sent.push(payload); if (failure) throw new Error('timeout'); return { providerMessageId: 'message-id' } } }
     throw new Error(name)

@@ -23,6 +23,7 @@ export type ActionItemStatus =
   | 'cancelled'
 
 export type ActionCaseItemView = {
+  workParts?: ActionCaseWorkPart[]
   scopeAttachmentIds?: string[] | null
   id: string
   title: string
@@ -41,7 +42,16 @@ export type ActionCaseItemView = {
   costSuggestion: ActionCaseCostSuggestion | null
 }
 
+export type ActionCaseWorkPart = {
+  id: string
+  title: string
+  scope: string | null
+  sortOrder: number
+  updatedAt: string
+}
+
 export type ActionCaseCostLineView = {
+  workPartId?: string | null
   id: string
   category: 'own_labor' | 'material' | 'subcontractor' | 'waste' | 'transport' | 'other'
   description: string
@@ -65,6 +75,7 @@ export type ActionCaseCostLineView = {
 }
 
 export type ActionCaseQuote = {
+  packageGroupKey?: string | null
   id: string
   requestId?: string | null
   separatePricesConfirmed?: boolean
@@ -92,6 +103,9 @@ export type ActionCaseQuote = {
 }
 
 export type ActionCaseRequestLine = {
+  workPartId?: string | null
+  workPartTitle?: string
+  workPartScope?: string
   costLineId: string
   itemId: string
   itemTitle: string
@@ -100,6 +114,7 @@ export type ActionCaseRequestLine = {
 }
 
 export type ActionCaseQuoteRequest = {
+  pricePresentation?: 'grouped' | 'itemized'
   id: string
   supplierName: string
   supplierEmail: string
@@ -155,6 +170,7 @@ export type ActionCaseAttachmentView = {
 }
 
 export type ActionCaseView = {
+  quotePackages?: import('./quotePackages').QuotePackageView[]
   id: string
   title: string
   customerName: string

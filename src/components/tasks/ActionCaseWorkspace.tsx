@@ -286,6 +286,12 @@ function CaseDocuments({
   )
 }
 
+function costActionMessage(name: string, payload: Record<string, unknown>) {
+  if (name === 'work_part') return ({ save: 'Arbetsdelen sparades.', delete: 'Arbetsdelen togs bort. Kalkylraderna är kvar.', move_lines: 'Valda rader flyttades.', bulk_update: 'Valda kalkylvärden sparades.' } as Record<string, string>)[String(payload.operation)] ?? 'Kalkylen uppdaterades.'
+  if (name === 'work_quote') return payload.operation === 'select' ? 'Offerten används i kalkylen. Ingen beställning har skickats.' : payload.operation === 'save' ? 'Offerten sparades. Välj den för att använda priset i kalkylen.' : 'Prisunderlaget uppdaterades.'
+  return ({ send_quote_request: 'Offertförfrågan har skickats.', generate_cost_suggestions: 'Kalkylförslaget är klart för granskning.', apply_cost_suggestions: 'Valda rader lades till i kalkylen.', delete_cost_line: 'Kalkylraden togs bort.' } as Record<string, string>)[name] ?? 'Kalkylraden sparades.'
+}
+
 export default function ActionCaseWorkspace({ initialWorkspace, initialError }: Props) {
   const toast = useToast()
   const [workspace, setWorkspace] = useState(initialWorkspace)
@@ -295,7 +301,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
   const [selectedCaseId, setSelectedCaseId] = useState(initialWorkspace?.cases[0]?.id ?? null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [initialCostLineId, setInitialCostLineId] = useState<string>()
-  const [requestEditor, setRequestEditor] = useState<{ requestId: string | null; preselectedLineId?: string; supplementId?: string } | null>(null)
+  const [requestEditor, setRequestEditor] = useState<{ requestId: string | null; preselectedLineIds?: string[]; supplementId?: string } | null>(null)
   const [creating, setCreating] = useState(false)
   const [newItemTitle, setNewItemTitle] = useState('')
   const selectedCase = workspace?.cases.find((item) => item.id === selectedCaseId) ?? null
@@ -315,7 +321,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       return result as ActionResult
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
-      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request'].includes(name)) {
+      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'delete_attachment'].includes(name)) {
         await fetch('/api/action-cases').then(async (response) => {
           if (response.ok) { const result = await response.json(); setWorkspace(result.workspace) }
         }).catch(() => undefined)
@@ -352,18 +358,18 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError }: 
       attachments={selectedCase.attachments}
       participants={selectedCase.participants}
       initialCostLineId={initialCostLineId}
-      onRequest={(preselectedLineId) => setRequestEditor({ requestId: null, preselectedLineId })}
+      onRequest={(preselectedLineIds) => setRequestEditor({ requestId: null, preselectedLineIds })}
       onOpenRequest={(requestId) => setRequestEditor({ requestId })}
       busy={busy}
       onClose={() => { setSelectedItemId(null); setInitialCostLineId(undefined) }}
       onSave={async (payload) => Boolean(await action('update_item', { itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt, ...payload }))}
-      onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, name === 'send_quote_request' ? 'Offertförfrågan har skickats.' : name === 'work_quote' ? payload.operation === 'select' ? 'Offerten används i kalkylen. Ingen beställning har skickats.' : payload.operation === 'save' ? 'Offerten sparades. Välj den för att använda priset i kalkylen.' : 'Prisunderlaget uppdaterades.' : name === 'generate_cost_suggestions' ? 'Kalkylförslaget är klart för granskning.' : name === 'apply_cost_suggestions' ? 'Valda rader lades till i kalkylen.' : name === 'delete_cost_line' ? 'Kalkylraden togs bort.' : 'Kalkylraden sparades.'))}
+      onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, costActionMessage(name, payload)))}
     /> : null}
-    {selectedCase && requestEditor ? <ActionCaseRequestSheet key={`${selectedCase.id}:${requestEditor.requestId ?? requestEditor.supplementId ?? 'new'}:${requestEditor.preselectedLineId ?? ''}`}
+    {selectedCase && requestEditor ? <ActionCaseRequestSheet key={`${selectedCase.id}:${requestEditor.requestId ?? requestEditor.supplementId ?? 'new'}:${requestEditor.preselectedLineIds?.join(',') ?? ''}`}
       actionCase={selectedCase} {...requestEditor} busy={busy} onClose={() => setRequestEditor(null)}
       onSupplement={(request) => setRequestEditor({ requestId: null, supplementId: request.id })}
       onOpenWork={(itemId, costLineId) => { setRequestEditor(null); setSelectedItemId(itemId); setInitialCostLineId(costLineId) }}
-      onAction={async (name, data) => Boolean(await action(name, data, name === 'send_grouped_quote_request' ? 'Den samlade offertförfrågan har skickats.' : data.operation === 'response' ? 'Prisvillkoren har sparats.' : data.operation === 'delete' ? 'Utkastet togs bort.' : 'Förfrågan är sparad. Granska den före utskick.'))}
+      onAction={async (name, data) => Boolean(await action(name, data, name === 'quote_package' ? data.operation === 'accept' ? 'Grupppriset används i kalkylen. Ingen beställning har skickats.' : 'Tidigare prisunderlag har återställts.' : name === 'send_grouped_quote_request' ? 'Den samlade offertförfrågan har skickats.' : data.operation === 'response' ? 'Prisvillkoren har sparats.' : data.operation === 'delete' ? 'Utkastet togs bort.' : 'Förfrågan är sparad. Granska den före utskick.'))}
     /> : null}
   </>
 }

@@ -152,7 +152,7 @@ test('action-case API keeps technical AI failures private and schedules admin ha
       if (name === '@/lib/assignments/server') return { requireOrgContext: async () => ({ orgId: 'org', userId: 'user' }) }
       if (name === '@/lib/action-cases/costingAiServer') return { generateActionCaseCosts: async () => { throw new Error(`ACTION_CASE_AI_${errorCode}`) } }
       if (name === '@/lib/action-cases/costingAiAlerts') return { scheduleActionCaseAiAdminAlert: (code) => alerts.push(code) }
-      if (['@/lib/action-cases/server', '@/lib/action-cases/quotesServer', '@/lib/action-cases/quoteRequestsServer'].includes(name)) return {}
+      if (['@/lib/action-cases/server', '@/lib/action-cases/quotesServer', '@/lib/action-cases/quoteRequestsServer', '@/lib/action-cases/workPartsServer', '@/lib/action-cases/quotePackagesServer'].includes(name)) return {}
       throw new Error(name)
     })
     const response = await mod.exports.POST(new Request('https://example.test/api/action-cases', {

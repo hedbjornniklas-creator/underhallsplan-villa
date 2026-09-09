@@ -1,5 +1,5 @@
 // Isolated production component, synthetic data, no external calls or customer writes.
-import assert from 'node:assert/strict'
+import strictAssert from 'node:assert/strict'
 import { readFile, mkdtemp } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { resolve, join } from 'node:path'
@@ -9,8 +9,14 @@ import puppeteer from 'puppeteer-core'
 import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 const require = createRequire(import.meta.url)
+let passedAssertions = 0
+const assert = Object.fromEntries(['ok', 'equal', 'deepEqual', 'match', 'doesNotMatch'].map((name) => [name, (...args) => {
+  strictAssert[name](...args)
+  passedAssertions++
+}]))
 const { webpack } = require('next/dist/compiled/webpack/webpack')
 const output = await mkdtemp(join(tmpdir(), 'action-case-costing-ui-'))
+console.log(`Synthetic UI artifacts: ${output}`)
 await new Promise((ok, fail) => webpack({
   mode: 'development', devtool: false,
   plugins: [new webpack.DefinePlugin({ 'process.env': JSON.stringify({ NODE_ENV: 'development' }) })],
@@ -34,16 +40,64 @@ const server = createServer((request, response) => {
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok))
 let browser
 let page
+let scenario = 'startup'
 try {
   browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
   page = await browser.newPage()
-  await page.setRequestInterception(true)
-  page.on('request', (request) => new URL(request.url()).hostname === '127.0.0.1' ? request.continue() : request.abort())
-  const errors = []; page.on('pageerror', (error) => errors.push(error.message))
   const url = `http://127.0.0.1:${server.address().port}`
+  const unexpectedRequests = []
+  await page.setRequestInterception(true)
+  page.on('request', (request) => {
+    const target = new URL(request.url())
+    if (target.protocol === 'data:' && request.resourceType() === 'image') { void request.continue(); return }
+    const allowed = target.origin === url && request.method() === 'GET' &&
+      (['/', '/view.js', '/favicon.ico'].includes(target.pathname) || /^\/api\/action-cases\/[^/]+\/attachments\/[^/]+$/.test(target.pathname))
+    if (!allowed) unexpectedRequests.push(`${request.method()} ${request.url()}`)
+    void (allowed ? request.continue() : request.abort())
+  })
+  const errors = []; page.on('pageerror', (error) => errors.push(error.message))
+  const json = (testId) => page.$eval(`[data-testid="${testId}"]`, (node) => JSON.parse(node.textContent))
+  const start = (name, width) => { scenario = `${name}-${width}`; console.log(`Running ${scenario}`) }
   async function click(label) {
-    const handle = await page.evaluateHandle((text) => [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === text), label)
+    const handle = await page.evaluateHandle((text) => {
+      const scope = [...document.querySelectorAll('[role=dialog]')].at(-1) ?? document
+      return [...scope.querySelectorAll('button')].find((node) => node.textContent.trim() === text)
+    }, label)
     assert.ok(await handle.evaluate((node) => Boolean(node)), `Button ${label}`)
+    await page.waitForFunction((node) => !node.disabled, {}, handle)
+    await handle.asElement().click(); await handle.dispose()
+  }
+  async function checkLabel(text) {
+    const handle = await page.evaluateHandle((text) => [...document.querySelectorAll('[role=dialog] label')]
+      .find((node) => node.textContent.trim() === text)?.querySelector('input[type=checkbox]'), text)
+    assert.ok(await handle.evaluate((node) => Boolean(node)), `Checkbox ${text}`)
+    await handle.asElement().click(); await handle.dispose()
+  }
+  async function noDuplicateAttachments() {
+    const ids = await page.$$eval('input[name=attachment]', (nodes) => nodes.map((node) => node.value))
+    assert.equal(ids.length, new Set(ids).size, 'Attachment picker contains each scoped file once')
+  }
+  async function selectLabel(text, value) {
+    const handle = await page.evaluateHandle((text) => [...document.querySelectorAll('[role=dialog] label')]
+      .find((node) => node.firstChild?.textContent.trim() === text)?.querySelector('select'), text)
+    assert.ok(await handle.evaluate((node) => Boolean(node)), `Select ${text}`)
+    await handle.asElement().select(value); await handle.dispose()
+  }
+  async function fillLabel(text, value) {
+    const handle = await page.evaluateHandle((text) => [...document.querySelectorAll('[role=dialog] label')]
+      .find((node) => node.firstChild?.textContent.trim() === text)?.querySelector('input, textarea'), text)
+    assert.ok(await handle.evaluate((node) => Boolean(node)), `Field ${text}`)
+    await handle.asElement().click({ clickCount: 3 })
+    await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control')
+    await page.keyboard.type(value); await handle.dispose()
+  }
+  async function groupButton(title, label) {
+    const handle = await page.evaluateHandle((title, label) => {
+      const group = [...document.querySelectorAll('[aria-label=Grupppriser] > ul > li')].find((node) => node.querySelector('strong')?.textContent === title)
+      return group ? [...group.querySelectorAll('button')].find((node) => node.textContent.trim() === label) : null
+    }, title, label)
+    assert.ok(await handle.evaluate((node) => Boolean(node)), `Group ${title}: ${label}`)
+    await page.waitForFunction((node) => !node.disabled, {}, handle)
     await handle.asElement().click(); await handle.dispose()
   }
   async function noOverflow() {
@@ -51,7 +105,18 @@ try {
     assert.ok(result.scroll <= result.width + 1, JSON.stringify(result))
     assert.ok(result.right <= result.viewport + 1)
   }
+  async function savedTerms(selector, quote, expired) {
+    const content = await page.$eval(selector, (node) => ({ text: node.innerText, status: node.querySelector('[role=status]')?.textContent ?? '' }))
+    assert.ok(content.text.includes(quote.offeredScope), 'Saved supplier scope is visible without reopening an editor')
+    if (quote.exclusions) assert.ok(content.text.includes(quote.exclusions), 'Saved exclusions are visible')
+    assert.ok(content.text.includes(`Giltig till ${quote.validUntil}`), 'Saved validity date is visible')
+    if (expired) {
+      assert.match(content.status, /Behöver ny offert: ändrad omfattning eller utgången giltighet/)
+      assert.doesNotMatch(content.text, /används i kalkylen|vald i kalkylen|redo för offert|klar för offert/i, 'An active package record must not imply an expired quote is usable')
+    } else assert.match(content.status, /Används i kalkylen/)
+  }
   for (const width of [1440, 390]) {
+    start('scope', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(`${url}/?scope=1`, { waitUntil: 'networkidle0' })
     await page.locator('[aria-label="Granska entre.jpg"]').click()
@@ -87,9 +152,11 @@ try {
   assert.equal(await page.$$eval('[role=dialog] button[aria-pressed=true]', (nodes) => nodes[0].textContent), 'Omfattning')
 
   for (const width of [1440, 390]) {
+    start('scope-request', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(`${url}/?requests=1&scope=1`, { waitUntil: 'networkidle0' })
     await click('Begär offert')
+    await noDuplicateAttachments()
     const work = (n) => `input[name=workLine][value$="0000000000${n}"]`
     const file = (n) => `input[name=attachment][value$="0000000000${n}"]`
     const checked = () => page.$$eval('input[name=attachment]:checked', (nodes) => nodes.map((n) => Number(n.value.slice(-2))).sort())
@@ -110,6 +177,169 @@ try {
     await page.screenshot({ path: resolve(output, `scope-request-${width}.png`), fullPage: true })
   }
   for (const width of [1440, 390]) {
+    start('request-selection', width)
+    await page.setViewport({ width, height: 900 })
+    await page.goto(`${url}/?requests=1&scope=1&parts=1`, { waitUntil: 'networkidle0' })
+    await click('Begär offert')
+    assert.equal(await page.$eval('input[name=pricePresentation][value=grouped]', (node) => node.checked), true, 'New requests default to grouped prices')
+    const selectedWork = () => page.$$eval('input[name=workLine]:checked', (nodes) => nodes.map((node) => Number(node.value.slice(-2))).sort())
+    const selectedFiles = () => page.$$eval('input[name=attachment]:checked', (nodes) => nodes.map((node) => Number(node.value.slice(-2))).sort())
+    await checkLabel('Panel och målning'); assert.deepEqual(await selectedWork(), [21, 23])
+    assert.deepEqual(await selectedFiles(), [31, 34])
+    await checkLabel('Träpanel vid entrén'); assert.deepEqual(await selectedWork(), [21, 23, 24])
+    await checkLabel('Träpanel vid entrén'); assert.deepEqual(await selectedWork(), [])
+    await checkLabel('Välj alla arbeten'); assert.deepEqual(await selectedWork(), [21, 22, 23, 24])
+    assert.deepEqual(await selectedFiles(), [31, 32, 34])
+    await noDuplicateAttachments()
+    await page.click('input[name=attachment][value$="000000000034"]')
+    await checkLabel('Välj alla arbeten'); assert.deepEqual(await selectedWork(), [])
+    await checkLabel('Välj alla arbeten'); assert.deepEqual(await selectedFiles(), [31, 32], 'Select-all retains manual shared-document opt-out')
+    await page.click('input[name=attachment][value$="000000000034"]')
+    await checkLabel('Panel och målning'); assert.deepEqual(await selectedWork(), [22, 24])
+    await checkLabel('Panel och målning'); assert.deepEqual(await selectedWork(), [21, 22, 23, 24])
+    await page.locator('input[name=supplierName]').fill('Syntetisk Entreprenad AB')
+    await page.locator('input[name=supplierEmail]').fill('synthetic@example.test')
+    await noOverflow()
+    await page.$eval('input[name=workLine]', (node) => node.scrollIntoView({ block: 'center' }))
+    await page.screenshot({ path: resolve(output, `request-selection-${width}.png`), fullPage: true })
+    await click('Spara och förhandsgranska')
+    await page.waitForSelector('[data-testid=request-body]')
+    let [saved] = await json('requests')
+    assert.equal(saved.pricePresentation, 'grouped')
+    assert.equal(saved.lines.length, 4)
+    assert.equal(saved.lines.filter((line) => line.workPartTitle === 'Panel och målning').length, 2)
+    assert.deepEqual(saved.attachmentIds.map((id) => Number(id.slice(-2))), [31, 32, 34])
+    const [{ data }] = await json('request-payloads')
+    assert.equal(data.attachmentIds.length, new Set(data.attachmentIds).size, 'Submitted attachment IDs are unique before fixture normalization')
+    assert.equal(data.lines.length, new Set(data.lines.map((line) => line.costLineId)).size)
+    const groupedBody = await page.$eval('[data-testid=request-body]', (node) => node.textContent)
+    assert.match(groupedBody, /Prisgrupp 1: Panel och målning/)
+    assert.match(groupedBody, /- Demontera och montera panel/)
+    assert.match(groupedBody, /- Måla den nya panelen/)
+    assert.equal(groupedBody.split('Byt skadade brädor.').length - 1, 1, 'Item scope appears once across multiple price groups')
+    assert.equal(groupedBody.split('Montera panel och måla två gånger.').length - 1, 1)
+    assert.doesNotMatch(groupedBody, /1\. Demontera/)
+    assert.equal(await page.$$eval('[data-request-content] a[href$="000000000034"]', (nodes) => nodes.length), 1, 'Shared document appears once in preview')
+    await noOverflow()
+    await page.screenshot({ path: resolve(output, `request-grouped-${width}.png`), fullPage: true })
+    await click('Redigera')
+    assert.equal(await page.$eval('input[name=pricePresentation][value=grouped]', (node) => node.checked), true)
+    await page.click('input[name=pricePresentation][value=itemized]')
+    await click('Spara och förhandsgranska')
+    await page.waitForSelector('[data-testid=request-body]')
+    ;[saved] = await json('requests')
+    assert.equal(saved.pricePresentation, 'itemized')
+    assert.match(saved.body, /1\. Demontera och montera panel/)
+    assert.match(saved.body, /2\. Måla den nya panelen/)
+    assert.match(saved.body, /3\. Kontrollera anslutningar/)
+    assert.match(saved.body, /4\. Justera och täta fönsterbleck/)
+    assert.doesNotMatch(saved.body, /Prisgrupp \d/)
+    assert.equal(saved.sentAt, null)
+    assert.deepEqual(await json('actions'), ['quote_request:save', 'quote_request:save'])
+    await noOverflow()
+    await page.screenshot({ path: resolve(output, `request-itemized-${width}.png`), fullPage: true })
+    await click('Redigera')
+    assert.equal(await page.$eval('input[name=pricePresentation][value=itemized]', (node) => node.checked), true)
+  }
+  for (const width of [1440, 390]) {
+    start('direct-work-parts-bulk', width)
+    await page.setViewport({ width, height: 900 })
+    await page.goto(`${url}/?work=1&bulkFail=1`, { waitUntil: 'networkidle0' })
+    await click('Gå till kalkyl')
+    const workCheckbox = (description) => `input[type=checkbox][aria-label="Välj ${description}"]`
+    const hours = '[aria-label="Timmar för Montering"]'
+    const rate = '[aria-label="Timkostnad för Montering"]'
+    const directSave = '[aria-label="Spara egen kalkyl för Montering"]'
+    const bulkSave = '[aria-label="Spara timkostnad för valda arbeten"]'
+    const initialItem = await json('item')
+    assert.deepEqual(initialItem.workParts, [], 'Work parts are optional for direct pricing')
+    await page.locator(hours).fill('6.5')
+    await page.locator(rate).fill('725.25')
+    assert.equal((await json('item')).costLines.find((line) => line.description === 'Montering').quantity, 4, 'Editing alone does not save')
+    await noOverflow()
+    await page.$eval(hours, (node) => node.scrollIntoView({ block: 'center' }))
+    await page.screenshot({ path: resolve(output, `direct-edit-${width}.png`), fullPage: true })
+    await page.locator(directSave).click()
+    await page.waitForFunction(() => JSON.parse(document.querySelector('[data-testid=item]').textContent).costLines.some((line) => line.description === 'Montering' && line.quantity === 6.5 && line.unitCost === 725.25))
+    let savedItem = await json('item')
+    const directPayload = (await json('cost-payloads')).at(-1)
+    assert.equal(directPayload.name, 'work_part')
+    assert.equal(directPayload.payload.operation, 'bulk_update')
+    assert.deepEqual(directPayload.payload.costLineIds, [savedItem.costLines.find((line) => line.description === 'Montering').id])
+    assert.equal(directPayload.payload.expectedUpdatedAt, initialItem.updatedAt)
+    assert.equal(savedItem.costLines.find((line) => line.description === 'Montering').verified, false)
+    assert.deepEqual(savedItem.costLines.filter((line) => line.description !== 'Montering'), initialItem.costLines.filter((line) => line.description !== 'Montering'))
+    await page.waitForFunction((selector) => document.querySelector(selector).disabled, {}, directSave)
+    await page.locator('[aria-label="Lägg till arbetsdel"]').click()
+    await fillLabel('Arbetsdelens namn *', 'Snickeri vid entrén')
+    await fillLabel('Omfattning', 'Montering och målning av den nya panelen.')
+    await click('Spara arbetsdel')
+    await page.waitForFunction(() => JSON.parse(document.querySelector('[data-testid=item]').textContent).workParts.length === 1)
+    const partId = (await json('item')).workParts[0].id
+    await page.locator('[aria-label="Redigera arbetsdelen Snickeri vid entrén"]').click()
+    await fillLabel('Arbetsdelens namn *', 'Panel och ytbehandling vid entrén')
+    await click('Spara arbetsdel')
+    await page.waitForFunction(() => JSON.parse(document.querySelector('[data-testid=item]').textContent).workParts[0].title === 'Panel och ytbehandling vid entrén')
+    assert.equal((await json('item')).workParts.length, 1, 'Editing a work part does not create a duplicate')
+    assert.equal((await json('item')).workParts[0].id, partId)
+    await page.locator(workCheckbox('Montering')).click()
+    await page.locator(workCheckbox('Målning')).click()
+    await selectLabel('Flytta till arbetsdel', partId)
+    await page.locator('[aria-label="Flytta valda arbeten"]').click()
+    await page.waitForFunction((partId) => JSON.parse(document.querySelector('[data-testid=item]').textContent).costLines.filter((line) => line.workPartId === partId).length === 2, {}, partId)
+    await selectLabel('Arbetsdel', partId)
+    assert.equal(await page.$(workCheckbox('Efterkontroll')), null, 'Work-part filter hides unassigned work')
+    await checkLabel('Välj alla arbeten')
+    await fillLabel('Timkostnad för valda, kr', '810.5')
+    const beforeBulk = await json('item')
+    await page.locator(bulkSave).click()
+    await page.waitForFunction(() => document.querySelector('[role=alert]')?.textContent.includes('Timpriserna kunde inte sparas'))
+    assert.deepEqual(await json('item'), beforeBulk, 'Failed synthetic bulk save does not mutate saved state')
+    assert.equal(await page.$eval(workCheckbox('Montering'), (node) => node.checked), true)
+    assert.equal(await page.$eval(workCheckbox('Målning'), (node) => node.checked), true)
+    assert.equal(await page.$eval(`${bulkSave}`, (node) => node.closest('form').querySelector('input').value), '810.5', 'Failed bulk save retains the entered rate')
+    await noOverflow()
+    await page.$eval(bulkSave, (node) => node.scrollIntoView({ block: 'center' }))
+    await page.screenshot({ path: resolve(output, `bulk-failure-${width}.png`), fullPage: true })
+    await page.locator(bulkSave).click()
+    await page.waitForFunction((partId) => JSON.parse(document.querySelector('[data-testid=item]').textContent).costLines.filter((line) => line.workPartId === partId && line.unitCost === 810.5).length === 2, {}, partId)
+    savedItem = await json('item')
+    assert.deepEqual(savedItem.costLines.filter((line) => line.workPartId !== partId), beforeBulk.costLines.filter((line) => line.workPartId !== partId), 'Bulk rate save leaves unselected work and material unchanged')
+    assert.deepEqual(savedItem.costLines.map((line) => line.quantity), beforeBulk.costLines.map((line) => line.quantity), 'Bulk rate save preserves hours')
+    assert.equal(await page.$eval(workCheckbox('Montering'), (node) => node.checked), false, 'Successful bulk save clears selection')
+    const workPayloads = (await json('cost-payloads')).filter(({ name }) => name === 'work_part')
+    assert.deepEqual(workPayloads.map(({ payload }) => payload.operation), ['bulk_update', 'save', 'save', 'move_lines', 'bulk_update', 'bulk_update'])
+    for (const action of workPayloads) assert.equal(action.payload.expectedUpdatedAt, action.itemUpdatedAt, 'Work-part mutations submit the current item version')
+    assert.deepEqual(workPayloads.at(-1).payload, workPayloads.at(-2).payload, 'Retry submits the retained bulk draft')
+    await noOverflow()
+    await page.screenshot({ path: resolve(output, `work-parts-${width}.png`), fullPage: true })
+    await checkLabel('Välj alla arbeten')
+    await click('Begär offert (2)')
+    await page.waitForSelector('#group-request-form')
+    assert.equal(await page.$$eval('[role=dialog]', (nodes) => nodes.length), 1, 'Multi-select opens one shared request sheet')
+    const requestedIds = await json('request-line-ids')
+    assert.equal(Array.isArray(requestedIds), true)
+    assert.deepEqual([...requestedIds].sort(), savedItem.costLines.filter((line) => line.workPartId === partId).map((line) => line.id).sort())
+    assert.deepEqual(await page.$$eval('input[name=workLine]:checked', (nodes) => nodes.map((node) => node.value).sort()), [...requestedIds].sort())
+    await noDuplicateAttachments()
+    assert.equal(await page.$$eval('input[name=attachment]:checked', (nodes) => nodes.length), 2, 'Shared scope files are selected once for multiple work IDs')
+    await page.locator('input[name=supplierName]').fill('Syntetisk Panel AB')
+    await page.locator('input[name=supplierEmail]').fill('panel@example.test')
+    await click('Spara och förhandsgranska')
+    await page.waitForSelector('[data-testid=request-body]')
+    const [request] = await json('requests')
+    assert.deepEqual(request.lines.map((line) => line.costLineId).sort(), [...requestedIds].sort())
+    assert.ok(request.lines.every((line) => line.workPartId === partId))
+    assert.equal(request.pricePresentation, 'grouped')
+    assert.equal(request.attachmentIds.length, 2)
+    assert.equal(request.sentAt, null)
+    assert.match(request.body, /Prisgrupp 1: Panel och ytbehandling vid entrén/)
+    assert.doesNotMatch(request.body, /Prisgrupp 2/)
+    await noOverflow()
+    await page.screenshot({ path: resolve(output, `multi-request-${width}.png`), fullPage: true })
+  }
+  for (const width of [1440, 390]) {
+    start('costing', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(url, { waitUntil: 'networkidle0' })
     await click('Gå till kalkyl')
@@ -130,13 +360,14 @@ try {
     await noOverflow()
     await page.screenshot({ path: resolve(output, `edit-${width}.png`), fullPage: true })
     await click('Spara rad')
-    await page.waitForSelector('form', { hidden: true })
+    await page.waitForSelector('form input[name=description]', { hidden: true })
     const actions = JSON.parse(await page.$eval('[data-testid=actions]', (node) => node.textContent))
     assert.deepEqual(actions, ['generate_cost_suggestions', 'apply_cost_suggestions', 'update_cost_line'])
     await click('Stäng åtgärd')
     await page.waitForSelector('[role=dialog]', { hidden: true })
   }
   for (const width of [1440, 390]) {
+    start('quotes', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(`${url}/?quotes=1`, { waitUntil: 'networkidle0' })
     await click('Gå till kalkyl'); await click('Timmar / offerter'); await click('Offerter (0)')
@@ -172,10 +403,13 @@ try {
     await click('Skicka förfrågan')
     await page.waitForFunction(() => document.querySelector('[aria-label="Förhandsgranska offertförfrågan"]')?.textContent.includes('Förfrågan skickad'))
     await click('Timmar')
-    await page.waitForFunction(() => document.body.textContent.includes('Egen kalkyl: 4 tim'))
+    await click('Använd egen kalkyl')
+    await page.waitForSelector('[aria-label="Timmar för Montering"]')
+    assert.equal(await page.$eval('[aria-label="Timmar för Montering"]', (node) => node.value), '4')
     assert.match(await page.$eval('[role=dialog] footer', (n) => n.textContent), /2\s?700,00/)
   }
   for (const width of [1440, 390]) {
+    start('group-request', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(`${url}/?requests=1`, { waitUntil: 'networkidle0' })
     await click('Begär offert')
@@ -222,8 +456,10 @@ try {
     await page.waitForSelector('[data-testid=request-body]')
     const body = await page.$eval('[data-testid=request-body]', (n) => n.textContent)
     assert.deepEqual(JSON.parse(await page.$eval('[data-testid=requests]', (n) => n.textContent))[0].attachmentIds.map((id) => id.slice(-2)), ['31', '32', '34'])
-    assert.match(body, /1\. Demontera och montera panel/)
-    assert.match(body, /2\. Justera och täta fönsterbleck/)
+    assert.match(body, /Prisgrupp 1: Träpanel vid entrén/)
+    assert.match(body, /Prisgrupp 2: Fönsterbleck på gårdssidan/)
+    assert.match(body, /- Demontera och montera panel/)
+    assert.match(body, /- Justera och täta fönsterbleck/)
     assert.match(body, /servicebil/); assert.match(body, /mottagningsavgifter/)
     assert.match(body, /Redovisa även följande prisuppgifter separat/)
     assert.ok(!body.includes('Etablering och avetablering för'))
@@ -245,12 +481,12 @@ try {
     await page.waitForSelector('[aria-label=Offertsvar]')
     assert.equal(await page.$eval('[role=dialog] details', (n) => n.open), false, 'Sent email is collapsed so response handling is directly visible')
     assert.equal(await page.$('input[name=supplierName]'), null, 'Sent recipient is immutable')
-    await click('Registrera prisvillkor')
+    await click('Offertuppgifter')
     await page.select('[aria-label=Offertsvar] select', 'package')
     await page.locator('input[name=packageAmount]').fill('7500')
     await click('Spara prisvillkor')
-    await page.waitForFunction(() => document.querySelector('[aria-label=Offertsvar]')?.textContent.includes('Paketpris:'))
-    assert.match(await page.$eval('[aria-label=Offertsvar]', (n) => n.textContent), /Behöver specificeras/)
+    await page.waitForFunction(() => document.querySelector('[aria-label=Offertsvar]')?.textContent.includes('Gemensamt paketpris:'))
+    assert.match(await page.$eval('[aria-label=Offertsvar]', (n) => n.textContent), /Inte ett fristående delpris/)
     await noOverflow()
     await page.$eval('[aria-label=Offertsvar]', (node) => node.scrollIntoView({ block: 'start' }))
     await page.screenshot({ path: resolve(output, `group-response-${width}.png`), fullPage: true })
@@ -260,6 +496,153 @@ try {
     assert.equal(await page.$$eval('input[name=workLine]:checked', (n) => n.length), 0, 'Supplement has no old work selected')
     assert.equal(JSON.parse(await page.$eval('[data-testid=actions]', (n) => n.textContent)).filter((n) => n.startsWith('send_grouped_quote_request')).length, 1)
   }
+  for (const width of [1440, 390]) {
+    start('independent-group-prices', width)
+    await page.setViewport({ width, height: 900 })
+    await page.goto(`${url}/?requests=1&scope=1&parts=1&packages=1&packageFail=1`, { waitUntil: 'networkidle0' })
+    const originals = (await json('request-case')).items
+    const panelTitle = 'Träpanel vid entrén: Panel och målning'
+    const bleckTitle = 'Fönsterbleck på gårdssidan: Bleckarbete'
+    await click('Begär offert')
+    await checkLabel('Panel och målning'); await checkLabel('Bleckarbete')
+    await page.locator('input[name=supplierName]').fill('Syntetiska Grupppriser AB')
+    await page.locator('input[name=supplierEmail]').fill('group-prices@example.test')
+    await click('Spara och förhandsgranska')
+    await page.waitForSelector('[data-testid=request-body]')
+    const draftRequest = (await json('requests'))[0]
+    await click('Skicka förfrågan')
+    await page.waitForSelector('[aria-label=Grupppriser]')
+    await groupButton(panelTitle, 'Registrera grupppris')
+    await page.locator('input[name=groupAmount]').fill('4200')
+    await page.locator('textarea[name=groupOfferedScope]').fill('Panel och målning inklusive material. Separat beställningsbart grupppris.')
+    // Native date segments are locale-dependent; send the ISO value through React's input/change path.
+    await page.$eval('form[aria-label^="Grupppris för"] input[type=date]', (node) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(node, '2099-12-31')
+      node.dispatchEvent(new Event('input', { bubbles: true }))
+      node.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    assert.equal(await page.$eval('form[aria-label^="Grupppris för"] input[type=date]', (node) => node.value), '2099-12-31')
+    await page.click('input[name=groupCoveredLine][value$="000000000025"]')
+    await page.click('input[name=groupPriceChecked]')
+    assert.equal(await page.$eval('form[aria-label^="Grupppris för"] button[type=submit]', (node) => node.disabled), true, 'Multiple groups require independent-price confirmation')
+    await page.click('input[name=independentGroupPrice]')
+    assert.equal(await page.$eval('input[name=groupPriceChecked]', (node) => node.checked), false, 'Changing independence requires a fresh price check')
+    await page.click('input[name=groupPriceChecked]')
+    const expectedRequest = (await json('requests'))[0]
+    await click('Använd grupppriset i kalkylen')
+    await page.waitForFunction(() => document.querySelector('[role=alert]')?.textContent.includes('Grupppriset kunde inte sparas'))
+    assert.equal(await page.$eval('input[name=groupAmount]', (node) => node.value), '4200')
+    assert.equal(await page.$eval('input[name=independentGroupPrice]', (node) => node.checked), true)
+    assert.equal(await page.$eval('input[name=groupPriceChecked]', (node) => node.checked), true)
+    assert.deepEqual((await json('request-case')).items, originals, 'Failed synthetic group acceptance retains original costing')
+    await noOverflow()
+    await page.$eval('input[name=groupAmount]', (node) => node.scrollIntoView({ block: 'center' }))
+    await page.screenshot({ path: resolve(output, `group-price-edit-${width}.png`), fullPage: true })
+    await click('Använd grupppriset i kalkylen')
+    await page.waitForSelector('input[name=groupAmount]', { hidden: true })
+    let state = await json('request-case')
+    const firstPackage = state.quotePackages.find((price) => price.state === 'active')
+    assert.equal(firstPackage.amount, 4200)
+    assert.deepEqual(firstPackage.coveredLineIds.map((id) => Number(id.slice(-2))).sort(), [23, 25])
+    const firstPayloads = (await json('request-payloads')).filter(({ action }) => action === 'quote_package')
+    assert.equal(firstPayloads.length, 2)
+    assert.deepEqual(firstPayloads[0].data, firstPayloads[1].data, 'Group-price retry uses the retained draft')
+    const accepted = firstPayloads[1].data
+    assert.equal(accepted.groupKey, firstPackage.groupKey)
+    assert.equal(accepted.expectedUpdatedAt, expectedRequest.updatedAt)
+    assert.equal(accepted.separateGroupPriceConfirmed, true)
+    assert.equal(accepted.checked, true)
+    assert.equal(accepted.validUntil, '2099-12-31')
+    assert.deepEqual(accepted.expectedLines.map((line) => Number(line.costLineId.slice(-2))).sort(), [21, 23, 25])
+    for (const expected of accepted.expectedLines) assert.equal(expected.updatedAt, originals.flatMap((item) => item.costLines).find((line) => line.id === expected.costLineId).updatedAt)
+    assert.equal(state.items[0].costLines.find((line) => line.id === firstPackage.anchorLineId).unitCost, 4200)
+    assert.ok(state.items[0].costLines.filter((line) => firstPackage.coveredLineIds.includes(line.id)).every((line) => line.coveredByQuoteId === firstPackage.quoteId))
+    assert.deepEqual(state.items[1], originals[1], 'Accepting the first price leaves the other item untouched')
+    const acceptedQuote = state.items[0].costLines.find((line) => line.id === firstPackage.anchorLineId).quotes.find((quote) => quote.id === firstPackage.quoteId)
+    await savedTerms('[aria-label=Grupppriser] > ul > li:first-child', acceptedQuote, false)
+    await groupButton(bleckTitle, 'Registrera grupppris')
+    assert.equal(await page.$eval('input[name=groupAmount]', (node) => node.value), '', 'Other groups do not inherit or allocate the accepted price')
+    await page.locator('input[name=groupAmount]').fill('2300')
+    await page.locator('textarea[name=groupOfferedScope]').fill('Bleckarbete som kan beställas separat från panelarbetet.')
+    await page.click('input[name=independentGroupPrice]'); await page.click('input[name=groupPriceChecked]')
+    const secondExpected = (await json('requests'))[0].updatedAt
+    await click('Använd grupppriset i kalkylen')
+    await page.waitForSelector('input[name=groupAmount]', { hidden: true })
+    state = await json('request-case')
+    assert.equal(state.quotePackages.filter((price) => price.state === 'active').length, 2, 'One request can hold two independent active group prices')
+    assert.equal(new Set(state.quotePackages.map((price) => price.requestId)).size, 1)
+    assert.equal(new Set(state.quotePackages.map((price) => price.groupKey)).size, 2)
+    assert.equal((await json('request-payloads')).at(-1).data.expectedUpdatedAt, secondExpected)
+    const secondPackage = state.quotePackages.find((price) => price.groupKey !== firstPackage.groupKey)
+    const secondItem = state.items[1]
+    assert.equal(secondPackage.amount, 2300)
+    assert.deepEqual(state.quotePackages.find((price) => price.groupKey === firstPackage.groupKey), firstPackage, 'Second group acceptance preserves the first package')
+    await noOverflow()
+    await page.$eval('[aria-label=Grupppriser]', (node) => node.scrollIntoView({ block: 'start' }))
+    await page.screenshot({ path: resolve(output, `group-prices-active-${width}.png`), fullPage: true })
+    await groupButton(panelTitle, 'Ta bort prisval')
+    await click('Återställ prisunderlag')
+    await page.waitForFunction(() => JSON.parse(document.querySelector('[data-testid=request-case]').textContent).quotePackages.some((price) => price.state === 'removed'))
+    state = await json('request-case')
+    assert.deepEqual(state.items[0].costLines, originals[0].costLines, 'Removing a group price restores its synthetic original lines, including covered material')
+    assert.deepEqual(state.items[1], secondItem, 'Removing one group does not restore another group')
+    assert.deepEqual(state.quotePackages.find((price) => price.groupKey === secondPackage.groupKey), secondPackage)
+    assert.equal(state.quoteRequests[0].body, draftRequest.body, 'Group responses do not rewrite the sent request body')
+    assert.deepEqual(state.quoteRequests[0].lines, draftRequest.lines)
+    assert.deepEqual((await json('request-payloads')).filter(({ action }) => action === 'quote_package').map(({ data }) => data.operation), ['accept', 'accept', 'accept', 'remove'])
+    assert.equal((await json('actions')).filter((action) => action.startsWith('send_grouped_quote_request')).length, 1, 'Group acceptance/removal never triggers another synthetic send')
+    await noOverflow()
+    await page.screenshot({ path: resolve(output, `group-price-removed-${width}.png`), fullPage: true })
+  }
+  for (const width of [1440, 390]) {
+    await page.setViewport({ width, height: 900 })
+    for (const expired of [false, true]) {
+      const stateName = expired ? 'expired' : 'valid'
+      const query = `savedPackage=1${expired ? '&expired=1' : ''}`
+      start(`saved-group-terms-${stateName}`, width)
+      await page.goto(`${url}/?requests=1&${query}`, { waitUntil: 'networkidle0' })
+      const state = await json('request-case')
+      const price = state.quotePackages[0]
+      const anchor = state.items[0].costLines.find((line) => line.id === price.anchorLineId)
+      const quote = anchor.quotes.find((quote) => quote.id === price.quoteId)
+      assert.equal(price.state, 'active', 'Expiry fixture keeps the stored active package record')
+      assert.equal(anchor.selectedQuoteId, price.quoteId)
+      assert.equal(anchor.unitCost, expired ? null : 4200)
+      assert.equal(anchor.verified, !expired)
+      await savedTerms('[aria-label=Grupppriser]', quote, expired)
+      assert.deepEqual(await json('actions'), [], 'Reading saved terms does not mutate or send anything')
+      await noOverflow()
+      await page.$eval('[aria-label=Grupppriser]', (node) => node.scrollIntoView({ block: 'start' }))
+      await page.screenshot({ path: resolve(output, `group-terms-${stateName}-${width}.png`), fullPage: true })
+      for (const covered of [false, true]) {
+        const lineKind = covered ? 'covered' : 'anchor'
+        start(`saved-work-terms-${stateName}-${lineKind}`, width)
+        await page.goto(`${url}/?${query}${covered ? '&covered=1' : ''}`, { waitUntil: 'networkidle0' })
+        const selector = '[aria-label^="Prisunderlag för"]'
+        await page.waitForSelector(selector)
+        await savedTerms(selector, quote, expired)
+        const footer = await page.$eval('[role=dialog] footer', (node) => node.innerText)
+        if (expired) {
+          assert.match(footer, /Ej komplett/)
+          assert.doesNotMatch(footer, /Alla kalkylrader är kontrollerade|4\s?200,00|5\s?040,00/, 'Expired group amount must not be presented as a ready calculation')
+        } else {
+          assert.match(footer, /Alla kalkylrader är kontrollerade/)
+          assert.match(footer, /4\s?200,00/)
+        }
+        assert.deepEqual(await json('actions'), [])
+        await noOverflow()
+        await page.$eval(selector, (node) => node.scrollIntoView({ block: 'center' }))
+        await page.screenshot({ path: resolve(output, `work-terms-${stateName}-${lineKind}-${width}.png`), fullPage: true })
+        await click('Öppna grupppris')
+        await page.waitForSelector('[aria-label=Grupppriser]')
+        assert.equal(await json('opened-request-id'), price.requestId, 'Anchor and covered work open the saved shared request')
+        await savedTerms('[aria-label=Grupppriser]', quote, expired)
+        assert.equal(await page.$$eval('[role=dialog]', (nodes) => nodes.length), 1)
+        assert.deepEqual(await json('request-payloads'), [])
+      }
+    }
+  }
+  start('image-bank-and-failure-toasts', 390)
   await page.goto(`${url}/?requests=1&bank=1`, { waitUntil: 'networkidle0' })
   await page.locator('[aria-label="Granska entre.png"]').click()
   await page.waitForSelector('[aria-label="Granska bild"]')
@@ -284,10 +667,11 @@ try {
   assert.equal(await page.$eval('[role=alert]', (node) => { const box = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(box.x + 10, box.y + 10)) }), true, 'Shared error toast is above the sheet')
   assert.equal(await page.$('[role=dialog] form'), null)
   assert.deepEqual(errors, [])
-  console.log(`Desktop/mobile costing, grouped requests and shared error toasts passed. Screenshots: ${output}`)
+  assert.deepEqual(unexpectedRequests, [], 'No backend writes or external requests are allowed')
+  console.log(`${passedAssertions} assertions passed. Synthetic desktop1440/mobile390 costing, work parts, bulk retry, multi-ID requests, grouped/itemized presentation, independent group-price accept/remove, saved terms/expiry and shared error toasts passed. This does not verify backend behavior. Screenshots: ${output}`)
 } catch (error) {
   await page?.screenshot({ path: resolve(output, 'failure.png'), fullPage: true })
-  console.error('UI failure screenshot:', resolve(output, 'failure.png'))
+  console.error(`UI failure in ${scenario}. Screenshot:`, resolve(output, 'failure.png'))
   console.error(await page?.$$eval('form input, form select', (nodes) => nodes.map((n) => ({ name: n.name, value: n.value, disabled: n.disabled }))))
   throw error
 } finally {

@@ -22,6 +22,8 @@ import { generateActionCaseCosts } from '@/lib/action-cases/costingAiServer'
 import { scheduleActionCaseAiAdminAlert } from '@/lib/action-cases/costingAiAlerts'
 import { handleQuoteAction, sendQuoteRequest } from '@/lib/action-cases/quotesServer'
 import { handleRequestAction, sendGroupedRequest } from '@/lib/action-cases/quoteRequestsServer'
+import { handleWorkPartAction } from '@/lib/action-cases/workPartsServer'
+import { handleQuotePackageAction } from '@/lib/action-cases/quotePackagesServer'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -44,9 +46,28 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_FILE_UPLOAD_INCOMPLETE') return NextResponse.json({ error: 'Uppladdningen blev inte komplett. Försök igen.', code }, { status: 409 })
   if (code === 'ACTION_CASE_NOT_FOUND') return NextResponse.json({ error: 'Åtgärdsärendet kunde inte hittas.', code }, { status: 404 })
   if (code === 'ACTION_CASE_FILE_NOT_FOUND') return NextResponse.json({ error: 'Filen kunde inte hittas.', code }, { status: 404 })
+  if (code === 'ACTION_CASE_FILE_IN_USE') return NextResponse.json({ error: 'Filen ingår i sparat offertunderlag och kan inte tas bort.', code }, { status: 409 })
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {
+    ACTION_CASE_WORK_PART_INVALID: [400, 'Kontrollera arbetsdelens namn och valda kalkylrader.'],
+    ACTION_CASE_PACKAGE_INVALID: [400, 'Kontrollera grupppris, omfattning och valda kalkylrader.'],
+    ACTION_CASE_PACKAGE_ALLOCATION_REQUIRED: [409, 'Bekräfta ett separat pris för arbetsdelen. Ett gemensamt paketpris får inte delas upp automatiskt.'],
+    ACTION_CASE_PACKAGE_STALE: [409, 'Prisunderlaget har ändrats. Öppna förfrågan igen och kontrollera grupppriset.'],
+    ACTION_CASE_PACKAGE_ACTIVE: [409, 'Ta bort grupppriset ur kalkylen innan dess underlag eller villkor ändras.'],
+    ACTION_CASE_PACKAGE_REMOVE_FIRST: [409, 'Ta bort grupppriset ur kalkylen innan dess underlag eller villkor ändras.'],
+    ACTION_CASE_PACKAGE_USE_RPC: [409, 'Hantera grupppriset i den samlade offertförfrågan.'],
+    ACTION_CASE_PACKAGE_NOT_ACCEPTED: [409, 'Detta grupppris är inte längre valt. Öppna förfrågan igen.'],
+    ACTION_CASE_PACKAGE_RESPONSE_REQUIRED: [409, 'Förfrågan måste vara skickad innan ett grupppris registreras.'],
+    ACTION_CASE_PACKAGE_UNCHECKED: [400, 'Kontrollera gruppprisets belopp och omfattning innan det används.'],
+    ACTION_CASE_PACKAGE_GROUP_NOT_FOUND: [404, 'Prisgruppen kunde inte hittas i förfrågan.'],
+    ACTION_CASE_PACKAGE_AMOUNT_MISMATCH: [409, 'Grupppriset stämmer inte med det registrerade paketpriset. Kontrollera offertuppgifterna.'],
+    ACTION_CASE_PACKAGE_CONFLICT: [409, 'En eller flera rader ingår redan i ett valt offertpris. Ta bort det tidigare prisvalet först.'],
+    ACTION_CASE_WORK_PART_NOT_FOUND: [404, 'Arbetsdelen finns inte längre. Öppna åtgärden igen.'],
+    ACTION_CASE_WORK_PART_NOT_EMPTY: [409, 'Flytta arbetsdelens kalkylrader innan den tas bort.'],
+    ACTION_CASE_ITEM_LOCKED: [409, 'Kalkylen kan inte ändras i uppdragets nuvarande status.'],
+    ACTION_CASE_COST_LINE_DIRECT_REQUIRED: [409, 'Valda rader använder offertpris. Återgå till egen kalkyl innan de redigeras eller flyttas.'],
+    ACTION_CASE_COST_LINE_NOT_FOUND: [404, 'En vald kalkylrad finns inte längre. Öppna åtgärden igen.'],
     ACTION_CASE_REQUEST_INVALID: [400, 'Kontrollera mottagare, valda arbeten och uppgifter i förfrågan.'],
     ACTION_CASE_REQUEST_NOT_FOUND: [404, 'Offertförfrågan kunde inte hittas.'],
     ACTION_CASE_REQUEST_USE_GROUP: [409, 'Öppna den samlade förfrågan för att hantera utskicket.'],
@@ -133,6 +154,8 @@ export async function POST(request: Request) {
     else if (action === 'work_quote') await handleQuoteAction(ctx, payload)
     else if (action === 'send_quote_request') await sendQuoteRequest(ctx, payload)
     else if (action === 'quote_request') await handleRequestAction(ctx, payload)
+    else if (action === 'work_part') await handleWorkPartAction(ctx, payload)
+    else if (action === 'quote_package') await handleQuotePackageAction(ctx, payload)
     else if (action === 'send_grouped_quote_request') await sendGroupedRequest(ctx, payload)
     else throw new Error('ACTION_CASE_ACTION_INVALID')
     return NextResponse.json({ workspace: await getActionCaseWorkspace(ctx), accessUrl, upload, itemId })
