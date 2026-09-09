@@ -146,7 +146,7 @@ Lämna Fortnox-variabler tomma i Development/Preview tills den miljön har en
 avsiktligt registrerad, exakt callback. För sandbox rekommenderas en separat
 dold Fortnox-testintegration och en separat HusHub stagingmiljö.
 
-### Release-spärr: OAuth-parametrar i plattformsloggar
+### Beslutad riskhantering: OAuth-parametrar i Vercels loggar
 
 Fortnox returnerar authorization code och `state` som sökparametrar till
 callbackens GET-adress. HusHub lagrar dem inte och applikationskoden loggar inte
@@ -156,40 +156,51 @@ en Log Drain kan innehålla `proxy.path` med query-parametrar. Detta sker före
 eller utanför Next.js-routehanterarens kontroll; response headers kan inte
 förhindra det.
 
-**Ingen riktig sandbox- eller pilotanslutning får köras över den här callbacken
-förrän loggspärren är stängd.** Åtkomstbegränsning och kort retention minskar
-konsekvensen men uppfyller inte kravet att autentiseringsvärden inte ska lagras i
-loggar. Före fortsatt driftsättning krävs därför antingen:
+Fortnox föreskriver det här GET-baserade callbackformatet. Authorization code är
+giltig i tio minuter, kan endast användas en gång och kan inte växlas utan
+integrationens Client ID, Client Secret och identiska Redirect URI. Access-token,
+refresh-token och Client Secret förekommer aldrig i callback-URL:en.
 
-- verifierad redigering/uteslutning av `code` och `state` före lagring i både
-  Vercel Runtime Logs och samtliga Log Drains, testad med unika syntetiska
-  markörer; eller
-- en härdad callback-ingång under `hushub.se` som inte loggar query-parametrarna
-  och vidarebefordrar dem till HusHub över en autentiserad server-till-server-
-  kanal utan URL-parametrar. Den lösningen kräver en separat implementation och
-  säkerhetsgranskning innan Redirect URI ändras.
+Den 9 september 2026 valdes den befintliga Vercel-callbacken för sandbox och
+pilot. Beslutet accepterar den begränsade residualrisken att authorization code
+och `state` kan visas i Vercels åtkomstskyddade Runtime Logs. Projektet körde då
+på Hobby-planen, vars dokumenterade loggretention var en timme. Detta är ett
+uttryckligt riskbeslut, inte teknisk redigering av sökparametrarna.
 
-Som kompletterande skydd ska en Vercel-administratör dessutom:
+Ett syntetiskt produktionstest samma dag bekräftade att callbacken svarar med
+`303`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` och en
+ren `/settings`-adress. Testmarkörerna syntes samtidigt under Search Params i
+Vercel, vilket bekräftar den dokumenterade residualrisken. Inga riktiga
+Fortnoxvärden användes och inget provideranrop genomfördes.
 
-1. Begränsa åtkomst till projektets Runtime Logs till minsta nödvändiga grupp.
-2. Dokumentera Vercel-planens faktiska retention och minimera all längre
-   lagring i Log Drains och deras mottagarsystem.
-3. Inventera alla Log Drains och deras mottagare, åtkomst och retention. Skicka
-   inte callback-routen till en drain om authorization code och `state` inte
-   garanterat filtreras eller maskeras före lagring hos mottagaren.
-4. Förbjuda kopiering eller delning av callback-loggrader i supportärenden.
+Följande skydd är obligatoriska så länge den här lösningen används:
 
-Ett uttryckligt riskundantag kan dokumentera ett affärsbeslut men stänger inte
-det tekniska kravet. En authorization code är kortlivad och state är
-engångsbaserat, men båda ska behandlas som känsliga autentiseringsvärden.
+1. Kontot ska ha MFA och projekt-/loggåtkomst ska begränsas till minsta
+   nödvändiga grupp. Vid beslutstillfället var MFA aktivt och teamet hade en
+   medlem.
+2. Inga Log Drains får omfatta callbacken. Vid beslutstillfället fanns ingen
+   Log Drain. Inventera på nytt om Vercel-planen eller loggkonfigurationen ändras.
+3. Applikationskod får aldrig logga hela callback-URL:en, `code`, `state`,
+   provider-svar eller tokenvärden.
+4. Callback-loggrader får inte kopieras eller delas i supportärenden.
+5. Koden ska växlas omedelbart, `state` ska förbrukas atomiskt en gång och
+   webbläsaren ska därefter alltid skickas till en ren URL med `303`, `no-store`
+   och `no-referrer`. De skydden finns i den här leveransen och täcks av tester.
+6. Riskbeslutet ska omprövas om fler scopes läggs till, Vercels åtkomst eller
+   retention ändras eller integrationen går från begränsad pilot till bred drift.
+
+Om verksamheten senare kräver en absolut garanti att sökparametrarna aldrig
+lagras hos Vercel finns ingen dokumenterad Vercel-inställning som ger det. Då
+krävs en separat härdad ingress eller ett annat callbackformat som Fortnox
+dokumenterat stöder.
 
 ## 4. Verifiera i Fortnox sandbox
 
 Gör detta innan STYR:s riktiga konto används:
 
-1. Bekräfta först att release-spärren för callbackloggning ovan är tekniskt
-   stängd. Skapa därefter en sandbox i JNH:s Utvecklarportal. Fortnox tillåter flera samtidiga
-   testmiljöer.
+1. Bekräfta att de beslutade kontrollerna för callbackloggning ovan fortfarande
+   gäller. Skapa därefter en sandbox i JNH:s Utvecklarportal. Fortnox tillåter
+   flera samtidiga testmiljöer.
 2. Rekommenderat: skapa en separat dold testintegration med servicekonto,
    `companyinformation` och callback till en dedikerad HTTPS-stagingmiljö:
    `https://<staging-host>/api/integrations/fortnox/callback`.
