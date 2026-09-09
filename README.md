@@ -40,6 +40,20 @@ Open `http://localhost:3000`.
 - `docs/TECH_OVERVIEW.md`
 - `docs/UI_FEEDBACK_STANDARD.md`
 - `docs/SUPABASE_SCHEMA.md`
+- `docs/FORTNOX_CONNECTION_OPERATIONS.md`
+
+## Fortnox connection deployment
+
+The organization-scoped Fortnox service-account connection is operated through
+`docs/FORTNOX_CONNECTION_OPERATIONS.md`. In short: configure the exact callback
+`https://hushub.se/api/integrations/fortnox/callback` and only the
+`companyinformation` scope, apply
+`docs/db/2026-09-09_05_fortnox_connection_foundation.sql`, set the server-only
+Vercel variables, deploy, pass the sandbox checklist, and only then connect the
+STYR pilot from `/settings`. The callback logging gate in the runbook must be
+closed before any real sandbox or pilot flow: access/retention alone does not
+prevent OAuth query parameters from being stored by Vercel Runtime Logs or Log
+Drains. No real credentials belong in Git or chat.
 
 ## Report PDF worker deployment
 

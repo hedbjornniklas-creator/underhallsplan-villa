@@ -302,13 +302,19 @@ async function loadLegacyBrfMembership(profileId: string) {
   return (data ?? null) as LegacyBrfMemberRow | null
 }
 
-async function loadLegacyOrgMembership(profileId: string) {
+async function loadLegacyOrgMembership(profileId: string, orgId?: string | null) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
-  const { data, error } = await admin
+  let query = admin
     .from('org_members')
     .select('id,org_id,role')
     .eq('profile_id', profileId)
     .eq('is_active', true)
+
+  if (orgId) {
+    query = query.eq('org_id', orgId)
+  }
+
+  const { data, error } = await query
     .limit(1)
     .maybeSingle()
 
@@ -365,7 +371,7 @@ async function hasLegacyAccess<TProduct extends PlatformProductKey>(
 
   if (input.productKey === 'dashboard') {
     if (identity.isLegacyAdmin) return true
-    const orgMember = await loadLegacyOrgMembership(identity.profileId)
+    const orgMember = await loadLegacyOrgMembership(identity.profileId, input.scopeId)
     if (!orgMember) return false
     if (input.scopeType && input.scopeType !== 'organization') return false
     if (input.scopeId && orgMember.org_id !== input.scopeId) return false

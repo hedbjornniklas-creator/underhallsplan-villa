@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ProfileStartReturn from '@/components/besiktapp/ProfileStartReturn'
+import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
 import { supabase } from '@/lib/supabaseClient'
 import { isCustomerSelectableAddonKey } from '@/lib/assignments/addons'
 
@@ -714,6 +715,8 @@ export default function ObSettingsPage() {
   const avatarSrc = resolvePublicMediaUrl(form.avatar_path)
   const logoSrc = resolvePublicMediaUrl(form.logo_path)
   const signatureSrc = resolvePublicMediaUrl(form.signature_path)
+  const profileSavePending =
+    loading || saving || serializeProfileForm(form) !== savedSnapshot
   const handleBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
       router.back()
@@ -764,7 +767,7 @@ export default function ObSettingsPage() {
           </header>
 
           <ProfileStartReturn
-            pending={loading || saving || serializeProfileForm(form) !== savedSnapshot}
+            pending={profileSavePending}
             error={error}
             onRetry={() => {
               if (!profileHydratedRef.current || serializeProfileForm(form) === lastSavedProfileSnapshotRef.current) window.location.reload()
@@ -939,6 +942,8 @@ export default function ObSettingsPage() {
             ) : null}
 
           </section>
+
+          <FortnoxConnectionCard externalNavigationBlocked={profileSavePending} />
 
           <section className="rounded-2xl border border-white/30 bg-white/90 p-5 shadow-sm backdrop-blur-sm">
             <div className="mb-3 flex items-center gap-3">

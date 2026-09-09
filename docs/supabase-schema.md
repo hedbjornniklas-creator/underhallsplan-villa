@@ -149,3 +149,51 @@ Atomiska Uppdrag-RPC:er hanterar skapande av rot-/underuppdrag, statusövergång
 kontrollpunktsbeslut, deadlinebegäran/-beslut och rotation av externa länkar.
 Kontrollpunkter som verifieras binds till ett konkret bevis när regeln kräver det.
 
+## Modul: Fortnox-anslutning
+
+Fullständigt schema, constraints, RPC och RLS finns i
+`docs/db/2026-09-09_05_fortnox_connection_foundation.sql`.
+
+- `organizations.organization_number`: nullable juridiskt organisationsnummer i
+  kanoniskt format `XXXXXX-XXXX` med Luhn-kontroll. En trigger hindrar
+  webbläsarrollerna `anon` och `authenticated` från att ändra värdet utanför den
+  behörighetskontrollerade serverrouten.
+- `fortnox_connections`: en anslutning per `org_id`; TenantId är unikt mellan
+  organisationer. Företagsnamn, verifierat organisationsnummer, beviljade
+  scopes, status, anslutande profil, en monoton `connection_version` och
+  tidsstämplar lagras. En constraint kräver exakt ett scope,
+  `companyinformation`; extra scopes kan inte lagras. Tabellen innehåller inga
+  Client Secrets, authorization codes eller access-/refresh-token.
+- Den sammansatta främmande nyckeln
+  `(org_id, company_organization_number)` säkerställer att Fortnox-företagets
+  verifierade juridiska identitet matchar HusHub-organisationen.
+- `fortnox_oauth_states`: SHA-256-hash av slumpmässigt state, monoton
+  `attempt_sequence`, organisation, startande profil, exakt
+  `companyinformation`, utgångstid och konsumtionstid. Rått state lagras inte.
+  Ett unikt partiellt index tillåter högst ett väntande försök per organisation.
+  Utgångna rader äldre än 24 timmar rensas opportunistiskt när ett nytt flöde
+  startar.
+- `create_fortnox_oauth_state(...)`: låser organisationen, konsumerar äldre
+  väntande försök och skapar det nya försöket atomiskt.
+- `consume_fortnox_oauth_state(text, uuid)`: atomiskt engångsuttag som kräver
+  rätt profil, okonsumerat state och framtida utgångstid.
+- `save_fortnox_connection_from_oauth_state(...)`: låser samma organisation och
+  sparar endast om inget försök med högre `attempt_sequence` finns. En sen
+  callback från ett äldre försök kan därför inte skriva över den nyaste och en
+  lyckad save höjer `connection_version`.
+- `apply_fortnox_connection_verification(...)`: uppdaterar status och höjer
+  versionen endast när organisation, TenantId och förväntad `connection_version`
+  fortfarande matchar. Resultat från en äldre eller parallell kontroll kan
+  därför inte skriva över en återanslutning eller nyare kontroll.
+- Webbläsarroller saknar helt tabellåtkomst till `fortnox_connections` och
+  `fortnox_oauth_states`, och kan inte exekvera Fortnox-mutationsfunktionerna;
+  bastabeller och mutationer är `service_role`-only med RLS aktiverat.
+  Settings-status läses via en serverroute som först filtrerar på den aktuella
+  profilens aktiva medlemskap och bara returnerar säkra fält utan TenantId.
+- En organisationsadministratör kan starta en liveverifiering via serverrouten
+  `/api/integrations/fortnox/verify`. Den använder TenantId endast på servern,
+  uppdaterar `last_verified_at` vid lyckad kontroll och sätter
+  `needs_reauthorization` när Fortnox permanent avvisar organisationens
+  anslutning. Tillfälliga fel och centrala integrationskonfigurationsfel lämnar
+  den lagrade statusen oförändrad.
+
