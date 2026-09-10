@@ -759,7 +759,10 @@ export default function ObSettingsPage() {
                 </span>
               </div>
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">Besiktningsman - profil</h1>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+                  Inställningar
+                </p>
+                <h1 className="text-xl font-semibold text-gray-900">Profil och integrationer</h1>
               </div>
               <div className="ml-auto text-xs font-medium text-gray-600">
                 {saving ? 'Sparar...' : 'Autospar aktivt'}

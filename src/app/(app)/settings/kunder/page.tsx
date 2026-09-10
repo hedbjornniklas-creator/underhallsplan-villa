@@ -33,7 +33,7 @@ export default function CustomerSettingsPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
                 Inställningar
               </p>
-              <h1 className="text-xl font-semibold text-gray-900">Kunder</h1>
+              <h1 className="text-xl font-semibold text-gray-900">Kundregister</h1>
             </div>
           </div>
         </header>
