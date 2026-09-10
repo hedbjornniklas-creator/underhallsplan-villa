@@ -651,7 +651,7 @@ export default function ReportPdfDocumentV2({
     propertyMock.cadastral_id ??
     'Report'
   const inspectionDate = inspectionMock.date ?? ''
-  const rendererLabel = 'Renderer: pdf-v2'
+  const rendererLabel = mock.assignment_workflow_draft === true ? 'UTKAST - uppdragets godkännande eller avstämning saknas' : 'Renderer: pdf-v2'
 
   return (
     <Document>

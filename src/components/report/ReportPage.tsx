@@ -14,6 +14,7 @@ import {
 
 type ReportPageProps = {
   children: ReactNode
+  draftLabel?: string
   header?: ReactNode
   footerNote?: ReactNode
   pageNumber?: number
@@ -24,6 +25,7 @@ type ReportPageProps = {
 
 export default function ReportPage({
   children,
+  draftLabel,
   header,
   footerNote,
   pageNumber,
@@ -61,6 +63,7 @@ export default function ReportPage({
         position: 'relative',
       }}
     >
+      {draftLabel ? <div style={{ position: 'absolute', top: 8, left: 24, right: 24, textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#92400e' }}>{draftLabel}</div> : null}
       {header && (
         <div
           style={{

@@ -1,0 +1,302 @@
+import assert from 'node:assert/strict'
+import { after, before, test } from 'node:test'
+import { readFileSync } from 'node:fs'
+import { PGlite } from '@electric-sql/pglite'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { getObAssignmentChanges, validateObEarlyStartReason } from '../src/lib/ob/assignmentWorkflow.ts'
+import type { ObAssignmentWorkflow } from '../src/lib/ob/assignmentWorkflow'
+
+const db = new PGlite()
+const migration = readFileSync(new URL('../docs/db/2026-09-10_02_ob_early_start.sql', import.meta.url), 'utf8')
+const org = '00000000-0000-4000-8000-000000000001'
+const actor = '00000000-0000-4000-8000-000000000002'
+const stranger = '00000000-0000-4000-8000-000000000003'
+
+before(async () => {
+  await db.exec(`
+    create role anon; create role authenticated; create role service_role;
+    create schema auth; create schema extensions;
+    create function auth.uid() returns uuid language sql as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
+    create function auth.role() returns text language sql as $$ select current_setting('role') $$;
+    create function public.is_org_member(uuid) returns boolean language sql as $$ select true $$;
+    -- Hash implementation is not under test; the real token consumer is tested below.
+    create function public.digest(text,text) returns bytea language sql as $$ select convert_to(md5($1), 'UTF8') $$;
+    create table public.profiles (id uuid primary key);
+    create table public.organizations (id uuid primary key);
+    create table public.org_members (org_id uuid, profile_id uuid, role text, is_active boolean);
+    create table public.properties (id uuid primary key default gen_random_uuid(), owner uuid, name text,
+      status text, address text, postal_code text, city text, municipality text, cadastral_id text,
+      client_name text, owner_name text, created_at timestamptz default now());
+    create table public.inspections (id uuid primary key default gen_random_uuid(), property_id uuid references public.properties(id),
+      type text, inspection_family text, inspection_variant text, status text, inspection_side text,
+      date date, inspection_time time, client_name text, client_contact text, customer_name text,
+      customer_email text, customer_phone text, customer_address text, customer_postal_code text,
+      customer_city text, assignment_number text, assignment_confirmation_delivered_date date, scope text,
+      locked_at timestamptz, locked_by uuid);
+  `)
+  await db.exec(readFileSync(new URL('../docs/db/2026-02-20_02_assignments_core.sql', import.meta.url), 'utf8').replace(/^\uFEFF/, ''))
+  await db.exec(`
+    alter table public.assignments drop constraint assignments_status_check;
+    alter table public.assignments add constraint assignments_status_check check(status in ('draft','sent','ordered','booked','completed','expired','cancelled'));
+    alter table public.assignments add column booked_at timestamptz, add column archived_at timestamptz,
+      add column archived_by uuid, add column terms_document_hash text, add column customer_address text,
+      add column customer_postal_code text, add column customer_city text, add column property_municipality text,
+      add column property_owner_name text, add column brf_name text, add column apartment_number text,
+      add column apartment_holder_name text, add column scope_description text, add column invoice_email text;
+    alter table public.assignment_links add column terms_version text;
+    alter table public.assignment_acceptances add column terms_document_hash text;
+    create table public.settings_addon_services(id uuid primary key default gen_random_uuid(), key text, name text, sort_order int, is_active boolean);
+    create table public.profile_addon_services(org_id uuid, profile_id uuid, addon_service_id uuid, price_amount numeric, currency text, is_enabled boolean);
+    create table public.assignment_addon_orders(id uuid primary key default gen_random_uuid(), assignment_id uuid references public.assignments(id),
+      org_id uuid, addon_service_id uuid, addon_key text, addon_name_snapshot text, price_amount_snapshot numeric,
+      currency_snapshot text, created_at timestamptz default now(), constraint assignment_addon_orders_unique_per_assignment unique(assignment_id,addon_service_id));
+    create table public.inspection_addon_orders(id uuid primary key default gen_random_uuid(), inspection_id uuid references public.inspections(id),
+      org_id uuid, assignment_addon_order_id uuid references public.assignment_addon_orders(id) on delete set null,
+      addon_service_id uuid, addon_key text, addon_name_snapshot text, sort_order int,
+      price_amount_snapshot numeric, currency_snapshot text, is_selected boolean, selected_source text);
+    create table public.inspection_conditions(inspection_id uuid primary key references public.inspections(id), furnishing_level text);
+    create table public.inspection_images(id uuid primary key default gen_random_uuid(), inspection_id uuid references public.inspections(id), note text);
+    create table public.inspection_round_quick_notes(id uuid primary key default gen_random_uuid(), inspection_id uuid references public.inspections(id), note_text text);
+    create table public.inspection_report_links(id uuid primary key default gen_random_uuid(), inspection_id uuid references public.inspections(id), revoked_at timestamptz);
+    create table public.ob_property_snapshot(inspection_id uuid primary key references public.inspections(id), source_property_id uuid,
+      source_property_owner uuid, source_property_created_at timestamptz, name text, address text, postal_code text,
+      city text, municipality text, cadastral_id text, client_name text, owner_name text, status text,
+      brf_name text, apartment_number text, apartment_holder_name text);
+    insert into public.organizations values ('${org}');
+    insert into public.profiles values ('${actor}'), ('${stranger}');
+    insert into public.org_members values ('${org}', '${actor}', 'inspector', true), ('${org}', '${stranger}', 'inspector', true);
+  `)
+  const acceptSql = readFileSync(new URL('../docs/db/2026-05-27_01_tu_module_foundation.sql', import.meta.url), 'utf8')
+  await db.exec(acceptSql.slice(acceptSql.indexOf('create or replace function public.consume_assignment_token(')))
+  await db.exec(readFileSync(new URL('../docs/db/2026-03-24_03_inspection_lock_write_guards.sql', import.meta.url), 'utf8').replace(/^\uFEFF/, ''))
+  await db.exec(migration)
+  await db.exec(migration)
+})
+after(async () => { await db.close() })
+
+async function assignment(status = 'sent') {
+  const { rows } = await db.query<{ id: string }>(`insert into public.assignments(org_id,responsible_profile_id,customer_email,
+    customer_name,property_address,status,last_sent_at,preferred_date,orderer_role,price_amount,accepted_at,terms_version,booked_at)
+    values ($1,$2,'customer@example.test','Original customer','Test street',$3,now(),'2026-09-10','Säljare',1000,
+      case when $3='booked' then now() end,case when $3='booked' then 'v1' end,case when $3='booked' then now() end) returning id`, [org,actor,status])
+  const id = rows[0].id
+  const token = `test-token-for-assignment-${id}`
+  await db.query(`insert into public.assignment_links(assignment_id,org_id,token_hash,expires_at,terms_version)
+    values($1,$2,encode(digest($3,'sha256'),'hex'),now()+interval '1 day','v1')`, [id,org,token])
+  return { id, token }
+}
+async function start(id: string, reason: string | null = 'Customer has not replied', user = actor) {
+  const { rows } = await db.query<{ value: { inspectionId: string; propertyId: string } }>(
+    'select public.ob_start_assignment_inspection($1,$2,$3,$4) as value', [id,org,user,reason])
+  return rows[0].value
+}
+async function state(id: string): Promise<ObAssignmentWorkflow>
+async function state(id: string, allowUntracked: true): Promise<ObAssignmentWorkflow | null>
+async function state(id: string, allowUntracked = false) {
+  const { rows } = await db.query<{ value: ObAssignmentWorkflow | null }>('select public.ob_assignment_workflow_state($1) as value', [id])
+  if (!allowUntracked) assert.ok(rows[0].value)
+  return rows[0].value
+}
+async function accept(token: string, name = 'Customer approved name', addons: string[] = []) {
+  await db.query('select * from public.consume_assignment_token($1,$2,$3::jsonb,null,null)',
+    [token,'v1',JSON.stringify({ terms_document_hash: 'a'.repeat(64), customer_name: name, addon_service_ids: addons })])
+}
+
+async function review(inspectionId: string) {
+  const current = await state(inspectionId)
+  await db.query('select ob_review_assignment_workflow($1,$2,$3,$4)', [inspectionId,org,actor,current.reviewToken])
+}
+test('reason validation and comparison keep missing approval and changed scope explicit', () => {
+  assert.equal(validateObEarlyStartReason('  why  '), null)
+  assert.equal(validateObEarlyStartReason('  Customer pending  '), 'Customer pending')
+  assert.equal(validateObEarlyStartReason('x'.repeat(1001)), null)
+  assert.deepEqual(getObAssignmentChanges({ customer_name: 'A', addons: [] }, { customer_name: 'B', addons: [] }), ['customer_name'])
+})
+test('early start is idempotent, records reason and preserves unapproved status', async () => {
+  const a = await assignment()
+  const first = await start(a.id)
+  assert.deepEqual(await start(a.id), first)
+  const row = (await db.query<{status:string;accepted_at:string|null;booked_at:string|null}>('select * from assignments where id=$1', [a.id])).rows[0]
+  assert.equal(row.status, 'sent'); assert.equal(row.accepted_at, null); assert.equal(row.booked_at, null)
+  assert.equal((await state(first.inspectionId)).canDeliver, false)
+  assert.equal((await db.query<{n:number}>('select count(*)::int as n from ob_assignment_workflow_events where inspection_id=$1', [first.inspectionId])).rows[0].n, 1)
+})
+test('start rejects missing reason, invalid link, inactive status and another inspector without creating records', async () => {
+  const a = await assignment()
+  await assert.rejects(start(a.id, null), /OB_EARLY_REASON_REQUIRED/)
+  await assert.rejects(start(a.id, 'A valid reason', stranger), /OB_ASSIGNMENT_FORBIDDEN/)
+  await db.query('update assignment_links set expires_at=now()-interval \'1 day\' where assignment_id=$1', [a.id])
+  await assert.rejects(start(a.id), /OB_APPROVAL_LINK_REQUIRED/)
+  for (const status of ['draft', 'cancelled', 'expired']) {
+    const other = await assignment(status)
+    await assert.rejects(start(other.id), /OB_START_NOT_ALLOWED/)
+  }
+  assert.equal((await db.query<{inspection_id:string|null}>('select inspection_id from assignments where id=$1', [a.id])).rows[0].inspection_id, null)
+})
+test('late approval preserves inspection work; booking and explicit up-to-date review are required', async () => {
+  const a = await assignment(); const inspection = await start(a.id)
+  await db.query('insert into inspection_images(inspection_id,note) values($1,\'Existing work\')', [inspection.inspectionId])
+  await assert.rejects(db.query('update inspections set status=\'completed\' where id=$1', [inspection.inspectionId]), /OB_DELIVERY_BLOCKED/)
+  await assert.rejects(db.query('update inspections set locked_at=now() where id=$1', [inspection.inspectionId]), /OB_DELIVERY_BLOCKED/)
+  await assert.rejects(db.query('insert into inspection_report_links(inspection_id) values($1)', [inspection.inspectionId]), /OB_DELIVERY_BLOCKED/)
+  const oldState = await state(inspection.inspectionId)
+  await accept(a.token)
+  assert.equal((await state(inspection.inspectionId)).canDeliver, false)
+  assert.equal((await db.query<{customer_name:string}>('select customer_name from inspections where id=$1', [inspection.inspectionId])).rows[0].customer_name, 'Original customer')
+  await db.query('update assignments set status=\'booked\',booked_at=now() where id=$1', [a.id])
+  await assert.rejects(db.query('select ob_review_assignment_workflow($1,$2,$3,$4)', [inspection.inspectionId,org,actor,oldState.reviewToken]), /OB_WORKFLOW_CHANGED/)
+  const current = await state(inspection.inspectionId)
+  await db.query('select ob_review_assignment_workflow($1,$2,$3,$4)', [inspection.inspectionId,org,actor,current.reviewToken])
+  assert.equal((await state(inspection.inspectionId)).canDeliver, true)
+  await db.query('insert into inspection_report_links(inspection_id) values($1)', [inspection.inspectionId])
+  await db.query('update inspections set status=\'completed\',locked_at=now() where id=$1', [inspection.inspectionId])
+})
+test('reissue keeps the same inspection and event history; draft pauses writes and old token is revoked', async () => {
+  const a = await assignment(); const inspection = await start(a.id)
+  const result = await db.query<{ id: string }>('select ob_reissue_started_assignment($1,$2,$3) as id', [a.id,org,actor])
+  const nextId = result.rows[0].id
+  assert.notEqual(nextId, a.id)
+  assert.equal((await state(inspection.inspectionId)).assignmentId, nextId)
+  assert.equal((await state(inspection.inspectionId)).paused, true)
+  await assert.rejects(accept(a.token), /assignment_cancelled/)
+  await assert.rejects(db.query('insert into inspection_images(inspection_id,note) values($1,\'blocked\')', [inspection.inspectionId]), /OB_WORK_PAUSED/)
+  await db.query('update assignments set status=\'sent\',last_sent_at=now() where id=$1', [nextId])
+  await db.query(`insert into assignment_links(assignment_id,org_id,token_hash,expires_at,terms_version)
+    values($1,$2,encode(digest('synthetic-reissued-token','sha256'),'hex'),now()+interval '1 day','v1')`, [nextId,org])
+  assert.deepEqual(await start(nextId), inspection)
+  await db.query('insert into inspection_images(inspection_id,note) values($1,\'resumed\')', [inspection.inspectionId])
+  await db.query('update assignments set status=\'cancelled\' where id=$1', [nextId])
+  await assert.rejects(db.query('update inspections set client_name=\'blocked\' where id=$1', [inspection.inspectionId]), /OB_WORK_PAUSED/)
+})
+test('normal booked start remains available without early-start review', async () => {
+  const a = await assignment('booked'); const inspection = await start(a.id, null)
+  assert.equal(await state(inspection.inspectionId, true), null)
+  assert.equal((await db.query<{status:string}>('select status from assignments where id=$1', [a.id])).rows[0].status, 'completed')
+})
+
+test('failed snapshot insertion rolls back property, inspection and assignment together', async () => {
+  const a = await assignment()
+  const counts = async () => (await db.query('select (select count(*) from properties) as properties, (select count(*) from inspections) as inspections')).rows[0]
+  const before = await counts()
+  await db.exec(`create function test_snapshot_failure() returns trigger language plpgsql as $$ begin raise exception 'simulated_storage_failure'; end $$;
+    create trigger test_snapshot_failure before insert on ob_property_snapshot for each row execute function test_snapshot_failure();`)
+  try { await assert.rejects(start(a.id), /simulated_storage_failure/) }
+  finally { await db.exec('drop trigger test_snapshot_failure on ob_property_snapshot; drop function test_snapshot_failure();') }
+  assert.deepEqual(await counts(), before)
+  assert.equal((await db.query<{inspection_id:string|null}>('select inspection_id from assignments where id=$1', [a.id])).rows[0].inspection_id, null)
+})
+
+test('late addon approval never overwrites inspector selections and invalidates stale reviews', async () => {
+  const a = await assignment()
+  const addonId = (await db.query<{id:string}>(`insert into settings_addon_services(key,name,sort_order,is_active)
+    values('area_measurement','Areamatning',100,true) returning id`)).rows[0].id
+  await db.query(`insert into profile_addon_services values($1,$2,$3,500,'SEK',true)`, [org,actor,addonId])
+  await db.query(`insert into assignment_addon_orders(assignment_id,org_id,addon_service_id,addon_key,addon_name_snapshot,price_amount_snapshot,currency_snapshot)
+    values($1,$2,$3,'area_measurement','Areamatning',500,'SEK')`, [a.id,org,addonId])
+  const inspection = await start(a.id)
+  await db.query(`update inspection_addon_orders set is_selected=false where inspection_id=$1`, [inspection.inspectionId])
+  await accept(a.token, 'Customer', [addonId])
+  const selected = (await db.query<{is_selected:boolean;assignment_addon_order_id:string|null}>('select is_selected,assignment_addon_order_id from inspection_addon_orders where inspection_id=$1', [inspection.inspectionId])).rows[0]
+  assert.equal(selected.is_selected, false)
+  assert.equal(selected.assignment_addon_order_id, null)
+  await db.query(`update assignments set status='booked',booked_at=now() where id=$1`, [a.id])
+  await review(inspection.inspectionId)
+  await db.query('insert into inspection_report_links(inspection_id) values($1)', [inspection.inspectionId])
+  await db.query('update assignment_addon_orders set price_amount_snapshot=600 where assignment_id=$1', [a.id])
+  assert.equal((await state(inspection.inspectionId)).canDeliver, false)
+  assert.ok((await db.query<{revoked_at:string|null}>('select revoked_at from inspection_report_links where inspection_id=$1', [inspection.inspectionId])).rows[0].revoked_at)
+})
+
+test('authenticated browser writes cannot forge approval, detach work or call privileged RPCs', async () => {
+  const a = await assignment(); const inspection = await start(a.id)
+  await db.exec(`grant usage on schema public,auth to authenticated;
+    grant update on assignments to authenticated; grant select on assignments to authenticated;
+    grant insert on assignment_acceptances to authenticated;`)
+  await db.exec('set role authenticated')
+  try {
+    await assert.rejects(db.query('update assignments set inspection_id=null where id=$1', [a.id]), /OB_ASSIGNMENT_SERVER_WRITE_REQUIRED/)
+    await assert.rejects(db.query('update assignments set accepted_at=now(),booked_at=now(),status=\'booked\' where id=$1', [a.id]), /OB_ASSIGNMENT_SERVER_WRITE_REQUIRED/)
+    await assert.rejects(db.query(`insert into assignment_acceptances(assignment_id,org_id,accepted_at,terms_version,payload)
+      values($1,$2,now(),'v1','{}')`, [a.id,org]), /OB_ASSIGNMENT_SERVER_WRITE_REQUIRED/)
+    await assert.rejects(start(a.id), /permission denied for function/)
+    await assert.rejects(db.query('select ob_review_assignment_workflow($1,$2,$3,$4)', [inspection.inspectionId,org,actor,'forged']), /permission denied for function/)
+    await assert.rejects(db.query('delete from ob_assignment_workflows where inspection_id=$1', [inspection.inspectionId]), /permission denied/)
+    await assert.rejects(accept(a.token), /permission denied for function/)
+  } finally { await db.exec('reset role') }
+  assert.equal((await state(inspection.inspectionId)).canDeliver, false)
+})
+
+test('pausing revokes delivered links and protects inserts, updates, deletes and moving existing work', async () => {
+  const a = await assignment(); const inspection = await start(a.id)
+  const other = await start((await assignment()).id)
+  const imageId = (await db.query<{id:string}>(`insert into inspection_images(inspection_id,note) values($1,'work') returning id`, [inspection.inspectionId])).rows[0].id
+  await accept(a.token)
+  await db.query(`update assignments set status='booked',booked_at=now() where id=$1`, [a.id])
+  await review(inspection.inspectionId)
+  await db.query('insert into inspection_report_links(inspection_id) values($1)', [inspection.inspectionId])
+  await db.query('update assignments set archived_at=now() where id=$1', [a.id])
+  assert.ok((await db.query<{revoked_at:string|null}>('select revoked_at from inspection_report_links where inspection_id=$1', [inspection.inspectionId])).rows[0].revoked_at)
+  await assert.rejects(db.query('update inspection_images set inspection_id=$1 where id=$2', [other.inspectionId,imageId]), /OB_INSPECTION_LINK_IMMUTABLE/)
+  await assert.rejects(db.query('delete from inspection_images where id=$1', [imageId]), /OB_WORK_PAUSED/)
+  await assert.rejects(db.query('update inspection_images set note=\'changed\' where id=$1', [imageId]), /OB_WORK_PAUSED/)
+  await assert.rejects(db.query(`insert into inspection_round_quick_notes(inspection_id,note_text) values($1,'round note')`, [inspection.inspectionId]), /OB_WORK_PAUSED/)
+  await assert.rejects(db.query('update inspections set status=\'completed\' where id=$1', [inspection.inspectionId]), /OB_WORK_PAUSED/)
+})
+
+test('reissued approval and repeated start keep history and require a new review', async () => {
+  const a = await assignment(); const inspection = await start(a.id)
+  await accept(a.token)
+  await db.query(`update assignments set status='booked',booked_at=now() where id=$1`, [a.id])
+  await review(inspection.inspectionId)
+  const next = (await db.query<{id:string}>('select ob_reissue_started_assignment($1,$2,$3) as id', [a.id,org,actor])).rows[0].id
+  await db.query(`update assignments set status='sent',last_sent_at=now() where id=$1`, [next])
+  const token = `new-approved-assignment-token-${next}`
+  await db.query(`insert into assignment_links(assignment_id,org_id,token_hash,expires_at,terms_version)
+    values($1,$2,encode(digest($3,'sha256'),'hex'),now()+interval '1 day','v1')`, [next,org,token])
+  await accept(token)
+  assert.deepEqual(await start(next), inspection)
+  assert.equal((await state(inspection.inspectionId)).canDeliver, false)
+  await db.query(`update assignments set status='booked',booked_at=now() where id=$1`, [next])
+  await review(inspection.inspectionId)
+  assert.equal((await state(inspection.inspectionId)).canDeliver, true)
+  assert.equal((await db.query<{n:number}>('select count(*)::int as n from ob_assignment_workflow_events where inspection_id=$1', [inspection.inspectionId])).rows[0].n, 4)
+})
+
+test('booking alone cannot replace the customer acceptance record; archived and locked work stays protected', async () => {
+  const a = await assignment(); const inspection = await start(a.id)
+  await db.query(`update assignments set status='booked',booked_at=now(),accepted_at=now(),terms_version='v1' where id=$1`, [a.id])
+  await assert.rejects(review(inspection.inspectionId), /OB_APPROVAL_REQUIRED/)
+  await accept(a.token)
+  await db.query(`update assignments set status='booked' where id=$1`, [a.id])
+  await review(inspection.inspectionId)
+  await db.query('update inspections set locked_at=now() where id=$1', [inspection.inspectionId])
+  await assert.rejects(db.query('select ob_reissue_started_assignment($1,$2,$3)', [a.id,org,actor]), /OB_INSPECTION_LOCKED/)
+  await assert.rejects(db.query(`insert into inspection_images(inspection_id,note) values($1,'locked')`, [inspection.inspectionId]), /låst/)
+})
+
+test('a tracked inspection cannot change family or property to bypass delivery rules', async () => {
+  const inspection = await start((await assignment()).id)
+  await assert.rejects(db.query(`update inspections set inspection_family='TU' where id=$1`, [inspection.inspectionId]), /OB_INSPECTION_LINK_IMMUTABLE/)
+  await assert.rejects(db.query(`update inspections set property_id=null where id=$1`, [inspection.inspectionId]), /OB_INSPECTION_LINK_IMMUTABLE/)
+  await assert.rejects(db.query(`update assignments set assignment_type='STATUS' where inspection_id=$1`, [inspection.inspectionId]), /OB_INSPECTION_LINK_IMMUTABLE/)
+})
+
+test('only an active responsible inspector or an active organization admin may start or review', async () => {
+  const a = await assignment()
+  await db.query('update org_members set is_active=false where profile_id=$1', [actor])
+  try { await assert.rejects(start(a.id), /OB_ASSIGNMENT_FORBIDDEN/) }
+  finally { await db.query('update org_members set is_active=true where profile_id=$1', [actor]) }
+  await db.query('update org_members set role=\'admin\' where profile_id=$1', [stranger])
+  try { assert.ok((await start(a.id, 'Admin approved early start', stranger)).inspectionId) }
+  finally { await db.query('update org_members set role=\'inspector\' where profile_id=$1', [stranger]) }
+  await assert.rejects(db.query('select ob_start_assignment_inspection($1,$2,$3,$4)', [a.id,'00000000-0000-4000-8000-000000000099',actor,'reason']), /ASSIGNMENT_NOT_FOUND/)
+})
+
+test('expiry of the pending approval link pauses ongoing work without deleting it', async () => {
+  const a = await assignment(); const inspection = await start(a.id)
+  await db.query(`insert into inspection_images(inspection_id,note) values($1,'preserved')`, [inspection.inspectionId])
+  await db.query(`update assignment_links set expires_at=now()-interval '1 day' where assignment_id=$1`, [a.id])
+  assert.equal((await state(inspection.inspectionId)).paused, true)
+  await assert.rejects(db.query(`insert into inspection_round_quick_notes(inspection_id,note_text) values($1,'paused')`, [inspection.inspectionId]), /OB_WORK_PAUSED/)
+  assert.equal((await db.query<{note:string}>('select note from inspection_images where inspection_id=$1', [inspection.inspectionId])).rows[0].note, 'preserved')
+})

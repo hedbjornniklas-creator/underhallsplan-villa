@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronsLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
+import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
+import { validateObEarlyStartReason, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 
 type AssignmentStatus =
   | 'draft'
@@ -20,6 +22,7 @@ type AssignmentDetails = {
   id: string
   org_id: string
   status: AssignmentStatus
+  archived_at: string | null
   assignment_type: AssignmentType
   responsible_profile_id: string
   customer_name: string | null
@@ -206,6 +209,13 @@ export default function AssignmentDetailsPage() {
   const [sending, setSending] = useState(false)
   const [booking, setBooking] = useState(false)
   const [converting, setConverting] = useState(false)
+  const [earlyStartOpen, setEarlyStartOpen] = useState(false)
+  const [earlyStartReason, setEarlyStartReason] = useState('')
+  const [earlyStartConfirmed, setEarlyStartConfirmed] = useState(false)
+  const earlyStartDialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (earlyStartOpen) earlyStartDialogRef.current?.showModal()
+  }, [earlyStartOpen])
   const [reissuing, setReissuing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -230,8 +240,9 @@ export default function AssignmentDetailsPage() {
   }, [form])
 
   const canSend = assignment?.status === 'draft' && hasOrdererRole && hasValidPrice
-  const canBook = assignment?.status === 'ordered' && !assignment.inspection_id
+  const canBook = assignment?.status === 'ordered' && !assignment.archived_at
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
+  const canStartEarly = assignment?.assignment_type === 'OB' && assignment.status === 'sent' && !assignment.inspection_id && !assignment.accepted_at && !assignment.archived_at
   const isSent = assignment?.status === 'sent'
   const isOrdered = assignment?.status === 'ordered'
   const isBookedLocked = assignment?.status === 'booked'
@@ -272,6 +283,10 @@ export default function AssignmentDetailsPage() {
   useEffect(() => {
     void loadAssignment()
   }, [loadAssignment])
+
+  const handleWorkflowStatusChange = useCallback((workflow: ObAssignmentWorkflow) => {
+    if (workflow.assignmentId === id && workflow.status !== assignment?.status) void loadAssignment()
+  }, [id, assignment?.status, loadAssignment])
 
   const clearAutosaveTimer = useCallback(() => {
     if (autosaveTimerRef.current) {
@@ -468,6 +483,7 @@ export default function AssignmentDetailsPage() {
 
       const typedPayload = payload as { bookingEmailSent?: boolean } | null
       await loadAssignment()
+      window.dispatchEvent(new Event('ob-assignment-workflow-updated'))
       if (typedPayload?.bookingEmailSent === false) {
         setSuccess('Uppdraget är nu accepterat. Mejlet kunde inte skickas automatiskt.')
       } else {
@@ -480,13 +496,20 @@ export default function AssignmentDetailsPage() {
     }
   }
 
-  const handleConvert = async () => {
+  const handleConvert = async (early = false) => {
+    if (assignment?.inspection_id && assignment.property_id) {
+      router.push(`/properties/${assignment.property_id}/ob/${assignment.inspection_id}`)
+      return
+    }
     try {
       setConverting(true)
       setError(null)
       setSuccess(null)
 
-      const response = await fetch(`/api/ob/assignments/${id}/convert`, { method: 'POST' })
+      const response = await fetch(`/api/ob/assignments/${id}/convert`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(early ? { earlyStartReason, confirmEarlyStart: earlyStartConfirmed } : {}),
+      })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte starta besiktning.'))
@@ -597,18 +620,46 @@ export default function AssignmentDetailsPage() {
                 >
                   {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
                 </button>
-                <button
+                {!canStartEarly ? <button
                   type="button"
                   onClick={() => void handleConvert()}
-                  disabled={!canConvert || converting || booking || sending || reissuing || saving || loading}
+                  disabled={(!canConvert && !assignment?.inspection_id) || converting || booking || sending || reissuing || saving || loading}
                   title="Startar besiktningen och öppnar besiktningsvyn."
                   className="rounded-lg border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:border-indigo-200 disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
                 >
-                  {converting ? 'Startar...' : 'Starta besiktning'}
-                </button>
+                  {converting ? 'Startar...' : assignment?.inspection_id ? 'Öppna besiktning' : 'Starta besiktning'}
+                </button> : null}
+                {canStartEarly ? <button type="button" onClick={() => setEarlyStartOpen(true)}
+                  disabled={converting || booking || sending || reissuing || saving || loading}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:text-amber-700">
+                  Starta före godkännande
+                </button> : null}
               </div>
             </div>
           </header>
+
+          {earlyStartOpen ? <dialog ref={earlyStartDialogRef} aria-labelledby="early-start-title"
+            onCancel={event => { if (converting) event.preventDefault(); else setEarlyStartOpen(false) }}
+            className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg space-y-4 overflow-y-auto rounded-lg border border-amber-200 bg-white p-5 text-slate-900 shadow-xl backdrop:bg-black/40">
+              <h2 id="early-start-title" className="text-lg font-semibold">Starta före kundens godkännande</h2>
+              <p className="text-sm text-slate-700">Kundens godkännande saknas. Du kan dokumentera besiktningen. Slutmarkering, låsning och slutligt utlåtande är spärrade tills uppdraget är godkänt, accepterat och avstämt.</p>
+              <label className="block text-sm font-medium">Anledning till tidig start
+                <textarea autoFocus value={earlyStartReason} onChange={event => setEarlyStartReason(event.target.value)} maxLength={1000} disabled={converting}
+                  className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 p-2 text-slate-900" />
+              </label>
+              <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={earlyStartConfirmed} disabled={converting} onChange={event => setEarlyStartConfirmed(event.target.checked)} />
+                Jag bekräftar att besiktningen startas innan kundens godkännande har registrerats.
+              </label>
+              {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : null}
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" disabled={converting} onClick={() => setEarlyStartOpen(false)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-700">Avbryt</button>
+                <button type="button" disabled={converting || !earlyStartConfirmed || !validateObEarlyStartReason(earlyStartReason)} onClick={() => void handleConvert(true)}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-900 hover:bg-amber-100 disabled:bg-slate-100 disabled:text-slate-600">
+                  {converting ? 'Startar...' : 'Starta före godkännande'}
+                </button>
+              </div>
+          </dialog> : null}
+          {assignment?.inspection_id ? <ObAssignmentWorkflowBoundary key={assignment.inspection_id} inspectionId={assignment.inspection_id} onStatusChange={handleWorkflowStatusChange} /> : null}
 
           {error ? (
             <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
@@ -620,7 +671,7 @@ export default function AssignmentDetailsPage() {
           ) : null}
           {isBookedLocked ? (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Uppdragsbekräftelsen är bokad och låst för redigering. Klicka på Starta besiktning för att gå vidare.
+              Uppdragsbekräftelsen är bokad och låst för redigering.
             </div>
           ) : isOrdered ? (
             <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">

@@ -250,6 +250,12 @@ export default function ObWizard({
   const hasValidIds = isValidUuid(propertyId) && isValidUuid(inspectionId)
 
   const [deliveryMeta, setDeliveryMeta] = useState<ReportDeliveryMeta | null>(null)
+  const [workflowRevision, setWorkflowRevision] = useState(0)
+  useEffect(() => {
+    const refresh = () => setWorkflowRevision(value => value + 1)
+    window.addEventListener('ob-assignment-workflow-updated', refresh)
+    return () => window.removeEventListener('ob-assignment-workflow-updated', refresh)
+  }, [])
   const [deliveryMetaLoading, setDeliveryMetaLoading] = useState(false)
   const [deliveryMetaError, setDeliveryMetaError] = useState<string | null>(null)
   const [primaryRecipientInput, setPrimaryRecipientInput] = useState('')
@@ -274,7 +280,7 @@ export default function ObWizard({
     !inspectionId ||
     sendingReport ||
     deliveryMetaLoading ||
-    deliveryMeta?.canSend === false
+    !deliveryMeta || deliveryMeta.canSend === false
   const deliverySendDisabled = deliveryActionDisabled || !isValidEmail(primaryRecipientInput)
 
   useEffect(() => {
@@ -320,7 +326,7 @@ export default function ObWizard({
     return () => {
       cancelled = true
     }
-  }, [activeSection, hasValidIds, inspectionId])
+  }, [activeSection, hasValidIds, inspectionId, workflowRevision])
 
   useEffect(() => {
     if (!deliveryMeta?.defaultRecipientEmail) return

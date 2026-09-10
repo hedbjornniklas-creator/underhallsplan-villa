@@ -876,6 +876,9 @@ export default function ReportRendererClient({
   rootClassName,
 }: ReportRendererClientProps) {
   const rootClasses = ['report-root', rootClassName].filter(Boolean).join(' ')
+  const draftLabel = (mockData?.mock as Record<string, unknown> | undefined)?.assignment_workflow_draft === true
+    ? 'UTKAST - uppdragets godkännande eller avstämning saknas'
+    : undefined
   const isPdfMode = rootClasses.includes('report-root--pdf')
 
   const [pagePlan, setPagePlan] = useState<{
@@ -3048,6 +3051,7 @@ export default function ReportRendererClient({
           return (
             <ReportPage
               key={`page-cover-${page.pageNumber}`}
+              draftLabel={draftLabel}
               pageNumber={page.pageNumber}
               footerLeftLines={footerLeftLines}
               footerRightLines={footerRightLines}
@@ -3074,6 +3078,7 @@ export default function ReportRendererClient({
           return (
             <ReportPage
               key={`page-appendix-${page.pageNumber}`}
+              draftLabel={draftLabel}
               pageNumber={page.pageNumber}
               footerLeftLines={[]}
               footerRightLines={[]}
@@ -3099,6 +3104,7 @@ export default function ReportRendererClient({
         return (
           <ReportPage
             key={`page-${page.pageNumber}`}
+            draftLabel={draftLabel}
             pageNumber={page.pageNumber}
             footerLeftLines={[]}
             footerRightLines={[]}

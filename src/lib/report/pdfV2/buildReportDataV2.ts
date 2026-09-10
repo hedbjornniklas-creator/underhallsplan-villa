@@ -6,6 +6,7 @@ import {
   type InspectionDocumentReportLineInput,
 } from '@/lib/report/inspectionDocumentReportLine'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
+import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 type ExteriorItemRow = {
@@ -1361,8 +1362,10 @@ const supabase: any = createSupabaseServerClient()
   const riskText = trimText(riskLines.join('\n'))
   const ftuText = trimText(ftuLines.join('\n'))
 
+  const assignmentWorkflow = inspection ? await getObAssignmentWorkflow(resolvedParams.inspectionId) : null
   const mockData = {
     mock: {
+      assignment_workflow_draft: assignmentWorkflow?.canDeliver === false,
       company: {
         logo_url:
           (frozenCompanyFromSnapshot?.logo_url as string | null | undefined) ??

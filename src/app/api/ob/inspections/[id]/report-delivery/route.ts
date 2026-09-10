@@ -1,5 +1,6 @@
 ﻿import { NextResponse, after } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
@@ -732,6 +733,7 @@ export async function GET(
     }
 
     const ordererEmail = resolveReportRecipientEmail(inspection, assignment)
+    const workflow = await getObAssignmentWorkflow(id, org.orgId)
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
     const inspectionStatus = normalizeInspectionStatus(inspection.status)
     const pdfState = await getReportPdfState(admin, id)
@@ -745,17 +747,17 @@ export async function GET(
     return NextResponse.json({
       inspectionId: id,
       inspectionStatus,
-      canSend: inspectionStatus !== 'archived',
+      canSend: inspectionStatus !== 'archived' && workflow?.canDeliver !== false,
       reason:
         inspectionStatus === 'archived'
           ? 'Arkiverad besiktning kan inte skickas.'
-          : null,
+          : workflow?.reason ?? null,
       defaultRecipientEmail: ordererEmail,
       ordererEmail,
       hasStoredPdf: pdfState.hasStoredPdf,
       pdfStatus: pdfState.pdfStatus,
       pdfError: pdfState.pdfError,
-      canDownloadPdf: pdfState.hasStoredPdf && pdfState.pdfStatus === 'ready',
+      canDownloadPdf: workflow?.canDeliver !== false && pdfState.hasStoredPdf && pdfState.pdfStatus === 'ready',
       history,
       activityLog,
     })
@@ -807,6 +809,8 @@ export async function POST(
     }
 
     const fallbackOrdererEmail = resolveReportRecipientEmail(inspection, assignment)
+    const workflow = await getObAssignmentWorkflow(id, org.orgId)
+    if (workflow && !workflow.canDeliver) return jsonError(workflow.reason ?? 'Slutleveransen är spärrad.', 409)
     const action = parseReportDeliveryPostAction(body?.action, body?.mark_as_completed)
 
     if (action === 'regenerate_pdf') {

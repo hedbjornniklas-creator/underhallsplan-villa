@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -177,6 +178,11 @@ export async function GET(
       return new NextResponse('Du saknar behörighet att ladda ner detta utlåtande.', {
         status: 403,
       })
+    }
+
+    if (inspectionRow.inspection_family === 'OB') {
+      const workflow = await getObAssignmentWorkflow(inspectionId, orgContext.orgId)
+      if (workflow && !workflow.canDeliver) return new NextResponse(workflow.reason, { status: 409 })
     }
 
     const ebDetail =

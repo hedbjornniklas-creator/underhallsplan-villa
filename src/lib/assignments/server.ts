@@ -21,6 +21,7 @@ import {
   renderAcceptedAssignmentConfirmationPdf,
 } from '@/lib/assignments/acceptedConfirmationPdf'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
+import { getObAssignmentWorkflow, obWorkflowRpc } from '@/lib/ob/assignmentWorkflowServer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 export type AssignmentStatus =
@@ -913,6 +914,16 @@ export async function createReissuedAssignmentDraft(input: {
     throw new Error('ASSIGNMENT_NOT_FOUND')
   }
 
+  if (source.assignment_type === 'OB' && source.inspection_id && await getObAssignmentWorkflow(source.inspection_id, input.orgId)) {
+    const draftId = await obWorkflowRpc<string>('ob_reissue_started_assignment', {
+      p_assignment_id: source.id, p_org_id: input.orgId, p_actor: input.createdBy,
+    })
+    const draft = await getAssignmentById(input.orgId, draftId)
+    const cancelledSource = await getAssignmentById(input.orgId, source.id)
+    if (!draft || !cancelledSource) throw new Error('ASSIGNMENT_NOT_FOUND')
+    return { draft, cancelledSource }
+  }
+
   if (source.status !== 'sent' && source.status !== 'ordered' && source.status !== 'booked') {
     throw new Error('ASSIGNMENT_REISSUE_NOT_ALLOWED')
   }
@@ -1727,53 +1738,24 @@ function toDateOnly(value: string | null | undefined): string | null {
   return year && month && day ? `${year}-${month}-${day}` : null
 }
 
-function buildSnapshotPayload(inspectionId: string, propertyData: PropertySeedRow) {
-  return {
-    inspection_id: inspectionId,
-    source_property_id: propertyData.id,
-    source_property_owner: propertyData.owner ?? null,
-    source_property_created_at: propertyData.created_at ?? null,
-    imported_at: new Date().toISOString(),
-    snapshot_version: 1,
-    name: propertyData.name ?? null,
-    address: propertyData.address ?? null,
-    postal_code: propertyData.postal_code ?? null,
-    city: propertyData.city ?? null,
-    municipality: propertyData.municipality ?? null,
-    cadastral_id: propertyData.cadastral_id ?? null,
-    owner_name: propertyData.owner_name ?? null,
-    client_name: propertyData.client_name ?? null,
-    contact_person: propertyData.contact_person ?? null,
-    tenure_type: propertyData.tenure_type ?? null,
-    dwelling_type: propertyData.dwelling_type ?? null,
-    property_type: propertyData.property_type ?? null,
-    plot_area_m2: propertyData.plot_area_m2 ?? null,
-    area_m2: propertyData.area_m2 ?? null,
-    area_sqm: propertyData.area_sqm ?? null,
-    tax_value: propertyData.tax_value ?? null,
-    planning_status: propertyData.planning_status ?? null,
-    type_code: propertyData.type_code ?? null,
-    heating: propertyData.heating ?? null,
-    ventilation: propertyData.ventilation ?? null,
-    roof_type: propertyData.roof_type ?? null,
-    year_built: propertyData.year_built ?? null,
-    cover_path: propertyData.cover_path ?? null,
-    status: propertyData.status ?? null,
-    last_inspected: propertyData.last_inspected ?? null,
-    last_inspection_at: propertyData.last_inspection_at ?? null,
-  }
-}
-
 export async function convertAssignmentToInspection(input: {
   orgId: string
   assignmentId: string
   requestedByUserId: string
+  earlyStartReason?: string | null
 }): Promise<ConvertAssignmentResult> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const assignment = await getAssignmentById(input.orgId, input.assignmentId)
 
   if (!assignment) {
     throw new Error('Uppdraget hittades inte.')
+  }
+
+  if (assignment.assignment_type === 'OB') {
+    return obWorkflowRpc<ConvertAssignmentResult>('ob_start_assignment_inspection', {
+      p_assignment_id: assignment.id, p_org_id: input.orgId,
+      p_actor: input.requestedByUserId, p_early_reason: input.earlyStartReason ?? null,
+    })
   }
 
   if (assignment.inspection_id) {
@@ -2036,27 +2018,6 @@ export async function convertAssignmentToInspection(input: {
           )
         }
       }
-    }
-  }
-
-  if (assignment.assignment_type === 'OB') {
-    const snapshotPayload = {
-      ...buildSnapshotPayload(inspection.id, property),
-      brf_name: assignment.brf_name ?? null,
-      apartment_number: assignment.apartment_number ?? null,
-      apartment_holder_name: assignment.apartment_holder_name ?? null,
-    }
-
-    const { error: snapshotError } = await admin
-      .from('ob_property_snapshot')
-      .upsert(snapshotPayload, {
-        onConflict: 'inspection_id',
-      })
-
-    if (snapshotError) {
-      await admin.from('inspections').delete().eq('id', inspection.id)
-      await admin.from('properties').delete().eq('id', property.id)
-      throw new Error('Kunde inte skapa OB-snapshot från uppdrag.')
     }
   }
 

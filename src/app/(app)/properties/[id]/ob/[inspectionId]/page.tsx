@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Menu, X } from 'lucide-react'
 import Protected from '@/components/Protected'
+import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
@@ -703,6 +704,7 @@ export default function InspectionDetailPage() {
                 [&_select]:text-gray-900
                 [&_select]:border-gray-300`}
             >
+              <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id}>
               <ObWizard
                 property={property}
                 inspection={inspection}
@@ -712,6 +714,7 @@ export default function InspectionDetailPage() {
                 onInspectionAddonSelectionChanged={handleInspectionAddonSelectionChanged}
                 availableSections={visibleSections.map((section) => section.key)}
               />
+              </ObAssignmentWorkflowBoundary>
             </div>
           </div>
         </div>

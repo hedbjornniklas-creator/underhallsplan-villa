@@ -18,6 +18,7 @@ import {
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
+import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 
 export const dynamic = 'force-dynamic'
@@ -1413,8 +1414,10 @@ export default async function Page({
   const riskText = trimText(riskLines.join('\n'))
   const ftuText = trimText(ftuLines.join('\n'))
 
+  const assignmentWorkflow = inspection ? await getObAssignmentWorkflow(resolvedParams.inspectionId) : null
   const mockData = {
     mock: {
+      assignment_workflow_draft: assignmentWorkflow?.canDeliver === false,
       company: {
         logo_url: frozenCompanyFromSnapshot?.logo_url ?? profile?.logo_path ?? null,
       },

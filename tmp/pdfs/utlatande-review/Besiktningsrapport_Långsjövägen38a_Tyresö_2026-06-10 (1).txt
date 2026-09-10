@@ -1,0 +1,913 @@
+--- SIDA 1 ---
+Uppdragsnamn
+: 
+952792628
+Fastighetsbeteckning
+: 
+Näsby 4:222
+Referensnummer
+: 
+Byggnadsår
+: 
+1977
+Byggnadsyta
+: 
+200 m
+²
+Besiktningsdag
+: 
+2026-06-10
+Besiktningstyp
+: 
+Efterbesiktning
+Försäkringsbolag
+: 
+Länsförsäkringar Stockholm
+Ansvarig för objektet
+: 
+Inger Elisabet Falk | 0704532599 Johanna dottern  | johanna.s@gertfalk.se
+Försäkringstagare
+: 
+Inger Elisabet Falk | 0704532599 Johanna dottern  | johanna.s@gertfalk.se
+Kontaktperson/Dotter
+: 
+Johanna Sundborg | 0704532599
+Ansvarig tekniker
+: 
+Lucas Riutta | 0767900702  | lucas.riutta@recover.se
+Långsjövägen 38a, 13554 Tyresö
+Kontaktpersoner
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+1 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 2 ---
+Närvarande
+Tekniker
+: 
+Lucas Riutta
+Uppgifter från besiktningen
+Anledning till besiktning
+: 
+Fuktmätning i konstruktionen efter en brandskada
+Anmärkningar
+: 
+10/6-26
+Förhöjda RF-värden kunde uppmätas i isolering under överbetongen.
+Vidare hantering
+: 
+- Friläggning utav överbetongen för att komma åt att frilägga skadedrabbad isolering.
+- Ny fuktmätning på betongplatta utförs 
+- Eventuell avfuktning och sanering utav konstruktionen 
+- Återställning enligt gällande branschregler
+Formulär
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+2 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 3 ---
+Planskiss
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+3 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 4 ---
+Hela huset 
+  
+Längd: 0,00 m Bredd: 0,00 m
+ 
+Förråd - Rum 3 
+  
+Längd: 4,80 m  Bredd:  2,50 m  Höjd:  2,40 m
+ 
+Golv
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+14,60 m
+Ytskikt
+: 
+12,00 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+12,00 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+Överbetong på isolering ovanför betongplatta
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+4 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 5 ---
+Vägg
+ 
+Avdrag
+: 
+-
+ 
+Ytskikt
+: 
+35,04 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+35,04 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Putsad betongvägg
+ 
+Tak
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+14,60 m
+Ytskikt
+: 
+12,00 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+12,00 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Målat betongtak
+ 
+Förråd - Pannrum 
+  
+Längd: 10,10 m  Bredd:  3,30 m  Höjd:  2,40 m
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+5 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 6 ---
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+6 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 7 ---
+Golv
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+26,80 m
+Ytskikt
+: 
+33,33 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+12,00 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+Överbetong på isolering ovanför betongplatta
+ 
+Vägg
+ 
+Avdrag
+: 
+-
+ 
+Ytskikt
+: 
+64,32 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+35,04 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Putsad betongvägg
+ 
+Tak
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+26,80 m
+Ytskikt
+: 
+33,33 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+12,00 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+7 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 8 ---
+Konstruktion
+: 
+Målat betongtak
+ 
+Toalett - Wc 
+  
+Längd: 1,40 m  Bredd:  1,10 m  Höjd:  2,40 m
+ 
+Golv
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+5,00 m
+Ytskikt
+: 
+1,54 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+1,54 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Klinker på betonggolv med fyllning och underliggande isolering
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+8 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 9 ---
+Vägg
+ 
+Avdrag
+: 
+-
+ 
+Ytskikt
+: 
+12,00 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+12,00 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Kakel på gipsad regelvägg
+ 
+Tak
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+5,00 m
+Ytskikt
+: 
+1,54 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+1,54 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Målat betongtak
+ 
+Entré/Hall - Entré hall 
+  
+Längd: 4,20 m  Bredd:  3,60 m  Höjd:  2,40 m
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+9 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 10 ---
+Golv
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+15,60 m
+Ytskikt
+: 
+15,12 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+15,12 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Klinker på betonggolv med fyllning och underliggande isolering
+ 
+Vägg
+ 
+Avdrag
+: 
+-
+ 
+Ytskikt
+: 
+37,44 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+10 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 11 ---
+Bakomliggande skikt
+: 
+37,44 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Putsad betongvägg
+ 
+Tak
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+15,60 m
+Ytskikt
+: 
+15,12 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+15,12 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Konstruktion
+: 
+Målat betongtak
+ 
+Vardagsrum - Rum 1 
+  
+Längd: 7,10 m  Bredd:  3,30 m  Höjd:  2,40 m
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+11 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 12 ---
+Golv
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+20,80 m
+Ytskikt
+: 
+23,43 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+23,43 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Vägg
+ 
+Avdrag
+: 
+-
+ 
+Ytskikt
+: 
+49,92 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+49,92 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+12 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 13 ---
+Notering
+: 
+-
+ 
+Tak
+ 
+Avdrag
+: 
+-
+ 
+Omkrets: 
+20,80 m
+Ytskikt
+: 
+23,43 m
+²
+ 
+Årtal: 
+-
+Notering
+: 
+-
+ 
+Bakomliggande skikt
+: 
+23,43 m
+²
+ 
+CC-mått reglar: 
+600 mm
+Notering
+: 
+-
+ 
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+13 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10
+
+
+--- SIDA 14 ---
+Bilder från formulär
+Anmärkningar
+Förhöjda RF-värden i isolering
+Adress
+Kontaktuppgifter
+Organisationsnummer
+Recover Skadeservice AB 
+Libro ringväg 
+32
+ 
+752
+ 
+28
+ Uppsala 
+010-1777700
+ 
+johan.larsson@recover.se 
+5567871180
+14 (14)
+Skadedatum
+2026-04-02
+Skadenummer
+952792628
+Slutfört datum
+2026-06-10

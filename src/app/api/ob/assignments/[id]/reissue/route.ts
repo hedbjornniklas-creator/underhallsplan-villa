@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { obWorkflowError } from '@/lib/ob/assignmentWorkflowServer'
 import {
   createReissuedAssignmentDraft,
   getProfileContact,
@@ -49,6 +50,8 @@ export async function POST(
       cancelledNoticeEmailSent,
     })
   } catch (error) {
+    const known = obWorkflowError(error)
+    if (known) return jsonError(known[1], known[0])
     const message = error instanceof Error ? error.message : 'Okänt fel.'
 
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
