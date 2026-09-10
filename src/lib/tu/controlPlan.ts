@@ -109,6 +109,7 @@ export type TuControlPlanReviewSummary = {
   accepted: number
   rejected: number
   pending: number
+  included: number
   canApprove: boolean
 }
 
@@ -125,7 +126,8 @@ export function summarizeTuControlPlanReview(
 
   return {
     ...summary,
-    canApprove: summary.pending === 0 && summary.accepted > 0,
+    included: summary.accepted + summary.pending,
+    canApprove: summary.accepted + summary.pending > 0,
   }
 }
 

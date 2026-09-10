@@ -46,7 +46,7 @@ function mapError(error: unknown) {
     return jsonError('Helhetsanalysen är inte aktiverad för den här utredningens arbetssätt.', 409)
   }
   if (message === 'TU_CONTROL_PLAN_NOT_APPROVED') {
-    return jsonError('Godkänn kontrollplanen under Förbered kontrollen innan helhetsanalysen startas.', 409)
+    return jsonError('Godkänn kontrollinriktningen under Förbered kontrollen innan helhetsanalysen startas.', 409)
   }
   if (normalized.includes('tu_analysis_') || normalized.includes('tu_ai_analysis_items') || normalized.includes('42p01')) {
     return jsonError('Analysarbetsflödet är inte aktiverat i databasen ännu.', 409)

@@ -56,7 +56,7 @@ function mapError(error: unknown) {
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
   if (message === 'TU_CONTROL_PLAN_NOT_SUPPORTED') {
-    return jsonError('Kontrollplanen används endast för mallen Teknisk kontroll efter skadeåtgärd.', 409)
+    return jsonError('Kontrollinriktningen används endast för mallen Teknisk kontroll efter skadeåtgärd.', 409)
   }
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_CONTROL_PLAN_DOCUMENTS_REQUIRED') {
@@ -72,17 +72,17 @@ function mapError(error: unknown) {
     return jsonError('Analysunderlaget är för stort. Den sammanlagda gränsen är 50 MB.', 400)
   }
   if (message === 'TU_CONTROL_PLAN_NOT_READY') {
-    return jsonError('Kontrollplanen måste vara färdig innan den kan godkännas.', 409)
+    return jsonError('Kontrollinriktningen måste vara färdig innan den kan godkännas.', 409)
   }
   if (message === 'TU_CONTROL_PLAN_ITEMS_PENDING') {
-    return jsonError('Granska varje kontrollpunkt och välj Behåll eller Ta bort innan planen godkänns.', 409)
+    return jsonError('Kontrollinriktningen behöver granskas innan den kan godkännas.', 409)
   }
   if (message === 'TU_CONTROL_PLAN_HAS_NO_ACCEPTED_ITEMS') {
-    return jsonError('Behåll minst en kontrollpunkt innan planen godkänns.', 409)
+    return jsonError('Välj minst ett uppmärksamhetsområde innan inriktningen godkänns.', 409)
   }
-  if (message === 'TU_CONTROL_PLAN_TITLE_REQUIRED') return jsonError('Kontrollpunkten måste ha en rubrik.', 400)
-  if (message === 'TU_CONTROL_PLAN_DESCRIPTION_REQUIRED') return jsonError('Kontrollpunkten måste ha en beskrivning.', 400)
-  if (message === 'TU_CONTROL_PLAN_ITEM_NOT_FOUND') return jsonError('Kontrollpunkten hittades inte.', 404)
+  if (message === 'TU_CONTROL_PLAN_TITLE_REQUIRED') return jsonError('Uppmärksamhetsområdet måste ha en rubrik.', 400)
+  if (message === 'TU_CONTROL_PLAN_DESCRIPTION_REQUIRED') return jsonError('Uppmärksamhetsområdet måste ha en beskrivning.', 400)
+  if (message === 'TU_CONTROL_PLAN_ITEM_NOT_FOUND') return jsonError('Uppmärksamhetsområdet hittades inte.', 404)
   if (message === 'TU_CONTROL_PLAN_OBSERVATION_INVALID') {
     return jsonError('En vald fältpost tillhör inte den här utredningen.', 400)
   }
@@ -157,12 +157,12 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ preparation } satisfies TuControlPlanResponse)
     }
 
-    return jsonError('Okänd åtgärd för kontrollplanen.', 400)
+    return jsonError('Okänd åtgärd för kontrollinriktningen.', 400)
   } catch (error) {
     const mapped = mapError(error)
     if (mapped) return mapped
     console.error('[tu.preparation] POST failed', error)
-    return jsonError('Kunde inte uppdatera kontrollplanen.', 500)
+    return jsonError('Kunde inte uppdatera kontrollinriktningen.', 500)
   }
 }
 
@@ -206,7 +206,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (target === 'item') {
       const itemId = cleanText(body.itemId)
-      if (!itemId) return jsonError('Kontrollpunkt saknas.', 400)
+      if (!itemId) return jsonError('Uppmärksamhetsområde saknas.', 400)
       const patch: Parameters<typeof updateTuVerificationItem>[0]['patch'] = {}
       if ('title' in body) patch.title = cleanText(body.title)
       if ('description' in body) patch.description = cleanText(body.description)
@@ -250,7 +250,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (target === 'links') {
       const itemId = cleanText(body.itemId)
       const observationIds = uuidArray(body.observationIds)
-      if (!itemId) return jsonError('Kontrollpunkt saknas.', 400)
+      if (!itemId) return jsonError('Uppmärksamhetsområde saknas.', 400)
       if (!observationIds) return jsonError('En eller flera fältposter är ogiltiga.', 400)
       const item = await setTuVerificationItemObservations({
         orgId: orgContext.orgId,
@@ -262,7 +262,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ item } satisfies TuControlPlanResponse)
     }
 
-    return jsonError('Okänd ändring för kontrollplanen.', 400)
+    return jsonError('Okänd ändring för kontrollinriktningen.', 400)
   } catch (error) {
     const mapped = mapError(error)
     if (mapped) return mapped

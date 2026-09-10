@@ -7,7 +7,6 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  CircleX,
   ExternalLink,
   FileText,
   Files,
@@ -30,8 +29,6 @@ import {
   type TuDamageType,
   type TuRemediationStage,
   type TuVerificationItem,
-  type TuVerificationPriority,
-  type TuVerificationReviewStatus,
 } from '@/lib/tu/controlPlan'
 import {
   TU_DOCUMENT_SOURCE_ROLE_OPTIONS,
@@ -74,8 +71,6 @@ type Props = {
 type ItemDraft = {
   title: string
   description: string
-  verificationMethod: string
-  priority: TuVerificationPriority
 }
 
 type CaseSavePayload = {
@@ -94,8 +89,6 @@ function itemDraft(item: TuVerificationItem): ItemDraft {
   return {
     title: item.title,
     description: item.description,
-    verificationMethod: item.verificationMethod ?? '',
-    priority: item.priority,
   }
 }
 
@@ -111,13 +104,7 @@ function formatDocumentDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('sv-SE')
 }
 
-function reviewLabel(status: TuVerificationReviewStatus) {
-  if (status === 'accepted') return 'Ingår i planen'
-  if (status === 'rejected') return 'Bortvald'
-  return 'Inte granskad'
-}
-
-function ControlPlanItem({
+function ControlDirectionItem({
   item,
   documentById,
   locked,
@@ -133,99 +120,89 @@ function ControlPlanItem({
   onSave: (patch: Record<string, unknown>) => Promise<void>
 }) {
   const [draft, setDraft] = useState(() => itemDraft(item))
-  const [open, setOpen] = useState(item.reviewStatus === 'pending')
+  const [open, setOpen] = useState(false)
+  const included = item.reviewStatus !== 'rejected'
 
-  const save = async (reviewStatus?: TuVerificationReviewStatus) => {
-    await onSave({ ...draft, reviewStatus: reviewStatus ?? item.reviewStatus })
+  const save = async () => {
+    await onSave({
+      ...draft,
+      reviewStatus: included ? item.reviewStatus : 'rejected',
+    })
   }
 
   return (
     <article className={`rounded-md border transition ${
-      item.reviewStatus === 'rejected'
+      !included
         ? 'border-gray-200 bg-gray-50 opacity-70'
-        : item.reviewStatus === 'accepted'
-          ? 'border-emerald-200 bg-white'
-          : 'border-amber-200 bg-white'
+        : 'border-violet-200 bg-white'
     }`}>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-start gap-3 px-3 py-3 text-left sm:px-4"
-        aria-expanded={open}
-      >
-        <span className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md ${
-          item.reviewStatus === 'accepted'
-            ? 'bg-emerald-50 text-emerald-700'
-            : item.reviewStatus === 'rejected'
-              ? 'bg-gray-100 text-gray-500'
-              : 'bg-amber-50 text-amber-800'
-        }`}>
-          {item.reviewStatus === 'accepted'
-            ? <Check size={17} aria-hidden />
-            : item.reviewStatus === 'rejected'
-              ? <CircleX size={17} aria-hidden />
-              : <span className="text-xs font-semibold">{Math.max(1, Math.round(item.sortOrder / 10))}</span>}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold leading-5 text-gray-950">{item.title}</span>
-            {item.priority === 'high' ? (
-              <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700">Hög prioritet</span>
-            ) : null}
+      <div className="flex items-start gap-2 px-3 py-3 sm:px-4">
+        <label className="mt-0.5 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md bg-violet-50">
+          <input
+            type="checkbox"
+            checked={included}
+            onChange={() => void onSave({ reviewStatus: included ? 'rejected' : 'accepted' })}
+            disabled={locked || planApproved || busy}
+            aria-label={`${included ? 'Ta bort' : 'Ta med'} ${item.title}`}
+            className="size-4 rounded border-gray-300 text-violet-700 focus:ring-violet-500 disabled:cursor-not-allowed"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+          aria-expanded={open}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold leading-5 text-gray-950">{item.title}</span>
+              <span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${included
+                ? 'bg-violet-50 text-violet-800'
+                : 'bg-gray-100 text-gray-500'}`}
+              >
+                {included ? 'Ingår' : 'Bortvald'}
+              </span>
+            </span>
+            <span className="mt-1 line-clamp-2 block text-xs leading-5 text-gray-600">
+              {item.description}
+            </span>
           </span>
-          <span className="mt-1 block text-xs text-gray-500">
-            {item.category} · {reviewLabel(item.reviewStatus)}
-          </span>
-        </span>
-        <ChevronDown size={17} className={`mt-1 shrink-0 text-gray-500 transition ${open ? 'rotate-180' : ''}`} aria-hidden />
-      </button>
+          <ChevronDown size={17} className={`mt-1 shrink-0 text-gray-500 transition ${open ? 'rotate-180' : ''}`} aria-hidden />
+        </button>
+      </div>
 
       {open ? (
         <div className="space-y-4 border-t border-gray-100 px-3 py-4 sm:px-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Kontrollpunkt</span>
-              <input
-                value={draft.title}
-                onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
-                disabled={locked || planApproved || busy}
-                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-              />
-            </label>
-            <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Vad ska kontrolleras?</span>
-              <textarea
-                value={draft.description}
-                onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
-                disabled={locked || planApproved || busy}
-                rows={3}
-                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-              />
-            </label>
-            <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Kontrollmetod</span>
-              <textarea
-                value={draft.verificationMethod}
-                onChange={(event) => setDraft((current) => ({ ...current, verificationMethod: event.target.value }))}
-                disabled={locked || planApproved || busy}
-                rows={2}
-                className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-gray-700">Prioritet</span>
-              <select
-                value={draft.priority}
-                onChange={(event) => setDraft((current) => ({ ...current, priority: event.target.value as TuVerificationPriority }))}
-                disabled={locked || planApproved || busy}
-                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
-              >
-                <option value="high">Hög</option>
-                <option value="normal">Normal</option>
-                <option value="low">Låg</option>
-              </select>
-            </label>
-          </div>
+          {!planApproved ? (
+            <div className="grid gap-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-gray-700">Uppmärksamhetsområde</span>
+                <input
+                  value={draft.title}
+                  onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+                  disabled={locked || busy}
+                  className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-gray-700">Att vara uppmärksam på</span>
+                <textarea
+                  value={draft.description}
+                  onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+                  disabled={locked || busy}
+                  rows={3}
+                  className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {item.verificationMethod ? (
+            <details className="rounded-md bg-violet-50/60 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-semibold text-violet-900">Visa praktiskt stöd</summary>
+              <p className="mt-2 text-xs leading-5 text-gray-700">{item.verificationMethod}</p>
+            </details>
+          ) : null}
 
           <details className="rounded-md bg-gray-50 px-3 py-2">
             <summary className="cursor-pointer text-xs font-semibold text-gray-700">Visa källstöd ({item.sourceReferences.length})</summary>
@@ -245,29 +222,19 @@ function ControlPlanItem({
           </details>
 
           {planApproved ? (
-            <div className="flex items-center gap-2 border-t border-gray-100 pt-3 text-xs font-medium text-gray-600">
-              <ArrowRight size={15} className="shrink-0 text-violet-700" aria-hidden />
-              Resultat, noteringar och kopplade fältposter registreras under Dokumentera på plats.
-            </div>
+            <p className="border-t border-gray-100 pt-3 text-xs leading-5 text-gray-600">
+              Detta är ett internt minnesstöd. Dokumentera det du faktiskt ser som observation, mätning eller bild.
+            </p>
           ) : (
-            <div className="flex flex-wrap justify-between gap-2 border-t border-gray-100 pt-3">
+            <div className="flex justify-end border-t border-gray-100 pt-3">
               <button
                 type="button"
-                onClick={() => void save(item.reviewStatus === 'rejected' ? 'pending' : 'rejected')}
-                disabled={locked || busy}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
-              >
-                {item.reviewStatus === 'rejected' ? <RefreshCw size={15} aria-hidden /> : <CircleX size={15} aria-hidden />}
-                {item.reviewStatus === 'rejected' ? 'Återställ punkt' : 'Ta bort från planen'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void save('accepted')}
+                onClick={() => void save()}
                 disabled={locked || busy || !draft.title.trim() || !draft.description.trim()}
                 className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {busy ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Save size={15} aria-hidden />}
-                {item.reviewStatus === 'accepted' ? 'Spara ändringar' : 'Behåll i planen'}
+                Spara område
               </button>
             </div>
           )}
@@ -413,11 +380,11 @@ export default function TuPostDamagePreparationWorkspace({
 
       const payload = await callPreparation('POST', {
         action: preparation?.run?.status === 'failed' ? 'retry' : 'generate',
-      }, 'Kunde inte starta kontrollplanen.')
+      }, 'Kunde inte skapa kontrollinriktningen.')
       publishState(payload.preparation ?? null)
       toast.info('AI läser underlagen i bakgrunden. Du kan lämna sidan under tiden.')
     } catch (error) {
-      toast.error(error, 'Kunde inte starta kontrollplanen.')
+      toast.error(error, 'Kunde inte skapa kontrollinriktningen.')
     } finally {
       setActionBusy(null)
     }
@@ -426,7 +393,7 @@ export default function TuPostDamagePreparationWorkspace({
   const saveItem = async (itemId: string, patch: Record<string, unknown>) => {
     setActionBusy(`item:${itemId}`)
     try {
-      const payload = await callPreparation('PATCH', { target: 'item', itemId, ...patch }, 'Kunde inte spara kontrollpunkten.')
+      const payload = await callPreparation('PATCH', { target: 'item', itemId, ...patch }, 'Kunde inte spara uppmärksamhetsområdet.')
       if (payload.item) {
         const next = preparation
           ? {
@@ -441,9 +408,9 @@ export default function TuPostDamagePreparationWorkspace({
           : null
         publishState(next)
       }
-      toast.success('Kontrollpunkten har sparats.')
+      toast.success('Uppmärksamhetsområdet har sparats.')
     } catch (error) {
-      toast.error(error, 'Kunde inte spara kontrollpunkten.')
+      toast.error(error, 'Kunde inte spara uppmärksamhetsområdet.')
     } finally {
       setActionBusy(null)
     }
@@ -452,12 +419,12 @@ export default function TuPostDamagePreparationWorkspace({
   const approvePlan = async () => {
     setActionBusy('approve')
     try {
-      const payload = await callPreparation('POST', { action: 'approve' }, 'Kunde inte godkänna kontrollplanen.')
+      const payload = await callPreparation('POST', { action: 'approve' }, 'Kunde inte godkänna kontrollinriktningen.')
       publishState(payload.preparation ?? null)
-      toast.success('Kontrollplanen är klar att använda på plats.')
+      toast.success('Kontrollinriktningen är klar som minnesstöd på plats.')
       onOpenField()
     } catch (error) {
-      toast.error(error, 'Kunde inte godkänna kontrollplanen.')
+      toast.error(error, 'Kunde inte godkänna kontrollinriktningen.')
     } finally {
       setActionBusy(null)
     }
@@ -466,10 +433,10 @@ export default function TuPostDamagePreparationWorkspace({
   const reopenPlan = async () => {
     setActionBusy('reopen')
     try {
-      const payload = await callPreparation('POST', { action: 'reopen' }, 'Kunde inte öppna kontrollplanen.')
+      const payload = await callPreparation('POST', { action: 'reopen' }, 'Kunde inte öppna kontrollinriktningen.')
       publishState(payload.preparation ?? null)
     } catch (error) {
-      toast.error(error, 'Kunde inte öppna kontrollplanen.')
+      toast.error(error, 'Kunde inte öppna kontrollinriktningen.')
     } finally {
       setActionBusy(null)
     }
@@ -548,14 +515,14 @@ export default function TuPostDamagePreparationWorkspace({
           <div>
             <h2 className="text-base font-semibold text-gray-950">Förbered kontrollen</h2>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
-              Lägg in tidigare underlag. AI sammanställer vad som behöver kontrolleras utan att tolka en rekommendation som en utförd åtgärd.
+              Lägg in tidigare underlag. AI sammanfattar ett fåtal områden att ha i åtanke under besöket.
             </p>
           </div>
         </div>
         {approved ? (
           <span className="inline-flex h-8 items-center gap-2 rounded-md bg-emerald-50 px-3 text-xs font-semibold text-emerald-800">
             <CheckCircle2 size={15} aria-hidden />
-            Kontrollplan klar
+            Inriktning klar
           </span>
         ) : null}
       </header>
@@ -660,7 +627,7 @@ export default function TuPostDamagePreparationWorkspace({
         <div className="space-y-4 px-4 py-5 sm:px-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-gray-950">2. Underlag för kontrollplanen</h3>
+              <h3 className="text-sm font-semibold text-gray-950">2. Underlag för inriktningen</h3>
               <p className="mt-1 text-sm text-gray-600">PDF och text kan läsas av AI. Leveransbilagor hanteras senare i utlåtandet.</p>
             </div>
             <button
@@ -846,7 +813,7 @@ export default function TuPostDamagePreparationWorkspace({
               {processing || actionBusy === 'generate'
                 ? <Loader2 size={16} className="animate-spin" aria-hidden />
                 : planReady ? <RefreshCw size={16} aria-hidden /> : <Sparkles size={16} aria-hidden />}
-              {processing ? 'Skapar kontrollplan...' : planReady ? 'Skapa om kontrollplanen' : 'Skapa kontrollplan'}
+              {processing ? 'Skapar inriktning...' : planReady ? 'Skapa om inriktningen' : 'Skapa kontrollinriktning'}
             </button>
           </div>
 
@@ -861,7 +828,7 @@ export default function TuPostDamagePreparationWorkspace({
           ) : preparation?.run?.status === 'failed' ? (
             <div className="flex gap-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-800">
               <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden />
-              <span>{preparation.run.errorMessage || 'Kontrollplanen kunde inte skapas. Försök igen.'}</span>
+              <span>Kontrollinriktningen kunde inte skapas. Försök igen.</span>
             </div>
           ) : null}
         </div>
@@ -869,14 +836,14 @@ export default function TuPostDamagePreparationWorkspace({
         {planReady ? (
           <div className="space-y-5 px-4 py-5 sm:px-5">
             <div>
-              <h3 className="text-sm font-semibold text-gray-950">3. Granska kontrollplanen</h3>
-              <p className="mt-1 text-sm text-gray-600">Bestäm vad som ska kontrolleras på plats. Behåll eller ta bort varje AI-förslag. Kontrollresultaten fylls i i nästa steg.</p>
+              <h3 className="text-sm font-semibold text-gray-950">3. Granska kontrollinriktningen</h3>
+              <p className="mt-1 text-sm text-gray-600">Kontrollera att de föreslagna områdena är relevanta. De är ett minnesstöd, inte en checklista som måste bockas av.</p>
             </div>
 
             {preparation?.case.planStaleAt ? (
               <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden />
-                Underlaget har ändrats. Skapa om planen innan den används.
+                Underlaget har ändrats. Skapa om inriktningen innan den används.
               </div>
             ) : null}
 
@@ -893,7 +860,7 @@ export default function TuPostDamagePreparationWorkspace({
 
             {preparation?.case.essentialQuestions.length ? (
               <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-3">
-                <p className="text-sm font-semibold text-sky-950">Behöver bekräftas före eller vid besöket</p>
+                <p className="text-sm font-semibold text-sky-950">Oklarheter att ha i åtanke</p>
                 <ol className="mt-2 space-y-1 text-sm leading-5 text-sky-900">
                   {preparation.case.essentialQuestions.map((question, index) => <li key={question}>{index + 1}. {question}</li>)}
                 </ol>
@@ -905,15 +872,13 @@ export default function TuPostDamagePreparationWorkspace({
             ) : null}
 
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-gray-500">
-              <span>{preparation?.items.length ?? 0} föreslagna punkter</span>
-              <span>{reviewSummary.accepted} behållna</span>
+              <span>{reviewSummary.included} valda områden</span>
               {reviewSummary.rejected > 0 ? <span>{reviewSummary.rejected} bortvalda</span> : null}
-              {reviewSummary.pending > 0 ? <span className="text-amber-800">{reviewSummary.pending} kvar att granska</span> : null}
             </div>
 
             <div className="space-y-2">
               {preparation?.items.map((item) => (
-                <ControlPlanItem
+                <ControlDirectionItem
                   key={`${item.id}:${item.updatedAt ?? ''}:${item.reviewStatus}`}
                   item={item}
                   documentById={documentById}
@@ -928,12 +893,10 @@ export default function TuPostDamagePreparationWorkspace({
             <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xl text-sm text-gray-600">
                 {approved
-                  ? 'Planen är låst som utgångspunkt. Resultat och kompletteringar registreras under Dokumentera på plats.'
-                  : reviewSummary.pending > 0
-                    ? `Ta ställning till ${reviewSummary.pending} ${reviewSummary.pending === 1 ? 'punkt' : 'punkter'} innan planen kan godkännas.`
-                    : reviewSummary.accepted === 0
-                      ? 'Behåll minst en kontrollpunkt för att kunna fortsätta.'
-                      : 'Alla punkter är genomgångna. Godkänn planen för att börja dokumentera på plats.'}
+                  ? 'Inriktningen visas som ett frivilligt minnesstöd. Observationer, mätningar och bilder är det faktiska resultatunderlaget.'
+                  : reviewSummary.included === 0
+                    ? 'Välj minst ett uppmärksamhetsområde för att kunna fortsätta.'
+                    : 'Godkänn inriktningen när områdena ger en tillräcklig överblick inför besöket.'}
               </p>
               <div className="flex shrink-0 flex-wrap gap-2">
                 {approved ? (
@@ -944,7 +907,7 @@ export default function TuPostDamagePreparationWorkspace({
                     className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:text-gray-400"
                   >
                     {actionBusy === 'reopen' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <RefreshCw size={16} aria-hidden />}
-                    Ändra planen
+                    Ändra inriktningen
                   </button>
                 ) : (
                   <button
@@ -954,7 +917,7 @@ export default function TuPostDamagePreparationWorkspace({
                     className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
                     {actionBusy === 'approve' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <CheckCircle2 size={16} aria-hidden />}
-                    Godkänn plan och börja dokumentera
+                    Godkänn och börja dokumentera
                   </button>
                 )}
                 {approved ? (

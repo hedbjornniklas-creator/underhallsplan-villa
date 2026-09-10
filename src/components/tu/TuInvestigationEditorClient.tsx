@@ -2301,9 +2301,7 @@ export default function TuInvestigationEditorClient({
               onOpenEvidence={() => setWorkspaceView('evidence')}
               nextStep={postDamageWorkflowEnabled ? (
                 <TuPostDamageFieldChecklist
-                  inspectionId={investigation.inspectionId}
                   preparation={workflowState.preparation}
-                  locked={locked}
                 />
               ) : null}
             />

@@ -91,28 +91,28 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   const preparationRequired = source.workflowProfile === 'post_damage_review'
   const preparation = source.preparation
   const preparationRun = preparation?.run ?? null
-  const pendingControlItems = preparation?.items.filter((item) => item.reviewStatus === 'pending').length ?? 0
+  const includedControlItems = preparation?.items.filter((item) => item.reviewStatus !== 'rejected').length ?? 0
   let preparationStatus: TuWorkflowStepState = 'not_started'
   let preparationStatusText = 'Lägg till tidigare underlag'
   let preparationBlockers = 1
   if (preparationRun?.status === 'queued' || preparationRun?.status === 'processing') {
     preparationStatus = 'in_progress'
-    preparationStatusText = preparationRun.progressMessage || 'Kontrollplanen skapas i bakgrunden'
+    preparationStatusText = preparationRun.progressMessage || 'Kontrollinriktningen skapas i bakgrunden'
   } else if (preparationRun?.status === 'failed' || preparationRun?.status === 'cancelled') {
     preparationStatus = 'needs_attention'
-    preparationStatusText = 'Kontrollplanen behöver skapas om'
+    preparationStatusText = 'Kontrollinriktningen behöver skapas om'
   } else if (preparation?.case.planStaleAt) {
     preparationStatus = 'needs_attention'
-    preparationStatusText = 'Underlaget ändrades · kontrollplanen är inaktuell'
+    preparationStatusText = 'Underlaget ändrades · inriktningen är inaktuell'
   } else if (preparation?.case.status === 'plan_ready') {
     preparationStatus = 'needs_attention'
-    preparationStatusText = pendingControlItems > 0
-      ? `${pendingControlItems} kontrollpunkter behöver granskas`
-      : 'Kontrollplanen behöver godkännas'
-    preparationBlockers = Math.max(1, pendingControlItems)
+    preparationStatusText = includedControlItems > 0
+      ? `${includedControlItems} områden föreslagna · godkänn inriktningen`
+      : 'Välj minst ett uppmärksamhetsområde'
+    preparationBlockers = 1
   } else if (preparation?.case.status === 'plan_approved') {
     preparationStatus = 'complete'
-    preparationStatusText = `${preparation.items.filter((item) => item.reviewStatus === 'accepted').length} kontrollpunkter klara`
+    preparationStatusText = `${preparation.items.filter((item) => item.reviewStatus === 'accepted').length} uppmärksamhetsområden`
     preparationBlockers = 0
   } else if ((preparation?.readableSourceDocumentCount ?? 0) > 0) {
     preparationStatus = 'in_progress'
@@ -245,7 +245,7 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
       id: 'preparation',
       title: 'Förbered kontrollen',
       shortTitle: 'Förbered',
-      description: 'Underlag och kontrollplan',
+      description: 'Underlag och kontrollinriktning',
       status: preparationStatus,
       statusText: preparationStatusText,
       blockerCount: preparationBlockers,

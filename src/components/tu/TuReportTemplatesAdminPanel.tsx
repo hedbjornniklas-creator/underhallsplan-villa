@@ -272,7 +272,7 @@ function WorkflowProfileControl({
         ))}
       </select>
       <span className="mt-1.5 block text-xs leading-5 text-gray-500">
-        Kontroll efter skadeåtgärd får ett extra förberedelsesteg för källdokument och kontrollplan.
+        Kontroll efter skadeåtgärd får ett extra förberedelsesteg för källdokument och en kort intern kontrollinriktning.
         Valet kopieras till nya utredningar och kan inte ändras i efterhand.
       </span>
     </label>

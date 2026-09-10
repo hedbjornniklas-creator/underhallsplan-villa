@@ -119,7 +119,7 @@ test('adds the assignment disclaimer once with a traceable policy source', () =>
   assert.equal(secondPass[0].paragraphs.length, sections[0].paragraphs.length)
 })
 
-test('requires every control-plan item to be reviewed before approval', () => {
+test('treats generated attention areas as included until explicitly removed', () => {
   assert.deepEqual(summarizeTuControlPlanReview([
     { reviewStatus: 'accepted' },
     { reviewStatus: 'rejected' },
@@ -128,7 +128,8 @@ test('requires every control-plan item to be reviewed before approval', () => {
     accepted: 1,
     rejected: 1,
     pending: 1,
-    canApprove: false,
+    included: 2,
+    canApprove: true,
   })
 
   assert.equal(summarizeTuControlPlanReview([

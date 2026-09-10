@@ -43,7 +43,7 @@ function mapError(error: unknown) {
   }
   if (message === 'TU_ANALYSIS_NOT_APPROVED') return jsonError('Godkänn helhetsanalysen innan rapportutkastet skapas.', 409)
   if (message === 'TU_CONTROL_PLAN_NOT_APPROVED') {
-    return jsonError('Godkänn kontrollplanen innan rapportutkastet skapas.', 409)
+    return jsonError('Godkänn kontrollinriktningen innan rapportutkastet skapas.', 409)
   }
   if (message === 'TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS') return jsonError('Analysen saknar godkända underlag för utlåtandet.', 409)
   if (message === 'TU_REPORT_DRAFT_TEMPLATE_NOT_SUPPORTED') {

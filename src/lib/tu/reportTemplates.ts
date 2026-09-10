@@ -16,7 +16,7 @@ const TU_POST_DAMAGE_SECTION_POLICY: Record<string, { title: string; aiInstructi
   },
   observed_execution: {
     title: 'Kontrollens resultat',
-    aiInstruction: 'Redovisa kontrollens relevanta aktuella observationer, bilder och kvalificerade mätningar grupperade efter område eller förhållande. Skriv observationstyrt och inte som en kontrollpunktslista eller en redogörelse för interna statusfält. Beskriv endast vad som faktiskt kunde iakttas eller verifieras vid den aktuella kontrollen. När ett resultat behöver klassificeras, använd i sak verifierad i kontrollerbar del, avvikelse noterad, kan inte verifieras, inte åtkomlig eller inte kontrollerad. Använd inte godkänd eller underkänd.',
+    aiInstruction: 'Redovisa kontrollens relevanta aktuella observationer, bilder och kvalificerade mätningar grupperade efter område eller förhållande. Skriv observationstyrt och inte som en återgivning av den interna kontrollinriktningen eller interna statusfält. Beskriv endast vad som faktiskt kunde iakttas eller verifieras vid den aktuella kontrollen. När ett resultat behöver klassificeras, använd i sak verifierad i kontrollerbar del, avvikelse noterad, kan inte verifieras, inte åtkomlig eller inte kontrollerad. Använd inte godkänd eller underkänd.',
   },
   technical_assessment: {
     title: 'Samlad teknisk bedömning',
@@ -36,7 +36,7 @@ export const TU_POST_DAMAGE_SOURCE_POLICY = {
     'Aktuellt skick och aktuell teknisk bedömning ska grundas på besiktningsmannens observationer, egna bilder och kvalificerade mätningar från den aktuella kontrollen.',
     'Tidigare handlingar används endast för att förstå uppdragets bakgrund och inriktning om de inte uttryckligen innehåller separat aktuell utförandedokumentation.',
     'En tidigare rekommendation eller skadebeskrivning visar inte i sig att en åtgärd beställdes, utfördes eller fortfarande är aktuell.',
-    'Kontrollplanen är ett internt orienteringsstöd och får inte styra rapportens disposition eller återges som en kontrollpunktslista.',
+    'Kontrollinriktningen är ett internt orienteringsstöd och får inte styra rapportens disposition eller återges som en checklista.',
   ],
 } as const
 
