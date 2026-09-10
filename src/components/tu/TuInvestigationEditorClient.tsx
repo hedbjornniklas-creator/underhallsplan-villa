@@ -21,6 +21,7 @@ import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/li
 import {
   resolveTuReportDocumentTitle,
   resolveTuReportProjectType,
+  resolveTuReportSectionPolicy,
 } from '@/lib/tu/reportTemplates'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type { TuWorkspaceView } from '@/lib/tu/workflow'
@@ -3354,6 +3355,10 @@ export default function TuInvestigationEditorClient({
 
           {reportEditorSections.map((section, index) => {
             const sectionId = getSectionInstanceId(section)
+            const sectionDisplayTitle = resolveTuReportSectionPolicy(
+              initialInvestigation.reportTemplateKey,
+              section.key
+            )?.title ?? section.title
             const sectionNumberLabel = String(visibleSections.findIndex((item) => getSectionInstanceId(item) === sectionId) + 1)
             const isProtected = PROTECTED_SECTION_KEYS.has(section.key)
             const canChangeSectionType = !isProtected && !section.isRequired
@@ -3363,7 +3368,7 @@ export default function TuInvestigationEditorClient({
             const canMoveDown = index < reportEditorSections.length - 1 && !isProtected
             const sectionOptions = sectionTypeOptions.some((option) => option.key === section.key)
               ? sectionTypeOptions
-              : [{ key: section.key, title: section.title }, ...sectionTypeOptions]
+              : [{ key: section.key, title: sectionDisplayTitle }, ...sectionTypeOptions]
 
             return (
               <div key={sectionId} className="space-y-2">
@@ -3375,7 +3380,7 @@ export default function TuInvestigationEditorClient({
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <span className="text-base font-semibold text-gray-950">{sectionNumberLabel}.</span>
                     {!canChangeSectionType ? (
-                      <h2 className="text-base font-semibold text-gray-950">{section.title}</h2>
+                      <h2 className="text-base font-semibold text-gray-950">{sectionDisplayTitle}</h2>
                     ) : (
                       <select
                         value={section.key}
@@ -3400,7 +3405,7 @@ export default function TuInvestigationEditorClient({
                         type="button"
                         onClick={() => {
                           if (aiWorkflowEnabled) {
-                            setReportReviewTarget({ id: sectionId, title: section.title })
+                            setReportReviewTarget({ id: sectionId, title: sectionDisplayTitle })
                             return
                           }
                           void requestAiSuggestions({ sectionKey: section.key })
