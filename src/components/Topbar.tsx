@@ -224,8 +224,8 @@ export default function Topbar() {
           {hasUser ? (
             <Link
               href="/settings"
-              aria-label="Öppna profilinställningar"
-              title="Profilinställningar"
+              aria-label="Öppna inställningar"
+              title="Inställningar"
               className="group block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
             >
               <div

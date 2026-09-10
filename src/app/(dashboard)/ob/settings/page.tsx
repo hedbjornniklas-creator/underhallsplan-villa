@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ProfileStartReturn from '@/components/besiktapp/ProfileStartReturn'
 import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
+import SettingsNav from '@/components/settings/SettingsNav'
 import { supabase } from '@/lib/supabaseClient'
 import { isCustomerSelectableAddonKey } from '@/lib/assignments/addons'
 
@@ -765,6 +766,8 @@ export default function ObSettingsPage() {
               </div>
             </div>
           </header>
+
+          <SettingsNav />
 
           <ProfileStartReturn
             pending={profileSavePending}
