@@ -7,6 +7,11 @@ import type {
   TuPrintSection,
   TuPrintSignature,
 } from '@/components/tu/TuPrintPagedDocument'
+import {
+  resolveTuReportDocumentTitle,
+  resolveTuReportProjectType,
+  resolveTuReportSectionPolicy,
+} from '@/lib/tu/reportTemplates'
 import type { TuInvestigationDetails, TuInvestigationImage } from '@/lib/tu/server'
 
 const EMPTY_PRINT_VALUES = new Set(['-', '--', 'ej angivet', 'ej angivet.'])
@@ -317,11 +322,17 @@ function buildHeader(investigation: TuInvestigationDetails, reportDate: string):
       : normalizePrintableText(investigation.cadastralId)
 
   return {
-    documentTitle: normalizePrintableText(investigation.title) || 'Teknisk utredning',
+    documentTitle: resolveTuReportDocumentTitle({
+      templateKey: investigation.reportTemplateKey,
+      storedTitle: normalizePrintableText(investigation.title),
+    }),
     objectIdentifierLabel:
       investigation.objectType === 'apartment' ? 'Objekt, BRF/lägenhet' : 'Objekt, Fastighetsbeteckning',
     objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
-    projectType: normalizePrintableText(investigation.projectType) || 'Fördjupad teknisk utredning',
+    projectType: resolveTuReportProjectType({
+      templateKey: investigation.reportTemplateKey,
+      storedProjectType: normalizePrintableText(investigation.projectType),
+    }),
     reportDate,
     address: address ?? '-',
     assignmentNumber: investigation.assignmentNumber ?? investigation.inspection.assignment_number ?? '-',
@@ -381,7 +392,8 @@ export function buildTuPrintPayload(input: {
     .map((section) => ({
       id: section.id,
       key: section.key,
-      title: section.title,
+      title: resolveTuReportSectionPolicy(investigation.reportTemplateKey, section.key)?.title
+        ?? section.title,
       text: normalizeSectionText(section.key, section.text),
       subsections: (section.subsections ?? [])
         .map((subsection) => ({
@@ -410,7 +422,10 @@ export function buildTuPrintPayload(input: {
     companyLogoUrl: investigation.inspector?.logo_url ?? null,
     companyLogoAlt: investigation.inspector?.company_name ?? 'Besiktningsbolag',
     header: buildHeader(investigation, reportDateShort),
-    coverTitle: normalizePrintableText(investigation.title) || 'Fördjupad teknisk utredning',
+    coverTitle: resolveTuReportDocumentTitle({
+      templateKey: investigation.reportTemplateKey,
+      storedTitle: normalizePrintableText(investigation.title),
+    }),
     coverImage,
     parties: buildPartiesSection(investigation),
     metaRows: [],

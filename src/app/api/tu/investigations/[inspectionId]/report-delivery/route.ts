@@ -16,6 +16,7 @@ import {
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
+import { TU_POST_DAMAGE_REVIEW_TEMPLATE_KEY } from '@/lib/tu/workflowProfiles'
 import {
   evaluateTuReportImprovements,
   evaluateTuReportQuality,
@@ -639,7 +640,10 @@ function resolveInspectionDate(investigation: NonNullable<Awaited<ReturnType<typ
 async function getReportQualityIssues(
   investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
 ) {
-  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) return []
+  if (
+    investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY
+    && investigation.reportTemplateKey !== TU_POST_DAMAGE_REVIEW_TEMPLATE_KEY
+  ) return []
   const [observations, appendixImages] = await Promise.all([
     listTuObservations({
       orgId: investigation.orgId,
@@ -661,13 +665,17 @@ async function getReportQualityIssues(
     reportText,
     observations,
     appendixImages,
+    reportTemplateKey: investigation.reportTemplateKey,
   })
 }
 
 async function getReportImprovementReview(
   investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
 ) {
-  if (investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY) return null
+  if (
+    investigation.reportTemplateKey !== TU_MOISTURE_DAMAGE_TEMPLATE_KEY
+    && investigation.reportTemplateKey !== TU_POST_DAMAGE_REVIEW_TEMPLATE_KEY
+  ) return null
   const [observations, appendixImages] = await Promise.all([
     listTuObservations({
       orgId: investigation.orgId,
@@ -686,7 +694,12 @@ async function getReportImprovementReview(
       ...(section.subsections?.flatMap((subsection) => [subsection.title, subsection.text]) ?? []),
     ])
     .join('\n\n')
-  const qualityIssues = evaluateTuReportQuality({ reportText, observations, appendixImages })
+  const qualityIssues = evaluateTuReportQuality({
+    reportText,
+    observations,
+    appendixImages,
+    reportTemplateKey: investigation.reportTemplateKey,
+  })
   return evaluateTuReportImprovements({ reportText, observations, appendixImages, qualityIssues })
 }
 

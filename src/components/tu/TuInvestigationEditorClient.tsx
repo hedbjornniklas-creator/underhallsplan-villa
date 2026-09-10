@@ -18,6 +18,10 @@ import { useTuWorkflowState } from '@/hooks/useTuWorkflowState'
 import { supabase } from '@/lib/supabaseClient'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
+import {
+  resolveTuReportDocumentTitle,
+  resolveTuReportProjectType,
+} from '@/lib/tu/reportTemplates'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type { TuWorkspaceView } from '@/lib/tu/workflow'
 import type {
@@ -727,8 +731,14 @@ export default function TuInvestigationEditorClient({
     [initialSectionTypeOptions]
   )
   const [draft, setDraft] = useState<TuReportDraft>(initialInvestigation.reportDraft)
-  const [title, setTitle] = useState(initialInvestigation.title)
-  const [projectType, setProjectType] = useState(initialInvestigation.projectType ?? 'Fördjupad teknisk utredning')
+  const [title, setTitle] = useState(() => resolveTuReportDocumentTitle({
+    templateKey: initialInvestigation.reportTemplateKey,
+    storedTitle: initialInvestigation.title,
+  }))
+  const [projectType, setProjectType] = useState(() => resolveTuReportProjectType({
+    templateKey: initialInvestigation.reportTemplateKey,
+    storedProjectType: initialInvestigation.projectType,
+  }))
   const [objectDetails, setObjectDetails] = useState<ObjectDetailsForm>(() =>
     buildObjectDetailsForm(initialInvestigation)
   )

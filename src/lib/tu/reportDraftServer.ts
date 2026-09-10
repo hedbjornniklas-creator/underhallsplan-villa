@@ -28,6 +28,14 @@ import {
   tuReportProviderFailureMessage,
   type TuReportBackgroundState,
 } from '@/lib/tu/reportDraftBackground'
+import {
+  ensureTuPostDamageDisclaimer,
+  isTuPostDamageReport,
+  resolveTuReportSectionPolicy,
+  TU_POST_DAMAGE_ASSIGNMENT_NATURE_FIELD_KEY,
+  TU_POST_DAMAGE_REPORT_DISCLAIMER,
+  TU_POST_DAMAGE_SOURCE_POLICY,
+} from '@/lib/tu/reportTemplates'
 import { validateTuReportSections } from '@/lib/tu/reportGroundingServer'
 import type {
   TuWholeReportDraftRun,
@@ -340,21 +348,34 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
 
   const sections = investigation.reportDraft.sections
     .filter((section) => !NON_EDITABLE_SECTION_KEYS.has(section.key))
-    .map((section, index) => ({
-      id: section.id || section.key,
-      key: section.key,
-      title: section.title,
-      currentText: section.text,
-      aiInstruction: section.aiInstruction ?? null,
-      isRequired: section.isRequired === true,
-      order: index + 1,
-    }))
+    .map((section, index) => {
+      const policy = resolveTuReportSectionPolicy(investigation.reportTemplateKey, section.key)
+      return {
+        id: section.id || section.key,
+        key: section.key,
+        title: policy?.title ?? section.title,
+        currentText: section.text,
+        aiInstruction: policy?.aiInstruction ?? section.aiInstruction ?? null,
+        isRequired: section.isRequired === true,
+        order: index + 1,
+      }
+    })
   if (sections.length === 0) throw new Error('TU_REPORT_DRAFT_NO_SECTIONS')
 
-  const sourceFields: Array<{ key: string; label: string; value: string }> = []
-  const addSourceField = (key: string, label: string, value: unknown) => {
+  const sourceFields: Array<{
+    key: string
+    label: string
+    value: string
+    sourceRole: 'assignment_context' | 'current_evidence' | 'historic_context' | 'report_policy'
+  }> = []
+  const addSourceField = (
+    key: string,
+    label: string,
+    value: unknown,
+    sourceRole: 'assignment_context' | 'current_evidence' | 'historic_context' | 'report_policy' = 'assignment_context'
+  ) => {
     const normalized = cleanText(value)
-    if (normalized) sourceFields.push({ key, label, value: normalized })
+    if (normalized) sourceFields.push({ key, label, value: normalized, sourceRole })
   }
   addSourceField('assignment.title', 'Uppdragets titel', investigation.title)
   addSourceField('assignment.assignmentNumber', 'Arbetsnummer', investigation.assignmentNumber)
@@ -370,6 +391,14 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   addSourceField('object.cadastralId', 'Fastighetsbeteckning', investigation.cadastralId)
   addSourceField('object.brfName', 'Bostadsrättsförening', investigation.brfName)
   addSourceField('object.apartmentNumber', 'Lägenhetsnummer', investigation.apartmentNumber)
+  if (isTuPostDamageReport(investigation.reportTemplateKey)) {
+    addSourceField(
+      TU_POST_DAMAGE_ASSIGNMENT_NATURE_FIELD_KEY,
+      'Uppdragets karaktär',
+      TU_POST_DAMAGE_REPORT_DISCLAIMER,
+      'report_policy'
+    )
+  }
   if (controlPlan) {
     addSourceField('controlPlan.mainQuestion', 'Kontrollens huvudfråga', controlPlan.mainQuestion)
     for (const document of controlPlan.documents) {
@@ -381,12 +410,13 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
           document.documentDate,
           document.sourceParty,
           tuDocumentAnalysisSourceRoleLabel(document.sourceRole),
-        ].filter(Boolean).join(' · ')
+        ].filter(Boolean).join(' · '),
+        'historic_context'
       )
     }
   }
   for (const image of sourceImages) {
-    addSourceField(`image.${image.id}.caption`, 'Bildtext', image.caption)
+    addSourceField(`image.${image.id}.caption`, 'Bildtext', image.caption, 'current_evidence')
   }
 
   const chronologicalObservations = sortTuEvidenceChronologically(observations)
@@ -529,6 +559,9 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
       },
       sections,
       sourceFields,
+      sourcePolicy: isTuPostDamageReport(investigation.reportTemplateKey)
+        ? TU_POST_DAMAGE_SOURCE_POLICY
+        : null,
       controlPlan,
       evidence,
       approvedAnalysis: {
@@ -663,8 +696,11 @@ function editorialRequestBody(snapshot: JsonRecord) {
         'Placera varje sakuppgift i en primär rapportdel. Undvik att planera samma resonemang i flera delar.',
         'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
         'En rapportdel med isRequired true ska planeras med relevant källstöd när sådant finns. Om stöd verkligen saknas ska den utelämnas och få en tydlig internalWarning.',
-        'Om en controlPlan finns ska den användas för att hålla rapporten till kontrollens huvudfråga. En tidigare rekommendation eller uppgift om utförd åtgärd är kontext, inte ett eget verifierat kontrollresultat.',
+        'Följ sourcePolicy. Källor märkta historic_context får endast identifiera kontrollunderlaget och förklara uppdragets inriktning; de får inte bära rapportens aktuella resultat, tekniska bedömning eller rekommendationer.',
+        'Om en controlPlan finns är den endast ett internt orienteringsstöd för kontrollens huvudfråga. Planera inte en rapportdel per kontrollpunkt och använd inte kontrollplanen som rapportdisposition.',
+        'Aktuella resultat och bedömningar ska i första hand väljas direkt från dagens observationer, bilder och kvalificerade mätningar. En tidigare rekommendation eller uppgift om utförd åtgärd är kontext, inte ett verifierat kontrollresultat.',
         'Kontrollstatus not_verifiable betyder att kontrollpunkten inte kunde verifieras. reported_not_verifiable betyder att utförandet uppges vara gjort men inte kunde verifieras. Skriv aldrig om någon av dessa statusar till en verifierad åtgärd.',
+        `Fältet ${TU_POST_DAMAGE_ASSIGNMENT_NATURE_FIELD_KEY}, när det finns, ska väljas till rapportdelen assignment_scope och får inte användas i någon annan rapportdel.`,
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Använd endast id:n och field keys som finns i JSON-underlaget.',
         'internalWarnings är för besiktningsmannens granskning och ska aldrig bli rapporttext.',
       ].join('\n'),
@@ -749,7 +785,10 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
         'Bevara relevanta manuella texter när de stöds av de valda källorna, men redigera helheten till konsekvent språk och disposition.',
-        'När rapportmallen gäller kontroll efter skadeåtgärd ska texten beskriva vad som faktiskt kunde iakttas eller verifieras och tydligt skilja detta från uppgifter i tidigare handlingar.',
+        'Följ sourcePolicy. Tidigare handlingar får endast beskrivas kort i uppdragets bakgrund och får aldrig framställas som bevis för dagens förhållanden eller för att åtgärder har utförts.',
+        'När rapportmallen gäller kontroll efter skadeåtgärd ska texten byggas runt den aktuella kontrollens observationer och grupperas efter område eller förhållande, inte efter kontrollplanens punkter.',
+        'Använd vid behov formuleringarna verifierad i kontrollerbar del, avvikelse noterad, kan inte verifieras, inte åtkomlig eller inte kontrollerad. Använd inte godkänd eller underkänd.',
+        'Ett förhållande som inte kunde verifieras får inte beskrivas som en utebliven eller felaktigt utförd åtgärd.',
         'Skriv endast rapportdelar där include är true. För övriga sectionId ska paragraphs vara en tom array.',
         'Följ varje rapportsdels aiInstruction och editorialPurpose. Skriv inte rubriken i texten.',
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget.',
@@ -941,10 +980,18 @@ async function finalizeTuWholeReportDraft(input: {
       throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
     }
 
+    const reportTemplate = record(snapshot.reportTemplate)
+    const assignmentSectionId = expectedSections
+      .find((section) => cleanText(section.key) === 'assignment_scope')
+    const generatedSections = ensureTuPostDamageDisclaimer({
+      templateKey: cleanText(reportTemplate.key),
+      assignmentSectionId: assignmentSectionId ? cleanText(assignmentSectionId.id) : null,
+      sections: generated.sections,
+    })
     const validatedSections = validateTuReportSections({
       snapshot,
       expectedSectionIds: expectedIds,
-      generatedSections: generated.sections,
+      generatedSections,
     })
     const validatedById = new Map(
       validatedSections.map((section) => [section.sectionId, section])

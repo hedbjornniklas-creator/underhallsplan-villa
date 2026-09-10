@@ -1014,22 +1014,18 @@ function CoverPage({
           {header.objectIdentifier}
         </div>
 
-        <div className="mt-7 flex h-[88mm] w-[142mm] items-center justify-center overflow-hidden bg-white">
-          {coverImage ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
+        {coverImage ? (
+          <div className="mt-7 flex h-[88mm] w-[142mm] items-center justify-center overflow-hidden bg-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={getCoverPrintImageSrc(coverImage.src)}
               alt={coverImage.caption || 'Omslagsbild'}
               className="max-h-full max-w-full object-contain"
             />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center border border-dashed border-violet-200 text-[11px] text-gray-500">
-              Ingen omslagsbild vald
-            </div>
-          )}
-        </div>
+          </div>
+        ) : null}
 
-        <div className="mt-9 w-[150mm] self-center">
+        <div className={`${coverImage ? 'mt-9' : 'mt-14'} w-[150mm] self-center`}>
           <h2 className="text-[17px] font-medium text-violet-950">Innehåll</h2>
           <ol className="mt-3 space-y-2 text-[12px] leading-snug text-black">
             {tocEntries.map((entry) => (

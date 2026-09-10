@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { TU_STANDARD_REPORT_TEMPLATES } from '../src/lib/tu/reportTemplates.ts'
+import { ensureTuPostDamageDisclaimer, resolveTuReportDocumentTitle, resolveTuReportProjectType, resolveTuReportSectionPolicy, TU_POST_DAMAGE_ASSIGNMENT_NATURE_FIELD_KEY, TU_POST_DAMAGE_REPORT_DISCLAIMER, TU_STANDARD_REPORT_TEMPLATES } from '../src/lib/tu/reportTemplates.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { summarizeTuControlPlanReview } from '../src/lib/tu/controlPlan.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
@@ -60,13 +60,63 @@ test('seeds a general AI-assisted post-damage report template', () => {
   assert.ok(template)
   assert.equal(template.authoringMode, 'ai_assisted')
   assert.equal(template.workflowProfile, 'post_damage_review')
+  assert.equal(template.version, 2)
+  assert.equal(template.documentTitle, 'Teknisk uppföljningskontroll efter skadeåtgärd')
   assert.deepEqual(template.sections?.map((section) => section.titleOverride), [
-    'Uppdrag, underlag och avgränsning',
-    'Genomförande och iakttagelser',
-    'Teknisk bedömning',
+    'Uppdrag och avgränsning',
+    'Kontrollens resultat',
+    'Samlad teknisk bedömning',
     'Rekommenderad fortsatt hantering',
   ])
   assert.ok(template.sections?.every((section) => section.isRequired && !section.allowDelete))
+})
+
+test('uses the observation-driven policy for existing post-damage investigations', () => {
+  assert.equal(resolveTuReportDocumentTitle({
+    templateKey: 'post_damage_remediation_review',
+    storedTitle: 'Teknisk kontroll efter skadeåtgärd',
+  }), 'Teknisk uppföljningskontroll efter skadeåtgärd')
+  assert.equal(resolveTuReportDocumentTitle({
+    templateKey: 'post_damage_remediation_review',
+    storedTitle: 'Egen rapporttitel',
+  }), 'Egen rapporttitel')
+  assert.equal(resolveTuReportProjectType({
+    templateKey: 'post_damage_remediation_review',
+    storedProjectType: 'Teknisk kontroll efter skadeåtgärd',
+  }), 'Teknisk uppföljningskontroll efter skadeåtgärd')
+  assert.match(
+    resolveTuReportSectionPolicy('post_damage_remediation_review', 'observed_execution')?.aiInstruction ?? '',
+    /observationstyrt/i
+  )
+})
+
+test('adds the assignment disclaimer once with a traceable policy source', () => {
+  const sections = ensureTuPostDamageDisclaimer({
+    templateKey: 'post_damage_remediation_review',
+    assignmentSectionId: 'scope',
+    sections: [{
+      sectionId: 'scope',
+      paragraphs: [{
+        text: 'Kontrollen omfattade åtkomliga delar.',
+        sourceAnalysisItemIds: [],
+        sourceObservationIds: ['observation-1'],
+        sourceFieldKeys: [],
+        warnings: [],
+      }],
+    }],
+  })
+  assert.equal(sections[0].paragraphs.at(-1)?.text, TU_POST_DAMAGE_REPORT_DISCLAIMER)
+  assert.deepEqual(
+    sections[0].paragraphs.at(-1)?.sourceFieldKeys,
+    [TU_POST_DAMAGE_ASSIGNMENT_NATURE_FIELD_KEY]
+  )
+
+  const secondPass = ensureTuPostDamageDisclaimer({
+    templateKey: 'post_damage_remediation_review',
+    assignmentSectionId: 'scope',
+    sections,
+  })
+  assert.equal(secondPass[0].paragraphs.length, sections[0].paragraphs.length)
 })
 
 test('requires every control-plan item to be reviewed before approval', () => {

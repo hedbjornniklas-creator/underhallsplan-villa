@@ -24,6 +24,10 @@ import {
 } from '@/lib/tu/analysisBackground'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { getApprovedTuControlPlanSnapshot } from '@/lib/tu/controlPlanServer'
+import {
+  isTuPostDamageReport,
+  TU_POST_DAMAGE_SOURCE_POLICY,
+} from '@/lib/tu/reportTemplates'
 import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
@@ -639,6 +643,9 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
       })),
       chronologyInstruction:
         'Observationerna är sorterade äldst till nyast. En senare uppgift kan komplettera eller ersätta en preliminär uppfattning, men är inte automatiskt mer tillförlitlig.',
+      sourcePolicy: isTuPostDamageReport(investigation.reportTemplateKey)
+        ? TU_POST_DAMAGE_SOURCE_POLICY
+        : null,
       controlPlan,
       observations: chronologicalObservations.map((observation, index) => ({
         id: observation.id,
@@ -972,7 +979,10 @@ function synthesisRequestBody(input: {
       'En teknisk hypotes ska ha certainty probable eller uncertain och redovisa både stöd och motsägelser.',
       'En bildanalys visar endast synliga bildfakta och får inte ensam bevisa dolda förhållanden eller skadeorsak.',
       'Besiktningsmannens egna bilder dokumenterar observationerna och ska inte behandlas som ett fristående externt bildmaterial.',
-      'Om underlaget innehåller en godkänd controlPlan är den bakgrund och arbetsdisposition. Skilj dess tidigare uppgifter, rekommendationer, åtgärdspåståenden och kontrollkrav från besiktningsmannens egna resultat.',
+      'Följ sourcePolicy när den finns. Aktuellt skick och aktuell teknisk bedömning ska då grundas på observationer, egna bilder och kvalificerade mätningar från den aktuella kontrollen.',
+      'Om underlaget innehåller en godkänd controlPlan är den endast ett internt orienteringsstöd. Skilj dess tidigare uppgifter, rekommendationer, åtgärdspåståenden och kontrollkrav från besiktningsmannens egna resultat.',
+      'Skapa inte ett analysresultat per kontrollpunkt och återge inte kontrollplanen som en checklista. Gruppera i stället dagens observationer efter faktiskt område eller förhållande.',
+      'Tidigare rapporter och skadebeskrivningar får förklara varför ett område kontrollerades men får inte ensamma stödja ett påstående om dagens skick, utförd åtgärd eller kvarstående avvikelse.',
       'Ett verificationStatus i controlPlan beskriver besiktningsmannens registrerade kontrollresultat. not_checked är inte bevisning. not_verifiable och reported_not_verifiable får aldrig skrivas om till en verifierad åtgärd.',
       'Koppla kontrollplanens sakfrågor till hela fältunderlaget semantiskt. Dra inte en slutsats enbart för att en tidigare rapport eller åtgärdsredovisning påstår något.',
       'Beskriv inte ett utförande som felaktigt, otillåtet eller inte fackmässigt utan dokumenterad iakttagelse och angiven bedömningsgrund.',

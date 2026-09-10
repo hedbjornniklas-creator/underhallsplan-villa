@@ -91,6 +91,27 @@ test('blocks an audit-style list of missing measurement metadata', () => {
   assert.ok(issues.some((issue) => issue.id === 'measurement-audit-language-in-report'))
 })
 
+test('requires the assignment-nature disclaimer for post-damage follow-up reports', () => {
+  const issues = evaluateTuReportQuality({
+    reportText: 'Uppdraget omfattar en teknisk kontroll av åtkomliga delar.',
+    observations: [],
+    appendixImages: [],
+    reportTemplateKey: 'post_damage_remediation_review',
+  })
+  assert.ok(issues.some((issue) => issue.id === 'post-damage-assignment-nature-missing'))
+})
+
+test('warns when a technical follow-up is described as approved', () => {
+  const issues = evaluateTuReportQuality({
+    reportText: 'Uppdraget utgör inte en entreprenadbesiktning eller ett godkännande i avtalsrättslig mening. Arbetet är godkänt.',
+    observations: [],
+    appendixImages: [],
+    reportTemplateKey: 'post_damage_remediation_review',
+  })
+  assert.ok(issues.some((issue) => issue.id === 'post-damage-formal-result-language'))
+  assert.ok(!issues.some((issue) => issue.id === 'post-damage-assignment-nature-missing'))
+})
+
 test('treats missing measurements as a neutral review question', () => {
   const source = observation({
     sourceType: 'typed',

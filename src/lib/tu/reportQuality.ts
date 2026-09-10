@@ -1,5 +1,9 @@
 import type { TuObservation } from '@/lib/tu/evidence'
 
+const POST_DAMAGE_TEMPLATE_KEY = 'post_damage_remediation_review'
+const POST_DAMAGE_REPORT_DISCLAIMER =
+  'Uppdraget utgör en teknisk uppföljningskontroll och inte en entreprenadbesiktning eller ett godkännande av entreprenaden i avtalsrättslig mening.'
+
 export type TuReportQualityIssue = {
   id: string
   severity: 'blocker' | 'warning'
@@ -238,6 +242,7 @@ export function evaluateTuReportQuality(input: {
   reportText: string
   observations: TuObservation[]
   appendixImages: ReportImage[]
+  reportTemplateKey?: string | null
 }): TuReportQualityIssue[] {
   const issues: TuReportQualityIssue[] = []
   const measurements = input.observations.flatMap((observation) => observation.measurements)
@@ -318,6 +323,26 @@ export function evaluateTuReportQuality(input: {
       severity: 'blocker',
       message: 'Utlåtandet räknar upp saknade mätuppgifter. Utelämna det osäkra mätpåståendet eller beskriv endast en relevant undersökningsbegränsning.',
     })
+  }
+
+  if (input.reportTemplateKey === POST_DAMAGE_TEMPLATE_KEY) {
+    const hasAssignmentDisclaimer = /inte\s+en\s+entreprenadbesiktning/i.test(input.reportText)
+      && /avtalsrättslig/i.test(input.reportText)
+    if (!hasAssignmentDisclaimer) {
+      issues.push({
+        id: 'post-damage-assignment-nature-missing',
+        severity: 'blocker',
+        message: `Förtydliga uppdragets karaktär i avgränsningen: ${POST_DAMAGE_REPORT_DISCLAIMER}`,
+      })
+    }
+
+    if (/\b(?:godkänd|godkänt|godkända|underkänd|underkänt|underkända)\b/i.test(input.reportText)) {
+      issues.push({
+        id: 'post-damage-formal-result-language',
+        severity: 'warning',
+        message: 'Utlåtandet använder godkänd eller underkänd trots att uppdraget är en teknisk uppföljningskontroll. Beskriv i stället vad som verifierats, avvikit eller inte kunnat verifieras.',
+      })
+    }
   }
 
   const genericCaptionCount = input.appendixImages.filter((image) => isGenericCaption(image.caption)).length

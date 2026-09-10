@@ -16,6 +16,11 @@ import {
   type TuInvestigationImage,
 } from '@/lib/tu/server'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
+import {
+  resolveTuReportDocumentTitle,
+  resolveTuReportProjectType,
+  resolveTuReportSectionPolicy,
+} from '@/lib/tu/reportTemplates'
 
 export const dynamic = 'force-dynamic'
 
@@ -270,7 +275,10 @@ function buildFooter(investigation: TuInvestigationDetails) {
 }
 
 function resolveDocumentTitle(investigation: TuInvestigationDetails) {
-  return normalizePrintableText(investigation.title) || 'Teknisk utredning'
+  return resolveTuReportDocumentTitle({
+    templateKey: investigation.reportTemplateKey,
+    storedTitle: normalizePrintableText(investigation.title),
+  })
 }
 
 function buildHeader(investigation: TuInvestigationDetails, reportDate: string): TuPrintHeader {
@@ -292,7 +300,10 @@ function buildHeader(investigation: TuInvestigationDetails, reportDate: string):
     objectIdentifierLabel:
       investigation.objectType === 'apartment' ? 'Objekt, BRF/lägenhet' : 'Objekt, Fastighetsbeteckning',
     objectIdentifier: (objectIdentifier || address || '-').toLocaleUpperCase('sv-SE'),
-    projectType: normalizePrintableText(investigation.projectType) || 'Fördjupad teknisk utredning',
+    projectType: resolveTuReportProjectType({
+      templateKey: investigation.reportTemplateKey,
+      storedProjectType: normalizePrintableText(investigation.projectType),
+    }),
     reportDate,
     address: address ?? '-',
     assignmentNumber: investigation.assignmentNumber ?? investigation.inspection.assignment_number ?? '-',
@@ -387,7 +398,8 @@ export default async function TuInvestigationPrintPage({
     .map((section) => ({
       id: section.id,
       key: section.key,
-      title: section.title,
+      title: resolveTuReportSectionPolicy(investigation.reportTemplateKey, section.key)?.title
+        ?? section.title,
       text: normalizeSectionText(section.key, section.text),
       subsections: (section.subsections ?? [])
         .map((subsection) => ({
@@ -431,7 +443,7 @@ export default async function TuInvestigationPrintPage({
         companyLogoUrl={investigation.inspector?.logo_url ?? null}
         companyLogoAlt={companyLogoAlt}
         header={buildHeader(investigation, reportDateShort)}
-        coverTitle={normalizePrintableText(investigation.title) || 'Fördjupad teknisk utredning'}
+        coverTitle={resolveDocumentTitle(investigation)}
         coverImage={coverImage}
         parties={buildPartiesSection(investigation)}
         metaRows={[]}

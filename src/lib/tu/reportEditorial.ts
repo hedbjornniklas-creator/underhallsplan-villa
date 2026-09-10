@@ -133,6 +133,7 @@ export function buildTuReportWriterSnapshot(input: {
   return {
     ruleset: input.snapshot.ruleset,
     reportTemplate: input.snapshot.reportTemplate,
+    sourcePolicy: input.snapshot.sourcePolicy,
     editorialFocus: input.plan.focus,
     scopeBoundary: input.plan.scopeBoundary,
     sections: input.plan.sections.map((sectionPlan) => {

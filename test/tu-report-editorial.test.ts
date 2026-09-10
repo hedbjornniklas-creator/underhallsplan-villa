@@ -6,6 +6,7 @@ import { buildTuReportWriterSnapshot, parseTuReportEditorialPlan } from '../src/
 const snapshot = {
   ruleset: 'test',
   reportTemplate: { key: 'moisture_damage_investigation' },
+  sourcePolicy: { reportNature: 'observation_driven' },
   sections: [
     { id: 'scope', title: 'Uppdrag', currentText: '' },
     { id: 'assessment', title: 'Bedömning', currentText: '' },
@@ -93,6 +94,7 @@ test('writer snapshot excludes sources rejected by the editorial selection', () 
   })
   const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan })
   const serialized = JSON.stringify(writerSnapshot)
+  assert.deepEqual(writerSnapshot.sourcePolicy, snapshot.sourcePolicy)
   assert.match(serialized, /Fläck i innertak/)
   assert.doesNotMatch(serialized, /Taket lades 2010/)
   assert.doesNotMatch(serialized, /Testgatan 1/)
