@@ -5,10 +5,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, RefreshCw } from 'lucide-react'
 import { formatObAssignmentValue, getObAssignmentChanges, obAssignmentFieldLabels, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 
-export default function ObAssignmentWorkflowBoundary({ inspectionId, children, onStatusChange }: {
+export default function ObAssignmentWorkflowBoundary({ inspectionId, children, onStatusChange, showStatus = true }: {
   inspectionId: string
   children?: ReactNode
   onStatusChange?: (workflow: ObAssignmentWorkflow) => void
+  showStatus?: boolean
 }) {
   const [workflow, setWorkflow] = useState<ObAssignmentWorkflow | null>()
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +67,7 @@ export default function ObAssignmentWorkflowBoundary({ inspectionId, children, o
     {error ? <div role="alert" className="mb-3 flex items-center gap-2 border-l-4 border-rose-500 bg-rose-50 p-3 text-sm text-rose-800">
       {error}<button type="button" onClick={() => void load()} title="Uppdatera uppdragsstatus" aria-label="Uppdatera uppdragsstatus" className="ml-auto p-2"><RefreshCw size={18} /></button>
     </div> : null}
-    {workflow ? <div className={`mb-4 border-l-4 p-3 text-sm ${workflow.canDeliver ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-amber-500 bg-amber-50 text-amber-950'}`}>
+    {workflow && showStatus ? <div className={`mb-4 border-l-4 p-3 text-sm ${workflow.canDeliver ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-amber-500 bg-amber-50 text-amber-950'}`}>
       <div className="flex flex-wrap items-center gap-2">
         {workflow.canDeliver ? <Check size={18} /> : <AlertTriangle size={18} />}
         <strong>{workflow.canDeliver ? 'Uppdrag godkänt och avstämt' : workflow.reason}</strong>

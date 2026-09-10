@@ -124,6 +124,17 @@ try {
     await page.screenshot({ path: resolve(output, `paused-${width}.png`) })
     readFails = true; await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await page.waitForSelector('[role=alert]'); assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true)
+    reset()
+    await page.goto(`${base}/boundary?round`, { waitUntil: 'networkidle0' })
+    assert.equal(await page.$eval('body', node => node.textContent.includes('Startad före godkännande')), false)
+    assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), false)
+    workflow = { ...workflow, paused: true }
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await page.waitForFunction(() => document.querySelector('#test-note').matches(':disabled'))
+    readFails = true
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await page.waitForSelector('[role=alert]')
+    assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true)
   }
   reset()
   assignment.inspection_id = workflow.inspectionId

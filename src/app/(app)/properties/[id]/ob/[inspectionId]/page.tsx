@@ -704,7 +704,7 @@ export default function InspectionDetailPage() {
                 [&_select]:text-gray-900
                 [&_select]:border-gray-300`}
             >
-              <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id}>
+              <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={activeSection !== 'runda'}>
               <ObWizard
                 property={property}
                 inspection={inspection}
