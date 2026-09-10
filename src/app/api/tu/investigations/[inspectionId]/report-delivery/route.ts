@@ -946,14 +946,16 @@ export async function POST(
       snapshotSchemaVersion = frozenLink.snapshot_schema_version || 'tu_v1'
       snapshotAssignmentId = frozenLink.assignment_id
     } else {
-      const [coverImages, appendixImages] = await Promise.all([
+      const [coverImages, appendixImages, observations] = await Promise.all([
         listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'cover' }),
         listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'appendix' }),
+        listTuObservations({ orgId: org.orgId, inspectionId }),
       ])
       snapshotPayload = createTuReportSnapshotPayloadV1({
         investigation,
         coverImages,
         appendixImages,
+        observations,
         deliveryDocuments,
       })
     }

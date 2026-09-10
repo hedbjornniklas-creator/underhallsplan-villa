@@ -69,7 +69,7 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   const generatedReportSectionCount = source.reportDraft?.sections.filter((section) => (
     section.status !== 'rejected'
     && Boolean(section.proposedText.trim())
-    && (section.groundingStatus === 'grounded' || section.groundingStatus === 'manually_edited')
+    && section.groundingStatus !== 'needs_source'
   )).length ?? 0
   const generatedReportSectionTotal = source.reportDraft?.sections.length ?? 0
   const missingGeneratedSectionCount = Math.max(

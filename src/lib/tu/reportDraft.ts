@@ -41,9 +41,20 @@ export type TuWholeReportDraftSection = {
   updatedAt: string
 }
 
+export type TuWholeReportDraftAction = {
+  id: string
+  kind: 'measurement_metadata'
+  observationId: string
+  measurementId: string
+  title: string
+  detail: string
+  missingFields: string[]
+}
+
 export type TuWholeReportDraftState = {
   run: TuWholeReportDraftRun | null
   sections: TuWholeReportDraftSection[]
+  actions: TuWholeReportDraftAction[]
 }
 
 export type TuWholeReportDraftResponse = {

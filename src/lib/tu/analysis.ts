@@ -1,4 +1,5 @@
 import type { TuEvidenceAiSuggestion } from '@/lib/tu/evidence'
+import type { TuMeasurementImageVerification } from '@/lib/tu/measurementVerification'
 
 export type TuAnalysisWorkflowStatus =
   | 'in_progress'
@@ -96,6 +97,7 @@ export type TuAnalysisRun = {
   overview: string | null
   timelineSummary: string | null
   warnings: string[]
+  measurementVerifications: TuMeasurementImageVerification[]
   createdAt: string
   startedAt: string | null
   completedAt: string | null

@@ -32,6 +32,11 @@ import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
 import {
+  deriveTuMeasurementImageVerifications,
+  getTuMeasurementImageIds,
+  parseTuMeasurementImageVerifications,
+} from '@/lib/tu/measurementVerification'
+import {
   normalizeTuReportProviderResponse,
   tuReportProviderFailureMessage,
 } from '@/lib/tu/reportDraftBackground'
@@ -46,7 +51,7 @@ const TU_ANALYSIS_MODEL =
   process.env.OPENAI_TU_ANALYSIS_MODEL?.trim()
   || 'gpt-5.6'
 const RULESET_KEY = 'tu_ai_assisted_inspection_v1'
-const RULESET_VERSION = 2
+const RULESET_VERSION = 3
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
@@ -122,6 +127,7 @@ type OpenAiResponse = {
 type ImageAnalysis = {
   imageId: string
   visibleFacts: string[]
+  displayReadings: string[]
   quality: 'good' | 'limited' | 'unusable'
   relevance: 'high' | 'medium' | 'low'
   possibleDuplicateImageIds: string[]
@@ -249,6 +255,7 @@ function mapRun(row: RunRow): TuAnalysisRun {
     overview: cleanText(output.overview) || null,
     timelineSummary: cleanText(output.timelineSummary) || null,
     warnings: stringArray(output.warnings),
+    measurementVerifications: parseTuMeasurementImageVerifications(output.measurementVerifications),
     createdAt: isoOrNow(row.created_at),
     startedAt: row.started_at,
     completedAt: row.completed_at,
@@ -798,23 +805,28 @@ function configuredMaxImages() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_IMAGES
 }
 
-async function imageDataUrl(image: TuInvestigationImage) {
+async function imageDataUrl(image: TuInvestigationImage, highDetail: boolean) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin.storage.from(image.storageBucket).download(image.filePath)
   if (error || !data) throw new Error(error?.message ?? 'TU_IMAGE_DOWNLOAD_FAILED')
   const source = Buffer.from(await data.arrayBuffer())
   const optimized = await sharp(source)
     .rotate()
-    .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 78, mozjpeg: true })
+    .resize({
+      width: highDetail ? 2000 : 1280,
+      height: highDetail ? 2000 : 1280,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: highDetail ? 88 : 78, mozjpeg: true })
     .toBuffer()
   return `data:image/jpeg;base64,${optimized.toString('base64')}`
 }
 
-async function prepareImageBatch(images: TuInvestigationImage[]) {
+async function prepareImageBatch(images: TuInvestigationImage[], highDetailImageIds: Set<string>) {
   const loaded = await Promise.all(images.map(async (image) => {
     try {
-      return { image, dataUrl: await imageDataUrl(image), error: null }
+      return { image, dataUrl: await imageDataUrl(image, highDetailImageIds.has(image.id)), error: null }
     } catch (error) {
       return {
         image,
@@ -831,6 +843,7 @@ async function prepareImageBatch(images: TuInvestigationImage[]) {
     .map((item) => ({
       imageId: item.image.id,
       visibleFacts: [],
+      displayReadings: [],
       quality: 'unusable',
       relevance: 'low',
       possibleDuplicateImageIds: [],
@@ -846,12 +859,17 @@ async function prepareImageBatch(images: TuInvestigationImage[]) {
       'Analysera endast vad som faktiskt är synligt i bilderna.',
       'Identifiera inte personer och dra inga slutsatser om orsak, ansvar eller dolda förhållanden.',
       'Skriv neutrala svenska bildiakttagelser. Markera osäker bildkvalitet uttryckligen.',
+      'Om en instrumentskärm är tydligt läsbar: återge varje avläst displayvärde exakt, inklusive synlig enhet, i displayReadings. Gissa aldrig ett värde och lämna listan tom när displayen inte kan läsas säkert.',
       `Bilder i denna batch: ${available.map((item) => `${item.image.id} (${item.image.caption ?? 'utan bildtext'})`).join(', ')}`,
     ].join('\n'),
   }]
   for (const item of available) {
     content.push({ type: 'input_text', text: `imageId: ${item.image.id}` })
-    content.push({ type: 'input_image', image_url: item.dataUrl, detail: 'low' })
+    content.push({
+      type: 'input_image',
+      image_url: item.dataUrl,
+      detail: highDetailImageIds.has(item.image.id) ? 'high' : 'low',
+    })
   }
   const body = structuredOpenAiRequestBody({
     instructions: 'Du är ett visuellt dokumentationsstöd för en svensk teknisk utredning. Du beskriver synliga fakta, inte diagnoser.',
@@ -867,6 +885,7 @@ async function prepareImageBatch(images: TuInvestigationImage[]) {
             properties: {
               imageId: { type: 'string' },
               visibleFacts: { type: 'array', items: { type: 'string' } },
+              displayReadings: { type: 'array', items: { type: 'string' } },
               quality: { type: 'string', enum: ['good', 'limited', 'unusable'] },
               relevance: { type: 'string', enum: ['high', 'medium', 'low'] },
               possibleDuplicateImageIds: { type: 'array', items: { type: 'string' } },
@@ -875,6 +894,7 @@ async function prepareImageBatch(images: TuInvestigationImage[]) {
             required: [
               'imageId',
               'visibleFacts',
+              'displayReadings',
               'quality',
               'relevance',
               'possibleDuplicateImageIds',
@@ -905,6 +925,7 @@ function parseImageBatch(parsed: JsonRecord, availableImageIds: string[]) {
     .map((item) => ({
       imageId: cleanText(item.imageId),
       visibleFacts: stringArray(item.visibleFacts).slice(0, 12),
+      displayReadings: stringArray(item.displayReadings).slice(0, 8),
       quality: item.quality === 'good' || item.quality === 'limited' ? item.quality : 'unusable',
       relevance: item.relevance === 'high' || item.relevance === 'medium' ? item.relevance : 'low',
       possibleDuplicateImageIds: stringArray(item.possibleDuplicateImageIds)
@@ -917,6 +938,7 @@ function parseImageBatch(parsed: JsonRecord, availableImageIds: string[]) {
       mapped.push({
         imageId,
         visibleFacts: [],
+        displayReadings: [],
         quality: 'unusable',
         relevance: 'low',
         possibleDuplicateImageIds: [],
@@ -971,6 +993,7 @@ function synthesisRequestBody(input: {
       'Använd neutral terminologi tills ett förhållande är verifierat. Vid fuktfrågor ska fläck eller missfärgning användas i stället för fuktfläck när fukt inte har konstaterats.',
       'Vid fuktkontroller får du inte skriva att en konstruktion saknar fukt när underlaget endast visar att inga fuktindikationer noterats i en begränsad kontrollerad del.',
       'Vid fuktmätning ska du skilja mellan indikativ mätning och kvantitativ mätning. Ett indikativt utslag är inte en uppmätt fukthalt.',
+      'Ett granskat indikationsvärde får återges exakt som "indikationsvärde X" med instrument, metod och mätpunkt när dessa finns. Avsaknad av jämförelsegrund hindrar inte redovisning av avläsningen, men hindrar klassificering och slutsats om fukthalt.',
       'Klassificera inte ett resultat som normalt, förhöjt, acceptabelt eller utan avvikelse om relevant enhet, metod, instrument och jämförelsegrund saknas.',
       'Avgränsa varje mätresultat till den dokumenterade mätpunkten och tidpunkten. Generalisera inte till hela konstruktionen.',
       'Rubriken, rapportmallen och uppdragstypen är kontext, inte teknisk bevisning.',
@@ -1087,6 +1110,7 @@ function storedImageAnalyses(value: unknown): ImageAnalysis[] {
   return (Array.isArray(value) ? value : []).map(record).map((item): ImageAnalysis => ({
     imageId: cleanText(item.imageId),
     visibleFacts: stringArray(item.visibleFacts),
+    displayReadings: stringArray(item.displayReadings),
     quality: item.quality === 'good' || item.quality === 'limited' ? item.quality : 'unusable',
     relevance: item.relevance === 'high' || item.relevance === 'medium' ? item.relevance : 'low',
     possibleDuplicateImageIds: stringArray(item.possibleDuplicateImageIds),
@@ -1224,6 +1248,8 @@ async function finalizeTuInspectionAnalysis(input: {
       overview: analysis.overview,
       timelineSummary: analysis.timelineSummary,
       warnings: analysis.warnings,
+      imageAnalyses,
+      measurementVerifications: deriveTuMeasurementImageVerifications(snapshot, imageAnalyses),
       imageAnalysisCount: imageAnalyses.length,
       itemCount: itemRows.length,
     }
@@ -1329,6 +1355,7 @@ export async function runTuInspectionAnalysis(input: {
     const selectedImages = images.slice(0, configuredMaxImages())
     const workflow = parseTuAnalysisBackgroundState(run.output_payload)
     const imageAnalyses = storedImageAnalyses(workflow?.imageAnalyses)
+    const measurementImageIds = getTuMeasurementImageIds(snapshot)
 
     if (workflow?.stage === 'synthesis_ready') {
       await finalizeTuInspectionAnalysis({
@@ -1347,7 +1374,7 @@ export async function runTuInspectionAnalysis(input: {
       : 0
     if (nextImageIndex < selectedImages.length) {
       const batch = selectedImages.slice(nextImageIndex, nextImageIndex + IMAGE_BATCH_SIZE)
-      const prepared = await prepareImageBatch(batch)
+      const prepared = await prepareImageBatch(batch, measurementImageIds)
       const completedIndex = Math.min(nextImageIndex + batch.length, selectedImages.length)
       const accumulated = [...imageAnalyses, ...prepared.failed]
       if (!prepared.body) {

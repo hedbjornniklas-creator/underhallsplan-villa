@@ -125,7 +125,6 @@ export default function TuReportReviewDrawer({
     && current.sections.length > 0
     && current.sections.every((section) => (
       Boolean(section.proposedText.trim())
-      && section.groundingStatus !== 'blocked'
       && section.groundingStatus !== 'needs_source'
     ))
   const sectionChangeCount = current?.sections.length ?? 0
@@ -238,9 +237,7 @@ export default function TuReportReviewDrawer({
   }
 
   const sourceWarningCount = useMemo(
-    () => current?.sections.filter((section) => (
-      section.groundingStatus === 'blocked' || section.groundingStatus === 'needs_source'
-    )).length ?? 0,
+    () => current?.sections.filter((section) => section.groundingStatus === 'needs_source').length ?? 0,
     [current?.sections]
   )
 
@@ -399,7 +396,7 @@ export default function TuReportReviewDrawer({
                   <div className="divide-y divide-gray-200 border-y border-gray-200">
                     {current.sections.map((section) => {
                       const expanded = expandedIds.has(section.sectionId)
-                      const sourceBlocked = section.groundingStatus === 'blocked' || section.groundingStatus === 'needs_source'
+                      const sourceBlocked = section.groundingStatus === 'needs_source'
                       return (
                         <article key={section.sectionId} className="py-4">
                           <button

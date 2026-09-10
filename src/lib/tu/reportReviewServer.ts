@@ -297,12 +297,17 @@ function mapReview(input: {
   const sections: TuReportReviewSection[] = input.suggestions.map((suggestion) => {
     const before = beforeById.get(suggestion.target_section_id)
     const after = afterById.get(suggestion.target_section_id)
-    const groundingStatus = suggestion.grounding_status === 'grounded'
+    const storedGroundingStatus = suggestion.grounding_status === 'grounded'
       || suggestion.grounding_status === 'needs_source'
       || suggestion.grounding_status === 'blocked'
       || suggestion.grounding_status === 'manually_edited'
       ? suggestion.grounding_status
-      : 'blocked'
+      : 'needs_source'
+    // Older runs marked the whole section as blocked when one paragraph was removed.
+    // The remaining proposed text has already passed paragraph-level grounding.
+    const groundingStatus = storedGroundingStatus === 'blocked' && suggestion.proposed_text.trim()
+      ? 'grounded'
+      : storedGroundingStatus
     return {
       sectionId: suggestion.target_section_id,
       sectionKey: suggestion.target_section_key,
@@ -620,9 +625,9 @@ export async function runTuReportReview(input: {
     const { error: insertError } = await admin.from('tu_ai_suggestions').insert(rows)
     if (insertError) throw new Error(insertError.message)
     const completedAt = new Date().toISOString()
-    const blockedCount = validatedSections.filter((section) => (
-      section.groundingStatus === 'blocked' || section.groundingStatus === 'needs_source'
-    )).length
+    const blockedCount = validatedSections.filter(
+      (section) => section.groundingStatus === 'needs_source'
+    ).length
     const progressMessage = blockedCount > 0
       ? `Helhetsgranskningen är klar. ${blockedCount} ändringar behöver källkontroll.`
       : `Helhetsgranskningen är klar. ${rows.length} rapportdelar påverkas.`

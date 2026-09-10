@@ -20,6 +20,7 @@ import TuQuickMeasurementDialog from '@/components/tu/TuQuickMeasurementDialog'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
 import type { TuObservation } from '@/lib/tu/evidence'
 import type { TuFieldQueueItem } from '@/lib/tu/fieldQueue'
+import { formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
 
 type FieldImage = {
   id: string
@@ -304,8 +305,7 @@ export default function TuFieldLogWorkspace({
             </div>
           ) : null}
           <p className="mt-2 text-base font-semibold text-gray-950">
-            {measurement.measurementType}: {measurement.valueText}
-            {measurement.unit ? ` ${measurement.unit}` : ''}
+            {measurement.measurementType}: {formatTuMeasurementResult(measurement)}
           </p>
           {[measurement.method, measurement.instrument, measurement.note].some(Boolean) ? (
             <p className="mt-1 text-sm text-gray-600">

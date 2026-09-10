@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
+  Ruler,
   RotateCcw,
   Sparkles,
 } from 'lucide-react'
@@ -24,6 +25,7 @@ type Props = {
   analysisWarnings?: string[]
   onApplyDraft: (sections: Array<{ sectionId: string; text: string }>) => Promise<void>
   onOpenReport: () => void
+  onOpenMeasurement: (observationId: string, measurementId: string) => void
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -47,6 +49,7 @@ export default function TuWholeReportDraftPanel({
   analysisWarnings = [],
   onApplyDraft,
   onOpenReport,
+  onOpenMeasurement,
 }: Props) {
   const [draft, setDraft] = useState<TuWholeReportDraftState | null>(null)
   const [loading, setLoading] = useState(true)
@@ -125,7 +128,7 @@ export default function TuWholeReportDraftPanel({
     () => draft?.sections.filter((section) => (
       section.status !== 'rejected'
       && Boolean(section.proposedText.trim())
-      && (section.groundingStatus === 'grounded' || section.groundingStatus === 'manually_edited')
+      && section.groundingStatus !== 'needs_source'
     )) ?? [],
     [draft?.sections]
   )
@@ -317,6 +320,39 @@ export default function TuWholeReportDraftPanel({
                     <p className="mt-1 text-xs leading-5 text-gray-600">
                       {section.warnings[0] ?? 'Verifierbart underlag saknas för att skriva rapportdelen automatiskt.'}
                     </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {(draft.actions ?? []).length > 0 ? (
+            <section aria-labelledby="tu-measurement-actions-title" className="overflow-hidden rounded-md border border-amber-200 bg-amber-50">
+              <div className="flex gap-3 border-b border-amber-200 px-4 py-3">
+                <Ruler size={18} className="mt-0.5 shrink-0 text-amber-800" aria-hidden />
+                <div>
+                  <h4 id="tu-measurement-actions-title" className="font-semibold text-amber-950">
+                    Komplettera mätuppgifter
+                  </h4>
+                  <p className="mt-0.5 text-sm text-amber-900">
+                    Öppna mätningen direkt och fyll i det som saknas innan slutgranskningen.
+                  </p>
+                </div>
+              </div>
+              <div className="divide-y divide-amber-200">
+                {draft.actions.map((action) => (
+                  <div key={action.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-950">{action.title}</p>
+                      <p className="mt-0.5 text-sm text-gray-700">{action.detail}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onOpenMeasurement(action.observationId, action.measurementId)}
+                      className="h-9 shrink-0 rounded-md border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-950 hover:bg-amber-100"
+                    >
+                      Öppna mätningen
+                    </button>
                   </div>
                 ))}
               </div>

@@ -219,9 +219,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (acceptedSections.some((section) => !section.proposedText.trim())) {
         return jsonError('En vald rapportdel saknar text och kan inte föras över.', 409)
       }
-      if (acceptedSections.some((section) => (
-        section.groundingStatus === 'needs_source' || section.groundingStatus === 'blocked'
-      ))) {
+      if (acceptedSections.some((section) => section.groundingStatus === 'needs_source')) {
         return jsonError('Kontrollera källvarningarna i valda rapportdelar innan de förs över.', 409)
       }
       const now = new Date().toISOString()

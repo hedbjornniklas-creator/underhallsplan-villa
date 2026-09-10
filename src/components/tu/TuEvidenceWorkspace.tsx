@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import TuFieldEntryComposer from '@/components/tu/TuFieldEntryComposer'
+import TuMeasurementInstrumentSelect from '@/components/tu/TuMeasurementInstrumentSelect'
 import { useToast } from '@/components/ui/AppToastProvider'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
@@ -33,6 +34,18 @@ import type {
   TuObservationCertainty,
   TuObservationSourceType,
 } from '@/lib/tu/evidence'
+import {
+  formatTuMeasurementResult,
+  getTuMeasurementTypeDefinition,
+  resolveTuMeasurementUnit,
+  TU_MEASUREMENT_TYPE_DEFINITIONS,
+} from '@/lib/tu/measurementConfig'
+import {
+  readRememberedTuMeasurementMethod,
+  readRememberedTuMeasurementInstrument,
+  rememberTuMeasurementMethod,
+  rememberTuMeasurementInstrument,
+} from '@/lib/tu/measurementInstruments'
 
 type EvidenceSection = {
   id: string
@@ -107,6 +120,11 @@ type Props = {
   ) => Promise<void>
   onOpenReport: (sectionId?: string) => void
   onOpenAnalysis: () => void
+  focusRequest?: {
+    observationId: string
+    measurementId: string
+    nonce: number
+  } | null
   enableSectionAi?: boolean
 }
 
@@ -118,6 +136,31 @@ const EMPTY_MEASUREMENT: MeasurementForm = {
   method: '',
   instrument: '',
   note: '',
+}
+
+function emptyMeasurementWithRememberedInstrument(
+  measurementType = 'Fuktindikering'
+): MeasurementForm {
+  const definition = getTuMeasurementTypeDefinition(measurementType)
+  return {
+    ...EMPTY_MEASUREMENT,
+    measurementType,
+    unit: definition.fixedUnit ? definition.unit : '',
+    method: readRememberedTuMeasurementMethod(measurementType) || definition.defaultMethod,
+    instrument: readRememberedTuMeasurementInstrument(),
+  }
+}
+
+function measurementToForm(measurement: TuMeasurement): MeasurementForm {
+  return {
+    id: measurement.id,
+    measurementType: measurement.measurementType,
+    valueText: measurement.valueText,
+    unit: measurement.unit ?? '',
+    method: measurement.method ?? '',
+    instrument: measurement.instrument ?? '',
+    note: measurement.note ?? '',
+  }
 }
 
 const REVIEW_INVALIDATING_FIELDS = new Set<keyof ObservationForm>([
@@ -210,7 +253,7 @@ function getObservationPreview(observation: TuObservation) {
   if (observation.sourceType === 'measurement') {
     const measurement = observation.measurements[0]
     if (measurement) {
-      return `${measurement.measurementType}: ${measurement.valueText}${measurement.unit ? ` ${measurement.unit}` : ''}`
+      return `${measurement.measurementType}: ${formatTuMeasurementResult(measurement)}`
     }
   }
   return observation.noteText || observation.transcriptText || 'Endast bilddokumentation'
@@ -374,6 +417,7 @@ export default function TuEvidenceWorkspace({
   onApplySuggestion,
   onOpenReport,
   onOpenAnalysis,
+  focusRequest = null,
   enableSectionAi = false,
 }: Props) {
   const { success: showSuccessToast } = useToast()
@@ -417,6 +461,7 @@ export default function TuEvidenceWorkspace({
   const observationSavePromisesRef = useRef(
     new Map<string, { fingerprint: string; promise: Promise<TuObservation> }>()
   )
+  const consumedFocusRequestRef = useRef<number | null>(null)
 
   formRef.current = form
 
@@ -651,6 +696,21 @@ export default function TuEvidenceWorkspace({
   }, [inspectionId])
 
   useEffect(() => {
+    setMeasurementForm((current) => {
+      if (
+        current.id
+        || current.measurementType
+        || current.valueText
+        || current.unit
+        || current.method
+        || current.instrument
+        || current.note
+      ) return current
+      return emptyMeasurementWithRememberedInstrument()
+    })
+  }, [])
+
+  useEffect(() => {
     if (refreshToken <= 0) return
     void refreshObservationList()
   }, [refreshObservationList, refreshToken])
@@ -714,6 +774,7 @@ export default function TuEvidenceWorkspace({
   const sourceHasTranscript = Boolean(selectedObservation?.transcriptText?.trim())
   const sourceHasAudio = Boolean(selectedObservation?.audioStoragePath)
   const sourceMeasurements = selectedObservation?.measurements ?? []
+  const measurementDefinition = getTuMeasurementTypeDefinition(measurementForm.measurementType)
   const needsReviewCount = observations.length - reviewedCount
   const nextUnreviewedObservation = observations.find(
     (observation) => observation.reviewStatus !== 'reviewed' && observation.id !== form.id
@@ -747,6 +808,34 @@ export default function TuEvidenceWorkspace({
       || form.audioStoragePath
     )
   }, [form, selectedObservation])
+  const selectedMeasurement = measurementForm.id
+    ? sourceMeasurements.find((measurement) => measurement.id === measurementForm.id) ?? null
+    : null
+  const measurementFormDirty = useMemo(() => {
+    if (measurementForm.id) {
+      if (!selectedMeasurement) return true
+      return measurementForm.measurementType !== selectedMeasurement.measurementType
+        || measurementForm.valueText !== selectedMeasurement.valueText
+        || measurementForm.unit !== (selectedMeasurement.unit ?? '')
+        || measurementForm.method !== (selectedMeasurement.method ?? '')
+        || measurementForm.instrument !== (selectedMeasurement.instrument ?? '')
+        || measurementForm.note !== (selectedMeasurement.note ?? '')
+    }
+    return Boolean(
+      measurementForm.valueText.trim()
+      || measurementForm.note.trim()
+    )
+  }, [measurementForm, selectedMeasurement])
+
+  useEffect(() => {
+    if (!measurementFormDirty) return
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [measurementFormDirty])
 
   const updateForm = <K extends keyof ObservationForm>(key: K, value: ObservationForm[K]) => {
     setSavedMessage(null)
@@ -761,14 +850,21 @@ export default function TuEvidenceWorkspace({
   }
 
   const selectObservation = (observation: TuObservation) => {
-    if (formDirty && !window.confirm('Du har osparade ändringar. Vill du lämna fältposten utan att spara?')) return false
+    if (
+      (formDirty || measurementFormDirty)
+      && !window.confirm('Du har osparade ändringar. Vill du lämna fältposten utan att spara?')
+    ) return false
     setError(null)
     setSavedMessage(null)
     setSuggestion(null)
     setImagePickerOpen(false)
     setSupplementOpen(false)
     setMeasurementEditorOpen(observation.sourceType === 'measurement')
-    setMeasurementForm(EMPTY_MEASUREMENT)
+    setMeasurementForm(
+      observation.measurements[0]
+        ? measurementToForm(observation.measurements[0])
+        : emptyMeasurementWithRememberedInstrument()
+    )
     setForm(toObservationForm(observation))
     return true
   }
@@ -783,14 +879,17 @@ export default function TuEvidenceWorkspace({
       setError('Vänta tills den pågående bearbetningen är klar.')
       return
     }
-    if (formDirty && !window.confirm('Du har osparade ändringar. Vill du stänga utan att spara?')) return
+    if (
+      (formDirty || measurementFormDirty)
+      && !window.confirm('Du har osparade ändringar. Vill du stänga utan att spara?')
+    ) return
     setObservationPanelOpen(false)
     setImagePickerOpen(false)
     setSupplementOpen(false)
     setMeasurementEditorOpen(false)
     setError(null)
     setSavedMessage(null)
-  }, [formDirty, saving])
+  }, [formDirty, measurementFormDirty, saving])
 
   useEffect(() => {
     if (!observationPanelOpen) return
@@ -841,11 +940,16 @@ export default function TuEvidenceWorkspace({
     }
   }
 
-  const approveObservationAndOpenNext = () => {
-    if (locked || saving || !form.id) return
+  const approveObservationAndOpenNext = async () => {
+    if (locked || saving || measurementBusy || !form.id) return
     if (!form.noteText.trim() && !form.transcriptText.trim() && form.imageIds.length === 0) {
       setError('Lägg in en anteckning, en röstinmatning eller minst en bild.')
       return
+    }
+
+    if (measurementFormDirty) {
+      const measurementSaved = await saveMeasurement({ quiet: true })
+      if (!measurementSaved) return
     }
 
     const currentObservation = observations.find((observation) => observation.id === form.id)
@@ -1004,51 +1108,87 @@ export default function TuEvidenceWorkspace({
     }
   }
 
-  const saveMeasurement = async () => {
-    if (locked || measurementBusy || !form.id) return
+  async function saveMeasurement(options: { quiet?: boolean } = {}) {
+    if (locked || measurementBusy || !form.id) return false
     if (!measurementForm.measurementType.trim() || !measurementForm.valueText.trim()) {
       setError('Ange typ och mätvärde.')
-      return
+      setMeasurementEditorOpen(true)
+      return false
     }
+    const submittedForm: MeasurementForm = {
+      ...measurementForm,
+      unit: resolveTuMeasurementUnit(measurementForm.measurementType, measurementForm.unit),
+    }
+    const wasEditing = Boolean(submittedForm.id)
     setMeasurementBusy(true)
     setError(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements`, {
-        method: measurementForm.id ? 'PATCH' : 'POST',
+        method: submittedForm.id ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          measurementId: measurementForm.id,
+          measurementId: submittedForm.id,
           observationId: form.id,
           location: form.location,
-          ...measurementForm,
+          ...submittedForm,
         }),
       })
       const payload = await readJson<{ measurement?: TuMeasurement; error?: string }>(response)
       if (!response.ok || !payload.measurement) {
         throw new Error(payload.error ?? 'Kunde inte spara mätvärdet.')
       }
-      setMeasurementForm(EMPTY_MEASUREMENT)
+      const savedInstrument = payload.measurement.instrument?.trim() ?? ''
+      const savedMethod = payload.measurement.method?.trim() ?? ''
+      if (savedInstrument !== submittedForm.instrument.trim()) {
+        throw new Error('Instrumentet kunde inte sparas. Försök igen.')
+      }
+      if (savedMethod !== submittedForm.method.trim()) {
+        throw new Error('Mätmetoden kunde inte sparas. Försök igen.')
+      }
+      rememberTuMeasurementInstrument(savedInstrument)
+      rememberTuMeasurementMethod(submittedForm.measurementType, savedMethod)
+      setMeasurementForm(
+        wasEditing
+          ? measurementToForm(payload.measurement)
+          : {
+              ...emptyMeasurementWithRememberedInstrument(submittedForm.measurementType),
+              instrument: savedInstrument,
+              method: savedMethod,
+            }
+      )
       await loadObservations(form.id)
-      showSuccessToast(measurementForm.id ? 'Mätvärdet är uppdaterat.' : 'Mätvärdet är tillagt.')
+      if (!options.quiet) {
+        showSuccessToast(wasEditing ? 'Mätningen är sparad.' : 'Mätningen är tillagd.')
+      }
+      return true
     } catch (measurementError) {
       setError(measurementError instanceof Error ? measurementError.message : 'Kunde inte spara mätvärdet.')
+      return false
     } finally {
       setMeasurementBusy(false)
     }
   }
 
   const editMeasurement = (measurement: TuMeasurement) => {
-    setMeasurementForm({
-      id: measurement.id,
-      measurementType: measurement.measurementType,
-      valueText: measurement.valueText,
-      unit: measurement.unit ?? '',
-      method: measurement.method ?? '',
-      instrument: measurement.instrument ?? '',
-      note: measurement.note ?? '',
-    })
+    setMeasurementForm(measurementToForm(measurement))
     setMeasurementEditorOpen(true)
   }
+
+  useEffect(() => {
+    if (
+      !focusRequest
+      || loading
+      || consumedFocusRequestRef.current === focusRequest.nonce
+    ) return
+    const observation = observations.find((item) => item.id === focusRequest.observationId)
+    const measurement = observation?.measurements.find((item) => item.id === focusRequest.measurementId)
+    if (!observation || !measurement || !selectObservation(observation)) return
+    editMeasurement(measurement)
+    setObservationPanelOpen(true)
+    consumedFocusRequestRef.current = focusRequest.nonce
+    // Selection helpers intentionally use the latest local form state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest, loading, observations])
 
   const deleteMeasurement = async (measurementId: string) => {
     if (locked || measurementBusy || !form.id) return
@@ -1581,8 +1721,7 @@ export default function TuEvidenceWorkspace({
                   {sourceMeasurements.map((measurement) => (
                     <div key={measurement.id} className="py-2.5">
                       <p className="text-sm font-semibold text-gray-950">
-                        {measurement.measurementType}: {measurement.valueText}
-                        {measurement.unit ? ` ${measurement.unit}` : ''}
+                        {measurement.measurementType}: {formatTuMeasurementResult(measurement)}
                       </p>
                       {[measurement.method, measurement.instrument, measurement.note].some(Boolean) ? (
                         <p className="mt-0.5 text-xs text-gray-600">
@@ -1837,8 +1976,7 @@ export default function TuEvidenceWorkspace({
                         <div key={measurement.id} className="flex items-start justify-between gap-3 px-3 py-2.5">
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-gray-950">
-                              {measurement.measurementType}: {measurement.valueText}
-                              {measurement.unit ? ` ${measurement.unit}` : ''}
+                              {measurement.measurementType}: {formatTuMeasurementResult(measurement)}
                             </p>
                             <p className="mt-0.5 text-xs text-gray-600">
                               {[measurement.method, measurement.instrument, measurement.note].filter(Boolean).join(' · ')}
@@ -1870,44 +2008,81 @@ export default function TuEvidenceWorkspace({
                       ))}
                     </div>
                   ) : null}
-                  <div className="mt-3 grid gap-2 sm:grid-cols-[1.2fr_1fr_0.7fr]">
-                    <input
-                      value={measurementForm.measurementType}
-                      onChange={(event) => setMeasurementForm((current) => ({ ...current, measurementType: event.target.value }))}
-                      disabled={locked}
-                      placeholder="Typ, t.ex. fuktindikering eller temperatur"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                    />
-                    <input
-                      value={measurementForm.valueText}
-                      onChange={(event) => setMeasurementForm((current) => ({ ...current, valueText: event.target.value }))}
-                      disabled={locked}
-                      placeholder="Värde"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                    />
-                    <input
-                      value={measurementForm.unit}
-                      onChange={(event) => setMeasurementForm((current) => ({ ...current, unit: event.target.value }))}
-                      disabled={locked}
-                      placeholder="Enhet"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                    />
+                  <div className={`mt-3 grid gap-2 ${measurementDefinition.fixedUnit ? 'sm:grid-cols-2' : 'sm:grid-cols-[1.2fr_1fr_0.7fr]'}`}>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-gray-600">Mättyp</span>
+                      <select
+                        value={measurementForm.measurementType}
+                        onChange={(event) => {
+                          const nextType = event.target.value
+                          const nextDefinition = getTuMeasurementTypeDefinition(nextType)
+                          setMeasurementForm((current) => ({
+                            ...current,
+                            measurementType: nextType,
+                            unit: nextDefinition.fixedUnit ? nextDefinition.unit : '',
+                            method: readRememberedTuMeasurementMethod(nextType) || nextDefinition.defaultMethod,
+                          }))
+                        }}
+                        disabled={locked}
+                        className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                      >
+                        {TU_MEASUREMENT_TYPE_DEFINITIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-gray-600">{measurementDefinition.resultLabel}</span>
+                      <input
+                        value={measurementForm.valueText}
+                        onChange={(event) => setMeasurementForm((current) => ({ ...current, valueText: event.target.value }))}
+                        disabled={locked}
+                        inputMode="decimal"
+                        placeholder={measurementDefinition.resultPlaceholder}
+                        className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                      />
+                    </label>
+                    {!measurementDefinition.fixedUnit ? (
+                      <label className="space-y-1">
+                        <span className="text-xs font-medium text-gray-600">Enhet</span>
+                        <input
+                          value={measurementForm.unit}
+                          onChange={(event) => setMeasurementForm((current) => ({ ...current, unit: event.target.value }))}
+                          disabled={locked}
+                          placeholder="Enhet"
+                          className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                        />
+                      </label>
+                    ) : null}
                   </div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <input
-                      value={measurementForm.method}
-                      onChange={(event) => setMeasurementForm((current) => ({ ...current, method: event.target.value }))}
-                      disabled={locked}
-                      placeholder="Metod"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                    />
-                    <input
-                      value={measurementForm.instrument}
-                      onChange={(event) => setMeasurementForm((current) => ({ ...current, instrument: event.target.value }))}
-                      disabled={locked}
-                      placeholder="Instrument"
-                      className="h-9 rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                    />
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-gray-600">Metod</span>
+                      <input
+                        value={measurementForm.method}
+                        onChange={(event) => {
+                          const method = event.target.value
+                          setMeasurementForm((current) => ({ ...current, method }))
+                          rememberTuMeasurementMethod(measurementForm.measurementType, method)
+                        }}
+                        disabled={locked}
+                        placeholder="Metod"
+                        className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium text-gray-600">Instrument</span>
+                      <TuMeasurementInstrumentSelect
+                        key={measurementForm.id ?? 'new-measurement'}
+                        value={measurementForm.instrument}
+                        onChange={(instrument) => {
+                          setMeasurementForm((current) => ({ ...current, instrument }))
+                          rememberTuMeasurementInstrument(instrument)
+                        }}
+                        disabled={locked}
+                        compact
+                      />
+                    </label>
                   </div>
                   <textarea
                     value={measurementForm.note}
@@ -1921,7 +2096,7 @@ export default function TuEvidenceWorkspace({
                     {measurementForm.id ? (
                       <button
                         type="button"
-                        onClick={() => setMeasurementForm(EMPTY_MEASUREMENT)}
+                        onClick={() => setMeasurementForm(emptyMeasurementWithRememberedInstrument())}
                         disabled={measurementBusy}
                         className="mr-2 inline-flex h-9 items-center rounded-md px-3 text-xs font-semibold text-gray-600 hover:bg-gray-100"
                       >
@@ -1935,7 +2110,7 @@ export default function TuEvidenceWorkspace({
                       className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 disabled:text-gray-400"
                     >
                       {measurementBusy ? <Loader2 size={14} className="animate-spin" aria-hidden /> : measurementForm.id ? <Check size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
-                      {measurementForm.id ? 'Spara mätvärde' : 'Lägg till mätvärde'}
+                      {measurementForm.id ? 'Spara mätningen' : 'Lägg till mätning'}
                     </button>
                   </div>
                 </>
@@ -1978,8 +2153,8 @@ export default function TuEvidenceWorkspace({
                 ) : form.reviewStatus !== 'reviewed' ? (
                   <button
                     type="button"
-                    onClick={approveObservationAndOpenNext}
-                    disabled={locked || saving}
+                    onClick={() => void approveObservationAndOpenNext()}
+                    disabled={locked || saving || measurementBusy}
                     title="Du bekräftar att du själv har kontrollerat källmaterialet."
                     className="inline-flex min-h-10 min-w-44 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >

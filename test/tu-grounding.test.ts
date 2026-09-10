@@ -4,6 +4,8 @@ import test from 'node:test'
 import { findTuMoistureGroundingRisks, sortTuEvidenceChronologically, validateTuGroundedSections } from '../src/lib/tu/grounding.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { isTuAnalysisSourceImage } from '../src/lib/tu/evidence.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { deriveTuMeasurementImageVerifications } from '../src/lib/tu/measurementVerification.ts'
 
 test('excludes cover images from the AI source material', () => {
   assert.equal(isTuAnalysisSourceImage({ sectionKey: 'cover' }), false)
@@ -117,6 +119,45 @@ test('keeps a grounded paragraph with valid observation sources', () => {
   assert.deepEqual(section.sourceObservationIds, ['observation-1'])
 })
 
+test('removes only an unsafe paragraph and keeps the grounded text in the same report section', () => {
+  const [section] = validateTuGroundedSections({
+    expectedSectionIds: ['observations'],
+    generatedSections: [{
+      sectionId: 'observations',
+      paragraphs: [
+        {
+          text: 'En missfärgning noterades i innertaket.',
+          sourceAnalysisItemIds: [],
+          sourceObservationIds: ['observation-1'],
+          sourceFieldKeys: [],
+          warnings: [],
+        },
+        {
+          text: 'Kontrollen utfördes enligt standardmetoder.',
+          sourceAnalysisItemIds: [],
+          sourceObservationIds: ['observation-1'],
+          sourceFieldKeys: [],
+          warnings: [],
+        },
+      ],
+      warnings: [],
+    }],
+    validAnalysisItemIds: new Set(),
+    validObservationIds: new Set(['observation-1']),
+    validFieldKeys: new Set(),
+    analysisSourceTextById: new Map(),
+    observationSourceTextById: new Map([
+      ['observation-1', 'En missfärgning noterades i innertaket.'],
+    ]),
+    fieldSourceTextByKey: new Map(),
+    currentAssessmentTexts: [],
+  })
+
+  assert.equal(section.groundingStatus, 'grounded')
+  assert.equal(section.text, 'En missfärgning noterades i innertaket.')
+  assert.ok(section.warnings.some((warning) => warning.includes('Övrig källförankrad text behölls')))
+})
+
 test('blocks an earlier contradictory observation without its approved resolution', () => {
   const [section] = validateTuGroundedSections({
     expectedSectionIds: ['assessment'],
@@ -174,4 +215,38 @@ test('allows chronology when the paragraph cites the approved current assessment
   })
   assert.equal(section.groundingStatus, 'grounded')
   assert.match(section.text, /inte vara fuktrelaterad/i)
+})
+
+test('compares a registered measurement with a readable instrument display', () => {
+  const verifications = deriveTuMeasurementImageVerifications({
+    observations: [{
+      id: 'observation-1',
+      location: 'Källare',
+      imageIds: ['image-1'],
+      measurements: [{
+        id: 'measurement-1',
+        type: 'Fuktindikering',
+        value: '62',
+        instrument: 'Elma Moisture Max',
+        method: 'Indikativ ytmätning',
+      }],
+    }],
+  }, [{ imageId: 'image-1', displayReadings: ['62'] }])
+
+  assert.equal(verifications.length, 1)
+  assert.equal(verifications[0].status, 'match')
+  assert.equal(verifications[0].instrument, 'Elma Moisture Max')
+})
+
+test('flags a different readable instrument display for inspector review', () => {
+  const [verification] = deriveTuMeasurementImageVerifications({
+    observations: [{
+      id: 'observation-1',
+      imageIds: ['image-1'],
+      measurements: [{ id: 'measurement-1', type: 'Fuktindikering', value: '62' }],
+    }],
+  }, [{ imageId: 'image-1', displayReadings: ['26'] }])
+
+  assert.equal(verification.status, 'conflict')
+  assert.deepEqual(verification.imageReadings, ['26'])
 })

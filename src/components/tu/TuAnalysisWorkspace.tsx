@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   BrainCircuit,
+  CheckCircle2,
   Clock3,
   FileText,
   Loader2,
@@ -46,6 +47,7 @@ type Props = {
   onPreviewImage: (imageId: string) => void
   onOpenField: () => void
   onOpenEvidence: () => void
+  onOpenMeasurement: (observationId: string, measurementId: string) => void
   onApplyReportDraft: (sections: Array<{ sectionId: string; text: string }>) => Promise<void>
   onOpenReport: () => void
 }
@@ -71,9 +73,12 @@ export default function TuAnalysisWorkspace({
   inspectionId,
   refreshToken,
   locked,
+  images,
   queueCounts,
+  onPreviewImage,
   onOpenField,
   onOpenEvidence,
+  onOpenMeasurement,
   onApplyReportDraft,
   onOpenReport,
 }: Props) {
@@ -158,18 +163,41 @@ export default function TuAnalysisWorkspace({
     }
   }, [applyResponse, inspectionId])
 
+  const confirmRecordedMeasurement = useCallback(async (measurementId: string) => {
+    setActionBusy(`confirm-measurement-${measurementId}`)
+    setError(null)
+    try {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'confirm_measurement_recorded', measurementId }),
+      })
+      if (!response.ok) throw new Error(await responseError(response, 'Kunde inte bekräfta mätvärdet.'))
+      applyResponse(await response.json() as TuAnalysisResponse)
+    } catch (confirmError) {
+      setError(errorText(confirmError, 'Kunde inte bekräfta mätvärdet.'))
+    } finally {
+      setActionBusy(null)
+    }
+  }, [applyResponse, inspectionId])
+
+  const unresolvedMeasurementConflicts = workflow?.run?.measurementVerifications.filter((item) => (
+    item.status === 'conflict' && item.resolution !== 'recorded_confirmed'
+  )) ?? []
+
   useEffect(() => {
     const runId = workflow?.run?.id
     if (
       locked
       || workflow?.status !== 'analysis_ready'
       || workflow.run?.status !== 'completed'
+      || unresolvedMeasurementConflicts.length > 0
       || !runId
       || autoApprovedRunRef.current === runId
     ) return
     autoApprovedRunRef.current = runId
     void approveGenerated()
-  }, [approveGenerated, locked, workflow])
+  }, [approveGenerated, locked, unresolvedMeasurementConflicts.length, workflow])
 
   if (loading) {
     return (
@@ -313,18 +341,105 @@ export default function TuAnalysisWorkspace({
         ) : null}
 
         {!analysisProcessing && !failed && workflow?.status === 'analysis_ready' ? (
-          <div className="flex items-start gap-3 rounded-md border border-violet-200 bg-violet-50 p-4">
-            <Loader2 size={20} className="mt-0.5 shrink-0 animate-spin text-violet-700" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <h3 className="font-semibold text-gray-950">Förbereder rapportens delar</h3>
-              <p className="mt-1 text-sm text-gray-700">Helhetsanalysen är klar. Rapportutkastet startas automatiskt.</p>
-              {error ? (
-                <button type="button" onClick={() => void approveGenerated()} className="mt-3 inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white hover:bg-violet-800">
-                  <RefreshCw size={15} aria-hidden /> Försök fortsätta
-                </button>
-              ) : null}
+          unresolvedMeasurementConflicts.length > 0 ? (
+            <div className="space-y-4">
+              <div className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+                <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-700" aria-hidden />
+                <div>
+                  <h3 className="font-semibold text-amber-950">Kontrollera avläsningen innan utlåtandet skapas</h3>
+                  <p className="mt-1 text-sm leading-5 text-amber-900">
+                    Ett registrerat mätvärde skiljer sig från vad AI:n kunde läsa på en kopplad bild. Du avgör vilken uppgift som är riktig.
+                  </p>
+                </div>
+              </div>
+
+              {unresolvedMeasurementConflicts.map((verification) => {
+                const sourceImages = images.filter((image) => verification.sourceImageIds.includes(image.id))
+                return (
+                  <article key={verification.measurementId} className="rounded-md border border-gray-200 bg-white p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h4 className="font-semibold text-gray-950">{verification.location || verification.measurementType}</h4>
+                        <p className="mt-0.5 text-sm text-gray-600">{verification.measurementType}</p>
+                      </div>
+                      {verification.instrument ? (
+                        <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">
+                          {verification.instrument}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-md border border-violet-200 bg-violet-50 p-3">
+                        <p className="text-xs font-semibold uppercase text-violet-700">Registrerat i fältloggen</p>
+                        <p className="mt-1 text-lg font-semibold text-gray-950">
+                          {verification.recordedValue}{verification.unit ? ` ${verification.unit}` : ''}
+                        </p>
+                      </div>
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-xs font-semibold uppercase text-amber-800">Avläst från bild</p>
+                        <p className="mt-1 text-lg font-semibold text-gray-950">
+                          {verification.imageReadings.join(', ')}
+                        </p>
+                      </div>
+                    </div>
+
+                    {sourceImages.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {sourceImages.map((image) => (
+                          <button
+                            key={image.id}
+                            type="button"
+                            onClick={() => onPreviewImage(image.id)}
+                            className="overflow-hidden rounded-md border border-gray-200 bg-gray-50 hover:border-violet-300"
+                            aria-label="Öppna bilden i fullformat"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={image.publicUrl} alt={image.caption ?? 'Mätbild'} className="h-20 w-24 object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void confirmRecordedMeasurement(verification.measurementId)}
+                        disabled={locked || Boolean(actionBusy)}
+                        className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white hover:bg-violet-800 disabled:bg-gray-300"
+                      >
+                        {actionBusy === `confirm-measurement-${verification.measurementId}`
+                          ? <Loader2 size={16} className="animate-spin" aria-hidden />
+                          : <CheckCircle2 size={16} aria-hidden />}
+                        Registrerat värde är korrekt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenMeasurement(verification.observationId, verification.measurementId)}
+                        disabled={Boolean(actionBusy)}
+                        className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:text-gray-400"
+                      >
+                        Öppna och ändra mätningen
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
             </div>
-          </div>
+          ) : (
+            <div className="flex items-start gap-3 rounded-md border border-violet-200 bg-violet-50 p-4">
+              <Loader2 size={20} className="mt-0.5 shrink-0 animate-spin text-violet-700" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-gray-950">Förbereder rapportens delar</h3>
+                <p className="mt-1 text-sm text-gray-700">Helhetsanalysen är klar. Rapportutkastet startas automatiskt.</p>
+                {error ? (
+                  <button type="button" onClick={() => void approveGenerated()} className="mt-3 inline-flex h-9 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white hover:bg-violet-800">
+                    <RefreshCw size={15} aria-hidden /> Försök fortsätta
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )
         ) : null}
 
         {workflow?.status === 'analysis_approved' ? (
@@ -336,6 +451,7 @@ export default function TuAnalysisWorkspace({
             analysisWarnings={workflow.run?.warnings ?? []}
             onApplyDraft={onApplyReportDraft}
             onOpenReport={onOpenReport}
+            onOpenMeasurement={onOpenMeasurement}
           />
         ) : null}
       </div>

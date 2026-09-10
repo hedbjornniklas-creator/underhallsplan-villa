@@ -2,7 +2,19 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Camera, ChevronDown, Images, Loader2, Paperclip, Ruler, Save, X } from 'lucide-react'
+import TuMeasurementInstrumentSelect from '@/components/tu/TuMeasurementInstrumentSelect'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
+import {
+  getTuMeasurementTypeDefinition,
+  resolveTuMeasurementUnit,
+  TU_MEASUREMENT_TYPE_DEFINITIONS,
+} from '@/lib/tu/measurementConfig'
+import {
+  readRememberedTuMeasurementMethod,
+  readRememberedTuMeasurementInstrument,
+  rememberTuMeasurementMethod,
+  rememberTuMeasurementInstrument,
+} from '@/lib/tu/measurementInstruments'
 
 const MAX_IMAGE_FILES = 20
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024
@@ -12,21 +24,6 @@ type Props = {
   queue: TuFieldQueueController
   onClose: () => void
   onQueued?: () => void
-}
-
-const MEASUREMENT_TYPES = [
-  'Fuktindikering',
-  'Relativ fuktighet (RF)',
-  'Fuktkvot (FK)',
-  'Temperatur',
-  'Yttemperatur',
-  'Annan instrumentmätning',
-]
-
-function suggestedUnit(measurementType: string) {
-  if (measurementType.includes('(RF)') || measurementType.includes('(FK)')) return '%'
-  if (measurementType.toLocaleLowerCase('sv-SE').includes('temperatur')) return '°C'
-  return ''
 }
 
 export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQueued }: Props) {
@@ -50,6 +47,34 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
     setPreviewUrls(nextUrls)
     return () => nextUrls.forEach((url) => URL.revokeObjectURL(url))
   }, [files])
+
+  useEffect(() => {
+    const definition = getTuMeasurementTypeDefinition(measurementType)
+    setInstrument((current) => current || readRememberedTuMeasurementInstrument())
+    setMethod((current) => (
+      current
+      || readRememberedTuMeasurementMethod(measurementType)
+      || definition.defaultMethod
+    ))
+    setUnit((current) => definition.fixedUnit ? definition.unit : current)
+    // The initial type is stable for this initialization.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const measurementDefinition = getTuMeasurementTypeDefinition(measurementType)
+  const savedUnit = resolveTuMeasurementUnit(measurementType, unit)
+  const hasDraft = Boolean(
+    valueText.trim()
+    || location.trim()
+    || note.trim()
+    || files.length > 0
+  )
+
+  const close = () => {
+    if (saving) return
+    if (hasDraft && !window.confirm('Mätningen är inte sparad. Vill du stänga ändå?')) return
+    onClose()
+  }
 
   const addFiles = (nextFiles: File[]) => {
     const combined = [...files, ...nextFiles]
@@ -82,13 +107,15 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
       await queue.enqueueMeasurement({
         measurementType,
         valueText,
-        unit,
+        unit: savedUnit,
         location,
         method,
         instrument,
         note,
         files,
       })
+      rememberTuMeasurementInstrument(instrument)
+      rememberTuMeasurementMethod(measurementType, method)
       onQueued?.()
       onClose()
     } catch (saveError) {
@@ -123,7 +150,7 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             disabled={saving}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             aria-label="Stäng mätningen"
@@ -146,27 +173,35 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
                 value={measurementType}
                 onChange={(event) => {
                   const nextType = event.target.value
+                  const nextDefinition = getTuMeasurementTypeDefinition(nextType)
                   setMeasurementType(nextType)
-                  if (!unit.trim()) setUnit(suggestedUnit(nextType))
+                  setUnit(nextDefinition.fixedUnit ? nextDefinition.unit : '')
+                  setMethod(
+                    readRememberedTuMeasurementMethod(nextType)
+                    || nextDefinition.defaultMethod
+                  )
                 }}
                 autoFocus
                 className="h-12 w-full rounded-md border border-gray-300 bg-white px-3 text-base outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
               >
-                {MEASUREMENT_TYPES.map((option) => <option key={option}>{option}</option>)}
+                {TU_MEASUREMENT_TYPE_DEFINITIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
             </label>
-            <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-2">
+            <div className={measurementDefinition.fixedUnit ? '' : 'grid grid-cols-[minmax(0,1fr)_6rem] gap-2'}>
               <label className="space-y-1">
-                <span className="text-sm font-medium text-gray-800">Resultat *</span>
+                <span className="text-sm font-medium text-gray-800">{measurementDefinition.resultLabel} *</span>
                 <input
                   value={valueText}
                   onChange={(event) => setValueText(event.target.value)}
                   inputMode="decimal"
-                  placeholder="Exempel: 12,4"
+                  placeholder={measurementDefinition.resultPlaceholder}
                   className="h-12 w-full rounded-md border border-gray-300 px-3 text-base outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                 />
               </label>
-              <label className="space-y-1">
+              {!measurementDefinition.fixedUnit ? (
+                <label className="space-y-1">
                 <span className="text-sm font-medium text-gray-800">Enhet</span>
                 <input
                   value={unit}
@@ -174,7 +209,12 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
                   placeholder="%, °C"
                   className="h-12 w-full rounded-md border border-gray-300 px-3 text-base outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                 />
-              </label>
+                </label>
+              ) : measurementDefinition.unit ? (
+                <p className="mt-1 text-xs text-gray-500">Enhet: {measurementDefinition.unit}</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-500">Registreras som indikationsvärde utan enhet.</p>
+              )}
             </div>
           </div>
 
@@ -185,6 +225,18 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
               onChange={(event) => setLocation(event.target.value)}
               placeholder="Exempel: Sovrum, tak vid fläck"
               className="h-12 w-full rounded-md border border-gray-300 px-3 text-base outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-sm font-medium text-gray-800">Instrument <span className="font-normal text-gray-500">(valfritt)</span></span>
+            <TuMeasurementInstrumentSelect
+              value={instrument}
+              onChange={(nextInstrument) => {
+                setInstrument(nextInstrument)
+                rememberTuMeasurementInstrument(nextInstrument)
+              }}
+              disabled={locked || saving}
             />
           </label>
 
@@ -273,17 +325,12 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
                 <span className="text-sm font-medium text-gray-800">Metod</span>
                 <input
                   value={method}
-                  onChange={(event) => setMethod(event.target.value)}
+                  onChange={(event) => {
+                    const nextMethod = event.target.value
+                    setMethod(nextMethod)
+                    rememberTuMeasurementMethod(measurementType, nextMethod)
+                  }}
                   placeholder="Exempel: indikativ ytmätning"
-                  className="h-11 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-sm font-medium text-gray-800">Instrument</span>
-                <input
-                  value={instrument}
-                  onChange={(event) => setInstrument(event.target.value)}
-                  placeholder="Modell eller inventarienummer"
                   className="h-11 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
                 />
               </label>

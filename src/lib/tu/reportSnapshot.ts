@@ -12,6 +12,8 @@ import {
   resolveTuReportProjectType,
   resolveTuReportSectionPolicy,
 } from '@/lib/tu/reportTemplates'
+import type { TuObservation } from '@/lib/tu/evidence'
+import { formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
 import type { TuInvestigationDetails, TuInvestigationImage } from '@/lib/tu/server'
 
 const EMPTY_PRINT_VALUES = new Set(['-', '--', 'ej angivet', 'ej angivet.'])
@@ -149,6 +151,58 @@ function normalizeSectionText(key: string, text: string) {
   return key === 'assignment_parties'
     ? normalizeAssignmentPartiesText(text)
     : normalizePrintableText(text)
+}
+
+export function buildTuMeasurementPrintSection(observations: TuObservation[]): TuPrintSection | null {
+  const measurementRows = observations
+    .filter((observation) => observation.reviewStatus === 'reviewed' && observation.includeInReport)
+    .flatMap((observation) => observation.measurements.map((measurement, index) => {
+      const location = normalizePrintableText(measurement.location ?? observation.location)
+      const details = [
+        `Resultat: ${formatTuMeasurementResult(measurement)}`,
+        measurement.method ? `Metod: ${normalizePrintableText(measurement.method)}` : null,
+        measurement.instrument ? `Instrument: ${normalizePrintableText(measurement.instrument)}` : null,
+        measurement.note ? `Kommentar: ${normalizePrintableText(measurement.note)}` : null,
+      ].filter((line): line is string => Boolean(line))
+      return {
+        id: `measurement-${measurement.id}`,
+        title: location
+          ? `${location} – ${normalizePrintableText(measurement.measurementType)}`
+          : `${normalizePrintableText(measurement.measurementType)} ${index + 1}`,
+        text: details.join('\n'),
+      }
+    }))
+  if (measurementRows.length === 0) return null
+  return {
+    id: 'structured-measurements',
+    key: 'measurements',
+    title: 'Mätningar',
+    text: '',
+    subsections: measurementRows,
+  }
+}
+
+export function insertTuMeasurementPrintSection(
+  sections: TuPrintSection[],
+  measurementSection: TuPrintSection | null
+) {
+  if (!measurementSection || sections.some((section) => /mätning/i.test(section.key))) return sections
+  const next = [...sections]
+  let resultIndex = -1
+  next.forEach((section, index) => {
+    if (section.key === 'observed_execution' || /(?:result|observation|iakttag)/i.test(section.key)) {
+      resultIndex = index
+    }
+  })
+  if (resultIndex >= 0) {
+    next.splice(resultIndex + 1, 0, measurementSection)
+    return next
+  }
+  const assessmentIndex = next.findIndex((section) => (
+    /(?:assessment|recommended|closing)/i.test(section.key)
+  ))
+  next.splice(assessmentIndex >= 0 ? assessmentIndex : next.length, 0, measurementSection)
+  return next
 }
 
 function toPrintRow(label: string, value: string | null | undefined): TuPrintMetaRow | null {
@@ -381,13 +435,14 @@ export function buildTuPrintPayload(input: {
   investigation: TuInvestigationDetails
   coverImages: TuInvestigationImage[]
   appendixImages: TuInvestigationImage[]
+  observations?: TuObservation[]
   reportDate?: Date
 }): TuPrintPayload {
   const reportDate = input.reportDate ?? new Date()
   const reportDateShort = formatReportDate(reportDate)
   const reportDateLong = formatReportDateLong(reportDate)
   const investigation = input.investigation
-  const printableSections: TuPrintSection[] = investigation.reportDraft.sections
+  const reportSections: TuPrintSection[] = investigation.reportDraft.sections
     .filter((section) => section.key !== 'assignment_parties' && section.key !== 'signature')
     .map((section) => ({
       id: section.id,
@@ -404,6 +459,10 @@ export function buildTuPrintPayload(input: {
         .filter((subsection) => Boolean(subsection.title && subsection.text)),
     }))
     .filter((section) => Boolean(section.text || (section.subsections && section.subsections.length > 0)))
+  const printableSections = insertTuMeasurementPrintSection(
+    reportSections,
+    buildTuMeasurementPrintSection(input.observations ?? [])
+  )
   const appendixImages: TuPrintImage[] = input.appendixImages.map((image, index) => ({
     id: image.id,
     src: image.publicUrl,
@@ -441,6 +500,7 @@ export function createTuReportSnapshotPayloadV1(input: {
   investigation: TuInvestigationDetails
   coverImages: TuInvestigationImage[]
   appendixImages: TuInvestigationImage[]
+  observations?: TuObservation[]
   deliveryDocuments?: TuReportDeliveryDocument[]
   createdAt?: Date
 }): TuReportSnapshotPayloadV1 {
@@ -449,6 +509,7 @@ export function createTuReportSnapshotPayloadV1(input: {
     investigation: input.investigation,
     coverImages: input.coverImages,
     appendixImages: input.appendixImages,
+    observations: input.observations,
     reportDate: createdAt,
   })
 

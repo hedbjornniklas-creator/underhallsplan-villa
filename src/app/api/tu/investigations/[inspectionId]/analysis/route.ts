@@ -13,6 +13,7 @@ import {
   type TuAnalysisResponse,
 } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
+import { parseTuMeasurementImageVerifications } from '@/lib/tu/measurementVerification'
 import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
@@ -32,6 +33,12 @@ function cleanText(value: unknown) {
 function nullableText(value: unknown) {
   const normalized = cleanText(value)
   return normalized || null
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
 }
 
 function mapError(error: unknown) {
@@ -169,6 +176,41 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const admin = createSupabaseAdminClient()
+    if (action === 'confirm_measurement_recorded') {
+      const measurementId = cleanText(body.measurementId)
+      if (!measurementId) return jsonError('Välj vilken mätning som ska bekräftas.', 400)
+      const workflow = await getTuAnalysisWorkflow({ orgId: orgContext.orgId, inspectionId })
+      if (!workflow.run || workflow.run.status !== 'completed' || workflow.status !== 'analysis_ready') {
+        return jsonError('Mätningen kan granskas när helhetsanalysen är klar.', 409)
+      }
+      const verification = workflow.run.measurementVerifications.find((item) => item.measurementId === measurementId)
+      if (!verification || verification.status !== 'conflict') {
+        return jsonError('Ingen avvikande bildavläsning finns för den mätningen.', 409)
+      }
+      const { data: runData, error: runError } = await admin
+        .from('tu_ai_runs')
+        .select('output_payload')
+        .eq('id', workflow.run.id)
+        .eq('org_id', orgContext.orgId)
+        .eq('inspection_id', inspectionId)
+        .eq('operation', 'inspection_analysis')
+        .single()
+      if (runError || !runData) throw new Error(runError?.message ?? 'TU_ANALYSIS_RUN_NOT_FOUND')
+      const output = record((runData as { output_payload: unknown }).output_payload)
+      const verifications = parseTuMeasurementImageVerifications(output.measurementVerifications)
+        .map((item) => item.measurementId === measurementId
+          ? { ...item, resolution: 'recorded_confirmed' as const }
+          : item)
+      const { error: updateError } = await admin
+        .from('tu_ai_runs')
+        .update({ output_payload: { ...output, measurementVerifications: verifications } })
+        .eq('id', workflow.run.id)
+        .eq('org_id', orgContext.orgId)
+        .eq('inspection_id', inspectionId)
+      if (updateError) throw new Error(updateError.message)
+      return stateResponse(orgContext.orgId, inspectionId)
+    }
+
     if (action === 'reopen') {
       const { error } = await admin
         .from('tu_analysis_workflows')
@@ -188,6 +230,11 @@ export async function POST(request: Request, context: RouteContext) {
       const workflow = await getTuAnalysisWorkflow({ orgId: orgContext.orgId, inspectionId })
       if (!workflow.run || workflow.run.status !== 'completed') {
         return jsonError('Helhetsanalysen måste vara klar innan utlåtandet kan skapas.', 409)
+      }
+      if (workflow.run.measurementVerifications.some((item) => (
+        item.status === 'conflict' && item.resolution !== 'recorded_confirmed'
+      ))) {
+        return jsonError('Kontrollera mätvärdena som skiljer sig från bildavläsningen innan utlåtandet skapas.', 409)
       }
       const currentAssessment = workflow.items.find((item) => item.itemType === 'current_assessment')
       if (!currentAssessment) {

@@ -130,7 +130,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (review.sections.length === 0) return jsonError('AI:n föreslog ingen faktisk textändring.', 409)
       if (review.sections.some((section) => (
         !section.proposedText.trim()
-        || section.groundingStatus === 'blocked'
         || section.groundingStatus === 'needs_source'
       ))) return jsonError('Kontrollera källvarningarna innan ändringarna används.', 409)
       const { data: row, error: rowError } = await admin

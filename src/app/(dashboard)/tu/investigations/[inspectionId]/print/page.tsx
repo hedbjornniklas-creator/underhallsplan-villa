@@ -15,6 +15,12 @@ import {
   type TuInvestigationDetails,
   type TuInvestigationImage,
 } from '@/lib/tu/server'
+import { listTuObservations } from '@/lib/tu/evidenceServer'
+import type { TuObservation } from '@/lib/tu/evidence'
+import {
+  buildTuMeasurementPrintSection,
+  insertTuMeasurementPrintSection,
+} from '@/lib/tu/reportSnapshot'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import {
   resolveTuReportDocumentTitle,
@@ -362,6 +368,7 @@ export default async function TuInvestigationPrintPage({
   let investigation: TuInvestigationDetails | null = null
   let coverImages: TuInvestigationImage[] = []
   let appendixImages: TuInvestigationImage[] = []
+  let observations: TuObservation[] = []
 
   try {
     const context = await requireTuContext()
@@ -371,16 +378,11 @@ export default async function TuInvestigationPrintPage({
       inspectorProfileId: context.userId,
     })
     if (!investigation) notFound()
-    coverImages = await listTuInvestigationImages({
-      orgId: context.orgId,
-      inspectionId,
-      sectionKey: 'cover',
-    })
-    appendixImages = await listTuInvestigationImages({
-      orgId: context.orgId,
-      inspectionId,
-      sectionKey: 'appendix',
-    })
+    ;[coverImages, appendixImages, observations] = await Promise.all([
+      listTuInvestigationImages({ orgId: context.orgId, inspectionId, sectionKey: 'cover' }),
+      listTuInvestigationImages({ orgId: context.orgId, inspectionId, sectionKey: 'appendix' }),
+      listTuObservations({ orgId: context.orgId, inspectionId }),
+    ])
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') redirect('/login')
@@ -393,7 +395,7 @@ export default async function TuInvestigationPrintPage({
   const reportDate = new Date()
   const reportDateShort = formatReportDate(reportDate)
   const reportDateLong = formatReportDateLong(reportDate)
-  const printableSections: TuPrintSection[] = investigation.reportDraft.sections
+  const reportSections: TuPrintSection[] = investigation.reportDraft.sections
     .filter((section) => section.key !== 'assignment_parties' && section.key !== 'signature')
     .map((section) => ({
       id: section.id,
@@ -410,6 +412,10 @@ export default async function TuInvestigationPrintPage({
         .filter((subsection) => Boolean(subsection.title && subsection.text)),
     }))
     .filter((section) => Boolean(section.text || (section.subsections && section.subsections.length > 0)))
+  const printableSections = insertTuMeasurementPrintSection(
+    reportSections,
+    buildTuMeasurementPrintSection(observations)
+  )
   const printableImages: TuPrintImage[] = appendixImages.map((image, index) => ({
     id: image.id,
     src: image.publicUrl,

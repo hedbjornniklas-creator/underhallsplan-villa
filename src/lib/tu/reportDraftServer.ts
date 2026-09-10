@@ -39,6 +39,7 @@ import {
 import { validateTuReportSections } from '@/lib/tu/reportGroundingServer'
 import type {
   TuWholeReportDraftRun,
+  TuWholeReportDraftAction,
   TuWholeReportDraftSection,
   TuWholeReportDraftState,
 } from '@/lib/tu/reportDraft'
@@ -232,6 +233,39 @@ function mapSection(row: SuggestionRow): TuWholeReportDraftSection {
   }
 }
 
+function measurementCompletionActions(snapshot: JsonRecord): TuWholeReportDraftAction[] {
+  const evidence = record(snapshot.evidence)
+  const observations = Array.isArray(evidence.observations) ? evidence.observations.map(record) : []
+  return observations.flatMap((observation) => {
+    const observationId = cleanText(observation.id)
+    const observationLocation = cleanText(observation.location)
+    const measurements = Array.isArray(observation.measurements)
+      ? observation.measurements.map(record)
+      : []
+    return measurements.map((measurement): TuWholeReportDraftAction | null => {
+      const measurementId = cleanText(measurement.id)
+      if (!observationId || !measurementId) return null
+      const measurementType = cleanText(measurement.type) || 'Mätning'
+      const missingFields = [
+        !cleanText(measurement.location) && !observationLocation ? 'plats' : '',
+        !cleanText(measurement.instrument) ? 'instrument' : '',
+        !cleanText(measurement.method) ? 'metod' : '',
+      ].filter(Boolean)
+      if (missingFields.length === 0) return null
+      const location = cleanText(measurement.location) || observationLocation
+      return {
+        id: `measurement-${measurementId}`,
+        kind: 'measurement_metadata',
+        observationId,
+        measurementId,
+        title: location ? `${measurementType} – ${location}` : measurementType,
+        detail: `Komplettera ${missingFields.join(', ')} för att mätningen ska kunna redovisas tydligt.`,
+        missingFields,
+      }
+    }).filter((action): action is TuWholeReportDraftAction => Boolean(action))
+  })
+}
+
 async function markStaleRunFailed(run: TuWholeReportDraftRun) {
   const lastActivity = run.heartbeatAt ?? run.startedAt ?? run.createdAt
   const staleBefore = Date.now() - STALE_RUN_MINUTES * 60 * 1000
@@ -292,7 +326,7 @@ export async function getTuWholeReportDraftState(input: {
     ])
   if (runError) throw new Error(runError.message)
   if (workflowError) throw new Error(workflowError.message)
-  if (!runData) return { run: null, sections: [] }
+  if (!runData) return { run: null, sections: [], actions: [] }
 
   const runRow = runData as unknown as RunRow
   const snapshot = record(runRow.input_snapshot)
@@ -307,7 +341,7 @@ export async function getTuWholeReportDraftState(input: {
     || cleanText(approvedAnalysis.runId) !== workflow.current_analysis_run_id
     || cleanText(approvedAnalysis.approvedAt) !== workflow.analysis_approved_at
   ) {
-    return { run: null, sections: [] }
+    return { run: null, sections: [], actions: [] }
   }
 
   let run = mapRun(runRow)
@@ -323,6 +357,7 @@ export async function getTuWholeReportDraftState(input: {
   return {
     run,
     sections: ((sectionData ?? []) as unknown as SuggestionRow[]).map(mapSection),
+    actions: measurementCompletionActions(snapshot),
   }
 }
 
@@ -693,6 +728,7 @@ function editorialRequestBody(snapshot: JsonRecord) {
         'Besiktningsmannens observationer och egna bilder är dokumentation av den genomförda undersökningen, inte externt bildmaterial.',
         'Systemfält och deras etiketter är intern metadata. Välj ett fältvärde endast när själva sakuppgiften behövs i rapporten.',
         'Bristande metadata om en mätning är i första hand en intern granskningsvarning. Välj inte en uppräkning av saknade fält som rapportinnehåll.',
+        'Ett granskat indikationsvärde är ett användbart aktuellt kontrollresultat. Det får väljas och redovisas som indikationsvärde med mätpunkt, metod och instrument utan att omvandlas till fukthalt eller klassificeras som normalt eller förhöjt.',
         'Om en faktisk begränsning påverkar möjligheten att besvara huvudfrågan får begränsningen väljas, men den ska beskrivas proportionerligt och utan intern kontrolljargong.',
         'Placera varje sakuppgift i en primär rapportdel. Undvik att planera samma resonemang i flera delar.',
         'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
@@ -782,6 +818,7 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Skilj sakligt mellan egna iakttagelser, uttryckligt angivna partsuppgifter och tekniska bedömningar utan att beskriva den interna datakällan.',
         'Följ den godkända aktuella bedömningen och återinför inte en preliminär benämning eller slutsats som senare har ersatts.',
         'Utelämna osäkra mätpåståenden när mätunderlaget inte räcker. Räkna inte upp vilka metadatafält som saknas i rapporten.',
+        'Redovisa granskade indikationsvärden som "indikationsvärde X" tillsammans med tillgänglig mätpunkt, metod och instrument. Avsaknad av jämförelsegrund hindrar inte redovisning av avläsningen men förbjuder klassificering och slutsats om fukthalt.',
         'Ta bara med begränsningar som har faktisk betydelse för slutsatsen och formulera dem i besiktningsmannens direkta fackspråk.',
         'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',

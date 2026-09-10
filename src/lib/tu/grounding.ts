@@ -203,6 +203,13 @@ export function validateTuGroundedSections(input: {
 
     const text = acceptedParagraphs.map((paragraph) => paragraph.text).join('\n\n')
     if (!text) warnings.push('Rapportdelen lämnades tom eftersom verifierbart underlag saknas.')
+    if (text && blockedParagraphCount > 0) {
+      warnings.push(
+        blockedParagraphCount === 1
+          ? 'Ett osäkert AI-stycke togs bort. Övrig källförankrad text behölls.'
+          : `${blockedParagraphCount} osäkra AI-stycken togs bort. Övrig källförankrad text behölls.`
+      )
+    }
     return {
       sectionId,
       text,
@@ -216,9 +223,7 @@ export function validateTuGroundedSections(input: {
         acceptedParagraphs.flatMap((paragraph) => paragraph.sourceFieldKeys)
       ),
       warnings: uniqueStrings(warnings),
-      groundingStatus: text
-        ? blockedParagraphCount > 0 ? 'blocked' : 'grounded'
-        : 'needs_source',
+      groundingStatus: text ? 'grounded' : 'needs_source',
     }
   })
 }

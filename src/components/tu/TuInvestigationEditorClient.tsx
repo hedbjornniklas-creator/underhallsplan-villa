@@ -796,6 +796,15 @@ export default function TuInvestigationEditorClient({
   const [workspaceView, setWorkspaceView] = useState<TuWorkspaceView>(
     postDamageWorkflowEnabled ? 'preparation' : aiWorkflowEnabled ? 'field' : 'report'
   )
+  const [evidenceFocusRequest, setEvidenceFocusRequest] = useState<{
+    observationId: string
+    measurementId: string
+    nonce: number
+  } | null>(null)
+  const openMeasurementInEvidence = useCallback((observationId: string, measurementId: string) => {
+    setEvidenceFocusRequest({ observationId, measurementId, nonce: Date.now() })
+    setWorkspaceView('evidence')
+  }, [])
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
     setImages((current) => upsertImages(current, [image]))
   }, [])
@@ -2321,6 +2330,7 @@ export default function TuInvestigationEditorClient({
             onApplySuggestion={applyEvidenceSuggestion}
             onOpenReport={openReportWorkspace}
             onOpenAnalysis={() => setWorkspaceView('assessment')}
+            focusRequest={evidenceFocusRequest}
           />
         ) : aiWorkflowEnabled && workspaceView === 'assessment' ? (
           <TuAnalysisWorkspace
@@ -2333,6 +2343,7 @@ export default function TuInvestigationEditorClient({
             onPreviewImage={setPreviewImageId}
             onOpenField={() => setWorkspaceView('field')}
             onOpenEvidence={() => setWorkspaceView('evidence')}
+            onOpenMeasurement={openMeasurementInEvidence}
             onApplyReportDraft={applyWholeReportDraft}
             onOpenReport={() => openReportWorkspace()}
           />
