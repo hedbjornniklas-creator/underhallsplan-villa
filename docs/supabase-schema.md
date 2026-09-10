@@ -152,7 +152,8 @@ Kontrollpunkter som verifieras binds till ett konkret bevis när regeln kräver 
 ## Modul: Fortnox-anslutning
 
 Fullständigt schema, constraints, RPC och RLS finns i
-`docs/db/2026-09-09_05_fortnox_connection_foundation.sql`.
+`docs/db/2026-09-09_05_fortnox_connection_foundation.sql`, med scopeutökningen i
+`docs/db/2026-09-10_03_fortnox_customer_invoice_scopes.sql`.
 
 - `organizations.organization_number`: nullable juridiskt organisationsnummer i
   kanoniskt format `XXXXXX-XXXX` med Luhn-kontroll. En trigger hindrar
@@ -161,15 +162,19 @@ Fullständigt schema, constraints, RPC och RLS finns i
 - `fortnox_connections`: en anslutning per `org_id`; TenantId är unikt mellan
   organisationer. Företagsnamn, verifierat organisationsnummer, beviljade
   scopes, status, anslutande profil, en monoton `connection_version` och
-  tidsstämplar lagras. En constraint kräver exakt ett scope,
-  `companyinformation`; extra scopes kan inte lagras. Tabellen innehåller inga
-  Client Secrets, authorization codes eller access-/refresh-token.
+  tidsstämplar lagras. En aktuell anslutning kräver exakt
+  `companyinformation`, `customer` och `invoice`. En äldre rad med endast
+  `companyinformation` bevaras enbart med status `needs_reauthorization`; delvisa,
+  dubblerade eller extra scopes avvisas. Tabellen innehåller inga Client Secrets,
+  authorization codes eller access-/refresh-token.
 - Den sammansatta främmande nyckeln
   `(org_id, company_organization_number)` säkerställer att Fortnox-företagets
   verifierade juridiska identitet matchar HusHub-organisationen.
 - `fortnox_oauth_states`: SHA-256-hash av slumpmässigt state, monoton
-  `attempt_sequence`, organisation, startande profil, exakt
-  `companyinformation`, utgångstid och konsumtionstid. Rått state lagras inte.
+  `attempt_sequence`, organisation, startande profil, begärda scopes, utgångstid
+  och konsumtionstid. Databasen accepterar det historiska identity-only-setet
+  eller det aktuella kompletta scope-setet; applikationen skapar och slutför bara
+  nya försök med det kompletta setet. Rått state lagras inte.
   Ett unikt partiellt index tillåter högst ett väntande försök per organisation.
   Utgångna rader äldre än 24 timmar rensas opportunistiskt när ett nytt flöde
   startar.

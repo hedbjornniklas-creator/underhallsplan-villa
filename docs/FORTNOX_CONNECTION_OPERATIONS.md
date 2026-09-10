@@ -11,9 +11,10 @@ skapar eller ändrar inga kunder, fakturor eller andra poster i Fortnox.
   vara kopplat till högst en HusHub-organisation.
 - Redirect URI i produktion är exakt:
   `https://hushub.se/api/integrations/fortnox/callback`
-- Begärd och tillåten scope i denna leverans är exakt `companyinformation`.
-  Applikationens validering och databasens constraints avvisar både saknad scope
-  och varje extra scope.
+- Begärd scope i denna leverans är exakt `companyinformation`, `customer` och
+  `invoice`. Applikationens validering och databasens constraints avvisar både
+  partiella och extra scope-set. Äldre `companyinformation`-anslutningar bevaras
+  endast med status `needs_reauthorization`.
 - Authorization code och access-/refresh-token används endast i serverns minne
   och lagras inte. Anslutningsraden innehåller TenantId, företagsnamn,
   organisationsnummer, scopes, status, anslutande profil, felkod,
@@ -38,20 +39,15 @@ inte den lagrade statusen. Administratören kan därefter välja
 
 ## Scopebeslut
 
-Välj bara `companyinformation` i Utvecklarportalen nu. Det behövs för att läsa
-företagsnamn, organisationsnummer och `DatabaseNumber`/TenantId och räcker för
-att skapa en verifierad anslutning.
-
-Välj inte `customer` eller `invoice` i denna leverans:
+Välj `companyinformation`, `customer` och `invoice` i Utvecklarportalen:
 
 - Fortnox scopes ger både läs- och skrivrättighet; det finns inget separat
   read-only-scope.
-- HusHub har ännu ingen aktiverad funktion som behöver dessa rättigheter.
-- `customer` ska läggas till samtidigt som den granskade kundsynkningen byggs.
-- `invoice` ska läggas till först när fakturautkast byggs och riskerna kring
-  skrivning, idempotens och godkännande är hanterade.
-- När scopes senare utökas måste befintliga företag återansluta och godkänna
-  dem på nytt. Kontrollera samtidigt att företaget har nödvändig Fortnox-licens.
+- Denna anslutningsrelease använder fortfarande bara företagsinformationen och
+  skapar ännu inga kunder eller fakturor. Skrivfunktionerna byggs och testas som
+  separata steg med idempotens och uttryckligt användargodkännande.
+- Alla redan anslutna företag måste återansluta och godkänna det kompletta setet.
+  Kontrollera samtidigt att företaget har nödvändig Fortnox-licens.
 
 ## 1. Konfigurera Fortnox Utvecklarportal
 
@@ -60,7 +56,7 @@ Gör detta i JNH Consulting AB:s Fortnox Utvecklarportal:
 1. Öppna den dolda HusHub-integrationen.
 2. Aktivera servicekonto för integrationen.
 3. Behåll integrationen dold/opublicerad under pilotfasen.
-4. Välj endast scopet `companyinformation`.
+4. Välj scopen `companyinformation`, `customer` och `invoice`.
 5. Sätt Redirect URI till exakt
    `https://hushub.se/api/integrations/fortnox/callback` utan avslutande snedstreck.
 6. Spara Client ID och Client Secret i en godkänd lösenords-/hemlighetshanterare.
@@ -72,19 +68,20 @@ servicekontot måste vara systemadministratör i det valda Fortnox-företaget.
 
 ## 2. Applicera databasmigreringen
 
-Granska och kör följande fil genom projektets ordinarie Supabase-flöde eller
+Granska och kör följande filer i ordning genom projektets ordinarie Supabase-flöde eller
 SQL Editor, före applikationsdeployen:
 
-`docs/db/2026-09-09_05_fortnox_connection_foundation.sql`
+1. `docs/db/2026-09-09_05_fortnox_connection_foundation.sql`
+2. `docs/db/2026-09-10_03_fortnox_customer_invoice_scopes.sql`
 
-Migrationen är transaktionell och skapar:
+Migrationerna är transaktionella och skapar eller uppdaterar:
 
 - `organizations.organization_number` i formatet `XXXXXX-XXXX` med giltig
   Luhn-kontrollsiffra;
 - Luhn-kontroll och ett databasskydd som hindrar `anon`/`authenticated` från att
   kringgå den behörighetskontrollerade serverrouten för organisationsnumret;
 - `fortnox_connections` med en rad per organisation, unikt TenantId, en monoton
-  `connection_version` och exakt `companyinformation` som enda lagringsbara scope;
+  `connection_version` och ett strikt scopekontrakt;
 - `fortnox_oauth_states` för kortlivade, hashade engångs-state med en monoton
   försökssekvens och högst ett väntande försök per organisation;
 - `create_fortnox_oauth_state(...)` för att serialisera nya försök och ersätta
@@ -101,6 +98,11 @@ Migrationen är transaktionell och skapar:
   både direkt tabellåtkomst och exekveringsrätt till mutationsfunktionerna.
   Den autentiserade statusrutten gör medlemskontroll och returnerar endast den
   säkra statusprojektionen, aldrig TenantId.
+
+Scopeutökningen markerar befintliga `companyinformation`-anslutningar som
+`needs_reauthorization` och tillåter därefter bara det historiska setet i det
+läget eller det kompletta aktuella setet. Den kan köras om utan att höja
+`connection_version` ytterligare för en redan markerad rad.
 
 De lokala migrationstesterna applicerar SQL i en isolerad PGlite-databas. De
 innebär inte att migreringen har körts i Supabase.
@@ -202,7 +204,8 @@ Gör detta innan STYR:s riktiga konto används:
    gäller. Skapa därefter en sandbox i JNH:s Utvecklarportal. Fortnox tillåter
    flera samtidiga testmiljöer.
 2. Rekommenderat: skapa en separat dold testintegration med servicekonto,
-   `companyinformation` och callback till en dedikerad HTTPS-stagingmiljö:
+   `companyinformation`, `customer`, `invoice` och callback till en dedikerad
+   HTTPS-stagingmiljö:
    `https://<staging-host>/api/integrations/fortnox/callback`.
 3. Lägg testintegrationens Client ID/Secret och exakt samma callback i endast
    stagingmiljön. Sätt även stagingmiljöns `APP_BASE_URL` till dess HTTPS-origin.
@@ -214,7 +217,8 @@ Gör detta innan STYR:s riktiga konto används:
 6. Logga in i sandboxen som systemadministratör, välj rätt testföretag och
    godkänn servicekontot.
 7. Kontrollera att återkomsten visar rätt företagsnamn och organisationsnummer,
-   att scopet är **Företagsinformation** och att `Senast verifierad` har uppdaterats.
+   att behörigheterna är **Företagsinformation**, **Kundregister** och **Fakturor**
+   och att `Senast verifierad` har uppdaterats.
    Klicka därefter **Kontrollera anslutning** och kontrollera att liveverifieringen
    lyckas och uppdaterar tidsstämpeln igen.
 8. Testa ett avsiktligt felaktigt HusHub-organisationsnummer. Flödet ska ge
@@ -240,8 +244,8 @@ where org_id = '<HUSHUB_TEST_ORG_ID>'::uuid;
 ```
 
 Förväntat: exakt en rad, `tenant_id_valid = true`,
-`connection_version_valid = true`, endast `companyinformation` och
-`status = 'connected'`. Klistra inte in TenantId eller andra riktiga
+`connection_version_valid = true`, exakt `companyinformation`, `customer` och
+`invoice` samt `status = 'connected'`. Klistra inte in TenantId eller andra riktiga
 företagsuppgifter i supportloggar.
 
 ## 5. Anslut STYR första gången
@@ -261,7 +265,8 @@ Fortnox.
    `Fortnox anslutet – STYR Projekt Stockholm AB` och samma organisationsnummer
    som sparades i HusHub.
 7. Klicka **Kontrollera anslutning**. Kontrollera därefter `Senast verifierad`,
-   scopet **Företagsinformation** och exakt en databasrad för STYR:s
+   behörigheterna **Företagsinformation**, **Kundregister** och **Fakturor** samt
+   exakt en databasrad för STYR:s
    HusHub-organisation med kontrollfrågan ovan.
 8. Kontrollera en annan HusHub-organisation: den ska fortfarande vara separat
    och inte visa STYR:s anslutning.
@@ -291,10 +296,10 @@ Det går därför att använda samma knapp efter ändrade behörigheter eller et
 det nyaste försöket sparas; en äldre callback ska visas som ersatt och får inte
 skriva över den nyare anslutningen.
 
-Vid framtida scopeutökning ska portalens scopes, kodens scopekontrakt, tester och
-driftdokumentation ändras i samma release. Varje redan ansluten organisation
-måste sedan återansluta. Aktivera aldrig ett nytt write-capable scope enbart i
-portalen och anta att befintliga anslutningar uppdateras.
+Vid en framtida scopeändring ska portalens scopes, kodens scopekontrakt, tester och
+driftdokumentation ändras i samma release. Varje redan ansluten organisation måste
+sedan återansluta. Aktivera aldrig ett nytt write-capable scope enbart i portalen
+och anta att befintliga anslutningar uppdateras.
 
 ## 7. Felsökning
 
@@ -308,7 +313,7 @@ portalen och anta att befintliga anslutningar uppdateras.
 | Fel företag/organisationsnummer | Vald Fortnox-tenant matchar inte HusHub-organisationens juridiska nummer | Kontrollera sparat nummer och starta om flödet med rätt Fortnox-företag |
 | Företaget redan anslutet till annan organisation | Samma TenantId är redan bundet i HusHub | Utred vilken organisation som är korrekt; radera eller flytta inte raden utan beslutad migrering |
 | Saknad behörighet i HusHub | Kontot saknar aktivt org-adminmedlemskap eller exakt Dashboard/Admin-tilldelning | Rätta den befintliga åtkomstmodellen; skapa ingen parallell Fortnox-roll |
-| Databasstödet saknas | Migrationen är inte applicerad i rätt Supabase-projekt | Kör och verifiera migration `2026-09-09_05` |
+| Databasstödet saknas | Migrationerna är inte applicerade i rätt Supabase-projekt | Kör och verifiera `2026-09-09_05` följd av `2026-09-10_03` |
 | Fortnox kan inte nås | Timeout, rate limit eller tillfälligt 5xx-fel | Kontrollera Fortnox driftstatus och försök igen; logga inte provider-svar eller credentials |
 | Anslutningen ändrades under kontrollen | En återanslutning eller parallell livekontroll hann spara en nyare version | Läs den aktuella statusen som Settings hämtar om; kör bara en ny kontroll om statusen fortfarande behöver verifieras |
 | Kontroll visar “Behöver återanslutas” | Fortnox avvisar Client Credentials, access-token, licens eller scope | Kontrollera Fortnox-behörighet och välj **Återanslut Fortnox** som systemadministratör |

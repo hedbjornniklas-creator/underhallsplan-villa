@@ -60,7 +60,7 @@ const CALLBACK_NOTICES: Readonly<Record<string, Notice>> = Object.freeze({
   scope_missing: {
     tone: 'error',
     message:
-      'Fortnox gav inte behörigheten Företagsinformation. Återanslut och godkänn den begärda behörigheten.',
+      'Fortnox gav inte alla behörigheter som behövs för företagsinformation, kunder och fakturor. Återanslut och godkänn de begärda behörigheterna.',
   },
   state_invalid: {
     tone: 'error',
@@ -125,7 +125,7 @@ const API_ERROR_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   FORTNOX_PERMISSION_OR_LICENSE_MISSING:
     'Kontot saknar nödvändig behörighet eller licens i Fortnox.',
   FORTNOX_REQUIRED_SCOPE_MISSING:
-    'Fortnox gav inte behörigheten Företagsinformation. Återanslut Fortnox.',
+    'Fortnox gav inte alla behörigheter för företagsinformation, kunder och fakturor. Återanslut Fortnox.',
   FORTNOX_ORGANIZATION_MISMATCH:
     'Fortnox-företaget stämmer inte med organisationens organisationsnummer.',
   FORTNOX_COMPANY_VERIFICATION_FAILED:

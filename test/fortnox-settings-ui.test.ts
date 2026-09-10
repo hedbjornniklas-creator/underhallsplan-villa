@@ -361,7 +361,7 @@ test('a valid callback orgId overrides the default, is scrubbed from the URL and
     connection: {
       companyName: 'STYR Projekt Stockholm AB',
       organizationNumber: '556123-4567',
-      grantedScopes: ['companyinformation'],
+      grantedScopes: ['companyinformation', 'customer', 'invoice'],
       status: 'connected',
       connectedAt: '2026-09-09T08:00:00.000Z',
       lastVerifiedAt: '2026-09-09T09:00:00.000Z',
@@ -381,6 +381,7 @@ test('a valid callback orgId overrides the default, is scrubbed from the URL and
 
   assert.equal(findElement(tree, (node) => node.type === 'select').props.value, FIRST_ORG_ID)
   assert.ok(textContent(tree).includes('Fortnox anslutet – STYR Projekt Stockholm AB'))
+  assert.ok(textContent(tree).includes('Företagsinformation, Kundregister, Fakturor'))
   assert.ok(textContent(tree).includes('Fortnox har anslutits och verifierats.'))
   assert.equal(harness.history[0], '/settings?keep=1#profile')
   const form = findElement(tree, (node) => node.type === 'form')
@@ -400,7 +401,7 @@ test('a connected callback notice is withheld unless status confirms the same or
     connection: {
       companyName: 'Annat Fortnox-bolag AB',
       organizationNumber: '556765-4321',
-      grantedScopes: ['companyinformation'],
+      grantedScopes: ['companyinformation', 'customer', 'invoice'],
       status: 'connected',
       connectedAt: '2026-09-09T08:00:00.000Z',
       lastVerifiedAt: '2026-09-09T09:00:00.000Z',
@@ -426,7 +427,7 @@ test('an admin can verify the current connection and refresh its visible status'
   const verifiedConnection: NonNullable<Organization['connection']> = {
     companyName: 'Verifierat Fortnox-bolag AB',
     organizationNumber: '556123-4567',
-    grantedScopes: ['companyinformation'],
+    grantedScopes: ['companyinformation', 'customer', 'invoice'],
     status: 'connected',
     connectedAt: '2026-09-09T08:00:00.000Z',
     lastVerifiedAt: '2026-09-09T10:30:00.000Z',
@@ -472,7 +473,7 @@ test('callback failure categories show distinct allowlisted Swedish guidance', a
     ['hushub_access_denied', 'administratörsbehörighet för organisationen i HusHub'],
     ['fortnox_access_denied', 'Fortnox nekade auktoriseringen'],
     ['permission_or_license_missing', 'nödvändig behörighet eller licens i Fortnox'],
-    ['scope_missing', 'behörigheten Företagsinformation'],
+    ['scope_missing', 'behörigheter som behövs för företagsinformation, kunder och fakturor'],
     ['state_invalid', 'ogiltigt, har gått ut eller har redan använts'],
     ['callback_invalid', 'Returen från Fortnox är ogiltig'],
     ['superseded', 'ersattes av ett nyare'],
@@ -539,7 +540,7 @@ test('non-admins have copyable read-only status and no connect or organization-n
         connection: {
           companyName: 'Läsbart Fortnox-bolag AB',
           organizationNumber: '556123-4567',
-          grantedScopes: ['companyinformation'],
+          grantedScopes: ['companyinformation', 'customer', 'invoice'],
           status: 'connected',
           connectedAt: '2026-09-09T08:00:00.000Z',
           lastVerifiedAt: '2026-09-09T09:00:00.000Z',

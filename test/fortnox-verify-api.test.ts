@@ -90,7 +90,7 @@ test('verification POST is same-origin, strictly shaped and returns only safe co
   const connection = {
     companyName: 'HusHub Test AB',
     organizationNumber: '556123-4567',
-    grantedScopes: ['companyinformation'],
+    grantedScopes: ['companyinformation', 'customer', 'invoice'],
     status: 'connected',
     connectedAt: '2026-09-09T09:00:00.000Z',
     lastVerifiedAt: '2026-09-09T10:00:00.000Z',

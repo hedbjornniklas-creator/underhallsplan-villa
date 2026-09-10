@@ -46,14 +46,16 @@ Open `http://localhost:3000`.
 
 The organization-scoped Fortnox service-account connection is operated through
 `docs/FORTNOX_CONNECTION_OPERATIONS.md`. In short: configure the exact callback
-`https://hushub.se/api/integrations/fortnox/callback` and only the
-`companyinformation` scope, apply
-`docs/db/2026-09-09_05_fortnox_connection_foundation.sql`, set the server-only
+`https://hushub.se/api/integrations/fortnox/callback` and the scopes
+`companyinformation`, `customer` and `invoice`. Apply
+`docs/db/2026-09-09_05_fortnox_connection_foundation.sql` followed by
+`docs/db/2026-09-10_03_fortnox_customer_invoice_scopes.sql`, set the server-only
 Vercel variables, deploy, pass the sandbox checklist, and only then connect the
-STYR pilot from `/settings`. The callback logging gate in the runbook must be
-closed before any real sandbox or pilot flow: access/retention alone does not
-prevent OAuth query parameters from being stored by Vercel Runtime Logs or Log
-Drains. No real credentials belong in Git or chat.
+STYR pilot from `/settings`. Existing identity-only connections must be
+reauthorized after the scope migration and deployment. The callback logging gate
+in the runbook must be closed before any real sandbox or pilot flow:
+access/retention alone does not prevent OAuth query parameters from being stored
+by Vercel Runtime Logs or Log Drains. No real credentials belong in Git or chat.
 
 ## Report PDF worker deployment
 

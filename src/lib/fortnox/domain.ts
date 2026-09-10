@@ -3,7 +3,11 @@ export const FORTNOX_TOKEN_ENDPOINT = 'https://apps.fortnox.se/oauth-v1/token'
 export const FORTNOX_API_BASE_URL = 'https://api.fortnox.se/3'
 export const FORTNOX_CALLBACK_PATH = '/api/integrations/fortnox/callback'
 export const FORTNOX_PRODUCTION_REDIRECT_URI = `https://hushub.se${FORTNOX_CALLBACK_PATH}`
-export const FORTNOX_CONNECTION_SCOPES = Object.freeze(['companyinformation'] as const)
+export const FORTNOX_CONNECTION_SCOPES = Object.freeze([
+  'companyinformation',
+  'customer',
+  'invoice',
+] as const)
 
 const ORGANIZATION_NUMBER_PATTERN = /^(\d{6})-?(\d{4})$/
 const SCOPE_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
@@ -107,6 +111,14 @@ export function hasExactFortnoxScopes(
     scopes.length > 0 &&
     scopes.length === required.length &&
     required.every((scope) => scopes.includes(scope))
+  )
+}
+
+/** Accepts the original identity-only grant or the current full grant. */
+export function hasAllowedFortnoxConnectionScopes(value: unknown) {
+  return (
+    hasExactFortnoxScopes(value, ['companyinformation']) ||
+    hasExactFortnoxScopes(value, FORTNOX_CONNECTION_SCOPES)
   )
 }
 

@@ -10,6 +10,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   FORTNOX_CONNECTION_SCOPES,
   buildFortnoxAuthorizationUrl,
+  hasAllowedFortnoxConnectionScopes,
   hasExactFortnoxScopes,
   normalizeFortnoxOrganizationNumber,
   normalizeFortnoxScopes,
@@ -189,11 +190,16 @@ async function requireFortnoxOrganizationAdmin(orgId: string) {
 }
 
 function mapConnection(row: FortnoxConnectionRow): FortnoxConnectionStatus {
+  const grantedScopes = normalizeFortnoxScopes(row.granted_scopes)
   return {
     companyName: row.company_name,
     organizationNumber: row.company_organization_number,
-    grantedScopes: normalizeFortnoxScopes(row.granted_scopes),
-    status: row.status,
+    grantedScopes,
+    status:
+      row.status === 'connected' &&
+      hasExactFortnoxScopes(grantedScopes, FORTNOX_CONNECTION_SCOPES)
+        ? 'connected'
+        : 'needs_reauthorization',
     connectedAt: row.connected_at,
     lastVerifiedAt: row.last_verified_at,
   }
@@ -417,10 +423,14 @@ async function applyFortnoxConnectionVerification(input: {
     ? (data[0] as AppliedVerificationRow | undefined)
     : undefined
   if (!row) throw new Error('FORTNOX_VERIFICATION_SUPERSEDED')
+  const hasValidStatusScopes =
+    row.status === 'connected'
+      ? hasExactFortnoxScopes(row.granted_scopes, FORTNOX_CONNECTION_SCOPES)
+      : row.status === 'needs_reauthorization' &&
+        hasAllowedFortnoxConnectionScopes(row.granted_scopes)
   if (
     normalizeConnectionVersion(row.connection_version) === null ||
-    !hasExactFortnoxScopes(row.granted_scopes, FORTNOX_CONNECTION_SCOPES) ||
-    (row.status !== 'connected' && row.status !== 'needs_reauthorization')
+    !hasValidStatusScopes
   ) {
     throw new Error('FORTNOX_DATABASE_FAILED')
   }

@@ -182,7 +182,7 @@ test('authorization-code exchange sends the exact Fortnox token request and retu
   const token = await provider.exchangeFortnoxAuthorizationCode(
     {
       code: 'one-time-authorization-code',
-      requestedScopes: ['companyinformation'],
+      requestedScopes: fortnoxDomain.FORTNOX_CONNECTION_SCOPES,
       configuration,
     },
     capturingFetch(
@@ -191,7 +191,7 @@ test('authorization-code exchange sends the exact Fortnox token request and retu
         refresh_token: 'refresh-token-never-leak',
         token_type: 'Bearer',
         expires_in: 3600,
-        scope: 'companyinformation companyinformation',
+        scope: 'companyinformation customer invoice customer',
       },
       calls
     )
@@ -199,7 +199,7 @@ test('authorization-code exchange sends the exact Fortnox token request and retu
 
   assert.deepEqual(token, {
     accessToken: 'short-lived-access-token',
-    scopes: ['companyinformation'],
+    scopes: ['companyinformation', 'customer', 'invoice'],
     expiresIn: 3600,
     tokenType: 'bearer',
   })
@@ -230,7 +230,7 @@ test('client-credentials exchange sends TenantId and the requested scope exactly
   const token = await provider.requestFortnoxClientCredentialsToken(
     {
       tenantId: '123456',
-      requestedScopes: ['companyinformation'],
+      requestedScopes: fortnoxDomain.FORTNOX_CONNECTION_SCOPES,
       configuration,
     },
     capturingFetch(
@@ -239,7 +239,7 @@ test('client-credentials exchange sends TenantId and the requested scope exactly
         refresh_token: 'refresh-token-never-leak',
         token_type: 'bearer',
         expires_in: 3600,
-        scope: 'companyinformation',
+        scope: 'companyinformation customer invoice',
       },
       calls
     )
@@ -247,7 +247,7 @@ test('client-credentials exchange sends TenantId and the requested scope exactly
 
   assert.deepEqual(token, {
     accessToken: 'client-credentials-access-token',
-    scopes: ['companyinformation'],
+    scopes: ['companyinformation', 'customer', 'invoice'],
     expiresIn: 3600,
     tokenType: 'bearer',
   })
@@ -272,7 +272,7 @@ test('client-credentials exchange sends TenantId and the requested scope exactly
   )
   assert.deepEqual([...requestBody(call).entries()], [
     ['grant_type', 'client_credentials'],
-    ['scope', 'companyinformation'],
+    ['scope', 'companyinformation customer invoice'],
   ])
 })
 

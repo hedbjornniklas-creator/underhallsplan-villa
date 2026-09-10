@@ -11,6 +11,7 @@ const {
   FORTNOX_PRODUCTION_REDIRECT_URI,
   FORTNOX_TOKEN_ENDPOINT,
   buildFortnoxAuthorizationUrl,
+  hasAllowedFortnoxConnectionScopes,
   hasExactFortnoxScopes,
   hasRequiredFortnoxScopes,
   normalizeFortnoxOrganizationNumber,
@@ -19,13 +20,17 @@ const {
   parseFortnoxTokenResponse,
 } = fortnoxDomain
 
-test('Fortnox endpoints, callback and first-connection scope stay fixed', () => {
+test('Fortnox endpoints, callback and customer/invoice connection scopes stay fixed', () => {
   assert.equal(FORTNOX_AUTHORIZATION_ENDPOINT, 'https://apps.fortnox.se/oauth-v1/auth')
   assert.equal(FORTNOX_TOKEN_ENDPOINT, 'https://apps.fortnox.se/oauth-v1/token')
   assert.equal(FORTNOX_API_BASE_URL, 'https://api.fortnox.se/3')
   assert.equal(FORTNOX_CALLBACK_PATH, '/api/integrations/fortnox/callback')
   assert.equal(FORTNOX_PRODUCTION_REDIRECT_URI, 'https://hushub.se/api/integrations/fortnox/callback')
-  assert.deepEqual(FORTNOX_CONNECTION_SCOPES, ['companyinformation'])
+  assert.deepEqual(FORTNOX_CONNECTION_SCOPES, [
+    'companyinformation',
+    'customer',
+    'invoice',
+  ])
   assert.ok(Object.isFrozen(FORTNOX_CONNECTION_SCOPES))
 })
 
@@ -50,12 +55,22 @@ test('Fortnox scopes are case-sensitive, validated and de-duplicated', () => {
   for (const value of [null, '', [], ['companyinformation customer'], ['companyinformation', 1], 'CompanyInformation', 'companyinformation "customer"']) {
     assert.deepEqual(normalizeFortnoxScopes(value), [], String(value))
   }
-  assert.equal(hasRequiredFortnoxScopes('customer companyinformation'), true)
+  assert.equal(hasRequiredFortnoxScopes('invoice customer companyinformation'), true)
   assert.equal(hasRequiredFortnoxScopes('customer'), false)
   assert.equal(hasRequiredFortnoxScopes('companyinformation', ['companyinformation', 'customer']), false)
-  assert.equal(hasExactFortnoxScopes('companyinformation'), true)
-  assert.equal(hasExactFortnoxScopes('customer companyinformation'), false)
+  assert.equal(hasExactFortnoxScopes('invoice customer companyinformation'), true)
+  assert.equal(hasExactFortnoxScopes('companyinformation'), false)
   assert.equal(hasExactFortnoxScopes('customer'), false)
+  assert.equal(hasAllowedFortnoxConnectionScopes('companyinformation'), true)
+  assert.equal(
+    hasAllowedFortnoxConnectionScopes('invoice companyinformation customer'),
+    true
+  )
+  assert.equal(hasAllowedFortnoxConnectionScopes('companyinformation customer'), false)
+  assert.equal(
+    hasAllowedFortnoxConnectionScopes('companyinformation customer invoice order'),
+    false
+  )
 })
 
 test('authorization URL exactly describes Fortnox service-account consent', () => {
@@ -74,7 +89,7 @@ test('authorization URL exactly describes Fortnox service-account consent', () =
   ])
   assert.equal(url.searchParams.get('client_id'), 'client-id')
   assert.equal(url.searchParams.get('redirect_uri'), FORTNOX_PRODUCTION_REDIRECT_URI)
-  assert.equal(url.searchParams.get('scope'), 'companyinformation')
+  assert.equal(url.searchParams.get('scope'), 'companyinformation customer invoice')
   assert.equal(url.searchParams.get('state'), state)
   assert.equal(url.searchParams.get('access_type'), 'offline')
   assert.equal(url.searchParams.get('response_type'), 'code')
@@ -122,13 +137,13 @@ test('token response parser returns only a valid bearer token and granted scopes
   const parsed = parseFortnoxTokenResponse({
     access_token: 'access-token-value',
     refresh_token: 'must-not-leave-the-parser',
-    scope: 'companyinformation companyinformation',
+    scope: 'companyinformation customer invoice customer',
     expires_in: 3600,
     token_type: 'Bearer',
   })
   assert.deepEqual(parsed, {
     accessToken: 'access-token-value',
-    scopes: ['companyinformation'],
+    scopes: ['companyinformation', 'customer', 'invoice'],
     expiresIn: 3600,
     tokenType: 'bearer',
   })
@@ -138,7 +153,7 @@ test('token response parser returns only a valid bearer token and granted scopes
 test('token response parser fails closed on malformed envelopes and missing scope', () => {
   const valid = {
     access_token: 'access-token-value',
-    scope: 'companyinformation',
+    scope: 'companyinformation customer invoice',
     expires_in: 3600,
     token_type: 'bearer',
   }
@@ -150,7 +165,9 @@ test('token response parser fails closed on malformed envelopes and missing scop
     { ...valid, access_token: 'token with whitespace' },
     { ...valid, scope: undefined },
     { ...valid, scope: 'customer' },
+    { ...valid, scope: 'companyinformation' },
     { ...valid, scope: 'companyinformation customer' },
+    { ...valid, scope: 'companyinformation customer invoice order' },
     { ...valid, expires_in: '3600' },
     { ...valid, expires_in: 0 },
     { ...valid, expires_in: 1.5 },

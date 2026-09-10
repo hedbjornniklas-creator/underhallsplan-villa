@@ -41,6 +41,7 @@ const CALLBACK_STATE = 'state_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 const AUTHORIZATION_CODE = 'one-time-authorization-code'
 const AUTHORIZATION_TOKEN = 'authorization-access-token'
 const CLIENT_CREDENTIALS_TOKEN = 'client-credentials-access-token'
+const CURRENT_SCOPES = ['companyinformation', 'customer', 'invoice']
 const REAUTHORIZATION_ERRORS = [
   'FORTNOX_ACCESS_TOKEN_REJECTED',
   'FORTNOX_CLIENT_CREDENTIALS_REJECTED',
@@ -459,7 +460,7 @@ function serverHarness(options: HarnessOptions = {}) {
       providerCalls.push({ name: 'exchange', input })
       return {
         accessToken: AUTHORIZATION_TOKEN,
-        scopes: ['companyinformation'],
+        scopes: [...CURRENT_SCOPES],
         expiresIn: 3600,
         tokenType: 'bearer' as const,
       }
@@ -471,7 +472,7 @@ function serverHarness(options: HarnessOptions = {}) {
       }
       return {
         accessToken: CLIENT_CREDENTIALS_TOKEN,
-        scopes: ['companyinformation'],
+        scopes: [...CURRENT_SCOPES],
         expiresIn: 3600,
         tokenType: 'bearer' as const,
       }
@@ -629,7 +630,7 @@ test('settings expose only active member organizations, safe status and fail-clo
           companyName: 'Default Fortnox AB',
           organizationNumber: '556765-4321',
           grantedScopes: ['companyinformation'],
-          status: 'connected',
+          status: 'needs_reauthorization',
           connectedAt,
           lastVerifiedAt: verifiedAt,
         },
@@ -706,7 +707,7 @@ test('organization number saves canonically and rejects invalid or connection-co
         tenant_id: '123456',
         company_name: 'Already Connected AB',
         company_organization_number: '556765-4321',
-        granted_scopes: ['companyinformation'],
+        granted_scopes: [...CURRENT_SCOPES],
         status: 'connected',
         connected_at: '2026-09-09T09:00:00.000Z',
         last_verified_at: '2026-09-09T09:05:00.000Z',
@@ -792,7 +793,7 @@ test('live verification uses the stored TenantId and refreshes only safe connect
         tenant_id: '123456',
         company_name: 'Old Company Name AB',
         company_organization_number: ORGANIZATION_NUMBER,
-        granted_scopes: ['companyinformation'],
+        granted_scopes: [...CURRENT_SCOPES],
         status: 'needs_reauthorization',
         connected_at: connectedAt,
         last_verified_at: '2026-09-09T09:05:00.000Z',
@@ -814,7 +815,7 @@ test('live verification uses the stored TenantId and refreshes only safe connect
   )
   assert.deepEqual(harness.providerCalls[0].input, {
     tenantId: '123456',
-    requestedScopes: ['companyinformation'],
+    requestedScopes: [...CURRENT_SCOPES],
     configuration: harness.configuration,
   })
   assert.equal(harness.providerCalls[1].input, CLIENT_CREDENTIALS_TOKEN)
@@ -830,7 +831,7 @@ test('live verification uses the stored TenantId and refreshes only safe connect
         p_tenant_id: '123456',
         p_expected_version: 1,
         p_company_name: 'HusHub Test AB',
-        p_granted_scopes: ['companyinformation'],
+        p_granted_scopes: [...CURRENT_SCOPES],
         p_error_code: null,
       },
     }
@@ -838,7 +839,7 @@ test('live verification uses the stored TenantId and refreshes only safe connect
   assert.deepEqual(result, {
     companyName: 'HusHub Test AB',
     organizationNumber: ORGANIZATION_NUMBER,
-    grantedScopes: ['companyinformation'],
+    grantedScopes: [...CURRENT_SCOPES],
     status: 'connected',
     connectedAt,
     lastVerifiedAt: '2026-09-09T10:00:00.000Z',
@@ -850,6 +851,43 @@ test('live verification uses the stored TenantId and refreshes only safe connect
   assert.equal(serializedResult.includes(harness.configuration.clientSecret), false)
 })
 
+test('legacy identity-only connections require reauthorization before provider access', async () => {
+  const connection: Connection = {
+    org_id: ORG_ID,
+    tenant_id: '123456',
+    connection_version: 4,
+    company_name: 'HusHub Test AB',
+    company_organization_number: ORGANIZATION_NUMBER,
+    granted_scopes: ['companyinformation'],
+    status: 'connected',
+    connected_at: '2026-09-09T09:00:00.000Z',
+    last_verified_at: '2026-09-09T09:05:00.000Z',
+  }
+  const harness = serverHarness({ connections: [connection] })
+
+  await assert.rejects(
+    harness.server.verifyFortnoxConnection(ORG_ID),
+    /FORTNOX_REQUIRED_SCOPE_MISSING/
+  )
+
+  assert.equal(harness.providerCalls.length, 0)
+  assert.deepEqual(
+    harness.rpcCalls.find(
+      (call) => call.name === 'apply_fortnox_connection_verification'
+    )?.input,
+    {
+      p_org_id: ORG_ID,
+      p_tenant_id: '123456',
+      p_expected_version: 4,
+      p_company_name: null,
+      p_granted_scopes: null,
+      p_error_code: 'FORTNOX_REQUIRED_SCOPE_MISSING',
+    }
+  )
+  assert.equal(connection.status, 'needs_reauthorization')
+  assert.equal(connection.connection_version, 5)
+})
+
 test('live verification marks rejected credentials for reauthorization but leaves transient failures unchanged', async () => {
   const connectionFixture = (): Connection => ({
     org_id: ORG_ID,
@@ -857,7 +895,7 @@ test('live verification marks rejected credentials for reauthorization but leave
     connection_version: 1,
     company_name: 'HusHub Test AB',
     company_organization_number: ORGANIZATION_NUMBER,
-    granted_scopes: ['companyinformation'],
+    granted_scopes: [...CURRENT_SCOPES],
     status: 'connected',
     connected_at: '2026-09-09T09:00:00.000Z',
     last_verified_at: '2026-09-09T09:05:00.000Z',
@@ -926,7 +964,7 @@ test('live verification fails closed when a newer connection version wins the ra
     connection_version: 7,
     company_name: 'HusHub Test AB',
     company_organization_number: ORGANIZATION_NUMBER,
-    granted_scopes: ['companyinformation'],
+    granted_scopes: [...CURRENT_SCOPES],
     status: 'connected',
     connected_at: '2026-09-09T09:00:00.000Z',
     last_verified_at: '2026-09-09T09:05:00.000Z',
@@ -950,7 +988,7 @@ test('live verification fails closed when a newer connection version wins the ra
       p_tenant_id: '123456',
       p_expected_version: 7,
       p_company_name: 'HusHub Test AB',
-      p_granted_scopes: ['companyinformation'],
+      p_granted_scopes: [...CURRENT_SCOPES],
       p_error_code: null,
     }
   )
@@ -966,7 +1004,7 @@ test('every permanent connection error uses the versioned reauthorization RPC co
       connection_version: 11,
       company_name: 'HusHub Test AB',
       company_organization_number: ORGANIZATION_NUMBER,
-      granted_scopes: ['companyinformation'],
+      granted_scopes: [...CURRENT_SCOPES],
       status: 'connected',
       connected_at: '2026-09-09T09:00:00.000Z',
       last_verified_at: '2026-09-09T09:05:00.000Z',
@@ -1022,7 +1060,7 @@ test('authorization state is random in the URL and persisted only as a profile-b
   assert.notEqual(persisted.state_hash, state)
   assert.equal(persisted.org_id, ORG_ID)
   assert.equal(persisted.initiated_by_profile_id, PROFILE_ID)
-  assert.deepEqual(persisted.requested_scopes, ['companyinformation'])
+  assert.deepEqual(persisted.requested_scopes, CURRENT_SCOPES)
   assert.ok(
     new Date(String(persisted.expires_at)).getTime() >= startedAt + 10 * 60 * 1000
   )
@@ -1048,7 +1086,7 @@ test('callback state is validated and atomically consumed for the current profil
     states: {
       [CALLBACK_STATE]: {
         profileId: OTHER_PROFILE_ID,
-        row: { org_id: ORG_ID, requested_scopes: ['companyinformation'] },
+        row: { org_id: ORG_ID, requested_scopes: [...CURRENT_SCOPES] },
       },
     },
   })
@@ -1073,11 +1111,29 @@ test('callback state is validated and atomically consumed for the current profil
   assert.equal(wrongProfile.providerCalls.length, 0)
   assert.equal(wrongProfile.connectionUpserts.length, 0)
 
-  const cancelled = serverHarness({
+  const legacyState = serverHarness({
     states: {
       [CALLBACK_STATE]: {
         profileId: PROFILE_ID,
         row: { org_id: ORG_ID, requested_scopes: ['companyinformation'] },
+      },
+    },
+  })
+  await assert.rejects(
+    legacyState.server.completeFortnoxAuthorization({
+      state: CALLBACK_STATE,
+      code: AUTHORIZATION_CODE,
+    }),
+    /FORTNOX_STATE_INVALID/
+  )
+  assert.equal(legacyState.providerCalls.length, 0)
+  assert.equal(legacyState.connectionUpserts.length, 0)
+
+  const cancelled = serverHarness({
+    states: {
+      [CALLBACK_STATE]: {
+        profileId: PROFILE_ID,
+        row: { org_id: ORG_ID, requested_scopes: [...CURRENT_SCOPES] },
       },
     },
   })
@@ -1102,7 +1158,7 @@ test('callback state is validated and atomically consumed for the current profil
       states: {
         [CALLBACK_STATE]: {
           profileId: PROFILE_ID,
-          row: { org_id: ORG_ID, requested_scopes: ['companyinformation'] },
+          row: { org_id: ORG_ID, requested_scopes: [...CURRENT_SCOPES] },
         },
       },
     })
@@ -1122,7 +1178,7 @@ test('successful callback verifies both grants and persists one safe connection 
     states: {
       [CALLBACK_STATE]: {
         profileId: PROFILE_ID,
-        row: { org_id: ORG_ID, requested_scopes: ['companyinformation'] },
+        row: { org_id: ORG_ID, requested_scopes: [...CURRENT_SCOPES] },
       },
     },
   })
@@ -1148,13 +1204,13 @@ test('successful callback verifies both grants and persists one safe connection 
   )
   assert.deepEqual(harness.providerCalls[0].input, {
     code: AUTHORIZATION_CODE,
-    requestedScopes: ['companyinformation'],
+    requestedScopes: [...CURRENT_SCOPES],
     configuration: harness.configuration,
   })
   assert.equal(harness.providerCalls[1].input, AUTHORIZATION_TOKEN)
   assert.deepEqual(harness.providerCalls[2].input, {
     tenantId: '123456',
-    requestedScopes: ['companyinformation'],
+    requestedScopes: [...CURRENT_SCOPES],
     configuration: harness.configuration,
   })
   assert.equal(harness.providerCalls[3].input, CLIENT_CREDENTIALS_TOKEN)
@@ -1179,7 +1235,7 @@ test('successful callback verifies both grants and persists one safe connection 
   assert.equal(upsert.payload.tenant_id, '123456')
   assert.equal(upsert.payload.company_name, 'HusHub Test AB')
   assert.equal(upsert.payload.company_organization_number, ORGANIZATION_NUMBER)
-  assert.deepEqual(upsert.payload.granted_scopes, ['companyinformation'])
+  assert.deepEqual(upsert.payload.granted_scopes, CURRENT_SCOPES)
   assert.equal(upsert.payload.status, 'connected')
   assert.equal(upsert.payload.connected_by_profile_id, PROFILE_ID)
   assert.equal(upsert.payload.connected_at, upsert.payload.last_verified_at)
@@ -1201,7 +1257,7 @@ test('successful callback verifies both grants and persists one safe connection 
     orgId: ORG_ID,
     companyName: 'HusHub Test AB',
     organizationNumber: ORGANIZATION_NUMBER,
-    grantedScopes: ['companyinformation'],
+    grantedScopes: [...CURRENT_SCOPES],
     status: 'connected',
     connectedAt: upsert.payload.connected_at,
     lastVerifiedAt: upsert.payload.last_verified_at,
@@ -1224,7 +1280,7 @@ test('organization mismatch aborts before client credentials or persistence', as
     states: {
       [CALLBACK_STATE]: {
         profileId: PROFILE_ID,
-        row: { org_id: ORG_ID, requested_scopes: ['companyinformation'] },
+        row: { org_id: ORG_ID, requested_scopes: [...CURRENT_SCOPES] },
       },
     },
     initialCompany: {
@@ -1253,7 +1309,7 @@ test('a TenantId uniqueness conflict is reported without a second or credential-
     states: {
       [CALLBACK_STATE]: {
         profileId: PROFILE_ID,
-        row: { org_id: ORG_ID, requested_scopes: ['companyinformation'] },
+        row: { org_id: ORG_ID, requested_scopes: [...CURRENT_SCOPES] },
       },
     },
     upsertError: { code: '23505', message: 'unique violation' },
@@ -1284,7 +1340,7 @@ test('a superseded OAuth attempt fails closed without exposing callback credenti
     states: {
       [CALLBACK_STATE]: {
         profileId: PROFILE_ID,
-        row: { org_id: ORG_ID, requested_scopes: ['companyinformation'] },
+        row: { org_id: ORG_ID, requested_scopes: [...CURRENT_SCOPES] },
       },
     },
     saveResult: false,
