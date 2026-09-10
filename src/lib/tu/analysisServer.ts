@@ -46,7 +46,7 @@ const TU_ANALYSIS_MODEL =
   process.env.OPENAI_TU_ANALYSIS_MODEL?.trim()
   || 'gpt-5.6'
 const RULESET_KEY = 'tu_ai_assisted_inspection_v1'
-const RULESET_VERSION = 1
+const RULESET_VERSION = 2
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
@@ -979,6 +979,10 @@ function synthesisRequestBody(input: {
       'En teknisk hypotes ska ha certainty probable eller uncertain och redovisa både stöd och motsägelser.',
       'En bildanalys visar endast synliga bildfakta och får inte ensam bevisa dolda förhållanden eller skadeorsak.',
       'Besiktningsmannens egna bilder dokumenterar observationerna och ska inte behandlas som ett fristående externt bildmaterial.',
+      'Skapa efter helhetsanalysen ett begränsat urval av report_image-poster för bilder som tydligt stödjer utlåtandets centrala observationer. Välj inte bilder enbart för att fylla bilagan.',
+      'Varje report_image ska innehålla exakt ett sourceImageId, ha includeInReport true och använda bildanalysens kvalitet, relevans och möjliga dubbletter. Uteslut oanvändbara, lågrelevanta och överflödigt likartade bilder.',
+      'För report_image ska title ange en kort plats- eller observationsgrupp och summary vara en saklig kundanpassad bildtext. Beskriv endast synliga förhållanden samt plats eller byggnadsdel som stöds av källorna.',
+      'Sortera report_image-poster i en begriplig bilageordning grupperad efter plats och observation, inte efter den ordning bilderna togs.',
       'Följ sourcePolicy när den finns. Aktuellt skick och aktuell teknisk bedömning ska då grundas på observationer, egna bilder och kvalificerade mätningar från den aktuella kontrollen.',
       'Om underlaget innehåller en godkänd controlPlan är den endast ett internt orienteringsstöd. Skilj dess tidigare uppgifter, rekommendationer, åtgärdspåståenden och kontrollkrav från besiktningsmannens egna resultat.',
       'Skapa inte ett analysresultat per kontrollpunkt och återge inte kontrollplanen som en checklista. Gruppera i stället dagens observationer efter faktiskt område eller förhållande.',

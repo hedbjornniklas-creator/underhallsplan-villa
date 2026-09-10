@@ -7,17 +7,20 @@ import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
+import TuImageAppendixProposalDrawer, { type TuAppendixProposalApplyResult } from '@/components/tu/TuImageAppendixProposalDrawer'
 import TuPostDamagePreparationWorkspace from '@/components/tu/TuPostDamagePreparationWorkspace'
 import TuPostDamageFieldChecklist from '@/components/tu/TuPostDamageFieldChecklist'
 import TuPrintActions from '@/components/tu/TuPrintActions'
 import TuReportReviewDrawer from '@/components/tu/TuReportReviewDrawer'
 import TuWorkflowRail from '@/components/tu/TuWorkflowRail'
+import { useToast } from '@/components/ui/AppToastProvider'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueue'
 import { useTuWorkflowState } from '@/hooks/useTuWorkflowState'
 import { supabase } from '@/lib/supabaseClient'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
+import { effectiveTuReportImageCaption, isGenericTuImageCaption } from '@/lib/tu/imageAppendix'
 import {
   resolveTuReportDocumentTitle,
   resolveTuReportProjectType,
@@ -54,6 +57,7 @@ type TuInvestigationImage = {
   filePath: string
   publicUrl: string
   caption: string | null
+  reportCaption: string | null
   sortOrder: number
   uploadedBy: string | null
   createdAt: string | null
@@ -760,6 +764,7 @@ export default function TuInvestigationEditorClient({
   const [appendixReorderStatus, setAppendixReorderStatus] = useState<'idle' | 'queued' | 'saving'>('idle')
   const [appendixInsertIndex, setAppendixInsertIndex] = useState<number | null>(null)
   const [appendixDropBusyIndex, setAppendixDropBusyIndex] = useState<number | null>(null)
+  const [appendixProposalOpen, setAppendixProposalOpen] = useState(false)
   const [documents, setDocuments] = useState<TuInvestigationDocument[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [documentBusy, setDocumentBusy] = useState(false)
@@ -781,6 +786,7 @@ export default function TuInvestigationEditorClient({
   const [reportReviewTarget, setReportReviewTarget] = useState<
     { id: string; title: string } | null | undefined
   >(undefined)
+  const toast = useToast()
   const aiWorkflowEnabled = usesTuAiAssistedWorkflow(
     initialInvestigation.reportAuthoringMode,
     initialInvestigation.reportTemplateKey
@@ -1621,7 +1627,11 @@ export default function TuInvestigationEditorClient({
           </div>
           <div className="relative min-h-0 flex-1">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={previewImage.publicUrl} alt={previewImage.caption ?? ''} className="h-full w-full object-contain" />
+            <img
+              src={previewImage.publicUrl}
+              alt={previewImage.sectionKey === 'appendix' ? effectiveTuReportImageCaption(previewImage) : previewImage.caption ?? ''}
+              className="h-full w-full object-contain"
+            />
             {canNavigate ? (
               <>
                 <button
@@ -1647,7 +1657,9 @@ export default function TuInvestigationEditorClient({
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-white shadow-lg backdrop-blur">
             <div className="min-w-0 text-xs text-white/75">
-              {previewImage.caption?.trim() ? previewImage.caption : 'Ingen bildtext angiven.'}
+              {previewImage.sectionKey === 'appendix'
+                ? effectiveTuReportImageCaption(previewImage) || 'Ingen bildtext angiven.'
+                : previewImage.caption?.trim() || 'Ingen bildtext angiven.'}
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -1716,6 +1728,60 @@ export default function TuInvestigationEditorClient({
     } finally {
       setImageBusy(false)
     }
+  }
+
+  const applyAppendixProposal = async (
+    rows: Array<{ imageId: string; reportCaption: string }>
+  ): Promise<TuAppendixProposalApplyResult> => {
+    if (locked || rows.length === 0) {
+      return { succeededImageIds: [], failedCount: rows.length }
+    }
+
+    const currentImages = imagesRef.current
+    const appendixSortOrders = currentImages
+      .filter((image) => image.sectionKey === 'appendix')
+      .map((image) => image.sortOrder)
+    const firstSortOrder = (appendixSortOrders.length > 0 ? Math.max(...appendixSortOrders) : 0) + 10
+
+    setImageBusy(true)
+    setImageError(null)
+    rows.forEach((row) => setImageActionTarget(row.imageId, 'appendix'))
+    const results = await Promise.allSettled(
+      rows.map((row, index) => patchImageRequest(row.imageId, {
+        sectionKey: 'appendix',
+        sortOrder: firstSortOrder + index * 10,
+        reportCaption: row.reportCaption,
+      }))
+    )
+    const savedImages = results.flatMap((result) => (
+      result.status === 'fulfilled' && result.value ? [result.value as TuInvestigationImage] : []
+    ))
+    const succeededImageIds = savedImages.map((image) => image.id)
+    const failedCount = results.length - savedImages.length
+
+    if (savedImages.length > 0) {
+      setImages((current) => {
+        const next = upsertImages(current, savedImages)
+        imagesRef.current = next
+        return next
+      })
+    }
+    rows.forEach((row) => setImageActionTarget(row.imageId, null))
+    setImageBusy(false)
+
+    if (failedCount > 0) {
+      toast.error('Några bilder kunde inte läggas till i bilagan. Försök igen.', {
+        appearance: 'dark',
+        dedupeKey: 'tu-appendix-proposal-partial-error',
+      })
+    } else {
+      toast.success(
+        `${savedImages.length} bild${savedImages.length === 1 ? '' : 'er'} lades till i bilagan.`,
+        { appearance: 'dark', dedupeKey: 'tu-appendix-proposal-applied' }
+      )
+    }
+
+    return { succeededImageIds, failedCount }
   }
 
   const deleteImage = async (imageId: string) => {
@@ -2947,16 +3013,29 @@ export default function TuInvestigationEditorClient({
                 </p>
               ) : null}
             </div>
-              <button
-                type="button"
-                onClick={() => appendixFileInputRef.current?.click()}
-                disabled={locked || imageBusy}
-                aria-busy={imageDropBusySection === 'appendix'}
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
-              >
-                {imageDropBusySection === 'appendix' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
-                {imageDropBusySection === 'appendix' ? 'Bearbetar...' : 'Direkt till bilaga'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {aiWorkflowEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => setAppendixProposalOpen(true)}
+                    disabled={locked || imagesLoading || imageBusy}
+                    className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  >
+                    <Sparkles size={16} aria-hidden />
+                    Föreslå bildbilaga
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => appendixFileInputRef.current?.click()}
+                  disabled={locked || imageBusy}
+                  aria-busy={imageDropBusySection === 'appendix'}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                >
+                  {imageDropBusySection === 'appendix' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+                  {imageDropBusySection === 'appendix' ? 'Bearbetar...' : 'Direkt till bilaga'}
+                </button>
+              </div>
               <input
                 ref={appendixFileInputRef}
                 type="file"
@@ -3040,7 +3119,7 @@ export default function TuInvestigationEditorClient({
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={image.publicUrl}
-                            alt={image.caption ?? 'Bilagebild'}
+                            alt={effectiveTuReportImageCaption(image) || 'Bilagebild'}
                             className={`aspect-square w-full object-cover ${actionPending ? 'opacity-55' : ''}`}
                           />
                         </button>
@@ -3119,24 +3198,24 @@ export default function TuInvestigationEditorClient({
                         </div>
                       </div>
                       <textarea
-                        value={image.caption ?? ''}
+                        value={image.reportCaption ?? image.caption ?? ''}
                         rows={3}
                         disabled={locked || actionPending}
                         onChange={(event) => {
-                          const caption = event.target.value
+                          const reportCaption = event.target.value
                           setImages((current) => {
                             const next = current.map((currentImage) =>
-                              currentImage.id === image.id ? { ...currentImage, caption } : currentImage
+                              currentImage.id === image.id ? { ...currentImage, reportCaption } : currentImage
                             )
                             imagesRef.current = next
                             return next
                           })
                         }}
-                        onBlur={(event) => void patchImage(image.id, { caption: event.target.value })}
+                        onBlur={(event) => void patchImage(image.id, { reportCaption: event.target.value })}
                         className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="Plats, byggnadsdel och vad bilden visar"
                       />
-                      {!image.caption?.trim() || /^(?:bild|foto|besiktningsbild)(?:\s+\d+)?$/i.test(image.caption.trim()) ? (
+                      {isGenericTuImageCaption(effectiveTuReportImageCaption(image)) ? (
                         <p className="text-xs font-medium text-amber-700">
                           Lägg till en beskrivande bildtext innan utlåtandet fastställs.
                         </p>
@@ -3612,6 +3691,16 @@ export default function TuInvestigationEditorClient({
             target={reportReviewTarget}
             onClose={() => setReportReviewTarget(undefined)}
             onApplySections={applyWholeReportDraft}
+          />
+        ) : null}
+        {appendixProposalOpen ? (
+          <TuImageAppendixProposalDrawer
+            inspectionId={investigation.inspectionId}
+            images={images}
+            locked={locked}
+            onClose={() => setAppendixProposalOpen(false)}
+            onPreviewImage={setPreviewImageId}
+            onApply={applyAppendixProposal}
           />
         ) : null}
         {renderImagePreview()}

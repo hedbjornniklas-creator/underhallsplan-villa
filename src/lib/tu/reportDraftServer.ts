@@ -522,7 +522,8 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   if (!analysisRun) throw new Error('TU_ANALYSIS_NOT_APPROVED')
   const acceptedItems = (analysisItems ?? []) as unknown as Array<Record<string, unknown>>
   const reportItems = acceptedItems.filter((item) => (
-    item.include_in_report === true || item.item_type === 'current_assessment'
+    item.item_type !== 'report_image'
+    && (item.include_in_report === true || item.item_type === 'current_assessment')
   ))
   const resolvedConflicts = acceptedItems.filter((item) => item.item_type === 'evidence_conflict')
   if (reportItems.length === 0) throw new Error('TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS')

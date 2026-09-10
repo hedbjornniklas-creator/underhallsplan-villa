@@ -170,6 +170,7 @@ export type TuInvestigationImage = {
   filePath: string
   publicUrl: string
   caption: string | null
+  reportCaption: string | null
   sortOrder: number
   uploadedBy: string | null
   createdAt: string | null
@@ -255,6 +256,7 @@ type TuImageRow = {
   storage_bucket: string | null
   file_path: string
   caption: string | null
+  report_caption: string | null
   sort_order: number | null
   uploaded_by: string | null
   created_at: string | null
@@ -1630,7 +1632,7 @@ export async function getTuInvestigationById(input: {
 }
 
 const TU_IMAGE_COLUMNS =
-  'id,inspection_id,org_id,section_key,storage_bucket,file_path,caption,sort_order,uploaded_by,created_at,updated_at'
+  'id,inspection_id,org_id,section_key,storage_bucket,file_path,caption,report_caption,sort_order,uploaded_by,created_at,updated_at'
 
 function normalizeTuImageSectionKey(value: string | null | undefined): 'bank' | 'appendix' | 'cover' {
   if (value === 'appendix') return 'appendix'
@@ -1649,6 +1651,7 @@ function mapTuInvestigationImage(row: TuImageRow, admin: TuStorageClient): TuInv
     filePath: row.file_path,
     publicUrl: admin.storage.from(bucket).getPublicUrl(row.file_path).data.publicUrl,
     caption: row.caption,
+    reportCaption: row.report_caption,
     sortOrder: row.sort_order ?? 100,
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,

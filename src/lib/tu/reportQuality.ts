@@ -37,6 +37,7 @@ export type TuReportImprovementReview = {
 type ReportImage = {
   id: string
   caption: string | null
+  reportCaption?: string | null
 }
 
 function clean(value: string | null | undefined) {
@@ -50,6 +51,10 @@ export function isTuSystemGeneratedReportSection(sectionKey: string) {
 function isGenericCaption(value: string | null | undefined) {
   const caption = clean(value).toLocaleLowerCase('sv-SE')
   return !caption || /^(?:bild|foto|besiktningsbild)(?:\s+\d+)?$/.test(caption)
+}
+
+function reportImageCaption(image: ReportImage) {
+  return clean(image.reportCaption) || clean(image.caption)
 }
 
 function boundedScore(value: number): 1 | 2 | 3 | 4 | 5 {
@@ -74,7 +79,7 @@ export function evaluateTuReportImprovements(input: {
     || !clean(measurement.method)
     || !clean(measurement.instrument)
   ))
-  const genericCaptionCount = input.appendixImages.filter((image) => isGenericCaption(image.caption)).length
+  const genericCaptionCount = input.appendixImages.filter((image) => isGenericCaption(reportImageCaption(image))).length
   const blockerCount = input.qualityIssues.filter((issue) => issue.severity === 'blocker').length
   const warningCount = input.qualityIssues.filter((issue) => issue.severity === 'warning').length
   const scopeIsExplicit = /(?:uppdrag|frågeställning)/i.test(input.reportText)
@@ -345,7 +350,7 @@ export function evaluateTuReportQuality(input: {
     }
   }
 
-  const genericCaptionCount = input.appendixImages.filter((image) => isGenericCaption(image.caption)).length
+  const genericCaptionCount = input.appendixImages.filter((image) => isGenericCaption(reportImageCaption(image))).length
   if (genericCaptionCount > 0) {
     issues.push({
       id: 'appendix-caption-missing',

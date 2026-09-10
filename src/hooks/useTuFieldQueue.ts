@@ -25,6 +25,7 @@ export type TuFieldServerImage = {
   filePath: string
   publicUrl: string
   caption: string | null
+  reportCaption: string | null
   sortOrder: number
   uploadedBy: string | null
   createdAt: string | null

@@ -26,7 +26,7 @@
     "test:besiktapp-invitations": "node --experimental-strip-types --test test/besiktapp-invitations.test.ts",
     "test:besiktapp-start": "node --experimental-strip-types --test test/besiktapp-getting-started.test.ts",
     "test:fortnox": "node --experimental-strip-types --test test/fortnox-connection-foundation.test.ts test/fortnox-scope-expansion.test.ts test/fortnox-domain.test.ts test/fortnox-provider.test.ts test/fortnox-server.test.ts test/fortnox-http.test.ts test/fortnox-api.test.ts test/fortnox-verify-api.test.ts test/fortnox-settings-ui.test.ts test/platform-access-multiorg.test.ts",
-    "test:tu": "node --experimental-strip-types --test test/tu-authoring-mode.test.ts test/tu-grounding.test.ts test/tu-report-background.test.ts test/tu-report-editorial.test.ts test/tu-report-quality.test.ts test/tu-workflow-profile.test.ts"
+    "test:tu": "node --experimental-strip-types --test test/tu-authoring-mode.test.ts test/tu-grounding.test.ts test/tu-image-appendix.test.ts test/tu-report-background.test.ts test/tu-report-editorial.test.ts test/tu-report-quality.test.ts test/tu-workflow-profile.test.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",

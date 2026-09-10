@@ -66,6 +66,7 @@ type TuInvestigationImageRow = {
   storage_bucket: string | null
   file_path: string
   caption: string | null
+  report_caption: string | null
   sort_order: number | null
   uploaded_by: string | null
   created_at: string | null
@@ -73,7 +74,7 @@ type TuInvestigationImageRow = {
 }
 
 const IMAGE_COLUMNS =
-  'id,inspection_id,org_id,section_key,storage_bucket,file_path,caption,sort_order,uploaded_by,created_at,updated_at'
+  'id,inspection_id,org_id,section_key,storage_bucket,file_path,caption,report_caption,sort_order,uploaded_by,created_at,updated_at'
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -202,6 +203,7 @@ function mapImage(row: TuInvestigationImageRow, admin: TuImageSupabaseClient) {
     filePath: row.file_path,
     publicUrl: admin.storage.from(bucket).getPublicUrl(row.file_path).data.publicUrl,
     caption: row.caption,
+    reportCaption: row.report_caption,
     sortOrder: row.sort_order ?? 100,
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,
@@ -508,6 +510,9 @@ export async function PATCH(
 
     const patch: Record<string, unknown> = {}
     if ('caption' in body) patch.caption = cleanText(body.caption)
+    if ('reportCaption' in body || 'report_caption' in body) {
+      patch.report_caption = cleanText(body.reportCaption ?? body.report_caption)
+    }
     if ('sectionKey' in body || 'section_key' in body) {
       patch.section_key = normalizeSectionKey(body.sectionKey ?? body.section_key)
     }

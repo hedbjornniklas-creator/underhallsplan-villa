@@ -73,6 +73,19 @@ test('warns about generic appendix captions', () => {
   assert.ok(issues.some((issue) => issue.id === 'appendix-caption-missing'))
 })
 
+test('uses the customer-facing appendix caption when the source caption is generic', () => {
+  const issues = evaluateTuReportQuality({
+    reportText: '',
+    observations: [],
+    appendixImages: [{
+      id: 'image-1',
+      caption: 'Bild 1',
+      reportCaption: 'Missfärgning i innertaket vid kontorets norra vägg.',
+    }],
+  })
+  assert.ok(!issues.some((issue) => issue.id === 'appendix-caption-missing'))
+})
+
 test('blocks internal source language in the customer report', () => {
   const issues = evaluateTuReportQuality({
     reportText: 'Den registrerade uppdragsbeskrivningen anger att fläcken ska undersökas.',
