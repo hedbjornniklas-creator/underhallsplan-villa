@@ -36,12 +36,16 @@ export type OrganizationCustomer = OrganizationCustomerInput & {
   updatedAt: string
 }
 
+export type OrganizationCustomerOrganization = {
+  id: string
+  name: string | null
+  isDefault: boolean
+  canManage: boolean
+}
+
 export type OrganizationCustomerWorkspace = {
-  organization: {
-    id: string
-    name: string | null
-    canManage: boolean
-  }
+  organization: OrganizationCustomerOrganization
+  organizations: OrganizationCustomerOrganization[]
   customers: OrganizationCustomer[]
 }
 

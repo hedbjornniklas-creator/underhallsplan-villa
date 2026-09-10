@@ -13,9 +13,19 @@ import {
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const workspace = await getOrganizationCustomerWorkspace()
+    const searchParams = new URL(request.url).searchParams
+    if (
+      [...searchParams.keys()].some((key) => key !== 'orgId') ||
+      searchParams.getAll('orgId').length > 1 ||
+      (searchParams.has('orgId') && !searchParams.get('orgId'))
+    ) {
+      throw new Error('CUSTOMER_REQUEST_INVALID')
+    }
+    const workspace = await getOrganizationCustomerWorkspace(
+      searchParams.get('orgId') ?? undefined
+    )
     return NextResponse.json({ workspace }, { headers: CUSTOMER_RESPONSE_HEADERS })
   } catch (error) {
     const failure = customerFailure(error)
@@ -30,10 +40,14 @@ export async function POST(request: Request) {
   try {
     assertCustomerSameOrigin(request)
     const body = await readCustomerJson(request)
-    if (Object.keys(body).length !== 1 || !('customer' in body)) {
+    if (
+      Object.keys(body).length !== 2 ||
+      !('orgId' in body) ||
+      !('customer' in body)
+    ) {
       throw new Error('CUSTOMER_REQUEST_INVALID')
     }
-    const customer = await createOrganizationCustomer(body.customer)
+    const customer = await createOrganizationCustomer(body.orgId, body.customer)
     return NextResponse.json(
       { customer },
       { status: 201, headers: CUSTOMER_RESPONSE_HEADERS }

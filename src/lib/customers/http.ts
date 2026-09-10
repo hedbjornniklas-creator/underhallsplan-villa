@@ -35,6 +35,14 @@ const FAILURES: Readonly<Record<string, Omit<CustomerFailure, 'code'>>> = Object
     message: 'Endast en organisationsadministratör kan ändra kundregistret.',
     status: 403,
   },
+  CUSTOMER_ORGANIZATION_MEMBER_REQUIRED: {
+    message: 'Du saknar behörighet till den valda organisationen.',
+    status: 403,
+  },
+  CUSTOMER_ORGANIZATION_INVALID: {
+    message: 'Den valda organisationen är ogiltig.',
+    status: 400,
+  },
   CUSTOMER_ORIGIN_FORBIDDEN: {
     message: 'Otillåten begäran.',
     status: 403,

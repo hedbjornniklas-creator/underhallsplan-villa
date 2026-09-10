@@ -1,12 +1,15 @@
 import 'server-only'
 
-import { hasCurrentUserAccess } from '@/lib/access/server'
-import { requireOrgContext } from '@/lib/assignments/server'
+import {
+  requireProductAccess,
+  type PlatformAccessContext,
+} from '@/lib/access/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   parseOrganizationCustomerInput,
   type OrganizationCustomer,
   type OrganizationCustomerInput,
+  type OrganizationCustomerOrganization,
   type OrganizationCustomerType,
   type OrganizationCustomerWorkspace,
 } from './domain'
@@ -83,6 +86,14 @@ type CustomerRow = {
   updated_at: string
 }
 
+type OrganizationMembershipRow = {
+  org_id: string
+  role: 'admin' | 'inspector'
+  is_default: boolean
+  created_at: string
+  organizations: { name?: unknown } | Array<{ name?: unknown }> | null
+}
+
 function databaseFailure(error: DatabaseError): never {
   if (
     error?.code === '42P01' ||
@@ -111,6 +122,17 @@ function databaseFailure(error: DatabaseError): never {
 function customerId(value: unknown) {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
     throw new Error('CUSTOMER_ID_INVALID')
+  }
+  return value
+}
+
+function organizationId(value: unknown, required: boolean) {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new Error('CUSTOMER_ORGANIZATION_INVALID')
+    return null
+  }
+  if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
+    throw new Error('CUSTOMER_ORGANIZATION_INVALID')
   }
   return value
 }
@@ -189,27 +211,85 @@ function toDatabaseValues(input: OrganizationCustomerInput, profileId: string) {
   }
 }
 
-async function customerContext(requireAdmin: boolean) {
-  const organization = await requireOrgContext()
-  const canRead = await hasCurrentUserAccess({
-    productKey: 'dashboard',
-    scopeType: 'organization',
-    scopeId: organization.orgId,
-  })
-  if (!canRead) throw new Error('PRODUCT_ACCESS_REQUIRED')
+function relationName(value: OrganizationMembershipRow['organizations']) {
+  const organization = Array.isArray(value) ? value[0] : value
+  return typeof organization?.name === 'string' && organization.name.trim()
+    ? organization.name.trim()
+    : null
+}
 
-  const canManage =
-    organization.role === 'admin' &&
-    (await hasCurrentUserAccess({
-      productKey: 'dashboard',
-      moduleKey: 'admin',
-      scopeType: 'organization',
-      scopeId: organization.orgId,
-    }))
-  if (requireAdmin && !canManage) {
+function dashboardAssignments(context: PlatformAccessContext) {
+  return context.assignments.filter((assignment) => assignment.productKey === 'dashboard')
+}
+
+function canReadOrganization(context: PlatformAccessContext, orgId: string) {
+  const assignments = dashboardAssignments(context)
+  if (assignments.length === 0) return true
+  return assignments.some(
+    (assignment) =>
+      assignment.scopeType === 'organization' && assignment.scopeId === orgId
+  )
+}
+
+function canManageOrganization(context: PlatformAccessContext, orgId: string) {
+  const assignments = dashboardAssignments(context)
+  if (assignments.length === 0) return true
+  return assignments.some((assignment) => {
+    const isAdminModule =
+      assignment.moduleKey === 'admin' ||
+      (!assignment.moduleKey && assignment.roleKey === 'dashboard_admin')
+    return (
+      isAdminModule &&
+      assignment.scopeType === 'organization' &&
+      assignment.scopeId === orgId
+    )
+  })
+}
+
+async function customerContext(orgIdValue: unknown, requireAdmin: boolean) {
+  const requestedOrgId = organizationId(orgIdValue, requireAdmin)
+  const access = await requireProductAccess('dashboard')
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('org_members')
+    .select('org_id,role,is_default,created_at,organizations(name)')
+    .eq('profile_id', access.identity.profileId)
+    .eq('is_active', true)
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: true })
+
+  if (error) databaseFailure(error)
+  const memberships = (data ?? []) as unknown as OrganizationMembershipRow[]
+  const organizations = memberships.flatMap<OrganizationCustomerOrganization>((membership) => {
+    if (!canReadOrganization(access, membership.org_id)) return []
+    return [
+      {
+        id: membership.org_id,
+        name: relationName(membership.organizations),
+        isDefault: membership.is_default,
+        canManage:
+          membership.role === 'admin' &&
+          canManageOrganization(access, membership.org_id),
+      },
+    ]
+  })
+
+  if (organizations.length === 0) throw new Error('ORG_MEMBERSHIP_REQUIRED')
+  const selected = requestedOrgId
+    ? organizations.find((organization) => organization.id === requestedOrgId)
+    : organizations.find((organization) => organization.isDefault) ??
+      organizations[0]
+
+  if (!selected) throw new Error('CUSTOMER_ORGANIZATION_MEMBER_REQUIRED')
+  if (requireAdmin && !selected.canManage) {
     throw new Error('CUSTOMER_ORGANIZATION_ADMIN_REQUIRED')
   }
-  return { ...organization, canManage }
+  return {
+    profileId: access.identity.profileId,
+    orgId: selected.id,
+    organization: selected,
+    organizations,
+  }
 }
 
 async function customerStillExists(orgId: string, id: string) {
@@ -224,8 +304,10 @@ async function customerStillExists(orgId: string, id: string) {
   return Boolean(data)
 }
 
-export async function getOrganizationCustomerWorkspace(): Promise<OrganizationCustomerWorkspace> {
-  const context = await customerContext(false)
+export async function getOrganizationCustomerWorkspace(
+  orgIdValue?: unknown
+): Promise<OrganizationCustomerWorkspace> {
+  const context = await customerContext(orgIdValue, false)
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('organization_customers')
@@ -236,27 +318,24 @@ export async function getOrganizationCustomerWorkspace(): Promise<OrganizationCu
 
   if (error) databaseFailure(error)
   return {
-    organization: {
-      id: context.orgId,
-      name: context.orgName,
-      canManage: context.canManage,
-    },
+    organization: context.organization,
+    organizations: context.organizations,
     customers: ((data ?? []) as unknown as CustomerRow[]).map((row) =>
-      mapCustomer(row, { includePersonalIdentity: context.canManage })
+      mapCustomer(row, { includePersonalIdentity: context.organization.canManage })
     ),
   }
 }
 
-export async function createOrganizationCustomer(value: unknown) {
-  const context = await customerContext(true)
+export async function createOrganizationCustomer(orgIdValue: unknown, value: unknown) {
+  const context = await customerContext(orgIdValue, true)
   const input = parseOrganizationCustomerInput(value)
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('organization_customers')
     .insert({
       org_id: context.orgId,
-      ...toDatabaseValues(input, context.userId),
-      created_by_profile_id: context.userId,
+      ...toDatabaseValues(input, context.profileId),
+      created_by_profile_id: context.profileId,
     })
     .select(CUSTOMER_COLUMNS)
     .single()
@@ -266,18 +345,19 @@ export async function createOrganizationCustomer(value: unknown) {
 }
 
 export async function updateOrganizationCustomer(
+  orgIdValue: unknown,
   idValue: unknown,
   versionValue: unknown,
   value: unknown
 ) {
-  const context = await customerContext(true)
+  const context = await customerContext(orgIdValue, true)
   const id = customerId(idValue)
   const version = expectedVersion(versionValue)
   const input = parseOrganizationCustomerInput(value)
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('organization_customers')
-    .update(toDatabaseValues(input, context.userId))
+    .update(toDatabaseValues(input, context.profileId))
     .eq('org_id', context.orgId)
     .eq('id', id)
     .eq('version', version)
@@ -295,11 +375,12 @@ export async function updateOrganizationCustomer(
 }
 
 export async function setOrganizationCustomerActive(
+  orgIdValue: unknown,
   idValue: unknown,
   versionValue: unknown,
   activeValue: unknown
 ) {
-  const context = await customerContext(true)
+  const context = await customerContext(orgIdValue, true)
   const id = customerId(idValue)
   const version = expectedVersion(versionValue)
   if (typeof activeValue !== 'boolean') throw new Error('CUSTOMER_REQUEST_INVALID')
@@ -309,7 +390,7 @@ export async function setOrganizationCustomerActive(
     .from('organization_customers')
     .update({
       is_active: activeValue,
-      updated_by_profile_id: context.userId,
+      updated_by_profile_id: context.profileId,
     })
     .eq('org_id', context.orgId)
     .eq('id', id)

@@ -27,16 +27,30 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (
       action === 'update' &&
-      Object.keys(body).every((key) => ['action', 'version', 'customer'].includes(key)) &&
-      Object.keys(body).length === 3
+      Object.keys(body).every((key) =>
+        ['action', 'orgId', 'version', 'customer'].includes(key)
+      ) &&
+      Object.keys(body).length === 4
     ) {
-      customer = await updateOrganizationCustomer(customerId, version, body.customer)
+      customer = await updateOrganizationCustomer(
+        body.orgId,
+        customerId,
+        version,
+        body.customer
+      )
     } else if (
       action === 'set_active' &&
-      Object.keys(body).every((key) => ['action', 'version', 'isActive'].includes(key)) &&
-      Object.keys(body).length === 3
+      Object.keys(body).every((key) =>
+        ['action', 'orgId', 'version', 'isActive'].includes(key)
+      ) &&
+      Object.keys(body).length === 4
     ) {
-      customer = await setOrganizationCustomerActive(customerId, version, body.isActive)
+      customer = await setOrganizationCustomerActive(
+        body.orgId,
+        customerId,
+        version,
+        body.isActive
+      )
     } else {
       throw new Error('CUSTOMER_REQUEST_INVALID')
     }

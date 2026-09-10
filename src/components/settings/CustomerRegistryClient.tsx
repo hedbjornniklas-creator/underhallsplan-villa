@@ -169,15 +169,20 @@ export default function CustomerRegistryClient() {
   const [saving, setSaving] = useState(false)
   const [statusCustomerId, setStatusCustomerId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (orgId?: string) => {
     setLoading(true)
     setLoadError(null)
     try {
       const body = await responseBody(
-        await fetch('/api/settings/customers', {
-          cache: 'no-store',
-          headers: { Accept: 'application/json' },
-        })
+        await fetch(
+          orgId
+            ? `/api/settings/customers?orgId=${encodeURIComponent(orgId)}`
+            : '/api/settings/customers',
+          {
+            cache: 'no-store',
+            headers: { Accept: 'application/json' },
+          }
+        )
       )
       if (!body.workspace) throw new Error('Kundregistret gav inget svar.')
       setWorkspace(body.workspace)
@@ -200,9 +205,9 @@ export default function CustomerRegistryClient() {
     })
   }, [search, showInactive, workspace])
 
-  const replaceCustomer = (customer: OrganizationCustomer) => {
+  const replaceCustomer = (customer: OrganizationCustomer, orgId: string) => {
     setWorkspace((current) =>
-      current
+      current?.organization.id === orgId
         ? {
             ...current,
             customers: current.customers.some((item) => item.id === customer.id)
@@ -237,8 +242,23 @@ export default function CustomerRegistryClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
+  const switchOrganization = (orgId: string) => {
+    if (saving || statusCustomerId !== null || orgId === workspace?.organization.id) return
+    setEditing(null)
+    setFormOpen(false)
+    setForm({ ...EMPTY_FORM })
+    setSearch('')
+    setShowInactive(false)
+    void load(orgId)
+  }
+
   const saveCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const targetOrgId = workspace?.organization.id
+    if (!targetOrgId) {
+      toast.error('Välj en organisation innan kunden sparas.')
+      return
+    }
     setSaving(true)
     try {
       const response = editing
@@ -247,6 +267,7 @@ export default function CustomerRegistryClient() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               action: 'update',
+              orgId: targetOrgId,
               version: editing.version,
               customer: inputFromForm(form),
             }),
@@ -254,11 +275,14 @@ export default function CustomerRegistryClient() {
         : await fetch('/api/settings/customers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customer: inputFromForm(form) }),
+            body: JSON.stringify({
+              orgId: targetOrgId,
+              customer: inputFromForm(form),
+            }),
           })
       const body = await responseBody(response)
       if (!body.customer) throw new Error('Kunden kunde inte läsas efter sparandet.')
-      replaceCustomer(body.customer)
+      replaceCustomer(body.customer, targetOrgId)
       toast.success(
         editing
           ? `Kund ${body.customer.customerNumber} har sparats.`
@@ -281,6 +305,11 @@ export default function CustomerRegistryClient() {
     ) {
       return
     }
+    const targetOrgId = workspace?.organization.id
+    if (!targetOrgId) {
+      toast.error('Välj en organisation innan kundstatusen ändras.')
+      return
+    }
     setStatusCustomerId(customer.id)
     try {
       const body = await responseBody(
@@ -289,13 +318,14 @@ export default function CustomerRegistryClient() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'set_active',
+            orgId: targetOrgId,
             version: customer.version,
             isActive: !customer.isActive,
           }),
         })
       )
       if (!body.customer) throw new Error('Kundstatusen kunde inte läsas efter sparandet.')
-      replaceCustomer(body.customer)
+      replaceCustomer(body.customer, targetOrgId)
       if (!body.customer.isActive) setShowInactive(true)
       toast.success(
         body.customer.isActive
@@ -347,16 +377,38 @@ export default function CustomerRegistryClient() {
               på i ett senare steg.
             </p>
           </div>
-          {workspace.organization.canManage ? (
-            <ActionButton
-              tone="blue"
-              icon={<Plus size={17} aria-hidden="true" />}
-              className="rounded-lg px-4 py-2.5 text-sm"
-              onClick={openCreate}
-            >
-              Ny kund
-            </ActionButton>
-          ) : null}
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-64">
+            {workspace.organizations.length > 1 ? (
+              <label className="space-y-1">
+                <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Organisation
+                </span>
+                <select
+                  value={workspace.organization.id}
+                  disabled={saving || statusCustomerId !== null}
+                  onChange={(event) => switchOrganization(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-950 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                >
+                  {workspace.organizations.map((organization) => (
+                    <option key={organization.id} value={organization.id}>
+                      {organization.name || 'Namnlös organisation'}
+                      {organization.isDefault ? ' (standard)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {workspace.organization.canManage ? (
+              <ActionButton
+                tone="blue"
+                icon={<Plus size={17} aria-hidden="true" />}
+                className="rounded-lg px-4 py-2.5 text-sm"
+                onClick={openCreate}
+              >
+                Ny kund
+              </ActionButton>
+            ) : null}
+          </div>
         </div>
 
         {!workspace.organization.canManage ? (
