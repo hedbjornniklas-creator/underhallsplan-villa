@@ -1,5 +1,5 @@
 'use client'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRightLeft,
   ChevronRight,
@@ -18,7 +18,9 @@ import type {
   RemovalResult,
   ImageNoteDraft,
   ImageNotePreview,
+  MoveTarget,
 } from '@/lib/ob/roundMutations'
+import { roundImageLocation } from '@/lib/ob/roundImageLocation'
 import type { ObMobileRoundProps as Props } from './ObMobileRound'
 import type {
   InteriorRoom,
@@ -61,26 +63,57 @@ export function ImageLinkSheet({
     ftu_text: '',
     outcomeId: null,
   })
-  const [placement, setPlacement] = useState<ImageNotePreview | null>(null),
-    [checking, setChecking] = useState(false),
+  const imageLocation = roundImageLocation(photo, p.notes, p.observations)
+  const imageRoom = p.rooms.find(room => room.id === imageLocation.roomId)
+  const imageItem = p.exteriorItems.find(item => item.id === imageLocation.exteriorItemId)
+  const [place, setPlace] = useState<{ area: '' | 'interior' | 'exterior'; floor: string; id: string }>(() => ({
+    area: imageRoom ? 'interior' : imageItem ? 'exterior' : '',
+    floor: imageRoom ? p.floorKey(imageRoom.floor_label) : '',
+    id: imageRoom?.id || imageItem?.id || '',
+  }))
+  const [placeEdited, setPlaceEdited] = useState(false)
+  const placeRooms = p.rooms.filter(room => p.floorKey(room.floor_label) === place.floor)
+    .sort((a, b) => b.order_index - a.order_index)
+  const targetRoom = place.area === 'interior' ? placeRooms.find(room => room.id === place.id) : null
+  const targetItem = place.area === 'exterior' ? p.exteriorItems.find(item => item.id === place.id) : null
+  const target = useMemo<MoveTarget | undefined>(() => targetRoom?.id
+    ? { area: 'interior', roomId: targetRoom.id }
+    : targetItem?.id ? { area: 'exterior', exteriorItemId: targetItem.id } : undefined,
+  [targetRoom?.id, targetItem?.id])
+  // Keep implicit current/origin placement for existing images. User selections are explicit.
+  const requestTarget = placeEdited ? target : undefined
+  const previewKey = target ? (placeEdited ? JSON.stringify(target) : 'image-place') : null
+  const [checkedPlacement, setCheckedPlacement] = useState<{ key: string; value: ImageNotePreview } | null>(null)
+  const placement = previewKey && checkedPlacement?.key === previewKey ? checkedPlacement.value : null
+  const [checking, setChecking] = useState(false),
     [placeError, setPlaceError] = useState(''),
     [attempt, setAttempt] = useState(0)
   const retry = useRef<{ fingerprint: string; requestId: string } | null>(null)
   const previewImage = useRef(p.onPreviewImageNote)
+  const floorKey = p.floorKey
   useEffect(() => {
     previewImage.current = p.onPreviewImageNote
   }, [p.onPreviewImageNote])
   useEffect(() => {
-    if (tab !== 'new' || p.locked || p.mutationBlocked || placement) return
+    if (tab !== 'new' || !previewKey || p.locked || p.mutationBlocked || placement) return
     let active = true
     setChecking(true)
     setPlaceError('')
     previewImage
-      .current(photo.id)
+      .current(photo.id, requestTarget)
       .then((value) => {
         if (active) {
+          if (requestTarget && (requestTarget.area === 'interior'
+            ? value.room?.id !== requestTarget.roomId || value.exteriorItem !== null
+            : value.exteriorItem?.id !== requestTarget.exteriorItemId || value.room !== null)) {
+            throw Error('Den valda platsen kunde inte bekräftas. Välj plats igen.')
+          }
+          if (!requestTarget) {
+            if (value.room) setPlace({ area: 'interior', floor: floorKey(value.room.floor_label), id: value.room.id! })
+            else if (value.exteriorItem) setPlace({ area: 'exterior', floor: '', id: value.exteriorItem.id })
+          }
           setChecking(false)
-          setPlacement(value)
+          setCheckedPlacement({ key: previewKey, value })
         }
       })
       .catch((e) => {
@@ -97,23 +130,30 @@ export function ImageLinkSheet({
     return () => {
       active = false
     }
-  }, [tab, p.locked, p.mutationBlocked, photo.id, placement, attempt])
-  const placeLabel = placement
-    ? placement.room
-      ? `${p.floorLabel(placement.room.floor_label)} · ${placement.room.room_label}`
-      : `Utsida · ${placement.exteriorItem?.label}`
-    : imagePlace
+  }, [tab, p.locked, p.mutationBlocked, floorKey, photo.id, placement, previewKey, requestTarget, attempt])
+  const targetLabel = targetRoom
+    ? `${p.floorLabel(targetRoom.floor_label)} · ${targetRoom.room_label}`
+    : targetItem ? `Utsida · ${targetItem.label}` : ''
+  function changePlace(next: typeof place) {
+    if (flight.current) return
+    setPlace(next)
+    setPlaceEdited(true)
+    setCheckedPlacement(null)
+    setChecking(false)
+    setPlaceError('')
+    setError('')
+  }
   function changeTab(next: 'existing' | 'new') {
     if (flight.current) return
     setTab(next)
     setError('')
   }
   async function create() {
-    if (!placement || flight.current || p.locked || p.mutationBlocked) return
+    if (!placement || checking || flight.current || p.locked || p.mutationBlocked) return
     flight.current = true
     setBusy(true)
     setError('')
-    const fingerprint = JSON.stringify({ token: placement.token, draft })
+    const fingerprint = JSON.stringify({ token: placement.token, target: requestTarget, draft })
     if (retry.current?.fingerprint !== fingerprint)
       retry.current = { fingerprint, requestId: crypto.randomUUID() }
     try {
@@ -122,6 +162,7 @@ export function ImageLinkSheet({
         token: placement.token,
         requestId: retry.current.requestId,
         draft,
+        ...(requestTarget ? { target: requestTarget } : {}),
       })
       onLinked()
     } catch (e) {
@@ -256,16 +297,16 @@ export function ImageLinkSheet({
         <div>
           <p className="obm-place-label">
             <MapPin size={15} />
-            {placeLabel}
+            {imagePlace}
           </p>
-          <button
+          {(imageRoom || imageItem) && <button
             className="obm-text-action"
             disabled={busy}
             onClick={onGoToPlace}
           >
             Gå till bildens plats
             <ChevronRight size={17} />
-          </button>
+          </button>}
         </div>
       </div>
       <div
@@ -399,6 +440,48 @@ export function ImageLinkSheet({
         aria-labelledby="image-note-tab-new"
         hidden={tab !== 'new'}
       >
+        <section className="obm-image-note-place" aria-label="Plats för noteringen">
+          <h3>Plats för noteringen</h3>
+          <p className="obm-category-label">Välj var noteringen hör hemma. Bilden kopplas dit först när du väljer ”Skapa och koppla”.</p>
+          <label className="obm-field">
+            Område
+            <select aria-label="Område" value={place.area} disabled={busy || p.locked}
+              onChange={event => changePlace({ area: event.target.value as typeof place.area, floor: '', id: '' })}>
+              <option value="">Välj insida eller utsida</option>
+              <option value="interior">Insida</option>
+              <option value="exterior">Utsida</option>
+            </select>
+          </label>
+          {place.area === 'interior' && <>
+            <label className="obm-field">
+              Plan
+              <select aria-label="Plan" value={place.floor} disabled={busy || p.locked}
+                onChange={event => changePlace({ ...place, floor: event.target.value, id: '' })}>
+                <option value="">Välj plan</option>
+                {p.floors.map(key => <option key={key} value={key}>{p.floorLabel(key)}</option>)}
+              </select>
+            </label>
+            <label className="obm-field">
+              Rum
+              <select aria-label="Rum" value={place.id} disabled={busy || p.locked || !place.floor}
+                onChange={event => changePlace({ ...place, id: event.target.value })}>
+                <option value="">Välj rum</option>
+                {placeRooms.map(room => <option key={room.id} value={room.id}>{room.room_label}</option>)}
+              </select>
+            </label>
+            {place.floor && !placeRooms.length && <p className="obm-category-label">Inga rum finns på detta plan. Lägg först till rummet under Platser.</p>}
+          </>}
+          {place.area === 'exterior' && <label className="obm-field">
+            Byggnadsdel
+            <select aria-label="Byggnadsdel" value={place.id} disabled={busy || p.locked}
+              onChange={event => changePlace({ ...place, id: event.target.value })}>
+              <option value="">Välj byggnadsdel</option>
+              {p.exteriorItems.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>}
+          {!target && <p role="status" className="obm-category-label">Välj en plats innan du skapar noteringen.</p>}
+          {targetLabel && <p className="obm-place-label"><MapPin size={15} />{targetLabel}</p>}
+        </section>
         {checking && <p role="status">Kontrollerar bildens plats…</p>}
         {placeError && (
           <>

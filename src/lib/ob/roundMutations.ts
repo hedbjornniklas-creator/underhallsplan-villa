@@ -53,6 +53,7 @@ export type ImageNotePreview = {
 }
 export type ImageNoteRequest = {
   imageId: string
+  target?: MoveTarget
   token: string
   requestId: string
   draft: ImageNoteDraft

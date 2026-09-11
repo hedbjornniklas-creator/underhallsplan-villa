@@ -1121,6 +1121,28 @@ body:has(dialog.obm-sheet[open]) {
   display: flex;
   flex-direction: column;
 }
+.obm-image-navigation {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+.obm-image-navigation > div {
+  min-width: 0;
+  text-align: center;
+  color: #647482;
+  font-size: 12px;
+}
+.obm-image-navigation .obm-place-label {
+  justify-content: center;
+  margin: 0 0 4px;
+}
+.obm-sheet .obm-image-navigation .obm-icon:not(:disabled) {
+  border: 1px solid var(--obm-line);
+  color: var(--obm-blue);
+}
 .obm-image-viewer {
   flex: 1;
   min-height: 0;
@@ -1234,6 +1256,14 @@ main[data-ob-mobile-round='true'] > button[aria-label='Öppna stegmeny'] {
   font-size: 13px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.obm-image-note-place {
+  border-bottom: 1px solid var(--obm-line);
+  margin-bottom: 18px;
+  padding-bottom: 4px;
+}
+.obm-image-note-place h3 {
+  margin-top: 16px;
 }
 .obm-root .obm-delete-icon:not(:disabled),
 .obm-sheet .obm-delete-icon:not(:disabled) {

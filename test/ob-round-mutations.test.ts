@@ -13,6 +13,9 @@ const migration = readFileSync(
   'utf8',
 )
 let preFloorMigration: Awaited<ReturnType<typeof fixture>>
+let prePlaceMigration: Awaited<ReturnType<typeof fixture>>
+let legacyImageNoteRequest: ReturnType<typeof imageNoteRequest>
+let prePlaceSnapshot: unknown
 before(async () => {
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
@@ -73,12 +76,34 @@ before(async () => {
   preFloorMigration = await fixture()
   await db.exec(floorsMigration)
   await db.exec(floorsMigration)
+  prePlaceMigration = await fixture()
+  const f = prePlaceMigration
+  const preview = await rpc(f.id, 'image-note-preview', { imageId: f.loose.id })
+  legacyImageNoteRequest = imageNoteRequest(f.loose.id, preview.token)
+  const target = { area: 'interior', roomId: f.target.id }
+  for (const operation of ['image-note-place-preview', 'image-note-place']) {
+    await assert.rejects(rpc(f.id, operation, { ...legacyImageNoteRequest, target }), /OB_ROUND_INVALID/,
+      'Old databases must reject place operations, not ignore their target')
+  }
+  await rpc(f.id, 'image-note', legacyImageNoteRequest)
+  prePlaceSnapshot = await inspectionSnapshot(f.id)
+  const placeMigration = readFileSync(new URL('../docs/db/2026-09-11_07_ob_image_note_place.sql', import.meta.url), 'utf8')
+  await db.exec(placeMigration)
+  await db.exec(placeMigration)
 })
 after(() => db.close())
 // SQL fixtures intentionally exercise multiple table and JSON result shapes.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function one(sql: string, params: unknown[] = []): Promise<any> {
   return (await db.query(sql, params)).rows[0]
+}
+function imageNoteRequest(imageId: string, token: string) {
+  return { imageId, token, requestId: randomUUID(), draft: { note: 'Ny notering', risk_text: 'Risk', ftu_text: 'Utredning', outcomeId: null } }
+}
+async function inspectionSnapshot(id: string) {
+  return Promise.all(['inspection_interior_rooms', 'inspection_control_items', 'inspection_images',
+    'inspection_exterior_observations', 'ob_round_mutation_events'].map(async (table) =>
+    (await db.query(`select * from ${table} where inspection_id=$1 order by id`, [id])).rows))
 }
 async function fixture() {
   const property = await one(
@@ -125,6 +150,15 @@ async function saveFloors(id: string, levels: unknown, revision = 1, user = acto
   return (await one('select ob_save_floor_model($1,$2,$3,$4,$5::jsonb) as result', [id, org, user, revision, JSON.stringify(levels)])).result
 }
 const newLevels = [{ level: 0, name: 'Entrance' }, { level: -1, name: 'Suterrang' }, { level: 1, name: '' }]
+
+test('place migration is rerunnable, changes no historical rows or receipts, and preserves legacy retries', async () => {
+  const f = prePlaceMigration
+  assert.deepEqual(await inspectionSnapshot(f.id), prePlaceSnapshot)
+  const retry = await rpc(f.id, 'image-note', legacyImageNoteRequest)
+  assert.equal(retry.image.id, f.loose.id)
+  assert.equal(retry.note.interior_room_id, f.room.id)
+  assert.deepEqual(await inspectionSnapshot(f.id), prePlaceSnapshot)
+})
 async function basementChoice(id: string, system = 'ja', value = randomUUID()) {
   const item = randomUUID(), group = randomUUID()
   await db.query('insert into settings_overview_items values($1,$2,true)', [item, 'building_type'])
@@ -808,4 +842,167 @@ test('image-note rejects stale places, blank text and inactive templates without
     ).n,
     1,
   )
+})
+
+test('explicit interior place creates and links an unplaced image once without inventing provenance', async () => {
+  const f = await fixture()
+  const image = await one('insert into inspection_images(inspection_id,label) values($1,$2) returning *', [f.id, 'Unplaced'])
+  const target = { area: 'interior', roomId: f.target.id }
+  const before = await inspectionSnapshot(f.id)
+  const preview = await rpc(f.id, 'image-note-place-preview', { imageId: image.id, target })
+  assert.equal(preview.room.id, f.target.id)
+  assert.equal(preview.observation, null)
+  assert.equal(preview.exteriorItem, null)
+  assert.deepEqual(await inspectionSnapshot(f.id), before, 'Preview must never write a draft, place or receipt')
+  const request = { ...imageNoteRequest(image.id, preview.token), target }
+  const result = await rpc(f.id, 'image-note-place', request)
+  assert.equal(result.note.interior_room_id, f.target.id)
+  assert.equal(result.image.control_item_id, result.note.id)
+  assert.equal(result.image.interior_room_id, f.target.id)
+  assert.equal(result.image.processing_status, 'linked')
+  for (const key of ['origin_interior_room_id', 'origin_exterior_observation_id', 'origin_exterior_item_id', 'origin_floor_label', 'file_path', 'thumbnail_file_path', 'label']) {
+    assert.equal(result.image[key], image[key], key)
+  }
+  assert.equal(result.note.note, request.draft.note)
+  assert.equal(result.note.risk_text, request.draft.risk_text)
+  assert.equal(result.note.ftu_text, request.draft.ftu_text)
+  assert.deepEqual(await rpc(f.id, 'image-note-place', request), result)
+  const receipt = await one('select * from ob_round_mutation_events where inspection_id=$1 and request_id=$2', [f.id, request.requestId])
+  assert.equal(receipt.operation, 'image-note')
+  assert.deepEqual(receipt.request.target, target)
+  assert.deepEqual(receipt.before_data.record, image)
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...request, target: { area: 'interior', roomId: f.room.id } }), /OB_ROUND_STALE/)
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...request, requestId: randomUUID() }), /OB_ROUND_IMAGE_LINKED/)
+  await db.query("update inspection_control_items set note='Latest text' where id=$1", [result.note.id])
+  assert.equal((await rpc(f.id, 'image-note-place', request)).note.note, 'Latest text')
+  assert.equal((await one('select count(*)::int as n from inspection_control_items where inspection_id=$1', [f.id])).n, 2)
+})
+
+test('explicit exterior place overrides capture/current place, preserves all origins, and reuses only eligible own observations', async () => {
+  const f = await fixture(), other = await fixture()
+  const origin = await one('insert into inspection_exterior_observations(inspection_id,exterior_item_id) values($1,$2) returning *', [f.id, other.exterior.id])
+  const image = await one('update inspection_images set origin_exterior_observation_id=$2,origin_exterior_item_id=$3,origin_floor_label=$4 where id=$1 returning *', [f.loose.id, origin.id, other.exterior.id, 'plan1'])
+  await db.query('insert into inspection_exterior_observations(inspection_id,exterior_item_id) values($1,$2)', [other.id, f.exterior.id])
+  await db.query('insert into inspection_exterior_observations(inspection_id,exterior_item_id,is_free_note) values($1,$2,true)', [f.id, f.exterior.id])
+  await db.query("insert into inspection_exterior_observations(inspection_id,exterior_item_id,values) values($1,$2,'{\"_free_note\":true}')", [f.id, f.exterior.id])
+  const own = await one('insert into inspection_exterior_observations(inspection_id,exterior_item_id) values($1,$2) returning *', [f.id, f.exterior.id])
+  const target = { area: 'exterior', exteriorItemId: f.exterior.id }
+  const preview = await rpc(f.id, 'image-note-place-preview', { imageId: image.id, target })
+  assert.equal(preview.room, null)
+  assert.equal(preview.observation.id, own.id)
+  assert.equal(preview.exteriorItem.id, f.exterior.id)
+  const result = await rpc(f.id, 'image-note-place', { ...imageNoteRequest(image.id, preview.token), target })
+  assert.equal(result.note.interior_room_id, null)
+  assert.equal(result.note.exterior_observation_id, own.id)
+  assert.equal(result.image.exterior_observation_id, own.id)
+  for (const key of ['origin_interior_room_id', 'origin_exterior_observation_id', 'origin_exterior_item_id', 'origin_floor_label', 'file_path', 'thumbnail_file_path']) {
+    assert.equal(result.image[key], image[key], key)
+  }
+})
+
+test('explicit image place tokens reject changed target, implicit/explicit substitution, stale image and stale place', async () => {
+  const f = await fixture()
+  const target = { area: 'interior', roomId: f.room.id }
+  const implicit = await rpc(f.id, 'image-note-preview', { imageId: f.loose.id })
+  const preview = await rpc(f.id, 'image-note-place-preview', { imageId: f.loose.id, target })
+  assert.notEqual(preview.token, implicit.token, 'An explicit choice must not reuse the implicit preview token')
+  const request = { ...imageNoteRequest(f.loose.id, preview.token), target }
+  const before = await inspectionSnapshot(f.id)
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...request, target: { area: 'interior', roomId: f.target.id } }), /OB_ROUND_STALE/)
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...request, token: implicit.token }), /OB_ROUND_STALE/)
+  await assert.rejects(rpc(f.id, 'image-note', imageNoteRequest(f.loose.id, preview.token)), /OB_ROUND_STALE/)
+  assert.deepEqual(await inspectionSnapshot(f.id), before)
+  await db.query("update inspection_images set label='Changed' where id=$1", [f.loose.id])
+  await assert.rejects(rpc(f.id, 'image-note-place', request), /OB_ROUND_STALE/)
+  const refreshed = await rpc(f.id, 'image-note-place-preview', { imageId: f.loose.id, target })
+  await db.query("update inspection_interior_rooms set room_label='Renamed' where id=$1", [f.room.id])
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...request, token: refreshed.token }), /OB_ROUND_STALE/)
+  const exteriorTarget = { area: 'exterior', exteriorItemId: f.exterior.id }
+  const exteriorPreview = await rpc(f.id, 'image-note-place-preview', { imageId: f.loose.id, target: exteriorTarget })
+  await db.query("update settings_exterior_items set label='Updated' where id=$1", [f.exterior.id])
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...request, target: exteriorTarget, token: exteriorPreview.token }), /OB_ROUND_STALE/)
+  assert.equal((await one('select count(*)::int as n from ob_round_mutation_events where inspection_id=$1', [f.id])).n, 0)
+})
+
+test('explicit image place rejects foreign, missing, inactive, deleted and malformed targets without fallback', async () => {
+  const f = await fixture(), other = await fixture()
+  const target = { area: 'interior', roomId: f.target.id }
+  const valid = { imageId: f.loose.id, target }
+  for (const invalid of [null, {}, [], { area: 'roof' }, { area: 'interior' }, { area: 'interior', roomId: 'bad' },
+    { area: 'exterior' }, { area: 'exterior', exteriorItemId: null },
+    { ...target, exteriorItemId: f.exterior.id }]) {
+    await assert.rejects(rpc(f.id, 'image-note-place-preview', { ...valid, target: invalid }), /OB_ROUND_INVALID/)
+  }
+  await assert.rejects(rpc(f.id, 'image-note-place-preview', { imageId: f.loose.id }), /OB_ROUND_INVALID/)
+  await assert.rejects(rpc(f.id, 'image-note-preview', valid), /OB_ROUND_INVALID/)
+  await assert.rejects(rpc(f.id, 'image-note-place-preview', { ...valid, imageId: other.loose.id }), /OB_ROUND_NOT_FOUND/)
+  await assert.rejects(rpc(f.id, 'image-note-place-preview', { ...valid, imageId: f.image.id }), /OB_ROUND_IMAGE_LINKED/)
+  for (const roomId of [other.room.id, randomUUID()]) {
+    await assert.rejects(rpc(f.id, 'image-note-place-preview', { ...valid, target: { area: 'interior', roomId } }), /OB_ROUND_PLACE_REQUIRED/)
+  }
+  const preview = await rpc(f.id, 'image-note-place-preview', valid)
+  await db.query('delete from inspection_interior_rooms where id=$1', [f.target.id])
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...imageNoteRequest(f.loose.id, preview.token), target }), /OB_ROUND_PLACE_REQUIRED/)
+  const exteriorTarget = { area: 'exterior', exteriorItemId: f.exterior.id }
+  const exteriorPreview = await rpc(f.id, 'image-note-place-preview', { ...valid, target: exteriorTarget })
+  await db.query('update settings_exterior_items set is_active=false where id=$1', [f.exterior.id])
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...imageNoteRequest(f.loose.id, exteriorPreview.token), target: exteriorTarget }), /OB_ROUND_PLACE_REQUIRED/)
+  await assert.rejects(rpc(f.id, 'image-note-place-preview', { ...valid, target: exteriorTarget }), /OB_ROUND_PLACE_REQUIRED/)
+  await assert.rejects(rpc(f.id, 'image-note-place-preview', { ...valid, target: { area: 'exterior', exteriorItemId: randomUUID() } }), /OB_ROUND_PLACE_REQUIRED/)
+  assert.equal((await one('select count(*)::int as n from inspection_control_items where inspection_id=$1', [f.id])).n, 1)
+  assert.equal((await one('select control_item_id from inspection_images where id=$1', [f.loose.id])).control_item_id, null)
+})
+
+test('explicit exterior create rolls back observation, note, link and receipt together, then retries once', async () => {
+  const f = await fixture()
+  const image = await one('insert into inspection_images(inspection_id) values($1) returning *', [f.id])
+  const target = { area: 'exterior', exteriorItemId: f.exterior.id }
+  const before = await inspectionSnapshot(f.id)
+  const preview = await rpc(f.id, 'image-note-place-preview', { imageId: image.id, target })
+  assert.equal(preview.room, null)
+  assert.equal(preview.observation, null)
+  assert.deepEqual(await inspectionSnapshot(f.id), before)
+  const request = { ...imageNoteRequest(image.id, preview.token), target }
+  for (const table of ['inspection_images', 'ob_round_mutation_events']) {
+    const event = table === 'inspection_images' ? 'update' : 'insert'
+    await db.exec(`create function test_fail_place() returns trigger language plpgsql as $$ begin raise exception 'TEST_PLACE_FAILURE'; end $$;
+      create trigger zz_test_fail_place before ${event} on ${table} for each row execute function test_fail_place();`)
+    try {
+      await assert.rejects(rpc(f.id, 'image-note-place', request), /TEST_PLACE_FAILURE/)
+    } finally {
+      await db.exec(`drop trigger zz_test_fail_place on ${table}; drop function test_fail_place();`)
+    }
+    assert.deepEqual(await inspectionSnapshot(f.id), before)
+  }
+  const result = await rpc(f.id, 'image-note-place', request)
+  assert.equal(result.observation.exterior_item_id, f.exterior.id)
+  assert.equal(result.note.exterior_observation_id, result.observation.id)
+  assert.equal(result.image.control_item_id, result.note.id)
+  assert.equal(result.image.origin_exterior_item_id, null)
+  assert.deepEqual(await rpc(f.id, 'image-note-place', request), result)
+  assert.equal((await one('select count(*)::int as n from inspection_exterior_observations where inspection_id=$1', [f.id])).n, 1)
+  assert.equal((await one('select count(*)::int as n from ob_round_mutation_events where inspection_id=$1', [f.id])).n, 1)
+})
+
+test('explicit image places retain owner, workflow and removal protections at both preview and save', async () => {
+  const f = await fixture()
+  const target = { area: 'interior', roomId: f.target.id }
+  const preview = await rpc(f.id, 'image-note-place-preview', { imageId: f.loose.id, target })
+  const request = { ...imageNoteRequest(f.loose.id, preview.token), target }
+  for (const operation of ['image-note-place-preview', 'image-note-place']) {
+    await assert.rejects(rpc(f.id, operation, request, stranger), /OB_ROUND_FORBIDDEN/)
+  }
+  for (const state of ['locked', 'paused']) {
+    if (state === 'locked') await db.query('update inspections set locked_at=now() where id=$1', [f.id])
+    else await db.query('insert into test_paused values($1)', [f.id])
+    for (const operation of ['image-note-place-preview', 'image-note-place']) {
+      await assert.rejects(rpc(f.id, operation, request), state === 'locked' ? /OB_ROUND_LOCKED/ : /OB_ROUND_PAUSED/)
+    }
+    if (state === 'locked') await db.query('update inspections set locked_at=null where id=$1', [f.id])
+    else await db.query('delete from test_paused where inspection_id=$1', [f.id])
+  }
+  await db.query('delete from inspection_images where id=$1', [f.loose.id])
+  await assert.rejects(rpc(f.id, 'image-note-place', request), /OB_ROUND_NOT_FOUND/)
+  assert.equal((await one('select count(*)::int as n from inspection_control_items where inspection_id=$1', [f.id])).n, 1)
+  assert.equal((await one('select count(*)::int as n from ob_round_mutation_events where inspection_id=$1', [f.id])).n, 0)
 })

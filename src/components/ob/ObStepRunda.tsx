@@ -362,7 +362,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
   const roundMutationRef = useRef(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const [message, setMessage] = useState<{ text: string } | null>(null)
 
   const [roomTypes, setRoomTypes] = useState<RoomType[]>([])
   const [rooms, setRooms] = useState<InteriorRoom[]>([])
@@ -410,6 +410,12 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
   const ensuredExteriorItemIdsRef = useRef<Set<string>>(new Set())
   const uploadProcessorRunningRef = useRef(false)
   const localImagePreviewUrlsRef = useRef<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(null), 4000)
+    return () => clearTimeout(timer)
+  }, [message])
 
   useEffect(() => {
     localImagePreviewUrlsRef.current = localImagePreviewUrls
@@ -803,7 +809,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
               ? prev.map(image => (image.id === saved.id ? saved : image))
               : [saved, ...prev]
           )
-          setMessage('Bild uppladdad.')
+          setMessage({ text: 'Bild uppladdad.' })
         } catch (e: unknown) {
           const latestItem = await getRoundImageUploadItem(item.id)
           if (!latestItem) continue
@@ -1874,7 +1880,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
         ...prev,
         [item.id]: URL.createObjectURL(blob),
       }))
-      setMessage(linkedControlItem ? 'Bild sparad lokalt och köad för uppladdning.' : 'Bild sparad lokalt.')
+      setMessage({ text: linkedControlItem ? 'Bild sparad lokalt och köad för uppladdning.' : 'Bild sparad lokalt.' })
       void processQueuedImageUploads()
     } catch (e: unknown) {
       console.error('queue OB round image failed:', e)
@@ -2014,7 +2020,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
 
       setSelectedImageIds(new Set())
       const count = updated.length + localImagesToUpdate.length
-      setMessage(`${count} bild${count === 1 ? '' : 'er'} kopplad${count === 1 ? '' : 'e'}.`)
+      setMessage({ text: `${count} bild${count === 1 ? '' : 'er'} kopplad${count === 1 ? '' : 'e'}.` })
       if (localImagesToUpdate.length > 0) void processQueuedImageUploads()
       return true
     } catch (e: unknown) {
@@ -2051,7 +2057,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
         status: image.local_upload_status === 'failed' ? 'queued' : image.local_upload_status ?? 'queued',
         error: null,
       })
-      setMessage('Bilden kopplades loss.')
+      setMessage({ text: 'Bilden kopplades loss.' })
       void processQueuedImageUploads()
       return
     }
@@ -2061,7 +2067,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       const updated = await unlinkRoundImage(supabase, inspection.id, image.id,
         expectedNoteId || image.control_item_id) as InspectionImage
       setImages(prev => prev.map(row => (row.id === updated.id ? updated : row)))
-      setMessage('Bilden kopplades loss.')
+      setMessage({ text: 'Bilden kopplades loss.' })
     } catch (e: unknown) {
       console.error('unlink image from control item failed:', e)
       if (expectedNoteId) throw e
@@ -2318,7 +2324,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'
           }`}
         >
-          <span>{error ?? message}</span>
+          <span>{error ?? message?.text}</span>
           <button type="button" onClick={clearNotice} aria-label="Stäng" className="text-current">
             <X size={14} />
           </button>
@@ -2415,7 +2421,9 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             if (result.noteIds.includes(selectedControlItemId!)) setSelectedControlItemId(null)
             return result
           }}
-          onPreviewImageNote={imageId => requestRoundMutation(inspection.id, 'image-note-preview', { imageId })}
+          onPreviewImageNote={(imageId, target) => requestRoundMutation(inspection.id, 'image-note-preview', {
+            imageId, ...(target ? { target } : {}),
+          })}
           onCreateImageNote={async request => {
             const result = await runRoundMutation<ImageNoteResult>('image-note', request)
             mergeRoundMutation({ room: null, note: result.note, images: result.image ? [result.image] : [], observation: result.observation })

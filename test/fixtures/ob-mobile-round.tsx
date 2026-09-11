@@ -9,12 +9,14 @@ import { ObFloorContext, useObFloorModel } from '../../src/components/ob/ObFloor
 import { ObFloorEditor } from '../../src/components/ob/ObFloorEditor'
 import ObRoundSheet from '../../src/components/ob/ObRoundSheet'
 import { floorModelKeys, modelFloorLabel, type ObFloorModel } from '../../src/lib/ob/floorModel'
+import type { MoveTarget } from '../../src/lib/ob/roundMutations'
 
 type Note = ObMobileRoundProps['notes'][number]
 type Room = ObMobileRoundProps['rooms'][number]
 type Image = ObMobileRoundProps['images'][number]
 const inspectionId = 'synthetic-mobile-inspection'
 const newFloors = new URLSearchParams(location.search).has('levels')
+const imagePlaceFixture = new URLSearchParams(location.search).has('image-place')
 const rooms: Room[] = [
   {
     id: 'room-1',
@@ -81,6 +83,15 @@ const initialImages: Image[] = [
     sort_order: 10,
   },
 ]
+if (imagePlaceFixture) {
+  initialImages[0] = { ...initialImages[0], interior_room_id: null, processing_status: 'unprocessed', source_area: null }
+}
+if (new URLSearchParams(location.search).has('image-origin')) {
+  initialImages[0] = { ...initialImages[0], interior_room_id: null, origin_interior_room_id: 'room-2', origin_room_label: 'Sovrum' }
+}
+if (new URLSearchParams(location.search).has('image-origin-exterior')) {
+  initialImages[0] = { ...initialImages[0], interior_room_id: null, origin_exterior_observation_id: 'observation-extra', origin_exterior_item_id: 'exterior-1' }
+}
 if (new URLSearchParams(location.search).has('linked')) {
   initialImages[0] = { ...initialImages[0], control_item_id: 'note-1', processing_status: 'linked',
     origin_interior_room_id: 'room-2', origin_room_label: 'Sovrum', captured_at: '2026-09-11T09:00:00Z' }
@@ -102,6 +113,18 @@ if (new URLSearchParams(location.search).has('room-images')) {
     { ...initialImages[0], id: 'room-unplaced', interior_room_id: null },
   )
 }
+if (new URLSearchParams(location.search).has('image-preview-nav')) {
+  initialImages[0] = { ...initialImages[0], file_path: '/photo.png?image=first', label: 'Första bilden', sort_order: 40 }
+  // Pending navigation follows the rendered source order, not IDs or sort_order.
+  // Interleaved linked/ignored rows must never become navigation targets.
+  initialImages.push(
+    { ...initialImages[0], id: 'preview-linked', file_path: '/photo.png?image=linked', control_item_id: 'note-1', processing_status: 'linked' },
+    { ...initialImages[0], id: 'preview-middle', file_path: '/photo.png?image=middle', label: 'Andra bilden', interior_room_id: 'room-2', sort_order: 10 },
+    { ...initialImages[0], id: 'preview-ignored', file_path: '/photo.png?image=ignored', processing_status: 'ignored' },
+    { ...initialImages[0], id: 'preview-exterior', file_path: '/photo.png?image=exterior', label: 'Tredje bilden', interior_room_id: null, exterior_observation_id: 'observation-extra', sort_order: 30 },
+    { ...initialImages[0], id: 'preview-unplaced', file_path: '/photo.png?image=unplaced', label: 'Fjärde bilden', interior_room_id: null, processing_status: 'linked', sort_order: 20 },
+  )
+}
 const exteriorItems = [
   {
     id: 'exterior-1',
@@ -111,6 +134,25 @@ const exteriorItems = [
     sort_order: 10,
   },
 ]
+if (imagePlaceFixture) {
+  exteriorItems.push({ id: 'exterior-2', key: 'grund', label: 'Grund', is_active: true, sort_order: 20 })
+}
+if (new URLSearchParams(location.search).has('swipe')) {
+  // Rendered order deliberately differs from IDs, labels, and sort_order.
+  exteriorItems.unshift({ id: 'exterior-3', key: 'tak', label: 'Tak', is_active: true, sort_order: 30 })
+  exteriorItems.push({ id: 'exterior-2', key: 'grund', label: 'Grund', is_active: true, sort_order: 20 })
+}
+const observations = ['observation-1', 'observation-extra'].map((id) => ({
+  id,
+  inspection_id: inspectionId,
+  exterior_item_id: 'exterior-1',
+  part_label: null,
+  values: {},
+  note: null,
+}))
+if (imagePlaceFixture) {
+  observations.push({ ...observations[0], id: 'observation-2', exterior_item_id: 'exterior-2' })
+}
 const qa = {
   failSaves: false,
   partialLink: false,
@@ -120,12 +162,17 @@ const qa = {
   failSuggestion: false,
   holdRename: false,
   failRename: false,
+  holdImagePreviews: [] as string[],
+  failImagePreview: false,
+  failImageCreate: false,
   dropMutationResponse: false,
   delayMs: 0,
   calls: [] as Array<{ kind: string; id: string; patch?: unknown }>,
   notes: initialNotes,
   images: initialImages,
   rooms,
+  exteriorItems,
+  observations,
   completeUpload: () => {},
   hasDrafts: () => hasObTextDraftsForInspection(inspectionId),
   imageQueue: () => listRoundImageUploadItems(inspectionId),
@@ -152,6 +199,7 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
       : initialImages,
   )
   const [area, setArea] = useState<'interior' | 'exterior'>('interior')
+  const [exteriorId, setExteriorId] = useState('exterior-1')
   const [floor, setFloor] = useState(newFloors ? 'plan0' : 'plan1'),
     [roomId, setRoomId] = useState('room-1')
   const [menu, setMenu] = useState(false)
@@ -201,6 +249,7 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
     setMutating(true)
     try {
       await new Promise((resolve) => setTimeout(resolve, qa.delayMs))
+      if (kind === 'image-note' && qa.failImageCreate) throw Error('Synthetic image note failure')
       if (!receipts.current.has(requestId))
         receipts.current.set(requestId, action())
       if (qa.dropMutationResponse) {
@@ -244,15 +293,8 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
             floorKey={(key) => key}
             activeRoom={activeRoom}
             exteriorItems={exteriorItems}
-            activeExteriorItem={exteriorItems[0]}
-            observations={['observation-1', 'observation-extra'].map((id) => ({
-              id,
-              inspection_id: inspectionId,
-              exterior_item_id: 'exterior-1',
-              part_label: null,
-              values: {},
-              note: null,
-            }))}
+            activeExteriorItem={exteriorItems.find(item => item.id === exteriorId) ?? null}
+            observations={observations}
             notes={notes}
             images={images}
             quickNotes={[]}
@@ -264,7 +306,10 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
               setFloor(room.floor_label)
               setArea('interior')
             }}
-            onExterior={() => setArea('exterior')}
+            onExterior={(item) => {
+              setExteriorId(item.id)
+              setArea('exterior')
+            }}
             onAddRoom={async (type, label) => {
               const room = {
                 ...rooms[0],
@@ -489,41 +534,48 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
                 }
               })
             }
-            onPreviewImageNote={async (imageId) => {
-              qa.calls.push({ kind: 'image-preview', id: imageId })
+            onPreviewImageNote={async (imageId, target) => {
+              const image = images.find(image => image.id === imageId)!
+              const destination = imageNoteDestination(image, target)
+              const key = destination?.area === 'interior' ? destination.roomId : destination?.exteriorItemId ?? 'unplaced'
+              const fail = qa.failImagePreview
+              qa.calls.push({ kind: 'image-preview', id: imageId, patch: { target: target ?? null, key } })
+              while (qa.holdImagePreviews.includes(key)) await new Promise(resolve => setTimeout(resolve, 20))
+              qa.calls.push({ kind: 'image-preview-settled', id: imageId, patch: { key } })
+              if (fail) throw Error('Synthetic image preview failure')
+              if (!destination) throw Error('Bilden saknar plats. Välj en plats för noteringen.')
               return {
-                token: 'synthetic-image-token',
-                room: roomRows.find(
-                  (row) =>
-                    row.id ===
-                    images.find((image) => image.id === imageId)
-                      ?.interior_room_id,
-                )!,
-                observation: null,
-                exteriorItem: null,
+                token: imageNoteToken(imageId, destination),
+                room: destination.area === 'interior' ? roomRows.find(row => row.id === destination.roomId)! : null,
+                observation: imageNoteObservation(image, destination, target),
+                exteriorItem: destination.area === 'exterior' ? exteriorItems.find(row => row.id === destination.exteriorItemId)! : null,
               }
             }}
-            onCreateImageNote={(request) =>
-              mutate('image-note', request.requestId, () => {
+            onCreateImageNote={(request) => {
+              qa.calls.push({ kind: 'image-note-request', id: request.requestId, patch: request })
+              return mutate('image-note', request.requestId, () => {
                 const image = images.find((row) => row.id === request.imageId)!
+                const destination = imageNoteDestination(image, request.target)
+                if (!destination || request.token !== imageNoteToken(image.id, destination)) throw Error('Synthetic stale image placement')
+                const observation = imageNoteObservation(image, destination, request.target)
                 const created = {
                   ...note,
                   id: crypto.randomUUID(),
-                  interior_room_id: image.interior_room_id,
-                  exterior_observation_id: image.exterior_observation_id,
+                  interior_room_id: destination.area === 'interior' ? destination.roomId : null,
+                  exterior_observation_id: observation?.id ?? null,
                   note: request.draft.note,
                   risk_text: request.draft.risk_text,
                   ftu_text: request.draft.ftu_text,
                   selected_outcome_id: request.draft.outcomeId,
                 }
-                const linked = { ...image, control_item_id: created.id }
+                const linked = { ...image, control_item_id: created.id, interior_room_id: created.interior_room_id, exterior_observation_id: created.exterior_observation_id, processing_status: 'linked' as const }
                 setNotes((rows) => [...rows, created])
                 setImages((rows) =>
                   rows.map((row) => (row.id === linked.id ? linked : row)),
                 )
-                return { note: created, image: linked, observation: null }
+                return { note: created, image: linked, observation }
               })
-            }
+            }}
           />
         </div>
       </fieldset>
@@ -537,6 +589,23 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
       )}
     </main>
   )
+}
+function imageNoteDestination(image: Image, target?: MoveTarget): MoveTarget | null {
+  if (target) return target
+  const hasCurrentPlace = Boolean(image.interior_room_id || image.exterior_observation_id)
+  const roomId = image.interior_room_id || (!hasCurrentPlace ? image.origin_interior_room_id : null)
+  if (roomId && rooms.some(room => room.id === roomId)) return { area: 'interior', roomId }
+  const observationId = image.exterior_observation_id || (!hasCurrentPlace ? image.origin_exterior_observation_id : null)
+  const exteriorItemId = observations.find(row => row.id === observationId)?.exterior_item_id || (!hasCurrentPlace ? image.origin_exterior_item_id : null)
+  return exteriorItemId ? { area: 'exterior', exteriorItemId } : null
+}
+function imageNoteToken(imageId: string, target: MoveTarget) {
+  return `synthetic-image-token:${imageId}:${JSON.stringify(target)}`
+}
+function imageNoteObservation(image: Image, destination: MoveTarget, target?: MoveTarget) {
+  if (destination.area !== 'exterior') return null
+  const originalId = target ? null : image.exterior_observation_id || image.origin_exterior_observation_id
+  return observations.find(row => row.id === originalId) ?? observations.find(row => row.exterior_item_id === destination.exteriorItemId)!
 }
 function FloorFixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
   const [model, update] = useState<ObFloorModel>({ revision: 1, levels: [

@@ -53,6 +53,17 @@ export async function testRoomSwipe(page, base, output) {
     return gesture({ x: p.x - dx / 2, y: p.y }, dx, options.dy ?? 0, options.duration ?? 220, options.end ?? 'touchEnd', options.multi)
   }
   async function remainsHall(message) { assert.equal(await title(), 'Hall', message) }
+  async function remainsExterior(label, message) {
+    assert.equal(await title(), label, message)
+    assert.ok(await page.$('[data-view="room"][data-area="exterior"]'), 'stays in exterior detail')
+  }
+  async function exteriorList() {
+    await page.$$eval('.obm-segment button', rows => rows.find(row => row.textContent.trim() === 'Utsida').click())
+  }
+  const inspectionData = () => page.evaluate(() => {
+    const { rooms, notes, images, exteriorItems, observations } = window.__obMobileTest
+    return { rooms, notes, images, exteriorItems, observations }
+  })
   try {
     for (const width of [320, 390]) {
       await page.setViewport({ width, height: 820, isMobile: true, hasTouch: true })
@@ -143,13 +154,93 @@ export async function testRoomSwipe(page, base, output) {
     await swipe(1)
     await swipe(-1)
     assert.equal(await title(), onlyRoom, 'a floor with only one room never leaves that floor')
-    await page.click('[aria-label="Till platser"]')
-    await page.$$eval('.obm-segment button', rows => rows.find(row => row.textContent.trim() === 'Utsida').click())
+    assert.deepEqual(await page.evaluate(() => window.__obMobileTest.calls), [])
+
+    for (const width of [320, 390]) {
+      await page.setViewport({ width, height: 820, isMobile: true, hasTouch: true })
+      await fresh(width === 320 ? '&levels' : '')
+      const before = await inspectionData()
+      await exteriorList()
+      assert.deepEqual(await page.$$eval('.obm-place-row strong', nodes => nodes.map(node => node.textContent)), ['Tak', 'Fasad', 'Grund'])
+      for (const step of [1, -1]) {
+        await swipe(step, '.obm-section-title')
+        assert.ok(await page.$('[data-view="places"][data-area="exterior"]'), 'swiping the main exterior list does not navigate')
+      }
+      await page.$$eval('.obm-place-row', rows => rows.find(row => row.querySelector('strong')?.textContent === 'Fasad').click())
+      await remainsExterior('Fasad', 'the selected building part opens')
+      await swipe(1)
+      await remainsExterior('Grund', 'left follows rendered exterior order, not ID, label, or sort_order')
+      await swipe(1)
+      await remainsExterior('Grund', 'last building part does not wrap')
+      await page.reload({ waitUntil: 'networkidle0' })
+      await remainsExterior('Grund', 'last swiped building part survives reload')
+      await swipe(-1)
+      await remainsExterior('Fasad', 'right goes to the previous building part')
+      await swipe(-1)
+      await remainsExterior('Tak', 'right follows the exterior list to its first part')
+      await swipe(-1)
+      await remainsExterior('Tak', 'first building part does not wrap')
+      await swipe(1)
+      await remainsExterior('Fasad', 'can navigate after reaching an exterior boundary')
+      for (const options of [{ dx: -35 }, { dy: 85 }, { duration: 1150 }, { multi: true }, { end: 'touchCancel' }]) {
+        await swipe(1, '.obm-catalog .obm-section-title', options)
+        await remainsExterior('Fasad', `ignored exterior gesture: ${JSON.stringify(options)}`)
+      }
+      await swipe(1, '[data-note-id="outside-note"] > span')
+      await remainsExterior('Grund', 'a swipe over an exterior note navigates without opening its editor')
+      assert.equal(await page.$('dialog[open]'), null)
+      await swipe(-1)
+      await remainsExterior('Fasad')
+
+      await swipe(1, '[aria-label="Sök notering"]')
+      await remainsExterior('Fasad', 'swiping an exterior text field does not navigate')
+      await page.focus('[aria-label="Sök notering"]')
+      await swipe(1)
+      await remainsExterior('Fasad', 'focused text field prevents building-part changes')
+      await page.evaluate(() => document.activeElement.blur())
+      await swipe(1, '.obm-room-actions .obm-primary')
+      await remainsExterior('Fasad', 'exterior action buttons do not trigger navigation')
+      await page.click('.obm-place-images summary')
+      const exteriorPhoto = '.obm-place-image[data-image-id="room-outside"]'
+      await gesture(await point(exteriorPhoto), 90)
+      await remainsExterior('Fasad', 'exterior gallery swipes do not change building part')
+      await page.click(exteriorPhoto)
+      await page.waitForSelector('dialog[open]')
+      await swipe(1, 'dialog .obm-place-label')
+      await remainsExterior('Fasad', 'image dialog swipes do not change the underlying building part')
+      await page.click('dialog [aria-label="Tillbaka"]')
+      await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+      const exteriorNote = await point('[data-note-id="outside-note"]')
+      await page.touchscreen.tap(exteriorNote.x, exteriorNote.y)
+      await page.waitForSelector('dialog[aria-label="Notering"]')
+      await swipe(1, 'dialog .obm-place-label')
+      await remainsExterior('Fasad', 'note editor swipes do not change the underlying building part')
+      await page.click('dialog [aria-label="Tillbaka"]')
+      await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+
+      await page.type('[aria-label="Sök notering"]', 'fasad')
+      await page.evaluate(() => document.activeElement.blur())
+      await swipe(1)
+      await remainsExterior('Grund', 'swiping uses normal exterior navigation from search results')
+      assert.equal(await page.$eval('[aria-label="Sök notering"]', node => node.value), '', 'navigation clears the previous search')
+      assert.equal(await page.$eval('.obm-search-scope button', node => node.getAttribute('aria-pressed')), 'true', 'navigation restores this-place search scope')
+      await page.screenshot({ path: resolve(output, `exterior-swipe-${width}.png`) })
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      assert.deepEqual(await inspectionData(), before, 'exterior gestures preserve synthetic inspection records')
+      assert.deepEqual(await page.evaluate(() => window.__obMobileTest.calls), [], 'exterior gestures invoke no synthetic mutation callbacks')
+    }
+
+    // Without the swipe fixture, the usual single exterior part remains a boundary in both directions.
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
+    await page.goto(base, { waitUntil: 'networkidle0' })
+    await exteriorList()
+    assert.equal((await page.$$('.obm-place-row')).length, 1, 'additional building parts are isolated to the swipe fixture')
     await page.click('.obm-place-row')
     await swipe(1)
-    assert.equal(await title(), 'Fasad', 'exterior views do not use room swiping')
+    await swipe(-1)
+    await remainsExterior('Fasad', 'a single building part does not navigate away')
     assert.deepEqual(await page.evaluate(() => window.__obMobileTest.calls), [])
-    console.log('PASS: real touch swipes, shared floor order/boundaries, vertical scroll, gesture guards, image/editor isolation, mouse behavior, and no inspection writes.')
+    console.log('PASS: real touch swipes, interior/exterior list order and boundaries, reload, vertical scroll, gesture guards, image/editor isolation, mouse behavior, and no synthetic mutation callbacks.')
   } finally {
     await client.detach()
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })

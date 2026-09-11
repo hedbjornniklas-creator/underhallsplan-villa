@@ -276,3 +276,51 @@ test('round API guards authorization, locks, stale writes, request size and miss
   )
   assert.equal(calls.length, 0)
 })
+
+test('image-note API validates optional place targets before either RPC operation', async () => {
+  const { api, calls } = route()
+  const image = {
+    imageId: randomUUID(), requestId: randomUUID(), token: 'a'.repeat(32),
+    draft: { note: 'Text', risk_text: '', ftu_text: '', outcomeId: null },
+  }
+  for (const operation of ['image-note-preview', 'image-note']) {
+    for (const target of [null, false, '', [], {}, { area: 'roof' }, { area: 'interior' },
+      { area: 'interior', roomId: 'bad' }, { area: 'exterior' }, { area: 'exterior', exteriorItemId: 'bad' },
+      { area: 'interior', roomId: randomUUID(), exteriorItemId: randomUUID() },
+      { area: 'exterior', exteriorItemId: randomUUID(), roomId: null }]) {
+      assert.equal((await api.POST(request({ operation, payload: { ...image, target } }), context)).status, 400)
+    }
+  }
+  for (const operation of ['image-note-place-preview', 'image-note-place']) {
+    assert.equal((await api.POST(request({ operation, payload: image }), context)).status, 400,
+      'Database-only operation names must not bypass the public input validator')
+  }
+  assert.equal(calls.length, 0)
+})
+
+test('image-note API maps explicit places to fail-closed RPC operations and preserves legacy omission', async () => {
+  const { api, calls } = route()
+  const image = {
+    imageId: randomUUID(), requestId: randomUUID(), token: 'a'.repeat(32),
+    draft: { note: 'Text', risk_text: 'Risk', ftu_text: 'FTU', outcomeId: null },
+  }
+  for (const target of [undefined, { area: 'interior', roomId: randomUUID() }, { area: 'exterior', exteriorItemId: randomUUID() }]) {
+    for (const operation of ['image-note-preview', 'image-note']) {
+      const input = target ? { ...image, target } : image
+      assert.equal((await api.POST(request({ operation, payload: input, p_actor: randomUUID(), p_org_id: randomUUID() }), context)).status, 200)
+      const call = calls.at(-1)!
+      assert.equal(call.p_actor, actor)
+      assert.equal(call.p_org_id, org)
+      assert.equal(call.p_operation, target ? (operation === 'image-note-preview' ? 'image-note-place-preview' : 'image-note-place') : operation)
+      assert.deepEqual(call.p_payload, input)
+      assert.deepEqual(call.p_floor_keys, [])
+    }
+  }
+  for (const operation of ['image-note-preview', 'image-note']) {
+    const oldDatabase = route({ rpcError: 'OB_ROUND_INVALID' })
+    const response = await oldDatabase.api.POST(request({ operation, payload: { ...image, target: { area: 'interior', roomId: randomUUID() } } }), context)
+    assert.equal(response.status, 400)
+    assert.equal(oldDatabase.calls.length, 1, 'Never retry against the legacy operation after the database rejects explicit placement')
+    assert.match(String(oldDatabase.calls[0].p_operation), /^image-note-place/)
+  }
+})

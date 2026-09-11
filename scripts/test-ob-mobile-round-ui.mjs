@@ -16,6 +16,7 @@ import { testNoteSuggestion } from '../test/helpers/ob-note-suggestion-browser.m
 import { testRoomNameImages } from '../test/helpers/ob-room-name-images-browser.mjs'
 import { testRoomSwipe } from '../test/helpers/ob-room-swipe-browser.mjs'
 import { testRoundBack } from '../test/helpers/ob-round-back-browser.mjs'
+import { testImagePlace } from '../test/helpers/ob-image-place-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -101,6 +102,8 @@ if (serve) {
       if (new URL(request.url()).origin === base) void request.continue()
       else { external.push(request.url()); void request.abort() }
     })
+    if (process.argv.includes('--image-place-only') || !process.argv.some(arg => arg.endsWith('-only'))) await testImagePlace(page, base, output)
+    if (!process.argv.includes('--image-place-only')) {
     await testRoundBack(page, base, output)
     if (!process.argv.includes('--back-only')) {
     await testRoomSwipe(page, base, output)
@@ -120,7 +123,8 @@ if (serve) {
     }
     }
     }
-    if (process.argv.includes('--back-only') || process.argv.includes('--swipe-only') || process.argv.includes('--floors-only') || process.argv.includes('--images-only') || process.argv.includes('--image-bank-only') || process.argv.includes('--image-preview-only') || process.argv.includes('--image-removal-only') || process.argv.includes('--note-suggestion-only') || process.argv.includes('--room-name-images-only')) {
+    }
+    if (process.argv.includes('--image-place-only') || process.argv.includes('--back-only') || process.argv.includes('--swipe-only') || process.argv.includes('--floors-only') || process.argv.includes('--images-only') || process.argv.includes('--image-bank-only') || process.argv.includes('--image-preview-only') || process.argv.includes('--image-removal-only') || process.argv.includes('--note-suggestion-only') || process.argv.includes('--room-name-images-only')) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
       console.log('PASS: selected browser checks. No external requests.')

@@ -8,6 +8,21 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 const isId = (value: unknown) => typeof value === 'string' && uuid.test(value)
+const isTarget = (value: unknown) =>
+  object(value) &&
+  (value.area === 'interior'
+    ? isId(value.roomId) && value.exteriorItemId === undefined
+    : value.area === 'exterior' && isId(value.exteriorItemId) && value.roomId === undefined)
+
+// A pre-place-selection database rejects these operations instead of ignoring
+// target and creating a note at the image's old location.
+export function roundMutationRpcOperation(operation: string, payload: Record<string, unknown>) {
+  if (payload.target !== undefined) {
+    if (operation === 'image-note-preview') return 'image-note-place-preview'
+    if (operation === 'image-note') return 'image-note-place'
+  }
+  return operation
+}
 
 export function validateRoundMutation(inspectionId: string, body: unknown) {
   if (!isId(inspectionId) || !object(body) || !object(body.payload))
@@ -35,6 +50,7 @@ export function validateRoundMutation(inspectionId: string, body: unknown) {
     return false
   if (String(operation).startsWith('image-note')) {
     if (!isId(p.imageId)) return false
+    if (p.target !== undefined && !isTarget(p.target)) return false
     if (operation === 'image-note') {
       if (!object(p.draft)) return false
       const draft = p.draft
@@ -130,7 +146,7 @@ export function roundMutationError(error: unknown): [number, string] {
     ],
     OB_ROUND_PLACE_REQUIRED: [
       409,
-      'Bilden saknar en giltig plats. Koppla den till en befintlig notering i stället.',
+      'Bilden saknar en giltig plats. Välj ett rum eller en utvändig del.',
     ],
     OB_ROUND_IMAGE_LINKED: [409, 'Bilden är redan kopplad till en notering.'],
     OB_ROUND_ROOM_NOT_EMPTY: [

@@ -49,6 +49,9 @@ do not replace physical-device, production-database and report acceptance.
   This addition needs no new database migration.
 - In Att bearbeta, pressing an image thumbnail opens a large, uncropped preview
   in the current tab. Back/Escape returns to the list at its scroll position.
+  Previous/next arrows and a position counter follow the same pending-image
+  list, without wrapping at either end. Linked/ignored images are excluded.
+  The place label and link action follow the image currently displayed.
   The adjacent place/arrow still opens image linking directly, and the preview
   also has a link action. Viewing images does not write inspection data; locked
   inspections and queued uploads can be previewed without enabling linking.
@@ -80,7 +83,12 @@ do not replace physical-device, production-database and report acceptance.
   Deletion still uses the separate confirmation/archiving flow; the note and
   stored files remain. Deletion in the image link sheet is unchanged.
 - Existing/new note tabs in Koppla bild. New notes use free or editable catalog
-  text and the image's saved place. No record is created on tab changes/cancel.
+  text and default to the image's saved place, never the last visited room.
+  Under Ny notering, select Insida → Plan → Rum or Utsida → Byggnadsdel to
+  assign an unplaced image or choose another destination. Draft text survives
+  place changes. Only Skapa och koppla creates the note and assigns the image,
+  in one transaction; selecting a place, previewing, switching tabs or
+  cancelling changes no inspection records. Capture origin is retained.
 - Atomic move/delete/create-and-link with server authorization, workflow/lock
   guards, stale preflight checks and idempotency receipts. Local pending text
   drafts and uploads block these actions; editor actions flush text first.
@@ -106,6 +114,16 @@ It has not been applied to Supabase by this task. It creates two private
 receipt/archive tables and functions/triggers; it does not backfill or rewrite
 existing inspection content. It requires the existing OB assignment-workflow
 foundation and inspection write-lock guards.
+
+Place selection for new image notes additionally requires
+`docs/db/2026-09-11_07_ob_image_note_place.sql` after the foundation above and
+before deploying the place-selector UI/API. This forward migration replaces
+the RPC function without rewriting existing rows. It has not been applied to
+Supabase by the place-selector task. Explicit targets use new RPC operation
+names, so a database without this migration rejects the request instead of
+silently ignoring the selected destination. Legacy no-target requests retain
+their current/origin placement behavior. Target selection, current image state
+and destination state are verified again during the atomic save.
 
 The RPC is executable only by `service_role`. The API derives actor and active
 organization from the authenticated session; the RPC additionally checks
@@ -171,6 +189,7 @@ should be needed just to retire the old interface.
 node --experimental-strip-types --test test/ob-mobile-round.test.ts
 node --experimental-strip-types --test test/ob-round-mutations.test.ts test/ob-round-mutation-api.test.ts test/ob-early-start-api.test.ts
 node scripts/test-ob-mobile-round-ui.mjs
+node scripts/test-ob-mobile-round-ui.mjs --image-place-only
 npx tsc --noEmit --incremental false
 ```
 

@@ -14,6 +14,7 @@ import {
   Camera,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   FileText,
   Image as ImageIcon,
@@ -48,6 +49,7 @@ import type {
   ImageNoteRequest,
   ImageNotePreview,
   ImageNoteResult,
+  MoveTarget,
 } from '@/lib/ob/roundMutations'
 import Sheet from './ObRoundSheet'
 import ObRoundImageBank from './ObRoundImageBank'
@@ -127,7 +129,7 @@ export type ObMobileRoundProps = {
     token: string,
     requestId: string,
   ) => Promise<RemovalResult>
-  onPreviewImageNote: (imageId: string) => Promise<ImageNotePreview>
+  onPreviewImageNote: (imageId: string, target?: MoveTarget) => Promise<ImageNotePreview>
   onCreateImageNote: (request: ImageNoteRequest) => Promise<ImageNoteResult>
 }
 
@@ -489,13 +491,22 @@ export default function ObMobileRound(p: Props) {
   const roomsOnFloor = p.rooms
     .filter(room => p.floorKey(room.floor_label) === p.floorKey(p.activeFloor))
     .sort((a, b) => b.order_index - a.order_index)
-  const roomSwipe = useObRoomSwipe(
-    view === 'room' && p.area === 'interior' && p.activeRoom?.id && !busy && !importing
-      ? `${p.inspectionId}:${p.activeFloor}:${p.activeRoom.id}` : null,
+  const activePlaceKey = p.area === 'interior'
+    ? p.activeRoom?.id && `${p.inspectionId}:interior:${p.activeFloor}:${p.activeRoom.id}`
+    : p.activeExteriorItem?.id && `${p.inspectionId}:exterior:${p.activeExteriorItem.id}`
+  const placeSwipe = useObRoomSwipe(
+    view === 'room' && !busy && !importing ? activePlaceKey ?? null : null,
     step => {
-      const index = roomsOnFloor.findIndex(room => room.id === p.activeRoom?.id)
-      const next = index < 0 ? undefined : roomsOnFloor[index + step]
-      if (next?.id) goRoom(next)
+      if (p.area === 'interior') {
+        const index = roomsOnFloor.findIndex(room => room.id === p.activeRoom?.id)
+        const next = index < 0 ? undefined : roomsOnFloor[index + step]
+        if (next?.id) goRoom(next)
+      } else {
+        // Follow the exterior list's order without wrapping or changing area.
+        const index = p.exteriorItems.findIndex(item => item.id === p.activeExteriorItem?.id)
+        const next = index < 0 ? undefined : p.exteriorItems[index + step]
+        if (next?.id) goExterior(next)
+      }
     },
   )
   const observationIds = new Set(
@@ -529,6 +540,10 @@ export default function ObMobileRound(p: Props) {
   const unmatched = p.images.filter(
     (image) => !image.control_item_id && image.processing_status !== 'ignored',
   )
+  const pendingPhotoIndex = view === 'pending'
+    ? unmatched.findIndex(image => image.id === enlargedPhoto?.id) : -1
+  const previousPendingPhoto = pendingPhotoIndex > 0 ? unmatched[pendingPhotoIndex - 1] : null
+  const nextPendingPhoto = pendingPhotoIndex >= 0 ? unmatched[pendingPhotoIndex + 1] : null
   const drafts = p.notes.filter(
     (note) =>
       (!note.control_point_id && !hasNote(note)) ||
@@ -543,7 +558,7 @@ export default function ObMobileRound(p: Props) {
     inspectionId: p.inspectionId,
     ready: restored,
     canGoBack: view !== 'places' || Boolean(editor || preview || photo || enlargedPhoto || renameRoom || moveSubject || removalSubject || addRoomOpen),
-    root: roomSwipe.ref,
+    root: placeSwipe.ref,
     onBack: () => {
       setView('places')
       setQuery('')
@@ -887,7 +902,7 @@ export default function ObMobileRound(p: Props) {
     )
   }
   return (
-    <div className="obm-root" data-view={view} data-area={p.area} {...roomSwipe}>
+    <div className="obm-root" data-view={view} data-area={p.area} {...placeSwipe}>
       {view !== 'room' && (
         <header className="obm-inspection-header">
           <div>
@@ -1592,9 +1607,26 @@ export default function ObMobileRound(p: Props) {
             </button>
           }
         >
-          <p className="obm-place-label"><MapPin size={16} />{imagePlace(enlargedPhoto)}</p>
+          {pendingPhotoIndex >= 0 ? (
+            <nav className="obm-image-navigation" aria-label="Bläddra bland bilder">
+              <button type="button" className="obm-icon" aria-label="Föregående bild" title="Föregående bild"
+                disabled={!previousPendingPhoto}
+                onClick={() => { if (previousPendingPhoto) setEnlargedPhotoId(previousPendingPhoto.id) }}>
+                <ChevronLeft size={24} />
+              </button>
+              <div role="status" aria-live="polite" aria-atomic="true">
+                <p className="obm-place-label"><MapPin size={16} />{imagePlace(enlargedPhoto)}</p>
+                <span>{pendingPhotoIndex + 1} av {unmatched.length}</span>
+              </div>
+              <button type="button" className="obm-icon" aria-label="Nästa bild" title="Nästa bild"
+                disabled={!nextPendingPhoto}
+                onClick={() => { if (nextPendingPhoto) setEnlargedPhotoId(nextPendingPhoto.id) }}>
+                <ChevronRight size={24} />
+              </button>
+            </nav>
+          ) : <p className="obm-place-label"><MapPin size={16} />{imagePlace(enlargedPhoto)}</p>}
           <div className="obm-image-viewer">
-            <img src={p.imageSrc(enlargedPhoto)} alt={enlargedPhoto.label || 'Besiktningsbild'} />
+            <img key={enlargedPhoto.id} src={p.imageSrc(enlargedPhoto)} alt={enlargedPhoto.label || 'Besiktningsbild'} />
           </div>
         </Sheet>
       )}
