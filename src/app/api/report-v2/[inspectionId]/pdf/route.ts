@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+import { requireTuContext } from '@/lib/tu/server'
 import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
@@ -151,7 +152,18 @@ export async function GET(
 
   try {
     const admin = createSupabaseAdminClient()
-    const orgContext = await requireOrgContext()
+    const searchParams = new URL(request.url).searchParams
+    if (
+      [...searchParams.keys()].some((key) => key !== 'orgId') ||
+      searchParams.getAll('orgId').length > 1 ||
+      (searchParams.has('orgId') && !searchParams.get('orgId'))
+    ) {
+      return new NextResponse('Ogiltigt organisationsval.', { status: 400 })
+    }
+    const requestedOrgId = searchParams.has('orgId')
+      ? searchParams.get('orgId')
+      : undefined
+    let orgContext = await requireOrgContext(requestedOrgId)
 
     const { data: inspection, error: inspectionError } = await admin
       .from('inspections')
@@ -168,11 +180,16 @@ export async function GET(
     }
 
     const inspectionRow = inspection as InspectionForPdf
-    const hasAccess =
-      (await hasAssignmentAccess(admin, orgContext.orgId, inspectionId)) ||
-      (await hasTechnicalInvestigationAccess(admin, orgContext.orgId, inspectionId)) ||
-      (await hasEbInspectionAccess(admin, orgContext.orgId, inspectionId)) ||
-      (await isInspectionOwnedByUser(admin, inspectionRow.property_id, orgContext.userId))
+    const inspectionFamily = String(inspectionRow.inspection_family ?? '').trim().toUpperCase()
+    if (inspectionFamily === 'TU') {
+      orgContext = await requireTuContext(requestedOrgId)
+    }
+
+    const hasAccess = inspectionFamily === 'TU'
+      ? await hasTechnicalInvestigationAccess(admin, orgContext.orgId, inspectionId)
+      : (await hasAssignmentAccess(admin, orgContext.orgId, inspectionId)) ||
+        (await hasEbInspectionAccess(admin, orgContext.orgId, inspectionId)) ||
+        (await isInspectionOwnedByUser(admin, inspectionRow.property_id, orgContext.userId))
 
     if (!hasAccess) {
       return new NextResponse('Du saknar behörighet att ladda ner detta utlåtande.', {
@@ -190,6 +207,7 @@ export async function GET(
         ? await admin
             .from('eb_inspection_details')
             .select('sequence_no')
+            .eq('org_id', orgContext.orgId)
             .eq('inspection_id', inspectionId)
             .maybeSingle()
         : null
@@ -201,6 +219,7 @@ export async function GET(
     const { data: linkRows, error: linkError } = await admin
       .from('inspection_report_links')
       .select('id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,pdf_error,created_at,snapshot_payload')
+      .eq('org_id', orgContext.orgId)
       .eq('inspection_id', inspectionId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
@@ -278,6 +297,14 @@ export async function GET(
     }
     if (message === 'ORG_MEMBERSHIP_REQUIRED') {
       return new NextResponse('Du saknar organisationstillhörighet.', { status: 403 })
+    }
+    if (message === 'ORG_SELECTION_INVALID') {
+      return new NextResponse('Ogiltigt organisationsval.', { status: 400 })
+    }
+    if (message === 'MODULE_ACCESS_REQUIRED') {
+      return new NextResponse('Du saknar TU-behörighet i den valda organisationen.', {
+        status: 403,
+      })
     }
     return new NextResponse(message, { status: 500 })
   }

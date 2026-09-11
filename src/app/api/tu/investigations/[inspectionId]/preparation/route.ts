@@ -17,7 +17,7 @@ import {
   isTuVerificationStatus,
   type TuControlPlanResponse,
 } from '@/lib/tu/controlPlan'
-import { requireTuContext } from '@/lib/tu/server'
+import { requireTuRequestContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -52,6 +52,7 @@ function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
@@ -107,10 +108,10 @@ async function stateResponse(orgId: string, inspectionId: string, status = 200) 
   return NextResponse.json({ preparation } satisfies TuControlPlanResponse, { status })
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     return stateResponse(orgContext.orgId, inspectionId)
   } catch (error) {
     const mapped = mapError(error)
@@ -123,7 +124,7 @@ export async function GET(_request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const body = await request.json().catch(() => ({})) as Record<string, unknown>
     const action = cleanText(body.action)
 
@@ -169,7 +170,7 @@ export async function POST(request: Request, context: RouteContext) {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const body = await request.json().catch(() => ({})) as Record<string, unknown>
     const target = cleanText(body.target)
 

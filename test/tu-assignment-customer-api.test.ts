@@ -11,6 +11,7 @@ type TuRoute = {
 
 type HarnessOptions = {
   bindingError?: Error
+  contextError?: Error
   linked?: boolean
   sendError?: Error
 }
@@ -113,8 +114,9 @@ function harness(routePath: string, options: HarnessOptions = {}) {
   }
 
   const tuServer = {
-    async requireTuContext() {
-      calls.push({ name: 'context' })
+    async requireTuContext(requestedOrgId?: unknown) {
+      calls.push({ name: 'context', value: requestedOrgId })
+      if (options.contextError) throw options.contextError
       return {
         orgId: ORG_ID,
         userId: USER_ID,
@@ -177,6 +179,7 @@ function harness(routePath: string, options: HarnessOptions = {}) {
 
 function validBody() {
   return {
+    orgId: ORG_ID,
     customerBinding: {
       mode: 'create',
       customerType: 'private',
@@ -232,6 +235,7 @@ test('TU draft POST creates, binds with the persisted id/version and refetches t
 
   assert.equal(response.status, 201)
   assert.deepEqual(callNames(setup.calls), ['context', 'create', 'bind', 'refetch'])
+  assert.deepEqual(setup.calls[0], { name: 'context', value: ORG_ID })
   assert.deepEqual(setup.calls[2], {
     name: 'bind',
     value: [
@@ -276,6 +280,7 @@ test('TU quick-send binds and refetches before it sends the linked assignment', 
     'refetch',
     'send',
   ])
+  assert.deepEqual(setup.calls[0], { name: 'context', value: ORG_ID })
   assert.deepEqual(setup.calls[2].value, [
     ORG_ID,
     ASSIGNMENT_ID,
@@ -414,6 +419,43 @@ test('both TU POST routes reject missing/invalid bindings before creating a draf
   }
 })
 
+test('both TU POST routes reject missing or invalid orgId before creating a draft', async () => {
+  for (const candidate of [
+    {
+      file: 'src/app/api/tu/assignments/route.ts',
+      path: '/api/tu/assignments',
+    },
+    {
+      file: 'src/app/api/tu/assignments/quick-send/route.ts',
+      path: '/api/tu/assignments/quick-send',
+    },
+  ]) {
+    const missingSetup = harness(candidate.file)
+    const missingBody = validBody() as Record<string, unknown>
+    delete missingBody.orgId
+
+    const missingResponse = await missingSetup.route.POST(
+      request(candidate.path, missingBody)
+    )
+    assert.equal(missingResponse.status, 400)
+    assert.deepEqual(missingSetup.calls, [])
+
+    const invalidSetup = harness(candidate.file, {
+      contextError: new Error('ORG_SELECTION_INVALID'),
+    })
+    const invalidBody = { ...validBody(), orgId: 'not-a-uuid' }
+    const invalidResponse = await invalidSetup.route.POST(
+      request(candidate.path, invalidBody)
+    )
+
+    assert.equal(invalidResponse.status, 400)
+    assert.deepEqual(invalidSetup.calls, [
+      { name: 'context', value: 'not-a-uuid' },
+    ])
+    assert.equal((await json(invalidResponse)).error, 'Den valda organisationen är ogiltig.')
+  }
+})
+
 test('both TU POST routes reject cross-origin requests before context or draft creation', async () => {
   for (const candidate of [
     {
@@ -439,11 +481,18 @@ test('both TU POST routes reject cross-origin requests before context or draft c
 test('TU access accepts global access or access scoped to the exact organization', () => {
   assert.match(
     requireTuContextSource,
-    /const context = await requireOrgContext\(\)[\s\S]*?hasCurrentUserAccess\(\{[\s\S]*?scopeType: 'organization',[\s\S]*?scopeId: context\.orgId/
+    /export async function requireTuContext\(requestedOrgId\?: unknown\)[\s\S]*?const context = await requireOrgContext\(requestedOrgId\)[\s\S]*?hasCurrentUserAccess\(\{[\s\S]*?scopeType: 'organization',[\s\S]*?scopeId: context\.orgId/
   )
   assert.match(
     requireTuContextSource,
     /hasCurrentUserAccess\(\{[\s\S]*?moduleKey: 'technical_investigations',[\s\S]*?scopeType: 'global'/
   )
-  assert.match(requireTuContextSource, /if \(!hasOrganizationAccess && !hasGlobalAccess\)/)
+  assert.match(
+    requireTuContextSource,
+    /if \(hasOrganizationAccess \|\| hasGlobalAccess\) return context/
+  )
+  assert.match(
+    requireTuContextSource,
+    /if \(requestedOrgId !== undefined\) throw new Error\('MODULE_ACCESS_REQUIRED'\)/
+  )
 })

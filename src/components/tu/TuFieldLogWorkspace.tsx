@@ -37,6 +37,7 @@ type ObservationResponse = {
 
 type Props = {
   inspectionId: string
+  organizationId: string
   locked: boolean
   images: FieldImage[]
   queue: TuFieldQueueController
@@ -83,6 +84,7 @@ function queueStatus(item: TuFieldQueueItem) {
 
 export default function TuFieldLogWorkspace({
   inspectionId,
+  organizationId,
   locked,
   images,
   queue,
@@ -101,7 +103,7 @@ export default function TuFieldLogWorkspace({
   const loadObservations = useCallback(async () => {
     setLoadError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`)
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`)
       const payload = (await response.json().catch(() => ({}))) as ObservationResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta fältloggen.')
       setObservations(payload.observations ?? [])
@@ -110,7 +112,7 @@ export default function TuFieldLogWorkspace({
     } finally {
       setLoading(false)
     }
-  }, [inspectionId])
+  }, [inspectionId, organizationId])
 
   useEffect(() => {
     void loadObservations()

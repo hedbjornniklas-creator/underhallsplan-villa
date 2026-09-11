@@ -44,12 +44,14 @@ function draftSummary(draft: AssignmentCustomerDraft) {
 }
 
 export default function AssignmentCustomerSelector({
+  organizationId,
   value,
   draft,
   disabled,
   onChange,
   onUseCustomer,
 }: {
+  organizationId: string
   value: AssignmentCustomerBinding | null
   draft: AssignmentCustomerDraft
   disabled: boolean
@@ -69,15 +71,21 @@ export default function AssignmentCustomerSelector({
       setLoading(true)
       setError(null)
       try {
-        const response = await fetch('/api/settings/customers', {
+        const response = await fetch(
+          `/api/settings/customers?orgId=${encodeURIComponent(organizationId)}`,
+          {
           cache: 'no-store',
           credentials: 'same-origin',
           headers: { Accept: 'application/json' },
           signal: controller.signal,
-        })
+          }
+        )
         const body = (await response.json().catch(() => ({}))) as CustomerWorkspaceResponse
         if (!response.ok || !body.workspace || !Array.isArray(body.workspace.customers)) {
           throw new Error(body.error || 'Kundregistret kunde inte hämtas.')
+        }
+        if (body.workspace.organization.id !== organizationId) {
+          throw new Error('Kundregistret svarade för fel organisation. Ladda om sidan.')
         }
         if (current) setWorkspace(body.workspace)
       } catch (loadError) {
@@ -96,7 +104,7 @@ export default function AssignmentCustomerSelector({
       current = false
       controller.abort()
     }
-  }, [loadAttempt])
+  }, [loadAttempt, organizationId])
 
   const activeCustomers = useMemo(
     () => workspace?.customers.filter((customer) => customer.isActive) ?? [],

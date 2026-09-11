@@ -43,6 +43,11 @@ const DOCUMENT_FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf,ap
 const MAX_IMAGE_FILES_PER_UPLOAD = 20
 const MAX_IMAGE_UPLOAD_BYTES = 15 * 1024 * 1024
 
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
+
 type TuImageSectionKey = 'bank' | 'appendix' | 'cover'
 type TuImageViewCount = 9 | 4 | 1
 type TuImageActionTarget = TuImageSectionKey | 'delete' | 'reorder'
@@ -815,6 +820,7 @@ export default function TuInvestigationEditorClient({
   }, [])
   const fieldQueue = useTuFieldQueue({
     inspectionId: initialInvestigation.inspectionId,
+    organizationId: investigation.orgId,
     enabled: aiWorkflowEnabled,
     locked,
     onImageUploaded: handleFieldImageUploaded,
@@ -835,18 +841,24 @@ export default function TuInvestigationEditorClient({
 
   const saveTuPatch = useCallback(
     async (body: Record<string, unknown>): Promise<TuSavePatchResponse> => {
-      const response = await fetch(`/api/tu/investigations/${initialInvestigation.inspectionId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${initialInvestigation.inspectionId}`,
+          initialInvestigation.orgId
+        ),
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as TuSavePatchResponse
       if (!response.ok) {
         throw new Error(payload.error ?? 'Kunde inte spara TU-utredningen.')
       }
       return payload
     },
-    [initialInvestigation.inspectionId]
+    [initialInvestigation.inspectionId, initialInvestigation.orgId]
   )
 
   const autosave = useAutosaveQueue<Record<string, unknown>, TuSavePatchResponse>({
@@ -924,7 +936,12 @@ export default function TuInvestigationEditorClient({
       setImagesLoading(true)
       setImageError(null)
       try {
-        const response = await fetch(`/api/tu/investigations/${initialInvestigation.inspectionId}/images`)
+        const response = await fetch(
+          organizationUrl(
+            `/api/tu/investigations/${initialInvestigation.inspectionId}/images`,
+            initialInvestigation.orgId
+          )
+        )
         const payload = (await response.json().catch(() => ({}))) as ImageApiResponse
         if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta TU-bilder.')
         if (!cancelled) setImages(sortTuImages(payload.images ?? []))
@@ -942,7 +959,7 @@ export default function TuInvestigationEditorClient({
     return () => {
       cancelled = true
     }
-  }, [initialInvestigation.inspectionId])
+  }, [initialInvestigation.inspectionId, initialInvestigation.orgId])
 
   useEffect(() => {
     let cancelled = false
@@ -951,7 +968,12 @@ export default function TuInvestigationEditorClient({
       setDocumentsLoading(true)
       setDocumentError(null)
       try {
-        const response = await fetch(`/api/tu/investigations/${initialInvestigation.inspectionId}/documents`)
+        const response = await fetch(
+          organizationUrl(
+            `/api/tu/investigations/${initialInvestigation.inspectionId}/documents`,
+            initialInvestigation.orgId
+          )
+        )
         const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
         if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta TU-dokument.')
         if (!cancelled) setDocuments(sortTuDocuments(payload.documents ?? []))
@@ -969,7 +991,7 @@ export default function TuInvestigationEditorClient({
     return () => {
       cancelled = true
     }
-  }, [initialInvestigation.inspectionId])
+  }, [initialInvestigation.inspectionId, initialInvestigation.orgId])
 
   const savePatch = async (body: Record<string, unknown>) => {
     setError(null)
@@ -1246,15 +1268,21 @@ export default function TuInvestigationEditorClient({
     setAiBusy(true)
     setAiError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/ai-draft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          mode: options?.fillEmpty ? 'fill_empty' : 'suggest',
-          sectionKey: options?.sectionKey,
-        }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${investigation.inspectionId}/ai-draft`,
+          investigation.orgId
+        ),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            mode: options?.fillEmpty ? 'fill_empty' : 'suggest',
+            sectionKey: options?.sectionKey,
+          }),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as TuAiResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa AI-förslag.')
       setAiSuggestions(payload.suggestions ?? [])
@@ -1379,6 +1407,7 @@ export default function TuInvestigationEditorClient({
   ).length
   const workflowState = useTuWorkflowState({
     inspectionId: investigation.inspectionId,
+    organizationId: investigation.orgId,
     enabled: aiWorkflowEnabled,
     workflowProfile: investigation.reportWorkflowProfile,
     refreshToken: fieldQueue.completedRevision,
@@ -1492,17 +1521,23 @@ export default function TuInvestigationEditorClient({
       for (const [index, originalFile] of imageFiles.entries()) {
         const position = `${index + 1}/${imageFiles.length}`
         setImageUploadProgress(`Skapar uppladdningslänk ${position}: ${originalFile.name}`)
-        const signedResponse = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'createSignedUpload',
-            sectionKey,
-            fileName: originalFile.name,
-            contentType: originalFile.type,
-            fileSize: originalFile.size,
-          }),
-        })
+        const signedResponse = await fetch(
+          organizationUrl(
+            `/api/tu/investigations/${investigation.inspectionId}/images`,
+            investigation.orgId
+          ),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'createSignedUpload',
+              sectionKey,
+              fileName: originalFile.name,
+              contentType: originalFile.type,
+              fileSize: originalFile.size,
+            }),
+          }
+        )
         if (!signedResponse.ok) {
           const message = await readApiError(signedResponse, 'Kunde inte skapa uppladdningslänk.')
           throw new Error(`${message} (${buildImageUploadContext([originalFile])})`)
@@ -1527,15 +1562,21 @@ export default function TuInvestigationEditorClient({
         }
 
         setImageUploadProgress(`Sparar bildrad ${position}: ${originalFile.name}`)
-        const completeResponse = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'completeSignedUpload',
-            sectionKey,
-            filePath: upload.filePath,
-          }),
-        })
+        const completeResponse = await fetch(
+          organizationUrl(
+            `/api/tu/investigations/${investigation.inspectionId}/images`,
+            investigation.orgId
+          ),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'completeSignedUpload',
+              sectionKey,
+              filePath: upload.filePath,
+            }),
+          }
+        )
         if (!completeResponse.ok) {
           const message = await readApiError(completeResponse, 'Bilden laddades upp men kunde inte sparas i listan.')
           throw new Error(`${message} (${buildImageUploadContext([originalFile])})`)
@@ -1712,11 +1753,17 @@ export default function TuInvestigationEditorClient({
   }
 
   const patchImageRequest = async (imageId: string, patch: Record<string, unknown>) => {
-    const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageId, ...patch }),
-    })
+    const response = await fetch(
+      organizationUrl(
+        `/api/tu/investigations/${investigation.inspectionId}/images`,
+        investigation.orgId
+      ),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageId, ...patch }),
+      }
+    )
     const payload = (await response.json().catch(() => ({}))) as ImageApiResponse
     if (!response.ok) throw new Error(payload.error ?? 'Kunde inte spara bild.')
     return payload.image ?? null
@@ -1805,11 +1852,17 @@ export default function TuInvestigationEditorClient({
     setImageBusy(true)
     setImageError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/images`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageId }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${investigation.inspectionId}/images`,
+          investigation.orgId
+        ),
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageId }),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as ImageApiResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort bild.')
       setImages((current) => {
@@ -2145,10 +2198,16 @@ export default function TuInvestigationEditorClient({
         formData.set('analysisSourceRole', options.analysisSourceRole)
       }
 
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/documents`, {
-        method: 'POST',
-        body: formData,
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${investigation.inspectionId}/documents`,
+          investigation.orgId
+        ),
+        {
+          method: 'POST',
+          body: formData,
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
       if (!response.ok || !payload.document) {
         throw new Error(payload.error ?? 'Kunde inte ladda upp dokument.')
@@ -2171,11 +2230,17 @@ export default function TuInvestigationEditorClient({
     setDocumentBusy(true)
     setDocumentError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/documents`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${investigation.inspectionId}/documents`,
+          investigation.orgId
+        ),
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId }),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort dokument.')
       setDocuments((current) => current.filter((document) => document.id !== documentId))
@@ -2200,11 +2265,17 @@ export default function TuInvestigationEditorClient({
     setDocumentBusy(true)
     setDocumentError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${investigation.inspectionId}/documents`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId, ...patch }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${investigation.inspectionId}/documents`,
+          investigation.orgId
+        ),
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId, ...patch }),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as DocumentApiResponse
       if (!response.ok || !payload.document) throw new Error(payload.error ?? 'Kunde inte spara dokument.')
       setDocuments((current) => upsertDocument(current, payload.document as TuInvestigationDocument))
@@ -2236,7 +2307,7 @@ export default function TuInvestigationEditorClient({
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 md:px-6">
         <header className="space-y-4 border-b border-violet-100 pb-4">
           <Link
-              href="/tu/investigations"
+            href={organizationUrl('/tu/investigations', investigation.orgId)}
             className="inline-flex items-center gap-2 text-sm font-medium text-violet-800 hover:text-violet-950"
           >
             <ArrowLeft size={16} aria-hidden />
@@ -2289,6 +2360,7 @@ export default function TuInvestigationEditorClient({
         {postDamageWorkflowEnabled && workspaceView === 'preparation' ? (
           <TuPostDamagePreparationWorkspace
             inspectionId={investigation.inspectionId}
+            organizationId={investigation.orgId}
             scopeDescription={investigation.scopeDescription}
             locked={locked}
             preparation={workflowState.preparation}
@@ -2307,6 +2379,7 @@ export default function TuInvestigationEditorClient({
           <div className="space-y-4">
             <TuFieldLogWorkspace
               inspectionId={investigation.inspectionId}
+              organizationId={investigation.orgId}
               locked={locked}
               images={images}
               queue={fieldQueue}
@@ -2323,6 +2396,7 @@ export default function TuInvestigationEditorClient({
         ) : aiWorkflowEnabled && workspaceView === 'evidence' ? (
           <TuEvidenceWorkspace
             inspectionId={investigation.inspectionId}
+            organizationId={investigation.orgId}
             refreshToken={fieldQueue.completedRevision}
             locked={locked}
             queue={fieldQueue}
@@ -2340,6 +2414,7 @@ export default function TuInvestigationEditorClient({
         ) : aiWorkflowEnabled && workspaceView === 'assessment' ? (
           <TuAnalysisWorkspace
             inspectionId={investigation.inspectionId}
+            organizationId={investigation.orgId}
             refreshToken={fieldQueue.completedRevision}
             locked={locked}
             sections={draft.sections}
@@ -2366,6 +2441,7 @@ export default function TuInvestigationEditorClient({
             ) : null}
             <TuPrintActions
               inspectionId={investigation.inspectionId}
+              organizationId={investigation.orgId}
               finalizationBlockedReason={finalizationBlockedReason}
               stageLabel={aiWorkflowEnabled
                 ? `Steg ${workflowState.steps.find((step) => step.id === 'delivery')?.number ?? workflowState.steps.length}`
@@ -2392,7 +2468,10 @@ export default function TuInvestigationEditorClient({
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
             <Link
-              href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`}
+              href={organizationUrl(
+                `/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`,
+                investigation.orgId
+              )}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
             >
               <Printer size={16} aria-hidden />
@@ -3701,6 +3780,7 @@ export default function TuInvestigationEditorClient({
         {reportReviewTarget !== undefined ? (
           <TuReportReviewDrawer
             inspectionId={investigation.inspectionId}
+            organizationId={investigation.orgId}
             locked={locked}
             target={reportReviewTarget}
             onClose={() => setReportReviewTarget(undefined)}
@@ -3710,6 +3790,7 @@ export default function TuInvestigationEditorClient({
         {appendixProposalOpen ? (
           <TuImageAppendixProposalDrawer
             inspectionId={investigation.inspectionId}
+            organizationId={investigation.orgId}
             images={images}
             locked={locked}
             onClose={() => setAppendixProposalOpen(false)}

@@ -19,6 +19,7 @@ import {
 
 type Props = {
   inspectionId: string
+  organizationId: string
   locked: boolean
   autoStart?: boolean
   analysisOverview?: string | null
@@ -41,8 +42,14 @@ function sectionCountText(count: number) {
   return count === 1 ? '1 rapportdel' : `${count} rapportdelar`
 }
 
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
+
 export default function TuWholeReportDraftPanel({
   inspectionId,
+  organizationId,
   locked,
   autoStart = false,
   analysisOverview = null,
@@ -69,9 +76,13 @@ export default function TuWholeReportDraftPanel({
   const loadState = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-draft`, {
-        cache: 'no-store',
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-draft`,
+          organizationId
+        ),
+        { cache: 'no-store' }
+      )
       if (!response.ok) throw new Error(await responseError(response, 'Kunde inte hämta utlåtandeförslaget.'))
       applyPayload(await response.json() as TuWholeReportDraftResponse)
       setError(null)
@@ -80,7 +91,7 @@ export default function TuWholeReportDraftPanel({
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [applyPayload, inspectionId])
+  }, [applyPayload, inspectionId, organizationId])
 
   useEffect(() => {
     void loadState()
@@ -97,11 +108,17 @@ export default function TuWholeReportDraftPanel({
     setActionBusy(action)
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-draft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-draft`,
+          organizationId
+        ),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        }
+      )
       if (!response.ok) throw new Error(await responseError(response, 'Kunde inte skapa utlåtandet.'))
       applyPayload(await response.json() as TuWholeReportDraftResponse)
     } catch (startError) {
@@ -109,7 +126,7 @@ export default function TuWholeReportDraftPanel({
     } finally {
       setActionBusy(null)
     }
-  }, [applyPayload, inspectionId])
+  }, [applyPayload, inspectionId, organizationId])
 
   useEffect(() => {
     if (
@@ -163,11 +180,17 @@ export default function TuWholeReportDraftPanel({
       const rejectedIds = draft.sections
         .filter((section) => !acceptedIds.includes(section.id))
         .map((section) => section.id)
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-draft`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'mark_applied', acceptedIds, rejectedIds }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-draft`,
+          organizationId
+        ),
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'mark_applied', acceptedIds, rejectedIds }),
+        }
+      )
       if (!response.ok) throw new Error(await responseError(response, 'Texten sparades, men statusen kunde inte uppdateras.'))
       applyPayload(await response.json() as TuWholeReportDraftResponse)
       showSuccessToast(

@@ -320,9 +320,8 @@ export default function FortnoxConnectionCard({
     }
     preferredOrgId.current = normalizedCallbackOrgId
 
-    if (url.searchParams.has('fortnox') || url.searchParams.has('orgId')) {
+    if (url.searchParams.has('fortnox')) {
       url.searchParams.delete('fortnox')
-      url.searchParams.delete('orgId')
       window.history.replaceState(
         window.history.state,
         '',

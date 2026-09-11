@@ -1,9 +1,21 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import CustomerRegistryClient from '@/components/settings/CustomerRegistryClient'
 import SettingsNav from '@/components/settings/SettingsNav'
 
-export default function CustomerSettingsPage() {
+export default async function CustomerSettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ orgId?: string | string[] }>
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const organizationId =
+    typeof resolvedSearchParams.orgId === 'string' ? resolvedSearchParams.orgId : null
+  const settingsHref = organizationId
+    ? `/settings?orgId=${encodeURIComponent(organizationId)}`
+    : '/settings'
+
   return (
     <main className="relative min-h-full overflow-hidden p-4 md:p-6">
       <div
@@ -23,7 +35,7 @@ export default function CustomerSettingsPage() {
         <header className="rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <Link
-              href="/settings"
+              href={settingsHref}
               aria-label="Tillbaka till inställningar"
               className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
@@ -39,7 +51,15 @@ export default function CustomerSettingsPage() {
         </header>
 
         <SettingsNav />
-        <CustomerRegistryClient />
+        <Suspense
+          fallback={
+            <section className="rounded-2xl border border-white/30 bg-white/90 p-5 text-sm text-gray-600 shadow-sm backdrop-blur-sm">
+              Laddar kundregister…
+            </section>
+          }
+        >
+          <CustomerRegistryClient />
+        </Suspense>
       </div>
     </main>
   )

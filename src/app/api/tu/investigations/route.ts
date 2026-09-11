@@ -28,6 +28,7 @@ function text(body: Record<string, unknown>, key: string) {
 function mapAccessError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_REPORT_TEMPLATE_REQUIRED') return jsonError('Välj en mall innan utredningen skapas.', 400)
@@ -55,13 +56,14 @@ function hasReadyPdf(row: ReportLinkPdfLite | null | undefined) {
   return normalizePdfStatus(row.pdf_status) === 'ready' && (hasStoredPdf || hasLegacyPdf)
 }
 
-async function listLatestReportLinks(inspectionIds: string[]) {
+async function listLatestReportLinks(orgId: string, inspectionIds: string[]) {
   if (inspectionIds.length === 0) return new Map<string, ReportLinkPdfLite>()
 
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('inspection_report_links')
     .select('inspection_id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,created_at')
+    .eq('org_id', orgId)
     .in('inspection_id', inspectionIds)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -83,12 +85,23 @@ async function listLatestReportLinks(inspectionIds: string[]) {
   return latestByInspectionId
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const context = await requireTuContext()
+    const searchParams = new URL(request.url).searchParams
+    if (
+      [...searchParams.keys()].some((key) => key !== 'orgId') ||
+      searchParams.getAll('orgId').length !== 1
+    ) {
+      return jsonError('Välj arbetsorganisation innan TU-utredningarna hämtas.', 400)
+    }
+    const context = await requireTuContext(searchParams.get('orgId'))
     const items = await listTuInvestigations(context.orgId)
-    const reportLinks = await listLatestReportLinks(items.map((item) => item.inspectionId))
+    const reportLinks = await listLatestReportLinks(
+      context.orgId,
+      items.map((item) => item.inspectionId)
+    )
     return NextResponse.json({
+      org: { id: context.orgId, name: context.orgName },
       items: items.map((item) => ({
         ...item,
         hasReadyPdf: hasReadyPdf(reportLinks.get(item.inspectionId)),
@@ -103,8 +116,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const context = await requireTuContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    if (!Object.prototype.hasOwnProperty.call(body, 'orgId')) {
+      return jsonError('Välj arbetsorganisation innan utredningen skapas.', 400)
+    }
+    const context = await requireTuContext(body.orgId)
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
     const customerEmail = text(body, 'customerEmail').toLowerCase()
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
@@ -120,7 +136,7 @@ export async function POST(request: Request) {
       orgId: context.orgId,
       createdBy: context.userId,
       reportTemplateKey: text(body, 'reportTemplateKey') || null,
-      responsibleProfileId: text(body, 'responsibleProfileId') || context.userId,
+      responsibleProfileId: context.userId,
       title: text(body, 'title') || null,
       scopeDescription: text(body, 'scopeDescription') || null,
       propertyAddress: text(body, 'propertyAddress') || null,

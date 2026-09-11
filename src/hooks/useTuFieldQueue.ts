@@ -92,6 +92,7 @@ export type EnqueueMeasurementInput = {
 
 type UseTuFieldQueueOptions = {
   inspectionId: string
+  organizationId: string
   enabled: boolean
   locked: boolean
   onImageUploaded: (image: TuFieldServerImage) => void
@@ -165,6 +166,7 @@ function resetFailedParts(item: TuFieldQueueItem): TuFieldQueueItem {
 
 export function useTuFieldQueue({
   inspectionId,
+  organizationId,
   enabled,
   locked,
   onImageUploaded,
@@ -231,7 +233,7 @@ export function useTuFieldQueue({
       })
       image = workingItem.images[imageIndex]
 
-      const signedResponse = await fetch(`/api/tu/investigations/${inspectionId}/images`, {
+      const signedResponse = await fetch(`/api/tu/investigations/${inspectionId}/images?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -268,7 +270,7 @@ export function useTuFieldQueue({
         })
       if (storageError) throw new Error(storageError.message || 'Kunde inte ladda upp bilden.')
 
-      const completeResponse = await fetch(`/api/tu/investigations/${inspectionId}/images`, {
+      const completeResponse = await fetch(`/api/tu/investigations/${inspectionId}/images?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -297,7 +299,7 @@ export function useTuFieldQueue({
       onImageUploaded(serverImage)
       return workingItem
     },
-    [inspectionId, onImageUploaded, persistItem]
+    [inspectionId, onImageUploaded, organizationId, persistItem]
   )
 
   const transcribeAudio = useCallback(
@@ -322,7 +324,7 @@ export function useTuFieldQueue({
       formData.append('clientAudioId', workingItem.id)
 
       const response = await fetch(
-        `/api/tu/investigations/${inspectionId}/observations/transcribe`,
+        `/api/tu/investigations/${inspectionId}/observations/transcribe?orgId=${encodeURIComponent(organizationId)}`,
         { method: 'POST', body: formData }
       )
       const payload = (await response.json().catch(() => ({}))) as TranscriptionApiResponse
@@ -350,7 +352,7 @@ export function useTuFieldQueue({
       })
       return workingItem
     },
-    [inspectionId, persistItem]
+    [inspectionId, organizationId, persistItem]
   )
 
   const saveObservation = useCallback(
@@ -362,7 +364,7 @@ export function useTuFieldQueue({
         .map((image) => image.serverImageId)
         .filter((id): id is string => Boolean(id))
 
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -391,14 +393,14 @@ export function useTuFieldQueue({
       if (!payload.observation) throw new Error('Servern returnerade ingen observation.')
       onObservationSaved?.(payload.observation)
     },
-    [inspectionId, onObservationSaved]
+    [inspectionId, onObservationSaved, organizationId]
   )
 
   const saveMeasurement = useCallback(
     async (queueItem: TuFieldQueueItem) => {
       const measurement = queueItem.measurement
       if (!measurement) throw new Error('Mätposten saknar mätuppgifter.')
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -424,7 +426,7 @@ export function useTuFieldQueue({
       if (!payload.observation) throw new Error('Servern returnerade ingen mätpost.')
       onObservationSaved?.(payload.observation)
     },
-    [inspectionId, onObservationSaved]
+    [inspectionId, onObservationSaved, organizationId]
   )
 
   const processItem = useCallback(

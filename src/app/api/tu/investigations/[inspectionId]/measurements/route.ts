@@ -8,7 +8,7 @@ import {
   type TuMeasurementWriteInput,
 } from '@/lib/tu/evidenceServer'
 import { isTuMeasurementAssessment } from '@/lib/tu/evidence'
-import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
+import { getTuInvestigationById, requireTuRequestContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,6 +37,7 @@ function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
@@ -94,7 +95,7 @@ export async function POST(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     await requireEditableInvestigation(orgContext.orgId, inspectionId)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const values = measurementValues(body)
@@ -168,7 +169,7 @@ export async function PATCH(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     await requireEditableInvestigation(orgContext.orgId, inspectionId)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const measurementId = uuid(body.measurementId)
@@ -198,7 +199,7 @@ export async function DELETE(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     await requireEditableInvestigation(orgContext.orgId, inspectionId)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const measurementId = uuid(body.measurementId)

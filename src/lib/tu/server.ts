@@ -309,6 +309,11 @@ type SupabaseError = {
 
 type SupabaseResponse<T> = Promise<{ data: T | null; error: SupabaseError }>
 type SupabaseListResponse<T> = { data: T[] | null; error: SupabaseError }
+type TuOrganizationMembershipRow = {
+  org_id: string
+  is_default: boolean
+  created_at: string
+}
 
 type QueryBuilder<T = Record<string, unknown>> = {
   then: <TResult1 = SupabaseListResponse<T>, TResult2 = never>(
@@ -969,8 +974,8 @@ export async function getTuInspectorProfileCard(input: {
   }
 }
 
-export async function requireTuContext() {
-  const context = await requireOrgContext()
+export async function requireTuContext(requestedOrgId?: unknown) {
+  const context = await requireOrgContext(requestedOrgId)
   const [hasOrganizationAccess, hasGlobalAccess] = await Promise.all([
     hasCurrentUserAccess({
       productKey: 'dashboard',
@@ -984,10 +989,48 @@ export async function requireTuContext() {
       scopeType: 'global',
     }),
   ])
-  if (!hasOrganizationAccess && !hasGlobalAccess) {
-    throw new Error('MODULE_ACCESS_REQUIRED')
+  if (hasOrganizationAccess || hasGlobalAccess) return context
+
+  // An explicit URL/body selection must never fall back to another organization.
+  if (requestedOrgId !== undefined) throw new Error('MODULE_ACCESS_REQUIRED')
+
+  // For a legacy URL without orgId, pick the first active membership where TU is
+  // actually available. This lets the switcher canonicalize the URL without
+  // getting stuck on a default organization that lacks TU access.
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('org_members')
+    .select('org_id,is_default,created_at')
+    .eq('profile_id', context.userId)
+    .eq('is_active', true)
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: true })
+    .order('org_id', { ascending: true })
+
+  if (error) throw new Error('MODULE_ACCESS_REQUIRED')
+  const memberships = (data ?? []) as unknown as TuOrganizationMembershipRow[]
+  const access = await Promise.all(
+    memberships.map(async (membership) => ({
+      orgId: membership.org_id,
+      allowed: await hasCurrentUserAccess({
+        productKey: 'dashboard',
+        moduleKey: 'technical_investigations',
+        scopeType: 'organization',
+        scopeId: membership.org_id,
+      }),
+    }))
+  )
+  const fallback = access.find((item) => item.allowed)
+  if (!fallback) throw new Error('MODULE_ACCESS_REQUIRED')
+  return requireOrgContext(fallback.orgId)
+}
+
+export async function requireTuRequestContext(request: Request) {
+  const searchParams = new URL(request.url).searchParams
+  if (searchParams.getAll('orgId').length !== 1) {
+    throw new Error('ORG_SELECTION_INVALID')
   }
-  return context
+  return requireTuContext(searchParams.get('orgId'))
 }
 
 export async function listTuAssignments(orgId: string): Promise<TuAssignmentListItem[]> {

@@ -129,8 +129,14 @@ function formatFileSize(value: number | null | undefined) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
+
 export default function TuPrintActions({
   inspectionId,
+  organizationId,
   finalizationBlockedReason = null,
   stageLabel = 'Steg 5',
   onStatusChange,
@@ -138,6 +144,7 @@ export default function TuPrintActions({
   onOpenReport,
 }: {
   inspectionId: string
+  organizationId: string
   finalizationBlockedReason?: string | null
   stageLabel?: string
   onStatusChange?: (state: { reportLockedAt: string | null }) => void
@@ -168,9 +175,13 @@ export default function TuPrintActions({
   const loadMeta = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
-        cache: 'no-store',
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-delivery`,
+          organizationId
+        ),
+        { cache: 'no-store' }
+      )
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta leveransstatus.')
       setMeta((current) => ({
@@ -184,7 +195,7 @@ export default function TuPrintActions({
     } finally {
       if (!options?.silent) setLoading(false)
     }
-  }, [inspectionId, onStatusChange, showDeliveryError])
+  }, [inspectionId, onStatusChange, organizationId, showDeliveryError])
 
   useEffect(() => {
     void loadMeta()
@@ -213,17 +224,23 @@ export default function TuPrintActions({
     setBusyAction(action)
     setResult(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          primary_recipient: normalizedRecipient,
-          extra_recipients: parseExtraRecipients(extraRecipients),
-          acknowledge_stale_analysis: Boolean(meta?.analysisStale && staleAnalysisAcknowledged),
-          acknowledged_analysis_stale_at: meta?.analysisStaleAt ?? null,
-        }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-delivery`,
+          organizationId
+        ),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action,
+            primary_recipient: normalizedRecipient,
+            extra_recipients: parseExtraRecipients(extraRecipients),
+            acknowledge_stale_analysis: Boolean(meta?.analysisStale && staleAnalysisAcknowledged),
+            acknowledged_analysis_stale_at: meta?.analysisStaleAt ?? null,
+          }),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hantera utlåtandet.')
 
@@ -262,11 +279,14 @@ export default function TuPrintActions({
     setUnlockBusy(true)
     setResult(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/unlock`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
-      })
+      const response = await fetch(
+        organizationUrl(`/api/tu/investigations/${inspectionId}/unlock`, organizationId),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte låsa upp utlåtandet.')
 
@@ -296,11 +316,17 @@ export default function TuPrintActions({
     setRegeneratingPdf(true)
     setResult(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'regenerate_pdf' }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-delivery`,
+          organizationId
+        ),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'regenerate_pdf' }),
+        }
+      )
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte starta om PDF-genereringen.')
 
@@ -320,8 +346,12 @@ export default function TuPrintActions({
   const locked = Boolean(meta?.reportLockedAt)
   const hasPublishedVersion = Boolean(meta?.hasActiveLink)
   const unlockedWithPublishedVersion = !locked && hasPublishedVersion
-  const downloadUrl = meta?.downloadUrl ?? null
-  const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
+  const downloadUrl = meta?.downloadUrl
+    ? organizationUrl(meta.downloadUrl, organizationId)
+    : null
+  const digitalReportUrl =
+    meta?.publicLink ??
+    (meta?.digitalUrl ? organizationUrl(meta.digitalUrl, organizationId) : null)
   const canSend = locked && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
   const effectiveFinalizationBlockedReason = meta?.analysisStale ? null : finalizationBlockedReason

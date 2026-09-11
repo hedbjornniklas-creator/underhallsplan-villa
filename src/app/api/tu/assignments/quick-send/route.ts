@@ -44,6 +44,7 @@ function parsePrice(value: string) {
 function mapAccessError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   return null
@@ -60,8 +61,11 @@ export async function POST(request: Request) {
 
   try {
     assertAssignmentCustomerSameOrigin(request)
-    const context = await requireTuContext()
     const body = await readAssignmentCustomerJson(request)
+    if (!Object.prototype.hasOwnProperty.call(body, 'orgId')) {
+      return jsonError('Välj arbetsorganisation innan uppdraget skickas.', 400)
+    }
+    const context = await requireTuContext(body.orgId)
     const customerBinding = parseAssignmentCustomerBinding(body.customerBinding)
     const customerEmail = text(body, 'customerEmail').toLowerCase()
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
@@ -98,7 +102,7 @@ export async function POST(request: Request) {
     const assignment = await createTuAssignmentDraft({
       orgId: context.orgId,
       createdBy: context.userId,
-      responsibleProfileId: text(body, 'responsibleProfileId') || context.userId,
+      responsibleProfileId: context.userId,
       customerEmail,
       customerName: text(body, 'customerName') || null,
       customerPhone: text(body, 'customerPhone') || null,

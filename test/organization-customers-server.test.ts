@@ -299,6 +299,30 @@ test('normalized access lists and reads only the exact organization scope', asyn
   )
 })
 
+test('global dashboard admin access applies to every active member organization', async () => {
+  const harness = serverHarness({
+    assignments: [
+      {
+        productKey: 'dashboard',
+        moduleKey: 'admin',
+        roleKey: 'dashboard_admin',
+        scopeType: 'global',
+        scopeId: null,
+      },
+    ],
+    memberships: [
+      membership(ORG_A, 'admin', true, 'Org A'),
+      membership(ORG_B, 'admin', false, 'Org B'),
+    ],
+    rows: [row(ORG_B)],
+  })
+
+  const workspace = await harness.server.getOrganizationCustomerWorkspace(ORG_B)
+
+  assert.deepEqual(workspace.organizations.map((organization) => organization.id), [ORG_A, ORG_B])
+  assert.equal(workspace.organization.canManage, true)
+})
+
 test('admin create derives selected organization and audit profile on the server', async () => {
   const harness = serverHarness({
     memberships: [membership(ORG_B, 'admin', false, 'Hushub 1')],

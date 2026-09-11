@@ -37,7 +37,11 @@ export async function POST(
 ) {
   try {
     const { inspectionId } = await context.params
-    const org = await requireTuContext()
+    const searchParams = new URL(request.url).searchParams
+    if (searchParams.getAll('orgId').length !== 1) {
+      return jsonError('Välj arbetsorganisation innan utlåtandet låses upp.', 400)
+    }
+    const org = await requireTuContext(searchParams.get('orgId'))
     const body = (await request.json().catch(() => null)) as { reason?: unknown } | null
     const reason = normalizeReason(body?.reason)
     if (!reason) {
@@ -73,6 +77,7 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+    if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
     if (isMissingUnlockSchemaError(message)) {

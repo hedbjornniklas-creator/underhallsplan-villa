@@ -34,6 +34,7 @@ type DeliveryResponse = {
 
 type Options = {
   inspectionId: string
+  organizationId: string
   enabled: boolean
   workflowProfile: TuWorkflowProfile
   refreshToken: number
@@ -50,6 +51,7 @@ async function jsonOrError<T>(response: Response, fallback: string): Promise<T> 
 
 export function useTuWorkflowState({
   inspectionId,
+  organizationId,
   enabled,
   workflowProfile,
   refreshToken,
@@ -70,12 +72,12 @@ export function useTuWorkflowState({
     if (!silent) setLoading(true)
     try {
       const preparationRequest = workflowProfile === 'post_damage_review'
-        ? fetch(`/api/tu/investigations/${inspectionId}/preparation`, { cache: 'no-store' })
+        ? fetch(`/api/tu/investigations/${inspectionId}/preparation?orgId=${encodeURIComponent(organizationId)}`, { cache: 'no-store' })
         : Promise.resolve(null)
       const [analysisResponse, reportResponse, deliveryResponse, preparationResponse] = await Promise.all([
-        fetch(`/api/tu/investigations/${inspectionId}/analysis`, { cache: 'no-store' }),
-        fetch(`/api/tu/investigations/${inspectionId}/report-draft`, { cache: 'no-store' }),
-        fetch(`/api/tu/investigations/${inspectionId}/report-delivery`, { cache: 'no-store' }),
+        fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, { cache: 'no-store' }),
+        fetch(`/api/tu/investigations/${inspectionId}/report-draft?orgId=${encodeURIComponent(organizationId)}`, { cache: 'no-store' }),
+        fetch(`/api/tu/investigations/${inspectionId}/report-delivery?orgId=${encodeURIComponent(organizationId)}`, { cache: 'no-store' }),
         preparationRequest,
       ])
       const [analysisPayload, reportPayload, deliveryPayload, preparationPayload] = await Promise.all([
@@ -104,7 +106,7 @@ export function useTuWorkflowState({
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [enabled, inspectionId, workflowProfile])
+  }, [enabled, inspectionId, organizationId, workflowProfile])
 
   useEffect(() => {
     void refresh()

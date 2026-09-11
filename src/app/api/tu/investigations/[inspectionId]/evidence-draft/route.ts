@@ -9,7 +9,7 @@ import { formatTuMeasurementAssessment } from '@/lib/tu/measurementConfig'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
-  requireTuContext,
+  requireTuRequestContext,
 } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
@@ -136,6 +136,7 @@ function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
@@ -163,7 +164,7 @@ export async function POST(
   let runInspectionId: string | null = null
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const investigation = await getTuInvestigationById({
       orgId: orgContext.orgId,
       inspectionId,
@@ -437,7 +438,7 @@ export async function PATCH(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const investigation = await getTuInvestigationById({ orgId: orgContext.orgId, inspectionId })
     if (!investigation) throw new Error('TU_INVESTIGATION_NOT_FOUND')
     if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')

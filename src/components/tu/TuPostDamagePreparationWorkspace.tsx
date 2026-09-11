@@ -43,6 +43,7 @@ type DocumentActionTarget = 'include' | 'analysis' | 'metadata' | 'delete'
 
 type Props = {
   inspectionId: string
+  organizationId: string
   scopeDescription: string | null
   locked: boolean
   preparation: TuControlPlanState | null
@@ -246,6 +247,7 @@ function ControlDirectionItem({
 
 export default function TuPostDamagePreparationWorkspace({
   inspectionId,
+  organizationId,
   scopeDescription,
   locked,
   preparation: externalPreparation,
@@ -318,7 +320,7 @@ export default function TuPostDamagePreparationWorkspace({
   }
 
   const callPreparation = async (method: 'POST' | 'PATCH', body: Record<string, unknown>, fallback: string) => {
-    const response = await fetch(`/api/tu/investigations/${inspectionId}/preparation`, {
+    const response = await fetch(`/api/tu/investigations/${inspectionId}/preparation?orgId=${encodeURIComponent(organizationId)}`, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

@@ -39,6 +39,7 @@ type QueueCounts = {
 
 type Props = {
   inspectionId: string
+  organizationId: string
   refreshToken: number
   locked: boolean
   sections: TuReportSection[]
@@ -71,6 +72,7 @@ function clockText(value: string | null | undefined) {
 
 export default function TuAnalysisWorkspace({
   inspectionId,
+  organizationId,
   refreshToken,
   locked,
   images,
@@ -100,7 +102,7 @@ export default function TuAnalysisWorkspace({
   const loadState = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, {
         cache: 'no-store',
       })
       if (!response.ok) throw new Error(await responseError(response, 'Kunde inte hämta analysen.'))
@@ -111,7 +113,7 @@ export default function TuAnalysisWorkspace({
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [applyResponse, inspectionId])
+  }, [applyResponse, inspectionId, organizationId])
 
   useEffect(() => {
     void loadState()
@@ -131,7 +133,7 @@ export default function TuAnalysisWorkspace({
     setActionBusy(action)
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, pendingQueueCount: queueCounts.total }),
@@ -143,13 +145,13 @@ export default function TuAnalysisWorkspace({
     } finally {
       setActionBusy(null)
     }
-  }, [applyResponse, inspectionId, queueCounts.total])
+  }, [applyResponse, inspectionId, organizationId, queueCounts.total])
 
   const approveGenerated = useCallback(async () => {
     setActionBusy('approve-generated')
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'approve_generated' }),
@@ -161,13 +163,13 @@ export default function TuAnalysisWorkspace({
     } finally {
       setActionBusy(null)
     }
-  }, [applyResponse, inspectionId])
+  }, [applyResponse, inspectionId, organizationId])
 
   const confirmRecordedMeasurement = useCallback(async (measurementId: string) => {
     setActionBusy(`confirm-measurement-${measurementId}`)
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'confirm_measurement_recorded', measurementId }),
@@ -179,7 +181,7 @@ export default function TuAnalysisWorkspace({
     } finally {
       setActionBusy(null)
     }
-  }, [applyResponse, inspectionId])
+  }, [applyResponse, inspectionId, organizationId])
 
   const unresolvedMeasurementConflicts = workflow?.run?.measurementVerifications.filter((item) => (
     item.status === 'conflict' && item.resolution !== 'recorded_confirmed'
@@ -445,6 +447,7 @@ export default function TuAnalysisWorkspace({
         {workflow?.status === 'analysis_approved' ? (
           <TuWholeReportDraftPanel
             inspectionId={inspectionId}
+            organizationId={organizationId}
             locked={locked}
             autoStart
             analysisOverview={workflow.run?.overview}

@@ -12,6 +12,7 @@ function jsonError(message: string, status: number, extra?: Record<string, unkno
 function mapAccessError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_ASSIGNMENT_NOT_FOUND') return jsonError('TU-uppdraget hittades inte.', 404)
@@ -19,12 +20,19 @@ function mapAccessError(error: unknown) {
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
-    const orgContext = await requireTuContext()
+    const searchParams = new URL(request.url).searchParams
+    if (
+      [...searchParams.keys()].some((key) => key !== 'orgId') ||
+      searchParams.getAll('orgId').length !== 1
+    ) {
+      return jsonError('Välj arbetsorganisation innan uppdraget skickas.', 400)
+    }
+    const orgContext = await requireTuContext(searchParams.get('orgId'))
     const assignment = await getTuAssignmentById(orgContext.orgId, id)
     if (!assignment) return jsonError('TU-uppdraget hittades inte.', 404)
     if (!assignment.customer_email) return jsonError('Uppdraget saknar kundmejl.', 400)

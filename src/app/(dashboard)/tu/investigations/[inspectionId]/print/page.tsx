@@ -363,7 +363,7 @@ export default async function TuInvestigationPrintPage({
   searchParams,
 }: {
   params: Promise<{ inspectionId: string }>
-  searchParams?: Promise<{ pdf?: string }>
+  searchParams?: Promise<{ pdf?: string; orgId?: string | string[] }>
 }) {
   const { inspectionId } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
@@ -375,7 +375,7 @@ export default async function TuInvestigationPrintPage({
   let observations: TuObservation[] = []
 
   try {
-    const context = await requireTuContext()
+    const context = await requireTuContext(resolvedSearchParams.orgId)
     investigation = await getTuInvestigationById({
       orgId: context.orgId,
       inspectionId,
@@ -445,7 +445,7 @@ export default async function TuInvestigationPrintPage({
     <main className="tu-print-root min-h-screen bg-neutral-100 text-gray-950 print:bg-white">
       {isPdfRender ? null : (
         <TuPrintPreviewToolbar
-          backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}`}
+          backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}?orgId=${encodeURIComponent(investigation.orgId)}`}
           printTitle={printTitle}
         />
       )}

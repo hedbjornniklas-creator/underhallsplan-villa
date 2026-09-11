@@ -227,7 +227,8 @@ function canReadOrganization(context: PlatformAccessContext, orgId: string) {
   if (assignments.length === 0) return true
   return assignments.some(
     (assignment) =>
-      assignment.scopeType === 'organization' && assignment.scopeId === orgId
+      assignment.scopeType === 'global' ||
+      (assignment.scopeType === 'organization' && assignment.scopeId === orgId)
   )
 }
 
@@ -240,8 +241,8 @@ function canManageOrganization(context: PlatformAccessContext, orgId: string) {
       (!assignment.moduleKey && assignment.roleKey === 'dashboard_admin')
     return (
       isAdminModule &&
-      assignment.scopeType === 'organization' &&
-      assignment.scopeId === orgId
+      (assignment.scopeType === 'global' ||
+        (assignment.scopeType === 'organization' && assignment.scopeId === orgId))
     )
   })
 }
@@ -257,6 +258,7 @@ async function customerContext(orgIdValue: unknown, requireAdmin: boolean) {
     .eq('is_active', true)
     .order('is_default', { ascending: false })
     .order('created_at', { ascending: true })
+    .order('org_id', { ascending: true })
 
   if (error) databaseFailure(error)
   const memberships = (data ?? []) as unknown as OrganizationMembershipRow[]
@@ -323,6 +325,14 @@ export async function getOrganizationCustomerWorkspace(
     customers: ((data ?? []) as unknown as CustomerRow[]).map((row) =>
       mapCustomer(row, { includePersonalIdentity: context.organization.canManage })
     ),
+  }
+}
+
+export async function getOrganizationCustomerNavigationContext(orgIdValue?: unknown) {
+  const context = await customerContext(orgIdValue, false)
+  return {
+    organization: context.organization,
+    organizations: context.organizations,
   }
 }
 

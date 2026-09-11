@@ -22,7 +22,7 @@ const componentCode = ts.transpileModule(source(componentPath), {
   },
 }).outputText
 
-function renderNavigation(pathname: string) {
+function renderNavigation(pathname: string, search = '') {
   const compiledModule = {
     exports: {} as { default: React.ComponentType },
   }
@@ -30,6 +30,7 @@ function renderNavigation(pathname: string) {
 
   new Function('require', 'module', 'exports', componentCode)(
     (name: string) => {
+      if (name === 'react') return require(name)
       if (name === 'react/jsx-runtime') return require(name)
       if (name === 'next/link') {
         function LinkMock({
@@ -40,7 +41,12 @@ function renderNavigation(pathname: string) {
         }
         return LinkMock
       }
-      if (name === 'next/navigation') return { usePathname: () => pathname }
+      if (name === 'next/navigation') {
+        return {
+          usePathname: () => pathname,
+          useSearchParams: () => new URLSearchParams(search),
+        }
+      }
       if (name === 'lucide-react') return new Proxy({}, { get: () => Icon })
       throw new Error(`Unexpected SettingsNav dependency: ${name}`)
     },
@@ -101,6 +107,14 @@ test('unrelated routes do not mark a settings destination as current', () => {
   const html = renderNavigation('/dashboard-v1')
 
   assert.equal(activeLinks(html).length, 0)
+})
+
+test('settings navigation preserves the active organization in both destinations', () => {
+  const organizationId = '22222222-2222-4222-8222-222222222222'
+  const html = renderNavigation('/settings/kunder', `orgId=${organizationId}`)
+
+  anchorFor(html, `/settings?orgId=${organizationId}`)
+  anchorFor(html, `/settings/kunder?orgId=${organizationId}`)
 })
 
 test('both settings pages mount the shared navigation once and use matching headings', () => {

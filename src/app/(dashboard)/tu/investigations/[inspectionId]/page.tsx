@@ -12,15 +12,18 @@ export const dynamic = 'force-dynamic'
 
 export default async function TuInvestigationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ inspectionId: string }>
+  searchParams?: Promise<{ orgId?: string | string[] }>
 }) {
   const { inspectionId } = await params
+  const resolvedSearchParams = searchParams ? await searchParams : {}
   let investigation: TuInvestigationDetails | null = null
   let sectionTypeOptions: TuReportSectionTypeOption[] = []
 
   try {
-    const context = await requireTuContext()
+    const context = await requireTuContext(resolvedSearchParams.orgId)
     ;[investigation, sectionTypeOptions] = await Promise.all([
       getTuInvestigationById({
         orgId: context.orgId,

@@ -27,6 +27,7 @@ type ReviewTarget = {
 
 type Props = {
   inspectionId: string
+  organizationId: string
   locked: boolean
   target: ReviewTarget
   onClose: () => void
@@ -46,8 +47,14 @@ function isPending(review: TuReportReviewInstruction | null) {
   return review?.status === 'queued' || review?.status === 'processing'
 }
 
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
+
 export default function TuReportReviewDrawer({
   inspectionId,
+  organizationId,
   locked,
   target,
   onClose,
@@ -78,9 +85,13 @@ export default function TuReportReviewDrawer({
   const loadState = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-review`, {
-        cache: 'no-store',
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-review`,
+          organizationId
+        ),
+        { cache: 'no-store' }
+      )
       if (!response.ok) throw new Error(await responseError(response, 'Kunde inte hämta ändringshistoriken.'))
       applyPayload(await response.json() as TuReportReviewResponse)
       setError(null)
@@ -89,7 +100,7 @@ export default function TuReportReviewDrawer({
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [applyPayload, inspectionId])
+  }, [applyPayload, inspectionId, organizationId])
 
   useEffect(() => {
     setInstruction('')
@@ -142,15 +153,21 @@ export default function TuReportReviewDrawer({
     setBusy('start')
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/report-review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scope: target ? 'section' : 'report',
-          targetSectionId: target?.id ?? null,
-          instruction: normalized,
-        }),
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-review`,
+          organizationId
+        ),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scope: target ? 'section' : 'report',
+            targetSectionId: target?.id ?? null,
+            instruction: normalized,
+          }),
+        }
+      )
       if (!response.ok) throw new Error(await responseError(response, 'Kunde inte starta omarbetningen.'))
       applyPayload(await response.json() as TuReportReviewResponse)
     } catch (submitError) {
@@ -163,11 +180,17 @@ export default function TuReportReviewDrawer({
   }
 
   const patchReview = async (action: 'apply' | 'reject' | 'revert', reviewId: string) => {
-    const response = await fetch(`/api/tu/investigations/${inspectionId}/report-review`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, instructionId: reviewId }),
-    })
+    const response = await fetch(
+      organizationUrl(
+        `/api/tu/investigations/${inspectionId}/report-review`,
+        organizationId
+      ),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, instructionId: reviewId }),
+      }
+    )
     if (!response.ok) throw new Error(await responseError(response, 'Kunde inte uppdatera rapportändringen.'))
     applyPayload(await response.json() as TuReportReviewResponse)
   }

@@ -79,7 +79,8 @@ function canAccessOrganization(context: PlatformAccessContext, orgId: string) {
   if (dashboardAssignments.length === 0) return true
   return dashboardAssignments.some(
     (assignment) =>
-      assignment.scopeType === 'organization' && assignment.scopeId === orgId
+      assignment.scopeType === 'global' ||
+      (assignment.scopeType === 'organization' && assignment.scopeId === orgId)
   )
 }
 

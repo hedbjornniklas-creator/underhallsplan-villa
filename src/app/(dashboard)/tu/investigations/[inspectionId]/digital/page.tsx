@@ -33,14 +33,14 @@ export default async function TuInvestigationDigitalReportPage({
   searchParams,
 }: {
   params: Promise<{ inspectionId: string }>
-  searchParams?: Promise<{ pdf?: string }>
+  searchParams?: Promise<{ pdf?: string; orgId?: string | string[] }>
 }) {
   const { inspectionId } = await params
   const resolvedSearchParams = await searchParams
   const isPdfRender = resolvedSearchParams?.pdf === '1'
 
   try {
-    const context = await requireTuContext()
+    const context = await requireTuContext(resolvedSearchParams?.orgId)
     const investigation = await getTuInvestigationById({
       orgId: context.orgId,
       inspectionId,
@@ -52,6 +52,7 @@ export default async function TuInvestigationDigitalReportPage({
     const { data, error } = await admin
       .from('inspection_report_links')
       .select('snapshot_payload,pdf_status,pdf_base64,pdf_storage_bucket,pdf_storage_path')
+      .eq('org_id', context.orgId)
       .eq('inspection_id', inspectionId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
@@ -72,8 +73,8 @@ export default async function TuInvestigationDigitalReportPage({
       (String(row.pdf_storage_bucket ?? '').trim().length > 0 &&
         String(row.pdf_storage_path ?? '').trim().length > 0)
     const pdfStatus = hasStoredPdf ? 'ready' : normalizePdfStatus(row.pdf_status)
-    const pdfDownloadUrl = `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`
-    const pdfStatusEndpoint = `/api/tu/investigations/${encodeURIComponent(inspectionId)}/report-delivery?status=1`
+    const pdfDownloadUrl = `/api/report-v2/${encodeURIComponent(inspectionId)}/pdf?orgId=${encodeURIComponent(context.orgId)}`
+    const pdfStatusEndpoint = `/api/tu/investigations/${encodeURIComponent(inspectionId)}/report-delivery?status=1&orgId=${encodeURIComponent(context.orgId)}`
     const deliveryDocuments = (
       await Promise.all(
         (snapshot.deliveryDocuments ?? []).map(async (document) => {
@@ -128,7 +129,7 @@ export default async function TuInvestigationDigitalReportPage({
         pdfStatus={pdfStatus}
         pdfStatusEndpoint={pdfStatusEndpoint}
         shareEndpoint={null}
-        shareUrl={`/tu/investigations/${encodeURIComponent(inspectionId)}/digital`}
+        shareUrl={`/tu/investigations/${encodeURIComponent(inspectionId)}/digital?orgId=${encodeURIComponent(context.orgId)}`}
         deliveryDocuments={deliveryDocuments}
       />
     )

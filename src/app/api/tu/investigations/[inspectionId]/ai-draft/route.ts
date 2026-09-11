@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   getTuInvestigationById,
-  requireTuContext,
+  requireTuRequestContext,
   type TuReportSectionKey,
 } from '@/lib/tu/server'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
@@ -37,6 +37,7 @@ function jsonError(message: string, status: number) {
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   return null
@@ -100,7 +101,7 @@ export async function POST(
 
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const investigation = await getTuInvestigationById({
       orgId: orgContext.orgId,
       inspectionId,

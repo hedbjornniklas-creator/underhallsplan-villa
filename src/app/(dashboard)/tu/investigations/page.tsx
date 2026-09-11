@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ChevronsLeft, Download, Loader2, LockOpen, Plus, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
 
@@ -31,6 +31,7 @@ type InvestigationItem = {
 
 type ListResponse = {
   items: InvestigationItem[]
+  org: { id: string; name: string | null }
 }
 
 type StatusFilter = 'all' | 'draft' | 'ongoing' | 'completed' | 'locked'
@@ -49,6 +50,11 @@ const STORAGE_KEY = 'tu:investigations:list:view:v1'
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
 const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
+
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
 
 const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
@@ -128,10 +134,18 @@ function timestamp(value: string | null) {
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
-function PdfDownloadActionButton({ inspectionId }: { inspectionId: string }) {
+function PdfDownloadActionButton({
+  inspectionId,
+  organizationId,
+}: {
+  inspectionId: string
+  organizationId: string | null
+}) {
+  if (!organizationId) return null
+
   return (
     <a
-      href={`/api/report-v2/${encodeURIComponent(inspectionId)}/pdf`}
+      href={`/api/report-v2/${encodeURIComponent(inspectionId)}/pdf?orgId=${encodeURIComponent(organizationId)}`}
       onClick={(event) => event.stopPropagation()}
       title="Ladda ner gällande PDF"
       aria-label="Ladda ner gällande PDF"
@@ -176,6 +190,8 @@ function UnlockInvestigationActionButton({
 
 export default function TuInvestigationsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const organizationId = searchParams.get('orgId')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<InvestigationItem[]>([])
@@ -192,23 +208,34 @@ export default function TuInvestigationsPage() {
   const [unlockError, setUnlockError] = useState<string | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
     const loadInvestigations = async () => {
+      if (!organizationId) return
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch('/api/tu/investigations', { cache: 'no-store' })
+        setItems([])
+        const response = await fetch(organizationUrl('/api/tu/investigations', organizationId), {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
         const data = (await response.json().catch(() => ({}))) as Partial<ListResponse> & { error?: string }
-        if (!response.ok) throw new Error(data.error ?? 'Kunde inte hämta utredningar.')
-        setItems(data.items ?? [])
+        if (!response.ok || data.org?.id !== organizationId) {
+          throw new Error(data.error ?? 'Kunde inte hämta utredningar för vald organisation.')
+        }
+        if (!controller.signal.aborted) setItems(data.items ?? [])
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta utredningar.')
+        if (!controller.signal.aborted) {
+          setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta utredningar.')
+        }
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     }
 
     void loadInvestigations()
-  }, [])
+    return () => controller.abort()
+  }, [organizationId])
 
   useEffect(() => {
     try {
@@ -328,7 +355,11 @@ export default function TuInvestigationsPage() {
   }
 
   const openInvestigation = (inspectionId: string) => {
-    router.push(`/tu/investigations/${inspectionId}`)
+    router.push(
+      organizationId
+        ? organizationUrl(`/tu/investigations/${inspectionId}`, organizationId)
+        : `/tu/investigations/${inspectionId}`
+    )
   }
 
   const deleteInvestigation = async (item: InvestigationItem) => {
@@ -341,11 +372,16 @@ export default function TuInvestigationsPage() {
     if (!confirmed) return
 
     try {
+      if (!organizationId) throw new Error('Välj arbetsorganisation innan utredningen raderas.')
       setDeletingId(item.inspectionId)
       setError(null)
-      const response = await fetch(`/api/tu/investigations/${encodeURIComponent(item.inspectionId)}`, {
-        method: 'DELETE',
-      })
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${encodeURIComponent(item.inspectionId)}`,
+          organizationId
+        ),
+        { method: 'DELETE' }
+      )
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte radera utlåtandet.')
       setItems((prev) => prev.filter((row) => row.inspectionId !== item.inspectionId))
@@ -380,11 +416,12 @@ export default function TuInvestigationsPage() {
     }
 
     try {
+      if (!organizationId) throw new Error('Välj arbetsorganisation innan utlåtandet låses upp.')
       setUnlockSubmitting(true)
       setUnlockError(null)
       setError(null)
 
-      const response = await fetch(`/api/tu/investigations/${encodeURIComponent(unlockTarget.inspectionId)}/unlock`, {
+      const response = await fetch(organizationUrl(`/api/tu/investigations/${encodeURIComponent(unlockTarget.inspectionId)}/unlock`, organizationId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason }),
@@ -433,7 +470,7 @@ export default function TuInvestigationsPage() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => router.push('/tu')}
+                  onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
                   aria-label="Till huvudsidan"
                   title="Till huvudsidan"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
@@ -442,7 +479,7 @@ export default function TuInvestigationsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push('/tu')}
+                  onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
                   aria-label="Tillbaka"
                   title="Tillbaka"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
@@ -454,7 +491,7 @@ export default function TuInvestigationsPage() {
 
               <button
                 type="button"
-                onClick={() => router.push('/tu')}
+                onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-violet-800 transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 sm:w-auto"
               >
                 <Plus size={14} strokeWidth={2.3} />
@@ -580,7 +617,10 @@ export default function TuInvestigationsPage() {
                         <td className="px-3 py-2 align-middle whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
                             {item.hasReadyPdf ? (
-                              <PdfDownloadActionButton inspectionId={item.inspectionId} />
+                              <PdfDownloadActionButton
+                                inspectionId={item.inspectionId}
+                                organizationId={organizationId}
+                              />
                             ) : null}
                             {item.reportLockedAt ? (
                               <UnlockInvestigationActionButton

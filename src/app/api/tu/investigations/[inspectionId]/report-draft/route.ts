@@ -6,7 +6,7 @@ import {
   createTuWholeReportDraftRun,
   getTuWholeReportDraftState,
 } from '@/lib/tu/reportDraftServer'
-import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
+import { getTuInvestigationById, requireTuRequestContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,6 +34,7 @@ function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
@@ -62,8 +63,8 @@ function mapError(error: unknown) {
   return null
 }
 
-async function requireInvestigation(inspectionId: string) {
-  const orgContext = await requireTuContext()
+async function requireInvestigation(request: Request, inspectionId: string) {
+  const orgContext = await requireTuRequestContext(request)
   const investigation = await getTuInvestigationById({
     orgId: orgContext.orgId,
     inspectionId,
@@ -94,10 +95,10 @@ async function advanceInBackground(input: {
   }
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
-    const { orgContext } = await requireInvestigation(inspectionId)
+    const { orgContext } = await requireInvestigation(request, inspectionId)
     const draft = await getTuWholeReportDraftState({
       orgId: orgContext.orgId,
       inspectionId,
@@ -124,7 +125,7 @@ export async function GET(_request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
-    const { orgContext, investigation } = await requireInvestigation(inspectionId)
+    const { orgContext, investigation } = await requireInvestigation(request, inspectionId)
     if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
     const body = await request.json().catch(() => ({})) as Record<string, unknown>
     const action = cleanText(body.action)
@@ -154,7 +155,7 @@ export async function POST(request: Request, context: RouteContext) {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { inspectionId } = await context.params
-    const { orgContext, investigation } = await requireInvestigation(inspectionId)
+    const { orgContext, investigation } = await requireInvestigation(request, inspectionId)
     if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
     const body = await request.json().catch(() => ({})) as Record<string, unknown>
     const action = cleanText(body.action)

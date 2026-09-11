@@ -17,6 +17,7 @@ function jsonError(message: string, status: number) {
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
@@ -25,12 +26,16 @@ function mapError(error: unknown) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ inspectionId: string }> }
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const searchParams = new URL(request.url).searchParams
+    if (searchParams.getAll('orgId').length !== 1) {
+      return jsonError('Välj arbetsorganisation innan utredningen hämtas.', 400)
+    }
+    const orgContext = await requireTuContext(searchParams.get('orgId'))
     const investigation = await getTuInvestigationById({
       orgId: orgContext.orgId,
       inspectionId,
@@ -51,7 +56,11 @@ export async function PATCH(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const searchParams = new URL(request.url).searchParams
+    if (searchParams.getAll('orgId').length !== 1) {
+      return jsonError('Välj arbetsorganisation innan utredningen sparas.', 400)
+    }
+    const orgContext = await requireTuContext(searchParams.get('orgId'))
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const patch: Parameters<typeof updateTuInvestigationDraft>[0]['patch'] = {}
 
@@ -94,12 +103,16 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ inspectionId: string }> }
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const searchParams = new URL(request.url).searchParams
+    if (searchParams.getAll('orgId').length !== 1) {
+      return jsonError('Välj arbetsorganisation innan utredningen raderas.', 400)
+    }
+    const orgContext = await requireTuContext(searchParams.get('orgId'))
     const result = await deleteTuInvestigation({
       orgId: orgContext.orgId,
       inspectionId,

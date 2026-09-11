@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowLeft,
   CalendarDays,
@@ -73,40 +73,57 @@ function money(value: number | null, currency: string, customerType: DetailRespo
   return customerType === 'consumer' ? `${formatted} inklusive moms` : formatted
 }
 
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
+
 export default function TuAssignmentDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const organizationId = searchParams.get('orgId')
   const [data, setData] = useState<DetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
     const load = async () => {
+      if (!organizationId) return
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch(`/api/tu/assignments/${encodeURIComponent(params.id)}`, {
-          cache: 'no-store',
-        })
+        setData(null)
+        const response = await fetch(
+          organizationUrl(`/api/tu/assignments/${encodeURIComponent(params.id)}`, organizationId),
+          { cache: 'no-store', signal: controller.signal }
+        )
         const payload = (await response.json().catch(() => ({}))) as Partial<DetailResponse> & {
           error?: string
         }
         if (!response.ok || !payload.assignment || !payload.currentTerms) {
           throw new Error(payload.error ?? 'Kunde inte hämta uppdragsbekräftelsen.')
         }
-        setData(payload as DetailResponse)
+        if (payload.assignment.org_id !== organizationId) {
+          throw new Error('Uppdraget tillhör inte den valda organisationen.')
+        }
+        if (!controller.signal.aborted) setData(payload as DetailResponse)
       } catch (loadError) {
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : 'Kunde inte hämta uppdragsbekräftelsen.'
-        )
+        if (!controller.signal.aborted) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Kunde inte hämta uppdragsbekräftelsen.'
+          )
+        }
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     }
     void load()
-  }, [params.id])
+    return () => controller.abort()
+  }, [organizationId, params.id])
 
   const assignment = data?.assignment
   const isApartment = Boolean(assignment?.brf_name || assignment?.apartment_number)
@@ -119,7 +136,13 @@ export default function TuAssignmentDetailPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
               <button
                 type="button"
-                onClick={() => router.push('/tu/assignments')}
+                onClick={() =>
+                  router.push(
+                    organizationId
+                      ? organizationUrl('/tu/assignments', organizationId)
+                      : '/tu/assignments'
+                  )
+                }
                 aria-label="Till uppdragsbekräftelser"
                 title="Till uppdragsbekräftelser"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -147,7 +170,16 @@ export default function TuAssignmentDetailPage() {
                   {assignment.inspection_id ? (
                     <button
                       type="button"
-                      onClick={() => router.push(`/tu/investigations/${assignment.inspection_id}`)}
+                      onClick={() =>
+                        router.push(
+                          organizationId
+                            ? organizationUrl(
+                                `/tu/investigations/${assignment.inspection_id}`,
+                                organizationId
+                              )
+                            : `/tu/investigations/${assignment.inspection_id}`
+                        )
+                      }
                       className="inline-flex h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
                     >
                       <ExternalLink size={16} aria-hidden />

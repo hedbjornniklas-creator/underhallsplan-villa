@@ -67,11 +67,12 @@ function textContent(value: unknown): string {
 }
 
 const CUSTOMER_ID = '11111111-1111-4111-8111-111111111111'
+const ORGANIZATION_ID = '22222222-2222-4222-8222-222222222222'
 
 function workspace(canManage = true): OrganizationCustomerWorkspace {
   return {
     organization: {
-      id: '22222222-2222-4222-8222-222222222222',
+      id: ORGANIZATION_ID,
       name: 'Pilotorganisationen',
       isDefault: true,
       canManage,
@@ -209,6 +210,7 @@ function selectorHarness(input: {
   function render() {
     cursor = 0
     return compiled.exports.default({
+      organizationId: ORGANIZATION_ID,
       value: input.value ?? null,
       draft: input.draft ?? DRAFT,
       disabled: false,
@@ -244,7 +246,10 @@ test('customer selector loads the current organization and never silently matche
   const tree = await harness.settle()
 
   assert.equal(harness.fetchCalls.length, 1)
-  assert.equal(harness.fetchCalls[0].url, '/api/settings/customers')
+  assert.equal(
+    harness.fetchCalls[0].url,
+    `/api/settings/customers?orgId=${ORGANIZATION_ID}`
+  )
   assert.equal(harness.fetchCalls[0].init?.cache, 'no-store')
   assert.equal(harness.fetchCalls[0].init?.credentials, 'same-origin')
   assert.ok(harness.fetchCalls[0].init?.signal instanceof AbortSignal)

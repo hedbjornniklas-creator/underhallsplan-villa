@@ -354,7 +354,7 @@ test('status GET chooses the default organization and explicit selection drives 
   assert.equal(harness.calls.length, 1, 'native connect form must not be replaced by fetch')
 })
 
-test('a valid callback orgId overrides the default, is scrubbed from the URL and shows exact connected text', async () => {
+test('a valid callback orgId overrides the default, stays active after callback cleanup and shows exact connected text', async () => {
   const connected = organization({
     id: FIRST_ORG_ID,
     name: 'STYR i HusHub',
@@ -383,7 +383,10 @@ test('a valid callback orgId overrides the default, is scrubbed from the URL and
   assert.ok(textContent(tree).includes('Fortnox anslutet – STYR Projekt Stockholm AB'))
   assert.ok(textContent(tree).includes('Företagsinformation, Kundregister, Fakturor'))
   assert.ok(textContent(tree).includes('Fortnox har anslutits och verifierats.'))
-  assert.equal(harness.history[0], '/settings?keep=1#profile')
+  assert.equal(
+    harness.history[0],
+    `/settings?keep=1&orgId=${FIRST_ORG_ID}#profile`
+  )
   const form = findElement(tree, (node) => node.type === 'form')
   assert.equal(
     findElement(form, (node) => node.type === 'input' && node.props.name === 'orgId').props.value,
@@ -486,7 +489,7 @@ test('callback failure categories show distinct allowlisted Swedish guidance', a
     })
     const tree = await harness.settle()
     assert.ok(textContent(tree).includes(expectedText), status)
-    assert.equal(harness.history[0], '/settings')
+    assert.equal(harness.history[0], `/settings?orgId=${FIRST_ORG_ID}`)
   }
 })
 

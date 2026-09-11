@@ -190,6 +190,11 @@ function canStartAssignmentInvestigation(item: TuAssignmentListItem) {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
+
 const CUSTOMER_BINDING_FORM_KEYS = new Set<keyof TuFormState>([
   'customerType',
   'customerIdentityNumber',
@@ -210,12 +215,16 @@ const CUSTOMER_ADDRESS_SOURCE_KEYS = new Set<keyof TuFormState>([
 ])
 
 export default function TuDashboardClient({
+  organizationId,
+  organizationName,
   initialAssignments,
   initialInvestigations,
   initialReportTemplates,
   inspectorProfile,
   initialError,
 }: {
+  organizationId: string
+  organizationName: string | null
   initialAssignments: TuAssignmentListItem[]
   initialInvestigations: TuInspectionSummary[]
   initialReportTemplates: TuReportTemplateOption[]
@@ -518,6 +527,7 @@ export default function TuDashboardClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          orgId: organizationId,
           ...form,
           customerBinding:
             customerBinding.mode === 'create'
@@ -531,9 +541,16 @@ export default function TuDashboardClient({
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa TU-uppdrag.')
 
-      const assignmentResponse = await fetch('/api/tu/assignments', { cache: 'no-store' })
+      const assignmentResponse = await fetch(
+        organizationUrl('/api/tu/assignments', organizationId),
+        { cache: 'no-store' }
+      )
       const assignmentPayload = await assignmentResponse.json().catch(() => ({}))
-      if (assignmentResponse.ok && Array.isArray(assignmentPayload.items)) {
+      if (
+        assignmentResponse.ok &&
+        assignmentPayload.org?.id === organizationId &&
+        Array.isArray(assignmentPayload.items)
+      ) {
         setAssignments(assignmentPayload.items)
       }
 
@@ -594,13 +611,15 @@ export default function TuDashboardClient({
       const response = await fetch('/api/tu/investigations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(scratchForm),
+        body: JSON.stringify({ orgId: organizationId, ...scratchForm }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa TU-utredning.')
       setScratchForm(EMPTY_SCRATCH_FORM)
       setDialog(null)
-      router.push(`/tu/investigations/${payload.inspectionId}`)
+      router.push(
+        organizationUrl(`/tu/investigations/${payload.inspectionId}`, organizationId)
+      )
     } catch (scratchError) {
       setError(scratchError instanceof Error ? scratchError.message : 'Kunde inte skapa TU-utredning.')
     } finally {
@@ -623,7 +642,7 @@ export default function TuDashboardClient({
       const response = await fetch(`/api/tu/assignments/${selectedAssignment.id}/convert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reportTemplateKey }),
+        body: JSON.stringify({ orgId: organizationId, reportTemplateKey }),
       })
       const payload = (await response.json().catch(() => null)) as
         | { error?: string; inspectionId?: string }
@@ -631,7 +650,9 @@ export default function TuDashboardClient({
       if (!response.ok) throw new Error(payload?.error ?? 'Kunde inte starta utredning.')
       if (!payload?.inspectionId) throw new Error('Konverteringen saknar utrednings-id.')
       setSelectedAssignment(null)
-      router.push(`/tu/investigations/${payload.inspectionId}`)
+      router.push(
+        organizationUrl(`/tu/investigations/${payload.inspectionId}`, organizationId)
+      )
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : 'Kunde inte starta utredning.')
     } finally {
@@ -664,6 +685,9 @@ export default function TuDashboardClient({
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">TU</p>
                   <h1 className="text-2xl font-semibold text-slate-950">Tekniska utredningar</h1>
+                  <p className="mt-1 text-xs font-medium text-emerald-700">
+                    {organizationName || 'Vald arbetsorganisation'}
+                  </p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:flex sm:items-center">
@@ -688,6 +712,7 @@ export default function TuDashboardClient({
 
           <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <AssignmentConfirmationsCard
+              organizationId={organizationId}
               assignments={latestAssignments}
               busy={busy}
               onOpenDialog={() => openCreationDialog('quick')}
@@ -705,13 +730,17 @@ export default function TuDashboardClient({
                 setSelectedAssignment(assignment)
               }}
             />
-            <InvestigationsCard investigations={latestInvestigations} />
-            <ProfileCard profile={inspectorProfile} />
+            <InvestigationsCard
+              organizationId={organizationId}
+              investigations={latestInvestigations}
+            />
+            <ProfileCard organizationId={organizationId} profile={inspectorProfile} />
           </section>
         </div>
 
         {dialog === 'quick' ? (
           <QuickAssignmentDialog
+            organizationId={organizationId}
             form={form}
             customerBinding={customerBinding}
             busy={busy}
@@ -806,11 +835,13 @@ function CardHeading({
 }
 
 function AssignmentConfirmationsCard({
+  organizationId,
   assignments,
   busy,
   onOpenDialog,
   onStartAssignment,
 }: {
+  organizationId: string
   assignments: TuAssignmentListItem[]
   busy: string | null
   onOpenDialog: () => void
@@ -841,6 +872,7 @@ function AssignmentConfirmationsCard({
             {assignments.map((assignment) => (
               <AssignmentMiniRow
                 key={assignment.id}
+                organizationId={organizationId}
                 assignment={assignment}
                 onStartAssignment={onStartAssignment}
               />
@@ -850,7 +882,10 @@ function AssignmentConfirmationsCard({
           <ListEmptyState>Inga uppdragsbekräftelser ännu.</ListEmptyState>
         )}
       </div>
-      <CardFooterLink href="/tu/assignments" label="Visa alla uppdragsbekräftelser" />
+      <CardFooterLink
+        href={organizationUrl('/tu/assignments', organizationId)}
+        label="Visa alla uppdragsbekräftelser"
+      />
     </CardShell>
   )
 }
@@ -916,7 +951,13 @@ function StartInvestigationCard({
   )
 }
 
-function InvestigationsCard({ investigations }: { investigations: TuInspectionSummary[] }) {
+function InvestigationsCard({
+  organizationId,
+  investigations,
+}: {
+  organizationId: string
+  investigations: TuInspectionSummary[]
+}) {
   return (
     <CardShell>
       <CardHeading
@@ -928,19 +969,32 @@ function InvestigationsCard({ investigations }: { investigations: TuInspectionSu
         {investigations.length > 0 ? (
           <ul className="h-full min-w-0 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
             {investigations.map((investigation) => (
-              <InvestigationMiniRow key={investigation.inspectionId} investigation={investigation} />
+              <InvestigationMiniRow
+                key={investigation.inspectionId}
+                organizationId={organizationId}
+                investigation={investigation}
+              />
             ))}
           </ul>
         ) : (
           <ListEmptyState>Inga utredningar ännu.</ListEmptyState>
         )}
       </div>
-      <CardFooterLink href="/tu/investigations" label="Öppna alla utredningar" />
+      <CardFooterLink
+        href={organizationUrl('/tu/investigations', organizationId)}
+        label="Öppna alla utredningar"
+      />
     </CardShell>
   )
 }
 
-function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
+function ProfileCard({
+  organizationId,
+  profile,
+}: {
+  organizationId: string
+  profile: TuInspectorProfileCard | null
+}) {
   const [imageLoadError, setImageLoadError] = useState(false)
   const imageSrc = imageLoadError ? null : profile?.avatarUrl ?? profile?.logoUrl ?? null
   const name = profile?.fullName || 'Besiktningsman'
@@ -1004,7 +1058,7 @@ function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
       </div>
       <div className="mt-auto pt-5">
         <PendingLink
-          href="/settings"
+          href={organizationUrl('/settings', organizationId)}
           autoPending
           pendingLabel="Öppnar profil..."
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
@@ -1018,9 +1072,11 @@ function ProfileCard({ profile }: { profile: TuInspectorProfileCard | null }) {
 }
 
 function AssignmentMiniRow({
+  organizationId,
   assignment,
   onStartAssignment,
 }: {
+  organizationId: string
   assignment: TuAssignmentListItem
   onStartAssignment: (assignment: TuAssignmentListItem) => void
 }) {
@@ -1032,7 +1088,10 @@ function AssignmentMiniRow({
     return (
       <li>
         <PendingLink
-          href={`/tu/investigations/${encodeURIComponent(assignment.inspection_id)}`}
+          href={organizationUrl(
+            `/tu/investigations/${encodeURIComponent(assignment.inspection_id)}`,
+            organizationId
+          )}
           autoPending
           pendingLabel="Öppnar utredning..."
           className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -1068,7 +1127,10 @@ function AssignmentMiniRow({
   return (
     <li>
       <PendingLink
-        href={`/tu/assignments/${encodeURIComponent(assignment.id)}`}
+        href={organizationUrl(
+          `/tu/assignments/${encodeURIComponent(assignment.id)}`,
+          organizationId
+        )}
         autoPending
         pendingLabel="Öppnar uppdrag..."
         className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -1081,11 +1143,20 @@ function AssignmentMiniRow({
   )
 }
 
-function InvestigationMiniRow({ investigation }: { investigation: TuInspectionSummary }) {
+function InvestigationMiniRow({
+  organizationId,
+  investigation,
+}: {
+  organizationId: string
+  investigation: TuInspectionSummary
+}) {
   return (
     <li>
       <PendingLink
-        href={`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`}
+        href={organizationUrl(
+          `/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`,
+          organizationId
+        )}
         autoPending
         pendingLabel="Öppnar utredning..."
         className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -1269,6 +1340,7 @@ function DialogError({ message }: { message: string | null }) {
 }
 
 function QuickAssignmentDialog({
+  organizationId,
   form,
   customerBinding,
   busy,
@@ -1280,6 +1352,7 @@ function QuickAssignmentDialog({
   onModeChange,
   onSubmit,
 }: {
+  organizationId: string
   form: TuFormState
   customerBinding: AssignmentCustomerBinding | null
   busy: string | null
@@ -1376,6 +1449,7 @@ function QuickAssignmentDialog({
           </div>
         )}
         <AssignmentCustomerSelector
+          organizationId={organizationId}
           value={customerBinding}
           draft={{
             customerType: form.customerType,

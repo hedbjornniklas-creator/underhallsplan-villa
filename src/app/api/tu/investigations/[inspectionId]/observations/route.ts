@@ -11,7 +11,7 @@ import {
   isTuObservationReviewStatus,
   isTuObservationSourceType,
 } from '@/lib/tu/evidence'
-import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
+import { getTuInvestigationById, requireTuRequestContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,6 +46,7 @@ function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
@@ -115,12 +116,12 @@ function observationValues(body: Record<string, unknown>, inspectionId: string):
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ inspectionId: string }> }
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     await requireInvestigation(orgContext.orgId, inspectionId, false)
     const observations = await listTuObservations({ orgId: orgContext.orgId, inspectionId })
     return NextResponse.json({ observations })
@@ -138,7 +139,7 @@ export async function POST(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     await requireInvestigation(orgContext.orgId, inspectionId, true)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const values = observationValues(body, inspectionId)
@@ -172,7 +173,7 @@ export async function PATCH(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     await requireInvestigation(orgContext.orgId, inspectionId, true)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const observationId = uuid(body.observationId)
@@ -207,7 +208,7 @@ export async function DELETE(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     await requireInvestigation(orgContext.orgId, inspectionId, true)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const observationId = uuid(body.observationId)

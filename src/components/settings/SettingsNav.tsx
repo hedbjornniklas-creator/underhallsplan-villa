@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { Suspense } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { Check, ChevronRight, Settings, UsersRound } from 'lucide-react'
 
 const ITEMS = [
@@ -19,8 +20,10 @@ const ITEMS = [
   },
 ] as const
 
-export default function SettingsNav() {
+function SettingsNavContent() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const organizationId = searchParams.get('orgId')
 
   return (
     <nav
@@ -42,7 +45,11 @@ export default function SettingsNav() {
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={
+                organizationId
+                  ? `${item.href}?orgId=${encodeURIComponent(organizationId)}`
+                  : item.href
+              }
               aria-current={active ? 'page' : undefined}
               className={`group flex min-h-20 items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
                 active
@@ -89,5 +96,13 @@ export default function SettingsNav() {
         })}
       </div>
     </nav>
+  )
+}
+
+export default function SettingsNav() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsNavContent />
+    </Suspense>
   )
 }

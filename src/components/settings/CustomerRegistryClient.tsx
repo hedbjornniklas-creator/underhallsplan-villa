@@ -21,6 +21,7 @@ import {
   Upload,
   UserRound,
 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 import type {
   OrganizationCustomer,
   OrganizationCustomerInput,
@@ -160,6 +161,8 @@ function customerSearchText(customer: OrganizationCustomer) {
 
 export default function CustomerRegistryClient() {
   const toast = useToast()
+  const searchParams = useSearchParams()
+  const selectedOrganizationId = searchParams.get('orgId')
   const [workspace, setWorkspace] = useState<OrganizationCustomerWorkspace | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -172,8 +175,11 @@ export default function CustomerRegistryClient() {
   const [statusCustomerId, setStatusCustomerId] = useState<string | null>(null)
   const [fortnoxCustomerId, setFortnoxCustomerId] = useState<string | null>(null)
   const fortnoxExportInFlightRef = useRef<string | null>(null)
+  const loadRequestRef = useRef(0)
 
   const load = useCallback(async (orgId?: string) => {
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
     setLoading(true)
     setLoadError(null)
     try {
@@ -189,17 +195,28 @@ export default function CustomerRegistryClient() {
         )
       )
       if (!body.workspace) throw new Error('Kundregistret gav inget svar.')
+      if (orgId && body.workspace.organization.id !== orgId) {
+        throw new Error('Kundregistret svarade för fel organisation. Ladda om sidan.')
+      }
+      if (loadRequestRef.current !== requestId) return
       setWorkspace(body.workspace)
     } catch (error) {
+      if (loadRequestRef.current !== requestId) return
       setLoadError(error instanceof Error ? error.message : 'Kundregistret kunde inte hämtas.')
     } finally {
-      setLoading(false)
+      if (loadRequestRef.current === requestId) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    setWorkspace(null)
+    setEditing(null)
+    setFormOpen(false)
+    setForm({ ...EMPTY_FORM })
+    setSearch('')
+    setShowInactive(false)
+    void load(selectedOrganizationId ?? undefined)
+  }, [load, selectedOrganizationId])
 
   const visibleCustomers = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('sv-SE')
@@ -246,27 +263,13 @@ export default function CustomerRegistryClient() {
     setForm((current) => ({ ...current, [key]: value }))
   }
 
-  const switchOrganization = (orgId: string) => {
-    if (
-      saving ||
-      statusCustomerId !== null ||
-      fortnoxCustomerId !== null ||
-      orgId === workspace?.organization.id
-    ) {
-      return
-    }
-    setEditing(null)
-    setFormOpen(false)
-    setForm({ ...EMPTY_FORM })
-    setSearch('')
-    setShowInactive(false)
-    void load(orgId)
-  }
-
   const saveCustomer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const targetOrgId = workspace?.organization.id
-    if (!targetOrgId) {
+    if (
+      !targetOrgId ||
+      (selectedOrganizationId !== null && targetOrgId !== selectedOrganizationId)
+    ) {
       toast.error('Välj en organisation innan kunden sparas.')
       return
     }
@@ -317,7 +320,10 @@ export default function CustomerRegistryClient() {
       return
     }
     const targetOrgId = workspace?.organization.id
-    if (!targetOrgId) {
+    if (
+      !targetOrgId ||
+      (selectedOrganizationId !== null && targetOrgId !== selectedOrganizationId)
+    ) {
       toast.error('Välj en organisation innan kundstatusen ändras.')
       return
     }
@@ -359,7 +365,10 @@ export default function CustomerRegistryClient() {
       return
     }
     const targetOrgId = workspace?.organization.id
-    if (!targetOrgId) {
+    if (
+      !targetOrgId ||
+      (selectedOrganizationId !== null && targetOrgId !== selectedOrganizationId)
+    ) {
       toast.error('Välj en organisation innan kunden överförs.')
       return
     }
@@ -431,7 +440,7 @@ export default function CustomerRegistryClient() {
         <ActionButton
           tone="secondary"
           className="mt-4 rounded-lg px-4 py-2 text-sm"
-          onClick={() => void load()}
+          onClick={() => void load(selectedOrganizationId ?? undefined)}
         >
           Försök igen
         </ActionButton>
@@ -456,26 +465,10 @@ export default function CustomerRegistryClient() {
           </div>
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-64">
             {workspace.organizations.length > 1 ? (
-              <label className="space-y-1">
-                <span className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Organisation
-                </span>
-                <select
-                  value={workspace.organization.id}
-                  disabled={
-                    saving || statusCustomerId !== null || fortnoxCustomerId !== null
-                  }
-                  onChange={(event) => switchOrganization(event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-950 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-                >
-                  {workspace.organizations.map((organization) => (
-                    <option key={organization.id} value={organization.id}>
-                      {organization.name || 'Namnlös organisation'}
-                      {organization.isDefault ? ' (standard)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-900">
+                Byt arbetsorganisation i topbaren. Kundlistan följer alltid organisationen som
+                visas där.
+              </div>
             ) : null}
             {workspace.organization.canManage ? (
               <ActionButton

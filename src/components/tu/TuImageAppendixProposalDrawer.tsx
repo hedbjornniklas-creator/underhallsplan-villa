@@ -23,6 +23,7 @@ export type TuAppendixProposalApplyResult = {
 
 type Props = {
   inspectionId: string
+  organizationId: string
   images: Array<TuAppendixSourceImage & { publicUrl: string }>
   locked: boolean
   onClose: () => void
@@ -41,6 +42,7 @@ function clean(value: string | null | undefined) {
 
 export default function TuImageAppendixProposalDrawer({
   inspectionId,
+  organizationId,
   images,
   locked,
   onClose,
@@ -66,7 +68,7 @@ export default function TuImageAppendixProposalDrawer({
       setLoading(true)
       setLoadError(null)
       try {
-        const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, { cache: 'no-store' })
+        const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, { cache: 'no-store' })
         if (!response.ok) {
           throw new Error(await responseError(response, 'Kunde inte hämta bildförslaget.'))
         }
@@ -91,7 +93,7 @@ export default function TuImageAppendixProposalDrawer({
     return () => {
       cancelled = true
     }
-  }, [inspectionId])
+  }, [inspectionId, organizationId])
 
   const updateRow = (imageId: string, patch: Partial<ProposalRow>) => {
     setRows((current) => current.map((row) => row.imageId === imageId ? { ...row, ...patch } : row))

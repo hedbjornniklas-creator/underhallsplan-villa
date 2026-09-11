@@ -43,6 +43,7 @@ const domain = load<typeof AssignmentCustomerDomain>(
 
 type HarnessOptions = {
   activeMember?: boolean
+  globalAccess?: boolean
   normalizedOrgId?: string | null
   rpcCode?: string
   rpcError?: { code?: string; message?: string } | null
@@ -71,8 +72,8 @@ function harness(options: HarnessOptions = {}) {
               productKey: 'dashboard',
               moduleKey: 'technical_investigations',
               roleKey: 'inspector',
-              scopeType: 'organization',
-              scopeId: normalizedOrgId,
+              scopeType: options.globalAccess ? 'global' : 'organization',
+              scopeId: options.globalAccess ? null : normalizedOrgId,
             },
           ],
     normalizedAccessAvailable: normalizedOrgId !== null,
@@ -244,6 +245,19 @@ test('membership and normalized organization scope are both fail-closed', async 
   )
   assert.deepEqual(wrongScope.fromCalls, [])
   assert.deepEqual(wrongScope.rpcCalls, [])
+})
+
+test('a global dashboard assignment still requires active membership but allows the selected org', async () => {
+  const candidate = harness({ globalAccess: true })
+  await candidate.server.assignOrganizationCustomer(
+    ORG_ID,
+    ASSIGNMENT_ID,
+    EXPECTED_UPDATED_AT,
+    { mode: 'existing', customerId: CUSTOMER_ID, customerVersion: 1 }
+  )
+
+  assert.equal(candidate.rpcCalls.length, 1)
+  assert.equal(candidate.fromCalls[0]?.table, 'org_members')
 })
 
 test('SQL outcome codes become stable, non-diagnostic service errors', async () => {

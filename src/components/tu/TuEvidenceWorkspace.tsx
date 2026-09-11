@@ -108,6 +108,7 @@ type ObservationSaveBatchResult = Record<string, TuObservation>
 
 type Props = {
   inspectionId: string
+  organizationId: string
   refreshToken?: number
   locked: boolean
   queue: TuFieldQueueController
@@ -416,6 +417,7 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export default function TuEvidenceWorkspace({
   inspectionId,
+  organizationId,
   refreshToken = 0,
   locked,
   queue,
@@ -481,7 +483,7 @@ export default function TuEvidenceWorkspace({
       const result: ObservationSaveBatchResult = {}
 
       for (const job of Object.values(batch)) {
-        const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`, {
+        const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(observationRequestBody(job.form)),
@@ -526,7 +528,7 @@ export default function TuEvidenceWorkspace({
 
       return result
     },
-    [inspectionId]
+    [inspectionId, organizationId]
   )
 
   const observationAutosave = useAutosaveQueue<ObservationSaveBatch, ObservationSaveBatchResult>({
@@ -644,7 +646,7 @@ export default function TuEvidenceWorkspace({
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`)
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`)
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta besiktningsunderlaget.')
       const serverObservations = (payload.observations ?? []).map((observation) =>
@@ -668,11 +670,11 @@ export default function TuEvidenceWorkspace({
     } finally {
       setLoading(false)
     }
-  }, [form.id, inspectionId, sections])
+  }, [form.id, inspectionId, organizationId, sections])
 
   const refreshObservationList = useCallback(async () => {
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`)
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`)
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte uppdatera besiktningsunderlaget.')
       const serverObservations = (payload.observations ?? []).map((observation) =>
@@ -698,13 +700,13 @@ export default function TuEvidenceWorkspace({
           : 'Kunde inte uppdatera besiktningsunderlaget.'
       )
     }
-  }, [inspectionId])
+  }, [inspectionId, organizationId])
 
   useEffect(() => {
     void loadObservations(null)
     // The workspace owns its refresh lifecycle; form selection must not retrigger initial loading.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inspectionId])
+  }, [inspectionId, organizationId])
 
   useEffect(() => {
     setMeasurementForm((current) => {
@@ -755,7 +757,7 @@ export default function TuEvidenceWorkspace({
     let cancelled = false
     async function loadAnalysisStatus() {
       try {
-        const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+        const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, {
           cache: 'no-store',
         })
         if (!response.ok) return
@@ -769,7 +771,7 @@ export default function TuEvidenceWorkspace({
     return () => {
       cancelled = true
     }
-  }, [inspectionId, refreshToken])
+  }, [inspectionId, organizationId, refreshToken])
 
   const selectedObservation = form.id
     ? observations.find((observation) => observation.id === form.id) ?? null
@@ -931,7 +933,7 @@ export default function TuEvidenceWorkspace({
         await queueObservationSnapshot(form)
         setSavedMessage('Ändringarna är sparade.')
       } else {
-        const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`, {
+        const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(observationRequestBody(form)),
@@ -1050,7 +1052,7 @@ export default function TuEvidenceWorkspace({
     setSaving(true)
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ observationId: form.id }),
@@ -1157,7 +1159,7 @@ export default function TuEvidenceWorkspace({
     setMeasurementBusy(true)
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements?orgId=${encodeURIComponent(organizationId)}`, {
         method: submittedForm.id ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1232,7 +1234,7 @@ export default function TuEvidenceWorkspace({
     setMeasurementBusy(true)
     setError(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/measurements?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ measurementId }),
@@ -1254,7 +1256,7 @@ export default function TuEvidenceWorkspace({
     setAiError(null)
     setSuggestion(null)
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/evidence-draft`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/evidence-draft?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sectionId: aiSectionId }),
@@ -1281,7 +1283,7 @@ export default function TuEvidenceWorkspace({
         await onApplySuggestion(suggestion.targetSectionId, suggestion.proposedText, mode)
         appliedToReport = true
       }
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/evidence-draft`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/evidence-draft?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ suggestionId: suggestion.id, status, mode: status === 'accepted' ? mode : null }),

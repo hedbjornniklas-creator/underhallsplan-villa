@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
+import { getTuInvestigationById, requireTuRequestContext } from '@/lib/tu/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { isTuDocumentAnalysisSourceRole } from '@/lib/tu/documents'
 
@@ -90,6 +90,7 @@ function jsonError(message: string, status: number) {
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
@@ -236,12 +237,12 @@ async function readDocumentRow(
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ inspectionId: string }> }
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const admin = createSupabaseAdminClient() as unknown as TuDocumentSupabaseClient
 
     await assertInvestigation(orgContext.orgId, inspectionId)
@@ -272,7 +273,7 @@ export async function POST(
 
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const admin = createSupabaseAdminClient() as unknown as TuDocumentSupabaseClient
 
     await assertInvestigation(orgContext.orgId, inspectionId, { editable: true })
@@ -353,7 +354,7 @@ export async function PATCH(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const admin = createSupabaseAdminClient() as unknown as TuDocumentSupabaseClient
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const documentId = normalizeUuid(body.documentId ?? body.document_id)
@@ -415,7 +416,7 @@ export async function DELETE(
 ) {
   try {
     const { inspectionId } = await context.params
-    const orgContext = await requireTuContext()
+    const orgContext = await requireTuRequestContext(request)
     const admin = createSupabaseAdminClient() as unknown as TuDocumentSupabaseClient
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const documentId = normalizeUuid(body.documentId ?? body.document_id)

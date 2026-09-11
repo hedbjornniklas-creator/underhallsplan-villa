@@ -7,7 +7,7 @@ import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
-  requireTuContext,
+  requireTuRequestContext,
 } from '@/lib/tu/server'
 import {
   createTuReportSnapshotPayloadV1,
@@ -178,6 +178,7 @@ function parseExtraRecipients(value: unknown, primary: string | null) {
 
 async function setPdfJobStatus(
   admin: AdminClient,
+  orgId: string,
   linkId: string,
   patch: {
     pdf_status?: PdfStatus
@@ -195,6 +196,7 @@ async function setPdfJobStatus(
   const { error } = await admin
     .from('inspection_report_links')
     .update(patch)
+    .eq('org_id', orgId)
     .eq('id', linkId)
     .is('revoked_at', null)
 
@@ -226,12 +228,14 @@ function getMailFromAddress() {
 
 async function revokeOlderReportLinks(
   admin: AdminClient,
+  orgId: string,
   inspectionId: string,
   activeLinkId: string
 ) {
   const { error } = await admin
     .from('inspection_report_links')
     .update({ revoked_at: new Date().toISOString() })
+    .eq('org_id', orgId)
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .neq('id', activeLinkId)
@@ -274,6 +278,7 @@ async function createOutboundMessage(
 
 async function updateOutboundMessage(
   admin: AdminClient,
+  orgId: string,
   id: string,
   patch: {
     status: 'sent' | 'failed'
@@ -283,7 +288,11 @@ async function updateOutboundMessage(
     sent_at?: string | null
   }
 ) {
-  const { error } = await admin.from('outbound_messages').update(patch).eq('id', id)
+  const { error } = await admin
+    .from('outbound_messages')
+    .update(patch)
+    .eq('org_id', orgId)
+    .eq('id', id)
   if (error) {
     console.error('[tu.report-delivery] failed to update outbound message', {
       id,
@@ -294,11 +303,13 @@ async function updateOutboundMessage(
 
 async function getDeliveryHistory(
   admin: AdminClient,
+  orgId: string,
   inspectionId: string
 ): Promise<OutboundMessageRow[]> {
   const { data, error } = await admin
     .from('outbound_messages')
     .select('id,recipient_email,status,sent_at,created_at,error_message,subject')
+    .eq('org_id', orgId)
     .eq('inspection_id', inspectionId)
     .eq('template_key', TEMPLATE_KEY)
     .order('created_at', { ascending: false })
@@ -382,11 +393,13 @@ function buildDeliveryActivityLog(input: {
 
 async function getLatestReportLink(
   admin: AdminClient,
+  orgId: string,
   inspectionId: string
 ) {
   const { data, error } = await admin
     .from('inspection_report_links')
     .select('id,org_id,token_hash,created_at,pdf_status,pdf_error,revoked_at,pdf_storage_bucket,pdf_storage_path,pdf_base64')
+    .eq('org_id', orgId)
     .eq('inspection_id', inspectionId)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })
@@ -436,10 +449,11 @@ async function getCurrentTuRevision(
   return (data as TuReportRevisionRow | null) ?? null
 }
 
-async function getReportSnapshotLink(admin: AdminClient, linkId: string) {
+async function getReportSnapshotLink(admin: AdminClient, orgId: string, linkId: string) {
   const { data, error } = await admin
     .from('inspection_report_links')
     .select('id,org_id,assignment_id,snapshot_schema_version,snapshot_payload')
+    .eq('org_id', orgId)
     .eq('id', linkId)
     .maybeSingle()
   if (error) throw new Error(error.message ?? 'Kunde inte läsa den fastställda rapportversionen.')
@@ -770,7 +784,7 @@ export async function GET(
 ) {
   try {
     const { inspectionId } = await context.params
-    const org = await requireTuContext()
+    const org = await requireTuRequestContext(request)
     const admin = createSupabaseAdminClient()
     const investigation = await getTuInvestigationById({
       orgId: org.orgId,
@@ -780,7 +794,7 @@ export async function GET(
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
     if (new URL(request.url).searchParams.get('status') === '1') {
-      const activeLink = await getLatestReportLink(admin, inspectionId)
+      const activeLink = await getLatestReportLink(admin, org.orgId, inspectionId)
       if (!activeLink || activeLink.org_id !== org.orgId) {
         return jsonError('Det finns inget fastställt TU-utlåtande.', 404)
       }
@@ -797,9 +811,9 @@ export async function GET(
     }
 
     const [history, unlockHistory, activeLink, deliveryDocuments, revision, qualityIssues, improvementReview, analysisState] = await Promise.all([
-      getDeliveryHistory(admin, inspectionId),
+      getDeliveryHistory(admin, org.orgId, inspectionId),
       getUnlockHistory(admin, org.orgId, inspectionId),
-      getLatestReportLink(admin, inspectionId),
+      getLatestReportLink(admin, org.orgId, inspectionId),
       listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
       getCurrentTuRevision(admin, org.orgId, inspectionId),
       getReportQualityIssues(investigation),
@@ -836,7 +850,9 @@ export async function GET(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+    if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+    if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('Du saknar TU-behörighet i den valda organisationen.', 403)
     return jsonError(message || 'Kunde inte läsa TU-utskicksstatus.', 500)
   }
 }
@@ -847,7 +863,7 @@ export async function POST(
 ) {
   try {
     const { inspectionId } = await context.params
-    const org = await requireTuContext()
+    const org = await requireTuRequestContext(request)
     const admin = createSupabaseAdminClient()
     const body = (await request.json().catch(() => null)) as
       | {
@@ -869,7 +885,7 @@ export async function POST(
     let acknowledgedAnalysisStaleAt: string | null = null
 
     if (action === 'regenerate_pdf') {
-      const latestLink = await getLatestReportLink(admin, inspectionId)
+      const latestLink = await getLatestReportLink(admin, org.orgId, inspectionId)
       if (!latestLink) {
         return jsonError('Det finns ingen publicerad rapportlänk att generera PDF för.', 400)
       }
@@ -880,7 +896,7 @@ export async function POST(
       const latestStatus = normalizePdfStatus(latestLink.pdf_status)
       const shouldSchedulePdfJob = latestStatus !== 'pending' && latestStatus !== 'processing'
       if (shouldSchedulePdfJob) {
-        await setPdfJobStatus(admin, latestLink.id, {
+        await setPdfJobStatus(admin, org.orgId, latestLink.id, {
           pdf_status: 'pending',
           pdf_error: null,
           pdf_attempts: 0,
@@ -905,9 +921,9 @@ export async function POST(
       })
 
       const [history, unlockHistory, activeLink, deliveryDocuments] = await Promise.all([
-        getDeliveryHistory(admin, inspectionId),
+        getDeliveryHistory(admin, org.orgId, inspectionId),
         getUnlockHistory(admin, org.orgId, inspectionId),
-        getLatestReportLink(admin, inspectionId),
+        getLatestReportLink(admin, org.orgId, inspectionId),
         listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
       ])
       const ordererEmail = resolveDefaultRecipient(investigation)
@@ -976,7 +992,7 @@ export async function POST(
 
     if (sendingFinalizedRevision) {
       if (!currentRevision) {
-        const latestFrozenLink = await getLatestReportLink(admin, inspectionId)
+        const latestFrozenLink = await getLatestReportLink(admin, org.orgId, inspectionId)
         if (!latestFrozenLink) {
           return jsonError('Den fastställda rapportversionen saknas. Lås upp och fastställ utlåtandet på nytt.', 409)
         }
@@ -987,7 +1003,11 @@ export async function POST(
           userId: org.userId,
         })
       }
-      const frozenLink = await getReportSnapshotLink(admin, currentRevision.snapshot_link_id)
+      const frozenLink = await getReportSnapshotLink(
+        admin,
+        org.orgId,
+        currentRevision.snapshot_link_id
+      )
       if (frozenLink.org_id !== org.orgId) {
         return jsonError('Den fastställda rapportversionen tillhör inte din organisation.', 403)
       }
@@ -1086,7 +1106,7 @@ export async function POST(
             html: emailContent.html,
             text: emailContent.text,
           })
-          await updateOutboundMessage(admin, messageId, {
+          await updateOutboundMessage(admin, org.orgId, messageId, {
             status: 'sent',
             provider: sendResult.provider,
             provider_message_id: sendResult.providerMessageId,
@@ -1095,7 +1115,7 @@ export async function POST(
           sentRecipients.push(recipient)
         } catch (sendError) {
           const message = sendError instanceof Error ? sendError.message : 'Mejlutskick misslyckades.'
-          await updateOutboundMessage(admin, messageId, {
+          await updateOutboundMessage(admin, org.orgId, messageId, {
             status: 'failed',
             error_message: message,
           })
@@ -1128,6 +1148,7 @@ export async function POST(
           admin
             .from('inspection_report_links')
             .update({ revoked_at: new Date().toISOString() })
+            .eq('org_id', org.orgId)
             .eq('id', linkId),
         ])
         throw lockError
@@ -1156,18 +1177,19 @@ export async function POST(
           userId: org.userId,
         }))
       }
-      await revokeOlderReportLinks(admin, inspectionId, linkId)
+      await revokeOlderReportLinks(admin, org.orgId, inspectionId, linkId)
     } else {
       await admin
         .from('inspection_report_links')
         .update({ revoked_at: new Date().toISOString() })
+        .eq('org_id', org.orgId)
         .eq('id', linkId)
     }
 
     const [history, unlockHistory, activeLink] = await Promise.all([
-      getDeliveryHistory(admin, inspectionId),
+      getDeliveryHistory(admin, org.orgId, inspectionId),
       getUnlockHistory(admin, org.orgId, inspectionId),
-      getLatestReportLink(admin, inspectionId),
+      getLatestReportLink(admin, org.orgId, inspectionId),
     ])
     const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
 
@@ -1200,7 +1222,9 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+    if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+    if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('Du saknar TU-behörighet i den valda organisationen.', 403)
     if (message === 'TU_REVISIONS_NOT_ACTIVATED') {
       return jsonError('TU-revisioner är inte aktiverade i databasen ännu.', 409)
     }

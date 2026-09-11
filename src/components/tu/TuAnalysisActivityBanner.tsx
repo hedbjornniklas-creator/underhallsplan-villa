@@ -11,6 +11,7 @@ import {
 
 type Props = {
   inspectionId: string
+  organizationId: string
   enabled: boolean
   onOpenAnalysis: () => void
 }
@@ -29,14 +30,19 @@ function elapsedText(value: string | null | undefined, now: number) {
   return `${Math.floor(minutes / 60)} tim ${minutes % 60} min`
 }
 
-export default function TuAnalysisActivityBanner({ inspectionId, enabled, onOpenAnalysis }: Props) {
+export default function TuAnalysisActivityBanner({
+  inspectionId,
+  organizationId,
+  enabled,
+  onOpenAnalysis,
+}: Props) {
   const [workflow, setWorkflow] = useState<TuAnalysisWorkflow | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
   const loadState = useCallback(async () => {
     if (!enabled) return
     try {
-      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis`, {
+      const response = await fetch(`/api/tu/investigations/${inspectionId}/analysis?orgId=${encodeURIComponent(organizationId)}`, {
         cache: 'no-store',
       })
       if (!response.ok) return
@@ -45,7 +51,7 @@ export default function TuAnalysisActivityBanner({ inspectionId, enabled, onOpen
     } catch {
       // The full analysis view handles request errors. This banner stays unobtrusive.
     }
-  }, [enabled, inspectionId])
+  }, [enabled, inspectionId, organizationId])
 
   useEffect(() => {
     if (!enabled) return

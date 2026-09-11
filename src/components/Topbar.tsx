@@ -2,15 +2,35 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
-import { useEffect, useRef, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
-import { LayoutGrid, Power } from 'lucide-react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { LayoutGrid, Power, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useProfile } from '@/hooks/useProfile'
+import ActiveOrganizationSwitcher from '@/components/organizations/ActiveOrganizationSwitcher'
 
 export default function Topbar() {
+  return (
+    <Suspense fallback={<TopbarFallback />}>
+      <TopbarContent />
+    </Suspense>
+  )
+}
+
+function TopbarFallback() {
+  return (
+    <header
+      data-app-topbar="true"
+      className="sticky top-0 z-50 h-14 border-b border-black/5 bg-white/90 backdrop-blur-sm"
+      aria-label="Laddar navigering"
+    />
+  )
+}
+
+function TopbarContent() {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { profile } = useProfile()
   const [email, setEmail] = useState<string | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -104,6 +124,9 @@ export default function Topbar() {
   }, [moduleMenuOpen])
 
   const displayName = profile?.full_name?.trim() || null
+  const organizationId = searchParams.get('orgId')
+  const organizationHref = (path: string) =>
+    organizationId ? `${path}?orgId=${encodeURIComponent(organizationId)}` : path
   const hasUser = isLoggedIn
   const normalizedPath = (pathname || '').toLowerCase()
   const isAdminContext = normalizedPath.startsWith('/admin')
@@ -143,7 +166,7 @@ export default function Topbar() {
       code: 'TU',
       label: 'Tekniska utredningar',
       description: 'TU / uppdrag och utlåtanden',
-      href: '/tu',
+      href: organizationHref('/tu'),
       active: isTuContext,
     },
     {
@@ -165,7 +188,7 @@ export default function Topbar() {
         : isEbContext
           ? '/eb'
           : isTuContext
-            ? '/tu'
+            ? organizationHref('/tu')
             : isTasksContext
               ? '/uppdrag'
               : isObContext
@@ -221,33 +244,12 @@ export default function Topbar() {
         </div>
 
         <div className="min-w-0 px-3 text-center">
-          {hasUser ? (
-            <Link
-              href="/settings"
-              aria-label="Öppna inställningar"
-              title="Inställningar"
-              className="group block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-            >
-              <div
-                className={`truncate font-medium text-gray-900 transition-all duration-200 group-hover:text-emerald-700 md:text-sm ${
-                  isMobileCompact ? 'text-xs' : 'text-sm'
-                }`}
-              >
-                {displayName ?? email}
-              </div>
-              {displayName && email ? (
-                <div
-                  className={`truncate text-xs text-gray-400 transition-all duration-200 md:block ${
-                    isMobileCompact ? 'hidden opacity-0' : 'block opacity-100'
-                  }`}
-                >
-                  {email}
-                </div>
-              ) : null}
-            </Link>
-          ) : (
-            <div className="truncate text-sm text-gray-500">Inte inloggad</div>
-          )}
+          <ActiveOrganizationSwitcher
+            isLoggedIn={hasUser}
+            displayName={displayName}
+            email={email}
+            compact={isMobileCompact}
+          />
         </div>
 
         <div className="flex items-center justify-end gap-2">
@@ -304,6 +306,18 @@ export default function Topbar() {
                 </div>
               ) : null}
             </div>
+          ) : null}
+          {hasUser ? (
+            <Link
+              href={organizationHref('/settings')}
+              aria-label="Öppna profil och inställningar"
+              title={displayName ? `Profil och inställningar – ${displayName}` : 'Profil och inställningar'}
+              className={`inline-flex items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:-translate-y-0.5 hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 md:h-10 md:w-10 ${
+                isMobileCompact ? 'h-8 w-8' : 'h-10 w-10'
+              }`}
+            >
+              <UserRound size={isMobileCompact ? 15 : 18} aria-hidden strokeWidth={2.1} />
+            </Link>
           ) : null}
           <button
             onClick={handleLogout}

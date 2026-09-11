@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Archive, ArrowLeft, Ban, ChevronsLeft, FileText, Mail, Play, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
 
@@ -37,6 +37,7 @@ type AssignmentItem = {
 
 type ListResponse = {
   items: AssignmentItem[]
+  org: { id: string; name: string | null }
 }
 
 type StatusFilter =
@@ -65,6 +66,11 @@ const STORAGE_KEY = 'tu:assignments:list:view:v1'
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
 const COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
+
+function organizationUrl(path: string, organizationId: string) {
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}orgId=${encodeURIComponent(organizationId)}`
+}
 
 const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
@@ -185,6 +191,10 @@ function getSortIndicator(active: boolean, direction: SortDirection) {
 
 export default function TuAssignmentsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const organizationId = searchParams.get('orgId')
+  const activeOrganizationIdRef = useRef(organizationId)
+  activeOrganizationIdRef.current = organizationId
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<AssignmentItem[]>([])
@@ -201,24 +211,39 @@ export default function TuAssignmentsPage() {
     type: 'archive' | 'cancel' | 'convert' | 'send'
   } | null>(null)
 
-  const loadAssignments = async () => {
+  const loadAssignments = useCallback(async (signal?: AbortSignal) => {
+    if (!organizationId) return
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch('/api/tu/assignments', { cache: 'no-store' })
+      setItems([])
+      const response = await fetch(organizationUrl('/api/tu/assignments', organizationId), {
+        cache: 'no-store',
+        signal,
+      })
       const data = (await response.json().catch(() => ({}))) as Partial<ListResponse> & { error?: string }
-      if (!response.ok) throw new Error(data.error ?? 'Kunde inte hämta uppdragsbekräftelser.')
-      setItems(data.items ?? [])
+      if (!response.ok || data.org?.id !== organizationId) {
+        throw new Error(data.error ?? 'Kunde inte hämta uppdragsbekräftelser för vald organisation.')
+      }
+      if (!signal?.aborted && activeOrganizationIdRef.current === organizationId) {
+        setItems(data.items ?? [])
+      }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta uppdragsbekräftelser.')
+      if (!signal?.aborted && activeOrganizationIdRef.current === organizationId) {
+        setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta uppdragsbekräftelser.')
+      }
     } finally {
-      setLoading(false)
+      if (!signal?.aborted && activeOrganizationIdRef.current === organizationId) {
+        setLoading(false)
+      }
     }
-  }
+  }, [organizationId])
 
   useEffect(() => {
-    void loadAssignments()
-  }, [])
+    const controller = new AbortController()
+    void loadAssignments(controller.signal)
+    return () => controller.abort()
+  }, [loadAssignments])
 
   useEffect(() => {
     try {
@@ -387,7 +412,11 @@ export default function TuAssignmentsPage() {
     try {
       setError(null)
       setActionState({ id: item.id, type: 'send' })
-      const response = await fetch(`/api/tu/assignments/${item.id}/send`, { method: 'POST' })
+      if (!organizationId) throw new Error('Välj arbetsorganisation innan uppdraget skickas.')
+      const response = await fetch(
+        organizationUrl(`/api/tu/assignments/${item.id}/send`, organizationId),
+        { method: 'POST' }
+      )
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skicka uppdragsbekräftelse.')
       await loadAssignments()
@@ -408,9 +437,10 @@ export default function TuAssignmentsPage() {
     if (!confirmed) return
 
     try {
+      if (!organizationId) throw new Error('Välj arbetsorganisation innan uppdraget ändras.')
       setError(null)
       setActionState({ id: item.id, type: 'archive' })
-      const response = await fetch(`/api/tu/assignments/${item.id}`, {
+      const response = await fetch(organizationUrl(`/api/tu/assignments/${item.id}`, organizationId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ archived_at: nextArchived ? new Date().toISOString() : null }),
@@ -436,9 +466,10 @@ export default function TuAssignmentsPage() {
     if (!confirmed) return
 
     try {
+      if (!organizationId) throw new Error('Välj arbetsorganisation innan uppdraget ändras.')
       setError(null)
       setActionState({ id: item.id, type: 'cancel' })
-      const response = await fetch(`/api/tu/assignments/${item.id}`, {
+      const response = await fetch(organizationUrl(`/api/tu/assignments/${item.id}`, organizationId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'cancelled', archived_at: new Date().toISOString() }),
@@ -459,15 +490,22 @@ export default function TuAssignmentsPage() {
   const handleConvertToInvestigation = async (item: AssignmentItem) => {
     if (!canStartInvestigation(item)) return
     try {
+      if (!organizationId) throw new Error('Välj arbetsorganisation innan utredningen startas.')
       setError(null)
       setActionState({ id: item.id, type: 'convert' })
-      const response = await fetch(`/api/tu/assignments/${item.id}/convert`, { method: 'POST' })
+      const response = await fetch(`/api/tu/assignments/${item.id}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId: organizationId }),
+      })
       const payload = (await response.json().catch(() => null)) as
         | { error?: string; inspectionId?: string }
         | null
       if (!response.ok) throw new Error(payload?.error ?? 'Kunde inte starta utredning.')
       if (!payload?.inspectionId) throw new Error('Konverteringen saknar utrednings-id.')
-      router.push(`/tu/investigations/${payload.inspectionId}`)
+      router.push(
+        organizationUrl(`/tu/investigations/${payload.inspectionId}`, organizationId)
+      )
     } catch (convertError) {
       setError(convertError instanceof Error ? convertError.message : 'Kunde inte starta utredning.')
     } finally {
@@ -489,7 +527,7 @@ export default function TuAssignmentsPage() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => router.push('/tu')}
+                  onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
                   aria-label="Till huvudsidan"
                   title="Till huvudsidan"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
@@ -498,7 +536,7 @@ export default function TuAssignmentsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push('/tu')}
+                  onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
                   aria-label="Tillbaka"
                   title="Tillbaka"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
@@ -510,7 +548,7 @@ export default function TuAssignmentsPage() {
 
               <button
                 type="button"
-                onClick={() => router.push('/tu')}
+                onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-violet-800 transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 sm:w-auto"
               >
                 <Plus size={14} strokeWidth={2.3} />
@@ -637,12 +675,22 @@ export default function TuAssignmentsPage() {
                           role="link"
                           tabIndex={0}
                           aria-label={`Öppna uppdragsbekräftelse för ${item.customer_name || item.customer_email}`}
-                          onClick={() => router.push(`/tu/assignments/${item.id}`)}
+                          onClick={() =>
+                            router.push(
+                              organizationId
+                                ? organizationUrl(`/tu/assignments/${item.id}`, organizationId)
+                                : `/tu/assignments/${item.id}`
+                            )
+                          }
                           onKeyDown={(event) => {
                             if (event.target !== event.currentTarget) return
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault()
-                              router.push(`/tu/assignments/${item.id}`)
+                              router.push(
+                                organizationId
+                                  ? organizationUrl(`/tu/assignments/${item.id}`, organizationId)
+                                  : `/tu/assignments/${item.id}`
+                              )
                             }
                           }}
                           className={`cursor-pointer border-b outline-none last:border-b-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 ${
@@ -679,7 +727,16 @@ export default function TuAssignmentsPage() {
                               {item.inspection_id ? (
                                 <button
                                   type="button"
-                                  onClick={() => router.push(`/tu/investigations/${item.inspection_id}`)}
+                                  onClick={() =>
+                                    router.push(
+                                      organizationId
+                                        ? organizationUrl(
+                                            `/tu/investigations/${item.inspection_id}`,
+                                            organizationId
+                                          )
+                                        : `/tu/investigations/${item.inspection_id}`
+                                    )
+                                  }
                                   title="Öppna utredning"
                                   aria-label="Öppna utredning"
                                   className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50"

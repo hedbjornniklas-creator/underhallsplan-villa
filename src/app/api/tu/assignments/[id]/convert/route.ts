@@ -11,6 +11,7 @@ function jsonError(message: string, status: number) {
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
+  if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_ASSIGNMENT_NOT_FOUND') return jsonError('TU-uppdraget hittades inte.', 404)
@@ -29,8 +30,11 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params
-    const orgContext = await requireTuContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    if (!Object.prototype.hasOwnProperty.call(body, 'orgId')) {
+      return jsonError('Välj arbetsorganisation innan utredningen startas.', 400)
+    }
+    const orgContext = await requireTuContext(body.orgId)
     const reportTemplateKey = typeof body.reportTemplateKey === 'string' ? body.reportTemplateKey.trim() : ''
     const result = await convertTuAssignmentToInvestigation({
       orgId: orgContext.orgId,
