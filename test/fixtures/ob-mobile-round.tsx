@@ -75,6 +75,10 @@ const initialImages: Image[] = [
     sort_order: 10,
   },
 ]
+if (new URLSearchParams(location.search).has('linked')) {
+  initialImages[0] = { ...initialImages[0], control_item_id: 'note-1', processing_status: 'linked',
+    origin_interior_room_id: 'room-2', origin_room_label: 'Sovrum', captured_at: '2026-09-11T09:00:00Z' }
+}
 if (new URLSearchParams(location.search).has('imagebank')) {
   initialImages.push(
     { ...initialImages[0], id: 'bank-origin', label: 'Ursprung', interior_room_id: null, origin_interior_room_id: 'room-1' },
@@ -97,6 +101,7 @@ const qa = {
   failSaves: false,
   partialLink: false,
   holdLinks: false,
+  holdUnlink: false,
   dropMutationResponse: false,
   delayMs: 0,
   calls: [] as Array<{ kind: string; id: string; patch?: unknown }>,
@@ -321,6 +326,21 @@ function Fixture() {
                   exterior_observation_id: target.exterior_observation_id, processing_status: 'linked',
                 } : row))
                 return !qa.partialLink
+              } finally {
+                setMutating(false)
+              }
+            }}
+            onUnlinkImage={async (image, target) => {
+              qa.calls.push({ kind: 'unlink', id: image.id, patch: { noteId: target.id } })
+              setMutating(true)
+              try {
+                while (qa.holdUnlink) await new Promise(resolve => setTimeout(resolve, 20))
+                await new Promise(resolve => setTimeout(resolve, qa.delayMs))
+                if (qa.failSaves) throw Error('Synthetic unlink failure')
+                if (images.find(row => row.id === image.id)?.control_item_id !== target.id) throw Error('Changed image link')
+                setImages(rows => rows.map(row => row.id === image.id ? {
+                  ...row, control_item_id: null, processing_status: 'unprocessed', ignored_at: null,
+                } : row))
               } finally {
                 setMutating(false)
               }

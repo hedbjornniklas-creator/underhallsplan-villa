@@ -57,8 +57,14 @@ do not replace physical-device, production-database and report acceptance.
   back arrow at the left. Move a room to a floor, or a note to a room/exterior part.
 - Confirmed deletion of empty rooms, notes and images. Deleting a note unlinks
   its pictures first, retaining them at their place under pending work.
-- Image deletion in the link sheet and beside editor thumbnails. The note and
-  the stored original/thumbnail files remain; deleted row metadata is archived.
+- The trash icon beside editor thumbnails offers two actions: remove from the
+  note (unlink) or delete from the inspection. Unlink retains the image row,
+  file, placement and capture origin, and returns it to Att bearbeta/Bildbank.
+  It flushes note text first, blocks during uploads, and conditionally updates
+  the expected note link so another editor's changed link is not removed.
+  An already-unlinked image is accepted when retrying a lost response.
+  Deletion still uses the separate confirmation/archiving flow; the note and
+  stored files remain. Deletion in the image link sheet is unchanged.
 - Existing/new note tabs in Koppla bild. New notes use free or editable catalog
   text and the image's saved place. No record is created on tab changes/cancel.
 - Atomic move/delete/create-and-link with server authorization, workflow/lock
@@ -188,6 +194,8 @@ and `node scripts/test-ob-mobile-round-ui.mjs --images-only`.
 Image-bank checks: `node --experimental-strip-types --test test/ob-round-image-bank.test.ts`
 and `node scripts/test-ob-mobile-round-ui.mjs --image-bank-only`.
 Image-preview checks: `node scripts/test-ob-mobile-round-ui.mjs --image-preview-only`.
+Image removal choices: `node scripts/test-ob-mobile-round-ui.mjs --image-removal-only`
+and `node --experimental-strip-types --test test/ob-round-image-unlink.test.ts`.
 
 Before retiring the legacy round, verify the production adapter against an
 isolated database, test the real phone camera/upload queue, and compare the

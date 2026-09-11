@@ -60,7 +60,9 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
     const qa = window.__obMobileTest, note = qa.notes.find(row => row.id === 'note-1')
     return [note.interior_room_id, note.note, qa.images[0].interior_room_id]
   }), ['room-2', 'Text före flytt', 'room-2'])
-  await page.click('dialog [aria-label="Radera bild"]')
+  await page.click('dialog [aria-label="Ta bort bild"]')
+  await waitSheet('Ta bort bild')
+  await click('Radera från besiktningen', 'dialog')
   await waitSheet('Radera bild')
   await click('Avbryt', 'dialog')
   await waitSheet('Notering')

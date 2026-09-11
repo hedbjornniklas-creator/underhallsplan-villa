@@ -50,6 +50,7 @@ import type {
 } from '@/lib/ob/roundMutations'
 import Sheet from './ObRoundSheet'
 import ObRoundImageBank from './ObRoundImageBank'
+import ObRoundImageActions from './ObRoundImageActions'
 import {
   ImageLinkSheet,
   MoveSheet,
@@ -108,6 +109,7 @@ export type ObMobileRoundProps = {
   onImportImages: (files: File[]) => Promise<void>
   onLinkImage: (image: RoundImage, note: Note) => Promise<boolean>
   onLinkImages: (images: RoundImage[], note: Note) => Promise<boolean>
+  onUnlinkImage: (image: RoundImage, note: Note) => Promise<void>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
   onRemove: (
@@ -161,6 +163,8 @@ function Editor({
   const [status, setStatus] = useState(initial.pending ? 'Ej sparad' : 'Sparad')
   const [error, setError] = useState('')
   const [imageBankOpen, setImageBankOpen] = useState(false)
+  const [imageActionsId, setImageActionsId] = useState<string | null>(null)
+  const [imageNotice, setImageNotice] = useState('')
   const [leaving, setLeaving] = useState(false),
     leaveRef = useRef(false)
   const values = useRef(draft),
@@ -171,6 +175,7 @@ function Editor({
   const update = useRef(p.onUpdateNote)
   update.current = p.onUpdateNote
   const linked = p.images.filter((image) => image.control_item_id === note.id)
+  const imageActions = linked.find(image => image.id === imageActionsId)
   const persist = useCallback((): Promise<boolean> => {
     if (timer.current) clearTimeout(timer.current)
     if (flight.current) return flight.current
@@ -245,6 +250,15 @@ function Editor({
   if (imageBankOpen) return (
     <ObRoundImageBank note={note} place={place} imagePlace={imagePlace} p={p}
       onClose={() => setImageBankOpen(false)} />
+  )
+  if (imageActions) return (
+    <ObRoundImageActions image={imageActions} note={note} place={place} p={p}
+      onClose={() => setImageActionsId(null)}
+      onUnlinked={() => {
+        setImageActionsId(null)
+        setImageNotice('Bilden kopplades loss och finns i Att bearbeta.')
+      }}
+      onDelete={() => onDeleteImage(imageActions)} />
   )
   return (
     <Sheet
@@ -390,16 +404,20 @@ function Editor({
             </a>
             <button
               className="obm-icon obm-delete-icon"
-              title="Radera bild"
-              aria-label="Radera bild"
+              title="Ta bort bild"
+              aria-label="Ta bort bild"
               disabled={p.locked || leaving}
-              onClick={() => void finish(() => onDeleteImage(image))}
+              onClick={() => void finish(() => {
+                setImageNotice('')
+                setImageActionsId(image.id)
+              })}
             >
               <Trash2 size={18} />
             </button>
           </div>
         ))}
       </div>
+      {imageNotice && <p role="status" className="obm-saved">{imageNotice}</p>}
     </Sheet>
   )
 }

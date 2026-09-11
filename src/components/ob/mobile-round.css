@@ -910,6 +910,15 @@ body:has(dialog.obm-sheet[open]) {
 .obm-image-bank-group {
   margin-top: 18px;
 }
+.obm-image-removal-actions {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+.obm-image-removal-actions > button {
+  width: 100%;
+  padding: 10px 8px;
+}
 .obm-image-bank-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

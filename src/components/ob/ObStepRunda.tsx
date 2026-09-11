@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { queueImageBatch, unplacedImagePlacement } from '@/lib/ob/roundImageImport'
+import { unlinkRoundImage } from '@/lib/ob/unlinkRoundImage'
 import { useObFloorModel } from './ObFloorProvider'
 import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
@@ -2005,10 +2006,19 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     }
   }
 
-  const unlinkImageFromControlItem = async (imageId: string) => {
-    if (isInspectionLocked) return
+  const unlinkImageFromControlItem = async (imageId: string, expectedNoteId?: string) => {
+    if (isInspectionLocked) {
+      if (expectedNoteId) throw Error('Besiktningen är låst.')
+      return
+    }
     const image = roundImages.find(row => row.id === imageId)
-    if (!image?.id) return
+    if (!image?.control_item_id || (expectedNoteId && image.control_item_id !== expectedNoteId)) {
+      if (expectedNoteId) throw Error('Bildens koppling har ändrats. Uppdatera bildlistan och försök igen.')
+      return
+    }
+    if (expectedNoteId && (saving || roundMutating || pendingUploadCount > 0 || isLocalRoundImage(image))) {
+      throw Error('Vänta tills sparande och bilduppladdning är klara.')
+    }
 
     if (isLocalRoundImage(image)) {
       await updateLocalQueuedImage(image, {
@@ -2027,24 +2037,18 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       return
     }
 
+    if (expectedNoteId) setSaving(true)
     try {
-      const { data, error: updateError } = await supabase
-        .from('inspection_images')
-        .update({
-          control_item_id: null,
-          processing_status: 'unprocessed',
-        })
-        .eq('id', image.id)
-        .select('*')
-        .single()
-
-      if (updateError) throw updateError
-      const updated = data as InspectionImage
+      const updated = await unlinkRoundImage(supabase, inspection.id, image.id,
+        expectedNoteId || image.control_item_id) as InspectionImage
       setImages(prev => prev.map(row => (row.id === updated.id ? updated : row)))
       setMessage('Bilden kopplades loss.')
     } catch (e: unknown) {
       console.error('unlink image from control item failed:', e)
+      if (expectedNoteId) throw e
       setError(e instanceof Error ? e.message : 'Kunde inte koppla loss bilden.')
+    } finally {
+      if (expectedNoteId) setSaving(false)
     }
   }
 
@@ -2412,6 +2416,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             if (saving || roundMutating || pendingUploadCount > 0 || images.some(isLocalRoundImage)) return false
             return Boolean(await linkSelectedImagesToControlItem(note.id, images, true))
           }}
+          onUnlinkImage={(image, note) => unlinkImageFromControlItem(image.id, note.id!)}
         />
       ) : renderRoundSurface()}
       {!mobileLayout && roomDialogOpen && activeRoom ? renderRoomDialog() : null}
