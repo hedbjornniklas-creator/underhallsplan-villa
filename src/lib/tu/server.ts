@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { requireModuleAccess } from '@/lib/access/server'
+import { hasCurrentUserAccess } from '@/lib/access/server'
 import {
   buildBaseUrl,
   createAssignment,
@@ -969,17 +969,23 @@ export async function getTuInspectorProfileCard(input: {
 }
 
 export async function requireTuContext() {
-  await requireModuleAccess({
-    productKey: 'dashboard',
-    moduleKey: 'technical_investigations',
-  })
   const context = await requireOrgContext()
-  await requireModuleAccess({
-    productKey: 'dashboard',
-    moduleKey: 'technical_investigations',
-    scopeType: 'organization',
-    scopeId: context.orgId,
-  })
+  const [hasOrganizationAccess, hasGlobalAccess] = await Promise.all([
+    hasCurrentUserAccess({
+      productKey: 'dashboard',
+      moduleKey: 'technical_investigations',
+      scopeType: 'organization',
+      scopeId: context.orgId,
+    }),
+    hasCurrentUserAccess({
+      productKey: 'dashboard',
+      moduleKey: 'technical_investigations',
+      scopeType: 'global',
+    }),
+  ])
+  if (!hasOrganizationAccess && !hasGlobalAccess) {
+    throw new Error('MODULE_ACCESS_REQUIRED')
+  }
   return context
 }
 

@@ -436,9 +436,14 @@ test('both TU POST routes reject cross-origin requests before context or draft c
   }
 })
 
-test('TU access is scoped to the exact organization used for the assignment', () => {
+test('TU access accepts global access or access scoped to the exact organization', () => {
   assert.match(
     requireTuContextSource,
-    /const context = await requireOrgContext\(\)[\s\S]*?requireModuleAccess\(\{[\s\S]*?moduleKey: 'technical_investigations',[\s\S]*?scopeType: 'organization',[\s\S]*?scopeId: context\.orgId/
+    /const context = await requireOrgContext\(\)[\s\S]*?hasCurrentUserAccess\(\{[\s\S]*?scopeType: 'organization',[\s\S]*?scopeId: context\.orgId/
   )
+  assert.match(
+    requireTuContextSource,
+    /hasCurrentUserAccess\(\{[\s\S]*?moduleKey: 'technical_investigations',[\s\S]*?scopeType: 'global'/
+  )
+  assert.match(requireTuContextSource, /if \(!hasOrganizationAccess && !hasGlobalAccess\)/)
 })
