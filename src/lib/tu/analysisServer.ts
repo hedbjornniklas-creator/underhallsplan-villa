@@ -18,6 +18,7 @@ import {
 } from '@/lib/tu/analysis'
 import {
   parseTuAnalysisBackgroundState,
+  tuImageBatchMaxOutputTokens,
   tuAnalysisFailureMessage,
   tuAnalysisBackgroundPayload,
   type TuAnalysisBackgroundState,
@@ -355,12 +356,13 @@ function structuredOpenAiRequestBody(input: {
   schemaName: string
   schema: JsonRecord
   maxOutputTokens: number
+  reasoningEffort?: 'medium' | 'high'
 }) {
   return {
       model: TU_ANALYSIS_MODEL,
       background: true,
       store: false,
-      reasoning: { effort: 'high' },
+      reasoning: { effort: input.reasoningEffort ?? 'high' },
       instructions: input.instructions,
       input: input.content,
       text: {
@@ -859,6 +861,7 @@ async function prepareImageBatch(images: TuInvestigationImage[], highDetailImage
       'Analysera endast vad som faktiskt är synligt i bilderna.',
       'Identifiera inte personer och dra inga slutsatser om orsak, ansvar eller dolda förhållanden.',
       'Skriv neutrala svenska bildiakttagelser. Markera osäker bildkvalitet uttryckligen.',
+      'Håll resultatet kort: högst fyra korta synliga fakta och högst två korta varningar per bild.',
       'Om en instrumentskärm är tydligt läsbar: återge varje avläst displayvärde exakt, inklusive synlig enhet, i displayReadings. Gissa aldrig ett värde och lämna listan tom när displayen inte kan läsas säkert.',
       `Bilder i denna batch: ${available.map((item) => `${item.image.id} (${item.image.caption ?? 'utan bildtext'})`).join(', ')}`,
     ].join('\n'),
@@ -907,7 +910,8 @@ async function prepareImageBatch(images: TuInvestigationImage[], highDetailImage
       required: ['images'],
       additionalProperties: false,
     },
-    maxOutputTokens: 2400,
+    maxOutputTokens: tuImageBatchMaxOutputTokens(available.length),
+    reasoningEffort: 'medium',
   })
   return {
     body,

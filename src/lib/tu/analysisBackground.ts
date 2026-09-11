@@ -1,5 +1,9 @@
 export const TU_ANALYSIS_BACKGROUND_STATE_VERSION = 1 as const
 
+const TU_IMAGE_BATCH_MIN_OUTPUT_TOKENS = 4_000
+const TU_IMAGE_BATCH_MAX_OUTPUT_TOKENS = 12_000
+const TU_IMAGE_BATCH_OUTPUT_TOKENS_PER_IMAGE = 1_000
+
 export type TuAnalysisBackgroundStage =
   | 'image_batch_ready'
   | 'image_batch_pending'
@@ -15,6 +19,19 @@ export type TuAnalysisBackgroundState = {
   batchImageIds: string[]
   imageAnalyses: unknown[]
   analysisDraft: unknown | null
+}
+
+export function tuImageBatchMaxOutputTokens(imageCount: number) {
+  const normalizedImageCount = Number.isFinite(imageCount)
+    ? Math.max(1, Math.floor(imageCount))
+    : 1
+  return Math.min(
+    TU_IMAGE_BATCH_MAX_OUTPUT_TOKENS,
+    Math.max(
+      TU_IMAGE_BATCH_MIN_OUTPUT_TOKENS,
+      normalizedImageCount * TU_IMAGE_BATCH_OUTPUT_TOKENS_PER_IMAGE
+    )
+  )
 }
 
 type JsonRecord = Record<string, unknown>

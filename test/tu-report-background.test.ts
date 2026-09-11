@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { parseTuAnalysisBackgroundState, tuAnalysisBackgroundPayload, tuAnalysisFailureMessage } from '../src/lib/tu/analysisBackground.ts'
+import { parseTuAnalysisBackgroundState, tuAnalysisBackgroundPayload, tuAnalysisFailureMessage, tuImageBatchMaxOutputTokens } from '../src/lib/tu/analysisBackground.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { shouldRejectGeneratedAnalysisItem } from '../src/lib/tu/analysis.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
@@ -28,6 +28,14 @@ test('keeps image-batch progress in a resumable analysis state', () => {
     imageAnalyses: [{ imageId: 'image-0' }],
     analysisDraft: null,
   })
+})
+
+test('scales image-analysis output budget with the batch size', () => {
+  assert.equal(tuImageBatchMaxOutputTokens(1), 4_000)
+  assert.equal(tuImageBatchMaxOutputTokens(4), 4_000)
+  assert.equal(tuImageBatchMaxOutputTokens(8), 8_000)
+  assert.equal(tuImageBatchMaxOutputTokens(100), 12_000)
+  assert.equal(tuImageBatchMaxOutputTokens(Number.NaN), 4_000)
 })
 
 test('does not expose technical analysis errors to users', () => {
