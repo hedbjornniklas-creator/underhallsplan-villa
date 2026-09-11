@@ -189,6 +189,62 @@ const FAILURE_DEFINITIONS: Readonly<Record<string, Omit<FortnoxFailure, 'code'>>
       message: 'Det finns ingen Fortnox-anslutning att kontrollera för organisationen.',
       status: 404,
     },
+    FORTNOX_CONNECTION_NEEDS_REAUTHORIZATION: {
+      message: 'Fortnox-anslutningen behöver godkännas på nytt innan kunder kan överföras.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_ID_INVALID: {
+      message: 'Kunden är ogiltig.',
+      status: 400,
+    },
+    FORTNOX_CUSTOMER_VERSION_INVALID: {
+      message: 'Kundversionen är ogiltig.',
+      status: 400,
+    },
+    FORTNOX_CUSTOMER_NOT_FOUND: {
+      message: 'Kunden kunde inte hittas i den valda organisationen.',
+      status: 404,
+    },
+    FORTNOX_CUSTOMER_INACTIVE: {
+      message: 'Aktivera kunden innan den överförs till Fortnox.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_VERSION_CONFLICT: {
+      message: 'Kunden har ändrats. Ladda om kundregistret och försök igen.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_TENANT_CONFLICT: {
+      message: 'Kunden är kopplad till ett annat Fortnox-företag och kan inte flyttas automatiskt.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_MATCH_AMBIGUOUS: {
+      message: 'Flera Fortnox-kunder har samma organisationsnummer. Kopplingen behöver kontrolleras manuellt.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_NUMBER_CONFLICT: {
+      message: 'Det planerade kundnumret används redan i Fortnox.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_NUMBER_COLLISION: {
+      message: 'Det planerade kundnumret används redan av en annan Fortnox-kund. Kopplingen behöver kontrolleras manuellt.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_REJECTED: {
+      message: 'Fortnox avvisade kunduppgifterna. Kontrollera kundens namn, adress och postnummer.',
+      status: 422,
+    },
+    FORTNOX_CUSTOMER_OUTCOME_UNKNOWN: {
+      message: 'Fortnox kunde inte bekräfta överföringen. Ingen ny kund skapas innan samma kundnummer har kontrollerats.',
+      status: 503,
+    },
+    FORTNOX_CUSTOMER_BINDING_SUPERSEDED: {
+      message: 'Kunden eller Fortnox-anslutningen ändrades under överföringen. Ladda om kundregistret.',
+      status: 409,
+    },
+    FORTNOX_CUSTOMER_BINDING_SCHEMA_REQUIRED: {
+      message: 'Databasstödet för Fortnox-kunder behöver installeras innan överföringen kan användas.',
+      status: 503,
+    },
     FORTNOX_VERIFICATION_SUPERSEDED: {
       message: 'Anslutningen ändrades medan kontrollen pågick. Statusen har hämtats på nytt.',
       status: 409,

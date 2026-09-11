@@ -9,6 +9,8 @@ import {
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   FORTNOX_CONNECTION_SCOPES,
+  buildFortnoxCustomerDraft,
+  buildFortnoxCustomerIdentity,
   buildFortnoxAuthorizationUrl,
   hasAllowedFortnoxConnectionScopes,
   hasExactFortnoxScopes,
@@ -16,16 +18,56 @@ import {
   normalizeFortnoxScopes,
 } from './domain'
 import {
+  createFortnoxCustomer,
   exchangeFortnoxAuthorizationCode,
+  fetchFortnoxCustomer,
   fetchFortnoxCompanyInformation,
+  findFortnoxCustomersByOrganizationNumber,
   getFortnoxConfiguration,
   isFortnoxConfigured,
   requestFortnoxClientCredentialsToken,
 } from './provider'
+import type { OrganizationCustomer } from '@/lib/customers/domain'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const OAUTH_STATE_PATTERN = /^[A-Za-z0-9_-]{32,200}$/
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000
+const FORTNOX_CUSTOMER_OPERATION_SCOPES = Object.freeze([
+  'companyinformation',
+  'customer',
+] as const)
+const FORTNOX_CUSTOMER_DATABASE_COLUMNS = [
+  'id',
+  'org_id',
+  'customer_number',
+  'customer_type',
+  'name',
+  'organization_number',
+  'personal_identity_number',
+  'email',
+  'phone',
+  'address',
+  'address_line_2',
+  'postal_code',
+  'city',
+  'country_code',
+  'invoice_same_as_customer',
+  'invoice_name',
+  'invoice_email',
+  'invoice_address',
+  'invoice_address_line_2',
+  'invoice_postal_code',
+  'invoice_city',
+  'invoice_country_code',
+  'invoice_reference',
+  'fortnox_tenant_id',
+  'fortnox_customer_number',
+  'fortnox_synced_at',
+  'is_active',
+  'version',
+  'created_at',
+  'updated_at',
+].join(',')
 
 type DatabaseError = {
   code?: string | null
@@ -81,6 +123,50 @@ type AppliedVerificationRow = FortnoxConnectionRow & {
 type ConsumedStateRow = {
   org_id: string
   requested_scopes: string[]
+}
+
+type FortnoxCustomerDatabaseRow = {
+  id: string
+  org_id: string
+  customer_number: number | string
+  customer_type: 'business' | 'private'
+  name: string
+  organization_number: string | null
+  personal_identity_number: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  address_line_2: string | null
+  postal_code: string | null
+  city: string | null
+  country_code: string
+  invoice_same_as_customer: boolean
+  invoice_name: string | null
+  invoice_email: string | null
+  invoice_address: string | null
+  invoice_address_line_2: string | null
+  invoice_postal_code: string | null
+  invoice_city: string | null
+  invoice_country_code: string | null
+  invoice_reference: string | null
+  fortnox_tenant_id: string | null
+  fortnox_customer_number: string | null
+  fortnox_synced_at: string | null
+  is_active: boolean
+  version: number | string
+  created_at: string
+  updated_at: string
+}
+
+type FortnoxCustomerBindingRow = {
+  result_code: string
+  customer_id: string | null
+  bound_org_id: string | null
+  bound_tenant_id: string | null
+  bound_fortnox_customer_number: string | null
+  bound_at: string | null
+  customer_version: number | string | null
+  customer_updated_at: string | null
 }
 
 export type FortnoxConnectionStatus = {
@@ -395,6 +481,480 @@ function normalizeConnectionVersion(value: unknown) {
         ? Number(value)
         : Number.NaN
   return Number.isSafeInteger(normalized) && normalized > 0 ? normalized : null
+}
+
+function normalizeCustomerVersion(value: unknown) {
+  const normalized =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && /^[1-9][0-9]*$/u.test(value)
+        ? Number(value)
+        : Number.NaN
+  return Number.isSafeInteger(normalized) && normalized > 0 ? normalized : null
+}
+
+function assertFortnoxCustomerId(value: unknown) {
+  if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
+    throw new Error('FORTNOX_CUSTOMER_ID_INVALID')
+  }
+  return value
+}
+
+function assertFortnoxCustomerVersion(value: unknown) {
+  const version = normalizeCustomerVersion(value)
+  if (version === null) throw new Error('FORTNOX_CUSTOMER_VERSION_INVALID')
+  return version
+}
+
+function mapFortnoxCustomerDatabaseRow(
+  row: FortnoxCustomerDatabaseRow
+): OrganizationCustomer {
+  const customerType = row.customer_type === 'private' ? 'private' : 'business'
+  return {
+    id: row.id,
+    customerNumber: String(row.customer_number),
+    customerType,
+    name: row.name,
+    identityNumber:
+      customerType === 'business'
+        ? row.organization_number
+        : row.personal_identity_number,
+    email: row.email,
+    phone: row.phone,
+    address: row.address,
+    addressLine2: row.address_line_2,
+    postalCode: row.postal_code,
+    city: row.city,
+    countryCode: row.country_code,
+    invoiceSameAsCustomer: row.invoice_same_as_customer,
+    invoiceName: row.invoice_name,
+    invoiceEmail: row.invoice_email,
+    invoiceAddress: row.invoice_address,
+    invoiceAddressLine2: row.invoice_address_line_2,
+    invoicePostalCode: row.invoice_postal_code,
+    invoiceCity: row.invoice_city,
+    invoiceCountryCode: row.invoice_country_code,
+    invoiceReference: row.invoice_reference,
+    fortnoxCustomerNumber: row.fortnox_customer_number,
+    isActive: row.is_active,
+    version: Number(row.version),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+async function loadFortnoxCustomerConnection(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  orgId: string
+) {
+  const { data, error } = await admin
+    .from('fortnox_connections')
+    .select(
+      'org_id,tenant_id,company_name,company_organization_number,granted_scopes,status,connected_at,last_verified_at,connection_version'
+    )
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (error) throwDatabaseError(error)
+  if (!data) throw new Error('FORTNOX_CONNECTION_NOT_FOUND')
+  const connection = data as FortnoxVerifiableConnectionRow
+  if (
+    connection.status !== 'connected' ||
+    !hasExactFortnoxScopes(connection.granted_scopes, FORTNOX_CONNECTION_SCOPES)
+  ) {
+    throw new Error('FORTNOX_CONNECTION_NEEDS_REAUTHORIZATION')
+  }
+  return connection
+}
+
+async function requireFortnoxCustomerOperationAccess(
+  authorization: Awaited<ReturnType<typeof requireFortnoxOrganizationAdmin>>,
+  admin: ReturnType<typeof createSupabaseAdminClient>
+) {
+  const orgId = authorization.organization.id
+  const connection = await loadFortnoxCustomerConnection(admin, orgId)
+  if (
+    !authorization.organization.organization_number ||
+    connection.company_organization_number !==
+      authorization.organization.organization_number
+  ) {
+    throw new Error('FORTNOX_ORGANIZATION_MISMATCH')
+  }
+
+  const token = await requestFortnoxClientCredentialsToken({
+    tenantId: connection.tenant_id,
+    requestedScopes: [...FORTNOX_CUSTOMER_OPERATION_SCOPES],
+    configuration: getFortnoxConfiguration(),
+  })
+  if (!hasExactFortnoxScopes(token.scopes, FORTNOX_CUSTOMER_OPERATION_SCOPES)) {
+    throw new Error('FORTNOX_REQUIRED_SCOPE_MISSING')
+  }
+
+  const company = await fetchFortnoxCompanyInformation(token.accessToken)
+  if (
+    company.tenantId !== connection.tenant_id ||
+    company.organizationNumber !== connection.company_organization_number ||
+    company.organizationNumber !== authorization.organization.organization_number
+  ) {
+    throw new Error('FORTNOX_COMPANY_VERIFICATION_FAILED')
+  }
+
+  const currentAuthorization = await requireFortnoxOrganizationAdmin(orgId)
+  const currentConnection = await loadFortnoxCustomerConnection(admin, orgId)
+  if (
+    currentAuthorization.context.identity.profileId !==
+      authorization.context.identity.profileId ||
+    currentAuthorization.organization.organization_number !==
+      company.organizationNumber ||
+    currentConnection.tenant_id !== connection.tenant_id ||
+    currentConnection.company_organization_number !== company.organizationNumber
+  ) {
+    throw new Error('FORTNOX_CUSTOMER_BINDING_SUPERSEDED')
+  }
+
+  return {
+    accessToken: token.accessToken,
+    profileId: authorization.context.identity.profileId,
+    tenantId: connection.tenant_id,
+  }
+}
+
+function customerDraft(
+  row: FortnoxCustomerDatabaseRow,
+  customerNumber: string,
+  externalReference: string
+) {
+  try {
+    return buildFortnoxCustomerDraft({
+      customerType: row.customer_type,
+      name: row.name,
+      customerNumber,
+      externalReference,
+      organizationNumber: row.organization_number,
+      email: row.email,
+      invoiceEmail: row.invoice_same_as_customer ? row.email : row.invoice_email,
+      phone: row.phone,
+      address: row.address,
+      addressLine2: row.address_line_2,
+      postalCode: row.postal_code,
+      city: row.city,
+      countryCode: row.country_code,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'FORTNOX_CUSTOMER_PAYLOAD_INVALID') {
+      throw new Error('FORTNOX_CUSTOMER_REJECTED')
+    }
+    throw error
+  }
+}
+
+function ownsFortnoxCustomer(
+  customer: { customerNumber: string; externalReference: string | null },
+  customerNumber: string,
+  externalReference: string
+) {
+  return (
+    customer.customerNumber === customerNumber &&
+    customer.externalReference === externalReference
+  )
+}
+
+type FortnoxCustomerCandidateResult =
+  | { status: 'owned'; customerNumber: string }
+  | { status: 'collision' | 'reserved' }
+
+async function ensureFortnoxCustomerCandidate(input: {
+  accessToken: string
+  row: FortnoxCustomerDatabaseRow
+  customerNumber: string
+  externalReference: string
+}): Promise<FortnoxCustomerCandidateResult> {
+  const existing = await fetchFortnoxCustomer(
+    input.accessToken,
+    input.customerNumber
+  )
+  if (existing) {
+    return ownsFortnoxCustomer(
+      existing,
+      input.customerNumber,
+      input.externalReference
+    )
+      ? { status: 'owned', customerNumber: existing.customerNumber }
+      : { status: 'collision' }
+  }
+
+  const draft = customerDraft(
+    input.row,
+    input.customerNumber,
+    input.externalReference
+  )
+  try {
+    const created = await createFortnoxCustomer(input.accessToken, draft)
+    if (
+      ownsFortnoxCustomer(
+        created,
+        input.customerNumber,
+        input.externalReference
+      )
+    ) {
+      return { status: 'owned', customerNumber: created.customerNumber }
+    }
+  } catch (error) {
+    const code = error instanceof Error ? error.message : ''
+    if (
+      code !== 'FORTNOX_CUSTOMER_NUMBER_CONFLICT' &&
+      code !== 'FORTNOX_CUSTOMER_OUTCOME_UNKNOWN'
+    ) {
+      throw error
+    }
+
+    let reconciled
+    try {
+      reconciled = await fetchFortnoxCustomer(
+        input.accessToken,
+        input.customerNumber
+      )
+    } catch {
+      throw new Error(
+        code === 'FORTNOX_CUSTOMER_OUTCOME_UNKNOWN'
+          ? 'FORTNOX_CUSTOMER_OUTCOME_UNKNOWN'
+          : 'FORTNOX_TEMPORARILY_UNAVAILABLE'
+      )
+    }
+    if (reconciled) {
+      return ownsFortnoxCustomer(
+        reconciled,
+        input.customerNumber,
+        input.externalReference
+      )
+        ? { status: 'owned', customerNumber: reconciled.customerNumber }
+        : { status: 'collision' }
+    }
+    if (code === 'FORTNOX_CUSTOMER_NUMBER_CONFLICT') {
+      return { status: 'reserved' }
+    }
+    throw new Error('FORTNOX_CUSTOMER_OUTCOME_UNKNOWN')
+  }
+
+  const reconciled = await fetchFortnoxCustomer(
+    input.accessToken,
+    input.customerNumber
+  )
+  if (!reconciled) throw new Error('FORTNOX_CUSTOMER_OUTCOME_UNKNOWN')
+  return ownsFortnoxCustomer(
+    reconciled,
+    input.customerNumber,
+    input.externalReference
+  )
+    ? { status: 'owned', customerNumber: reconciled.customerNumber }
+    : { status: 'collision' }
+}
+
+async function createOrRecoverFortnoxCustomer(
+  accessToken: string,
+  row: FortnoxCustomerDatabaseRow
+) {
+  const identity = buildFortnoxCustomerIdentity(row.id, row.customer_number)
+  for (const customerNumber of [
+    identity.customerNumber,
+    identity.fallbackCustomerNumber,
+  ]) {
+    const result = await ensureFortnoxCustomerCandidate({
+      accessToken,
+      row,
+      customerNumber,
+      externalReference: identity.externalReference,
+    })
+    if (result.status === 'owned') return result.customerNumber
+  }
+  throw new Error('FORTNOX_CUSTOMER_NUMBER_COLLISION')
+}
+
+async function bindFortnoxCustomer(input: {
+  admin: ReturnType<typeof createSupabaseAdminClient>
+  row: FortnoxCustomerDatabaseRow
+  expectedVersion: number
+  profileId: string
+  tenantId: string
+  fortnoxCustomerNumber: string
+}) {
+  const { data, error } = await input.admin.rpc(
+    'bind_organization_customer_to_fortnox',
+    {
+      p_org_id: input.row.org_id,
+      p_customer_id: input.row.id,
+      p_expected_version: input.expectedVersion,
+      p_profile_id: input.profileId,
+      p_tenant_id: input.tenantId,
+      p_fortnox_customer_number: input.fortnoxCustomerNumber,
+    }
+  )
+  if (error) {
+    if (
+      error.code === '42883' ||
+      error.code === 'PGRST202' ||
+      error.code === 'PGRST204'
+    ) {
+      throw new Error('FORTNOX_CUSTOMER_BINDING_SCHEMA_REQUIRED')
+    }
+    throwDatabaseError(error)
+  }
+
+  const result = Array.isArray(data)
+    ? (data[0] as FortnoxCustomerBindingRow | undefined)
+    : undefined
+  if (!result) throw new Error('FORTNOX_DATABASE_FAILED')
+
+  if (result.result_code === 'ADMIN_REQUIRED') {
+    throw new Error('FORTNOX_ORGANIZATION_ADMIN_REQUIRED')
+  }
+  if (result.result_code === 'CONNECTION_NOT_CURRENT') {
+    throw new Error('FORTNOX_CUSTOMER_BINDING_SUPERSEDED')
+  }
+  if (result.result_code === 'CUSTOMER_NOT_FOUND') {
+    throw new Error('FORTNOX_CUSTOMER_NOT_FOUND')
+  }
+  if (result.result_code === 'CUSTOMER_INACTIVE') {
+    throw new Error('FORTNOX_CUSTOMER_INACTIVE')
+  }
+  if (result.result_code === 'VERSION_CONFLICT') {
+    throw new Error('FORTNOX_CUSTOMER_VERSION_CONFLICT')
+  }
+  if (result.result_code === 'LINK_CONFLICT') {
+    throw new Error('FORTNOX_CUSTOMER_TENANT_CONFLICT')
+  }
+  if (result.result_code !== 'BOUND' && result.result_code !== 'ALREADY_BOUND') {
+    throw new Error('FORTNOX_DATABASE_FAILED')
+  }
+
+  const version = normalizeCustomerVersion(result.customer_version)
+  if (
+    version === null ||
+    result.customer_id !== input.row.id ||
+    result.bound_org_id !== input.row.org_id ||
+    result.bound_tenant_id !== input.tenantId ||
+    result.bound_fortnox_customer_number !== input.fortnoxCustomerNumber ||
+    typeof result.bound_at !== 'string' ||
+    typeof result.customer_updated_at !== 'string'
+  ) {
+    throw new Error('FORTNOX_DATABASE_FAILED')
+  }
+
+  return mapFortnoxCustomerDatabaseRow({
+    ...input.row,
+    fortnox_tenant_id: result.bound_tenant_id,
+    fortnox_customer_number: result.bound_fortnox_customer_number,
+    fortnox_synced_at: result.bound_at,
+    version,
+    updated_at: result.customer_updated_at,
+  })
+}
+
+/**
+ * Explicitly exports one active, organization-scoped HusHub customer to the
+ * currently connected Fortnox tenant and stores the resulting customer link.
+ *
+ * Private customers are never matched on name or e-mail. Business customers
+ * may reuse one unambiguous, exact organization-number match in Fortnox.
+ */
+export async function exportOrganizationCustomerToFortnox(
+  orgIdValue: unknown,
+  customerIdValue: unknown,
+  versionValue: unknown
+): Promise<OrganizationCustomer> {
+  if (typeof orgIdValue !== 'string') {
+    throw new Error('FORTNOX_ORGANIZATION_INVALID')
+  }
+  assertOrganizationId(orgIdValue)
+  const customerId = assertFortnoxCustomerId(customerIdValue)
+  const expectedVersion = assertFortnoxCustomerVersion(versionValue)
+
+  const authorization = await requireFortnoxOrganizationAdmin(orgIdValue)
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('organization_customers')
+    .select(FORTNOX_CUSTOMER_DATABASE_COLUMNS)
+    .eq('org_id', orgIdValue)
+    .eq('id', customerId)
+    .maybeSingle()
+
+  if (error) throwDatabaseError(error)
+  if (!data) throw new Error('FORTNOX_CUSTOMER_NOT_FOUND')
+
+  const row = data as unknown as FortnoxCustomerDatabaseRow
+  const currentVersion = normalizeCustomerVersion(row.version)
+  if (
+    row.id !== customerId ||
+    row.org_id !== orgIdValue ||
+    currentVersion === null
+  ) {
+    throw new Error('FORTNOX_DATABASE_FAILED')
+  }
+  if (!row.is_active) throw new Error('FORTNOX_CUSTOMER_INACTIVE')
+
+  const hasTenantId = row.fortnox_tenant_id !== null
+  const hasCustomerNumber = row.fortnox_customer_number !== null
+  const hasSyncedAt = row.fortnox_synced_at !== null
+  const isLinked = hasTenantId && hasCustomerNumber && hasSyncedAt
+  const isUnlinked = !hasTenantId && !hasCustomerNumber && !hasSyncedAt
+  if (!isLinked && !isUnlinked) throw new Error('FORTNOX_DATABASE_FAILED')
+
+  // A retry after a successful bind is read-only and returns the current row.
+  // It still validates that the organization points at the same live tenant.
+  if (isLinked) {
+    const connection = await loadFortnoxCustomerConnection(admin, orgIdValue)
+    if (
+      !authorization.organization.organization_number ||
+      connection.company_organization_number !==
+        authorization.organization.organization_number ||
+      row.fortnox_tenant_id !== connection.tenant_id
+    ) {
+      throw new Error('FORTNOX_CUSTOMER_TENANT_CONFLICT')
+    }
+    return mapFortnoxCustomerDatabaseRow({ ...row, version: currentVersion })
+  }
+
+  if (currentVersion !== expectedVersion) {
+    throw new Error('FORTNOX_CUSTOMER_VERSION_CONFLICT')
+  }
+
+  const access = await requireFortnoxCustomerOperationAccess(
+    authorization,
+    admin
+  )
+
+  let fortnoxCustomerNumber: string | null = null
+  if (row.customer_type === 'business') {
+    const organizationNumber = normalizeFortnoxOrganizationNumber(
+      row.organization_number
+    )
+    if (!organizationNumber) throw new Error('FORTNOX_CUSTOMER_REJECTED')
+
+    const matches = await findFortnoxCustomersByOrganizationNumber(
+      access.accessToken,
+      organizationNumber
+    )
+    if (matches.length > 1) {
+      throw new Error('FORTNOX_CUSTOMER_MATCH_AMBIGUOUS')
+    }
+    fortnoxCustomerNumber = matches[0]?.customerNumber ?? null
+  }
+
+  if (!fortnoxCustomerNumber) {
+    fortnoxCustomerNumber = await createOrRecoverFortnoxCustomer(
+      access.accessToken,
+      row
+    )
+  }
+
+  return bindFortnoxCustomer({
+    admin,
+    row,
+    expectedVersion,
+    profileId: access.profileId,
+    tenantId: access.tenantId,
+    fortnoxCustomerNumber,
+  })
 }
 
 async function applyFortnoxConnectionVerification(input: {

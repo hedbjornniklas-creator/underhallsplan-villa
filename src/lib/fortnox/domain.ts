@@ -15,6 +15,13 @@ const OAUTH_STATE_PATTERN = /^[A-Za-z0-9_-]{32,200}$/
 const ACCESS_TOKEN_PATTERN = /^\S{1,8192}$/u
 const TENANT_ID_PATTERN = /^[1-9][0-9]{0,31}$/
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/
+const CUSTOMER_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+const GENERATED_CUSTOMER_IDENTIFIER_PATTERN = /^[A-Z0-9]+$/u
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u
+
+export const FORTNOX_CUSTOMER_NUMBER_MAX_LENGTH = 50
+export const FORTNOX_CUSTOMER_EXTERNAL_REFERENCE_MAX_LENGTH = 50
+export const FORTNOX_CUSTOMER_LIST_LIMIT = 500
 
 type UnknownRecord = Record<string, unknown>
 
@@ -31,8 +38,141 @@ export type FortnoxCompanyInformation = {
   organizationNumber: string
 }
 
+export type FortnoxCustomerIdentity = {
+  customerNumber: string
+  externalReference: string
+  fallbackCustomerNumber: string
+}
+
+export type FortnoxCustomerDraftInput = {
+  customerType: 'business' | 'private'
+  name: string
+  customerNumber: string
+  externalReference: string
+  organizationNumber?: string | null
+  email?: string | null
+  invoiceEmail?: string | null
+  phone?: string | null
+  address?: string | null
+  addressLine2?: string | null
+  postalCode?: string | null
+  city?: string | null
+  countryCode: string
+}
+
+export type FortnoxCustomerDraft = {
+  Name: string
+  CustomerNumber: string
+  ExternalReference: string
+  Type: 'COMPANY' | 'PRIVATE'
+  Email?: string
+  EmailInvoice?: string
+  Phone1?: string
+  Address1?: string
+  Address2?: string
+  ZipCode?: string
+  City?: string
+  CountryCode: string
+  OrganisationNumber?: string
+}
+
+export type FortnoxCustomer = {
+  customerNumber: string
+  externalReference: string | null
+  organizationNumber: string | null
+}
+
+export type FortnoxCustomerList = {
+  customers: FortnoxCustomer[]
+  meta: {
+    currentPage: number
+    totalPages: number
+    totalResources: number
+  }
+}
+
+const CUSTOMER_DRAFT_INPUT_KEYS = new Set([
+  'customerType',
+  'name',
+  'customerNumber',
+  'externalReference',
+  'organizationNumber',
+  'email',
+  'invoiceEmail',
+  'phone',
+  'address',
+  'addressLine2',
+  'postalCode',
+  'city',
+  'countryCode',
+])
+const FORTNOX_CUSTOMER_DRAFT_KEYS = new Set([
+  'Name',
+  'CustomerNumber',
+  'ExternalReference',
+  'Type',
+  'Email',
+  'EmailInvoice',
+  'Phone1',
+  'Address1',
+  'Address2',
+  'ZipCode',
+  'City',
+  'CountryCode',
+  'OrganisationNumber',
+])
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function safeTrimmedText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  if (
+    !normalized ||
+    normalized.length > maxLength ||
+    CONTROL_CHARACTER_PATTERN.test(normalized)
+  ) {
+    return null
+  }
+  return normalized
+}
+
+function optionalSafeText(value: unknown, maxLength: number): string | null | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  return safeTrimmedText(value, maxLength)
+}
+
+function validInt32(value: unknown, minimum: number): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value >= minimum &&
+    value <= 2_147_483_647
+  )
+}
+
+function normalizeLocalCustomerNumber(value: unknown): string | null {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) return null
+    value = String(value)
+  } else if (typeof value === 'bigint') {
+    value = value.toString()
+  }
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,18}$/u.test(value)) return null
+  return value.length > 4 || (value.length === 4 && value >= '1001') ? value : null
+}
+
+function normalizeGeneratedCustomerIdentifier(value: unknown, maxLength: number) {
+  const normalized = safeTrimmedText(value, maxLength)
+  return normalized && GENERATED_CUSTOMER_IDENTIFIER_PATTERN.test(normalized)
+    ? normalized
+    : null
+}
+
+export function normalizeFortnoxCustomerNumber(value: unknown): string | null {
+  return safeTrimmedText(value, FORTNOX_CUSTOMER_NUMBER_MAX_LENGTH)
 }
 
 export function normalizeFortnoxClientId(value: unknown): string | null {
@@ -221,5 +361,202 @@ export function parseFortnoxCompanyInformation(value: unknown): FortnoxCompanyIn
     tenantId,
     companyName,
     organizationNumber,
+  }
+}
+
+/**
+ * Creates stable, tenant-local Fortnox identifiers without putting a UUID,
+ * punctuation or personal identity number in CustomerNumber.
+ */
+export function buildFortnoxCustomerIdentity(
+  customerId: unknown,
+  localNumber: unknown
+): FortnoxCustomerIdentity {
+  if (typeof customerId !== 'string' || !CUSTOMER_UUID_PATTERN.test(customerId)) {
+    throw new Error('FORTNOX_CUSTOMER_IDENTITY_INVALID')
+  }
+  const normalizedLocalNumber = normalizeLocalCustomerNumber(localNumber)
+  if (!normalizedLocalNumber) throw new Error('FORTNOX_CUSTOMER_IDENTITY_INVALID')
+
+  const compactCustomerId = customerId.replaceAll('-', '').toUpperCase()
+  return {
+    customerNumber: `HH${normalizedLocalNumber}`,
+    externalReference: `HH${compactCustomerId}`,
+    fallbackCustomerNumber: `HH${normalizedLocalNumber}X${compactCustomerId.slice(0, 12)}`,
+  }
+}
+
+/** Builds only the explicitly approved Fortnox customer fields. */
+export function buildFortnoxCustomerDraft(input: FortnoxCustomerDraftInput): FortnoxCustomerDraft {
+  if (
+    !isRecord(input) ||
+    Object.keys(input).some((key) => !CUSTOMER_DRAFT_INPUT_KEYS.has(key)) ||
+    (input.customerType !== 'business' && input.customerType !== 'private')
+  ) {
+    throw new Error('FORTNOX_CUSTOMER_PAYLOAD_INVALID')
+  }
+
+  const name = safeTrimmedText(input.name, 200)
+  const customerNumber = normalizeGeneratedCustomerIdentifier(
+    input.customerNumber,
+    FORTNOX_CUSTOMER_NUMBER_MAX_LENGTH
+  )
+  const externalReference = normalizeGeneratedCustomerIdentifier(
+    input.externalReference,
+    FORTNOX_CUSTOMER_EXTERNAL_REFERENCE_MAX_LENGTH
+  )
+  const countryCode = safeTrimmedText(input.countryCode, 2)?.toUpperCase() ?? null
+  const email = optionalSafeText(input.email, 254)
+  const invoiceEmail = optionalSafeText(input.invoiceEmail, 254)
+  const phone = optionalSafeText(input.phone, 50)
+  const address = optionalSafeText(input.address, 255)
+  const addressLine2 = optionalSafeText(input.addressLine2, 255)
+  const postalCode = optionalSafeText(input.postalCode, 10)
+  const city = optionalSafeText(input.city, 120)
+
+  if (
+    !name ||
+    !customerNumber ||
+    !externalReference ||
+    !countryCode ||
+    !/^[A-Z]{2}$/u.test(countryCode) ||
+    email === null ||
+    invoiceEmail === null ||
+    phone === null ||
+    address === null ||
+    addressLine2 === null ||
+    postalCode === null ||
+    city === null ||
+    (email !== undefined && !EMAIL_PATTERN.test(email)) ||
+    (invoiceEmail !== undefined && !EMAIL_PATTERN.test(invoiceEmail))
+  ) {
+    throw new Error('FORTNOX_CUSTOMER_PAYLOAD_INVALID')
+  }
+
+  const organizationNumber = normalizeFortnoxOrganizationNumber(input.organizationNumber)
+  if (
+    (input.customerType === 'business' && !organizationNumber) ||
+    (input.customerType === 'private' && input.organizationNumber != null)
+  ) {
+    throw new Error('FORTNOX_CUSTOMER_PAYLOAD_INVALID')
+  }
+
+  return {
+    Name: name,
+    CustomerNumber: customerNumber,
+    ExternalReference: externalReference,
+    Type: input.customerType === 'business' ? 'COMPANY' : 'PRIVATE',
+    ...(email === undefined ? {} : { Email: email }),
+    ...(invoiceEmail === undefined ? {} : { EmailInvoice: invoiceEmail }),
+    ...(phone === undefined ? {} : { Phone1: phone }),
+    ...(address === undefined ? {} : { Address1: address }),
+    ...(addressLine2 === undefined ? {} : { Address2: addressLine2 }),
+    ...(postalCode === undefined ? {} : { ZipCode: postalCode }),
+    ...(city === undefined ? {} : { City: city }),
+    CountryCode: countryCode,
+    ...(organizationNumber ? { OrganisationNumber: organizationNumber } : {}),
+  }
+}
+
+/** Revalidates a draft at the provider boundary so cast values cannot add fields. */
+export function parseFortnoxCustomerDraft(value: unknown): FortnoxCustomerDraft | null {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).some((key) => !FORTNOX_CUSTOMER_DRAFT_KEYS.has(key)) ||
+    (value.Type !== 'COMPANY' && value.Type !== 'PRIVATE')
+  ) {
+    return null
+  }
+
+  try {
+    return buildFortnoxCustomerDraft({
+      customerType: value.Type === 'COMPANY' ? 'business' : 'private',
+      name: value.Name as string,
+      customerNumber: value.CustomerNumber as string,
+      externalReference: value.ExternalReference as string,
+      organizationNumber: value.OrganisationNumber as string | null | undefined,
+      email: value.Email as string | null | undefined,
+      invoiceEmail: value.EmailInvoice as string | null | undefined,
+      phone: value.Phone1 as string | null | undefined,
+      address: value.Address1 as string | null | undefined,
+      addressLine2: value.Address2 as string | null | undefined,
+      postalCode: value.ZipCode as string | null | undefined,
+      city: value.City as string | null | undefined,
+      countryCode: value.CountryCode as string,
+    })
+  } catch {
+    return null
+  }
+}
+
+function parseFortnoxCustomer(value: unknown): FortnoxCustomer | null {
+  if (!isRecord(value)) return null
+
+  const customerNumber = normalizeFortnoxCustomerNumber(value.CustomerNumber)
+  const externalReference = optionalSafeText(
+    value.ExternalReference,
+    FORTNOX_CUSTOMER_EXTERNAL_REFERENCE_MAX_LENGTH
+  )
+  const organizationNumberValue = optionalSafeText(value.OrganisationNumber, 32)
+
+  if (
+    !customerNumber ||
+    externalReference === null ||
+    organizationNumberValue === null
+  ) {
+    return null
+  }
+
+  const organizationNumber = organizationNumberValue
+    ? normalizeFortnoxOrganizationNumber(organizationNumberValue)
+    : null
+  if (organizationNumberValue && !organizationNumber) return null
+
+  return {
+    customerNumber,
+    externalReference: externalReference ?? null,
+    organizationNumber,
+  }
+}
+
+export function parseFortnoxCustomerResponse(value: unknown): FortnoxCustomer | null {
+  if (!isRecord(value)) return null
+  return parseFortnoxCustomer(value.Customer)
+}
+
+export function parseFortnoxCustomerListResponse(value: unknown): FortnoxCustomerList | null {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.Customers) ||
+    value.Customers.length > FORTNOX_CUSTOMER_LIST_LIMIT ||
+    !isRecord(value.MetaInformation)
+  ) {
+    return null
+  }
+
+  const currentPage = value.MetaInformation['@CurrentPage']
+  const totalPages = value.MetaInformation['@TotalPages']
+  const totalResources = value.MetaInformation['@TotalResources']
+  if (
+    !validInt32(currentPage, 1) ||
+    !validInt32(totalPages, 0) ||
+    !validInt32(totalResources, 0) ||
+    (totalPages === 0 && value.Customers.length > 0) ||
+    (totalPages > 0 && currentPage > totalPages) ||
+    totalResources < value.Customers.length
+  ) {
+    return null
+  }
+
+  const customers = value.Customers.map(parseFortnoxCustomer)
+  if (customers.some((customer) => customer === null)) return null
+
+  return {
+    customers: customers as FortnoxCustomer[],
+    meta: {
+      currentPage,
+      totalPages,
+      totalResources,
+    },
   }
 }

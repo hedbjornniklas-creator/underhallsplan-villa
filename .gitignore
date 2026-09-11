@@ -158,6 +158,7 @@ vite.config.ts.timestamp-*
 /tmp/eb-follow-up-portal-ui/
 /tmp/eb-report-delivery-ui/
 /tmp/ob-early-start-ui/
+/tmp/ob-mobile-round-ui/
 
 # next.js
 /.next/

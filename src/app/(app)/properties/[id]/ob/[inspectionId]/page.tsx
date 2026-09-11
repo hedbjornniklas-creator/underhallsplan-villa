@@ -8,6 +8,7 @@ import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBo
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
+import { isObMobileRoundV2Enabled } from '@/lib/ob/mobileRound'
 import ObWizard, {
   ObSectionKey,
   ObWizardInspectionInput,
@@ -224,6 +225,13 @@ export default function InspectionDetailPage() {
 
   // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
+  const [mobileRoundV2, setMobileRoundV2] = useState(false)
+
+  useEffect(() => {
+    const enabled = isObMobileRoundV2Enabled(process.env.NEXT_PUBLIC_OB_MOBILE_ROUND_V2, window.location.search)
+    setMobileRoundV2(enabled)
+    if (enabled) setActiveSection('runda')
+  }, [inspectionId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -630,6 +638,7 @@ export default function InspectionDetailPage() {
   return (
     <Protected>
       <main
+        data-ob-mobile-round={activeSection === 'runda' && mobileRoundV2}
         className={`relative min-h-full overflow-hidden ${
           activeSection === 'runda' ? 'p-0' : 'px-2 pb-24 pt-3 sm:px-3 md:p-6'
         }`}
@@ -709,6 +718,8 @@ export default function InspectionDetailPage() {
                 property={property}
                 inspection={inspection}
                 activeSection={activeSection}
+                mobileRoundV2={mobileRoundV2}
+                onOpenStepMenu={() => setMobileMenuOpen(true)}
                 onPropertyUpdated={(updated) => setProperty(updated as Property)}
                 onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
                 onInspectionAddonSelectionChanged={handleInspectionAddonSelectionChanged}

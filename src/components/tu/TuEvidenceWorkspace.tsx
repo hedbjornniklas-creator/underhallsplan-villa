@@ -982,6 +982,11 @@ export default function TuEvidenceWorkspace({
 
     if (nextObservation) {
       setForm(toObservationForm(nextObservation))
+      setMeasurementForm(
+        nextObservation.measurements[0]
+          ? measurementToForm(nextObservation.measurements[0])
+          : emptyMeasurementWithRememberedInstrument()
+      )
       setSavedMessage(null)
       showSuccessToast('Källmaterialet är markerat som kontrollerat. Nästa fältpost har öppnats.', {
         appearance: 'dark',
@@ -990,6 +995,7 @@ export default function TuEvidenceWorkspace({
       })
     } else {
       setForm(snapshot)
+      setMeasurementForm(emptyMeasurementWithRememberedInstrument())
       setObservationFilter('all')
       setObservationPanelOpen(false)
       setSavedMessage(null)

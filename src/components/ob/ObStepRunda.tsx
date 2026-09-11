@@ -4,6 +4,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from '
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
+import ObMobileRound from './ObMobileRound'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
   type ControlPointSearchResult,
@@ -35,7 +36,7 @@ type InspectionSide = 'buyer' | 'seller' | 'apartment'
 type RoundArea = 'interior' | 'exterior'
 type ValueMap = Record<string, unknown>
 
-type RoomType = {
+export type RoomType = {
   id: string
   key: string
   label: string
@@ -43,7 +44,7 @@ type RoomType = {
   is_active: boolean
 }
 
-type InteriorRoom = {
+export type InteriorRoom = {
   id?: string
   inspection_id: string
   floor_label: string
@@ -54,7 +55,7 @@ type InteriorRoom = {
   note: string | null
 }
 
-type SettingsExteriorItem = {
+export type SettingsExteriorItem = {
   id: string
   key: string
   label: string
@@ -62,7 +63,7 @@ type SettingsExteriorItem = {
   is_active: boolean
 }
 
-type InspectionExteriorObservation = {
+export type InspectionExteriorObservation = {
   id?: string
   inspection_id: string
   exterior_item_id: string
@@ -74,7 +75,7 @@ type InspectionExteriorObservation = {
   ftu_text?: string | null
 }
 
-type InspectionControlItem = {
+export type InspectionControlItem = {
   id?: string
   inspection_id: string
   interior_room_id: string | null
@@ -89,7 +90,7 @@ type InspectionControlItem = {
   selected_outcome_id: string | null
 }
 
-type ControlPointLite = ControlPointSearchResult & {
+export type ControlPointLite = ControlPointSearchResult & {
   id: string
   key: string
   title: string
@@ -102,7 +103,7 @@ type ControlPointLite = ControlPointSearchResult & {
   applies_to?: unknown
 }
 
-type ControlPointOutcome = {
+export type ControlPointOutcome = {
   id: string
   control_point_id: string
   label: string
@@ -138,14 +139,14 @@ type InspectionImage = {
   ignored_at?: string | null
 }
 
-type RoundImage = InspectionImage & {
+export type RoundImage = InspectionImage & {
   local_queue_id?: string
   local_preview_url?: string
   local_upload_status?: RoundImageUploadItem['status']
   local_upload_error?: string | null
 }
 
-type QuickNote = {
+export type QuickNote = {
   id: string
   inspection_id: string
   source_area: RoundArea
@@ -161,6 +162,9 @@ type ImageFilter = 'all' | 'unprocessed' | 'linked' | 'ignored' | 'active' | 'un
 
 type ObStepRundaProps = {
   inspection: Inspection
+  mobileLayout?: boolean
+  address?: string
+  onOpenMenu?: () => void
 }
 
 const IMAGE_BUCKET = 'inspection-images' as const
@@ -335,7 +339,7 @@ const statusLabel = (status: ReturnType<typeof imageStatus>) => {
   return 'Obehandlad'
 }
 
-export default function ObStepRunda({ inspection }: ObStepRundaProps) {
+export default function ObStepRunda({ inspection, mobileLayout = false, address = '', onOpenMenu = () => {} }: ObStepRundaProps) {
   const isInspectionLocked = Boolean(inspection?.locked_at)
   const inspectionSide = normalizeInspectionSide(inspection?.inspection_side)
 
@@ -1566,7 +1570,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
         item.exterior_observation_id === baseItem.exterior_observation_id
     )
     const sortOrder = siblings.reduce((max, item) => Math.max(max, item.sort_order ?? 0), 0) + 10
-    await upsertControlItem({
+    return upsertControlItem({
       inspection_id: inspection.id,
       interior_room_id: baseItem.interior_room_id,
       exterior_observation_id: baseItem.exterior_observation_id,
@@ -1859,20 +1863,23 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     return updated
   }
 
-  const linkSelectedImagesToControlItem = async (controlItemId = selectedControlItemId) => {
+  const linkSelectedImagesToControlItem = async (
+    controlItemId = selectedControlItemId,
+    candidates = selectedImages
+  ) => {
     if (isInspectionLocked) return
     if (!controlItemId) {
       setError('Välj en notering att koppla bilderna till.')
       return
     }
-    if (selectedImages.length === 0) {
+    if (candidates.length === 0) {
       setError('Välj minst en bild.')
       return
     }
     const controlItem = controlItems.find(item => item.id === controlItemId)
     if (!controlItem?.id) return
     const resolvedControlItemId = controlItem.id
-    const alreadyLinkedElsewhere = selectedImages.find(
+    const alreadyLinkedElsewhere = candidates.find(
       image => image.control_item_id && image.control_item_id !== resolvedControlItemId
     )
     if (alreadyLinkedElsewhere) {
@@ -1883,8 +1890,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
     setSaving(true)
     setError(null)
     try {
-      const localImagesToUpdate = selectedImages.filter(isLocalRoundImage)
-      const serverImagesToUpdate = selectedImages.filter(image => !isLocalRoundImage(image))
+      const localImagesToUpdate = candidates.filter(isLocalRoundImage)
+      const serverImagesToUpdate = candidates.filter(image => !isLocalRoundImage(image))
       const serverImageIds = serverImagesToUpdate.map(image => image.id)
       let updated: InspectionImage[] = []
 
@@ -1903,6 +1910,9 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
         if (updateError) throw updateError
         updated = (data ?? []) as InspectionImage[]
+        if (updated.length !== serverImageIds.length) {
+          throw new Error('Alla valda bilder kunde inte kopplas. Uppdatera bildlistan och försök igen.')
+        }
         setImages(prev => prev.map(image => updated.find(row => row.id === image.id) ?? image))
       }
 
@@ -1926,6 +1936,7 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
       const count = updated.length + localImagesToUpdate.length
       setMessage(`${count} bild${count === 1 ? '' : 'er'} kopplad${count === 1 ? '' : 'e'}.`)
       if (localImagesToUpdate.length > 0) void processQueuedImageUploads()
+      return true
     } catch (e: unknown) {
       console.error('link images failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte koppla bilder.')
@@ -2211,8 +2222,8 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
   }
 
   return (
-    <div className="min-h-dvh space-y-4 bg-white p-2 md:p-4">
-      {isInspectionLocked ? (
+    <div className={mobileLayout ? 'ob-mobile-round-host' : 'min-h-dvh space-y-4 bg-white p-2 md:p-4'}>
+      {isInspectionLocked && !mobileLayout ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Besiktningen är låst. ÖB-rundan kan läsas men inte ändras.
         </div>
@@ -2233,9 +2244,85 @@ export default function ObStepRunda({ inspection }: ObStepRundaProps) {
 
       {renderImageUploadQueueNotice()}
 
-      {renderRoundSurface()}
-      {roomDialogOpen && activeRoom ? renderRoomDialog() : null}
-      {exteriorDialogOpen && activeExteriorItem ? renderExteriorDialog() : null}
+      {mobileLayout ? (
+        <ObMobileRound
+          inspectionId={inspection.id}
+          inspectionSide={inspectionSide}
+          pointApplies={point => controlPointAppliesToInspectionSide(point, inspectionSide)}
+          pointMatchesRoom={controlPointMatchesRoom}
+          address={address}
+          onOpenMenu={onOpenMenu}
+          locked={isInspectionLocked}
+          rooms={rooms}
+          roomTypes={roomTypes}
+          floors={floorOptions}
+          floorLabel={floorLabelFromKey}
+          floorKey={normalizeFloorKey}
+          activeFloor={activeFloor}
+          activeRoom={activeRoom}
+          area={area}
+          exteriorItems={exteriorItems}
+          observations={exteriorObservations}
+          activeExteriorItem={activeExteriorItem}
+          notes={controlItems}
+          images={roundImages}
+          quickNotes={quickNotes}
+          imageSrc={getRoundImageSrc}
+          onArea={setArea}
+          onFloor={setActiveFloor}
+          onRoom={room => {
+            setArea('interior')
+            setActiveFloor(normalizeFloorKey(room.floor_label))
+            setActiveRoomId(room.id ?? null)
+          }}
+          onExterior={item => {
+            setArea('exterior')
+            setActiveExteriorItemId(item.id)
+          }}
+          onAddRoom={async (type, label) => {
+            const saved = await upsertRoom({
+              inspection_id: inspection.id,
+              floor_label: activeFloor,
+              room_type_key: type,
+              room_label: label.trim() || getSuggestedRoomLabel(type, activeFloor),
+              order_index: Math.max(0, ...roomsForActiveFloor.map(room => room.order_index)) + 10,
+              values: {},
+              note: null,
+            })
+            if (saved?.id) {
+              setRooms(prev => [...prev, saved].sort(sortRooms))
+              setActiveRoomId(saved.id)
+              await ensureDefaultInteriorControlItems(saved)
+            }
+            return saved
+          }}
+          onNewNote={createFreeNote}
+          onAddOutcome={async (point, outcome) => {
+            const observation = area === 'exterior' && activeExteriorItem
+              ? await ensureExteriorObservationAndDefaults(activeExteriorItem)
+              : null
+            if (area === 'interior' ? !activeRoom?.id : !observation?.id) return null
+            return (await addOutcomeControlItem({
+              inspection_id: inspection.id,
+              interior_room_id: area === 'interior' ? activeRoom?.id ?? null : null,
+              exterior_observation_id: observation?.id ?? null,
+              control_point_id: point.id,
+              title: point.title || point.label || point.key,
+              status: null,
+              note: null,
+              sort_order: 0,
+              selected_outcome_id: null,
+            }, outcome)) ?? null
+          }}
+          onUpdateNote={(id, patch) => updateControlItem(id, patch, { throwOnError: true })}
+          mutationBlocked={saving || pendingUploadCount > 0}
+          onCamera={openCameraCapture}
+          onGallery={openGalleryPicker}
+          onLinkImage={async (image, note) => Boolean(await linkSelectedImagesToControlItem(note.id, [image]))}
+        />
+      ) : renderRoundSurface()}
+      {!mobileLayout && roomDialogOpen && activeRoom ? renderRoomDialog() : null}
+      {!mobileLayout && exteriorDialogOpen && activeExteriorItem ? renderExteriorDialog() : null}
       {controlItemDialogId ? renderControlItemDetailDialog() : null}
       {freeNoteDialogId ? renderFreeNoteDialog() : null}
       {previewImage ? renderImagePreviewDialog() : null}

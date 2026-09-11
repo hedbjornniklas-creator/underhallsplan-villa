@@ -82,6 +82,8 @@ interface ObWizardProps {
   onInspectionUpdated?: (i: ObWizardInspection) => void
   onInspectionAddonSelectionChanged?: (selectedAddonKeys: string[]) => void
   availableSections?: ObSectionKey[]
+  mobileRoundV2?: boolean
+  onOpenStepMenu?: () => void
 }
 
 type ReportDeliveryHistoryRow = {
@@ -183,6 +185,8 @@ export default function ObWizard({
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
   availableSections,
+  mobileRoundV2 = false,
+  onOpenStepMenu,
 }: ObWizardProps) {
   const normalizedProperty = useMemo<ObWizardProperty>(
     () => ({
@@ -909,7 +913,12 @@ export default function ObWizard({
       )
 
     case 'runda':
-      return <ObStepRunda inspection={normalizedInspection} />
+      return <ObStepRunda
+        inspection={normalizedInspection}
+        mobileLayout={mobileRoundV2}
+        address={normalizedProperty.address || normalizedProperty.name}
+        onOpenMenu={onOpenStepMenu}
+      />
 
     case 'utsida':
       return <ObStepUtsida inspection={normalizedInspection} />

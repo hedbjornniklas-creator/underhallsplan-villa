@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type HTMLInputTypeAttribute,
@@ -17,6 +18,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Upload,
   UserRound,
 } from 'lucide-react'
 import type {
@@ -168,6 +170,8 @@ export default function CustomerRegistryClient() {
   const [formOpen, setFormOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [statusCustomerId, setStatusCustomerId] = useState<string | null>(null)
+  const [fortnoxCustomerId, setFortnoxCustomerId] = useState<string | null>(null)
+  const fortnoxExportInFlightRef = useRef<string | null>(null)
 
   const load = useCallback(async (orgId?: string) => {
     setLoading(true)
@@ -243,7 +247,14 @@ export default function CustomerRegistryClient() {
   }
 
   const switchOrganization = (orgId: string) => {
-    if (saving || statusCustomerId !== null || orgId === workspace?.organization.id) return
+    if (
+      saving ||
+      statusCustomerId !== null ||
+      fortnoxCustomerId !== null ||
+      orgId === workspace?.organization.id
+    ) {
+      return
+    }
     setEditing(null)
     setFormOpen(false)
     setForm({ ...EMPTY_FORM })
@@ -339,6 +350,71 @@ export default function CustomerRegistryClient() {
     }
   }
 
+  const exportToFortnox = async (customer: OrganizationCustomer) => {
+    if (
+      saving ||
+      statusCustomerId !== null ||
+      fortnoxExportInFlightRef.current !== null
+    ) {
+      return
+    }
+    const targetOrgId = workspace?.organization.id
+    if (!targetOrgId) {
+      toast.error('Välj en organisation innan kunden överförs.')
+      return
+    }
+    if (
+      !window.confirm(
+        `Vill du koppla kund ${customer.customerNumber} – ${customer.name} till organisationens anslutna Fortnox-företag?\n\nHusHub skickar namn, postadress, e-post och telefon. För företagskunder skickas även organisationsnumret.`
+      )
+    ) {
+      return
+    }
+
+    fortnoxExportInFlightRef.current = customer.id
+    setFortnoxCustomerId(customer.id)
+    try {
+      const body = await responseBody(
+        await fetch(
+          `/api/integrations/fortnox/customers/${encodeURIComponent(customer.id)}/export`,
+          {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              orgId: targetOrgId,
+              version: customer.version,
+            }),
+          }
+        )
+      )
+      if (
+        !body.customer ||
+        body.customer.id !== customer.id ||
+        !body.customer.fortnoxCustomerNumber
+      ) {
+        throw new Error('Kopplingen till Fortnox kunde inte bekräftas. Ladda om sidan innan du försöker igen.')
+      }
+      replaceCustomer(body.customer, targetOrgId)
+      toast.success(
+        `Kund ${body.customer.customerNumber} är kopplad till Fortnox-kund ${body.customer.fortnoxCustomerNumber}.`
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Kunden kunde inte överföras till Fortnox.')
+    } finally {
+      if (fortnoxExportInFlightRef.current === customer.id) {
+        fortnoxExportInFlightRef.current = null
+      }
+      setFortnoxCustomerId((current) => (current === customer.id ? null : current))
+    }
+  }
+
+  const customerActionPending =
+    saving || statusCustomerId !== null || fortnoxCustomerId !== null
+
   if (loading) {
     return (
       <section className="rounded-2xl border border-white/30 bg-white/90 p-6 text-sm text-gray-600 shadow-sm backdrop-blur-sm">
@@ -373,8 +449,9 @@ export default function CustomerRegistryClient() {
             </p>
             <h2 className="mt-1 text-xl font-semibold text-gray-950">Kundregister</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
-              Varje kund får ett eget HusHub-kundnummer i organisationen. Fortnox kopplas
-              på i ett senare steg.
+              Varje kund får ett eget HusHub-kundnummer i organisationen. När kunden är
+              klar kan du överföra den till Fortnox; samma koppling återanvänds för framtida
+              uppdrag.
             </p>
           </div>
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-64">
@@ -385,7 +462,9 @@ export default function CustomerRegistryClient() {
                 </span>
                 <select
                   value={workspace.organization.id}
-                  disabled={saving || statusCustomerId !== null}
+                  disabled={
+                    saving || statusCustomerId !== null || fortnoxCustomerId !== null
+                  }
                   onChange={(event) => switchOrganization(event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm font-medium text-gray-950 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                 >
@@ -403,6 +482,7 @@ export default function CustomerRegistryClient() {
                 tone="blue"
                 icon={<Plus size={17} aria-hidden="true" />}
                 className="rounded-lg px-4 py-2.5 text-sm"
+                disabled={customerActionPending}
                 onClick={openCreate}
               >
                 Ny kund
@@ -496,7 +576,10 @@ export default function CustomerRegistryClient() {
                       customer={customer}
                       canManage={workspace.organization.canManage}
                       statusBusy={statusCustomerId === customer.id}
+                      fortnoxBusy={fortnoxCustomerId === customer.id}
+                      actionsDisabled={customerActionPending}
                       onEdit={openEdit}
+                      onExportToFortnox={exportToFortnox}
                       onToggleActive={toggleActive}
                     />
                   ))}
@@ -511,7 +594,10 @@ export default function CustomerRegistryClient() {
                   customer={customer}
                   canManage={workspace.organization.canManage}
                   statusBusy={statusCustomerId === customer.id}
+                  fortnoxBusy={fortnoxCustomerId === customer.id}
+                  actionsDisabled={customerActionPending}
                   onEdit={openEdit}
+                  onExportToFortnox={exportToFortnox}
                   onToggleActive={toggleActive}
                 />
               ))}
@@ -739,13 +825,19 @@ function CustomerTableRow({
   customer,
   canManage,
   statusBusy,
+  fortnoxBusy,
+  actionsDisabled,
   onEdit,
+  onExportToFortnox,
   onToggleActive,
 }: {
   customer: OrganizationCustomer
   canManage: boolean
   statusBusy: boolean
+  fortnoxBusy: boolean
+  actionsDisabled: boolean
   onEdit: (customer: OrganizationCustomer) => void
+  onExportToFortnox: (customer: OrganizationCustomer) => void
   onToggleActive: (customer: OrganizationCustomer) => void
 }) {
   const IdentityIcon = customer.customerType === 'business' ? Building2 : UserRound
@@ -796,10 +888,26 @@ function CustomerTableRow({
       {canManage ? (
         <td className="px-3 py-4 align-top">
           <div className="flex justify-end gap-2">
+            {!customer.fortnoxCustomerNumber && customer.isActive ? (
+              <ActionButton
+                tone="emeraldSecondary"
+                busy={fortnoxBusy}
+                busyLabel="Överför…"
+                disabled={actionsDisabled}
+                icon={<Upload size={15} aria-hidden="true" />}
+                className="rounded-lg px-3 py-2 text-xs"
+                aria-label={`Överför kund ${customer.customerNumber} till Fortnox`}
+                title="Överför och koppla kunden till Fortnox"
+                onClick={() => void onExportToFortnox(customer)}
+              >
+                Till Fortnox
+              </ActionButton>
+            ) : null}
             <button
               type="button"
+              disabled={actionsDisabled}
               onClick={() => onEdit(customer)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
               aria-label={`Redigera kund ${customer.customerNumber}`}
               title="Redigera"
             >
@@ -808,6 +916,7 @@ function CustomerTableRow({
             <ActionButton
               tone="secondary"
               busy={statusBusy}
+              disabled={actionsDisabled}
               icon={
                 customer.isActive ? (
                   <CircleOff size={15} aria-hidden="true" />
@@ -831,13 +940,19 @@ function CustomerMobileCard({
   customer,
   canManage,
   statusBusy,
+  fortnoxBusy,
+  actionsDisabled,
   onEdit,
+  onExportToFortnox,
   onToggleActive,
 }: {
   customer: OrganizationCustomer
   canManage: boolean
   statusBusy: boolean
+  fortnoxBusy: boolean
+  actionsDisabled: boolean
   onEdit: (customer: OrganizationCustomer) => void
+  onExportToFortnox: (customer: OrganizationCustomer) => void
   onToggleActive: (customer: OrganizationCustomer) => void
 }) {
   return (
@@ -874,8 +989,24 @@ function CustomerMobileCard({
       </dl>
       {canManage ? (
         <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+          {!customer.fortnoxCustomerNumber && customer.isActive ? (
+            <ActionButton
+              tone="emeraldSecondary"
+              busy={fortnoxBusy}
+              busyLabel="Överför…"
+              disabled={actionsDisabled}
+              icon={<Upload size={15} aria-hidden="true" />}
+              className="rounded-lg px-3 py-2 text-xs"
+              aria-label={`Överför kund ${customer.customerNumber} till Fortnox`}
+              title="Överför och koppla kunden till Fortnox"
+              onClick={() => void onExportToFortnox(customer)}
+            >
+              Till Fortnox
+            </ActionButton>
+          ) : null}
           <ActionButton
             tone="secondary"
+            disabled={actionsDisabled}
             icon={<Pencil size={15} aria-hidden="true" />}
             className="rounded-lg px-3 py-2 text-xs"
             onClick={() => onEdit(customer)}
@@ -885,6 +1016,7 @@ function CustomerMobileCard({
           <ActionButton
             tone="secondary"
             busy={statusBusy}
+            disabled={actionsDisabled}
             icon={
               customer.isActive ? (
                 <CircleOff size={15} aria-hidden="true" />
