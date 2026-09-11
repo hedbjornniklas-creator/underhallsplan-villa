@@ -5,6 +5,8 @@ import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, T
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ObMobileRound from './ObMobileRound'
+import { requestRoundMutation, type MoveResult, type RemovalResult, type ImageNoteResult, type RoundMutationOperation } from '@/lib/ob/roundMutations'
+import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
   type ControlPointSearchResult,
@@ -345,6 +347,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
 
   const [area, setArea] = useState<RoundArea>('interior')
   const [loading, setLoading] = useState(true)
+  const [roundMutating, setRoundMutating] = useState(false)
+  const roundMutationRef = useRef(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -1512,6 +1516,36 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     if (saved) setControlItems(prev => prev.map(item => (item.id === itemId ? saved : item)))
   }
 
+  async function runRoundMutation<T>(operation: RoundMutationOperation, payload: object): Promise<T> {
+    if (isInspectionLocked) throw Error('Besiktningen är låst.')
+    if (saving || roundMutationRef.current) throw Error('Vänta tills sparandet är klart.')
+    roundMutationRef.current = true
+    setRoundMutating(true)
+    try {
+      if (hasObTextDraftsForInspection(inspection.id)) {
+        throw Error('Det finns osparad text. Öppna noteringen och spara innan du fortsätter.')
+      }
+      if ((await listRoundImageUploadItems(inspection.id)).length) {
+        throw Error('Vänta tills alla bilder har laddats upp.')
+      }
+      return await requestRoundMutation<T>(inspection.id, operation, payload)
+    } finally {
+      roundMutationRef.current = false
+      setRoundMutating(false)
+    }
+  }
+  function mergeRoundMutation(result: MoveResult) {
+    const { room, note, observation } = result
+    if (room?.id) setRooms(rows => rows.map(row => row.id === room.id ? room : row).sort(sortRooms))
+    if (note?.id) {
+      setControlItems(rows => [...rows.filter(row => row.id !== note.id), normalizeControlItem(note)])
+    }
+    if (observation?.id) {
+      setExteriorObservations(rows => [...rows.filter(row => row.id !== observation.id), observation])
+    }
+    setImages(rows => rows.map(row => result.images.find(image => image.id === row.id) ?? row))
+  }
+
   const deleteControlItem = async (itemId: string, skipConfirm = false) => {
     if (isInspectionLocked) return
     if (!skipConfirm && !confirm('Ta bort denna notering/kontrollpunkt?')) return
@@ -2315,7 +2349,29 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             }, outcome)) ?? null
           }}
           onUpdateNote={(id, patch) => updateControlItem(id, patch, { throwOnError: true })}
-          mutationBlocked={saving || pendingUploadCount > 0}
+          mutationBlocked={saving || roundMutating || pendingUploadCount > 0}
+          onMove={async request => {
+            const result = await runRoundMutation<MoveResult>('move', request)
+            mergeRoundMutation(result)
+            return result
+          }}
+          onPreviewRemoval={request => requestRoundMutation(inspection.id, 'remove-preview', request)}
+          onRemove={async (request, token, requestId) => {
+            const result = await runRoundMutation<RemovalResult>('remove', { ...request, token, requestId })
+            setRooms(rows => rows.filter(row => row.id !== result.roomId))
+            setControlItems(rows => rows.filter(row => !result.noteIds.includes(row.id!)))
+            setQuickNotes(rows => rows.filter(row => !result.quickNoteIds.includes(row.id)))
+            setImages(rows => rows.filter(row => !result.imageIds.includes(row.id)).map(row => result.images.find(image => image.id === row.id) ?? row))
+            if (result.roomId === activeRoomId) setActiveRoomId(null)
+            if (result.noteIds.includes(selectedControlItemId!)) setSelectedControlItemId(null)
+            return result
+          }}
+          onPreviewImageNote={imageId => requestRoundMutation(inspection.id, 'image-note-preview', { imageId })}
+          onCreateImageNote={async request => {
+            const result = await runRoundMutation<ImageNoteResult>('image-note', request)
+            mergeRoundMutation({ room: null, note: result.note, images: result.image ? [result.image] : [], observation: result.observation })
+            return result
+          }}
           onCamera={openCameraCapture}
           onGallery={openGalleryPicker}
           onLinkImage={async (image, note) => Boolean(await linkSelectedImagesToControlItem(note.id, [image]))}

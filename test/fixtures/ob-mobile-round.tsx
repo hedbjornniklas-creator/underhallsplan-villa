@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import ObMobileRound, {
   type ObMobileRoundProps,
@@ -79,25 +79,35 @@ const exteriorItems = [
 ]
 const qa = {
   failSaves: false,
+  dropMutationResponse: false,
   delayMs: 0,
   calls: [] as Array<{ kind: string; id: string; patch?: unknown }>,
   notes: initialNotes,
   images: initialImages,
+  rooms,
   completeUpload: () => {},
   hasDrafts: () => hasObTextDraftsForInspection(inspectionId),
 }
 Object.assign(window, { __obMobileTest: qa })
 
 function Fixture() {
+  const [mutating, setMutating] = useState(false)
+  const receipts = useRef(new Map<string, unknown>())
   const [roomRows, setRoomRows] = useState(rooms)
   const [notes, setNotes] = useState<Note[]>(
     () =>
       JSON.parse(localStorage.getItem('fixture-notes') || 'null') ||
       initialNotes,
   )
-  const [images, setImages] = useState<Image[]>(() => new URLSearchParams(location.search).has('queued')
-    ? initialImages.map(image => ({ ...image, local_queue_id: 'queue-1', local_upload_status: 'uploading' }))
-    : initialImages)
+  const [images, setImages] = useState<Image[]>(() =>
+    new URLSearchParams(location.search).has('queued')
+      ? initialImages.map((image) => ({
+          ...image,
+          local_queue_id: 'queue-1',
+          local_upload_status: 'uploading',
+        }))
+      : initialImages,
+  )
   const [area, setArea] = useState<'interior' | 'exterior'>('interior')
   const [floor, setFloor] = useState('plan1'),
     [roomId, setRoomId] = useState('room-1')
@@ -107,10 +117,20 @@ function Fixture() {
   useEffect(() => {
     qa.notes = notes
     qa.images = images
-  }, [notes, images])
+    qa.rooms = roomRows
+  }, [notes, images, roomRows])
   useEffect(() => {
-    qa.completeUpload = () => setImages(rows => rows.map(image => ({ ...image, local_queue_id: undefined, local_upload_status: undefined })))
-    return () => { qa.completeUpload = () => {} }
+    qa.completeUpload = () =>
+      setImages((rows) =>
+        rows.map((image) => ({
+          ...image,
+          local_queue_id: undefined,
+          local_upload_status: undefined,
+        })),
+      )
+    return () => {
+      qa.completeUpload = () => {}
+    }
   }, [])
   useEffect(() => {
     localStorage.setItem('fixture-notes', JSON.stringify(notes))
@@ -129,6 +149,26 @@ function Fixture() {
     qa.calls.push({ kind: 'create', id: next.id })
     return next
   }
+  async function mutate<T>(
+    kind: string,
+    requestId: string,
+    action: () => T,
+  ): Promise<T> {
+    qa.calls.push({ kind, id: requestId })
+    setMutating(true)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, qa.delayMs))
+      if (!receipts.current.has(requestId))
+        receipts.current.set(requestId, action())
+      if (qa.dropMutationResponse) {
+        qa.dropMutationResponse = false
+        throw Error('Synthetic lost response')
+      }
+      return receipts.current.get(requestId) as T
+    } finally {
+      setMutating(false)
+    }
+  }
   return (
     <main data-ob-mobile-round="true">
       <fieldset disabled={paused} style={{ padding: 0, margin: 0, border: 0 }}>
@@ -141,7 +181,9 @@ function Fixture() {
             pointApplies={() => true}
             pointMatchesRoom={() => true}
             locked={locked}
-            mutationBlocked={images.some(image => image.local_queue_id)}
+            mutationBlocked={
+              mutating || images.some((image) => image.local_queue_id)
+            }
             area={area}
             activeFloor={floor}
             rooms={roomRows}
@@ -228,6 +270,151 @@ function Fixture() {
               )
               return true
             }}
+            onMove={(request) =>
+              mutate('move', request.requestId, () => {
+                if (request.kind === 'room') {
+                  const room = {
+                    ...roomRows.find((row) => row.id === request.id)!,
+                    floor_label: request.floor,
+                  }
+                  setRoomRows((rows) =>
+                    rows.map((row) => (row.id === room.id ? room : row)),
+                  )
+                  return { room, note: null, images: [], observation: null }
+                }
+                const moved = {
+                  ...notes.find((row) => row.id === request.id)!,
+                  interior_room_id:
+                    request.target.area === 'interior'
+                      ? request.target.roomId
+                      : null,
+                  exterior_observation_id:
+                    request.target.area === 'exterior' ? 'observation-1' : null,
+                }
+                const linked = images
+                  .filter((row) => row.control_item_id === moved.id)
+                  .map((row) => ({
+                    ...row,
+                    interior_room_id: moved.interior_room_id,
+                    exterior_observation_id: moved.exterior_observation_id,
+                  }))
+                setNotes((rows) =>
+                  rows.map((row) => (row.id === moved.id ? moved : row)),
+                )
+                setImages((rows) =>
+                  rows.map(
+                    (row) => linked.find((image) => image.id === row.id) || row,
+                  ),
+                )
+                return {
+                  room: null,
+                  note: moved,
+                  images: linked,
+                  observation: null,
+                }
+              })
+            }
+            onPreviewRemoval={async (request) => {
+              const linked = images.filter((row) =>
+                request.kind === 'note'
+                  ? row.control_item_id === request.id
+                  : row.interior_room_id === request.id,
+              )
+              const roomNotes = notes.filter(
+                (row) => row.interior_room_id === request.id,
+              )
+              return {
+                ...request,
+                token: 'synthetic-token',
+                label:
+                  request.kind === 'room'
+                    ? roomRows.find((row) => row.id === request.id)!.room_label
+                    : 'Syntetiskt innehåll',
+                counts: {
+                  notes: roomNotes.length,
+                  images: linked.length,
+                  quickNotes: 0,
+                },
+                blockedReason:
+                  request.kind === 'room' && (linked.length || roomNotes.length)
+                    ? 'Rummet innehåller noteringar eller bilder.'
+                    : null,
+              }
+            }}
+            onRemove={(request, _token, requestId) =>
+              mutate('remove', requestId, () => {
+                const detached =
+                  request.kind === 'note'
+                    ? images
+                        .filter((row) => row.control_item_id === request.id)
+                        .map((row) => ({ ...row, control_item_id: null }))
+                    : []
+                setNotes((rows) =>
+                  rows.filter(
+                    (row) => request.kind !== 'note' || row.id !== request.id,
+                  ),
+                )
+                setRoomRows((rows) =>
+                  rows.filter(
+                    (row) => request.kind !== 'room' || row.id !== request.id,
+                  ),
+                )
+                setImages((rows) =>
+                  rows
+                    .filter(
+                      (row) =>
+                        request.kind !== 'image' || row.id !== request.id,
+                    )
+                    .map(
+                      (row) =>
+                        detached.find((image) => image.id === row.id) || row,
+                    ),
+                )
+                return {
+                  roomId: request.kind === 'room' ? request.id : null,
+                  noteIds: request.kind === 'note' ? [request.id] : [],
+                  imageIds: request.kind === 'image' ? [request.id] : [],
+                  quickNoteIds: [],
+                  images: detached,
+                  archiveId: 'synthetic-archive',
+                }
+              })
+            }
+            onPreviewImageNote={async (imageId) => {
+              qa.calls.push({ kind: 'image-preview', id: imageId })
+              return {
+                token: 'synthetic-image-token',
+                room: roomRows.find(
+                  (row) =>
+                    row.id ===
+                    images.find((image) => image.id === imageId)
+                      ?.interior_room_id,
+                )!,
+                observation: null,
+                exteriorItem: null,
+              }
+            }}
+            onCreateImageNote={(request) =>
+              mutate('image-note', request.requestId, () => {
+                const image = images.find((row) => row.id === request.imageId)!
+                const created = {
+                  ...note,
+                  id: crypto.randomUUID(),
+                  interior_room_id: image.interior_room_id,
+                  exterior_observation_id: image.exterior_observation_id,
+                  note: request.draft.note,
+                  risk_text: request.draft.risk_text,
+                  ftu_text: request.draft.ftu_text,
+                  selected_outcome_id: request.draft.outcomeId,
+                }
+                const linked = { ...image, control_item_id: created.id }
+                setNotes((rows) => [...rows, created])
+                setImages((rows) =>
+                  rows.map((row) => (row.id === linked.id ? linked : row)),
+                )
+                return { note: created, image: linked, observation: null }
+              })
+            }
           />
         </div>
       </fieldset>

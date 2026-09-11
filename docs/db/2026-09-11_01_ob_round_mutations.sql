@@ -1,0 +1,296 @@
+-- OB mobile round: atomic moves, recoverable removals and create-and-link.
+-- Apply before deploying the corresponding UI. Existing inspection rows are not rewritten.
+begin;
+
+create table if not exists public.ob_round_mutation_events (
+  id uuid primary key default gen_random_uuid(),
+  inspection_id uuid not null references public.inspections(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  request_id uuid not null,
+  operation text not null,
+  request jsonb not null,
+  before_data jsonb not null,
+  result jsonb not null,
+  created_at timestamptz not null default now(),
+  unique (inspection_id, request_id)
+);
+create table if not exists public.ob_round_removed_records (
+  table_name text not null,
+  record_id uuid not null,
+  inspection_id uuid not null references public.inspections(id) on delete cascade,
+  event_id uuid not null references public.ob_round_mutation_events(id) on delete cascade,
+  primary key (table_name, record_id)
+);
+alter table public.ob_round_mutation_events enable row level security;
+alter table public.ob_round_removed_records enable row level security;
+revoke all on public.ob_round_mutation_events, public.ob_round_removed_records from public, anon, authenticated;
+grant all on public.ob_round_mutation_events, public.ob_round_removed_records to service_role;
+
+-- Serialize legacy/direct child writes with the new commands. Late offline
+-- writes cannot resurrect removed IDs or attach an image to a deleted note.
+create or replace function public.ob_round_guard_child()
+returns trigger language plpgsql security definer set search_path = pg_catalog, public as $$
+declare v_id uuid; v_row jsonb; n public.inspection_control_items; v_room uuid; v_obs uuid;
+begin
+  v_row := case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end;
+  v_id := (v_row->>'inspection_id')::uuid;
+  if tg_op = 'UPDATE' and old.inspection_id is distinct from new.inspection_id
+    and exists (select 1 from public.inspections where id in (old.inspection_id, new.inspection_id)
+      and coalesce(inspection_family, type) = 'OB') then raise exception 'OB_ROUND_FOREIGN'; end if;
+  if not exists (select 1 from public.inspections i where i.id = v_id
+    and coalesce(i.inspection_family, i.type) = 'OB') then return coalesce(new, old); end if;
+  perform 1 from public.inspections where id = v_id for update;
+  perform public.raise_if_inspection_locked(v_id, tg_table_name);
+  if tg_op = 'DELETE' then return old; end if;
+  if tg_op = 'UPDATE' and old.inspection_id is distinct from new.inspection_id then
+    raise exception 'OB_ROUND_FOREIGN';
+  end if;
+  if exists (select 1 from public.ob_round_removed_records where table_name = tg_table_name
+    and record_id = (v_row->>'id')::uuid) then raise exception 'OB_ROUND_REMOVED'; end if;
+  v_room := (v_row->>'interior_room_id')::uuid;
+  v_obs := (v_row->>'exterior_observation_id')::uuid;
+  if v_room is not null and not exists (select 1 from public.inspection_interior_rooms where id = v_room and inspection_id = v_id)
+    then raise exception 'OB_ROUND_FOREIGN'; end if;
+  if v_obs is not null and not exists (select 1 from public.inspection_exterior_observations where id = v_obs and inspection_id = v_id)
+    then raise exception 'OB_ROUND_FOREIGN'; end if;
+  if tg_table_name = 'inspection_images' and v_row->>'control_item_id' is not null then
+    select * into n from public.inspection_control_items where id = (v_row->>'control_item_id')::uuid and inspection_id = v_id;
+    if not found then raise exception 'OB_ROUND_REMOVED'; end if;
+    new.interior_room_id := n.interior_room_id;
+    new.exterior_observation_id := n.exterior_observation_id;
+  end if;
+  return new;
+end;
+$$;
+
+do $$ declare t text; begin
+  foreach t in array array['inspection_interior_rooms', 'inspection_control_items', 'inspection_images',
+    'inspection_exterior_observations', 'inspection_round_quick_notes'] loop
+    execute format('drop trigger if exists trg_ob_round_guard_child on public.%I', t);
+    execute format('create trigger trg_ob_round_guard_child before insert or update or delete on public.%I
+      for each row execute function public.ob_round_guard_child()', t);
+  end loop;
+end $$;
+
+create or replace function public.ob_round_mutate(
+  p_inspection_id uuid, p_org_id uuid, p_actor uuid, p_operation text, p_payload jsonb,
+  p_floor_keys text[] default '{}'::text[]
+) returns jsonb language plpgsql security definer set search_path = pg_catalog, public as $$
+declare
+  i public.inspections; r public.inspection_interior_rooms; n public.inspection_control_items;
+  img public.inspection_images; obs public.inspection_exterior_observations; ext public.settings_exterior_items;
+  outcome public.settings_control_point_outcomes; point public.settings_control_points;
+  prior public.ob_round_mutation_events; v_assignment uuid; v_state jsonb;
+  v_id uuid; v_request_id uuid; v_event_id uuid := gen_random_uuid(); v_kind text;
+  v_room_id uuid; v_obs_id uuid; v_item_id uuid; v_floor text; v_token text;
+  v_before jsonb; v_result jsonb; v_record jsonb; v_notes jsonb := '[]'; v_images jsonb := '[]'; v_quick jsonb := '[]';
+  v_label text; v_blocked text; v_draft jsonb; v_note_ids jsonb := '[]'; v_image_ids jsonb := '[]'; v_quick_ids jsonb := '[]';
+begin
+  if p_actor is null or p_org_id is null or not exists (
+    select 1 from public.org_members where org_id = p_org_id and profile_id = p_actor and is_active
+  ) then raise exception 'OB_ROUND_FORBIDDEN'; end if;
+  -- Same owner rule as OB unlock; no new organization-wide data access.
+  if not exists (select 1 from public.inspections si join public.properties sp on sp.id = si.property_id
+    where si.id = p_inspection_id and sp.owner = p_actor and coalesce(si.inspection_family, si.type) = 'OB') then
+    raise exception 'OB_ROUND_FORBIDDEN'; end if;
+  select current_assignment_id into v_assignment from public.ob_assignment_workflows where inspection_id = p_inspection_id;
+  if v_assignment is not null then perform 1 from public.assignments where id = v_assignment for update; end if;
+  select * into i from public.inspections where id = p_inspection_id for update;
+  if i.locked_at is not null or lower(coalesce(i.status, '')) in ('completed','klar','done') then raise exception 'OB_ROUND_LOCKED'; end if;
+  v_state := public.ob_assignment_workflow_state(p_inspection_id);
+  if coalesce((v_state->>'paused')::boolean, false) then raise exception 'OB_ROUND_PAUSED'; end if;
+
+  if p_operation = 'floor-context' then
+    return jsonb_build_object(
+      'rooms', (select coalesce(jsonb_agg(jsonb_build_object('floor_label', floor_label)), '[]') from public.inspection_interior_rooms where inspection_id = i.id),
+      'values', (select s.values from public.inspection_overview_selections s join public.settings_overview_items o on o.id = s.overview_item_id
+        where s.inspection_id = i.id and o.key = 'building_type' and o.is_active order by s.set_index limit 1),
+      'groups', (select coalesce(jsonb_agg(jsonb_build_object('key', g.key, 'options',
+        (select coalesce(jsonb_agg(to_jsonb(opt)), '[]') from public.settings_overview_options opt where opt.group_id = g.id and opt.is_active))), '[]')
+        from public.settings_overview_groups g join public.settings_overview_items o on o.id = g.overview_item_id
+        where o.key = 'building_type' and o.is_active and g.is_active));
+  end if;
+  if p_operation not in ('move', 'remove-preview', 'remove', 'image-note-preview', 'image-note')
+    or jsonb_typeof(p_payload) <> 'object' then raise exception 'OB_ROUND_INVALID'; end if;
+  if p_operation in ('move', 'remove', 'image-note') then
+    v_request_id := (p_payload->>'requestId')::uuid;
+    if v_request_id is null then raise exception 'OB_ROUND_INVALID'; end if;
+    select * into prior from public.ob_round_mutation_events where inspection_id = i.id and request_id = v_request_id;
+    if found then
+      if prior.actor_id is distinct from p_actor or prior.operation <> p_operation or prior.request <> p_payload then raise exception 'OB_ROUND_STALE'; end if;
+      -- Return current surviving records, not stale snapshots that undo later edits in the UI.
+      v_result := prior.result;
+      if v_result->'room' <> 'null'::jsonb then v_result := jsonb_set(v_result, '{room}', coalesce((select to_jsonb(t) from public.inspection_interior_rooms t where t.id = (v_result->'room'->>'id')::uuid), 'null')); end if;
+      if v_result->'note' <> 'null'::jsonb then v_result := jsonb_set(v_result, '{note}', coalesce((select to_jsonb(t) from public.inspection_control_items t where t.id = (v_result->'note'->>'id')::uuid), 'null')); end if;
+      if v_result ? 'images' then v_result := jsonb_set(v_result, '{images}', (select coalesce(jsonb_agg(to_jsonb(t)), '[]') from public.inspection_images t where t.id in (select (x->>'id')::uuid from jsonb_array_elements(prior.result->'images') x))); end if;
+      if v_result ? 'image' then v_result := jsonb_set(v_result, '{image}', coalesce((select to_jsonb(t) from public.inspection_images t where t.id = (v_result->'image'->>'id')::uuid), 'null')); end if;
+      if v_result ? 'observation' then v_result := jsonb_set(v_result, '{observation}', coalesce((select to_jsonb(t) from public.inspection_exterior_observations t where t.id = (v_result->'note'->>'exterior_observation_id')::uuid and t.inspection_id = i.id), 'null')); end if;
+      return v_result;
+    end if;
+  end if;
+  v_id := coalesce(p_payload->>'id', p_payload->>'imageId')::uuid;
+  v_kind := case when p_operation like 'image-note%' then 'image' else p_payload->>'kind' end;
+  if v_kind = 'room' then
+    select * into r from public.inspection_interior_rooms where id = v_id and inspection_id = i.id for update;
+    if not found then raise exception 'OB_ROUND_NOT_FOUND'; end if;
+    v_record := to_jsonb(r); v_label := r.room_label;
+    select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]') into v_notes from public.inspection_control_items t where interior_room_id = r.id;
+    select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]') into v_images from public.inspection_images t
+      where interior_room_id = r.id or origin_interior_room_id = r.id or control_item_id in (select (x->>'id')::uuid from jsonb_array_elements(v_notes) x);
+    select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]') into v_quick from public.inspection_round_quick_notes t where interior_room_id = r.id;
+  elsif v_kind = 'note' then
+    select * into n from public.inspection_control_items where id = v_id and inspection_id = i.id for update;
+    if not found then raise exception 'OB_ROUND_NOT_FOUND'; end if;
+    v_record := to_jsonb(n); v_label := coalesce(nullif(n.note,''), n.title);
+    select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]') into v_images from public.inspection_images t where control_item_id = n.id;
+  elsif v_kind = 'image' then
+    select * into img from public.inspection_images where id = v_id and inspection_id = i.id for update;
+    if not found then raise exception 'OB_ROUND_NOT_FOUND'; end if;
+    v_record := to_jsonb(img); v_label := coalesce(img.label, 'Bild');
+  else raise exception 'OB_ROUND_INVALID'; end if;
+  if exists (select 1 from jsonb_array_elements(v_notes || v_images || v_quick) x where x->>'inspection_id' <> i.id::text) then
+    raise exception 'OB_ROUND_FOREIGN'; end if;
+  v_before := jsonb_build_object('record', v_record, 'notes', v_notes, 'images', v_images, 'quickNotes', v_quick);
+
+  if p_operation in ('remove-preview', 'remove') then
+    v_token := md5(v_before::text);
+    if v_kind = 'room' and (coalesce(r.values, '{}') <> '{}'::jsonb or length(btrim(coalesce(r.note,''))) > 0
+      or jsonb_array_length(v_images) > 0
+      or exists (select 1 from jsonb_array_elements(v_quick) x where length(btrim(coalesce(x->>'note',''))) > 0)
+      or exists (select 1 from jsonb_array_elements(v_notes) x where x->>'control_point_id' is null
+        or x->>'status' is not null or x->>'selected_outcome_id' is not null
+        or length(btrim(coalesce(x->>'note','') || coalesce(x->>'risk_text','') || coalesce(x->>'ftu_text',''))) > 0)) then
+      v_blocked := 'Rummet innehaller uppgifter, noteringar eller bilder.';
+    end if;
+    if p_operation = 'remove-preview' then return jsonb_build_object('kind', v_kind, 'id', v_id, 'token', v_token,
+      'label', v_label, 'blockedReason', v_blocked, 'counts', jsonb_build_object('notes', jsonb_array_length(v_notes), 'images', jsonb_array_length(v_images), 'quickNotes', jsonb_array_length(v_quick))); end if;
+    if p_payload->>'token' is distinct from v_token then raise exception 'OB_ROUND_STALE'; end if;
+    if v_blocked is not null then raise exception 'OB_ROUND_ROOM_NOT_EMPTY'; end if;
+    if v_kind = 'note' then
+      -- Unlink before deleting; some existing FKs cascade image rows.
+      update public.inspection_images set control_item_id = null, interior_room_id = n.interior_room_id,
+        exterior_observation_id = n.exterior_observation_id, processing_status = 'unprocessed', ignored_at = null where control_item_id = n.id;
+      delete from public.inspection_control_items where id = n.id;
+      v_note_ids := jsonb_build_array(n.id);
+      select coalesce(jsonb_agg(to_jsonb(t)), '[]') into v_images from public.inspection_images t
+        where t.id in (select (x->>'id')::uuid from jsonb_array_elements(v_before->'images') x);
+    elsif v_kind = 'image' then
+      delete from public.inspection_images where id = img.id;
+      v_image_ids := jsonb_build_array(img.id);
+    else
+      select coalesce(jsonb_agg(x->'id'), '[]') into v_note_ids from jsonb_array_elements(v_notes) x;
+      select coalesce(jsonb_agg(x->'id'), '[]') into v_quick_ids from jsonb_array_elements(v_quick) x;
+      delete from public.inspection_control_items where interior_room_id = r.id;
+      delete from public.inspection_round_quick_notes where interior_room_id = r.id;
+      delete from public.inspection_interior_rooms where id = r.id;
+    end if;
+    v_result := jsonb_build_object('roomId', case when v_kind = 'room' then r.id end, 'noteIds', v_note_ids,
+      'imageIds', v_image_ids, 'quickNoteIds', v_quick_ids, 'images', v_images, 'archiveId', v_event_id);
+  elsif p_operation = 'move' then
+    if v_kind = 'room' then
+      v_floor := p_payload->>'floor';
+      if v_floor is null or not (v_floor = any(p_floor_keys)) or v_floor = r.floor_label then raise exception 'OB_ROUND_INVALID'; end if;
+      if p_payload->'from'->>'floor' is distinct from r.floor_label then raise exception 'OB_ROUND_STALE'; end if;
+      update public.inspection_interior_rooms set floor_label = v_floor, updated_at = now(),
+        order_index = (select coalesce(max(order_index),0) + 10 from public.inspection_interior_rooms where inspection_id = i.id and floor_label = v_floor)
+        where id = r.id returning * into r;
+      v_result := jsonb_build_object('room', to_jsonb(r), 'note', null, 'images', '[]'::jsonb, 'observation', null);
+    elsif v_kind = 'note' then
+      if (p_payload->'from'->>'roomId')::uuid is distinct from n.interior_room_id
+        or (p_payload->'from'->>'observationId')::uuid is distinct from n.exterior_observation_id then raise exception 'OB_ROUND_STALE'; end if;
+      if p_payload->'target'->>'area' = 'interior' then v_room_id := (p_payload->'target'->>'roomId')::uuid;
+      elsif p_payload->'target'->>'area' = 'exterior' then v_item_id := (p_payload->'target'->>'exteriorItemId')::uuid;
+      else raise exception 'OB_ROUND_INVALID'; end if;
+    else raise exception 'OB_ROUND_INVALID'; end if;
+  else
+    if img.control_item_id is not null then raise exception 'OB_ROUND_IMAGE_LINKED'; end if;
+    -- Prefer current placement; capture origin is only a fallback, never active UI room.
+    if img.interior_room_id is not null or img.exterior_observation_id is not null then
+      v_room_id := img.interior_room_id; v_obs_id := img.exterior_observation_id;
+    else v_room_id := img.origin_interior_room_id; v_obs_id := img.origin_exterior_observation_id; v_item_id := img.origin_exterior_item_id; end if;
+  end if;
+
+  if (p_operation = 'move' and v_kind = 'note') or p_operation like 'image-note%' then
+    if v_room_id is not null then
+      if v_obs_id is not null or v_item_id is not null then raise exception 'OB_ROUND_PLACE_REQUIRED'; end if;
+      select * into r from public.inspection_interior_rooms where id = v_room_id and inspection_id = i.id for update;
+      if not found then raise exception 'OB_ROUND_PLACE_REQUIRED'; end if;
+    else
+      if v_obs_id is not null then
+        select * into obs from public.inspection_exterior_observations where id = v_obs_id and inspection_id = i.id
+          and not coalesce(is_free_note,false) and coalesce(values->>'_free_note','false') <> 'true' for update;
+        if not found then raise exception 'OB_ROUND_PLACE_REQUIRED'; end if;
+        if v_item_id is not null and v_item_id <> obs.exterior_item_id then raise exception 'OB_ROUND_PLACE_REQUIRED'; end if;
+        v_item_id := obs.exterior_item_id;
+      end if;
+      select * into ext from public.settings_exterior_items where id = v_item_id and is_active;
+      if not found then raise exception 'OB_ROUND_PLACE_REQUIRED'; end if;
+      if obs.id is null then
+        select * into obs from public.inspection_exterior_observations where inspection_id = i.id and exterior_item_id = ext.id
+          and not coalesce(is_free_note,false) and coalesce(values->>'_free_note','false') <> 'true'
+          order by created_at, id limit 1 for update;
+      end if;
+    end if;
+    if p_operation like 'image-note%' then
+      v_token := md5(jsonb_build_object('image', img, 'room', r, 'observation', obs, 'exteriorItem', ext)::text);
+      if p_operation = 'image-note-preview' then return jsonb_build_object('token', v_token,
+        'room', case when r.id is not null then to_jsonb(r) end,
+        'observation', case when obs.id is not null then to_jsonb(obs) end,
+        'exteriorItem', case when ext.id is not null then to_jsonb(ext) end); end if;
+      if p_payload->>'token' is distinct from v_token then raise exception 'OB_ROUND_STALE'; end if;
+      v_draft := p_payload->'draft';
+      if jsonb_typeof(v_draft) <> 'object' or not exists (select 1 from unnest(array['note','risk_text','ftu_text']) k
+        where length(btrim(coalesce(v_draft->>k,''))) > 0) then raise exception 'OB_ROUND_TEXT_REQUIRED'; end if;
+      if exists (select 1 from unnest(array['note','risk_text','ftu_text']) k where jsonb_typeof(v_draft->k) <> 'string' or length(v_draft->>k) > 20000) then raise exception 'OB_ROUND_INVALID'; end if;
+      if v_draft->>'outcomeId' is not null then
+        select * into outcome from public.settings_control_point_outcomes where id = (v_draft->>'outcomeId')::uuid and is_active;
+        if not found then raise exception 'OB_ROUND_INVALID'; end if;
+        select * into point from public.settings_control_points where id = outcome.control_point_id and is_active;
+        if not found then raise exception 'OB_ROUND_INVALID'; end if;
+        if coalesce(cardinality(point.applies_to),0) > 0 and not (coalesce(i.inspection_side,'buyer') = any(point.applies_to)
+          or 'all' = any(point.applies_to)) then raise exception 'OB_ROUND_INVALID'; end if;
+      end if;
+    end if;
+    if r.id is null and obs.id is null then
+      insert into public.inspection_exterior_observations(inspection_id, exterior_item_id, part_label, values, is_free_note)
+        values(i.id, ext.id, null, '{}', false) returning * into obs;
+    end if;
+    if p_operation = 'move' then
+      update public.inspection_control_items set interior_room_id = r.id, exterior_observation_id = obs.id, updated_at = now(),
+        sort_order = (select coalesce(max(sort_order),0) + 10 from public.inspection_control_items
+          where inspection_id = i.id and interior_room_id is not distinct from r.id and exterior_observation_id is not distinct from obs.id)
+        where id = n.id returning * into n;
+      update public.inspection_images set interior_room_id = n.interior_room_id, exterior_observation_id = n.exterior_observation_id where control_item_id = n.id;
+      select coalesce(jsonb_agg(to_jsonb(t)), '[]') into v_images from public.inspection_images t where control_item_id = n.id;
+      v_result := jsonb_build_object('room', null, 'note', to_jsonb(n), 'images', v_images,
+        'observation', case when obs.id is not null then to_jsonb(obs) end);
+    else
+      insert into public.inspection_control_items(inspection_id, interior_room_id, exterior_observation_id,
+        control_point_id, selected_outcome_id, title, status, note, risk_text, ftu_text, sort_order)
+        values(i.id, r.id, obs.id, point.id, outcome.id, coalesce(nullif(point.title,''), point.label, point.key, 'Fri notering'),
+          case when outcome.id is not null then 'remark' end, v_draft->>'note', v_draft->>'risk_text', v_draft->>'ftu_text',
+          (select coalesce(max(sort_order),0) + 10 from public.inspection_control_items where inspection_id = i.id
+            and interior_room_id is not distinct from r.id and exterior_observation_id is not distinct from obs.id)) returning * into n;
+      update public.inspection_images set control_item_id = n.id, interior_room_id = r.id, exterior_observation_id = obs.id,
+        processing_status = 'linked', ignored_at = null where id = img.id returning * into img;
+      v_result := jsonb_build_object('note', to_jsonb(n), 'image', to_jsonb(img),
+        'observation', case when obs.id is not null then to_jsonb(obs) end);
+    end if;
+  end if;
+  insert into public.ob_round_mutation_events(id, inspection_id, actor_id, request_id, operation, request, before_data, result)
+    values(v_event_id, i.id, p_actor, v_request_id, p_operation, p_payload, v_before, v_result);
+  if p_operation = 'remove' then
+    insert into public.ob_round_removed_records(table_name, record_id, inspection_id, event_id)
+      select 'inspection_control_items', x::uuid, i.id, v_event_id from jsonb_array_elements_text(v_note_ids) x
+      union all select 'inspection_images', x::uuid, i.id, v_event_id from jsonb_array_elements_text(v_image_ids) x
+      union all select 'inspection_round_quick_notes', x::uuid, i.id, v_event_id from jsonb_array_elements_text(v_quick_ids) x
+      union all select 'inspection_interior_rooms', r.id, i.id, v_event_id where v_kind = 'room';
+  end if;
+  return v_result;
+end;
+$$;
+revoke all on function public.ob_round_mutate(uuid,uuid,uuid,text,jsonb,text[]) from public, anon, authenticated;
+grant execute on function public.ob_round_mutate(uuid,uuid,uuid,text,jsonb,text[]) to service_role;
+revoke all on function public.ob_round_guard_child() from public, anon, authenticated;
+notify pgrst, 'reload schema';
+commit;

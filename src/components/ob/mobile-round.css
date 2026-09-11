@@ -970,3 +970,130 @@ body:has(dialog.obm-sheet[open]) {
 main[data-ob-mobile-round='true'] > button[aria-label='Öppna stegmeny'] {
   display: none;
 }
+
+.obm-link-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid #e0e7ec;
+  margin: 8px 0 16px;
+}
+.obm-sheet .obm-link-tabs button {
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 4px;
+  min-width: 0;
+  font-size: 13px;
+  color: #5f707b;
+}
+.obm-sheet .obm-link-tabs button[aria-selected='true'] {
+  border-bottom-color: #245eb5;
+  color: #245eb5;
+  font-weight: 700;
+}
+.obm-new-image-note > .obm-search {
+  margin-bottom: 16px;
+}
+.obm-new-image-note input::-webkit-search-cancel-button {
+  display: none;
+}
+.obm-image-note-results {
+  margin-bottom: 16px;
+}
+.obm-image-note-results > p {
+  font-size: 12px;
+  color: #5f707b;
+}
+.obm-sheet .obm-image-note-suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: 0;
+  border-bottom: 1px solid #e0e7ec;
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.obm-image-note-suggestion small {
+  display: block;
+  font-size: 11px;
+  color: #5f707b;
+}
+.obm-image-note-suggestion strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 4px 0;
+}
+.obm-image-note-suggestion span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  color: #5f707b;
+}
+.obm-image-note-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e0e7ec;
+}
+.obm-image-note-selected > span {
+  flex: 1;
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.obm-root .obm-delete-icon:not(:disabled),
+.obm-sheet .obm-delete-icon:not(:disabled) {
+  color: #b42318;
+  background: #fff;
+}
+.obm-root .obm-delete-icon:not(:disabled):hover,
+.obm-sheet .obm-delete-icon:not(:disabled):hover {
+  background: #fff1f0;
+}
+.obm-sheet .obm-danger {
+  background: #b42318;
+  color: #fff;
+  border: 1px solid #b42318;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+.obm-sheet .obm-danger:not(:disabled):hover {
+  background: #912018;
+}
+.obm-sheet .obm-danger:disabled {
+  background: #edf0f2;
+  color: #65717d;
+  border-color: #d9dfe3;
+}
+.obm-room-header-actions {
+  grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+}
+.obm-root .obm-move-icon:not(:disabled),
+.obm-sheet .obm-move-icon:not(:disabled) {
+  color: #245eb5;
+}
+.obm-move-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border-block: 1px solid var(--obm-line);
+  padding: 16px 0;
+  margin: 8px 0 18px;
+}
+.obm-move-summary span {
+  min-width: 0;
+  font-size: 12px;
+  color: #5f707b;
+}
+.obm-move-summary strong {
+  display: block;
+  font-size: 14px;
+  color: #243546;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}

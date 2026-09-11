@@ -10,6 +10,7 @@ import React, {
 } from 'react'
 import {
   ArrowLeft,
+  ArrowRightLeft,
   Camera,
   Check,
   ChevronDown,
@@ -24,7 +25,7 @@ import {
   Search,
   X,
   Inbox,
-  Link as LinkIcon,
+  Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import {
@@ -36,6 +37,24 @@ import {
 } from '@/lib/ob/roundSearch'
 import { getObTextDraftStorageKey } from '@/lib/ob/localTextDrafts'
 import { restoreRoundDraft } from '@/lib/ob/mobileRound'
+import type {
+  MoveRequest,
+  MoveResult,
+  RemovalRequest,
+  RemovalPreview,
+  RemovalResult,
+  ImageNoteRequest,
+  ImageNotePreview,
+  ImageNoteResult,
+} from '@/lib/ob/roundMutations'
+import Sheet from './ObRoundSheet'
+import {
+  ImageLinkSheet,
+  MoveSheet,
+  RemovalSheet,
+  type MoveSubject,
+  type RemovalSubject,
+} from './ObRoundMutationSheets'
 import type {
   RoomType,
   InteriorRoom,
@@ -85,291 +104,35 @@ export type ObMobileRoundProps = {
   onCamera: (id: string | null) => void
   onGallery: (id: string | null) => void
   onLinkImage: (image: RoundImage, note: Note) => Promise<boolean>
+  onMove: (request: MoveRequest) => Promise<MoveResult>
+  onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
+  onRemove: (
+    request: RemovalRequest,
+    token: string,
+    requestId: string,
+  ) => Promise<RemovalResult>
+  onPreviewImageNote: (imageId: string) => Promise<ImageNotePreview>
+  onCreateImageNote: (request: ImageNoteRequest) => Promise<ImageNoteResult>
 }
 
 type Props = ObMobileRoundProps
-
-function Sheet({
-  title,
-  onClose,
-  children,
-  footer,
-  actions,
-  closeDisabled = false,
-}: {
-  title: string
-  onClose: () => void
-  children: React.ReactNode
-  footer?: React.ReactNode
-  actions?: React.ReactNode
-  closeDisabled?: boolean
-}) {
-  const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
-    const dialog = ref.current!
-    dialog.showModal()
-    return () => dialog.close()
-  }, [])
-  return (
-    <dialog
-      ref={ref}
-      role="dialog"
-      aria-label={title}
-      className="obm-sheet"
-      onCancel={(event) => {
-        event.preventDefault()
-        if (!closeDisabled) onClose()
-      }}
-    >
-      <header className="obm-sheet-header-back">
-        <button
-          className="obm-icon"
-          title="Tillbaka"
-          aria-label="Tillbaka"
-          disabled={closeDisabled}
-          onClick={() => {
-            if (!closeDisabled) onClose()
-          }}
-        >
-          <ArrowLeft size={23} />
-        </button>
-        <h2>{title}</h2>
-        {actions && <div className="obm-sheet-actions">{actions}</div>}
-      </header>
-      <div className="obm-sheet-body">{children}</div>
-      {footer && <footer>{footer}</footer>}
-    </dialog>
-  )
-}
-
-function ImageLinkSheet({
-  photo,
-  p,
-  placeOf,
-  imagePlace,
-  onClose,
-  onGoToPlace,
-  onLinked,
-}: {
-  photo: RoundImage
-  p: Props
-  placeOf: (note: Note) => string
-  imagePlace: string
-  onClose: () => void
-  onGoToPlace: () => void
-  onLinked: () => void
-}) {
-  const [query, setQuery] = useState(''),
-    [selectedId, setSelectedId] = useState('')
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
-    flight = useRef(false)
-  const notes = p.notes.filter(hasNote),
-    selected = notes.find((note) => note.id === selectedId)
-  const noteText = (note: Note) =>
-    note.note?.trim() ||
-    (note.status === 'ok'
-      ? 'Inget att notera'
-      : note.risk_text?.trim() || note.ftu_text?.trim() || note.title)
-  const currentPlace = photo.interior_room_id || photo.exterior_observation_id
-  const roomId =
-    photo.interior_room_id ||
-    (!currentPlace ? photo.origin_interior_room_id : null)
-  const observationId =
-    photo.exterior_observation_id ||
-    (!currentPlace ? photo.origin_exterior_observation_id : null)
-  const exteriorItemId =
-    p.observations.find((row) => row.id === observationId)?.exterior_item_id ||
-    (!currentPlace ? photo.origin_exterior_item_id : null)
-  const samePlace = (note: Note) =>
-    roomId
-      ? note.interior_room_id === roomId
-      : Boolean(
-          exteriorItemId &&
-            p.observations.some(
-              (row) =>
-                row.id === note.exterior_observation_id &&
-                row.exterior_item_id === exteriorItemId,
-            ),
-        )
-  const matching = notes.filter((note) =>
-    matchesWords(
-      [
-        placeOf(note),
-        note.title,
-        noteText(note),
-        note.risk_text,
-        note.ftu_text,
-      ].join(' '),
-      query,
-    ),
-  )
-  const groups = [
-    { label: 'Bildens plats', notes: matching.filter(samePlace) },
-    {
-      label: 'Övriga platser',
-      notes: matching.filter((note) => !samePlace(note)),
-    },
-  ]
-  function search(value: string) {
-    setQuery(value)
-    setSelectedId('')
-    setError('')
-  }
-  async function link() {
-    if (!selected || p.locked || p.mutationBlocked || flight.current) return
-    flight.current = true
-    setBusy(true)
-    setError('')
-    try {
-      if (!(await p.onLinkImage(photo, selected)))
-        throw Error('Bilden kunde inte kopplas. Försök igen.')
-      onLinked()
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Bilden kunde inte kopplas. Försök igen.',
-      )
-    } finally {
-      flight.current = false
-      setBusy(false)
-    }
-  }
-  return (
-    <Sheet
-      title="Koppla bild"
-      closeDisabled={busy}
-      onClose={() => {
-        if (!flight.current) onClose()
-      }}
-      footer={
-        <button
-          className="obm-primary"
-          disabled={!selected || busy || p.locked || p.mutationBlocked}
-          onClick={() => void link()}
-        >
-          <LinkIcon size={18} />
-          {busy ? 'Kopplar…' : 'Koppla till notering'}
-        </button>
-      }
-    >
-      <div className="obm-link-image-context">
-        <a
-          href={p.imageSrc(photo)}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Öppna bilden i full storlek"
-        >
-          <img src={p.imageSrc(photo)} alt={photo.label || 'Bild att koppla'} />
-        </a>
-        <div>
-          <p className="obm-place-label">
-            <MapPin size={15} />
-            {imagePlace}
-          </p>
-          <button
-            className="obm-text-action"
-            disabled={busy}
-            onClick={onGoToPlace}
-          >
-            Gå till bildens plats
-            <ChevronRight size={17} />
-          </button>
-        </div>
-      </div>
-      <div className="obm-link-search">
-        <label className="obm-search">
-          <Search size={20} />
-          <input
-            type="search"
-            aria-label="Sök notering att koppla"
-            placeholder="Sök rum eller notering…"
-            disabled={busy}
-            value={query}
-            onChange={(e) => search(e.target.value)}
-          />
-          {query && (
-            <button
-              className="obm-icon"
-              title="Rensa sökning"
-              aria-label="Rensa sökning"
-              disabled={busy}
-              onClick={() => search('')}
-            >
-              <X size={18} />
-            </button>
-          )}
-        </label>
-      </div>
-      {error && (
-        <p role="alert" className="obm-error">
-          {error}
-        </p>
-      )}
-      {p.mutationBlocked && (
-        <p role="status" className="obm-unfinished">
-          Vänta tills sparande och bilduppladdningar är klara.
-        </p>
-      )}
-      <fieldset className="obm-link-options" disabled={busy || p.locked}>
-        <legend>
-          Välj notering <span aria-live="polite">({matching.length})</span>
-        </legend>
-        {groups
-          .filter((group) => group.notes.length)
-          .map((group) => (
-            <div key={group.label} className="obm-link-group">
-              <h3>{group.label}</h3>
-              {group.notes.map((note) => (
-                <label
-                  key={note.id}
-                  className="obm-link-option"
-                  data-selected={selectedId === note.id}
-                >
-                  <input
-                    type="radio"
-                    name="link-note"
-                    value={note.id}
-                    checked={selectedId === note.id}
-                    onChange={() => {
-                      setSelectedId(note.id!)
-                      setError('')
-                    }}
-                  />
-                  <span>
-                    <small>{placeOf(note)}</small>
-                    <strong>{noteText(note)}</strong>
-                    {note.control_point_id && (
-                      <span className="obm-link-category">{note.title}</span>
-                    )}
-                  </span>
-                </label>
-              ))}
-            </div>
-          ))}
-      </fieldset>
-      {!matching.length && (
-        <p className="obm-empty" role="status">
-          {notes.length
-            ? 'Inga noteringar matchar sökningen.'
-            : 'Inga noteringar att koppla bilden till.'}
-        </p>
-      )}
-    </Sheet>
-  )
-}
 
 function Editor({
   note,
   place,
   p,
   onClose,
+  onMove,
+  onDelete,
+  onDeleteImage,
 }: {
   note: Note
   place: string
   p: Props
   onClose: () => void
+  onMove: () => void
+  onDelete: () => void
+  onDeleteImage: (image: RoundImage) => void
 }) {
   const key = getObTextDraftStorageKey(
     `ob:${p.inspectionId}:mobile-round:${note.id}`,
@@ -476,6 +239,28 @@ function Editor({
     <Sheet
       title="Notering"
       closeDisabled={leaving}
+      actions={
+        <>
+          <button
+            className="obm-icon obm-move-icon"
+            title="Flytta notering"
+            aria-label="Flytta notering"
+            disabled={p.locked || leaving}
+            onClick={() => void finish(onMove)}
+          >
+            <ArrowRightLeft size={21} />
+          </button>
+          <button
+            className="obm-icon obm-delete-icon"
+            title="Radera notering"
+            aria-label="Radera notering"
+            disabled={p.locked || leaving}
+            onClick={() => void finish(onDelete)}
+          >
+            <Trash2 size={20} />
+          </button>
+        </>
+      }
       onClose={() => void finish()}
       footer={
         <>
@@ -585,6 +370,15 @@ function Editor({
                 alt={image.label || 'Bild till noteringen'}
               />
             </a>
+            <button
+              className="obm-icon obm-delete-icon"
+              title="Radera bild"
+              aria-label="Radera bild"
+              disabled={p.locked || leaving}
+              onClick={() => void finish(() => onDeleteImage(image))}
+            >
+              <Trash2 size={18} />
+            </button>
           </div>
         ))}
       </div>
@@ -608,7 +402,11 @@ export default function ObMobileRound(p: Props) {
   const [editorId, setEditorId] = useState<string | null>(null),
     [preview, setPreview] = useState<Outcome | null>(null)
   const [photoId, setPhotoId] = useState<string | null>(null)
-  const photo = p.images.find(image => image.id === photoId)
+  const [moveSubject, setMoveSubject] = useState<MoveSubject | null>(null)
+  const [removalSubject, setRemovalSubject] = useState<RemovalSubject | null>(
+    null,
+  )
+  const photo = p.images.find((image) => image.id === photoId)
   const [addRoomOpen, setAddRoomOpen] = useState(false),
     [roomType, setRoomType] = useState(''),
     [roomLabel, setRoomLabel] = useState('')
@@ -770,10 +568,7 @@ export default function ObMobileRound(p: Props) {
         )
       return p.pointMatchesRoom(point, p.activeRoom?.room_type_key ?? '')
     },
-    [
-      targetNotes,
-      p,
-    ],
+    [targetNotes, p],
   )
   const candidates = useMemo(
     () =>
@@ -1019,7 +814,14 @@ export default function ObMobileRound(p: Props) {
         </header>
       )}
       {view === 'room' ? (
-        <header className="obm-room-header">
+        <header
+          className={
+            'obm-room-header' +
+            (p.area === 'interior' && p.activeRoom?.id
+              ? ' obm-room-header-actions'
+              : '')
+          }
+        >
           <button
             className="obm-icon"
             title="Till platser"
@@ -1032,6 +834,35 @@ export default function ObMobileRound(p: Props) {
             <span>{parentLabel}</span>
             <h1>{targetLabel}</h1>
           </div>
+          {p.area === 'interior' && p.activeRoom?.id && (
+            <>
+              <button
+                className="obm-icon obm-move-icon"
+                title="Flytta rum"
+                aria-label="Flytta rum"
+                disabled={p.locked || busy}
+                onClick={() =>
+                  setMoveSubject({ kind: 'room', room: p.activeRoom! })
+                }
+              >
+                <ArrowRightLeft size={21} />
+              </button>
+              <button
+                className="obm-icon obm-delete-icon"
+                title="Radera rum"
+                aria-label="Radera rum"
+                disabled={p.locked || busy}
+                onClick={() =>
+                  setRemovalSubject({
+                    request: { kind: 'room', id: p.activeRoom!.id! },
+                    place: `${parentLabel} · ${targetLabel}`,
+                  })
+                }
+              >
+                <Trash2 size={20} />
+              </button>
+            </>
+          )}
         </header>
       ) : (
         <header className="obm-page-header">
@@ -1452,6 +1283,100 @@ export default function ObMobileRound(p: Props) {
           place={placeOf(editor)}
           p={p}
           onClose={() => setEditorId(null)}
+          onMove={() => {
+            setEditorId(null)
+            setMoveSubject({ kind: 'note', note: editor })
+          }}
+          onDelete={() => {
+            setEditorId(null)
+            setRemovalSubject({
+              request: { kind: 'note', id: editor.id! },
+              place: placeOf(editor),
+              returnEditorId: editor.id!,
+            })
+          }}
+          onDeleteImage={(image) => {
+            setEditorId(null)
+            setRemovalSubject({
+              request: { kind: 'image', id: image.id },
+              place: placeOf(editor),
+              image,
+              returnEditorId: editor.id!,
+            })
+          }}
+        />
+      )}
+      {moveSubject && (
+        <MoveSheet
+          subject={moveSubject}
+          p={p}
+          place={
+            moveSubject.kind === 'room'
+              ? `${p.floorLabel(moveSubject.room.floor_label)} · ${moveSubject.room.room_label}`
+              : placeOf(moveSubject.note)
+          }
+          onClose={() => {
+            if (moveSubject.kind === 'note') setEditorId(moveSubject.note.id!)
+            setMoveSubject(null)
+          }}
+          onMoved={(result) => {
+            setMoveSubject(null)
+            setQuery('')
+            setEverywhere(false)
+            setView('room')
+            if (result.room) goRoom(result.room)
+            if (result.note) {
+              const room = p.rooms.find(
+                (row) => row.id === result.note!.interior_room_id,
+              )
+              const item = p.exteriorItems.find(
+                (row) => row.id === result.observation?.exterior_item_id,
+              )
+              if (room) goRoom(room)
+              else if (item) goExterior(item)
+              else setView('places')
+              setEditorId(result.note.id!)
+            }
+            if (!result.room && !result.note) setView('places')
+            setNotice(result.room ? 'Rummet flyttat' : 'Noteringen flyttad')
+          }}
+        />
+      )}
+      {removalSubject && (
+        <RemovalSheet
+          subject={removalSubject}
+          p={p}
+          onClose={() => {
+            setEditorId(removalSubject.returnEditorId ?? null)
+            setPhotoId(removalSubject.returnPhoto?.id ?? null)
+            setRemovalSubject(null)
+          }}
+          onRemoved={(result) => {
+            for (const id of result.noteIds) {
+              try {
+                const key = getObTextDraftStorageKey(
+                  `ob:${p.inspectionId}:mobile-round:${id}`,
+                )
+                if (key) localStorage.removeItem(key)
+              } catch {}
+            }
+            if (
+              removalSubject.returnEditorId &&
+              !result.noteIds.includes(removalSubject.returnEditorId)
+            )
+              setEditorId(removalSubject.returnEditorId)
+            if (result.roomId) setView('places')
+            setNotice(
+              result.roomId
+                ? 'Rummet raderat'
+                : result.imageIds.length
+                  ? 'Bilden raderad'
+                  : result.images.length
+                    ? 'Noteringen raderad. Bilderna finns under Att bearbeta.'
+                    : 'Noteringen raderad',
+            )
+            setRemovalSubject(null)
+          }}
         />
       )}
       {preview && (
@@ -1508,9 +1433,25 @@ export default function ObMobileRound(p: Props) {
           key={photo.id}
           photo={photo}
           p={p}
+          catalog={{
+            points: applicablePoints,
+            outcomes,
+            loading: catalogLoading,
+            error: catalogError,
+            reload: () => void loadCatalog(),
+          }}
           placeOf={placeOf}
           imagePlace={imagePlace(photo)}
           onClose={() => setPhotoId(null)}
+          onDelete={() => {
+            setPhotoId(null)
+            setRemovalSubject({
+              request: { kind: 'image', id: photo.id },
+              place: imagePlace(photo),
+              image: photo,
+              returnPhoto: photo,
+            })
+          }}
           onLinked={() => {
             setPhotoId(null)
             setNotice('Bilden kopplad')

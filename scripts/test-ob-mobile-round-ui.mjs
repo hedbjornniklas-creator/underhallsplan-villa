@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 import puppeteer from 'puppeteer-core'
+import { testRoundParity } from '../test/helpers/ob-round-parity-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -92,7 +93,7 @@ if (serve) {
       await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control')
       await page.type(selector, value)
     }
-    for (const width of [320, 390, 430, 1280]) {
+    for (const width of [320, 360, 390, 430, 1280]) {
       await page.setViewport({ width, height: 820 })
       await fresh()
       assert.ok(await page.evaluate(() => {
@@ -197,6 +198,7 @@ if (serve) {
     await page.waitForFunction(() => !document.querySelector('dialog[open]'))
     assert.equal(await page.evaluate(() => window.__obMobileTest.images[0].control_item_id), 'note-1', 'image picker resolves the fresh server image after upload')
 
+    await testRoundParity({ page, click, fresh, fill, noOverflow, output })
     await fresh('?locked')
     await page.click('.obm-place-row')
     assert.equal(await page.$eval('.obm-room-actions button', node => node.disabled), true)
