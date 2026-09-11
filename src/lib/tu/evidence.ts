@@ -8,6 +8,7 @@ export type TuObservationSourceType = 'typed' | 'voice' | 'mixed' | 'measurement
 export type TuObservationCertainty = 'confirmed' | 'probable' | 'uncertain'
 export type TuObservationReviewStatus = 'draft' | 'reviewed'
 export type TuAiSuggestionStatus = 'pending' | 'accepted' | 'rejected'
+export type TuMeasurementAssessment = 'no_deviation' | 'deviation' | 'not_assessable'
 
 export type TuMeasurement = {
   id: string
@@ -18,6 +19,7 @@ export type TuMeasurement = {
   unit: string | null
   method: string | null
   instrument: string | null
+  assessment: TuMeasurementAssessment | null
   note: string | null
   measuredAt: string
   createdAt: string
@@ -84,4 +86,8 @@ export function isTuObservationReviewStatus(value: unknown): value is TuObservat
 
 export function isTuAiSuggestionStatus(value: unknown): value is TuAiSuggestionStatus {
   return value === 'pending' || value === 'accepted' || value === 'rejected'
+}
+
+export function isTuMeasurementAssessment(value: unknown): value is TuMeasurementAssessment {
+  return value === 'no_deviation' || value === 'deviation' || value === 'not_assessable'
 }

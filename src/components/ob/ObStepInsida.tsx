@@ -1,5 +1,7 @@
 ﻿'use client'
 
+import { useObFloorModel } from './ObFloorProvider'
+import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import {
   useEffect,
   useMemo,
@@ -416,6 +418,7 @@ const normalizeFloorKey = (value: string | null | undefined) => {
 // Huvudkomponent
 // =============================
 export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
+  const { model: floorModel } = useObFloorModel()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -765,6 +768,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           console.warn('Kunde inte läsa våningsinfo från Förutsättningar:', e)
         }
 
+        if (floorModel) floorsFromConditions = floorModelKeys(floorModel)
         setDerivedFloors(floorsFromConditions)
 
         // 3) Läs kontrollpunkter per rum
@@ -904,7 +908,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
           if (floorsFromConditions.length) {
             setNewFloorLabel(floorsFromConditions[0])
           } else {
-            setNewFloorLabel('plan1')
+            setNewFloorLabel(floorModel ? 'plan0' : 'plan1')
           }
         }
       } catch (e: unknown) {
@@ -1062,6 +1066,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
   // Våningar för flikar
   const floorLabels = useMemo(() => {
+    if (floorModel) return ['ovrigt', ...floorModelKeys(floorModel)]
     const base = derivedFloors.length
       ? derivedFloors.map(normalizeFloorKey)
       : Array.from(new Set(rooms.map(r => normalizeFloorKey(r.floor_label))))
@@ -1072,7 +1077,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
 
     const ordered = [OTHER_ROOM_TYPE_KEY, ...withoutVind, ...(hasVind ? ['vind'] : [])]
     return ordered.filter((k, idx) => ordered.indexOf(k) === idx)
-  }, [derivedFloors, rooms])
+  }, [derivedFloors, rooms, floorModel])
 
   useEffect(() => {
     if (!floorLabels.length) return
@@ -1088,6 +1093,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
     normalizeSwedish(activeFloor ?? '').toLowerCase() === OTHER_ROOM_TYPE_KEY
 
   const getFloorLabel = (k: string) => {
+    if (floorModel) return modelFloorLabel(floorModel, k)
     if (k === OTHER_ROOM_TYPE_KEY) return OTHER_ROOM_DISPLAY_LABEL
     if (k === 'vind') return atticLabel || 'Vind'
     return floorLabelFromKey(k)
@@ -1175,6 +1181,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
   }
 
   const sortRooms = (a: InteriorRoom, b: InteriorRoom) => {
+    if (floorModel) return modelFloorRank(floorModel, a.floor_label) - modelFloorRank(floorModel, b.floor_label) || (b.order_index ?? 0) - (a.order_index ?? 0)
     const aFloor = normalizeFloorKey(a.floor_label)
     const bFloor = normalizeFloorKey(b.floor_label)
     if (aFloor < bFloor) return -1
@@ -3618,7 +3625,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
                 } else if (floorLabels.length) {
                   setNewFloorLabel(floorLabels[0])
                 } else {
-                  setNewFloorLabel('plan1')
+                  setNewFloorLabel(floorModel ? 'plan0' : 'plan1')
                 }
                 setShowNewRoomForm(true)
               }}
@@ -3772,7 +3779,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
               } else if (floorLabels.length) {
                 setNewFloorLabel(floorLabels[0])
               } else {
-                setNewFloorLabel('plan1')
+                setNewFloorLabel(floorModel ? 'plan0' : 'plan1')
               }
               setShowNewRoomForm(true)
             }}

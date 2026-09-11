@@ -1,10 +1,22 @@
 import { NextResponse } from 'next/server'
 import {
   createTuAssignmentDraft,
+  getTuAssignmentById,
   requireTuContext,
   sendTuAssignmentConfirmation,
 } from '@/lib/tu/server'
-import { AssignmentEmailSendError, isMissingEnvError } from '@/lib/assignments/server'
+import { AssignmentEmailSendError } from '@/lib/assignments/server'
+import {
+  assignOrganizationCustomer,
+  discardUnlinkedAssignmentDraft,
+  parseAssignmentCustomerBinding,
+} from '@/lib/assignment-customers/server'
+import {
+  ASSIGNMENT_CUSTOMER_RESPONSE_HEADERS,
+  assertAssignmentCustomerSameOrigin,
+  assignmentCustomerFailure,
+  readAssignmentCustomerJson,
+} from '@/lib/assignment-customers/http'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,7 +24,10 @@ export const dynamic = 'force-dynamic'
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function jsonError(message: string, status: number, extra?: Record<string, unknown>) {
-  return NextResponse.json({ error: message, ...(extra ?? {}) }, { status })
+  return NextResponse.json(
+    { error: message, ...(extra ?? {}) },
+    { status, headers: ASSIGNMENT_CUSTOMER_RESPONSE_HEADERS }
+  )
 }
 
 function text(body: Record<string, unknown>, key: string) {
@@ -35,9 +50,19 @@ function mapAccessError(error: unknown) {
 }
 
 export async function POST(request: Request) {
+  let savedAssignmentId: string | null = null
+  let savedCustomer: {
+    id: string
+    customerNumber: string
+    version: number
+    created: boolean
+  } | null = null
+
   try {
+    assertAssignmentCustomerSameOrigin(request)
     const context = await requireTuContext()
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const body = await readAssignmentCustomerJson(request)
+    const customerBinding = parseAssignmentCustomerBinding(body.customerBinding)
     const customerEmail = text(body, 'customerEmail').toLowerCase()
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const scopeDescription = text(body, 'scopeDescription')
@@ -65,6 +90,9 @@ export async function POST(request: Request) {
     }
     if (price === null || Number.isNaN(price)) {
       return jsonError('Pris är obligatoriskt innan utskick.', 400)
+    }
+    if (customerBinding.mode === 'create' && !text(body, 'customerName')) {
+      return jsonError('Ange kundens namn.', 400, { code: 'CUSTOMER_NAME_REQUIRED' })
     }
 
     const assignment = await createTuAssignmentDraft({
@@ -96,28 +124,74 @@ export async function POST(request: Request) {
       notesInternal: text(body, 'notesInternal') || null,
     })
 
+    let customerLink
+    let linkedAssignment
+    try {
+      customerLink = await assignOrganizationCustomer(
+        context.orgId,
+        assignment.id,
+        assignment.updated_at,
+        customerBinding
+      )
+      linkedAssignment = await getTuAssignmentById(context.orgId, assignment.id)
+      if (!linkedAssignment?.organization_customer_id) {
+        throw new Error('ASSIGNMENT_CUSTOMER_DATABASE_FAILED')
+      }
+    } catch (linkError) {
+      await discardUnlinkedAssignmentDraft(
+        context.orgId,
+        assignment.id,
+        assignment.updated_at
+      ).catch(() => false)
+      throw linkError
+    }
+
+    savedAssignmentId = linkedAssignment.id
+    savedCustomer = customerLink.customer
+
     const sendResult = await sendTuAssignmentConfirmation({
-      assignment,
+      assignment: linkedAssignment,
       orgName: context.orgName,
       requestedByUserId: context.userId,
     })
 
-    return NextResponse.json({
-      assignmentId: assignment.id,
-      status: 'sent',
-      acceptUrl: sendResult.acceptUrl,
-      expiresAt: sendResult.expiresAt,
-    })
+    return NextResponse.json(
+      {
+        assignmentId: assignment.id,
+        status: 'sent',
+        acceptUrl: sendResult.acceptUrl,
+        expiresAt: sendResult.expiresAt,
+        customer: customerLink.customer,
+      },
+      { headers: ASSIGNMENT_CUSTOMER_RESPONSE_HEADERS }
+    )
   } catch (error) {
+    if (savedAssignmentId && savedCustomer) {
+      return NextResponse.json(
+        {
+          assignmentId: savedAssignmentId,
+          status: 'delivery_failed',
+          deliveryFailed: true,
+          warning:
+            'Uppdraget sparades och kunden kopplades, men mejlet kunde inte skickas. Försök igen från det sparade uppdraget.',
+          customer: savedCustomer,
+          ...(error instanceof AssignmentEmailSendError
+            ? { acceptUrl: error.acceptUrl }
+            : {}),
+        },
+        { status: 202, headers: ASSIGNMENT_CUSTOMER_RESPONSE_HEADERS }
+      )
+    }
+
     const accessError = mapAccessError(error)
     if (accessError) return accessError
 
     const message = error instanceof Error ? error.message : 'Okänt fel.'
-    if (error instanceof AssignmentEmailSendError) {
-      return jsonError('Kunde inte skicka mejl just nu.', 502, { acceptUrl: error.acceptUrl })
-    }
-    if (isMissingEnvError(error)) {
-      return jsonError('Servern saknar mejlkonfiguration i env.', 500)
+    const customerFailure = assignmentCustomerFailure(error)
+    if (customerFailure.code !== 'ASSIGNMENT_CUSTOMER_REQUEST_FAILED') {
+      return jsonError(customerFailure.message, customerFailure.status, {
+        code: customerFailure.code,
+      })
     }
     if (message.includes('column') || message.includes('relation') || message.includes('does not exist')) {
       return jsonError('Databasen saknar senaste TU-migrationen.', 500)

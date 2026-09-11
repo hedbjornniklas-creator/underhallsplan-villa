@@ -32,6 +32,7 @@ import {
 import { isTuAnalysisSourceImage } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { sortTuEvidenceChronologically } from '@/lib/tu/grounding'
+import { formatTuMeasurementAssessment } from '@/lib/tu/measurementConfig'
 import {
   deriveTuMeasurementImageVerifications,
   getTuMeasurementImageIds,
@@ -324,6 +325,7 @@ function mapSnapshotSourceObservations(snapshotValue: unknown) {
           cleanText(measurement.unit),
           cleanText(measurement.location),
           cleanText(measurement.method),
+          cleanText(measurement.assessmentLabel),
         ].filter(Boolean)
         return parts.length > 0 ? `Mätvärde: ${parts.join(' · ')}` : ''
       }),
@@ -680,6 +682,8 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
           unit: measurement.unit,
           method: measurement.method,
           instrument: measurement.instrument,
+          assessment: measurement.assessment,
+          assessmentLabel: formatTuMeasurementAssessment(measurement),
           note: measurement.note,
           measuredAt: measurement.measuredAt,
         })),
@@ -998,7 +1002,9 @@ function synthesisRequestBody(input: {
       'Vid fuktkontroller får du inte skriva att en konstruktion saknar fukt när underlaget endast visar att inga fuktindikationer noterats i en begränsad kontrollerad del.',
       'Vid fuktmätning ska du skilja mellan indikativ mätning och kvantitativ mätning. Ett indikativt utslag är inte en uppmätt fukthalt.',
       'Ett granskat indikationsvärde får återges exakt som "indikationsvärde X" med instrument, metod och mätpunkt när dessa finns. Avsaknad av jämförelsegrund hindrar inte redovisning av avläsningen, men hindrar klassificering och slutsats om fukthalt.',
-      'Klassificera inte ett resultat som normalt, förhöjt, acceptabelt eller utan avvikelse om relevant enhet, metod, instrument och jämförelsegrund saknas.',
+      'Klassificera aldrig ett mätresultat utifrån siffervärdet på egen hand. measurement.assessment är besiktningsmannens uttryckliga bedömning och får användas när den finns; saknas den ska resultatet inte klassificeras.',
+      'Vid fuktindikering betyder no_deviation endast att ingen avvikande indikation noterades i den dokumenterade mätpunkten. deviation betyder avvikande/förhöjd indikation i mätpunkten. Inget av alternativen är i sig en uppmätt fukthalt eller bevis för skada.',
+      'Om assessment är not_assessable ska endast den verifierade avläsningen och relevanta begränsningar återges utan klassificering.',
       'Avgränsa varje mätresultat till den dokumenterade mätpunkten och tidpunkten. Generalisera inte till hela konstruktionen.',
       'Rubriken, rapportmallen och uppdragstypen är kontext, inte teknisk bevisning.',
       'En kontrollerad fältpost betyder att källmaterialet är korrekt återgivet, inte att varje teknisk slutsats i fritexten är bekräftad.',

@@ -7,6 +7,7 @@ import {
   updateTuMeasurement,
   type TuMeasurementWriteInput,
 } from '@/lib/tu/evidenceServer'
+import { isTuMeasurementAssessment } from '@/lib/tu/evidence'
 import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
 
 export const runtime = 'nodejs'
@@ -42,6 +43,7 @@ function mapError(error: unknown) {
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_OBSERVATION_NOT_FOUND') return jsonError('Observationen hittades inte.', 404)
   if (message === 'TU_MEASUREMENT_NOT_FOUND') return jsonError('Mätvärdet hittades inte.', 404)
+  if (message === 'TU_MEASUREMENT_ASSESSMENT_INVALID') return jsonError('Välj en giltig bedömning.', 400)
   if (message === 'TU_OBSERVATION_IMAGE_INVALID') return jsonError('En vald bild tillhör inte utredningen.', 400)
   if (message === 'TU_OBSERVATION_ID_CONFLICT' || message === 'TU_MEASUREMENT_ID_CONFLICT') {
     return jsonError('Det lokala fältunderlaget kunde inte identifieras säkert.', 409)
@@ -64,7 +66,14 @@ async function requireEditableInvestigation(orgId: string, inspectionId: string)
 function measurementValues(body: Record<string, unknown>): TuMeasurementWriteInput | null {
   const measurementType = text(body.measurementType)
   const valueText = text(body.valueText)
+  const assessmentValue = text(body.assessment)
   if (!measurementType || !valueText) return null
+  if (assessmentValue && !isTuMeasurementAssessment(assessmentValue)) {
+    throw new Error('TU_MEASUREMENT_ASSESSMENT_INVALID')
+  }
+  const assessment = assessmentValue && isTuMeasurementAssessment(assessmentValue)
+    ? assessmentValue
+    : null
   return {
     observationId: uuid(body.observationId),
     location: text(body.location) || null,
@@ -73,6 +82,7 @@ function measurementValues(body: Record<string, unknown>): TuMeasurementWriteInp
     unit: text(body.unit) || null,
     method: text(body.method) || null,
     instrument: text(body.instrument) || null,
+    assessment,
     note: text(body.note) || null,
     measuredAt: text(body.measuredAt) || null,
   }

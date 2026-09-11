@@ -7,6 +7,7 @@ import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 import puppeteer from 'puppeteer-core'
 import { testRoundParity } from '../test/helpers/ob-round-parity-browser.mjs'
+import { testFloorEditor } from '../test/helpers/ob-floor-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -32,9 +33,19 @@ const css = `${globalCss.css}\n${await readFile('src/components/ob/mobile-round.
 const js = await readFile(resolve(output, 'view.js'))
 const navigationJs = await readFile(resolve(output, 'navigation.js'))
 const photo = await readFile('public/landing/Background1.png')
-const server = createServer((request, response) => {
+const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
   response.setHeader('Cache-Control', 'no-store')
+  // Synthetic preview callback only. Production persistence is exercised by SQL/API tests.
+  if (request.method === 'POST' && url.pathname === '/api/ob/inspections/synthetic-mobile-inspection/floors') {
+    let text = ''; for await (const chunk of request) text += chunk
+    const body = JSON.parse(text)
+    response.setHeader('Content-Type', 'application/json')
+    if (!body.levels.some(row => row.level === 1)) {
+      response.writeHead(409); response.end(JSON.stringify({ error: 'Planet har rum och kan inte tas bort.' })); return
+    }
+    response.end(JSON.stringify({ data: { levels: body.levels, revision: body.revision + 1 } })); return
+  }
   if (request.method === 'GET' && url.pathname === '/api/ob/inspections/synthetic-mobile-inspection/assignment-workflow') {
     response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ workflow: null })); return
   }
@@ -49,6 +60,9 @@ const server = createServer((request, response) => {
   if (url.pathname === '/photo.png') { response.setHeader('Content-Type', 'image/png'); response.end(photo); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
   if (url.pathname === '/preview') {
+    if (url.searchParams.has('levels')) {
+      response.end('<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>OB plan - testuppgifter</title><style>html,body{margin:0;height:100%;background:#edf1f2}iframe{display:block;width:min(100%,390px);height:100dvh;margin:auto;border:0;background:white}</style></head><body><iframe src="/?levels" title="OB med ny planindelning"></iframe></body></html>'); return
+    }
     response.end('<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · testuppgifter</title><style>html,body{margin:0;height:100%;background:#edf1f2}iframe{display:block;width:min(100%,390px);height:100dvh;margin:auto;border:0;background:white}</style></head><body><iframe src="/" title="ÖB mobilrunda med testuppgifter"></iframe></body></html>')
     return
   }
@@ -72,6 +86,12 @@ if (serve) {
       if (new URL(request.url()).origin === base) void request.continue()
       else { external.push(request.url()); void request.abort() }
     })
+    await testFloorEditor(page, base, output)
+    if (process.argv.includes('--floors-only')) {
+      assert.deepEqual(errors, [])
+      assert.deepEqual(external, [])
+      console.log('PASS: numeric floor editor, save/cancel/conflict/locked states and 320-1280px layouts. No external requests.')
+    } else {
     async function click(text, parent = '') {
       for (const button of await page.$$(`${parent} button`)) {
         const label = await button.evaluate(node => node.textContent.trim())
@@ -256,6 +276,7 @@ if (serve) {
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
     console.log('PASS: mobile/desktop layouts, real step menu with both rounds, switching/draft guard, deep link, apartment menu, paginated search, autosave/recovery, image linking, locked/paused states. No external requests.')
+    }
   } catch (error) {
     if (page) {
       console.error(await page.$eval('body', node => node.innerText))

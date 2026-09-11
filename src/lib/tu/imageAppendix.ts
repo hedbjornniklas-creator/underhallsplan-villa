@@ -31,6 +31,13 @@ export function effectiveTuReportImageCaption(image: TuAppendixSourceImage) {
   return clean(image.reportCaption) || clean(image.caption)
 }
 
+export function resolveTuPrintImageCaption(
+  image: TuAppendixSourceImage,
+  index: number
+) {
+  return effectiveTuReportImageCaption(image) || `Bild ${index + 1}`
+}
+
 function conciseCaption(value: string) {
   const caption = clean(value)
   if (caption.length <= 320) return caption

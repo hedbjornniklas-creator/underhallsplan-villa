@@ -79,6 +79,7 @@ export function evaluateTuReportImprovements(input: {
     || !clean(measurement.method)
     || !clean(measurement.instrument)
   ))
+  const unassessedMeasurements = measurements.filter((measurement) => !measurement.assessment)
   const genericCaptionCount = input.appendixImages.filter((image) => isGenericCaption(reportImageCaption(image))).length
   const blockerCount = input.qualityIssues.filter((issue) => issue.severity === 'blocker').length
   const warningCount = input.qualityIssues.filter((issue) => issue.severity === 'warning').length
@@ -134,6 +135,14 @@ export function evaluateTuReportImprovements(input: {
       requiredBeforeFinalization: false,
     })
   }
+  if (unassessedMeasurements.length > 0) {
+    measurementSuggestions.push({
+      id: 'measurements-unassessed',
+      message: `Bedöm ${unassessedMeasurements.length} mätning${unassessedMeasurements.length === 1 ? '' : 'ar'} som saknar besiktningsmannens bedömning.`,
+      destination: 'evidence',
+      requiredBeforeFinalization: false,
+    })
+  }
 
   const imageSuggestions: TuReportImprovementSuggestion[] = []
   if (input.appendixImages.length === 0) {
@@ -169,7 +178,9 @@ export function evaluateTuReportImprovements(input: {
   const fieldScore = observations.length === 0
     ? 1
     : boundedScore(5 - (reviewedCount < observations.length ? 1 : 0) - (missingLocationCount > 0 ? 1 : 0) - (missingObservationTextCount > 0 ? 1 : 0))
-  const measurementScore = measurements.length === 0 ? 3 : boundedScore(5 - (incompleteMeasurements.length > 0 ? 2 : 0))
+  const measurementScore = measurements.length === 0
+    ? 3
+    : boundedScore(5 - (incompleteMeasurements.length > 0 ? 2 : 0) - (unassessedMeasurements.length > 0 ? 1 : 0))
   const imageScore = input.appendixImages.length === 0 ? 2 : boundedScore(5 - (genericCaptionCount > 0 ? 2 : 0))
   const reportScore = boundedScore(5 - blockerCount * 2 - warningCount)
 
@@ -257,11 +268,20 @@ export function evaluateTuReportQuality(input: {
     || !clean(measurement.method)
     || !clean(measurement.instrument)
   ))
+  const unassessedMeasurements = measurements.filter((measurement) => !measurement.assessment)
   if (incompleteMeasurements.length > 0) {
     issues.push({
       id: 'measurement-context-incomplete',
       severity: 'warning',
       message: `${incompleteMeasurements.length} mätning${incompleteMeasurements.length === 1 ? '' : 'ar'} saknar plats, metod eller instrument. Komplettera dem om resultatet ska användas i bedömningen.`,
+    })
+  }
+
+  if (unassessedMeasurements.length > 0) {
+    issues.push({
+      id: 'measurement-assessment-missing',
+      severity: 'warning',
+      message: `${unassessedMeasurements.length} mätning${unassessedMeasurements.length === 1 ? '' : 'ar'} saknar besiktningsmannens bedömning.`,
     })
   }
 
@@ -285,6 +305,8 @@ export function evaluateTuReportQuality(input: {
       && clean(measurement.unit)
       && clean(measurement.method)
       && clean(measurement.instrument)
+      && measurement.assessment !== null
+      && measurement.assessment !== 'not_assessable'
       && /(?:referens|gränsvärde|jämförelse|normalvärde|förhöjd|normal|acceptabel)/i.test(clean(measurement.note))
     ))
     if (!hasQualifiedMeasurement) {

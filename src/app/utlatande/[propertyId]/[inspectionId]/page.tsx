@@ -11,11 +11,14 @@ import {
 } from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import {
+  BUILDING_DATA_OVERVIEW_ITEM_KEYS,
   buildBuildingDataMap,
   buildBuildingTypeParts,
   renderBuildingDataTextFromTemplate,
 } from '@/lib/report/buildingData'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { readObFloorModel } from '@/lib/ob/floorModelStore'
+import { modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { cookies } from 'next/headers'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
 import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
@@ -189,6 +192,7 @@ export default async function Page({
   }
 
   const getInteriorFloorRank = (value: string | null | undefined) => {
+    if (floorModel) return modelFloorRank(floorModel, value ?? '')
     const key = normalizeInteriorFloorKey(value)
     if (key === 'ovrigt' || key === '\u00f6vrigt') return 0
     if (key === 'k\u00e4llare') return 10
@@ -206,6 +210,7 @@ export default async function Page({
   }
 
   const floorLabelFromKey = (value: string) => {
+    if (floorModel) return modelFloorLabel(floorModel, value)
     const key = normalizeKey(value)
     if (key === 'k\u00e4llare') return 'K\u00e4llare'
     if (key === 'k\u00e4llare_delvis') return 'K\u00e4llare'
@@ -312,6 +317,7 @@ export default async function Page({
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
   const inspection = (inspectionData as any) ?? null
+  const floorModel = inspection ? await readObFloorModel(supabase, inspection.id) : null
 
   if (inspectionError) {
     console.error('Kunde inte hÃ¤mta besiktning', inspectionError)
@@ -485,26 +491,6 @@ export default async function Page({
   }
 
   
-  const overviewItemKeys = [
-    'weather',
-    'building_type',
-    'building_form',
-    'building_year',
-    'foundation',
-    'structure',
-    'frame',
-    'joist',
-    'joists',
-    'facade',
-    'windows',
-    'roof',
-    'heating',
-    'ventilation',
-    'water',
-    'sewage',
-    'sewer',
-  ]
-
   const { data: overviewSelections, error: overviewSelectionsError } = await supabase
     .from('inspection_overview_selections')
     .select('overview_item_id, floor_key, set_index, values, note')
@@ -517,7 +503,7 @@ export default async function Page({
   const { data: overviewItems, error: overviewItemsError } = await supabase
     .from('settings_overview_items')
     .select('id, key, label, sort_order, applies_to')
-    .in('key', overviewItemKeys)
+    .in('key', BUILDING_DATA_OVERVIEW_ITEM_KEYS)
     .eq('is_active', true)
 
   if (overviewItemsError) {
@@ -629,6 +615,8 @@ export default async function Page({
   const customerContactText = buildCustomerContactText(inspection)
 
   const buildingDataMap = buildBuildingDataMap({
+    floorModel,
+    inspectionSide,
     selections: overviewSelections ?? [],
     items: overviewItemsRows,
     groups: overviewGroupsRows,

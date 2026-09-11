@@ -1,3 +1,5 @@
+import type { TuMeasurementAssessment } from '@/lib/tu/evidence'
+
 export type TuMeasurementTypeDefinition = {
   value: string
   label: string
@@ -85,4 +87,32 @@ export function formatTuMeasurementResult(input: {
   if (!value) return ''
   if (input.measurementType === 'Fuktindikering') return `${value} (indikationsvärde)`
   return unit ? `${value} ${unit}` : value
+}
+
+export function getTuMeasurementAssessmentOptions(measurementType: string): Array<{
+  value: TuMeasurementAssessment
+  label: string
+}> {
+  if (measurementType === 'Fuktindikering') {
+    return [
+      { value: 'no_deviation', label: 'Ingen avvikande indikation' },
+      { value: 'deviation', label: 'Avvikande/förhöjd indikation' },
+      { value: 'not_assessable', label: 'Kan inte bedömas' },
+    ]
+  }
+
+  return [
+    { value: 'no_deviation', label: 'Ingen avvikelse noterad' },
+    { value: 'deviation', label: 'Avvikande resultat' },
+    { value: 'not_assessable', label: 'Kan inte bedömas' },
+  ]
+}
+
+export function formatTuMeasurementAssessment(input: {
+  measurementType: string
+  assessment?: TuMeasurementAssessment | null
+}) {
+  if (!input.assessment) return ''
+  return getTuMeasurementAssessmentOptions(input.measurementType)
+    .find((option) => option.value === input.assessment)?.label ?? ''
 }

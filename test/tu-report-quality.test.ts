@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { evaluateTuReportImprovements, evaluateTuReportQuality, isTuSystemGeneratedReportSection } from '../src/lib/tu/reportQuality.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { formatTuMeasurementAssessment } from '../src/lib/tu/measurementConfig.ts'
 import type { TuObservation } from '../src/lib/tu/evidence.ts'
 
 function observation(overrides: Partial<TuObservation> = {}): TuObservation {
@@ -28,6 +30,7 @@ function observation(overrides: Partial<TuObservation> = {}): TuObservation {
       unit: '%',
       method: 'Stiftmätning',
       instrument: 'Protimeter',
+      assessment: 'no_deviation',
       note: 'Jämförelse mot dokumenterat gränsvärde; nivån är inte förhöjd.',
       measuredAt: '2026-09-01T08:00:00Z',
       createdAt: '2026-09-01T08:00:00Z',
@@ -62,6 +65,28 @@ test('blocks a comparative claim when instrument context is missing', () => {
     appendixImages: [],
   })
   assert.ok(issues.some((issue) => issue.id === 'comparative-moisture-claim-unsupported'))
+})
+
+test('uses an inspector assessment instead of inferring from an indication value', () => {
+  assert.equal(formatTuMeasurementAssessment({
+    measurementType: 'Fuktindikering',
+    assessment: 'deviation',
+  }), 'Avvikande/förhöjd indikation')
+  assert.equal(formatTuMeasurementAssessment({
+    measurementType: 'Fuktindikering',
+    assessment: null,
+  }), '')
+})
+
+test('warns when a registered measurement lacks inspector assessment', () => {
+  const source = observation()
+  source.measurements[0] = { ...source.measurements[0], assessment: null }
+  const issues = evaluateTuReportQuality({
+    reportText: 'Mätningen redovisas i utlåtandet.',
+    observations: [source],
+    appendixImages: [],
+  })
+  assert.ok(issues.some((issue) => issue.id === 'measurement-assessment-missing'))
 })
 
 test('warns about generic appendix captions', () => {

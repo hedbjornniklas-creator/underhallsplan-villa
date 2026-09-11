@@ -1,6 +1,8 @@
 'use client'
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useObFloorModel } from './ObFloorProvider'
+import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
@@ -191,7 +193,7 @@ const normalizeFloorKey = (value: string | null | undefined) => {
   return normalized
 }
 
-const floorLabelFromKey = (key: string) => {
+const legacyFloorLabelFromKey = (key: string) => {
   const normalized = normalizeFloorKey(key)
   if (normalized === OTHER_ROOM_TYPE_KEY) return OTHER_ROOM_DISPLAY_LABEL
   if (normalized === 'källare') return 'Källare'
@@ -220,7 +222,7 @@ const sortRoomTypesByLabel = (roomTypes: RoomType[]) =>
     )
   )
 
-const sortRooms = (a: InteriorRoom, b: InteriorRoom) => {
+const legacySortRooms = (a: InteriorRoom, b: InteriorRoom) => {
   const floorCompare = normalizeFloorKey(a.floor_label).localeCompare(normalizeFloorKey(b.floor_label), 'sv')
   if (floorCompare !== 0) return floorCompare
   return (a.order_index ?? 0) - (b.order_index ?? 0)
@@ -342,6 +344,11 @@ const statusLabel = (status: ReturnType<typeof imageStatus>) => {
 }
 
 export default function ObStepRunda({ inspection, mobileLayout = false, address = '', onOpenMenu = () => {} }: ObStepRundaProps) {
+  const { model: floorModel } = useObFloorModel()
+  const floorLabelFromKey = (key: string) => floorModel ? modelFloorLabel(floorModel, key) : legacyFloorLabelFromKey(key)
+  const sortRooms = (a: InteriorRoom, b: InteriorRoom) => floorModel
+    ? modelFloorRank(floorModel, a.floor_label) - modelFloorRank(floorModel, b.floor_label) || (a.order_index ?? 0) - (b.order_index ?? 0)
+    : legacySortRooms(a, b)
   const isInspectionLocked = Boolean(inspection?.locked_at)
   const inspectionSide = normalizeInspectionSide(inspection?.inspection_side)
 
@@ -455,6 +462,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
   }
 
   const floorOptions = useMemo(() => {
+    if (floorModel) return ['ovrigt', ...floorModelKeys(floorModel)]
     const base = derivedFloors.length
       ? derivedFloors.map(normalizeFloorKey)
       : Array.from(new Set(rooms.map(room => normalizeFloorKey(room.floor_label))))
@@ -466,7 +474,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     const ordered = [OTHER_ROOM_TYPE_KEY, ...withoutVind, ...(hasVind ? ['vind'] : [])]
     const unique = ordered.filter((floor, index) => ordered.indexOf(floor) === index)
     return unique.length > 0 ? unique : [OTHER_ROOM_TYPE_KEY, 'plan1']
-  }, [derivedFloors, rooms])
+  }, [derivedFloors, rooms, floorModel])
 
   const roomsForActiveFloor = useMemo(
     () =>
@@ -1036,7 +1044,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       )
 
       if (!activeFloor) {
-        const firstFloor = normalizedRooms[0]?.floor_label ?? 'plan1'
+        const firstFloor = normalizedRooms[0]?.floor_label ?? (floorModel ? 'plan0' : 'plan1')
         setActiveFloor(normalizeFloorKey(firstFloor))
       }
       if (!activeRoomId) {
@@ -1054,6 +1062,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
   }
 
   const loadFloorsFromConditions = async () => {
+    if (floorModel) { setDerivedFloors(floorModelKeys(floorModel)); return }
     try {
       const { data: buildingItem, error: buildingItemError } = await supabase
         .from('settings_overview_items')

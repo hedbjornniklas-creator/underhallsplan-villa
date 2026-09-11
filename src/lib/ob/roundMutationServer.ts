@@ -101,6 +101,9 @@ export function roundFloorKeys(context: {
 export function roundMutationError(error: unknown): [number, string] {
   const message = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    OB_FLOOR_LEGACY: [409, 'Denna besiktning beh\u00e5ller sin tidigare planindelning.'],
+    OB_FLOOR_UNKNOWN: [409, 'Planet finns inte. Kontrollera planindelningen igen.'],
+    OB_FLOOR_IN_USE: [409, 'Planet har rum, byggnadsuppgifter eller bildursprung och kan inte tas bort.'],
     UNAUTHORIZED: [401, 'Inte inloggad.'],
     ORG_MEMBERSHIP_REQUIRED: [403, 'Ingen organisationskoppling.'],
     OB_ROUND_FORBIDDEN: [403, 'Du får bara ändra dina egna besiktningar.'],

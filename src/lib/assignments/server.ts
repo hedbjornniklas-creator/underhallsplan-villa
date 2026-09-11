@@ -69,6 +69,7 @@ export type OrgContext = {
 export type AssignmentListItem = {
   id: string
   org_id: string
+  organization_customer_id: string | null
   status: AssignmentStatus
   assignment_type: AssignmentType
   customer_name: string | null
@@ -249,6 +250,7 @@ type OrganizationIdRow = {
 const ASSIGNMENT_SELECT_LIST = `
   id,
   org_id,
+  organization_customer_id,
   status,
   assignment_type,
   responsible_profile_id,

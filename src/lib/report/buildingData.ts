@@ -2,12 +2,14 @@ import 'server-only'
 
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
+import { modelFloorLabel, modelFloorRank, type ObFloorModel } from '@/lib/ob/floorModel'
 
 type BuildingDataRubric =
   | 'V\u00e4derlek:'
   | 'Byggnadstyp:'
   | 'Byggnads\u00e5r:'
   | 'Grundl\u00e4ggning:'
+  | 'Dr\u00e4nering:'
   | 'Stomme:'
   | 'Bj\u00e4lklag:'
   | 'Fasad:'
@@ -80,6 +82,7 @@ const RUBRICS: BuildingDataRubric[] = [
   'Byggnadstyp:',
   'Byggnads\u00e5r:',
   'Grundl\u00e4ggning:',
+  'Dr\u00e4nering:',
   'Stomme:',
   'Bj\u00e4lklag:',
   'Fasad:',
@@ -114,6 +117,12 @@ const COMPONENT_DEFS: Array<{
     rubric: 'Grundl\u00e4ggning:',
     itemKeys: ['foundation'],
     conditionKeys: ['foundation'],
+  },
+  {
+    rubric: 'Dr\u00e4nering:',
+    // Existing drainage category created in the overview settings admin.
+    itemKeys: ['item_ye11n'],
+    conditionKeys: [],
   },
   {
     rubric: 'Stomme:',
@@ -161,6 +170,9 @@ const COMPONENT_DEFS: Array<{
     conditionKeys: ['sewer'],
   },
 ]
+
+// Keep the live report and the data frozen for digital delivery/PDF in sync.
+export const BUILDING_DATA_OVERVIEW_ITEM_KEYS = COMPONENT_DEFS.flatMap((def) => def.itemKeys)
 
 const normalizeFloorKey = (value: string | null | undefined) =>
   String(value ?? '')
@@ -352,7 +364,8 @@ const renderBuildingTypeSentence = (
 const formatSelectionRow = (
   row: OverviewSelection,
   groups: OverviewGroup[],
-  optionsByGroupId: Map<string, Map<string, string>>
+  optionsByGroupId: Map<string, Map<string, string>>,
+  floorModel?: ObFloorModel | null
 ) => {
   const values = row.values ?? {}
   const segments: string[] = []
@@ -385,7 +398,7 @@ const formatSelectionRow = (
   if (!base) return ''
 
   if (row.floor_key) {
-    const label = floorLabelFromKey(row.floor_key)
+    const label = floorModel ? modelFloorLabel(floorModel, row.floor_key) : floorLabelFromKey(row.floor_key)
     return `${label}: ${base}`
   }
   return base
@@ -455,11 +468,11 @@ const selectionRowSignature = (row: OverviewSelection) =>
     row.note ?? '',
   ])
 
-const sortSelectionRows = (rows: OverviewSelection[]) => {
+const sortSelectionRows = (rows: OverviewSelection[], floorModel?: ObFloorModel | null) => {
   const seen = new Set<string>()
   return rows.slice().sort((a, b) => {
-    const floorA = floorSortRank(a.floor_key)
-    const floorB = floorSortRank(b.floor_key)
+    const floorA = floorModel ? modelFloorRank(floorModel, a.floor_key ?? '') : floorSortRank(a.floor_key)
+    const floorB = floorModel ? modelFloorRank(floorModel, b.floor_key ?? '') : floorSortRank(b.floor_key)
     if (floorA !== floorB) return floorA - floorB
     const floorKeyA = normalizeFloorKey(a.floor_key)
     const floorKeyB = normalizeFloorKey(b.floor_key)
@@ -530,18 +543,28 @@ export function buildBuildingDataMap({
   groups,
   options,
   conditions,
+  floorModel,
+  inspectionSide,
 }: {
   selections: OverviewSelection[]
   items: OverviewItem[]
   groups: OverviewGroup[]
   options: OverviewOption[]
   conditions?: InspectionConditions | null
+  floorModel?: ObFloorModel | null
+  inspectionSide?: string | null
 }): BuildingDataMap {
   const result = {} as BuildingDataMap
 
   const context = createBuildingDataContext({ selections, items, groups, options })
 
   COMPONENT_DEFS.forEach((def) => {
+    // Drainage concerns the building, not the scope of an apartment inspection.
+    // Also exclude any stale selections before freezing data for delivery/PDF.
+    if (def.rubric === 'Dr\u00e4nering:' && inspectionSide === 'apartment') {
+      result[def.rubric] = '--'
+      return
+    }
     const itemKey = def.itemKeys.find((key) => context.itemsByKey.has(key)) ?? null
     if (!itemKey && def.itemKeys.length > 0) {
       warnBuildingData('BuildingData: saknar itemKey for komponent', {
@@ -553,7 +576,7 @@ export function buildBuildingDataMap({
 
     if (itemKey) {
       const item = context.itemsByKey.get(itemKey)!
-      const rows = sortSelectionRows(context.selectionsByItemKey.get(itemKey) ?? [])
+      const rows = sortSelectionRows(context.selectionsByItemKey.get(itemKey) ?? [], floorModel)
       const groupsForItem = context.groupsByItemId.get(item.id) ?? []
       if (def.rubric === 'Byggnadstyp:' && rows.length > 0) {
         selectionValue = renderBuildingTypeSentence(
@@ -567,7 +590,7 @@ export function buildBuildingDataMap({
         }
       } else {
         const rowTexts = rows
-          .map((row) => formatSelectionRow(row, groupsForItem, context.optionsByGroupId))
+          .map((row) => formatSelectionRow(row, groupsForItem, context.optionsByGroupId, floorModel))
           .filter((rowText) => rowText && rowText.trim().length > 0)
 
         if (rowTexts.length > 0) {
@@ -636,6 +659,11 @@ export function renderBuildingDataText(
     const value = map[rubric] ?? '--'
     let valueText = value
     const index = updated.findIndex((row) => row.trim().startsWith(rubric))
+    // Older inspections without drainage data should retain their existing layout.
+    if (rubric === 'Dr\u00e4nering:' && (!value.trim() || value === '--')) {
+      if (index >= 0) updated.splice(index, 1)
+      return
+    }
     if (index >= 0) {
       const templateLine = updated[index]
       if (rubric === 'Byggnadstyp:' && templateLine.includes('{TYPE}')) {

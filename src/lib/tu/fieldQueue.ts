@@ -1,3 +1,5 @@
+import type { TuMeasurementAssessment } from '@/lib/tu/evidence'
+
 export type TuFieldQueueStatus = 'queued' | 'processing' | 'failed'
 export type TuFieldQueueImageStatus = 'queued' | 'uploading' | 'uploaded' | 'failed'
 export type TuFieldQueueAudioStatus = 'queued' | 'transcribing' | 'transcribed' | 'failed'
@@ -34,6 +36,7 @@ export type TuFieldQueuedMeasurement = {
   location: string | null
   method: string | null
   instrument: string | null
+  assessment?: TuMeasurementAssessment | null
   note: string | null
   measuredAt: string
 }

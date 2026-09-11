@@ -20,7 +20,7 @@ import TuQuickMeasurementDialog from '@/components/tu/TuQuickMeasurementDialog'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
 import type { TuObservation } from '@/lib/tu/evidence'
 import type { TuFieldQueueItem } from '@/lib/tu/fieldQueue'
-import { formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
+import { formatTuMeasurementAssessment, formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
 
 type FieldImage = {
   id: string
@@ -229,10 +229,17 @@ export default function TuFieldLogWorkspace({
           ) : null}
           {item.noteText ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-900">{item.noteText}</p> : null}
           {item.measurement ? (
-            <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-gray-950">
-              <Ruler size={15} className="text-violet-700" aria-hidden />
-              {item.measurement.measurementType}: {item.measurement.valueText}
-              {item.measurement.unit ? ` ${item.measurement.unit}` : ''}
+            <div className="mt-2 text-sm text-gray-950">
+              <div className="flex items-center gap-2 font-semibold">
+                <Ruler size={15} className="text-violet-700" aria-hidden />
+                {item.measurement.measurementType}: {item.measurement.valueText}
+                {item.measurement.unit ? ` ${item.measurement.unit}` : ''}
+              </div>
+              {item.measurement.assessment ? (
+                <p className="mt-1 text-xs font-medium text-gray-600">
+                  {formatTuMeasurementAssessment(item.measurement)}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {item.audio ? (
@@ -306,6 +313,9 @@ export default function TuFieldLogWorkspace({
           ) : null}
           <p className="mt-2 text-base font-semibold text-gray-950">
             {measurement.measurementType}: {formatTuMeasurementResult(measurement)}
+          </p>
+          <p className={`mt-1 text-sm font-semibold ${measurement.assessment === 'deviation' ? 'text-amber-800' : measurement.assessment === 'no_deviation' ? 'text-emerald-800' : 'text-gray-600'}`}>
+            {formatTuMeasurementAssessment(measurement) || 'Bedöms under Sortera och granska'}
           </p>
           {[measurement.method, measurement.instrument, measurement.note].some(Boolean) ? (
             <p className="mt-1 text-sm text-gray-600">

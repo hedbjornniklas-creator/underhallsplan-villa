@@ -4,16 +4,21 @@ import ObMobileRound, {
   type ObMobileRoundProps,
 } from '../../src/components/ob/ObMobileRound'
 import { hasObTextDraftsForInspection } from '../../src/lib/ob/localTextDrafts'
+import { ObFloorContext, useObFloorModel } from '../../src/components/ob/ObFloorProvider'
+import { ObFloorEditor } from '../../src/components/ob/ObFloorEditor'
+import ObRoundSheet from '../../src/components/ob/ObRoundSheet'
+import { floorModelKeys, modelFloorLabel, type ObFloorModel } from '../../src/lib/ob/floorModel'
 
 type Note = ObMobileRoundProps['notes'][number]
 type Room = ObMobileRoundProps['rooms'][number]
 type Image = ObMobileRoundProps['images'][number]
 const inspectionId = 'synthetic-mobile-inspection'
+const newFloors = new URLSearchParams(location.search).has('levels')
 const rooms: Room[] = [
   {
     id: 'room-1',
     inspection_id: inspectionId,
-    floor_label: 'plan1',
+    floor_label: newFloors ? 'plan0' : 'plan1',
     room_type_key: 'hall',
     room_label: 'Hall',
     order_index: 10,
@@ -23,7 +28,7 @@ const rooms: Room[] = [
   {
     id: 'room-2',
     inspection_id: inspectionId,
-    floor_label: 'plan2',
+    floor_label: newFloors ? 'plan1' : 'plan2',
     room_type_key: 'hall',
     room_label: 'Sovrum med ett mycket långt rumsnamn',
     order_index: 20,
@@ -91,6 +96,7 @@ const qa = {
 Object.assign(window, { __obMobileTest: qa })
 
 function Fixture() {
+  const { model } = useObFloorModel()
   const [mutating, setMutating] = useState(false)
   const receipts = useRef(new Map<string, unknown>())
   const [roomRows, setRoomRows] = useState(rooms)
@@ -109,7 +115,7 @@ function Fixture() {
       : initialImages,
   )
   const [area, setArea] = useState<'interior' | 'exterior'>('interior')
-  const [floor, setFloor] = useState('plan1'),
+  const [floor, setFloor] = useState(newFloors ? 'plan0' : 'plan1'),
     [roomId, setRoomId] = useState('room-1')
   const [menu, setMenu] = useState(false)
   const locked = new URLSearchParams(location.search).has('locked')
@@ -196,8 +202,8 @@ function Fixture() {
                 is_active: true,
               },
             ]}
-            floors={['plan1', 'plan2']}
-            floorLabel={(key) => (key === 'plan2' ? 'Plan 2' : 'Plan 1')}
+            floors={model ? ['ovrigt', ...floorModelKeys(model)] : ['plan1', 'plan2']}
+            floorLabel={(key) => model ? modelFloorLabel(model, key) : (key === 'plan2' ? 'Plan 2' : 'Plan 1')}
             floorKey={(key) => key}
             activeRoom={activeRoom}
             exteriorItems={exteriorItems}
@@ -418,7 +424,10 @@ function Fixture() {
           />
         </div>
       </fieldset>
-      {menu && (
+      {menu && model && <ObRoundSheet title="Byggnadstyp" onClose={() => setMenu(false)}>
+        <ObFloorEditor inspectionId={inspectionId} disabled={locked || paused} />
+      </ObRoundSheet>}
+      {menu && !model && (
         <aside role="dialog" aria-label="Stegmeny">
           <button onClick={() => setMenu(false)}>Tillbaka</button>
         </aside>
@@ -426,4 +435,10 @@ function Fixture() {
     </main>
   )
 }
-createRoot(document.getElementById('root')!).render(<Fixture />)
+function FloorFixture() {
+  const [model, update] = useState<ObFloorModel>({ revision: 1, levels: [
+    { level: 0, name: 'Entr\u00e9plan' }, { level: 1, name: '' }, { level: -1, name: 'Suterr\u00e4ng' },
+  ] })
+  return <ObFloorContext.Provider value={{ model, update }}><Fixture /></ObFloorContext.Provider>
+}
+createRoot(document.getElementById('root')!).render(newFloors ? <FloorFixture /> : <Fixture />)

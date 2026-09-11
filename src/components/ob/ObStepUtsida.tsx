@@ -12,6 +12,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { useObFloorModel } from './ObFloorProvider'
+import { modelFloorLabel } from '@/lib/ob/floorModel'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
@@ -290,6 +292,7 @@ const isImageLinkedToNote = (image: InspectionImage) =>
   Boolean(image.control_item_id || image.exterior_observation_id)
 
 export default function ObStepUtsida({ inspection }: { inspection: Inspection }) {
+  const { model: floorModel } = useObFloorModel()
   const collapsedStorageKey = `ob:utsida:collapsed:${inspection.id}`
   const [loading, setLoading] = useState(true)
   const [, setSaving] = useState(false)
@@ -2236,6 +2239,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
   const quickNoteHasText = (note: RoundQuickNote) => note.note.trim().length > 0
 
   const floorLabelFromQuickNoteKey = (floorLabel: string | null | undefined) => {
+    if (floorModel && floorLabel) return modelFloorLabel(floorModel, floorLabel)
     const raw = (floorLabel ?? '').trim()
     if (!raw) return 'Plan'
 

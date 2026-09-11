@@ -86,6 +86,7 @@ export function validateTuReportSections(input: {
             cleanText(measurement.unit) ? `Enhet: ${cleanText(measurement.unit)}` : '',
             cleanText(measurement.method) ? `Metod: ${cleanText(measurement.method)}` : '',
             cleanText(measurement.instrument) ? `Instrument: ${cleanText(measurement.instrument)}` : '',
+            cleanText(measurement.assessmentLabel) ? `Bedömning: ${cleanText(measurement.assessmentLabel)}` : '',
             cleanText(measurement.note) ? `Mätkommentar: ${cleanText(measurement.note)}` : '',
           ])
         : []),

@@ -1,13 +1,32 @@
 import { NextResponse } from 'next/server'
-import { createTuAssignmentDraft, listTuAssignments, requireTuContext } from '@/lib/tu/server'
+import {
+  createTuAssignmentDraft,
+  getTuAssignmentById,
+  listTuAssignments,
+  requireTuContext,
+} from '@/lib/tu/server'
+import {
+  assignOrganizationCustomer,
+  discardUnlinkedAssignmentDraft,
+  parseAssignmentCustomerBinding,
+} from '@/lib/assignment-customers/server'
+import {
+  ASSIGNMENT_CUSTOMER_RESPONSE_HEADERS,
+  assertAssignmentCustomerSameOrigin,
+  assignmentCustomerFailure,
+  readAssignmentCustomerJson,
+} from '@/lib/assignment-customers/http'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status })
+function jsonError(message: string, status: number, code?: string) {
+  return NextResponse.json(
+    { error: message, ...(code ? { code } : {}) },
+    { status, headers: ASSIGNMENT_CUSTOMER_RESPONSE_HEADERS }
+  )
 }
 
 function text(body: Record<string, unknown>, key: string) {
@@ -43,8 +62,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    assertAssignmentCustomerSameOrigin(request)
     const context = await requireTuContext()
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const body = await readAssignmentCustomerJson(request)
+    const customerBinding = parseAssignmentCustomerBinding(body.customerBinding)
     const customerEmail = text(body, 'customerEmail').toLowerCase()
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
@@ -60,6 +81,9 @@ export async function POST(request: Request) {
 
     if (Number.isNaN(price)) {
       return jsonError('Ange ett giltigt pris.', 400)
+    }
+    if (customerBinding.mode === 'create' && !text(body, 'customerName')) {
+      return jsonError('Ange kundens namn.', 400, 'CUSTOMER_NAME_REQUIRED')
     }
 
     const assignment = await createTuAssignmentDraft({
@@ -91,10 +115,43 @@ export async function POST(request: Request) {
       notesInternal: text(body, 'notesInternal') || null,
     })
 
-    return NextResponse.json({ assignment }, { status: 201 })
+    let customerLink
+    let linkedAssignment
+    try {
+      customerLink = await assignOrganizationCustomer(
+        context.orgId,
+        assignment.id,
+        assignment.updated_at,
+        customerBinding
+      )
+      linkedAssignment = await getTuAssignmentById(context.orgId, assignment.id)
+      if (!linkedAssignment?.organization_customer_id) {
+        throw new Error('ASSIGNMENT_CUSTOMER_DATABASE_FAILED')
+      }
+    } catch (linkError) {
+      await discardUnlinkedAssignmentDraft(
+        context.orgId,
+        assignment.id,
+        assignment.updated_at
+      ).catch(() => false)
+      throw linkError
+    }
+
+    return NextResponse.json(
+      { assignment: linkedAssignment, customer: customerLink.customer },
+      { status: 201, headers: ASSIGNMENT_CUSTOMER_RESPONSE_HEADERS }
+    )
   } catch (error) {
     const accessError = mapAccessError(error)
     if (accessError) return accessError
+    const customerFailure = assignmentCustomerFailure(error)
+    if (customerFailure.code !== 'ASSIGNMENT_CUSTOMER_REQUEST_FAILED') {
+      return jsonError(customerFailure.message, customerFailure.status, customerFailure.code)
+    }
+    const message = error instanceof Error ? error.message : ''
+    if (message.includes('column') || message.includes('relation') || message.includes('does not exist')) {
+      return jsonError('Databasen saknar migrationen för uppdragens kundkoppling.', 503)
+    }
     return jsonError('Kunde inte skapa TU-uppdrag.', 500)
   }
 }

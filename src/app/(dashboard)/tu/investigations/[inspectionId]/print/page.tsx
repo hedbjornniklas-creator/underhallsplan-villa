@@ -17,6 +17,7 @@ import {
 } from '@/lib/tu/server'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import type { TuObservation } from '@/lib/tu/evidence'
+import { resolveTuPrintImageCaption } from '@/lib/tu/imageAppendix'
 import {
   buildTuMeasurementPrintSection,
   insertTuMeasurementPrintSection,
@@ -419,7 +420,7 @@ export default async function TuInvestigationPrintPage({
   const printableImages: TuPrintImage[] = appendixImages.map((image, index) => ({
     id: image.id,
     src: image.publicUrl,
-    caption: image.caption?.trim() || `Bild ${index + 1}`,
+    caption: resolveTuPrintImageCaption(image, index),
   }))
   const coverImageSource = coverImages[0] ?? null
   const coverImage: TuPrintImage | null = coverImageSource

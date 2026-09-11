@@ -969,8 +969,18 @@ export async function getTuInspectorProfileCard(input: {
 }
 
 export async function requireTuContext() {
-  await requireModuleAccess({ productKey: 'dashboard', moduleKey: 'technical_investigations' })
-  return requireOrgContext()
+  await requireModuleAccess({
+    productKey: 'dashboard',
+    moduleKey: 'technical_investigations',
+  })
+  const context = await requireOrgContext()
+  await requireModuleAccess({
+    productKey: 'dashboard',
+    moduleKey: 'technical_investigations',
+    scopeType: 'organization',
+    scopeId: context.orgId,
+  })
+  return context
 }
 
 export async function listTuAssignments(orgId: string): Promise<TuAssignmentListItem[]> {

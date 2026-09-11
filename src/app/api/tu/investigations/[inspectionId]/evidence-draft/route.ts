@@ -5,6 +5,7 @@ import {
   isTuAiSuggestionStatus,
   type TuEvidenceAiSuggestion,
 } from '@/lib/tu/evidence'
+import { formatTuMeasurementAssessment } from '@/lib/tu/measurementConfig'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
@@ -204,6 +205,8 @@ export async function POST(
         unit: measurement.unit,
         method: measurement.method,
         instrument: measurement.instrument,
+        assessment: measurement.assessment,
+        assessmentLabel: formatTuMeasurementAssessment(measurement),
         note: measurement.note,
       })),
       images: observation.imageIds.map((imageId) => ({
@@ -305,6 +308,7 @@ export async function POST(
           'Använd endast fakta i JSON-underlaget. Hitta aldrig på observationer, mätvärden, datum, orsaker, ansvar eller åtgärder.',
           'En kontrollerad fältpost betyder att källmaterialet är korrekt återgivet, inte att varje teknisk slutsats i fritexten är bekräftad.',
           'Skilj verifierade fakta från sannolika tekniska bedömningar och från sådant som inte har kunnat fastställas.',
+          'Klassificera aldrig ett mätvärde från siffran ensam. Använd endast en uttrycklig assessment från besiktningsmannen och avgränsa bedömningen till mätpunkten.',
           'Formulera osäkerheter uttryckligen. Utse inte juridiskt ansvarig part och lämna inga juridiska slutsatser.',
           'Skriv sakligt, precist och proportionerligt på svenska. Undvik upprepning och utfyllnad.',
           'Följ sektionens aiInstruction när den finns.',

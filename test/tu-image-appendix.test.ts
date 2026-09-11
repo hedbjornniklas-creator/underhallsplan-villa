@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { buildTuAppendixSuggestions, isGenericTuImageCaption } from '../src/lib/tu/imageAppendix.ts'
+import { buildTuAppendixSuggestions, isGenericTuImageCaption, resolveTuPrintImageCaption } from '../src/lib/tu/imageAppendix.ts'
 import type { TuAnalysisItem } from '../src/lib/tu/analysis.ts'
 
 function analysisItem(overrides: Partial<TuAnalysisItem> = {}): TuAnalysisItem {
@@ -92,4 +92,20 @@ test('recognizes empty and generic captions', () => {
   assert.equal(isGenericTuImageCaption(null), true)
   assert.equal(isGenericTuImageCaption('Foto 3'), true)
   assert.equal(isGenericTuImageCaption('Missfärgning i innertak.'), false)
+})
+
+test('uses the approved report caption in print payloads', () => {
+  assert.equal(resolveTuPrintImageCaption({
+    id: 'image-1',
+    sectionKey: 'appendix',
+    caption: 'Bild 1',
+    reportCaption: 'Golvbrunn med mörkare yta runt anslutningen.',
+  }, 0), 'Golvbrunn med mörkare yta runt anslutningen.')
+
+  assert.equal(resolveTuPrintImageCaption({
+    id: 'image-2',
+    sectionKey: 'appendix',
+    caption: null,
+    reportCaption: null,
+  }, 1), 'Bild 2')
 })

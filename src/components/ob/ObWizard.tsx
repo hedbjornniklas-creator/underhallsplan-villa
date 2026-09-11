@@ -12,6 +12,7 @@ import ObStepAreamatning from './ObStepAreamatning'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
 import ObStepGranska from './ObStepGranska'
 import type { Tables } from '@/types/supabase'
+import { ObFloorProvider } from './ObFloorProvider'
 
 type DbInspection = Tables<'inspections'>
 type DbProperty = Tables<'properties'>
@@ -177,7 +178,11 @@ function normalizeDeliveryMeta(meta: ReportDeliveryMeta): ReportDeliveryMeta {
   }
 }
 
-export default function ObWizard({
+export default function ObWizard(props: ObWizardProps) {
+  return <ObFloorProvider key={props.inspection.id} inspectionId={props.inspection.id}><ObWizardContent {...props} /></ObFloorProvider>
+}
+
+function ObWizardContent({
   property,
   inspection,
   activeSection,

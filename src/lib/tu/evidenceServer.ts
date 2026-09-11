@@ -2,10 +2,12 @@ import 'server-only'
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
+  isTuMeasurementAssessment,
   isTuObservationCertainty,
   isTuObservationReviewStatus,
   isTuObservationSourceType,
   type TuMeasurement,
+  type TuMeasurementAssessment,
   type TuObservation,
   type TuObservationCertainty,
   type TuObservationReviewStatus,
@@ -51,6 +53,7 @@ type TuMeasurementRow = {
   unit: string | null
   method: string | null
   instrument: string | null
+  assessment: string | null
   note: string | null
   measured_at: string | null
   created_at: string | null
@@ -84,6 +87,7 @@ export type TuMeasurementWriteInput = {
   unit?: string | null
   method?: string | null
   instrument?: string | null
+  assessment?: TuMeasurementAssessment | null
   note?: string | null
   measuredAt?: string | null
 }
@@ -121,6 +125,7 @@ const MEASUREMENT_COLUMNS = [
   'unit',
   'method',
   'instrument',
+  'assessment',
   'note',
   'measured_at',
   'created_at',
@@ -152,6 +157,7 @@ function mapMeasurement(row: TuMeasurementRow): TuMeasurement {
     unit: nullableText(row.unit),
     method: nullableText(row.method),
     instrument: nullableText(row.instrument),
+    assessment: isTuMeasurementAssessment(row.assessment) ? row.assessment : null,
     note: nullableText(row.note),
     measuredAt: isoOrNow(row.measured_at),
     createdAt: isoOrNow(row.created_at),
@@ -502,6 +508,7 @@ export async function createTuMeasurement(input: {
       unit: nullableText(input.values.unit),
       method: nullableText(input.values.method),
       instrument: nullableText(input.values.instrument),
+      assessment: isTuMeasurementAssessment(input.values.assessment) ? input.values.assessment : null,
       note: nullableText(input.values.note),
       measured_at: isoOrNow(input.values.measuredAt),
       created_by: input.userId,
@@ -537,6 +544,7 @@ export async function updateTuMeasurement(input: {
       unit: nullableText(input.values.unit),
       method: nullableText(input.values.method),
       instrument: nullableText(input.values.instrument),
+      assessment: isTuMeasurementAssessment(input.values.assessment) ? input.values.assessment : null,
       note: nullableText(input.values.note),
       measured_at: isoOrNow(input.values.measuredAt),
       updated_by: input.userId,

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import type { TuObservation } from '@/lib/tu/evidence'
+import type { TuMeasurementAssessment, TuObservation } from '@/lib/tu/evidence'
 import {
   deleteTuFieldQueueItem,
   getTuFieldQueueItem,
@@ -85,6 +85,7 @@ export type EnqueueMeasurementInput = {
   location?: string | null
   method?: string | null
   instrument?: string | null
+  assessment?: TuMeasurementAssessment | null
   note?: string | null
   files?: File[]
 }
@@ -410,6 +411,7 @@ export function useTuFieldQueue({
           location: measurement.location,
           method: measurement.method,
           instrument: measurement.instrument,
+          assessment: measurement.assessment,
           note: measurement.note,
           measuredAt: measurement.measuredAt,
           imageIds: queueItem.images
@@ -595,6 +597,7 @@ export function useTuFieldQueue({
         location: input.location?.trim() || null,
         method: input.method?.trim() || null,
         instrument: input.instrument?.trim() || null,
+        assessment: input.assessment ?? null,
         note: input.note?.trim() || null,
         measuredAt: now,
       }

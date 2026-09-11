@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import DebouncedTextarea from './DebouncedTextarea'
+import { useObFloorModel } from './ObFloorProvider'
+import { ObFloorEditor } from './ObFloorEditor'
+import { floorModelKeys, modelFloorLabel } from '@/lib/ob/floorModel'
 import {
   buildInteriorFloorKeysFromOverview,
   buildOverviewFloorOptionLookup,
@@ -160,6 +163,7 @@ export default function ObStepForutsattningar({
   inspection: Inspection
 }) {
   const collapsedStorageKey = `ob:forutsattningar:collapsed:${inspection.id}`
+  const { model: floorModel } = useObFloorModel()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -607,6 +611,7 @@ export default function ObStepForutsattningar({
   // Floors derived from Byggnadstyp selection (settingsstyrt)
   // -----------------------------
   const floorKeys = useMemo(() => {
+    if (floorModel) return floorModelKeys(floorModel)
     const buildingItem = items.find(i => i.key === 'building_type')
     if (!buildingItem) return [] as string[]
 
@@ -617,7 +622,7 @@ export default function ObStepForutsattningar({
       sels[0].values || {},
       buildOverviewFloorOptionLookup(buildingItem.groups)
     )
-  }, [items, getItemSelections])
+  }, [items, getItemSelections, floorModel])
 
   // -----------------------------
   // Conditional group visibility
@@ -864,6 +869,12 @@ export default function ObStepForutsattningar({
   }
 
   const renderItem = (item: ItemBundle) => {
+    return <>{renderItemFields(item)}{item.key === 'building_type' && floorModel &&
+        <ObFloorEditor inspectionId={inspection.id} disabled={isInspectionLocked || ['completed', 'klar', 'done'].includes(inspection.status ?? '')} />
+    }</>
+  }
+
+  const renderItemFields = (item: ItemBundle) => {
     if (!isRepeatableItem(item) && item.selection_mode === 'single') {
       const arr = ensureSingleSelection(item.id)
       return renderSelectionSet(item, arr[0], 0)
@@ -949,6 +960,7 @@ export default function ObStepForutsattningar({
     }
 
     const floorLabel = (k?: string | null) => {
+      if (floorModel && k) return modelFloorLabel(floorModel, k)
       if (k === 'källare') return 'Källare'
       if (k === 'källare_delvis') return 'Källare (delvis)'
       if (k === 'suterräng') return 'Suterräng'

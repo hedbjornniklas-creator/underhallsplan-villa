@@ -16,6 +16,7 @@ import {
   type TuGeneratedGroundedSection,
   type TuGroundingStatus,
 } from '@/lib/tu/grounding'
+import { formatTuMeasurementAssessment } from '@/lib/tu/measurementConfig'
 import {
   buildTuReportWriterSnapshot,
   parseTuReportEditorialPlan,
@@ -250,6 +251,7 @@ function measurementCompletionActions(snapshot: JsonRecord): TuWholeReportDraftA
         !cleanText(measurement.location) && !observationLocation ? 'plats' : '',
         !cleanText(measurement.instrument) ? 'instrument' : '',
         !cleanText(measurement.method) ? 'metod' : '',
+        !cleanText(measurement.assessment) ? 'bedömning' : '',
       ].filter(Boolean)
       if (missingFields.length === 0) return null
       const location = cleanText(measurement.location) || observationLocation
@@ -483,6 +485,8 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
         unit: measurement.unit,
         method: measurement.method,
         instrument: measurement.instrument,
+        assessment: measurement.assessment,
+        assessmentLabel: formatTuMeasurementAssessment(measurement),
         note: measurement.note,
         measuredAt: measurement.measuredAt,
       })),
@@ -728,7 +732,7 @@ function editorialRequestBody(snapshot: JsonRecord) {
         'Besiktningsmannens observationer och egna bilder är dokumentation av den genomförda undersökningen, inte externt bildmaterial.',
         'Systemfält och deras etiketter är intern metadata. Välj ett fältvärde endast när själva sakuppgiften behövs i rapporten.',
         'Bristande metadata om en mätning är i första hand en intern granskningsvarning. Välj inte en uppräkning av saknade fält som rapportinnehåll.',
-        'Ett granskat indikationsvärde är ett användbart aktuellt kontrollresultat. Det får väljas och redovisas som indikationsvärde med mätpunkt, metod och instrument utan att omvandlas till fukthalt eller klassificeras som normalt eller förhöjt.',
+        'Ett granskat indikationsvärde är ett användbart aktuellt kontrollresultat. Det får redovisas med mätpunkt, metod och instrument utan att omvandlas till fukthalt. Klassificera det endast enligt besiktningsmannens uttryckliga measurement.assessment.',
         'Om en faktisk begränsning påverkar möjligheten att besvara huvudfrågan får begränsningen väljas, men den ska beskrivas proportionerligt och utan intern kontrolljargong.',
         'Placera varje sakuppgift i en primär rapportdel. Undvik att planera samma resonemang i flera delar.',
         'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
@@ -818,7 +822,8 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Skilj sakligt mellan egna iakttagelser, uttryckligt angivna partsuppgifter och tekniska bedömningar utan att beskriva den interna datakällan.',
         'Följ den godkända aktuella bedömningen och återinför inte en preliminär benämning eller slutsats som senare har ersatts.',
         'Utelämna osäkra mätpåståenden när mätunderlaget inte räcker. Räkna inte upp vilka metadatafält som saknas i rapporten.',
-        'Redovisa granskade indikationsvärden som "indikationsvärde X" tillsammans med tillgänglig mätpunkt, metod och instrument. Avsaknad av jämförelsegrund hindrar inte redovisning av avläsningen men förbjuder klassificering och slutsats om fukthalt.',
+        'Redovisa granskade indikationsvärden som "indikationsvärde X" tillsammans med tillgänglig mätpunkt, metod och instrument. Använd measurement.assessment för bedömningen, men omvandla aldrig en indikation till fukthalt eller skadebevis.',
+        'assessment no_deviation betyder ingen avvikande indikation i den dokumenterade mätpunkten, deviation betyder avvikande/förhöjd indikation i mätpunkten och not_assessable förbjuder klassificering.',
         'Ta bara med begränsningar som har faktisk betydelse för slutsatsen och formulera dem i besiktningsmannens direkta fackspråk.',
         'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',

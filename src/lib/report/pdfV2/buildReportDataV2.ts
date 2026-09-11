@@ -1,5 +1,7 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
+import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
+import { readObFloorModel } from '@/lib/ob/floorModelStore'
+import { modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import {
   formatInspectionDocumentReportLineParts,
   type InspectionDocumentReportLineParts,
@@ -265,6 +267,7 @@ const supabase: any = createSupabaseServerClient()
   }
 
   const getInteriorFloorRank = (value: string | null | undefined) => {
+    if (floorModel) return modelFloorRank(floorModel, value ?? '')
     const key = normalizeInteriorFloorKey(value)
     if (key === 'ovrigt' || key === '\u00f6vrigt') return 0
     if (key === 'k\u00e4llare') return 10
@@ -282,6 +285,7 @@ const supabase: any = createSupabaseServerClient()
   }
 
   const floorLabelFromKey = (value: string) => {
+    if (floorModel) return modelFloorLabel(floorModel, value)
     const key = normalizeKey(value)
     if (key === 'k\u00e4llare') return 'K\u00e4llare'
     if (key === 'k\u00e4llare_delvis') return 'K\u00e4llare'
@@ -312,6 +316,7 @@ const supabase: any = createSupabaseServerClient()
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
   const inspection = (inspectionData as any) ?? null
+  const floorModel = inspection ? await readObFloorModel(supabase, inspection.id) : null
 
   if (inspectionError) {
     console.error('Kunde inte hÃ¤mta besiktning', inspectionError)
@@ -479,26 +484,6 @@ const supabase: any = createSupabaseServerClient()
   }
 
   
-  const overviewItemKeys = [
-    'weather',
-    'building_type',
-    'building_form',
-    'building_year',
-    'foundation',
-    'structure',
-    'frame',
-    'joist',
-    'joists',
-    'facade',
-    'windows',
-    'roof',
-    'heating',
-    'ventilation',
-    'water',
-    'sewage',
-    'sewer',
-  ]
-
   const { data: overviewSelections, error: overviewSelectionsError } = await supabase
     .from('inspection_overview_selections')
     .select('overview_item_id, floor_key, set_index, values, note')
@@ -511,7 +496,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: overviewItems, error: overviewItemsError } = await supabase
     .from('settings_overview_items')
     .select('id, key, label, sort_order')
-    .in('key', overviewItemKeys)
+    .in('key', BUILDING_DATA_OVERVIEW_ITEM_KEYS)
     .eq('is_active', true)
 
   if (overviewItemsError) {
@@ -620,6 +605,8 @@ const supabase: any = createSupabaseServerClient()
   const customerContactText = buildCustomerContactText(inspection)
 
   const buildingDataMap = buildBuildingDataMap({
+    floorModel,
+    inspectionSide: inspection?.inspection_side,
     selections: overviewSelections ?? [],
     items: overviewItemsRows,
     groups: overviewGroupsRows,

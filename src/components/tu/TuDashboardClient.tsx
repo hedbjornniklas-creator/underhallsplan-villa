@@ -2,6 +2,9 @@
 
 import Link from 'next/link'
 import GettingStarted from '@/components/besiktapp/GettingStarted'
+import AssignmentCustomerSelector, {
+  type AssignmentCustomerBinding,
+} from '@/components/customers/AssignmentCustomerSelector'
 import { useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -21,6 +24,8 @@ import {
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import PendingLink from '@/components/ui/PendingLink'
+import type { OrganizationCustomer } from '@/lib/customers/domain'
+import { normalizeOrganizationCustomerIdentity } from '@/lib/customers/domain'
 import { tuReportAuthoringModeLabel } from '@/lib/tu/authoring'
 import type {
   TuAssignmentListItem,
@@ -33,6 +38,7 @@ type TuFormState = {
   objectType: 'villa' | 'apartment'
   customerType: 'consumer' | 'business'
   customerAddressMatchesObject: boolean
+  customerIdentityNumber: string
   customerName: string
   customerEmail: string
   customerPhone: string
@@ -86,6 +92,7 @@ const EMPTY_TU_FORM: TuFormState = {
   objectType: 'villa',
   customerType: 'consumer',
   customerAddressMatchesObject: false,
+  customerIdentityNumber: '',
   customerName: '',
   customerEmail: '',
   customerPhone: '',
@@ -183,6 +190,25 @@ function canStartAssignmentInvestigation(item: TuAssignmentListItem) {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+const CUSTOMER_BINDING_FORM_KEYS = new Set<keyof TuFormState>([
+  'customerType',
+  'customerIdentityNumber',
+  'customerAddressMatchesObject',
+  'customerName',
+  'customerEmail',
+  'customerPhone',
+  'customerAddress',
+  'customerPostalCode',
+  'customerCity',
+  'invoiceEmail',
+])
+
+const CUSTOMER_ADDRESS_SOURCE_KEYS = new Set<keyof TuFormState>([
+  'propertyAddress',
+  'propertyPostalCode',
+  'propertyCity',
+])
+
 export default function TuDashboardClient({
   initialAssignments,
   initialInvestigations,
@@ -207,6 +233,7 @@ export default function TuDashboardClient({
   const [error, setError] = useState<string | null>(initialError)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [customerBinding, setCustomerBinding] = useState<AssignmentCustomerBinding | null>(null)
   const savedCustomerAddressRef = useRef({
     customerAddress: '',
     customerPostalCode: '',
@@ -238,7 +265,20 @@ export default function TuDashboardClient({
 
   const updateForm = <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => {
     setError(null)
+    if (
+      CUSTOMER_BINDING_FORM_KEYS.has(key) ||
+      (form.customerAddressMatchesObject && CUSTOMER_ADDRESS_SOURCE_KEYS.has(key))
+    ) {
+      setCustomerBinding(null)
+    }
     setForm((current) => {
+      if (key === 'customerType') {
+        return {
+          ...current,
+          customerType: value as TuFormState['customerType'],
+          customerIdentityNumber: '',
+        }
+      }
       if (key === 'customerAddressMatchesObject') {
         if (value) {
           savedCustomerAddressRef.current = {
@@ -270,6 +310,27 @@ export default function TuDashboardClient({
       if (key === 'propertyCity') next.customerCity = value as string
       return next
     })
+  }
+
+  const useExistingCustomer = (customer: OrganizationCustomer) => {
+    savedCustomerAddressRef.current = {
+      customerAddress: customer.address ?? '',
+      customerPostalCode: customer.postalCode ?? '',
+      customerCity: customer.city ?? '',
+    }
+    setForm((current) => ({
+      ...current,
+      customerType: customer.customerType === 'business' ? 'business' : 'consumer',
+      customerIdentityNumber: customer.identityNumber ?? '',
+      customerAddressMatchesObject: false,
+      customerName: customer.name,
+      customerEmail: customer.email ?? '',
+      customerPhone: customer.phone ?? '',
+      customerAddress: customer.address ?? '',
+      customerPostalCode: customer.postalCode ?? '',
+      customerCity: customer.city ?? '',
+      invoiceEmail: customer.invoiceSameAsCustomer ? '' : customer.invoiceEmail ?? '',
+    }))
   }
 
   const updateScratchForm = <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => {
@@ -361,6 +422,7 @@ export default function TuDashboardClient({
   }
 
   const switchToConfirmation = () => {
+    setCustomerBinding(null)
     setForm((current) => ({
       ...current,
       objectType: scratchForm.objectType,
@@ -403,6 +465,31 @@ export default function TuDashboardClient({
       setNotice(null)
       return
     }
+    const customerIdentityType = form.customerType === 'business' ? 'business' : 'private'
+    const normalizedIdentity = normalizeOrganizationCustomerIdentity(
+      form.customerIdentityNumber,
+      customerIdentityType
+    )
+    if (form.customerType === 'business' && !normalizedIdentity) {
+      setError('Ange ett giltigt organisationsnummer innan kunden kopplas.')
+      setNotice(null)
+      return
+    }
+    if (form.customerType === 'consumer' && form.customerIdentityNumber.trim() && !normalizedIdentity) {
+      setError('Personnumret har inte ett giltigt format.')
+      setNotice(null)
+      return
+    }
+    if (!customerBinding) {
+      setError('Välj en befintlig kund eller bekräfta att en ny kund ska skapas.')
+      setNotice(null)
+      return
+    }
+    if (customerBinding.mode === 'create' && !form.customerName.trim()) {
+      setError('Ange kundens namn innan en ny kund skapas.')
+      setNotice(null)
+      return
+    }
     if (sendNow && (missingVillaObject || missingApartmentObject)) {
       setError(
         form.objectType === 'apartment'
@@ -430,7 +517,16 @@ export default function TuDashboardClient({
       const response = await fetch(sendNow ? '/api/tu/assignments/quick-send' : '/api/tu/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          customerBinding:
+            customerBinding.mode === 'create'
+              ? {
+                  ...customerBinding,
+                  identityNumber: normalizedIdentity,
+                }
+              : customerBinding,
+        }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa TU-uppdrag.')
@@ -441,8 +537,15 @@ export default function TuDashboardClient({
         setAssignments(assignmentPayload.items)
       }
 
-      setNotice(sendNow ? 'Uppdragsbekräftelsen är skickad.' : 'Uppdraget sparades som utkast.')
+      setNotice(
+        sendNow && payload.deliveryFailed === true
+          ? 'Uppdraget och kunden sparades, men mejlet kunde inte skickas. Försök igen från det sparade uppdraget.'
+          : sendNow
+            ? 'Uppdragsbekräftelsen är skickad.'
+            : 'Uppdraget sparades som utkast.'
+      )
       setForm(EMPTY_TU_FORM)
+      setCustomerBinding(null)
       setDialog(null)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Kunde inte skapa TU-uppdrag.')
@@ -610,6 +713,7 @@ export default function TuDashboardClient({
         {dialog === 'quick' ? (
           <QuickAssignmentDialog
             form={form}
+            customerBinding={customerBinding}
             busy={busy}
             error={error}
             onClose={() => {
@@ -617,6 +721,8 @@ export default function TuDashboardClient({
               setDialog(null)
             }}
             onChange={updateForm}
+            onCustomerBindingChange={setCustomerBinding}
+            onUseCustomer={useExistingCustomer}
             onModeChange={switchToDirectCreation}
             onSubmit={submitAssignment}
           />
@@ -1164,18 +1270,24 @@ function DialogError({ message }: { message: string | null }) {
 
 function QuickAssignmentDialog({
   form,
+  customerBinding,
   busy,
   error,
   onClose,
   onChange,
+  onCustomerBindingChange,
+  onUseCustomer,
   onModeChange,
   onSubmit,
 }: {
   form: TuFormState
+  customerBinding: AssignmentCustomerBinding | null
   busy: string | null
   error: string | null
   onClose: () => void
   onChange: <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => void
+  onCustomerBindingChange: (value: AssignmentCustomerBinding | null) => void
+  onUseCustomer: (customer: OrganizationCustomer) => void
   onModeChange: () => void
   onSubmit: (sendNow: boolean) => void
 }) {
@@ -1229,6 +1341,16 @@ function QuickAssignmentDialog({
           <Field label="Namn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
           <Field label="Beställarmejl" required value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
           <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
+          <Field
+            label={
+              form.customerType === 'business'
+                ? 'Organisationsnummer'
+                : 'Personnummer (valfritt)'
+            }
+            required={form.customerType === 'business'}
+            value={form.customerIdentityNumber}
+            onChange={(value) => onChange('customerIdentityNumber', value)}
+          />
         </div>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2.5 text-sm text-slate-800">
           <input
@@ -1253,6 +1375,23 @@ function QuickAssignmentDialog({
             <Field label="Ort" value={form.customerCity} onChange={(value) => onChange('customerCity', value)} />
           </div>
         )}
+        <AssignmentCustomerSelector
+          value={customerBinding}
+          draft={{
+            customerType: form.customerType,
+            identityNumber: form.customerIdentityNumber,
+            name: form.customerName,
+            email: form.customerEmail,
+            phone: form.customerPhone,
+            address: form.customerAddress,
+            postalCode: form.customerPostalCode,
+            city: form.customerCity,
+            invoiceEmail: form.invoiceEmail,
+          }}
+          disabled={busy !== null}
+          onChange={onCustomerBindingChange}
+          onUseCustomer={onUseCustomer}
+        />
       </section>
 
       <section className="border-b border-slate-200 py-4">
@@ -1305,7 +1444,7 @@ function QuickAssignmentDialog({
           <button
           type="button"
           onClick={() => onSubmit(false)}
-          disabled={busy === 'draft'}
+          disabled={busy !== null}
           aria-busy={busy === 'draft'}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
         >
@@ -1315,7 +1454,7 @@ function QuickAssignmentDialog({
           <button
           type="button"
           onClick={() => onSubmit(true)}
-          disabled={busy === 'quick-send'}
+          disabled={busy !== null}
           aria-busy={busy === 'quick-send'}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300"
         >

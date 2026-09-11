@@ -13,7 +13,8 @@ import {
   resolveTuReportSectionPolicy,
 } from '@/lib/tu/reportTemplates'
 import type { TuObservation } from '@/lib/tu/evidence'
-import { formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
+import { resolveTuPrintImageCaption } from '@/lib/tu/imageAppendix'
+import { formatTuMeasurementAssessment, formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
 import type { TuInvestigationDetails, TuInvestigationImage } from '@/lib/tu/server'
 
 const EMPTY_PRINT_VALUES = new Set(['-', '--', 'ej angivet', 'ej angivet.'])
@@ -158,8 +159,10 @@ export function buildTuMeasurementPrintSection(observations: TuObservation[]): T
     .filter((observation) => observation.reviewStatus === 'reviewed' && observation.includeInReport)
     .flatMap((observation) => observation.measurements.map((measurement, index) => {
       const location = normalizePrintableText(measurement.location ?? observation.location)
+      const assessment = formatTuMeasurementAssessment(measurement)
       const details = [
         `Resultat: ${formatTuMeasurementResult(measurement)}`,
+        assessment ? `Bedömning: ${assessment}` : null,
         measurement.method ? `Metod: ${normalizePrintableText(measurement.method)}` : null,
         measurement.instrument ? `Instrument: ${normalizePrintableText(measurement.instrument)}` : null,
         measurement.note ? `Kommentar: ${normalizePrintableText(measurement.note)}` : null,
@@ -466,7 +469,7 @@ export function buildTuPrintPayload(input: {
   const appendixImages: TuPrintImage[] = input.appendixImages.map((image, index) => ({
     id: image.id,
     src: image.publicUrl,
-    caption: image.reportCaption?.trim() || image.caption?.trim() || `Bild ${index + 1}`,
+    caption: resolveTuPrintImageCaption(image, index),
   }))
   const coverImageSource = input.coverImages[0] ?? null
   const coverImage: TuPrintImage | null = coverImageSource

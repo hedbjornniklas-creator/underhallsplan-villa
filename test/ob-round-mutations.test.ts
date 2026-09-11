@@ -12,6 +12,7 @@ const migration = readFileSync(
   new URL('../docs/db/2026-09-11_01_ob_round_mutations.sql', import.meta.url),
   'utf8',
 )
+let preFloorMigration: Awaited<ReturnType<typeof fixture>>
 before(async () => {
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
@@ -64,6 +65,14 @@ before(async () => {
   )
   await db.exec(migration)
   await db.exec(migration)
+  await db.exec(`
+    create table settings_interior_room_types(id uuid primary key default gen_random_uuid(),key text unique,label text,sort_order int,is_active boolean);
+    alter table inspection_overview_selections add column floor_key text;
+  `)
+  const floorsMigration = readFileSync(new URL('../docs/db/2026-09-11_03_ob_floor_model.sql', import.meta.url), 'utf8')
+  preFloorMigration = await fixture()
+  await db.exec(floorsMigration)
+  await db.exec(floorsMigration)
 })
 after(() => db.close())
 // SQL fixtures intentionally exercise multiple table and JSON result shapes.
@@ -105,6 +114,131 @@ async function fixture() {
   )
   return { id: inspection.id, room, target, note, image, loose, exterior }
 }
+async function floorFixture() {
+  const property = await one('insert into properties(owner) values($1) returning *', [actor])
+  await db.exec('update ob_floor_rollout set enabled=true')
+  const inspection = await one('insert into inspections(property_id) values($1) returning *', [property.id])
+  await db.exec('update ob_floor_rollout set enabled=false')
+  return inspection.id as string
+}
+async function saveFloors(id: string, levels: unknown, revision = 1, user = actor) {
+  return (await one('select ob_save_floor_model($1,$2,$3,$4,$5::jsonb) as result', [id, org, user, revision, JSON.stringify(levels)])).result
+}
+const newLevels = [{ level: 0, name: 'Entrance' }, { level: -1, name: 'Suterrang' }, { level: 1, name: '' }]
+async function basementChoice(id: string, system = 'ja', value = randomUUID()) {
+  const item = randomUUID(), group = randomUUID()
+  await db.query('insert into settings_overview_items values($1,$2,true)', [item, 'building_type'])
+  await db.query('insert into settings_overview_groups values($1,$2,$3,true)', [group, item, 'basement'])
+  await db.query('insert into settings_overview_options values($1,$2,$3,$4,true)', [group, value, 'Future category with no basement label', system])
+  await db.query('insert into inspection_overview_selections(inspection_id,overview_item_id,values,set_index) values($1,$2,$3,0)', [id, item, { basement: value }])
+  return { item, group, value }
+}
+
+test('floor rollout is opt-in, never backfills existing inspections or alters their records', async () => {
+  const f = preFloorMigration
+  assert.equal((await one('select count(*)::int as n from inspection_floor_models where inspection_id=$1', [f.id])).n, 0)
+  assert.deepEqual(await one('select * from inspection_interior_rooms where id=$1', [f.room.id]), f.room)
+  assert.deepEqual(await one('select * from inspection_control_items where id=$1', [f.note.id]), f.note)
+  assert.deepEqual(await one('select * from inspection_images where id=$1', [f.image.id]), f.image)
+  await basementChoice(f.id)
+  assert.equal((await one('select count(*)::int as n from ob_auto_rooms where inspection_id=$1', [f.id])).n, 0)
+  await assert.rejects(saveFloors(f.id, newLevels), /OB_FLOOR_LEGACY/)
+  const disabled = await fixture()
+  assert.equal((await one('select count(*)::int as n from inspection_floor_models where inspection_id=$1', [disabled.id])).n, 0)
+  await db.exec('update ob_floor_rollout set enabled=true')
+  await db.query("insert into inspections(property_id,type,inspection_family) select property_id,'EB','EB' from inspections where id=$1", [f.id])
+  await db.exec('update ob_floor_rollout set enabled=false')
+  assert.equal((await one("select count(*)::int as n from inspection_floor_models m join inspections i on i.id=m.inspection_id where i.type='EB'")).n, 0)
+})
+
+test('new floor model starts at zero, saves explicit negative levels and rejects stale or invalid edits', async () => {
+  const id = await floorFixture()
+  const model = await one('select * from inspection_floor_models where inspection_id=$1', [id])
+  assert.deepEqual(model.levels, [{ level: 0, name: 'Entr\u00e9plan' }])
+  for (const levels of [[], null, [{ level: 1, name: '' }], [{ level: 0, name: '' }, { level: 0, name: 'Duplicate' }], [{ level: 0.5, name: '' }]]) {
+    await assert.rejects(saveFloors(id, levels), /OB_ROUND_INVALID/)
+  }
+  const saved = await saveFloors(id, newLevels)
+  assert.equal(saved.revision, 2)
+  await assert.rejects(saveFloors(id, newLevels), /OB_ROUND_STALE/)
+  assert.equal((await one('select count(*)::int as n from ob_floor_changes where inspection_id=$1', [id])).n, 1)
+})
+
+test('floor edits and moves preserve room, note and image identities and reject occupied floor removal', async () => {
+  const id = await floorFixture()
+  await saveFloors(id, newLevels)
+  const room = await one("insert into inspection_interior_rooms(inspection_id,floor_label) values($1,'plan0') returning *", [id])
+  const note = await one("insert into inspection_control_items(inspection_id,interior_room_id,title,note) values($1,$2,'Keep','Original text') returning *", [id, room.id])
+  const image = await one("insert into inspection_images(inspection_id,interior_room_id,control_item_id,origin_floor_label) values($1,$2,$3,'plan0') returning *", [id, room.id, note.id])
+  const moved = await rpc(id, 'move', { kind: 'room', id: room.id, from: { floor: 'plan0' }, floor: 'plan-1', requestId: randomUUID() }, actor, ['ovrigt','plan0','plan-1','plan1'])
+  assert.equal(moved.room.id, room.id)
+  assert.equal(moved.room.floor_label, 'plan-1')
+  const renamed = newLevels.map(row => row.level === -1 ? { ...row, name: 'Lower entrance' } : row)
+  await saveFloors(id, renamed, 2)
+  assert.deepEqual(await one('select * from inspection_control_items where id=$1', [note.id]), note)
+  assert.deepEqual(await one('select * from inspection_images where id=$1', [image.id]), image)
+  await assert.rejects(saveFloors(id, renamed.filter(row => row.level !== -1), 3), /OB_FLOOR_IN_USE/)
+  await assert.rejects(db.query("update inspection_interior_rooms set floor_label='plan99' where id=$1", [room.id]), /OB_FLOOR_UNKNOWN/)
+})
+
+test('floor removal protects per-floor answers and image provenance against late writes', async () => {
+  const id = await floorFixture()
+  await saveFloors(id, newLevels)
+  await db.query("insert into inspection_images(inspection_id,origin_floor_label) values($1,'plan-1')", [id])
+  await assert.rejects(saveFloors(id, newLevels.filter(row => row.level !== -1), 2), /OB_FLOOR_IN_USE/)
+  await db.query("insert into inspection_overview_selections(inspection_id,floor_key,values,set_index) values($1,'plan1','{}',0)", [id])
+  await assert.rejects(saveFloors(id, newLevels.filter(row => row.level !== 1), 2), /OB_FLOOR_IN_USE/)
+  await assert.rejects(db.query("insert into inspection_overview_selections(inspection_id,floor_key) values($1,'plan99')", [id]), /OB_FLOOR_UNKNOWN/)
+  await assert.rejects(db.query("insert into inspection_images(inspection_id,origin_floor_label) values($1,'plan99')", [id]), /OB_FLOOR_UNKNOWN/)
+})
+
+test('floor settings remain owner-only, locked/paused-safe and not writable from browser roles', async () => {
+  const id = await floorFixture()
+  await assert.rejects(saveFloors(id, newLevels, 1, stranger), /OB_ROUND_FORBIDDEN/)
+  await db.query('update inspections set locked_at=now() where id=$1', [id])
+  await assert.rejects(saveFloors(id, newLevels), /OB_ROUND_LOCKED/)
+  await db.query('update inspections set locked_at=null where id=$1', [id])
+  await db.query('insert into test_paused values($1)', [id])
+  await assert.rejects(saveFloors(id, newLevels), /OB_ROUND_PAUSED/)
+  for (const role of ['anon','authenticated']) {
+    assert.equal((await one("select has_function_privilege($1,'ob_save_floor_model(uuid,uuid,uuid,integer,jsonb)','execute') as allowed", [role])).allowed, false)
+    for (const table of ['inspection_floor_models','ob_auto_rooms','ob_floor_rollout','ob_floor_changes']) {
+      assert.equal((await one("select has_table_privilege($1,$2,'insert,update,delete') as allowed", [role, table])).allowed, false)
+    }
+  }
+})
+
+test('basement automation uses semantic values for future categories, runs once and does not assign a physical level', async () => {
+  const id = await floorFixture()
+  await basementChoice(id)
+  const room = await one("select * from inspection_interior_rooms where inspection_id=$1 and room_type_key='kallare'", [id])
+  assert.equal(room.floor_label, 'ovrigt')
+  assert.equal(room.room_label, 'K\u00e4llare')
+  assert.deepEqual((await one('select levels from inspection_floor_models where inspection_id=$1', [id])).levels, [{ level: 0, name: 'Entr\u00e9plan' }])
+  await db.query('update inspection_overview_selections set values=values where inspection_id=$1', [id])
+  assert.equal((await one('select count(*)::int as n from inspection_interior_rooms where inspection_id=$1', [id])).n, 1)
+  await db.query("update inspection_interior_rooms set room_label='My name',floor_label='plan0' where id=$1", [room.id])
+  await db.query('update inspection_overview_selections set values=values where inspection_id=$1', [id])
+  assert.equal((await one('select room_label from inspection_interior_rooms where id=$1', [room.id])).room_label, 'My name')
+  await db.query('delete from inspection_interior_rooms where id=$1', [room.id])
+  await db.query('update inspection_overview_selections set values=values where inspection_id=$1', [id])
+  assert.equal((await one('select count(*)::int as n from inspection_interior_rooms where inspection_id=$1', [id])).n, 0)
+})
+
+test('basement automation handles no/unknown choices, reuses existing rooms and never deletes content', async () => {
+  for (const semantic of ['nej', null]) {
+    const id = await floorFixture()
+    await basementChoice(id, semantic as unknown as string)
+    assert.equal((await one('select count(*)::int as n from inspection_interior_rooms where inspection_id=$1', [id])).n, 0)
+  }
+  const id = await floorFixture()
+  const existing = await one("insert into inspection_interior_rooms(inspection_id,floor_label,room_type_key,room_label,note) values($1,'ovrigt','kallare','K\u00e4llare','Keep me') returning *", [id])
+  await basementChoice(id)
+  await db.query("update inspection_overview_selections set values='{}' where inspection_id=$1", [id])
+  assert.deepEqual(await one('select * from inspection_interior_rooms where id=$1', [existing.id]), existing)
+  assert.equal((await one('select count(*)::int as n from inspection_interior_rooms where inspection_id=$1', [id])).n, 1)
+})
+
 async function rpc(
   id: string,
   operation: string,

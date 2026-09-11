@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { obWorkflowRpc } from '@/lib/ob/assignmentWorkflowServer'
 import { roundFloorKeys, roundMutationError, validateRoundMutation } from '@/lib/ob/roundMutationServer'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { readObFloorModel } from '@/lib/ob/floorModelStore'
+import { floorModelKeys } from '@/lib/ob/floorModel'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +22,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       const floorContext = await obWorkflowRpc<Parameters<typeof roundFloorKeys>[0]>('ob_round_mutate', {
         ...args, p_operation: 'floor-context', p_payload: {},
       })
-      floors = roundFloorKeys(floorContext)
+      const model = await readObFloorModel(createSupabaseAdminClient(), id)
+      floors = model ? ['ovrigt', ...floorModelKeys(model)] : roundFloorKeys(floorContext)
     }
     const data = await obWorkflowRpc('ob_round_mutate', {
       ...args, p_operation: body.operation, p_payload: body.payload, p_floor_keys: floors,

@@ -14,7 +14,8 @@ const CONTENT_HEIGHT_MM = PAGE_HEIGHT_MM - PAGE_CONTENT_TOP_MM - PAGE_CONTENT_BO
 const SECTION_CHUNK_TARGET_CHARS = 320
 const PAGE_PACKING_SAFETY_MM = 4
 const BLOCK_GAP_MM = 5
-const SECTION_GAP_MM = 6
+const SECTION_GAP_MM = 5
+const SECTION_CONTINUATION_GAP_MM = 2.5
 const PRINT_IMAGE_POLICY = {
   coverMaxLongSidePx: 1200,
   appendixMaxLongSidePx: 900,
@@ -649,7 +650,9 @@ function SectionBlock({
             ? 'tu-report-block tu-report-section-block border-t border-violet-200 pt-4'
             : 'tu-report-block tu-report-section-block'
       }
-      style={{ marginBottom: mm(SECTION_GAP_MM) }}
+      style={{
+        marginBottom: mm(continuation ? SECTION_CONTINUATION_GAP_MM : SECTION_GAP_MM),
+      }}
     >
       {!continuation ? (
         <h2 className="text-[15px] font-semibold leading-tight text-violet-950">
@@ -659,7 +662,7 @@ function SectionBlock({
       {text.trim() ? (
         <div className={continuation ? '' : 'mt-2'}>
           <p
-            className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950"
+            className="whitespace-pre-wrap text-[13px] leading-[20px] text-gray-950"
             style={PRINT_TEXT_STYLE}
           >
             {text}
@@ -684,7 +687,9 @@ function SubsectionBlock({
   return (
     <section
       className="tu-report-block tu-report-subsection-block"
-      style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+      style={{
+        marginBottom: mm(continuation ? SECTION_CONTINUATION_GAP_MM : BLOCK_GAP_MM),
+      }}
     >
       {!continuation ? (
         <h3 className="text-[13px] font-semibold leading-tight text-gray-950">
@@ -693,7 +698,7 @@ function SubsectionBlock({
       ) : null}
       <div className={continuation ? '' : 'mt-1.5'}>
         <p
-          className="whitespace-pre-wrap text-[13px] leading-6 text-gray-950"
+          className="whitespace-pre-wrap text-[13px] leading-[20px] text-gray-950"
           style={PRINT_TEXT_STYLE}
         >
           {text}
@@ -853,10 +858,14 @@ function PrintableBlockView({
   return <ImageGridBlock images={block.images} onImageReady={onImageReady} />
 }
 
-function getHeaderValueStyle(nowrap: boolean): CSSProperties {
+function getHeaderValueStyle(nowrap: boolean, value: string): CSSProperties {
+  const valueLength = value.trim().length
+  const compact = !nowrap && valueLength > 30
+  const veryCompact = !nowrap && valueLength > 58
+
   return {
-    fontSize: '9.6pt',
-    lineHeight: 1.22,
+    fontSize: veryCompact ? '6.8pt' : compact ? '7.6pt' : '9.6pt',
+    lineHeight: compact ? 1.05 : 1.22,
     whiteSpace: nowrap ? 'nowrap' : 'normal',
   }
 }
@@ -875,7 +884,7 @@ function HeaderValue({
       <div className="shrink-0 text-[6pt] leading-[1.15] text-black">{label}</div>
       <div
         className="min-w-0 overflow-hidden break-words pb-0.5 font-medium text-black"
-        style={getHeaderValueStyle(nowrap)}
+        style={getHeaderValueStyle(nowrap, value)}
       >
         {value || '-'}
       </div>
@@ -902,9 +911,9 @@ function ReportHeader({
     <div
       className="tu-report-header-table grid overflow-hidden border border-black text-black"
       style={{
-        height: mm(25.5),
-        gridTemplateColumns: '63mm 35mm 34mm 42mm',
-        gridTemplateRows: '8.5mm 8.5mm 8.5mm',
+        height: mm(28.5),
+        gridTemplateColumns: '75mm 30mm 27mm 42mm',
+        gridTemplateRows: '9.5mm 9.5mm 9.5mm',
       }}
     >
       <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">

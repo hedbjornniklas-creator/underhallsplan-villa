@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Camera, ChevronDown, Images, Loader2, Paperclip, Ruler, Save, X } from 'lucide-react'
 import TuMeasurementInstrumentSelect from '@/components/tu/TuMeasurementInstrumentSelect'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
+import type { TuMeasurementAssessment } from '@/lib/tu/evidence'
 import {
+  getTuMeasurementAssessmentOptions,
   getTuMeasurementTypeDefinition,
   resolveTuMeasurementUnit,
   TU_MEASUREMENT_TYPE_DEFINITIONS,
@@ -33,6 +35,7 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
   const [location, setLocation] = useState('')
   const [method, setMethod] = useState('')
   const [instrument, setInstrument] = useState('')
+  const [assessment, setAssessment] = useState<TuMeasurementAssessment | ''>('')
   const [note, setNote] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
@@ -66,6 +69,7 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
   const hasDraft = Boolean(
     valueText.trim()
     || location.trim()
+    || assessment
     || note.trim()
     || files.length > 0
   )
@@ -111,6 +115,7 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
         location,
         method,
         instrument,
+        assessment: assessment || null,
         note,
         files,
       })
@@ -314,26 +319,41 @@ export default function TuQuickMeasurementDialog({ locked, queue, onClose, onQue
 
           <details className="group rounded-md border border-gray-200">
             <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-3 text-sm font-semibold text-gray-800 [&::-webkit-details-marker]:hidden">
-              Fler uppgifter
+              Bedömning och kommentar
               <span className="inline-flex items-center gap-2 text-xs font-normal text-gray-500">
                 Kan fyllas i senare
                 <ChevronDown size={15} className="transition group-open:rotate-180" aria-hidden />
               </span>
             </summary>
             <div className="grid gap-4 border-t border-gray-200 p-3 sm:grid-cols-2">
-              <label className="space-y-1">
-                <span className="text-sm font-medium text-gray-800">Metod</span>
-                <input
-                  value={method}
-                  onChange={(event) => {
-                    const nextMethod = event.target.value
-                    setMethod(nextMethod)
-                    rememberTuMeasurementMethod(measurementType, nextMethod)
-                  }}
-                  placeholder="Exempel: indikativ ytmätning"
-                  className="h-11 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                />
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-sm font-medium text-gray-800">Bedömning</span>
+                <select
+                  value={assessment}
+                  onChange={(event) => setAssessment(event.target.value as TuMeasurementAssessment | '')}
+                  className="h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                >
+                  <option value="">Bedöms vid granskningen</option>
+                  {getTuMeasurementAssessmentOptions(measurementType).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </label>
+              {measurementType === 'Annan instrumentmätning' ? (
+                <label className="space-y-1 sm:col-span-2">
+                  <span className="text-sm font-medium text-gray-800">Metod</span>
+                  <input
+                    value={method}
+                    onChange={(event) => {
+                      const nextMethod = event.target.value
+                      setMethod(nextMethod)
+                      rememberTuMeasurementMethod(measurementType, nextMethod)
+                    }}
+                    placeholder="Beskriv hur mätningen utfördes"
+                    className="h-11 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                  />
+                </label>
+              ) : null}
               <label className="space-y-1 sm:col-span-2">
                 <span className="text-sm font-medium text-gray-800">Kommentar</span>
                 <textarea

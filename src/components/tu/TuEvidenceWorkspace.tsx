@@ -30,12 +30,15 @@ import type {
   TuEvidenceAiSuggestion,
   TuEvidenceResponse,
   TuMeasurement,
+  TuMeasurementAssessment,
   TuObservation,
   TuObservationCertainty,
   TuObservationSourceType,
 } from '@/lib/tu/evidence'
 import {
+  formatTuMeasurementAssessment,
   formatTuMeasurementResult,
+  getTuMeasurementAssessmentOptions,
   getTuMeasurementTypeDefinition,
   resolveTuMeasurementUnit,
   TU_MEASUREMENT_TYPE_DEFINITIONS,
@@ -88,6 +91,7 @@ type MeasurementForm = {
   unit: string
   method: string
   instrument: string
+  assessment: TuMeasurementAssessment | ''
   note: string
 }
 
@@ -135,6 +139,7 @@ const EMPTY_MEASUREMENT: MeasurementForm = {
   unit: '',
   method: '',
   instrument: '',
+  assessment: '',
   note: '',
 }
 
@@ -159,6 +164,7 @@ function measurementToForm(measurement: TuMeasurement): MeasurementForm {
     unit: measurement.unit ?? '',
     method: measurement.method ?? '',
     instrument: measurement.instrument ?? '',
+    assessment: measurement.assessment ?? '',
     note: measurement.note ?? '',
   }
 }
@@ -257,6 +263,11 @@ function getObservationPreview(observation: TuObservation) {
     }
   }
   return observation.noteText || observation.transcriptText || 'Endast bilddokumentation'
+}
+
+function isObservationReviewComplete(observation: TuObservation) {
+  return observation.reviewStatus === 'reviewed'
+    && observation.measurements.every((measurement) => Boolean(measurement.assessment))
 }
 
 function observationFormFingerprint(form: ObservationForm) {
@@ -647,7 +658,7 @@ export default function TuEvidenceWorkspace({
       const selectedId = preferredId === undefined ? form.id : preferredId
       const selected =
         (selectedId ? next.find((observation) => observation.id === selectedId) : null)
-        ?? next.find((observation) => observation.reviewStatus !== 'reviewed')
+        ?? next.find((observation) => !isObservationReviewComplete(observation))
         ?? next[0]
         ?? null
       setForm(selected ? toObservationForm(selected) : createEmptyObservation(sections))
@@ -675,7 +686,7 @@ export default function TuEvidenceWorkspace({
       setForm((current) => {
         if (current.id) return current
         const selected =
-          next.find((observation) => observation.reviewStatus !== 'reviewed')
+          next.find((observation) => !isObservationReviewComplete(observation))
           ?? next[0]
           ?? null
         return selected ? toObservationForm(selected) : current
@@ -704,6 +715,7 @@ export default function TuEvidenceWorkspace({
         || current.unit
         || current.method
         || current.instrument
+        || current.assessment
         || current.note
       ) return current
       return emptyMeasurementWithRememberedInstrument()
@@ -766,7 +778,7 @@ export default function TuEvidenceWorkspace({
     form.id
     && (pendingObservationSaveIds.has(form.id) || failedObservationSaveIds.has(form.id))
   )
-  const reviewedCount = observations.filter((observation) => observation.reviewStatus === 'reviewed').length
+  const reviewedCount = observations.filter(isObservationReviewComplete).length
   const linkedImages = images.filter((image) => form.imageIds.includes(image.id))
   const sourceHasLocation = Boolean(selectedObservation?.location?.trim())
   const sourceHasBuildingComponent = Boolean(selectedObservation?.buildingComponent?.trim())
@@ -777,13 +789,14 @@ export default function TuEvidenceWorkspace({
   const measurementDefinition = getTuMeasurementTypeDefinition(measurementForm.measurementType)
   const needsReviewCount = observations.length - reviewedCount
   const nextUnreviewedObservation = observations.find(
-    (observation) => observation.reviewStatus !== 'reviewed' && observation.id !== form.id
+    (observation) => !isObservationReviewComplete(observation) && observation.id !== form.id
   ) ?? null
   const filteredObservations = useMemo(() => {
     const query = observationSearch.trim().toLocaleLowerCase('sv-SE')
     return observations.filter((observation) => {
-      if (observationFilter === 'needs_review' && observation.reviewStatus === 'reviewed') return false
-      if (observationFilter === 'reviewed' && observation.reviewStatus !== 'reviewed') return false
+      const reviewComplete = isObservationReviewComplete(observation)
+      if (observationFilter === 'needs_review' && reviewComplete) return false
+      if (observationFilter === 'reviewed' && !reviewComplete) return false
       if (!query) return true
       return [
         observation.location,
@@ -819,6 +832,7 @@ export default function TuEvidenceWorkspace({
         || measurementForm.unit !== (selectedMeasurement.unit ?? '')
         || measurementForm.method !== (selectedMeasurement.method ?? '')
         || measurementForm.instrument !== (selectedMeasurement.instrument ?? '')
+        || measurementForm.assessment !== (selectedMeasurement.assessment ?? '')
         || measurementForm.note !== (selectedMeasurement.note ?? '')
     }
     return Boolean(
@@ -947,6 +961,20 @@ export default function TuEvidenceWorkspace({
       return
     }
 
+    const missingAssessment = sourceMeasurements.find((measurement) => (
+      measurement.id === measurementForm.id
+        ? !measurementForm.assessment
+        : !measurement.assessment
+    ))
+    if (missingAssessment || (measurementFormDirty && measurementForm.valueText.trim() && !measurementForm.assessment)) {
+      const measurement = missingAssessment ?? selectedMeasurement
+      if (measurement) editMeasurement(measurement)
+      setSupplementOpen(true)
+      setMeasurementEditorOpen(true)
+      setError('Välj en bedömning för varje mätning innan fältposten markeras som kontrollerad.')
+      return
+    }
+
     if (measurementFormDirty) {
       const measurementSaved = await saveMeasurement({ quiet: true })
       if (!measurementSaved) return
@@ -964,7 +992,7 @@ export default function TuEvidenceWorkspace({
       reviewStatus: 'reviewed',
     }
     const nextObservation = observations.find(
-      (observation) => observation.id !== snapshot.id && observation.reviewStatus !== 'reviewed'
+      (observation) => observation.id !== snapshot.id && !isObservationReviewComplete(observation)
     ) ?? null
 
     setError(null)
@@ -1150,6 +1178,9 @@ export default function TuEvidenceWorkspace({
       }
       if (savedMethod !== submittedForm.method.trim()) {
         throw new Error('Mätmetoden kunde inte sparas. Försök igen.')
+      }
+      if ((payload.measurement.assessment ?? '') !== submittedForm.assessment) {
+        throw new Error('Bedömningen kunde inte sparas. Försök igen.')
       }
       rememberTuMeasurementInstrument(savedInstrument)
       rememberTuMeasurementMethod(submittedForm.measurementType, savedMethod)
@@ -1438,6 +1469,7 @@ export default function TuEvidenceWorkspace({
                 {filteredObservations.map((observation) => {
                   const active = observationPanelOpen && observation.id === form.id
                   const observationNumber = observations.findIndex((item) => item.id === observation.id) + 1
+                  const reviewComplete = isObservationReviewComplete(observation)
                   return (
                     <button
                       key={observation.id}
@@ -1450,11 +1482,11 @@ export default function TuEvidenceWorkspace({
                       }`}
                     >
                       <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
-                        observation.reviewStatus === 'reviewed'
+                        reviewComplete
                           ? 'bg-emerald-50 text-emerald-800'
                           : 'bg-violet-50 text-violet-800'
                       }`}>
-                        {observation.reviewStatus === 'reviewed'
+                        {reviewComplete
                           ? <CheckCircle2 size={16} aria-label="Kontrollerad" />
                           : observationNumber}
                       </span>
@@ -1481,18 +1513,23 @@ export default function TuEvidenceWorkspace({
                       </span>
                       <span className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center">
                         <span className={`hidden rounded px-2 py-1 text-[10px] font-semibold xl:inline-flex ${
-                          observation.reviewStatus === 'reviewed'
+                          reviewComplete
                             ? 'bg-emerald-50 text-emerald-800'
                             : 'bg-violet-50 text-violet-800'
                         }`}>
-                          {observation.reviewStatus === 'reviewed' ? 'Kontrollerad' : 'Att kontrollera'}
+                          {reviewComplete ? 'Kontrollerad' : 'Att kontrollera'}
                         </span>
                         {!observation.location ? (
                           <span className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">
                             Saknar plats
                           </span>
                         ) : null}
-                        {observation.sourceType !== 'measurement' && observation.reviewStatus !== 'reviewed' && observation.imageIds.length === 0 ? (
+                        {observation.measurements.some((measurement) => !measurement.assessment) ? (
+                          <span className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">
+                            Bedömning saknas
+                          </span>
+                        ) : null}
+                        {observation.sourceType !== 'measurement' && !reviewComplete && observation.imageIds.length === 0 ? (
                           <span className="hidden rounded bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600 lg:inline-flex">
                             Ingen bild
                           </span>
@@ -1542,11 +1579,11 @@ export default function TuEvidenceWorkspace({
                   <span className="rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">Osparade ändringar</span>
                 ) : form.id ? (
                   <span className={`rounded px-2 py-1 text-xs font-semibold ${
-                    form.reviewStatus === 'reviewed'
+                    selectedObservation && isObservationReviewComplete(selectedObservation)
                       ? 'bg-emerald-50 text-emerald-800'
                       : 'bg-violet-50 text-violet-800'
                   }`}>
-                    {form.reviewStatus === 'reviewed' ? 'Kontrollerad' : 'Behöver kontrolleras'}
+                    {selectedObservation && isObservationReviewComplete(selectedObservation) ? 'Kontrollerad' : 'Behöver kontrolleras'}
                   </span>
                 ) : null}
                 {form.id ? (
@@ -1729,6 +1766,13 @@ export default function TuEvidenceWorkspace({
                       <p className="text-sm font-semibold text-gray-950">
                         {measurement.measurementType}: {formatTuMeasurementResult(measurement)}
                       </p>
+                      {measurement.assessment ? (
+                        <p className={`mt-0.5 text-xs font-semibold ${measurement.assessment === 'deviation' ? 'text-amber-800' : measurement.assessment === 'no_deviation' ? 'text-emerald-800' : 'text-gray-600'}`}>
+                          {formatTuMeasurementAssessment(measurement)}
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-xs font-semibold text-amber-800">Bedömning saknas</p>
+                      )}
                       {[measurement.method, measurement.instrument, measurement.note].some(Boolean) ? (
                         <p className="mt-0.5 text-xs text-gray-600">
                           {[measurement.method, measurement.instrument, measurement.note].filter(Boolean).join(' · ')}
@@ -1987,6 +2031,9 @@ export default function TuEvidenceWorkspace({
                             <p className="mt-0.5 text-xs text-gray-600">
                               {[measurement.method, measurement.instrument, measurement.note].filter(Boolean).join(' · ')}
                             </p>
+                            <p className={`mt-1 text-xs font-semibold ${measurement.assessment === 'deviation' ? 'text-amber-800' : measurement.assessment === 'no_deviation' ? 'text-emerald-800' : 'text-gray-600'}`}>
+                              {formatTuMeasurementAssessment(measurement) || 'Bedömning saknas'}
+                            </p>
                           </div>
                           <span className="flex shrink-0 items-center gap-1">
                             <button
@@ -2063,18 +2110,21 @@ export default function TuEvidenceWorkspace({
                   </div>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
                     <label className="space-y-1">
-                      <span className="text-xs font-medium text-gray-600">Metod</span>
-                      <input
-                        value={measurementForm.method}
-                        onChange={(event) => {
-                          const method = event.target.value
-                          setMeasurementForm((current) => ({ ...current, method }))
-                          rememberTuMeasurementMethod(measurementForm.measurementType, method)
-                        }}
+                      <span className="text-xs font-medium text-gray-600">Bedömning *</span>
+                      <select
+                        value={measurementForm.assessment}
+                        onChange={(event) => setMeasurementForm((current) => ({
+                          ...current,
+                          assessment: event.target.value as TuMeasurementAssessment | '',
+                        }))}
                         disabled={locked}
-                        placeholder="Metod"
-                        className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
-                      />
+                        className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                      >
+                        <option value="">Välj bedömning</option>
+                        {getTuMeasurementAssessmentOptions(measurementForm.measurementType).map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
                     </label>
                     <label className="space-y-1">
                       <span className="text-xs font-medium text-gray-600">Instrument</span>
@@ -2090,6 +2140,22 @@ export default function TuEvidenceWorkspace({
                       />
                     </label>
                   </div>
+                  {measurementForm.measurementType === 'Annan instrumentmätning' ? (
+                    <label className="mt-2 block space-y-1">
+                      <span className="text-xs font-medium text-gray-600">Metod</span>
+                      <input
+                        value={measurementForm.method}
+                        onChange={(event) => {
+                          const method = event.target.value
+                          setMeasurementForm((current) => ({ ...current, method }))
+                          rememberTuMeasurementMethod(measurementForm.measurementType, method)
+                        }}
+                        disabled={locked}
+                        placeholder="Beskriv hur mätningen utfördes"
+                        className="h-9 w-full rounded-md border border-gray-300 px-3 text-sm outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100"
+                      />
+                    </label>
+                  ) : null}
                   <textarea
                     value={measurementForm.note}
                     onChange={(event) => setMeasurementForm((current) => ({ ...current, note: event.target.value }))}
@@ -2131,12 +2197,12 @@ export default function TuEvidenceWorkspace({
               <span className="px-1 text-xs text-gray-600">
                 {!form.id
                   ? 'Den nya fältposten sparas först som utkast.'
-                  : form.reviewStatus === 'reviewed'
+                  : selectedObservation && isObservationReviewComplete(selectedObservation)
                     ? 'Källmaterialet är kontrollerat och redo för analys.'
                     : 'Kontrollera sakuppgifter och kopplingar innan analysen.'}
               </span>
               <div className="flex flex-wrap gap-2">
-                {form.id && form.reviewStatus !== 'reviewed' ? (
+                {form.id && (!selectedObservation || !isObservationReviewComplete(selectedObservation)) ? (
                   <button
                     type="button"
                     onClick={() => void saveObservation()}
@@ -2156,7 +2222,7 @@ export default function TuEvidenceWorkspace({
                     {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
                     Spara fältpost
                   </button>
-                ) : form.reviewStatus !== 'reviewed' ? (
+                ) : !selectedObservation || !isObservationReviewComplete(selectedObservation) ? (
                   <button
                     type="button"
                     onClick={() => void approveObservationAndOpenNext()}

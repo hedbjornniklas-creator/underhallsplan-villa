@@ -2,6 +2,7 @@ Väderlek:
 Byggnadstyp: Byggnaden är uppförd som {TYPE} med {FLOORS_TEXT}{ATTIC_TEXT}{BASEMENT_TEXT}.
 Byggnadsår:
 Grundläggning:
+Dränering:
 Stomme:
 Bjälklag:
 Fasad:
