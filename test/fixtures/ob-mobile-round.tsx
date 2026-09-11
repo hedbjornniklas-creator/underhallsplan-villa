@@ -102,6 +102,8 @@ const qa = {
   partialLink: false,
   holdLinks: false,
   holdUnlink: false,
+  holdSuggestion: false,
+  failSuggestion: false,
   dropMutationResponse: false,
   delayMs: 0,
   calls: [] as Array<{ kind: string; id: string; patch?: unknown }>,
@@ -344,6 +346,11 @@ function Fixture() {
               } finally {
                 setMutating(false)
               }
+            }}
+            onSuggestNote={async suggestion => {
+              qa.calls.push({ kind: 'suggestion', id: suggestion.noteId, patch: suggestion })
+              while (qa.holdSuggestion) await new Promise(resolve => setTimeout(resolve, 20))
+              if (qa.failSuggestion) throw Error('Synthetic suggestion failure')
             }}
             onMove={(request) =>
               mutate('move', request.requestId, () => {

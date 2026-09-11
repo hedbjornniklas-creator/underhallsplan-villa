@@ -197,6 +197,30 @@ Image-preview checks: `node scripts/test-ob-mobile-round-ui.mjs --image-preview-
 Image removal choices: `node scripts/test-ob-mobile-round-ui.mjs --image-removal-only`
 and `node --experimental-strip-types --test test/ob-round-image-unlink.test.ts`.
 
+### Free-note suggestions for the catalog
+
+- Free notes have a secondary "Föreslå till biblioteket" action. It saves the
+  original first, then opens an editable, separate text copy. Opening/canceling
+  sends no email; changing the copy does not change the inspection note.
+- Only "Skicka förslag" sends note, risk, further-investigation text and an
+  optional room type/building-part category to admin for manual review. The
+  sender's profile email is included for replies. No images, property address,
+  inspection link or customer records are attached. Users review the text for
+  personal details before sending. Nothing is added to the catalog automatically.
+- API: `/api/ob/inspections/[id]/note-suggestions`. Requires authentication and
+  active organization membership, verifies the OB property owner, and scopes the
+  free note to that inspection. Uses read-only queries, no migration required.
+- Mail uses existing `RESEND_API_KEY` and `ASSIGNMENTS_MAIL_FROM` configuration.
+  Recipient defaults to the existing HusHub admin address `jn@hedbjorn.se`;
+  optional server variable `OB_NOTE_SUGGESTIONS_EMAIL` overrides it. The browser
+  cannot select a recipient. Provider idempotency keys deduplicate identical
+  retries within the provider's retention period; this is not a permanent
+  suggestion register. A bounded, instance-local limit permits 20 attempts per
+  user/hour (not a distributed limit). Errors retain the editable copy.
+- Checks: `node --experimental-strip-types --test test/ob-note-suggestion.test.ts`
+  and `node scripts/test-ob-mobile-round-ui.mjs --note-suggestion-only`.
+  The local preview uses synthetic callbacks and never sends real email.
+
 Before retiring the legacy round, verify the production adapter against an
 isolated database, test the real phone camera/upload queue, and compare the
 saved report with the legacy round. Confirm backup/restore and the remaining

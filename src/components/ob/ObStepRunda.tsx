@@ -3,6 +3,7 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { queueImageBatch, unplacedImagePlacement } from '@/lib/ob/roundImageImport'
 import { unlinkRoundImage } from '@/lib/ob/unlinkRoundImage'
+import { submitObNoteSuggestion } from '@/lib/ob/noteSuggestion'
 import { useObFloorModel } from './ObFloorProvider'
 import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
@@ -2417,6 +2418,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             return Boolean(await linkSelectedImagesToControlItem(note.id, images, true))
           }}
           onUnlinkImage={(image, note) => unlinkImageFromControlItem(image.id, note.id!)}
+          onSuggestNote={suggestion => submitObNoteSuggestion(inspection.id, suggestion)}
         />
       ) : renderRoundSurface()}
       {!mobileLayout && roomDialogOpen && activeRoom ? renderRoomDialog() : null}

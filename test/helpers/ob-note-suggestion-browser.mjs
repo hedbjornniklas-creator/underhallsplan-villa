@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
+
+export async function testNoteSuggestion(page, base, output) {
+  const editor = 'dialog[aria-label="Notering"]', sheet = 'dialog[aria-label="Föreslå notering"]'
+  async function click(label, root = 'dialog') {
+    for (const button of await page.$$(`${root} button`)) {
+      if (await button.evaluate(node => node.textContent.trim()) === label) { await button.click(); return }
+    }
+    throw Error(`Missing button: ${label}`)
+  }
+  async function fresh(query = '') {
+    await page.goto(base, { waitUntil: 'networkidle0' })
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
+    await page.goto(base + query, { waitUntil: 'networkidle0' })
+    await page.click('.obm-place-row')
+    await page.click('[data-note-id="note-1"]')
+    await page.waitForSelector(editor)
+  }
+  for (const width of [320, 390, 1280]) {
+    await page.setViewport({ width, height: 820 })
+    await fresh()
+    await page.type(`${editor} textarea`, 'Ny text. ')
+    await click('Föreslå till biblioteket')
+    await page.waitForSelector(sheet)
+    assert.equal(await page.$$eval('dialog[open]', rows => rows.length), 1)
+    assert.ok(await page.$$eval('.obm-sheet,.obm-sheet-body', rows => rows.every(row => row.scrollWidth <= row.clientWidth + 1)))
+    const original = await page.evaluate(() => window.__obMobileTest.notes[0].note)
+    assert.ok(original.includes('Ny text.'))
+    assert.equal(await page.$eval(`${sheet} textarea`, node => node.value), original)
+    await page.screenshot({ path: resolve(output, `note-suggestion-${width}.png`) })
+    await page.type(`${sheet} textarea`, 'Bara i förslaget. ')
+    await page.click(`${sheet} [aria-label="Tillbaka"]`)
+    await page.waitForSelector(editor)
+    assert.equal(await page.$eval(`${editor} textarea`, node => node.value), original)
+    assert.equal(await page.evaluate(() => window.__obMobileTest.calls.filter(c => c.kind === 'suggestion').length), 0)
+    await click('Föreslå till biblioteket')
+    await page.waitForSelector(sheet)
+    await page.type(`${sheet} textarea`, 'Kopia. ')
+    await page.evaluate(() => { window.__obMobileTest.holdSuggestion = true })
+    await click('Skicka förslag')
+    await page.waitForFunction(() => document.querySelector('dialog [aria-label="Tillbaka"]').disabled)
+    await page.keyboard.press('Escape')
+    assert.ok(await page.$(sheet))
+    assert.ok(await page.$eval(`${sheet} footer button`, node => node.disabled))
+    await page.evaluate(() => { window.__obMobileTest.holdSuggestion = false })
+    await page.waitForSelector(editor)
+    const result = await page.evaluate(() => ({ note: window.__obMobileTest.notes[0].note, calls: window.__obMobileTest.calls.filter(c => c.kind === 'suggestion') }))
+    assert.equal(result.note, original)
+    assert.equal(result.calls.length, 1)
+    assert.ok(result.calls[0].patch.note.includes('Kopia.'))
+    assert.ok(await page.$eval(editor, node => node.textContent.includes('Förslaget har skickats till admin.')))
+  }
+  await fresh()
+  await click('Föreslå till biblioteket')
+  await page.waitForSelector(sheet)
+  await page.evaluate(() => { window.__obMobileTest.failSuggestion = true })
+  await page.type(`${sheet} textarea`, 'Behåll texten. ')
+  await click('Skicka förslag')
+  await page.waitForSelector(`${sheet} [role="alert"]`)
+  assert.ok(await page.$eval(`${sheet} textarea`, node => node.value.includes('Behåll texten.')))
+  await page.evaluate(() => { window.__obMobileTest.failSuggestion = false })
+  await click('Skicka förslag')
+  await page.waitForSelector(editor)
+  const attempts = await page.evaluate(() => window.__obMobileTest.calls.filter(c => c.kind === 'suggestion'))
+  assert.deepEqual(attempts[0].patch, attempts[1].patch)
+  await fresh('?locked')
+  assert.ok(await page.$$eval(`${editor} button`, nodes => nodes.find(node => node.textContent.trim() === 'Föreslå till biblioteket').disabled))
+  await fresh()
+  await page.evaluate(() => { window.__obMobileTest.failSaves = true })
+  await page.type(`${editor} textarea`, 'Osparad text. ')
+  await click('Föreslå till biblioteket')
+  await page.waitForSelector(`${editor} [role="alert"]`)
+  assert.equal(await page.$(sheet), null)
+  assert.equal(await page.evaluate(() => window.__obMobileTest.calls.filter(c => c.kind === 'suggestion').length), 0)
+  await page.evaluate(() => { window.__obMobileTest.failSaves = false })
+  await click('Klart')
+  await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
+  console.log('PASS: note suggestion copy, cancel, save guard, retries, busy/locked states and 320/390/1280 layouts. No email sent.')
+}

@@ -12,6 +12,7 @@ import { testImageImport } from '../test/helpers/ob-image-import-browser.mjs'
 import { testImageBank } from '../test/helpers/ob-image-bank-browser.mjs'
 import { testImagePreview } from '../test/helpers/ob-image-preview-browser.mjs'
 import { testImageRemoval } from '../test/helpers/ob-image-removal-browser.mjs'
+import { testNoteSuggestion } from '../test/helpers/ob-note-suggestion-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -90,6 +91,8 @@ if (serve) {
       if (new URL(request.url()).origin === base) void request.continue()
       else { external.push(request.url()); void request.abort() }
     })
+    await testNoteSuggestion(page, base, output)
+    if (!process.argv.includes('--note-suggestion-only')) {
     await testImageRemoval(page, base, output)
     if (!process.argv.includes('--image-removal-only')) await testImagePreview(page, base, output)
     if (!process.argv.includes('--image-removal-only') && !process.argv.includes('--image-preview-only')) {
@@ -97,7 +100,8 @@ if (serve) {
       if (!process.argv.includes('--image-bank-only')) await testImageImport(page, base, output)
       if (!process.argv.includes('--images-only') && !process.argv.includes('--image-bank-only')) await testFloorEditor(page, base, output)
     }
-    if (process.argv.includes('--floors-only') || process.argv.includes('--images-only') || process.argv.includes('--image-bank-only') || process.argv.includes('--image-preview-only') || process.argv.includes('--image-removal-only')) {
+    }
+    if (process.argv.includes('--floors-only') || process.argv.includes('--images-only') || process.argv.includes('--image-bank-only') || process.argv.includes('--image-preview-only') || process.argv.includes('--image-removal-only') || process.argv.includes('--note-suggestion-only')) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
       console.log('PASS: selected browser checks. No external requests.')

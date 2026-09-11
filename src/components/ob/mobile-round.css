@@ -915,6 +915,16 @@ body:has(dialog.obm-sheet[open]) {
   gap: 8px;
   width: 100%;
 }
+.obm-suggestion-action {
+  margin: 16px 0 24px;
+}
+.obm-suggestion-action > button {
+  padding: 10px 12px;
+  border: 1px solid var(--obm-line);
+  border-radius: 6px;
+  color: var(--obm-blue);
+  width: 100%;
+}
 .obm-image-removal-actions > button {
   width: 100%;
   padding: 10px 8px;

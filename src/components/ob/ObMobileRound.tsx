@@ -27,6 +27,7 @@ import {
   X,
   Inbox,
   Trash2,
+  MessageSquarePlus,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import {
@@ -51,6 +52,8 @@ import type {
 import Sheet from './ObRoundSheet'
 import ObRoundImageBank from './ObRoundImageBank'
 import ObRoundImageActions from './ObRoundImageActions'
+import ObRoundNoteSuggestion from './ObRoundNoteSuggestion'
+import type { ObNoteSuggestion } from '@/lib/ob/noteSuggestion'
 import {
   ImageLinkSheet,
   MoveSheet,
@@ -110,6 +113,7 @@ export type ObMobileRoundProps = {
   onLinkImage: (image: RoundImage, note: Note) => Promise<boolean>
   onLinkImages: (images: RoundImage[], note: Note) => Promise<boolean>
   onUnlinkImage: (image: RoundImage, note: Note) => Promise<void>
+  onSuggestNote: (suggestion: ObNoteSuggestion) => Promise<void>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
   onRemove: (
@@ -165,6 +169,9 @@ function Editor({
   const [imageBankOpen, setImageBankOpen] = useState(false)
   const [imageActionsId, setImageActionsId] = useState<string | null>(null)
   const [imageNotice, setImageNotice] = useState('')
+  const [suggestionOpen, setSuggestionOpen] = useState(false)
+  const [sentSuggestion, setSentSuggestion] = useState<string | null>(null)
+  const suggestionVersion = JSON.stringify(draft)
   const [leaving, setLeaving] = useState(false),
     leaveRef = useRef(false)
   const values = useRef(draft),
@@ -260,6 +267,16 @@ function Editor({
       }}
       onDelete={() => onDeleteImage(imageActions)} />
   )
+  if (suggestionOpen) {
+    const room = p.rooms.find(row => row.id === note.interior_room_id)
+    const observation = p.observations.find(row => row.id === note.exterior_observation_id)
+    const category = room ? p.roomTypes.find(type => type.key === room.room_type_key)?.label
+      : p.exteriorItems.find(item => item.id === observation?.exterior_item_id)?.label
+    return <ObRoundNoteSuggestion initial={{ noteId: note.id!, note: draft.note || '', risk_text: draft.risk_text || '', ftu_text: draft.ftu_text || '', category: category || '' }}
+      blocked={p.locked || p.mutationBlocked} onSend={p.onSuggestNote}
+      onClose={() => setSuggestionOpen(false)}
+      onSent={() => { setSentSuggestion(suggestionVersion); setSuggestionOpen(false) }} />
+  }
   return (
     <Sheet
       title="Notering"
@@ -361,6 +378,13 @@ function Editor({
           />
         </label>
       </details>
+      {!note.control_point_id && <div className="obm-suggestion-action">
+        {sentSuggestion === suggestionVersion ? <p role="status" className="obm-saved"><Check size={16} />Förslaget har skickats till admin.</p> :
+          <button type="button" disabled={p.locked || p.mutationBlocked || leaving || !draft.note?.trim()}
+            onClick={() => void finish(() => setSuggestionOpen(true))}>
+            <MessageSquarePlus size={18} />Föreslå till biblioteket
+          </button>}
+      </div>}
       <div className="obm-section-title">
         <h3>Bilder</h3>
         <span>{linked.length}</span>
