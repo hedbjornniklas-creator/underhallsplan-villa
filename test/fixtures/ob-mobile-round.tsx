@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { createRoot } from 'react-dom/client'
 import ObMobileRound, {
   type ObMobileRoundProps,
 } from '../../src/components/ob/ObMobileRound'
@@ -38,6 +37,13 @@ const rooms: Room[] = [
     note: null,
   },
 ]
+if (new URLSearchParams(location.search).has('swipe')) {
+  // Deliberately unsorted, with another floor interleaved in the source array.
+  rooms.push(
+    { ...rooms[0], id: 'room-3', room_label: 'Kök', order_index: 0 },
+    { ...rooms[0], id: 'room-4', room_label: 'Vardagsrum', order_index: 30 },
+  )
+}
 const note: Note = {
   id: 'note-1',
   inspection_id: inspectionId,
@@ -88,6 +94,14 @@ if (new URLSearchParams(location.search).has('imagebank')) {
     { ...initialImages[0], id: 'bank-linked', control_item_id: 'empty-note', processing_status: 'linked' },
   )
 }
+if (new URLSearchParams(location.search).has('room-images')) {
+  initialImages.push(
+    { ...initialImages[0], id: 'room-linked', control_item_id: 'note-1', origin_interior_room_id: 'room-2', processing_status: 'linked' },
+    { ...initialImages[0], id: 'room-moved', interior_room_id: 'room-2', origin_interior_room_id: 'room-1' },
+    { ...initialImages[0], id: 'room-outside', interior_room_id: null, exterior_observation_id: 'observation-extra', origin_interior_room_id: 'room-1' },
+    { ...initialImages[0], id: 'room-unplaced', interior_room_id: null },
+  )
+}
 const exteriorItems = [
   {
     id: 'exterior-1',
@@ -104,6 +118,8 @@ const qa = {
   holdUnlink: false,
   holdSuggestion: false,
   failSuggestion: false,
+  holdRename: false,
+  failRename: false,
   dropMutationResponse: false,
   delayMs: 0,
   calls: [] as Array<{ kind: string; id: string; patch?: unknown }>,
@@ -116,7 +132,7 @@ const qa = {
 }
 Object.assign(window, { __obMobileTest: qa })
 
-function Fixture() {
+function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
   const { model } = useObFloorModel()
   const [mutating, setMutating] = useState(false)
   const receipts = useRef(new Map<string, unknown>())
@@ -204,7 +220,7 @@ function Fixture() {
             inspectionId={inspectionId}
             inspectionSide="buyer"
             address="Testgatan 1 (syntetiskt objekt)"
-            onOpenMenu={() => setMenu(true)}
+            onOpenMenu={onOpenStepMenu ?? (() => setMenu(true))}
             pointApplies={() => true}
             pointMatchesRoom={() => true}
             locked={locked}
@@ -351,6 +367,17 @@ function Fixture() {
               qa.calls.push({ kind: 'suggestion', id: suggestion.noteId, patch: suggestion })
               while (qa.holdSuggestion) await new Promise(resolve => setTimeout(resolve, 20))
               if (qa.failSuggestion) throw Error('Synthetic suggestion failure')
+            }}
+            onRenameRoom={async (room, name) => {
+              qa.calls.push({ kind: 'rename', id: room.id!, patch: { room_label: name } })
+              setMutating(true)
+              try {
+                while (qa.holdRename) await new Promise(resolve => setTimeout(resolve, 20))
+                if (qa.failRename) throw Error('Synthetic rename failure')
+                const updated = { ...room, room_label: name }
+                setRoomRows(rows => rows.map(row => row.id === room.id ? updated : row))
+                return updated
+              } finally { setMutating(false) }
             }}
             onMove={(request) =>
               mutate('move', request.requestId, () => {
@@ -511,10 +538,12 @@ function Fixture() {
     </main>
   )
 }
-function FloorFixture() {
+function FloorFixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
   const [model, update] = useState<ObFloorModel>({ revision: 1, levels: [
     { level: 0, name: 'Entr\u00e9plan' }, { level: 1, name: '' }, { level: -1, name: 'Suterr\u00e4ng' },
   ] })
-  return <ObFloorContext.Provider value={{ model, update }}><Fixture /></ObFloorContext.Provider>
+  return <ObFloorContext.Provider value={{ model, update }}><Fixture onOpenStepMenu={onOpenStepMenu} /></ObFloorContext.Provider>
 }
-createRoot(document.getElementById('root')!).render(newFloors ? <FloorFixture /> : <Fixture />)
+export default function MobileRoundFixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
+  return newFloors ? <FloorFixture onOpenStepMenu={onOpenStepMenu} /> : <Fixture onOpenStepMenu={onOpenStepMenu} />
+}

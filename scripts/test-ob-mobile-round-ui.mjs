@@ -13,6 +13,9 @@ import { testImageBank } from '../test/helpers/ob-image-bank-browser.mjs'
 import { testImagePreview } from '../test/helpers/ob-image-preview-browser.mjs'
 import { testImageRemoval } from '../test/helpers/ob-image-removal-browser.mjs'
 import { testNoteSuggestion } from '../test/helpers/ob-note-suggestion-browser.mjs'
+import { testRoomNameImages } from '../test/helpers/ob-room-name-images-browser.mjs'
+import { testRoomSwipe } from '../test/helpers/ob-room-swipe-browser.mjs'
+import { testRoundBack } from '../test/helpers/ob-round-back-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -21,7 +24,7 @@ const output = resolve('tmp/ob-mobile-round-ui')
 await mkdir(output, { recursive: true })
 await new Promise((ok, fail) => webpack({
   mode: 'development', devtool: false,
-  entry: { view: resolve('test/fixtures/ob-mobile-round.tsx'), navigation: resolve('test/fixtures/ob-round-page.tsx') },
+  entry: { view: resolve('test/fixtures/ob-mobile-round-page.tsx'), navigation: resolve('test/fixtures/ob-round-page.tsx') },
   output: { path: output, filename: '[name].js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve('test/fixtures/ob-mobile-round-client.ts'),
@@ -64,7 +67,14 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/navigation.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(navigationJs); return }
   if (url.pathname === '/photo.png') { response.setHeader('Content-Type', 'image/png'); response.end(photo); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
+  if (url.pathname === '/history-before') {
+    response.end('<!doctype html><html lang="sv"><body><h1>Besiktningar</h1></body></html>'); return
+  }
   if (url.pathname === '/preview') {
+    if (url.searchParams.has('swipe')) {
+      const source = url.searchParams.has('levels') ? '/?levels&swipe' : '/?swipe'
+      response.end(`<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · testuppgifter</title><style>html,body{margin:0;height:100%;background:#edf1f2}iframe{display:block;width:min(100%,390px);height:100dvh;margin:auto;border:0;background:white}</style></head><body><iframe src="${source}" title="ÖB mobilrunda med testuppgifter"></iframe></body></html>`); return
+    }
     if (url.searchParams.has('levels')) {
       response.end('<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>OB plan - testuppgifter</title><style>html,body{margin:0;height:100%;background:#edf1f2}iframe{display:block;width:min(100%,390px);height:100dvh;margin:auto;border:0;background:white}</style></head><body><iframe src="/?levels" title="OB med ny planindelning"></iframe></body></html>'); return
     }
@@ -91,6 +101,12 @@ if (serve) {
       if (new URL(request.url()).origin === base) void request.continue()
       else { external.push(request.url()); void request.abort() }
     })
+    await testRoundBack(page, base, output)
+    if (!process.argv.includes('--back-only')) {
+    await testRoomSwipe(page, base, output)
+    if (!process.argv.includes('--swipe-only')) {
+    await testRoomNameImages(page, base, output)
+    if (!process.argv.includes('--room-name-images-only')) {
     await testNoteSuggestion(page, base, output)
     if (!process.argv.includes('--note-suggestion-only')) {
     await testImageRemoval(page, base, output)
@@ -101,7 +117,10 @@ if (serve) {
       if (!process.argv.includes('--images-only') && !process.argv.includes('--image-bank-only')) await testFloorEditor(page, base, output)
     }
     }
-    if (process.argv.includes('--floors-only') || process.argv.includes('--images-only') || process.argv.includes('--image-bank-only') || process.argv.includes('--image-preview-only') || process.argv.includes('--image-removal-only') || process.argv.includes('--note-suggestion-only')) {
+    }
+    }
+    }
+    if (process.argv.includes('--back-only') || process.argv.includes('--swipe-only') || process.argv.includes('--floors-only') || process.argv.includes('--images-only') || process.argv.includes('--image-bank-only') || process.argv.includes('--image-preview-only') || process.argv.includes('--image-removal-only') || process.argv.includes('--note-suggestion-only') || process.argv.includes('--room-name-images-only')) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
       console.log('PASS: selected browser checks. No external requests.')

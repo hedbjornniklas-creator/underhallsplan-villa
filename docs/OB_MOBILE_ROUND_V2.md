@@ -55,6 +55,20 @@ do not replace physical-device, production-database and report acceptance.
 - Existing inspection locking and assignment-workflow boundary remain in place.
 - Icon-only move and delete actions at the right of room/note headers; consistent
   back arrow at the left. Move a room to a floor, or a note to a room/exterior part.
+- The room title has a pencil and opens "Byt rumsnamn" with explicit save/back.
+  Rename updates only `room_label` on the same inspection/room, conditional on
+  the previous name. Room type, floor, order, values, notes, pictures and capture
+  origins are not rewritten. Failed saves retain the name draft; an identical
+  retry after a lost response is accepted. Pending text/uploads and locks block
+  rename. It uses existing RLS/write guards and needs no new migration.
+- Room/exterior details have a collapsed image section above catalog suggestions:
+  "Bilder i rummet" / "Bilder på platsen", with total and unlinked counts. It is
+  hidden during text search. Expand to see linked and unlinked thumbnails;
+  preview an image, then open its existing note or link an unlinked photo using
+  the existing/new-note flow. Viewing never creates a note or image link.
+  Current note/image placement takes precedence over capture origin, which is
+  only a fallback for photos without a current place. A moved image appears at
+  its current place, not at both places. Historical origin labels are preserved.
 - Confirmed deletion of empty rooms, notes and images. Deleting a note unlinks
   its pictures first, retaining them at their place under pending work.
 - The trash icon beside editor thumbnails offers two actions: remove from the
@@ -196,6 +210,44 @@ and `node scripts/test-ob-mobile-round-ui.mjs --image-bank-only`.
 Image-preview checks: `node scripts/test-ob-mobile-round-ui.mjs --image-preview-only`.
 Image removal choices: `node scripts/test-ob-mobile-round-ui.mjs --image-removal-only`
 and `node --experimental-strip-types --test test/ob-round-image-unlink.test.ts`.
+Room rename and place-image checks: `node --experimental-strip-types --test test/ob-room-name-images.test.ts`
+and `node scripts/test-ob-mobile-round-ui.mjs --room-name-images-only`.
+
+### Touch navigation between rooms
+
+- In an interior room, swipe left for the next room or right for the previous
+  room, using the same descending order as the selected floor's room list.
+  Navigation stops at the first/last room; it never wraps or changes floors.
+- This is navigation only: no rooms, notes, images or inspection data are written.
+  The existing back arrow and place list remain available on all devices.
+- Short, vertical, slow, multi-finger and screen-edge gestures do not navigate.
+  Fields, image galleries, dialogs and action buttons are excluded. Swiping a
+  note row or suggestion category does not also activate it. Mouse dragging is
+  unchanged; vertical scrolling and pinch zoom retain browser behavior.
+- Synthetic touch checks: `node scripts/test-ob-mobile-round-ui.mjs --swipe-only`.
+  Preview with several rooms on one floor: `http://127.0.0.1:57068/preview?levels&swipe`.
+
+### Phone/browser Back
+
+- The new round owns one same-URL history boundary while a detail view, a tab
+  other than Places, or a round dialog is open. Browser/phone Back first closes
+  the top dialog; without a dialog it returns to Places on the selected floor.
+  From Places, normal browser navigation remains available.
+- Dialog Back uses the existing cancel/arrow callback. The note editor flushes
+  pending text before closing, stays open on save failure, and ignores further
+  close requests while saving. Busy mutation dialogs retain their close guard.
+- Moving between rooms (including swipes) does not add history entries. In-app
+  arrows and step changes remove the boundary. Reload reuses it rather than
+  adding another. A retired forward boundary is skipped, not an extra blank step.
+- Existing router history metadata is preserved. The inspection page does not
+  add its separate text-draft boundary while this local boundary handles Back;
+  its existing unload/link/leave protections remain unchanged.
+- Navigation does not change inspection records; closing an edited note uses
+  the same existing autosave as its in-app arrow. No SQL migration is required.
+- Check: `node scripts/test-ob-mobile-round-ui.mjs --back-only`. Tests exercise
+  actual browser history, the production round/editor and the real inspection
+  page's draft guard with synthetic data, including slow/failed saves, nested
+  dialogs, normal exit, reload, Strict Mode and switching steps.
 
 ### Free-note suggestions for the catalog
 

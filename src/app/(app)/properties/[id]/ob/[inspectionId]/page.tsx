@@ -8,6 +8,7 @@ import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBo
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
+import { isObRoundBackManaged } from '@/lib/ob/roundBackHistory'
 import { getInitialObSection, isObRoundSection } from '@/lib/ob/mobileRound'
 import ObWizard, {
   ObSectionKey,
@@ -241,7 +242,7 @@ export default function InspectionDetailPage() {
       'Det finns text som bara är sparad lokalt på den här enheten. Den ligger kvar och försöker sparas när du öppnar besiktningen igen. Vill du lämna ändå?'
 
     const pushBackButtonGuard = () => {
-      if (textDraftHistoryGuardPushedRef.current || !hasTextDrafts()) return
+      if (textDraftHistoryGuardPushedRef.current || isObRoundBackManaged(inspectionId) || !hasTextDrafts()) return
       window.history.pushState({ obTextDraftGuard: true }, '', window.location.href)
       textDraftHistoryGuardPushedRef.current = true
     }

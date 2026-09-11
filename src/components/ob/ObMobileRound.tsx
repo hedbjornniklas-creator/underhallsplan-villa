@@ -53,6 +53,11 @@ import Sheet from './ObRoundSheet'
 import ObRoundImageBank from './ObRoundImageBank'
 import ObRoundImageActions from './ObRoundImageActions'
 import ObRoundNoteSuggestion from './ObRoundNoteSuggestion'
+import ObRoundRenameRoom from './ObRoundRenameRoom'
+import ObRoundPlaceImages from './ObRoundPlaceImages'
+import { useObRoomSwipe } from './useObRoomSwipe'
+import { useObRoundBack } from './useObRoundBack'
+import { roundImageLocation } from '@/lib/ob/roundImageLocation'
 import type { ObNoteSuggestion } from '@/lib/ob/noteSuggestion'
 import {
   ImageLinkSheet,
@@ -114,6 +119,7 @@ export type ObMobileRoundProps = {
   onLinkImages: (images: RoundImage[], note: Note) => Promise<boolean>
   onUnlinkImage: (image: RoundImage, note: Note) => Promise<void>
   onSuggestNote: (suggestion: ObNoteSuggestion) => Promise<void>
+  onRenameRoom: (room: InteriorRoom, name: string) => Promise<InteriorRoom>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
   onRemove: (
@@ -463,12 +469,14 @@ export default function ObMobileRound(p: Props) {
     [preview, setPreview] = useState<Outcome | null>(null)
   const [photoId, setPhotoId] = useState<string | null>(null)
   const [enlargedPhotoId, setEnlargedPhotoId] = useState<string | null>(null)
+  const [renameRoom, setRenameRoom] = useState<InteriorRoom | null>(null)
   const [moveSubject, setMoveSubject] = useState<MoveSubject | null>(null)
   const [removalSubject, setRemovalSubject] = useState<RemovalSubject | null>(
     null,
   )
   const photo = p.images.find((image) => image.id === photoId)
   const enlargedPhoto = p.images.find((image) => image.id === enlargedPhotoId)
+  const enlargedPhotoNote = p.notes.find(note => note.id === enlargedPhoto?.control_item_id)
   const [addRoomOpen, setAddRoomOpen] = useState(false),
     [roomType, setRoomType] = useState(''),
     [roomLabel, setRoomLabel] = useState('')
@@ -478,6 +486,18 @@ export default function ObMobileRound(p: Props) {
   const [importing, setImporting] = useState(false)
   const [restored, setRestored] = useState(false)
   const positionKey = `ob-mobile-round:v2:${p.inspectionId}:position`
+  const roomsOnFloor = p.rooms
+    .filter(room => p.floorKey(room.floor_label) === p.floorKey(p.activeFloor))
+    .sort((a, b) => b.order_index - a.order_index)
+  const roomSwipe = useObRoomSwipe(
+    view === 'room' && p.area === 'interior' && p.activeRoom?.id && !busy && !importing
+      ? `${p.inspectionId}:${p.activeFloor}:${p.activeRoom.id}` : null,
+    step => {
+      const index = roomsOnFloor.findIndex(room => room.id === p.activeRoom?.id)
+      const next = index < 0 ? undefined : roomsOnFloor[index + step]
+      if (next?.id) goRoom(next)
+    },
+  )
   const observationIds = new Set(
     p.observations
       .filter((row) => row.exterior_item_id === p.activeExteriorItem?.id)
@@ -492,6 +512,12 @@ export default function ObMobileRound(p: Props) {
         )
   const targetNotes = p.notes.filter(atTarget),
     written = p.notes.filter(hasNote)
+  const imageLocations = new Map(p.images.map(image => [image.id, roundImageLocation(image, p.notes, p.observations)]))
+  const targetImages = p.images.filter(image => {
+    const place = imageLocations.get(image.id)!
+    return p.area === 'interior' ? Boolean(p.activeRoom?.id && place.roomId === p.activeRoom.id)
+      : Boolean(p.activeExteriorItem?.id && place.exteriorItemId === p.activeExteriorItem.id)
+  })
   const targetLabel =
     p.area === 'interior'
       ? (p.activeRoom?.room_label ?? 'Välj rum')
@@ -513,6 +539,17 @@ export default function ObMobileRound(p: Props) {
     drafts.length +
     p.quickNotes.filter((note) => note.note.trim()).length
   const editor = p.notes.find((note) => note.id === editorId)
+  useObRoundBack({
+    inspectionId: p.inspectionId,
+    ready: restored,
+    canGoBack: view !== 'places' || Boolean(editor || preview || photo || enlargedPhoto || renameRoom || moveSubject || removalSubject || addRoomOpen),
+    root: roomSwipe.ref,
+    onBack: () => {
+      setView('places')
+      setQuery('')
+      setEverywhere(false)
+    },
+  })
   const applicablePoints = useMemo(
     () => points.filter(p.pointApplies),
     [points, p.pointApplies],
@@ -692,21 +729,10 @@ export default function ObMobileRound(p: Props) {
     return `Utsida · ${p.exteriorItems.find((item) => item.id === observation?.exterior_item_id)?.label ?? 'Plats saknas'}`
   }
   function imagePlace(image: RoundImage) {
-    const room = p.rooms.find(
-      (room) =>
-        room.id === (image.interior_room_id || image.origin_interior_room_id),
-    )
+    const location = imageLocations.get(image.id)!
+    const room = p.rooms.find(room => room.id === location.roomId)
     if (room) return `${p.floorLabel(room.floor_label)} · ${room.room_label}`
-    const observation = p.observations.find(
-      (row) =>
-        row.id ===
-        (image.exterior_observation_id || image.origin_exterior_observation_id),
-    )
-    const item = p.exteriorItems.find(
-      (row) =>
-        row.id ===
-        (observation?.exterior_item_id || image.origin_exterior_item_id),
-    )
+    const item = p.exteriorItems.find(row => row.id === location.exteriorItemId)
     return item
       ? `Utsida · ${item.label}`
       : image.origin_room_label || 'Plats saknas'
@@ -861,7 +887,7 @@ export default function ObMobileRound(p: Props) {
     )
   }
   return (
-    <div className="obm-root" data-view={view} data-area={p.area}>
+    <div className="obm-root" data-view={view} data-area={p.area} {...roomSwipe}>
       {view !== 'room' && (
         <header className="obm-inspection-header">
           <div>
@@ -897,7 +923,11 @@ export default function ObMobileRound(p: Props) {
           </button>
           <div>
             <span>{parentLabel}</span>
-            <h1>{targetLabel}</h1>
+            <h1>{p.area === 'interior' && p.activeRoom?.id ?
+              <button type="button" className="obm-room-name" title="Byt rumsnamn" aria-label="Byt rumsnamn"
+                disabled={p.locked || busy || p.mutationBlocked} onClick={() => setRenameRoom(p.activeRoom!)}>
+                <span>{targetLabel}</span><PenLine size={17} />
+              </button> : targetLabel}</h1>
           </div>
           {p.area === 'interior' && p.activeRoom?.id && (
             <>
@@ -1051,21 +1081,12 @@ export default function ObMobileRound(p: Props) {
           )}
           <div className="obm-places">
             {p.area === 'interior'
-              ? p.rooms
-                  .filter(
-                    (room) =>
-                      p.floorKey(room.floor_label) ===
-                      p.floorKey(p.activeFloor),
-                  )
-                  .sort((a, b) => b.order_index - a.order_index)
-                  .map((room) => {
+              ? roomsOnFloor.map((room) => {
                     const count = written.filter(
                       (note) => note.interior_room_id === room.id,
                     ).length
                     const imageCount = p.images.filter(
-                      (image) =>
-                        (image.interior_room_id ||
-                          image.origin_interior_room_id) === room.id,
+                      image => imageLocations.get(image.id)?.roomId === room.id,
                     ).length
                     return (
                       <button
@@ -1182,6 +1203,9 @@ export default function ObMobileRound(p: Props) {
               {targetNotes.filter(hasNote).map(noteRow)}
             </section>
           )}
+          {!query && <ObRoundPlaceImages key={`${p.area}:${p.activeRoom?.id}:${p.activeExteriorItem?.id}`}
+            images={targetImages} title={p.area === 'interior' ? 'Bilder i rummet' : 'Bilder på platsen'}
+            imageSrc={p.imageSrc} onOpen={image => setEnlargedPhotoId(image.id)} />}
           <section className="obm-catalog">
             <div className="obm-section-title">
               <h2>{query ? 'Sökresultat' : 'Noteringsförslag'}</h2>
@@ -1420,6 +1444,9 @@ export default function ObMobileRound(p: Props) {
           }}
         />
       )}
+      {renameRoom && <ObRoundRenameRoom room={renameRoom} blocked={p.locked || p.mutationBlocked}
+        onRename={p.onRenameRoom} onClose={() => setRenameRoom(null)}
+        onRenamed={room => { p.onRoom(room); setRenameRoom(null); setNotice('Rumsnamnet sparat') }} />}
       {moveSubject && (
         <MoveSheet
           subject={moveSubject}
@@ -1550,14 +1577,18 @@ export default function ObMobileRound(p: Props) {
             <button
               type="button"
               className="obm-primary"
-              disabled={p.locked || p.mutationBlocked}
+              disabled={enlargedPhoto.control_item_id ? !enlargedPhotoNote
+                : p.locked || p.mutationBlocked || Boolean(enlargedPhoto.local_queue_id) || enlargedPhoto.processing_status === 'ignored'}
               onClick={() => {
-                setPhotoId(enlargedPhoto.id)
+                if (enlargedPhoto.control_item_id) {
+                  if (!enlargedPhotoNote) return
+                  openNote(enlargedPhotoNote)
+                } else setPhotoId(enlargedPhoto.id)
                 setEnlargedPhotoId(null)
               }}
             >
-              <LinkIcon size={18} />
-              Koppla till notering
+              {enlargedPhoto.control_item_id ? <FileText size={18} /> : <LinkIcon size={18} />}
+              {enlargedPhoto.control_item_id ? 'Öppna notering' : 'Koppla till notering'}
             </button>
           }
         >
@@ -1596,22 +1627,9 @@ export default function ObMobileRound(p: Props) {
             setNotice('Bilden kopplad')
           }}
           onGoToPlace={() => {
-            const room = p.rooms.find(
-              (room) =>
-                room.id ===
-                (photo.interior_room_id || photo.origin_interior_room_id),
-            )
-            const obs = p.observations.find(
-              (obs) =>
-                obs.id ===
-                (photo.exterior_observation_id ||
-                  photo.origin_exterior_observation_id),
-            )
-            const item = p.exteriorItems.find(
-              (item) =>
-                item.id ===
-                (photo.origin_exterior_item_id || obs?.exterior_item_id),
-            )
+            const location = imageLocations.get(photo.id)!
+            const room = p.rooms.find(room => room.id === location.roomId)
+            const item = p.exteriorItems.find(item => item.id === location.exteriorItemId)
             setPhotoId(null)
             if (room) goRoom(room)
             else if (item) goExterior(item)

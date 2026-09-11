@@ -4,6 +4,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from '
 import { queueImageBatch, unplacedImagePlacement } from '@/lib/ob/roundImageImport'
 import { unlinkRoundImage } from '@/lib/ob/unlinkRoundImage'
 import { submitObNoteSuggestion } from '@/lib/ob/noteSuggestion'
+import { renameRoundRoom } from '@/lib/ob/renameRoundRoom'
 import { useObFloorModel } from './ObFloorProvider'
 import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
@@ -1557,6 +1558,23 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     }
     setImages(rows => rows.map(row => result.images.find(image => image.id === row.id) ?? row))
   }
+  async function renameRoomLabel(room: InteriorRoom, name: string): Promise<InteriorRoom> {
+    if (isInspectionLocked) throw Error('Besiktningen är låst.')
+    if (!room.id || room.inspection_id !== inspection.id) throw Error('Rummet tillhör inte denna besiktning.')
+    if (saving || roundMutationRef.current || pendingUploadCount > 0) throw Error('Vänta tills sparandet och bilduppladdningen är klara.')
+    roundMutationRef.current = true
+    setRoundMutating(true)
+    try {
+      if (hasObTextDraftsForInspection(inspection.id)) throw Error('Det finns osparad text. Spara noteringen innan du fortsätter.')
+      if ((await listRoundImageUploadItems(inspection.id)).length) throw Error('Vänta tills alla bilder har laddats upp.')
+      const updated = await renameRoundRoom(supabase, inspection.id, room.id, room.room_label ?? null, name) as InteriorRoom
+      setRooms(rows => rows.map(row => row.id === updated.id ? updated : row).sort(sortRooms))
+      return updated
+    } finally {
+      roundMutationRef.current = false
+      setRoundMutating(false)
+    }
+  }
 
   const deleteControlItem = async (itemId: string, skipConfirm = false) => {
     if (isInspectionLocked) return
@@ -2419,6 +2437,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
           }}
           onUnlinkImage={(image, note) => unlinkImageFromControlItem(image.id, note.id!)}
           onSuggestNote={suggestion => submitObNoteSuggestion(inspection.id, suggestion)}
+          onRenameRoom={renameRoomLabel}
         />
       ) : renderRoundSurface()}
       {!mobileLayout && roomDialogOpen && activeRoom ? renderRoomDialog() : null}
