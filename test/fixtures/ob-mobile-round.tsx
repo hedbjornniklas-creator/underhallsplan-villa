@@ -75,6 +75,15 @@ const initialImages: Image[] = [
     sort_order: 10,
   },
 ]
+if (new URLSearchParams(location.search).has('imagebank')) {
+  initialImages.push(
+    { ...initialImages[0], id: 'bank-origin', label: 'Ursprung', interior_room_id: null, origin_interior_room_id: 'room-1' },
+    { ...initialImages[0], id: 'bank-other', label: 'Annat rum', interior_room_id: 'room-2' },
+    { ...initialImages[0], id: 'bank-unplaced', label: 'Uppladdad', interior_room_id: null },
+    { ...initialImages[0], id: 'bank-ignored', processing_status: 'ignored' },
+    { ...initialImages[0], id: 'bank-linked', control_item_id: 'empty-note', processing_status: 'linked' },
+  )
+}
 const exteriorItems = [
   {
     id: 'exterior-1',
@@ -86,6 +95,8 @@ const exteriorItems = [
 ]
 const qa = {
   failSaves: false,
+  partialLink: false,
+  holdLinks: false,
   dropMutationResponse: false,
   delayMs: 0,
   calls: [] as Array<{ kind: string; id: string; patch?: unknown }>,
@@ -296,6 +307,23 @@ function Fixture() {
                 ),
               )
               return true
+            }}
+            onLinkImages={async (selected, target) => {
+              qa.calls.push({ kind: 'link-batch', id: target.id!, patch: selected.map(image => image.id) })
+              setMutating(true)
+              try {
+                while (qa.holdLinks) await new Promise(resolve => setTimeout(resolve, 20))
+                await new Promise(resolve => setTimeout(resolve, qa.delayMs))
+                if (qa.failSaves) throw Error('Synthetic image link failure')
+                const ids = new Set((qa.partialLink ? selected.slice(0, 1) : selected).map(image => image.id))
+                setImages(rows => rows.map(row => ids.has(row.id) && !row.control_item_id ? {
+                  ...row, control_item_id: target.id!, interior_room_id: target.interior_room_id,
+                  exterior_observation_id: target.exterior_observation_id, processing_status: 'linked',
+                } : row))
+                return !qa.partialLink
+              } finally {
+                setMutating(false)
+              }
             }}
             onMove={(request) =>
               mutate('move', request.requestId, () => {

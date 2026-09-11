@@ -37,6 +37,21 @@ do not replace physical-device, production-database and report acceptance.
   discarding successful files. Cancel creates nothing and locked/paused views
   cannot import. Images can be linked to existing notes after upload; creating
   a new image note still requires a saved place. No database migration is needed.
+- The note editor has three photo actions: camera, device gallery, and Bildbank.
+  Bildbank selects multiple existing unhandled images, grouped by the note's
+  place, other places, and no place. Search does not clear selections; back
+  discards the selection without linking. Opening the bank flushes note text
+  first, and returning preserves the editor draft. Linking requires confirmation
+  and completed uploads. The conditional update is scoped to the inspection and
+  still-unlinked, non-ignored rows, so a concurrent link is not overwritten.
+  Successful partial updates remain visible; retry includes only remaining
+  selections. Image files and original capture metadata are not changed.
+  This addition needs no new database migration.
+- In Att bearbeta, pressing an image thumbnail opens a large, uncropped preview
+  in the current tab. Back/Escape returns to the list at its scroll position.
+  The adjacent place/arrow still opens image linking directly, and the preview
+  also has a link action. Viewing images does not write inspection data; locked
+  inspections and queued uploads can be previewed without enabling linking.
 - Existing inspection locking and assignment-workflow boundary remain in place.
 - Icon-only move and delete actions at the right of room/note headers; consistent
   back arrow at the left. Move a room to a floor, or a note to a room/exterior part.
@@ -158,18 +173,21 @@ physical camera capture, real upload retries, or report output parity.
 Interactive synthetic preview, with no credentials or database connection:
 
 ```powershell
-node scripts/test-ob-mobile-round-ui.mjs --serve --port 57067
+node scripts/test-ob-mobile-round-ui.mjs --serve --port 57068
 ```
 
 This separate preview uses invented data, not the user's working test copy.
-Current preview: `http://127.0.0.1:57067/preview`. Older preview processes on
-57065/57066 have not been stopped or reset by this update.
+Current preview: `http://127.0.0.1:57068/preview?levels`. Older preview processes on
+57065/57066/57067 have not been stopped or reset by this update.
 Synthetic note text and imported test files are persisted in the preview's own
 browser origin. Displayed images and rooms in this fixture reset on reload;
 the fixture does not upload imported files to Supabase. The server must remain running.
 Screenshots/build output are ignored under `tmp/ob-mobile-round-ui`.
 Image-import checks: `node --experimental-strip-types --test test/ob-round-image-import.test.ts`
 and `node scripts/test-ob-mobile-round-ui.mjs --images-only`.
+Image-bank checks: `node --experimental-strip-types --test test/ob-round-image-bank.test.ts`
+and `node scripts/test-ob-mobile-round-ui.mjs --image-bank-only`.
+Image-preview checks: `node scripts/test-ob-mobile-round-ui.mjs --image-preview-only`.
 
 Before retiring the legacy round, verify the production adapter against an
 isolated database, test the real phone camera/upload queue, and compare the

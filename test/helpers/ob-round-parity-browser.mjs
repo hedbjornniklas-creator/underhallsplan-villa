@@ -16,7 +16,7 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
   const closed = () => page.waitForFunction(() => !document.querySelector('dialog[open]'))
   async function imageSheet() {
     await click('Att bearbeta', 'nav')
-    await page.click('.obm-image-row')
+    await page.click('.obm-image-link')
     await waitSheet('Koppla bild')
   }
   await fresh()

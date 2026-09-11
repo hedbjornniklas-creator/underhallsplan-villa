@@ -9,6 +9,8 @@ import puppeteer from 'puppeteer-core'
 import { testRoundParity } from '../test/helpers/ob-round-parity-browser.mjs'
 import { testFloorEditor } from '../test/helpers/ob-floor-browser.mjs'
 import { testImageImport } from '../test/helpers/ob-image-import-browser.mjs'
+import { testImageBank } from '../test/helpers/ob-image-bank-browser.mjs'
+import { testImagePreview } from '../test/helpers/ob-image-preview-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -87,12 +89,16 @@ if (serve) {
       if (new URL(request.url()).origin === base) void request.continue()
       else { external.push(request.url()); void request.abort() }
     })
-    await testImageImport(page, base, output)
-    if (!process.argv.includes('--images-only')) await testFloorEditor(page, base, output)
-    if (process.argv.includes('--floors-only') || process.argv.includes('--images-only')) {
+    await testImagePreview(page, base, output)
+    if (!process.argv.includes('--image-preview-only')) {
+      await testImageBank(page, base, output)
+      if (!process.argv.includes('--image-bank-only')) await testImageImport(page, base, output)
+      if (!process.argv.includes('--images-only') && !process.argv.includes('--image-bank-only')) await testFloorEditor(page, base, output)
+    }
+    if (process.argv.includes('--floors-only') || process.argv.includes('--images-only') || process.argv.includes('--image-bank-only') || process.argv.includes('--image-preview-only')) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
-      console.log('PASS: multi-image import, durable local queue, cancellation, failures, locked/paused states and 320-1280px layouts. No external requests.')
+      console.log('PASS: selected browser checks. No external requests.')
     } else {
     async function click(text, parent = '') {
       for (const button of await page.$$(`${parent} button`)) {
@@ -195,7 +201,7 @@ if (serve) {
     assert.equal(await page.evaluate(() => window.__obMobileTest.hasDrafts()), false)
 
     await click('Att bearbeta', 'nav')
-    await page.click('.obm-image-row')
+    await page.click('.obm-image-link')
     await page.waitForSelector('dialog[aria-label="Koppla bild"]')
     assert.equal(await page.$('dialog select'), null, 'wrapped radio list replaces the native select')
     await page.type('[aria-label="Sök notering att koppla"]', 'överleva')
@@ -210,7 +216,7 @@ if (serve) {
 
     await fresh('?queued')
     await click('Att bearbeta', 'nav')
-    await page.click('.obm-image-row')
+    await page.click('.obm-image-link')
     await page.waitForSelector('dialog input[type="radio"]')
     await page.click('dialog input[type="radio"]')
     assert.equal(await page.$eval('dialog footer button', node => node.disabled), true)

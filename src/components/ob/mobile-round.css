@@ -641,13 +641,27 @@ body:has(dialog.obm-sheet[open]) {
   border-bottom: 1px solid var(--obm-line);
   text-align: left;
 }
-.obm-image-row > img {
+.obm-root .obm-image-thumb {
   width: 94px;
   height: 94px;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: zoom-in;
+}
+.obm-image-thumb > img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   border-radius: 6px;
 }
-.obm-image-row > span {
+.obm-root .obm-image-link {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  justify-content: space-between;
+  padding: 0;
+}
+.obm-image-link > span {
   flex: 1;
   min-width: 0;
   display: grid;
@@ -882,15 +896,74 @@ body:has(dialog.obm-sheet[open]) {
   margin-bottom: 12px;
 }
 .obm-photo-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 12px 0;
 }
 .obm-sheet .obm-photo-actions button {
-  flex: 1;
+  min-width: 0;
   border: 1px solid #c8d8e3;
   color: #365e7d;
   padding: 8px;
+}
+.obm-image-bank-group {
+  margin-top: 18px;
+}
+.obm-image-bank-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 12px;
+}
+.obm-image-bank-item {
+  min-width: 0;
+  border: 1px solid var(--obm-line);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.obm-image-bank-item:has(:checked) {
+  border-color: var(--obm-blue);
+  background: #eff5ff;
+}
+.obm-image-bank-item:focus-within {
+  outline: 2px solid #83aaf2;
+  outline-offset: 2px;
+}
+.obm-image-bank-item > img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: block;
+  object-fit: contain;
+  background: #f1f4f6;
+}
+.obm-image-bank-item > span {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  font-size: 12px;
+}
+.obm-image-bank-item input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--obm-blue);
+}
+.obm-image-bank-item small {
+  display: block;
+  color: #647482;
+}
+@media (max-width: 480px) {
+  .obm-sheet .obm-photo-actions button {
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+  }
+  .obm-image-bank-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .obm-photos {
   display: grid;
@@ -949,6 +1022,25 @@ body:has(dialog.obm-sheet[open]) {
 .obm-sheet {
   max-width: 640px;
   margin: 0 auto;
+}
+.obm-sheet:has(.obm-image-viewer) {
+  max-width: 1100px;
+}
+.obm-sheet-body:has(.obm-image-viewer) {
+  display: flex;
+  flex-direction: column;
+}
+.obm-image-viewer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: #f1f4f6;
+}
+.obm-image-viewer img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
 }
 .obm-root .obm-inspection-header {
   display: flex;

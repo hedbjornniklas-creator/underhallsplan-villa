@@ -1919,7 +1919,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
 
   const linkSelectedImagesToControlItem = async (
     controlItemId = selectedControlItemId,
-    candidates = selectedImages
+    candidates = selectedImages,
+    onlyUnhandled = false
   ) => {
     if (isInspectionLocked) return
     if (!controlItemId) {
@@ -1950,7 +1951,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       let updated: InspectionImage[] = []
 
       if (serverImageIds.length > 0) {
-        const { data, error: updateError } = await supabase
+        let query = supabase
           .from('inspection_images')
           .update({
             control_item_id: resolvedControlItemId,
@@ -1959,15 +1960,20 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             processing_status: 'linked',
             ignored_at: null,
           })
+          .eq('inspection_id', inspection.id)
           .in('id', serverImageIds)
-          .select('*')
+        if (onlyUnhandled) {
+          query = query.is('control_item_id', null)
+            .or('processing_status.is.null,processing_status.neq.ignored')
+        }
+        const { data, error: updateError } = await query.select('*')
 
         if (updateError) throw updateError
         updated = (data ?? []) as InspectionImage[]
+        setImages(prev => prev.map(image => updated.find(row => row.id === image.id) ?? image))
         if (updated.length !== serverImageIds.length) {
           throw new Error('Alla valda bilder kunde inte kopplas. Uppdatera bildlistan och försök igen.')
         }
-        setImages(prev => prev.map(image => updated.find(row => row.id === image.id) ?? image))
       }
 
       await Promise.all(
@@ -2402,6 +2408,10 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             }))
           }}
           onLinkImage={async (image, note) => Boolean(await linkSelectedImagesToControlItem(note.id, [image]))}
+          onLinkImages={async (images, note) => {
+            if (saving || roundMutating || pendingUploadCount > 0 || images.some(isLocalRoundImage)) return false
+            return Boolean(await linkSelectedImagesToControlItem(note.id, images, true))
+          }}
         />
       ) : renderRoundSurface()}
       {!mobileLayout && roomDialogOpen && activeRoom ? renderRoomDialog() : null}

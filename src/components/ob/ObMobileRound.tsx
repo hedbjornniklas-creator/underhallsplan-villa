@@ -18,6 +18,7 @@ import {
   FileText,
   Image as ImageIcon,
   Layers,
+  Link as LinkIcon,
   MapPin,
   Menu,
   PenLine,
@@ -48,6 +49,7 @@ import type {
   ImageNoteResult,
 } from '@/lib/ob/roundMutations'
 import Sheet from './ObRoundSheet'
+import ObRoundImageBank from './ObRoundImageBank'
 import {
   ImageLinkSheet,
   MoveSheet,
@@ -105,6 +107,7 @@ export type ObMobileRoundProps = {
   onGallery: (id: string | null) => void
   onImportImages: (files: File[]) => Promise<void>
   onLinkImage: (image: RoundImage, note: Note) => Promise<boolean>
+  onLinkImages: (images: RoundImage[], note: Note) => Promise<boolean>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
   onRemove: (
@@ -126,6 +129,7 @@ function Editor({
   onMove,
   onDelete,
   onDeleteImage,
+  imagePlace,
 }: {
   note: Note
   place: string
@@ -134,6 +138,7 @@ function Editor({
   onMove: () => void
   onDelete: () => void
   onDeleteImage: (image: RoundImage) => void
+  imagePlace: (image: RoundImage) => string
 }) {
   const key = getObTextDraftStorageKey(
     `ob:${p.inspectionId}:mobile-round:${note.id}`,
@@ -155,6 +160,7 @@ function Editor({
   const [draft, setDraft] = useState<Patch>(initial.draft)
   const [status, setStatus] = useState(initial.pending ? 'Ej sparad' : 'Sparad')
   const [error, setError] = useState('')
+  const [imageBankOpen, setImageBankOpen] = useState(false)
   const [leaving, setLeaving] = useState(false),
     leaveRef = useRef(false)
   const values = useRef(draft),
@@ -236,6 +242,10 @@ function Editor({
       setLeaving(false)
     }
   }
+  if (imageBankOpen) return (
+    <ObRoundImageBank note={note} place={place} imagePlace={imagePlace} p={p}
+      onClose={() => setImageBankOpen(false)} />
+  )
   return (
     <Sheet
       title="Notering"
@@ -356,6 +366,13 @@ function Editor({
           <ImageIcon size={20} />
           Välj bilder
         </button>
+        <button
+          disabled={p.locked || leaving}
+          onClick={() => void finish(() => setImageBankOpen(true))}
+        >
+          <Inbox size={20} />
+          Bildbank
+        </button>
       </div>
       <div className="obm-photos">
         {linked.map((image) => (
@@ -403,11 +420,13 @@ export default function ObMobileRound(p: Props) {
   const [editorId, setEditorId] = useState<string | null>(null),
     [preview, setPreview] = useState<Outcome | null>(null)
   const [photoId, setPhotoId] = useState<string | null>(null)
+  const [enlargedPhotoId, setEnlargedPhotoId] = useState<string | null>(null)
   const [moveSubject, setMoveSubject] = useState<MoveSubject | null>(null)
   const [removalSubject, setRemovalSubject] = useState<RemovalSubject | null>(
     null,
   )
   const photo = p.images.find((image) => image.id === photoId)
+  const enlargedPhoto = p.images.find((image) => image.id === enlargedPhotoId)
   const [addRoomOpen, setAddRoomOpen] = useState(false),
     [roomType, setRoomType] = useState(''),
     [roomLabel, setRoomLabel] = useState('')
@@ -1254,25 +1273,36 @@ export default function ObMobileRound(p: Props) {
           </div>
           <div className="obm-image-list">
             {unmatched.map((image) => (
-              <button
+              <div
                 key={image.id}
                 className="obm-image-row"
-                onClick={() => setPhotoId(image.id)}
               >
-                <img
-                  src={p.imageSrc(image)}
-                  alt={image.label || 'Besiktningsbild'}
-                />
-                <span>
-                  <strong>{imagePlace(image)}</strong>
-                  <small>
-                    {image.local_upload_status
-                      ? 'Lokal bild · ' + image.local_upload_status
-                      : 'Ej kopplad'}
-                  </small>
-                </span>
-                <ChevronRight size={19} />
-              </button>
+                <button
+                  type="button"
+                  className="obm-image-thumb"
+                  aria-label={`Förstora bild: ${imagePlace(image)}`}
+                  title="Förstora bild"
+                  onClick={() => setEnlargedPhotoId(image.id)}
+                >
+                  <img src={p.imageSrc(image)} alt={image.label || 'Besiktningsbild'} />
+                </button>
+                <button
+                  type="button"
+                  className="obm-image-link"
+                  aria-label={`Koppla bild: ${imagePlace(image)}`}
+                  onClick={() => setPhotoId(image.id)}
+                >
+                  <span>
+                    <strong>{imagePlace(image)}</strong>
+                    <small>
+                      {image.local_upload_status
+                        ? 'Lokal bild · ' + image.local_upload_status
+                        : 'Ej kopplad'}
+                    </small>
+                  </span>
+                  <ChevronRight size={19} />
+                </button>
+              </div>
             ))}
           </div>
           {pendingCount === 0 && (
@@ -1324,6 +1354,7 @@ export default function ObMobileRound(p: Props) {
           place={placeOf(editor)}
           p={p}
           onClose={() => setEditorId(null)}
+          imagePlace={imagePlace}
           onMove={() => {
             setEditorId(null)
             setMoveSubject({ kind: 'note', note: editor })
@@ -1467,6 +1498,31 @@ export default function ObMobileRound(p: Props) {
               <p className="obm-full-text">{preview.ftu_template}</p>
             </>
           )}
+        </Sheet>
+      )}
+      {enlargedPhoto && (
+        <Sheet
+          title="Bild"
+          onClose={() => setEnlargedPhotoId(null)}
+          footer={
+            <button
+              type="button"
+              className="obm-primary"
+              disabled={p.locked || p.mutationBlocked}
+              onClick={() => {
+                setPhotoId(enlargedPhoto.id)
+                setEnlargedPhotoId(null)
+              }}
+            >
+              <LinkIcon size={18} />
+              Koppla till notering
+            </button>
+          }
+        >
+          <p className="obm-place-label"><MapPin size={16} />{imagePlace(enlargedPhoto)}</p>
+          <div className="obm-image-viewer">
+            <img src={p.imageSrc(enlargedPhoto)} alt={enlargedPhoto.label || 'Besiktningsbild'} />
+          </div>
         </Sheet>
       )}
       {photo && (
