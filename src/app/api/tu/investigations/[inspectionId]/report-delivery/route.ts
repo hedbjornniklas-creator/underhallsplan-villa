@@ -18,6 +18,12 @@ import { TU_MOISTURE_DAMAGE_TEMPLATE_KEY } from '@/lib/tu/evidence'
 import { listTuObservations } from '@/lib/tu/evidenceServer'
 import { TU_POST_DAMAGE_REVIEW_TEMPLATE_KEY } from '@/lib/tu/workflowProfiles'
 import {
+  getTuAnalysisFinalizationBlocker,
+  isTuAnalysisStaleForFinalization,
+  isTuStaleAnalysisAcknowledgementCurrent,
+  type TuAnalysisFinalizationState,
+} from '@/lib/tu/finalization'
+import {
   evaluateTuReportImprovements,
   evaluateTuReportQuality,
   isTuSystemGeneratedReportSection,
@@ -705,21 +711,20 @@ async function getReportImprovementReview(
 
 async function getFinalizationBlocker(
   admin: AdminClient,
-  investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
+  investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>,
+  staleAnalysisAcknowledged = false,
+  knownAnalysisState?: TuAnalysisFinalizationState | null
 ) {
   if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) return null
 
-  const { data, error } = await admin
-    .from('tu_analysis_workflows')
-    .select('status,analysis_stale_at')
-    .eq('org_id', investigation.orgId)
-    .eq('inspection_id', investigation.inspectionId)
-    .maybeSingle()
-  if (error) throw new Error(error.message)
-  const workflow = data as { status?: string | null; analysis_stale_at?: string | null } | null
-  if (workflow?.analysis_stale_at || workflow?.status !== 'analysis_approved') {
-    return 'Den samlade bedömningen måste vara aktuell och godkänd innan utlåtandet kan fastställas.'
-  }
+  const analysisState = knownAnalysisState === undefined
+    ? await getAnalysisFinalizationState(admin, investigation)
+    : knownAnalysisState
+  const analysisBlocker = getTuAnalysisFinalizationBlocker({
+    state: analysisState,
+    staleAnalysisAcknowledged,
+  })
+  if (analysisBlocker) return analysisBlocker
 
   const missingSections = investigation.reportDraft.sections.filter((section) => {
     if (isTuSystemGeneratedReportSection(section.key)) return false
@@ -735,6 +740,28 @@ async function getFinalizationBlocker(
   const qualityBlocker = qualityIssues.find((issue) => issue.severity === 'blocker')
   if (qualityBlocker) return qualityBlocker.message
   return null
+}
+
+async function getAnalysisFinalizationState(
+  admin: AdminClient,
+  investigation: NonNullable<Awaited<ReturnType<typeof getTuInvestigationById>>>
+): Promise<TuAnalysisFinalizationState | null> {
+  if (!usesTuAiAssistedWorkflow(investigation.reportAuthoringMode, investigation.reportTemplateKey)) return null
+
+  const { data, error } = await admin
+    .from('tu_analysis_workflows')
+    .select('status,analysis_stale_at')
+    .eq('org_id', investigation.orgId)
+    .eq('inspection_id', investigation.inspectionId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  const workflow = data as { status?: string | null; analysis_stale_at?: string | null } | null
+  return workflow
+    ? {
+        status: workflow.status ?? null,
+        analysisStaleAt: workflow.analysis_stale_at ?? null,
+      }
+    : null
 }
 
 export async function GET(
@@ -769,7 +796,7 @@ export async function GET(
       )
     }
 
-    const [history, unlockHistory, activeLink, deliveryDocuments, revision, qualityIssues, improvementReview] = await Promise.all([
+    const [history, unlockHistory, activeLink, deliveryDocuments, revision, qualityIssues, improvementReview, analysisState] = await Promise.all([
       getDeliveryHistory(admin, inspectionId),
       getUnlockHistory(admin, org.orgId, inspectionId),
       getLatestReportLink(admin, inspectionId),
@@ -777,6 +804,7 @@ export async function GET(
       getCurrentTuRevision(admin, org.orgId, inspectionId),
       getReportQualityIssues(investigation),
       getReportImprovementReview(investigation),
+      getAnalysisFinalizationState(admin, investigation),
     ])
     const ordererEmail = resolveDefaultRecipient(investigation)
     const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
@@ -802,6 +830,8 @@ export async function GET(
       revisionPublishedAt: revision?.published_at ?? null,
       qualityIssues,
       improvementReview,
+      analysisStale: isTuAnalysisStaleForFinalization(analysisState),
+      analysisStaleAt: analysisState?.analysisStaleAt ?? null,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
@@ -824,6 +854,8 @@ export async function POST(
           action?: unknown
           primary_recipient?: unknown
           extra_recipients?: unknown
+          acknowledge_stale_analysis?: unknown
+          acknowledged_analysis_stale_at?: unknown
         }
       | null
     const action = parseAction(body?.action)
@@ -833,6 +865,8 @@ export async function POST(
       inspectorProfileId: org.userId,
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
+    let staleAnalysisAcknowledged = false
+    let acknowledgedAnalysisStaleAt: string | null = null
 
     if (action === 'regenerate_pdf') {
       const latestLink = await getLatestReportLink(admin, inspectionId)
@@ -898,7 +932,22 @@ export async function POST(
     }
 
     if ((action === 'lock_only' || action === 'send_and_lock') && !investigation.reportLockedAt) {
-      const finalizationBlocker = await getFinalizationBlocker(admin, investigation)
+      const analysisState = await getAnalysisFinalizationState(admin, investigation)
+      acknowledgedAnalysisStaleAt =
+        typeof body?.acknowledged_analysis_stale_at === 'string'
+          ? body.acknowledged_analysis_stale_at
+          : null
+      staleAnalysisAcknowledged = body?.acknowledge_stale_analysis === true
+        && isTuStaleAnalysisAcknowledgementCurrent({
+          state: analysisState,
+          acknowledgedAnalysisStaleAt,
+        })
+      const finalizationBlocker = await getFinalizationBlocker(
+        admin,
+        investigation,
+        staleAnalysisAcknowledged,
+        analysisState
+      )
       if (finalizationBlocker) return jsonError(finalizationBlocker, 409)
     }
 
@@ -951,13 +1000,21 @@ export async function POST(
         listTuInvestigationImages({ orgId: org.orgId, inspectionId, sectionKey: 'appendix' }),
         listTuObservations({ orgId: org.orgId, inspectionId }),
       ])
-      snapshotPayload = createTuReportSnapshotPayloadV1({
+      const reportSnapshot = createTuReportSnapshotPayloadV1({
         investigation,
         coverImages,
         appendixImages,
         observations,
         deliveryDocuments,
       })
+      if (staleAnalysisAcknowledged && acknowledgedAnalysisStaleAt) {
+        reportSnapshot.meta.finalizationReview = {
+          analysisStaleAt: acknowledgedAnalysisStaleAt,
+          staleAnalysisAcknowledgedAt: new Date().toISOString(),
+          staleAnalysisAcknowledgedBy: org.userId,
+        }
+      }
+      snapshotPayload = reportSnapshot
     }
     const token = generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)

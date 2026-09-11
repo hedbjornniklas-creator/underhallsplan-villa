@@ -4,6 +4,8 @@ import ObMobileRound, {
   type ObMobileRoundProps,
 } from '../../src/components/ob/ObMobileRound'
 import { hasObTextDraftsForInspection } from '../../src/lib/ob/localTextDrafts'
+import { queueImageBatch, unplacedImagePlacement } from '../../src/lib/ob/roundImageImport'
+import { putRoundImageUploadItem, listRoundImageUploadItems } from '../../src/lib/ob/roundImageUploadQueue'
 import { ObFloorContext, useObFloorModel } from '../../src/components/ob/ObFloorProvider'
 import { ObFloorEditor } from '../../src/components/ob/ObFloorEditor'
 import ObRoundSheet from '../../src/components/ob/ObRoundSheet'
@@ -92,6 +94,7 @@ const qa = {
   rooms,
   completeUpload: () => {},
   hasDrafts: () => hasObTextDraftsForInspection(inspectionId),
+  imageQueue: () => listRoundImageUploadItems(inspectionId),
 }
 Object.assign(window, { __obMobileTest: qa })
 
@@ -264,6 +267,24 @@ function Fixture() {
             onGallery={(id) => {
               qa.calls.push({ kind: 'gallery', id: id || 'place' })
             }}
+            onImportImages={files => queueImageBatch(files, async (file, index) => {
+              qa.calls.push({ kind: 'import', id: file.name })
+              await new Promise(resolve => setTimeout(resolve, qa.delayMs))
+              if (qa.failSaves) throw Error('Synthetic local save failure')
+              const id = crypto.randomUUID(), capturedAt = new Date().toISOString()
+              const placement = unplacedImagePlacement()
+              await putRoundImageUploadItem({
+                id, serverImageId: id, inspectionId, blob: file, originalName: file.name,
+                contentType: file.type, storagePath: `synthetic/${id}`, capturedAt,
+                createdAt: capturedAt, updatedAt: capturedAt, status: 'queued', attempts: 0,
+                error: null, sortOrder: 100 + index * 10, ...placement,
+              })
+              setImages(rows => [...rows, {
+                id, inspection_id: inspectionId, file_path: URL.createObjectURL(file),
+                label: file.name, sort_order: 100 + index * 10, source_area: placement.sourceArea,
+                ...placement.origin, ...placement.link, local_queue_id: id, local_upload_status: 'queued',
+              }])
+            })}
             onLinkImage={async (image, target) => {
               if (image.local_queue_id) throw Error('Stale queued image')
               qa.calls.push({ kind: 'link', id: target.id! })

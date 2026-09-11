@@ -50,6 +50,8 @@ type DeliveryResponse = {
   deliveryDocuments?: DeliveryDocumentItem[]
   revisionNumber?: number | null
   revisionStatus?: 'finalized' | 'published' | null
+  analysisStale?: boolean
+  analysisStaleAt?: string | null
   qualityIssues?: Array<{
     id: string
     severity: 'blocker' | 'warning'
@@ -153,6 +155,7 @@ export default function TuPrintActions({
   const [unlockBusy, setUnlockBusy] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const [improvementOpen, setImprovementOpen] = useState(false)
+  const [staleAnalysisAcknowledged, setStaleAnalysisAcknowledged] = useState(false)
   const { error: showErrorToast } = useToast()
 
   const showDeliveryError = useCallback((value: unknown, fallback: string) => {
@@ -188,6 +191,10 @@ export default function TuPrintActions({
   }, [loadMeta])
 
   useEffect(() => {
+    if (!meta?.analysisStale) setStaleAnalysisAcknowledged(false)
+  }, [meta?.analysisStale, meta?.analysisStaleAt])
+
+  useEffect(() => {
     if (meta?.pdfStatus !== 'pending' && meta?.pdfStatus !== 'processing') return
     const timer = window.setInterval(() => {
       void loadMeta({ silent: true })
@@ -213,6 +220,8 @@ export default function TuPrintActions({
           action,
           primary_recipient: normalizedRecipient,
           extra_recipients: parseExtraRecipients(extraRecipients),
+          acknowledge_stale_analysis: Boolean(meta?.analysisStale && staleAnalysisAcknowledged),
+          acknowledged_analysis_stale_at: meta?.analysisStaleAt ?? null,
         }),
       })
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
@@ -315,8 +324,10 @@ export default function TuPrintActions({
   const digitalReportUrl = meta?.publicLink ?? meta?.digitalUrl ?? null
   const canSend = locked && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
+  const effectiveFinalizationBlockedReason = meta?.analysisStale ? null : finalizationBlockedReason
   const canFinalize = !locked
-    && !finalizationBlockedReason
+    && !effectiveFinalizationBlockedReason
+    && (!meta?.analysisStale || staleAnalysisAcknowledged)
     && !serverQualityBlocker
     && !busyAction
     && !unlockBusy
@@ -394,10 +405,28 @@ export default function TuPrintActions({
           </div>
         </div>
 
-        {!locked && finalizationBlockedReason ? (
+        {!locked && effectiveFinalizationBlockedReason ? (
           <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
-            Innan utlåtandet kan fastställas: {finalizationBlockedReason}
+            Innan utlåtandet kan fastställas: {effectiveFinalizationBlockedReason}
           </p>
+        ) : null}
+
+        {!locked && meta?.analysisStale ? (
+          <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950">
+            <p className="text-sm font-semibold">Underlaget har ändrats efter AI-analysen</p>
+            <p className="mt-1 text-sm leading-5">
+              Din redigerade rapporttext behålls. Du kan uppdatera analysen eller fastställa den text du själv har granskat.
+            </p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm leading-5">
+              <input
+                type="checkbox"
+                checked={staleAnalysisAcknowledged}
+                onChange={(event) => setStaleAnalysisAcknowledged(event.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-amber-400 text-violet-700 focus:ring-violet-500"
+              />
+              <span>Jag har granskat utlåtandet mot det aktuella underlaget och vill fastställa nuvarande text.</span>
+            </label>
+          </div>
         ) : null}
 
         {!locked && !meta?.improvementReview && meta?.qualityIssues?.length ? (
@@ -638,7 +667,11 @@ export default function TuPrintActions({
               className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {busyAction === 'lock_only' ? <RefreshCw size={16} className="animate-spin" aria-hidden /> : <LockKeyhole size={16} aria-hidden />}
-              {busyAction === 'lock_only' ? 'Fastställer revision...' : 'Fastställ utlåtandet'}
+              {busyAction === 'lock_only'
+                ? 'Fastställer revision...'
+                : meta?.analysisStale
+                  ? 'Fastställ nuvarande text'
+                  : 'Fastställ utlåtandet'}
             </button>
           )}
           {locked ? (

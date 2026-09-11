@@ -31,6 +31,12 @@ do not replace physical-device, production-database and report acceptance.
 - Camera/gallery callbacks use the existing IndexedDB upload queue and preserve
   existing origin metadata. Existing-note image linking uses a wrapped,
   searchable radio list, rather than a native select with very long options.
+- Att bearbeta has a multiple-image gallery picker. Imported files use the same
+  local upload queue, with no inherited room, exterior part, floor or note.
+  Each file is saved independently; failed local saves are listed without
+  discarding successful files. Cancel creates nothing and locked/paused views
+  cannot import. Images can be linked to existing notes after upload; creating
+  a new image note still requires a saved place. No database migration is needed.
 - Existing inspection locking and assignment-workflow boundary remain in place.
 - Icon-only move and delete actions at the right of room/note headers; consistent
   back arrow at the left. Move a room to a floor, or a note to a room/exterior part.
@@ -158,9 +164,12 @@ node scripts/test-ob-mobile-round-ui.mjs --serve --port 57067
 This separate preview uses invented data, not the user's working test copy.
 Current preview: `http://127.0.0.1:57067/preview`. Older preview processes on
 57065/57066 have not been stopped or reset by this update.
-Only synthetic note text is persisted in its own browser origin. Images and
-rooms in this fixture reset on reload. The server must remain running.
+Synthetic note text and imported test files are persisted in the preview's own
+browser origin. Displayed images and rooms in this fixture reset on reload;
+the fixture does not upload imported files to Supabase. The server must remain running.
 Screenshots/build output are ignored under `tmp/ob-mobile-round-ui`.
+Image-import checks: `node --experimental-strip-types --test test/ob-round-image-import.test.ts`
+and `node scripts/test-ob-mobile-round-ui.mjs --images-only`.
 
 Before retiring the legacy round, verify the production adapter against an
 isolated database, test the real phone camera/upload queue, and compare the

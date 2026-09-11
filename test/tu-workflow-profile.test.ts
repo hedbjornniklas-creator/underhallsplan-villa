@@ -9,6 +9,11 @@ import { summarizeTuControlPlanReview } from '../src/lib/tu/controlPlan.ts'
 import { deriveTuWorkflowSteps } from '../src/lib/tu/workflow.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { resolveTuWorkflowProfile } from '../src/lib/tu/workflowProfiles.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import {
+  getTuAnalysisFinalizationBlocker,
+  isTuStaleAnalysisAcknowledgementCurrent,
+} from '../src/lib/tu/finalization.ts'
 
 function workflowSource(workflowProfile: 'field_report' | 'post_damage_review') {
   return {
@@ -140,4 +145,46 @@ test('treats generated attention areas as included until explicitly removed', ()
   assert.equal(summarizeTuControlPlanReview([
     { reviewStatus: 'rejected' },
   ]).canApprove, false)
+})
+
+test('allows an inspector to keep reviewed report text after acknowledging stale source material', () => {
+  const state = {
+    status: 'in_progress',
+    analysisStaleAt: '2026-09-11T10:51:07.639Z',
+  }
+
+  assert.match(
+    getTuAnalysisFinalizationBlocker({ state, staleAnalysisAcknowledged: false }) ?? '',
+    /Underlaget har ändrats/
+  )
+  assert.equal(
+    getTuAnalysisFinalizationBlocker({ state, staleAnalysisAcknowledged: true }),
+    null
+  )
+})
+
+test('still blocks a report that has never reached an approved analysis', () => {
+  assert.match(
+    getTuAnalysisFinalizationBlocker({
+      state: { status: 'analysis_ready', analysisStaleAt: null },
+      staleAnalysisAcknowledged: false,
+    }) ?? '',
+    /måste vara aktuell och godkänd/
+  )
+})
+
+test('accepts a stale-analysis acknowledgement only for the source version shown to the inspector', () => {
+  const state = {
+    status: 'in_progress',
+    analysisStaleAt: '2026-09-11T10:51:07.639Z',
+  }
+
+  assert.equal(isTuStaleAnalysisAcknowledgementCurrent({
+    state,
+    acknowledgedAnalysisStaleAt: state.analysisStaleAt,
+  }), true)
+  assert.equal(isTuStaleAnalysisAcknowledgementCurrent({
+    state,
+    acknowledgedAnalysisStaleAt: '2026-09-11T10:50:00.000Z',
+  }), false)
 })

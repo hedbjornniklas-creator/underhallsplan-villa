@@ -8,6 +8,7 @@ import tailwind from '@tailwindcss/postcss'
 import puppeteer from 'puppeteer-core'
 import { testRoundParity } from '../test/helpers/ob-round-parity-browser.mjs'
 import { testFloorEditor } from '../test/helpers/ob-floor-browser.mjs'
+import { testImageImport } from '../test/helpers/ob-image-import-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -86,11 +87,12 @@ if (serve) {
       if (new URL(request.url()).origin === base) void request.continue()
       else { external.push(request.url()); void request.abort() }
     })
-    await testFloorEditor(page, base, output)
-    if (process.argv.includes('--floors-only')) {
+    await testImageImport(page, base, output)
+    if (!process.argv.includes('--images-only')) await testFloorEditor(page, base, output)
+    if (process.argv.includes('--floors-only') || process.argv.includes('--images-only')) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
-      console.log('PASS: numeric floor editor, save/cancel/conflict/locked states and 320-1280px layouts. No external requests.')
+      console.log('PASS: multi-image import, durable local queue, cancellation, failures, locked/paused states and 320-1280px layouts. No external requests.')
     } else {
     async function click(text, parent = '') {
       for (const button of await page.$$(`${parent} button`)) {

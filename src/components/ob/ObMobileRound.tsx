@@ -103,6 +103,7 @@ export type ObMobileRoundProps = {
   onUpdateNote: (id: string, patch: Patch) => Promise<void>
   onCamera: (id: string | null) => void
   onGallery: (id: string | null) => void
+  onImportImages: (files: File[]) => Promise<void>
   onLinkImage: (image: RoundImage, note: Note) => Promise<boolean>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
@@ -411,6 +412,9 @@ export default function ObMobileRound(p: Props) {
     [roomType, setRoomType] = useState(''),
     [roomLabel, setRoomLabel] = useState('')
   const busyRef = useRef(false)
+  const importInput = useRef<HTMLInputElement>(null)
+  const importingRef = useRef(false)
+  const [importing, setImporting] = useState(false)
   const [restored, setRestored] = useState(false)
   const positionKey = `ob-mobile-round:v2:${p.inspectionId}:position`
   const observationIds = new Set(
@@ -895,6 +899,43 @@ export default function ObMobileRound(p: Props) {
                 ? `${written.length} noteringar`
                 : `${unmatched.length} bilder utan notering · ${drafts.length} att komplettera`}
           </p>
+          {view === 'pending' && (
+            <div className="obm-import-images">
+              <button
+                type="button"
+                className="obm-primary"
+                disabled={p.locked || importing}
+                onClick={() => importInput.current?.click()}
+              >
+                <ImageIcon size={20} />
+                {importing ? 'Lägger till bilder...' : 'Lägg till bilder'}
+              </button>
+              <input
+                ref={importInput}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                aria-label="Välj bilder att bearbeta"
+                onChange={async event => {
+                  const files = Array.from(event.currentTarget.files ?? [])
+                  event.currentTarget.value = ''
+                  if (!files.length || p.locked || importingRef.current) return
+                  importingRef.current = true
+                  setImporting(true)
+                  setError('')
+                  try {
+                    await p.onImportImages(files)
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : 'Bilderna kunde inte läggas till.')
+                  } finally {
+                    importingRef.current = false
+                    setImporting(false)
+                  }
+                }}
+              />
+            </div>
+          )}
         </header>
       )}
       {error && (

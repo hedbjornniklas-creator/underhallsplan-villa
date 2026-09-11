@@ -1,6 +1,7 @@
 'use client'
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { queueImageBatch, unplacedImagePlacement } from '@/lib/ob/roundImageImport'
 import { useObFloorModel } from './ObFloorProvider'
 import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
@@ -1794,9 +1795,17 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     galleryInputRef.current?.click()
   }
 
-  const uploadImage = async (blob: Blob, originalName?: string, linkToControlItemId: string | null = null) => {
-    if (isInspectionLocked) return
-    setError(null)
+  const uploadImage = async (
+    blob: Blob,
+    originalName?: string,
+    linkToControlItemId: string | null = null,
+    options: { unplaced?: boolean; sortOrder?: number; throwOnError?: boolean } = {}
+  ) => {
+    if (isInspectionLocked) {
+      if (options.throwOnError) throw new Error('Besiktningen är låst.')
+      return
+    }
+    if (!options.throwOnError) setError(null)
     setMessage(null)
     try {
       const capturedAt = new Date().toISOString()
@@ -1806,9 +1815,10 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       const serverImageId = createLocalId()
       const fileName = `${capturedAt.replace(/[:.]/g, '-')}-${localId.slice(0, 8)}.${ext}`
       const path = `${inspection.id}/round/${datePart}/${fileName}`
-      const origin = await getCaptureOrigin()
+      const unplaced = options.unplaced ? unplacedImagePlacement() : null
+      const origin = unplaced?.origin ?? await getCaptureOrigin()
       const maxSort = roundImages.reduce((max, image) => Math.max(max, image.sort_order ?? 0), 0)
-      const linkedControlItem = linkToControlItemId
+      const linkedControlItem = !unplaced && linkToControlItemId
         ? controlItems.find(item => item.id === linkToControlItemId) ?? null
         : null
 
@@ -1826,10 +1836,10 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
         status: 'queued',
         attempts: 0,
         error: null,
-        sortOrder: maxSort + 10,
-        sourceArea: area,
+        sortOrder: options.sortOrder ?? maxSort + 10,
+        sourceArea: unplaced ? unplaced.sourceArea : area,
         origin,
-        link: {
+        link: unplaced?.link ?? {
           control_item_id: linkedControlItem?.id ?? null,
           interior_room_id: linkedControlItem?.interior_room_id ?? null,
           exterior_observation_id: linkedControlItem?.exterior_observation_id ?? null,
@@ -1848,6 +1858,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       void processQueuedImageUploads()
     } catch (e: unknown) {
       console.error('queue OB round image failed:', e)
+      if (options.throwOnError) throw e
       setError(e instanceof Error ? e.message : 'Kunde inte spara bilden lokalt.')
     }
   }
@@ -2383,6 +2394,13 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
           }}
           onCamera={openCameraCapture}
           onGallery={openGalleryPicker}
+          onImportImages={async files => {
+            setError(null)
+            const maxSort = roundImages.reduce((max, image) => Math.max(max, image.sort_order ?? 0), 0)
+            await queueImageBatch(files, (file, index) => uploadImage(file, file.name, null, {
+              unplaced: true, throwOnError: true, sortOrder: maxSort + (index + 1) * 10,
+            }))
+          }}
           onLinkImage={async (image, note) => Boolean(await linkSelectedImagesToControlItem(note.id, [image]))}
         />
       ) : renderRoundSurface()}

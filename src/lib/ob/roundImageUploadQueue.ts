@@ -15,7 +15,7 @@ export type RoundImageUploadItem = {
   attempts: number
   error: string | null
   sortOrder: number
-  sourceArea: 'interior' | 'exterior'
+  sourceArea: 'interior' | 'exterior' | null
   origin: {
     origin_interior_room_id: string | null
     origin_exterior_observation_id: string | null

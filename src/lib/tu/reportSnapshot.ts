@@ -14,6 +14,7 @@ import {
 } from '@/lib/tu/reportTemplates'
 import type { TuObservation } from '@/lib/tu/evidence'
 import { resolveTuPrintImageCaption } from '@/lib/tu/imageAppendix'
+import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
 import { formatTuMeasurementAssessment, formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
 import type { TuInvestigationDetails, TuInvestigationImage } from '@/lib/tu/server'
 
@@ -48,6 +49,11 @@ export type TuReportSnapshotPayloadV1 = {
     propertyAddress: string | null
     reportDate: string
     customerName: string | null
+    finalizationReview?: {
+      analysisStaleAt: string
+      staleAnalysisAcknowledgedAt: string
+      staleAnalysisAcknowledgedBy: string
+    }
   }
 }
 
@@ -293,7 +299,9 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
   const assignmentParties = parseAssignmentPartiesFields(assignmentPartiesText)
   const customerName =
     assignmentParties.customerName ?? assignment?.customer_name ?? investigation.inspection.customer_name
-  const customerRole = assignmentParties.customerRole ?? assignment?.orderer_role
+  const customerRole =
+    normalizeTuOrdererRole(assignmentParties.customerRole) ??
+    normalizeTuOrdererRole(assignment?.orderer_role)
   const customerPhone =
     assignmentParties.customerPhone ?? assignment?.customer_phone ?? investigation.inspection.customer_phone
   const customerEmail =

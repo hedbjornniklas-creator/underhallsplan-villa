@@ -5,6 +5,8 @@ import { parseTuAnalysisBackgroundState, tuAnalysisBackgroundPayload, tuAnalysis
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { shouldRejectGeneratedAnalysisItem } from '../src/lib/tu/analysis.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { normalizeTuOrdererRole } from '../src/lib/tu/customerRole.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { normalizeTuReportProviderResponse, parseTuReportBackgroundState, tuReportBackgroundPayload, tuReportProviderFailureMessage } from '../src/lib/tu/reportDraftBackground.ts'
 
 test('keeps image-batch progress in a resumable analysis state', () => {
@@ -122,4 +124,10 @@ test('turns provider diagnostics into concise user-facing messages', () => {
   })
   assert.equal(message, 'AI-tjänsten kunde inte färdigställa utlåtandet. Försök igen.')
   assert.doesNotMatch(message, /internal_provider_code|secret diagnostic/)
+})
+
+test('removes legacy TU object labels without hiding an actual orderer role', () => {
+  assert.equal(normalizeTuOrdererRole('Teknisk utredning - Villa'), null)
+  assert.equal(normalizeTuOrdererRole('Teknisk utredning – Lägenhet'), null)
+  assert.equal(normalizeTuOrdererRole('  Fastighetsägare  '), 'Fastighetsägare')
 })

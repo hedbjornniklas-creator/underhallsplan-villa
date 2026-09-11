@@ -159,7 +159,7 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   let assessmentBlockers = !hasSources ? 1 : evidenceBlockers + source.queue.total
   if (analysisStale) {
     assessmentStatus = 'needs_attention'
-    assessmentStatusText = 'Underlaget ändrades · analysen måste uppdateras'
+    assessmentStatusText = 'Underlaget ändrades · kontrollera ändringen'
     assessmentBlockers = Math.max(1, assessmentBlockers)
   } else if (analysisRun?.status === 'queued' || analysisRun?.status === 'processing') {
     assessmentStatus = 'in_progress'
@@ -198,7 +198,7 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   let reportBlockers = workflow?.status === 'analysis_approved' ? 0 : 1
   if (analysisStale && source.reportFilledSectionCount > 0) {
     reportStatus = 'needs_attention'
-    reportStatusText = 'Underlaget ändrades · utlåtandet måste uppdateras'
+    reportStatusText = 'Underlaget ändrades · kontrollera utlåtandet'
     reportBlockers = 1
   } else if (reportProcessing) {
     reportStatus = 'in_progress'

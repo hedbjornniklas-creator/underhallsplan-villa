@@ -147,6 +147,12 @@ body:has(dialog.obm-sheet[open]) {
   color: var(--obm-muted);
   font-size: 12px;
 }
+.obm-import-images {
+  margin-top: 14px;
+}
+.obm-import-images > button {
+  width: 100%;
+}
 .obm-place-header-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 144px;
@@ -595,6 +601,7 @@ body:has(dialog.obm-sheet[open]) {
   box-shadow: 0 4px 14px #215d481a;
 }
 .obm-error {
+  overflow-wrap: anywhere;
   padding: 10px 14px;
   margin: 8px 12px;
   color: #9a3527;

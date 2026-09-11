@@ -19,6 +19,7 @@ import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueu
 import { useTuWorkflowState } from '@/hooks/useTuWorkflowState'
 import { supabase } from '@/lib/supabaseClient'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
+import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
 import { effectiveTuReportImageCaption, isGenericTuImageCaption } from '@/lib/tu/imageAppendix'
 import {
@@ -363,7 +364,7 @@ function buildAssignmentPartiesForm(investigation: TuInvestigationDetails): Assi
   const base = { ...EMPTY_ASSIGNMENT_PARTIES_FORM }
 
   assignIfPresent(base, 'customerName', assignment?.customer_name ?? inspection.customer_name)
-  assignIfPresent(base, 'customerRole', assignment?.orderer_role)
+  assignIfPresent(base, 'customerRole', normalizeTuOrdererRole(assignment?.orderer_role))
   assignIfPresent(base, 'customerIdentityNumber', assignment?.personal_identity_number)
   assignIfPresent(
     base,
@@ -403,6 +404,10 @@ function buildAssignmentPartiesForm(investigation: TuInvestigationDetails): Assi
   ) as Partial<AssignmentPartiesForm>
 
   const merged = mergeNonEmptyFields(base, parsedCustomerFields)
+  merged.customerRole =
+    normalizeTuOrdererRole(parsedCustomerFields.customerRole) ??
+    normalizeTuOrdererRole(base.customerRole) ??
+    ''
   for (const field of INSPECTOR_PARTY_FIELDS) {
     if (!merged[field.key] && cleanFieldValue(parsed[field.key])) {
       merged[field.key] = cleanFieldValue(parsed[field.key])

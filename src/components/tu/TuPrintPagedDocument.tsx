@@ -15,7 +15,8 @@ const SECTION_CHUNK_TARGET_CHARS = 320
 const PAGE_PACKING_SAFETY_MM = 4
 const BLOCK_GAP_MM = 5
 const SECTION_GAP_MM = 5
-const SECTION_CONTINUATION_GAP_MM = 2.5
+const PARAGRAPH_GAP_MM = 2.5
+const PARAGRAPH_CONTINUATION_GAP_MM = 0
 const PRINT_IMAGE_POLICY = {
   coverMaxLongSidePx: 1200,
   appendixMaxLongSidePx: 900,
@@ -147,6 +148,7 @@ type PrintableBlock =
       title: string
       text: string
       continuation: boolean
+      gapAfterMm: number
     }
   | {
       id: string
@@ -155,6 +157,7 @@ type PrintableBlock =
       title: string
       text: string
       continuation: boolean
+      gapAfterMm: number
     }
   | {
       id: string
@@ -180,6 +183,11 @@ type TocEntry = {
   numberLabel: string | null
   label: string
   pageNumber: number | null
+}
+
+type SectionTextChunk = {
+  text: string
+  continuationOfParagraph: boolean
 }
 
 function normalizeTextNewlines(text: string) {
@@ -316,22 +324,9 @@ function chunkListParagraph(paragraph: string) {
   return chunks.length > 0 ? chunks : chunkParagraph(paragraph)
 }
 
-function appendChunkUnit(chunks: string[], current: string, unit: string) {
-  if (!unit.trim()) return current
-
-  const next = current ? `${current}\n\n${unit}` : unit
-  if (current.trim() && next.length > SECTION_CHUNK_TARGET_CHARS) {
-    chunks.push(current.trimEnd())
-    return unit
-  }
-
-  return next
-}
-
 function chunkSectionText(text: string) {
   const paragraphs = splitParagraphs(text)
-  const chunks: string[] = []
-  let currentChunk = ''
+  const paragraphGroups: string[] = []
 
   for (let index = 0; index < paragraphs.length; index += 1) {
     const paragraph = paragraphs[index]
@@ -344,23 +339,28 @@ function chunkSectionText(text: string) {
     ) {
       const combined = `${paragraph}\n\n${nextParagraph}`
       if (combined.length <= SECTION_CHUNK_TARGET_CHARS * 2) {
-        for (const unit of chunkListParagraph(combined)) {
-          currentChunk = appendChunkUnit(chunks, currentChunk, unit)
-        }
+        paragraphGroups.push(combined)
         index += 1
         continue
       }
     }
 
+    paragraphGroups.push(paragraph)
+  }
+
+  const chunks: SectionTextChunk[] = []
+  for (const paragraph of paragraphGroups) {
     const paragraphChunks = splitListParagraph(paragraph)
       ? chunkListParagraph(paragraph)
       : chunkParagraph(paragraph)
-    for (const unit of paragraphChunks) {
-      currentChunk = appendChunkUnit(chunks, currentChunk, unit)
-    }
+    paragraphChunks.forEach((chunk, index) => {
+      chunks.push({
+        text: chunk,
+        continuationOfParagraph: index > 0,
+      })
+    })
   }
 
-  if (currentChunk.trim()) chunks.push(currentChunk.trimEnd())
   return chunks
 }
 
@@ -390,11 +390,17 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
     const printableSubsections =
       section.subsections?.filter((subsection) => subsection.title.trim() && subsection.text.trim()) ?? []
     const shouldPrintSectionHeader = chunks.length > 0 || printableSubsections.length > 0
-    const sectionChunks = chunks.length > 0 ? chunks : shouldPrintSectionHeader ? [''] : []
+    const sectionChunks =
+      chunks.length > 0
+        ? chunks
+        : shouldPrintSectionHeader
+          ? [{ text: '', continuationOfParagraph: false }]
+          : []
     if (shouldPrintSectionHeader) sectionNumber += 1
     const numberLabel = String(sectionNumber)
 
     sectionChunks.forEach((chunk, index) => {
+      const nextChunk = sectionChunks[index + 1]
       blocks.push({
         id: `section-${section.id}-${index}`,
         type: 'section',
@@ -402,8 +408,13 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
         sectionKey: section.key,
         numberLabel,
         title: section.title,
-        text: chunk,
+        text: chunk.text,
         continuation: index > 0,
+        gapAfterMm: nextChunk
+          ? nextChunk.continuationOfParagraph
+            ? PARAGRAPH_CONTINUATION_GAP_MM
+            : PARAGRAPH_GAP_MM
+          : SECTION_GAP_MM,
       })
     })
 
@@ -411,13 +422,19 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
       const subsectionNumberLabel = `${numberLabel}.${subsectionIndex + 1}`
       const subsectionChunks = chunkSectionText(subsection.text)
       subsectionChunks.forEach((chunk, index) => {
+        const nextChunk = subsectionChunks[index + 1]
         blocks.push({
           id: `subsection-${section.id}-${subsection.id}-${index}`,
           type: 'subsection',
           numberLabel: subsectionNumberLabel,
           title: subsection.title,
-          text: chunk,
+          text: chunk.text,
           continuation: index > 0,
+          gapAfterMm: nextChunk
+            ? nextChunk.continuationOfParagraph
+              ? PARAGRAPH_CONTINUATION_GAP_MM
+              : PARAGRAPH_GAP_MM
+            : BLOCK_GAP_MM,
         })
       })
     })
@@ -633,12 +650,14 @@ function SectionBlock({
   title,
   text,
   continuation,
+  gapAfterMm,
   showDivider,
 }: {
   numberLabel: string
   title: string
   text: string
   continuation: boolean
+  gapAfterMm: number
   showDivider: boolean
 }) {
   return (
@@ -651,7 +670,7 @@ function SectionBlock({
             : 'tu-report-block tu-report-section-block'
       }
       style={{
-        marginBottom: mm(continuation ? SECTION_CONTINUATION_GAP_MM : SECTION_GAP_MM),
+        marginBottom: mm(gapAfterMm),
       }}
     >
       {!continuation ? (
@@ -678,17 +697,19 @@ function SubsectionBlock({
   title,
   text,
   continuation,
+  gapAfterMm,
 }: {
   numberLabel: string
   title: string
   text: string
   continuation: boolean
+  gapAfterMm: number
 }) {
   return (
     <section
       className="tu-report-block tu-report-subsection-block"
       style={{
-        marginBottom: mm(continuation ? SECTION_CONTINUATION_GAP_MM : BLOCK_GAP_MM),
+        marginBottom: mm(gapAfterMm),
       }}
     >
       {!continuation ? (
@@ -792,7 +813,7 @@ function ImageGridBlock({
             onLoad={() => onImageReady?.(image.id)}
             onError={() => onImageReady?.(image.id)}
           />
-          <figcaption className="mt-1 max-h-[12mm] overflow-hidden whitespace-pre-wrap text-[9px] leading-3 text-gray-700">
+          <figcaption className="mt-1 max-h-[18mm] overflow-hidden whitespace-pre-wrap text-[12px] leading-[17px] text-gray-700">
             {image.caption}
           </figcaption>
         </figure>
@@ -826,6 +847,7 @@ function PrintableBlockView({
         title={block.title}
         text={block.text}
         continuation={block.continuation}
+        gapAfterMm={block.gapAfterMm}
         showDivider={!isFirstOnPage}
       />
     )
@@ -837,6 +859,7 @@ function PrintableBlockView({
         title={block.title}
         text={block.text}
         continuation={block.continuation}
+        gapAfterMm={block.gapAfterMm}
       />
     )
   }
@@ -858,10 +881,15 @@ function PrintableBlockView({
   return <ImageGridBlock images={block.images} onImageReady={onImageReady} />
 }
 
-function getHeaderValueStyle(nowrap: boolean, value: string): CSSProperties {
+function getHeaderValueStyle(
+  nowrap: boolean,
+  value: string,
+  compactAfter: number,
+  veryCompactAfter: number
+): CSSProperties {
   const valueLength = value.trim().length
-  const compact = !nowrap && valueLength > 30
-  const veryCompact = !nowrap && valueLength > 58
+  const compact = !nowrap && valueLength > compactAfter
+  const veryCompact = !nowrap && valueLength > veryCompactAfter
 
   return {
     fontSize: veryCompact ? '6.8pt' : compact ? '7.6pt' : '9.6pt',
@@ -874,17 +902,21 @@ function HeaderValue({
   label,
   value,
   nowrap = false,
+  compactAfter = 30,
+  veryCompactAfter = 58,
 }: {
   label: string
   value: string
   nowrap?: boolean
+  compactAfter?: number
+  veryCompactAfter?: number
 }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col justify-start overflow-hidden px-1.5 py-0.5">
       <div className="shrink-0 text-[6pt] leading-[1.15] text-black">{label}</div>
       <div
         className="min-w-0 overflow-hidden break-words pb-0.5 font-medium text-black"
-        style={getHeaderValueStyle(nowrap, value)}
+        style={getHeaderValueStyle(nowrap, value, compactAfter, veryCompactAfter)}
       >
         {value || '-'}
       </div>
@@ -917,7 +949,12 @@ function ReportHeader({
       }}
     >
       <div className="min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
-        <HeaderValue label="Dokument" value={header.documentTitle} />
+        <HeaderValue
+          label="Dokument"
+          value={header.documentTitle}
+          compactAfter={40}
+          veryCompactAfter={62}
+        />
       </div>
       <div className="col-span-2 min-h-0 min-w-0 overflow-hidden border-b border-r border-black">
         <HeaderValue label="Rapportdatum" value={header.reportDate} nowrap />
@@ -945,7 +982,12 @@ function ReportHeader({
         <HeaderValue label="Adress" value={header.address} />
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
-        <HeaderValue label="Projekttyp" value={header.projectType} />
+        <HeaderValue
+          label="Projekttyp"
+          value={header.projectType}
+          compactAfter={40}
+          veryCompactAfter={62}
+        />
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
         <HeaderValue label="Arbetsnummer" value={header.assignmentNumber} nowrap />
@@ -955,6 +997,15 @@ function ReportHeader({
       </div>
     </div>
   )
+}
+
+function getCoverTitleStyle(value: string): CSSProperties {
+  const valueLength = value.trim().length
+
+  return {
+    fontSize: valueLength <= 40 ? '36px' : valueLength <= 58 ? '32px' : '28px',
+    lineHeight: 1.14,
+  }
 }
 
 function CoverPage({
@@ -1016,7 +1067,10 @@ function CoverPage({
         <div className="text-center text-[16px] font-medium leading-6 text-violet-950">
           Utlåtande över
         </div>
-        <div className="mt-1 max-w-[150mm] text-center text-[32px] font-medium leading-tight text-violet-950">
+        <div
+          className="mt-1 max-w-[165mm] text-center font-medium text-violet-950"
+          style={getCoverTitleStyle(coverTitle)}
+        >
           {coverTitle}
         </div>
         <div className="mt-7 text-center text-[10px] font-bold uppercase tracking-wide text-black">

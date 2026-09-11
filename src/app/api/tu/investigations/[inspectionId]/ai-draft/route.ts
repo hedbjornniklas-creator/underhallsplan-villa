@@ -4,6 +4,7 @@ import {
   requireTuContext,
   type TuReportSectionKey,
 } from '@/lib/tu/server'
+import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -138,7 +139,7 @@ export async function POST(
       },
       assignment: {
         customerName: investigation.assignment?.customer_name ?? investigation.inspection.customer_name,
-        customerRole: investigation.assignment?.orderer_role,
+        customerRole: normalizeTuOrdererRole(investigation.assignment?.orderer_role),
         scopeDescription: investigation.scopeDescription,
         inspectionDate: investigation.inspection.date,
         inspectionTime: investigation.inspection.inspection_time,

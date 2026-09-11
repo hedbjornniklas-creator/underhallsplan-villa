@@ -498,9 +498,7 @@ export async function POST(
 
     const roleLabel =
       termsRole === 'technical'
-        ? isApartmentObject
-          ? 'Teknisk utredning - Lägenhet'
-          : 'Teknisk utredning - Villa'
+        ? null
         : termsRole === 'construction_consumer'
           ? 'Entreprenadbesiktning - Konsument'
         : termsRole === 'construction_business'

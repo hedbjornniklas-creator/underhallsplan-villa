@@ -155,6 +155,48 @@ try {
   await page.setViewport({ width: 1440, height: 1000 })
   await page.goto(`http://127.0.0.1:${server.address().port}/applicant`, { waitUntil: 'networkidle0' })
   const originalCompletion = await page.evaluate(() => sessionStorage.getItem('completion-fixture'))
+  for (const width of [320, 344, 390, 768, 1440]) {
+    await page.evaluate(original => {
+      const draft = JSON.parse(original)
+      draft.case.status = 'draft'
+      draft.form.actionTypeKeys = ['wall']
+      draft.form.questionAnswers = {}
+      draft.form.participantEntries = []
+      draft.completionRequest = { id: null, requestedDocuments: [], requestedParticipants: [] }
+      const question = { id: 'water', key: 'water', label: 'Görs ingrepp i vatten- eller avloppsledningar, fasta anslutningar eller föreningens installationer?',
+        helpText: 'Fullständig hjälptext från admin. '.repeat(20), responseType: 'boolean', isRequired: true, sortOrder: 1,
+        options: ['Ja', 'Nej'].map((label, index) => ({ id: label, key: label, label, description: `${label}: hela beskrivningen från admin. `.repeat(20), sortOrder: index, triggers: [] })) }
+      const action = { id: 'wall', key: 'wall', label: 'Riva vägg', description: 'Hela renoveringsbeskrivningen. '.repeat(30), sortOrder: 1, requirements: [], participantRoles: [], questions: [question] }
+      sessionStorage.setItem('completion-fixture', JSON.stringify(draft))
+      sessionStorage.setItem('initial-application-config', JSON.stringify({ brf: draft.brf, actionTypes: [action], questionBank: [question] }))
+    }, originalCompletion)
+    await page.setViewport({ width, height: 900 })
+    await page.reload({ waitUntil: 'networkidle0' })
+    await page.locator('::-p-xpath(//button[contains(., "Vad vill du renovera")])').click()
+    const field = await page.waitForSelector('fieldset')
+    assert.equal(await field.$eval('details', el => el.open), false)
+    assert.equal(await field.$$eval('input[type=radio]', els => els.length), 2)
+    assert.ok(await field.$eval('legend', el => el.getBoundingClientRect().width) >= Math.min(width - 40, 600))
+    const help = page.locator('fieldset > details > summary')
+    await help.click()
+    assert.equal(await field.$eval('details', el => el.open), true)
+    assert.ok((await field.$eval('details', el => el.textContent)).includes('Fullständig hjälptext från admin. '.repeat(20)))
+    await help.click()
+    await page.click('input[type=radio][value="Ja"]')
+    await page.click('input[type=radio][value="Nej"]')
+    assert.deepEqual(await field.$$eval('input[type=radio]:checked', els => els.map(el => el.value)), ['Nej'])
+    const optionHelp = page.locator('fieldset .grid > div:first-child details summary')
+    await optionHelp.click()
+    assert.equal(await page.$eval('input[value="Nej"]', el => el.checked), true)
+    await optionHelp.click()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await field.screenshot({ path: resolve(output, `resident-question-${width}.png`) })
+    await page.screenshot({ path: resolve(output, `resident-page-${width}.png`), fullPage: true })
+    await page.locator('::-p-xpath(//button[contains(., "Nästa steg")])').click()
+    await page.locator('::-p-xpath(//button[contains(., "Tillbaka")])').click()
+    assert.equal(await page.$eval('input[value="Nej"]', el => el.checked), true)
+    console.log(`PASS resident ${width}px: full-width question, inline admin text, exclusive choices, back navigation`)
+  }
   for (const width of [1440, 390]) {
     for (const source of ['action', 'answer']) {
       await page.evaluate(({ originalCompletion, source }) => {

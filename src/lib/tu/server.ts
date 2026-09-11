@@ -22,6 +22,7 @@ import {
   resolveTuReportAuthoringMode,
   type TuReportAuthoringMode,
 } from '@/lib/tu/authoring'
+import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type {
   TuReportTemplateOption,
@@ -844,7 +845,7 @@ function buildTuAssignmentPartiesText(input: {
 
   const customerLines = [
     joinLine('Namn', assignment?.customer_name ?? inspection?.customer_name),
-    joinLine('Roll/beställartyp', assignment?.orderer_role),
+    joinLine('Roll/beställartyp', normalizeTuOrdererRole(assignment?.orderer_role)),
     joinLine('Person-/org.nr', assignment?.personal_identity_number),
     joinLine('Adress', customerAddress),
     joinLine('Telefon', assignment?.customer_phone ?? inspection?.customer_phone),
@@ -1058,7 +1059,7 @@ export async function createTuAssignmentDraft(input: {
     apartmentHolderName: objectType === 'apartment' ? input.apartmentHolderName : null,
     invoiceEmail: input.invoiceEmail,
     scopeDescription: input.scopeDescription,
-    ordererRole: objectType === 'apartment' ? 'Teknisk utredning - Lägenhet' : 'Teknisk utredning - Villa',
+    ordererRole: null,
     preferredDate: input.preferredDate,
     preferredTime: input.preferredTime,
     priceAmount: input.priceAmount,

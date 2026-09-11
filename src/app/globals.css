@@ -435,11 +435,6 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
   .tu-report-block {
     break-inside: avoid-page;
     page-break-inside: avoid;
-    margin-bottom: 5mm;
-  }
-
-  .tu-report-section-block {
-    margin-bottom: 6mm;
   }
 
   .tu-report-cover-block {
