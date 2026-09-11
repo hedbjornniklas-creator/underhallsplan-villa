@@ -5,16 +5,17 @@ import { test } from 'node:test'
 const mobileModule = '../src/lib/ob/mobileRound.ts'
 const searchModule = '../src/lib/ob/roundSearch.ts'
 const draftModule = '../src/lib/ob/localTextDrafts.ts'
-const { isObMobileRoundV2Enabled, restoreRoundDraft } = await import(mobileModule) as typeof import('../src/lib/ob/mobileRound')
+const { getInitialObSection, isObRoundSection, restoreRoundDraft } = await import(mobileModule) as typeof import('../src/lib/ob/mobileRound')
 const { matchesWords, noteMatchRank, unfinishedFields } = await import(searchModule) as typeof import('../src/lib/ob/roundSearch')
 const { getObTextDraftStorageKey, getObTextDraftInspectionPrefix } = await import(draftModule) as typeof import('../src/lib/ob/localTextDrafts')
 
-test('mobile round requires both the build flag and an explicit opt-in link', () => {
-  assert.equal(isObMobileRoundV2Enabled(undefined, '?round=mobile-v2'), false)
-  assert.equal(isObMobileRoundV2Enabled('false', '?round=mobile-v2'), false)
-  assert.equal(isObMobileRoundV2Enabled('true', ''), false)
-  assert.equal(isObMobileRoundV2Enabled('true', '?round=legacy'), false)
-  assert.equal(isObMobileRoundV2Enabled('true', '?round=mobile-v2'), true)
+test('both rounds have their own section; ordinary links keep the original start page', () => {
+  assert.equal(getInitialObSection(''), 'grunddata')
+  assert.equal(getInitialObSection('?round=unknown'), 'grunddata')
+  assert.equal(getInitialObSection('?round=mobile-v2'), 'runda-ny')
+  assert.equal(isObRoundSection('runda'), true)
+  assert.equal(isObRoundSection('runda-ny'), true)
+  assert.equal(isObRoundSection('review'), false)
 })
 
 test('draft restoration accepts text fields only, without changing persisted records', () => {
@@ -43,13 +44,20 @@ test('production integration uses existing writes and the draft guard, not the t
   const round = read('src/components/ob/ObStepRunda.tsx')
   const mobile = read('src/components/ob/ObMobileRound.tsx')
   const page = read('src/app/(app)/properties/[id]/ob/[inspectionId]/page.tsx')
+  const wizard = read('src/components/ob/ObWizard.tsx')
   assert.match(round, /mobileLayout = false/)
   assert.match(round, /onNewNote=\{createFreeNote\}/)
   assert.match(round, /onUpdateNote=\{\(id, patch\) => updateControlItem\(id, patch, \{ throwOnError: true \}\)\}/)
   assert.match(round, /onCamera=\{openCameraCapture\}/)
   assert.match(round, /onGallery=\{openGalleryPicker\}/)
   assert.match(round, /linkSelectedImagesToControlItem\(note.id, \[image\]\)/)
-  assert.match(page, /isObMobileRoundV2Enabled\(process.env.NEXT_PUBLIC_OB_MOBILE_ROUND_V2, window.location.search\)/)
+  assert.match(page, /\{ key: 'runda', label: 'ÖB-runda' \}/)
+  assert.match(page, /\{ key: 'runda-ny', label: 'ÖB-runda \(ny\)' \}/)
+  assert.match(wizard, /case 'runda':\s+case 'runda-ny':\s+return <ObStepRunda/)
+  assert.match(wizard, /mobileLayout=\{activeSection === 'runda-ny'\}/)
+  assert.match(page, /showStatus=\{!isRoundSection\}/)
+  assert.match(page, /!confirmLeaveIfTextDrafts\(\)/)
+  assert.doesNotMatch(page, /NEXT_PUBLIC_OB_MOBILE_ROUND_V2/)
   assert.match(mobile, /getObTextDraftStorageKey/)
   assert.doesNotMatch(mobile + round, /@lab|\/lab\/|ob-safe-lab|working\.json/)
 })

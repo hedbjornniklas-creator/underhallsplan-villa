@@ -24,6 +24,17 @@ const outcome = {
 
 export const supabase = {
   from(table: string) {
+    if (['inspections', 'properties', 'ob_property_snapshot', 'assignments'].includes(table)) {
+      const data = table === 'inspections'
+        ? { id: 'synthetic-mobile-inspection', property_id: 'synthetic-property', inspection_side: new URLSearchParams(location.search).has('apartment') ? 'apartment' : 'buyer' }
+        : table === 'properties' ? { id: 'synthetic-property', name: 'Testobjekt', address: 'Testgatan 1' } : null
+      const builder = {
+        select: () => builder, eq: () => builder,
+        single: async () => ({ data, error: null }),
+        maybeSingle: async () => ({ data, error: null }),
+      }
+      return builder
+    }
     if (
       !['settings_control_points', 'settings_control_point_outcomes'].includes(
         table,

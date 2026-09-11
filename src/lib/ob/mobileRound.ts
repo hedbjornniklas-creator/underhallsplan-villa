@@ -4,14 +4,15 @@ export type RoundTextDraft = {
   ftu_text: string
 }
 
-// Both switches are required. Existing inspection links keep the legacy round.
-export function isObMobileRoundV2Enabled(
-  flag: string | undefined,
-  search: string,
-) {
-  return (
-    flag === 'true' && new URLSearchParams(search).get('round') === 'mobile-v2'
-  )
+export function isObRoundSection(section: string) {
+  return section === 'runda' || section === 'runda-ny'
+}
+
+// Keep ordinary inspection links on their original starting page.
+export function getInitialObSection(search: string): 'grunddata' | 'runda-ny' {
+  return new URLSearchParams(search).get('round') === 'mobile-v2'
+    ? 'runda-ny'
+    : 'grunddata'
 }
 
 export function restoreRoundDraft(

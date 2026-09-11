@@ -14,10 +14,14 @@ const output = resolve('tmp/ob-mobile-round-ui')
 await mkdir(output, { recursive: true })
 await new Promise((ok, fail) => webpack({
   mode: 'development', devtool: false,
-  entry: resolve('test/fixtures/ob-mobile-round.tsx'),
-  output: { path: output, filename: 'view.js' },
+  entry: { view: resolve('test/fixtures/ob-mobile-round.tsx'), navigation: resolve('test/fixtures/ob-round-page.tsx') },
+  output: { path: output, filename: '[name].js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve('test/fixtures/ob-mobile-round-client.ts'),
+    '@/components/Protected': resolve('test/fixtures/ob-round-navigation.tsx'),
+    '@/components/ob/ObWizard': resolve('test/fixtures/ob-round-wizard.tsx'),
+    'next/navigation': resolve('test/fixtures/ob-round-navigation.tsx'),
+    'next/link': resolve('test/helpers/preview-link.tsx'),
     './mobile-round.css': false, '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
@@ -25,21 +29,29 @@ await new Promise((ok, fail) => webpack({
 const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const css = `${globalCss.css}\n${await readFile('src/components/ob/mobile-round.css', 'utf8')}`
 const js = await readFile(resolve(output, 'view.js'))
+const navigationJs = await readFile(resolve(output, 'navigation.js'))
 const photo = await readFile('public/landing/Background1.png')
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
   response.setHeader('Cache-Control', 'no-store')
+  if (request.method === 'GET' && url.pathname === '/api/ob/inspections/synthetic-mobile-inspection/assignment-workflow') {
+    response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ workflow: null })); return
+  }
+  if (request.method === 'GET' && url.pathname === '/api/ob/inspections/synthetic-mobile-inspection/addon-orders') {
+    response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ addonOrders: [] })); return
+  }
   if (request.method !== 'GET' || url.pathname.startsWith('/api')) {
     response.writeHead(405); response.end('No data writes in this preview'); return
   }
   if (url.pathname === '/view.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(js); return }
+  if (url.pathname === '/navigation.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(navigationJs); return }
   if (url.pathname === '/photo.png') { response.setHeader('Content-Type', 'image/png'); response.end(photo); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
   if (url.pathname === '/preview') {
     response.end('<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · testuppgifter</title><style>html,body{margin:0;height:100%;background:#edf1f2}iframe{display:block;width:min(100%,390px);height:100dvh;margin:auto;border:0;background:white}</style></head><body><iframe src="/" title="ÖB mobilrunda med testuppgifter"></iframe></body></html>')
     return
   }
-  response.end(`<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · syntetisk förhandsvisning</title><style>${css}</style></head><body><div id="root"></div><script src="/view.js"></script></body></html>`)
+  response.end(`<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · syntetisk förhandsvisning</title><style>${css}</style></head><body><div id="root"></div><script src="/${url.pathname === '/navigation' ? 'navigation' : 'view'}.js"></script></body></html>`)
 })
 const serve = process.argv.includes('--serve')
 const portArg = process.argv.indexOf('--port')
@@ -195,9 +207,53 @@ if (serve) {
     assert.deepEqual(await page.evaluate(() => window.__obMobileTest.calls), [])
     await fresh('?paused')
     assert.equal(await page.$eval('.obm-place-row', node => node.matches(':disabled')), true)
+
+    async function openStepMenu() {
+      await page.evaluate(() => [...document.querySelectorAll('button[aria-label="Öppna stegmeny"]')].find(button => button.getBoundingClientRect().width > 0).click())
+      await page.waitForSelector('[role="dialog"]')
+    }
+    async function chooseSection(label) {
+      await page.evaluate(label => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.firstElementChild?.textContent === label).click(), label)
+    }
+    async function selectedSection() { return page.$eval('[data-selected-ob-section]', node => node.dataset.selectedObSection) }
+    for (const width of [390, 1280]) {
+      await page.setViewport({ width, height: 820 })
+      await page.goto(base + '/navigation', { waitUntil: 'networkidle0' })
+      assert.equal(await selectedSection(), 'grunddata')
+      await openStepMenu()
+      assert.ok(await page.$eval('[role="dialog"]', node => node.textContent.includes('ÖB-runda (ny)')))
+      await page.screenshot({ path: resolve(output, `step-menu-${width}.png`) })
+      await chooseSection('ÖB-runda (ny)')
+      await page.waitForSelector('[data-selected-ob-section="runda-ny"]')
+      assert.equal(await page.$eval('main', node => node.dataset.obMobileRound), 'true')
+      assert.ok(await page.$('body.ob-round-fullscreen'))
+      assert.equal(await page.$eval('[data-inspection-id]', node => node.dataset.inspectionId), 'synthetic-mobile-inspection')
+      await openStepMenu(); await chooseSection('ÖB-runda')
+      await page.waitForSelector('[data-selected-ob-section="runda"]')
+      assert.equal(await page.$eval('main', node => node.dataset.obMobileRound), 'false')
+      assert.ok(await page.$('body.ob-round-fullscreen'))
+      await page.evaluate(() => localStorage.setItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending', 'test draft'))
+      await openStepMenu()
+      page.once('dialog', dialog => void dialog.dismiss())
+      await chooseSection('ÖB-runda (ny)')
+      assert.equal(await selectedSection(), 'runda', 'cancelled unsaved-text warning keeps the old round mounted')
+      page.once('dialog', dialog => void dialog.accept())
+      await chooseSection('ÖB-runda (ny)')
+      await page.waitForSelector('[data-selected-ob-section="runda-ny"]')
+      await page.evaluate(() => localStorage.removeItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending'))
+      await openStepMenu(); await chooseSection('Granska')
+      await page.waitForSelector('[data-selected-ob-section="review"]')
+      assert.equal(await page.$('body.ob-round-fullscreen'), null)
+      await noOverflow()
+    }
+    await page.goto(base + '/navigation?round=mobile-v2&apartment', { waitUntil: 'networkidle0' })
+    assert.equal(await selectedSection(), 'runda-ny', 'new round deep link works without environment flags')
+    await openStepMenu()
+    assert.equal(await page.$eval('[role="dialog"]', node => node.textContent.includes('Byggnad - utsida')), false)
+    assert.ok(await page.$eval('[role="dialog"]', node => node.textContent.includes('ÖB-runda (ny)')))
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
-    console.log('PASS: four viewport layouts, navigation, exterior parts, paginated search, free notes, ordered autosave, failure recovery, draft guard, image linking, locked and paused states. No external requests.')
+    console.log('PASS: mobile/desktop layouts, real step menu with both rounds, switching/draft guard, deep link, apartment menu, paginated search, autosave/recovery, image linking, locked/paused states. No external requests.')
   } catch (error) {
     if (page) {
       console.error(await page.$eval('body', node => node.innerText))

@@ -8,7 +8,7 @@ import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBo
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
-import { isObMobileRoundV2Enabled } from '@/lib/ob/mobileRound'
+import { getInitialObSection, isObRoundSection } from '@/lib/ob/mobileRound'
 import ObWizard, {
   ObSectionKey,
   ObWizardInspectionInput,
@@ -172,6 +172,7 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
   { key: 'forutsattningar', label: 'Förutsättningar' },
   { key: 'runda', label: 'ÖB-runda' },
+  { key: 'runda-ny', label: 'ÖB-runda (ny)' },
   { key: 'utsida', label: 'Byggnad - utsida' },
   { key: 'insida', label: 'Byggnad - insida' },
 ]
@@ -225,12 +226,11 @@ export default function InspectionDetailPage() {
 
   // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
-  const [mobileRoundV2, setMobileRoundV2] = useState(false)
+  const mobileRoundV2 = activeSection === 'runda-ny'
+  const isRoundSection = isObRoundSection(activeSection)
 
   useEffect(() => {
-    const enabled = isObMobileRoundV2Enabled(process.env.NEXT_PUBLIC_OB_MOBILE_ROUND_V2, window.location.search)
-    setMobileRoundV2(enabled)
-    if (enabled) setActiveSection('runda')
+    setActiveSection(getInitialObSection(window.location.search))
   }, [inspectionId])
 
   useEffect(() => {
@@ -591,12 +591,12 @@ export default function InspectionDetailPage() {
   }, [activeSection])
 
   useEffect(() => {
-    document.body.classList.toggle('ob-round-fullscreen', activeSection === 'runda')
+    document.body.classList.toggle('ob-round-fullscreen', isRoundSection)
 
     return () => {
       document.body.classList.remove('ob-round-fullscreen')
     }
-  }, [activeSection])
+  }, [isRoundSection])
 
   useEffect(() => {
     if (!mobileMenuOpen) return
@@ -638,9 +638,9 @@ export default function InspectionDetailPage() {
   return (
     <Protected>
       <main
-        data-ob-mobile-round={activeSection === 'runda' && mobileRoundV2}
+        data-ob-mobile-round={mobileRoundV2}
         className={`relative min-h-full overflow-hidden ${
-          activeSection === 'runda' ? 'p-0' : 'px-2 pb-24 pt-3 sm:px-3 md:p-6'
+          isRoundSection ? 'p-0' : 'px-2 pb-24 pt-3 sm:px-3 md:p-6'
         }`}
       >
         <div
@@ -654,12 +654,12 @@ export default function InspectionDetailPage() {
 
         <div
           className={`relative mx-auto w-full ${
-            activeSection === 'runda' || activeSection === 'review'
+            isRoundSection || activeSection === 'review'
               ? 'max-w-none space-y-0'
               : 'max-w-7xl space-y-3 md:space-y-4'
           }`}
         >
-          {activeSection !== 'runda' ? (
+          {!isRoundSection ? (
             <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
               <button
                 type="button"
@@ -694,7 +694,7 @@ export default function InspectionDetailPage() {
               className={`${
                 activeSection === 'insida' ||
                 activeSection === 'utsida' ||
-                activeSection === 'runda' ||
+                isRoundSection ||
                 activeSection === 'review' ||
                 activeSection === 'areamatning' ||
                 activeSection === 'fuktkontroll'
@@ -713,12 +713,11 @@ export default function InspectionDetailPage() {
                 [&_select]:text-gray-900
                 [&_select]:border-gray-300`}
             >
-              <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={activeSection !== 'runda'}>
+              <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={!isRoundSection}>
               <ObWizard
                 property={property}
                 inspection={inspection}
                 activeSection={activeSection}
-                mobileRoundV2={mobileRoundV2}
                 onOpenStepMenu={() => setMobileMenuOpen(true)}
                 onPropertyUpdated={(updated) => setProperty(updated as Property)}
                 onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
@@ -787,7 +786,12 @@ export default function InspectionDetailPage() {
                   <button
                     key={section.key}
                     type="button"
-                    onClick={() => setActiveSection(section.key)}
+                    onClick={() => {
+                      if (activeSection !== section.key && !confirmLeaveIfTextDrafts()) return
+                      setActiveSection(section.key)
+                      setMobileMenuOpen(false)
+                    }}
+                    aria-current={activeSection === section.key ? 'step' : undefined}
                     className={`flex items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
                       activeSection === section.key
                         ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/15'

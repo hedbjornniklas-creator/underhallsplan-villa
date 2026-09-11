@@ -6,7 +6,7 @@ Customer data, credentials and backup files must never be committed to Git.
 
 The first opt-in integration into the real application is documented in
 [OB_MOBILE_ROUND_V2.md](OB_MOBILE_ROUND_V2.md). It is separate from this local
-copy, uses the existing application persistence, and is not deployed. The
+copy, uses the existing application persistence, and has its own step-menu entry. The
 synthetic integration preview does not read or update this working test copy.
 
 ## Start And Develop

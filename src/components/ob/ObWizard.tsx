@@ -67,6 +67,7 @@ export type ObSectionKey =
   | 'handlingar'
   | 'forutsattningar'
   | 'runda'
+  | 'runda-ny'
   | 'utsida'
   | 'insida'
   | 'areamatning'
@@ -82,7 +83,6 @@ interface ObWizardProps {
   onInspectionUpdated?: (i: ObWizardInspection) => void
   onInspectionAddonSelectionChanged?: (selectedAddonKeys: string[]) => void
   availableSections?: ObSectionKey[]
-  mobileRoundV2?: boolean
   onOpenStepMenu?: () => void
 }
 
@@ -185,7 +185,6 @@ export default function ObWizard({
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
   availableSections,
-  mobileRoundV2 = false,
   onOpenStepMenu,
 }: ObWizardProps) {
   const normalizedProperty = useMemo<ObWizardProperty>(
@@ -913,9 +912,10 @@ export default function ObWizard({
       )
 
     case 'runda':
+    case 'runda-ny':
       return <ObStepRunda
         inspection={normalizedInspection}
-        mobileLayout={mobileRoundV2}
+        mobileLayout={activeSection === 'runda-ny'}
         address={normalizedProperty.address || normalizedProperty.name}
         onOpenMenu={onOpenStepMenu}
       />
