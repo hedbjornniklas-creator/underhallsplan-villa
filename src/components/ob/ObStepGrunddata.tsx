@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { recordObGrunddataWriteResult, trackObGrunddataWrite } from '@/lib/ob/grunddataWrites'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
@@ -479,7 +480,7 @@ export default function ObStepGrunddata({
   }, [inspection.id, inspection.scope, notifyAddonSelection])
 
   // Hjälpare: spara property-fält
-  const saveProperty = async (patch: Partial<Property>) => {
+  const saveProperty = (patch: Partial<Property>) => trackObGrunddataWrite(inspection.id, async () => {
     if (isInspectionLocked) return
     setError(null)
     setSavingProp(true)
@@ -490,9 +491,12 @@ export default function ObStepGrunddata({
     }
 
     const obSnapshotClient = supabase as unknown as SupabaseUpsertClient
-    const { error: updErr } = await obSnapshotClient
+    const { error: updErr } = await Promise.resolve(obSnapshotClient
       .from('ob_property_snapshot')
-      .upsert(payload, { onConflict: 'inspection_id' })
+      .upsert(payload, { onConflict: 'inspection_id' }))
+      .catch(error => ({ error }))
+
+    recordObGrunddataWriteResult(inspection.id, Object.keys(patch).map(key => `property:${key}`), Boolean(updErr))
 
     setSavingProp(false)
 
@@ -505,13 +509,13 @@ export default function ObStepGrunddata({
     if (onPropertyUpdated) {
       onPropertyUpdated({ ...property, ...patch } as Property)
     }
-  }
+  })
 
   // Hjälpare: spara inspection-fält
   const saveInspection = useCallback(async (
     patch: Partial<Inspection>,
     options?: { throwOnError?: boolean }
-  ): Promise<Inspection | null> => {
+  ): Promise<Inspection | null> => trackObGrunddataWrite(inspection.id, async () => {
     if (isInspectionLocked) {
       if (options?.throwOnError) throw new Error('Besiktningen ar last och kan inte redigeras.')
       return null
@@ -519,13 +523,15 @@ export default function ObStepGrunddata({
     setError(null)
     setSavingInsp(true)
 
-    const { error: updErr, data } = await supabase
+    const { error: updErr, data } = await Promise.resolve(supabase
       .from('inspections')
       .update(patch)
       .eq('id', inspection.id)
       .select('*')
-      .single()
+      .single())
+      .catch(error => ({ error, data: null }))
 
+    recordObGrunddataWriteResult(inspection.id, Object.keys(patch).map(key => `inspection:${key}`), Boolean(updErr))
     setSavingInsp(false)
 
     if (updErr) {
@@ -540,9 +546,9 @@ export default function ObStepGrunddata({
     }
 
     return (data as Inspection | null) ?? null
-  }, [inspection.id, isInspectionLocked, onInspectionUpdated])
+  }), [inspection.id, isInspectionLocked, onInspectionUpdated])
 
-  const saveOrdererToInspection = async (nextOrderer: typeof ordererForm) => {
+  const saveOrdererToInspection = (nextOrderer: typeof ordererForm) => trackObGrunddataWrite(inspection.id, async () => {
     if (isInspectionLocked) return
     setSavingOrderer(true)
 
@@ -583,7 +589,7 @@ export default function ObStepGrunddata({
       customer_phone: customerPhone,
       customer_email: customerEmail,
     } as Property)
-  }
+  })
 
   // Autogenerera uppdragsnummer baserat på datum + löpnummer
   useEffect(() => {

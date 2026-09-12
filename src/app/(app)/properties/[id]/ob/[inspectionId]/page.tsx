@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Menu, X } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
+import { getObAssignmentReconciliationPatches, type ObAssignmentReconciledDetail } from '@/lib/ob/assignmentWorkflow'
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
@@ -206,6 +207,17 @@ export default function InspectionDetailPage() {
 
   const [property, setProperty] = useState<Property | null>(null)
   const [inspection, setInspection] = useState<Inspection | null>(null)
+  useEffect(() => {
+    const reconcile = (event: Event) => {
+      const detail = (event as CustomEvent<ObAssignmentReconciledDetail>).detail
+      if (!detail || detail.workflow.inspectionId !== inspectionId) return
+      const patches = getObAssignmentReconciliationPatches(detail)
+      if (Object.keys(patches.inspection).length) setInspection(current => current ? { ...current, ...patches.inspection } as Inspection : current)
+      if (Object.keys(patches.property).length) setProperty(current => current ? { ...current, ...patches.property } as Property : current)
+    }
+    window.addEventListener('ob-assignment-reconciled', reconcile)
+    return () => window.removeEventListener('ob-assignment-reconciled', reconcile)
+  }, [inspectionId])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])

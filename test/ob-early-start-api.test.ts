@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import ts from 'typescript'
 // @ts-expect-error Node's strip-types runner requires the explicit extension.
-import { validateObEarlyStartReason } from '../src/lib/ob/assignmentWorkflow.ts'
+import { validateObEarlyStartReason, isObAssignmentTransferFields } from '../src/lib/ob/assignmentWorkflow.ts'
 
 type Context = { params: Promise<{ id: string; inspectionId: string }> }
 type Route = { POST: (request: Request, context: Context) => Promise<Response>; GET: (request: Request, context: Context) => Promise<Response> }
@@ -49,13 +49,36 @@ test('review requires explicit confirmation and a version token; forbidden actor
   let writes = 0
   const route = load('src/app/api/ob/inspections/[id]/assignment-workflow/route.ts', {
     '@/lib/assignments/server': { requireOrgContext: async () => org },
+    '@/lib/ob/assignmentWorkflow': { isObAssignmentTransferFields },
     '@/lib/ob/assignmentWorkflowServer': { ...workflowDependency, obWorkflowRpc: async () => { writes++; throw new Error('OB_ASSIGNMENT_FORBIDDEN') } },
   })
   assert.equal((await route.POST(request({ reviewToken: 'token' }), context)).status, 400)
   assert.equal((await route.POST(new Request('http://localhost/api/test', { method: 'POST', body: '{' }), context)).status, 400)
   assert.equal(writes, 0)
-  assert.equal((await route.POST(request({ reviewToken: 'token', confirmed: true }), context)).status, 403)
+  assert.equal((await route.POST(request({ reviewToken: 'token', reconciliationToken: 'data-token', fields: [], confirmed: true }), context)).status, 403)
   assert.equal(writes, 1)
+})
+
+test('reconciliation validates explicit selected keys and both versions and uses authenticated actor', async () => {
+  const calls: unknown[] = []
+  const route = load('src/app/api/ob/inspections/[id]/assignment-workflow/route.ts', {
+    '@/lib/assignments/server': { requireOrgContext: async () => org },
+    '@/lib/ob/assignmentWorkflow': { isObAssignmentTransferFields },
+    '@/lib/ob/assignmentWorkflowServer': { ...workflowDependency, obWorkflowRpc: async (name: string, args: unknown) => { calls.push({ name, args }); return { canDeliver: true } } },
+  })
+  const valid = { reviewToken: 'assignment-version', reconciliationToken: 'grunddata-version', confirmed: true, fields: ['customer_phone'] }
+  for (const invalid of [
+    { ...valid, reconciliationToken: undefined }, { ...valid, reconciliationToken: '' },
+    { ...valid, fields: undefined }, { ...valid, fields: 'customer_phone' },
+    { ...valid, fields: ['customer_phone', 'customer_phone'] }, { ...valid, fields: ['notes'] },
+    { ...valid, fields: ['addons'] }, { ...valid, fields: ['__proto__'] },
+  ]) assert.equal((await route.POST(request(invalid), context)).status, 400)
+  assert.deepEqual(calls, [])
+  assert.equal((await route.POST(request({ ...valid, orgId: 'forged', actor: 'forged', customer_phone: 'forged' }), context)).status, 200)
+  assert.deepEqual(calls, [{ name: 'ob_reconcile_assignment_workflow', args: {
+    p_inspection_id: 'test-inspection', p_org_id: org.orgId, p_actor: org.userId,
+    p_review_token: 'assignment-version', p_reconciliation_token: 'grunddata-version', p_fields: ['customer_phone'],
+  } }])
 })
 
 function readOnlyAdmin() {

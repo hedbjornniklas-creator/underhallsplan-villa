@@ -33,8 +33,10 @@ function reset() {
     created_at: '2026-09-10T08:00:00Z', updated_at: '2026-09-10T08:00:00Z', last_sent_at: '2026-09-10T08:00:00Z' }
   workflow = { inspectionId: 'test-inspection', assignmentId: assignment.id, status: 'sent',
     startedAt: '2026-09-10T08:00:00Z', startReason: 'Kunden har inte hunnit godkänna.',
-    acceptedAt: null, bookedAt: null, initialSnapshot: { customer_name: 'Testkund', addons: [] },
-    currentSnapshot: { customer_name: 'Uppdaterad Testkund', addons: [{ key: 'area', name: 'Areamätning', price: 500, currency: 'SEK' }], terms_document_hash: 'a'.repeat(64) },
+    acceptedAt: null, bookedAt: null, initialSnapshot: { customer_name: 'Testkund', customer_phone: null, addons: [] },
+    currentSnapshot: { customer_name: 'Uppdaterad Testkund', customer_phone: '0701234567', addons: [{ key: 'area', name: 'Areamätning', price: 500, currency: 'SEK' }], terms_document_hash: 'a'.repeat(64) },
+    inspectionSnapshot: { customer_name: 'Besiktningsmannens namn', customer_phone: null },
+    reconciliationToken: 'test-reconciliation-token', inspectionLocked: false,
     reviewToken: 'test-review-token', needsReview: true, paused: false, canDeliver: false, reason: 'Inväntar kundens godkännande.' }
   posts.length = 0; readFails = false; reviewFails = false
 }
@@ -51,10 +53,22 @@ const server = createServer(async (request, response) => {
     let raw = ''; for await (const chunk of request) raw += chunk
     const payload = JSON.parse(raw || '{}'); posts.push({ route, payload })
     await new Promise(ok => setTimeout(ok, 150))
-    if (route.endsWith('/convert')) response.end(JSON.stringify({ propertyId: 'test-property', inspectionId: 'test-inspection' }))
+    if (route.endsWith('/fixture-grunddata')) {
+      if (payload.fail) { response.statusCode = 500; response.end(JSON.stringify({ error: 'Synthetic failed Grunddata save' })); return }
+      workflow = { ...workflow, inspectionSnapshot: { ...workflow.inspectionSnapshot, customer_name: payload.customer_name },
+        reconciliationToken: `${workflow.reconciliationToken}-name-saved` }
+      response.end(JSON.stringify({ saved: true }))
+    } else if (route.endsWith('/convert')) response.end(JSON.stringify({ propertyId: 'test-property', inspectionId: 'test-inspection' }))
     else if (route.endsWith('/assignment-workflow')) {
       if (reviewFails) { response.statusCode = 409; response.end(JSON.stringify({ error: 'Uppdragsbekräftelsen har ändrats. Uppdatera sidan.' })); return }
-      workflow = { ...workflow, canDeliver: true, needsReview: false, reason: null }
+      assert.equal(payload.reviewToken, workflow.reviewToken)
+      assert.equal(payload.reconciliationToken, workflow.reconciliationToken)
+      assert.equal(payload.confirmed, true)
+      assert.ok(Array.isArray(payload.fields))
+      const inspectionSnapshot = { ...workflow.inspectionSnapshot }
+      for (const field of payload.fields) inspectionSnapshot[field] = workflow.currentSnapshot[field]
+      workflow = { ...workflow, inspectionSnapshot,
+        reconciliationToken: `${workflow.reconciliationToken}-updated`, canDeliver: true, needsReview: false, reason: null }
       response.end(JSON.stringify({ workflow }))
     } else { response.statusCode = 400; response.end(JSON.stringify({ error: 'Unexpected test write' })) }
     return
@@ -82,7 +96,21 @@ try {
     assert.fail(`Missing button: ${label}`)
   }
   const overflow = () => page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
-  for (const width of [1440, 390]) {
+  const fieldCheckbox = label => `input[aria-label="Använd kundens uppgift: ${label}"]`
+  const confirmation = 'input[aria-label="Bekräfta avstämningen"]'
+  const saveLabel = 'Uppdatera Grunddata och bekräfta avstämning'
+  const setAccepted = () => {
+    workflow = { ...workflow, acceptedAt: '2026-09-10T09:00:00Z', bookedAt: '2026-09-10T09:05:00Z', status: 'booked', reason: 'Kundens uppgifter och tillägg behöver stämmas av mot besiktningen.' }
+  }
+  async function expectDisabledButton(label, expected = true) {
+    assert.equal(await page.$$eval('button', (buttons, text) => buttons.find(button => button.textContent.trim() === text)?.disabled, label), expected, label)
+  }
+  async function openComparison() {
+    await page.waitForSelector('details')
+    if (!await page.$eval('details', node => node.open)) await page.click('summary')
+    await page.waitForFunction(() => !document.querySelector('details')?.textContent.includes('Hämtar aktuell jämförelse...'))
+  }
+  for (const width of [1440, 390, 320]) {
     reset(); await page.setViewport({ width, height: 900 })
     await page.goto(base, { waitUntil: 'networkidle0' })
     await click('Starta före godkännande'); await page.waitForSelector('dialog[open]')
@@ -102,22 +130,53 @@ try {
 
     await page.goto(`${base}/boundary`, { waitUntil: 'networkidle0' })
     assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), false)
+    await page.type('#test-note', 'En redan påbörjad notering.')
     assert.equal(await page.$('details'), null)
-    workflow = { ...workflow, acceptedAt: '2026-09-10T09:00:00Z', bookedAt: '2026-09-10T09:05:00Z', status: 'booked', reason: 'Kundens uppgifter och tillägg behöver stämmas av mot besiktningen.' }
+    setAccepted()
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-    await page.waitForSelector('details'); await page.click('summary')
-    assert.equal(await page.$eval('details button', node => node.disabled), true)
-    await page.click('details input[type=checkbox]')
+    await openComparison()
+    assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true, 'Grunddata editing pauses while comparing customer data')
+    await expectDisabledButton(saveLabel)
+    assert.equal(await page.$eval(fieldCheckbox('Telefon'), node => node.checked), true, 'new phone defaults to import when Grunddata is empty')
+    assert.equal(await page.$eval(fieldCheckbox('Kund'), node => node.checked), false, 'inspector-edited name is not overwritten by default')
+    assert.ok(await page.$eval('details', node => node.textContent.includes('Besiktningsmannens namn')), 'comparison shows current Grunddata, not the initial assignment value')
+    await page.click(confirmation)
     assert.equal(await overflow(), false)
+    assert.equal(await page.$eval('details', node => node.scrollWidth > node.clientWidth), false)
     await page.screenshot({ path: resolve(output, `review-${width}.png`), fullPage: true })
-    reviewFails = true; await click('Bekräfta avstämning'); await page.waitForSelector('[role=alert]')
+    reviewFails = true; await click(saveLabel); await page.waitForSelector('[role=alert]')
     assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true)
+    assert.equal(await page.$eval(confirmation, node => node.checked), false, 'a stale review must be explicitly confirmed again')
+    assert.equal(await page.$eval('#test-phone', node => node.textContent), '', 'a failed import must not optimistically change Grunddata')
+    assert.equal(await page.$eval('#test-updated-fields', node => node.textContent), '')
+    await expectDisabledButton(saveLabel)
+    workflow = { ...workflow, reviewToken: 'fresh-review-token', reconciliationToken: 'fresh-reconciliation-token' }
     reviewFails = false; await page.click('[aria-label="Uppdatera uppdragsstatus"]')
     await page.waitForFunction(() => !document.querySelector('[role=alert]'))
-    await click('Bekräfta avstämning')
+    await expectDisabledButton(saveLabel)
+    await page.click(confirmation)
+    await click(saveLabel)
     await page.waitForFunction(() => document.body.textContent.includes('Uppdrag godkänt och avstämt'))
     assert.equal(posts.at(-1).payload.confirmed, true)
-    assert.equal(posts.at(-1).payload.reviewToken, 'test-review-token')
+    assert.equal(posts.at(-1).payload.reviewToken, 'fresh-review-token')
+    assert.equal(posts.at(-1).payload.reconciliationToken, 'fresh-reconciliation-token')
+    assert.deepEqual(posts.at(-1).payload.fields, ['customer_phone'])
+    assert.equal(workflow.inspectionSnapshot.customer_phone, '0701234567')
+    assert.equal(workflow.inspectionSnapshot.customer_name, 'Besiktningsmannens namn')
+    assert.equal(await page.$eval('#test-phone', node => node.textContent), '0701234567', 'successful reconciliation refreshes the displayed Grunddata without reload')
+    assert.equal(await page.$eval('#test-customer', node => node.textContent), 'Besiktningsmannens namn')
+    assert.equal(await page.$eval('#test-updated-fields', node => node.textContent), 'customer_phone')
+    assert.equal(await page.$eval('#test-note', node => node.value), 'En redan påbörjad notering.', 'reconciliation does not reload or discard inspection edits')
+    assert.ok(await page.$eval('summary', node => node.textContent.includes('Jämför kundens uppgifter med Grunddata')), 'already acknowledged reviews remain reopenable')
+    await openComparison()
+    assert.equal(await page.$eval(fieldCheckbox('Kund'), node => node.checked), false)
+    await page.click(fieldCheckbox('Kund'))
+    await page.click(confirmation)
+    await click(saveLabel)
+    await page.waitForFunction(() => !Array.from(document.querySelectorAll('button')).some(node => node.textContent.trim() === 'Sparar...'))
+    assert.deepEqual(posts.at(-1).payload.fields, ['customer_name'], 'a conflict is imported only by an explicit choice')
+    assert.equal(workflow.inspectionSnapshot.customer_name, 'Uppdaterad Testkund')
+    assert.equal(await page.$eval('#test-customer', node => node.textContent), 'Uppdaterad Testkund')
     workflow = { ...workflow, paused: true, canDeliver: false, reason: 'Arbetet är pausat.' }
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await page.waitForFunction(() => document.querySelector('#test-note').matches(':disabled'))
@@ -136,6 +195,65 @@ try {
     await page.waitForSelector('[role=alert]')
     assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true)
   }
+  reset(); setAccepted()
+  await page.goto(`${base}/boundary`, { waitUntil: 'networkidle0' })
+  await openComparison()
+  await page.click(fieldCheckbox('Telefon'))
+  await page.click(confirmation)
+  await click('Bekräfta avstämning')
+  await page.waitForFunction(() => document.body.textContent.includes('Uppdrag godkänt och avstämt'))
+  assert.deepEqual(posts.at(-1).payload.fields, [], 'acknowledgement without import leaves Grunddata untouched')
+  assert.equal(workflow.inspectionSnapshot.customer_phone, null)
+  assert.equal(workflow.inspectionSnapshot.customer_name, 'Besiktningsmannens namn')
+  await page.reload({ waitUntil: 'networkidle0' })
+  await openComparison()
+  assert.equal(await page.$eval(fieldCheckbox('Telefon'), node => node.checked), true, 'previously acknowledged missing phone can still be imported after reopening the inspection')
+  await page.click(confirmation)
+  await click(saveLabel)
+  await page.waitForFunction(() => document.querySelector('#test-phone').textContent === '0701234567')
+  assert.deepEqual(posts.at(-1).payload.fields, ['customer_phone'])
+  reset(); setAccepted(); workflow.inspectionLocked = true
+  await page.goto(`${base}/boundary`, { waitUntil: 'networkidle0' })
+  await openComparison()
+  assert.equal(await page.$eval(fieldCheckbox('Telefon'), node => node.disabled), true, 'locked inspection cannot import customer details')
+  assert.equal(posts.length, 0)
+  reset(); setAccepted()
+  delete workflow.inspectionSnapshot; delete workflow.reconciliationToken; delete workflow.inspectionLocked
+  await page.goto(`${base}/boundary`, { waitUntil: 'networkidle0' })
+  await openComparison()
+  assert.equal(await page.$$eval('input[aria-label^="Använd kundens uppgift:"]', nodes => nodes.every(node => node.disabled)), true, 'old backend must not expose editable import controls')
+  assert.equal(await page.$$eval('details button', nodes => nodes.every(node => node.disabled)), true, 'migration absence must not pretend to import Grunddata')
+  assert.equal(posts.length, 0)
+  reset(); setAccepted()
+  await page.goto(`${base}/boundary?failed-grunddata`, { waitUntil: 'networkidle0' })
+  await page.click('#test-customer-name-input', { clickCount: 3 })
+  await page.type('#test-customer-name-input', 'Besiktningsmannens nya kundnamn')
+  await openComparison()
+  await page.waitForFunction(() => document.querySelector('[role=alert]')?.textContent.includes('En ändring i Grunddata kunde inte sparas.'))
+  assert.equal(await page.$eval('#test-name-save-status', node => node.textContent), 'failed')
+  assert.equal(await page.$eval('#test-customer-name-input', node => node.value), 'Besiktningsmannens nya kundnamn', 'failed blur save must preserve the typed name')
+  assert.equal(await page.$eval('#test-customer', node => node.textContent), 'Besiktningsmannens namn', 'failed save must not update saved props')
+  await expectDisabledButton(saveLabel)
+  assert.equal(posts.filter(item => item.route.endsWith('/assignment-workflow')).length, 0, 'unsaved Grunddata cannot be reconciled')
+  await page.click('summary')
+  assert.equal(await page.$eval('#test-customer-name-input', node => node.matches(':disabled')), false, 'closing failed comparison must allow the inspector to retry the save')
+  await page.click('#test-allow-name-save')
+  await page.focus('#test-customer-name-input')
+  await openComparison()
+  await page.waitForFunction(() => !document.querySelector('[role=alert]'))
+  assert.equal(await page.$eval('#test-name-save-status', node => node.textContent), 'saved')
+  assert.equal(await page.$eval('#test-customer', node => node.textContent), 'Besiktningsmannens nya kundnamn')
+  assert.ok(await page.$eval('details', node => node.textContent.includes('Besiktningsmannens nya kundnamn')), 'retry success refreshes comparison against the newly saved name')
+  assert.equal(await page.$eval(fieldCheckbox('Kund'), node => node.checked), false)
+  assert.equal(await page.$eval(fieldCheckbox('Telefon'), node => node.checked), true)
+  await page.click(confirmation)
+  await click(saveLabel)
+  await page.waitForFunction(() => document.querySelector('#test-phone').textContent === '0701234567')
+  assert.deepEqual(posts.filter(item => item.route.endsWith('/assignment-workflow')).map(item => item.payload.fields), [['customer_phone']])
+  assert.equal(workflow.inspectionSnapshot.customer_name, 'Besiktningsmannens nya kundnamn')
+  assert.equal(await page.$eval('#test-customer-name-input', node => node.value), 'Besiktningsmannens nya kundnamn')
+  assert.equal(await overflow(), false)
+  await page.screenshot({ path: resolve(output, 'grunddata-save-recovery-320.png') })
   reset()
   assignment.inspection_id = workflow.inspectionId
   assignment.property_id = 'test-property'
@@ -148,7 +266,7 @@ try {
   await page.waitForFunction(() => !Array.from(document.querySelectorAll('button')).find(node => node.textContent.trim() === 'Acceptera uppdrag')?.disabled)
   assert.equal(await bookingButtonDisabled(), false, 'late approval refreshes the assignment actions as well as the workflow panel')
   assert.deepEqual(errors, [])
-  console.log('PASS: desktop/mobile start consent, Escape, review conflicts, draft editing, pause, failure-closed behavior and overflow.')
+  console.log('PASS: desktop/mobile start consent, selective Grunddata import, explicit conflicts, stale-review and failed-save recovery, reopened reconciliation, locked/migration safeguards, draft editing, pause and overflow.')
 } catch (error) {
   if (page) {
     console.error(await page.$eval('body', node => node.innerText))

@@ -28,6 +28,10 @@ export function obWorkflowError(error: unknown) {
     OB_APPROVAL_LINK_REQUIRED: [409, 'En giltig godkännandelänk saknas. Skapa och skicka en ny version av uppdragsbekräftelsen.'],
     OB_APPROVAL_REQUIRED: [409, 'Kundens godkännande och besiktningsmannens accept måste vara registrerade.'],
     OB_WORKFLOW_CHANGED: [409, 'Uppdragsbekräftelsen har ändrats. Uppdatera sidan och stäm av den aktuella versionen.'],
+    OB_RECONCILIATION_CHANGED: [409, 'Grunddata eller uppdragsbekräftelsen har ändrats sedan jämförelsen öppnades. Uppdatera uppgifterna och gör dina val igen. Inget har förts över.'],
+    OB_RECONCILIATION_INVALID_FIELDS: [400, 'En vald uppgift kan inte föras över till Grunddata.'],
+    OB_RECONCILIATION_FIELD_EMPTY: [400, 'En vald kunduppgift är tom. Befintliga uppgifter får inte raderas genom avstämningen.'],
+    OB_RECONCILIATION_SNAPSHOT_MISSING: [409, 'Besiktningens objektuppgifter saknas. Avstämningen kunde inte genomföras.'],
     OB_INSPECTION_LOCKED: [409, 'Besiktningen är låst. Lås upp den innan uppdragsbekräftelsen ändras.'],
   }
   return known[message] ?? null
