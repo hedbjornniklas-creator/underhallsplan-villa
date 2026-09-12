@@ -29,6 +29,9 @@ import type {
 } from './ObStepRunda'
 import Sheet from './ObRoundSheet'
 import ImageNoteForm, { type ImageNoteCatalog } from './ObImageNoteForm'
+import { useObBuilding } from './ObBuildingContext'
+import { supabase } from '@/lib/supabaseClient'
+import { modelFloorLabel, floorModelKeys } from '@/lib/ob/floorModel'
 
 export function ImageLinkSheet({
   photo,
@@ -531,6 +534,12 @@ export function MoveSheet({
   const retry = useRef<{ fingerprint: string; requestId: string } | null>(null)
   const roomMove = subject.kind === 'room',
     title = roomMove ? 'Flytta rum' : 'Flytta notering'
+  const building = useObBuilding()
+  const [targetPartId, setTargetPartId] = useState(building?.part?.id ?? '')
+  const targetPart = building?.overview.parts.find(part => part.id === targetPartId)
+  const otherBuilding = Boolean(building?.part && targetPartId !== building.part.id)
+  const [targetRooms, setTargetRooms] = useState<InteriorRoom[]>([])
+  const [loadingTarget, setLoadingTarget] = useState(false)
   const [area, setArea] = useState<'interior' | 'exterior'>('interior')
   const [floor, setFloor] = useState(
     p.floorKey(roomMove ? subject.room.floor_label : p.activeFloor),
@@ -539,7 +548,24 @@ export function MoveSheet({
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const flight = useRef(false)
-  const rooms = p.rooms.filter(
+  useEffect(() => {
+    if (!otherBuilding || !building) { setLoadingTarget(false); return }
+    let active = true
+    setLoadingTarget(true); setTargetRooms([]); setDestination(''); setError('')
+    void (async () => {
+      try {
+        const { data, error } = await supabase.from('inspection_interior_rooms').select('*')
+          .eq('inspection_id', building.inspectionId).eq('building_part_id', targetPartId).order('order_index')
+        if (error) throw error
+        if (active) { setTargetRooms((data ?? []) as InteriorRoom[]); setLoadingTarget(false) }
+      } catch { if (active) setError('Kunde inte hämta målbyggnadens rum. Välj byggnaden igen.') }
+    })()
+    return () => { active = false }
+  }, [otherBuilding, targetPartId, building?.inspectionId])
+  const targetFloors = otherBuilding ? targetPart?.floor_model ? ['ovrigt', ...floorModelKeys(targetPart.floor_model)]
+    : [...new Set(['ovrigt', ...targetRooms.map(room => room.floor_label)])] : p.floors
+  const targetFloorLabel = (key: string) => otherBuilding && targetPart?.floor_model ? modelFloorLabel(targetPart.floor_model, key) : p.floorLabel(key)
+  const rooms = (otherBuilding ? targetRooms : p.rooms).filter(
     (room) =>
       p.floorKey(room.floor_label) === floor &&
       (roomMove || room.id !== subject.note.interior_room_id),
@@ -549,16 +575,16 @@ export function MoveSheet({
     : p.observations.find(
         (row) => row.id === subject.note.exterior_observation_id,
       )?.exterior_item_id
-  const items = p.exteriorItems.filter((item) => item.id !== currentExterior)
-  const valid = roomMove
-    ? floor !== p.floorKey(subject.room.floor_label)
+  const items = p.exteriorItems.filter((item) => otherBuilding || item.id !== currentExterior)
+  const valid = !loadingTarget && (roomMove
+    ? targetFloors.includes(floor) && (otherBuilding || floor !== p.floorKey(subject.room.floor_label))
     : area === 'interior'
       ? rooms.some((room) => room.id === destination)
-      : items.some((item) => item.id === destination)
+      : items.some((item) => item.id === destination))
   const targetLabel = roomMove
-    ? p.floorLabel(floor)
+    ? targetFloorLabel(floor)
     : area === 'interior'
-      ? `${p.floorLabel(floor)} · ${rooms.find((room) => room.id === destination)?.room_label ?? ''}`
+      ? `${targetFloorLabel(floor)} · ${rooms.find((room) => room.id === destination)?.room_label ?? ''}`
       : `Utsida · ${items.find((item) => item.id === destination)?.label ?? ''}`
   async function move() {
     if (!valid || flight.current || p.locked || p.mutationBlocked) return
@@ -586,12 +612,13 @@ export function MoveSheet({
                   ? { area, roomId: destination }
                   : { area, exteriorItemId: destination },
             }
-      const fingerprint = JSON.stringify(selection)
+      const fingerprint = JSON.stringify([targetPartId, selection])
       if (retry.current?.fingerprint !== fingerprint)
         retry.current = { fingerprint, requestId: crypto.randomUUID() }
       onMoved(
         await p.onMove({
           ...selection,
+          ...(targetPartId ? { targetBuildingPartId: targetPartId } : {}),
           requestId: retry.current.requestId,
         } as MoveRequest),
       )
@@ -652,6 +679,13 @@ export function MoveSheet({
           Besiktningen är låst.
         </p>
       )}
+      {building?.part && <label className="obm-field">Till byggnad
+        <select aria-label="Till byggnad" disabled={busy} value={targetPartId} onChange={e => {
+          setTargetPartId(e.target.value); setFloor(''); setDestination(''); setError('')
+        }}>
+          {building.overview.parts.map(part => <option key={part.id} value={part.id}>{part.name}</option>)}
+        </select>
+      </label>}
       {!roomMove && (
         <label className="obm-field">
           Område
@@ -681,9 +715,10 @@ export function MoveSheet({
               setDestination('')
             }}
           >
-            {p.floors.map((key) => (
+            <option value="">Välj plan</option>
+            {targetFloors.map((key) => (
               <option key={key} value={key}>
-                {p.floorLabel(key)}
+                {targetFloorLabel(key)}
               </option>
             ))}
           </select>
