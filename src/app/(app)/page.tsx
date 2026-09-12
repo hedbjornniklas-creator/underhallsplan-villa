@@ -12,10 +12,11 @@ export default function HomePage() {
       <section className="hushub-hero" aria-labelledby="home-title">
         <div className="public-container hushub-hero-inner">
           <div className="hushub-hero-copy">
-            <h1 id="home-title">Digitala verktyg för<br />besiktning och renoveringsärenden.</h1>
+            <h1 id="home-title">Digitala verktyg för<br />besiktning och renoverings<wbr />ärenden.</h1>
             <p>BesiktApp för dig som arbetar med besiktningar. RenoApp för styrelsen och de boende i en bostadsrättsförening.</p>
             <div className="hushub-hero-actions">
-              <Link href="#produkter" className="public-button hushub-button-light">Se våra verktyg</Link>
+              <Link href="/renoapp/apply" className="public-button hushub-button-light">Ansök om renovering</Link>
+              <Link href="#produkter" className="hushub-hero-link">Se våra verktyg</Link>
             </div>
           </div>
           <div className="hushub-hero-visual">

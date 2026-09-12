@@ -690,7 +690,7 @@ export default function RenoAppApplyPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
-  const [step, setStep] = useState<number | null>(null)
+  const [step, setStep] = useState<number | null>(1)
   const [emailValidationRequested, setEmailValidationRequested] = useState(false)
   const applicantEmailRef = useRef<HTMLInputElement>(null)
   const focusApplicantEmailRef = useRef(false)
@@ -1058,7 +1058,7 @@ export default function RenoAppApplyPage() {
       unitNumberInternal: current.unitNumberInternal,
       unitNumberSkatteverket: current.unitNumberSkatteverket,
     }))
-    setStep(null)
+    setStep(1)
     setError(null)
     setSubmitResult(null)
     setDraftInfo(null)
@@ -1400,6 +1400,8 @@ export default function RenoAppApplyPage() {
       return (
         <div className="grid gap-4">
           <div className="grid items-start gap-4 md:grid-cols-2">
+            <label className="grid min-w-0 gap-2 text-sm font-semibold text-stone-900">
+              Namn *
             <input
               value={form.applicantName}
               onChange={(event) => updateField('applicantName', event.target.value)}
@@ -1407,8 +1409,9 @@ export default function RenoAppApplyPage() {
               placeholder="Namn *"
               required
             />
+            </label>
             <div>
-              <label htmlFor="applicant-email" className="sr-only">E-postadress</label>
+              <label htmlFor="applicant-email" className="mb-2 block text-sm font-semibold text-stone-900">E-postadress *</label>
               <input
                 id="applicant-email"
                 ref={applicantEmailRef}
@@ -1426,6 +1429,8 @@ export default function RenoAppApplyPage() {
                 {draftEmailError ?? 'Länken till din sparade ansökan skickas till den här adressen.'}
               </p>
             </div>
+            <label className="grid min-w-0 gap-2 text-sm font-semibold text-stone-900 md:col-span-2">
+              Telefon *
             <input
               value={form.applicantPhone}
               onChange={(event) => updateField('applicantPhone', event.target.value)}
@@ -1433,6 +1438,9 @@ export default function RenoAppApplyPage() {
               placeholder="Telefon *"
               required
             />
+            </label>
+            <label className="grid min-w-0 gap-2 text-sm font-semibold text-stone-900">
+              Internt lägenhetsnummer *
             <input
               value={form.unitNumberInternal}
               onChange={(event) => updateField('unitNumberInternal', event.target.value)}
@@ -1440,6 +1448,9 @@ export default function RenoAppApplyPage() {
               placeholder="Internt lägenhetsnummer *"
               required
             />
+            </label>
+            <label className="grid min-w-0 gap-2 text-sm font-semibold text-stone-900">
+              Skatteverkets lägenhetsnummer *
             <input
               value={form.unitNumberSkatteverket}
               onChange={(event) => updateField('unitNumberSkatteverket', event.target.value)}
@@ -1447,6 +1458,7 @@ export default function RenoAppApplyPage() {
               placeholder="Skatteverkets lägenhetsnummer *"
               required
             />
+            </label>
           </div>
 
           <div className="border-t border-stone-200 pt-4 text-sm leading-7 text-stone-700">
@@ -2063,6 +2075,26 @@ export default function RenoAppApplyPage() {
           </div>
         </div>
 
+        <section className="min-w-0 border-t border-stone-200 pt-4" aria-labelledby="application-project-summary">
+          <h3 id="application-project-summary" className="text-base font-semibold text-stone-900">Projektbeskrivning</h3>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-stone-700">{form.description || 'Ingen projektbeskrivning angiven.'}</p>
+        </section>
+        {visibleQuestions.length > 0 ? (
+          <section className="min-w-0 border-t border-stone-200 pt-4" aria-labelledby="application-answer-summary">
+            <h3 id="application-answer-summary" className="text-base font-semibold text-stone-900">Dina svar</h3>
+            <dl className="divide-y divide-stone-200 text-sm">
+              {visibleQuestions.map(question => {
+                const selected = form.questionAnswers[question.key] ?? []
+                const labels = question.options.filter(option => selected.includes(option.key)).map(option => option.label)
+                return <div key={question.id} className="py-3">
+                  <dt className="font-medium text-stone-900">{question.label}</dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words text-stone-700">{labels.length ? labels.join(', ') : 'Inte besvarad'}</dd>
+                </div>
+              })}
+            </dl>
+          </section>
+        ) : null}
+
         {(isNeedInfoCase || isReadOnlyCase) && (uploadedDocuments.length > 0 || form.participantEntries.length > 0) ? (
           <details className="min-w-0 border-t border-stone-200 py-4">
             <summary className="cursor-pointer text-sm font-semibold text-stone-900">Sparade handlingar och företagsuppgifter</summary>
@@ -2112,14 +2144,13 @@ export default function RenoAppApplyPage() {
           </div>
         ) : null}
 
-        {submitResult ? (
+        {submitResult && !isReadOnlyCase ? (
           <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
             <p className="font-semibold">{submitResult.status === 'draft' ? 'Utkast sparat' : 'Ansökan registrerad'}</p>
             <p className="mt-2">Ärendenummer: {submitResult.caseNumber}</p>
-            <p className="mt-2 break-all">
-              {submitResult.status === 'draft' ? 'Fortsätt senare via:' : 'Öppna samma ansökningssida via:'}{' '}
-              {submitResult.resumeUrl}
-            </p>
+            <a className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={submitResult.resumeUrl}>
+              {submitResult.status === 'draft' ? 'Fortsätt med ansökan' : 'Öppna ansökan'}
+            </a>
             {submitResult.emailError ? <p className="mt-2 text-amber-900">{submitResult.emailError}</p> : null}
           </div>
         ) : null}
@@ -2159,7 +2190,7 @@ export default function RenoAppApplyPage() {
           <div className="mt-5"><RenovationRulesDocument rules={config.renovationRules} token={activeDraftToken} /></div>
         ) : null}
 
-        {draftInfo ? (
+        {draftInfo && !isReadOnlyCase ? (
           <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
             <p className="font-semibold">
               {isNeedInfoCase
@@ -2211,12 +2242,14 @@ export default function RenoAppApplyPage() {
 
         {isReadOnlyCase ? (
           <div className="mt-6 border-t border-stone-200 pt-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Inskickad ansökan</p>
+            <p className="text-sm font-semibold text-emerald-800">{submitResult?.status === 'submitted' ? 'Ansökan registrerad' : 'Inskickad ansökan'}</p>
+            <p className="mt-2 break-words text-sm text-stone-600">Ärendenummer {draftInfo?.case.caseNumber ?? submitResult?.caseNumber} · {draftInfo ? formatCaseStatus(draftInfo.case.status) : 'Inskickad'}</p>
             <h2 className="mt-2 text-2xl font-semibold text-stone-900">Styrelsen handlägger ärendet</h2>
             <p className="mt-2 text-sm leading-7 text-stone-600">
               Grundansökan kan inte ändras efter inskickning. Om styrelsen behöver mer information skickas en ny
               kompletteringsbegäran till den här adressen.
             </p>
+            {submitResult?.emailError ? <p role="alert" className="mt-3 text-sm text-amber-900">{submitResult.emailError}</p> : null}
             <div className="mt-6">{renderStepContent(5)}</div>
           </div>
         ) : (

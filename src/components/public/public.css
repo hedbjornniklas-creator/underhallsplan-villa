@@ -204,7 +204,7 @@
 .hushub-hero-caption { position: absolute; bottom: 0; left: -28px; padding: 19px 28px; background: #fff; color: #263852; border-radius: 8px; box-shadow: 0 12px 40px rgb(0 0 0 / 9%); }
 .hushub-hero-caption img { display: block; width: 126px; height: 36px; object-fit: contain; object-position: left center; }
 .hushub-hero-caption span { display: block; margin-top: 7px; font-size: .9375rem; }
-.hushub-hero h1 { font-size: clamp(2.6rem, 4.4vw, 3.85rem); font-weight: 400; letter-spacing: -.04em; line-height: 1.12; }
+.hushub-hero h1 { font-size: 3.85rem; font-weight: 400; letter-spacing: 0; line-height: 1.12; }
 .hushub-hero-copy > p { max-width: 520px; margin-top: 30px; font-size: 1.25rem; line-height: 1.5; color: #e6ecf5; }
 .hushub-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; margin-top: 36px; }
 .hushub-button-light { background: #fff; color: #172b4d; border-color: #fff; padding-inline: 26px; }
@@ -382,7 +382,7 @@ ol.public-feature-list h3::before { counter-increment: feature; content: counter
 @media (max-width: 767px) {
   .public-container { width: calc(100% - 40px); }
   .hushub-hero-inner { grid-template-columns: minmax(0, 1fr); gap: 38px; padding-block: 46px; min-height: 0; }
-  .hushub-hero h1 { font-size: clamp(2.55rem, 9vw, 3.5rem); line-height: 1.09; }
+  .hushub-hero h1 { font-size: 2rem; line-height: 1.15; }
   .hushub-hero-copy > p { font-size: 1.0625rem; margin-top: 22px; max-width: 440px; }
   .hushub-hero-actions { gap: 8px 22px; margin-top: 26px; }
   .hushub-hero-visual { width: min(100% - 18px, 425px); margin-left: 18px; }
