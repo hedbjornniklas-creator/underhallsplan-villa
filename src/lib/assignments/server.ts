@@ -23,6 +23,13 @@ import {
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import { getObAssignmentWorkflow, obWorkflowRpc } from '@/lib/ob/assignmentWorkflowServer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { requireConfiguredOrganizationProfileCard } from '@/lib/organizations/profileCard'
+import {
+  ASSIGNMENT_ISSUER_SNAPSHOT_SCHEMA_VERSION,
+  createAssignmentIssuerIdentitySnapshotV1,
+  parseAssignmentIssuerIdentitySnapshot,
+  type AssignmentIssuerIdentitySnapshotV1,
+} from '@/lib/assignments/issuerIdentity'
 
 export type AssignmentStatus =
   | 'draft'
@@ -1041,6 +1048,70 @@ function toSwedishDateString(value: string | null) {
   return date.toLocaleDateString('sv-SE')
 }
 
+async function createTuAssignmentIssuerIdentitySnapshot(
+  admin: SupabaseAdminClient,
+  assignment: Pick<AssignmentDetails, 'assignment_type' | 'org_id' | 'responsible_profile_id'>
+): Promise<AssignmentIssuerIdentitySnapshotV1 | null> {
+  if (assignment.assignment_type !== 'TU') return null
+
+  const card = await requireConfiguredOrganizationProfileCard({
+    orgId: assignment.org_id,
+    profileId: assignment.responsible_profile_id,
+  })
+  if (card.migrationRequired) throw new Error('ORG_PROFILE_CARD_MIGRATION_REQUIRED')
+  if (card.source === 'unconfigured') throw new Error('ORG_PROFILE_CARD_REQUIRED')
+
+  const { summary } = await resolveInspectorCertificationSummary(admin, {
+    profileId: assignment.responsible_profile_id,
+    orgId: assignment.org_id,
+  })
+
+  return createAssignmentIssuerIdentitySnapshotV1({
+    orgId: assignment.org_id,
+    profileId: assignment.responsible_profile_id,
+    capturedAt: new Date().toISOString(),
+    card: {
+      id: card.id,
+      version: card.version,
+      source: card.source,
+      updatedAt: card.updatedAt,
+    },
+    inspector: {
+      displayName: card.displayName,
+      title: card.title,
+      phone: card.phone,
+      email: card.email,
+      avatarPath: card.avatarPath,
+      signaturePath: card.signaturePath,
+    },
+    company: {
+      name: card.companyName,
+      organizationNumber: card.companyOrgNo,
+      address: card.companyAddress,
+      postalCode: card.companyPostalCode,
+      city: card.companyCity,
+      logoPath: card.logoPath,
+      reportFooterText: card.reportFooterText,
+    },
+    certifications: {
+      sbrGroup: summary.sbr_group,
+      sbrStatus: summary.sbr_status,
+      membershipNumber: summary.membership_number,
+      certificationNumber: summary.certification_number,
+      isSbrDiplomeradAreamatning: summary.is_sbr_diplomerad_areamatning,
+      items: summary.all_selected_items.map((item) => ({
+        key: item.key,
+        name: item.name,
+        category: item.category,
+        sortOrder: item.sort_order,
+        numberValue: item.number_value,
+        validTo: item.valid_to,
+      })),
+    },
+    replyToEmail: card.email,
+  })
+}
+
 export async function sendAssignmentConfirmation(input: {
   assignment: AssignmentDetails
   orgName: string | null
@@ -1063,6 +1134,14 @@ export async function sendAssignmentConfirmation(input: {
     throw new Error('PRICE_REQUIRED')
   }
   const terms = getAssignmentTermsDocument(termsRole)
+  // Resolve the sender before invalidating the previous link. TU links retain
+  // the exact organization card that was used when this issue was sent.
+  const issuerIdentitySnapshot = await createTuAssignmentIssuerIdentitySnapshot(
+    admin,
+    input.assignment
+  )
+  const resolvedOrgName = issuerIdentitySnapshot?.company.name ?? input.orgName
+  const resolvedReplyTo = issuerIdentitySnapshot?.replyToEmail ?? input.responsibleEmail
 
   await admin
     .from('assignment_links')
@@ -1083,6 +1162,12 @@ export async function sendAssignmentConfirmation(input: {
       expires_at: expiresAt,
       terms_version: terms.version,
       created_by: input.requestedByUserId,
+      ...(issuerIdentitySnapshot
+        ? {
+            issuer_snapshot_schema_version: ASSIGNMENT_ISSUER_SNAPSHOT_SCHEMA_VERSION,
+            issuer_identity_snapshot: issuerIdentitySnapshot,
+          }
+        : {}),
     })
     .select('id')
     .single()
@@ -1094,7 +1179,7 @@ export async function sendAssignmentConfirmation(input: {
   const fromAddress = getMailFromAddress()
   const { subject, html, text } = buildAssignmentConfirmationEmail({
     assignment: input.assignment,
-    orgName: input.orgName,
+    orgName: resolvedOrgName,
     acceptUrl,
     expiresAt,
     termsVersion: terms.version,
@@ -1112,7 +1197,7 @@ export async function sendAssignmentConfirmation(input: {
       template_key: 'assignment_confirmation',
       status: 'pending',
       created_by: input.requestedByUserId,
-      reply_to_email: input.responsibleEmail ?? null,
+      reply_to_email: resolvedReplyTo ?? null,
     })
     .select('id')
     .single()
@@ -1125,7 +1210,7 @@ export async function sendAssignmentConfirmation(input: {
     const sendResult = await sendAssignmentEmail({
       to: input.assignment.customer_email,
       from: fromAddress,
-      replyTo: input.responsibleEmail ?? null,
+      replyTo: resolvedReplyTo ?? null,
       subject,
       html,
       text,
@@ -1280,6 +1365,7 @@ export async function sendAssignmentAcceptedNotice(input: {
   requestedByUserId?: string | null
   responsibleEmail: string | null
   acceptancePayload: Record<string, unknown>
+  issuerIdentitySnapshot?: unknown
 }): Promise<void> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   if (!input.assignment.accepted_at) {
@@ -1300,53 +1386,113 @@ export async function sendAssignmentAcceptedNotice(input: {
     throw new Error('ASSIGNMENT_TERMS_SNAPSHOT_MISMATCH')
   }
 
-  const [addonOrders, inspectorResult, organizationResult] = await Promise.all([
-    listAssignmentAddonOrders({
-      orgId: input.assignment.org_id,
-      assignmentId: input.assignment.id,
-    }),
-    admin
-      .from('profiles')
-      .select(
-        'full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city'
-      )
-      .eq('id', input.assignment.responsible_profile_id)
-      .maybeSingle(),
-    admin
-      .from('organizations')
-      .select('name')
-      .eq('id', input.assignment.org_id)
-      .maybeSingle(),
-  ])
+  const addonOrders = await listAssignmentAddonOrders({
+    orgId: input.assignment.org_id,
+    assignmentId: input.assignment.id,
+  })
+  let resolvedOrgName = input.orgName
+  let resolvedReplyTo = input.responsibleEmail
+  let inspectorForPdf: Parameters<
+    typeof renderAcceptedAssignmentConfirmationPdf
+  >[0]['inspector'] = null
 
-  if (inspectorResult.error) {
-    throw new Error(inspectorResult.error.message ?? 'Kunde inte hämta besiktningsmannen.')
-  }
+  if (input.assignment.assignment_type === 'TU') {
+    const suppliedSnapshot =
+      input.issuerIdentitySnapshot === undefined || input.issuerIdentitySnapshot === null
+        ? null
+        : parseAssignmentIssuerIdentitySnapshot(input.issuerIdentitySnapshot, {
+            orgId: input.assignment.org_id,
+          })
+    if (input.issuerIdentitySnapshot != null && !suppliedSnapshot) {
+      throw new Error('ASSIGNMENT_ISSUER_IDENTITY_INVALID')
+    }
+    const snapshot =
+      suppliedSnapshot ??
+      (await createTuAssignmentIssuerIdentitySnapshot(admin, input.assignment))
+    if (!snapshot) throw new Error('ASSIGNMENT_ISSUER_IDENTITY_INVALID')
 
-  const inspectorProfile = inspectorResult.data as
-    | {
-        full_name: string | null
-        email: string | null
-        phone: string | null
-        company_name: string | null
-        company_orgno: string | null
-        company_address: string | null
-        company_postal_code: string | null
-        company_city: string | null
-      }
-    | null
-  const { summary: certificationSummary } = await resolveInspectorCertificationSummary(
-    admin,
-    {
+    resolvedOrgName = snapshot.company.name
+    resolvedReplyTo = snapshot.replyToEmail
+    inspectorForPdf = {
+      fullName: snapshot.inspector.displayName,
+      email: snapshot.inspector.email,
+      phone: snapshot.inspector.phone,
+      companyName: snapshot.company.name,
+      companyOrgNo: snapshot.company.organizationNumber,
+      companyAddress: snapshot.company.address,
+      companyPostalCode: snapshot.company.postalCode,
+      companyCity: snapshot.company.city,
+      sbrGroup: snapshot.certifications.sbrGroup,
+      sbrStatus: snapshot.certifications.sbrStatus,
+      membershipNumber: snapshot.certifications.membershipNumber,
+      certificationNumber: snapshot.certifications.certificationNumber,
+      certifications: snapshot.certifications.items.map((item) => ({
+        name: item.name,
+        number: item.numberValue,
+        validTo: item.validTo,
+      })),
+    }
+  } else {
+    const [inspectorResult, organizationResult] = await Promise.all([
+      admin
+        .from('profiles')
+        .select(
+          'full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city'
+        )
+        .eq('id', input.assignment.responsible_profile_id)
+        .maybeSingle(),
+      admin
+        .from('organizations')
+        .select('name')
+        .eq('id', input.assignment.org_id)
+        .maybeSingle(),
+    ])
+    if (inspectorResult.error) {
+      throw new Error(inspectorResult.error.message ?? 'Kunde inte hämta besiktningsmannen.')
+    }
+    const inspectorProfile = inspectorResult.data as
+      | {
+          full_name: string | null
+          email: string | null
+          phone: string | null
+          company_name: string | null
+          company_orgno: string | null
+          company_address: string | null
+          company_postal_code: string | null
+          company_city: string | null
+        }
+      | null
+    const { summary } = await resolveInspectorCertificationSummary(admin, {
       profileId: input.assignment.responsible_profile_id,
       orgId: input.assignment.org_id,
-    }
-  )
-  const resolvedOrgName =
-    input.orgName ??
-    (organizationResult.data as { name?: string | null } | null)?.name ??
-    inspectorProfile?.company_name ??
-    null
+    })
+    resolvedOrgName =
+      input.orgName ??
+      (organizationResult.data as { name?: string | null } | null)?.name ??
+      inspectorProfile?.company_name ??
+      null
+    inspectorForPdf = inspectorProfile
+      ? {
+          fullName: inspectorProfile.full_name,
+          email: inspectorProfile.email,
+          phone: inspectorProfile.phone,
+          companyName: inspectorProfile.company_name,
+          companyOrgNo: inspectorProfile.company_orgno,
+          companyAddress: inspectorProfile.company_address,
+          companyPostalCode: inspectorProfile.company_postal_code,
+          companyCity: inspectorProfile.company_city,
+          sbrGroup: summary.sbr_group,
+          sbrStatus: summary.sbr_status,
+          membershipNumber: summary.membership_number,
+          certificationNumber: summary.certification_number,
+          certifications: summary.all_selected_items.map((item) => ({
+            name: item.name,
+            number: item.number_value,
+            validTo: item.valid_to,
+          })),
+        }
+      : null
+  }
 
   const { subject, html, text } = buildAssignmentAcceptedNoticeEmail({
     assignment: input.assignment,
@@ -1368,7 +1514,7 @@ export async function sendAssignmentAcceptedNotice(input: {
       template_key: 'assignment_accept_notice',
       status: 'pending',
       created_by: createdBy,
-      reply_to_email: input.responsibleEmail ?? null,
+      reply_to_email: resolvedReplyTo ?? null,
     })
     .select('id')
     .single()
@@ -1388,27 +1534,7 @@ export async function sendAssignmentAcceptedNotice(input: {
         priceAmount: row.price_amount_snapshot,
         currency: row.currency_snapshot,
       })),
-      inspector: inspectorProfile
-        ? {
-            fullName: inspectorProfile.full_name,
-            email: inspectorProfile.email,
-            phone: inspectorProfile.phone,
-            companyName: inspectorProfile.company_name,
-            companyOrgNo: inspectorProfile.company_orgno,
-            companyAddress: inspectorProfile.company_address,
-            companyPostalCode: inspectorProfile.company_postal_code,
-            companyCity: inspectorProfile.company_city,
-            sbrGroup: certificationSummary.sbr_group,
-            sbrStatus: certificationSummary.sbr_status,
-            membershipNumber: certificationSummary.membership_number,
-            certificationNumber: certificationSummary.certification_number,
-            certifications: certificationSummary.all_selected_items.map((item) => ({
-              name: item.name,
-              number: item.number_value,
-              validTo: item.valid_to,
-            })),
-          }
-        : null,
+      inspector: inspectorForPdf,
     })
     const attachmentFilename = buildAcceptedAssignmentConfirmationFilename({
       assignmentType: input.assignment.assignment_type,
@@ -1418,7 +1544,7 @@ export async function sendAssignmentAcceptedNotice(input: {
     const sendResult = await sendAssignmentEmail({
       to: input.assignment.customer_email,
       from: fromAddress,
-      replyTo: input.responsibleEmail ?? null,
+      replyTo: resolvedReplyTo ?? null,
       subject,
       html,
       text,
@@ -1625,20 +1751,50 @@ export async function sendInspectionCompletedEmail(input: {
 export async function resolvePublicAssignmentByToken(token: string) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const tokenHash = hashAssignmentToken(token)
+  const assignmentColumns =
+    'assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,invoice_name,invoice_address,invoice_email,personal_identity_number,orderer_role,accepted_at,assignment_details)'
+  const currentColumns =
+    `id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,issuer_snapshot_schema_version,issuer_identity_snapshot,${assignmentColumns}`
+  const legacyColumns =
+    `id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,${assignmentColumns}`
 
-  const { data, error } = await admin
+  let result = await admin
     .from('assignment_links')
-    .select(
-      'id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,invoice_name,invoice_address,invoice_email,personal_identity_number,orderer_role,accepted_at,assignment_details)'
-    )
+    .select(currentColumns)
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
-  if (error) {
-    throw new Error(error.message ?? 'Kunde inte verifiera token.')
+  const errorText = `${result.error?.code ?? ''} ${result.error?.message ?? ''}`.toLowerCase()
+  if (
+    result.error &&
+    (
+      errorText.includes('42703') ||
+      errorText.includes('issuer_snapshot_schema_version') ||
+      errorText.includes('issuer_identity_snapshot')
+    )
+  ) {
+    result = await admin
+      .from('assignment_links')
+      .select(legacyColumns)
+      .eq('token_hash', tokenHash)
+      .maybeSingle()
   }
 
-  return data as
+  if (result.error) {
+    throw new Error(result.error.message ?? 'Kunde inte verifiera token.')
+  }
+
+  const data = result.data as Record<string, unknown> | null
+  if (!data) return null
+
+  return {
+    ...data,
+    issuer_snapshot_schema_version:
+      typeof data.issuer_snapshot_schema_version === 'string'
+        ? data.issuer_snapshot_schema_version
+        : null,
+    issuer_identity_snapshot: data.issuer_identity_snapshot ?? null,
+  } as
     | {
         id: string
         assignment_id: string
@@ -1647,9 +1803,10 @@ export async function resolvePublicAssignmentByToken(token: string) {
         used_at: string | null
         revoked_at: string | null
         terms_version: string | null
+        issuer_snapshot_schema_version: string | null
+        issuer_identity_snapshot: unknown
         assignments: AssignmentDetails | AssignmentDetails[] | null
       }
-    | null
 }
 
 export async function consumeAssignmentToken(input: {

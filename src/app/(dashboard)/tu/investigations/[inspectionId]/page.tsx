@@ -28,7 +28,6 @@ export default async function TuInvestigationPage({
       getTuInvestigationById({
         orgId: context.orgId,
         inspectionId,
-        inspectorProfileId: context.userId,
       }),
       listTuReportSectionTypeOptions(),
     ])

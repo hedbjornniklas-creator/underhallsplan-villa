@@ -327,10 +327,12 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
 
   return {
     leftRows: [
-      toPrintRow('Besiktningsman', assignmentParties.inspectorName ?? inspector?.full_name),
-      toPrintRow('Medlemsnummer SBR', assignmentParties.inspectorMembershipNumber ?? inspector?.membership_number),
-      toPrintRow('Telefon', assignmentParties.inspectorPhone ?? inspector?.phone),
-      toPrintRow('E-Post', assignmentParties.inspectorEmail ?? inspector?.email),
+      // Inspector identity is organization-managed. Never let a legacy or
+      // manually edited draft override the exact organization card here.
+      toPrintRow('Besiktningsman', inspector?.full_name),
+      toPrintRow('Medlemsnummer SBR', inspector?.membership_number),
+      toPrintRow('Telefon', inspector?.phone),
+      toPrintRow('E-Post', inspector?.email),
       toPrintRow('Närvarande', customerAttendees),
       toPrintRow('Besiktningsdag', inspectionDate),
       toPrintRow('Klockslag', inspectionTime),
@@ -359,6 +361,10 @@ function buildFooter(investigation: TuInvestigationDetails) {
     inspector?.company_name,
     inspector?.company_orgno ? `Org.nr ${inspector.company_orgno}` : null,
     companyAddress,
+    ...String(inspector?.report_footer_text ?? '')
+      .split(/\r?\n/u)
+      .map((line) => normalizePrintableText(line))
+      .filter(Boolean),
   ]
     .map((line) => normalizePrintableText(line))
     .filter(Boolean)

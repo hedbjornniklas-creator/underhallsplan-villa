@@ -5,7 +5,6 @@ import {
   buildBaseUrl,
   createAssignment,
   getAssignmentById,
-  getProfileContact,
   listAssignmentsByOrg,
   requireOrgContext,
   sendAssignmentConfirmation,
@@ -17,6 +16,10 @@ import { resolveInspectorCertificationSummary } from '@/lib/certifications/profi
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
+import {
+  requireConfiguredOrganizationProfileCard,
+  resolveOrganizationProfileCard,
+} from '@/lib/organizations/profileCard'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   resolveTuReportAuthoringMode,
@@ -130,10 +133,12 @@ export type TuInspectorProfileCard = {
   avatarUrl: string | null
   logoUrl: string | null
   credentialLines: string[]
+  organizationConfigured: boolean
 }
 
 export type TuInvestigationDetails = TuInspectionSummary & {
   orgId: string
+  inspectorProfileId: string | null
   reportTemplateKey: string | null
   reportTemplateTitle: string | null
   reportTemplateVersion: number | null
@@ -181,6 +186,7 @@ export type TuInvestigationImage = {
 type TuDetailRow = {
   inspection_id: string
   org_id: string
+  inspector_profile_id: string | null
   assignment_id: string | null
   property_id: string | null
   title: string | null
@@ -224,11 +230,13 @@ type TuInspectorProfileRow = {
   logo_url: string | null
   signature_path: string | null
   signature_url: string | null
+  report_footer_text: string | null
   sbr_group: string | null
   sbr_status: string | null
   membership_number: string | null
   certification_number: string | null
   certification_items: InspectorCertificationListItem[]
+  organization_profile_configured: boolean
 }
 
 type InspectionRow = {
@@ -769,7 +777,7 @@ function upsertAssignmentPartiesSectionText(
 
   const inspectorBlock = extractTuInspectorBlock(normalizedText)
   const hasInspectorText = Boolean(inspectorBlock && inspectorBlock !== 'Ej angivet.')
-  const missingInspectorPattern = /Besiktningsman\r?\nEj angivet\.?/m
+  const inspectorPattern = /Besiktningsman\r?\n[\s\S]*$/m
 
   return {
     sections: draft.sections.map((section) => {
@@ -778,10 +786,17 @@ function upsertAssignmentPartiesSectionText(
       const currentText = section.text.trim()
       if (!currentText) return { ...section, text: normalizedText }
 
-      if (hasInspectorText && missingInspectorPattern.test(currentText)) {
+      if (hasInspectorText && inspectorPattern.test(currentText)) {
         return {
           ...section,
-          text: currentText.replace(missingInspectorPattern, `Besiktningsman\n${inspectorBlock}`),
+          text: currentText.replace(inspectorPattern, `Besiktningsman\n${inspectorBlock}`),
+        }
+      }
+
+      if (hasInspectorText) {
+        return {
+          ...section,
+          text: `${currentText}\n\nBesiktningsman\n${inspectorBlock}`,
         }
       }
 
@@ -822,11 +837,6 @@ function resolveTuPublicMediaUrl(path: string | null | undefined) {
   if (trimmed.startsWith('/')) return trimmed
 
   return createSupabaseAdminClient().storage.from('property-media').getPublicUrl(trimmed).data.publicUrl
-}
-
-function isMissingSignaturePathError(error: SupabaseError) {
-  const message = (error?.message ?? '').toLowerCase()
-  return message.includes('signature_path') || message.includes('42703')
 }
 
 function buildTuAssignmentPartiesText(input: {
@@ -890,57 +900,38 @@ async function getTuInspectorProfile(input: {
   if (!normalizedProfileId) return null
 
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
-  let signatureColumnAvailable = true
-  let profileResult = await admin
-    .from('profiles')
-    .select(
-      'id,full_name,email,phone,avatar_path,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path,signature_path'
-    )
-    .eq('id', normalizedProfileId)
-    .maybeSingle()
-
-  if (profileResult.error && isMissingSignaturePathError(profileResult.error)) {
-    signatureColumnAvailable = false
-    profileResult = await admin
-      .from('profiles')
-      .select(
-        'id,full_name,email,phone,avatar_path,company_name,company_orgno,company_address,company_postal_code,company_city,logo_path'
-      )
-      .eq('id', normalizedProfileId)
-      .maybeSingle()
-  }
-
-  if (profileResult.error || !profileResult.data) return null
-  const rawProfile = profileResult.data as Omit<
-    TuInspectorProfileRow,
-    | 'avatar_url'
-    | 'logo_url'
-    | 'signature_url'
-    | 'sbr_group'
-    | 'sbr_status'
-    | 'membership_number'
-    | 'certification_number'
-    | 'certification_items'
-  >
-  const profile = {
-    ...rawProfile,
-    signature_path: signatureColumnAvailable ? rawProfile.signature_path ?? null : null,
-  }
+  const card = await resolveOrganizationProfileCard({
+    profileId: normalizedProfileId,
+    orgId: input.orgId,
+  })
   const { summary } = await resolveInspectorCertificationSummary(admin, {
     profileId: normalizedProfileId,
     orgId: input.orgId,
   })
 
   return {
-    ...profile,
-    avatar_url: resolveTuPublicMediaUrl(profile.avatar_path),
-    logo_url: resolveTuPublicMediaUrl(profile.logo_path),
-    signature_url: resolveTuPublicMediaUrl(profile.signature_path),
+    id: normalizedProfileId,
+    full_name: cleanText(card.displayName),
+    email: cleanText(card.email),
+    phone: cleanText(card.phone),
+    avatar_path: cleanText(card.avatarPath),
+    avatar_url: resolveTuPublicMediaUrl(card.avatarPath),
+    company_name: cleanText(card.companyName),
+    company_orgno: cleanText(card.companyOrgNo),
+    company_address: cleanText(card.companyAddress),
+    company_postal_code: cleanText(card.companyPostalCode),
+    company_city: cleanText(card.companyCity),
+    logo_path: cleanText(card.logoPath),
+    logo_url: resolveTuPublicMediaUrl(card.logoPath),
+    signature_path: cleanText(card.signaturePath),
+    signature_url: resolveTuPublicMediaUrl(card.signaturePath),
+    report_footer_text: cleanText(card.reportFooterText),
     sbr_group: summary.sbr_group,
     sbr_status: summary.sbr_status,
     membership_number: summary.membership_number,
     certification_number: summary.certification_number,
     certification_items: summary.all_selected_items,
+    organization_profile_configured: card.configured,
   } satisfies TuInspectorProfileRow
 }
 
@@ -971,7 +962,17 @@ export async function getTuInspectorProfileCard(input: {
     avatarUrl: profile.avatar_url,
     logoUrl: profile.logo_url,
     credentialLines: credentialLines.length > 0 ? credentialLines : fallbackCredentialLines,
+    organizationConfigured: profile.organization_profile_configured,
   }
+}
+
+export async function requireTuOrganizationProfileCard(input: {
+  orgId: string
+  profileId: string
+}) {
+  const card = await requireConfiguredOrganizationProfileCard(input)
+  if (card.migrationRequired) throw new Error('ORG_PROFILE_CARD_MIGRATION_REQUIRED')
+  return card
 }
 
 export async function requireTuContext(requestedOrgId?: unknown) {
@@ -1121,12 +1122,15 @@ export async function sendTuAssignmentConfirmation(input: {
   requestedByUserId: string
 }) {
   if (input.assignment.assignment_type !== 'TU') throw new Error('TU_ASSIGNMENT_NOT_FOUND')
-  const responsibleProfile = await getProfileContact(input.assignment.responsible_profile_id)
+  const responsibleProfile = await requireTuOrganizationProfileCard({
+    orgId: input.assignment.org_id,
+    profileId: input.assignment.responsible_profile_id,
+  })
   return sendAssignmentConfirmation({
     assignment: input.assignment,
-    orgName: input.orgName,
+    orgName: responsibleProfile.companyName || input.orgName,
     requestedByUserId: input.requestedByUserId,
-    responsibleEmail: responsibleProfile?.email ?? null,
+    responsibleEmail: responsibleProfile.email,
     baseUrl: buildBaseUrl(),
   })
 }
@@ -1229,6 +1233,7 @@ async function createInspectionForTu(input: {
 async function createTuDetail(input: {
   inspectionId: string
   orgId: string
+  inspectorProfileId: string
   assignmentId?: string | null
   propertyId: string
   title?: string | null
@@ -1250,6 +1255,7 @@ async function createTuDetail(input: {
     .insert({
       inspection_id: input.inspectionId,
       org_id: input.orgId,
+      inspector_profile_id: input.inspectorProfileId,
       assignment_id: input.assignmentId ?? null,
       property_id: input.propertyId,
       title: cleanText(input.title) ?? 'Teknisk utredning',
@@ -1346,6 +1352,7 @@ export async function createScratchTuInvestigation(input: {
     await createTuDetail({
       inspectionId: inspection.id,
       orgId: input.orgId,
+      inspectorProfileId: ownerProfileId,
       propertyId: property.id,
       title,
       projectType: reportTemplate.projectType,
@@ -1431,6 +1438,7 @@ export async function convertTuAssignmentToInvestigation(input: {
     await createTuDetail({
       inspectionId: inspection.id,
       orgId: input.orgId,
+      inspectorProfileId: assignment.responsible_profile_id ?? input.requestedByUserId,
       assignmentId: assignment.id,
       propertyId: property.id,
       title: reportTemplate.documentTitle,
@@ -1538,7 +1546,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,inspector_profile_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1587,13 +1595,12 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
 export async function getTuInvestigationById(input: {
   orgId: string
   inspectionId: string
-  inspectorProfileId?: string | null
 }): Promise<TuInvestigationDetails | null> {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,inspector_profile_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
@@ -1629,10 +1636,26 @@ export async function getTuInvestigationById(input: {
   const assignment = detail.assignment_id
     ? await getAssignmentById(input.orgId, detail.assignment_id)
     : null
-  const inspector = await getTuInspectorProfile({
-    profileId: input.inspectorProfileId ?? assignment?.responsible_profile_id ?? detail.created_by,
-    orgId: input.orgId,
-  })
+  const inspectorProfileId =
+    detail.inspector_profile_id ??
+    (detail.report_locked_at ? null : assignment?.responsible_profile_id ?? detail.created_by)
+  let inspector: TuInspectorProfileRow | null = null
+  try {
+    inspector = await getTuInspectorProfile({
+      profileId: inspectorProfileId,
+      orgId: input.orgId,
+    })
+  } catch (error) {
+    // A locked report is rendered from its immutable report snapshot. Keep it
+    // readable and re-sendable if its former inspector is no longer an active
+    // organization member; unlocked work must still fail closed.
+    if (
+      !detail.report_locked_at ||
+      !(error instanceof Error && error.message === 'ORG_MEMBERSHIP_REQUIRED')
+    ) {
+      throw error
+    }
+  }
   const summary = buildSummary(detail, inspection, property)
   const assignmentBrfName = cleanText(assignment?.brf_name)
   const assignmentApartmentNumber = cleanText(assignment?.apartment_number)
@@ -1656,6 +1679,7 @@ export async function getTuInvestigationById(input: {
   return {
     ...resolvedSummary,
     orgId: detail.org_id,
+    inspectorProfileId,
     reportTemplateKey: cleanText(detail.report_template_key),
     reportTemplateTitle: cleanText(detail.report_template_title),
     reportTemplateVersion: detail.report_template_version ?? null,
@@ -1767,7 +1791,6 @@ export async function updateTuInvestigationDraft(input: {
   const existing = await getTuInvestigationById({
     orgId: input.orgId,
     inspectionId: input.inspectionId,
-    inspectorProfileId: input.updatedBy,
   })
   if (!existing) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   if (existing.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
@@ -1847,7 +1870,6 @@ export async function updateTuInvestigationDraft(input: {
   return getTuInvestigationById({
     orgId: input.orgId,
     inspectionId: input.inspectionId,
-    inspectorProfileId: input.updatedBy,
   })
 }
 

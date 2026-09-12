@@ -7,10 +7,12 @@ import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
 import {
   getTuInvestigationById,
   listTuInvestigationImages,
+  requireTuOrganizationProfileCard,
   requireTuRequestContext,
 } from '@/lib/tu/server'
 import {
   createTuReportSnapshotPayloadV1,
+  isTuReportSnapshotPayloadV1,
   type TuReportDeliveryDocument,
 } from '@/lib/tu/reportSnapshot'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
@@ -118,6 +120,14 @@ function isValidEmail(value: string) {
 function normalizeEmail(value: unknown) {
   const normalized = normalizeText(value).toLowerCase()
   return normalized && isValidEmail(normalized) ? normalized : null
+}
+
+function resolveFrozenReplyToEmail(snapshot: unknown) {
+  if (!isTuReportSnapshotPayloadV1(snapshot)) return null
+  const emailRow = snapshot.report.parties?.leftRows.find(
+    (row) => row.label.trim().toLocaleLowerCase('sv-SE') === 'e-post'
+  )
+  return normalizeEmail(emailRow?.value)
 }
 
 function resolveReportDraftRecipientEmail(
@@ -789,7 +799,6 @@ export async function GET(
     const investigation = await getTuInvestigationById({
       orgId: org.orgId,
       inspectionId,
-      inspectorProfileId: org.userId,
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
@@ -853,6 +862,12 @@ export async function GET(
     if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('Du saknar TU-behörighet i den valda organisationen.', 403)
+    if (message === 'ORG_PROFILE_CARD_REQUIRED') {
+      return jsonError('Fyll i företagsvisitkortet för ansvarig besiktningsman innan rapporten fastställs.', 409)
+    }
+    if (message === 'ORG_PROFILE_CARD_MIGRATION_REQUIRED') {
+      return jsonError('Databasen saknar migrationen för organisationsprofiler.', 409)
+    }
     return jsonError(message || 'Kunde inte läsa TU-utskicksstatus.', 500)
   }
 }
@@ -878,9 +893,18 @@ export async function POST(
     const investigation = await getTuInvestigationById({
       orgId: org.orgId,
       inspectionId,
-      inspectorProfileId: org.userId,
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
+    const usesFrozenRevision = action === 'send_and_lock' && Boolean(investigation.reportLockedAt)
+    if (action !== 'regenerate_pdf' && !usesFrozenRevision) {
+      if (!investigation.inspectorProfileId) {
+        return jsonError('TU-utredningen saknar ansvarig besiktningsman.', 409)
+      }
+      await requireTuOrganizationProfileCard({
+        orgId: org.orgId,
+        profileId: investigation.inspectorProfileId,
+      })
+    }
     let staleAnalysisAcknowledged = false
     let acknowledgedAnalysisStaleAt: string | null = null
 
@@ -1078,13 +1102,18 @@ export async function POST(
         ...parseExtraRecipients(body?.extra_recipients, primaryRecipient),
       ]
       const emailContent = buildInspectionReportDeliveryEmail({
-        orgName: org.orgName,
+        orgName:
+          sendingFinalizedRevision && isTuReportSnapshotPayloadV1(snapshotPayload)
+            ? snapshotPayload.report.companyLogoAlt
+            : investigation.inspector?.company_name ?? org.orgName,
         customerName: investigation.assignment?.customer_name ?? investigation.inspection.customer_name,
         propertyAddress: resolvePropertyAddress(investigation),
         inspectionDate: resolveInspectionDate(investigation),
         detailsUrl: publicLink,
       })
-      const replyToEmail = investigation.inspector?.email?.trim() || null
+      const replyToEmail = sendingFinalizedRevision
+        ? resolveFrozenReplyToEmail(snapshotPayload)
+        : normalizeEmail(investigation.inspector?.email)
 
       for (const recipient of recipients) {
         const messageId = await createOutboundMessage(admin, {
@@ -1225,6 +1254,12 @@ export async function POST(
     if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('Du saknar TU-behörighet i den valda organisationen.', 403)
+    if (message === 'ORG_PROFILE_CARD_REQUIRED') {
+      return jsonError('Fyll i företagsvisitkortet för ansvarig besiktningsman innan rapporten fastställs.', 409)
+    }
+    if (message === 'ORG_PROFILE_CARD_MIGRATION_REQUIRED') {
+      return jsonError('Databasen saknar migrationen för organisationsprofiler.', 409)
+    }
     if (message === 'TU_REVISIONS_NOT_ACTIVATED') {
       return jsonError('TU-revisioner är inte aktiverade i databasen ännu.', 409)
     }

@@ -199,7 +199,10 @@ export default function ActiveOrganizationSwitcher({
       return
     }
 
-    const onSafeRoot = pathname === '/tu' || pathname === '/settings/kunder'
+    const onSafeRoot =
+      pathname === '/tu' ||
+      pathname === '/tu/settings/profile' ||
+      pathname === '/settings/kunder'
     const targetPath = onSafeRoot ? pathname : surface === 'tu' ? '/tu' : '/settings/kunder'
     const next = onSafeRoot ? new URLSearchParams(search) : new URLSearchParams()
     next.set('orgId', orgId)

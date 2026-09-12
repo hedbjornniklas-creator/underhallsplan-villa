@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import {
   createTuAssignmentDraft,
   getTuAssignmentById,
+  requireTuOrganizationProfileCard,
   requireTuContext,
   sendTuAssignmentConfirmation,
 } from '@/lib/tu/server'
@@ -47,6 +48,12 @@ function mapAccessError(error: unknown) {
   if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+  if (message === 'ORG_PROFILE_CARD_REQUIRED') {
+    return jsonError('Fyll i företagsvisitkortet för den valda organisationen innan du skickar.', 409)
+  }
+  if (message === 'ORG_PROFILE_CARD_MIGRATION_REQUIRED') {
+    return jsonError('Databasen saknar migrationen för organisationsprofiler.', 409)
+  }
   return null
 }
 
@@ -98,6 +105,13 @@ export async function POST(request: Request) {
     if (customerBinding.mode === 'create' && !text(body, 'customerName')) {
       return jsonError('Ange kundens namn.', 400, { code: 'CUSTOMER_NAME_REQUIRED' })
     }
+
+    // Validate the organization's sender identity before creating a customer or
+    // assignment, so a missing card cannot leave a half-finished draft behind.
+    await requireTuOrganizationProfileCard({
+      orgId: context.orgId,
+      profileId: context.userId,
+    })
 
     const assignment = await createTuAssignmentDraft({
       orgId: context.orgId,

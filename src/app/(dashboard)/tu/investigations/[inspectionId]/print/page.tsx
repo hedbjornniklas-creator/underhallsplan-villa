@@ -379,7 +379,6 @@ export default async function TuInvestigationPrintPage({
     investigation = await getTuInvestigationById({
       orgId: context.orgId,
       inspectionId,
-      inspectorProfileId: context.userId,
     })
     if (!investigation) notFound()
     ;[coverImages, appendixImages, observations] = await Promise.all([

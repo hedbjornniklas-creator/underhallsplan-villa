@@ -44,7 +44,6 @@ export default async function TuInvestigationDigitalReportPage({
     const investigation = await getTuInvestigationById({
       orgId: context.orgId,
       inspectionId,
-      inspectorProfileId: context.userId,
     })
     if (!investigation) notFound()
 

@@ -998,7 +998,7 @@ function ProfileCard({
   const [imageLoadError, setImageLoadError] = useState(false)
   const imageSrc = imageLoadError ? null : profile?.avatarUrl ?? profile?.logoUrl ?? null
   const name = profile?.fullName || 'Besiktningsman'
-  const company = profile?.companyName || 'Profiluppgifter saknas'
+  const company = profile?.companyName || 'Företagsprofil behöver fyllas i'
   const address = [
     profile?.companyAddress,
     [profile?.companyPostalCode, profile?.companyCity].filter(Boolean).join(' '),
@@ -1020,6 +1020,11 @@ function ProfileCard({
         icon={<IdCard size={22} aria-hidden />}
       />
       <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+        {profile && !profile.organizationConfigured ? (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+            Spara ett eget visitkort för den här organisationen innan du skickar TU-dokument.
+          </div>
+        ) : null}
         <div className="flex items-start gap-3">
           {imageSrc ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -1058,13 +1063,13 @@ function ProfileCard({
       </div>
       <div className="mt-auto pt-5">
         <PendingLink
-          href={organizationUrl('/settings', organizationId)}
+          href={organizationUrl('/tu/settings/profile', organizationId)}
           autoPending
           pendingLabel="Öppnar profil..."
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
         >
           <Settings size={16} aria-hidden />
-          Öppna profil
+          Öppna företagsprofil
         </PendingLink>
       </div>
     </CardShell>

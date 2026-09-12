@@ -168,7 +168,6 @@ export async function POST(
     const investigation = await getTuInvestigationById({
       orgId: orgContext.orgId,
       inspectionId,
-      inspectorProfileId: orgContext.userId,
     })
     if (!investigation) throw new Error('TU_INVESTIGATION_NOT_FOUND')
     if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')

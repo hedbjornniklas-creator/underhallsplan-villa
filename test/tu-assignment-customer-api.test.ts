@@ -13,6 +13,7 @@ type HarnessOptions = {
   bindingError?: Error
   contextError?: Error
   linked?: boolean
+  profileError?: Error
   sendError?: Error
 }
 
@@ -126,6 +127,11 @@ function harness(routePath: string, options: HarnessOptions = {}) {
     async createTuAssignmentDraft(input: unknown) {
       calls.push({ name: 'create', value: input })
       return assignment
+    },
+    async requireTuOrganizationProfileCard(input: unknown) {
+      calls.push({ name: 'profile', value: input })
+      if (options.profileError) throw options.profileError
+      return { configured: true }
     },
     async getTuAssignmentById(orgId: string, assignmentId: string) {
       calls.push({ name: 'refetch', value: [orgId, assignmentId] })
@@ -275,20 +281,21 @@ test('TU quick-send binds and refetches before it sends the linked assignment', 
   assert.match(response.headers.get('cache-control') ?? '', /no-store/)
   assert.deepEqual(callNames(setup.calls), [
     'context',
+    'profile',
     'create',
     'bind',
     'refetch',
     'send',
   ])
   assert.deepEqual(setup.calls[0], { name: 'context', value: ORG_ID })
-  assert.deepEqual(setup.calls[2].value, [
+  assert.deepEqual(setup.calls[3].value, [
     ORG_ID,
     ASSIGNMENT_ID,
     DRAFT_UPDATED_AT,
     { mode: 'create', customerType: 'private', identityNumber: null },
   ])
-  assert.deepEqual(setup.calls[3].value, [ORG_ID, ASSIGNMENT_ID])
-  assert.deepEqual(setup.calls[4].value, {
+  assert.deepEqual(setup.calls[4].value, [ORG_ID, ASSIGNMENT_ID])
+  assert.deepEqual(setup.calls[5].value, {
     assignment: {
       id: ASSIGNMENT_ID,
       updated_at: LINKED_UPDATED_AT,
@@ -312,6 +319,19 @@ test('TU quick-send binds and refetches before it sends the linked assignment', 
   })
 })
 
+test('TU quick-send requires the selected organization profile before creating data', async () => {
+  const setup = harness('src/app/api/tu/assignments/quick-send/route.ts', {
+    profileError: new Error('ORG_PROFILE_CARD_REQUIRED'),
+  })
+  const response = await setup.route.POST(
+    request('/api/tu/assignments/quick-send', validBody())
+  )
+
+  assert.equal(response.status, 409)
+  assert.deepEqual(callNames(setup.calls), ['context', 'profile'])
+  assert.match(String((await json(response)).error), /företagsvisitkortet/u)
+})
+
 test('TU quick-send never sends mail when binding fails or the refetch is not linked', async () => {
   const bindingFailure = harness(
     'src/app/api/tu/assignments/quick-send/route.ts',
@@ -323,8 +343,8 @@ test('TU quick-send never sends mail when binding fails or the refetch is not li
 
   assert.equal(failedBindingResponse.status, 409)
   assert.equal((await json(failedBindingResponse)).code, 'ASSIGNMENT_CUSTOMER_INACTIVE')
-  assert.deepEqual(callNames(bindingFailure.calls), ['context', 'create', 'bind', 'discard'])
-  assert.deepEqual(bindingFailure.calls[3].value, [
+  assert.deepEqual(callNames(bindingFailure.calls), ['context', 'profile', 'create', 'bind', 'discard'])
+  assert.deepEqual(bindingFailure.calls[4].value, [
     ORG_ID,
     ASSIGNMENT_ID,
     DRAFT_UPDATED_AT,
@@ -341,6 +361,7 @@ test('TU quick-send never sends mail when binding fails or the refetch is not li
   assert.equal(missingLinkResponse.status, 500)
   assert.deepEqual(callNames(missingLink.calls), [
     'context',
+    'profile',
     'create',
     'bind',
     'refetch',
@@ -363,6 +384,7 @@ test('a mail failure returns the saved assignment and cannot invite a duplicate 
   assert.equal(response.status, 202)
   assert.deepEqual(callNames(setup.calls), [
     'context',
+    'profile',
     'create',
     'bind',
     'refetch',

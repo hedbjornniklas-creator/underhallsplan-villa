@@ -16,6 +16,12 @@ function mapAccessError(error: unknown) {
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_ASSIGNMENT_NOT_FOUND') return jsonError('TU-uppdraget hittades inte.', 404)
+  if (message === 'ORG_PROFILE_CARD_REQUIRED') {
+    return jsonError('Fyll i företagsvisitkortet för den valda organisationen innan du skickar.', 409)
+  }
+  if (message === 'ORG_PROFILE_CARD_MIGRATION_REQUIRED') {
+    return jsonError('Databasen saknar migrationen för organisationsprofiler.', 409)
+  }
   return null
 }
 

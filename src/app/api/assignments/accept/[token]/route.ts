@@ -8,6 +8,8 @@ import {
   resolvePublicAssignmentByToken,
   sendAssignmentAcceptedNotice,
 } from '@/lib/assignments/server'
+import { parseAssignmentIssuerIdentitySnapshot } from '@/lib/assignments/issuerIdentity'
+import { resolveOrganizationProfileCard } from '@/lib/organizations/profileCard'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   getAllAssignmentTermsDocuments,
@@ -103,6 +105,8 @@ type PublicLink = {
   used_at: string | null
   revoked_at: string | null
   terms_version: string | null
+  issuer_snapshot_schema_version: string | null
+  issuer_identity_snapshot: unknown
   assignments: PublicAssignmentSummary | PublicAssignmentSummary[] | null
 }
 
@@ -232,36 +236,103 @@ export async function GET(
     const admin = createSupabaseAdminClient()
 
     if (assignment.responsible_profile_id) {
-      const { data: inspectorData } = await admin
-        .from('profiles')
-        .select(
-          'full_name,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
-        )
-        .eq('id', assignment.responsible_profile_id)
-        .maybeSingle()
-
-      const { summary } = await resolveInspectorCertificationSummary(admin, {
-        profileId: assignment.responsible_profile_id,
-        orgId: link.org_id,
-      })
-
-      inspector = inspectorData
-        ? {
-            full_name: inspectorData.full_name ?? null,
-            sbr_group: summary.sbr_group,
-            sbr_status: summary.sbr_status,
-            membership_number: summary.membership_number,
-            certification_number: summary.certification_number,
-            phone: inspectorData.phone ?? null,
-            email: inspectorData.email ?? null,
-            company_name: inspectorData.company_name ?? null,
-            company_orgno: inspectorData.company_orgno ?? null,
-            company_address: inspectorData.company_address ?? null,
-            company_postal_code: inspectorData.company_postal_code ?? null,
-            company_city: inspectorData.company_city ?? null,
-            avatar_path: inspectorData.avatar_path ?? null,
+      if (assignment.assignment_type === 'TU') {
+        const snapshot = parseAssignmentIssuerIdentitySnapshot(
+          link.issuer_identity_snapshot,
+          {
+            orgId: link.org_id,
           }
-        : null
+        )
+        if (link.issuer_identity_snapshot != null && !snapshot) {
+          throw new Error('ASSIGNMENT_ISSUER_IDENTITY_INVALID')
+        }
+
+        if (snapshot) {
+          inspector = {
+            full_name: snapshot.inspector.displayName,
+            sbr_group: snapshot.certifications.sbrGroup,
+            sbr_status: snapshot.certifications.sbrStatus,
+            membership_number: snapshot.certifications.membershipNumber,
+            certification_number: snapshot.certifications.certificationNumber,
+            phone: snapshot.inspector.phone,
+            email: snapshot.inspector.email,
+            company_name: snapshot.company.name,
+            company_orgno: snapshot.company.organizationNumber,
+            company_address: snapshot.company.address,
+            company_postal_code: snapshot.company.postalCode,
+            company_city: snapshot.company.city,
+            avatar_path: snapshot.inspector.avatarPath,
+          }
+        } else {
+          // Compatibility for links issued before SQL 07. The lookup is still
+          // scoped to the exact organization and never reads company branding
+          // from a different organization.
+          try {
+            const [card, certification] = await Promise.all([
+              resolveOrganizationProfileCard({
+                orgId: link.org_id,
+                profileId: assignment.responsible_profile_id,
+              }),
+              resolveInspectorCertificationSummary(admin, {
+                profileId: assignment.responsible_profile_id,
+                orgId: link.org_id,
+              }),
+            ])
+            inspector = {
+              full_name: card.displayName,
+              sbr_group: certification.summary.sbr_group,
+              sbr_status: certification.summary.sbr_status,
+              membership_number: certification.summary.membership_number,
+              certification_number: certification.summary.certification_number,
+              phone: card.phone,
+              email: card.email,
+              company_name: card.companyName || null,
+              company_orgno: card.companyOrgNo,
+              company_address: card.companyAddress,
+              company_postal_code: card.companyPostalCode,
+              company_city: card.companyCity,
+              avatar_path: card.avatarPath,
+            }
+          } catch (profileError) {
+            console.error('[assignments.accept] failed to load legacy TU issuer', {
+              token_prefix: token.slice(0, 8),
+              error: profileError instanceof Error ? profileError.message : String(profileError),
+            })
+            inspector = null
+          }
+        }
+      } else {
+        const { data: inspectorData } = await admin
+          .from('profiles')
+          .select(
+            'full_name,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
+          )
+          .eq('id', assignment.responsible_profile_id)
+          .maybeSingle()
+
+        const { summary } = await resolveInspectorCertificationSummary(admin, {
+          profileId: assignment.responsible_profile_id,
+          orgId: link.org_id,
+        })
+
+        inspector = inspectorData
+          ? {
+              full_name: inspectorData.full_name ?? null,
+              sbr_group: summary.sbr_group,
+              sbr_status: summary.sbr_status,
+              membership_number: summary.membership_number,
+              certification_number: summary.certification_number,
+              phone: inspectorData.phone ?? null,
+              email: inspectorData.email ?? null,
+              company_name: inspectorData.company_name ?? null,
+              company_orgno: inspectorData.company_orgno ?? null,
+              company_address: inspectorData.company_address ?? null,
+              company_postal_code: inspectorData.company_postal_code ?? null,
+              company_city: inspectorData.company_city ?? null,
+              avatar_path: inspectorData.avatar_path ?? null,
+            }
+          : null
+      }
 
       if (assignment.assignment_type !== 'TU' && assignment.assignment_type !== 'EB') {
         try {
@@ -392,6 +463,20 @@ export async function POST(
     if (!assignment) return jsonError('Uppdraget kunde inte hittas.', 404)
     if (assignment.status?.toLowerCase() === 'cancelled') {
       return jsonError('Den här länken är inte längre aktiv.', 410)
+    }
+    if (assignment.assignment_type === 'TU' && link.issuer_identity_snapshot != null) {
+      // The issued snapshot is the historical source of truth. A later
+      // reassignment must not invalidate an otherwise valid customer link.
+      const issuerSnapshot = parseAssignmentIssuerIdentitySnapshot(
+        link.issuer_identity_snapshot,
+        { orgId: link.org_id }
+      )
+      if (!issuerSnapshot) {
+        return jsonError(
+          'Uppdragslänkens avsändaruppgifter är ogiltiga. Begär en ny länk.',
+          409
+        )
+      }
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -643,13 +728,17 @@ export async function POST(
     try {
       const updatedAssignment = await getAssignmentById(link.org_id, assignment.id)
       if (updatedAssignment) {
-        const responsibleProfile = await getProfileContact(updatedAssignment.responsible_profile_id)
+        const responsibleProfile =
+          updatedAssignment.assignment_type === 'TU'
+            ? null
+            : await getProfileContact(updatedAssignment.responsible_profile_id)
         await sendAssignmentAcceptedNotice({
           assignment: updatedAssignment,
           orgName: null,
           requestedByUserId: updatedAssignment.responsible_profile_id,
           responsibleEmail: responsibleProfile?.email ?? null,
           acceptancePayload: payload,
+          issuerIdentitySnapshot: link.issuer_identity_snapshot,
         })
         confirmationEmailSent = true
       }

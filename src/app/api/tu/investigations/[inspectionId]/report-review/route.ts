@@ -51,7 +51,6 @@ async function requireInvestigation(request: Request, inspectionId: string) {
   const investigation = await getTuInvestigationById({
     orgId: orgContext.orgId,
     inspectionId,
-    inspectorProfileId: orgContext.userId,
   })
   if (!investigation) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   return { orgContext, investigation }

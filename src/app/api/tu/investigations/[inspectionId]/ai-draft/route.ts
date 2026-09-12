@@ -105,7 +105,6 @@ export async function POST(
     const investigation = await getTuInvestigationById({
       orgId: orgContext.orgId,
       inspectionId,
-      inspectorProfileId: orgContext.userId,
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
     if (investigation.reportLockedAt) return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
