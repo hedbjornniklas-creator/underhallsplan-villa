@@ -231,6 +231,25 @@ not a delivered or locked customer report. The app remains on the previous froze
 source copy, with only this report-format fix and staging-proxy adjustment applied;
 the concurrent customer-reconciliation implementation/migration was not installed.
 
+## GitHub backup branch (2026-09-13)
+
+The Vercel dashboard identifies `main` as the production branch. Its project
+environment-variable list currently scopes `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` to All Environments.
+Preview must therefore not be treated as the isolated Supabase test environment.
+No credential values or environment settings were changed during this check.
+
+Before publishing the local checkpoint, `vercel.json` disables automatic Git
+deployments for the exact branch `codex/ob-staging-cleanup-2026-09-13`. Other
+branches retain Vercel's existing default. This is a source-code backup, not an
+approval to deploy, migrate production, merge into `main`, or test with customer
+records. It does not disable existing previews or manual deployments.
+
+Keep this guard until a separately approved preview is configured with isolated
+test data and credentials. A differently named branch is not covered by this
+rule and needs its own deployment review before pushing. See Vercel's
+[Git deployment configuration](https://vercel.com/docs/project-configuration/git-configuration).
+
 ## Remaining gates
 
 1. Broaden the synthetic conditions/suggestion catalog and app acceptance;
