@@ -961,6 +961,7 @@ export async function POST(
       dynamicAppendices: {
         includeAreaMeasurement: areaMeasurementAppendix.enabled === true,
         includeMoistureControl: moistureControlAppendix.enabled === true,
+        buildings: reportData.mock.appendices?.buildings,
       },
     })
     timing.mark('report_spec_built')

@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import DebouncedTextarea from './DebouncedTextarea'
 import { useObFloorModel } from './ObFloorProvider'
+import { useObBuilding, useObBuildingData } from './ObBuildingContext'
+import { buildingDraftScope } from '@/lib/ob/buildingStructure'
+import ObBuildingCover from './ObBuildingCover'
 import { ObFloorEditor } from './ObFloorEditor'
 import { floorModelKeys, modelFloorLabel } from '@/lib/ob/floorModel'
 import {
@@ -103,12 +105,6 @@ const isUniqueViolation = (error: unknown) => {
   return err?.code === '23505' || text.includes('duplicate key')
 }
 
-const isMissingConflictTarget = (error: unknown) => {
-  const err = toErrorLike(error)
-  const text = `${err?.message ?? ''} ${err?.details ?? ''}`.toLowerCase()
-  return err?.code === '42P10' || text.includes('no unique or exclusion constraint')
-}
-
 const normalizeSwedishToken = (value: string) =>
   value
     .trim()
@@ -162,7 +158,10 @@ export default function ObStepForutsattningar({
   property: Property
   inspection: Inspection
 }) {
-  const collapsedStorageKey = `ob:forutsattningar:collapsed:${inspection.id}`
+  const building = useObBuilding()
+  const { client: supabase } = useObBuildingData()
+  const draftScope = buildingDraftScope(inspection.id, building?.part?.id)
+  const collapsedStorageKey = `ob:forutsattningar:collapsed:${draftScope}`
   const { model: floorModel } = useObFloorModel()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -459,20 +458,10 @@ export default function ObStepForutsattningar({
       if (sel.id) {
         return await updateExistingSelection(sel.id)
       } else {
-        const { data, error: upsertErr } = await supabase
-          .from('inspection_overview_selections')
-          .upsert(selectionPayload, {
-            onConflict: 'inspection_id,overview_item_id,floor_key,set_index',
-          })
-          .select('*')
-          .single()
-
-        if (!upsertErr) return data as InspectionOverviewSelection
-        if (!isMissingConflictTarget(upsertErr) && !isUniqueViolation(upsertErr)) {
-          throw upsertErr
-        }
-
+        // Explicit lookup/insert also works with the legacy partial unique index
+        // after the building cutover; no ambiguous ON CONFLICT target remains.
         const existing = await findExistingSelection()
+        if (existing?.id && building?.part) throw Error('Byggnadsuppgiften har skapats i en annan vy. Uppdatera innan du ändrar den.')
         if (existing?.id) return await updateExistingSelection(existing.id)
 
         const { data: inserted, error: insErr } = await supabase
@@ -481,7 +470,7 @@ export default function ObStepForutsattningar({
           .select('*')
           .single()
 
-        if (insErr && isUniqueViolation(insErr)) {
+        if (insErr && isUniqueViolation(insErr) && !building?.part) {
           const createdByRace = await findExistingSelection()
           if (createdByRace?.id) return await updateExistingSelection(createdByRace.id)
         }
@@ -548,10 +537,11 @@ export default function ObStepForutsattningar({
     const arr = getItemSelections(itemId)
     const target = arr.find(a => a.set_index === setIndex)
     const next = arr.filter(a => a.set_index !== setIndex)
-    setItemSelections(itemId, next)
     if (target?.id) {
-      await supabase.from('inspection_overview_selections').delete().eq('id', target.id)
+      const { error } = await supabase.from('inspection_overview_selections').delete().eq('id', target.id)
+      if (error) { setError(error.message || 'Uppgiften kunde inte tas bort.'); return }
     }
+    setItemSelections(itemId, next)
   }
 
   const toggleItemCollapsed = (itemId: string) => {
@@ -839,7 +829,7 @@ export default function ObStepForutsattningar({
           <div className="space-y-1">
             <label className="text-xs font-medium text-gray-700">Notering (valfritt)</label>
             <DebouncedTextarea
-              draftKey={`ob:${inspection.id}:forutsattningar:${item.id}:${sel.floor_key ?? 'nofloor'}:${sel.set_index}:note`}
+            draftKey={`ob:${draftScope}:forutsattningar:${item.id}:${sel.floor_key ?? 'nofloor'}:${sel.set_index}:note`}
               value={sel.note ?? ''}
               disabled={isInspectionLocked}
               onSave={note => updateSelectionNote(item.id, selIndex, note)}
@@ -1115,6 +1105,7 @@ export default function ObStepForutsattningar({
         <header>
           <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
         </header>
+        <ObBuildingCover legacyPath={inspection.cover_path ?? null} locked={isInspectionLocked} />
 
         {isInspectionLocked ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -1199,6 +1190,7 @@ export default function ObStepForutsattningar({
       ) : null}
 
       {/* SÄRSKILDA FÖRUTSÄTTNINGAR */}
+      <ObBuildingCover legacyPath={inspection.cover_path ?? null} locked={isInspectionLocked} />
       <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3">
         <header className="flex items-center justify-between gap-3">
           <h3 className="text-base font-semibold text-gray-900">Särskilda förutsättningar</h3>

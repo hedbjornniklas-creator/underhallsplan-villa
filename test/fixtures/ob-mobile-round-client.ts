@@ -23,6 +23,11 @@ const outcome = {
 }
 
 export const supabase = {
+  storage: { from: () => ({
+    getPublicUrl: () => ({ data: { publicUrl: '/photo.png' } }),
+    upload: async () => ({ data: {}, error: null }),
+    remove: () => { throw Error('The building cover must not delete any files') },
+  }) },
   from(table: string) {
     if (['inspections', 'properties', 'ob_property_snapshot', 'assignments'].includes(table)) {
       const data = table === 'inspections'

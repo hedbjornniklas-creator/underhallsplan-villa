@@ -1,6 +1,7 @@
 export type RoundImageUploadStatus = 'queued' | 'uploading' | 'failed'
 
 export type RoundImageUploadItem = {
+  buildingPartId?: string | null
   id: string
   serverImageId: string
   inspectionId: string

@@ -38,6 +38,7 @@ test('production uses the durable upload queue with an explicit unplaced batch c
   assert.match(source, /queueImageBatch\(files, \(file, index\) => uploadImage\(file, file.name, null/)
   assert.match(source, /unplaced: true, throwOnError: true, sortOrder: maxSort \+ \(index \+ 1\) \* 10/)
   assert.match(source, /options.unplaced \? unplacedImagePlacement\(\) : null/)
-  assert.match(source, /unplaced\?\.origin \?\? await getCaptureOrigin\(\)/)
+  assert.match(source, /unplaced\?\.origin \?\? await \(captureContextRef.current\?\.origin \?\? getCaptureOrigin\)\(\)/)
+  assert.match(source, /captureContextRef.current = \{ origin: getCaptureOrigin, area, partId \}/)
   assert.match(source, /await putRoundImageUploadItem\(item\)/)
 })

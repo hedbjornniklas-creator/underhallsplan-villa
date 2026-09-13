@@ -135,7 +135,7 @@ export async function testRoundBack(page, base, output) {
     await guarded()
     await page.click('[aria-label="Öppna stegmeny"]')
     await page.waitForSelector('[role="dialog"]')
-    await page.evaluate(() => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.firstElementChild?.textContent === 'Grunddata').click())
+    await page.evaluate(() => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.firstElementChild?.textContent === 'Fastighet & uppdrag').click())
     await page.waitForSelector('[data-selected-ob-section="grunddata"]')
     await page.waitForFunction(() => !history.state?.__obRoundBack)
     assert.equal(await index(), unmountBase, 'switching steps cleans up without an invisible Back step')

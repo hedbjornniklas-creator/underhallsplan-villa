@@ -6,6 +6,8 @@ import { ArrowLeft, Menu, X } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
 import { getObAssignmentReconciliationPatches, type ObAssignmentReconciledDetail } from '@/lib/ob/assignmentWorkflow'
+import { ObBuildingContext } from '@/components/ob/ObBuildingContext'
+import type { ObBuildingOverview } from '@/lib/ob/buildingStructure'
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
@@ -169,8 +171,9 @@ function normalizeAssignmentRoleToInspectionSide(
   return null
 }
 
-const SECTIONS: { key: ObSectionKey; label: string }[] = [
-  { key: 'grunddata', label: 'Grunddata' },
+type Section = { key: ObSectionKey; label: string; partId?: string }
+const SECTIONS: Section[] = [
+  { key: 'grunddata', label: 'Fastighet & uppdrag' },
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
   { key: 'forutsattningar', label: 'Förutsättningar' },
   { key: 'runda', label: 'ÖB-runda' },
@@ -182,9 +185,16 @@ const SECTIONS: { key: ObSectionKey; label: string }[] = [
 function getVisibleSections(
   isApartmentInspection: boolean,
   showAreaMeasurement: boolean,
-  showMoistureControl: boolean
+  showMoistureControl: boolean,
+  buildings?: ObBuildingOverview | null
 ) {
-  const sections: { key: ObSectionKey; label: string }[] = [...SECTIONS]
+  const sections: Section[] = buildings?.structure ? [
+    ...SECTIONS.slice(0, 2),
+    ...buildings.parts.flatMap(part => [
+      { key: 'forutsattningar' as const, label: `Förutsättningar · ${part.name}`, partId: part.id },
+      { key: 'runda-ny' as const, label: `ÖB-runda · ${part.name}`, partId: part.id },
+    ]),
+  ] : [...SECTIONS]
   if (showAreaMeasurement) {
     sections.push({ key: 'areamatning', label: 'Areamätning' })
   }
@@ -222,6 +232,29 @@ export default function InspectionDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [buildingOverview, setBuildingOverview] = useState<ObBuildingOverview | null>(null)
+  const [buildingError, setBuildingError] = useState<string | null>(null)
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(null)
+  const buildingRequest = useRef(0)
+  const reloadBuildings = useCallback(async () => {
+    const request = ++buildingRequest.current
+    const response = await fetch(`/api/ob/inspections/${inspectionId}/buildings`, { cache: 'no-store' })
+    const result = await response.json()
+    if (request !== buildingRequest.current) return
+    if (!response.ok || !result.data) throw Error(result.error || 'Byggnaderna kunde inte hämtas.')
+    if (!Array.isArray(result.data.parts) || result.data.structure && (
+      result.data.structure.inspection_id !== inspectionId || !result.data.parts.some((part: { id: string; inspection_id: string }) =>
+        part.id === result.data.structure.primary_part_id && part.inspection_id === inspectionId)))
+      throw Error('Byggnadsindelningen kunde inte verifieras.')
+    setBuildingOverview(result.data)
+    setBuildingError(null)
+  }, [inspectionId])
+  useEffect(() => {
+    let active = true
+    setBuildingOverview(null); setBuildingError(null); setSelectedBuildingId(null)
+    void reloadBuildings().catch(error => { if (active) setBuildingError(error.message) })
+    return () => { active = false; buildingRequest.current++ }
+  }, [reloadBuildings])
   const textDraftHistoryGuardPushedRef = useRef(false)
   const confirmLeaveIfTextDrafts = useCallback(() => {
     if (!hasObTextDraftsForInspection(inspectionId)) return true
@@ -239,6 +272,11 @@ export default function InspectionDetailPage() {
 
   // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
+  const activeBuilding = buildingOverview?.parts.find(part => part.id === selectedBuildingId)
+    ?? buildingOverview?.parts.find(part => part.id === buildingOverview.structure?.primary_part_id) ?? null
+  useEffect(() => {
+    if (buildingOverview?.structure && ['runda','insida','utsida'].includes(activeSection)) setActiveSection('runda-ny')
+  }, [buildingOverview?.structure, activeSection])
   const mobileRoundV2 = activeSection === 'runda-ny'
   const isRoundSection = isObRoundSection(activeSection)
 
@@ -576,10 +614,11 @@ export default function InspectionDetailPage() {
   const visibleSections = getVisibleSections(
     isApartmentInspection,
     showAreaMeasurement,
-    showMoistureControl
+    showMoistureControl,
+    buildingOverview
   )
-  const activeSectionIndex = visibleSections.findIndex((section) => section.key === activeSection)
-  const activeSectionLabel = visibleSections.find((section) => section.key === activeSection)?.label ?? ''
+  const activeSectionIndex = visibleSections.findIndex(section => section.key === activeSection && (!section.partId || section.partId === activeBuilding?.id))
+  const activeSectionLabel = visibleSections[activeSectionIndex]?.label ?? ''
 
   useEffect(() => {
     if (isApartmentInspection && activeSection === 'utsida') {
@@ -727,6 +766,10 @@ export default function InspectionDetailPage() {
                 [&_select]:border-gray-300`}
             >
               <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={!isRoundSection}>
+              {buildingError ? <div role="alert" className="p-4 text-red-700">{buildingError}
+                <button type="button" className="ml-3 underline" onClick={() => void reloadBuildings().catch(error => setBuildingError(error.message))}>Försök igen</button>
+              </div> : !buildingOverview ? <p role="status" className="p-4">Hämtar byggnader...</p> :
+              <ObBuildingContext.Provider value={{ inspectionId, overview: buildingOverview, part: activeBuilding, reload: reloadBuildings }}>
               <ObWizard
                 property={property}
                 inspection={inspection}
@@ -737,6 +780,7 @@ export default function InspectionDetailPage() {
                 onInspectionAddonSelectionChanged={handleInspectionAddonSelectionChanged}
                 availableSections={visibleSections.map((section) => section.key)}
               />
+              </ObBuildingContext.Provider>}
               </ObAssignmentWorkflowBoundary>
             </div>
           </div>
@@ -797,16 +841,17 @@ export default function InspectionDetailPage() {
               <div className="grid max-h-[62vh] gap-2 overflow-auto pr-1">
                 {visibleSections.map((section, index) => (
                   <button
-                    key={section.key}
+                    key={`${section.key}:${section.partId ?? ''}`}
                     type="button"
                     onClick={() => {
-                      if (activeSection !== section.key && !confirmLeaveIfTextDrafts()) return
+                      if ((activeSection !== section.key || section.partId !== activeBuilding?.id) && !confirmLeaveIfTextDrafts()) return
+                      if (section.partId) setSelectedBuildingId(section.partId)
                       setActiveSection(section.key)
                       setMobileMenuOpen(false)
                     }}
-                    aria-current={activeSection === section.key ? 'step' : undefined}
+                    aria-current={activeSectionIndex === index ? 'step' : undefined}
                     className={`flex items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
-                      activeSection === section.key
+                      activeSectionIndex === index
                         ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/15'
                         : 'bg-gray-50 text-gray-800 hover:bg-gray-100'
                     }`}
@@ -814,7 +859,7 @@ export default function InspectionDetailPage() {
                     <span>{section.label}</span>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs ${
-                        activeSection === section.key
+                        activeSectionIndex === index
                           ? 'bg-white/18 text-white'
                           : 'bg-white text-gray-500'
                       }`}

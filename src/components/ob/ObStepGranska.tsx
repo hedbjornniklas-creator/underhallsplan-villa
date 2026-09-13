@@ -1,6 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
+import { ExternalLink } from 'lucide-react'
+import { useObBuilding } from './ObBuildingContext'
 import ObStepAreamatning from './ObStepAreamatning'
 import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
@@ -83,6 +85,7 @@ export default function ObStepGranska({
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
 }: ObStepGranskaProps) {
+  const building = useObBuilding()
   const availableSectionSet = useMemo(
     () => new Set<ObSectionKey>(availableSections),
     [availableSections]
@@ -226,6 +229,23 @@ export default function ObStepGranska({
       case 'fuktkontroll':
         return <ObStepFuktkontroll property={property} inspection={inspection} />
     }
+  }
+
+  if (building?.overview.structure) {
+    const href = `/utlatande/${property.id}/${inspection.id}`
+    return <section className="mx-auto w-full min-w-0 max-w-[1100px] bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 py-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-gray-900">Granska</h1>
+          <p className="mt-1 break-words text-sm text-gray-600">{building.overview.parts.map(part => part.name).join(' · ')}</p>
+        </div>
+        <a href={href} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm text-blue-700 hover:bg-blue-50">
+          <ExternalLink size={18} />Öppna utlåtande
+        </a>
+      </header>
+      <iframe title="Granska samtliga byggnader" src={`${href}?embed=1&revision=${building.overview.structure.revision}`}
+        className="min-h-[1100px] w-full border-0" />
+    </section>
   }
 
   return (

@@ -1,6 +1,8 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
+import { readBuildingReportState, assertBuildingReportRevision } from '@/lib/ob/buildingReport'
+import { buildingCoverPath, type ObBuildingPart } from '@/lib/ob/buildingStructure'
 import { modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import {
   formatInspectionDocumentReportLineParts,
@@ -142,14 +144,22 @@ type MoistureControlImageRow = {
 
 export type ReportDataV2 = {
   mock: Record<string, any>
+  obBuildingRevision?: number
 }
 
 export async function buildReportDataV2(params: {
   propertyId?: string | null
   inspectionId: string
-}): Promise<ReportDataV2> {
+}, scopedPart?: ObBuildingPart): Promise<ReportDataV2> {
   const resolvedParams = params
 const supabase: any = createSupabaseServerClient()
+  const buildingState = await readBuildingReportState(supabase, params.inspectionId)
+  const part = scopedPart ?? buildingState?.parts.find(p => p.id === buildingState.structure.primary_part_id) ?? null
+  if (scopedPart && !buildingState?.parts.some(p => p.id === scopedPart.id)) throw Error('Byggnaden ingår inte i besiktningen.')
+  const buildingFrom = (table: string) => ({ select: (columns: string) => {
+    const query = supabase.from(part && table === 'inspection_conditions' ? 'ob_building_conditions' : table).select(columns)
+    return part ? query.eq('building_part_id', part.id) : query
+  } })
 
   const fallback = '--'
   const valueOrFallback = (value: string | null | undefined, alt = fallback) => {
@@ -316,7 +326,7 @@ const supabase: any = createSupabaseServerClient()
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
   const inspection = (inspectionData as any) ?? null
-  const floorModel = inspection ? await readObFloorModel(supabase, inspection.id) : null
+  const floorModel = part ? part.floor_model : inspection ? await readObFloorModel(supabase, inspection.id) : null
 
   if (inspectionError) {
     console.error('Kunde inte hÃ¤mta besiktning', inspectionError)
@@ -471,8 +481,7 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hÃ¤mta upplysningar', disclosureError)
   }
 
-  const { data: inspectionConditions, error: conditionsError } = await supabase
-    .from('inspection_conditions')
+  const { data: inspectionConditions, error: conditionsError } = await buildingFrom('inspection_conditions')
     .select(
       'furnishing_level, weather, weather_note, building_type, building_form, building_year, foundation, frame, joists, facade, windows, roof, heating, ventilation, water, sewer'
     )
@@ -484,8 +493,7 @@ const supabase: any = createSupabaseServerClient()
   }
 
   
-  const { data: overviewSelections, error: overviewSelectionsError } = await supabase
-    .from('inspection_overview_selections')
+  const { data: overviewSelections, error: overviewSelectionsError } = await buildingFrom('inspection_overview_selections')
     .select('overview_item_id, floor_key, set_index, values, note')
     .eq('inspection_id', resolvedParams.inspectionId)
 
@@ -558,7 +566,7 @@ const supabase: any = createSupabaseServerClient()
     property?.city ?? null,
   ].filter((part) => part && String(part).trim().length > 0)
 
-  const coverImageUrl = buildInspectionImageUrl(inspection?.cover_path ?? null)
+  const coverImageUrl = buildInspectionImageUrl(buildingCoverPath(part, buildingState?.structure.primary_part_id ?? null, inspection?.cover_path ?? null))
 
   let fullAddress = fallback
   if (addressParts.length > 0) {
@@ -913,8 +921,7 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hamta utsida-komponenter', exteriorItemsError)
   }
 
-  const { data: exteriorObservations, error: exteriorObservationsError } = await supabase
-    .from('inspection_exterior_observations')
+  const { data: exteriorObservations, error: exteriorObservationsError } = await buildingFrom('inspection_exterior_observations')
     .select('id, exterior_item_id, part_label, note, risk_text, ftu_text, values, created_at')
     .eq('inspection_id', resolvedParams.inspectionId)
     .order('created_at', { ascending: true })
@@ -923,8 +930,7 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hamta utsida-observationer', exteriorObservationsError)
   }
 
-  const { data: exteriorControlItems, error: exteriorControlItemsError } = await supabase
-    .from('inspection_control_items')
+  const { data: exteriorControlItems, error: exteriorControlItemsError } = await buildingFrom('inspection_control_items')
     .select(
       'id, exterior_observation_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id'
     )
@@ -962,8 +968,7 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hamta utfall (utsida)', outcomesError)
   }
 
-  const { data: interiorRooms, error: interiorRoomsError } = await supabase
-    .from('inspection_interior_rooms')
+  const { data: interiorRooms, error: interiorRoomsError } = await buildingFrom('inspection_interior_rooms')
     .select('id, floor_label, room_label, room_type_key, note, order_index')
     .eq('inspection_id', resolvedParams.inspectionId)
 
@@ -991,8 +996,7 @@ const supabase: any = createSupabaseServerClient()
 
   const { data: interiorControlItems, error: interiorControlItemsError } =
     interiorRoomIds.length > 0
-      ? await supabase
-          .from('inspection_control_items')
+      ? await buildingFrom('inspection_control_items')
           .select(
             'id, interior_room_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id'
           )
@@ -1031,8 +1035,7 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hamta utfall (insida)', interiorOutcomesError)
   }
 
-  const { data: exteriorImages, error: exteriorImagesError } = await supabase
-    .from('inspection_images')
+  const { data: exteriorImages, error: exteriorImagesError } = await buildingFrom('inspection_images')
     .select('id, control_item_id, exterior_observation_id, file_path, sort_order, created_at')
     .eq('inspection_id', resolvedParams.inspectionId)
     .order('sort_order', { ascending: true })
@@ -1554,5 +1557,27 @@ const supabase: any = createSupabaseServerClient()
     },
   }
 
+  if (buildingState) {
+    const errors = [inspectionError, propertyError, conditionsError, overviewSelectionsError, overviewItemsError,
+      overviewGroupsError, overviewOptionsError, exteriorObservationsError, exteriorControlItemsError, interiorRoomsError,
+      interiorControlItemsError, exteriorImagesError]
+    if (errors.some(Boolean)) throw Error('Alla byggnadsuppgifter kunde inte hämtas. Inget ofullständigt utlåtande skapas.')
+    const result: ReportDataV2 = mockData
+    result.obBuildingRevision = buildingState.structure.revision
+    if (!scopedPart) {
+      const buildings = []
+      for (const extra of buildingState.parts.filter(p => p.id !== buildingState.structure.primary_part_id)) {
+        const extraData = await buildReportDataV2(params, extra)
+        buildings.push({ id: extra.id, buildingId: extra.building_id, name: extra.name, categoryKey: extra.category_key,
+          introduction: [{ title: extra.name, noteText: extra.scope_note ?? '', riskText: '', ftuText: '', hasDeviations: false,
+            photoUrls: extraData.mock.properties.cover_path ? [extraData.mock.properties.cover_path] : [] }],
+          conditions: extraData.mock.inspection_conditions, buildingData: extraData.mock.buildingData,
+          exterior: extraData.mock.exterior, interior: extraData.mock.interior })
+      }
+      result.mock.appendices.buildings = buildings
+    }
+    await assertBuildingReportRevision(supabase, params.inspectionId, buildingState.structure.revision)
+    return result
+  }
   return mockData
 }

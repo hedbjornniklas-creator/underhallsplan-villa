@@ -12,6 +12,7 @@ import {
 import AppendixPage from '@/components/report/AppendixPage'
 import ReportCoverPage from '@/components/report/ReportCoverPage'
 import ReportPage from '@/components/report/ReportPage'
+import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
 import {
   parseInspectionDocumentReportLine,
   type InspectionDocumentReportLineParts,
@@ -451,6 +452,7 @@ function getMockValue(data: Record<string, unknown>, path: string): string {
   }
 
   if (current === null || current === undefined) return 'saknas'
+  if (path.endsWith('.furnishing_level') && typeof current === 'string') return formatFurnishingLevel(current)
   return typeof current === 'string' || typeof current === 'number'
     ? String(current)
     : JSON.stringify(current)
@@ -1157,9 +1159,12 @@ export default function ReportRendererClient({
         }
 
         if (block.type === 'inspectionBlocks') {
+          const isBuildingNotes = section.id.startsWith('appendix-building-')
+          const isInteriorNotes = section.id === 'notes-interior' || isBuildingNotes && block.itemsPath.endsWith('interior.blocks')
+          const isExteriorNotes = section.id === 'notes' || isBuildingNotes && block.itemsPath.endsWith('exterior.blocks')
           const items = getMockArray<InspectionBlockItem>(mockData, block.itemsPath)
           if (items.length > 0) {
-            if (section.id === 'notes-interior' || section.id === 'notes') {
+            if (isInteriorNotes || isExteriorNotes) {
               const groups: Array<{ title: string; items: InspectionBlockItem[] }> = []
               items.forEach((item) => {
                 const title = String(item.title ?? '').trim()
@@ -1176,11 +1181,11 @@ export default function ReportRendererClient({
                 if (isPdfMode) {
                   const titleParts = splitInspectionGroupTitle(group.title)
                   const roomTitle =
-                    section.id === 'notes-interior' && titleParts.context
+                    isInteriorNotes && titleParts.context
                       ? titleParts.label
                       : group.title
                   const startsNewInteriorFloor =
-                    section.id === 'notes-interior' &&
+                    isInteriorNotes &&
                     titleParts.context &&
                     titleParts.context !== previousInteriorFloor
                   if (startsNewInteriorFloor) {
@@ -1211,7 +1216,7 @@ export default function ReportRendererClient({
                         id: `${section.id}-room-group-${blockIndex}-${groupIndex}-${itemIndex}-${segment.segment}-${segmentIndex}`,
                         sectionId: section.id,
                         sectionStartOnNewPage:
-                          section.id !== 'notes-interior' &&
+                          !isInteriorNotes &&
                           section.startOnNewPage &&
                           blockIndex === 0 &&
                           groupIndex === 0 &&

@@ -89,6 +89,8 @@ export type ObMobileRoundProps = {
   pointMatchesRoom: (point: Point, roomType: string) => boolean
   mutationBlocked: boolean
   inspectionId: string
+  scopeId?: string
+  buildingName?: string
   inspectionSide: string
   locked: boolean
   area: 'interior' | 'exterior'
@@ -155,7 +157,7 @@ function Editor({
   imagePlace: (image: RoundImage) => string
 }) {
   const key = getObTextDraftStorageKey(
-    `ob:${p.inspectionId}:mobile-round:${note.id}`,
+    `ob:${p.scopeId ?? p.inspectionId}:mobile-round:${note.id}`,
   )!
   const original = {
     note: note.note ?? '',
@@ -487,7 +489,7 @@ export default function ObMobileRound(p: Props) {
   const importingRef = useRef(false)
   const [importing, setImporting] = useState(false)
   const [restored, setRestored] = useState(false)
-  const positionKey = `ob-mobile-round:v2:${p.inspectionId}:position`
+  const positionKey = `ob-mobile-round:v2:${p.scopeId ?? p.inspectionId}:position`
   const roomsOnFloor = p.rooms
     .filter(room => p.floorKey(room.floor_label) === p.floorKey(p.activeFloor))
     .sort((a, b) => b.order_index - a.order_index)
@@ -937,7 +939,7 @@ export default function ObMobileRound(p: Props) {
             <ArrowLeft size={23} />
           </button>
           <div>
-            <span>{parentLabel}</span>
+            <span>{p.buildingName ? `${p.buildingName} · ${parentLabel}` : parentLabel}</span>
             <h1>{p.area === 'interior' && p.activeRoom?.id ?
               <button type="button" className="obm-room-name" title="Byt rumsnamn" aria-label="Byt rumsnamn"
                 disabled={p.locked || busy || p.mutationBlocked} onClick={() => setRenameRoom(p.activeRoom!)}>
@@ -976,7 +978,7 @@ export default function ObMobileRound(p: Props) {
         </header>
       ) : (
         <header className="obm-page-header">
-          <span>ÖB-RUNDA</span>
+          <span>{p.buildingName ?? 'ÖB-RUNDA'}</span>
           {view === 'places' ? (
             <div className="obm-place-header-row">
               <h1>Välj plats</h1>
@@ -1477,6 +1479,9 @@ export default function ObMobileRound(p: Props) {
           }}
           onMoved={(result) => {
             setMoveSubject(null)
+            if (result.movedOut) {
+              setEditorId(null); setView('places'); setNotice('Flyttad till vald byggnad'); return
+            }
             setQuery('')
             setEverywhere(false)
             setView('room')
@@ -1511,7 +1516,7 @@ export default function ObMobileRound(p: Props) {
             for (const id of result.noteIds) {
               try {
                 const key = getObTextDraftStorageKey(
-                  `ob:${p.inspectionId}:mobile-round:${id}`,
+                  `ob:${p.scopeId ?? p.inspectionId}:mobile-round:${id}`,
                 )
                 if (key) localStorage.removeItem(key)
               } catch {}
