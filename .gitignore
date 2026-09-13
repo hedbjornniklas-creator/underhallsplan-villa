@@ -159,6 +159,7 @@ vite.config.ts.timestamp-*
 /tmp/eb-report-delivery-ui/
 /tmp/ob-early-start-ui/
 /tmp/ob-mobile-round-ui/
+/tmp/renoapp-resident-journey/
 
 # next.js
 /.next/

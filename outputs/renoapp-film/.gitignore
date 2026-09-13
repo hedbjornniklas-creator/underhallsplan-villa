@@ -1,0 +1,8 @@
+# Generated/local media stays on disk, outside source control.
+*.mp4
+*.png
+*.jpg
+*.jpeg
+*.log
+__pycache__/
+/combined/list.js
