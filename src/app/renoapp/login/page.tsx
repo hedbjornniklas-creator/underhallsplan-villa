@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
-import PublicFrame from '@/components/public/PublicFrame'
+import PublicFrame from '@/components/renoapp/RenoAppPublicFrame'
 import { supabase } from '@/lib/supabaseClient'
 import PasswordAuthPanel from '@/components/auth/PasswordAuthPanel'
 import { getRenoAppReturnPath } from '@/lib/renoapp/brfLifecycle'
@@ -67,7 +67,7 @@ export default function RenoAppLoginPage() {
         <span className="public-eyebrow">RenoApp · För styrelsen</span>
         <h1>Logga in till RenoApp</h1>
         <p className="public-auth-intro">Använd kontot du fått via din förening.</p>
-        <PasswordAuthPanel redirectTo={authRedirectTo} accent="emerald" />
+          <PasswordAuthPanel redirectTo={authRedirectTo} accent="renoapp" />
         <div className="public-auth-help">
           <h2>Saknar du tillgång?</h2>
           <p>Be den som administrerar föreningen i RenoApp att bjuda in dig. Vill er förening börja använda tjänsten? <Link href="/renoapp/request-access">Anmäl föreningens intresse.</Link></p>

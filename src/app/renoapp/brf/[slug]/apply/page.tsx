@@ -1510,7 +1510,7 @@ export default function RenoAppApplyPage() {
                       className="py-2 text-left"
                     >
                       <label className="flex min-h-11 cursor-pointer items-center gap-3 font-semibold text-stone-900">
-                        <input type="checkbox" checked={selected} onChange={() => toggleActionType(action.key)} className="h-5 w-5 shrink-0 accent-emerald-800" />
+                        <input type="checkbox" checked={selected} onChange={() => toggleActionType(action.key)} className="reno-choice h-5 w-5 shrink-0" />
                         {action.label}
                       </label>
                       {action.description ? <ApplicationHelp>{action.description}</ApplicationHelp> : null}
@@ -1626,7 +1626,7 @@ export default function RenoAppApplyPage() {
                               <label
                                 className={`flex min-h-12 cursor-pointer items-start gap-3 rounded-md border px-3 py-3 text-left transition ${
                                   selected
-                                    ? 'border-emerald-700 bg-emerald-50 text-stone-950'
+                                    ? 'reno-selected'
                                     : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-50'
                                 }`}
                               >
@@ -1643,7 +1643,7 @@ export default function RenoAppApplyPage() {
                                         : [option.key]
                                     )
                                   }
-                                  className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-800"
+                                  className="reno-choice mt-0.5 h-5 w-5 shrink-0"
                                 />
                                 <span className="min-w-0">
                                   <span className="block font-medium text-stone-900">{option.label}</span>
@@ -2121,7 +2121,7 @@ export default function RenoAppApplyPage() {
               <input type="checkbox" checked={acceptedRulesId === config.renovationRules.id}
                 aria-invalid={Boolean(rulesError)} aria-describedby={rulesError ? 'application-rules-error' : undefined}
                 onChange={event => { setAcceptedRulesId(event.target.checked ? config.renovationRules!.id : null); setRulesError(null) }}
-                className="mt-1 h-4 w-4 shrink-0 accent-emerald-700" />
+                className="reno-choice mt-1 h-4 w-4 shrink-0" />
               <span>Jag har läst och godkänner {config.brf.name}s renoveringsregler.</span>
             </label>
             {rulesError ? <p id="application-rules-error" role="alert" className="text-sm text-rose-700">{rulesError}</p> : null}
@@ -2283,7 +2283,7 @@ export default function RenoAppApplyPage() {
                       <span
                         className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
                           isOpen
-                            ? 'border-emerald-800 bg-emerald-800 text-white'
+                            ? 'reno-step-active'
                             : 'border-stone-300 bg-white text-stone-700'
                         }`}
                       >
@@ -2339,7 +2339,7 @@ export default function RenoAppApplyPage() {
               <button
                 type="button"
                 onClick={() => setStep((current) => getNextVisibleStepId(current, flowStepItems))}
-                className="ml-auto inline-flex min-h-11 items-center gap-2 rounded-md bg-emerald-800 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-900"
+                className="reno-button ml-auto"
               >
                 Nästa steg <ArrowRight size={16} aria-hidden="true" />
               </button>
@@ -2348,7 +2348,7 @@ export default function RenoAppApplyPage() {
                 type="button"
                 onClick={() => void submitApplication('submit')}
                 disabled={submitting || savingDraft || autosaving || Boolean(uploadingTargetId) || Boolean(deletingDocumentId) || completionConflict}
-                className="ml-auto min-h-11 rounded-md bg-emerald-800 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-60"
+                className="reno-button ml-auto"
               >
                 {submitting ? 'Skickar...' : isNeedInfoCase ? 'Skicka komplettering' : 'Skicka ansökan'}
               </button>

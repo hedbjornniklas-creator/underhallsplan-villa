@@ -29,7 +29,7 @@ export default async function RenoAppAppLayout({ children }: { children: ReactNo
 
   return (
     <div className="min-h-full">
-      <main className="mx-auto w-full max-w-6xl px-6 py-10 md:px-10">{children}</main>
+      <main className="reno-portal-main">{children}</main>
     </div>
   )
 }

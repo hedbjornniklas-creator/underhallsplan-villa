@@ -1,12 +1,13 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Power } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { isPublicRenoPage } from '@/lib/publicNavigation'
+import RenoAppBrand from './RenoAppBrand'
+import RenoAppMenu from './RenoAppMenu'
 
 type RenoAppHeaderContext = {
   accessibleBrfs: Array<{
@@ -100,25 +101,11 @@ export default function RenoAppHeader() {
 
   if (isPublicRenoPage(pathname)) return null
 
-  return (
-    <header className="border-b border-stone-200/80 bg-white/75 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-2 md:px-10 lg:px-12">
-        <Link href="https://hushub.se" className="flex items-center gap-2">
-          <Image
-            src="/landing/Renoapp.png"
-            alt="RenoApp"
-            width={156}
-            height={36}
-            className="h-8 w-auto object-contain"
-            priority
-          />
-        </Link>
-
-        {isAppPortal ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+  const portalControls = (
+          <div className="reno-portal-controls">
             {brfContext?.accessibleBrfs.length ? (
               brfContext.accessibleBrfs.length > 1 ? (
-                <label className="flex items-center gap-2 rounded-full border border-stone-300 bg-white/85 px-3 py-2 text-sm text-stone-700">
+                <label className="reno-brf-switcher">
                   <span className="font-semibold text-stone-800">Förening</span>
                   <select
                     value={brfContext.activeBrfId ?? brfContext.accessibleBrfs[0]?.id ?? ''}
@@ -133,18 +120,18 @@ export default function RenoAppHeader() {
                   </select>
                 </label>
               ) : (
-                <div className="rounded-full border border-stone-300 bg-white/85 px-4 py-2 text-sm text-stone-700">
+                <div className="reno-brf-switcher">
                   <span className="font-semibold text-stone-800">Förening:</span>{' '}
                   <span className="font-medium text-stone-900">{activeBrf?.name ?? activeBrf?.slug ?? '-'}</span>
                 </div>
               )
             ) : loadingBrfContext ? (
-              <div className="rounded-full border border-stone-300 bg-white/85 px-4 py-2 text-sm text-stone-600">
+              <div className="reno-brf-switcher">
                 Laddar förening...
               </div>
             ) : null}
 
-            <nav className="flex flex-wrap items-center gap-2">
+            <nav className="reno-nav" aria-label="Styrelseportalen">
               {appNavItems.map((item) => {
                 const isActive =
                   pathname === item.href || (item.href !== '/renoapp/app' && pathname.startsWith(`${item.href}/`))
@@ -153,11 +140,7 @@ export default function RenoAppHeader() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                      isActive
-                        ? 'bg-stone-900 text-white'
-                        : 'border border-stone-300 bg-white/80 text-stone-800 hover:bg-stone-100'
-                    }`}
+                    aria-current={isActive ? 'page' : undefined}
                   >
                     {item.label}
                   </Link>
@@ -167,15 +150,25 @@ export default function RenoAppHeader() {
             <button
               type="button"
               onClick={() => void handleLogout()}
-              className="ml-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-b from-rose-400 to-red-600 p-[3px] shadow-[0_10px_18px_-10px_rgba(185,28,28,0.95)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_20px_-10px_rgba(185,28,28,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+              className="reno-icon-button"
+              data-reno-close-menu
               aria-label="Logga ut"
               title="Logga ut"
             >
-              <span className="flex h-full w-full items-center justify-center rounded-full bg-white ring-1 ring-red-200/70 shadow-inner">
-                <Power size={18} aria-hidden className="text-red-500" strokeWidth={2.25} />
-              </span>
+              <LogOut size={20} aria-hidden="true" />
             </button>
           </div>
+  )
+
+  return (
+    <header className="reno-header">
+      <div className="reno-header-inner">
+        <RenoAppBrand href={isAppPortal ? '/renoapp/app' : 'https://renoapp.se/'} />
+        {isAppPortal ? (
+          <>
+            <div className="reno-desktop-nav">{portalControls}</div>
+            <RenoAppMenu key={pathname}>{portalControls}</RenoAppMenu>
+          </>
         ) : null}
       </div>
     </header>

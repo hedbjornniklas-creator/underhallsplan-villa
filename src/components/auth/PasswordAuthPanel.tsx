@@ -9,7 +9,7 @@ import ActionButton from '@/components/ui/ActionButton'
 
 type PasswordAuthPanelProps = {
   redirectTo?: string
-  accent?: 'blue' | 'emerald'
+  accent?: 'blue' | 'emerald' | 'renoapp'
 }
 
 const localization = {
@@ -46,8 +46,11 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
   const [signingIn, setSigningIn] = useState(false)
   const [signInError, setSignInError] = useState<string | null>(null)
   const isEmerald = accent === 'emerald'
-  const brand = isEmerald ? '#047857' : '#1d4ed8'
-  const brandAccent = isEmerald ? '#065f46' : '#1e40af'
+  const isRenoApp = accent === 'renoapp'
+  const brand = isRenoApp ? '#476786' : isEmerald ? '#047857' : '#1d4ed8'
+  const brandAccent = isRenoApp ? '#274c70' : isEmerald ? '#065f46' : '#1e40af'
+  const fontFamily = isRenoApp ? 'RenoApp Manrope, Arial, sans-serif' : 'Arial, Helvetica, sans-serif'
+  const radius = isRenoApp ? '6px' : '14px'
 
   const appearance = {
     theme: ThemeSupa,
@@ -59,7 +62,7 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
           brandButtonText: '#ffffff',
           inputBackground: '#ffffff',
           inputBorder: '#d6d3d1',
-          inputBorderHover: isEmerald ? '#6ee7b7' : '#93c5fd',
+          inputBorderHover: isRenoApp ? '#476786' : isEmerald ? '#6ee7b7' : '#93c5fd',
           inputBorderFocus: brand,
           inputLabelText: '#292524',
           inputText: '#1c1917',
@@ -82,21 +85,21 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
           baseButtonSize: '15px',
         },
         fonts: {
-          bodyFontFamily: 'Arial, Helvetica, sans-serif',
-          buttonFontFamily: 'Arial, Helvetica, sans-serif',
-          inputFontFamily: 'Arial, Helvetica, sans-serif',
-          labelFontFamily: 'Arial, Helvetica, sans-serif',
+          bodyFontFamily: fontFamily,
+          buttonFontFamily: fontFamily,
+          inputFontFamily: fontFamily,
+          labelFontFamily: fontFamily,
         },
         radii: {
-          borderRadiusButton: '14px',
-          inputBorderRadius: '14px',
+          borderRadiusButton: radius,
+          inputBorderRadius: radius,
         },
       },
     },
     style: {
       button: { fontWeight: 700 },
       label: { fontWeight: 700 },
-      message: { borderRadius: '14px', lineHeight: '1.5' },
+      message: { borderRadius: radius, lineHeight: '1.5' },
     },
   } as const
 
@@ -133,13 +136,13 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
   }
 
   return (
-    <div>
+    <div className={isRenoApp ? 'reno-auth' : undefined}>
       {showPasswordReset ? (
         <div>
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
             <div
               className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                isEmerald ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                isRenoApp ? 'reno-selected' : isEmerald ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
               }`}
             >
               <KeyRound size={18} aria-hidden="true" />
@@ -184,7 +187,7 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
                 disabled={signingIn}
                 placeholder="namn@foretag.se"
                 className={`h-12 w-full rounded-[14px] border border-stone-300 bg-white px-4 text-[15px] text-stone-950 outline-none transition placeholder:text-stone-400 focus:ring-2 disabled:cursor-wait disabled:bg-stone-50 ${
-                  isEmerald
+                  isRenoApp ? 'reno-field' : isEmerald
                     ? 'focus:border-emerald-700 focus:ring-emerald-700/20'
                     : 'focus:border-blue-700 focus:ring-blue-700/20'
                 }`}
@@ -202,7 +205,7 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
                 disabled={signingIn}
                 placeholder="Ditt lösenord"
                 className={`h-12 w-full rounded-[14px] border border-stone-300 bg-white px-4 text-[15px] text-stone-950 outline-none transition placeholder:text-stone-400 focus:ring-2 disabled:cursor-wait disabled:bg-stone-50 ${
-                  isEmerald
+                  isRenoApp ? 'reno-field' : isEmerald
                     ? 'focus:border-emerald-700 focus:ring-emerald-700/20'
                     : 'focus:border-blue-700 focus:ring-blue-700/20'
                 }`}
@@ -221,7 +224,7 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
               busyLabel="Loggar in …"
               icon={<KeyRound size={17} aria-hidden="true" />}
               tone={isEmerald ? 'emerald' : 'blue'}
-              className="min-h-12 w-full rounded-[14px] px-4 text-[15px] font-bold"
+              className={`min-h-12 w-full rounded-[14px] px-4 text-[15px] font-bold ${isRenoApp ? 'reno-button' : ''}`}
             >
               Logga in
             </ActionButton>
@@ -232,7 +235,7 @@ export default function PasswordAuthPanel({ redirectTo, accent = 'blue' }: Passw
             disabled={signingIn}
             onClick={() => setShowPasswordReset(true)}
             className={`mt-4 text-sm font-semibold transition active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 ${
-              isEmerald ? 'text-emerald-800 hover:text-emerald-950' : 'text-blue-800 hover:text-blue-950'
+              isRenoApp ? 'reno-link' : isEmerald ? 'text-emerald-800 hover:text-emerald-950' : 'text-blue-800 hover:text-blue-950'
             }`}
           >
             Glömt lösenordet?

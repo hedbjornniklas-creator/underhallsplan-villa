@@ -101,7 +101,7 @@ const EMPTY_FORM: FormState = {
 }
 const EMPTY_USER: UserState = { name: '', email: '' }
 const MAX_ADDITIONAL_USERS = 3
-const INPUT_CLASS = 'w-full rounded-md border border-stone-300 bg-white px-3 py-2.5 text-sm text-stone-950 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100'
+const INPUT_CLASS = 'reno-field w-full border bg-white px-3 py-2.5 text-stone-950 outline-none focus:ring-2'
 
 function formatDateTime(value: string | null) {
   if (!value) return '-'
@@ -334,8 +334,8 @@ export default function RenoAppInvitePage() {
   const wrongMemberAccount = !isActivation && payload.currentUser.email !== null && !payload.currentUser.matchesInvite
   const needsPassword = !isActivation && !payload.currentUser.matchesInvite
 
-  return <main className="min-h-screen bg-stone-50 px-4 py-8 text-stone-950 sm:px-6 sm:py-10"><div className="mx-auto max-w-5xl">
-    <header className="border-b border-stone-200 bg-white px-5 py-6 sm:px-8">
+  return <main className="min-h-screen bg-white px-4 py-8 sm:px-6 sm:py-10"><div className="mx-auto max-w-5xl">
+    <header className="border-b border-stone-200 py-6">
       <div className="flex flex-wrap items-start justify-between gap-4"><div>
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">RenoApp</p>
         <h1 className="mt-2 text-2xl font-semibold sm:text-3xl">{isActivation ? `Aktivera ${payload.brf.name} i RenoApp` : `Tillgång till ${payload.brf.name}`}</h1>
@@ -349,7 +349,7 @@ export default function RenoAppInvitePage() {
         <SummaryItem label="Giltig till" value={formatDateTime(payload.invite.expiresAt)} /></div>
     </header>
 
-    <section className="bg-white px-5 py-7 sm:px-8 sm:py-9">
+    <section className="py-7 sm:py-9">
       {payload.state === 'expired' || payload.state === 'revoked' ?
         <div className="rounded-md border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900">Den här länken är inte längre aktiv. Kontakta HusHub eller föreningens administratör för att få en ny länk.</div>
       : payload.state === 'accepted' && isActivation ?
@@ -362,9 +362,9 @@ export default function RenoAppInvitePage() {
           {portalInviteResults.some(invite => invite.emailSent) ? <p className="mt-3 text-xs leading-5 text-emerald-900">Mejlet är beställt hos mejltjänsten. Det kan dröja några minuter innan mottagarens e-postleverantör visar det. Kontrollera även skräppost.</p> : null}
           <div className="mt-5 border-t border-emerald-200 pt-5">
             {continueInviteUrl ? <><p className="text-sm leading-6">Aktiveringsadressen är också vald som användare. Du kan fortsätta direkt utan att invänta mejlet.</p>
-              <Link href={continueInviteUrl} className="mt-3 inline-flex items-center gap-2 rounded-md bg-stone-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-stone-800">Fortsätt till inloggning <ArrowRight size={16} /></Link></>
+              <Link href={continueInviteUrl} className="reno-button mt-3">Fortsätt till inloggning <ArrowRight size={16} /></Link></>
             : payload.activationMemberInvite?.state === 'accepted' ? <><p className="text-sm leading-6">Den personliga inbjudan för aktiveringsadressen är redan accepterad.</p>
-              <Link href="/renoapp/login?next=/renoapp/app" className="mt-3 inline-flex items-center gap-2 rounded-md bg-stone-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-stone-800">Logga in <ArrowRight size={16} /></Link></>
+              <Link href="/renoapp/login?next=/renoapp/app" className="reno-button mt-3">Logga in <ArrowRight size={16} /></Link></>
             : payload.activationMemberInvite && payload.activationMemberInvite.state !== 'revoked' ? <><p className="text-sm leading-6">Har den personliga inbjudan till {payload.invite.email} inte kommit fram? Du kan ersätta den tidigare länken och skicka en ny.</p>
               <button type="button" disabled={resendingMemberInvite} onClick={() => void handleResendMemberInvite()} className="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-800 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw size={16} />{resendingMemberInvite ? 'Skickar...' : 'Skicka ny personlig inbjudan'}</button></>
             : null}
@@ -377,12 +377,12 @@ export default function RenoAppInvitePage() {
       : wrongMemberAccount ?
         <div className="rounded-md border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950"><p className="font-semibold">Du är inloggad med fel konto</p>
           <p className="mt-2 leading-6">Inbjudan gäller {payload.invite.email}, men du är inloggad som {payload.currentUser.email}.</p>
-          <button type="button" onClick={() => void handleSignOut(true)} disabled={signingOut} className="mt-4 rounded-md bg-stone-950 px-4 py-2.5 font-semibold text-white hover:bg-stone-800 disabled:opacity-50">{signingOut ? 'Byter konto...' : 'Byt konto'}</button></div>
+          <button type="button" onClick={() => void handleSignOut(true)} disabled={signingOut} className="reno-button mt-4">{signingOut ? 'Byter konto...' : 'Byt konto'}</button></div>
       : payload.state === 'accepted' ?
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950"><p className="font-semibold">Inbjudan har accepterats</p>
           <p className="mt-1 leading-6">Ditt konto är kopplat till {payload.brf.name}.</p><div className="mt-4">{payload.currentUser.matchesInvite
-            ? <button type="button" onClick={() => void openBrf()} className="rounded-md bg-stone-950 px-4 py-2.5 font-semibold text-white hover:bg-stone-800">Öppna RenoApp</button>
-            : <Link href={loginHref} className="rounded-md bg-stone-950 px-4 py-2.5 font-semibold text-white hover:bg-stone-800">Logga in</Link>}</div>
+            ? <button type="button" onClick={() => void openBrf()} className="reno-button">Öppna RenoApp</button>
+            : <Link href={loginHref} className="reno-button">Logga in</Link>}</div>
           {completionWarnings.length > 0 ? <p role="status" className="mt-4 text-amber-950">{completionWarnings.join(' ')}</p> : null}</div>
       : <form onSubmit={handleAccept} className="space-y-10">
         {isActivation ? <>
@@ -416,8 +416,8 @@ export default function RenoAppInvitePage() {
             <fieldset className="mt-5 grid gap-3 sm:grid-cols-2"><legend className="sr-only">Tillgång till ansökningssidan</legend>{([
               ['listed', 'Publikt sökbar', 'Föreningen visas när boende söker på RenoApps ansökningssida.'],
               ['direct_link', 'Endast direktlänk', 'Föreningen visas inte i sökningen. Styrelsen delar ansökningslänken med boende.'],
-            ] as const).map(([value, title, description]) => <label key={value} className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 ${form.publicApplyMode === value ? 'border-emerald-700 bg-emerald-50' : 'border-stone-300'}`}>
-              <input type="radio" name="publicApplyMode" checked={form.publicApplyMode === value} onChange={() => updateField('publicApplyMode', value)} className="mt-1 h-4 w-4 accent-emerald-800" />
+            ] as const).map(([value, title, description]) => <label key={value} className={`flex cursor-pointer items-start gap-3 rounded-md border p-4 ${form.publicApplyMode === value ? 'reno-selected' : 'border-stone-300'}`}>
+              <input type="radio" name="publicApplyMode" checked={form.publicApplyMode === value} onChange={() => updateField('publicApplyMode', value)} className="reno-choice mt-1 h-4 w-4" />
               <span><span className="block text-sm font-semibold">{title}</span><span className="mt-1 block text-sm leading-6 text-stone-600">{description}</span></span></label>)}</fieldset>
           </section>
 
@@ -454,7 +454,7 @@ export default function RenoAppInvitePage() {
 
         {actionError ? <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">{actionError}</div> : null}
         <div className="border-t border-stone-200 pt-6"><button type="submit" disabled={submitting || (isActivation && (!termsAccepted || !signatoryAuthorityConfirmed))}
-          className="rounded-md bg-stone-950 px-5 py-3 text-sm font-semibold text-white hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50">{submitting ? (isActivation ? 'Aktiverar...' : 'Bekräftar...') : (isActivation ? 'Aktivera föreningen' : 'Bekräfta och öppna RenoApp')}</button>
+          className="reno-button">{submitting ? (isActivation ? 'Aktiverar...' : 'Bekräftar...') : (isActivation ? 'Aktivera föreningen' : 'Bekräfta och öppna RenoApp')}</button>
           {requiresManualLogin ? <Link href={loginHref} onClick={saveBeforeLogin} className="ml-3 inline-flex rounded-md border border-stone-300 px-5 py-3 text-sm font-semibold hover:bg-stone-50">Logga in med befintligt konto</Link> : null}</div>
       </form>}
     </section>
