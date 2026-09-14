@@ -149,7 +149,7 @@ export default function RenoAppAppHomePage() {
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-stone-900 sm:text-4xl">
+        <h1 className="text-2xl font-semibold text-stone-900 sm:text-3xl">
           Välkommen till styrelseportalen{payload?.viewerName ? `, ${payload.viewerName}` : ''}
         </h1>
       </div>
@@ -157,7 +157,7 @@ export default function RenoAppAppHomePage() {
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
 
       {loading ? (
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 text-sm text-stone-600 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <section className="py-6 text-sm text-stone-600">
           Laddar RenoApp-sammanfattning...
         </section>
       ) : (
@@ -167,14 +167,14 @@ export default function RenoAppAppHomePage() {
               <Link
                 key={card.title}
                 href="/renoapp/app/cases"
-                className={`rounded-[28px] border p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)] transition ${card.tone}`}
+                className={`rounded-md border p-5 transition ${card.tone}`}
               >
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                   {card.eyebrow}
                 </p>
                 <h2 className="mt-3 text-xl font-semibold text-stone-900">{card.title}</h2>
-                <div className="mt-6 flex items-end justify-between gap-4">
-                  <p className="text-6xl font-semibold leading-none tracking-tight text-stone-900">{card.value}</p>
+                <div className="mt-4 flex items-end justify-between gap-4">
+                  <p className="text-4xl font-semibold leading-none text-stone-900">{card.value}</p>
                   <div className="h-12 w-px bg-stone-200/80" />
                 </div>
                 <p className="mt-5 text-sm leading-7 text-stone-800">{card.description}</p>
@@ -183,7 +183,7 @@ export default function RenoAppAppHomePage() {
             ))}
           </section>
 
-          <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+          <section className="reno-section py-6">
             <h2 className="text-2xl font-semibold text-stone-900">Skicka ansökningslänk</h2>
             <p className="mt-2 text-sm leading-7 text-stone-700">
               Skicka BRF:ens ansökningssida till en boende via mejl.
@@ -194,7 +194,7 @@ export default function RenoAppAppHomePage() {
                 <input
                   value={applyLinkForm.fullName}
                   onChange={(event) => setApplyLinkForm((current) => ({ ...current, fullName: event.target.value }))}
-                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  className="reno-field w-full border bg-white px-4 py-3 text-stone-900"
                   placeholder="Namn"
                 />
               </label>
@@ -203,7 +203,7 @@ export default function RenoAppAppHomePage() {
                 <input
                   value={applyLinkForm.email}
                   onChange={(event) => setApplyLinkForm((current) => ({ ...current, email: event.target.value }))}
-                  className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  className="reno-field w-full border bg-white px-4 py-3 text-stone-900"
                   placeholder="namn@exempel.se"
                   type="email"
                 />
@@ -214,7 +214,7 @@ export default function RenoAppAppHomePage() {
                 type="button"
                 onClick={() => void handleSendApplyLink()}
                 disabled={!(payload?.activeBrfId ?? brfItems[0]?.id) || sendingApplyLink}
-                className="rounded-full border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-900 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="reno-button"
               >
                 {sendingApplyLink ? 'Skickar...' : 'Skicka ansökningslänk'}
               </button>

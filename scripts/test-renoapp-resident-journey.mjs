@@ -58,6 +58,7 @@ try {
       assert.ok(await entry.evaluate(el => el.getBoundingClientRect().bottom < innerHeight))
       await page.locator('.hushub-hero-actions a[href="/renoapp/apply"]').click()
       await page.waitForSelector('#brf-search')
+      await page.waitForFunction(() => document.querySelector('#brf-search-status')?.textContent.includes('Skriv ett namn'))
       await snapshot('02-search-empty')
       await page.locator('#brf-search').fill('Testföreningen')
       await page.waitForSelector('a[href="/renoapp/brf/layout-test/apply"]')

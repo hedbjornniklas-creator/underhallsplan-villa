@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Search } from 'lucide-react'
-import PublicFrame from '@/components/public/PublicFrame'
+import PublicFrame from '@/components/renoapp/RenoAppPublicFrame'
 import PublicFaq from '@/components/public/PublicFaq'
 
 type PublicBrfListItem = {

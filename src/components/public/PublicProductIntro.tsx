@@ -6,7 +6,7 @@ import { PUBLIC_PRODUCTS, type PublicProductId } from '@/lib/publicNavigation'
 import { PUBLIC_COMMERCIAL_CONTENT, publishedPricing } from '@/lib/publicCommercialContent'
 import { PublicProductLink } from './PublicSession'
 
-export default function PublicProductIntro({ product, audience, title, children, interestHref, interestLabel, aside }: {
+export default function PublicProductIntro({ product, audience, title, children, interestHref, interestLabel, aside, logo }: {
   product: PublicProductId
   audience: string
   title: string
@@ -14,6 +14,7 @@ export default function PublicProductIntro({ product, audience, title, children,
   interestHref: string
   interestLabel: string
   aside: ReactNode
+  logo?: { src: string; width: number; height: number }
 }) {
   const info = PUBLIC_PRODUCTS[product]
   const pricing = publishedPricing(PUBLIC_COMMERCIAL_CONTENT.pricing[product])
@@ -22,7 +23,7 @@ export default function PublicProductIntro({ product, audience, title, children,
       <div className="public-container public-product-intro-grid">
         <div className="public-product-intro-copy">
           <Link href="/" className="public-back-link">Till HusHub</Link>
-          <Image className="public-feature-logo" src={info.logo} alt={info.name} width={info.width} height={info.height} priority />
+          <Image className="public-feature-logo" src={logo?.src ?? info.logo} alt={info.name} width={logo?.width ?? info.width} height={logo?.height ?? info.height} priority />
           <span className="public-eyebrow">{audience}</span>
           <h1>{title}</h1>
           <div className="public-product-lead">{children}</div>

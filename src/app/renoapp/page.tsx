@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import type { Metadata } from 'next'
 import { ArrowRight } from 'lucide-react'
-import PublicFrame from '@/components/public/PublicFrame'
+import PublicFrame from '@/components/renoapp/RenoAppPublicFrame'
 import PublicFaq from '@/components/public/PublicFaq'
 import { PublicProductLink } from '@/components/public/PublicSession'
 import PublicProductIntro from '@/components/public/PublicProductIntro'
@@ -18,6 +18,7 @@ export default function RenoAppLandingPage() {
   return (
     <PublicFrame activeProduct="renoapp">
       <PublicProductIntro product="renoapp" audience="För bostadsrättsföreningar"
+        logo={{ src: '/renoapp/brand/logo.svg', width: 267, height: 64 }}
         title="Bättre underlag från början. Mindre att jaga i efterhand."
         interestHref="/renoapp/request-access" interestLabel="Anmäl föreningens intresse"
         aside={

@@ -120,7 +120,7 @@ function InputField({
         readOnly={readOnly}
         inputMode={inputMode}
         placeholder={placeholder}
-        className={`w-full rounded-2xl border px-4 py-3 text-sm ${
+        className={`reno-field w-full border px-4 py-3 ${
           readOnly
             ? 'border-stone-200 bg-stone-100 text-stone-600'
             : 'border-stone-300 bg-white text-stone-900'
@@ -149,7 +149,7 @@ function TextAreaField({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         rows={4}
-        className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+        className="reno-field w-full border bg-white px-4 py-3 text-stone-900"
       />
     </label>
   )
@@ -248,9 +248,9 @@ export default function RenoAppBrfPage() {
 
   return (
     <div className="grid gap-6">
-      <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+      <section>
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">BRF</p>
-        <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">BRF-information</h2>
+        <h2 className="mt-2 text-2xl font-semibold text-stone-900 sm:text-3xl">BRF-information</h2>
         <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
           Här kan du redigera BRF:ens uppgifter, kontaktinformation och hur den publika ansökan ska fungera.
         </p>
@@ -258,11 +258,11 @@ export default function RenoAppBrfPage() {
       </section>
 
       {loading ? (
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 text-sm text-stone-600 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <section className="py-6 text-sm text-stone-600">
           Laddar BRF-information...
         </section>
       ) : items.length === 0 ? (
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 text-sm text-stone-600 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <section className="py-6 text-sm text-stone-600">
           Ingen BRF hittades för den inloggade användaren.
         </section>
       ) : (
@@ -274,7 +274,7 @@ export default function RenoAppBrfPage() {
             return (
               <article
                 key={item.id}
-                className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]"
+                className="reno-section py-6"
               >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
@@ -406,10 +406,10 @@ export default function RenoAppBrfPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-3 rounded-3xl border border-stone-200 bg-stone-50 p-5">
+                <div className="reno-section mt-6 grid gap-3 pt-5">
                   <p className="text-sm font-semibold text-stone-900">Publik ansökan</p>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-4 text-sm text-stone-700">
+                  <label className="flex items-start gap-3 py-3 text-sm text-stone-700">
                     <input
                       type="checkbox"
                       checked={form.isPublicApplyListed}
@@ -431,7 +431,7 @@ export default function RenoAppBrfPage() {
                     type="button"
                     onClick={() => void handleSave(item.id)}
                     disabled={savingBrfId === item.id}
-                    className="rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="reno-button"
                   >
                     {savingBrfId === item.id ? 'Sparar...' : 'Spara BRF-information'}
                   </button>

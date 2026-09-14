@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import PublicFrame from '@/components/public/PublicFrame'
+import PublicFrame from '@/components/renoapp/RenoAppPublicFrame'
 
 type FormState = {
   name: string

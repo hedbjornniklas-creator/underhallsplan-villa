@@ -245,9 +245,9 @@ export default function RenoAppUsersPage() {
 
   return (
     <div className="grid gap-6">
-      <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+      <section>
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Användare</p>
-        <h2 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">RenoApp-användare</h2>
+        <h2 className="mt-2 text-2xl font-semibold text-stone-900 sm:text-3xl">RenoApp-användare</h2>
         <p className="mt-4 max-w-3xl text-base leading-8 text-stone-700">
           Här visas aktiva BRF-medlemmar och väntande invites för de BRF:er som du har åtkomst till.
         </p>
@@ -255,11 +255,11 @@ export default function RenoAppUsersPage() {
       </section>
 
       {loading ? (
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 text-sm text-stone-600 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <section className="py-6 text-sm text-stone-600">
           Laddar användare...
         </section>
       ) : items.length === 0 ? (
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 text-sm text-stone-600 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
+        <section className="py-6 text-sm text-stone-600">
           Inga BRF-användare hittades ännu.
         </section>
       ) : (
@@ -267,7 +267,7 @@ export default function RenoAppUsersPage() {
           {items.map((group) => (
             <article
               key={group.brf.id}
-              className="rounded-[28px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]"
+              className="reno-section py-6"
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -284,7 +284,7 @@ export default function RenoAppUsersPage() {
               </div>
 
               <div className="mt-6 grid gap-5 lg:grid-cols-2">
-                <div className="rounded-3xl border border-stone-200 bg-stone-50 p-5">
+                <div className="min-w-0">
                   <p className="text-sm font-semibold text-stone-900">Aktiva användare</p>
                   {group.members.length === 0 ? (
                     <p className="mt-3 text-sm text-stone-700">Ingen användare är aktiv ännu.</p>
@@ -293,14 +293,14 @@ export default function RenoAppUsersPage() {
                       {group.members.map((member) => (
                         <li
                           key={member.profileId}
-                          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700"
+                          className="reno-panel px-4 py-3 text-sm text-stone-700"
                         >
                           <p className="font-medium text-stone-900">{member.fullName ?? 'Namn saknas'}</p>
                           <p>{member.email ?? '-'}</p>
                           <p className="text-xs uppercase tracking-[0.12em] text-stone-500">
                             {formatRole(member.role)} · accepterad {formatDateTime(member.acceptedAt)}
                           </p>
-                          <div className="mt-3 grid gap-2 rounded-2xl border border-stone-200 bg-stone-50 px-3 py-3">
+                          <div className="mt-3 grid gap-2 border-t border-stone-200 py-3">
                             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                               Mejlutskick
                             </p>
@@ -344,7 +344,7 @@ export default function RenoAppUsersPage() {
                               type="button"
                               onClick={() => void handleRemoveMember(group.brf.id, member.profileId)}
                               disabled={removingMemberKey === `${group.brf.id}:${member.profileId}`}
-                              className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="min-h-11 rounded-md border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {removingMemberKey === `${group.brf.id}:${member.profileId}`
                                 ? 'Tar bort...'
@@ -357,15 +357,15 @@ export default function RenoAppUsersPage() {
                   )}
                 </div>
 
-                <div className="rounded-3xl border border-stone-200 bg-stone-50 p-5">
+                <div className="min-w-0">
                   <p className="text-sm font-semibold text-stone-900">Lägg till användare</p>
-                  <div className="mt-3 grid gap-3 rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="mt-3 grid gap-3">
                     <label className="block">
                       <span className="mb-2 block text-sm font-semibold text-stone-800">Namn</span>
                       <input
                         value={inviteFormByBrf[group.brf.id]?.fullName ?? ''}
                         onChange={(event) => updateInviteField(group.brf.id, 'fullName', event.target.value)}
-                        className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                        className="reno-field w-full border bg-white px-4 py-3 text-stone-900"
                         placeholder="Namn"
                       />
                     </label>
@@ -374,7 +374,7 @@ export default function RenoAppUsersPage() {
                       <input
                         value={inviteFormByBrf[group.brf.id]?.email ?? ''}
                         onChange={(event) => updateInviteField(group.brf.id, 'email', event.target.value)}
-                        className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                        className="reno-field w-full border bg-white px-4 py-3 text-stone-900"
                         placeholder="namn@exempel.se"
                         type="email"
                       />
@@ -383,7 +383,7 @@ export default function RenoAppUsersPage() {
                       type="button"
                       onClick={() => void handleCreateInvite(group.brf.id)}
                       disabled={submittingBrfId === group.brf.id}
-                      className="rounded-full bg-stone-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="reno-button"
                     >
                       {submittingBrfId === group.brf.id ? 'Skickar...' : 'Skicka invite'}
                     </button>
@@ -397,7 +397,7 @@ export default function RenoAppUsersPage() {
                       {group.pendingInvites.map((invite) => (
                         <li
                           key={invite.id}
-                          className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700"
+                          className="reno-panel px-4 py-3 text-sm text-stone-700"
                         >
                           <p className="font-medium text-stone-900">{invite.fullName ?? 'Namn saknas'}</p>
                           <p>{invite.email}</p>
@@ -409,7 +409,7 @@ export default function RenoAppUsersPage() {
                               type="button"
                               onClick={() => void handleRevokeInvite(invite.id)}
                               disabled={revokingInviteId === invite.id}
-                              className="rounded-full border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="min-h-11 rounded-md border border-stone-300 px-3 py-2 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {revokingInviteId === invite.id ? 'Återkallar...' : 'Återkalla invite'}
                             </button>

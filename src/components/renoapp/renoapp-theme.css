@@ -1,0 +1,138 @@
+@font-face {
+  font-family: 'RenoApp Manrope';
+  src: url('/renoapp/brand/manrope.ttf') format('truetype');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+/* Keep the customer-facing RenoApp theme out of HusHub and BesiktApp. */
+.renoapp-scope {
+  --reno-blue: #476786;
+  --reno-blue-soft: #eaf0f5;
+  --reno-ink: #293239;
+  --reno-muted: #58636d;
+  --reno-mist: #f4f6f7;
+  --reno-line: #cfd7de;
+  --reno-focus: #274c70;
+  min-height: 100vh;
+  background: var(--reno-mist);
+  color: var(--reno-ink);
+  font-family: 'RenoApp Manrope', Arial, sans-serif;
+  letter-spacing: 0;
+}
+.renoapp-scope :where(h1, h2, h3, h4, p, a, span, button, input, select, textarea, label) { letter-spacing: 0; }
+.renoapp-scope :where(button, input, select, textarea) { font-family: inherit; }
+.renoapp-scope :where(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--reno-focus);
+  outline-offset: 3px;
+}
+.renoapp-scope .reno-button,
+.renoapp-scope .reno-auth #auth-forgot-password button[type='submit'],
+.renoapp-scope .public-button:not(.public-button-secondary) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--reno-blue);
+  border-radius: 6px;
+  background: var(--reno-blue);
+  color: white;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.5;
+  text-decoration: none;
+  box-shadow: none;
+}
+.renoapp-scope .reno-button:hover,
+.renoapp-scope .reno-auth #auth-forgot-password button[type='submit']:hover,
+.renoapp-scope .public-button:not(.public-button-secondary):hover { background: var(--reno-focus); }
+.renoapp-scope .reno-button:disabled { cursor: not-allowed; opacity: .55; }
+.renoapp-scope .reno-link { color: var(--reno-focus); }
+.renoapp-scope .reno-selected { background: var(--reno-blue-soft); border-color: var(--reno-blue); color: var(--reno-ink); }
+.renoapp-scope .reno-step-active { background: var(--reno-blue); border-color: var(--reno-blue); color: white; }
+.renoapp-scope .reno-field { border-radius: 6px; border-color: var(--reno-line); font-size: 16px; }
+.renoapp-scope .reno-field:focus { border-color: var(--reno-blue); --tw-ring-color: #47678633; }
+.renoapp-scope .reno-auth #auth-forgot-password input {
+  min-height: 48px; padding: 12px 14px; border: 1px solid var(--reno-line); border-radius: 6px;
+  background: white; color: var(--reno-ink); font: inherit;
+}
+.renoapp-scope .reno-auth #auth-forgot-password label { font: inherit; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+.renoapp-scope .reno-choice { accent-color: var(--reno-blue); }
+.renoapp-scope .reno-panel { border: 1px solid var(--reno-line); border-radius: 8px; background: white; box-shadow: none; }
+.renoapp-scope .reno-section { border: 0; border-radius: 0; border-top: 1px solid var(--reno-line); background: transparent; box-shadow: none; }
+
+.renoapp-scope .reno-header { background: white; border-bottom: 1px solid var(--reno-line); }
+.renoapp-scope .reno-header-inner {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 72px; max-width: 1280px; margin: auto; padding: 12px 32px;
+}
+.renoapp-scope .reno-brand { display: inline-flex; align-items: center; flex-shrink: 0; min-height: 44px; }
+.renoapp-scope .reno-brand img { display: block; width: 150px; height: auto; }
+.renoapp-scope .reno-desktop-nav, .renoapp-scope .reno-portal-controls, .renoapp-scope .reno-nav {
+  display: flex; align-items: center; gap: 8px;
+}
+.renoapp-scope .reno-nav > a:not(.reno-button) {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 10px 12px;
+  border-radius: 6px; font-size: 14px; font-weight: 600; color: var(--reno-ink); text-decoration: none;
+}
+.renoapp-scope .reno-nav > a:not(.reno-button):hover { background: var(--reno-mist); }
+.renoapp-scope .reno-nav > a[aria-current='page'] { background: var(--reno-blue-soft); color: var(--reno-focus); }
+.renoapp-scope .reno-brf-switcher {
+  display: flex; align-items: center; gap: 8px; max-width: 275px;
+  padding: 8px 12px; border-right: 1px solid var(--reno-line); font-size: 13px; color: var(--reno-muted);
+}
+.renoapp-scope .reno-brf-switcher > span:first-child { font-weight: 700; }
+.renoapp-scope .reno-brf-switcher select { min-width: 0; width: 100%; background: transparent; min-height: 32px; color: var(--reno-ink); font-size: 14px; }
+.renoapp-scope .reno-icon-button {
+  display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 44px; height: 44px;
+  padding: 0; border: 1px solid var(--reno-line); border-radius: 6px; color: var(--reno-ink); background: white;
+}
+.renoapp-scope .reno-icon-button:hover { background: var(--reno-mist); }
+.renoapp-scope .reno-mobile-menu { display: none; }
+.renoapp-scope .reno-menu-dialog {
+  position: fixed; inset: 0 0 auto auto; margin: 0; width: min(100%, 400px); max-width: 100%;
+  max-height: 100dvh; overflow-y: auto; border: 0; padding: 0; background: white; color: var(--reno-ink);
+}
+.renoapp-scope .reno-menu-dialog::backdrop { background: rgb(41 50 57 / .36); }
+.renoapp-scope .reno-menu-body { padding: 16px; }
+.renoapp-scope .reno-menu-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.renoapp-scope .reno-menu-heading h2 { font-size: 20px; font-weight: 700; }
+.renoapp-scope .reno-menu-links :is(.reno-portal-controls, .reno-nav) { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.renoapp-scope .reno-menu-links .reno-brf-switcher { max-width: none; border-right: 0; border-bottom: 1px solid var(--reno-line); padding: 0 0 16px; margin-bottom: 8px; }
+.renoapp-scope .reno-menu-links .reno-brf-switcher select { min-height: 44px; font-size: 16px; }
+.renoapp-scope .reno-skip-link { position: absolute; left: 16px; top: -100px; z-index: 50; padding: 12px; background: white; }
+.renoapp-scope .reno-skip-link:focus { top: 12px; }
+.renoapp-scope .reno-portal-main { margin: auto; width: 100%; max-width: 1200px; padding: 32px; }
+.renoapp-scope .reno-footer {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 24px;
+  max-width: 1200px; margin: auto; padding: 32px 24px; border-top: 1px solid var(--reno-line);
+  font-size: 14px; color: var(--reno-muted);
+}
+.renoapp-scope .reno-footer p { margin: 8px 0 0; }
+.renoapp-scope .reno-footer nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.renoapp-scope .reno-footer nav a { display: inline-flex; align-items: center; min-height: 44px; }
+
+.renoapp-scope .public-site {
+  --public-ink: var(--reno-ink); --public-muted: var(--reno-muted); --public-line: var(--reno-line);
+  --public-paper: var(--reno-mist); --public-green: var(--reno-blue); --public-blue: var(--reno-blue);
+  font-family: inherit; letter-spacing: 0; background: white;
+}
+.renoapp-scope .public-site :is(h1, h2, h3, p, a, span, button, input, label) { letter-spacing: 0; }
+.renoapp-scope .public-site :is(.public-entry-heading h1, .public-page-intro h1, .public-auth h1) { font-size: 36px; }
+.renoapp-scope .public-auth { padding-top: 48px; padding-bottom: 56px; }
+.renoapp-scope .public-site .public-button-secondary { border-radius: 6px; min-height: 44px; }
+.renoapp-scope .public-site .public-feature-logo { width: 200px; height: auto; }
+
+@media (max-width: 1099px) {
+  .renoapp-scope .reno-desktop-nav { display: none; }
+  .renoapp-scope .reno-mobile-menu { display: block; }
+  .renoapp-scope .reno-header-inner { min-height: 64px; padding: 10px 16px; }
+}
+@media (max-width: 639px) {
+  .renoapp-scope .reno-brand img { width: 138px; }
+  .renoapp-scope .reno-portal-main { padding: 24px 16px; }
+  .renoapp-scope .public-site :is(.public-entry-heading h1, .public-page-intro h1, .public-auth h1) { font-size: 28px; }
+  .renoapp-scope .public-auth { padding-top: 32px; padding-bottom: 40px; }
+}
