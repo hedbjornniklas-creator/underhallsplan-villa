@@ -63,6 +63,60 @@
 .renoapp-scope .reno-panel { border: 1px solid var(--reno-line); border-radius: 8px; background: white; box-shadow: none; }
 .renoapp-scope .reno-section { border: 0; border-radius: 0; border-top: 1px solid var(--reno-line); background: transparent; box-shadow: none; }
 
+.renoapp-scope .reno-button-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; max-width: 100%; padding: 8px 14px; border: 1px solid var(--reno-line);
+  border-radius: 6px; background: white; color: var(--reno-focus); font-size: 14px;
+  line-height: 1.5; font-weight: 600; text-decoration: none; box-shadow: none;
+}
+.renoapp-scope .reno-button-secondary:hover { background: var(--reno-blue-soft); border-color: var(--reno-blue); }
+.renoapp-scope .reno-button-secondary:disabled { cursor: not-allowed; opacity: .55; }
+.renoapp-scope .reno-button-secondary svg, .renoapp-scope .reno-button svg { flex-shrink: 0; }
+.renoapp-scope .reno-case-review { min-width: 0; background: white; overflow-wrap: anywhere; }
+.renoapp-scope .reno-case-section {
+  min-width: 0; padding: 28px 24px; border: 0; border-top: 1px solid var(--reno-line);
+  border-radius: 0; background: white; box-shadow: none;
+}
+.renoapp-scope .reno-case-title { font-size: 20px; line-height: 1.4; font-weight: 700; color: var(--reno-ink); }
+.renoapp-scope .reno-case-description { max-width: 80ch; color: var(--reno-muted); }
+.renoapp-scope .reno-case-metadata { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 20px 0; }
+.renoapp-scope .reno-material-list { border-block: 1px solid var(--reno-line); }
+.renoapp-scope .reno-material-row { min-width: 0; padding: 20px 0; border-bottom: 1px solid var(--reno-line); }
+.renoapp-scope .reno-material-row:last-child { border-bottom: 0; }
+.renoapp-scope .reno-material-files { padding-left: 16px; border-left: 2px solid var(--reno-line); }
+.renoapp-scope .reno-case-flow { padding: 12px 0; border-top: 1px solid var(--reno-line); border-bottom: 1px solid var(--reno-line); }
+.renoapp-scope .reno-case-flow > summary { display: flex; align-items: center; gap: 8px; width: fit-content; min-height: 44px; cursor: pointer; list-style: none; font-size: 14px; font-weight: 600; }
+.renoapp-scope .reno-case-flow > summary::-webkit-details-marker { display: none; }
+.renoapp-scope .reno-case-flow[open] > summary > svg { transform: rotate(180deg); }
+.renoapp-scope .reno-cases-mobile { display: none; }
+.renoapp-scope .reno-cases-desktop { display: block; }
+.renoapp-scope .reno-mobile-case { display: block; position: relative; min-width: 0; padding: 16px 16px 16px 20px; border-bottom: 1px solid var(--reno-line); color: var(--reno-ink); background: white; text-decoration: none; }
+.renoapp-scope .reno-cases-mobile [role='listitem']:last-child .reno-mobile-case { border-bottom: 0; }
+.renoapp-scope .reno-mobile-case:hover { background: var(--reno-mist); }
+.renoapp-scope .reno-cases-toolbar { display: grid; gap: 16px; padding: 20px; background: white; border-block: 1px solid var(--reno-line); }
+.renoapp-scope .reno-cases-search { display: flex; align-items: center; gap: 12px; }
+.renoapp-scope .reno-cases-search > div { flex: 1; min-width: 0; }
+.renoapp-scope .reno-case-access { width: 100%; max-width: 896px; margin: auto; padding: 32px 24px; overflow-wrap: anywhere; }
+.renoapp-scope .reno-case-access-section { padding-block: 24px; border-top: 1px solid var(--reno-line); }
+.renoapp-scope .reno-case-access h1 { font-size: 28px; line-height: 1.4; }
+.renoapp-scope .reno-case-access :is(input, select, textarea) { max-width: 100%; min-width: 0; width: 100%; font-size: 16px; }
+.renoapp-scope .reno-review-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; border-radius: 8px; }
+
+@media (max-width: 1023px) {
+  .renoapp-scope .reno-cases-mobile { display: block; }
+  .renoapp-scope .reno-cases-desktop { display: none; }
+}
+@media (max-width: 639px) {
+  .renoapp-scope .reno-case-section { padding: 24px 16px; }
+  .renoapp-scope .reno-case-metadata { grid-template-columns: 1fr; gap: 12px; }
+  .renoapp-scope .reno-case-access { padding: 24px 16px; }
+  .renoapp-scope .reno-case-access h1 { font-size: 22px; }
+  .renoapp-scope .reno-cases-toolbar { padding: 16px; }
+  .renoapp-scope .reno-cases-search { gap: 8px; }
+  .renoapp-scope .reno-cases-search .reno-button-secondary { width: 44px; height: 44px; padding: 0; flex-shrink: 0; }
+  .renoapp-scope .reno-cases-search .reno-button-secondary span { display: none; }
+}
+
 .renoapp-scope .reno-header { background: white; border-bottom: 1px solid var(--reno-line); }
 .renoapp-scope .reno-header-inner {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;

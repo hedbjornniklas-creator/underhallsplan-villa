@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
-import { CircleHelp } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CircleHelp, ArrowDown, ArrowUp, ChevronRight, ChevronLeft, X } from 'lucide-react'
 
 type CaseItem = {
   id: string
@@ -230,9 +230,9 @@ function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
       }
     default:
       return {
-        inactive: 'border-indigo-300 bg-indigo-100 text-indigo-900 hover:bg-indigo-200',
-        active: 'border-indigo-700 bg-indigo-700 text-white',
-        countInactive: 'bg-indigo-200 text-indigo-900',
+        inactive: 'border-[var(--reno-line)] bg-white text-[var(--reno-focus)] hover:bg-[var(--reno-blue-soft)]',
+        active: 'border-[var(--reno-blue)] bg-[var(--reno-blue)] text-white',
+        countInactive: 'bg-[var(--reno-blue-soft)] text-[var(--reno-focus)]',
         countActive: 'bg-white/20 text-white',
       }
   }
@@ -259,12 +259,25 @@ export default function RenoAppCasesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showStatusHelp, setShowStatusHelp] = useState(false)
+  const statusDialog = useRef<HTMLDialogElement>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortField, setSortField] = useState<SortField>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
+
+  useEffect(() => {
+    if (!showStatusHelp) return
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    statusDialog.current?.showModal()
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+      trigger?.focus()
+    }
+  }, [showStatusHelp])
 
   useEffect(() => {
     let active = true
@@ -462,25 +475,27 @@ export default function RenoAppCasesPage() {
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-stone-900 sm:text-4xl">Ärendehantering</h1>
+        <h1 className="text-2xl font-bold text-[var(--reno-ink)]">Ärendehantering</h1>
       </div>
 
-      <section className="grid gap-3 border-y border-stone-200 bg-white p-4 sm:p-5">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <div className="min-w-0 flex-1 sm:max-w-xl">
+      <section className="reno-cases-toolbar">
+        <div className="reno-cases-search">
+          <div>
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Sök på ärendenummer, åtgärd, status eller sökande"
+              placeholder="Sök ärenden"
               aria-label="Sök ärenden"
-              className="h-10 w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500"
+              className="reno-field h-11 w-full border bg-white px-3 py-2 text-[var(--reno-ink)] placeholder:text-[var(--reno-muted)]"
             />
           </div>
           <button
             type="button"
             onClick={() => setShowStatusHelp(true)}
-            className="inline-flex min-h-10 max-w-[145px] shrink-0 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-left text-xs text-stone-700 transition hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400 sm:max-w-none sm:text-sm"
+            className="reno-button-secondary"
+            aria-label="Vad betyder statusarna?"
+            title="Vad betyder statusarna?"
           >
             <CircleHelp size={16} className="shrink-0" aria-hidden="true" />
             <span>Vad betyder statusarna?</span>
@@ -499,8 +514,8 @@ export default function RenoAppCasesPage() {
                 aria-pressed={active}
                 className={
                   active
-                    ? `inline-flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium ${style.active}`
-                    : `inline-flex shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm ${style.inactive}`
+                    ? `inline-flex min-h-11 shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium ${style.active}`
+                    : `inline-flex min-h-11 shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm ${style.inactive}`
                 }
               >
                 <span>{tab.label}</span>
@@ -517,7 +532,7 @@ export default function RenoAppCasesPage() {
             )
           })}
 
-          <div className="flex shrink-0 items-center gap-2 lg:ml-auto">
+          <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
             <label className="text-xs text-stone-600" htmlFor="renoappCasesPageSize">
               Rader/sida
             </label>
@@ -525,7 +540,7 @@ export default function RenoAppCasesPage() {
               id="renoappCasesPageSize"
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm text-stone-700"
+              className="reno-field min-h-11 border bg-white px-2 py-1.5"
             >
               {PAGE_SIZE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
@@ -538,7 +553,7 @@ export default function RenoAppCasesPage() {
               <button
                 type="button"
                 onClick={resetView}
-                className="rounded-md border border-stone-300 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+                className="reno-button-secondary"
               >
                 Rensa filter
               </button>
@@ -546,6 +561,25 @@ export default function RenoAppCasesPage() {
           </div>
         </div>
       </section>
+
+      <div className="reno-cases-mobile">
+        <div className="flex items-center gap-2">
+          <label htmlFor="renoappCasesSort" className="text-sm font-semibold">Sortera</label>
+          <select id="renoappCasesSort" value={sortField} onChange={event => handleSort(event.target.value as SortField)}
+            className="reno-field min-h-11 min-w-0 flex-1 border bg-white px-2">
+            <option value="status">Status</option>
+            <option value="submittedAt">Ansökningsdatum</option>
+            <option value="caseNumber">Ärendenummer</option>
+            <option value="title">Åtgärd</option>
+            <option value="applicant">Sökande</option>
+          </select>
+          <button type="button" onClick={() => setSortDirection(current => current === 'asc' ? 'desc' : 'asc')}
+            className="reno-icon-button" aria-label={sortDirection === 'asc' ? 'Sortera fallande' : 'Sortera stigande'}
+            title={sortDirection === 'asc' ? 'Sortera fallande' : 'Sortera stigande'}>
+            {sortDirection === 'asc' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
+          </button>
+        </div>
+      </div>
 
       {error ? <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div> : null}
 
@@ -557,14 +591,14 @@ export default function RenoAppCasesPage() {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white">
-            <table className="w-full min-w-[1000px] table-fixed text-left text-sm text-black">
+          <div className="reno-cases-desktop overflow-x-auto border-y border-[var(--reno-line)] bg-white">
+            <table className="w-full table-fixed text-left text-sm text-[var(--reno-ink)]">
               <colgroup>
-                <col className="w-[190px]" />
+                <col className="w-[185px]" />
                 <col />
-                <col className="w-[200px]" />
+                <col className="w-[185px]" />
                 <col className="w-[155px]" />
-                <col className="w-[170px]" />
+                <col className="w-[145px]" />
               </colgroup>
               <thead className="border-b bg-stone-50 text-xs uppercase text-black">
                 <tr>
@@ -657,6 +691,26 @@ export default function RenoAppCasesPage() {
             </table>
           </div>
 
+          <div className="reno-cases-mobile border-y border-[var(--reno-line)]" role="list" aria-label="Renoveringsansökningar">
+            {pagedRows.map(item => (
+              <div key={item.id} role="listitem">
+                <Link href={`/renoapp/app/cases/${item.id}`} className="reno-mobile-case" data-case-number={item.caseNumber}>
+                  <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${getStatusMarkerClass(item.status)}`} />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="whitespace-nowrap text-sm font-bold tabular-nums">{item.caseNumber}</span>
+                    <ChevronRight size={18} className="shrink-0 text-[var(--reno-muted)]" aria-hidden="true" />
+                  </div>
+                  <p className="mt-2 break-words text-sm font-medium">{getActionLabel(item)}</p>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(item.status)}`}>{getStatusLabel(item.status)}</span>
+                    <span className="text-xs tabular-nums text-[var(--reno-muted)]">{formatDate(item.submittedAt)}</span>
+                  </div>
+                  <p className="mt-2 break-words text-sm text-[var(--reno-muted)]">{item.applicant.name ?? '-'}</p>
+                </Link>
+              </div>
+            ))}
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-stone-600">
             <p>
               Visar {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, totalItems)} av {totalItems} ärenden
@@ -666,9 +720,10 @@ export default function RenoAppCasesPage() {
                 type="button"
                 onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
                 disabled={safePage <= 1}
-                className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="reno-icon-button disabled:opacity-50"
+                aria-label="Föregående sida" title="Föregående sida"
               >
-                Föregående
+                <ChevronLeft size={18} aria-hidden="true" />
               </button>
               <span>
                 Sida {safePage} / {totalPages}
@@ -677,9 +732,10 @@ export default function RenoAppCasesPage() {
                 type="button"
                 onClick={() => setCurrentPage((current) => Math.min(totalPages, current + 1))}
                 disabled={safePage >= totalPages}
-                className="rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="reno-icon-button disabled:opacity-50"
+                aria-label="Nästa sida" title="Nästa sida"
               >
-                Nästa
+                <ChevronRight size={18} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -687,15 +743,14 @@ export default function RenoAppCasesPage() {
       )}
 
       {showStatusHelp ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/40 px-3 py-4 sm:items-center sm:p-6"
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={statusDialog}
+          className="reno-review-dialog fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-2xl border border-[var(--reno-line)] bg-white p-0 text-[var(--reno-ink)] backdrop:bg-black/40"
           aria-labelledby="renoapp-status-help-title"
           onClick={() => setShowStatusHelp(false)}
+          onCancel={() => setShowStatusHelp(false)}
         >
           <div
-            className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-[28px] bg-white shadow-[0_24px_80px_-32px_rgba(28,25,23,0.55)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-4 sm:px-6">
@@ -711,16 +766,16 @@ export default function RenoAppCasesPage() {
               <button
                 type="button"
                 onClick={() => setShowStatusHelp(false)}
-                className="shrink-0 rounded-full border border-stone-300 px-3 py-1.5 text-sm text-stone-700 transition hover:bg-stone-50"
+                className="reno-icon-button" aria-label="Stäng" title="Stäng"
               >
-                Stäng
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
 
-            <div className="max-h-[calc(85vh-96px)] overflow-y-auto px-5 py-4 sm:px-6">
+            <div className="px-5 py-4 sm:px-6">
               <div className="grid gap-3">
                 {STATUS_HELP_ITEMS.map((item) => (
-                  <article key={item.key} className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
+                  <article key={item.key} className="border-b border-[var(--reno-line)] py-4 last:border-b-0">
                     <h3 className="text-base font-semibold text-stone-900">{item.label}</h3>
                     <p className="mt-2 text-sm leading-6 text-stone-700">{item.meaning}</p>
                     <p className="mt-2 text-sm leading-6 text-stone-600">
@@ -731,7 +786,7 @@ export default function RenoAppCasesPage() {
               </div>
             </div>
           </div>
-        </div>
+        </dialog>
       ) : null}
     </div>
   )

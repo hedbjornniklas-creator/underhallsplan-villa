@@ -1682,26 +1682,26 @@ export default function RenoAppApplyPage() {
     if (stepId === 3) {
       return (
         <div className="grid gap-4">
-          <p className="max-w-4xl text-sm leading-7 text-stone-700">
+          <p className="max-w-4xl text-sm leading-7 text-[var(--reno-muted)]">
             {isNeedInfoCase
               ? 'Ladda upp de handlingar som styrelsen har begärt. Befintliga handlingar ligger kvar i ärendet.'
               : 'Här ser du vad som normalt behöver bifogas utifrån de renoveringstyper du valt. Om något saknas nu kan du ändå spara utkastet och komplettera senare.'}
           </p>
           {!activeDraftToken && requirementsForCurrentFlow.length > 0 ? (
-            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
               Fyll först i lägenhet och kontakt så att utkastet kan skapas innan du laddar upp dokument.
             </div>
           ) : null}
           {!isNeedInfoCase && selectedActions.length === 0 ? (
-            <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+            <div className="rounded-lg border border-stone-200 bg-white p-5 text-sm text-[var(--reno-muted)]">
               Välj först minst en renoveringstyp i steg 2.
             </div>
           ) : requirementsForCurrentFlow.length === 0 ? (
-            <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+            <div className="rounded-lg border border-stone-200 bg-white p-5 text-sm text-[var(--reno-muted)]">
               Inga underlag behöver bifogas utifrån dina nuvarande val.
             </div>
           ) : (
-            <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white">
+            <div className="border-y border-[var(--reno-line)] bg-white">
               {requirementsForCurrentFlow.map((requirement, index) => {
                 const requirementDocuments = uploadedDocuments.filter(
                   (item) => item.documentTypeId === requirement.documentTypeId
@@ -1710,21 +1710,21 @@ export default function RenoAppApplyPage() {
                 return (
                   <div
                     key={requirement.documentTypeId}
-                    className={`${index > 0 ? 'border-t border-stone-200' : ''} px-5 py-5`}
+                    className={`${index > 0 ? 'border-t border-stone-200' : ''} py-5`}
                   >
-                    <p className="font-semibold text-stone-900">
+                    <p className="font-semibold text-[var(--reno-ink)]">
                       {requirement.documentLabel} {requirement.isRequired ? '(obligatorisk)' : '(bra att ha)'}
                     </p>
                     {requirement.documentDescription ? (
-                      <p className="mt-2 text-sm leading-7 text-stone-700">{requirement.documentDescription}</p>
+                      <p className="mt-2 text-sm leading-7 text-[var(--reno-muted)]">{requirement.documentDescription}</p>
                     ) : null}
-                    {requirement.note ? <p className="mt-2 text-sm text-stone-500">{requirement.note}</p> : null}
+                    {requirement.note ? <p className="mt-2 text-sm text-[var(--reno-muted)]">{requirement.note}</p> : null}
                     <div className="mt-4 flex flex-wrap items-center gap-3">
                       <label
-                        className={`inline-flex cursor-pointer items-center rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        className={`inline-flex min-h-11 cursor-pointer items-center rounded-md px-4 py-2 text-sm font-semibold transition ${
                           activeDraftToken
-                            ? 'bg-stone-900 text-white hover:bg-stone-700'
-                            : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-stone-500'
+                            ? 'bg-[var(--reno-blue)] text-white hover:bg-[var(--reno-focus)]'
+                            : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-[var(--reno-muted)]'
                         }`}
                       >
                         <input
@@ -1746,24 +1746,24 @@ export default function RenoAppApplyPage() {
                           : 'Ladda upp ett eller flera dokument'}
                       </label>
                     </div>
-                    <p className="mt-2 text-sm text-stone-500">Du kan lägga till fler dokument senare om det behövs.</p>
+                    <p className="mt-2 text-sm text-[var(--reno-muted)]">Du kan lägga till fler dokument senare om det behövs.</p>
                     {requirementDocuments.length > 0 ? (
                       <ul className="mt-4 divide-y divide-stone-200 border-t border-stone-200">
                         {requirementDocuments.map((item) => (
-                          <li key={item.id} className="flex items-start justify-between gap-3 py-3 text-sm text-stone-700">
+                          <li key={item.id} className="flex min-w-0 flex-wrap items-start justify-between gap-3 py-3 text-sm text-[var(--reno-muted)] [overflow-wrap:anywhere]">
                             <div>
                               <p className="font-medium text-sky-700">{item.fileName ?? 'Dokument'}</p>
-                              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
+                              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--reno-muted)]">
                                 {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
                               </p>
-                              {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                              {item.note ? <p className="mt-1 text-[var(--reno-muted)]">{item.note}</p> : null}
                             </div>
                             <button
                               type="button"
                               onClick={() => void deleteDocument(item.id)}
                               hidden={isNeedInfoCase && item.completionRequestId !== draftInfo?.completionRequest.id}
                               disabled={Boolean(deletingDocumentId) || (isNeedInfoCase && item.completionRequestId !== draftInfo?.completionRequest.id)}
-                              className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-[var(--reno-muted)] transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {deletingDocumentId === item.id ? 'Raderar...' : 'Radera'}
                             </button>
@@ -1784,7 +1784,7 @@ export default function RenoAppApplyPage() {
       return (
         <div className="grid gap-4">
           {participantRolesForCurrentFlow.length === 0 ? (
-            <div className="rounded-3xl border border-stone-200 bg-white p-5 text-sm text-stone-700">
+            <div className="rounded-lg border border-stone-200 bg-white p-5 text-sm text-[var(--reno-muted)]">
               Inga entreprenörer eller konsulter behöver anges utifrån dina nuvarande val.
             </div>
           ) : null}
@@ -1806,18 +1806,18 @@ export default function RenoAppApplyPage() {
             return (
               <div
                 key={participantRole.id}
-                className={`rounded-3xl border bg-white p-5 ${
+                className={`border-t bg-white py-5 ${
                   hasConfirmationError ? 'border-rose-300' : 'border-stone-200'
                 }`}
               >
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-stone-900">
+                    <p className="text-sm font-semibold text-[var(--reno-ink)]">
                       {participantRole.label}
                       {participantRole.isRequired ? ' (krävs)' : ''}
                     </p>
                     {participantRole.description ? (
-                      <p className="mt-2 text-sm leading-7 text-stone-700">{participantRole.description}</p>
+                      <p className="mt-2 text-sm leading-7 text-[var(--reno-muted)]">{participantRole.description}</p>
                     ) : null}
                     {hasVerificationContent ? (
                       <div className="mt-3">
@@ -1830,14 +1830,14 @@ export default function RenoAppApplyPage() {
                                 : [...current, participantRole.id]
                             )
                           }
-                          className="inline-flex items-center rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-stone-700 transition hover:bg-stone-100"
+                          className="inline-flex items-center rounded-full border border-stone-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--reno-muted)] transition hover:bg-stone-100"
                         >
                           Verifieringsinstruktion
                         </button>
                         {verificationInstructionsOpen ? (
-                          <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                          <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-4">
                             {participantRole.verificationInstructions ? (
-                              <p className="text-sm leading-7 text-stone-700">
+                              <p className="text-sm leading-7 text-[var(--reno-muted)]">
                                 {participantRole.verificationInstructions}
                               </p>
                             ) : null}
@@ -1856,7 +1856,7 @@ export default function RenoAppApplyPage() {
                       </div>
                     ) : null}
                   </div>
-                  <span className="shrink-0 rounded-full border border-stone-300 bg-stone-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-stone-600">
+                  <span className="shrink-0 rounded-full border border-stone-300 bg-stone-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--reno-muted)]">
                     {participantRole.roleKind === 'consultant' ? 'Konsult' : 'Entreprenör'}
                   </span>
                 </div>
@@ -1868,7 +1868,7 @@ export default function RenoAppApplyPage() {
                       onChange={(event) =>
                         updateParticipantEntry(participantRole.id, { companyName: event.target.value })
                       }
-                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                      className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-[var(--reno-ink)] md:col-span-2"
                       placeholder="Företagsnamn"
                     />
                   ) : null}
@@ -1879,7 +1879,7 @@ export default function RenoAppApplyPage() {
                       onChange={(event) =>
                         updateParticipantEntry(participantRole.id, { orgNumber: event.target.value })
                       }
-                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-[var(--reno-ink)]"
                       placeholder="Organisationsnummer"
                     />
                   ) : null}
@@ -1890,7 +1890,7 @@ export default function RenoAppApplyPage() {
                       onChange={(event) =>
                         updateParticipantEntry(participantRole.id, { contactName: event.target.value })
                       }
-                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-[var(--reno-ink)]"
                       placeholder="Kontaktperson"
                     />
                   ) : null}
@@ -1899,7 +1899,7 @@ export default function RenoAppApplyPage() {
                     <input
                       value={entry.email}
                       onChange={(event) => updateParticipantEntry(participantRole.id, { email: event.target.value })}
-                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-[var(--reno-ink)]"
                       placeholder="E-post"
                       type="email"
                     />
@@ -1909,7 +1909,7 @@ export default function RenoAppApplyPage() {
                     <input
                       value={entry.phone}
                       onChange={(event) => updateParticipantEntry(participantRole.id, { phone: event.target.value })}
-                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                      className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-[var(--reno-ink)]"
                       placeholder="Telefon"
                     />
                   ) : null}
@@ -1922,16 +1922,16 @@ export default function RenoAppApplyPage() {
                           certificationReference: event.target.value,
                         })
                       }
-                      className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 md:col-span-2"
+                      className="rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm text-[var(--reno-ink)] md:col-span-2"
                       placeholder="Behörighetsnummer eller certifieringsreferens"
                     />
                   ) : null}
                 </div>
 
                 {participantRole.insuranceRequired ? (
-                  <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
-                    <p className="text-sm font-semibold text-stone-900">Försäkringsbevis</p>
-                    <p className="mt-2 text-sm leading-7 text-stone-700">
+                  <div className="mt-4 border-t border-[var(--reno-line)] py-4">
+                    <p className="text-sm font-semibold text-[var(--reno-ink)]">Försäkringsbevis</p>
+                    <p className="mt-2 text-sm leading-7 text-[var(--reno-muted)]">
                       Ladda upp försäkringsbevis för {participantRole.label.toLowerCase()}.
                     </p>
                     {!activeDraftToken ? (
@@ -1941,10 +1941,10 @@ export default function RenoAppApplyPage() {
                     ) : null}
                     <div className="mt-4 flex flex-wrap items-center gap-3">
                       <label
-                        className={`inline-flex cursor-pointer items-center rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        className={`inline-flex min-h-11 cursor-pointer items-center rounded-md px-4 py-2 text-sm font-semibold transition ${
                           activeDraftToken
-                            ? 'bg-stone-900 text-white hover:bg-stone-700'
-                            : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-stone-500'
+                            ? 'bg-[var(--reno-blue)] text-white hover:bg-[var(--reno-focus)]'
+                            : 'cursor-not-allowed border border-stone-300 bg-stone-100 text-[var(--reno-muted)]'
                         }`}
                       >
                         <input
@@ -1968,7 +1968,7 @@ export default function RenoAppApplyPage() {
                           ? 'Laddar upp...'
                           : 'Ladda upp ett eller flera försäkringsbevis'}
                       </label>
-                      <p className="text-sm text-stone-500">Du kan lägga till fler filer om det behövs.</p>
+                      <p className="text-sm text-[var(--reno-muted)]">Du kan lägga till fler filer om det behövs.</p>
                     </div>
 
                     {insuranceDocuments.length > 0 ? (
@@ -1976,22 +1976,22 @@ export default function RenoAppApplyPage() {
                         {insuranceDocuments.map((item) => (
                           <li
                             key={item.id}
-                            className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700"
+                            className="rounded-lg border border-stone-200 bg-white px-4 py-3 text-sm text-[var(--reno-muted)]"
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="font-medium text-sky-700">{item.fileName ?? 'Försäkringsbevis'}</p>
-                                <p className="mt-1 text-xs uppercase tracking-[0.16em] text-stone-500">
+                                <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[var(--reno-muted)]">
                                   {item.status} · uppladdad {formatDateTime(item.uploadedAt)}
                                 </p>
-                                {item.note ? <p className="mt-1 text-stone-500">{item.note}</p> : null}
+                                {item.note ? <p className="mt-1 text-[var(--reno-muted)]">{item.note}</p> : null}
                               </div>
                               <button
                                 type="button"
                                 onClick={() => void deleteDocument(item.id)}
                                 hidden={isNeedInfoCase && item.completionRequestId !== draftInfo?.completionRequest.id}
                                 disabled={Boolean(deletingDocumentId) || (isNeedInfoCase && item.completionRequestId !== draftInfo?.completionRequest.id)}
-                                className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold text-[var(--reno-muted)] transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {deletingDocumentId === item.id ? 'Raderar...' : 'Radera'}
                               </button>
@@ -2004,7 +2004,7 @@ export default function RenoAppApplyPage() {
                 ) : null}
 
                 <div className="mt-4 grid gap-3">
-                  <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                  <label className="flex items-start gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-[var(--reno-muted)]">
                     <input
                       checked={entry.hasVerifiedAuthorization}
                       onChange={(event) =>
@@ -2018,7 +2018,7 @@ export default function RenoAppApplyPage() {
                     <span>Jag har kontrollerat att företaget har rätt behörighet.</span>
                   </label>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                  <label className="flex items-start gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-[var(--reno-muted)]">
                     <input
                       checked={entry.acceptsResponsibility}
                       onChange={(event) =>
@@ -2047,21 +2047,21 @@ export default function RenoAppApplyPage() {
     return (
       <div className="grid gap-4">
         <div>
-          <p className="text-sm font-semibold text-stone-900">Sammanfattning</p>
+          <p className="text-sm font-semibold text-[var(--reno-ink)]">Sammanfattning</p>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              <p className="font-medium text-stone-900">Sökande</p>
+            <div className="border-b border-[var(--reno-line)] py-3 text-sm text-[var(--reno-muted)]">
+              <p className="font-medium text-[var(--reno-ink)]">Sökande</p>
               <p className="mt-1">{form.applicantName || '-'}</p>
               <p>{form.applicantEmail || '-'}</p>
               <p>{form.applicantPhone || '-'}</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              <p className="font-medium text-stone-900">Lägenhet</p>
+            <div className="border-b border-[var(--reno-line)] py-3 text-sm text-[var(--reno-muted)]">
+              <p className="font-medium text-[var(--reno-ink)]">Lägenhet</p>
               <p className="mt-1">Internt nr: {form.unitNumberInternal || '-'}</p>
               <p>Skatteverket: {form.unitNumberSkatteverket || '-'}</p>
             </div>
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
-              <p className="font-medium text-stone-900">Valda renoveringstyper</p>
+            <div className="border-b border-[var(--reno-line)] py-3 text-sm text-[var(--reno-muted)]">
+              <p className="font-medium text-[var(--reno-ink)]">Valda renoveringstyper</p>
               {selectedActions.length > 0 ? (
                 <ul className="mt-1 list-disc space-y-1 pl-5">
                   {selectedActions.map((action) => (
@@ -2076,19 +2076,19 @@ export default function RenoAppApplyPage() {
         </div>
 
         <section className="min-w-0 border-t border-stone-200 pt-4" aria-labelledby="application-project-summary">
-          <h3 id="application-project-summary" className="text-base font-semibold text-stone-900">Projektbeskrivning</h3>
-          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-stone-700">{form.description || 'Ingen projektbeskrivning angiven.'}</p>
+          <h3 id="application-project-summary" className="text-base font-semibold text-[var(--reno-ink)]">Projektbeskrivning</h3>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--reno-muted)]">{form.description || 'Ingen projektbeskrivning angiven.'}</p>
         </section>
         {visibleQuestions.length > 0 ? (
           <section className="min-w-0 border-t border-stone-200 pt-4" aria-labelledby="application-answer-summary">
-            <h3 id="application-answer-summary" className="text-base font-semibold text-stone-900">Dina svar</h3>
+            <h3 id="application-answer-summary" className="text-base font-semibold text-[var(--reno-ink)]">Dina svar</h3>
             <dl className="divide-y divide-stone-200 text-sm">
               {visibleQuestions.map(question => {
                 const selected = form.questionAnswers[question.key] ?? []
                 const labels = question.options.filter(option => selected.includes(option.key)).map(option => option.label)
                 return <div key={question.id} className="py-3">
-                  <dt className="font-medium text-stone-900">{question.label}</dt>
-                  <dd className="mt-1 whitespace-pre-wrap break-words text-stone-700">{labels.length ? labels.join(', ') : 'Inte besvarad'}</dd>
+                  <dt className="font-medium text-[var(--reno-ink)]">{question.label}</dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words text-[var(--reno-muted)]">{labels.length ? labels.join(', ') : 'Inte besvarad'}</dd>
                 </div>
               })}
             </dl>
@@ -2097,8 +2097,8 @@ export default function RenoAppApplyPage() {
 
         {(isNeedInfoCase || isReadOnlyCase) && (uploadedDocuments.length > 0 || form.participantEntries.length > 0) ? (
           <details className="min-w-0 border-t border-stone-200 py-4">
-            <summary className="cursor-pointer text-sm font-semibold text-stone-900">Sparade handlingar och företagsuppgifter</summary>
-            <ul className="mt-3 divide-y divide-stone-200 text-sm text-stone-700">
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--reno-ink)]">Sparade handlingar och företagsuppgifter</summary>
+            <ul className="mt-3 divide-y divide-stone-200 text-sm text-[var(--reno-muted)]">
               {uploadedDocuments.map(document => (
                 <li key={document.id} className="break-words py-2">{document.fileName ?? 'Dokument'}</li>
               ))}
@@ -2115,9 +2115,9 @@ export default function RenoAppApplyPage() {
           <RenovationRulesReceipt acceptance={(submitResult?.rulesAcceptance ?? draftInfo?.rulesAcceptance)!} token={activeDraftToken} />
         ) : !isNeedInfoCase && !isReadOnlyCase && config?.renovationRules ? (
           <section className="min-w-0 space-y-4 border-t border-stone-200 py-4" aria-labelledby="application-rules-heading">
-            <h3 id="application-rules-heading" className="text-base font-semibold text-stone-900">Föreningens renoveringsregler</h3>
+            <h3 id="application-rules-heading" className="text-base font-semibold text-[var(--reno-ink)]">Föreningens renoveringsregler</h3>
             <RenovationRulesDocument rules={config.renovationRules} token={activeDraftToken} />
-            <label className="flex cursor-pointer items-start gap-3 text-sm leading-6 text-stone-900">
+            <label className="flex cursor-pointer items-start gap-3 text-sm leading-6 text-[var(--reno-ink)]">
               <input type="checkbox" checked={acceptedRulesId === config.renovationRules.id}
                 aria-invalid={Boolean(rulesError)} aria-describedby={rulesError ? 'application-rules-error' : undefined}
                 onChange={event => { setAcceptedRulesId(event.target.checked ? config.renovationRules!.id : null); setRulesError(null) }}
@@ -2129,7 +2129,7 @@ export default function RenoAppApplyPage() {
         ) : rulesError ? <p role="alert" className="text-sm text-rose-700">{rulesError}</p> : null}
 
         {isNeedInfoCase ? (
-          <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
             <p className="text-sm font-semibold text-amber-950">Svar till styrelsen</p>
             <p className="mt-2 text-sm leading-7 text-amber-900">
               Beskriv vad du har kompletterat eller förtydligat. Du kan också bara ladda upp dokument och skicka in igen.
@@ -2138,14 +2138,14 @@ export default function RenoAppApplyPage() {
               value={replyMessage}
               onChange={(event) => setReplyMessage(event.target.value)}
               rows={5}
-              className="mt-4 w-full rounded-3xl border border-amber-200 bg-white px-5 py-4 text-sm text-stone-900"
+              className="mt-4 w-full rounded-lg border border-amber-200 bg-white px-5 py-4 text-sm text-[var(--reno-ink)]"
               placeholder="Skriv ditt svar till styrelsen här."
             />
           </div>
         ) : null}
 
         {submitResult && !isReadOnlyCase ? (
-          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
             <p className="font-semibold">{submitResult.status === 'draft' ? 'Utkast sparat' : 'Ansökan registrerad'}</p>
             <p className="mt-2">Ärendenummer: {submitResult.caseNumber}</p>
             <a className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={submitResult.resumeUrl}>
@@ -2165,7 +2165,7 @@ export default function RenoAppApplyPage() {
   if (error && !config) {
     return (
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">
-        <div className="rounded-[32px] border border-rose-200 bg-rose-50 p-8 text-rose-900">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-8 text-rose-900">
           {error}
         </div>
       </main>
@@ -2173,12 +2173,12 @@ export default function RenoAppApplyPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-3xl bg-white px-4 py-6 text-stone-900 md:px-8 md:py-10 [&_input:not([type=checkbox]):not([type=radio])]:text-base [&_textarea]:text-base [&_select]:text-base [&_input]:rounded-md [&_textarea]:rounded-md [&_select]:rounded-md [&_button]:rounded-md" data-resident-application>
+    <main className="mx-auto min-h-screen w-full max-w-3xl bg-white px-4 py-6 text-[var(--reno-ink)] md:px-8 md:py-10 [&_input:not([type=checkbox]):not([type=radio])]:text-base [&_textarea]:text-base [&_select]:text-base [&_input]:rounded-md [&_textarea]:rounded-md [&_select]:rounded-md [&_button]:rounded-md" data-resident-application>
       <section>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Ansökningsguide</p>
-          <h1 className="mt-2 break-words text-2xl font-semibold text-stone-900">{config?.brf.name ?? slug}</h1>
-          <p className="mt-3 text-base leading-6 text-stone-700">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--reno-muted)]">Ansökningsguide</p>
+          <h1 className="mt-2 break-words text-2xl font-semibold text-[var(--reno-ink)]">{config?.brf.name ?? slug}</h1>
+          <p className="mt-3 text-base leading-6 text-[var(--reno-muted)]">
             {config?.brf.applyIntroText ??
               'Här ansöker du om att renovera din lägenhet. Du behöver inget konto.'}
           </p>
@@ -2191,7 +2191,7 @@ export default function RenoAppApplyPage() {
         ) : null}
 
         {draftInfo && !isReadOnlyCase ? (
-          <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+          <div className="mt-6 border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-semibold">
               {isNeedInfoCase
                 ? 'Styrelsen har begärt komplettering i ditt ärende.'
@@ -2215,11 +2215,11 @@ export default function RenoAppApplyPage() {
         {caseMessages.length ? (
           <div className="mt-6 border-y border-stone-200 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-stone-900">Kommunikation i ärendet</p>
+              <p className="text-sm font-semibold text-[var(--reno-ink)]">Kommunikation i ärendet</p>
               <button
                 type="button"
                 onClick={() => setShowCaseMessages((current) => !current)}
-                className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+                className="reno-button-secondary"
               >
                 {showCaseMessages ? 'Dölj kommunikation' : 'Visa kommunikation'}
               </button>
@@ -2227,10 +2227,10 @@ export default function RenoAppApplyPage() {
             {showCaseMessages ? (
               <div className="mt-4 space-y-2">
                 {caseMessages.map((message) => (
-                  <div key={message.id} className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+                  <div key={message.id} className="border-b border-[var(--reno-line)] py-3 text-sm text-[var(--reno-muted)]">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-medium text-stone-900">{getMessageTitle(message.type)}</p>
-                      <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
+                      <p className="font-medium text-[var(--reno-ink)]">{getMessageTitle(message.type)}</p>
+                      <p className="text-xs text-[var(--reno-muted)]">{formatDateTime(message.createdAt)}</p>
                     </div>
                     {message.message ? <p className="mt-2 whitespace-pre-wrap">{message.message}</p> : null}
                   </div>
@@ -2243,9 +2243,9 @@ export default function RenoAppApplyPage() {
         {isReadOnlyCase ? (
           <div className="mt-6 border-t border-stone-200 pt-5">
             <p className="text-sm font-semibold text-emerald-800">{submitResult?.status === 'submitted' ? 'Ansökan registrerad' : 'Inskickad ansökan'}</p>
-            <p className="mt-2 break-words text-sm text-stone-600">Ärendenummer {draftInfo?.case.caseNumber ?? submitResult?.caseNumber} · {draftInfo ? formatCaseStatus(draftInfo.case.status) : 'Inskickad'}</p>
-            <h2 className="mt-2 text-2xl font-semibold text-stone-900">Styrelsen handlägger ärendet</h2>
-            <p className="mt-2 text-sm leading-7 text-stone-600">
+            <p className="mt-2 break-words text-sm text-[var(--reno-muted)]">Ärendenummer {draftInfo?.case.caseNumber ?? submitResult?.caseNumber} · {draftInfo ? formatCaseStatus(draftInfo.case.status) : 'Inskickad'}</p>
+            <h2 className="mt-2 text-2xl font-semibold text-[var(--reno-ink)]">Styrelsen handlägger ärendet</h2>
+            <p className="mt-2 text-sm leading-7 text-[var(--reno-muted)]">
               Grundansökan kan inte ändras efter inskickning. Om styrelsen behöver mer information skickas en ny
               kompletteringsbegäran till den här adressen.
             </p>
@@ -2256,10 +2256,10 @@ export default function RenoAppApplyPage() {
           <div className="mt-6 border-t border-stone-200 pt-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="mt-2 text-2xl font-semibold text-stone-900">
+              <h2 className="mt-2 text-2xl font-semibold text-[var(--reno-ink)]">
                 {isNeedInfoCase ? 'Komplettera ansökan' : 'Din ansökan'}
               </h2>
-              {isNeedInfoCase ? <p className="mt-2 text-sm text-stone-600">Grundansökan är låst. Lägg till efterfrågade handlingar eller uppgifter och skicka sedan kompletteringen.</p> : null}
+              {isNeedInfoCase ? <p className="mt-2 text-sm text-[var(--reno-muted)]">Grundansökan är låst. Lägg till efterfrågade handlingar eller uppgifter och skicka sedan kompletteringen.</p> : null}
             </div>
           </div>
 
@@ -2284,17 +2284,17 @@ export default function RenoAppApplyPage() {
                         className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
                           isOpen
                             ? 'reno-step-active'
-                            : 'border-stone-300 bg-white text-stone-700'
+                            : 'border-stone-300 bg-white text-[var(--reno-muted)]'
                         }`}
                       >
                         {visibleIndex + 1}
                       </span>
                       <div className="min-w-0">
-                        <p className="text-[15px] font-semibold text-stone-900 md:text-base">{item.label}</p>
-                        {!isOpen ? <p className="mt-1 hidden text-sm text-stone-600 sm:block">{stepSummaries[item.id]}</p> : null}
+                        <p className="text-[15px] font-semibold text-[var(--reno-ink)] md:text-base">{item.label}</p>
+                        {!isOpen ? <p className="mt-1 hidden text-sm text-[var(--reno-muted)] sm:block">{stepSummaries[item.id]}</p> : null}
                       </div>
                     </div>
-                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
+                    <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--reno-muted)]">
                       {isOpen ? 'Öppet' : 'Öppna'}
                     </span>
                   </button>
@@ -2306,13 +2306,13 @@ export default function RenoAppApplyPage() {
           </div>
 
           {error ? (
-            <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
               {error}
             </div>
           ) : null}
 
           {autosaveEligible && !isReadOnlyCase && !submitResult ? (
-            <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+            <div className="mt-4 py-3 text-sm text-[var(--reno-muted)]">
               {autosaving
                   ? 'Sparar...'
                 : lastAutosavedAt
@@ -2322,7 +2322,7 @@ export default function RenoAppApplyPage() {
           ) : null}
 
           {!hasValidApplicantEmail && !isNeedInfoCase ? (
-            <p className="mt-4 text-sm text-stone-600">
+            <p className="mt-4 text-sm text-[var(--reno-muted)]">
               {activeDraftToken
                 ? 'Ändringarna sparas när du anger en giltig e-postadress i ”Lägenhet och kontakt”.'
                 : 'Ange din e-postadress i ”Lägenhet och kontakt” för att kunna spara och fortsätta senare.'}
@@ -2360,7 +2360,7 @@ export default function RenoAppApplyPage() {
                 type="button"
                 onClick={() => void submitApplication('draft')}
                 disabled={savingDraft || autosaving || submitting || completionConflict}
-                className="rounded-full border border-stone-300 px-5 py-3 text-sm font-semibold text-stone-800 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="reno-button-secondary"
               >
                 {savingDraft ? 'Sparar...' : isNeedInfoCase ? 'Spara komplettering' : 'Spara och fortsätt senare'}
               </button>

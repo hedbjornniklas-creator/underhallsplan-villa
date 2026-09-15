@@ -38,4 +38,4 @@ window.fetch = async (input, init) => {
   }
   throw new Error(`Unmocked fixture request: ${url}`)
 }
-createRoot(document.getElementById('root')!).render(<Applicant />)
+createRoot(document.getElementById('root')!).render(<div className="renoapp-scope"><Applicant /></div>)

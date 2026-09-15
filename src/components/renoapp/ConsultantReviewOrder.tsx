@@ -76,15 +76,15 @@ export default function ConsultantReviewOrder({ caseId, brfName, isDraft }: { ca
   }
 
   return (
-    <section className="min-w-0 border-y border-stone-300 bg-white px-5 py-6 sm:px-6" aria-label="Granskning av byggkonsult">
+    <section className="reno-case-section" aria-label="Granskning av byggkonsult">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-stone-950"><Headset size={22} className="shrink-0 text-emerald-700" aria-hidden="true" />Granskning av byggkonsult</h2>
+          <h2 className="reno-case-title flex items-center gap-2"><Headset size={22} className="shrink-0 text-[var(--reno-blue)]" aria-hidden="true" />Granskning av byggkonsult</h2>
           <p className="mt-1 text-sm text-stone-600">Granskning av ansökan och inskickade underlag.</p>
           <p className="mt-2 text-base font-semibold text-stone-950">Fast pris: {CONSULTANT_REVIEW_PRICE_LABEL}</p>
         </div>
         {!order && !loadError ? <button type="button" disabled={loading || isDraft} onClick={() => { setError(null); dialog.current?.showModal() }}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-emerald-800 px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50">
+          className="reno-button-secondary shrink-0">
           <Headset size={18} aria-hidden="true" />{loading ? 'Läser beställningsstatus...' : 'Få hjälp av byggkonsult'}
         </button> : null}
       </div>
@@ -116,13 +116,13 @@ export default function ConsultantReviewOrder({ caseId, brfName, isDraft }: { ca
           </div>
           <label className="grid gap-2 text-sm font-semibold">Meddelande till byggkonsulten <span className="font-normal text-stone-500">Frivilligt</span>
             <textarea value={message} onChange={event => setMessage(event.target.value)} maxLength={CONSULTANT_REVIEW_MAX_MESSAGE} rows={4} disabled={sending}
-              className="w-full resize-y rounded-md border border-stone-300 px-3 py-2 font-normal focus:outline-2 focus:outline-emerald-700" />
+              className="reno-field w-full resize-y border px-3 py-2 font-normal" />
           </label>
           <p className="mt-4 text-sm text-stone-600">Genom att beställa godkänner du kostnaden för föreningens räkning.</p>
           {error ? <p role="alert" className="mt-3 text-sm text-rose-800">{error}</p> : null}
           <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-stone-200 pt-4">
-            <button type="button" disabled={sending} onClick={() => dialog.current?.close()} className="min-h-11 rounded-md border border-stone-300 px-4 py-2 text-sm font-semibold disabled:opacity-50">Avbryt</button>
-            <button type="submit" disabled={sending} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-60">
+            <button type="button" disabled={sending} onClick={() => dialog.current?.close()} className="reno-button-secondary">Avbryt</button>
+            <button type="submit" disabled={sending} className="reno-button">
               {sending ? <LoaderCircle size={18} className="animate-spin" aria-hidden="true" /> : <Check size={18} aria-hidden="true" />}{sending ? 'Skickar beställning...' : 'Beställ granskning'}
             </button>
           </div>

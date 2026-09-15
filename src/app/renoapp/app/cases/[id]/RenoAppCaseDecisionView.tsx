@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } f
 import { RenovationRulesReceipt } from '@/components/renoapp/RenovationRulesView'
 import ConsultantReviewOrder from '@/components/renoapp/ConsultantReviewOrder'
 import type { RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
-import { FileText, Building2, Check, Minus, Info, TriangleAlert, ChevronDown, ChevronUp } from 'lucide-react'
+import { FileText, Building2, Check, Minus, Info, TriangleAlert, ChevronDown, ChevronUp, Download, Send, X } from 'lucide-react'
 import { getUnsentCompletionItems, selectCompletionItems, type CompletionSummary } from '@/lib/renoapp/completion'
 
 export type RenoAppCaseStatusAction = 'need_info' | 'approved' | 'conditional' | 'rejected'
@@ -212,7 +212,7 @@ function formatStatusLabel(status: string) {
 }
 
 function getStatusBadgeClass(status: string) {
-  if (status === 'draft') return 'border-stone-200 bg-stone-100 text-stone-700'
+  if (status === 'draft') return 'border-[var(--reno-line)] bg-stone-100 text-[var(--reno-muted)]'
   if (status === 'new_application' || status === 'submitted') return 'border-violet-300 bg-violet-100 text-violet-950'
   if (status === 'need_info') return 'border-amber-200 bg-amber-100 text-amber-900'
   if (status === 'ready_for_review' || status === 'review') return 'border-cyan-300 bg-cyan-100 text-cyan-950'
@@ -221,7 +221,7 @@ function getStatusBadgeClass(status: string) {
     return 'border-orange-300 bg-orange-100 text-orange-950'
   }
   if (status === 'rejected') return 'border-rose-200 bg-rose-100 text-rose-800'
-  return 'border-stone-200 bg-stone-100 text-stone-700'
+  return 'border-[var(--reno-line)] bg-stone-100 text-[var(--reno-muted)]'
 }
 
 function getBoardStatusOptionLabel(status: RenoAppCaseStatusAction) {
@@ -287,15 +287,15 @@ function SuggestionReason({ sources }: { sources: UnderlagItem['suggestionSource
   if (reasons.length === 0) return null
 
   return (
-    <div className="mt-2 border-l-2 border-sky-300 pl-3 text-sm leading-5 text-stone-600">
-      <p className="text-xs font-semibold text-stone-700">Grund för förslaget</p>
+    <div className="mt-2 border-l-2 border-sky-300 pl-3 text-sm leading-5 text-[var(--reno-muted)]">
+      <p className="text-xs font-semibold text-[var(--reno-muted)]">Grund för förslaget</p>
       <p className="mt-0.5">{reasons[0].text}</p>
       {reasons.length > 1 ? (
         <details className="mt-1.5">
           <summary className="w-fit cursor-pointer text-xs font-semibold text-sky-800 underline-offset-4 hover:underline">
             Visa alla orsaker ({reasons.length})
           </summary>
-          <ul className="mt-2 grid gap-1.5 border-t border-stone-200 pt-2">
+          <ul className="mt-2 grid gap-1.5 border-t border-[var(--reno-line)] pt-2">
             {reasons.map((reason) => (
               <li key={reason.id} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden="true" />
@@ -347,11 +347,11 @@ function getMissingReviewFlags(item: RenoAppCaseDetail) {
   return item.reviewFlags.filter((flag) => flag.severity !== 'info' || flag.sourceType === 'missing_document')
 }
 
-function Card({ children, className }: { children: ReactNode; className?: string }) {
+function CaseSection({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <article
       className={cx(
-        'rounded-[18px] border border-stone-200/80 bg-white shadow-[0_18px_55px_-44px_rgba(41,37,36,0.34)]',
+        'reno-case-section',
         className
       )}
     >
@@ -363,9 +363,9 @@ function Card({ children, className }: { children: ReactNode; className?: string
 function SectionTitle({ title, eyebrow, description }: { title: string; eyebrow?: string; description?: string }) {
   return (
     <div className="grid gap-1">
-      {eyebrow ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">{eyebrow}</p> : null}
-      <h2 className="text-xl font-semibold tracking-tight text-stone-950 sm:text-2xl">{title}</h2>
-      {description ? <p className="text-sm leading-6 text-stone-600">{description}</p> : null}
+      {eyebrow ? <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--reno-muted)]">{eyebrow}</p> : null}
+      <h2 className="reno-case-title">{title}</h2>
+      {description ? <p className="reno-case-description text-sm leading-6">{description}</p> : null}
     </div>
   )
 }
@@ -395,7 +395,7 @@ function RequirementDecisionChoices({
         return (
           <label
             key={decision}
-            className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-stone-800"
+            className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-[var(--reno-ink)]"
           >
             <span className="relative flex h-4 w-4 shrink-0">
               <input
@@ -404,7 +404,7 @@ function RequirementDecisionChoices({
                 value={decision}
                 checked={active}
                 onChange={() => onChange(decision)}
-                className="h-4 w-4 appearance-none rounded-sm border border-stone-400 bg-white checked:border-sky-700 checked:bg-sky-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-4 w-4 appearance-none rounded-sm border border-stone-400 bg-white checked:border-[var(--reno-blue)] checked:bg-[var(--reno-blue)] disabled:cursor-not-allowed disabled:opacity-50"
               />
               {active ? <Check size={14} strokeWidth={3} aria-hidden="true" className="pointer-events-none absolute inset-0 m-auto text-white" /> : null}
             </span>
@@ -421,7 +421,7 @@ function MaterialIndicator({ row }: { row: UnderlagItem }) {
     <span aria-hidden="true" className={cx(
       'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full',
       row.checked ? 'bg-emerald-100 text-emerald-700' : row.requirementDecision === 'not_requested'
-        ? 'bg-stone-100 text-stone-500' : 'bg-amber-100 text-amber-800'
+        ? 'bg-stone-100 text-[var(--reno-muted)]' : 'bg-amber-100 text-amber-800'
     )}>
       {row.checked ? <Check size={16} /> : <Minus size={16} />}
     </span>
@@ -430,10 +430,10 @@ function MaterialIndicator({ row }: { row: UnderlagItem }) {
 
 function RequirementHeading({ label, onInfo }: { label: string; onInfo: () => void }) {
   return (
-    <p className="font-semibold text-stone-950 [overflow-wrap:anywhere]">
+    <p className="font-semibold text-[var(--reno-ink)] [overflow-wrap:anywhere]">
       {label}{' '}
       <button type="button" onClick={onInfo} aria-label={`Visa granskningsstöd för ${label}`} title="Visa granskningsstöd"
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full align-middle text-stone-500 hover:bg-stone-100 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-sky-700">
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full align-middle text-[var(--reno-muted)] hover:bg-stone-100 hover:text-[var(--reno-ink)] focus-visible:outline-2 focus-visible:outline-sky-700">
         <Info size={15} aria-hidden="true" />
       </button>
     </p>
@@ -466,9 +466,9 @@ function CompletionExpansionWarning({ item, rows, onPrepareCompletion }: {
 
 function KeyValueCard({ label, value }: { label: string; value: string; secondary?: string }) {
   return (
-    <div className="px-5 py-3.5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-stone-950">{value}</p>
+    <div className="min-w-0">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--reno-muted)]">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-[var(--reno-ink)]">{value}</p>
     </div>
   )
 }
@@ -478,21 +478,22 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
   const apartmentNumber = displayText(item.unit.unitNumberInternal, 'ej angivet')
 
   return (
-    <Card className="p-5 sm:p-6">
+    <CaseSection>
       <SectionTitle title="Ärendesammanfattning" />
 
-      <div className="mt-4 overflow-hidden rounded-[18px] border border-stone-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+      <div className="mt-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 py-2">
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-stone-950">Ärende lägenhet {apartmentNumber}</h1>
+            <p className="mb-1 text-sm font-semibold tabular-nums text-[var(--reno-focus)]">{item.caseNumber}</p>
+            <h1 className="text-lg font-semibold tracking-tight text-[var(--reno-ink)]">Ärende lägenhet {apartmentNumber}</h1>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">Status</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--reno-muted)]">Status</span>
             <StatusBadge status={item.status} />
           </div>
         </div>
 
-        <div className="grid border-t border-stone-200 sm:grid-cols-3 sm:divide-x sm:divide-stone-200">
+        <div className="reno-case-metadata">
           <KeyValueCard label="Ansökningsdatum" value={formatDate(item.submittedAt)} />
           <KeyValueCard label="Senast uppdaterad" value={formatDate(item.updatedAt)} />
           <KeyValueCard
@@ -501,38 +502,38 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
           />
         </div>
 
-        <div className="grid gap-3 border-t border-stone-200 px-5 py-4">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Sammanfattning av ansökan</h3>
+        <div className="grid gap-3 border-t border-[var(--reno-line)] py-4">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--reno-muted)]">Sammanfattning av ansökan</h3>
           {summaryChips.length > 0 ? (
             <div className="grid gap-2 sm:grid-cols-2">
               {summaryChips.map((chip) => (
-                <div key={chip} className="flex items-start gap-2 text-sm leading-6 text-stone-700">
+                <div key={chip} className="flex items-start gap-2 text-sm leading-6 text-[var(--reno-muted)]">
                   <span className="mt-0.5 text-emerald-700" aria-hidden="true">✓</span>
                   <span>{chip}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-stone-600">Strukturerad sammanfattning saknas.</p>
+            <p className="text-sm text-[var(--reno-muted)]">Strukturerad sammanfattning saknas.</p>
           )}
         </div>
       </div>
 
-      <div className="mt-4 rounded-[18px] border border-stone-200 bg-stone-50/80 p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-stone-500">Lägenhetsinnehavarens beskrivning</h3>
-        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+      <div className="border-t border-[var(--reno-line)] pt-4">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--reno-muted)]">Lägenhetsinnehavarens beskrivning</h3>
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--reno-muted)]">
           {displayText(item.description, 'Ingen beskrivning registrerad.')}
         </p>
         {item.rulesAcceptance ? <div className="mt-4"><RenovationRulesReceipt acceptance={item.rulesAcceptance} /></div> : null}
         {item.blockedAt ? (
-          <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
             <p className="font-semibold">Ärendet är spärrat</p>
             <p>Tidpunkt: {formatDateTime(item.blockedAt)}</p>
             <p>Orsak: {displayText(item.blockedReason, 'Ingen orsak angiven.')}</p>
           </div>
         ) : null}
       </div>
-    </Card>
+    </CaseSection>
   )
 }
 
@@ -547,9 +548,9 @@ function CaseMaterialStatusCard({ missingItems, reviewFlags }: { missingItems: U
   const hasMissing = missingLabels.length > 0
 
   return (
-    <Card className="p-6">
+    <CaseSection>
       <SectionTitle title="Underlagsstatus" />
-      <div className={cx('mt-5 rounded-[14px] border p-4', hasMissing ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-emerald-200 bg-emerald-50 text-emerald-950')}>
+      <div className={cx('mt-5 rounded-lg border p-4', hasMissing ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-emerald-200 bg-emerald-50 text-emerald-950')}>
         <div className="flex items-start gap-3">
           <span className="mt-1 h-3 w-3 shrink-0 rounded-full bg-current" aria-hidden="true" />
           <div>
@@ -571,24 +572,24 @@ function CaseMaterialStatusCard({ missingItems, reviewFlags }: { missingItems: U
           </div>
         </div>
       </div>
-    </Card>
+    </CaseSection>
   )
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ConsiderationsCard({ items }: { items: string[] }) {
   return (
-    <Card className="p-6">
+    <CaseSection>
       <SectionTitle title="Att beakta inför beslut" />
       <ul className="mt-5 grid gap-3">
         {items.map((item) => (
-          <li key={item} className="flex gap-3 text-sm leading-6 text-stone-700">
+          <li key={item} className="flex gap-3 text-sm leading-6 text-[var(--reno-muted)]">
             <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-stone-400" aria-hidden="true" />
             <span>{item}</span>
           </li>
         ))}
       </ul>
-    </Card>
+    </CaseSection>
   )
 }
 
@@ -632,15 +633,15 @@ function DocumentsPanel({
 
   const renderRows = (rows: UnderlagItem[], emptyText: string) => {
     if (rows.length === 0) {
-      return <p className="rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">{emptyText}</p>
+      return <p className="rounded-lg border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-[var(--reno-muted)]">{emptyText}</p>
     }
 
     return (
-      <div className="overflow-hidden rounded-[18px] border border-stone-200">
+      <div className="reno-material-list">
         {rows.map((row) => {
           const document = row.documentId ? documentById.get(row.documentId) : null
           return (
-            <div key={row.id} data-requirement-id={row.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-4 border-b border-stone-200 bg-white px-4 py-4 last:border-b-0 lg:grid-cols-[28px_minmax(0,1fr)_140px_230px] lg:gap-x-4 lg:items-start">
+            <div key={row.id} data-requirement-id={row.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-3 reno-material-row lg:grid-cols-[28px_minmax(0,1fr)_140px_230px] lg:gap-x-4 lg:items-start">
               <MaterialIndicator row={row} />
               <div className="min-w-0">
                 <RequirementHeading label={displayText(row.label)} onInfo={() => setActiveReviewSupport({ label: displayText(row.label), reviewGuidance: row.reviewGuidance })} />
@@ -649,21 +650,21 @@ function DocumentsPanel({
               <div className="col-start-2 lg:col-start-auto">
                 <RequirementDecisionChoices label={displayText(row.label)} value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
               </div>
-              <div className="col-start-2 grid min-w-0 justify-items-start gap-2 lg:col-start-auto">
-                <p className={cx('text-sm font-medium', row.checked ? 'text-emerald-800' : 'text-stone-600')}>{getDocumentStatusLabel(row)}</p>
-                {document?.fileName ? <p className="w-full text-sm text-stone-500 [overflow-wrap:anywhere]">{displayText(document.fileName)}</p> : null}
+              <div className="reno-material-files col-start-2 grid min-w-0 justify-items-start gap-2 lg:col-start-auto">
+                <p className={cx('text-sm font-medium', row.checked ? 'text-emerald-800' : 'text-[var(--reno-muted)]')}>{getDocumentStatusLabel(row)}</p>
+                {document?.fileName ? <p className="w-full text-sm text-[var(--reno-muted)] [overflow-wrap:anywhere]">{displayText(document.fileName)}</p> : null}
               {row.documentId ? (
                 <a
                   href={`/api/renoapp/app/cases/${item.id}/documents/${row.documentId}?view=1`}
                   target="_blank" rel="noopener noreferrer"
-                  className="inline-flex min-h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-900 hover:bg-stone-50"
+                  className="reno-button-secondary"
                 >
                   <FileText size={16} aria-hidden="true" /> Öppna dokument
                 </a>
               ) : null}
               {document && item.documents.filter(file => file.documentTypeId === document.documentTypeId && file.id !== document.id).length > 0 ? (
                 <details className="w-full min-w-0 text-sm">
-                  <summary className="cursor-pointer text-stone-700">Fler filer</summary>
+                  <summary className="cursor-pointer text-[var(--reno-muted)]">Fler filer</summary>
                   <ul className="mt-2 space-y-2">
                     {item.documents.filter(file => file.documentTypeId === document.documentTypeId && file.id !== document.id).map(file => (
                       <li key={file.id}><a className="break-all text-sky-800 underline underline-offset-2" href={`/api/renoapp/app/cases/${item.id}/documents/${file.id}?view=1`} target="_blank" rel="noopener noreferrer">{file.fileName ?? 'Dokument'}</a></li>
@@ -680,7 +681,7 @@ function DocumentsPanel({
   }
 
   return (
-    <Card className="p-5 sm:p-6">
+    <CaseSection>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <SectionTitle
           title="Föreslagna underlag"
@@ -691,8 +692,9 @@ function DocumentsPanel({
             type="button"
             onClick={onDownloadAll}
             disabled={documentRows.every((row) => !row.documentId) || downloading}
-            className="rounded-full border border-stone-900 bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="reno-button-secondary"
           >
+            <Download size={18} aria-hidden="true" />
             {downloading ? 'Laddar ner...' : 'Ladda ner alla filer'}
           </button>
         </div>
@@ -717,29 +719,29 @@ function DocumentsPanel({
             className="absolute inset-0 cursor-default"
             aria-label="Stäng granskningsstöd"
           />
-          <div className="relative z-10 flex max-h-[86vh] w-full max-w-5xl flex-col rounded-[18px] border border-stone-200 bg-white p-6 shadow-[0_30px_80px_-45px_rgba(28,25,23,0.5)]">
+          <div className="relative z-10 flex max-h-[86vh] w-full max-w-5xl flex-col reno-review-dialog rounded-lg border border-[var(--reno-line)] bg-white p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Granskningsstöd</p>
-                <h3 id="review-support-title" className="mt-2 text-lg font-semibold text-stone-950">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--reno-muted)]">Granskningsstöd</p>
+                <h3 id="review-support-title" className="mt-2 text-lg font-semibold text-[var(--reno-ink)]">
                   {activeReviewSupport.label}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveReviewSupport(null)}
-                className="rounded-full border border-stone-300 px-3 py-1 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                className="reno-button-secondary"
               >
-                Stäng
+                <X size={18} aria-hidden="true" /><span className="sr-only">Stäng</span>
               </button>
             </div>
-            <p className="mt-4 overflow-y-auto whitespace-pre-wrap pr-2 text-sm leading-6 text-stone-700">
+            <p className="mt-4 overflow-y-auto whitespace-pre-wrap pr-2 text-sm leading-6 text-[var(--reno-muted)]">
               {displayText(activeReviewSupport.reviewGuidance, 'Inget granskningsstöd är registrerat för detta underlag.')}
             </p>
           </div>
         </div>
       ) : null}
-    </Card>
+    </CaseSection>
   )
 }
 
@@ -777,7 +779,7 @@ function ConsultantsPanel({
   }, [activeReviewSupport])
 
   return (
-    <Card className="p-5 sm:p-6">
+    <CaseSection>
       <SectionTitle
         title="Föreslagna uppgifter om entreprenörer och konsulter"
         description="RenoApp föreslår vilka entreprenörer eller konsulter som kan behöva anges utifrån den valda åtgärden och de uppgifter som har lämnats i ansökan. Styrelsen kan begära in eller avstå från uppgifter utifrån det enskilda ärendets omfattning."
@@ -786,15 +788,15 @@ function ConsultantsPanel({
         <CompletionExpansionWarning item={item} rows={rows} onPrepareCompletion={onPrepareCompletion} />
       </div>
       {rows.length === 0 ? (
-        <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+        <p className="mt-5 rounded-lg border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-[var(--reno-muted)]">
           Inga entreprenörer eller konsulter efterfrågas i ärendet.
         </p>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-[18px] border border-stone-200">
+        <div className="reno-material-list mt-6">
           {rows.map((row) => {
             const expanded = expandedParticipantIds[row.id] === true
             return (
-              <div key={row.id} data-requirement-id={row.id} className="border-b border-stone-200 bg-white px-4 py-4 last:border-b-0">
+              <div key={row.id} data-requirement-id={row.id} className="reno-material-row">
                 <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-4 lg:grid-cols-[28px_minmax(0,1fr)_140px_230px] lg:gap-x-4 lg:items-start">
                   <MaterialIndicator row={row} />
                   <div className="min-w-0">
@@ -804,14 +806,14 @@ function ConsultantsPanel({
                   <div className="col-start-2 lg:col-start-auto">
                     <RequirementDecisionChoices label={getParticipantDisplayLabel(row.label)} value={row.requirementDecision} onChange={decision => onRequirementDecisionChange(row, decision)} />
                   </div>
-                  <div className="col-start-2 grid min-w-0 justify-items-start gap-2 lg:col-start-auto">
-                    <p className="text-sm font-medium text-stone-700">{getParticipantStatusLabel(row)}</p>
-                    <p className="w-full text-sm text-stone-500 [overflow-wrap:anywhere]">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
+                  <div className="reno-material-files col-start-2 grid min-w-0 justify-items-start gap-2 lg:col-start-auto">
+                    <p className="text-sm font-medium text-[var(--reno-muted)]">{getParticipantStatusLabel(row)}</p>
+                    <p className="w-full text-sm text-[var(--reno-muted)] [overflow-wrap:anywhere]">{row.details?.companyName ? displayText(row.details.companyName) : 'Företag ej angivet'}</p>
                   <button
                     type="button"
                     onClick={() => onToggle(row.id)}
                     aria-expanded={expanded}
-                    className="inline-flex min-h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-left text-sm font-semibold text-stone-900 hover:bg-stone-50"
+                    className="reno-button-secondary text-left"
                   >
                     <Building2 size={16} className="shrink-0" aria-hidden="true" />
                     {expanded ? 'Dölj företagsuppgifter' : 'Visa företagsuppgifter'}
@@ -820,20 +822,20 @@ function ConsultantsPanel({
                 </div>
 
                 {expanded ? (
-                  <div className="mt-4 grid gap-4 break-words rounded-[14px] border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                  <div className="mt-4 grid gap-4 border-t border-[var(--reno-line)] py-4 text-sm text-[var(--reno-muted)]">
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <p><span className="font-semibold text-stone-950">Företag:</span> {displayText(row.details?.companyName)}</p>
-                      <p><span className="font-semibold text-stone-950">Kontaktperson:</span> {displayText(row.details?.contactName)}</p>
-                      <p><span className="font-semibold text-stone-950">Organisationsnummer:</span> {displayText(row.details?.orgNumber)}</p>
-                      <p><span className="font-semibold text-stone-950">E-post:</span> {displayText(row.details?.email)}</p>
-                      <p><span className="font-semibold text-stone-950">Telefon:</span> {displayText(row.details?.phone)}</p>
-                      <p><span className="font-semibold text-stone-950">Certifiering:</span> {displayText(row.details?.certificationReference)}</p>
+                      <p><span className="font-semibold text-[var(--reno-ink)]">Företag:</span> {displayText(row.details?.companyName)}</p>
+                      <p><span className="font-semibold text-[var(--reno-ink)]">Kontaktperson:</span> {displayText(row.details?.contactName)}</p>
+                      <p><span className="font-semibold text-[var(--reno-ink)]">Organisationsnummer:</span> {displayText(row.details?.orgNumber)}</p>
+                      <p><span className="font-semibold text-[var(--reno-ink)]">E-post:</span> {displayText(row.details?.email)}</p>
+                      <p><span className="font-semibold text-[var(--reno-ink)]">Telefon:</span> {displayText(row.details?.phone)}</p>
+                      <p><span className="font-semibold text-[var(--reno-ink)]">Certifiering:</span> {displayText(row.details?.certificationReference)}</p>
                     </div>
                     {item.documents.filter(file => `participant:${file.participantRoleId}` === row.id).map(file => (
                       <a key={file.id} className="inline-flex items-start gap-2 break-all text-sky-800 underline underline-offset-2" href={`/api/renoapp/app/cases/${item.id}/documents/${file.id}?view=1`} target="_blank" rel="noopener noreferrer"><FileText size={16} className="mt-0.5 shrink-0" />{file.fileName ?? 'Dokument'}</a>
                     ))}
                     {row.summary.length > 0 ? (
-                      <ul className="grid gap-2 border-t border-stone-200 pt-4">
+                      <ul className="grid gap-2 border-t border-[var(--reno-line)] pt-4">
                         {row.summary.map((line) => (
                           <li key={line} className="flex items-start gap-2">
                             <span
@@ -865,29 +867,29 @@ function ConsultantsPanel({
             className="absolute inset-0 cursor-default"
             aria-label="Stäng granskningsstöd"
           />
-          <div className="relative z-10 w-full max-w-lg rounded-[18px] border border-stone-200 bg-white p-6 shadow-[0_30px_80px_-45px_rgba(28,25,23,0.5)]">
+          <div className="relative z-10 w-full max-w-lg reno-review-dialog rounded-lg border border-[var(--reno-line)] bg-white p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500">Granskningsstöd</p>
-                <h3 id="participant-review-support-title" className="mt-2 text-lg font-semibold text-stone-950">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--reno-muted)]">Granskningsstöd</p>
+                <h3 id="participant-review-support-title" className="mt-2 text-lg font-semibold text-[var(--reno-ink)]">
                   {activeReviewSupport.label}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveReviewSupport(null)}
-                className="rounded-full border border-stone-300 px-3 py-1 text-sm font-semibold text-stone-700 transition hover:bg-stone-100"
+                className="reno-button-secondary"
               >
-                Stäng
+                <X size={18} aria-hidden="true" /><span className="sr-only">Stäng</span>
               </button>
             </div>
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[var(--reno-muted)]">
               {displayText(activeReviewSupport.reviewGuidance, 'Inget granskningsstöd är registrerat för denna roll.')}
             </p>
           </div>
         </div>
       ) : null}
-    </Card>
+    </CaseSection>
   )
 }
 
@@ -926,7 +928,7 @@ function BoardDecisionPanel({
   const [helpOpen, setHelpOpen] = useState(false)
 
   return (
-    <Card className="p-5 sm:p-6">
+    <CaseSection>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <SectionTitle
           title="Dokumentera styrelsens beslut"
@@ -935,14 +937,14 @@ function BoardDecisionPanel({
         <button
           type="button"
           onClick={() => setHelpOpen((current) => !current)}
-          className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100"
+          className="reno-button-secondary"
         >
           {helpOpen ? 'Dölj hjälp' : 'Visa hjälp'}
         </button>
       </div>
 
       {helpOpen ? (
-        <div className="mt-5 rounded-[14px] border border-sky-200 bg-sky-50 p-5 text-sm leading-6 text-sky-950">
+        <div className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-5 text-sm leading-6 text-sky-950">
           <p className="font-semibold">Så används beslutskortet</p>
           <ul className="mt-3 grid gap-2">
             <li><span className="font-semibold">Begär komplettering:</span> skickar ärendet till sökanden igen. Skriv tydligt vilka underlag eller uppgifter som ska lämnas in.</li>
@@ -957,13 +959,13 @@ function BoardDecisionPanel({
       ) : null}
 
       {isDraftCase ? (
-        <div className="mt-6 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
+        <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
           Ärendet är fortfarande ett utkast. Styrelsen kan inte agera förrän lägenhetsinnehavaren har skickat in ansökan.
         </div>
       ) : (
         <form onSubmit={onSubmit} className="mt-6 grid gap-5">
           <fieldset>
-            <legend className="text-sm font-semibold text-stone-950">Välj beslut</legend>
+            <legend className="text-sm font-semibold text-[var(--reno-ink)]">Välj beslut</legend>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {STATUS_ACTIONS.map((status) => {
                 const isSelected = selectedStatus === status
@@ -972,10 +974,10 @@ function BoardDecisionPanel({
                   <label
                     key={status}
                     className={cx(
-                      'flex min-h-12 cursor-pointer items-center gap-3 rounded-[10px] border px-4 py-3 text-sm font-semibold transition',
+                      'flex min-h-12 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold transition',
                       isSelected
-                        ? 'border-stone-900 bg-stone-50 text-stone-950 ring-1 ring-stone-900'
-                        : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400 hover:bg-stone-50'
+                        ? 'reno-selected'
+                        : 'border-stone-300 bg-white text-[var(--reno-muted)] hover:border-stone-400 hover:bg-stone-50'
                     )}
                   >
                     <input
@@ -984,7 +986,7 @@ function BoardDecisionPanel({
                       value={status}
                       checked={isSelected}
                       onChange={() => onStatusChange(status)}
-                      className="h-4 w-4 shrink-0 accent-stone-900"
+                      className="h-4 w-4 shrink-0 accent-[var(--reno-blue)]"
                     />
                     <span>{getBoardStatusOptionLabel(status)}</span>
                   </label>
@@ -994,10 +996,10 @@ function BoardDecisionPanel({
           </fieldset>
 
           {selectedStatus === 'need_info' ? (
-            <label className="grid gap-2 text-sm text-stone-700">
-              <span className="font-semibold text-stone-950">Vad behöver kompletteras?</span>
+            <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
+              <span className="font-semibold text-[var(--reno-ink)]">Vad behöver kompletteras?</span>
               {completionSnippets.length > 0 ? (
-                <div className="rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
                   <p className="font-semibold">Komplettering som kommer med i meddelandet</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">
                     {completionSnippets.map((snippet) => (
@@ -1010,35 +1012,35 @@ function BoardDecisionPanel({
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={5}
-                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="reno-field border bg-white px-4 py-3 text-[var(--reno-ink)]"
                 placeholder="Meddelande till lägenhetsinnehavaren"
               />
             </label>
           ) : null}
 
           {selectedStatus === 'approved' ? (
-            <label className="grid gap-2 text-sm text-stone-700">
-              <span className="font-semibold text-stone-950">Intern beslutsnotering</span>
+            <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
+              <span className="font-semibold text-[var(--reno-ink)]">Intern beslutsnotering</span>
               <textarea
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={4}
-                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="reno-field border bg-white px-4 py-3 text-[var(--reno-ink)]"
                 placeholder="Valfri intern notering."
               />
             </label>
           ) : null}
 
           {selectedStatus === 'conditional' ? (
-            <label className="grid gap-2 text-sm text-stone-700">
-              <span className="font-semibold text-stone-950">Villkor</span>
+            <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
+              <span className="font-semibold text-[var(--reno-ink)]">Villkor</span>
               <div className="flex flex-wrap gap-2">
                 {CONDITION_SNIPPETS.map((snippet) => (
                   <button
                     key={snippet}
                     type="button"
                     onClick={() => onConditionsChange(appendSnippet(conditions, snippet))}
-                    className="rounded-full border border-lime-200 bg-lime-50 px-3 py-1 text-sm text-lime-900 hover:bg-lime-100"
+                    className="reno-button-secondary text-left"
                   >
                     {snippet}
                   </button>
@@ -1048,22 +1050,22 @@ function BoardDecisionPanel({
                 value={conditions}
                 onChange={(event) => onConditionsChange(event.target.value)}
                 rows={5}
-                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="reno-field border bg-white px-4 py-3 text-[var(--reno-ink)]"
                 placeholder="Villkor som ska ingå i beslutet."
               />
             </label>
           ) : null}
 
           {selectedStatus === 'rejected' ? (
-            <label className="grid gap-2 text-sm text-stone-700">
-              <span className="font-semibold text-stone-950">Motivering</span>
+            <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
+              <span className="font-semibold text-[var(--reno-ink)]">Motivering</span>
               <div className="flex flex-wrap gap-2">
                 {REJECTION_SNIPPETS.map((snippet) => (
                   <button
                     key={snippet}
                     type="button"
                     onClick={() => onReasonChange(appendSnippet(reason, snippet))}
-                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-sm text-rose-900 hover:bg-rose-100"
+                    className="reno-button-secondary text-left"
                   >
                     {snippet}
                   </button>
@@ -1073,19 +1075,19 @@ function BoardDecisionPanel({
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={5}
-                className="rounded-[14px] border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                className="reno-field border bg-white px-4 py-3 text-[var(--reno-ink)]"
                 placeholder="Motivering till avslag."
               />
             </label>
           ) : null}
 
           {showDecisionConfirmation ? (
-            <label className="flex items-start gap-3 rounded-[14px] border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-700">
+            <label className="flex items-start gap-3 rounded-lg border border-[var(--reno-line)] bg-stone-50 p-4 text-sm leading-6 text-[var(--reno-muted)]">
               <input
                 type="checkbox"
                 checked={decisionConfirmed}
                 onChange={(event) => onDecisionConfirmedChange(event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-stone-300 accent-stone-900"
+                className="mt-1 h-4 w-4 rounded border-stone-300 accent-[var(--reno-blue)]"
               />
               <span>Jag bekräftar att beslut fattas av styrelsen baserat på inkommet underlag.</span>
             </label>
@@ -1094,18 +1096,19 @@ function BoardDecisionPanel({
           {actionError ? <p className="text-sm text-rose-700">{actionError}</p> : null}
           {actionSuccess ? <p className="text-sm text-emerald-700">{actionSuccess}</p> : null}
 
-          <div className="flex justify-end border-t border-stone-200 pt-5">
+          <div className="flex justify-end border-t border-[var(--reno-line)] pt-5">
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-full border border-stone-900 bg-stone-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="reno-button"
             >
+              <Send size={18} aria-hidden="true" />
               {submitting ? 'Sparar...' : getBoardActionSubmitLabel(selectedStatus)}
             </button>
           </div>
         </form>
       )}
-    </Card>
+    </CaseSection>
   )
 }
 
@@ -1113,11 +1116,11 @@ function CaseHistoryTimeline({ messages, expanded, onToggle }: { messages: Messa
   const historyId = useId()
 
   return (
-    <Card className="p-6">
+    <CaseSection>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SectionTitle title="Ärendehistorik" />
         <button type="button" onClick={onToggle} aria-expanded={expanded} aria-controls={historyId}
-          className="inline-flex min-h-9 items-center gap-2 text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
+          className="inline-flex min-h-9 items-center gap-2 text-sm font-semibold text-[var(--reno-muted)] underline-offset-4 hover:underline">
           {expanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
           {expanded ? 'Dölj historik' : 'Visa historik'}
         </button>
@@ -1125,39 +1128,39 @@ function CaseHistoryTimeline({ messages, expanded, onToggle }: { messages: Messa
 
       <div id={historyId} hidden={!expanded}>
       {messages.length === 0 ? (
-        <p className="mt-5 rounded-[14px] border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+        <p className="mt-5 rounded-lg border border-dashed border-stone-300 bg-stone-50 px-4 py-3 text-sm text-[var(--reno-muted)]">
           Inga skickade meddelanden.
         </p>
       ) : (
         <ol className="mt-5 grid gap-3">
           {messages.map((message) => (
-            <li key={message.id} className="relative rounded-[14px] border border-stone-200 bg-stone-50 p-4">
+            <li key={message.id} className="relative rounded-lg border border-[var(--reno-line)] bg-stone-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="font-semibold text-stone-950">{getMessageTitle(message.type)}</p>
-                <p className="text-xs text-stone-500">{formatDateTime(message.createdAt)}</p>
+                <p className="font-semibold text-[var(--reno-ink)]">{getMessageTitle(message.type)}</p>
+                <p className="text-xs text-[var(--reno-muted)]">{formatDateTime(message.createdAt)}</p>
               </div>
-              <p className="mt-1 text-xs uppercase tracking-[0.14em] text-stone-500">
+              <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[var(--reno-muted)]">
                 {getMessageAuthorLabel(message.authorRole)}
                 {message.authorName ? `: ${displayText(message.authorName)}` : ''}
               </p>
-              {message.message ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-700">{displayText(message.message)}</p> : null}
+              {message.message ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--reno-muted)]">{displayText(message.message)}</p> : null}
             </li>
           ))}
         </ol>
       )}
       </div>
-    </Card>
+    </CaseSection>
   )
 }
 
 function InfoDisclaimerCard() {
   return (
-    <Card className="p-6">
+    <CaseSection>
       <SectionTitle title="Information" />
-      <p className="mt-5 text-sm leading-6 text-stone-600">
+      <p className="mt-5 text-sm leading-6 text-[var(--reno-muted)]">
         RenoApp tillhandahåller strukturerad information, underlag och dokumentation för ärendehantering. Systemet lämnar inte teknisk eller juridisk rådgivning. Bedömning och beslut fattas alltid av styrelsen eller av särskilt anlitad fackman.
       </p>
-    </Card>
+    </CaseSection>
   )
 }
 
@@ -1165,14 +1168,14 @@ function ReviewFlagsCard({ flags }: { flags: ReviewFlag[] }) {
   if (flags.length === 0) return null
 
   return (
-    <Card className="p-6">
+    <CaseSection>
       <SectionTitle title="Registrerade kontrollpunkter" />
       <div className="mt-5 grid gap-3">
         {flags.map((flag) => (
           <div
             key={flag.id}
             className={cx(
-              'rounded-[14px] border p-4 text-sm leading-6',
+              'rounded-lg border p-4 text-sm leading-6',
               flag.severity === 'high'
                 ? 'border-rose-200 bg-rose-50 text-rose-900'
                 : flag.severity === 'warning'
@@ -1186,7 +1189,7 @@ function ReviewFlagsCard({ flags }: { flags: ReviewFlag[] }) {
           </div>
         ))}
       </div>
-    </Card>
+    </CaseSection>
   )
 }
 
@@ -1281,7 +1284,7 @@ export default function RenoAppCaseDecisionView({
   }
 
   return (
-    <div className="grid gap-6">
+    <div className="reno-case-review">
       <CaseHeaderSummary item={item} />
       {item.completion && item.status === 'need_info' && item.completion.delivery_status !== 'sent' ? (
         <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
@@ -1289,7 +1292,7 @@ export default function RenoAppCaseDecisionView({
           <button type="button" disabled={submitting} onClick={onRetryDelivery} className="rounded-md border border-amber-800 px-3 py-2 font-semibold disabled:opacity-50">Skicka mejlet igen</button>
         </div>
       ) : null}
-      <fieldset disabled={submitting} className="grid min-w-0 gap-6">
+      <fieldset disabled={submitting} className="min-w-0">
       <DocumentsPanel
         item={item}
         documentRows={documentUnderlag}

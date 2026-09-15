@@ -18,11 +18,14 @@ await new Promise((resolveBuild, reject) => webpack({
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: { '@': resolve('src'), 'next/navigation': resolve('test/fixtures/renoapp-navigation.ts') } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
 }, (error, stats) => error || stats.hasErrors() ? reject(error ?? new Error(stats.toString('errors-only'))) : resolveBuild()))
-const { css } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
+const { css: baseCss } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
+const css = baseCss + await readFile('src/components/renoapp/renoapp-theme.css', 'utf8')
+const font = await readFile('public/renoapp/brand/manrope.ttf')
 const js = await readFile(resolve(output, 'view.js'))
 const applicantJs = await readFile(resolve(output, 'applicant.js'))
 let reviewOrderPosts = 0
 const server = createServer((request, response) => {
+  if (request.url === '/renoapp/brand/manrope.ttf') { response.setHeader('Content-Type', 'font/ttf'); response.end(font); return }
   if (request.url.endsWith('/consultant-review')) {
     if (request.method === 'POST') reviewOrderPosts++
     response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ order: null })); return
@@ -41,10 +44,14 @@ try {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('dialog', dialog => dialog.accept())
-  for (const width of [1440, 1024, 390]) {
+  for (const width of [1440, 1024, 390, 344]) {
     await page.setViewport({ width, height: 1000 })
     await page.goto(`http://127.0.0.1:${server.address().port}`, { waitUntil: 'networkidle0' })
     await page.waitForSelector('a[href$="?view=1"]')
+    await page.evaluate(() => document.fonts.ready)
+    assert.equal(await page.$eval('#board-decision button[type="submit"]', node => getComputedStyle(node).backgroundColor), 'rgb(71, 103, 134)')
+    assert.equal(await page.$eval('.reno-case-section', node => getComputedStyle(node).borderRadius), '0px')
+    await page.screenshot({ path: resolve(output, `case-full-${width}.png`), fullPage: true })
     const reviewSection = '[aria-label="Granskning av byggkonsult"]'
     const scope = `${reviewSection} > details`
     assert.equal(await page.$eval(scope, node => node.open), false)
