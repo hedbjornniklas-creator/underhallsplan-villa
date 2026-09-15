@@ -1,0 +1,20 @@
+:root {
+  --reno-blue: #476786;
+  --reno-blueSoft: #EAF0F5;
+  --reno-apricot: #F6E7DC;
+  --reno-ink: #293239;
+  --reno-muted: #58636D;
+  --reno-white: #FFFFFF;
+  --reno-mist: #F4F6F7;
+  --reno-line: #CFD7DE;
+  --reno-success: #2C7159;
+  --reno-successBg: #E8F2EC;
+  --reno-warning: #805C1C;
+  --reno-warningBg: #FFF2D9;
+  --reno-error: #A33F40;
+  --reno-errorBg: #FBEDEE;
+  --reno-focus: #274C70;
+  --reno-font: "Manrope", Arial, sans-serif;
+  --reno-radius: 6px;
+  --reno-spacing: 8px;
+}

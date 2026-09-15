@@ -1,0 +1,29 @@
+{
+  "colors": {
+    "blue": "#476786",
+    "blueSoft": "#EAF0F5",
+    "apricot": "#F6E7DC",
+    "ink": "#293239",
+    "muted": "#58636D",
+    "white": "#FFFFFF",
+    "mist": "#F4F6F7",
+    "line": "#CFD7DE",
+    "success": "#2C7159",
+    "successBg": "#E8F2EC",
+    "warning": "#805C1C",
+    "warningBg": "#FFF2D9",
+    "error": "#A33F40",
+    "errorBg": "#FBEDEE",
+    "focus": "#274C70"
+  },
+  "contrastRatios": {
+    "white/blue": 5.91,
+    "ink/white": 13.05,
+    "muted/white": 6.14,
+    "ink/apricot": 10.8,
+    "blue/blueSoft": 5.15,
+    "success/successBg": 5.08,
+    "warning/warningBg": 5.47,
+    "error/errorBg": 5.52
+  }
+}

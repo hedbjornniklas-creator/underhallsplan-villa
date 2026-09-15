@@ -160,6 +160,10 @@ vite.config.ts.timestamp-*
 /tmp/ob-early-start-ui/
 /tmp/ob-mobile-round-ui/
 /tmp/renoapp-resident-journey/
+/tmp/renoapp-brand-ui/
+/tmp/renoapp-brand-next/
+/tmp/renoapp-brand-check.json
+/tmp/renoapp-brand-preview.err
 
 # next.js
 /.next/

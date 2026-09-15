@@ -1,0 +1,8 @@
+# Generated deliverables and visual checks remain available locally.
+/*.pdf
+/*.zip
+/qa-page-*.png
+/assets/fonts/Manrope-400.ttf
+/assets/fonts/Manrope-600.ttf
+/assets/fonts/Manrope-700.ttf
+__pycache__/
