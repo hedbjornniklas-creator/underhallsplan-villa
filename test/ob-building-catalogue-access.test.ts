@@ -53,6 +53,6 @@ test('unexpected inherited grants abort and roll back instead of claiming a secu
     await assert.rejects(db.exec(sql), /UNEXPECTED_GRANT/)
     await db.exec('rollback')
     assert.deepEqual((await db.query('select * from settings_ob_building_categories')).rows, [{ key: 'main', label: 'Main' }])
-    assert.equal((await db.query("select has_table_privilege('anon','settings_ob_building_categories','INSERT') as kept")).rows[0].kept, true)
+    assert.equal((await db.query<{ kept: boolean }>("select has_table_privilege('anon','settings_ob_building_categories','INSERT') as kept")).rows[0].kept, true)
   } finally { await db.close() }
 })
