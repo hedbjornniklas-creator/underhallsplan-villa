@@ -41,7 +41,7 @@ const row = async (table, key) => JSON.parse(JSON.stringify((await db.query(`sel
 let sequence = 100
 let legacyDraft, legacySent
 
-async function fixture({ groups = 1, parts = false, sameItem = false } = {}) {
+async function fixture({ groups = 1, parts = false, sameItem = false, pricePresentation = 'grouped', includeAll = false } = {}) {
   const n = sequence; sequence += 100
   const c = id(n), r = id(n + 1), lines = [], extras = []
   await db.query('insert into action_cases(id,org_id,title,customer_name,property_address) values($1,$2,$3,$4,$5)', [c, id(1), 'Case', 'Customer', 'Address'])
@@ -55,10 +55,15 @@ async function fixture({ groups = 1, parts = false, sameItem = false } = {}) {
       if (partId) await db.query('update action_case_cost_lines set work_part_id=$1 where id=$2', [partId, lineId])
       const source = { costLineId: lineId, itemId, itemTitle: `Action ${sameItem ? 0 : group}`, scope: `Scope ${sameItem ? 0 : group}`, description: `Work ${group}-${index}`,
         workPartId: partId, workPartTitle: partId ? `Part ${group}` : '', workPartScope: partId ? `Part scope ${group}` : '' }
-      if (index === 2) extras.push(source); else lines.push(source)
+      if (includeAll) {
+        if (index === 2 && group === 1) await db.query("update action_case_cost_lines set category='transport' where id=$1", [lineId])
+        const saved = await row('action_case_cost_lines', lineId)
+        Object.assign(source, { category: saved.category, quantity: Number(saved.quantity), unit: saved.unit, quantityBasis: saved.quantity_basis })
+        lines.push(source)
+      } else if (index === 2) extras.push(source); else lines.push(source)
     }
   }
-  const input = { requestId: r, supplierName: 'UE', supplierEmail: 'ue@example.test', subject: 'Request', lines, requirementKeys: ['materials'], attachmentIds: [] }
+  const input = { requestId: r, pricePresentation, supplierName: 'UE', supplierEmail: 'ue@example.test', subject: 'Request', lines, requirementKeys: ['materials'], attachmentIds: [] }
   const write = async (op, data = {}, org = id(1)) => (await db.query('select write_action_case_request($1,$2,$3,$4,$5,$6::jsonb) result', [org, c, r, id(2), op, JSON.stringify(data)])).rows[0].result
   const get = () => row('action_case_quote_requests', r)
   const save = async (more = {}) => write('save', requests.normalizeQuoteRequest({ ...input, ...more }))
@@ -69,14 +74,14 @@ async function fixture({ groups = 1, parts = false, sameItem = false } = {}) {
     return claim
   }
   const response = async (amount = 2500) => write('response', { expectedUpdatedAt: (await get()).updated_at, responseMode: 'package', packageAmount: amount, responseNotes: 'Reviewed', responseDocumentId: null })
-  const groupList = requests.groupRequestLines(lines)
+  const groupList = requests.groupRequestLines(lines, pricePresentation)
   const groupPayload = async (group = 0, more = {}) => {
     const sources = groupList[group].lines
     const coveredLineIds = more.coveredLineIds ?? []
     const expectedLines = []
     for (const lineId of [...sources.map((s) => s.costLineId), ...coveredLineIds]) expectedLines.push({ costLineId: lineId, updatedAt: (await row('action_case_cost_lines', lineId)).updated_at })
     return { operation: 'accept', caseId: c, requestId: r, groupKey: groupList[group].key,
-      amount: 2500, checked: true, offeredScope: 'All listed group work', separateGroupPriceConfirmed: groups > 1,
+      amount: 2500, checked: true, offeredScope: 'All listed group work', separateGroupPriceConfirmed: groupList.length > 1,
       expectedUpdatedAt: (await get()).updated_at, expectedLines, coveredLineIds, ...more }
   }
   const packageWrite = async (op, data, org = id(1), caseId = c) => (await db.query('select write_action_case_quote_package($1,$2,$3,$4,$5,$6::jsonb) result', [org, caseId, r, id(2), op, JSON.stringify(data)])).rows[0].result
@@ -107,10 +112,12 @@ before(async () => {
   await db.exec(sql('2026-09-09_02_action_case_scope_attachments'))
   await db.exec(sql('2026-09-09_03_action_case_work_parts'))
   await db.exec(packageMigration())
+  await db.exec(sql('2026-09-15_02_action_case_rfq_action_totals'))
+  await db.exec(sql('2026-09-15_02_action_case_rfq_action_totals'))
 })
 after(() => db.close())
 
-test('upgrade preserves old body/snapshots and legacy itemized default; new requests group by default', async () => {
+test('upgrade preserves legacy requests and explicitly requested legacy grouping', async () => {
   for (const f of [legacyDraft, legacySent]) {
     const r = await f.get()
     assert.equal(r.price_presentation, 'itemized')
@@ -123,6 +130,112 @@ test('upgrade preserves old body/snapshots and legacy itemized default; new requ
   const f = await fixture(); await f.save()
   assert.equal((await f.get()).price_presentation, 'grouped')
   assert.equal(requests.mapQuoteRequest({}).pricePresentation, 'itemized')
+})
+
+test('full RFQ defaults to one action total across parts, keeps quantities but excludes internal pricing', async () => {
+  const f = await fixture({ groups: 2, parts: true, sameItem: true, includeAll: true, pricePresentation: 'action_total' })
+  const request = requests.normalizeQuoteRequest({ ...f.input, pricePresentation: undefined, lines: f.lines.map((s) => ({ ...s, unitCost: 999999, markupPercent: 666, notes: 'PRIVATE' })) })
+  assert.equal(request.pricePresentation, 'action_total')
+  assert.equal(requests.groupRequestLines(request.lines, request.pricePresentation).length, 1)
+  assert.match(request.body, /ett totalpris exklusive moms/)
+  assert.match(request.body, /behöver inte prissättas var för sig/)
+  for (const heading of ['Arbete:', 'Material:', 'Övrigt:', '4 tim']) assert.ok(request.body.includes(heading))
+  assert.doesNotMatch(JSON.stringify(request), /999999|666|PRIVATE/)
+  assert.equal(request.body.split('Åtgärd:').length - 1, 1)
+  await f.save(); await f.send()
+  assert.equal((await f.get()).price_presentation, 'action_total')
+  assert.equal((await db.query('select count(*) n from action_case_work_quotes where request_id=$1', [f.r])).rows[0].n, 0, 'No per-row response placeholders for total pricing')
+  const originals = await Promise.all(f.lines.map((s) => row('action_case_cost_lines', s.costLineId)))
+  const accepted = await f.accept(0, { separateGroupPriceConfirmed: false })
+  assert.equal(Number((await row('action_case_items', f.lines[0].itemId)).estimated_cost), 2500)
+  const price = (await db.query('select * from action_case_quote_packages where request_id=$1', [f.r])).rows[0]
+  assert.equal(price.work_part_id, null)
+  assert.equal(price.covered_line_ids.length, 5)
+  for (const partId of new Set(f.lines.map((s) => s.workPartId))) {
+    await assert.rejects(db.query("update action_case_work_parts set scope='Changed' where id=$1", [partId]), /ACTION_CASE_(PACKAGE_REMOVE_FIRST|QUOTE_COVERAGE)/)
+  }
+  await assert.rejects(f.accept(), /ACTION_CASE_PACKAGE_REMOVE_FIRST/)
+  await f.remove()
+  for (const [index, source] of f.lines.entries()) assert.deepEqual(withoutAuditFields(await row('action_case_cost_lines', source.costLineId)).record, withoutAuditFields(originals[index]).record)
+  assert.equal(Number((await row('action_case_items', f.lines[0].itemId)).estimated_cost), 8800)
+  assert.equal((await row('action_case_work_quotes', accepted.quoteId)).amount, '2500.00')
+})
+
+test('material-only and other-only groups accept and restore totals without changing category', async () => {
+  for (const category of ['material', 'waste', 'transport', 'other']) {
+    const f = await fixture({ includeAll: true, pricePresentation: 'action_total' })
+    const source = f.lines[2]
+    await db.query('update action_case_cost_lines set category=$1 where id=$2', [category, source.costLineId])
+    source.category = category
+    f.lines.splice(0, 2)
+    const normalized = requests.normalizeQuoteRequest(f.input)
+    await f.write('save', normalized); await f.send()
+    const before = await row('action_case_cost_lines', source.costLineId)
+    const payload = { ...(await f.groupPayload()), expectedLines: [{ costLineId: source.costLineId, updatedAt: before.updated_at }] }
+    await f.packageWrite('accept', payload)
+    const anchor = await row('action_case_cost_lines', source.costLineId)
+    assert.equal(anchor.category, category)
+    assert.equal(Number(anchor.unit_cost), 2500)
+    assert.equal(Number((await row('action_case_items', source.itemId)).estimated_cost), 6500, 'Unselected work is not covered')
+    await f.remove()
+    assert.deepEqual(withoutAuditFields(await row('action_case_cost_lines', source.costLineId)).record, withoutAuditFields(before).record)
+  }
+})
+
+test('line pricing creates separate groups for work, material and other without phantom work quotes', async () => {
+  const f = await fixture({ groups: 2, parts: true, sameItem: true, includeAll: true, pricePresentation: 'line_items' })
+  assert.equal(f.groupList.length, 6)
+  assert.equal(f.groupList[2].key, `${f.lines[2].itemId}:${f.lines[2].costLineId}`)
+  await f.save(); await f.send()
+  assert.match((await f.get()).body, /per numrerad del/)
+  assert.equal((await db.query('select count(*) n from action_case_work_quotes where request_id=$1', [f.r])).rows[0].n, 0)
+  await assert.rejects(f.accept(2, { separateGroupPriceConfirmed: false }), /ACTION_CASE_PACKAGE_ALLOCATION_REQUIRED/)
+  for (let group = 0; group < f.groupList.length; group++) await f.accept(group, { amount: 100 })
+  assert.equal(Number((await row('action_case_items', f.lines[0].itemId)).estimated_cost), 600)
+  for (let group = 0; group < f.groupList.length; group++) await f.remove(group)
+  assert.equal(Number((await row('action_case_items', f.lines[0].itemId)).estimated_cost), 8800)
+})
+
+test('full snapshot rejects changed quantities, units, category and basis before send and price acceptance', async () => {
+  for (const [column, value] of [['quantity', 99], ['unit', 'm2'], ['category', 'material'], ['quantity_basis', 'estimated']]) {
+    for (const sent of [false, true]) {
+      const f = await fixture({ includeAll: true, pricePresentation: 'action_total' })
+      await f.save(); if (sent) await f.send()
+      await db.query(`update action_case_cost_lines set ${column}=$1 where id=$2`, [value, f.lines[0].costLineId])
+      await assert.rejects(sent ? f.accept() : f.send(), /ACTION_CASE_(QUOTE|PACKAGE)_STALE/)
+      assert.equal((await db.query('select count(*) n from action_case_quote_packages where request_id=$1', [f.r])).rows[0].n, 0)
+    }
+  }
+})
+
+test('full RFQ handles unknown quantities, rejects incomplete metadata and additional unrequested coverage', async () => {
+  const f = await fixture({ includeAll: true, pricePresentation: 'action_total' })
+  const line = f.lines[0]
+  await db.query("update action_case_cost_lines set quantity=null,quantity_basis='unknown',is_verified=false,verified_at=null,verified_by=null where id=$1", [line.costLineId])
+  line.quantity = null; line.quantityBasis = 'unknown'
+  assert.equal(requests.requestLineText(line), line.description)
+  for (const field of ['category', 'quantity', 'unit', 'quantityBasis']) {
+    const partial = { ...line }; delete partial[field]
+    assert.throws(() => requests.normalizeQuoteRequest({ ...f.input, lines: [partial] }), /ACTION_CASE_REQUEST_INVALID/)
+    await assert.rejects(f.write('save', { ...requests.normalizeQuoteRequest(f.input), lines: [partial] }), /ACTION_CASE_REQUEST_INVALID/)
+  }
+  await f.save(); await f.send()
+  await assert.rejects(f.accept(0, { coveredLineIds: [f.lines[2].costLineId] }), /ACTION_CASE_PACKAGE_INVALID/)
+  await assert.rejects(f.packageWrite('accept', await f.groupPayload(), id(9)), /ACTION_CASE_NOT_FOUND/)
+  await f.accept()
+  await f.remove()
+  assert.equal((await row('action_case_cost_lines', line.costLineId)).quantity, null)
+})
+
+test('new total request retry keeps its frozen payload after source changes', async () => {
+  const f = await fixture({ includeAll: true, pricePresentation: 'action_total' }); await f.save()
+  const first = await f.write('claim_send', { expectedUpdatedAt: (await f.get()).updated_at, emailPayload: { text: (await f.get()).body } })
+  await f.write('finish_send', { leaseId: first.leaseId, success: false })
+  await db.query('update action_case_cost_lines set quantity=42 where id=$1', [f.lines[0].costLineId])
+  const retry = await f.write('claim_send', { emailPayload: { text: 'MUST NOT REPLACE' } })
+  assert.deepEqual(retry.payload, first.payload)
+  await f.write('finish_send', { leaseId: retry.leaseId, success: true })
+  await assert.rejects(f.accept(), /ACTION_CASE_PACKAGE_STALE/)
 })
 
 test('grouped body collects noncontiguous action/part groups, prints scopes once and never copies internal prices', async () => {

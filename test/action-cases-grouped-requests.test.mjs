@@ -5,10 +5,10 @@ import ts from 'typescript'
 import { PGlite } from '@electric-sql/pglite'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
 
-const module = { exports: {} }
+const compiledModule = { exports: {} }
 const source = readFileSync(new URL('../src/lib/action-cases/quoteRequests.ts', import.meta.url), 'utf8')
-new Function('module', 'exports', 'require', ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(module, module.exports, () => quotes)
-const { normalizeQuoteRequest, REQUEST_REQUIREMENTS } = module.exports
+new Function('module', 'exports', 'require', ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(compiledModule, compiledModule.exports, () => quotes)
+const { normalizeQuoteRequest, REQUEST_REQUIREMENTS } = compiledModule.exports
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const db = new PGlite()
 const migration = (name) => readFileSync(new URL(`../docs/db/2026-09-08_${name}.sql`, import.meta.url), 'utf8')
@@ -34,7 +34,7 @@ async function fixture() {
     await db.query('insert into action_case_items(id,org_id,action_case_id,title,scope,sort_order) values($1,$2,$3,$4,$5,$6)', [line.itemId, id(1), c, line.itemTitle, line.scope, lines.indexOf(line) + 1])
     await db.query("insert into action_case_cost_lines(id,org_id,action_case_id,action_case_item_id,category,description,quantity,unit,unit_cost,quantity_basis,is_verified,verified_by,verified_at) values($1,$2,$3,$4,'own_labor',$5,4,'tim',500,'provided',true,$6,now())", [line.costLineId, id(1), c, line.itemId, line.description, id(2)])
   }
-  const input = { requestId: r, supplierName: 'Test UE', supplierEmail: 'ue@example.test', subject: 'Request', lines, requirementKeys: ['travel', 'materials', 'own_waste', 'protection', 'extra_rates'], attachmentIds: [] }
+  const input = { pricePresentation: 'itemized', requestId: r, supplierName: 'Test UE', supplierEmail: 'ue@example.test', subject: 'Request', lines, requirementKeys: ['travel', 'materials', 'own_waste', 'protection', 'extra_rates'], attachmentIds: [] }
   const write = async (op, data = {}, requestId = r, orgId = id(1)) => (await db.query('select write_action_case_request($1,$2,$3,$4,$5,$6::jsonb) result', [orgId, c, requestId, id(2), op, JSON.stringify(data)])).rows[0].result
   const get = () => row('action_case_quote_requests', r)
   const workQuotes = async () => JSON.parse(JSON.stringify((await db.query('select * from action_case_work_quotes where request_id=$1 order by cost_line_id', [r])).rows))
@@ -45,7 +45,7 @@ async function fixture() {
 }
 
 test('selection snapshots only chosen requirements; extra rates are separate; invalid input is rejected', () => {
-  const input = { requestId: id(10), supplierName: ' UE ', supplierEmail: 'UE@example.test', subject: 'Request', lines: [{ itemId: id(20), costLineId: id(21), itemTitle: 'Action', scope: ' Scope ', description: 'Work' }], requirementKeys: ['travel', 'extra_rates'], attachmentIds: [] }
+  const input = { pricePresentation: 'itemized', requestId: id(10), supplierName: ' UE ', supplierEmail: 'UE@example.test', subject: 'Request', lines: [{ itemId: id(20), costLineId: id(21), itemTitle: 'Action', scope: ' Scope ', description: 'Work' }], requirementKeys: ['travel', 'extra_rates'], attachmentIds: [] }
   const normalized = normalizeQuoteRequest(input)
   assert.equal(normalized.supplierEmail, 'ue@example.test')
   assert.equal(normalized.lines[0].scope, ' Scope ', 'source snapshots must not be trimmed before database comparison')

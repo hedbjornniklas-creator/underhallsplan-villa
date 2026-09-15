@@ -29,7 +29,7 @@ export async function handleRequestAction(context: Context, payload: Payload) {
       const { data: existing, error } = await createSupabaseAdminClient().from('action_case_quote_requests')
         .select('price_presentation').eq('id', quoteId(payload.requestId)).eq('org_id', context.orgId).eq('action_case_id', quoteId(payload.caseId)).maybeSingle()
       if (error) throw new Error(['42P01', '42703', 'PGRST204', 'PGRST205'].includes(error.code) ? 'ACTION_CASES_SCHEMA_REQUIRED' : 'ACTION_CASE_REQUEST_WRITE_FAILED')
-      pricePresentation = existing?.price_presentation ?? 'grouped'
+      pricePresentation = existing?.price_presentation ?? 'action_total'
     }
     return writeRequest(context, payload, 'save', normalizeQuoteRequest({ ...payload, pricePresentation }))
   }

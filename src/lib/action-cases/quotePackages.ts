@@ -1,4 +1,4 @@
-import type { PackageRequestLine } from './quoteRequests'
+import type { PackageRequestLine, PricePresentation } from './quoteRequests'
 import { groupRequestLines } from './quoteRequests'
 import { quoteId } from './quotes'
 
@@ -17,8 +17,8 @@ export type QuotePackageAction = {
 })
 
 export const PACKAGE_ALLOCATION_REASON = 'Paketet omfattar flera åtgärder eller arbetsdelar. Välj en prisgrupp och bekräfta ett självständigt grupppris. Automatisk fördelning av ett gemensamt paketpris stöds inte.'
-export function packageAcceptanceBlockReason(lines: readonly PackageRequestLine[], groupKey?: string, separateGroupPriceConfirmed = false): string | null {
-  const groups = groupRequestLines(lines)
+export function packageAcceptanceBlockReason(lines: readonly PackageRequestLine[], groupKey?: string, separateGroupPriceConfirmed = false, presentation: PricePresentation = 'grouped'): string | null {
+  const groups = groupRequestLines(lines, presentation)
   if (!groups.length || (groupKey != null && !groups.some((group) => group.key === groupKey))) return PACKAGE_ALLOCATION_REASON
   return groups.length === 1 || (groupKey != null && separateGroupPriceConfirmed) ? null : PACKAGE_ALLOCATION_REASON
 }
