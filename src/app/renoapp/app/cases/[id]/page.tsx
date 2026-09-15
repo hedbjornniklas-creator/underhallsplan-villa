@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { ArrowLeft, ChevronDown } from 'lucide-react'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { completionMessage, selectCompletionItems } from '@/lib/renoapp/completion'
 import RenoAppCaseDecisionView, {
@@ -37,7 +38,7 @@ function getFlowStepClass(active: boolean, tone: 'blue' | 'amber' | 'violet' | '
     if (tone === 'rose') return 'border-rose-300 bg-rose-50 text-rose-950'
   }
 
-  return 'border-stone-200 bg-white text-stone-800'
+  return 'border-[var(--reno-line)] bg-white text-[var(--reno-ink)]'
 }
 
 function CaseFlowVisualization({ status }: { status: string }) {
@@ -61,48 +62,43 @@ function CaseFlowVisualization({ status }: { status: string }) {
           : 'stone'
 
   return (
-    <section className="min-w-0 flex-1 rounded-[18px] border border-stone-200 bg-white px-4 py-4 shadow-[0_18px_55px_-48px_rgba(41,37,36,0.36)]">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-        <div className={getFlowStepClass(activeMainStep === 1, 'blue') + ' rounded-[14px] border px-4 py-3'}>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">1</p>
+    <details className="reno-case-flow">
+      <summary><ChevronDown size={18} aria-hidden="true" />Ärendets gång</summary>
+      <div className="grid gap-3 pb-2 pt-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={getFlowStepClass(activeMainStep === 1, 'blue') + ' rounded-lg border px-4 py-3'}>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--reno-muted)]">1</p>
           <p className="mt-1 text-sm font-semibold">Ansökan inkommen</p>
-          <p className="mt-1 text-xs leading-5 text-stone-600">Ansökan är registrerad.</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--reno-muted)]">Ansökan är registrerad.</p>
         </div>
 
-        <div className="hidden text-stone-400 xl:block" aria-hidden="true">→</div>
-
-        <div className={getFlowStepClass(activeMainStep === 2, 'amber') + ' rounded-[14px] border px-4 py-3'}>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">2</p>
+        <div className={getFlowStepClass(activeMainStep === 2, 'amber') + ' rounded-lg border px-4 py-3'}>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--reno-muted)]">2</p>
           <p className="mt-1 text-sm font-semibold">Styrelsen granskar</p>
-          <p className="mt-1 text-xs leading-5 text-stone-600">Begär in de uppgifter som behövs.</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--reno-muted)]">Begär in de uppgifter som behövs.</p>
         </div>
 
-        <div className="hidden text-stone-400 xl:block" aria-hidden="true">→</div>
-
-        <div className={getFlowStepClass(activeMainStep === 3, 'violet') + ' rounded-[14px] border px-4 py-3'}>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">3</p>
+        <div className={getFlowStepClass(activeMainStep === 3, 'violet') + ' rounded-lg border px-4 py-3'}>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--reno-muted)]">3</p>
           <p className="mt-1 text-sm font-semibold">Sökanden kompletterar</p>
-          <p className="mt-1 text-xs leading-5 text-stone-600">Begärda uppgifter lämnas in.</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--reno-muted)]">Begärda uppgifter lämnas in.</p>
         </div>
 
-        <div className="hidden text-stone-400 xl:block" aria-hidden="true">→</div>
-
-        <div className="grid min-w-[250px] gap-2">
-          <div className={getFlowStepClass(outcomeTone === 'amber', 'amber') + ' rounded-[14px] border px-4 py-2'}>
+        <div className="grid min-w-0 gap-2">
+          <div className={getFlowStepClass(outcomeTone === 'amber', 'amber') + ' rounded-lg border px-4 py-2'}>
             <p className="text-sm font-semibold">Begär mer uppgifter</p>
-            <p className="text-xs leading-5 text-stone-600">Styrelsen kan begära komplettering igen.</p>
+            <p className="text-xs leading-5 text-[var(--reno-muted)]">Styrelsen kan begära komplettering igen.</p>
           </div>
-          <div className={getFlowStepClass(outcomeTone === 'rose', 'rose') + ' rounded-[14px] border px-4 py-2'}>
+          <div className={getFlowStepClass(outcomeTone === 'rose', 'rose') + ' rounded-lg border px-4 py-2'}>
             <p className="text-sm font-semibold">Avslag</p>
-            <p className="text-xs leading-5 text-stone-600">Ansökan avslås med motivering.</p>
+            <p className="text-xs leading-5 text-[var(--reno-muted)]">Ansökan avslås med motivering.</p>
           </div>
-          <div className={getFlowStepClass(outcomeTone === 'emerald', 'emerald') + ' rounded-[14px] border px-4 py-2'}>
+          <div className={getFlowStepClass(outcomeTone === 'emerald', 'emerald') + ' rounded-lg border px-4 py-2'}>
             <p className="text-sm font-semibold">Godkännande</p>
-            <p className="text-xs leading-5 text-stone-600">Ansökan godkänns eller godkänns med villkor.</p>
+            <p className="text-xs leading-5 text-[var(--reno-muted)]">Ansökan godkänns eller godkänns med villkor.</p>
           </div>
         </div>
       </div>
-    </section>
+    </details>
   )
 }
 
@@ -325,7 +321,7 @@ export default function RenoAppCaseDetailPage() {
 
   if (loading) {
     return (
-      <div className="rounded-[18px] border border-stone-200/80 bg-white p-6 text-sm text-stone-600 shadow-[0_18px_55px_-44px_rgba(41,37,36,0.34)]">
+      <div className="rounded-lg border border-[var(--reno-line)] bg-white p-6 text-sm text-[var(--reno-muted)] shadow-none">
         Laddar RenoApp-ärende...
       </div>
     )
@@ -334,10 +330,10 @@ export default function RenoAppCaseDetailPage() {
   if (error || !item) {
     return (
       <div className="grid gap-6">
-        <Link href="/renoapp/app/cases" className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
+        <Link href="/renoapp/app/cases" className="text-sm font-semibold text-[var(--reno-muted)] underline-offset-4 hover:underline">
           Tillbaka till ärenden
         </Link>
-        <div className="rounded-[18px] border border-rose-200 bg-rose-50 p-6 text-rose-900">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-6 text-rose-900">
           {error ?? 'Kunde inte läsa RenoApp-ärendet.'}
         </div>
       </div>
@@ -345,9 +341,10 @@ export default function RenoAppCaseDetailPage() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-[1440px] gap-4 px-4 py-4 sm:px-8 sm:py-6">
+    <div className="grid min-w-0 gap-4">
       <div className="flex items-center">
-        <Link href="/renoapp/app/cases" className="text-sm font-semibold text-stone-700 underline-offset-4 hover:underline">
+        <Link href="/renoapp/app/cases" className="reno-link inline-flex min-h-11 items-center gap-2 text-sm font-semibold hover:underline">
+          <ArrowLeft size={16} aria-hidden="true" />
           Tillbaka till ärenden
         </Link>
       </div>

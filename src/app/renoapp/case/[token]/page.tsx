@@ -67,6 +67,18 @@ function formatDateTime(value: string | null) {
   return date.toLocaleString('sv-SE')
 }
 
+function statusLabel(value: string | null) {
+  const labels: Record<string, string> = {
+    draft: 'Utkast', new_application: 'Inskickad', submitted: 'Inskickad',
+    review: 'Hos styrelsen för granskning', ready_for_review: 'Klar för granskning',
+    need_info: 'Komplettering begärd', approved: 'Godkänd',
+    conditional: 'Godkänd med villkor', approved_with_conditions: 'Godkänd med villkor',
+    rejected: 'Avslag', expired: 'Länken har gått ut', revoked: 'Länken är återkallad',
+    active: 'Aktiv', inactive: 'Inaktiv', uploaded: 'Uppladdat',
+  }
+  return value ? labels[value] ?? value : '-'
+}
+
 export default function RenoAppCaseAccessPage() {
   const router = useRouter()
   const params = useParams<{ token: string }>()
@@ -176,13 +188,13 @@ export default function RenoAppCaseAccessPage() {
   }
 
   if (loading) {
-    return <main className="mx-auto min-h-screen max-w-4xl px-6 py-14 md:px-10">Laddar ärende...</main>
+    return <main className="reno-case-access">Laddar ärende...</main>
   }
 
   if (error || !payload) {
     return (
-      <main className="mx-auto min-h-screen max-w-4xl px-6 py-14 md:px-10">
-        <div className="rounded-[32px] border border-rose-200 bg-rose-50 p-8 text-rose-900">
+      <main className="reno-case-access">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-8 text-rose-900">
           {error ?? 'Kunde inte läsa ärendet.'}
         </div>
       </main>
@@ -190,43 +202,45 @@ export default function RenoAppCaseAccessPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-4xl px-6 py-14 md:px-10">
-      <section className="rounded-[32px] border border-stone-200/80 bg-white/85 p-8 shadow-[0_24px_70px_-40px_rgba(41,37,36,0.48)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-stone-500">Magic Link</p>
-        <h1 className="mt-4 text-4xl font-semibold tracking-tight text-stone-900">{payload.case.caseNumber}</h1>
-        <p className="mt-4 text-base leading-8 text-stone-700">{payload.case.title}</p>
+    <main className="reno-case-access bg-white">
+      <section className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--reno-muted)]">Din renoveringsansökan</p>
+        <h1 className="mt-2 font-bold tabular-nums text-[var(--reno-ink)]">{payload.case.caseNumber}</h1>
+        <p className="mt-2 text-base leading-6 text-[var(--reno-muted)]">{payload.case.title}</p>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Status</p>
-            <p className="mt-2 text-sm text-stone-700">{payload.state === 'open' ? payload.case.status : payload.state}</p>
+          <div className="min-w-0 border-t border-[var(--reno-line)] py-4">
+            <p className="text-sm font-semibold text-[var(--reno-ink)]">Status</p>
+            <p className="mt-2 text-sm text-[var(--reno-muted)]">{statusLabel(payload.state === 'open' ? payload.case.status : payload.state)}</p>
           </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Tillåtet via länken</p>
-            <p className="mt-2 text-sm text-stone-700">{payload.access.allowedActions.join(', ')}</p>
-            <p className="mt-2 text-xs text-stone-500">Giltig till {formatDateTime(payload.access.expiresAt)}</p>
+          <div className="min-w-0 border-t border-[var(--reno-line)] py-4">
+            <p className="text-sm font-semibold text-[var(--reno-ink)]">Din ärendelänk</p>
+            <p className="mt-2 text-sm text-[var(--reno-muted)]">{payload.state !== 'open'
+              ? statusLabel(payload.state)
+              : canUpload ? 'Visa ansökan och ladda upp dokument' : 'Visa ansökan'}</p>
+            <p className="mt-2 text-xs text-[var(--reno-muted)]">Giltig till {formatDateTime(payload.access.expiresAt)}</p>
           </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">BRF</p>
-            <p className="mt-2 text-sm text-stone-700">{payload.brf.name}</p>
+          <div className="min-w-0 border-t border-[var(--reno-line)] py-4">
+            <p className="text-sm font-semibold text-[var(--reno-ink)]">BRF</p>
+            <p className="mt-2 text-sm text-[var(--reno-muted)]">{payload.brf.name}</p>
           </div>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-            <p className="text-sm font-semibold text-stone-900">Åtgärd</p>
-            <p className="mt-2 text-sm text-stone-700">{payload.case.actionType?.label ?? 'Ej angiven'}</p>
+          <div className="min-w-0 border-t border-[var(--reno-line)] py-4">
+            <p className="text-sm font-semibold text-[var(--reno-ink)]">Åtgärd</p>
+            <p className="mt-2 text-sm text-[var(--reno-muted)]">{payload.case.actionType?.label ?? 'Ej angiven'}</p>
           </div>
         </div>
 
-        <div className="mt-8 rounded-3xl border border-stone-200 bg-white/70 p-6">
-          <p className="text-sm font-semibold text-stone-900">Beskrivning</p>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">
+        <div className="reno-case-access-section mt-4">
+          <p className="text-sm font-semibold text-[var(--reno-ink)]">Beskrivning</p>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[var(--reno-muted)]">
             {payload.case.description ?? 'Ingen beskrivning registrerad.'}
           </p>
         </div>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <div className="rounded-3xl border border-stone-200 bg-white/70 p-6">
-            <p className="text-sm font-semibold text-stone-900">Kontakt</p>
-            <p className="mt-3 text-sm leading-7 text-stone-700">
+          <div className="reno-case-access-section">
+            <p className="text-sm font-semibold text-[var(--reno-ink)]">Kontakt</p>
+            <p className="mt-3 text-sm leading-7 text-[var(--reno-muted)]">
               {payload.contact.name ?? 'Okänd kontakt'}
               <br />
               {payload.contact.email ?? '-'}
@@ -234,29 +248,29 @@ export default function RenoAppCaseAccessPage() {
               {payload.contact.phone ?? '-'}
             </p>
           </div>
-          <div className="rounded-3xl border border-stone-200 bg-white/70 p-6">
-            <p className="text-sm font-semibold text-stone-900">Lägenhet</p>
-            <p className="mt-3 text-sm leading-7 text-stone-700">
+          <div className="reno-case-access-section">
+            <p className="text-sm font-semibold text-[var(--reno-ink)]">Lägenhet</p>
+            <p className="mt-3 text-sm leading-7 text-[var(--reno-muted)]">
               Internt nr: {payload.unit.unitNumberInternal ?? '-'}
               <br />
               Skatteverket: {payload.unit.unitNumberSkatteverket ?? '-'}
               <br />
-              Status: {payload.unit.status ?? '-'}
+              Status: {statusLabel(payload.unit.status)}
             </p>
           </div>
         </div>
 
-        <div className="mt-8 rounded-3xl border border-stone-200 bg-white/70 p-6">
-          <p className="text-sm font-semibold text-stone-900">Dokument</p>
+        <div className="reno-case-access-section mt-4">
+          <p className="text-sm font-semibold text-[var(--reno-ink)]">Dokument</p>
           {payload.documents.length === 0 ? (
-            <p className="mt-3 text-sm text-stone-700">Inga dokument är uppladdade ännu.</p>
+            <p className="mt-3 text-sm text-[var(--reno-muted)]">Inga dokument är uppladdade ännu.</p>
           ) : (
-            <ul className="mt-3 space-y-2 text-sm text-stone-700">
+            <ul className="mt-3 space-y-2 text-sm text-[var(--reno-muted)]">
               {payload.documents.map((document) => (
-                <li key={document.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-                  <p className="font-medium text-stone-900">{document.fileName ?? 'Dokument'}</p>
-                  <p className="text-xs text-stone-500">
-                    {document.status} · {formatDateTime(document.uploadedAt)}
+                <li key={document.id} className="border-b border-[var(--reno-line)] py-3 last:border-b-0">
+                  <p className="font-medium text-[var(--reno-ink)]">{document.fileName ?? 'Dokument'}</p>
+                  <p className="text-xs text-[var(--reno-muted)]">
+                    {statusLabel(document.status)} · {formatDateTime(document.uploadedAt)}
                   </p>
                   {document.note ? <p className="mt-1">{document.note}</p> : null}
                 </li>
@@ -265,15 +279,15 @@ export default function RenoAppCaseAccessPage() {
           )}
         </div>
 
-        <div className="mt-8 rounded-3xl border border-stone-200 bg-white/70 p-6">
-          <p className="text-sm font-semibold text-stone-900">Dokumentkrav</p>
+        <div className="reno-case-access-section mt-4">
+          <p className="text-sm font-semibold text-[var(--reno-ink)]">Dokumentkrav</p>
           {payload.documentOptions.length === 0 ? (
-            <p className="mt-3 text-sm text-stone-700">Inga dokumentkrav är registrerade för den valda åtgärden.</p>
+            <p className="mt-3 text-sm text-[var(--reno-muted)]">Inga dokumentkrav är registrerade för den valda åtgärden.</p>
           ) : (
-            <ul className="mt-3 space-y-2 text-sm text-stone-700">
+            <ul className="mt-3 space-y-2 text-sm text-[var(--reno-muted)]">
               {payload.documentOptions.map((option) => (
-                <li key={option.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3">
-                  <p className="font-medium text-stone-900">
+                <li key={option.id} className="border-b border-[var(--reno-line)] py-3 last:border-b-0">
+                  <p className="font-medium text-[var(--reno-ink)]">
                     {option.label} {option.isRequired ? '(obligatorisk)' : '(valfri)'}
                   </p>
                   {option.description ? <p className="mt-1">{option.description}</p> : null}
@@ -284,15 +298,15 @@ export default function RenoAppCaseAccessPage() {
         </div>
 
         {canUpload ? (
-          <form onSubmit={handleUpload} className="mt-8 rounded-3xl border border-stone-200 bg-white/70 p-6">
-            <p className="text-sm font-semibold text-stone-900">Ladda upp dokument</p>
+          <form onSubmit={handleUpload} className="reno-case-access-section mt-4">
+            <p className="text-sm font-semibold text-[var(--reno-ink)]">Ladda upp dokument</p>
             <div className="mt-4 grid gap-4">
-              <label className="grid gap-2 text-sm text-stone-700">
+              <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
                 <span>Dokumenttyp</span>
                 <select
                   value={selectedDocumentTypeId}
                   onChange={(event) => setSelectedDocumentTypeId(event.target.value)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  className="reno-field border bg-white px-3 py-3 text-[var(--reno-ink)]"
                 >
                   <option value="">Välj dokumenttyp</option>
                   {payload.documentOptions.map((option) => (
@@ -303,24 +317,24 @@ export default function RenoAppCaseAccessPage() {
                 </select>
               </label>
 
-              <label className="grid gap-2 text-sm text-stone-700">
+              <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
                 <span>Fil</span>
                 <input
                   key={formResetKey}
                   type="file"
                   accept=".pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
                   onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  className="reno-field border bg-white px-3 py-3 text-[var(--reno-ink)]"
                 />
               </label>
 
-              <label className="grid gap-2 text-sm text-stone-700">
+              <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
                 <span>Kommentar</span>
                 <textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
                   rows={3}
-                  className="rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900"
+                  className="reno-field border bg-white px-3 py-3 text-[var(--reno-ink)]"
                   placeholder="Valfri kommentar till dokumentet"
                 />
               </label>
@@ -333,11 +347,11 @@ export default function RenoAppCaseAccessPage() {
               <button
                 type="submit"
                 disabled={uploading}
-                className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="reno-button"
               >
                 {uploading ? 'Laddar upp...' : 'Ladda upp dokument'}
               </button>
-              <p className="self-center text-xs text-stone-500">
+              <p className="self-center text-xs text-[var(--reno-muted)]">
                 Tillåtna filer: PDF, JPG, PNG, WEBP, HEIC, HEIF. Max 15 MB.
               </p>
             </div>
@@ -345,10 +359,10 @@ export default function RenoAppCaseAccessPage() {
         ) : null}
 
         <div className="mt-8 flex flex-wrap gap-3">
-          <Link href="/renoapp" className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-stone-100">
+          <Link href="/renoapp" className="reno-button-secondary">
             Till RenoApp-start
           </Link>
-          <Link href={`/renoapp/brf/${payload.brf.slug}/apply`} className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-stone-700">
+          <Link href={`/renoapp/brf/${payload.brf.slug}/apply`} className="reno-button">
             Ny ansökan
           </Link>
         </div>

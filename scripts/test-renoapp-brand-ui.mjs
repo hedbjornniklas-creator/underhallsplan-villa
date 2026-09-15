@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import puppeteer from 'puppeteer-core'
 import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
+import { item as caseItem } from '../test/fixtures/renoapp-case-item.ts'
 
 const require = createRequire(import.meta.url)
 const { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -30,11 +31,19 @@ const js = await readFile(resolve(output, 'view.js'))
 const brf = { id: 'brf-test', name: 'Testföreningen med ett längre namn', slug: 'brand-test', role: 'board', isPublicApplyEnabled: true, isPublicApplyListed: true }
 const context = { accessibleBrfs: [brf, { ...brf, id: 'second', name: 'Andra föreningen' }], activeBrfId: brf.id, viewerName: 'Testperson', stats: { newCases: 3, needInfoCases: 1, handledCases: 8 } }
 const writes = []
+let accessState = 'open'
+let accessStatus = 'review'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname
   const json = value => { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(value)) }
   if (request.method !== 'GET') { writes.push({ path, method: request.method }); json({}); return }
   if (path === '/api/renoapp/app/context') { json(context); return }
+  if (path === '/api/renoapp/app/cases/brand-case') { json({ item: caseItem }); return }
+  if (path === '/api/renoapp/case-access/brand-test') {
+    json({ state: accessState, access: { allowedActions: ['view_case', 'upload_documents'], expiresAt: '2027-01-01' },
+      case: { ...caseItem, status: accessStatus }, brf, contact: caseItem.applicant, unit: caseItem.unit,
+      documents: [{ ...caseItem.documents[0], fileName: 'Mycket-långt-filnamn-för-konstruktionsutlåtande-version-2026-09-15.pdf' }], documentOptions: [] }); return
+  }
   if (path === '/api/renoapp/app/brf') { json({ items: [brf] }); return }
   if (path === '/api/renoapp/app/users') { json({ items: [{ brf, members: [{ profileId: 'test', fullName: 'Testperson', email: 'test@example.test', role: 'board', receivesGeneralInfoEmails: true, receivesCaseEventEmails: true }], pendingInvites: [] }] }); return }
   if (path === '/api/renoapp/invites/brand-test') {
@@ -60,7 +69,7 @@ try {
   page.on('request', request => new URL(request.url()).origin === origin ? request.continue() : request.abort())
   for (const width of process.env.TEST_VIEWPORTS?.split(',').map(Number) ?? [344, 390, 768, 1440]) {
     await page.setViewport({ width, height: 844 })
-    for (const path of ['/renoapp/login', '/renoapp/app', '/renoapp/app/brf', '/renoapp/app/users', '/renoapp/invite/brand-test']) {
+    for (const path of ['/renoapp/login', '/renoapp/app', '/renoapp/app/brf', '/renoapp/app/users', '/renoapp/invite/brand-test', '/renoapp/app/cases/brand-case', '/renoapp/case/brand-test']) {
       await page.goto(origin + path, { waitUntil: 'networkidle0' })
       await page.evaluate(() => document.fonts.ready)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}px ${path} overflow`)
@@ -69,7 +78,7 @@ try {
       assert.match(await page.$eval('.renoapp-scope', el => getComputedStyle(el).fontFamily), /RenoApp Manrope/)
       assert.ok(await page.$eval('.reno-brand img', img => img.complete && img.naturalWidth > 0))
       await page.screenshot({ path: resolve(output, `${width}-${path.replaceAll('/', '_')}.png`), fullPage: true })
-      if (width < 1100 && !path.includes('/invite/')) {
+      if (width < 1100 && !path.includes('/invite/') && !path.includes('/case/')) {
         assert.ok(await page.$eval('.reno-header', el => el.getBoundingClientRect().height <= 76))
         await page.locator('button[aria-label="Öppna meny"]').click()
         await page.waitForSelector('dialog[open]')
@@ -81,9 +90,38 @@ try {
         assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Öppna meny')
         assert.equal(await page.$eval('body', el => el.style.overflow), '')
       }
+      if (path.includes('/cases/')) {
+        assert.equal(await page.$eval('.reno-case-flow', el => el.open), false)
+        await page.locator('.reno-case-flow > summary').click()
+        assert.equal(await page.$eval('.reno-case-flow', el => el.scrollWidth > el.clientWidth), false)
+        await page.screenshot({ path: resolve(output, `${width}-case-flow.png`) })
+        assert.equal(await page.$eval('#board-decision button[type="submit"]', el => getComputedStyle(el).backgroundColor), 'rgb(71, 103, 134)')
+      }
+      if (path.includes('/case/')) {
+        assert.equal(await page.$('input[type="file"]'), null, 'Submitted applications remain read-only')
+        assert.doesNotMatch(await page.$eval('main', el => el.textContent), /view_case|upload_documents|Status: active/)
+        assert.match(await page.$eval('main', el => el.textContent), /Hos styrelsen för granskning/)
+      }
     }
     console.log(`PASS ${width}px: login, portal, BRF, users, activation, logo, font and menu`)
   }
+  for (const state of ['expired', 'revoked']) {
+    accessState = state
+    await page.goto(origin + '/renoapp/case/brand-test', { waitUntil: 'networkidle0' })
+    assert.equal(await page.$('input[type="file"]'), null)
+  }
+  accessState = 'open'
+  accessStatus = 'draft'
+  await page.setViewport({ width: 344, height: 844 })
+  await page.goto(origin + '/renoapp/case/brand-test', { waitUntil: 'networkidle0' })
+  await page.waitForSelector('input[type="file"]')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  await page.screenshot({ path: resolve(output, '344-case-upload.png'), fullPage: true })
+  accessStatus = 'need_info'
+  await page.goto(origin + '/renoapp/case/brand-test', { waitUntil: 'networkidle0' })
+  await page.waitForFunction(() => location.pathname === '/renoapp/brf/brand-test/apply' && location.search === '?draft=brand-test')
+  accessStatus = 'review'
+  console.log('PASS case access: read-only, expired, revoked, draft upload and completion redirect; no writes')
   await page.setViewport({ width: 344, height: 844 })
   await page.goto(origin + '/renoapp/app', { waitUntil: 'networkidle0' })
   await page.locator('button[aria-label="Öppna meny"]').click()

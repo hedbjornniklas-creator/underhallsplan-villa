@@ -10,4 +10,4 @@ window.fetch = async () => Response.json({ items: statuses.map((status, index) =
   actionType: null, applicant: { name: 'Testperson', email: null },
 })) })
 
-createRoot(document.getElementById('root')!).render(<CasesPage />)
+createRoot(document.getElementById('root')!).render(<div className="renoapp-scope"><main className="reno-portal-main"><CasesPage /></main></div>)
