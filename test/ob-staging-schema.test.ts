@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-// @ts-expect-error The standalone Node ESM rehearsal utility is not part of the app build.
 import { buildStagingSchema, guardBuildingMigration, STAGING_PROJECT } from '../scripts/lib/ob-staging-schema.mjs'
 
 test('staging builder rejects production and unreviewed inventories before creating SQL', () => {

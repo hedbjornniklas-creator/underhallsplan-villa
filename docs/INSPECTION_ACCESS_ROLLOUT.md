@@ -186,8 +186,14 @@ needed before staging setup.
   unrestricted authenticated SELECT/INSERT/UPDATE policies on `components`
   alongside owner policies; the permissive policies combine with OR. Changing
   the view to security_invoker alone would not fix those table policies.
-  This remains an unresolved maintenance-plan access finding outside `09`/`10`,
-  requiring caller review and staging tests before a separately scoped fix.
+  This finding is outside `09`/`10`. The separately scoped
+  `2026-09-13_03_components_access_hardening.sql` has now passed caller review,
+  local PostgreSQL tests and live staging PostgREST checks. It has not run in
+  production; see `COMPONENTS_ACCESS_ROLLOUT.md`. The shared `component_types`
+  catalogue and its admin predicate's profile/role inputs are now separately
+  hardened and live-tested in staging by `2026-09-13_04_component_catalogue_access.sql`;
+  see `COMPONENT_CATALOGUE_ACCESS.md`. This does not settle every other global
+  settings table or the wider production administrator/caller review.
   No production customer rows were read to probe it. API exposure still needs
   verification; metadata does not establish prior exploitation.
   `renoapp_flow_connections` is security_invoker and has no anon/authenticated
@@ -230,6 +236,11 @@ deliveries. This metadata is not evidence that anyone exploited the weaknesses.
    approval, backup verification and a pause in editing/uploads.
 
 ## Local verification
+
+2026-09-14 follow-up: `OB_SETTINGS_ACCESS.md` records the separate, staging-only
+19-catalogue permission migration and editor guard. It requires the earlier
+catalogue/admin-input protection, and does not modify inspection rows or replace
+the production/real-device/restore gates above.
 
 `test/inspection-access-hardening.test.ts` executes the real security SQL against
 synthetic PostgreSQL fixtures, including actual SET ROLE anon/authenticated/
