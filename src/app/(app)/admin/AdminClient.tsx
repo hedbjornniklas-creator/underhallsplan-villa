@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import Protected from '@/components/Protected'
+import { useComponentCatalogueAccess } from '@/hooks/useComponentCatalogueAccess'
 import { supabase } from '@/lib/supabaseClient'
 import type { Database } from '@/types/supabase'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -206,6 +207,7 @@ type ControlPointOutcomeDraft = {
 }
 
 export default function AdminClient() {
+  const { canEdit: canEditCatalogue, loading: catalogueAccessLoading, failed: catalogueAccessFailed } = useComponentCatalogueAccess()
   const router = useRouter()
   const search = useSearchParams()
 
@@ -1346,14 +1348,18 @@ export default function AdminClient() {
   }
 
   const saveComp = async (id: string, patch: Partial<CompType>) => {
+    if (!canEditCatalogue) return
     const { error } = await (supabase as any)
       .from('component_types')
       .update(patch)
       .eq('id', id)
+      .select('id')
+      .single()
     if (error) return alert(error.message)
     setComps(prev => prev.map(x => (x.id === id ? { ...x, ...patch } as CompType : x)))
   }
   const addComp = async () => {
+    if (!canEditCatalogue) return
     const code = `CMP_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
     const { data, error } = await (supabase as any)
       .from('component_types')
@@ -1364,11 +1370,14 @@ export default function AdminClient() {
     setComps(prev => [data as CompType, ...prev])
   }
   const delComp = async (id: string) => {
+    if (!canEditCatalogue) return
     if (!confirm('Ta bort komponenttypen?')) return
     const { error } = await (supabase as any)
       .from('component_types')
       .delete()
       .eq('id', id)
+      .select('id')
+      .single()
     if (error) return alert(error.message)
     setComps(prev => prev.filter(x => x.id !== id))
   }
@@ -1813,10 +1822,12 @@ export default function AdminClient() {
 
         {tab === 'comps' && (
           <div className="bg-white rounded-xl shadow p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div>
                 <h2 className="font-semibold">Komponentkatalog</h2>
-                <div className="text-xs text-gray-500">component_types</div>
+                {!canEditCatalogue && <p role="status" className="text-xs text-gray-500">
+                  {catalogueAccessLoading ? 'Kontrollerar behörighet...' : catalogueAccessFailed ? 'Behörigheten kunde inte kontrolleras. Katalogen är skrivskyddad.' : 'Skrivskyddad katalog'}
+                </p>}
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -1825,12 +1836,12 @@ export default function AdminClient() {
                   placeholder="Sök..."
                   className="border rounded px-2 py-1 text-sm"
                 />
-                <button onClick={addComp} className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded">
+                {canEditCatalogue && <button onClick={addComp} className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded">
                   + Ny
-                </button>
+                </button>}
               </div>
             </div>
-            <div className="overflow-auto">
+            <fieldset disabled={!canEditCatalogue} aria-label="Komponentkatalog" className="min-w-0 overflow-auto [contain:inline-size]">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-600">
@@ -1893,9 +1904,9 @@ export default function AdminClient() {
                         />
                       </td>
                       <td className="py-2">
-                        <button onClick={() => delComp(c.id)} className="text-rose-600 underline">
+                        {canEditCatalogue && <button onClick={() => delComp(c.id)} className="text-rose-600 underline">
                           Ta bort
-                        </button>
+                        </button>}
                       </td>
                     </tr>
                   ))}
@@ -1908,7 +1919,7 @@ export default function AdminClient() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </fieldset>
           </div>
         )}
 

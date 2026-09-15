@@ -3,12 +3,12 @@ import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { getStandardTextPath, listStandardTextIds, type StandardTextId } from '@/content/standardtexts/registry'
 
 type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }
 
-export default function StandardTextsDebugPage({ searchParams }: PageProps) {
+export default async function StandardTextsDebugPage({ searchParams }: PageProps) {
   const ids = listStandardTextIds()
-  const rawId = searchParams?.id
+  const rawId = (await searchParams)?.id
   const selectedId = Array.isArray(rawId) ? rawId[0] : rawId
   const activeId = ids.includes(selectedId as StandardTextId)
     ? (selectedId as StandardTextId)

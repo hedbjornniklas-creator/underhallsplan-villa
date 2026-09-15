@@ -4,9 +4,12 @@ import { useState } from 'react'
 import { Plus, Save, Trash2, X } from 'lucide-react'
 import { validFloorLevels, type ObFloorLevel, type ObFloorModel } from '@/lib/ob/floorModel'
 import { useObFloorModel } from './ObFloorProvider'
+import { useObBuilding } from './ObBuildingContext'
+import { requestBuildingCommand, type ObBuildingOverview } from '@/lib/ob/buildingStructure'
 
 export function ObFloorEditor({ inspectionId, disabled }: { inspectionId: string; disabled: boolean }) {
   const { model, update } = useObFloorModel()
+  const building = useObBuilding()
   const [draft, setDraft] = useState<ObFloorLevel[] | null>(null)
   const [revision, setRevision] = useState<number | null>(null)
   const [number, setNumber] = useState('1')
@@ -32,6 +35,16 @@ export function ObFloorEditor({ inspectionId, disabled }: { inspectionId: string
     if (!draft || busy || disabled) return
     setBusy(true); setError(null)
     try {
+      if (building?.part) {
+        const result = await requestBuildingCommand<ObBuildingOverview>(inspectionId, 'floors', {
+          partId: building.part.id, revision, levels: draft, requestId: crypto.randomUUID(),
+        })
+        const saved = result.parts.find(part => part.id === building.part?.id)?.floor_model
+        if (!saved) throw Error('Planen kunde inte verifieras.')
+        update(saved); setDraft(null); setRevision(null)
+        await building.reload()
+        return
+      }
       const response = await fetch(`/api/ob/inspections/${inspectionId}/floors`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ revision, levels: draft }),

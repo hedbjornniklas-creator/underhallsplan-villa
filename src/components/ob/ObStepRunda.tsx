@@ -6,6 +6,8 @@ import { unlinkRoundImage } from '@/lib/ob/unlinkRoundImage'
 import { submitObNoteSuggestion } from '@/lib/ob/noteSuggestion'
 import { renameRoundRoom } from '@/lib/ob/renameRoundRoom'
 import { useObFloorModel } from './ObFloorProvider'
+import { useObBuilding, useObBuildingData } from './ObBuildingContext'
+import { buildingDraftScope, requestBuildingCommand } from '@/lib/ob/buildingStructure'
 import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
@@ -53,6 +55,7 @@ export type RoomType = {
 }
 
 export type InteriorRoom = {
+  building_part_id?: string | null
   id?: string
   inspection_id: string
   floor_label: string
@@ -72,6 +75,7 @@ export type SettingsExteriorItem = {
 }
 
 export type InspectionExteriorObservation = {
+  building_part_id?: string | null
   id?: string
   inspection_id: string
   exterior_item_id: string
@@ -84,6 +88,7 @@ export type InspectionExteriorObservation = {
 }
 
 export type InspectionControlItem = {
+  building_part_id?: string | null
   id?: string
   inspection_id: string
   interior_room_id: string | null
@@ -124,6 +129,8 @@ export type ControlPointOutcome = {
 }
 
 type InspectionImage = {
+  building_part_id?: string | null
+  origin_building_part_id?: string | null
   id: string
   inspection_id: string
   exterior_observation_id: string | null
@@ -348,6 +355,18 @@ const statusLabel = (status: ReturnType<typeof imageStatus>) => {
 }
 
 export default function ObStepRunda({ inspection, mobileLayout = false, address = '', onOpenMenu = () => {} }: ObStepRundaProps) {
+  const building = useObBuilding()
+  const { client: supabase, remember } = useObBuildingData()
+  const partId = building?.part?.id ?? null
+  const draftScope = buildingDraftScope(inspection.id, partId)
+  const captureContextRef = useRef<{ origin: () => ReturnType<typeof getCaptureOrigin>; area: RoundArea; partId: string | null } | null>(null)
+  async function scopedRoundMutation<T>(operation: RoundMutationOperation, payload: object): Promise<T> {
+    const result = partId
+      ? await requestBuildingCommand<T>(inspection.id, 'round', { ...payload, partId, operation })
+      : await requestRoundMutation<T>(inspection.id, operation, payload)
+    remember(result)
+    return result
+  }
   const { model: floorModel } = useObFloorModel()
   const floorLabelFromKey = (key: string) => floorModel ? modelFloorLabel(floorModel, key) : legacyFloorLabelFromKey(key)
   const sortRooms = (a: InteriorRoom, b: InteriorRoom) => floorModel
@@ -704,7 +723,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
 
   const refreshQueuedImageUploads = useCallback(async () => {
     try {
-      const rows = await listRoundImageUploadItems(inspection.id)
+      const rows = (await listRoundImageUploadItems(inspection.id)).filter(row => (row.buildingPartId ?? null) === partId)
       setQueuedImageUploads(rows)
       setLocalImagePreviewUrls(prev => {
         const next = { ...prev }
@@ -727,7 +746,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       console.error('load local OB round image queue failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte läsa lokal bildkö.')
     }
-  }, [inspection.id])
+  }, [inspection.id, partId])
 
   const processQueuedImageUploads = useCallback(async () => {
     if (uploadProcessorRunningRef.current) return
@@ -738,7 +757,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       const attemptedIds = new Set<string>()
       while (true) {
         if (typeof navigator !== 'undefined' && navigator.onLine === false) break
-        const rows = await listRoundImageUploadItems(inspection.id)
+        const rows = (await listRoundImageUploadItems(inspection.id)).filter(row => (row.buildingPartId ?? null) === partId)
         const item = rows.find(row => !attemptedIds.has(row.id))
         if (!item) break
         attemptedIds.add(item.id)
@@ -775,6 +794,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
               {
                 id: latestItem.serverImageId,
                 inspection_id: latestItem.inspectionId,
+                ...(latestItem.buildingPartId ? { origin_building_part_id: latestItem.buildingPartId } : {}),
                 interior_room_id: latestItem.link.interior_room_id,
                 exterior_observation_id: latestItem.link.exterior_observation_id,
                 control_item_id: latestItem.link.control_item_id,
@@ -831,7 +851,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     } finally {
       uploadProcessorRunningRef.current = false
     }
-  }, [inspection.id, removeQueuedUploadFromState, updateQueuedUploadInState])
+  }, [inspection.id, partId, supabase, removeQueuedUploadFromState, updateQueuedUploadInState])
 
   useEffect(() => {
     if (!inspection?.id) return
@@ -1547,7 +1567,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       if ((await listRoundImageUploadItems(inspection.id)).length) {
         throw Error('Vänta tills alla bilder har laddats upp.')
       }
-      return await requestRoundMutation<T>(inspection.id, operation, payload)
+      return await scopedRoundMutation<T>(operation, payload)
     } finally {
       roundMutationRef.current = false
       setRoundMutating(false)
@@ -1812,11 +1832,13 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
   }
 
   const openCameraCapture = (linkToControlItemId: string | null = null) => {
+    captureContextRef.current = { origin: getCaptureOrigin, area, partId }
     pendingImageControlItemIdRef.current = linkToControlItemId
     cameraInputRef.current?.click()
   }
 
   const openGalleryPicker = (linkToControlItemId: string | null = null) => {
+    captureContextRef.current = { origin: getCaptureOrigin, area, partId }
     pendingImageControlItemIdRef.current = linkToControlItemId
     galleryInputRef.current?.click()
   }
@@ -1842,7 +1864,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       const fileName = `${capturedAt.replace(/[:.]/g, '-')}-${localId.slice(0, 8)}.${ext}`
       const path = `${inspection.id}/round/${datePart}/${fileName}`
       const unplaced = options.unplaced ? unplacedImagePlacement() : null
-      const origin = unplaced?.origin ?? await getCaptureOrigin()
+      const origin = unplaced?.origin ?? await (captureContextRef.current?.origin ?? getCaptureOrigin)()
       const maxSort = roundImages.reduce((max, image) => Math.max(max, image.sort_order ?? 0), 0)
       const linkedControlItem = !unplaced && linkToControlItemId
         ? controlItems.find(item => item.id === linkToControlItemId) ?? null
@@ -1852,6 +1874,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
         id: localId,
         serverImageId,
         inspectionId: inspection.id,
+        buildingPartId: options.unplaced ? partId : captureContextRef.current?.partId ?? partId,
         blob,
         originalName: originalName ?? null,
         contentType: blob.type || 'image/jpeg',
@@ -1863,7 +1886,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
         attempts: 0,
         error: null,
         sortOrder: options.sortOrder ?? maxSort + 10,
-        sourceArea: unplaced ? unplaced.sourceArea : area,
+        sourceArea: unplaced ? unplaced.sourceArea : captureContextRef.current?.area ?? area,
         origin,
         link: unplaced?.link ?? {
           control_item_id: linkedControlItem?.id ?? null,
@@ -2336,6 +2359,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       {mobileLayout ? (
         <ObMobileRound
           inspectionId={inspection.id}
+          scopeId={draftScope}
+          buildingName={building?.part?.name}
           inspectionSide={inspectionSide}
           pointApplies={point => controlPointAppliesToInspectionSide(point, inspectionSide)}
           pointMatchesRoom={controlPointMatchesRoom}
@@ -2407,10 +2432,14 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
           mutationBlocked={saving || roundMutating || pendingUploadCount > 0}
           onMove={async request => {
             const result = await runRoundMutation<MoveResult>('move', request)
+            if (partId) {
+              await loadAll()
+              return { ...result, movedOut: Boolean(request.targetBuildingPartId && request.targetBuildingPartId !== partId) }
+            }
             mergeRoundMutation(result)
             return result
           }}
-          onPreviewRemoval={request => requestRoundMutation(inspection.id, 'remove-preview', request)}
+          onPreviewRemoval={request => scopedRoundMutation('remove-preview', request)}
           onRemove={async (request, token, requestId) => {
             const result = await runRoundMutation<RemovalResult>('remove', { ...request, token, requestId })
             setRooms(rows => rows.filter(row => row.id !== result.roomId))
@@ -2421,7 +2450,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             if (result.noteIds.includes(selectedControlItemId!)) setSelectedControlItemId(null)
             return result
           }}
-          onPreviewImageNote={(imageId, target) => requestRoundMutation(inspection.id, 'image-note-preview', {
+          onPreviewImageNote={(imageId, target) => scopedRoundMutation('image-note-preview', {
             imageId, ...(target ? { target } : {}),
           })}
           onCreateImageNote={async request => {

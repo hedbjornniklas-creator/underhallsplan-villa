@@ -10,6 +10,8 @@ import {
   type InspectionDocumentReportLineInput,
 } from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
+import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
+import { readBuildingReportState } from '@/lib/ob/buildingReport'
 import {
   BUILDING_DATA_OVERVIEW_ITEM_KEYS,
   buildBuildingDataMap,
@@ -111,19 +113,30 @@ export default async function Page({
   params,
   searchParams,
 }: {
-  params:
-    | { propertyId: string; inspectionId: string }
-    | Promise<{ propertyId: string; inspectionId: string }>
-  searchParams?:
-    | Record<string, string | string[] | undefined>
-    | Promise<Record<string, string | string[] | undefined>>
+  params: Promise<{ propertyId: string; inspectionId: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }) {
   const resolvedParams = await Promise.resolve(params)
-  const resolvedSearchParams = await Promise.resolve(searchParams ?? {})
+  const resolvedSearchParams: Record<string, string | string[] | undefined> = await Promise.resolve(searchParams ?? {})
   const isEmbed = resolvedSearchParams?.embed === '1'
   const isAutoPrint = resolvedSearchParams?.autoprint === '1'
   const isPdf = resolvedSearchParams?.pdf === '1'
   const supabase: any = createSupabaseServerClient()
+  if (await readBuildingReportState(supabase, resolvedParams.inspectionId)) {
+    const data = await buildReportDataV2(resolvedParams)
+    const side = data.mock.inspections.side
+    const appendices = data.mock.appendices
+    return <div className="min-h-screen bg-neutral-100 print:bg-white">
+      {isAutoPrint && <AutoPrintTrigger />}
+      {!isEmbed && <ReportToolbar backHref={`/properties/${resolvedParams.propertyId}/ob/${resolvedParams.inspectionId}`} />}
+      <ReportRenderer mockData={data} inspectionSide={side} rootClassName={isPdf ? 'report-root--pdf' : undefined}
+        spec={buildReportSpec({ inspectionSide: side, dynamicAppendices: {
+          includeAreaMeasurement: appendices.area_measurement?.enabled === true,
+          includeMoistureControl: appendices.moisture_control?.enabled === true,
+          buildings: appendices.buildings,
+        } })} />
+    </div>
+  }
 
   const fallback = '--'
   const valueOrFallback = (value: string | null | undefined, alt = fallback) => {

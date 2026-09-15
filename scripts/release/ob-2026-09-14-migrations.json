@@ -1,0 +1,48 @@
+{
+  "status": "verification-only",
+  "productionApproved": false,
+  "applicationBase": "541b5b3dc4e901784f2060560c9a8ead51513933",
+  "applicationSourceSha256": "e262737d428b97ff58fa51ef3124e0602de7af668f781c4e5868a47ffbd11354",
+  "verifiedAt": "2026-09-14T21:24:51.374Z",
+  "rehearsalCompletedAt": "2026-09-14T20:01:01.877Z",
+  "runbook": "docs/OB_RELEASE_RUNBOOK.md",
+  "phases": [
+    {
+      "id": "access",
+      "requires": "Separate access-scope approval and current recovery copy; preserve existing service callers and administrator assignments.",
+      "migrations": [
+        { "path": "docs/db/2026-09-12_09_inspection_access_hardening.sql", "sha256": "43dd8c1fb36a44477894f9e729616c6046e91c1727af929a0b1ce1aae4512ac3" },
+        { "path": "docs/db/2026-09-12_10_inspection_rpc_media_hardening.sql", "sha256": "1119986f2b31bfa08edade6e8dab8033d4ddf6c829f2aa681b4b1c8213fc7369" },
+        { "path": "docs/db/2026-09-13_03_components_access_hardening.sql", "sha256": "6f8cd69db76077e4a73d5a8875f942f08d78eed3c408ad808df8ae246b2b5e1e" },
+        { "path": "docs/db/2026-09-13_04_component_catalogue_access.sql", "sha256": "1ba73e65f037152a0184c06dd43bc6ef74ffc3331e9a94304a869579f477e7ff" },
+        { "path": "docs/db/2026-09-14_01_ob_settings_access.sql", "sha256": "5e75cf8340505faeb7a2d9ce9c18be02bbdf3f47e0967a76abb652137f2ecc7a" }
+      ]
+    },
+    {
+      "id": "buildings-before-deploy",
+      "requires": "Installed prerequisites through 2026-09-11_07 checked against metadata; building rollout remains OFF.",
+      "migrations": [
+        { "path": "docs/db/2026-09-12_01_ob_building_parts.sql", "sha256": "e2582455a4d27ce3c9adcce150e61a06b6fccfac11e1105a9497a1424cd7f4f3" },
+        { "path": "docs/db/2026-09-12_02_ob_building_commands.sql", "sha256": "90c9a463cc98c86124722534ef37d88affbde638555c8560b275801f8ac4daa2" },
+        { "path": "docs/db/2026-09-12_03_ob_building_round.sql", "sha256": "7a235ca127783f541b299ba36910354393fc91a214dc25e1d4553715221893c9" },
+        { "path": "docs/db/2026-09-15_01_ob_building_catalogue_access.sql", "sha256": "0fcee108ad74d47ca3894c008d37de27df336807b9a165fc0f5cc7ff3ea94c34" }
+      ]
+    },
+    {
+      "id": "buildings-after-deploy",
+      "requires": "STOP until the compatible reviewed application is deployed and legacy smoke checks pass. Building rollout remains OFF.",
+      "migrations": [
+        { "path": "docs/db/2026-09-12_04_ob_building_cutover.sql", "sha256": "30b3581c4a4593c60688bd5f0e640d69a8ce7ad96b71394070ba0689bf34ccf4" },
+        { "path": "docs/db/2026-09-13_01_ob_building_purpose.sql", "sha256": "ddfe99ab2b60f048b95109f1fc63ab1a9676b4474b070c289f3d9d35562b5dd5" },
+        { "path": "docs/db/2026-09-13_02_ob_building_purpose_catalogue.sql", "sha256": "c5a908dd8f208ceefdf2f62a9eadfa95aff35937a6905415cc19af231961ed18" }
+      ]
+    }
+  ],
+  "correction": {
+    "date": "2026-09-15",
+    "reason": "Production defaults granted whole-table operations on the new categories table despite enabled RLS. The forward correction removes browser writes and anonymous grants, retaining inspector reads and service access.",
+    "verification": "test/ob-building-catalogue-access.test.ts: 2/2 passed; original 11 migrations and 45 application files unchanged."
+  },
+  "activationIncluded": false,
+  "automaticExecutionAllowed": false
+}

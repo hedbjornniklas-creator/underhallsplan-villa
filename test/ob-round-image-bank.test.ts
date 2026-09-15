@@ -15,7 +15,7 @@ test('image bank uses unhandled, uploaded images and recomputes selected rows fo
 
 test('entering the bank flushes text and does not discard the editor state', () => {
   assert.ok(editor.includes('finish(() => setImageBankOpen(true))'))
-  assert.ok(editor.includes('onClose={() => setImageBankOpen(false)}'))
+  assert.ok(editor.includes("onClose={() => { setImageNotice(''); setImageBankOpen(false) }}"))
   assert.ok(editor.includes('p.onCamera(note.id!)'))
   assert.ok(editor.includes('p.onGallery(note.id!)'))
 })

@@ -319,7 +319,8 @@ body:has(dialog.obm-sheet[open]) {
 }
 .obm-field input,
 .obm-field select,
-.obm-field textarea {
+.obm-field textarea,
+.obm-input {
   width: 100%;
   min-width: 0;
   max-width: 100%;

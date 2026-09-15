@@ -12,6 +12,8 @@ import {
   isInspectionAssignmentNumberForDate,
 } from '@/lib/inspections/assignmentNumber'
 import DebouncedTextarea from './DebouncedTextarea'
+import ObBuildingOverview from './ObBuildingOverview'
+import { useObBuilding } from './ObBuildingContext'
 
 export type ObInspection = Tables<'inspections'>
 
@@ -914,6 +916,7 @@ export default function ObStepGrunddata({
       : INSPECTOR_CARD.addressLine
   const inspectorAvatarSrc = resolvePublicMediaUrl(inspectorProfile?.avatar_path)
   const inspectionCoverSrc = resolveInspectionImageUrl(inspForm.cover_path || null)
+  const buildingContext = useObBuilding()
 
   return (
     <div className="space-y-4">
@@ -930,6 +933,7 @@ export default function ObStepGrunddata({
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
+      <ObBuildingOverview locked={isInspectionLocked} />
       <div className="grid gap-6 lg:grid-cols-3">
         {/* --- Kolumn 1: Objekt --- */}
         <section className="rounded-xl border bg-white p-4 space-y-3">
@@ -1014,7 +1018,7 @@ export default function ObStepGrunddata({
             </>
           ) : null}
 
-          <div className="space-y-2">
+          {!buildingContext?.overview.structure && <div className="space-y-2">
             <div className="text-xs font-medium text-gray-600">Omslagsbild</div>
             <div
               onDragOver={event => {
@@ -1084,9 +1088,7 @@ export default function ObStepGrunddata({
                 Besiktningen är klar och omslagsbilden är låst.
               </p>
             ) : null}
-          </div>
-
-
+          </div>}
           {savingProp && <p className="mt-1 text-[11px] text-gray-400">Sparar objekt...</p>}
         </section>
 

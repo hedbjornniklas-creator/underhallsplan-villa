@@ -17,8 +17,9 @@ export type MoveRequest = (
       from: { roomId: string | null; observationId: string | null }
       target: MoveTarget
     }
-) & { requestId: string }
+) & { requestId: string; targetBuildingPartId?: string }
 export type MoveResult = {
+  movedOut?: boolean
   room: InteriorRoom | null
   note: InspectionControlItem | null
   images: RoundImage[]

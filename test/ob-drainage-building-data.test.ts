@@ -163,8 +163,8 @@ for (const path of [
 ]) {
   test(`${path} uses the shared overview keys and forwards inspection side`, () => {
     const source = readSource(path)
-    assert.match(source, /import\s*\{[^}]*\bBUILDING_DATA_OVERVIEW_ITEM_KEYS\b[^}]*\}\s*from\s*['"]@\/lib\/report\/buildingData['"]/s)
+    assert.match(source, /import\s*\{[^}]*\bBUILDING_DATA_OVERVIEW_ITEM_KEYS\b[^}]*\}\s*from\s*['"]@\/lib\/report\/buildingData['"]/)
     assert.match(source, /\.in\(\s*['"]key['"]\s*,\s*BUILDING_DATA_OVERVIEW_ITEM_KEYS\s*\)/)
-    assert.match(source, /buildBuildingDataMap\(\{[^}]*\binspectionSide\b[^}]*\}\)/s)
+    assert.match(source, /buildBuildingDataMap\(\{[^}]*\binspectionSide\b[^}]*\}\)/)
   })
 }

@@ -12,7 +12,8 @@ import ObStepAreamatning from './ObStepAreamatning'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
 import ObStepGranska from './ObStepGranska'
 import type { Tables } from '@/types/supabase'
-import { ObFloorProvider } from './ObFloorProvider'
+import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
+import { useObBuilding } from './ObBuildingContext'
 
 type DbInspection = Tables<'inspections'>
 type DbProperty = Tables<'properties'>
@@ -179,6 +180,10 @@ function normalizeDeliveryMeta(meta: ReportDeliveryMeta): ReportDeliveryMeta {
 }
 
 export default function ObWizard(props: ObWizardProps) {
+  const building = useObBuilding()
+  if (building?.part) return <ObFloorContext.Provider value={{ model: building.part.floor_model, update: () => { void building.reload() } }}>
+    <ObWizardContent key={`${props.inspection.id}:${building.part.id}`} {...props} />
+  </ObFloorContext.Provider>
   return <ObFloorProvider key={props.inspection.id} inspectionId={props.inspection.id}><ObWizardContent {...props} /></ObFloorProvider>
 }
 

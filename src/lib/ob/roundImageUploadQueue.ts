@@ -1,6 +1,7 @@
 export type RoundImageUploadStatus = 'queued' | 'uploading' | 'failed'
 
 export type RoundImageUploadItem = {
+  buildingPartId?: string | null
   id: string
   serverImageId: string
   inspectionId: string
@@ -40,12 +41,6 @@ const DB_VERSION = 1
 
 const hasIndexedDb = () => typeof indexedDB !== 'undefined'
 
-const requestToPromise = <T>(request: IDBRequest<T>) =>
-  new Promise<T>((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-
 const openDb = () =>
   new Promise<IDBDatabase>((resolve, reject) => {
     if (!hasIndexedDb()) {
@@ -72,7 +67,14 @@ const withStore = async <T>(
   try {
     const transaction = db.transaction(STORE_NAME, mode)
     const store = transaction.objectStore(STORE_NAME)
-    return await requestToPromise(run(store))
+    // Request success can precede a transaction abort (for example a storage failure).
+    return await new Promise<T>((resolve, reject) => {
+      const request = run(store)
+      transaction.oncomplete = () => resolve(request.result)
+      transaction.onabort = () => reject(transaction.error ?? request.error ?? new Error('Bildkön kunde inte sparas.'))
+      transaction.onerror = () => reject(transaction.error ?? request.error ?? new Error('Fel i bildkön.'))
+      request.onerror = () => reject(request.error ?? new Error('Bildkön kunde inte läsas eller uppdateras.'))
+    })
   } finally {
     db.close()
   }
