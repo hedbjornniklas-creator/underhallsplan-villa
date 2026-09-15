@@ -266,7 +266,7 @@ function Editor({
   }
   if (imageBankOpen) return (
     <ObRoundImageBank note={note} place={place} imagePlace={imagePlace} p={p}
-      onClose={() => setImageBankOpen(false)} />
+      onClose={() => { setImageNotice(''); setImageBankOpen(false) }} />
   )
   if (imageActions) return (
     <ObRoundImageActions image={imageActions} note={note} place={place} p={p}

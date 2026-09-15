@@ -7,6 +7,8 @@ import Sheet from './ObRoundSheet'
 import { requestBuildingCommand, type ObBuildingPart } from '@/lib/ob/buildingStructure'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 import { listRoundImageUploadItems } from '@/lib/ob/roundImageUploadQueue'
+import { buildingCategoryLabel } from '@/lib/buildings/buildingPurpose'
+import ObBuildingPurposePicker from './ObBuildingPurposePicker'
 import './mobile-round.css'
 
 type Dialog = { mode: 'activate' | 'add' | 'edit' | 'remove'; part?: ObBuildingPart }
@@ -14,7 +16,7 @@ export default function ObBuildingOverview({ locked }: { locked: boolean }) {
   const context = useObBuilding()
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [name, setName] = useState('')
-  const [category, setCategory] = useState('guesthouse')
+  const [category, setCategory] = useState<string | null>(null)
   const [buildingId, setBuildingId] = useState('')
   const [scope, setScope] = useState('')
   const [confirmed, setConfirmed] = useState(false)
@@ -23,10 +25,12 @@ export default function ObBuildingOverview({ locked }: { locked: boolean }) {
   const requestId = useRef('')
   if (!context || (!context.overview.available && !context.overview.structure)) return null
   const { overview } = context
+  const availableBuildings = overview.buildings.filter(building => !overview.parts.some(part => part.building_id === building.id))
+  const purposeAvailable = overview.categories.some(row => row.catalogue_entry?.source === 'boverket-andamalskatalogen')
   const open = (next: Dialog) => {
     setDialog(next); setError(null); setConfirmed(false)
     setName(next.part?.name ?? (next.mode === 'activate' ? 'Huvudbyggnad' : ''))
-    setCategory(next.part?.category_key ?? 'guesthouse'); setScope(next.part?.scope_note ?? '')
+    setCategory(next.part ? next.part.category_key : purposeAvailable ? null : 'guesthouse'); setScope(next.part?.scope_note ?? '')
     setBuildingId(next.part?.building_id ?? '')
     requestId.current = crypto.randomUUID()
   }
@@ -40,14 +44,15 @@ export default function ObBuildingOverview({ locked }: { locked: boolean }) {
       const payload = dialog.mode === 'add' || dialog.mode === 'activate'
         ? { name: name.trim(), buildingId: buildingId || null, categoryKey: category, confirmed, activationToken: overview.activationToken }
         : { partId: dialog.part!.id, revision: dialog.part!.revision, name: name.trim(), categoryKey: category, scopeNote: scope.trim() || null }
-      await requestBuildingCommand(context.inspectionId, dialog.mode, { ...payload, requestId: requestId.current })
+      await requestBuildingCommand(context.inspectionId, dialog.mode, { ...payload,
+        ...(purposeAvailable ? { purposeCatalogueVersion: 1 } : {}), requestId: requestId.current })
       await context.reload()
       setDialog(null)
     } catch (e) { setError(e instanceof Error ? e.message : 'Byggnaden kunde inte sparas.') }
     finally { setBusy(false) }
   }
   const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm text-blue-700 disabled:opacity-50'
-  return <section aria-label="Byggnader" className="border-y border-gray-200 bg-white py-4">
+  return <section aria-label="Byggnader" className="border-y border-gray-200 bg-white py-4 text-gray-900">
     <header className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-lg font-semibold text-gray-900">Byggnader <span className="ml-2 text-sm font-normal text-gray-500">{overview.parts.length || 1}</span></h2>
       <button type="button" disabled={locked || !overview.available} className={button}
@@ -60,8 +65,8 @@ export default function ObBuildingOverview({ locked }: { locked: boolean }) {
       {overview.parts.map(part => <li key={part.id} className="flex min-w-0 items-center gap-3 py-3">
         <Building2 size={20} className="shrink-0 text-teal-700" />
         <div className="min-w-0 flex-1"><div className="break-words font-medium">{part.name}</div>
-          {overview.categories.find(c => c.key === part.category_key)?.label !== part.name &&
-            <div className="text-sm text-gray-500">{overview.categories.find(c => c.key === part.category_key)?.label ?? part.category_key}</div>}</div>
+          {part.category_key && buildingCategoryLabel(overview.categories, part.category_key) !== part.name &&
+            <div className="break-words text-sm text-gray-500">{buildingCategoryLabel(overview.categories, part.category_key)}</div>}</div>
         <button type="button" title="Ändra byggnad" aria-label={`Ändra ${part.name}`} disabled={locked} className={button} onClick={() => open({ mode: 'edit', part })}><PenLine size={18} /></button>
         {part.id !== overview.structure?.primary_part_id && <button type="button" title="Ta bort byggnad" aria-label={`Ta bort ${part.name}`} disabled={locked}
           className={`${button} !text-red-700`} onClick={() => open({ mode: 'remove', part })}><Trash2 size={18} /></button>}
@@ -73,13 +78,13 @@ export default function ObBuildingOverview({ locked }: { locked: boolean }) {
       </button>}>
       {dialog.mode === 'remove' ? <p>Ta bort {dialog.part?.name} från denna besiktning? Byggnaden måste vara tom. Fastighetens byggnadsregister behålls.</p> :
       <fieldset disabled={busy || locked} className="min-w-0 space-y-4">
-        {(dialog.mode === 'add' || dialog.mode === 'activate') && <label className="block text-sm">Byggnad på fastigheten
+        {(dialog.mode === 'add' || dialog.mode === 'activate') && availableBuildings.length > 0 && <label className="block text-sm">Byggnad på fastigheten
           <select value={buildingId} className="obm-input mt-2 w-full" onChange={e => { setBuildingId(e.target.value); const row = overview.buildings.find(b => b.id === e.target.value); if (row) setName(row.name) }}>
             <option value="">Registrera ny byggnad</option>
-            {overview.buildings.filter(b => !overview.parts.some(p => p.building_id === b.id)).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {availableBuildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select></label>}
         <label className="block text-sm">Byggnadens namn<input className="obm-input mt-2 w-full" value={name} maxLength={100} onChange={e => setName(e.target.value)} /></label>
-        {dialog.mode !== 'activate' && <label className="block text-sm">Byggnadstyp<select className="obm-input mt-2 w-full" value={category} onChange={e => setCategory(e.target.value)}>
+        {purposeAvailable ? <ObBuildingPurposePicker categories={overview.categories} value={category} onChange={setCategory} /> : dialog.mode !== 'activate' && <label className="block text-sm">Byggnadstyp<select className="obm-input mt-2 w-full" value={category ?? ''} onChange={e => setCategory(e.target.value)}>
           {overview.categories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
         </select></label>}
         {dialog.mode === 'edit' && <label className="block text-sm">Omfattning och begränsningar<textarea className="obm-input mt-2 w-full" rows={3} value={scope} maxLength={10000} onChange={e => setScope(e.target.value)} /></label>}

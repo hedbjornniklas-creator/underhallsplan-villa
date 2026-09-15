@@ -145,6 +145,7 @@ type MoistureControlImageRow = {
 export type ReportDataV2 = {
   mock: Record<string, any>
   obBuildingRevision?: number
+  obBuildingClassifications?: Pick<ObBuildingPart, 'id' | 'building_id' | 'name' | 'category_key' | 'purpose'>[]
 }
 
 export async function buildReportDataV2(params: {
@@ -1564,6 +1565,8 @@ const supabase: any = createSupabaseServerClient()
     if (errors.some(Boolean)) throw Error('Alla byggnadsuppgifter kunde inte hämtas. Inget ofullständigt utlåtande skapas.')
     const result: ReportDataV2 = mockData
     result.obBuildingRevision = buildingState.structure.revision
+    result.obBuildingClassifications = buildingState.parts.map(({ id, building_id, name, category_key, purpose }) =>
+      ({ id, building_id, name, category_key, purpose: purpose ?? null }))
     if (!scopedPart) {
       const buildings = []
       for (const extra of buildingState.parts.filter(p => p.id !== buildingState.structure.primary_part_id)) {

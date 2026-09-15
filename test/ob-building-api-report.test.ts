@@ -59,6 +59,18 @@ test('API rejects source/file rewrites and foreign cover paths',async()=>{
   assert.equal((await a.post({operation:'edit',payload:{...base,coverPath:root+'/building-covers/'+randomUUID()+'/photo.jpg'}})).status,400)
   assert.equal(a.calls.length,0)
 })
+
+test('building API accepts absent or cleared purposes but rejects malformed classification inputs', async () => {
+  const a = api()
+  const payload = { name: 'Eget namn', buildingId: null, requestId: randomUUID() }
+  for (const categoryKey of [undefined, null, 'boverket:010404:v2']) {
+    assert.equal((await a.post({ operation: 'add', payload: { ...payload, categoryKey } })).status, 200)
+  }
+  for (const categoryKey of ['', 42, { conceptNumber: '010404' }]) {
+    assert.equal((await a.post({ operation: 'add', payload: { ...payload, categoryKey } })).status, 400)
+  }
+  assert.equal((await a.post({ operation: 'edit', payload: { partId: part, requestId: randomUUID(), revision: 1, categoryKey: null } })).status, 200)
+})
 test('building appendices have independent source paths, full note blocks and TOC entries',()=>{
   const legacy=buildReportSpec({inspectionSide:'buyer'})
   assert.deepEqual(buildReportSpec({inspectionSide:'buyer',dynamicAppendices:{buildings:[]}}),legacy)
@@ -68,6 +80,14 @@ test('building appendices have independent source paths, full note blocks and TO
     const section=spec.find(s=>s.id==='appendix-building-'+building.id)!
     assert.equal(section.title,`Bilaga ${6+index}: ${building.name}`)
     assert.ok(section.blocks.some(b=>b.type==='inspectionBlocks'&&b.itemsPath===`mock.appendices.buildings.${index}.introduction`))
+    const conditions = section.blocks.find(b => b.type === 'twoColumn')
+    assert.ok(conditions?.type === 'twoColumn')
+    assert.deepEqual(conditions.rows, [{ label: 'Möblering:', value: {
+      kind: 'mock', path: `mock.appendices.buildings.${index}.conditions.furnishing_level`,
+    } }])
+    const buildingData = section.blocks.find(b => b.type === 'text' && b.layout === 'buildingData')
+    assert.ok(buildingData?.type === 'text')
+    assert.deepEqual(buildingData.source, { kind: 'mock', path: `mock.appendices.buildings.${index}.buildingData.text` })
     for(const area of ['exterior','interior']) assert.ok(section.blocks.some(b=>b.type==='inspectionBlocks'&&b.itemsPath===`mock.appendices.buildings.${index}.${area}.blocks`))
     const toc=spec.find(s=>s.id==='toc')!.blocks.find(b=>b.type==='toc')!
     assert.ok(toc.type==='toc'&&toc.entries.some(e=>e.sectionId===section.id))

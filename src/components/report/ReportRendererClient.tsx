@@ -13,6 +13,7 @@ import AppendixPage from '@/components/report/AppendixPage'
 import ReportCoverPage from '@/components/report/ReportCoverPage'
 import ReportPage from '@/components/report/ReportPage'
 import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
+import { paginateReportEntries } from '@/lib/report/paginateReportEntries'
 import {
   parseInspectionDocumentReportLine,
   type InspectionDocumentReportLineParts,
@@ -86,12 +87,13 @@ const ReportPhoto = ({
   )
   const [readySrc, setReadySrc] = useState<string | null>(null)
   const [failedSrc, setFailedSrc] = useState<string | null>(null)
+  const settledSrcRef = useRef<string | null>(null)
 
   const markReady = useCallback(() => {
-    setReadySrc((currentReadySrc) => {
-      if (currentReadySrc !== imageSrc) onSettled?.()
-      return imageSrc
-    })
+    if (settledSrcRef.current === imageSrc) return
+    settledSrcRef.current = imageSrc
+    setReadySrc(imageSrc)
+    onSettled?.()
   }, [imageSrc, onSettled])
 
   const imageRef = useCallback((image: HTMLImageElement | null) => {
@@ -163,6 +165,7 @@ type InspectionItemSegmentKind = 'note' | 'photos' | 'risk' | 'ftu'
 type InspectionRoomGroupItemSegmentEntry = {
   type: 'inspectionRoomGroupItemSegment'
   title: string
+  continuation: { id: string; sectionTitle: string; placeTitle: string }
   item: InspectionBlockItem
   segment: InspectionItemSegmentKind
   photoUrls: string[]
@@ -188,6 +191,12 @@ type InspectionFloorHeaderEntry = {
   title: string
   marginTopMm: number
   marginBottomMm: number
+}
+
+type InspectionContinuationHeaderEntry = {
+  type: 'inspectionContinuationHeader'
+  sectionTitle: string
+  placeTitle: string
 }
 
 type RiskItemEntry = {
@@ -237,6 +246,7 @@ type ExtendedReportBlock =
   | InspectionRoomGroupItemEntry
   | InspectionRoomGroupItemSegmentEntry
   | InspectionFloorHeaderEntry
+  | InspectionContinuationHeaderEntry
   | RiskItemEntry
   | FtuItemEntry
   | BuildingDataRowEntry
@@ -248,6 +258,7 @@ type Entry =
       id: string
       sectionId: string
       sectionStartOnNewPage: boolean
+      keepWithNext?: boolean
       block: ExtendedReportBlock
     }
   | {
@@ -441,7 +452,7 @@ const mmToPxNumber = (mm: number) => (mm * 96) / 25.4
 
 function getMockValue(data: Record<string, unknown>, path: string): string {
   const parts = path.split('.').filter(Boolean)
-  let current: any = data
+  let current: unknown = data
 
   for (const part of parts) {
     if (current && typeof current === 'object' && part in current) {
@@ -460,7 +471,7 @@ function getMockValue(data: Record<string, unknown>, path: string): string {
 
 function getMockPathValue(data: Record<string, unknown>, path: string): unknown {
   const parts = path.split('.').filter(Boolean)
-  let current: any = data
+  let current: unknown = data
 
   for (const part of parts) {
     if (current && typeof current === 'object' && part in current) {
@@ -480,7 +491,7 @@ function getMockArray<T>(data: Record<string, unknown>, path: string): T[] {
 
 function getMockList(data: Record<string, unknown>, path: string): string[] {
   const parts = path.split('.').filter(Boolean)
-  let current: any = data
+  let current: unknown = data
 
   for (const part of parts) {
     if (current && typeof current === 'object' && part in current) {
@@ -893,6 +904,7 @@ export default function ReportRendererClient({
   const measureContainerRef = useRef<HTMLDivElement | null>(null)
   const headerMeasureRef = useRef<HTMLDivElement | null>(null)
   const entryRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const continuationRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const notifyReportImageSettled = useCallback(() => {
     if (!isPdfMode) return
@@ -1020,8 +1032,8 @@ export default function ReportRendererClient({
 
         if (
           block.type === 'text' &&
-          block.source.kind === 'mock' &&
-          block.source.path === 'mock.buildingData.text'
+          (block.layout === 'buildingData' ||
+            block.source.kind === 'mock' && block.source.path === 'mock.buildingData.text')
         ) {
           const rows = parseBuildingDataLines(resolveText(block.source, mockData))
           rows.forEach((row, rowIndex) => {
@@ -1225,6 +1237,11 @@ export default function ReportRendererClient({
                         block: {
                           type: 'inspectionRoomGroupItemSegment',
                           title: roomTitle,
+                          continuation: {
+                            id: `${section.id}-continuation-${blockIndex}-${groupIndex}`,
+                            sectionTitle: section.title ?? '',
+                            placeTitle: group.title,
+                          },
                           item,
                           segment: segment.segment,
                           photoUrls: segment.photoUrls,
@@ -1298,6 +1315,7 @@ export default function ReportRendererClient({
           id: `${section.id}-block-${blockIndex}`,
           sectionId: section.id,
           sectionStartOnNewPage: section.startOnNewPage && blockIndex === 0,
+          keepWithNext: section.id.startsWith('appendix-building-') && block.type === 'heading',
           block,
         })
       })
@@ -1318,6 +1336,26 @@ export default function ReportRendererClient({
     })
     return entries
   }, [contentSections, isPdfMode, mockData, sectionSpacingPx])
+
+  const continuationEntries = useMemo(() => {
+    const headings = new Map<string, Entry>()
+    for (const section of contentSections.filter(section => section.id.startsWith('appendix-building-'))) {
+      const id = `${section.id}-continuation`
+      headings.set(id, {
+        kind: 'block', id, sectionId: section.id, sectionStartOnNewPage: false,
+        block: { type: 'inspectionContinuationHeader', sectionTitle: section.title ?? '', placeTitle: '' },
+      })
+    }
+    for (const entry of contentEntries) {
+      if (entry.kind !== 'block' || entry.block.type !== 'inspectionRoomGroupItemSegment') continue
+      const { id, sectionTitle, placeTitle } = entry.block.continuation
+      if (!headings.has(id)) headings.set(id, {
+        kind: 'block', id, sectionId: entry.sectionId, sectionStartOnNewPage: false,
+        block: { type: 'inspectionContinuationHeader', sectionTitle, placeTitle },
+      })
+    }
+    return headings
+  }, [contentEntries, contentSections])
 
   const appendices = useMemo(() => {
     const pages: Array<{ section: ResolvedReportSection; rawText: string; showTitle: boolean }> = []
@@ -1457,9 +1495,6 @@ export default function ReportRendererClient({
     const sectionPageMap = new Map<string, number>()
     const coverCount = coverSection ? 1 : 0
 
-    const hasMeaningfulEntry = (entries: Entry[]) =>
-      entries.some((entry) => entry.kind === 'block')
-
     const heightByEntryId = new Map<string, number>()
     contentEntries.forEach((entry, index) => {
       heightByEntryId.set(
@@ -1472,59 +1507,25 @@ export default function ReportRendererClient({
       entriesSubset: Entry[],
       startPageNumber: number
     ): PagePlan[] => {
-      const subsetPages: PagePlan[] = []
-      let currentEntries: Entry[] = []
-      let currentHeight = 0
-
-      const pushSubsetPage = () => {
-        if (currentEntries.length === 0) return
-        if (!hasMeaningfulEntry(currentEntries)) {
-          currentEntries = []
-          currentHeight = 0
-          return
-        }
-        subsetPages.push({
-          kind: 'sections',
-          entries: currentEntries,
-          pageNumber: startPageNumber + subsetPages.length,
+      const pages = paginateReportEntries(entriesSubset, availableHeight,
+        entry => heightByEntryId.get(entry.id) ?? 0,
+        entry => {
+          if (entry.kind !== 'block' || entry.sectionStartOnNewPage) return null
+          const id = entry.block.type === 'inspectionRoomGroupItemSegment'
+            ? entry.block.continuation.id : `${entry.sectionId}-continuation`
+          const heading = continuationEntries.get(id)
+          const node = continuationRefs.current[id]
+          return heading && node ? { entry: heading, height: node.getBoundingClientRect().height } : null
         })
-        currentEntries = []
-        currentHeight = 0
-      }
-
-      entriesSubset.forEach((entry) => {
-        const height = heightByEntryId.get(entry.id) ?? 0
-
-        if (entry.kind === 'block' && entry.sectionStartOnNewPage && currentEntries.length > 0) {
-          pushSubsetPage()
-        }
-
-        if (entry.kind === 'spacer' && currentEntries.length === 0) {
-          return
-        }
-
-        if (currentHeight + height > availableHeight && currentEntries.length > 0) {
-          if (entry.kind === 'spacer') {
-            pushSubsetPage()
-            return
+      return pages.map((entries, index) => {
+        const pageNumber = startPageNumber + index
+        entries.forEach(entry => {
+          if (entry.kind === 'block' && !sectionPageMap.has(entry.sectionId)) {
+            sectionPageMap.set(entry.sectionId, pageNumber)
           }
-          pushSubsetPage()
-        }
-
-        if (entry.kind === 'spacer' && currentEntries.length === 0) {
-          return
-        }
-
-        currentEntries.push(entry)
-        currentHeight += height
-
-        if (entry.kind === 'block' && !sectionPageMap.has(entry.sectionId)) {
-          sectionPageMap.set(entry.sectionId, startPageNumber + subsetPages.length)
-        }
+        })
+        return { kind: 'sections', entries, pageNumber }
       })
-
-      pushSubsetPage()
-      return subsetPages
     }
 
     const firstPostAppendixEntryIndex = contentEntries.findIndex(
@@ -1543,7 +1544,7 @@ export default function ReportRendererClient({
     const pages = paginateSectionEntries(mainSectionEntries, coverCount + 1)
 
     const appendixPages: PagePlan[] = []
-    appendices.forEach((appendix, index) => {
+    appendices.forEach((appendix) => {
       const pageNumber = coverCount + pages.length + appendixPages.length + 1
       appendixPages.push({
         kind: 'appendix',
@@ -1579,7 +1580,7 @@ export default function ReportRendererClient({
     setPaginationImageVersion((version) =>
       version === imageSettledVersion ? version : imageSettledVersion
     )
-  }, [appendices, contentEntries, coverSection, mockData, isPdfMode, imageSettledVersion])
+  }, [appendices, contentEntries, continuationEntries, coverSection, mockData, isPdfMode, imageSettledVersion])
 
   const companyLogoValue = getMockValue(mockData, 'mock.company.logo_url')
   const companyLogoUrl = companyLogoValue === 'saknas' ? null : companyLogoValue
@@ -2024,6 +2025,9 @@ export default function ReportRendererClient({
       <article
         key={key}
         className="ob-block bg-white"
+        data-report-inspection-segment={block.segment}
+        data-report-place={block.continuation.placeTitle}
+        data-report-section-title={block.continuation.sectionTitle}
         style={blockMargins({
           marginTopMm: block.marginTopMm,
           marginBottomMm: block.marginBottomMm,
@@ -2152,6 +2156,17 @@ export default function ReportRendererClient({
     index: number,
     sectionPageMap: Map<string, number>
   ) => {
+    if (block.type === 'inspectionContinuationHeader') {
+      return (
+        <div key={`${sectionId}-continuation-${index}`} data-report-continuation-context="1"
+          style={{ paddingBottom: mmToPx(3), overflowWrap: 'anywhere', lineHeight: 1.25 }}>
+          {block.sectionTitle && <div style={{ fontSize: '10pt', color: '#475569' }}>
+            {block.sectionTitle} (forts.)
+          </div>}
+          {block.placeTitle && <div style={{ fontSize: '11pt', fontWeight: 700 }}>{block.placeTitle}</div>}
+        </div>
+      )
+    }
     if (block.type === 'inspectionFloorHeader') {
       return (
         <div
@@ -2800,8 +2815,8 @@ export default function ReportRendererClient({
       const preset = block.small ? REPORT_STYLES.SMALL : REPORT_STYLES.BODY
       const content = resolveText(block.source, mockData)
       const isBuildingData =
-        block.source.kind === 'mock' &&
-        block.source.path === 'mock.buildingData.text'
+        block.layout === 'buildingData' ||
+        block.source.kind === 'mock' && block.source.path === 'mock.buildingData.text'
       const isVisualPreface =
         block.source.kind === 'static' &&
         block.source.text.includes('Byggnaden var')
@@ -3049,6 +3064,18 @@ export default function ReportRendererClient({
             </div>
           )
         })}
+      </div>
+
+      <div aria-hidden="true" style={{
+        position: 'absolute', left: '-99999px', top: 0, visibility: 'hidden',
+        width: mmToPxNumber(PAGE_WIDTH_MM) - mmToPxNumber(PAGE_PADDING_MM.left) - mmToPxNumber(PAGE_PADDING_MM.right),
+        fontFamily: FONT_FAMILY, color: TEXT_COLOR, lineHeight: LINE_HEIGHT,
+      }}>
+        {[...continuationEntries.values()].map((entry, index) => entry.kind === 'block' && (
+          <div key={entry.id} ref={node => { continuationRefs.current[entry.id] = node }}>
+            {renderBlock(entry.block, entry.sectionId, index, new Map())}
+          </div>
+        ))}
       </div>
 
       {pagePlan?.pages.map((page) => {

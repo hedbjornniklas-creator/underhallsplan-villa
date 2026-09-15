@@ -113,15 +113,11 @@ export default async function Page({
   params,
   searchParams,
 }: {
-  params:
-    | { propertyId: string; inspectionId: string }
-    | Promise<{ propertyId: string; inspectionId: string }>
-  searchParams?:
-    | Record<string, string | string[] | undefined>
-    | Promise<Record<string, string | string[] | undefined>>
+  params: Promise<{ propertyId: string; inspectionId: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
 }) {
   const resolvedParams = await Promise.resolve(params)
-  const resolvedSearchParams = await Promise.resolve(searchParams ?? {})
+  const resolvedSearchParams: Record<string, string | string[] | undefined> = await Promise.resolve(searchParams ?? {})
   const isEmbed = resolvedSearchParams?.embed === '1'
   const isAutoPrint = resolvedSearchParams?.autoprint === '1'
   const isPdf = resolvedSearchParams?.pdf === '1'

@@ -1,0 +1,2721 @@
+{
+  "source": "https://api.boverket.se/andamalskatalogen/v1/Catalogue",
+  "catalogueDate": "2026-09-13T13:57:45.4848961+02:00",
+  "sha256": "fcfe00087a6201261ca5192bb9044571a3288daef263cfe3b5083d36cf033117",
+  "documentation": "https://www.boverket.se/sv/om-boverket/oppna-data/api-tjanst-for-andamalskatalogen/",
+  "currentKeys": [
+    "boverket:01:v1",
+    "boverket:0101:v1",
+    "boverket:010101:v2",
+    "boverket:010102:v2",
+    "boverket:010103:v2",
+    "boverket:010104:v2",
+    "boverket:010105:v2",
+    "boverket:010106:v4",
+    "boverket:010107:v4",
+    "boverket:010108:v2",
+    "boverket:0102:v1",
+    "boverket:010201:v2",
+    "boverket:010202:v2",
+    "boverket:0103:v1",
+    "boverket:010301:v2",
+    "boverket:010302:v3",
+    "boverket:010303:v2",
+    "boverket:010304:v2",
+    "boverket:010305:v2",
+    "boverket:0104:v1",
+    "boverket:010401:v2",
+    "boverket:010402:v3",
+    "boverket:010403:v2",
+    "boverket:010404:v2",
+    "boverket:010405:v2",
+    "boverket:010406:v2",
+    "boverket:010407:v2",
+    "boverket:010408:v2",
+    "boverket:010409:v2",
+    "boverket:0105:v2",
+    "boverket:02:v1",
+    "boverket:0201:v1",
+    "boverket:020101:v2",
+    "boverket:020102:v2",
+    "boverket:020103:v2",
+    "boverket:020104:v2",
+    "boverket:020105:v2",
+    "boverket:020106:v2",
+    "boverket:020107:v2",
+    "boverket:020108:v2",
+    "boverket:020109:v1",
+    "boverket:020110:v2",
+    "boverket:020111:v2",
+    "boverket:020112:v2",
+    "boverket:0202:v1",
+    "boverket:020201:v2",
+    "boverket:020202:v2",
+    "boverket:020203:v2",
+    "boverket:020204:v2",
+    "boverket:020205:v2",
+    "boverket:020206:v2",
+    "boverket:020207:v2",
+    "boverket:020208:v2",
+    "boverket:0203:v1",
+    "boverket:020301:v2",
+    "boverket:020302:v2",
+    "boverket:020303:v2",
+    "boverket:020304:v2",
+    "boverket:020305:v2",
+    "boverket:020306:v2",
+    "boverket:020307:v2",
+    "boverket:020308:v2",
+    "boverket:0204:v1",
+    "boverket:020401:v2",
+    "boverket:020402:v2",
+    "boverket:020403:v2",
+    "boverket:020404:v2",
+    "boverket:020405:v2",
+    "boverket:020406:v2",
+    "boverket:0205:v1",
+    "boverket:020501:v2",
+    "boverket:020502:v2",
+    "boverket:020503:v2",
+    "boverket:020504:v2",
+    "boverket:020505:v2",
+    "boverket:020506:v3",
+    "boverket:020507:v2",
+    "boverket:020508:v2",
+    "boverket:020509:v2",
+    "boverket:0206:v1",
+    "boverket:020601:v2",
+    "boverket:020602:v2",
+    "boverket:020603:v2",
+    "boverket:020604:v2",
+    "boverket:020605:v2",
+    "boverket:020606:v2",
+    "boverket:020607:v2",
+    "boverket:0207:v1",
+    "boverket:020701:v2",
+    "boverket:020702:v2",
+    "boverket:020703:v2",
+    "boverket:020704:v2",
+    "boverket:020705:v2",
+    "boverket:0208:v1",
+    "boverket:020801:v2",
+    "boverket:020802:v2",
+    "boverket:0209:v1",
+    "boverket:020901:v2",
+    "boverket:020902:v2",
+    "boverket:020903:v2",
+    "boverket:0210:v1",
+    "boverket:021001:v2",
+    "boverket:021002:v2",
+    "boverket:021003:v2",
+    "boverket:0211:v2",
+    "boverket:03:v1",
+    "boverket:0301:v1",
+    "boverket:030101:v2",
+    "boverket:030102:v2",
+    "boverket:030103:v2",
+    "boverket:030104:v2",
+    "boverket:030105:v2",
+    "boverket:030106:v2",
+    "boverket:030107:v2",
+    "boverket:030108:v2",
+    "boverket:0302:v1",
+    "boverket:030201:v2",
+    "boverket:030202:v2",
+    "boverket:0303:v1",
+    "boverket:030301:v2",
+    "boverket:030302:v2",
+    "boverket:030303:v2",
+    "boverket:030304:v2",
+    "boverket:030305:v2",
+    "boverket:030306:v2",
+    "boverket:030307:v2",
+    "boverket:030308:v2",
+    "boverket:030309:v2",
+    "boverket:030310:v2",
+    "boverket:030311:v2",
+    "boverket:030312:v2",
+    "boverket:030313:v2",
+    "boverket:0304:v1",
+    "boverket:030401:v2",
+    "boverket:030402:v2",
+    "boverket:030403:v2",
+    "boverket:030404:v2",
+    "boverket:030405:v2",
+    "boverket:030406:v2",
+    "boverket:030407:v2",
+    "boverket:030408:v2",
+    "boverket:030409:v2",
+    "boverket:030410:v2",
+    "boverket:0305:v2",
+    "boverket:04:v1",
+    "boverket:0401:v1",
+    "boverket:040101:v2",
+    "boverket:040102:v2",
+    "boverket:040103:v2",
+    "boverket:040104:v2",
+    "boverket:040105:v2",
+    "boverket:040106:v2",
+    "boverket:0402:v1",
+    "boverket:040201:v2",
+    "boverket:040202:v2",
+    "boverket:040203:v2",
+    "boverket:040204:v2",
+    "boverket:040205:v2",
+    "boverket:040206:v2",
+    "boverket:040207:v2",
+    "boverket:040208:v2",
+    "boverket:040209:v2",
+    "boverket:0403:v2",
+    "boverket:05:v2",
+    "boverket:0501:v2",
+    "boverket:050101:v3",
+    "boverket:050102:v3",
+    "boverket:050103:v2",
+    "boverket:050104:v3",
+    "boverket:050105:v3",
+    "boverket:050106:v3",
+    "boverket:050107:v2",
+    "boverket:0502:v2",
+    "boverket:050201:v3",
+    "boverket:0503:v2",
+    "boverket:050301:v3",
+    "boverket:0504:v2",
+    "boverket:06:v2",
+    "boverket:0601:v1",
+    "boverket:060101:v2",
+    "boverket:060102:v2",
+    "boverket:060103:v2",
+    "boverket:0602:v1",
+    "boverket:060201:v2",
+    "boverket:060202:v2",
+    "boverket:060203:v2",
+    "boverket:060204:v2",
+    "boverket:0603:v2",
+    "boverket:060302:v1",
+    "boverket:060303:v1",
+    "boverket:060304:v1",
+    "boverket:060305:v1",
+    "boverket:060306:v1",
+    "boverket:0604:v1",
+    "boverket:07:v1",
+    "boverket:0701:v1",
+    "boverket:070101:v1"
+  ],
+  "entries": [
+    {
+      "key": "boverket:01:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "01",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/01/1",
+      "label": "Bostad",
+      "path": [
+        "Bostad"
+      ]
+    },
+    {
+      "key": "boverket:0101:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0101",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0101/1",
+      "label": "Småhus",
+      "path": [
+        "Bostad",
+        "Småhus"
+      ]
+    },
+    {
+      "key": "boverket:010101:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010101",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010101/2",
+      "label": "Friliggande enbostadshus",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Friliggande enbostadshus"
+      ]
+    },
+    {
+      "key": "boverket:010102:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010102",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010102/2",
+      "label": "Kedjehus",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Kedjehus"
+      ]
+    },
+    {
+      "key": "boverket:010103:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010103",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010103/2",
+      "label": "Radhus",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Radhus"
+      ]
+    },
+    {
+      "key": "boverket:010104:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010104",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010104/2",
+      "label": "Parhus",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Parhus"
+      ]
+    },
+    {
+      "key": "boverket:010105:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010105",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010105/2",
+      "label": "Friliggande tvåbostadshus",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Friliggande tvåbostadshus"
+      ]
+    },
+    {
+      "key": "boverket:010106:v4",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010106",
+      "version": 4,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010106/4",
+      "label": "Komplementbostadshus",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Komplementbostadshus"
+      ]
+    },
+    {
+      "key": "boverket:010107:v4",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010107",
+      "version": 4,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010107/4",
+      "label": "Ytterligare bostad i enbostadshus",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Ytterligare bostad i enbostadshus"
+      ]
+    },
+    {
+      "key": "boverket:010108:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010108",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010108/2",
+      "label": "Okänd",
+      "path": [
+        "Bostad",
+        "Småhus",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0102:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0102",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0102/1",
+      "label": "Flerbostadshus",
+      "path": [
+        "Bostad",
+        "Flerbostadshus"
+      ]
+    },
+    {
+      "key": "boverket:010201:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010201",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010201/2",
+      "label": "Flerbostadshus",
+      "path": [
+        "Bostad",
+        "Flerbostadshus",
+        "Flerbostadshus"
+      ]
+    },
+    {
+      "key": "boverket:010202:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010202",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010202/2",
+      "label": "Okänd",
+      "path": [
+        "Bostad",
+        "Flerbostadshus",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0103:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0103",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0103/1",
+      "label": "Specialbostad",
+      "path": [
+        "Bostad",
+        "Specialbostad"
+      ]
+    },
+    {
+      "key": "boverket:010301:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010301",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010301/2",
+      "label": "Specialbostad för äldre",
+      "path": [
+        "Bostad",
+        "Specialbostad",
+        "Specialbostad för äldre"
+      ]
+    },
+    {
+      "key": "boverket:010302:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010302",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010302/3",
+      "label": "Specialbostad för studenter",
+      "path": [
+        "Bostad",
+        "Specialbostad",
+        "Specialbostad för studenter"
+      ]
+    },
+    {
+      "key": "boverket:010303:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010303",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010303/2",
+      "label": "Specialbostad för funktionsnedsatta",
+      "path": [
+        "Bostad",
+        "Specialbostad",
+        "Specialbostad för funktionsnedsatta"
+      ]
+    },
+    {
+      "key": "boverket:010304:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010304",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010304/2",
+      "label": "Specialbostad för unga",
+      "path": [
+        "Bostad",
+        "Specialbostad",
+        "Specialbostad för unga"
+      ]
+    },
+    {
+      "key": "boverket:010305:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010305",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010305/2",
+      "label": "Okänd",
+      "path": [
+        "Bostad",
+        "Specialbostad",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0104:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0104",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0104/1",
+      "label": "Bostadskomplement",
+      "path": [
+        "Bostad",
+        "Bostadskomplement"
+      ]
+    },
+    {
+      "key": "boverket:010401:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010401",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010401/2",
+      "label": "Bostadskomplement utan mänsklig aktivitet",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Bostadskomplement utan mänsklig aktivitet"
+      ]
+    },
+    {
+      "key": "boverket:010402:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010402",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010402/3",
+      "label": "Bostadskomplement med mänsklig aktivitet",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Bostadskomplement med mänsklig aktivitet"
+      ]
+    },
+    {
+      "key": "boverket:010403:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010403",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010403/2",
+      "label": "Carport",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Carport"
+      ]
+    },
+    {
+      "key": "boverket:010404:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010404",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010404/2",
+      "label": "Garage",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Garage"
+      ]
+    },
+    {
+      "key": "boverket:010405:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010405",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010405/2",
+      "label": "Miljöhus",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Miljöhus"
+      ]
+    },
+    {
+      "key": "boverket:010406:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010406",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010406/2",
+      "label": "Cykelförvaring",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Cykelförvaring"
+      ]
+    },
+    {
+      "key": "boverket:010407:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010407",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010407/2",
+      "label": "Skärmtak",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Skärmtak"
+      ]
+    },
+    {
+      "key": "boverket:010408:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010408",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010408/2",
+      "label": "Teknisk försörjning",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Teknisk försörjning"
+      ]
+    },
+    {
+      "key": "boverket:010409:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "010409",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/010409/2",
+      "label": "Okänd",
+      "path": [
+        "Bostad",
+        "Bostadskomplement",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0105:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0105",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0105/2",
+      "label": "Okänd",
+      "path": [
+        "Bostad",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:02:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "02",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/02/1",
+      "label": "Samhällsfunktion",
+      "path": [
+        "Samhällsfunktion"
+      ]
+    },
+    {
+      "key": "boverket:0201:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0201",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0201/1",
+      "label": "Trafik och Kommunikation",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation"
+      ]
+    },
+    {
+      "key": "boverket:020101:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020101",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020101/2",
+      "label": "Resecentrum",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Resecentrum"
+      ]
+    },
+    {
+      "key": "boverket:020102:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020102",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020102/2",
+      "label": "Järnvägsstation",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Järnvägsstation"
+      ]
+    },
+    {
+      "key": "boverket:020103:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020103",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020103/2",
+      "label": "Busstation",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Busstation"
+      ]
+    },
+    {
+      "key": "boverket:020104:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020104",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020104/2",
+      "label": "Tunnelbanestation",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Tunnelbanestation"
+      ]
+    },
+    {
+      "key": "boverket:020105:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020105",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020105/2",
+      "label": "Flygterminal",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Flygterminal"
+      ]
+    },
+    {
+      "key": "boverket:020106:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020106",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020106/2",
+      "label": "Färjeterminal",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Färjeterminal"
+      ]
+    },
+    {
+      "key": "boverket:020107:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020107",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020107/2",
+      "label": "Hangar",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Hangar"
+      ]
+    },
+    {
+      "key": "boverket:020108:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020108",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020108/2",
+      "label": "Bussgarage",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Bussgarage"
+      ]
+    },
+    {
+      "key": "boverket:020109:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020109",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020109/1",
+      "label": "Fyrbyggnad",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Fyrbyggnad"
+      ]
+    },
+    {
+      "key": "boverket:020110:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020110",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020110/2",
+      "label": "Väderskydd för kollektivtrafik",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Väderskydd för kollektivtrafik"
+      ]
+    },
+    {
+      "key": "boverket:020111:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020111",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020111/2",
+      "label": "Parkeringshus",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Parkeringshus"
+      ]
+    },
+    {
+      "key": "boverket:020112:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020112",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020112/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Trafik och Kommunikation",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0202:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0202",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0202/1",
+      "label": "Samhällsfunktionskomplement",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement"
+      ]
+    },
+    {
+      "key": "boverket:020201:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020201",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020201/2",
+      "label": "Lager",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Lager"
+      ]
+    },
+    {
+      "key": "boverket:020202:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020202",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020202/2",
+      "label": "Miljöhus",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Miljöhus"
+      ]
+    },
+    {
+      "key": "boverket:020203:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020203",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020203/2",
+      "label": "Cykelförvaring",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Cykelförvaring"
+      ]
+    },
+    {
+      "key": "boverket:020204:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020204",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020204/2",
+      "label": "Garage",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Garage"
+      ]
+    },
+    {
+      "key": "boverket:020205:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020205",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020205/2",
+      "label": "Skärmtak",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Skärmtak"
+      ]
+    },
+    {
+      "key": "boverket:020206:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020206",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020206/2",
+      "label": "Förråd",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Förråd"
+      ]
+    },
+    {
+      "key": "boverket:020207:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020207",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020207/2",
+      "label": "Carport",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Carport"
+      ]
+    },
+    {
+      "key": "boverket:020208:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020208",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020208/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Samhällsfunktionskomplement",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0203:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0203",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0203/1",
+      "label": "Offentlig förvaltning",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning"
+      ]
+    },
+    {
+      "key": "boverket:020301:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020301",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020301/2",
+      "label": "Kommunal förvaltning",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Kommunal förvaltning"
+      ]
+    },
+    {
+      "key": "boverket:020302:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020302",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020302/2",
+      "label": "Regional förvaltning",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Regional förvaltning"
+      ]
+    },
+    {
+      "key": "boverket:020303:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020303",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020303/2",
+      "label": "Statlig förvaltning",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Statlig förvaltning"
+      ]
+    },
+    {
+      "key": "boverket:020304:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020304",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020304/2",
+      "label": "Polisstation",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Polisstation"
+      ]
+    },
+    {
+      "key": "boverket:020305:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020305",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020305/2",
+      "label": "Räddningstjänst",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Räddningstjänst"
+      ]
+    },
+    {
+      "key": "boverket:020306:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020306",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020306/2",
+      "label": "Arkiv",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Arkiv"
+      ]
+    },
+    {
+      "key": "boverket:020307:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020307",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020307/2",
+      "label": "Kriminalvård",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Kriminalvård"
+      ]
+    },
+    {
+      "key": "boverket:020308:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020308",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020308/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Offentlig förvaltning",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0204:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0204",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0204/1",
+      "label": "Utbildning",
+      "path": [
+        "Samhällsfunktion",
+        "Utbildning"
+      ]
+    },
+    {
+      "key": "boverket:020401:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020401",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020401/2",
+      "label": "Förskola",
+      "path": [
+        "Samhällsfunktion",
+        "Utbildning",
+        "Förskola"
+      ]
+    },
+    {
+      "key": "boverket:020402:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020402",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020402/2",
+      "label": "Grundskola",
+      "path": [
+        "Samhällsfunktion",
+        "Utbildning",
+        "Grundskola"
+      ]
+    },
+    {
+      "key": "boverket:020403:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020403",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020403/2",
+      "label": "Gymnasium",
+      "path": [
+        "Samhällsfunktion",
+        "Utbildning",
+        "Gymnasium"
+      ]
+    },
+    {
+      "key": "boverket:020404:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020404",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020404/2",
+      "label": "Högskola/universitet",
+      "path": [
+        "Samhällsfunktion",
+        "Utbildning",
+        "Högskola/universitet"
+      ]
+    },
+    {
+      "key": "boverket:020405:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020405",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020405/2",
+      "label": "Övrig utbildning",
+      "path": [
+        "Samhällsfunktion",
+        "Utbildning",
+        "Övrig utbildning"
+      ]
+    },
+    {
+      "key": "boverket:020406:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020406",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020406/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Utbildning",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0205:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0205",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0205/1",
+      "label": "Kultur",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur"
+      ]
+    },
+    {
+      "key": "boverket:020501:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020501",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020501/2",
+      "label": "Museum",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Museum"
+      ]
+    },
+    {
+      "key": "boverket:020502:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020502",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020502/2",
+      "label": "Bibliotek",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Bibliotek"
+      ]
+    },
+    {
+      "key": "boverket:020503:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020503",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020503/2",
+      "label": "Konserthus",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Konserthus"
+      ]
+    },
+    {
+      "key": "boverket:020504:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020504",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020504/2",
+      "label": "Teater",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Teater"
+      ]
+    },
+    {
+      "key": "boverket:020505:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020505",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020505/2",
+      "label": "Biograf",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Biograf"
+      ]
+    },
+    {
+      "key": "boverket:020506:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020506",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020506/3",
+      "label": "Hembygdsgård",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Hembygdsgård"
+      ]
+    },
+    {
+      "key": "boverket:020507:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020507",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020507/2",
+      "label": "Fäbod",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Fäbod"
+      ]
+    },
+    {
+      "key": "boverket:020508:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020508",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020508/2",
+      "label": "Samlingslokal",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Samlingslokal"
+      ]
+    },
+    {
+      "key": "boverket:020509:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020509",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020509/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Kultur",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0206:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0206",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0206/1",
+      "label": "Idrott",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott"
+      ]
+    },
+    {
+      "key": "boverket:020601:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020601",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020601/2",
+      "label": "Badhus",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott",
+        "Badhus"
+      ]
+    },
+    {
+      "key": "boverket:020602:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020602",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020602/2",
+      "label": "Multiarena",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott",
+        "Multiarena"
+      ]
+    },
+    {
+      "key": "boverket:020603:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020603",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020603/2",
+      "label": "Ridhus",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott",
+        "Ridhus"
+      ]
+    },
+    {
+      "key": "boverket:020604:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020604",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020604/2",
+      "label": "Idrottshall",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott",
+        "Idrottshall"
+      ]
+    },
+    {
+      "key": "boverket:020605:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020605",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020605/2",
+      "label": "Ishall",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott",
+        "Ishall"
+      ]
+    },
+    {
+      "key": "boverket:020606:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020606",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020606/2",
+      "label": "Komplement till idrottsplats",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott",
+        "Komplement till idrottsplats"
+      ]
+    },
+    {
+      "key": "boverket:020607:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020607",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020607/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Idrott",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0207:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0207",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0207/1",
+      "label": "Hälsa och sjukvård",
+      "path": [
+        "Samhällsfunktion",
+        "Hälsa och sjukvård"
+      ]
+    },
+    {
+      "key": "boverket:020701:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020701",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020701/2",
+      "label": "Vård- och omsorgsboende",
+      "path": [
+        "Samhällsfunktion",
+        "Hälsa och sjukvård",
+        "Vård- och omsorgsboende"
+      ]
+    },
+    {
+      "key": "boverket:020702:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020702",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020702/2",
+      "label": "Sjukhus",
+      "path": [
+        "Samhällsfunktion",
+        "Hälsa och sjukvård",
+        "Sjukhus"
+      ]
+    },
+    {
+      "key": "boverket:020703:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020703",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020703/2",
+      "label": "Primärvård",
+      "path": [
+        "Samhällsfunktion",
+        "Hälsa och sjukvård",
+        "Primärvård"
+      ]
+    },
+    {
+      "key": "boverket:020704:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020704",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020704/2",
+      "label": "Tandvård",
+      "path": [
+        "Samhällsfunktion",
+        "Hälsa och sjukvård",
+        "Tandvård"
+      ]
+    },
+    {
+      "key": "boverket:020705:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020705",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020705/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Hälsa och sjukvård",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0208:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0208",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0208/1",
+      "label": "Djurvård",
+      "path": [
+        "Samhällsfunktion",
+        "Djurvård"
+      ]
+    },
+    {
+      "key": "boverket:020801:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020801",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020801/2",
+      "label": "Djurvård",
+      "path": [
+        "Samhällsfunktion",
+        "Djurvård",
+        "Djurvård"
+      ]
+    },
+    {
+      "key": "boverket:020802:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020802",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020802/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Djurvård",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0209:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0209",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0209/1",
+      "label": "Samfund",
+      "path": [
+        "Samhällsfunktion",
+        "Samfund"
+      ]
+    },
+    {
+      "key": "boverket:020901:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020901",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020901/2",
+      "label": "Samfund",
+      "path": [
+        "Samhällsfunktion",
+        "Samfund",
+        "Samfund"
+      ]
+    },
+    {
+      "key": "boverket:020902:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020902",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020902/2",
+      "label": "Krematorium",
+      "path": [
+        "Samhällsfunktion",
+        "Samfund",
+        "Krematorium"
+      ]
+    },
+    {
+      "key": "boverket:020903:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "020903",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/020903/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Samfund",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0210:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0210",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0210/1",
+      "label": "Teknisk försörjning",
+      "path": [
+        "Samhällsfunktion",
+        "Teknisk försörjning"
+      ]
+    },
+    {
+      "key": "boverket:021001:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "021001",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/021001/2",
+      "label": "Offentlig toalett",
+      "path": [
+        "Samhällsfunktion",
+        "Teknisk försörjning",
+        "Offentlig toalett"
+      ]
+    },
+    {
+      "key": "boverket:021002:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "021002",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/021002/2",
+      "label": "Återvinningscentral",
+      "path": [
+        "Samhällsfunktion",
+        "Teknisk försörjning",
+        "Återvinningscentral"
+      ]
+    },
+    {
+      "key": "boverket:021003:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "021003",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/021003/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Teknisk försörjning",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0211:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0211",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0211/2",
+      "label": "Okänd",
+      "path": [
+        "Samhällsfunktion",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:03:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "03",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/03/1",
+      "label": "Verksamhet",
+      "path": [
+        "Verksamhet"
+      ]
+    },
+    {
+      "key": "boverket:0301:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0301",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0301/1",
+      "label": "Logi och restaurang",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang"
+      ]
+    },
+    {
+      "key": "boverket:030101:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030101",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030101/2",
+      "label": "Hotell",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Hotell"
+      ]
+    },
+    {
+      "key": "boverket:030102:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030102",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030102/2",
+      "label": "Övrig tillfällig vistelse",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Övrig tillfällig vistelse"
+      ]
+    },
+    {
+      "key": "boverket:030103:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030103",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030103/2",
+      "label": "Härbärge",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Härbärge"
+      ]
+    },
+    {
+      "key": "boverket:030104:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030104",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030104/2",
+      "label": "Servicebyggnad",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Servicebyggnad"
+      ]
+    },
+    {
+      "key": "boverket:030105:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030105",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030105/2",
+      "label": "Stuga",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Stuga"
+      ]
+    },
+    {
+      "key": "boverket:030106:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030106",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030106/2",
+      "label": "Konferens",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Konferens"
+      ]
+    },
+    {
+      "key": "boverket:030107:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030107",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030107/2",
+      "label": "Restaurang",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Restaurang"
+      ]
+    },
+    {
+      "key": "boverket:030108:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030108",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030108/2",
+      "label": "Okänd",
+      "path": [
+        "Verksamhet",
+        "Logi och restaurang",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0302:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0302",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0302/1",
+      "label": "Kontor",
+      "path": [
+        "Verksamhet",
+        "Kontor"
+      ]
+    },
+    {
+      "key": "boverket:030201:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030201",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030201/2",
+      "label": "Kontor",
+      "path": [
+        "Verksamhet",
+        "Kontor",
+        "Kontor"
+      ]
+    },
+    {
+      "key": "boverket:030202:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030202",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030202/2",
+      "label": "Okänd",
+      "path": [
+        "Verksamhet",
+        "Kontor",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0303:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0303",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0303/1",
+      "label": "Handel",
+      "path": [
+        "Verksamhet",
+        "Handel"
+      ]
+    },
+    {
+      "key": "boverket:030301:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030301",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030301/2",
+      "label": "Drivmedel",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Drivmedel"
+      ]
+    },
+    {
+      "key": "boverket:030302:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030302",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030302/2",
+      "label": "Fordonstvätt",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Fordonstvätt"
+      ]
+    },
+    {
+      "key": "boverket:030303:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030303",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030303/2",
+      "label": "Partihandel",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Partihandel"
+      ]
+    },
+    {
+      "key": "boverket:030304:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030304",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030304/2",
+      "label": "Köpcentrum",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Köpcentrum"
+      ]
+    },
+    {
+      "key": "boverket:030305:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030305",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030305/2",
+      "label": "Detaljhandel med livsmedel",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Detaljhandel med livsmedel"
+      ]
+    },
+    {
+      "key": "boverket:030306:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030306",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030306/2",
+      "label": "Detaljhandel med skrymmande varor",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Detaljhandel med skrymmande varor"
+      ]
+    },
+    {
+      "key": "boverket:030307:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030307",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030307/2",
+      "label": "Detaljhandel utom livsmedel",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Detaljhandel utom livsmedel"
+      ]
+    },
+    {
+      "key": "boverket:030308:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030308",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030308/2",
+      "label": "Detaljhandel utom skrymmande varor",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Detaljhandel utom skrymmande varor"
+      ]
+    },
+    {
+      "key": "boverket:030309:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030309",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030309/2",
+      "label": "Detaljhandel utom livsmedel eller skrymmande varor",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Detaljhandel utom livsmedel eller skrymmande varor"
+      ]
+    },
+    {
+      "key": "boverket:030310:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030310",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030310/2",
+      "label": "Detaljhandel",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Detaljhandel"
+      ]
+    },
+    {
+      "key": "boverket:030311:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030311",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030311/2",
+      "label": "Mässhall",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Mässhall"
+      ]
+    },
+    {
+      "key": "boverket:030312:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030312",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030312/2",
+      "label": "Service",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Service"
+      ]
+    },
+    {
+      "key": "boverket:030313:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030313",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030313/2",
+      "label": "Okänd",
+      "path": [
+        "Verksamhet",
+        "Handel",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0304:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0304",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0304/1",
+      "label": "Verksamhetskomplement",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement"
+      ]
+    },
+    {
+      "key": "boverket:030401:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030401",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030401/2",
+      "label": "Lager",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Lager"
+      ]
+    },
+    {
+      "key": "boverket:030402:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030402",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030402/2",
+      "label": "Miljöhus",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Miljöhus"
+      ]
+    },
+    {
+      "key": "boverket:030403:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030403",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030403/2",
+      "label": "Cykelförvaring",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Cykelförvaring"
+      ]
+    },
+    {
+      "key": "boverket:030404:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030404",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030404/2",
+      "label": "Garage",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Garage"
+      ]
+    },
+    {
+      "key": "boverket:030405:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030405",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030405/2",
+      "label": "Carport",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Carport"
+      ]
+    },
+    {
+      "key": "boverket:030406:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030406",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030406/2",
+      "label": "Kundvagnsparkering",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Kundvagnsparkering"
+      ]
+    },
+    {
+      "key": "boverket:030407:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030407",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030407/2",
+      "label": "Skärmtak",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Skärmtak"
+      ]
+    },
+    {
+      "key": "boverket:030408:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030408",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030408/2",
+      "label": "Förråd",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Förråd"
+      ]
+    },
+    {
+      "key": "boverket:030409:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030409",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030409/2",
+      "label": "Teknisk försörjning",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Teknisk försörjning"
+      ]
+    },
+    {
+      "key": "boverket:030410:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "030410",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/030410/2",
+      "label": "Okänd",
+      "path": [
+        "Verksamhet",
+        "Verksamhetskomplement",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0305:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0305",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0305/2",
+      "label": "Okänd",
+      "path": [
+        "Verksamhet",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:04:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "04",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/04/1",
+      "label": "Industri",
+      "path": [
+        "Industri"
+      ]
+    },
+    {
+      "key": "boverket:0401:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0401",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0401/1",
+      "label": "Industri",
+      "path": [
+        "Industri",
+        "Industri"
+      ]
+    },
+    {
+      "key": "boverket:040101:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040101",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040101/2",
+      "label": "Tillverkning",
+      "path": [
+        "Industri",
+        "Industri",
+        "Tillverkning"
+      ]
+    },
+    {
+      "key": "boverket:040102:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040102",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040102/2",
+      "label": "Cistern",
+      "path": [
+        "Industri",
+        "Industri",
+        "Cistern"
+      ]
+    },
+    {
+      "key": "boverket:040103:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040103",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040103/2",
+      "label": "Silo",
+      "path": [
+        "Industri",
+        "Industri",
+        "Silo"
+      ]
+    },
+    {
+      "key": "boverket:040104:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040104",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040104/2",
+      "label": "Kyl- och fryshus",
+      "path": [
+        "Industri",
+        "Industri",
+        "Kyl- och fryshus"
+      ]
+    },
+    {
+      "key": "boverket:040105:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040105",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040105/2",
+      "label": "Lager",
+      "path": [
+        "Industri",
+        "Industri",
+        "Lager"
+      ]
+    },
+    {
+      "key": "boverket:040106:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040106",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040106/2",
+      "label": "Okänd",
+      "path": [
+        "Industri",
+        "Industri",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0402:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0402",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0402/1",
+      "label": "Industrikomplement",
+      "path": [
+        "Industri",
+        "Industrikomplement"
+      ]
+    },
+    {
+      "key": "boverket:040201:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040201",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040201/2",
+      "label": "Miljöhus",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Miljöhus"
+      ]
+    },
+    {
+      "key": "boverket:040202:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040202",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040202/2",
+      "label": "Cykelförvaring",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Cykelförvaring"
+      ]
+    },
+    {
+      "key": "boverket:040203:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040203",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040203/2",
+      "label": "Garage",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Garage"
+      ]
+    },
+    {
+      "key": "boverket:040204:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040204",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040204/2",
+      "label": "Carport",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Carport"
+      ]
+    },
+    {
+      "key": "boverket:040205:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040205",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040205/2",
+      "label": "Skärmtak",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Skärmtak"
+      ]
+    },
+    {
+      "key": "boverket:040206:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040206",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040206/2",
+      "label": "Förråd",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Förråd"
+      ]
+    },
+    {
+      "key": "boverket:040207:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040207",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040207/2",
+      "label": "Teknisk försörjning",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Teknisk försörjning"
+      ]
+    },
+    {
+      "key": "boverket:040208:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040208",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040208/2",
+      "label": "Lastkaj",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Lastkaj"
+      ]
+    },
+    {
+      "key": "boverket:040209:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "040209",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/040209/2",
+      "label": "Okänd",
+      "path": [
+        "Industri",
+        "Industrikomplement",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0403:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0403",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0403/2",
+      "label": "Okänd",
+      "path": [
+        "Industri",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:05:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "05",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/05/2",
+      "label": "Lantbruk och liknande näring",
+      "path": [
+        "Lantbruk och liknande näring"
+      ]
+    },
+    {
+      "key": "boverket:0501:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0501",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0501/2",
+      "label": "Lantbruk",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk"
+      ]
+    },
+    {
+      "key": "boverket:050101:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050101",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050101/3",
+      "label": "Silo",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk",
+        "Silo"
+      ]
+    },
+    {
+      "key": "boverket:050102:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050102",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050102/3",
+      "label": "Maskinhall",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk",
+        "Maskinhall"
+      ]
+    },
+    {
+      "key": "boverket:050103:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050103",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050103/2",
+      "label": "Cistern",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk",
+        "Cistern"
+      ]
+    },
+    {
+      "key": "boverket:050104:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050104",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050104/3",
+      "label": "Växthus",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk",
+        "Växthus"
+      ]
+    },
+    {
+      "key": "boverket:050105:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050105",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050105/3",
+      "label": "Djurstall",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk",
+        "Djurstall"
+      ]
+    },
+    {
+      "key": "boverket:050106:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050106",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050106/3",
+      "label": "Lantbrukskomplement",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk",
+        "Lantbrukskomplement"
+      ]
+    },
+    {
+      "key": "boverket:050107:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050107",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050107/2",
+      "label": "Okänd",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Lantbruk",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0502:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0502",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0502/2",
+      "label": "Fiske",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Fiske"
+      ]
+    },
+    {
+      "key": "boverket:050201:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050201",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050201/3",
+      "label": "Fiske",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Fiske",
+        "Fiske"
+      ]
+    },
+    {
+      "key": "boverket:0503:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0503",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0503/2",
+      "label": "Rennäring",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Rennäring"
+      ]
+    },
+    {
+      "key": "boverket:050301:v3",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "050301",
+      "version": 3,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/050301/3",
+      "label": "Rennäring",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Rennäring",
+        "Rennäring"
+      ]
+    },
+    {
+      "key": "boverket:0504:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0504",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0504/2",
+      "label": "Okänd",
+      "path": [
+        "Lantbruk och liknande näring",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:06:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "06",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/06/2",
+      "label": "Övriga byggnadsverk",
+      "path": [
+        "Övriga byggnadsverk"
+      ]
+    },
+    {
+      "key": "boverket:0601:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0601",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0601/1",
+      "label": "Friluftsbyggnad",
+      "path": [
+        "Övriga byggnadsverk",
+        "Friluftsbyggnad"
+      ]
+    },
+    {
+      "key": "boverket:060101:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060101",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060101/2",
+      "label": "Vindskydd",
+      "path": [
+        "Övriga byggnadsverk",
+        "Friluftsbyggnad",
+        "Vindskydd"
+      ]
+    },
+    {
+      "key": "boverket:060102:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060102",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060102/2",
+      "label": "Värme- och raststuga",
+      "path": [
+        "Övriga byggnadsverk",
+        "Friluftsbyggnad",
+        "Värme- och raststuga"
+      ]
+    },
+    {
+      "key": "boverket:060103:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060103",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060103/2",
+      "label": "Okänd",
+      "path": [
+        "Övriga byggnadsverk",
+        "Friluftsbyggnad",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0602:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0602",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0602/1",
+      "label": "Fritidsbyggnad",
+      "path": [
+        "Övriga byggnadsverk",
+        "Fritidsbyggnad"
+      ]
+    },
+    {
+      "key": "boverket:060201:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060201",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060201/2",
+      "label": "Kolonistuga",
+      "path": [
+        "Övriga byggnadsverk",
+        "Fritidsbyggnad",
+        "Kolonistuga"
+      ]
+    },
+    {
+      "key": "boverket:060202:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060202",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060202/2",
+      "label": "Sjöbod",
+      "path": [
+        "Övriga byggnadsverk",
+        "Fritidsbyggnad",
+        "Sjöbod"
+      ]
+    },
+    {
+      "key": "boverket:060203:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060203",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060203/2",
+      "label": "Jaktstuga",
+      "path": [
+        "Övriga byggnadsverk",
+        "Fritidsbyggnad",
+        "Jaktstuga"
+      ]
+    },
+    {
+      "key": "boverket:060204:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060204",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060204/2",
+      "label": "Okänd",
+      "path": [
+        "Övriga byggnadsverk",
+        "Fritidsbyggnad",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0603:v2",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0603",
+      "version": 2,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0603/2",
+      "label": "Byggnadsverk",
+      "path": [
+        "Övriga byggnadsverk",
+        "Byggnadsverk"
+      ]
+    },
+    {
+      "key": "boverket:060302:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060302",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060302/1",
+      "label": "Mur",
+      "path": [
+        "Övriga byggnadsverk",
+        "Byggnadsverk",
+        "Mur"
+      ]
+    },
+    {
+      "key": "boverket:060303:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060303",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060303/1",
+      "label": "Mast",
+      "path": [
+        "Övriga byggnadsverk",
+        "Byggnadsverk",
+        "Mast"
+      ]
+    },
+    {
+      "key": "boverket:060304:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060304",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060304/1",
+      "label": "Torn",
+      "path": [
+        "Övriga byggnadsverk",
+        "Byggnadsverk",
+        "Torn"
+      ]
+    },
+    {
+      "key": "boverket:060305:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060305",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060305/1",
+      "label": "Okänd",
+      "path": [
+        "Övriga byggnadsverk",
+        "Byggnadsverk",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:060306:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "060306",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/060306/1",
+      "label": "Plank",
+      "path": [
+        "Övriga byggnadsverk",
+        "Byggnadsverk",
+        "Plank"
+      ]
+    },
+    {
+      "key": "boverket:0604:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0604",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0604/1",
+      "label": "Okänd",
+      "path": [
+        "Övriga byggnadsverk",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:07:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "07",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/07/1",
+      "label": "Okänd",
+      "path": [
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:0701:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "0701",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/0701/1",
+      "label": "Okänd",
+      "path": [
+        "Okänd",
+        "Okänd"
+      ]
+    },
+    {
+      "key": "boverket:070101:v1",
+      "source": "boverket-andamalskatalogen",
+      "conceptNumber": "070101",
+      "version": 1,
+      "uri": "https://api.boverket.se/andamalskatalogen/v1/concepts/070101/1",
+      "label": "Okänd",
+      "path": [
+        "Okänd",
+        "Okänd",
+        "Okänd"
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { loadAppendixText } from '@/lib/report/loadAppendixText'
 import type { ReportBlock, ReportSection, TextSource } from '@/lib/report/reportSpec'
 import ReportRendererClient from '@/components/report/ReportRendererClient'
+import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
 
 type ReportRendererProps = {
   spec: ReportSection[]
@@ -50,7 +51,14 @@ const resolveTextSource = (
 ): TextSource => {
   if (source.kind === 'standardText') {
     const raw = loadStandardText(source.id)
-    return { kind: 'static', text: interpolateStandardText(raw, mockData) }
+    let text = interpolateStandardText(raw, mockData)
+    if (source.id === 'STD_VISUAL_INSPECTION_CONDITIONS') {
+      const level = getMockValue(mockData, 'mock.inspection_conditions.furnishing_level').trim()
+      if (level && level !== '--' && level !== 'saknas') {
+        text = text.replace('fullt möblerad', formatFurnishingLevel(level))
+      }
+    }
+    return { kind: 'static', text }
   }
   return source
 }

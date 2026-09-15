@@ -10,10 +10,7 @@ import { deriveTuWorkflowSteps } from '../src/lib/tu/workflow.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { resolveTuWorkflowProfile } from '../src/lib/tu/workflowProfiles.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import {
-  getTuAnalysisFinalizationBlocker,
-  isTuStaleAnalysisAcknowledgementCurrent,
-} from '../src/lib/tu/finalization.ts'
+import { getTuAnalysisFinalizationBlocker, isTuStaleAnalysisAcknowledgementCurrent } from '../src/lib/tu/finalization.ts'
 
 function workflowSource(workflowProfile: 'field_report' | 'post_damage_review') {
   return {

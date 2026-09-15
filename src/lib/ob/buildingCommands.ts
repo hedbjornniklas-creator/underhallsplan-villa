@@ -26,9 +26,11 @@ export function validateBuildingCommand(inspectionId: string, body: unknown): bo
     && (p.targetBuildingPartId === undefined || isBuildingId(p.targetBuildingPartId))
     && validateRoundMutation(inspectionId, { operation: p.operation, payload: p })
   if (!isBuildingId(p.requestId)) return false
+  if (p.purposeCatalogueVersion !== undefined && p.purposeCatalogueVersion !== 1) return false
   if (body.operation === 'activate' || body.operation === 'add') return shortText(p.name)
     && (p.buildingId === null || isBuildingId(p.buildingId))
-    && (body.operation === 'activate' ? p.confirmed === true && typeof p.activationToken === 'string' && /^[a-f0-9]{32}$/.test(p.activationToken) : shortText(p.categoryKey))
+    && (p.categoryKey === undefined || p.categoryKey === null || shortText(p.categoryKey))
+    && (body.operation !== 'activate' || p.confirmed === true && typeof p.activationToken === 'string' && /^[a-f0-9]{32}$/.test(p.activationToken))
   if (!isBuildingId(p.partId)) return false
   if (body.operation === 'row') {
     if (!isBuildingId(p.id) || !object(p.row) || !Object.hasOwn(BUILDING_ROW_FIELDS, String(p.table))
@@ -51,7 +53,7 @@ export function validateBuildingCommand(inspectionId: string, body: unknown): bo
   if (body.operation === 'floors') return validFloorLevels(p.levels)
   if (body.operation === 'remove') return true
   if (body.operation !== 'edit') return false
-  return (p.name === undefined || shortText(p.name)) && (p.categoryKey === undefined || shortText(p.categoryKey))
+  return (p.name === undefined || shortText(p.name)) && (p.categoryKey === undefined || p.categoryKey === null || shortText(p.categoryKey))
     && (p.scopeNote === undefined || p.scopeNote === null || typeof p.scopeNote === 'string' && p.scopeNote.length <= 10000)
     && (p.coverPath === undefined || p.coverPath === null || typeof p.coverPath === 'string'
       && p.coverPath.startsWith(`${inspectionId}/building-covers/${p.partId}/`) && !p.coverPath.includes('..'))

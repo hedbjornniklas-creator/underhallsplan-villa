@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ObBuildingPart, ObBuildingStructure } from './buildingStructure'
 import { validFloorLevels } from './floorModel'
+import type { BuildingCategory } from '../buildings/buildingPurpose'
 
 export async function readBuildingReportState(db: SupabaseClient, inspectionId: string) {
   const { data: structure, error } = await db.from('ob_inspection_structure').select('*').eq('inspection_id', inspectionId).maybeSingle()
@@ -17,6 +18,16 @@ export async function readBuildingReportState(db: SupabaseClient, inspectionId: 
     return { ...part, floor_model: model.levels === null ? null : { levels: model.levels, revision: model.revision } } as ObBuildingPart
   })
   if (!parts.some(part => part.id === structure.primary_part_id)) throw Error('Besiktningens huvudbyggnad saknas.')
+  const classified = parts.filter(part => part.category_key?.startsWith('boverket:'))
+  if (classified.length) {
+    const { data: categories, error: categoryError } = await db.from('settings_ob_building_categories').select('*').in('key', classified.map(part => part.category_key))
+    if (categoryError) throw categoryError
+    for (const part of classified) {
+      const purpose = (categories as BuildingCategory[] | null)?.find(row => row.key === part.category_key)?.catalogue_entry
+      if (!purpose || purpose.key !== part.category_key) throw Error('Byggnadens ändamål kunde inte hämtas.')
+      part.purpose = purpose
+    }
+  }
   return { structure: structure as ObBuildingStructure, parts }
 }
 

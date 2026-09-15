@@ -392,7 +392,7 @@ test('profile save rejects external, foreign, mismatched and non-upload media pa
   const ownPrefix = `profiles/${PROFILE_ID}/organizations/${ORG_A}/`
   const otherProfile = '55555555-5555-4555-8555-555555555555'
   const uploadId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-  const invalidCases = [
+  const invalidCases: Array<Record<string, string | null>> = [
     { avatarPath: 'https://attacker.example/avatar.png' },
     { avatarPath: `profiles/${PROFILE_ID}/organizations/${ORG_B}/avatarPath-${uploadId}.png` },
     { logoPath: `profiles/${otherProfile}/organizations/${ORG_A}/logoPath-${uploadId}.png` },

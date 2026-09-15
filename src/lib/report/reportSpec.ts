@@ -41,6 +41,7 @@ export type ReportBlock =
       marginTopMm: number
       marginBottomMm: number
       small?: boolean
+      layout?: 'buildingData'
     }
   | {
       type: 'boxedText'
@@ -1266,12 +1267,14 @@ export function buildReportSpec(params?: {
     const id = `appendix-building-${building.id}`
     const title = `Bilaga ${number}: ${building.name}`
     const path = `mock.appendices.buildings.${index}`
-    const textBlock = (field: string): ReportBlock => ({ type: 'text', source: { kind: 'mock', path: `${path}.${field}` }, marginTopMm: 0, marginBottomMm: 4 })
     const heading = (text: string): ReportBlock => ({ type: 'heading', level: 3, text, marginTopMm: 3, marginBottomMm: 2 })
     const items = (field: string): ReportBlock => ({ type: 'inspectionBlocks', itemsPath: `${path}.${field}`, marginTopMm: 0, marginBottomMm: 4 })
     spec.push({ id, title, startOnNewPage: true, type: 'standard', blocks: [
       { type: 'heading', level: 2, text: title, marginTopMm: 0, marginBottomMm: 4 },
-      items('introduction'), heading('Förutsättningar'), textBlock('conditions.furnishing_level'), textBlock('buildingData.text'),
+      items('introduction'), heading('Förutsättningar'),
+      { type: 'twoColumn', labelWidthMm: 50, rowGapMm: 1.4, marginTopMm: 0, marginBottomMm: 4,
+        rows: [{ label: 'Möblering:', value: { kind: 'mock', path: `${path}.conditions.furnishing_level` } }] },
+      { type: 'text', source: { kind: 'mock', path: `${path}.buildingData.text` }, layout: 'buildingData', marginTopMm: 0, marginBottomMm: 4 },
       heading('Byggnad - utsida'), items('exterior.blocks'), heading('Byggnad - insida'), items('interior.blocks'),
       { type: 'boxedText', source: { kind: 'standardText', id: 'STD_FTU_GENERAL_NOTICE' }, marginTopMm: 2, marginBottomMm: 0 },
     ] })

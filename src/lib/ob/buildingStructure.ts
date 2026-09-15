@@ -1,11 +1,13 @@
 import type { ObFloorModel } from './floorModel'
+import type { BuildingCategory, BuildingPurpose } from '../buildings/buildingPurpose'
 
 export type ObBuildingPart = {
   id: string
   inspection_id: string
   building_id: string
   name: string
-  category_key: string
+  category_key: string | null
+  purpose?: BuildingPurpose | null
   cover_path: string | null
   scope_note: string | null
   sort_order: number
@@ -19,7 +21,7 @@ export type ObBuildingOverview = {
   structure: ObBuildingStructure | null
   parts: ObBuildingPart[]
   buildings: { id: string; name: string }[]
-  categories: { key: string; label: string }[]
+  categories: BuildingCategory[]
 }
 export const EMPTY_BUILDING_OVERVIEW: ObBuildingOverview = {
   available: false, structure: null, parts: [], buildings: [], categories: [],

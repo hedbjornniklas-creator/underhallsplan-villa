@@ -4,6 +4,7 @@ import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { useComponentCatalogueAccess } from '@/hooks/useComponentCatalogueAccess'
 
 type Row = {
   id: string
@@ -18,6 +19,7 @@ type Row = {
 }
 
 export default function InsidaSettingsPage() {
+  const { canEdit, loading: accessLoading, failed: accessFailed } = useComponentCatalogueAccess()
   const [rows, setRows] = useState<Row[]>([])
   const [q, setQ] = useState('')
 
@@ -44,6 +46,7 @@ export default function InsidaSettingsPage() {
   }
 
   const addRow = async () => {
+    if (!canEdit) return
     const { data, error } = await supabase
       .from('component_types')
       .insert({
@@ -66,10 +69,13 @@ export default function InsidaSettingsPage() {
   }
 
   const saveRow = async (id: string, patch: Partial<Row>) => {
+    if (!canEdit) return
     const { error } = await supabase
       .from('component_types')
       .update(patch)
       .eq('id', id)
+      .select('id')
+      .single()
 
     if (error) {
       alert(error.message)
@@ -82,11 +88,14 @@ export default function InsidaSettingsPage() {
   }
 
   const delRow = async (id: string) => {
+    if (!canEdit) return
     if (!confirm('Ta bort komponenttypen?')) return
     const { error } = await supabase
       .from('component_types')
       .delete()
       .eq('id', id)
+      .select('id')
+      .single()
 
     if (error) {
       alert(error.message)
@@ -108,7 +117,7 @@ export default function InsidaSettingsPage() {
   return (
     <Protected>
       <div className="p-4 md:p-6 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl md:text-2xl font-semibold">
             Insida – komponenttyper
           </h1>
@@ -117,26 +126,26 @@ export default function InsidaSettingsPage() {
           </Link>
         </div>
 
-        <p className="text-sm text-gray-600">
-          Här definierar du komponenttyper för insidan (badrum, kök, våtrum, ytskikt m.m.).
-        </p>
+        {!canEdit && <p role="status" className="text-sm text-gray-600">
+          {accessLoading ? 'Kontrollerar behörighet...' : accessFailed ? 'Behörigheten kunde inte kontrolleras. Katalogen är skrivskyddad.' : 'Skrivskyddad katalog'}
+        </p>}
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="Sök…"
             className="border rounded px-2 py-1 text-sm"
           />
-          <button
+          {canEdit && <button
             onClick={addRow}
             className="bg-emerald-600 text-white text-sm px-3 py-1.5 rounded"
           >
             + Ny komponent
-          </button>
+          </button>}
         </div>
 
-        <div className="overflow-auto">
+        <fieldset disabled={!canEdit} aria-label="Komponentkatalog" className="min-w-0 overflow-auto [contain:inline-size]">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-gray-600">
@@ -228,12 +237,12 @@ export default function InsidaSettingsPage() {
                     />
                   </td>
                   <td className="py-2">
-                    <button
+                    {canEdit && <button
                       onClick={() => delRow(r.id)}
                       className="text-rose-600 underline"
                     >
                       Ta bort
-                    </button>
+                    </button>}
                   </td>
                 </tr>
               ))}
@@ -246,7 +255,7 @@ export default function InsidaSettingsPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </fieldset>
       </div>
     </Protected>
   )

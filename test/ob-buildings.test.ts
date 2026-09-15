@@ -71,7 +71,8 @@ before(async () => {
     create unique index inspection_exterior_observations_unique_main on inspection_exterior_observations(inspection_id,exterior_item_id) where is_free_note=false;
   `)
   for (const name of ['2026-09-12_01_ob_building_parts.sql','2026-09-12_02_ob_building_commands.sql',
-    '2026-09-12_03_ob_building_round.sql','2026-09-12_04_ob_building_cutover.sql']) {
+    '2026-09-12_03_ob_building_round.sql','2026-09-12_04_ob_building_cutover.sql',
+    '2026-09-13_01_ob_building_purpose.sql','2026-09-13_02_ob_building_purpose_catalogue.sql']) {
     await db.exec(read(name)); await db.exec(read(name))
   }
   await db.exec("select set_config('request.jwt.claim.role','service_role',false)")
@@ -102,6 +103,64 @@ async function activate(id:string) {
 async function round(id:string, partId:string, operation:string, payload:Record<string,unknown>) {
   return (await one('select ob_building_round_mutate($1,$2,$3,$4,$5,$6) as data',[id,org,actor,operation,payload,partId])).data
 }
+
+test('purpose migrations are repeatable without rewriting a legacy category, report or related content', async () => {
+  const f = await fixture()
+  await db.exec('update ob_building_rollout set enabled=true')
+  const state = await command(f.i.id, 'activate', { name: 'Huvudbyggnad', buildingId: null, categoryKey: 'guesthouse',
+    confirmed: true, activationToken: (await overview(f.i.id)).activationToken })
+  assert.equal(state.parts[0].category_key, 'main', 'old clients keep activation semantics')
+  const before = await overview(f.i.id)
+  const report = await one('insert into inspection_report_links(inspection_id,snapshot_payload) values($1,$2) returning *',
+    [f.i.id, { reportData: { obBuildingRevision: before.structure.revision, legacyCategory: 'main' } }])
+  const originalImage = await one('select * from inspection_images where id=$1', [f.img.id])
+  await db.exec(read('2026-09-13_01_ob_building_purpose.sql'))
+  await db.exec(read('2026-09-13_02_ob_building_purpose_catalogue.sql'))
+  assert.equal((await one("select has_table_privilege('service_role','settings_ob_building_categories','SELECT') as allowed")).allowed, true)
+  assert.deepEqual(await overview(f.i.id), before)
+  assert.deepEqual(await one('select * from inspection_images where id=$1', [f.img.id]), originalImage)
+  assert.deepEqual(await one('select * from inspection_report_links where id=$1', [report.id]), report)
+  await db.exec('update ob_building_rollout set enabled=false')
+})
+
+test('purpose is optional, versioned, explicitly clearable and independent of the primary building role', async () => {
+  const f = await fixture()
+  await db.exec('update ob_building_rollout set enabled=true')
+  const initial = await command(f.i.id, 'activate', { name: 'Villan', buildingId: null, categoryKey: null,
+    purposeCatalogueVersion: 1, confirmed: true, activationToken: (await overview(f.i.id)).activationToken })
+  assert.equal(initial.parts[0].category_key, null)
+  const added = await command(f.i.id, 'add', { name: 'Eget fritt namn', buildingId: null, categoryKey: null })
+  const extra = added.parts.find((part: any) => part.id !== initial.parts[0].id)
+  assert.equal(extra.category_key, null)
+  const key = 'boverket:010404:v2'
+  const changed = await command(f.i.id, 'edit', { partId: extra.id, revision: extra.revision, categoryKey: key })
+  const selected = changed.parts.find((part: any) => part.id === extra.id)
+  assert.equal(selected.name, 'Eget fritt namn')
+  assert.equal(selected.category_key, key)
+  assert.equal(changed.categories.find((row: any) => row.key === key).catalogue_entry.version, 2)
+  const primary = changed.parts.find((part: any) => part.id === initial.parts[0].id)
+  const renamed = await command(f.i.id, 'edit', { partId: primary.id, revision: primary.revision, categoryKey: 'boverket:010101:v2' })
+  assert.equal(renamed.structure.primary_part_id, primary.id)
+  await assert.rejects(command(f.i.id, 'edit', { partId: extra.id, revision: extra.revision, categoryKey: null }), /STALE/)
+  await assert.rejects(command(f.i.id, 'edit', { partId: extra.id, revision: selected.revision, categoryKey: 'boverket:999999:v9' }), /foreign key/)
+  const cleared = await command(f.i.id, 'edit', { partId: extra.id, revision: selected.revision, categoryKey: null })
+  assert.equal(cleared.parts.find((part: any) => part.id === extra.id).category_key, null)
+  await db.exec('update ob_building_rollout set enabled=false')
+})
+
+test('catalogue versions cannot be rewritten or deleted and retired selected versions remain readable', async () => {
+  const f = await fixture(), state = await activate(f.i.id), part = state.parts[0]
+  const key = 'boverket:010404:v2'
+  await command(f.i.id, 'edit', { partId: part.id, revision: part.revision, categoryKey: key })
+  await assert.rejects(db.query('update settings_ob_building_categories set label=$1 where key=$2', ['New meaning', key]), /IMMUTABLE/)
+  await assert.rejects(db.query('update settings_ob_building_categories set catalogue_entry=null where key=$1', [key]), /IMMUTABLE/)
+  await assert.rejects(db.query('delete from settings_ob_building_categories where key=$1', [key]), /IMMUTABLE/)
+  await db.query('update settings_ob_building_categories set is_active=false where key=$1', [key])
+  const retired = (await overview(f.i.id)).categories.find((row: any) => row.key === key)
+  assert.equal(retired.label, 'Garage'); assert.equal(retired.is_active, false)
+  await db.query('update settings_ob_building_categories set is_active=true where key=$1', [key])
+  await db.exec('update ob_building_rollout set enabled=false')
+})
 test('rollout is off; additive migrations do not enroll or change legacy records',async()=>{
   const f=await fixture()
   assert.equal((await overview(f.i.id)).available,false)
