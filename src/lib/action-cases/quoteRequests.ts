@@ -1,11 +1,18 @@
-import type { ActionCaseQuoteRequest, ActionCaseRequestLine, ActionCaseView } from './contracts'
+import type { ActionCaseCostLineView, ActionCaseQuoteRequest, ActionCaseRequestLine, ActionCaseView } from './contracts'
 import { quoteId } from './quotes'
 
-export type PricePresentation = 'grouped' | 'itemized'
+export type PricePresentation = 'grouped' | 'itemized' | 'action_total' | 'line_items'
+export const REQUEST_CATEGORIES = ['own_labor', 'subcontractor', 'material', 'waste', 'transport', 'other'] as const
+export const requestCategoryLabel = (category?: string) => category === 'material' ? 'Material' : ['waste', 'transport', 'other'].includes(category ?? '') ? 'Övrigt' : 'Arbete'
+export const isFullRequest = (presentation?: PricePresentation) => presentation === 'action_total' || presentation === 'line_items'
 export type PackageRequestLine = ActionCaseRequestLine & {
   workPartId?: string | null
   workPartTitle?: string
   workPartScope?: string
+  category?: ActionCaseCostLineView['category']
+  quantity?: number | null
+  unit?: string
+  quantityBasis?: ActionCaseCostLineView['quantityBasis']
 }
 export type PackageQuoteRequest = Omit<ActionCaseQuoteRequest, 'lines'> & {
   lines: PackageRequestLine[]
@@ -17,12 +24,13 @@ export type QuoteRequestGroup = {
   lines: PackageRequestLine[]
 }
 
-export function groupRequestLines(lines: readonly PackageRequestLine[]): QuoteRequestGroup[] {
+export function groupRequestLines(lines: readonly PackageRequestLine[], presentation: PricePresentation = 'grouped'): QuoteRequestGroup[] {
   const groups = new Map<string, QuoteRequestGroup>()
   for (const line of lines) {
-    const key = `${line.itemId}:${line.workPartId ?? ''}`
+    const key = `${line.itemId}:${presentation === 'action_total' ? '' : presentation === 'line_items' ? line.costLineId : line.workPartId ?? ''}`
     const group = groups.get(key) ?? { key, itemId: line.itemId, itemTitle: line.itemTitle, scope: line.scope,
-      workPartId: line.workPartId ?? null, workPartTitle: line.workPartTitle ?? '', workPartScope: line.workPartScope ?? '', lines: [] }
+      workPartId: presentation === 'action_total' ? null : line.workPartId ?? null,
+      workPartTitle: presentation === 'action_total' ? '' : presentation === 'line_items' ? line.description : line.workPartTitle ?? '', workPartScope: line.workPartScope ?? '', lines: [] }
     group.lines.push(line)
     groups.set(key, group)
   }
@@ -55,11 +63,12 @@ function snapshotText(value: unknown, max: number) {
 }
 export function requestSources(actionCase: ActionCaseView): PackageRequestLine[] {
   return actionCase.items.filter((item) => !['cancelled', 'declined', 'completed'].includes(item.status)).flatMap((item) => item.costLines
-    .filter((line) => ['own_labor', 'subcontractor'].includes(line.category))
+    .filter((line) => REQUEST_CATEGORIES.includes(line.category))
     .map((line) => {
       const part = item.workParts?.find((part) => part.id === line.workPartId)
       return { costLineId: line.id, itemId: item.id, itemTitle: item.title, scope: item.scope ?? '', description: line.description,
-        workPartId: line.workPartId ?? null, workPartTitle: part?.title ?? '', workPartScope: part?.scope ?? '' }
+        workPartId: line.workPartId ?? null, workPartTitle: part?.title ?? '', workPartScope: part?.scope ?? '',
+        category: line.category, quantity: line.quantity, unit: line.unit, quantityBasis: line.quantityBasis }
     }))
 }
 
@@ -68,15 +77,23 @@ export function normalizeQuoteRequest(input: Record<string, unknown>) {
   const subject = text(input.subject, 200).replace(/[\r\n]/g, ' ')
   if (!supplierName || !subject || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(supplierEmail)) return invalid()
   if (!Array.isArray(input.lines) || !input.lines.length || input.lines.length > 30) return invalid()
-  const pricePresentation = input.pricePresentation ?? 'grouped'
-  if (pricePresentation !== 'grouped' && pricePresentation !== 'itemized') return invalid()
+  const pricePresentation = input.pricePresentation ?? 'action_total'
+  if (!['grouped', 'itemized', 'action_total', 'line_items'].includes(String(pricePresentation))) return invalid()
   const lines: PackageRequestLine[] = input.lines.map((value) => {
     if (!value || typeof value !== 'object') return invalid()
     const line = value as Record<string, unknown>
     const workPartId = line.workPartId == null ? null : quoteId(line.workPartId)
     const workPartTitle = snapshotText(line.workPartTitle ?? '', 500), workPartScope = snapshotText(line.workPartScope ?? '', 20000)
     if ((!workPartId && (workPartTitle || workPartScope)) || (workPartId && !workPartTitle)) return invalid()
-    return { costLineId: quoteId(line.costLineId), itemId: quoteId(line.itemId), itemTitle: snapshotText(line.itemTitle, 300), scope: snapshotText(line.scope, 12000), description: snapshotText(line.description, 1000), workPartId, workPartTitle, workPartScope }
+    let detail = {}
+    if (isFullRequest(pricePresentation as PricePresentation)) {
+      if (!REQUEST_CATEGORIES.includes(line.category as typeof REQUEST_CATEGORIES[number]) ||
+        (line.quantity !== null && (typeof line.quantity !== 'number' || !Number.isFinite(line.quantity) || line.quantity < 0 || line.quantity > 99999999999.999)) ||
+        typeof line.unit !== 'string' || !line.unit.trim() || line.unit.length > 40 ||
+        !['provided', 'calculated', 'estimated', 'unknown'].includes(String(line.quantityBasis))) return invalid()
+      detail = { category: line.category, quantity: line.quantity, unit: line.unit, quantityBasis: line.quantityBasis }
+    }
+    return { costLineId: quoteId(line.costLineId), itemId: quoteId(line.itemId), itemTitle: snapshotText(line.itemTitle, 300), scope: snapshotText(line.scope, 12000), description: snapshotText(line.description, 1000), workPartId, workPartTitle, workPartScope, ...detail }
   })
   if (new Set(lines.map((line) => line.costLineId)).size !== lines.length || lines.some((line) => !line.description || !line.itemTitle)) return invalid()
   for (const line of lines) {
@@ -103,6 +120,7 @@ export function buildQuoteRequestBody(request: Pick<ActionCaseQuoteRequest, 'mes
   lines: PackageRequestLine[]; pricePresentation?: PricePresentation
 }) {
   const blocks = ['Hej!', request.supplementsId ? `Komplettering till offertförfrågan ${request.supplementsId}. Nedanstående arbeten omfattas av denna komplettering.` : 'Vi önskar offert på nedanstående arbeten.', request.message]
+  if (isFullRequest(request.pricePresentation)) return buildFullRequestBody(request, blocks)
   const grouped = request.pricePresentation === 'grouped'
   const items = new Map<string, QuoteRequestGroup[]>()
   for (const group of groupRequestLines(request.lines)) items.set(group.itemId, [...(items.get(group.itemId) ?? []), group])
@@ -128,12 +146,43 @@ export function buildQuoteRequestBody(request: Pick<ActionCaseQuoteRequest, 'mes
   return blocks.filter(Boolean).join('\n\n')
 }
 
+export function requestLineText(line: PackageRequestLine) {
+  const quantity = line.quantity == null ? '' : ` · ${new Intl.NumberFormat('sv-SE', { maximumFractionDigits: 3 }).format(line.quantity)} ${line.unit}${line.quantityBasis === 'estimated' ? ' (uppskattat)' : line.quantityBasis === 'calculated' ? ' (beräknat)' : ''}`
+  return `${line.description}${quantity}`
+}
+
+function buildFullRequestBody(request: Parameters<typeof buildQuoteRequestBody>[0], blocks: string[]) {
+  let number = 0
+  for (const action of groupRequestLines(request.lines, 'action_total')) {
+    blocks.push(`Åtgärd: ${action.itemTitle}`)
+    if (action.scope) blocks.push(`Bakgrund: ${action.scope}`)
+    for (const part of groupRequestLines(action.lines)) {
+      if (part.workPartTitle) blocks.push(`Arbetsdel: ${part.workPartTitle}`)
+      if (part.workPartScope && part.workPartScope !== action.scope) blocks.push(`Bakgrund: ${part.workPartScope}`)
+      for (const category of ['Arbete', 'Material', 'Övrigt']) {
+        const rows = part.lines.filter((line) => requestCategoryLabel(line.category) === category)
+        if (rows.length) blocks.push(`${category}:`, ...rows.map((line) => `${request.pricePresentation === 'action_total' ? '-' : `${++number}.`} ${requestLineText(line)}`))
+      }
+    }
+    if (request.pricePresentation === 'action_total') blocks.push('Ange ett totalpris exklusive moms för åtgärdens samtliga valda delar ovan. Arbete, material och övrigt behöver inte prissättas var för sig.')
+  }
+  const included = request.requirements.filter((r) => r.kind === 'included'), separate = request.requirements.filter((r) => r.kind === 'separate')
+  blocks.push('Förfrågan omfattar de listade delarna och kraven nedan. Övriga delar i bakgrundsbeskrivningen ingår inte automatiskt. Ange eventuella undantag. Angivna mängder är underlag för prissättning; ange om din offert utgår från andra mängder.')
+  if (included.length) blocks.push('Utöver de listade delarna önskas även följande ingå, utan dubbeldebitering:', ...included.map((r) => `- ${r.text}`))
+  if (separate.length) blocks.push('Redovisa även dessa prisuppgifter separat:', ...separate.map((r) => `- ${r.text}`))
+  if (request.otherRequirements) blocks.push(`Övriga önskemål:\n${request.otherRequirements}`)
+  if (request.pricePresentation === 'line_items') blocks.push('Ange pris exklusive moms per numrerad del. Bekräfta om delpriserna gäller vid separat beställning.')
+  if (groupRequestLines(request.lines, 'action_total').length > 1) blocks.push('Ange ett totalpris per åtgärd och bekräfta om priserna gäller vid separat beställning. Gemensamma kostnader ska redovisas endast en gång med uppgift om var de ingår.')
+  blocks.push('Ange offertens giltighet, möjlig utförandetid och eventuella reservationer.', 'Detta är en offertförfrågan, inte en beställning.')
+  return blocks.filter(Boolean).join('\n\n')
+}
+
 export const REQUEST_VIEW_COLUMNS = 'id,action_case_id,supplier_name,supplier_email,subject,message,requirements,other_requirements,lines,attachment_ids,body,supplements_id,response_mode,package_amount,response_notes,response_document_id,delivery_status,sent_at,first_attempt_at,updated_at,price_presentation'
 export function mapQuoteRequest(row: Record<string, unknown>): PackageQuoteRequest {
   return { id: String(row.id), supplierName: String(row.supplier_name), supplierEmail: String(row.supplier_email),
     subject: String(row.subject), message: String(row.message), requirements: row.requirements as ActionCaseQuoteRequest['requirements'],
     otherRequirements: String(row.other_requirements), lines: row.lines as PackageRequestLine[], attachmentIds: row.attachment_ids as string[], body: String(row.body),
-    pricePresentation: row.price_presentation === 'grouped' ? 'grouped' : 'itemized',
+    pricePresentation: ['grouped', 'action_total', 'line_items'].includes(String(row.price_presentation)) ? row.price_presentation as PricePresentation : 'itemized',
     supplementsId: row.supplements_id ? String(row.supplements_id) : null, responseMode: row.response_mode as ActionCaseQuoteRequest['responseMode'],
     packageAmount: row.package_amount == null ? null : Number(row.package_amount), responseNotes: String(row.response_notes ?? ''), responseDocumentId: row.response_document_id ? String(row.response_document_id) : null,
     deliveryStatus: row.delivery_status as ActionCaseQuoteRequest['deliveryStatus'], sentAt: row.sent_at ? String(row.sent_at) : null,

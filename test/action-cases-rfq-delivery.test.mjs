@@ -33,6 +33,7 @@ before(async () => {
   for (const name of ['2026-09-08_03_action_case_costing', '2026-09-08_04_action_case_ai_costing', '2026-09-08_05_action_case_work_quotes', '2026-09-08_09_action_case_grouped_requests', '2026-09-09_02_action_case_scope_attachments', '2026-09-09_03_action_case_work_parts', '2026-09-09_04_action_case_package_pricing']) await db.exec(sql(name))
   await db.exec(`insert into organizations values('${id(1)}'),('${id(9)}'); insert into profiles values('${id(2)}');`)
   await db.exec(migration()); await db.exec(migration())
+  await db.exec(sql('2026-09-15_02_action_case_rfq_action_totals'))
 })
 after(async () => { await db.close() })
 
@@ -48,7 +49,7 @@ async function fixture(kind = 'request') {
   const write = async (operation, data) => kind === 'request'
     ? (await db.query('select write_action_case_request($1,$2,$3,$4,$5,$6::jsonb) result', [id(1), caseId, sourceId, id(2), operation, JSON.stringify(data)])).rows[0].result
     : (await db.query('select write_action_case_quote($1,$2,$3,$4,$5,$6,$7::jsonb) result', [id(1), caseId, itemId, lineId, id(2), operation, JSON.stringify({ id: sourceId, ...data })])).rows[0].result
-  if (kind === 'request') await write('save', requests.normalizeQuoteRequest({ requestId: sourceId, supplierName: 'UE', supplierEmail: 'ue@example.test', subject: 'Request', attachmentIds: [fileId], requirementKeys: [],
+  if (kind === 'request') await write('save', requests.normalizeQuoteRequest({ pricePresentation: 'grouped', requestId: sourceId, supplierName: 'UE', supplierEmail: 'ue@example.test', subject: 'Request', attachmentIds: [fileId], requirementKeys: [],
     lines: [{ costLineId: lineId, itemId, itemTitle: 'Action', scope: 'Scope', description: 'Work', workPartId: null, workPartTitle: '', workPartScope: '' }] }))
   else await write('save', { ...quotes.normalizeQuote({ quoteId: sourceId, supplierName: 'UE', supplierEmail: 'ue@example.test', requestSubject: 'Request', requestBody: 'Body', requestAttachmentIds: [fileId] }), scopeSnapshot: 'Scope', lineDescription: 'Work' })
   const payload = { to: 'ue@example.test', subject: 'Request', text: 'Private recipient link', idempotencyKey: sourceId }
@@ -79,6 +80,27 @@ test('first send freezes large selected originals with send claim, scoped immuta
   }
   const acl = (await db.query("select has_table_privilege('authenticated','action_case_rfq_deliveries','select') allowed, has_function_privilege('anon','claim_action_case_rfq_delivery(uuid,uuid,uuid,uuid,text,jsonb)','execute') execute")).rows[0]
   assert.equal(acl.allowed, false); assert.equal(acl.execute, false)
+})
+
+test('action-total material request uses the same immutable recipient link and send lease', async () => {
+  const f = await fixture()
+  await db.query("update action_case_cost_lines set category='material',quantity=12,unit='st',quantity_basis='provided' where id=$1", [f.lineId])
+  const saved = await get(f.table, f.sourceId)
+  await f.write('save', requests.normalizeQuoteRequest({ requestId: f.sourceId, expectedUpdatedAt: saved.updated_at,
+    supplierName: saved.supplier_name, supplierEmail: saved.supplier_email, subject: saved.subject,
+    attachmentIds: [f.fileId], requirementKeys: [], lines: saved.lines.map((line) => ({ ...line, category: 'material', quantity: 12, unit: 'st', quantityBasis: 'provided' })),
+  }))
+  const request = await get(f.table, f.sourceId)
+  const result = await f.claim({ expectedUpdatedAt: request.updated_at })
+  const delivery = await get('action_case_rfq_deliveries', f.deliveryId)
+  assert.match(request.body, /totalpris/)
+  assert.match(request.body, /12 st/)
+  assert.equal(request.price_presentation, 'action_total')
+  assert.equal(delivery.files[0].id, f.fileId)
+  assert.equal((await db.query('select count(*) n from action_case_work_quotes where request_id=$1', [f.sourceId])).rows[0].n, 0)
+  await f.write('finish_send', { leaseId: result.leaseId, success: false })
+  assert.deepEqual((await f.claim()).payload, result.payload)
+  assert.deepEqual(await get('action_case_rfq_deliveries', f.deliveryId), delivery)
 })
 
 test('foreign org, changed source/file, wrong selected IDs, >30 and mismatched email abort without claiming', async () => {

@@ -104,6 +104,10 @@ export type ActionCaseQuote = {
 }
 
 export type ActionCaseRequestLine = {
+  category?: ActionCaseCostLineView['category']
+  quantity?: number | null
+  unit?: string
+  quantityBasis?: ActionCaseCostLineView['quantityBasis']
   workPartId?: string | null
   workPartTitle?: string
   workPartScope?: string
@@ -116,7 +120,7 @@ export type ActionCaseRequestLine = {
 
 export type ActionCaseQuoteRequest = {
   delivery?: import('./rfqDelivery').RfqDelivery | null
-  pricePresentation?: 'grouped' | 'itemized'
+  pricePresentation?: 'grouped' | 'itemized' | 'action_total' | 'line_items'
   id: string
   supplierName: string
   supplierEmail: string

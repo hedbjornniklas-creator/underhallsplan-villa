@@ -73,7 +73,7 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
     return { ...initial, attachments: initial.attachments.map((file) => ({ ...file, fileSizeBytes: params.has('largeFiles') ? 6000000 : file.fileSizeBytes })), items: initial.items.map((item, n) => ({ ...item,
       ...(params.has('scope') && !initialCase ? { scopeAttachmentIds: [id(n === 0 ? 31 : 32), id(34)] } : {}),
       ...(params.has('parts') && !initialCase ? {
-        workParts: [{ id: id(41 + n), title: n === 0 ? 'Panel och målning' : 'Bleckarbete', scope: n === 0 ? 'Montera panel och måla två gånger.' : 'Täta bleckets anslutningar.', sortOrder: 100, updatedAt: version }],
+        workParts: [{ id: id(41 + n), title: n === 0 ? 'Panel och målning' : 'Bleckarbete', scope: n === 0 ? 'Montera panel och måla två gånger.' : 'Täta bleckets anslutningar.', sortOrder: 100, updatedAt: version }, ...(n === 0 && params.has('allCosts') ? [{ id: id(43), title: 'Transport', scope: 'Bortforsling av avfall.', sortOrder: 200, updatedAt: version }] : [])],
         costLines: [
           { ...item.costLines[0], workPartId: id(41 + n) },
           ...(n === 0 ? [
@@ -81,6 +81,7 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
             { ...item.costLines[0], id: id(24), description: 'Kontrollera anslutningar', workPartId: null },
           ] : []),
           ...(n === 0 && params.has('packages') ? [{ ...item.costLines[0], id: id(25), category: 'material' as const, description: 'Grundmålad panel', quantity: 4, unit: 'st', unitCost: 150, workPartId: id(41) }] : []),
+          ...(n === 0 && params.has('allCosts') ? [{ ...item.costLines[0], id: id(26), category: 'transport' as const, description: 'Bortforsling av avfall', quantity: 1, unit: 'st', unitCost: 1200, workPartId: id(43) }] : []),
         ],
       } : {}),
     })) }
@@ -111,7 +112,7 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
       if (action === 'quote_package') {
         const payload = normalizeQuotePackageAction(data)
         const request = actionCase.quoteRequests!.find((request) => request.id === payload.requestId)!
-        const group = groupRequestLines(request.lines).find((group) => group.key === payload.groupKey)!
+        const group = groupRequestLines(request.lines, request.pricePresentation).find((group) => group.key === payload.groupKey)!
         const key = `${request.id}:${group.key}`
         if (payload.expectedUpdatedAt !== request.updatedAt) { setBusy(false); toast.error('Förfrågan har ändrats.'); return false }
         if (payload.operation === 'accept' && packageFailure.current) {
@@ -136,7 +137,7 @@ export default function RequestApp({ initialCase, initialRequestId, preselectedL
               workPartId: group.workPartId, amount: payload.amount, coveredLineIds: lineIds.filter((id) => id !== anchorLineId), state: 'active', updatedAt,
             }],
             items: current.items.map((item) => item.id !== group.itemId ? item : { ...item, updatedAt, costLines: item.costLines.map((line) =>
-              line.id === anchorLineId ? { ...line, category: 'subcontractor', pricingMethod: 'quotes', quantity: 1, unit: 'uppdrag', unitCost: payload.amount, verified: true, selectedQuoteId: quoteId, quotes: [...(line.quotes ?? []), quote], updatedAt }
+              line.id === anchorLineId ? { ...line, category: ['own_labor', 'subcontractor'].includes(line.category) ? 'subcontractor' : line.category, pricingMethod: 'quotes', quantity: 1, unit: 'uppdrag', unitCost: payload.amount, verified: true, selectedQuoteId: quoteId, quotes: [...(line.quotes ?? []), quote], updatedAt }
                 : lineIds.includes(line.id) ? { ...line, coveredByQuoteId: quoteId, updatedAt } : line,
             ) }),
             quoteRequests: current.quoteRequests!.map((row) => row.id === request.id ? { ...row, updatedAt } : row),

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Check, Loader2, Plus, RotateCcw } from 'lucide-react'
 import type { ActionCaseQuoteRequest, ActionCaseView } from '@/lib/action-cases/contracts'
-import { groupRequestLines, type QuoteRequestGroup } from '@/lib/action-cases/quoteRequests'
+import { groupRequestLines, isFullRequest, requestLineText, type QuoteRequestGroup } from '@/lib/action-cases/quoteRequests'
 import { normalizeQuotePackageAction } from '@/lib/action-cases/quotePackages'
 import { groupPriceUsability } from './actionCaseGroupPricing'
 
@@ -25,7 +25,7 @@ function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel }: 
   onSave: (payload: Record<string, unknown>) => Promise<boolean>
   onCancel: () => void
 }) {
-  const multiple = groupRequestLines(request.lines).length > 1
+  const multiple = groupRequestLines(request.lines, request.pricePresentation).length > 1
   const item = actionCase.items.find((item) => item.id === group.itemId)
   const [expected] = useState(request.updatedAt)
   const [versions] = useState(() => Object.fromEntries((item?.costLines ?? []).map((line) => [line.id, line.updatedAt])))
@@ -35,7 +35,7 @@ function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel }: 
   const [covered, setCovered] = useState<string[]>([])
   const [checked, setChecked] = useState(false)
   const [independent, setIndependent] = useState(false)
-  const extras = (item?.costLines ?? []).filter((line) => !['own_labor', 'subcontractor'].includes(line.category) &&
+  const extras = isFullRequest(request.pricePresentation) ? [] : (item?.costLines ?? []).filter((line) => !['own_labor', 'subcontractor'].includes(line.category) &&
     (!line.workPartId || line.workPartId === group.workPartId) && !line.coveredByQuoteId && !line.selectedQuoteId)
   const priceIds = [...group.lines.map((line) => line.costLineId), ...covered]
   const payload = {
@@ -52,8 +52,9 @@ function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel }: 
     if (!busy && valid) void onSave(payload).then((saved) => { if (saved) onCancel() })
   }}>
     <fieldset disabled={busy} className="space-y-4">
+      {isFullRequest(request.pricePresentation) ? <ul className="list-inside list-disc text-sm text-slate-600" aria-label="Ingår i priset">{group.lines.map((line) => <li key={line.costLineId} className="break-words">{requestLineText(line)}</li>)}</ul> : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm">Grupppris exkl. moms, kr *<input autoFocus required name="groupAmount" type="number" min="0" step="0.01" className={input} value={amount} onChange={(event) => change(() => setAmount(event.target.value))} /></label>
+        <label className="text-sm">{request.pricePresentation === 'action_total' ? 'Totalpris' : request.pricePresentation === 'line_items' ? 'Delpris' : 'Grupppris'} exkl. moms, kr *<input autoFocus required name="groupAmount" type="number" min="0" step="0.01" className={input} value={amount} onChange={(event) => change(() => setAmount(event.target.value))} /></label>
         <label className="text-sm">Giltig till<input type="date" className={input} value={validUntil} onChange={(event) => change(() => setValidUntil(event.target.value))} /></label>
       </div>
       <label className="block text-sm">Offertens omfattning och eventuella undantag *<textarea required name="groupOfferedScope" rows={3} maxLength={4000} className={`${input} py-2`} value={scope} onChange={(event) => change(() => setScope(event.target.value))} /></label>
@@ -61,7 +62,7 @@ function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel }: 
       {multiple ? <label className="flex min-h-11 items-start gap-3 py-2 text-sm"><input type="checkbox" name="independentGroupPrice" className="mt-1 h-4 w-4 shrink-0 accent-violet-600" checked={independent} onChange={(event) => change(() => setIndependent(event.target.checked))} /><span>UE har bekräftat att detta grupppris gäller även vid separat beställning.</span></label> : null}
       <label className="flex min-h-11 items-start gap-3 py-2 text-sm"><input type="checkbox" name="groupPriceChecked" className="mt-1 h-4 w-4 shrink-0 accent-violet-600" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><span>Jag har kontrollerat belopp, omfattning och vilka kostnader som ingår.</span></label>
     </fieldset>
-    <div className="flex flex-wrap justify-end gap-2"><button type="button" className={secondary} disabled={busy} onClick={onCancel}>Avbryt</button><button className={primary} type="submit" disabled={busy || !valid}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}Använd grupppriset i kalkylen</button></div>
+    <div className="flex flex-wrap justify-end gap-2"><button type="button" className={secondary} disabled={busy} onClick={onCancel}>Avbryt</button><button className={primary} type="submit" disabled={busy || !valid}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}{request.pricePresentation === 'action_total' ? 'Använd totalpriset i kalkylen' : request.pricePresentation === 'line_items' ? 'Använd delpriset i kalkylen' : 'Använd grupppriset i kalkylen'}</button></div>
   </form>
 }
 
@@ -69,9 +70,9 @@ export default function ActionCaseGroupPrices({ actionCase, request, busy, onEdi
   const [editing, setEditing] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
   const cancel = () => { setEditing(null); setRemoving(null); onEditing(false) }
-  const groups = groupRequestLines(request.lines)
+  const groups = groupRequestLines(request.lines, request.pricePresentation)
   return <section className="border-t border-slate-200 pt-4" aria-label="Grupppriser">
-    <h3 className="font-semibold">Pris per åtgärd eller arbetsdel</h3>
+    <h3 className="font-semibold">{request.pricePresentation === 'action_total' ? 'Totalpris per åtgärd' : request.pricePresentation === 'line_items' ? 'Pris per kalkylrad' : 'Pris per åtgärd eller arbetsdel'}</h3>
     <ul className="mt-2 divide-y divide-slate-200">{groups.map((group) => {
       const active = actionCase.quotePackages?.find((price) => price.requestId === request.id && price.groupKey === group.key && price.state === 'active')
       const item = actionCase.items.find((item) => item.id === group.itemId)
@@ -81,8 +82,8 @@ export default function ActionCaseGroupPrices({ actionCase, request, busy, onEdi
       const missing = currentLines.some((line) => !line)
       const conflicting = currentLines.some((line) => line?.selectedQuoteId || line?.coveredByQuoteId)
       return <li key={group.key} className="py-3">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><strong className="block break-words text-sm">{group.workPartTitle ? `${group.itemTitle}: ${group.workPartTitle}` : group.itemTitle}</strong><p className="mt-1 text-xs text-slate-500">{group.lines.length} arbetsmoment</p>{active ? <p role="status" className={`mt-1 break-words text-sm font-semibold ${priceStatus.usable ? 'text-violet-800' : 'text-amber-800'}`}>{money(active.amount)} · {priceStatus.label}</p> : null}</div>
-          {active ? <button className={secondary} disabled={busy || Boolean(editing || removing)} type="button" onClick={() => { setRemoving(group.key); onEditing(true) }}><RotateCcw size={16} />Ta bort prisval</button> : <button className={secondary} disabled={busy || Boolean(editing || removing) || missing || conflicting} type="button" onClick={() => { setEditing(group.key); onEditing(true) }}><Plus size={16} />Registrera grupppris</button>}
+        <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><strong className="block break-words text-sm">{group.workPartTitle ? `${group.itemTitle}: ${group.workPartTitle}` : group.itemTitle}</strong><p className="mt-1 text-xs text-slate-500">{group.lines.length} {isFullRequest(request.pricePresentation) ? 'delar' : 'arbetsmoment'}</p>{active ? <p role="status" className={`mt-1 break-words text-sm font-semibold ${priceStatus.usable ? 'text-violet-800' : 'text-amber-800'}`}>{money(active.amount)} · {priceStatus.label}</p> : null}</div>
+          {active ? <button className={secondary} disabled={busy || Boolean(editing || removing)} type="button" onClick={() => { setRemoving(group.key); onEditing(true) }}><RotateCcw size={16} />Ta bort prisval</button> : <button className={secondary} disabled={busy || Boolean(editing || removing) || missing || conflicting} type="button" onClick={() => { setEditing(group.key); onEditing(true) }}><Plus size={16} />{request.pricePresentation === 'action_total' ? 'Registrera totalpris' : request.pricePresentation === 'line_items' ? 'Registrera delpris' : 'Registrera grupppris'}</button>}
         </div>
         {active && savedQuote ? <div className="mt-3 space-y-2">
           <p className="whitespace-pre-wrap break-words text-sm text-slate-600"><strong>Offertens omfattning:</strong> {savedQuote.offeredScope || 'Omfattning saknas'}</p>
