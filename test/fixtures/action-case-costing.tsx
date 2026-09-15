@@ -30,6 +30,12 @@ function App() {
         quantity: 4 + n, unit: 'tim', unitCost: 500 + n * 50, pricingMethod: 'direct',
         workPartId: null, quotes: [], updatedAt: version,
       })),
+      ...(params.has('allCosts') ? [
+        { ...initial.costLines[0], id: id(7), description: 'Grundfärg', verified: false, quantity: null, quantityBasis: 'unknown' as const, unitCost: null },
+        { ...initial.costLines[0], id: id(8), category: 'waste' as const, description: 'Avfallshantering' },
+        { ...initial.costLines[0], id: id(9), category: 'transport' as const, description: 'Transport' },
+      ] : []),
+      ...(params.has('manyLines') ? Array.from({ length: 31 }, (_, n) => ({ ...initial.costLines[0], id: id(100 + n), description: `Material ${n + 1}` })) : []),
     ],
   } : params.has('quotes') ? {
     ...initial, costLines: [

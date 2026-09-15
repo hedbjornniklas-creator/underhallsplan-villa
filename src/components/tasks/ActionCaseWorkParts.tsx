@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { FolderInput, Loader2, Mail, Pencil, Plus, RotateCcw, Save, Settings2, Trash2, X } from 'lucide-react'
+import { FolderInput, Loader2, Pencil, Plus, RotateCcw, Save, Settings2, Trash2 } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseWorkPart } from '@/lib/action-cases/contracts'
 import { MAX_WORK_PART_LINES } from '@/lib/action-cases/workParts'
 import { canEditDirectWork, isHourlyWork } from './ActionCaseDirectCostFields'
@@ -57,33 +57,26 @@ export function ActionCaseWorkParts({ parts, expectedUpdatedAt, busy, filter, on
   </div>
 }
 
-export function ActionCaseWorkSelection({ lines, selectedIds, parts, expectedUpdatedAt, busy, onSelect, onEditing, onAction, onRequest }: ActionProps & {
+export function ActionCaseWorkSelection({ lines, selectedIds, parts, expectedUpdatedAt, busy, onSelect, onEditing, onAction }: ActionProps & {
   lines: ActionCaseCostLineView[]; selectedIds: string[]; onSelect: (ids: string[]) => void
-  onRequest?: (costLineIds: string[]) => void
 }) {
   const [rateDraft, setRateDraft] = useState<{ value: string; expectedUpdatedAt: string } | null>(null)
   const [moveDraft, setMoveDraft] = useState<{ partId: string | null; expectedUpdatedAt: string } | null>(null)
+  const [expanded, setExpanded] = useState(false)
   const selected = lines.filter((line) => selectedIds.includes(line.id))
   const validBatch = selected.length > 0 && selected.length <= MAX_WORK_PART_LINES
   const eligible = selected.length > 0 && selected.every((line) => canEditDirectWork(line) && isHourlyWork(line))
   const rateValid = Boolean(rateDraft?.value.trim()) && Number.isFinite(Number(rateDraft?.value)) && Number(rateDraft?.value) >= 0 && Number(rateDraft?.value) <= 999999999999.99
   const drafting = Boolean(rateDraft || moveDraft)
-  const cancel = () => { setRateDraft(null); setMoveDraft(null); onEditing(false) }
+  const cancel = () => { setRateDraft(null); setMoveDraft(null); setExpanded(false); onEditing(false) }
   const save = async (payload: Record<string, unknown>) => {
     if (busy || !validBatch) return
     const ok = await onAction({ ...payload, costLineIds: selected.map((line) => line.id) })
     if (ok) { cancel(); onSelect([]) }
   }
-  if (!lines.length && !drafting) return null
-  return <div className="border-b border-slate-200 py-2">
-    <div className="flex flex-wrap items-center gap-2">
-      <label className="mr-auto flex min-h-11 items-center gap-2 text-sm font-medium"><input type="checkbox" className="h-4 w-4 shrink-0 accent-violet-600" disabled={busy || drafting || !lines.length} checked={lines.length > 0 && selected.length === lines.length} ref={(node) => { if (node) node.indeterminate = selected.length > 0 && selected.length < lines.length }} onChange={(event) => onSelect(event.target.checked ? lines.map((line) => line.id) : [])} />{selected.length ? `${selected.length} valda` : 'Välj alla arbeten'}</label>
-      {selected.length ? <>
-        <button className={button} type="button" disabled={busy || drafting || !onRequest || selected.length > 30} title={selected.length > 30 ? 'Högst 30 arbeten per förfrågan' : 'Skapa en förfrågan för valda arbeten'} onClick={() => onRequest?.(selected.map((line) => line.id))}><Mail size={16} />Begär offert ({selected.length})</button>
-        <button className={iconButton} type="button" disabled={busy || drafting} title="Rensa val" aria-label="Rensa valda arbeten" onClick={() => onSelect([])}><X size={16} /></button>
-      </> : null}
-    </div>
-    {selected.length > 30 ? <p role="status" className="pb-2 text-xs text-amber-800">{selected.length} valda. Högst 30 arbeten per offertförfrågan.</p> : null}
+  if (!selected.length && !drafting) return null
+  return <details className="border-b border-slate-200 py-2" open={expanded || drafting} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+    <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium text-slate-700">Ändra valda arbeten ({selected.length})</summary>
     {selected.length > MAX_WORK_PART_LINES ? <p role="status" className="pb-2 text-xs text-amber-800">Högst {MAX_WORK_PART_LINES} arbeten per flytt eller prisändring.</p> : null}
     {selected.length || drafting ? <div className="grid min-w-0 gap-3 pb-2 sm:grid-cols-2">
       {parts.length ? <form className="flex min-w-0 flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); if (!busy && moveDraft) void save({ operation: 'move_lines', ...moveDraft }) }}>
@@ -102,5 +95,5 @@ export function ActionCaseWorkSelection({ lines, selectedIds, parts, expectedUpd
       {!eligible ? <p className="text-xs text-slate-500 sm:col-span-2">Gemensam timkostnad kräver att alla valda arbeten har egen timkalkyl.</p> : null}
       {drafting ? <div className="flex items-center justify-between gap-2 sm:col-span-2"><p role="status" className="text-xs text-amber-800">Osparad {rateDraft ? 'timkostnad' : 'flytt'}</p><button type="button" className={iconButton} disabled={busy} title="Återställ osparad ändring" aria-label="Återställ massändring" onClick={cancel}><RotateCcw size={16} /></button></div> : null}
     </div> : null}
-  </div>
+  </details>
 }
