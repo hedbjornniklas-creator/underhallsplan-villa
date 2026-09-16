@@ -35,6 +35,7 @@ function query(data: unknown, writes: unknown[] = []) {
 const identity = { userId: 'admin-id', profile: { id: 'admin-id' } }
 function onboarding(admin: unknown, user: unknown = null, mail: (input: unknown) => Promise<unknown> = async () => {}) {
   return loadSource<typeof Onboarding>('src/lib/renoapp/onboarding.ts', {
+    '@/lib/renoapp/mailConfig': loadSource('src/lib/renoapp/mailConfig.ts', {}),
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/supabase/server': { createSupabaseServerClient: () => ({ auth: { getUser: async () => ({ data: { user } }) } }) },
     '@/lib/assignments/mailer': { sendAssignmentEmail: mail },
@@ -269,6 +270,7 @@ test('BRF administration uses the same module permission as the admin layout, wi
 test('board access does not fall back to old memberships or unlimited admin scope when normalized access is available', async () => {
   const assignments: unknown[] = []
   const service = loadSource<{ requireRenoAppViewerContext: () => Promise<{ activeBrfId: string; authorizedBrfIds: string[] }> }>('src/lib/renoapp/server.ts', {
+    '@/lib/renoapp/mailConfig': loadSource('src/lib/renoapp/mailConfig.ts', {}),
     'next/headers': { cookies: async () => ({ get: () => ({ value: 'unrelated-brf' }) }) },
     '@/lib/access/server': { getCurrentUserPlatformAccessContext: async () => ({ normalizedAccessAvailable: true, assignments,
       identity: { userId: 'admin-id', profileId: 'admin-id', isLegacyAdmin: true } }) },
@@ -280,6 +282,7 @@ test('board access does not fall back to old memberships or unlimited admin scop
     '@/lib/renoapp/renovationRulesServer': {}, '@/lib/renoapp/renovationRules': {},
     '@/lib/renoapp/consultantReviewAccess': {},
     '@/lib/renoapp/completion': {}, '@/lib/renoapp/completionServer': {},
+    '@/lib/renoapp/clarifications': {}, '@/lib/renoapp/clarificationsServer': {},
     '@/lib/renoapp/emailTemplate': loadSource('src/lib/renoapp/emailTemplate.ts', {}),
   })
   await assert.rejects(service.requireRenoAppViewerContext(), /RENOAPP_MEMBERSHIP_REQUIRED/)
@@ -290,11 +293,17 @@ test('board access does not fall back to old memberships or unlimited admin scop
 })
 
 test('personal invite preserves its secret link, escapes names and records the provider id', async context => {
+  const previousRenoAppFrom = process.env.RENOAPP_MAIL_FROM
+  delete process.env.RENOAPP_MAIL_FROM
+  context.after(() => {
+    if (previousRenoAppFrom === undefined) delete process.env.RENOAPP_MAIL_FROM
+    else process.env.RENOAPP_MAIL_FROM = previousRenoAppFrom
+  })
   const previous = process.env.ASSIGNMENTS_MAIL_FROM
   process.env.ASSIGNMENTS_MAIL_FROM = 'Hushub <noreply@hushub.se>'
   context.after(() => { if (previous === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM; else process.env.ASSIGNMENTS_MAIL_FROM = previous })
   const writes: unknown[] = []
-  let email: { html: string; text: string; replyTo: string } | undefined
+  let email: { from: string; html: string; text: string; replyTo: string } | undefined
   const admin = {
     from: () => query({ id: 'brf-id', name: 'BRF <Test>' }, writes),
     rpc: async () => ({ data: 'invite-id', error: null }),
@@ -314,5 +323,6 @@ test('personal invite preserves its secret link, escapes names and records the p
   assert.ok(email.html.includes('&lt;Test&gt;'))
   assert.ok(!email.html.includes('<Person>'))
   assert.equal(email.replyTo, 'jn@hedbjorn.se')
+  assert.equal(email.from, 'RenoApp <meddelanden@renoapp.se>')
   assert.ok(writes.some(value => (value as Record<string, unknown>).provider_message_id === 'resend-message-id'))
 })

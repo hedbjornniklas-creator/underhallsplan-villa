@@ -33,13 +33,17 @@ const rules = loadSource('src/lib/renoapp/renovationRules.ts', {})
 const completion = loadSource('src/lib/renoapp/completion.ts', {})
 const originalFetch = globalThis.fetch
 const originalMailFrom = process.env.ASSIGNMENTS_MAIL_FROM
+const originalRenoAppMailFrom = process.env.RENOAPP_MAIL_FROM
 
 before(() => {
+  delete process.env.RENOAPP_MAIL_FROM
   process.env.ASSIGNMENTS_MAIL_FROM = 'RenoApp <noreply@example.test>'
   globalThis.fetch = async () => { throw new Error('Network calls are forbidden in draft email tests') }
 })
 
 after(() => {
+  if (originalRenoAppMailFrom === undefined) delete process.env.RENOAPP_MAIL_FROM
+  else process.env.RENOAPP_MAIL_FROM = originalRenoAppMailFrom
   globalThis.fetch = originalFetch
   if (originalMailFrom === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM
   else process.env.ASSIGNMENTS_MAIL_FROM = originalMailFrom
@@ -57,7 +61,7 @@ type Mutation = {
   payload: Record<string, unknown> | null
   filters: Record<string, unknown>
 }
-type Email = { to: string; text: string; html: string }
+type Email = { from: string; to: string; text: string; html: string }
 
 function draftInput(email: unknown, resumed = false): Service.CreatePublicApplicationInput {
   return {
@@ -121,16 +125,16 @@ function fixture(resumed = false) {
   }
 
   const service = loadSource<typeof Service>('src/lib/renoapp/server.ts', {
+    '@/lib/renoapp/mailConfig': loadSource('src/lib/renoapp/mailConfig.ts', {}),
+    '@/lib/renoapp/clarifications': loadSource('src/lib/renoapp/clarifications.ts', {}),
+    '@/lib/renoapp/clarificationsServer': { getCaseClarifications: unexpected },
     'next/headers': { cookies: unexpected },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ from: query, rpc: unexpected }) },
     '@/lib/assignments/mailer': { sendAssignmentEmail: async (input: Email) => {
       emails.push(input)
       return { provider: 'mock', providerMessageId: 'mock-message' }
     } },
-    '@/lib/renoapp/emailTemplate': {
-      buildRenoAppEmailHtml: ({ bodyHtml }: { bodyHtml: string }) => bodyHtml,
-      buildRenoAppEmailButton: unexpected,
-    },
+    '@/lib/renoapp/emailTemplate': loadSource('src/lib/renoapp/emailTemplate.ts', {}),
     '@/lib/renoapp/completion': completion,
     '@/lib/renoapp/completionServer': { getLatestCompletion: unexpected, saveCompletion: unexpected },
     '@/lib/access/server': { getCurrentUserPlatformAccessContext: unexpected },
@@ -184,6 +188,7 @@ test('valid normalized email alone can create a draft and a continuation link', 
   assert.equal(links[0].payload?.email, 'applicant@example.test')
   assert.equal(new URL(result.resumeUrl).searchParams.get('draft'), links[0].payload?.plain_token)
   assert.equal(emails.length, 1)
+  assert.equal(emails[0].from, 'RenoApp <meddelanden@renoapp.se>')
   assert.equal(emails[0].to, 'applicant@example.test')
   assert.ok(emails[0].text.includes(result.resumeUrl))
 })
@@ -220,6 +225,7 @@ test('public applications route maps missing and invalid draft email to HTTP 400
   ]) {
     const { service, mutations, emails } = fixture()
     const route = loadSource<typeof ApplicationsRoute>('src/app/api/renoapp/public/applications/route.ts', {
+      '@/lib/renoapp/clarifications': loadSource('src/lib/renoapp/clarifications.ts', {}),
       '@/lib/renoapp/server': service,
       '@/lib/renoapp/renovationRules': rules,
       '@/lib/renoapp/completion': completion,

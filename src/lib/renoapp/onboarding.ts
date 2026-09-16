@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { buildRenoAppEmailHtml, buildRenoAppEmailButton } from '@/lib/renoapp/emailTemplate'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { getRenoAppMailFromAddress as getMailFromAddress } from '@/lib/renoapp/mailConfig'
 import { RENOAPP_BRF_TERMS_VERSION } from '@/lib/renoapp/brfTerms'
 import { requireBrfAdminContext } from '@/lib/renoapp/brfAdminAccess'
 import { normalizeBrfOrgNumber } from '@/lib/renoapp/brfLifecycle'
@@ -397,12 +398,6 @@ function buildAbsoluteUrl(origin: string, path: string) {
   return `${origin.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`
 }
 
-function getMailFromAddress() {
-  const mailFrom = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
-  if (!mailFrom) return null
-  return mailFrom
-}
-
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -776,7 +771,7 @@ async function createInviteRecord(
       emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
     }
   } else {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Invite skapades men inget mejl skickades.'
+    emailError = 'RenoApps avsändaradress saknas. Invite skapades men inget mejl skickades.'
   }
 
   const { error: deliveryError } = await admin.from('brf_member_invites').update({
@@ -866,7 +861,7 @@ async function sendRenoAppEmail(input: {
   if (!mailFrom) {
     return {
       emailSent: false,
-      emailError: 'ASSIGNMENTS_MAIL_FROM saknas. Mejlet kunde inte skickas.',
+      emailError: 'RenoApps avsändaradress saknas. Mejlet kunde inte skickas.',
     }
   }
 
@@ -956,7 +951,7 @@ async function sendBrfRequestAdminNotificationEmail(input: {
       <p><strong>E-post:</strong> ${safeContactEmail}</p>
       <p><strong>Telefon:</strong> ${safeContactPhone}</p>
       <p><strong>Meddelande:</strong> ${safeMessage}</p>
-      <p><a href="${reviewUrl}">Öppna BRF-ansökningar</a></p>
+      ${buildRenoAppEmailButton(reviewUrl, 'Öppna BRF-ansökningar')}
     `,
     text: [
       'En ny BRF-ansökan har kommit in i RenoApp.',

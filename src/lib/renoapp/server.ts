@@ -9,6 +9,7 @@ import { getCaseClarifications } from '@/lib/renoapp/clarificationsServer'
 import { getCurrentUserPlatformAccessContext, type PlatformAccessAssignment } from '@/lib/access/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { getRenoAppMailFromAddress as getMailFromAddress } from '@/lib/renoapp/mailConfig'
 import { requireBrfAdminContext } from '@/lib/renoapp/brfAdminAccess'
 import { requireConsultantReviewAccess } from '@/lib/renoapp/consultantReviewAccess'
 import { issueBrfInviteForAuthorizedUser } from '@/lib/renoapp/onboarding'
@@ -4332,7 +4333,7 @@ export async function upsertPublicApplication(
           ${caseTitle ? `<p>Renovering: <strong>${escapeHtml(caseTitle)}</strong></p>` : ''}
           <p>Sökande: <strong>${escapeHtml(applicantDisplayName)}</strong></p>
           <p>Öppna ärendet här:</p>
-          <p><a href="${caseAdminUrl}">${caseAdminUrl}</a></p>
+          ${buildRenoAppEmailButton(caseAdminUrl, 'Öppna ärendet')}
         `,
         text: [
           'En ny ansökan har kommit in i RenoApp.',
@@ -4372,7 +4373,7 @@ export async function upsertPublicApplication(
                   : ''
               }
               <p>Öppna länken nedan för att fortsätta senare:</p>
-                <p><a href="${resumeUrl}">${resumeUrl}</a></p>
+                ${buildRenoAppEmailButton(resumeUrl, 'Fortsätt ansökan')}
               `,
             }),
             text: [
@@ -4405,7 +4406,7 @@ export async function upsertPublicApplication(
               }
               <p>Styrelsen handlägger nu ärendet. Om mer information behövs får du ett meddelande via e-post.</p>
               <p>Du kan öppna ärendet via länken nedan för att se status och kommunikation:</p>
-              <p><a href="${resumeUrl}">${resumeUrl}</a></p>
+              ${buildRenoAppEmailButton(resumeUrl, 'Öppna ärendet')}
             `,
           }),
           text: [
@@ -4424,9 +4425,9 @@ export async function upsertPublicApplication(
   } else if (!applicantEmailValue) {
         emailError = 'Ingen e-postadress är angiven. Ansökan sparades men inget mejl kunde skickas.'
   } else if (mode === 'draft' && isNewDraft) {
-        emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Utkastet sparades men ingen fortsätt-länk skickades.'
+        emailError = 'RenoApps avsändaradress saknas. Utkastet sparades men ingen fortsätt-länk skickades.'
   } else if (mode === 'submit') {
-        emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ärendet skapades men inget mejl skickades.'
+        emailError = 'RenoApps avsändaradress saknas. Ärendet skapades men inget mejl skickades.'
   }
 
   return {
@@ -4855,12 +4856,6 @@ function hashToken(token: string) {
 
 function buildAbsoluteUrl(origin: string, path: string) {
   return `${origin.replace(/\/+$/, '')}${path.startsWith('/') ? path : `/${path}`}`
-}
-
-function getMailFromAddress() {
-  const mailFrom = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
-  if (!mailFrom) return null
-  return mailFrom
 }
 
 function escapeHtml(value: string) {
@@ -5677,7 +5672,7 @@ export async function sendRenoAppPublicApplyLink(input: {
             <p>Hej ${escapeHtml(fullNameValue)},</p>
             <p>Här är din ansökningslänk till <strong>${escapeHtml(String(brfData.name ?? 'er BRF'))}</strong>.</p>
             <p>Öppna ansökan här:</p>
-            <p><a href="${applyUrl}">${applyUrl}</a></p>
+            ${buildRenoAppEmailButton(applyUrl, 'Öppna ansökan')}
             <p>Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.</p>
           `,
         }),
@@ -5696,7 +5691,7 @@ export async function sendRenoAppPublicApplyLink(input: {
       emailError = error instanceof Error ? error.message : 'Mejlutskick misslyckades.'
     }
   } else {
-    emailError = 'ASSIGNMENTS_MAIL_FROM saknas. Ansökningslänken kunde inte skickas.'
+    emailError = 'RenoApps avsändaradress saknas. Ansökningslänken kunde inte skickas.'
   }
 
   return {

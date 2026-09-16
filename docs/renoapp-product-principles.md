@@ -156,6 +156,11 @@ Renoapp.se är den publika marknadswebbplatsen. Själva programmet ligger kvar p
 HusHub. Sidorna ska kännas sammanhängande och beskriva enkelhet och nytta för
 styrelsen, inte maximal mängd funktioner.
 
+RenoApps egna systemmejl ska ha RenoApp som avsändare från `renoapp.se`, separat
+från övriga HusHub-moduler. Svar ska fortsatt gå till rätt förening eller
+befintlig kontaktadress. En ny kontaktadress får inte användas för svar innan
+den kan ta emot mejl. Se mejlleveransdokumentet för konfiguration och undantag.
+
 Den beslutade affärsinriktningen är att föreningen kan ha tjänsten utan löpande
 avgift och att betalning aktualiseras när styrelsen väljer att acceptera en
 ansökan, inte när den boende skickar in den. Exakt pris, innebörden av
@@ -223,5 +228,6 @@ tillstånd att ändra produktionskonfiguration.
 
 | Datum | Beslut eller dokumentändring | Grund |
 | --- | --- | --- |
+| 2026-09-16 | RenoApps egna systemmejl får separat avsändare på renoapp.se. Befintliga svarsadresser och övriga modulers avsändare bevaras. | Uttryckligt beslut efter verifiering av renoapp.se i Resend. |
 | 2026-09-16 | Kommunfrågan får en pilot för "Jag behöver undersöka detta", begärt klarläggande i samma kompletteringsflöde och uttrycklig styrelsebedömning före godkännande. | Godkänd plan följd av "kör". Övriga frågor och katalogutökning ingår inte. |
 | 2026-09-16 | Första samlade styrdokumentet. Produktprinciper skiljs från dokumenterad funktion och öppna frågor. | Sammanställning av tidigare produktbeslut och förtydligandet om kvalitet framför kvantitet. Datumet avser sammanställningen, inte samtliga ursprungliga beslut. |
