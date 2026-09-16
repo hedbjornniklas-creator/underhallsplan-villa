@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CircleHelp, ArrowDown, ArrowUp, ChevronRight, ChevronLeft, X } from 'lucide-react'
+import { CircleHelp, ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, ChevronLeft, RotateCcw, Search, X } from 'lucide-react'
 
 type CaseItem = {
   id: string
@@ -158,86 +158,6 @@ function getStatusMarkerClass(status: CaseItem['status']) {
   }
 }
 
-function getStatusBadgeClass(status: CaseItem['status']) {
-  switch (getStatusBucket(status)) {
-    case 'draft':
-      return 'border-stone-300 bg-stone-100 text-stone-800'
-    case 'new_application':
-      return 'border-violet-300 bg-violet-100 text-violet-950'
-    case 'review':
-      return 'border-cyan-300 bg-cyan-100 text-cyan-950'
-    case 'need_info':
-      return 'border-amber-300 bg-amber-100 text-amber-950'
-    case 'approved':
-      return 'border-emerald-300 bg-emerald-100 text-emerald-950'
-    case 'rejected':
-      return 'border-rose-300 bg-rose-100 text-rose-950'
-    default:
-      return 'border-stone-300 bg-stone-100 text-stone-800'
-  }
-}
-
-type StatusTabStyle = {
-  inactive: string
-  active: string
-  countInactive: string
-  countActive: string
-}
-
-function getStatusTabStyle(key: StatusFilter): StatusTabStyle {
-  switch (key) {
-    case 'draft':
-      return {
-        inactive: 'border-gray-300 bg-[#FEFEFE] text-[#111827] hover:bg-[#FBFBFC]',
-        active: 'border-gray-400 bg-[#FFFFFF] text-[#111827]',
-        countInactive: 'bg-gray-200 text-[#111827]',
-        countActive: 'bg-gray-200 text-[#111827]',
-      }
-    case 'new_application':
-      return {
-        inactive: 'border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100',
-        active: 'border-violet-400 bg-violet-100 text-violet-950',
-        countInactive: 'bg-violet-100 text-violet-900',
-        countActive: 'bg-violet-200 text-violet-950',
-      }
-    case 'review':
-      return {
-        inactive: 'border-cyan-200 bg-cyan-50 text-cyan-900 hover:bg-cyan-100',
-        active: 'border-cyan-400 bg-cyan-100 text-cyan-950',
-        countInactive: 'bg-cyan-100 text-cyan-900',
-        countActive: 'bg-cyan-200 text-cyan-950',
-      }
-    case 'need_info':
-      return {
-        inactive: 'border-[#F4E6BC] bg-[#FFFDF5] text-[#8D6A23] hover:bg-[#FFF9EC]',
-        active: 'border-[#E8D39A] bg-[#FBF3DB] text-[#7D5B16]',
-        countInactive: 'bg-[#FCF4DE] text-[#8D6A23]',
-        countActive: 'bg-[#F4E8C2] text-[#7D5B16]',
-      }
-    case 'approved':
-      return {
-        inactive: 'border-[#D1EAD7] bg-[#F8FDF9] text-[#3D6B4A] hover:bg-[#F0FAF2]',
-        active: 'border-[#A4CFB0] bg-[#EEF7F0] text-[#355E41]',
-        countInactive: 'bg-[#F0F8F2] text-[#3D6B4A]',
-        countActive: 'bg-[#D1EAD7] text-[#355E41]',
-      }
-    case 'rejected':
-      return {
-        inactive: 'border-[#EBCFCF] bg-[#FFF8F8] text-[#8A5858] hover:bg-[#FFF0F0]',
-        active: 'border-[#D9B0B0] bg-[#F9ECEC] text-[#7B4C4C]',
-        countInactive: 'bg-[#FAEEEE] text-[#8A5858]',
-        countActive: 'bg-[#EBCFCF] text-[#7B4C4C]',
-      }
-    default:
-      return {
-        inactive: 'border-[var(--reno-line)] bg-white text-[var(--reno-focus)] hover:bg-[var(--reno-blue-soft)]',
-        active: 'border-[var(--reno-blue)] bg-[var(--reno-blue)] text-white',
-        countInactive: 'bg-[var(--reno-blue-soft)] text-[var(--reno-focus)]',
-        countActive: 'bg-white/20 text-white',
-      }
-  }
-}
-
 function getActionLabel(item: CaseItem) {
   const title = item.title.trim()
   if (title === 'RenoveringsansÃ¶kan') return 'Renoveringsansökan'
@@ -249,8 +169,8 @@ function getActionLabel(item: CaseItem) {
 }
 
 function getSortIndicator(active: boolean, direction: SortDirection) {
-  if (!active) return '↕'
-  return direction === 'asc' ? '↑' : '↓'
+  const Icon = active ? (direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  return <Icon size={14} aria-hidden="true" />
 }
 
 export default function RenoAppCasesPage() {
@@ -478,62 +398,60 @@ export default function RenoAppCasesPage() {
         <h1 className="text-2xl font-bold text-[var(--reno-ink)]">Ärendehantering</h1>
       </div>
 
-      <section className="reno-cases-toolbar">
-        <div className="reno-cases-search">
-          <div>
+      <section className="reno-cases-workspace" aria-label="Ärenden">
+        <div className="reno-cases-toolbar">
+          <div className="reno-cases-search">
+            <Search size={18} aria-hidden="true" />
             <input
               type="text"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Sök ärenden"
               aria-label="Sök ärenden"
-              className="reno-field h-11 w-full border bg-white px-3 py-2 text-[var(--reno-ink)] placeholder:text-[var(--reno-muted)]"
+              className="reno-field h-11 w-full border bg-white py-2 pl-10 pr-3 text-[var(--reno-ink)] placeholder:text-[var(--reno-muted)]"
             />
           </div>
           <button
             type="button"
             onClick={() => setShowStatusHelp(true)}
-            className="reno-button-secondary"
+            className="reno-cases-help"
             aria-label="Vad betyder statusarna?"
             title="Vad betyder statusarna?"
           >
             <CircleHelp size={16} className="shrink-0" aria-hidden="true" />
             <span>Vad betyder statusarna?</span>
           </button>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {STATUS_TABS.map((tab) => {
-            const active = statusFilter === tab.key
-            const style = getStatusTabStyle(tab.key)
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setStatusFilter(tab.key)}
-                aria-pressed={active}
-                className={
-                  active
-                    ? `inline-flex min-h-11 shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium ${style.active}`
-                    : `inline-flex min-h-11 shrink-0 items-center gap-1 rounded-md border px-3 py-1.5 text-sm ${style.inactive}`
-                }
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={
-                    active
-                      ? `rounded-full px-1.5 py-0 text-[10px] ${style.countActive}`
-                      : `rounded-full px-1.5 py-0 text-[10px] ${style.countInactive}`
-                  }
+          <div className="reno-cases-filters" role="group" aria-label="Filtrera efter status">
+            {STATUS_TABS.map((tab) => {
+              const active = statusFilter === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setStatusFilter(tab.key)}
+                  aria-pressed={active}
+                  className="reno-cases-filter"
                 >
-                  {statusCounts[tab.key]}
-                </span>
-              </button>
-            )
-          })}
+                  <span>{tab.label}</span>
+                  <span className="reno-cases-filter-count">
+                    {statusCounts[tab.key]}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
 
-          <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
-            <label className="text-xs text-stone-600" htmlFor="renoappCasesPageSize">
+          <label className="reno-cases-filter-mobile">
+            <span className="sr-only">Filtrera efter status</span>
+            <select id="renoappCasesStatusFilter" value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)}
+              className="reno-field min-h-11 w-full min-w-0 border bg-white px-2">
+              {STATUS_TABS.map(tab => <option key={tab.key} value={tab.key}>{tab.label} ({statusCounts[tab.key]})</option>)}
+            </select>
+          </label>
+
+          <div className="reno-cases-page-size">
+            <label htmlFor="renoappCasesPageSize">
               Rader/sida
             </label>
             <select
@@ -548,199 +466,191 @@ export default function RenoAppCasesPage() {
                 </option>
               ))}
             </select>
-
-            {hasActiveFilters ? (
-              <button
-                type="button"
-                onClick={resetView}
-                className="reno-button-secondary"
-              >
-                Rensa filter
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <div className="reno-cases-mobile">
-        <div className="flex items-center gap-2">
-          <label htmlFor="renoappCasesSort" className="text-sm font-semibold">Sortera</label>
-          <select id="renoappCasesSort" value={sortField} onChange={event => handleSort(event.target.value as SortField)}
-            className="reno-field min-h-11 min-w-0 flex-1 border bg-white px-2">
-            <option value="status">Status</option>
-            <option value="submittedAt">Ansökningsdatum</option>
-            <option value="caseNumber">Ärendenummer</option>
-            <option value="title">Åtgärd</option>
-            <option value="applicant">Sökande</option>
-          </select>
-          <button type="button" onClick={() => setSortDirection(current => current === 'asc' ? 'desc' : 'asc')}
-            className="reno-icon-button" aria-label={sortDirection === 'asc' ? 'Sortera fallande' : 'Sortera stigande'}
-            title={sortDirection === 'asc' ? 'Sortera fallande' : 'Sortera stigande'}>
-            {sortDirection === 'asc' ? <ArrowUp size={18} /> : <ArrowDown size={18} />}
-          </button>
-        </div>
-      </div>
-
-      {error ? <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div> : null}
-
-      {loading ? (
-        <div className="text-sm text-stone-600">Laddar RenoApp-ärenden...</div>
-      ) : totalItems === 0 ? (
-        <div className="rounded-md border border-dashed border-stone-300 bg-white/75 p-4 text-sm text-stone-700">
-          Inga RenoApp-ärenden i denna vy.
-        </div>
-      ) : (
-        <>
-          <div className="reno-cases-desktop overflow-x-auto border-y border-[var(--reno-line)] bg-white">
-            <table className="w-full table-fixed text-left text-sm text-[var(--reno-ink)]">
-              <colgroup>
-                <col className="w-[185px]" />
-                <col />
-                <col className="w-[185px]" />
-                <col className="w-[155px]" />
-                <col className="w-[145px]" />
-              </colgroup>
-              <thead className="border-b bg-stone-50 text-xs uppercase text-black">
-                <tr>
-                  <th className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('caseNumber')}
-                      className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
-                    >
-                      Ärendenummer <span>{getSortIndicator(sortField === 'caseNumber', sortDirection)}</span>
-                    </button>
-                  </th>
-                  <th className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('title')}
-                      className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
-                    >
-                      Åtgärd <span>{getSortIndicator(sortField === 'title', sortDirection)}</span>
-                    </button>
-                  </th>
-                  <th className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('status')}
-                      className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
-                    >
-                      Status <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
-                    </button>
-                  </th>
-                  <th className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('submittedAt')}
-                      className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
-                    >
-                      Ansökningsdatum <span>{getSortIndicator(sortField === 'submittedAt', sortDirection)}</span>
-                    </button>
-                  </th>
-                  <th className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort('applicant')}
-                      className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
-                    >
-                      Sökande <span>{getSortIndicator(sortField === 'applicant', sortDirection)}</span>
-                    </button>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedRows.map((item) => (
-                  <tr
-                    key={item.id}
-                    tabIndex={0}
-                    onClick={() => router.push(`/renoapp/app/cases/${item.id}`)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        router.push(`/renoapp/app/cases/${item.id}`)
-                      }
-                    }}
-                    className="h-12 cursor-pointer border-b border-stone-200 bg-white text-black last:border-b-0 hover:bg-stone-50 focus-visible:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-400 focus:ring-inset"
-                  >
-                    <td className="relative whitespace-nowrap px-4 py-2">
-                      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${getStatusMarkerClass(item.status)}`} />
-                      <Link href={`/renoapp/app/cases/${item.id}`} className="whitespace-nowrap font-semibold tabular-nums text-stone-900">
-                        {item.caseNumber}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2">
-                      <span className="block truncate" title={getActionLabel(item)}>{getActionLabel(item)}</span>
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(
-                          item.status
-                        )}`}
-                      >
-                        {getStatusLabel(item.status)}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 tabular-nums">{formatDate(item.submittedAt)}</td>
-                    <td className="px-4 py-2">
-                      <span className="block truncate" title={item.applicant.name ?? undefined}>{item.applicant.name ?? '-'}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
 
-          <div className="reno-cases-mobile border-y border-[var(--reno-line)]" role="list" aria-label="Renoveringsansökningar">
-            {pagedRows.map(item => (
-              <div key={item.id} role="listitem">
-                <Link href={`/renoapp/app/cases/${item.id}`} className="reno-mobile-case" data-case-number={item.caseNumber}>
-                  <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${getStatusMarkerClass(item.status)}`} />
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="whitespace-nowrap text-sm font-bold tabular-nums">{item.caseNumber}</span>
-                    <ChevronRight size={18} className="shrink-0 text-[var(--reno-muted)]" aria-hidden="true" />
-                  </div>
-                  <p className="mt-2 break-words text-sm font-medium">{getActionLabel(item)}</p>
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusBadgeClass(item.status)}`}>{getStatusLabel(item.status)}</span>
-                    <span className="text-xs tabular-nums text-[var(--reno-muted)]">{formatDate(item.submittedAt)}</span>
-                  </div>
-                  <p className="mt-2 break-words text-sm text-[var(--reno-muted)]">{item.applicant.name ?? '-'}</p>
-                </Link>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-stone-600">
-            <p>
-              Visar {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, totalItems)} av {totalItems} ärenden
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
-                disabled={safePage <= 1}
-                className="reno-icon-button disabled:opacity-50"
-                aria-label="Föregående sida" title="Föregående sida"
-              >
-                <ChevronLeft size={18} aria-hidden="true" />
-              </button>
-              <span>
-                Sida {safePage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setCurrentPage((current) => Math.min(totalPages, current + 1))}
-                disabled={safePage >= totalPages}
-                className="reno-icon-button disabled:opacity-50"
-                aria-label="Nästa sida" title="Nästa sida"
-              >
-                <ChevronRight size={18} aria-hidden="true" />
+          <div className="reno-cases-sort">
+            <label htmlFor="renoappCasesSort">Sortera</label>
+            <div className="flex min-w-0 items-center gap-2">
+              <select id="renoappCasesSort" value={sortField} onChange={event => handleSort(event.target.value as SortField)}
+                className="reno-field min-h-11 min-w-0 flex-1 border bg-white px-2">
+                <option value="status">Status</option>
+                <option value="submittedAt">Ansökningsdatum</option>
+                <option value="caseNumber">Ärendenummer</option>
+                <option value="title">Åtgärd</option>
+                <option value="applicant">Sökande</option>
+              </select>
+              <button type="button" onClick={() => setSortDirection(current => current === 'asc' ? 'desc' : 'asc')}
+                className="reno-icon-button" aria-label={sortDirection === 'asc' ? 'Sortera fallande' : 'Sortera stigande'}
+                title={sortDirection === 'asc' ? 'Sortera fallande' : 'Sortera stigande'}>
+                {sortDirection === 'asc' ? <ArrowUp size={18} aria-hidden="true" /> : <ArrowDown size={18} aria-hidden="true" />}
               </button>
             </div>
           </div>
-        </>
-      )}
+
+          {hasActiveFilters ? (
+            <button type="button" onClick={resetView} className="reno-cases-reset">
+              <RotateCcw size={16} aria-hidden="true" />Rensa filter
+            </button>
+          ) : null}
+        </div>
+
+        {error ? <div role="alert" className="m-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div> : null}
+
+        {loading ? (
+          <div className="p-5 text-sm text-[var(--reno-muted)]" role="status">Laddar RenoApp-ärenden...</div>
+        ) : totalItems === 0 ? (
+          <div className="p-5 text-sm text-[var(--reno-muted)]" role="status">
+            Inga RenoApp-ärenden i denna vy.
+          </div>
+        ) : (
+          <>
+            <div className="reno-cases-desktop">
+              <table className="reno-cases-table w-full table-fixed text-left text-sm text-[var(--reno-ink)]">
+                <colgroup>
+                  <col className="w-[185px]" />
+                  <col />
+                  <col className="w-[185px]" />
+                  <col className="w-[155px]" />
+                  <col className="w-[145px]" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('caseNumber')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
+                      >
+                        Ärendenummer <span>{getSortIndicator(sortField === 'caseNumber', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('title')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
+                      >
+                        Åtgärd <span>{getSortIndicator(sortField === 'title', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('status')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
+                      >
+                        Status <span>{getSortIndicator(sortField === 'status', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('submittedAt')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
+                      >
+                        Ansökningsdatum <span>{getSortIndicator(sortField === 'submittedAt', sortDirection)}</span>
+                      </button>
+                    </th>
+                    <th className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleSort('applicant')}
+                        className="inline-flex items-center gap-1 font-semibold hover:text-stone-900"
+                      >
+                        Sökande <span>{getSortIndicator(sortField === 'applicant', sortDirection)}</span>
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedRows.map((item) => (
+                    <tr
+                      key={item.id}
+                      tabIndex={0}
+                      onClick={() => router.push(`/renoapp/app/cases/${item.id}`)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          router.push(`/renoapp/app/cases/${item.id}`)
+                        }
+                      }}
+                      className="h-14 cursor-pointer border-b border-[var(--reno-line)] bg-white last:border-b-0 hover:bg-[var(--reno-mist)] focus-visible:bg-[var(--reno-mist)] focus:outline-none focus:ring-2 focus:ring-[var(--reno-focus)] focus:ring-inset"
+                    >
+                      <td className="relative whitespace-nowrap px-4 py-2">
+                        <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${getStatusMarkerClass(item.status)}`} />
+                        <Link href={`/renoapp/app/cases/${item.id}`} className="whitespace-nowrap tabular-nums text-[var(--reno-ink)]">
+                          {item.caseNumber}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className="block truncate" title={getActionLabel(item)}>{getActionLabel(item)}</span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className="reno-case-status">
+                          {getStatusLabel(item.status)}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 tabular-nums">{formatDate(item.submittedAt)}</td>
+                      <td className="px-4 py-2">
+                        <span className="block truncate" title={item.applicant.name ?? undefined}>{item.applicant.name ?? '-'}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="reno-cases-mobile" role="list" aria-label="Renoveringsansökningar">
+              {pagedRows.map(item => (
+                <div key={item.id} role="listitem">
+                  <Link href={`/renoapp/app/cases/${item.id}`} className="reno-mobile-case" data-case-number={item.caseNumber}>
+                    <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${getStatusMarkerClass(item.status)}`} />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="whitespace-nowrap text-sm font-bold tabular-nums">{item.caseNumber}</span>
+                      <ChevronRight size={18} className="shrink-0 text-[var(--reno-muted)]" aria-hidden="true" />
+                    </div>
+                    <p className="mt-2 break-words text-sm font-medium">{getActionLabel(item)}</p>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <span className="reno-case-status">{getStatusLabel(item.status)}</span>
+                      <span className="text-xs tabular-nums text-[var(--reno-muted)]">{formatDate(item.submittedAt)}</span>
+                    </div>
+                    <p className="mt-2 break-words text-sm text-[var(--reno-muted)]">{item.applicant.name ?? '-'}</p>
+                  </Link>
+                </div>
+              ))}
+            </div>
+
+            <div className="reno-cases-pagination">
+              <p>
+                Visar {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, totalItems)} av {totalItems} ärenden
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((current) => Math.max(1, current - 1))}
+                  disabled={safePage <= 1}
+                  className="reno-icon-button disabled:opacity-50"
+                  aria-label="Föregående sida" title="Föregående sida"
+                >
+                  <ChevronLeft size={18} aria-hidden="true" />
+                </button>
+                <span>
+                  Sida {safePage} av {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={safePage >= totalPages}
+                  className="reno-icon-button disabled:opacity-50"
+                  aria-label="Nästa sida" title="Nästa sida"
+                >
+                  <ChevronRight size={18} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
 
       {showStatusHelp ? (
         <dialog
