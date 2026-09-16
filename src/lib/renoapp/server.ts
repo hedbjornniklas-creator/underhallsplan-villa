@@ -4,6 +4,8 @@ import { buildRenoAppEmailHtml } from '@/lib/renoapp/emailTemplate'
 import { buildRenoAppEmailButton } from '@/lib/renoapp/emailTemplate'
 import { selectCompletionItems, completionMessage, completionTargetId, type CompletionSummary } from '@/lib/renoapp/completion'
 import { getLatestCompletion, saveCompletion } from '@/lib/renoapp/completionServer'
+import { clarificationItems, isOpenClarification, INVESTIGATE_OPTION_KEY, MUNICIPAL_QUESTION_KEY, type Clarification, type ClarificationAction, type ClarificationAnswers, type ClarificationQuestion } from '@/lib/renoapp/clarifications'
+import { getCaseClarifications } from '@/lib/renoapp/clarificationsServer'
 import { getCurrentUserPlatformAccessContext, type PlatformAccessAssignment } from '@/lib/access/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
@@ -779,6 +781,7 @@ export type RenoAppPublicBrfListItem = {
 }
 
 export type CreatePublicApplicationInput = {
+  clarificationAnswers?: ClarificationAnswers
   completionRequestId?: string | null
   completionRevision?: number
   rulesVersionId?: string | null
@@ -835,7 +838,7 @@ export type RenoAppCaseMessage = {
 }
 
 export type RenoAppPublicApplicationDraft = {
-  completionDraft: { revision: number; replyMessage: string }
+  completionDraft: { revision: number; replyMessage: string; clarificationAnswers?: ClarificationAnswers }
   rulesAcceptance: RenovationRulesAcceptance | null
   state: 'open' | 'expired' | 'revoked'
   access: {
@@ -893,6 +896,7 @@ export type RenoAppPublicApplicationDraft = {
     note: string | null
   }>
   completionRequest: {
+    requestedClarifications?: ClarificationQuestion[]
     id: string | null
     requestedAt: string | null
     requestedDocuments: Array<{
@@ -1353,6 +1357,7 @@ export type RenoAppUnitListItem = {
 }
 
 export type RenoAppCaseDetail = {
+  clarifications?: Clarification[]
   completion: CompletionSummary | null
   rulesAcceptance: RenovationRulesAcceptance
   id: string
@@ -1466,6 +1471,7 @@ export type RenoAppCaseDetail = {
 }
 
 export type UpdateRenoAppCaseStatusInput = {
+  selectedClarifications?: Array<{ questionId: string; revision: number }>
   completionRequestId?: string
   previousCompletionId?: string | null
   selectedRequirementIds?: string[]
@@ -3618,6 +3624,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
   return {
     state,
     completionDraft: {
+      clarificationAnswers: publishedCompletion?.submitted_at ? {} : publishedCompletion?.draft.clarificationAnswers ?? {},
       revision: publishedCompletion?.revision ?? 0,
       replyMessage: publishedCompletion?.submitted_at ? '' : publishedCompletion?.draft.replyMessage ?? '',
     },
@@ -3682,6 +3689,8 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       note: (row.note as string | null | undefined) ?? null,
     })),
     completionRequest: {
+      requestedClarifications: (publishedCompletion?.items ?? []).flatMap(item =>
+        item.category === 'clarification' && item.question ? [item.question] : []),
       id: publishedCompletion?.id ?? null,
       requestedAt: publishedCompletion?.created_at ?? null,
       requestedDocuments: requestedDecisions.flatMap((decision) => {
@@ -4031,6 +4040,7 @@ export async function upsertPublicApplication(
       revision: input.completionRevision ?? -1,
       participantEntries: participantEntriesInput.filter(entry => requestedCompletionParticipantRoleIds.has(entry.participantRoleId)),
       replyMessage, submit: mode === 'submit',
+      clarificationAnswers: input.clarificationAnswers ?? {},
     })
     if (mode === 'submit') {
       try {
@@ -4071,6 +4081,8 @@ export async function upsertPublicApplication(
     }
   }
 
+  if (Object.keys(input.clarificationAnswers ?? {}).length) throw new Error('COMPLETION_BASE_FIELDS_LOCKED')
+
   const contact = await upsertPublicApplicationContact({
     admin,
     existingContactId: (existingCase?.applicant_contact_id as string | null | undefined) ?? null,
@@ -4095,6 +4107,8 @@ export async function upsertPublicApplication(
 
   const riskLevel = computeRiskLevelFromActionTypes(selectedActionTypes)
   const title = buildPublicCaseTitle(selectedActionTypes)
+  const needsClarificationCapture = mode === 'submit' && applicableQuestions.some(question =>
+    question.key === MUNICIPAL_QUESTION_KEY && questionAnswersInput[question.key]?.includes(INVESTIGATE_OPTION_KEY))
   const nextStatus =
     mode === 'draft'
       ? existingStatus && existingStatus !== 'draft'
@@ -4127,7 +4141,7 @@ export async function upsertPublicApplication(
         contractor_email: contractorEmail,
         contractor_phone: contractorPhone,
         contractor_has_required_certification: contractorCertification,
-        status: nextStatus,
+        status: needsClarificationCapture ? 'draft' : nextStatus,
         risk_level: riskLevel,
         submitted_at: submittedAt,
       })
@@ -4156,7 +4170,7 @@ export async function upsertPublicApplication(
         contractor_email: contractorEmail,
         contractor_phone: contractorPhone,
         contractor_has_required_certification: contractorCertification,
-        status: nextStatus,
+        status: needsClarificationCapture ? 'draft' : nextStatus,
         risk_level: riskLevel,
         submitted_at: mode === 'submit' ? new Date().toISOString() : String(existingCase.submitted_at ?? new Date().toISOString()),
       })
@@ -4280,6 +4294,12 @@ export async function upsertPublicApplication(
   }
 
   const accessUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/case/${token}`)
+  if (needsClarificationCapture) {
+    // Publish only after answers are saved. The status trigger captures uncertainty atomically.
+    const { data: submitted, error } = await admin.from('renovation_cases')
+      .update({ status: nextStatus }).eq('id', caseId).eq('status', 'draft').select('id').single()
+    if (error || !submitted) throw new Error(error?.message ?? 'CASE_LOCKED')
+  }
   const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${token}`)
   const caseAdminUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/app/cases/${caseId}`)
   const applicantDisplayName = contact?.name ?? applicantName ?? 'OkÃ¤nd sÃ¶kande'
@@ -7662,6 +7682,7 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
 
   return {
     id: caseRow.id,
+    clarifications: await getCaseClarifications(caseId),
     completion: await getLatestCompletion(caseId).then(value => value ? ({
       id: value.id, items: value.items, message: value.message, created_at: value.created_at,
       submitted_at: value.submitted_at, delivery_status: value.delivery_status, delivery_error: value.delivery_error,
@@ -7852,10 +7873,14 @@ async function publishRenoAppCompletion(caseId: string, input: UpdateRenoAppCase
     if ((request?.id ?? null) !== (input.previousCompletionId ?? null)) throw new Error('COMPLETION_CHANGED')
     const selectedIds = detail.underlag.filter(row => row.requirementDecision === 'requested').map(row => row.id)
     if (canonicalStringSet(selectedIds) !== canonicalStringSet(input.selectedRequirementIds ?? [])) throw new Error('COMPLETION_REQUIREMENTS_CHANGED')
-    const items = selectCompletionItems(detail.underlag, input.correctionIds)
+    const clarificationRows = (detail.clarifications ?? []).filter(row => row.requested && isOpenClarification(row))
+    const expectedClarifications = clarificationRows.map(row => `${row.question_id}:${row.revision}`)
+    const submittedClarifications = (input.selectedClarifications ?? []).map(row => `${row.questionId}:${row.revision}`)
+    if (canonicalStringSet(expectedClarifications) !== canonicalStringSet(submittedClarifications)) throw new Error('CLARIFICATION_CHANGED')
+    const items = [...selectCompletionItems(detail.underlag, input.correctionIds), ...clarificationItems(clarificationRows)]
     const message = completionMessage(items, input.reason ?? '')
     if (!message) throw new Error('NEED_INFO_MESSAGE_REQUIRED')
-    const { error } = await admin.rpc('renoapp_publish_completion', {
+    const { error } = await admin.rpc('renoapp_publish_completion_clarifications', {
       p_case_id: caseId, p_id: requestId, p_previous_id: request?.id ?? null,
       p_status: status, p_actor: actorId, p_items: items, p_message: message,
       p_selected: selectedIds,
@@ -7899,6 +7924,22 @@ async function publishRenoAppCompletion(caseId: string, input: UpdateRenoAppCase
     provider_message_id: providerMessageId,
   }).eq('id', requestId)
   if (error) throw new Error('Begäran sparades, men mejlets leveransstatus kunde inte sparas. Ladda om ärendet.')
+  return (await getRenoAppCaseDetail(caseId))!
+}
+
+export async function reviewRenoAppClarification(caseId: string, input: {
+  questionId: string; revision: number; action: ClarificationAction; note: string
+}): Promise<RenoAppCaseDetail> {
+  const context = await requireRenoAppViewerContext()
+  const detail = await getRenoAppCaseDetail(caseId)
+  if (!detail || (context.authorizedBrfIds && !context.authorizedBrfIds.includes(detail.brf.id))) {
+    throw new Error('CASE_NOT_FOUND')
+  }
+  const { error } = await createSupabaseAdminClient().rpc('renoapp_review_clarification', {
+    p_case_id: caseId, p_question_id: input.questionId, p_revision: input.revision,
+    p_action: input.action, p_note: input.note, p_actor: context.profile.id,
+  })
+  if (error) throw new Error(error.message)
   return (await getRenoAppCaseDetail(caseId))!
 }
 

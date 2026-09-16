@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRenoAppCaseDetail, updateRenoAppCaseStatus } from '@/lib/renoapp/server'
 import { COMPLETION_ERRORS } from '@/lib/renoapp/completion'
+import { CLARIFICATION_ERRORS } from '@/lib/renoapp/clarifications'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,6 +48,7 @@ export async function POST(request: Request, context: RouteContext) {
       previousCompletionId?: string | null
       correctionIds?: string[]
       selectedRequirementIds?: string[]
+      selectedClarifications?: Array<{ questionId: string; revision: number }>
       retryCompletion?: boolean
     }
 
@@ -62,6 +64,8 @@ export async function POST(request: Request, context: RouteContext) {
       completionRequestId: body.completionRequestId,
       previousCompletionId: body.previousCompletionId,
       selectedRequirementIds: Array.isArray(body.selectedRequirementIds) ? body.selectedRequirementIds.filter(id => typeof id === 'string') : [],
+      selectedClarifications: Array.isArray(body.selectedClarifications) ? body.selectedClarifications.filter(row =>
+        row && typeof row.questionId === 'string' && Number.isInteger(row.revision)) : [],
       correctionIds: Array.isArray(body.correctionIds) ? body.correctionIds.filter(id => typeof id === 'string') : [],
       retryCompletion: body.retryCompletion === true,
     })
@@ -75,6 +79,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'CASE_NOT_FOUND') return jsonError('RenoApp-ärendet hittades inte.', 404)
     if (message === 'INVALID_CASE_STATUS') return jsonError('Ogiltig status för RenoApp-ärendet.', 400)
     if (COMPLETION_ERRORS[message]) return jsonError(COMPLETION_ERRORS[message], 409)
+    if (CLARIFICATION_ERRORS[message]) return jsonError(CLARIFICATION_ERRORS[message], 409)
     if (message === 'DRAFT_CASE_LOCKED') {
       return jsonError('Utkast är låsta för styrelsen tills medlemmen skickat in dem.', 409)
     }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { upsertPublicApplication, type CreatePublicApplicationInput } from '@/lib/renoapp/server'
 import { RULES_ERRORS } from '@/lib/renoapp/renovationRules'
 import { COMPLETION_ERRORS } from '@/lib/renoapp/completion'
+import { CLARIFICATION_ERRORS, parseClarificationAnswers } from '@/lib/renoapp/clarifications'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
         participantEntries,
         actionTypeKeys,
         questionAnswers,
+        clarificationAnswers: parseClarificationAnswers(body.clarificationAnswers),
       } satisfies CreatePublicApplicationInput,
       origin
     )
@@ -92,6 +94,8 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okant fel.'
+    if (message === 'INVALID_CLARIFICATION_ANSWERS') return jsonError('Ogiltiga svar på klarlägganden.', 400)
+    if (CLARIFICATION_ERRORS[message]) return NextResponse.json({ error: CLARIFICATION_ERRORS[message], code: message }, { status: 409 })
     if (COMPLETION_ERRORS[message]) return NextResponse.json({ error: COMPLETION_ERRORS[message], code: message }, { status: 409 })
     if (RULES_ERRORS[message]) {
       const ruleError = RULES_ERRORS[message]

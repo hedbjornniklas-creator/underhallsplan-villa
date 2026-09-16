@@ -1,8 +1,10 @@
 export type CompletionItem = {
   id: string
-  category: 'document' | 'participant'
+  category: 'document' | 'participant' | 'clarification'
   label: string
   correction: boolean
+  clarificationRevision?: number
+  question?: import('./clarifications').ClarificationQuestion
 }
 
 export type CompletionRequest = {
@@ -13,7 +15,7 @@ export type CompletionRequest = {
   created_at: string
   submitted_at: string | null
   revision: number
-  draft: { participantEntries?: unknown[]; replyMessage?: string }
+  draft: { participantEntries?: unknown[]; replyMessage?: string; clarificationAnswers?: import('./clarifications').ClarificationAnswers }
   delivery_status: 'pending' | 'sent' | 'failed'
   delivery_error: string | null
   provider_message_id: string | null
@@ -33,7 +35,7 @@ export function selectCompletionItems(
 
 export function completionMessage(items: CompletionItem[], note: string) {
   return [items.length ? `Följande ska kompletteras:\n${items.map(item =>
-    `- ${item.category === 'document' ? 'Underlag' : 'Uppgifter'}: ${item.label}${item.correction ? ' (rättelse begärd)' : ''}`
+    `- ${item.category === 'document' ? 'Underlag' : item.category === 'clarification' ? 'Klarläggande' : 'Uppgifter'}: ${item.label}${item.correction ? ' (rättelse begärd)' : ''}`
   ).join('\n')}` : '', note.trim()].filter(Boolean).join('\n\n')
 }
 

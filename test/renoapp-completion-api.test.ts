@@ -33,6 +33,7 @@ function serviceFunction<T>(names: string[], dependencies: Record<string, unknow
   return new Function(...Object.keys(dependencies), `${compile(code)};return ${names[0]}`)(...Object.values(dependencies)) as T
 }
 const common = load<typeof import('../src/lib/renoapp/completion')>('src/lib/renoapp/completion.ts', {})
+const clarifications = load<typeof import('../src/lib/renoapp/clarifications')>('src/lib/renoapp/clarifications.ts', {})
 const templates = load<Record<string, unknown>>('src/lib/renoapp/emailTemplate.ts', {})
 
 function confirmationFixture(status: 'new' | 'draft' | 'need_info', requestedRoles = ['plumber']) {
@@ -184,7 +185,7 @@ test('failed completion email stays visible; retry sends the same snapshot and d
     getRenoAppCaseDetail: async () => ({ id: 'case', caseNumber: 'RA-TEST', underlag,
       applicant: { name: 'Test <Person>', email: 'applicant@example.test' }, brf: { id: 'brf', name: 'Test BRF', slug: 'test' }, completion: request }),
     getLatestCompletion: async () => request, createSupabaseAdminClient: () => admin,
-    ...common, ...templates, canonicalStringSet: (values: string[]) => [...new Set(values)].sort().join(','),
+    ...common, ...clarifications, ...templates, canonicalStringSet: (values: string[]) => [...new Set(values)].sort().join(','),
     getMailFromAddress: () => 'Hushub <noreply@example.test>', ensureReusableCaseAccessToken: async () => 'same-token',
     buildAbsoluteUrl: (origin: string, path: string) => new URL(path, origin).toString(),
     escapeHtml: (value: string) => value.replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
@@ -236,6 +237,7 @@ test('applicant API passes the round and revision and returns reloadable conflic
   const route = load<typeof PublicRoute>('src/app/api/renoapp/public/applications/route.ts', {
     '@/lib/renoapp/server': { upsertPublicApplication: async (value: typeof input) => { input = value; if (conflict) throw new Error('COMPLETION_DRAFT_CHANGED'); return { completionRevision: 4 } } },
     '@/lib/renoapp/completion': common, '@/lib/renoapp/renovationRules': { RULES_ERRORS: {} },
+    '@/lib/renoapp/clarifications': clarifications,
   })
   const request = () => new Request('https://example.test/apply', { method: 'POST', body: JSON.stringify({ mode: 'draft', completionRequestId: 'round', completionRevision: 3, replyMessage: 'Saved reply' }) })
   assert.equal((await route.POST(request())).status, 201)
@@ -246,6 +248,76 @@ test('applicant API passes the round and revision and returns reloadable conflic
   const response = await route.POST(request())
   assert.equal(response.status, 409)
   assert.equal((await response.json()).code, 'COMPLETION_DRAFT_CHANGED')
+})
+
+test('clarification API validates input and returns assessment conflicts without leaking errors', async () => {
+  let calls = 0
+  let failure = ''
+  const route = load<typeof import('../src/app/api/renoapp/app/cases/[id]/clarifications/route')>('src/app/api/renoapp/app/cases/[id]/clarifications/route.ts', {
+    '@/lib/renoapp/clarifications': clarifications,
+    '@/lib/renoapp/server': { reviewRenoAppClarification: async () => { calls++; if (failure) throw new Error(failure); return { id: 'case' } } },
+  })
+  const post = (body: unknown) => route.POST(new Request('https://example.test/clarifications', { method: 'POST', body: JSON.stringify(body) }), { params: Promise.resolve({ id: 'case' }) })
+  const valid = { questionId: randomUUID(), revision: 0, action: 'resolve', note: 'Checked' }
+  for (const invalid of [null, {}, { ...valid, revision: -1 }, { ...valid, note: 'x'.repeat(4001) }, { ...valid, action: 'approve' }]) assert.equal((await post(invalid)).status,400)
+  assert.equal(calls,0)
+  assert.equal((await post(valid)).status,200)
+  for (const [code, status] of [['UNAUTHORIZED',401],['CASE_NOT_FOUND',404],['CLARIFICATION_CHANGED',409],['CLARIFICATION_REVIEW_REQUIRED',409],['secret database error',500]] as const) {
+    failure = code
+    const response = await post(valid)
+    assert.equal(response.status,status)
+    assert.doesNotMatch(JSON.stringify(await response.json()), /secret database/)
+  }
+})
+
+test('clarification assessment authorizes the case before any database mutation', async () => {
+  let allowed = false, mutations = 0
+  const service = serviceFunction<(id:string,input:object) => Promise<unknown>>(['reviewRenoAppClarification'], {
+    exports: {}, requireRenoAppViewerContext: async () => ({ authorizedBrfIds:['allowed'], profile:{id:'actor'} }),
+    getRenoAppCaseDetail: async () => ({ brf: { id: allowed ? 'allowed' : 'other' } }),
+    createSupabaseAdminClient: () => ({ rpc: async () => { mutations++; return { error:null } } }),
+  })
+  const input = {questionId:randomUUID(),revision:0,action:'request',note:''}
+  await assert.rejects(service('case',input), /CASE_NOT_FOUND/)
+  assert.equal(mutations,0)
+  allowed = true
+  await service('case',input)
+  assert.equal(mutations,1)
+})
+
+test('public API passes clarification drafts separately from locked base answers', async () => {
+  let saved: Record<string, unknown> | null = null
+  const route = load<typeof PublicRoute>('src/app/api/renoapp/public/applications/route.ts', {
+    '@/lib/renoapp/server': { upsertPublicApplication: async (value: Record<string, unknown>) => { saved=value; return {} } },
+    '@/lib/renoapp/completion':common, '@/lib/renoapp/renovationRules':{RULES_ERRORS:{}}, '@/lib/renoapp/clarifications':clarifications,
+  })
+  const answers = { [randomUUID()]:{optionId:randomUUID(),note:'Investigated'} }
+  const post = (clarificationAnswers:unknown) => route.POST(new Request('https://example.test/apply',{method:'POST',body:JSON.stringify({questionAnswers:{original:['needs_investigation']},clarificationAnswers})}))
+  assert.equal((await post(answers)).status,201)
+  assert.deepEqual(saved?.['clarificationAnswers'],answers)
+  assert.deepEqual(saved?.['questionAnswers'],{original:['needs_investigation']})
+  assert.equal((await post({bad:'value'})).status,400)
+})
+
+test('a clarified answer recalculates existing document suggestions without requesting them automatically', () => {
+  const build = serviceFunction<(input:object) => Array<{id:string;requirementDecision:string|null;suggestionSources:Array<{answerLabel:string}>}>>(
+    ['buildCaseUnderlagItems','resolveApplicableQuestionsForSelection'], {})
+  const configuration = {
+    selectedActionTypes:[{id:'wall',label:'Riva vägg'}], requirements:[],
+    questionConfig:{
+      questions:[{id:'municipal',key:'municipal',label:'Kommunens besked?',response_type:'single_select',sort_order:10}],
+      options:[{id:'unknown',question_id:'municipal',key:'needs_investigation',label:'Undersöka',sort_order:10},{id:'yes',question_id:'municipal',key:'yes',label:'Ja',sort_order:20}],
+      links:[{action_type_id:'wall',question_id:'municipal',is_required:true,sort_order:10}],
+      triggers:[{id:'trigger',option_id:'yes',trigger_type:'document',document_type_id:'startbesked',sort_order:10}],
+    },
+    documentTypes:[{id:'startbesked',label:'Startbesked',key:'startbesked'}],documents:[],participantRows:[],
+    participantRoles:[],actionTypeParticipantRoles:[],requirementDecisions:[],
+  }
+  assert.deepEqual(build({...configuration,questionAnswerRows:[{question_id:'municipal',option_id:'unknown'}]}),[])
+  const clarified=build({...configuration,questionAnswerRows:[{question_id:'municipal',option_id:'yes'}]})
+  assert.equal(clarified[0].id,'document:startbesked')
+  assert.equal(clarified[0].requirementDecision,null)
+  assert.equal(clarified[0].suggestionSources[0].answerLabel,'Ja')
 })
 
 test('a concurrent round change must not remove storage before the guarded delete succeeds', async () => {

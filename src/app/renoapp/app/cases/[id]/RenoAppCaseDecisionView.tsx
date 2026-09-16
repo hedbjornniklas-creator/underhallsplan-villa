@@ -3,6 +3,8 @@
 import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { RenovationRulesReceipt } from '@/components/renoapp/RenovationRulesView'
 import ConsultantReviewOrder from '@/components/renoapp/ConsultantReviewOrder'
+import BoardClarifications from '@/components/renoapp/BoardClarifications'
+import { clarificationItems, isOpenClarification, type Clarification } from '@/lib/renoapp/clarifications'
 import type { RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
 import { FileText, Building2, Check, Minus, Info, TriangleAlert, ChevronDown, ChevronUp, Download, Send, X } from 'lucide-react'
 import { getUnsentCompletionItems, selectCompletionItems, type CompletionSummary } from '@/lib/renoapp/completion'
@@ -11,6 +13,7 @@ export type RenoAppCaseStatusAction = 'need_info' | 'approved' | 'conditional' |
 type RequirementDecision = 'requested' | 'not_requested'
 
 export type RenoAppCaseDetail = {
+  clarifications?: Clarification[]
   completion: CompletionSummary | null
   rulesAcceptance?: RenovationRulesAcceptance
   id: string
@@ -894,6 +897,7 @@ function ConsultantsPanel({
 }
 
 function BoardDecisionPanel({
+  blockedReason,
   isDraftCase,
   selectedStatus,
   reason,
@@ -909,6 +913,7 @@ function BoardDecisionPanel({
   onDecisionConfirmedChange,
   onSubmit,
 }: {
+  blockedReason?: string | null
   isDraftCase: boolean
   selectedStatus: RenoAppCaseStatusAction
   reason: string
@@ -1095,11 +1100,12 @@ function BoardDecisionPanel({
 
           {actionError ? <p className="text-sm text-rose-700">{actionError}</p> : null}
           {actionSuccess ? <p className="text-sm text-emerald-700">{actionSuccess}</p> : null}
+          {blockedReason && <p role="status" className="text-sm text-amber-900">{blockedReason}</p>}
 
           <div className="flex justify-end border-t border-[var(--reno-line)] pt-5">
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || Boolean(blockedReason)}
               className="reno-button"
             >
               <Send size={18} aria-hidden="true" />
@@ -1194,6 +1200,9 @@ function ReviewFlagsCard({ flags }: { flags: ReviewFlag[] }) {
 }
 
 export default function RenoAppCaseDecisionView({
+  onClarificationSaved,
+  onClarificationBusyChange,
+  clarificationBusy = false,
   item,
   selectedStatus,
   reason,
@@ -1210,6 +1219,9 @@ export default function RenoAppCaseDecisionView({
   onSubmit,
   onRetryDelivery,
 }: {
+  onClarificationSaved?: (row: Clarification) => void
+  onClarificationBusyChange?: (questionId: string, busy: boolean) => void
+  clarificationBusy?: boolean
   item: RenoAppCaseDetail
   selectedStatus: RenoAppCaseStatusAction
   reason: string
@@ -1234,13 +1246,13 @@ export default function RenoAppCaseDecisionView({
   const missingReviewFlags = useMemo(() => getMissingReviewFlags(item), [item])
   const completionSnippets = useMemo(
     () =>
-      selectCompletionItems(item.underlag)
+      [...selectCompletionItems(item.underlag), ...clarificationItems(item.clarifications ?? [])]
         .map((row) =>
           row.category === 'document'
             ? `Underlag: ${displayText(row.label)}`
-            : `Uppgifter: ${getParticipantDisplayLabel(row.label)}`
+            : row.category === 'clarification' ? `Klarläggande: ${row.label}` : `Uppgifter: ${getParticipantDisplayLabel(row.label)}`
         ),
-    [item.underlag]
+    [item.underlag, item.clarifications]
   )
   const downloadAllUrls = useMemo(
     () =>
@@ -1286,6 +1298,10 @@ export default function RenoAppCaseDecisionView({
   return (
     <div className="reno-case-review">
       <CaseHeaderSummary item={item} />
+      {onClarificationSaved && onClarificationBusyChange && <BoardClarifications
+        caseId={item.id} rows={item.clarifications ?? []} status={item.status} completion={item.completion}
+        disabled={submitting} onSaved={onClarificationSaved} onBusyChange={onClarificationBusyChange}
+      />}
       {item.completion && item.status === 'need_info' && item.completion.delivery_status !== 'sent' ? (
         <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
           <p>{item.completion.delivery_error ?? 'Begäran är sparad, men mejlleveransen är inte bekräftad.'}</p>
@@ -1314,6 +1330,9 @@ export default function RenoAppCaseDecisionView({
       <ConsultantReviewOrder key={item.id} caseId={item.id} brfName={item.brf.name} isDraft={item.status === 'draft'} />
       <div id="board-decision" className="scroll-mt-24">
       <BoardDecisionPanel
+        blockedReason={clarificationBusy ? 'Klarläggandevalen måste sparas innan beslutet skickas.'
+          : ['approved', 'conditional'].includes(selectedStatus) && item.clarifications?.some(isOpenClarification)
+            ? 'Kvarstående frågor behöver klarläggas eller bedömas som inte relevanta före godkännande.' : null}
         isDraftCase={item.status === 'draft'}
         selectedStatus={selectedStatus}
         reason={reason}

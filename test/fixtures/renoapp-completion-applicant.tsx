@@ -30,6 +30,7 @@ window.fetch = async (input, init) => {
     if (sessionStorage.getItem('completion-conflict')) return Response.json({ code: 'COMPLETION_DRAFT_CHANGED', error: 'Kompletteringen har sparats i en annan flik. Ladda om sidan.' }, { status: 409 })
     draft.form.participantEntries = body.participantEntries
     draft.completionDraft.replyMessage = body.replyMessage
+    draft.completionDraft.clarificationAnswers = body.clarificationAnswers
     draft.completionDraft.revision++
     if (body.mode === 'submit') draft.case.status = draft.case.status === 'need_info' ? 'review' : 'submitted'
     persist()

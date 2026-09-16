@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, ChevronDown } from 'lucide-react'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { completionMessage, selectCompletionItems } from '@/lib/renoapp/completion'
+import { clarificationItems, isOpenClarification, CLARIFICATION_ERRORS, type Clarification } from '@/lib/renoapp/clarifications'
 import RenoAppCaseDecisionView, {
   type RenoAppCaseDetail,
   type RenoAppCaseStatusAction,
@@ -118,6 +119,16 @@ export default function RenoAppCaseDetailPage() {
   const [decisionConfirmed, setDecisionConfirmed] = useState(false)
   const lastRequirementSaveRef = useRef<Promise<RenoAppCaseDetail | null> | null>(null)
   const completionAttemptRef = useRef<{ fingerprint: string; id: string } | null>(null)
+  const busyClarifications = useRef(new Set<string>())
+  const [clarificationBusy, setClarificationBusy] = useState(false)
+  const handleClarificationBusy = useCallback((id: string, busy: boolean) => {
+    if (busy) busyClarifications.current.add(id)
+    else busyClarifications.current.delete(id)
+    setClarificationBusy(busyClarifications.current.size > 0)
+  }, [])
+  const handleClarificationSaved = useCallback((row: Clarification) => {
+    setItem(current => current ? { ...current, clarifications: (current.clarifications ?? []).map(old => old.question_id === row.question_id ? row : old) } : current)
+  }, [])
 
   const saveRequirementDecisionBatch = useCallback(
     async (updates: RequirementDecisionUpdate[]) => {
@@ -157,7 +168,7 @@ export default function RenoAppCaseDetailPage() {
     save: saveRequirementDecisionBatch,
     mergePayload: mergeRequirementDecisionUpdates,
     onSaved: (savedItem) => {
-      setItem(savedItem)
+      setItem(current => ({ ...savedItem, clarifications: current?.clarifications ?? savedItem.clarifications }))
       setActionSuccess('Valen sparades.')
     },
     onError: (saveError) => {
@@ -208,7 +219,15 @@ export default function RenoAppCaseDetailPage() {
 
   const handleStatusSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const requestMessage = completionMessage(selectCompletionItems(item?.underlag ?? []), reason)
+    const requestMessage = completionMessage([...selectCompletionItems(item?.underlag ?? []), ...clarificationItems(item?.clarifications ?? [])], reason)
+    if (busyClarifications.current.size) {
+      setActionError('Klarläggandevalen måste sparas innan beslutet skickas.')
+      return
+    }
+    if (['approved', 'conditional'].includes(selectedStatus) && item?.clarifications?.some(isOpenClarification)) {
+      setActionError(CLARIFICATION_ERRORS.CLARIFICATION_REVIEW_REQUIRED)
+      return
+    }
 
     if (!caseId) {
       setActionError('Ogiltigt RenoApp-ärende.')
@@ -241,8 +260,10 @@ export default function RenoAppCaseDetailPage() {
 
     try {
       await lastRequirementSaveRef.current
+      if (requirementDecisionAutosave.status === 'error') throw new Error('Underlagsvalen kunde inte sparas. Ladda om och kontrollera dem.')
       const selectedRequirementIds = item?.underlag.filter(row => row.requirementDecision === 'requested').map(row => row.id) ?? []
-      const fingerprint = JSON.stringify([selectedStatus, reason, selectedRequirementIds, item?.completion?.id])
+      const selectedClarifications = (item?.clarifications ?? []).filter(row => row.requested && isOpenClarification(row)).map(row => ({ questionId: row.question_id, revision: row.revision }))
+      const fingerprint = JSON.stringify([selectedStatus, reason, selectedRequirementIds, selectedClarifications, item?.completion?.id])
       if (completionAttemptRef.current?.fingerprint !== fingerprint) completionAttemptRef.current = { fingerprint, id: crypto.randomUUID() }
       const response = await fetch(`/api/renoapp/app/cases/${caseId}`, {
         method: 'POST',
@@ -254,6 +275,7 @@ export default function RenoAppCaseDetailPage() {
           reason: selectedStatus === 'conditional' ? null : reason,
           completionRequestId: completionAttemptRef.current.id,
           selectedRequirementIds,
+          selectedClarifications,
           previousCompletionId: item?.completion?.id ?? null,
           conditions: selectedStatus === 'conditional' ? conditions : null,
         }),
@@ -351,6 +373,9 @@ export default function RenoAppCaseDetailPage() {
       <CaseFlowVisualization status={item.status} />
 
       <RenoAppCaseDecisionView
+        clarificationBusy={clarificationBusy}
+        onClarificationSaved={handleClarificationSaved}
+        onClarificationBusyChange={handleClarificationBusy}
         item={item}
         selectedStatus={selectedStatus}
         reason={reason}
