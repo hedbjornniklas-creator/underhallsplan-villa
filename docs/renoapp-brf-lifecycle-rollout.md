@@ -20,6 +20,28 @@ The migration enables RLS and removes browser-role access to BRF associations, m
 
 ## Existing data and recovery
 
+### Personal invitation account routing (2026-09-16)
+
+Run `docs/db/2026-09-16_03_renoapp_invite_account_lookup.sql` before deploying
+the account-routing UI. This additive, repeatable migration creates a read-only,
+service-role-only function. It checks `auth.users` using only the email from a
+valid, open `member_access` invitation. Invalid, expired, revoked, accepted and
+BRF activation links cannot be used for this lookup. No user ID is returned.
+
+The invite GET route returns `accountAction` without caching: existing accounts
+see sign-in with a return link; new accounts see name/password creation. Signed-in
+matching users confirm access; other signed-in users must sign out, then the page
+reloads and chooses the appropriate path. A lookup failure never defaults to
+creating an account. This covers auth accounts without profiles as well.
+
+Account creation still rejects duplicates if another session creates the account
+after the preview was loaded. The UI clears the proposed password and switches
+to sign-in. The lookup does not authorize acceptance, reset passwords, create
+memberships or alter the BRF activation workflow. Shared login/reset remains
+unchanged. The BRF activation page only explains personal email invitations.
+
+### Recovery rules
+
 - Active legacy memberships with no normalized board grant receive a grant. Inactive memberships lose board grants. Existing disabled or expired grants are not automatically restored.
 - An admin can explicitly restore access for an active member from the BRF detail page. This action is recorded in history.
 - Older invitations have unknown delivery status. Accepted invitations are not reopened. Expired or failed invitations can be replaced using a new link; the previous unused link is revoked.

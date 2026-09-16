@@ -14,6 +14,7 @@ const migration = [
   sql('2026-09-05_01_renoapp_brf_lifecycle.sql'),
   sql('2026-09-06_01_renoapp_approve_rejected_request.sql'),
   sql('2026-09-06_02_renoapp_separate_activation_and_user_invites.sql'),
+  sql('2026-09-16_03_renoapp_invite_account_lookup.sql'),
 ].join('\n')
 before(async () => {
   await db.exec(`create role anon; create role authenticated; create role service_role;
@@ -48,6 +49,35 @@ async function activate(created: Awaited<ReturnType<typeof start>>, org: string,
     'select renoapp_activate_brf($1,$2,$3) as result', [created.token, completion(org), users])
   return { memberToken, ...result.rows[0].result }
 }
+
+test('account lookup is token-bound, read-only and restricted to the server', async () => {
+  await db.exec(sql('2026-09-16_03_renoapp_invite_account_lookup.sql'))
+  const created = await start('919191-9191')
+  const active = await activate(created, '919191-9191')
+  const lookup = async (token: string) => (await db.query<{ result: boolean | null }>(
+    'select renoapp_invite_account_exists($1) as result', [token])).rows[0].result
+  assert.equal(await lookup('invalid-token'), null)
+  assert.equal(await lookup(created.token), null, 'BRF activation must not expose account existence')
+  await db.exec('set role service_role')
+  try { assert.equal(await lookup(active.memberToken), true) } finally { await db.exec('reset role') }
+  for (const role of ['anon', 'authenticated']) {
+    await db.exec(`set role ${role}`)
+    try { await assert.rejects(lookup(active.memberToken), /permission denied/) } finally { await db.exec('reset role') }
+  }
+  const inviteId = active.memberInvites[0].id
+  await db.query('update brf_member_invites set email=$1 where id=$2', ['AuthOnly@Example.test', inviteId])
+  assert.equal(await lookup(active.memberToken), false)
+  await db.query('insert into auth.users(id,email) values($1,$2)', [randomUUID(), 'authonly@example.test'])
+  assert.equal(await lookup(active.memberToken), true, 'Auth account without profile must be recognized')
+  for (const column of ['accepted_at', 'revoked_at']) {
+    await db.query(`update brf_member_invites set ${column}=now() where id=$1`, [inviteId])
+    assert.equal(await lookup(active.memberToken), null)
+    await db.query(`update brf_member_invites set ${column}=null where id=$1`, [inviteId])
+  }
+  await db.query("update brf_member_invites set expires_at=now()-interval '1 minute' where id=$1", [inviteId])
+  assert.equal(await lookup(active.memberToken), null)
+  assert.equal((await db.query('select id from brf_members where brf_id=$1', [created.brf.id])).rows.length, 0)
+})
 
 test('manual create is idempotent and organizational duplicates are rejected', async () => {
   const initial = await start()

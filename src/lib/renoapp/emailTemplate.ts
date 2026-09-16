@@ -59,7 +59,7 @@ ${input.preheader ? `<div style="display:none;max-height:0;overflow:hidden;opaci
 <div style="margin-top:4px;font-size:14px;line-height:22px;color:${brand.muted};">En tjänst från HusHub</div></td></tr>
 <tr><td class="reno-email-padding reno-email-content" style="padding:32px;font-family:${fontFamily};font-size:16px;line-height:26px;color:${brand.ink};overflow-wrap:anywhere;word-wrap:break-word;">
 ${input.bodyHtml}
-<p style="margin:28px 0 0;">Med v&#228;nlig h&#228;lsning,<br/><strong>RenoApp</strong></p>
+<p style="margin:28px 0 0;">Med v&#228;nlig h&#228;lsning,<br/><strong>RenoApp-teamet</strong></p>
 </td></tr>
 <tr><td class="reno-email-padding" style="padding:20px 32px;border-top:1px solid ${brand.line};font-family:${fontFamily};font-size:13px;line-height:22px;color:${brand.muted};">
 <a href="https://renoapp.se" style="color:${brand.focus};text-decoration:underline;">renoapp.se</a>

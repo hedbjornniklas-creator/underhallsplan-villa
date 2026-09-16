@@ -36,6 +36,12 @@ let accessStatus = 'review'
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname
   const json = value => { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(value)) }
+  if (request.method === 'POST' && path === '/api/renoapp/invites/brand-test/accept'
+    && new URL(request.headers.referer ?? '/', 'http://localhost').searchParams.get('inviteScenario') === 'race') {
+    writes.push({ path, method: request.method })
+    response.statusCode = 409
+    json({ error: 'Det finns redan ett konto med den här e-postadressen. Logga in först.' }); return
+  }
   if (request.method !== 'GET') { writes.push({ path, method: request.method }); json({}); return }
   if (path === '/api/renoapp/app/context') { json(context); return }
   if (path === '/api/renoapp/app/cases/brand-case') { json({ item: caseItem }); return }
@@ -47,6 +53,14 @@ const server = createServer(async (request, response) => {
   if (path === '/api/renoapp/app/brf') { json({ items: [brf] }); return }
   if (path === '/api/renoapp/app/users') { json({ items: [{ brf, members: [{ profileId: 'test', fullName: 'Testperson', email: 'test@example.test', role: 'board', receivesGeneralInfoEmails: true, receivesCaseEventEmails: true }], pendingInvites: [] }] }); return }
   if (path === '/api/renoapp/invites/brand-test') {
+    const scenario = new URL(request.headers.referer ?? '/', 'http://localhost').searchParams.get('inviteScenario')
+    if (scenario) {
+      const email = 'test@example.test'
+      json({ mode: 'member_invite', state: ['expired', 'revoked', 'accepted'].includes(scenario) ? scenario : 'open', brf,
+        invite: { email, fullName: 'Testperson', role: 'board', kind: 'member_access', expiresAt: '2027-01-01' },
+        currentUser: { email: scenario === 'signed-in' ? email : scenario === 'wrong' ? 'other@example.test' : null, matchesInvite: scenario === 'signed-in' },
+        accountAction: scenario === 'new' || scenario === 'race' ? 'create_account' : 'sign_in', activationMemberInvite: null }); return
+    }
     json({ mode: 'brf_onboarding', state: 'open', brf,
       invite: { email: 'test@example.test', fullName: 'Testperson', role: 'board', kind: 'brf_activation', expiresAt: '2027-01-01' },
       currentUser: { email: null, matchesInvite: false }, activationMemberInvite: null }); return
@@ -60,6 +74,10 @@ const server = createServer(async (request, response) => {
 })
 await new Promise(done => server.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${server.address().port}`
+if (process.argv.includes('--serve')) {
+  console.log(`Fixture preview (mock data only): ${origin}`)
+  await new Promise(() => {})
+}
 const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 try {
   const page = await browser.newPage()

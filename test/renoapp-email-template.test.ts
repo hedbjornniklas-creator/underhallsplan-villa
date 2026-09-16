@@ -20,7 +20,7 @@ test('email uses the RenoApp palette and readable branding without external reso
   }
   assert.match(html, /<html lang="sv"/)
   assert.match(html, /Manrope.*Arial,sans-serif/)
-  assert.match(html, /<strong>RenoApp<\/strong>/)
+  assert.match(html, /<strong>RenoApp-teamet<\/strong>/)
   assert.match(html, /https:\/\/renoapp.se/)
   assert.doesNotMatch(html, /<img|<script|<link|@import|@font-face|url\(/i)
   assert.doesNotMatch(html, /#166534|#f6f1ea|Renoapp.png/)

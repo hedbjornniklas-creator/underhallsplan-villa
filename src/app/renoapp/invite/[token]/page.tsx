@@ -50,6 +50,7 @@ type InvitePreview = {
     isPublicApplyListed: boolean
   }
   currentUser: { email: string | null; matchesInvite: boolean }
+  accountAction: 'sign_in' | 'create_account' | null
   activationMemberInvite: {
     state: 'open' | 'expired' | 'revoked' | 'accepted'
     deliveryStatus: string
@@ -196,6 +197,7 @@ export default function RenoAppInvitePage() {
         setSignatoryName(data.brf.primaryContactName ?? data.invite.fullName ?? '')
         setAdditionalUsers([])
         setPassword('')
+        setRequiresManualLogin(false)
         setTermsAccepted(false)
         setSignatoryAuthorityConfirmed(false)
         setContinueInviteUrl(null)
@@ -276,7 +278,10 @@ export default function RenoAppInvitePage() {
         additionalInviteWarnings?: string[]; portalInvites?: PortalInviteResult[]; continueInviteUrl?: string | null }
       if (!response.ok) {
         const message = result.error ?? (payload.mode === 'member_invite' ? 'Kunde inte acceptera inbjudan.' : 'Kunde inte aktivera föreningen.')
-        if (response.status === 409 && message.includes('Logga in först')) setRequiresManualLogin(true)
+        if (response.status === 409 && message.includes('Logga in först')) {
+          setPassword('')
+          setRequiresManualLogin(true)
+        }
         throw new Error(message)
       }
       try { sessionStorage.removeItem(`renoapp-invite-user:${token}`) } catch {}
@@ -332,7 +337,9 @@ export default function RenoAppInvitePage() {
 
   const isActivation = payload.mode === 'brf_onboarding'
   const wrongMemberAccount = !isActivation && payload.currentUser.email !== null && !payload.currentUser.matchesInvite
-  const needsPassword = !isActivation && !payload.currentUser.matchesInvite
+  const needsLogin = !isActivation && !payload.currentUser.matchesInvite
+    && (requiresManualLogin || payload.accountAction !== 'create_account')
+  const needsPassword = !isActivation && !payload.currentUser.matchesInvite && !needsLogin
 
   return <main className="min-h-screen bg-white px-4 py-8 sm:px-6 sm:py-10"><div className="mx-auto max-w-5xl">
     <header className="border-b border-stone-200 py-6">
@@ -355,7 +362,7 @@ export default function RenoAppInvitePage() {
       : payload.state === 'accepted' && isActivation ?
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
           <div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 shrink-0" size={21} /><div><h2 className="font-semibold">Föreningen är aktiverad</h2>
-            <p className="mt-1 text-sm leading-6">De valda användarnas personliga inbjudningar har skapats. Där loggar de in med ett befintligt HusHub-konto eller skapar en ny inloggning.</p></div></div>
+            <p className="mt-1 text-sm leading-6">De valda användarnas personliga inbjudningar har skapats. Varje person följer sin länk för att få tillgång till styrelseportalen.</p></div></div>
           {portalInviteResults.length > 0 ? <ul className="mt-5 divide-y divide-emerald-200 border-y border-emerald-200">{portalInviteResults.map(invite =>
             <li key={invite.email} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span className="min-w-0 break-all">{invite.email}</span>
               <span className={`inline-flex shrink-0 items-center gap-1.5 font-medium ${invite.emailSent ? 'text-emerald-900' : 'text-amber-900'}`}><Mail size={15} />{invite.emailSent ? 'Överlämnad till mejltjänsten' : 'Mejlutskicket misslyckades'}</span></li>)}</ul> : null}
@@ -377,13 +384,18 @@ export default function RenoAppInvitePage() {
       : wrongMemberAccount ?
         <div className="rounded-md border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950"><p className="font-semibold">Du är inloggad med fel konto</p>
           <p className="mt-2 leading-6">Inbjudan gäller {payload.invite.email}, men du är inloggad som {payload.currentUser.email}.</p>
-          <button type="button" onClick={() => void handleSignOut(true)} disabled={signingOut} className="reno-button mt-4">{signingOut ? 'Byter konto...' : 'Byt konto'}</button></div>
+          <button type="button" onClick={() => void handleSignOut()} disabled={signingOut} className="reno-button mt-4">{signingOut ? 'Byter konto...' : 'Byt konto'}</button></div>
       : payload.state === 'accepted' ?
         <div className="rounded-md border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950"><p className="font-semibold">Inbjudan har accepterats</p>
           <p className="mt-1 leading-6">Ditt konto är kopplat till {payload.brf.name}.</p><div className="mt-4">{payload.currentUser.matchesInvite
             ? <button type="button" onClick={() => void openBrf()} className="reno-button">Öppna RenoApp</button>
             : <Link href={loginHref} className="reno-button">Logga in</Link>}</div>
           {completionWarnings.length > 0 ? <p role="status" className="mt-4 text-amber-950">{completionWarnings.join(' ')}</p> : null}</div>
+      : needsLogin ?
+        <div><h2 className="text-xl font-semibold sm:text-2xl">Logga in för att fortsätta</h2>
+          <p className="mt-3 text-sm leading-6 text-stone-600">Använd din befintliga inloggning för {payload.invite.email}. Efter inloggningen kommer du tillbaka hit och kan bekräfta din åtkomst.</p>
+          <Link href={loginHref} onClick={saveBeforeLogin} className="reno-button mt-5">Logga in <ArrowRight size={16} /></Link>
+        </div>
       : <form onSubmit={handleAccept} className="space-y-10">
         {isActivation ? <>
           <section className="space-y-6"><StepHeading number={1} title="Föreningens uppgifter" description="Kontrollera uppgifterna som ska användas i RenoApp och vid fakturering." />
@@ -421,8 +433,7 @@ export default function RenoAppInvitePage() {
               <span><span className="block text-sm font-semibold">{title}</span><span className="mt-1 block text-sm leading-6 text-stone-600">{description}</span></span></label>)}</fieldset>
           </section>
 
-          <section className="border-t border-stone-200 pt-9"><StepHeading number={3} title="Användare i styrelseportalen" description="Lägg till minst en person. Varje person får en egen länk och ska använda ett personligt konto." />
-            <div className="mt-5 rounded-md border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-950">Ett befintligt HusHub-konto återanvänds. Den som saknar konto skapar sin inloggning via den personliga länken. Användare kan läggas till och tas bort senare i styrelseportalen.</div>
+          <section className="border-t border-stone-200 pt-9"><StepHeading number={3} title="Användare i styrelseportalen" description="Lägg till minst en person. Varje person får en personlig inbjudan via mejl. Användare kan läggas till och tas bort senare i styrelseportalen." />
             <div className="mt-5 grid gap-4 sm:grid-cols-2"><InputField label="Första användarens namn" required value={firstUser.name} onChange={value => setFirstUser(current => ({ ...current, name: value }))} autoComplete="name" />
               <InputField label="Första användarens e-post" required value={firstUser.email} onChange={value => setFirstUser(current => ({ ...current, email: value }))} type="email" autoComplete="email" /></div>
             <div className="mt-4 space-y-4">{additionalUsers.map((user, index) => <div key={`additional-user-${index}`} className="grid gap-4 rounded-md border border-stone-200 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
@@ -447,7 +458,6 @@ export default function RenoAppInvitePage() {
           </section>
         </> : <section><h2 className="text-xl font-semibold sm:text-2xl">{needsPassword ? 'Skapa din inloggning' : 'Bekräfta din åtkomst'}</h2>
           {needsPassword ? <><p className="mt-2 text-sm leading-6 text-stone-600">Inloggningen kopplas till {payload.invite.email}.</p>
-            <p className="mt-4 text-sm text-stone-700">Har du redan ett HusHub-konto med denna e-postadress? <Link href={loginHref} onClick={saveBeforeLogin} className="font-semibold underline">Logga in</Link>.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2"><InputField label="Namn" required value={firstUser.name} onChange={value => setFirstUser(current => ({ ...current, name: value }))} autoComplete="name" />
               <InputField label="Lösenord" required value={password} onChange={setPassword} placeholder="Välj lösenord" type="password" autoComplete="new-password" helperText="Lösenordet måste innehålla minst 8 tecken." /></div></>
           : <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">Du är inloggad med {payload.currentUser.email}. Bekräfta för att lägga till föreningen i din styrelseportal.</p>}</section>}
@@ -455,7 +465,7 @@ export default function RenoAppInvitePage() {
         {actionError ? <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">{actionError}</div> : null}
         <div className="border-t border-stone-200 pt-6"><button type="submit" disabled={submitting || (isActivation && (!termsAccepted || !signatoryAuthorityConfirmed))}
           className="reno-button">{submitting ? (isActivation ? 'Aktiverar...' : 'Bekräftar...') : (isActivation ? 'Aktivera föreningen' : 'Bekräfta och öppna RenoApp')}</button>
-          {requiresManualLogin ? <Link href={loginHref} onClick={saveBeforeLogin} className="ml-3 inline-flex rounded-md border border-stone-300 px-5 py-3 text-sm font-semibold hover:bg-stone-50">Logga in med befintligt konto</Link> : null}</div>
+        </div>
       </form>}
     </section>
   </div></main>

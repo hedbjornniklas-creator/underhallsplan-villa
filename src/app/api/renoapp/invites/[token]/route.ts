@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getBrfInviteByToken } from '@/lib/renoapp/onboarding'
+import { getBrfInviteEntryByToken } from '@/lib/renoapp/onboarding'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,13 +17,13 @@ type RouteContext = {
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const { token } = await context.params
-    const item = await getBrfInviteByToken(token)
+    const item = await getBrfInviteEntryByToken(token)
 
     if (!item) {
       return jsonError('Inviten hittades inte.', 404)
     }
 
-    return NextResponse.json(item)
+    return NextResponse.json(item, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     return jsonError(message || 'Kunde inte läsa invite.', 500)

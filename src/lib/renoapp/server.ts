@@ -5683,7 +5683,7 @@ export async function sendRenoAppPublicApplyLink(input: {
           'Du kan börja fylla i ansökan direkt och fortsätta senare via samma länk.',
           '',
           'Med vänlig hälsning,',
-          'RenoApp-teamet på HusHub',
+          'RenoApp-teamet',
         ].join('\n'),
       })
       emailSent = true

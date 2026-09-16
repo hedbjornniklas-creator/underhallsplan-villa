@@ -144,6 +144,13 @@ tillåter det, utan dubbletter eller förlust av historik.
 En persons befintliga HusHub-konto återanvänds. Personlig inloggning, BRF:ens
 aktivering och behörighet till en viss förening är skilda saker.
 
+Vid BRF-aktivering anges bara vilka personer som ska få en personlig inbjudan.
+De ska inte behöva välja om de har konto. Den personliga inbjudan visar
+inloggning för befintliga konton och skapa inloggning för nya användare.
+Kontrollen gäller endast adressen i en giltig personlig inbjudan; den ger
+inte åtkomst och ändrar inte lösenord. Ett befintligt konto måste fortfarande
+vara inloggat med samma mejladress för att acceptera inbjudan.
+
 I flödesbyggaren betyder kopiering återanvändning av en definition och dess
 underfunktioner genom en ny koppling. Borttagning från flödet tar bort kopplingen,
 inte automatiskt definitionen ur databasen. Gemensamma ändringars påverkan på
@@ -160,6 +167,10 @@ RenoApps egna systemmejl ska ha RenoApp som avsändare från `renoapp.se`, separ
 från övriga HusHub-moduler. Svar ska fortsatt gå till rätt förening eller
 befintlig kontaktadress. En ny kontaktadress får inte användas för svar innan
 den kan ta emot mejl. Se mejlleveransdokumentet för konfiguration och undantag.
+
+I mejlhälsningar och texter om oss som hanterar förfrågningar används
+**RenoApp-teamet**. BRF-kvittot beskriver nästa steg som "När BRF:en godkänns",
+utan att ändra kravet på ett faktiskt administrativt godkännande.
 
 Den beslutade affärsinriktningen är att föreningen kan ha tjänsten utan löpande
 avgift och att betalning aktualiseras när styrelsen väljer att acceptera en
@@ -228,6 +239,8 @@ tillstånd att ändra produktionskonfiguration.
 
 | Datum | Beslut eller dokumentändring | Grund |
 | --- | --- | --- |
+| 2026-09-16 | Förenkla BRF-aktiveringen och låt den personliga inbjudan välja mellan inloggning och kontoskapande. Behåll identitetskontroll och skydd mot dubbelkonton. | Godkänt förslag följt av "Kör". |
+| 2026-09-16 | Använd RenoApp-teamet genomgående i mejlhälsningar och i text om handläggaren. BRF-kvittot säger "När BRF:en godkänns" i stället för "Om". Godkännandeflödet ändras inte. | Uttryckligt önskemål efter mottaget produktionsmejl. |
 | 2026-09-16 | RenoApps egna systemmejl får separat avsändare på renoapp.se. Befintliga svarsadresser och övriga modulers avsändare bevaras. | Uttryckligt beslut efter verifiering av renoapp.se i Resend. |
 | 2026-09-16 | Kommunfrågan får en pilot för "Jag behöver undersöka detta", begärt klarläggande i samma kompletteringsflöde och uttrycklig styrelsebedömning före godkännande. | Godkänd plan följd av "kör". Övriga frågor och katalogutökning ingår inte. |
 | 2026-09-16 | Första samlade styrdokumentet. Produktprinciper skiljs från dokumenterad funktion och öppna frågor. | Sammanställning av tidigare produktbeslut och förtydligandet om kvalitet framför kvantitet. Datumet avser sammanställningen, inte samtliga ursprungliga beslut. |
