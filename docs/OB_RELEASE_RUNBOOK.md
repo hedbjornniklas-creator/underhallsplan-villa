@@ -1,11 +1,15 @@
 # OB release runbook - 2026-09-14
 
-Status: **PRODUCTION UPDATE COMPLETE ON 15 SEPTEMBER; BUILDING ROLLOUT OFF**.
+Status: **PUBLISHED; BUILDING AVAILABILITY ENABLED ON 16 SEPTEMBER**.
 The user approved the database/access update and application publication with
 building rollout OFF, accepted the three pre-existing missing source images with
 their original PDFs preserved, and confirmed separate secure recovery-key custody.
 The backup is retained; no automatic deletion is scheduled. Do not publish the
 mixed development branch or activate/reopen any inspection under this approval.
+The user separately approved publishing feature availability on 16 September.
+The feature flag is now ON; individual inspection activation still requires an
+explicit main-building choice and confirmation. No inspection was enrolled by
+the feature-flag change.
 
 ## Release boundary
 
@@ -170,6 +174,36 @@ Safe local receipts: `production-final-verification.json`,
 The next step is separately approved activation of an explicitly chosen eligible
 inspection. Publication alone does not make additional buildings available.
 
+### Feature availability enabled, 16 September
+
+- The user requested publication if no blockers remained. A fresh read confirmed
+  rollout OFF, zero enrolled inspections and zero building parts before the
+  change. The newly referenced inspection is ongoing and unlocked; it is not
+  the earlier completed inspection discussed in section C.
+- All 45 reviewed application files remain identical between the original OB
+  release and current remote main `6d28a97938e4992d897eb47d94f32c55add3bdcf`.
+  The newer unrelated application work was neither reverted nor redeployed.
+  The 21 focused building, API/report and overview tests passed again.
+- A conditional update changed only the singleton `ob_building_rollout.enabled`
+  from false to true. Availability is global, not a per-inspection allowlist.
+  Both old and new eligible inspections require their own explicit activation;
+  locked/completed inspections remain protected by the existing write guards.
+- Encrypted before/after records retain the flag, structure tables and the
+  referenced inspection's rows. Those inspection rows are unchanged, and no
+  inspection structure or building part was created. This record is not a new
+  Storage backup and does not replace the per-inspection activation checks.
+- An authenticated browser reload of that inspection showed an enabled
+  "Välj huvudbyggnad" button. No activation dialog was confirmed, no new house
+  was created and no completed inspection was reopened.
+- The previously supplied public report was checked again at 06:50 UTC: page
+  200, redirect 302, PDF 200, 32 pages and identical original/backup bytes.
+  No report was regenerated.
+
+Safe local receipt: `.cache/ob-release/rollout-enable-20260916.json`.
+Before confirming a main building, verify the inspection's current recovery copy
+and finish pending text/image saves on every device. The global availability
+switch does not attest to those user-specific conditions.
+
 ## Before production approval
 
 1. Capture a fresh read-only production schema/access preflight and compare the
@@ -256,8 +290,9 @@ a rollout shortcut.
 
 1. Obtain a fresh pause on all devices; confirm drafts and uploads are saved.
 2. Refresh that inspection's scoped recovery manifest and compare its report.
-3. Enable only the reviewed rollout scope. Preview and explicitly confirm the
-   main building's register mapping and activation fingerprint.
+3. Feature availability is already enabled globally as of 16 September. Preview
+   and explicitly confirm this inspection's main-building register mapping and
+   activation fingerprint; do not bulk-enroll other inspections.
 4. Verify unchanged IDs, notes, floor labels, main-building facts and file paths.
    Add the extra building only after the primary building comparison passes.
 5. Verify independent conditions/round, image placement and the shared report,
