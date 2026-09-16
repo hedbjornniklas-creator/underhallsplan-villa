@@ -1,4 +1,6 @@
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { getRenoAppMailFromAddress } from '@/lib/renoapp/mailConfig'
+import { buildRenoAppEmailHtml, buildRenoAppEmailButton } from '@/lib/renoapp/emailTemplate'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -115,31 +117,24 @@ export async function sendMissingActionTypeFeedback(input: MissingActionTypeFeed
     throw new Error('ACTION_TYPE_FEEDBACK_RECIPIENT_MISSING')
   }
 
-  const mailFrom = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
-  if (!mailFrom) {
-    throw new Error('ACTION_TYPE_FEEDBACK_EMAIL_NOT_CONFIGURED')
-  }
+  const mailFrom = getRenoAppMailFromAddress()
 
   const reporterName = input.reporterName?.trim() || 'Ej angivet'
   const reporterEmail = normalizeEmail(input.reporterEmail)
   const applyUrl = buildAbsoluteUrl(input.origin, `/renoapp/brf/${encodeURIComponent(brf.slug)}/apply`)
-  const logoUrl = buildAbsoluteUrl(input.origin, '/landing/Renoapp.png')
   const subject = `RenoApp: förslag på saknad renoveringstyp för ${brf.name}`
-  const html = `
-    <div style="margin:0;padding:0;background:#f6f1ea;color:#1c1917;font-family:Arial,sans-serif;">
-      <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
-        <div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:24px;padding:32px;">
-          <img src="${logoUrl}" alt="RenoApp" width="132" style="display:block;width:132px;height:auto;margin-bottom:24px;" />
+  const html = buildRenoAppEmailHtml({
+    origin: input.origin,
+    preheader: subject,
+    bodyHtml: `
           <h1 style="margin:0 0 20px;font-size:24px;line-height:1.3;">Förslag på renoveringstyp</h1>
           <p style="margin:0 0 12px;"><strong>BRF:</strong> ${escapeHtml(String(brf.name ?? ''))}</p>
           <p style="margin:0 0 12px;"><strong>Avsändare:</strong> ${escapeHtml(reporterName)}</p>
           <p style="margin:0 0 20px;"><strong>E-post:</strong> ${escapeHtml(reporterEmail ?? 'Ej angiven')}</p>
-          <div style="margin:0 0 24px;padding:18px;background:#fafaf9;border:1px solid #e7e5e4;white-space:pre-wrap;line-height:1.6;">${escapeHtml(input.message)}</div>
-          <p style="margin:0;"><a href="${applyUrl}">Öppna BRF:ens ansökningssida</a></p>
-        </div>
-      </div>
-    </div>
-  `
+          <p style="margin:0 0 24px;white-space:pre-wrap;line-height:1.6;">${escapeHtml(input.message)}</p>
+          ${buildRenoAppEmailButton(applyUrl, 'Öppna ansökningssidan')}
+    `,
+  })
   const text = [
     'Förslag på saknad renoveringstyp i RenoApp',
     `BRF: ${brf.name}`,

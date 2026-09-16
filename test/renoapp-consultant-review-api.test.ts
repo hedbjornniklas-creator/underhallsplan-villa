@@ -66,6 +66,7 @@ function fixture() {
     },
   }
   const service = load<typeof Service>('src/lib/renoapp/consultantReviewServer.ts', {
+    '@/lib/renoapp/mailConfig': load('src/lib/renoapp/mailConfig.ts', {}),
     'server-only': {}, './consultantReview': common, '@/lib/renoapp/emailTemplate': template,
     '@/lib/renoapp/server': { requireRenoAppViewerContext: async () => {
       if (state.unauthorized) throw new Error('UNAUTHORIZED')
@@ -103,7 +104,13 @@ test('the current fixed price must be accepted, message is optional but bounded,
   assert.deepEqual(f.sideEffects, [])
   assert.equal((await f.service.orderConsultantReview('case', { confirmedPriceOre: 150000 })).deliveryStatus, 'sent')
 })
-test('one saved order emails the named recipient with escaped HTML, text version, reply-to and a protected case button', async () => {
+test('one saved order emails the named recipient with escaped HTML, text version, reply-to and a protected case button', async context => {
+  const previous = process.env.RENOAPP_MAIL_FROM
+  delete process.env.RENOAPP_MAIL_FROM
+  context.after(() => {
+    if (previous === undefined) delete process.env.RENOAPP_MAIL_FROM
+    else process.env.RENOAPP_MAIL_FROM = previous
+  })
   const f = fixture()
   const result = await f.service.orderConsultantReview('case', { confirmedPriceOre: 150000, message: '<script>alert(1)</script>' })
   assert.equal(result.priceOre, 150000)
@@ -112,6 +119,7 @@ test('one saved order emails the named recipient with escaped HTML, text version
   assert.equal(f.mail.length, 1)
   const mail = f.mail[0]
   assert.equal(mail.to, 'jn@hedbjorn.se')
+  assert.equal(mail.from, 'RenoApp <meddelanden@renoapp.se>')
   assert.equal(mail.replyTo, 'board@example.test')
   assert.match(String(mail.html), /&lt;script&gt;/)
   assert.match(String(mail.html), /&lt;BRF &amp; test&gt;/)

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { requireRenoAppViewerContext } from '@/lib/renoapp/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { getRenoAppMailFromAddress } from '@/lib/renoapp/mailConfig'
 import { buildRenoAppEmailButton, buildRenoAppEmailHtml } from '@/lib/renoapp/emailTemplate'
 import { CONSULTANT_REVIEW_MAX_MESSAGE, CONSULTANT_REVIEW_PRICE_LABEL, CONSULTANT_REVIEW_PRICE_ORE, type ConsultantReviewOrder } from './consultantReview'
 
@@ -85,7 +86,7 @@ export async function orderConsultantReview(caseId: string, input: { message?: u
     ['Beställt av', name], ['E-post', email], ['Fast pris', CONSULTANT_REVIEW_PRICE_LABEL],
   ]
   const emailPayload: EmailPayload = {
-    to: 'jn@hedbjorn.se', from: process.env.ASSIGNMENTS_MAIL_FROM?.trim() || 'Hushub <noreply@hushub.se>',
+    to: 'jn@hedbjorn.se', from: getRenoAppMailFromAddress(),
     replyTo: email || undefined,
     subject: `RenoApp: beställd konsultgranskning - ${item.case_number}`,
     html: buildRenoAppEmailHtml({ origin, preheader: `Beställd granskning för ${brf.name}. ${CONSULTANT_REVIEW_PRICE_LABEL}.`,
