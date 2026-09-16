@@ -53,3 +53,50 @@ test('the former overview redirects to the BRF list', () => {
   assert.throws(() => compiledModule.exports.default(), error => error === redirected)
   assert.equal(destination, '/admin/renoapp/brf')
 })
+
+test('BRF row opens its details without intercepting links, controls or text selection', () => {
+  const source = readFileSync(new URL('../src/app/(app)/admin/renoapp/brf/page.tsx', import.meta.url), 'utf8')
+  const ast = ts.createSourceFile('page.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+  let handler: ts.Expression | undefined
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(ast) === 'tr') {
+      for (const attribute of node.attributes.properties) {
+        if (ts.isJsxAttribute(attribute) && attribute.name.getText(ast) === 'onClick' &&
+            attribute.initializer && ts.isJsxExpression(attribute.initializer)) {
+          handler = attribute.initializer.expression
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.ok(handler, 'BRF rows must have a click handler')
+  const compiled = ts.transpileModule(`const handleClick = ${handler.getText(ast)}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 },
+  })
+  const destinations: string[] = []
+  let selection = ''
+  class Target {
+    readonly tag: string
+    constructor(tag: string) { this.tag = tag }
+    closest(selector: string) { return selector.split(', ').includes(this.tag) ? this : null }
+  }
+  const onClick = new Function('router', 'item', 'Element', 'window', `${compiled.outputText}; return handleClick`)(
+    { push: (path: string) => destinations.push(path) },
+    { id: 'brf-id' }, Target, { getSelection: () => ({ toString: () => selection }) },
+  )
+  const event = { target: new Target('td'), button: 0 }
+  onClick(event)
+  assert.deepEqual(destinations, ['/admin/renoapp/brf/brf-id'])
+  destinations.length = 0
+  for (const tag of ['a', 'button', 'input', 'select', 'textarea', '[role="button"]']) {
+    onClick({ ...event, target: new Target(tag) })
+  }
+  for (const flag of ['defaultPrevented', 'ctrlKey', 'metaKey', 'shiftKey', 'altKey']) {
+    onClick({ ...event, [flag]: true })
+  }
+  onClick({ ...event, button: 1 })
+  selection = 'Contact name'
+  onClick(event)
+  assert.deepEqual(destinations, [])
+})

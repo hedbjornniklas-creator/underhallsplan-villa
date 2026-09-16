@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { getBrfVisibilityLabel } from '@/lib/renoapp/brfLifecycle'
 import { useEffect, useMemo, useState } from 'react'
 import { ExternalLink, Plus, RotateCw } from 'lucide-react'
@@ -107,6 +108,7 @@ function getSortIndicator(active: boolean, direction: SortDirection) {
 }
 
 export default function RenoAppAdminBrfPage() {
+  const router = useRouter()
   const [items, setItems] = useState<BrfItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -385,7 +387,16 @@ export default function RenoAppAdminBrfPage() {
                 </thead>
                 <tbody>
                   {pagedRows.map((item) => (
-                    <tr key={item.id} className={`border-b last:border-b-0 ${getStatusRowClass(item)}`}>
+                    <tr
+                      key={item.id}
+                      onClick={(event) => {
+                        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                        if (event.target instanceof Element && event.target.closest('a, button, input, select, textarea, [role="button"]')) return
+                        if (window.getSelection()?.toString()) return
+                        router.push(`/admin/renoapp/brf/${item.id}`)
+                      }}
+                      className={`cursor-pointer border-b last:border-b-0 ${getStatusRowClass(item)}`}
+                    >
                       <td className="px-3 py-2 align-middle">
                         <Link href={`/admin/renoapp/brf/${item.id}`} className="font-medium underline-offset-4 hover:underline">{item.name}</Link>
                         <div className="mt-0.5 text-xs text-gray-700">{[item.orgNumber, getAddress(item)].filter(Boolean).join(' · ')}</div>
