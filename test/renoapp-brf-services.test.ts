@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import ts from 'typescript'
 import type * as Onboarding from '../src/lib/renoapp/onboarding'
 import type * as ActiveBrf from '../src/app/api/renoapp/app/active-brf/route'
+import type * as InviteRoute from '../src/app/api/renoapp/invites/[token]/route'
 
 const nodeRequire = createRequire(import.meta.url)
 function loadSource<T>(file: string, dependencies: Record<string, unknown>): T {
@@ -24,6 +25,7 @@ function query(data: unknown, writes: unknown[] = []) {
   const builder = {
     select: () => builder, eq: () => builder, gte: () => builder, in: () => builder,
     order: () => builder, limit: () => builder, maybeSingle: async () => result,
+    single: async () => result,
     update: (value: unknown) => { writes.push(value); return builder },
     insert: (value: unknown) => { writes.push(value); return builder },
     upsert: (value: unknown) => { writes.push(value); return builder },
@@ -45,6 +47,84 @@ function onboarding(admin: unknown, user: unknown = null, mail: (input: unknown)
     '@/lib/renoapp/brfLifecycle': { normalizeBrfOrgNumber: (value: string) => value },
   })
 }
+
+test('invite GET includes the account action without caching or accepting a caller-supplied email', async () => {
+  const route = loadSource<typeof InviteRoute>('src/app/api/renoapp/invites/[token]/route.ts', {
+    'next/server': { NextResponse: { json: Response.json } },
+    '@/lib/renoapp/onboarding': { getBrfInviteEntryByToken: async (token: string) => {
+      assert.equal(token, 'personal-token')
+      return { accountAction: 'sign_in' }
+    } },
+  })
+  const response = await route.GET(new Request('https://example.test/api?email=other@example.test'), {
+    params: Promise.resolve({ token: 'personal-token' }),
+  })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('cache-control'), 'no-store')
+  assert.deepEqual(await response.json(), { accountAction: 'sign_in' })
+})
+
+test('personal invitation chooses sign-in or creation before requesting a password', async () => {
+  const invite = { brf_id: 'brf-id', email: 'board@example.test', invite_kind: 'member_access',
+    expires_at: '2099-01-01', accepted_at: null, revoked_at: null }
+  for (const exists of [true, false]) {
+    const admin = {
+      from: (table: string) => query(table === 'brf_member_invites' ? invite : { id: 'brf-id', name: 'BRF' }),
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        assert.equal(name, 'renoapp_invite_account_exists')
+        assert.deepEqual(args, { p_token_hash: nodeRequire('node:crypto').createHash('sha256').update('personal-token').digest('hex') })
+        return { data: exists, error: null }
+      },
+    }
+    const preview = await onboarding(admin).getBrfInviteEntryByToken('personal-token')
+    assert.equal(preview?.accountAction, exists ? 'sign_in' : 'create_account')
+    assert.equal(preview?.state, 'open')
+  }
+  for (const state of ['expired', 'revoked', 'accepted', 'activation', 'signed-in', 'wrong-account', 'missing']) {
+    const row = { ...invite,
+      expires_at: state === 'expired' ? '2000-01-01' : invite.expires_at,
+      revoked_at: state === 'revoked' ? '2000-01-01' : null,
+      accepted_at: state === 'accepted' ? '2000-01-01' : null,
+      invite_kind: state === 'activation' ? 'brf_activation' : 'member_access',
+    }
+    const admin = {
+      from: (table: string) => query(table === 'brf_member_invites' ? (state === 'missing' ? null : row) : { id: 'brf-id' }),
+      rpc: async () => { throw new Error('Account lookup must not run') },
+    }
+    const user = state === 'signed-in' ? { email: invite.email } : state === 'wrong-account' ? { email: 'other@example.test' } : null
+    const preview = await onboarding(admin, user).getBrfInviteEntryByToken('personal-token')
+    assert.equal(preview?.accountAction ?? null, null)
+  }
+  for (const result of [{ data: null, error: null }, { data: null, error: { message: 'database unavailable' } }]) {
+    const admin = {
+      from: (table: string) => query(table === 'brf_member_invites' ? invite : { id: 'brf-id' }),
+      rpc: async () => result,
+    }
+    await assert.rejects(onboarding(admin).getBrfInviteEntryByToken('personal-token'), /Kunde inte kontrollera inbjudan/)
+  }
+})
+
+test('BRF receipt describes approval as the next step and uses the team identity in both formats', async () => {
+  const emails: Array<{ to: string; html: string; text: string }> = []
+  const writes: unknown[] = []
+  const service = onboarding({ from: () => query({ id: 'request-1', status: 'pending' }, writes) }, null,
+    async input => { emails.push(input as (typeof emails)[number]) })
+  const result = await service.createBrfRequest({
+    name: 'Test BRF', orgNumber: '123456-7890', contactName: 'Testperson', contactEmail: 'board@example.test',
+    origin: 'https://example.test',
+  })
+  assert.equal(result.status, 'pending')
+  assert.equal((writes[0] as { status: string }).status, 'pending')
+  const receipt = emails.find(email => email.to === 'board@example.test')
+  assert.ok(receipt)
+  for (const body of [receipt.html, receipt.text]) {
+    assert.match(body, /RenoApp-teamet går nu igenom er förfrågan/)
+    assert.match(body, /När BRF:en godkänns skickar vi en inbjudan till styrelsen/)
+    assert.doesNotMatch(body, /Om BRF:en|av admin|säker invite|RenoApp-teamet på HusHub/)
+  }
+  assert.match(receipt.html, /<strong>RenoApp-teamet<\/strong>/)
+  assert.match(receipt.text, /Med vänlig hälsning,\nRenoApp-teamet$/)
+})
 
 test('approval and rejection emails contain only the external message, including retry', async context => {
   const previous = process.env.ASSIGNMENTS_MAIL_FROM
@@ -233,6 +313,10 @@ test('a personal invitation creates an account only when no matching account exi
   assert.equal(result.createdUser, true)
   assert.equal(createdInputs[0]?.email, 'new@example.test')
   assert.equal(writes.length, 1)
+  const duplicate = { ...admin, rpc: async () => { throw new Error('Duplicate account must not grant access') },
+    auth: { admin: { createUser: async () => ({ data: { user: null }, error: { message: 'User already registered' } }) } } }
+  await assert.rejects(onboarding(duplicate).acceptBrfInvite('token', { password: 'password123', inviteUserName: 'New Person' }), /EXISTING_USER_LOGIN_REQUIRED/)
+  assert.equal(writes.length, 1, 'Duplicate rejection must not write a new profile')
 })
 
 test('active BRF selection requires a session and actual membership before setting a cookie', async () => {

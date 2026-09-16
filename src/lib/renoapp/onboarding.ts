@@ -55,7 +55,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
 }
 
 type SupabaseAdminClient = {
-  rpc: (name: string, args: Record<string, unknown>) => SupabaseResponse<Record<string, unknown>>
+  rpc: <T = Record<string, unknown>>(name: string, args: Record<string, unknown>) => SupabaseResponse<T>
   from: (table: string) => QueryBuilder
   auth: {
     admin: {
@@ -724,7 +724,7 @@ async function createInviteRecord(
             input.approvalContext?.externalMessage ? `Kommentar: ${input.approvalContext.externalMessage}` : null,
             '',
             'Med vänlig hälsning,',
-            'RenoApp-teamet på HusHub',
+            'RenoApp-teamet',
           ]
             .filter(Boolean)
             .join('\n')
@@ -738,7 +738,7 @@ async function createInviteRecord(
             'Om du inte väntade dig denna inbjudan kan du ignorera mejlet. Du kan svara på mejlet om du behöver hjälp.',
             '',
             'Med vänlig hälsning,',
-            'RenoApp-teamet på HusHub',
+            'RenoApp-teamet',
           ].join('\n')
 
       const delivery = await sendAssignmentEmail({
@@ -876,7 +876,7 @@ async function sendRenoAppEmail(input: {
         preheader: input.subject,
         bodyHtml: input.htmlBody,
       }),
-      text: `${input.text}\n\nMed vänlig hälsning,\nRenoApp-teamet på HusHub`,
+      text: `${input.text}\n\nMed vänlig hälsning,\nRenoApp-teamet`,
     })
 
     return {
@@ -907,13 +907,13 @@ async function sendBrfRequestReceiptEmail(input: {
     htmlBody: `
       <p>Hej ${safeContactName},</p>
       <p>Vi har tagit emot er intresseanmälan för <strong>${safeBrfName}</strong> i RenoApp.</p>
-      <p>Förfrågan granskas nu av admin. Om BRF:en godkänns skickas en säker invite till styrelsen.</p>
+      <p>RenoApp-teamet går nu igenom er förfrågan. När BRF:en godkänns skickar vi en inbjudan till styrelsen.</p>
       <p>Ni hör från oss när förfrågan har behandlats.</p>
     `,
     text: [
       `Hej ${input.contactName ?? 'er'},`,
       `Vi har tagit emot er intresseanmälan för ${input.brfName} i RenoApp.`,
-      'Förfrågan granskas nu av admin. Om BRF:en godkänns skickas en säker invite till styrelsen.',
+      'RenoApp-teamet går nu igenom er förfrågan. När BRF:en godkänns skickar vi en inbjudan till styrelsen.',
       'Ni hör från oss när förfrågan har behandlats.',
     ].join('\n'),
   })
@@ -1317,6 +1317,21 @@ export async function getBrfInviteByToken(token: string): Promise<RenoAppInviteP
     },
     activationMemberInvite,
   }
+}
+
+export async function getBrfInviteEntryByToken(token: string) {
+  const preview = await getBrfInviteByToken(token)
+  if (!preview) return null
+
+  let accountAction: 'sign_in' | 'create_account' | null = null
+  if (preview.mode === 'member_invite' && preview.state === 'open' && !preview.currentUser.email) {
+    const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+    const { data, error } = await admin.rpc<boolean>('renoapp_invite_account_exists', { p_token_hash: hashToken(token) })
+    // Do not offer account creation when the lookup fails or the invite changed.
+    if (error || typeof data !== 'boolean') throw new Error('Kunde inte kontrollera inbjudan. Försök igen om en stund.')
+    accountAction = data ? 'sign_in' : 'create_account'
+  }
+  return { ...preview, accountAction }
 }
 
 export async function resendActivationMemberInvite(

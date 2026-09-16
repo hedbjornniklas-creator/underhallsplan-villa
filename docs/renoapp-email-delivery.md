@@ -44,6 +44,12 @@ destination. Existing message text, subjects, recipients and Reply-To routing
 are preserved; the shared brand header and sign-off now identify RenoApp first.
 Existing saved consultant-review payloads are not restyled on retries.
 
+Email sign-offs consistently use `RenoApp-teamet`, including existing plain-text
+sign-offs. The BRF receipt names the team instead of "admin" and says
+"När BRF:en godkänns skickar vi en inbjudan till styrelsen." This is a copy
+change only; administrative approval is still required. The sender display
+name remains RenoApp and the footer still identifies HusHub as the provider.
+
 Run `node scripts/preview-renoapp-emails.mjs` to generate synthetic HTML previews
 under `tmp/renoapp-email-preview`; `--serve` provides an ephemeral localhost
 preview. Browser previews do not replace a real Outlook/Gmail delivery test,
