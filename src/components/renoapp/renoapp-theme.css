@@ -93,9 +93,40 @@
 .renoapp-scope .reno-mobile-case { display: block; position: relative; min-width: 0; padding: 16px 16px 16px 20px; border-bottom: 1px solid var(--reno-line); color: var(--reno-ink); background: white; text-decoration: none; }
 .renoapp-scope .reno-cases-mobile [role='listitem']:last-child .reno-mobile-case { border-bottom: 0; }
 .renoapp-scope .reno-mobile-case:hover { background: var(--reno-mist); }
-.renoapp-scope .reno-cases-toolbar { display: grid; gap: 16px; padding: 20px; background: white; border-block: 1px solid var(--reno-line); }
-.renoapp-scope .reno-cases-search { display: flex; align-items: center; gap: 12px; }
-.renoapp-scope .reno-cases-search > div { flex: 1; min-width: 0; }
+.renoapp-scope .reno-cases-workspace { min-width: 0; border: 1px solid var(--reno-line); background: white; }
+.renoapp-scope .reno-cases-toolbar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'search help pages' 'filters filters filters';
+  align-items: center; gap: 16px 20px; padding: 20px; border-bottom: 1px solid var(--reno-line);
+}
+.renoapp-scope .reno-cases-search { grid-area: search; position: relative; min-width: 0; }
+.renoapp-scope .reno-cases-search > svg { position: absolute; top: 13px; left: 14px; pointer-events: none; color: var(--reno-muted); }
+.renoapp-scope .reno-cases-help, .renoapp-scope .reno-cases-reset {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 8px 0; border: 0; background: transparent;
+  color: var(--reno-focus); font-size: 14px; line-height: 1.5; cursor: pointer;
+}
+.renoapp-scope .reno-cases-help { grid-area: help; }
+.renoapp-scope .reno-cases-help:hover, .renoapp-scope .reno-cases-reset:hover { text-decoration: underline; text-underline-offset: 4px; }
+.renoapp-scope .reno-cases-reset { grid-column: 1 / -1; justify-self: end; }
+.renoapp-scope .reno-cases-filters { grid-area: filters; display: flex; flex-wrap: wrap; gap: 0 8px; border-bottom: 1px solid var(--reno-line); }
+.renoapp-scope .reno-cases-filter {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 10px 12px; border: 0; border-bottom: 3px solid transparent;
+  border-radius: 0; background: transparent; color: var(--reno-muted);
+  font-size: 14px; line-height: 1.5; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.renoapp-scope .reno-cases-filter:hover { color: var(--reno-focus); }
+.renoapp-scope .reno-cases-filter[aria-pressed='true'] { color: var(--reno-focus); border-bottom-color: var(--reno-blue); }
+.renoapp-scope .reno-cases-filter-count { font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.renoapp-scope .reno-cases-page-size { grid-area: pages; display: flex; align-items: center; gap: 8px; }
+.renoapp-scope .reno-cases-page-size > label, .renoapp-scope .reno-cases-sort > label { font-size: 12px; color: var(--reno-muted); }
+.renoapp-scope .reno-cases-filter-mobile, .renoapp-scope .reno-cases-sort { display: none; min-width: 0; }
+.renoapp-scope .reno-cases-table thead { border-bottom: 1px solid var(--reno-line); background: var(--reno-mist); color: var(--reno-ink); font-size: 12px; }
+.renoapp-scope .reno-cases-table th { padding-block: 4px; }
+.renoapp-scope .reno-cases-table th button { min-height: 44px; white-space: nowrap; }
+.renoapp-scope .reno-case-status { color: var(--reno-ink); font-size: 14px; line-height: 1.5; font-weight: 400; white-space: nowrap; }
+.renoapp-scope .reno-cases-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-top: 1px solid var(--reno-line); color: var(--reno-muted); font-size: 14px; }
 .renoapp-scope .reno-case-access { width: 100%; max-width: 896px; margin: auto; padding: 32px 24px; overflow-wrap: anywhere; }
 .renoapp-scope .reno-case-access-section { padding-block: 24px; border-top: 1px solid var(--reno-line); }
 .renoapp-scope .reno-case-access h1 { font-size: 28px; line-height: 1.4; }
@@ -105,6 +136,11 @@
 @media (max-width: 1023px) {
   .renoapp-scope .reno-cases-mobile { display: block; }
   .renoapp-scope .reno-cases-desktop { display: none; }
+  .renoapp-scope .reno-cases-toolbar { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'search help' 'filters filters' 'sort pages'; }
+  .renoapp-scope .reno-cases-filters { display: none; }
+  .renoapp-scope .reno-cases-filter-mobile { display: block; grid-area: filters; }
+  .renoapp-scope .reno-cases-sort { display: grid; grid-area: sort; gap: 8px; }
+  .renoapp-scope .reno-cases-page-size { display: grid; gap: 8px; }
 }
 @media (max-width: 639px) {
   .renoapp-scope .reno-case-section { padding: 24px 16px; }
@@ -112,9 +148,9 @@
   .renoapp-scope .reno-case-access { padding: 24px 16px; }
   .renoapp-scope .reno-case-access h1 { font-size: 22px; }
   .renoapp-scope .reno-cases-toolbar { padding: 16px; }
-  .renoapp-scope .reno-cases-search { gap: 8px; }
-  .renoapp-scope .reno-cases-search .reno-button-secondary { width: 44px; height: 44px; padding: 0; flex-shrink: 0; }
-  .renoapp-scope .reno-cases-search .reno-button-secondary span { display: none; }
+  .renoapp-scope .reno-cases-help { justify-self: end; width: 44px; height: 44px; padding: 0; }
+  .renoapp-scope .reno-cases-help span { display: none; }
+  .renoapp-scope .reno-cases-pagination { padding: 16px; }
 }
 
 .renoapp-scope .reno-header { background: white; border-bottom: 1px solid var(--reno-line); }
