@@ -1,5 +1,9 @@
 # Kompletteringar i RenoApp
 
+Klarlagganden for osakra svar beskrivs i [Klarlagganden](renoapp-clarifications.md).
+Piloten ateranvander detta flode och tillater bara omsvar pa uttryckligen begarda
+fragor, inte fri redigering av grundansokan.
+
 ## Flode
 
 1. Styrelsens underlagsval sparas som tidigare, men andrar inte en redan skickad begaran. Om nya saknade underlag eller foretagsuppgifter begars visas en varning om att kompletteringsbegaran behover skickas igen. Jamforelsen gors mot den senaste sparade omgangen och finns kvar efter omladdning. Angrade val och redan inkommet material ger ingen varning.

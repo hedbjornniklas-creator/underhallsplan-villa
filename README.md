@@ -36,6 +36,7 @@ Open `http://localhost:3000`.
 - `src/app/(auth)/layout.tsx`: Auth shell.
 
 ## Key Docs
+- [RenoApp - produktprinciper och beslut](docs/renoapp-product-principles.md): product direction, agreed principles and open questions. Read before RenoApp work.
 - `docs/CHANGELOG.md`
 - `docs/TECH_OVERVIEW.md`
 - `docs/UI_FEEDBACK_STANDARD.md`

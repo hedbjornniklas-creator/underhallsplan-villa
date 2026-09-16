@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { RenovationRulesDocument, RenovationRulesReceipt } from '@/components/renoapp/RenovationRulesView'
 import ResidentApplicationProcess from '@/components/renoapp/ResidentApplicationProcess'
 import ApplicationHelp from '@/components/renoapp/ApplicationHelp'
+import ApplicantClarifications from '@/components/renoapp/ApplicantClarifications'
+import { clarificationAnswerError, type ClarificationAnswers, type ClarificationQuestion } from '@/lib/renoapp/clarifications'
 import type { RenovationRulesVersion, RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, ArrowRight, CheckCircle2, MessageSquarePlus, Send } from 'lucide-react'
@@ -135,7 +137,7 @@ type PublicConfigResponse = {
 }
 
 type DraftResponse = {
-  completionDraft?: { revision: number; replyMessage: string }
+  completionDraft?: { revision: number; replyMessage: string; clarificationAnswers?: ClarificationAnswers }
   rulesAcceptance: RenovationRulesAcceptance | null
   state: 'open' | 'expired' | 'revoked'
   access: {
@@ -183,6 +185,7 @@ type DraftResponse = {
     note: string | null
   }>
   completionRequest: {
+    requestedClarifications?: ClarificationQuestion[]
     id: string | null
     requestedAt: string | null
     requestedDocuments: Array<{
@@ -701,6 +704,7 @@ export default function RenoAppApplyPage() {
   const [activeDraftToken, setActiveDraftToken] = useState(initialDraftToken)
   const [draftInfo, setDraftInfo] = useState<DraftResponse | null>(null)
   const [replyMessage, setReplyMessage] = useState('')
+  const [clarificationAnswers, setClarificationAnswers] = useState<ClarificationAnswers>({})
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([])
   const [savingDraft, setSavingDraft] = useState(false)
   const [autosaving, setAutosaving] = useState(false)
@@ -792,6 +796,7 @@ export default function RenoAppApplyPage() {
         completionRevisionRef.current = payload.completionDraft?.revision ?? 0
         setUploadedDocuments(payload.documents ?? [])
         setReplyMessage(payload.completionDraft?.replyMessage ?? '')
+        setClarificationAnswers(payload.completionDraft?.clarificationAnswers ?? {})
         if (payload.case.status === 'need_info') {
           setStep(
             payload.completionRequest?.requestedDocuments.length > 0
@@ -818,7 +823,7 @@ export default function RenoAppApplyPage() {
           questionAnswers: payload.form.questionAnswers ?? {},
         }
         setForm(nextForm)
-        lastSavedDraftFingerprintRef.current = JSON.stringify([buildDraftFingerprint(nextForm), payload.completionDraft?.replyMessage ?? ''])
+        lastSavedDraftFingerprintRef.current = JSON.stringify([buildDraftFingerprint(nextForm), payload.completionDraft?.replyMessage ?? '', payload.completionDraft?.clarificationAnswers ?? {}])
         setLastAutosavedAt(payload.case.updatedAt ?? null)
       } catch (fetchError) {
         if (!active) return
@@ -936,7 +941,7 @@ export default function RenoAppApplyPage() {
       ).length,
     [form.participantEntries]
   )
-  const draftFingerprint = useMemo(() => JSON.stringify([buildDraftFingerprint(form), replyMessage]), [form, replyMessage])
+  const draftFingerprint = useMemo(() => JSON.stringify([buildDraftFingerprint(form), replyMessage, clarificationAnswers]), [form, replyMessage, clarificationAnswers])
   const hasValidApplicantEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.applicantEmail.trim())
   const draftEmailError = !hasValidApplicantEmail && (emailValidationRequested || Boolean(draftInfo && !isReadOnlyCase && !isNeedInfoCase))
     ? form.applicantEmail.trim()
@@ -1176,6 +1181,13 @@ export default function RenoAppApplyPage() {
       return
     }
     if (mode === 'submit') {
+      const clarificationError = isNeedInfoCase
+        ? clarificationAnswerError(draftInfo?.completionRequest.requestedClarifications ?? [], clarificationAnswers) : null
+      if (clarificationError) {
+        setError(clarificationError)
+        document.getElementById('clarification-heading')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        return
+      }
       if (!isNeedInfoCase && config?.renovationRules && acceptedRulesId !== config.renovationRules.id) {
         setRulesError('Du måste godkänna föreningens renoveringsregler innan du skickar in ansökan.')
         setStep(5)
@@ -1233,6 +1245,7 @@ export default function RenoAppApplyPage() {
           unitNumberSkatteverket: form.unitNumberSkatteverket,
           description: form.description,
           replyMessage,
+          clarificationAnswers: isNeedInfoCase ? clarificationAnswers : {},
           contractorName: form.contractorName,
           contractorOrgNumber: form.contractorOrgNumber,
           contractorEmail: form.contractorEmail,
@@ -1254,7 +1267,7 @@ export default function RenoAppApplyPage() {
         if (refreshed.ok) setConfig(await refreshed.json())
       }
       if (!response.ok) {
-        if (payload.code === 'COMPLETION_CHANGED' || payload.code === 'COMPLETION_DRAFT_CHANGED') setCompletionConflict(true)
+        if (payload.code === 'COMPLETION_CHANGED' || payload.code === 'COMPLETION_DRAFT_CHANGED' || payload.code === 'CLARIFICATION_CHANGED') setCompletionConflict(true)
         throw new Error(payload.error ?? 'Kunde inte spara ansökan.')
       }
 
@@ -1281,6 +1294,15 @@ export default function RenoAppApplyPage() {
 
       if (mode === 'submit') {
         const now = new Date().toISOString()
+        if (isNeedInfoCase) {
+          const updatedAnswers = { ...form.questionAnswers }
+          for (const question of draftInfo?.completionRequest.requestedClarifications ?? []) {
+            const definition = config?.questionBank.find(item => item.id === question.questionId)
+            const option = question.options.find(item => item.id === clarificationAnswers[question.questionId]?.optionId)
+            if (definition && option) updatedAnswers[definition.key] = [option.key]
+          }
+          setForm(current => ({ ...current, questionAnswers: updatedAnswers }))
+        }
         setReplyMessage('')
         setDraftInfo((current) =>
           current
@@ -2263,6 +2285,11 @@ export default function RenoAppApplyPage() {
             </div>
           </div>
 
+          {isNeedInfoCase && <ApplicantClarifications
+            questions={draftInfo?.completionRequest.requestedClarifications ?? []}
+            answers={clarificationAnswers} onChange={setClarificationAnswers}
+            disabled={submitting || savingDraft || completionConflict}
+          />}
           <div className="mt-4 space-y-2 md:mt-6 md:space-y-3">
             {flowStepItems.map((item, visibleIndex) => {
               const isOpen = step === item.id

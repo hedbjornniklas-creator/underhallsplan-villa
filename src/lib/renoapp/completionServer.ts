@@ -11,11 +11,13 @@ export async function getLatestCompletion(caseId: string): Promise<CompletionReq
 export async function saveCompletion(input: {
   caseId: string; requestId: string; tokenHash: string; revision: number
   participantEntries: unknown[]; replyMessage: string | null; submit: boolean
+  clarificationAnswers?: import('./clarifications').ClarificationAnswers
 }) {
-  const { data, error } = await createSupabaseAdminClient().rpc('renoapp_save_completion', {
+  const { data, error } = await createSupabaseAdminClient().rpc('renoapp_save_completion_clarifications', {
     p_case_id: input.caseId, p_request_id: input.requestId, p_token_hash: input.tokenHash,
     p_revision: input.revision, p_participants: input.participantEntries,
     p_reply: input.replyMessage, p_submit: input.submit,
+    p_answers: input.clarificationAnswers ?? {},
   })
   if (error) throw new Error(error.message)
   return data as { revision: number; submitted: boolean }

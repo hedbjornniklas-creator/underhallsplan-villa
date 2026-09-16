@@ -9,10 +9,10 @@ import { getUnsentCompletionItems, selectCompletionItems, completionMessage, typ
 const db = new PGlite()
 const docType = randomUUID(), role = randomUUID(), otherRole = randomUUID()
 const migration = readFileSync(new URL('../docs/db/2026-09-07_03_renoapp_completion_rounds.sql', import.meta.url), 'utf8')
-const items: CompletionItem[] = [
+const items = [
   { id: `document:${docType}`, category: 'document', label: 'Drawing', correction: false },
   { id: `participant:${role}`, category: 'participant', label: 'Plumber', correction: false },
-]
+] satisfies CompletionItem[]
 
 before(async () => {
   await db.exec(`
