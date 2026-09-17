@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import PublicFrame from '@/components/renoapp/RenoAppPublicFrame'
+import { RENOAPP_CASE_PRICE_DESCRIPTION, RENOAPP_CASE_INCLUDED } from '@/lib/renoapp/pricing'
 
 type FormState = {
   name: string
@@ -104,6 +105,8 @@ export default function RenoAppRequestAccessPage() {
           <span className="public-eyebrow">RenoApp för er förening</span>
           <h1>Vill ni börja använda RenoApp?</h1>
           <p>Berätta vilken förening ni företräder och vem vi kan kontakta. När er förfrågan har godkänts får styrelsen en inbjudan.</p>
+          <p>Ingen abonnemangsavgift. {RENOAPP_CASE_PRICE_DESCRIPTION} {RENOAPP_CASE_INCLUDED}</p>
+          <p>Det kostar inget att ansluta föreningen eller att ta emot en ansökan.</p>
           <Link href="/renoapp" className="public-text-link">Läs mer om RenoApp →</Link>
           <div className="public-aside-help"><h2>Vill du ansöka om renovering?</h2><p>Den här sidan är för föreningar som vill börja använda tjänsten. Som boende går du till <Link href="/renoapp/apply">föreningens renoveringsansökan</Link>.</p></div>
         </section>

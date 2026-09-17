@@ -1,6 +1,6 @@
 # RenoApp - produktprinciper och beslut
 
-Senast uppdaterad: 2026-09-16.
+Senast uppdaterad: 2026-09-17.
 Beslutsansvarig: HusHubs produktansvarige.
 Grund: produktbeslut och förtydliganden i RenoApp-arbetets chatthistorik.
 
@@ -172,12 +172,17 @@ I mejlhälsningar och texter om oss som hanterar förfrågningar används
 **RenoApp-teamet**. BRF-kvittot beskriver nästa steg som "När BRF:en godkänns",
 utan att ändra kravet på ett faktiskt administrativt godkännande.
 
-Den beslutade affärsinriktningen är att föreningen kan ha tjänsten utan löpande
-avgift och att betalning aktualiseras när styrelsen väljer att acceptera en
-ansökan, inte när den boende skickar in den. Exakt pris, innebörden av
-"acceptera" och den tekniska debiteringshändelsen är inte fastställda här.
-Detta är inte ett påstående om att automatisk debitering är implementerad.
-Beställning av sakkunnig granskning är ett separat erbjudande.
+Föreningen kan ansluta sig och ta emot ansökningar utan kostnad och utan
+abonnemangsavgift. Föreningen betalar **1 500 kr exklusive moms per ärende**
+när styrelsen väljer att **starta handläggningen**. Kompletteringar i samma
+ärende ingår. Priset ska visas innan styrelsen väljer att starta handläggningen.
+Den boendes inskickning utlöser ingen avgift. Att starta handläggningen är inte
+detsamma som att godkänna renoveringen; undvik därför det tvetydiga "acceptera".
+Personlig rådgivning och sakkunnig granskning beställs och prissätts separat.
+
+Detta är ett pris- och kommunikationsbeslut, inte ett påstående om att automatisk
+debitering är implementerad. En separat beställningshändelse för grundärendet
+och faktureringshanteringen återstår att implementera. Se [Pris och betalning](renoapp-pricing.md).
 
 ## Dokumenterad funktion och fördjupning
 
@@ -194,6 +199,7 @@ tester. Läs relevant dokument tillsammans med aktuell kod inför en ändring.
 | Frivillig beställning av sakkunnig hjälp och dess begränsningar | [Konsultgranskning](renoapp-consultant-reviews.md) |
 | BRF-registrering, aktivering, synlighet och behörighet | [BRF-livscykel](renoapp-brf-lifecycle-rollout.md) |
 | Mejlstruktur och leverans | [Mejlleverans](renoapp-email-delivery.md) |
+| Beslutat ärendepris, kommunikation och återstående debiteringsflöde | [Pris och betalning](renoapp-pricing.md) |
 
 ## Öppna frågor, inte beställd utveckling
 
@@ -203,7 +209,7 @@ tester. Läs relevant dokument tillsammans med aktuell kod inför en ändring.
 | Väsentligt ändrad renovering | Hur ändrad omfattning hanteras efter inskickning, utan att historik eller styrelsens tidigare bedömning blir missvisande. |
 | Utökad täckning | Vilka verkliga luckor i frågor, handlingar och utförare som ska åtgärdas först. Tidigare diskuterade nya renoveringstyper är kandidater, inte en beslutad leveranslista. |
 | Separat åtgärdsguide | Omfattning, publicering och granskning av uppgifter om vad som vanligtvis behöver tas upp med styrelsen. Guiden ska inte automatiskt skapa fler ansökningsflöden. |
-| Pris och debitering | Pris, betalande part, vad styrelsens "accept" innebär och när debitering ska ske. Blanda inte ihop detta med sökandens inskickning eller priset för konsultgranskning. |
+| Teknisk debitering | Uttrycklig beställning av handläggning med prisbekräftelse, sparat avtalat pris, skydd mot dubbeldebitering och faktureringshantering. Pris och betalande part är beslutade; tidigare avtal och redan påbörjade ärenden får inte prissättas om automatiskt. |
 
 ## Kontroll före en ändring
 
@@ -239,6 +245,7 @@ tillstånd att ändra produktionskonfiguration.
 
 | Datum | Beslut eller dokumentändring | Grund |
 | --- | --- | --- |
+| 2026-09-17 | Ärendepriset sätts till 1 500 kr exkl. moms, utan abonnemangsavgift, när styrelsen väljer att starta handläggningen. Kompletteringar i samma ärende ingår. Sakkunnig hjälp beställs separat. | Slutligt förtydligande: "1500 kr skall vi köra på", efter begäran att uppdatera alla platser. |
 | 2026-09-16 | Förenkla BRF-aktiveringen och låt den personliga inbjudan välja mellan inloggning och kontoskapande. Behåll identitetskontroll och skydd mot dubbelkonton. | Godkänt förslag följt av "Kör". |
 | 2026-09-16 | Använd RenoApp-teamet genomgående i mejlhälsningar och i text om handläggaren. BRF-kvittot säger "När BRF:en godkänns" i stället för "Om". Godkännandeflödet ändras inte. | Uttryckligt önskemål efter mottaget produktionsmejl. |
 | 2026-09-16 | RenoApps egna systemmejl får separat avsändare på renoapp.se. Befintliga svarsadresser och övriga modulers avsändare bevaras. | Uttryckligt beslut efter verifiering av renoapp.se i Resend. |

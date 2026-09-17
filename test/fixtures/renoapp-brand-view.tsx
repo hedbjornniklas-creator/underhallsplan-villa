@@ -9,15 +9,19 @@ import Users from '../../src/app/renoapp/app/users/page'
 import Invite from '../../src/app/renoapp/invite/[token]/page'
 import CaseDetail from '../../src/app/renoapp/app/cases/[id]/page'
 import CaseAccess from '../../src/app/renoapp/case/[token]/page'
+import Landing from '../../src/app/renoapp/page'
+import RequestAccess from '../../src/app/renoapp/request-access/page'
+import Terms from '../../src/app/renoapp/villkor/brf/page'
 
 const path = location.pathname
 const login = path.endsWith('/login')
 const legacy = path === '/legacy'
+const publicPage = path === '/renoapp' ? <Landing /> : path === '/renoapp/request-access' ? <RequestAccess /> : path === '/renoapp/villkor/brf' ? <Terms /> : null
 const page = path.includes('/cases/') ? <CaseDetail /> : path.endsWith('/brf') ? <Brf /> : path.endsWith('/users') ? <Users /> : <Overview />
-createRoot(document.getElementById('root')!).render(legacy ? <PasswordAuthPanel /> : (
+createRoot(document.getElementById('root')!).render(publicPage ?? (legacy ? <PasswordAuthPanel /> : (
   <div className="renoapp-scope">
     {login ? <PublicSessionProvider><div className="public-site"><RenoAppPublicHeader />
       <main id="public-content" className="public-auth"><h1>Logga in i RenoApp</h1><PasswordAuthPanel accent="renoapp" /></main>
     </div></PublicSessionProvider> : <><RenoAppHeader />{path.includes('/invite/') ? <Invite /> : path.includes('/case/') ? <CaseAccess /> : <main className="reno-portal-main">{page}</main>}</>}
   </div>
-))
+)))

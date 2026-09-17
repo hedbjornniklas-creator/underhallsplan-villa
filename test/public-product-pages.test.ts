@@ -7,8 +7,10 @@ import { createElement, type ReactNode } from 'react'
 import ts from 'typescript'
 // @ts-expect-error Node's strip-types runner requires the TypeScript extension.
 import * as contracts from '../src/lib/besiktapp/interestContracts.ts'
+import type * as CommercialContent from '../src/lib/publicCommercialContent'
 // @ts-expect-error Node's strip-types runner requires the TypeScript extension.
-import * as commercial from '../src/lib/publicCommercialContent.ts'
+import * as renoappPricing from '../src/lib/renoapp/pricing.ts'
+import type * as BrfTerms from '../src/lib/renoapp/brfTerms'
 // @ts-expect-error Node's strip-types runner requires the TypeScript extension.
 import * as companyInfo from '../src/lib/publicCompanyInfo.ts'
 import type * as InterestService from '../src/lib/besiktapp/interest'
@@ -21,6 +23,7 @@ import type * as ProfileDetails from '../src/components/ob/InspectorProfileDetai
 import type * as InterestUnavailable from '../src/components/public/BesiktInterestUnavailable'
 
 const nodeRequire = createRequire(import.meta.url)
+const commercial = loadSource<typeof CommercialContent>('src/lib/publicCommercialContent.ts', { './renoapp/pricing': renoappPricing })
 
 test('an unavailable interest form offers the approved public contact, never delivery settings', context => {
   const previous = process.env.BESIKTAPP_INTEREST_TO
@@ -118,14 +121,30 @@ function configure(context: { after: (fn: () => void) => void }) {
   context.after(() => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value } })
 }
 
-test('optional pricing and sales contact sections remain unpublished, with no empty sections', () => {
+test('BesiktApp pricing and sales contact remain unpublished; RenoApp shows the approved case price', () => {
   const sections = loadSource<typeof CommercialSections>('src/components/public/PublicCommercialSections.tsx', { '@/lib/publicCommercialContent': commercial })
-  for (const product of ['besiktapp', 'renoapp'] as const) {
-    assert.equal(commercial.publishedPricing(commercial.PUBLIC_COMMERCIAL_CONTENT.pricing[product]), null)
-    assert.equal(sections.PublicPricingSection({ product }), null)
-  }
+  assert.equal(commercial.publishedPricing(commercial.PUBLIC_COMMERCIAL_CONTENT.pricing.besiktapp), null)
+  assert.equal(sections.PublicPricingSection({ product: 'besiktapp' }), null)
+  const html = renderToStaticMarkup(sections.PublicPricingSection({ product: 'renoapp' }))
+  for (const text of ['1 500 kr', 'exklusive moms', 'starta handläggningen', 'Kompletteringar i samma ärende ingår.', 'Ingen abonnemangsavgift.', 'beställs separat']) assert.ok(html.includes(text), text)
+  assert.doesNotMatch(html, /1 000|1 499|1499/)
   assert.equal(commercial.publishedContact(commercial.PUBLIC_COMMERCIAL_CONTENT.contact), null)
   assert.equal(sections.PublicContactSection(), null)
+})
+
+test('BRF terms use the new version and shared case price with expert review excluded', () => {
+  const terms = loadSource<typeof BrfTerms>('src/lib/renoapp/brfTerms.ts', { './pricing': renoappPricing })
+  assert.equal(terms.RENOAPP_BRF_TERMS_VERSION, '2026-09-17')
+  const summary = terms.RENOAPP_BRF_TERMS_SUMMARY.join(' ')
+  const full = terms.RENOAPP_BRF_TERMS_SECTIONS.flatMap(section => section.paragraphs).join(' ')
+  for (const text of [summary, full]) {
+    assert.ok(text.includes(renoappPricing.RENOAPP_CASE_PRICE_DESCRIPTION))
+    assert.ok(text.includes(renoappPricing.RENOAPP_CASE_INCLUDED))
+    assert.doesNotMatch(text, /1 000|1 499|1499/)
+  }
+  assert.match(full, /inskickning av en ansökan utlöser ingen avgift/)
+  assert.match(full, /priset innan den väljer att starta handläggningen/)
+  assert.match(full, /ingår inte i grundpriset/)
 })
 
 test('company identity remains visible in the shared footer when commercial sections are disabled', () => {

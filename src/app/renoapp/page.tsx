@@ -66,7 +66,7 @@ export default function RenoAppLandingPage() {
           <PublicFaq items={[
             { question: 'Behöver de boende skapa konton?', answer: <>Nej. De använder föreningens ansökningssida. En personlig länk används för att fortsätta med ett sparat utkast eller lämna kompletteringar.</> },
             { question: 'Bedömer RenoApp om en renovering kan godkännas?', answer: <>Nej. RenoApp hjälper er att samla in och granska underlaget. Styrelsen gör bedömningen och fattar beslutet. Vid behov behöver ni ta in en sakkunnig.</> },
-            { question: 'Ingår personlig rådgivning till styrelsen?', answer: <>Inte i dag. RenoApp har hjälptexter och granskningsstöd i tjänsten. Personlig hjälp är en planerad funktion.</> },
+            { question: 'Ingår personlig rådgivning till styrelsen?', answer: <>Nej. Grundpriset gäller det digitala handläggningsstödet. Sakkunnig granskning kan beställas separat till det pris som visas före beställningen.</> },
             { question: 'Hur börjar vår förening använda RenoApp?', answer: <><Link href="/renoapp/request-access">Skicka en intresseanmälan</Link> med föreningens uppgifter och en kontaktperson. Förfrågan granskas, och när den godkänts får styrelsen en inbjudan.</> },
             { question: 'Vår förening är redan ansluten. Hur får jag ett konto?', answer: <>Be den som administrerar föreningen i RenoApp att bjuda in dig. Har du redan ett konto kan du <PublicProductLink product="renoapp">öppna styrelsens RenoApp</PublicProductLink>.</> },
           ]} />

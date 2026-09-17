@@ -1,4 +1,5 @@
 import type { PublicProductId } from './publicNavigation'
+import { RENOAPP_CASE_PRICE, RENOAPP_CASE_INCLUDED } from './renoapp/pricing'
 
 export type Publication<T> =
   | { enabled: false; content: T | null }
@@ -33,7 +34,20 @@ export const PUBLIC_COMMERCIAL_CONTENT: {
 } = {
   pricing: {
     besiktapp: { enabled: false, content: null },
-    renoapp: { enabled: false, content: null },
+    renoapp: {
+      enabled: true,
+      content: {
+        heading: 'Ingen abonnemangsavgift.',
+        introduction: 'Det kostar inget att ansluta föreningen eller att ta emot en ansökan. Ni betalar när styrelsen väljer att starta handläggningen, inte när den boende skickar in sin ansökan.',
+        plans: [{
+          name: 'Handläggning av renoveringsärende',
+          price: RENOAPP_CASE_PRICE,
+          billing: 'per ärende, exklusive moms',
+          features: ['Underlag, kommunikation och beslut samlade i samma ärende.', RENOAPP_CASE_INCLUDED, 'Ingen löpande avgift mellan ärendena.'],
+        }],
+        taxNote: 'Priset är exklusive moms. Att starta handläggningen är inte samma sak som att godkänna renoveringen. Personlig rådgivning och sakkunnig granskning ingår inte och beställs separat.',
+      },
+    },
   },
   contact: { enabled: false, content: null },
 }

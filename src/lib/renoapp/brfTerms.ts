@@ -1,11 +1,13 @@
-export const RENOAPP_BRF_TERMS_VERSION = '2026-09-06'
+import { RENOAPP_CASE_PRICE_DESCRIPTION, RENOAPP_CASE_INCLUDED } from './pricing'
+
+export const RENOAPP_BRF_TERMS_VERSION = '2026-09-17'
 export const RENOAPP_BRF_TERMS_TITLE = 'Villkor för användning av RenoApp - BRF'
 export const RENOAPP_BRF_TERMS_DOWNLOAD_URL = '/renoapp/villkor/brf'
 
 export const RENOAPP_BRF_TERMS_SUMMARY = [
   'RenoApp är ett beslutsstöd för BRF:ens hantering av renoveringsansökningar och ersätter inte styrelsens eget ansvar.',
   'Föreningen ansvarar själv för beslut, juridiska bedömningar och kommunikationen med medlemmar.',
-  'Föreningen debiteras 1 000 kr exklusive moms per ansökan enligt nuvarande villkor.',
+  `Ingen abonnemangsavgift. Föreningen betalar ${RENOAPP_CASE_PRICE_DESCRIPTION} ${RENOAPP_CASE_INCLUDED}`,
   'Avtalet gäller tills vidare med 30 dagars uppsägningstid och tvister avgörs enligt svensk lag.',
 ] as const
 
@@ -41,7 +43,9 @@ export const RENOAPP_BRF_TERMS_SECTIONS = [
   {
     title: '5. Pris och betalning',
     paragraphs: [
-      'Föreningen debiteras 1 000 kronor exklusive mervärdesskatt per renoveringsansökan, om inte annat har avtalats skriftligen. Fakturering sker månadsvis med 10 dagars betalningsvillkor.',
+      'Det kostar inget att ansluta föreningen eller att ta emot en renoveringsansökan. Ingen abonnemangsavgift tillkommer.',
+      `Föreningen betalar ${RENOAPP_CASE_PRICE_DESCRIPTION} ${RENOAPP_CASE_INCLUDED} Annat pris kan avtalas skriftligen. Fakturering sker månadsvis med 10 dagars betalningsvillkor.`,
+      'Avgiften avser handläggningen i RenoApp, inte ett godkännande av renoveringen. Den boendes inskickning av en ansökan utlöser ingen avgift. Styrelsen ska få information om priset innan den väljer att starta handläggningen.',
       'Tilläggstjänster, exempelvis granskning av besiktningsman eller annan sakkunnig, ingår inte i grundpriset och beställs samt prissätts separat innan arbetet påbörjas.',
     ],
   },
