@@ -75,6 +75,13 @@ till en version som saknar kompletteringsvyn medan sadana arenden finns.
 
 ## Tester
 
+Svarens befintliga maskinnycklar ska bevaras vid sparande, inklusive understreck.
+De far inte normaliseras som nya sluggar: `needs_investigation` ar inte samma
+alternativ som `needs-investigation`. Regressionstestet `test/renoapp-answer-keys.test.ts`
+kontrollerar bade utkast, inskickning och matchningen till sparade alternativ-ID:n.
+Tidigare bortfallna svar aterstalls inte automatiskt av kodrattingen. Berorda
+arenden maste granskas separat; saknade svar far inte gissas eller massifyllas.
+
 ```sh
 node --experimental-strip-types --test test/renoapp-clarifications.test.ts test/renoapp-completion.test.ts test/renoapp-completion-api.test.ts
 node scripts/test-renoapp-clarifications-ui.mjs

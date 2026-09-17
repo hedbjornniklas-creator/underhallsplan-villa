@@ -701,7 +701,10 @@ export default function RenoAppApplyPage() {
   const [acceptedRulesId, setAcceptedRulesId] = useState<string | null>(null)
   const [rulesError, setRulesError] = useState<string | null>(null)
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null)
+  const [sentSubmission, setSentSubmission] = useState<'application' | 'completion' | null>(null)
+  const submissionReceiptRef = useRef<HTMLHeadingElement>(null)
   const [activeDraftToken, setActiveDraftToken] = useState(initialDraftToken)
+  const [createdDraft, setCreatedDraft] = useState<{ slug: string; token: string; status: SubmitResult['status'] } | null>(null)
   const [draftInfo, setDraftInfo] = useState<DraftResponse | null>(null)
   const [replyMessage, setReplyMessage] = useState('')
   const [clarificationAnswers, setClarificationAnswers] = useState<ClarificationAnswers>({})
@@ -724,7 +727,7 @@ export default function RenoAppApplyPage() {
   const [missingActionTypeSending, setMissingActionTypeSending] = useState(false)
   const [missingActionTypeError, setMissingActionTypeError] = useState<string | null>(null)
   const [missingActionTypeSent, setMissingActionTypeSent] = useState(false)
-  const lastSavedDraftFingerprintRef = useRef('')
+  const [lastSavedDraftFingerprint, setLastSavedDraftFingerprint] = useState('')
   const autosaveDraftRef = useRef<(fingerprint: string) => void>(() => {})
 
   useEffect(() => {
@@ -735,6 +738,8 @@ export default function RenoAppApplyPage() {
   }, [step])
 
   useEffect(() => {
+    // A successful first save already has the configuration and current form in memory.
+    if (createdDraft?.slug === slug && (!initialDraftToken || initialDraftToken === createdDraft.token)) return
     let active = true
 
     const loadConfig = async () => {
@@ -767,9 +772,10 @@ export default function RenoAppApplyPage() {
     return () => {
       active = false
     }
-  }, [slug, initialDraftToken])
+  }, [slug, initialDraftToken, createdDraft])
 
   useEffect(() => {
+    if (createdDraft?.slug === slug && createdDraft.token === activeDraftToken && createdDraft.status === 'draft') return
     let active = true
 
     const loadDraft = async () => {
@@ -823,7 +829,7 @@ export default function RenoAppApplyPage() {
           questionAnswers: payload.form.questionAnswers ?? {},
         }
         setForm(nextForm)
-        lastSavedDraftFingerprintRef.current = JSON.stringify([buildDraftFingerprint(nextForm), payload.completionDraft?.replyMessage ?? '', payload.completionDraft?.clarificationAnswers ?? {}])
+        setLastSavedDraftFingerprint(JSON.stringify([buildDraftFingerprint(nextForm), payload.completionDraft?.replyMessage ?? '', payload.completionDraft?.clarificationAnswers ?? {}]))
         setLastAutosavedAt(payload.case.updatedAt ?? null)
       } catch (fetchError) {
         if (!active) return
@@ -836,16 +842,24 @@ export default function RenoAppApplyPage() {
     return () => {
       active = false
     }
-  }, [activeDraftToken])
+  }, [activeDraftToken, createdDraft, slug])
 
   const selectedActions = useMemo(
     () => config?.actionTypes.filter((action) => form.actionTypeKeys.includes(action.key)) ?? [],
     [config, form.actionTypeKeys]
   )
   const isNeedInfoCase = draftInfo?.case.status === 'need_info'
+  const isLocallyCreatedDraft = createdDraft?.slug === slug && createdDraft.token === activeDraftToken && createdDraft.status === 'draft'
   const isReadOnlyCase = Boolean(
-    activeDraftToken && (!draftInfo || draftInfo.state !== 'open' || (draftInfo.case.status !== 'draft' && draftInfo.case.status !== 'need_info'))
+    activeDraftToken && (draftInfo
+      ? draftInfo.state !== 'open' || (draftInfo.case.status !== 'draft' && draftInfo.case.status !== 'need_info')
+      : !isLocallyCreatedDraft)
   )
+  useEffect(() => {
+    if (!sentSubmission || loading) return
+    submissionReceiptRef.current?.focus({ preventScroll: true })
+    submissionReceiptRef.current?.scrollIntoView({ block: 'start' })
+  }, [sentSubmission, loading])
   const caseMessages = useMemo(
     () => (draftInfo?.messages ?? []).filter((message) => message.type !== 'document_uploaded'),
     [draftInfo?.messages]
@@ -952,6 +966,21 @@ export default function RenoAppApplyPage() {
     () => hasValidApplicantEmail && (buildDraftFingerprint(form) !== buildDraftFingerprint(INITIAL_FORM) || Boolean(activeDraftToken)),
     [activeDraftToken, form, hasValidApplicantEmail]
   )
+  const draftSaveStatus = completionConflict
+    ? 'Sparandet är pausat. Ladda om sidan för att hämta den senaste versionen.'
+    : submitting
+      ? 'Skickar...'
+      : savingDraft || autosaving || uploadingTargetId || deletingDocumentId
+        ? 'Sparar...'
+        : autosaveFailed
+          ? 'Ändringarna kunde inte sparas. Försök igen med spara-knappen innan du lämnar sidan.'
+          : !activeDraftToken
+            ? 'Välj Spara och fortsätt senare för att starta autosparandet.'
+            : !hasValidApplicantEmail
+              ? 'Ändringarna är inte sparade. Ange en giltig e-postadress.'
+              : draftFingerprint !== lastSavedDraftFingerprint
+                ? 'Ändringar väntar på att sparas...'
+                : 'Alla ändringar sparade'
   const stepSummaries = useMemo<Record<number, string>>(
     () => ({
       1:
@@ -1070,8 +1099,10 @@ export default function RenoAppApplyPage() {
     setReplyMessage('')
     setUploadedDocuments([])
     setActiveDraftToken('')
+    setCreatedDraft(null)
+    setSentSubmission(null)
     setLastAutosavedAt(null)
-    lastSavedDraftFingerprintRef.current = ''
+    setLastSavedDraftFingerprint('')
     router.replace(`/renoapp/brf/${slug}/apply`)
   }
 
@@ -1278,21 +1309,34 @@ export default function RenoAppApplyPage() {
 
       if (mode === 'draft') {
         if (payload.completionRevision !== undefined) completionRevisionRef.current = payload.completionRevision
-        lastSavedDraftFingerprintRef.current = options?.fingerprint ?? draftFingerprint
+        setLastSavedDraftFingerprint(options?.fingerprint ?? draftFingerprint)
         setLastAutosavedAt(new Date().toISOString())
       }
 
       const nextDraftToken =
-        payload.resumeUrl.match(/[?&]draft=([^&]+)/)?.[1] ?? activeDraftToken
+        new URL(payload.resumeUrl, window.location.href).searchParams.get('draft') ?? activeDraftToken
 
       if (nextDraftToken) {
+        const isFirstDraftSave = !activeDraftToken && mode === 'draft' && payload.status === 'draft'
+        if (isFirstDraftSave) {
+          setCreatedDraft({ slug, token: nextDraftToken, status: payload.status })
+        } else if (createdDraft?.token === nextDraftToken && createdDraft.status !== payload.status) {
+          setCreatedDraft({ ...createdDraft, status: payload.status })
+        }
         setActiveDraftToken(nextDraftToken)
         if (nextDraftToken !== activeDraftToken) {
-          router.replace(`/renoapp/brf/${slug}/apply?draft=${nextDraftToken}`)
+          if (isFirstDraftSave) {
+            const url = new URL(window.location.href)
+            url.searchParams.set('draft', nextDraftToken)
+            window.history.replaceState(null, '', url)
+          } else {
+            router.replace(`/renoapp/brf/${slug}/apply?draft=${nextDraftToken}`)
+          }
         }
       }
 
       if (mode === 'submit') {
+        setSentSubmission(isNeedInfoCase ? 'completion' : 'application')
         const now = new Date().toISOString()
         if (isNeedInfoCase) {
           const updatedAnswers = { ...form.questionAnswers }
@@ -1358,25 +1402,25 @@ export default function RenoAppApplyPage() {
       savingDraft ||
       autosaving
     ) return
-    if (draftFingerprint === lastSavedDraftFingerprintRef.current) return
+    if (draftFingerprint === lastSavedDraftFingerprint) return
 
     const timeoutId = window.setTimeout(() => {
       autosaveDraftRef.current(draftFingerprint)
     }, 1200)
 
     return () => window.clearTimeout(timeoutId)
-  }, [activeDraftToken, autosaveEligible, autosaving, config, draftFingerprint, isReadOnlyCase, completionConflict, autosaveFailed, savingDraft, submitting])
+  }, [activeDraftToken, autosaveEligible, autosaving, config, draftFingerprint, lastSavedDraftFingerprint, isReadOnlyCase, completionConflict, autosaveFailed, savingDraft, submitting])
 
   useEffect(() => {
     if (isReadOnlyCase || !activeDraftToken) return
     const warnIfUnsaved = (event: BeforeUnloadEvent) => {
-      if (draftFingerprint === lastSavedDraftFingerprintRef.current && !uploadingTargetId && !deletingDocumentId) return
+      if (draftFingerprint === lastSavedDraftFingerprint && !uploadingTargetId && !deletingDocumentId) return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warnIfUnsaved)
     return () => window.removeEventListener('beforeunload', warnIfUnsaved)
-  }, [activeDraftToken, draftFingerprint, isReadOnlyCase, uploadingTargetId, deletingDocumentId])
+  }, [activeDraftToken, draftFingerprint, lastSavedDraftFingerprint, isReadOnlyCase, uploadingTargetId, deletingDocumentId])
 
   const submitMissingActionType = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2170,9 +2214,6 @@ export default function RenoAppApplyPage() {
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950">
             <p className="font-semibold">{submitResult.status === 'draft' ? 'Utkast sparat' : 'Ansökan registrerad'}</p>
             <p className="mt-2">Ärendenummer: {submitResult.caseNumber}</p>
-            <a className="mt-2 inline-flex min-h-11 items-center font-semibold underline underline-offset-4" href={submitResult.resumeUrl}>
-              {submitResult.status === 'draft' ? 'Fortsätt med ansökan' : 'Öppna ansökan'}
-            </a>
             {submitResult.emailError ? <p className="mt-2 text-amber-900">{submitResult.emailError}</p> : null}
           </div>
         ) : null}
@@ -2200,13 +2241,31 @@ export default function RenoAppApplyPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--reno-muted)]">Ansökningsguide</p>
           <h1 className="mt-2 break-words text-2xl font-semibold text-[var(--reno-ink)]">{config?.brf.name ?? slug}</h1>
-          <p className="mt-3 text-base leading-6 text-[var(--reno-muted)]">
+          {!isReadOnlyCase && !sentSubmission ? <p className="mt-3 text-base leading-6 text-[var(--reno-muted)]">
             {config?.brf.applyIntroText ??
               'Här ansöker du om att renovera din lägenhet. Du behöver inget konto.'}
-          </p>
+          </p> : null}
         </div>
 
-        <ApplicationHelp label="Så fungerar ansökan"><ResidentApplicationProcess /></ApplicationHelp>
+        {sentSubmission ? (
+          <section aria-labelledby="application-sent-heading" className="mt-6 border-l-4 border-emerald-600 bg-emerald-50 p-5">
+            <CheckCircle2 aria-hidden="true" className="mb-3 h-8 w-8 text-emerald-700" />
+            <h2 id="application-sent-heading" ref={submissionReceiptRef} tabIndex={-1} className="scroll-mt-24 text-2xl font-semibold text-[var(--reno-ink)] focus:outline-none">
+              {sentSubmission === 'completion' ? 'Din komplettering är skickad' : 'Din ansökan är skickad'}
+            </h2>
+            <p className="mt-2 break-words text-sm text-[var(--reno-muted)]">Ärendenummer: {submitResult?.caseNumber}</p>
+            <p className="mt-4 leading-7">
+              {sentSubmission === 'completion'
+                ? 'Styrelsen kan nu granska dina kompletteringar. Du behöver inte skicka in dem igen.'
+                : 'Styrelsen har nu din ansökan för granskning. Du behöver inte skicka in den igen.'}
+            </p>
+            <p className="mt-2 leading-7 text-[var(--reno-muted)]">Om styrelsen behöver fler uppgifter får du en begäran via e-post. Du kan stänga sidan nu.</p>
+            {submitResult?.emailSent ? <p className="mt-3 break-words text-sm text-[var(--reno-muted)]">En bekräftelse med länk till ärendet har skickats till {form.applicantEmail}.</p> : null}
+            {submitResult?.emailError ? <p role="alert" className="mt-3 text-sm text-amber-900">{submitResult.emailError}</p> : null}
+          </section>
+        ) : null}
+
+        {!isReadOnlyCase && !sentSubmission ? <ApplicationHelp label="Så fungerar ansökan"><ResidentApplicationProcess /></ApplicationHelp> : null}
 
         {!isReadOnlyCase && !isNeedInfoCase && config?.renovationRules ? (
           <div className="mt-5"><RenovationRulesDocument rules={config.renovationRules} token={activeDraftToken} /></div>
@@ -2264,14 +2323,12 @@ export default function RenoAppApplyPage() {
 
         {isReadOnlyCase ? (
           <div className="mt-6 border-t border-stone-200 pt-5">
-            <p className="text-sm font-semibold text-emerald-800">{submitResult?.status === 'submitted' ? 'Ansökan registrerad' : 'Inskickad ansökan'}</p>
+            <h2 className="text-xl font-semibold text-[var(--reno-ink)]">{sentSubmission ? 'Din inskickade ansökan' : 'Inskickad ansökan'}</h2>
             <p className="mt-2 break-words text-sm text-[var(--reno-muted)]">Ärendenummer {draftInfo?.case.caseNumber ?? submitResult?.caseNumber} · {draftInfo ? formatCaseStatus(draftInfo.case.status) : 'Inskickad'}</p>
-            <h2 className="mt-2 text-2xl font-semibold text-[var(--reno-ink)]">Styrelsen handlägger ärendet</h2>
             <p className="mt-2 text-sm leading-7 text-[var(--reno-muted)]">
               Grundansökan kan inte ändras efter inskickning. Om styrelsen behöver mer information skickas en ny
-              kompletteringsbegäran till den här adressen.
+              kompletteringsbegäran via e-post.
             </p>
-            {submitResult?.emailError ? <p role="alert" className="mt-3 text-sm text-amber-900">{submitResult.emailError}</p> : null}
             <div className="mt-6">{renderStepContent(5)}</div>
           </div>
         ) : (
@@ -2338,13 +2395,10 @@ export default function RenoAppApplyPage() {
             </div>
           ) : null}
 
-          {autosaveEligible && !isReadOnlyCase && !submitResult ? (
-            <div className="mt-4 py-3 text-sm text-[var(--reno-muted)]">
-              {autosaving
-                  ? 'Sparar...'
-                : lastAutosavedAt
-                  ? `${isNeedInfoCase ? 'Komplettering' : 'Utkast'} autosparat ${formatDateTime(lastAutosavedAt)}.`
-                  : 'Välj Spara utkast när du vill skapa ansökan. Därefter autosparas ändringarna.'}
+          {(activeDraftToken || autosaveEligible || savingDraft) && !isReadOnlyCase ? (
+            <div role="status" aria-live="polite" aria-atomic="true" className={`mt-4 py-3 text-sm ${autosaveFailed || completionConflict ? 'text-rose-800' : 'text-[var(--reno-muted)]'}`}>
+              <p>{draftSaveStatus}</p>
+              {draftSaveStatus === 'Alla ändringar sparade' && lastAutosavedAt ? <p className="mt-1 text-xs">Senast sparat {formatDateTime(lastAutosavedAt)}.</p> : null}
             </div>
           ) : null}
 
