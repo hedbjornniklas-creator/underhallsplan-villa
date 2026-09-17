@@ -3805,14 +3805,15 @@ export async function upsertPublicApplication(
   const actionTypeKeys = Array.from(
     new Set((input.actionTypeKeys ?? []).map((value) => normalizeText(value)).filter((value): value is string => Boolean(value)))
   )
+  // These are existing configuration keys, not labels to turn into new slugs.
   const questionAnswersInput = Object.fromEntries(
     Object.entries(input.questionAnswers ?? {}).map(([questionKey, optionKeys]) => [
-      normalizeMachineKey(questionKey) ?? '',
+      normalizeText(questionKey) ?? '',
       Array.isArray(optionKeys)
         ? Array.from(
             new Set(
               optionKeys
-                .map((value) => normalizeMachineKey(value))
+                .map((value) => normalizeText(value))
                 .filter((value): value is string => Boolean(value))
             )
           )
