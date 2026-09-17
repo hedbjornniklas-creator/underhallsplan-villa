@@ -9,7 +9,7 @@
 - `PublicProductIntro` återanvänder introduktion, produktlogotyp, intresselänk och befintlig inloggningsväg. Exemplen på produktsidorna har fiktiva uppgifter och är inte skärmbilder.
 - Inloggade arbetsflöden, behörigheter, databas och driftupplägg har inte byggts om. Gemensamma mejlsändaren har ett valfritt idempotenshuvud och timeouten omfattar nu även läsning av leverantörens svarskropp.
 
-## Lägg till priser senare
+## Prisavsnitt
 
 De valfria kommersiella pris- och kontaktsektionerna styrs i `src/lib/publicCommercialContent.ts`. Bolagsidentitet och bekräftad offentlig företagskontakt finns separat i `src/lib/publicCompanyInfo.ts` och får inte döljas av kampanjinställningar.
 
@@ -17,7 +17,7 @@ De valfria kommersiella pris- och kontaktsektionerna styrs i `src/lib/publicComm
 2. Sätt just den produktens `enabled` till `true` när innehållet är beslutat.
 3. Produktsidan visar då den gemensamma `PublicPricingSection` före vanliga frågor, och introduktionen får länken ”Se priser”. Sidans struktur behöver inte ändras. Varje produkt kan publiceras oberoende.
 
-Belopp och villkor är medvetet inte ifyllda. Tomma/ofullständiga sektioner visas inte. Komponenten stödjer en eller flera planer, inte köp, abonnemangshantering eller betalning. Sådana nya arbetsflöden är ett separat beslut.
+RenoApps prisavsnitt är aktiverat efter beslut 2026-09-17: 1 500 kr exklusive moms per ärende när styrelsen väljer att starta handläggningen, utan abonnemangsavgift och med kompletteringar i samma ärende inkluderade. Se `docs/renoapp-pricing.md`. BesiktApps prisavsnitt är fortsatt avstängt. Tomma/ofullständiga sektioner visas inte. Komponenten stödjer en eller flera planer, inte köp, abonnemangshantering eller betalning. Sådana nya arbetsflöden är ett separat beslut.
 
 ## Lägg till en större kontaktsektion senare
 

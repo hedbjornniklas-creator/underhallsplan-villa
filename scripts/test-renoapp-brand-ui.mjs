@@ -21,7 +21,7 @@ await new Promise((done, reject) => webpack({
     '@/lib/supabaseClient': resolve('test/fixtures/renoapp-brand-supabase.ts'),
     '@': resolve('src'), 'next/navigation': resolve('test/fixtures/renoapp-brand-navigation.ts'),
   } },
-  module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
+  module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }, { test: /\.css$/, type: 'asset/source' }] },
 }, (error, stats) => error || stats.hasErrors() ? reject(error ?? Error(stats.toString('errors-only'))) : done()))
 const { css: base } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const theme = await readFile('src/components/renoapp/renoapp-theme.css', 'utf8')
