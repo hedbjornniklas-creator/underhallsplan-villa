@@ -4297,9 +4297,9 @@ export async function upsertPublicApplication(
 
   const accessUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/case/${token}`)
   if (needsClarificationCapture) {
-    // Publish only after answers are saved. The status trigger captures uncertainty atomically.
+    // Draft writes clear consent. Publish consent and status together after answers are saved.
     const { data: submitted, error } = await admin.from('renovation_cases')
-      .update({ status: nextStatus }).eq('id', caseId).eq('status', 'draft').select('id').single()
+      .update({ ...acceptanceFields, status: nextStatus }).eq('id', caseId).eq('status', 'draft').select('id').single()
     if (error || !submitted) throw new Error(error?.message ?? 'CASE_LOCKED')
   }
   const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${token}`)
