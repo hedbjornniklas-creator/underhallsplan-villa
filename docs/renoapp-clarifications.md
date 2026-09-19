@@ -46,6 +46,10 @@ begarda foretagsbekraftelser och klarlaggandesvar kontrolleras daremot.
   omgangar, fel revision, aterkallade lankar och obehoriga frageandringar nekas.
 - Pilotansokan sparas som utkast tills svaren ar sparade. Overgangen till
   inskickad skapar klarlaggandet i samma transaktion, innan godkannande ar mojligt.
+- Vid denna overgang sparas aven godkannandet av renoveringsreglerna i samma
+  skrivning som statusen. Utkastsparande registrerar fortfarande inget
+  godkannande. Regelversionen kontrolleras av databasens befintliga trigger.
+  Rattingen 2026-09-19 kraver ingen ny SQL-migration.
 
 ## Driftsattning
 

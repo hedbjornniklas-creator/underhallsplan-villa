@@ -3,6 +3,9 @@ import { before, after, test } from 'node:test'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
+import ts from 'typescript'
+// @ts-expect-error Node strip-types requires extensions.
+import { rulesAcceptanceFields } from '../src/lib/renoapp/renovationRules.ts'
 // @ts-expect-error Node strip-types requires extensions.
 import { MUNICIPAL_QUESTION_KEY, clarificationItems, clarificationAnswerError, parseClarificationAnswers, type Clarification } from '../src/lib/renoapp/clarifications.ts'
 // @ts-expect-error Node strip-types requires extensions.
@@ -17,8 +20,12 @@ const pilot = read('2026-09-16_02_renoapp_municipal_clarification_pilot.sql')
 before(async () => {
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
+    create table profiles(id uuid primary key);
+    create table brf_associations(id uuid primary key);
+    create schema storage;
+    create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
     create table renovation_cases(id uuid primary key, status text not null, applicant_contact_id uuid,
-      description text, updated_at timestamptz default now());
+      brf_id uuid references brf_associations, description text, updated_at timestamptz default now());
     create table renovation_document_types(id uuid primary key, label text);
     create table renoapp_participant_roles(id uuid primary key, label text);
     create table renovation_case_messages(id uuid primary key default gen_random_uuid(), case_id uuid references renovation_cases on delete cascade,
@@ -42,6 +49,7 @@ before(async () => {
   await db.exec(read('2026-09-07_03_renoapp_completion_rounds.sql'))
   await db.exec(foundation)
   await db.exec(pilot)
+  await db.exec(read('2026-09-07_02_renoapp_renovation_rules.sql'))
   unknown = (await db.query<{id:string}>("select id from renoapp_apply_question_options where question_id=$1 and key='needs_investigation'", [q])).rows[0].id
 })
 after(async () => { await db.close() })
@@ -83,6 +91,67 @@ test('only the pilot unknown is captured, including atomic draft publication; No
   assert.equal(await row(draft.id),undefined)
   await status(draft.id,'submitted')
   assert.equal((await row(draft.id)).state,'pending')
+})
+
+test('pilot submission publishes rules consent and clarification atomically, including stale-rule rollback', async () => {
+  const source = readFileSync(new URL('../src/lib/renoapp/server.ts', import.meta.url), 'utf8')
+  const ast = ts.createSourceFile('server.ts', source, ts.ScriptTarget.Latest, true)
+  let block = ''
+  function visit(node: ts.Node) {
+    if (ts.isIfStatement(node) && node.expression.getText(ast) === 'needsClarificationCapture') {
+      block = node.thenStatement.getText(ast)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  assert.ok(block, 'Missing actual server publication block')
+  const js = ts.transpileModule(`return async () => ${block}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  const publishCase = new Function('admin', 'acceptanceFields', 'nextStatus', 'caseId', js)
+  const admin = { from(table: string) {
+    assert.equal(table, 'renovation_cases')
+    return { update(fields: Record<string, unknown>) {
+      const filters: Record<string, unknown> = {}
+      const query = {
+        eq(key: string, value: unknown) { filters[key] = value; return query },
+        select(value: string) { assert.equal(value, 'id'); return query },
+        async single() {
+          const entries = Object.entries(fields)
+          const assignments = entries.map(([key], i) => `${key}=$${i + 1}`).join(',')
+          const params = [...entries.map(([, value]) => value), filters.id, filters.status]
+          const result = await db.query(`update renovation_cases set ${assignments} where id=$${params.length - 1} and status=$${params.length} returning id`, params)
+          return { data: result.rows[0], error: null }
+        },
+      }
+      return query
+    } }
+  } }
+  for (const format of ['text', 'pdf', 'none']) {
+    const association = randomUUID(), actor = randomUUID()
+    await db.query('insert into profiles values($1)', [actor])
+    await db.query('insert into brf_associations values($1)', [association])
+    const content = format === 'none' ? null : format === 'text' ? { format, body: 'Test rules' }
+      : { format, file_name: 'Rules.pdf', file_path: `${association}/published/test.pdf` }
+    const version = (await db.query<{id:string|null}>('select renoapp_publish_brf_rules($1,$2,null,$3) id', [actor,association,content])).rows[0].id
+    const f = await fixture('draft')
+    await db.query('update renovation_cases set brf_id=$2 where id=$1', [f.id,association])
+    const consent = rulesAcceptanceFields({ mode: 'submit', isCompletion: false, versionId: version,
+      accepted: format !== 'none', applicantName: 'Systemtest', applicantEmail: 'test@example.test' })
+    // Reproduce the initial draft write: its trigger intentionally removes consent.
+    await db.query('update renovation_cases set rules_version_id=$2,rules_accepted_at=now() where id=$1', [f.id,version])
+    assert.equal((await db.query<{rules_version_id:string|null}>('select rules_version_id from renovation_cases where id=$1', [f.id])).rows[0].rules_version_id,null)
+    if (version) {
+      await assert.rejects(publishCase(admin, {...consent, rules_version_id: randomUUID()}, 'submitted', f.id)(), /RULES_VERSION_CHANGED/)
+      await assert.rejects(publishCase(admin, {...consent, rules_accepted_at: null}, 'submitted', f.id)(), /RULES_ACCEPTANCE_REQUIRED/)
+      assert.equal(await row(f.id),undefined)
+    }
+    await publishCase(admin, consent, 'submitted', f.id)()
+    const receipt = (await db.query<{status:string;rules_version_id:string|null;rules_checked_at:string}>('select status,rules_version_id,rules_checked_at from renovation_cases where id=$1', [f.id])).rows[0]
+    assert.equal(receipt.status,'submitted')
+    assert.equal(receipt.rules_version_id,version)
+    assert.ok(receipt.rules_checked_at)
+    assert.equal((await row(f.id)).state,'pending')
+    await assert.rejects(status(f.id,'approved'), /CLARIFICATION_REVIEW_REQUIRED/)
+  }
 })
 
 test('open uncertainty blocks both approval types, not rejection, and requires explicit motivated assessment', async () => {
