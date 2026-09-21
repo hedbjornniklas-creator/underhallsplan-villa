@@ -104,7 +104,7 @@ export default function DebouncedTextarea({
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
-      if (draftKey && draftRef.current !== latestValueRef.current) {
+      if (draftKey && isDirtyRef.current) {
         writeStoredDraft(draftKey, draftRef.current)
       }
     }
@@ -136,11 +136,7 @@ export default function DebouncedTextarea({
   ) => {
     clearTimer()
     if (disabled || readOnly) return
-    if (!isDirtyRef.current && nextValue === latestValueRef.current) {
-      clearStoredDraft(draftKey)
-      markDirty(false)
-      return
-    }
+    if (!isDirtyRef.current) return
     if (inFlightDraftVersionsRef.current.has(draftVersion)) return
 
     writeStoredDraft(draftKey, nextValue)

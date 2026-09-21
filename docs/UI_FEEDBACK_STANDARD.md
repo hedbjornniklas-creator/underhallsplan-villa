@@ -31,6 +31,13 @@ not one toast per internal step.
 - Toasts close automatically according to their tone and always have a manual
   close button.
 - Identical messages are deduplicated and no more than five are shown.
+- When a native modal dialog is open, the same queue is rendered inside its top
+  layer so notifications remain visible and accessible above the backdrop.
+
+Confirmed on 2026-09-21: keep the existing upper-right desktop placement. Internal
+OB step navigation must not repeatedly prompt about drafts from another step;
+keep those drafts locally. The browser's leave/reload data-loss confirmation is
+a decision, not an action-error toast, and remains when text is still pending.
 
 The legacy EB `EbToastProvider` and `useEbToast()` are compatibility adapters to
 the same global queue. New code must use `useToast()` directly.

@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from 'react'
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
 
 export type AppToastTone = 'success' | 'error' | 'warning' | 'info'
 export type AppToastAppearance = 'default' | 'dark'
@@ -120,6 +121,22 @@ function ToastIcon({ tone }: { tone: AppToastTone }) {
   if (tone === 'error') return <CircleAlert {...props} />
   if (tone === 'warning') return <TriangleAlert {...props} />
   return <Info {...props} />
+}
+
+function ToastLayer({ children }: { children: ReactNode }) {
+  const [host, setHost] = useState<Element | null>(null)
+  useEffect(() => {
+    // A body-level z-index cannot appear above a modal dialog's browser top layer.
+    const updateHost = () => {
+      const dialogs = document.querySelectorAll('dialog:modal')
+      setHost(document.activeElement?.closest('dialog:modal') ?? dialogs.item(dialogs.length - 1) ?? document.body)
+    }
+    updateHost()
+    const observer = new MutationObserver(updateHost)
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] })
+    return () => observer.disconnect()
+  }, [])
+  return host ? createPortal(children, host) : null
 }
 
 /**
@@ -284,6 +301,7 @@ function AppToastProviderRoot({ children }: { children: ReactNode }) {
     <AppToastContext.Provider value={value}>
       {children}
       {toasts.length > 0 ? (
+        <ToastLayer>
         <section
           aria-label="Meddelanden"
           className="pointer-events-none fixed inset-x-0 top-0 z-[500] flex flex-col gap-2 px-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] print:hidden sm:left-auto sm:right-4 sm:top-4 sm:w-[min(380px,calc(100vw-2rem))] sm:p-0"
@@ -329,6 +347,7 @@ function AppToastProviderRoot({ children }: { children: ReactNode }) {
             )
           })}
         </section>
+        </ToastLayer>
       ) : null}
     </AppToastContext.Provider>
   )

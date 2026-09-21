@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ObMobileRound from './ObMobileRound'
 import { requestRoundMutation, type MoveResult, type RemovalResult, type ImageNoteResult, type RoundMutationOperation } from '@/lib/ob/roundMutations'
-import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
+import { clearConfirmedObNoteDrafts, hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
   type ControlPointSearchResult,
@@ -1058,7 +1058,9 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       setRooms(normalizedRooms.sort(sortRooms))
       setExteriorItems((exteriorRows ?? []) as SettingsExteriorItem[])
       setExteriorObservations(normalizedObservations)
-      setControlItems(((controlRows ?? []) as InspectionControlItem[]).map(normalizeControlItem))
+      const confirmedNotes = (controlRows ?? []) as InspectionControlItem[]
+      clearConfirmedObNoteDrafts(inspection.id, confirmedNotes, draftScope)
+      setControlItems(confirmedNotes.map(normalizeControlItem))
       setImages((imageRows ?? []) as InspectionImage[])
       setQuickNotes((quickNoteRows ?? []) as QuickNote[])
 
@@ -1561,7 +1563,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     roundMutationRef.current = true
     setRoundMutating(true)
     try {
-      if (hasObTextDraftsForInspection(inspection.id)) {
+      // Creating a separate image note cannot overwrite or delete an existing text draft.
+      if (operation !== 'image-note' && hasObTextDraftsForInspection(inspection.id)) {
         throw Error('Det finns osparad text. Öppna noteringen och spara innan du fortsätter.')
       }
       if ((await listRoundImageUploadItems(inspection.id)).length) {

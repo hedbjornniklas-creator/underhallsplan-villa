@@ -127,9 +127,13 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
   assert.ok(await page.$eval('[aria-label="Ny notering"]', node => node.value.length > 0))
   await fill('[aria-label="Ny notering"]', 'Justerad text från bild')
   await page.waitForFunction(() => !document.querySelector('dialog footer button').disabled)
+  await page.evaluate(() => localStorage.setItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:handlingar:defect_disclosures', JSON.stringify({ value: 'Annat osparat utkast' })))
   await page.evaluate(() => { window.__obMobileTest.dropMutationResponse = true })
   await click('Skapa och koppla', 'dialog footer')
-  await page.waitForSelector('dialog [role="alert"]')
+  await page.waitForSelector('dialog [aria-label="Meddelanden"] [role="alert"]')
+  assert.equal(await page.$('dialog .obm-sheet-body > .obm-error'), null, 'recoverable action error is not an inline banner')
+  await page.waitForSelector('[aria-label="Meddelanden"]', { hidden: true, timeout: 10000 })
+  assert.equal(await page.$eval('[aria-label="Ny notering"]', node => node.value), 'Justerad text från bild', 'toast expiry must not discard text')
   await page.waitForFunction(() => !document.querySelector('dialog footer button').disabled)
   await click('Skapa och koppla', 'dialog footer')
   await closed()
@@ -138,6 +142,7 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
     const calls = qa.calls.filter(row => row.kind === 'image-note')
     return [created.length, created[0].interior_room_id, created[0].selected_outcome_id, qa.images[0].control_item_id === created[0].id, new Set(calls.map(row => row.id)).size]
   }), [1, 'room-1', 'outcome-1', true, 1])
+  assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:handlingar:defect_disclosures'))).value, 'Annat osparat utkast')
 
   for (const width of [320, 360, 390, 430, 1280]) {
     await page.setViewport({ width, height: 820 })

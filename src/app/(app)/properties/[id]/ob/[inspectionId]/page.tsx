@@ -846,7 +846,7 @@ export default function InspectionDetailPage() {
             activeIndex={activeSectionIndex} onClose={() => setMobileMenuOpen(false)}
             onBack={handleBackToInspections}
             onSelect={section => {
-              if ((activeSection !== section.key || section.partId !== activeBuilding?.id) && !confirmLeaveIfTextDrafts()) return
+              // Local drafts survive internal navigation. Do not block the path back to their editor.
               if (section.partId) setSelectedBuildingId(section.partId)
               setActiveSection(section.key)
               setMobileMenuOpen(false)
