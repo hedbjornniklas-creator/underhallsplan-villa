@@ -160,6 +160,7 @@ vite.config.ts.timestamp-*
 /tmp/ob-early-start-ui/
 /tmp/ob-mobile-round-ui/
 /tmp/ob-brand-preview/
+/tmp/ob-forms-preview/
 /tmp/assignment-link-ui/
 
 # next.js
