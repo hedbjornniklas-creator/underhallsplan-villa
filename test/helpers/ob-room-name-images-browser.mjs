@@ -44,7 +44,8 @@ export async function testRoomNameImages(page, base, output) {
     assert.equal(await page.$eval('.obm-room-header h1', node => node.textContent), name)
     assert.ok(await page.$eval('.obm-room-header', header => {
       const name = header.querySelector('h1').getBoundingClientRect(), move = header.querySelector('[aria-label="Flytta rum"]').getBoundingClientRect()
-      return name.right <= move.left && header.scrollWidth <= header.clientWidth
+      const separated = innerWidth <= 480 ? name.bottom <= move.top : name.right <= move.left
+      return separated && header.scrollWidth <= header.clientWidth
     }))
     await page.screenshot({ path: resolve(output, `room-name-${width}.png`) })
     await page.click('.obm-place-images summary')

@@ -38,11 +38,14 @@ test('each building has its conditions immediately followed by its round, preser
   }
 })
 
-test('legacy inspection menus and apartment filtering remain unchanged', () => {
-  const keys = ['grunddata', 'handlingar', 'forutsattningar', 'runda', 'runda-ny', 'utsida', 'insida', 'review', 'delivery']
+test('legacy inspections expose only the new round with its final name and keep apartment filtering', () => {
+  const keys = ['grunddata', 'handlingar', 'forutsattningar', 'runda-ny', 'utsida', 'insida', 'review', 'delivery']
   for (const buildings of [undefined, null, { structure: null, parts: [] }]) {
     assert.deepEqual(getSections(false, false, false, buildings).map(row => row.key), keys)
     assert.deepEqual(getSections(true, false, false, buildings).map(row => row.key), keys.filter(key => key !== 'utsida'))
+    assert.deepEqual(getSections(false, false, false, buildings).filter(row => row.key.startsWith('runda')), [
+      { key: 'runda-ny', label: 'ÖB-runda' },
+    ])
   }
 })
 

@@ -1,0 +1,5 @@
+/* Test harness only. The real production stylesheet owns all round/menu styling. */
+body { margin: 0; background: #f4f6f8; }
+.ob-brand-conditions { max-width: 800px; margin: auto; min-height: 100dvh; }
+.ob-brand-conditions-body { padding: 24px 16px; }
+html[data-large-text] { font-size: 32px; }

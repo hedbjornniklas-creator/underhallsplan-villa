@@ -29,6 +29,7 @@ import {
   Inbox,
   Trash2,
   MessageSquarePlus,
+  RotateCcw,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import {
@@ -341,9 +342,12 @@ function Editor({
         {note.control_point_id ? note.title : 'Fri notering'}
       </p>
       {error && (
-        <p role="alert" className="obm-error">
-          {error}
-        </p>
+        <div role="alert" className="obm-error">
+          <p>{error}</p>
+          <button type="button" disabled={leaving || p.locked} onClick={() => void persist()}>
+            <RotateCcw size={18} />Försök igen
+          </button>
+        </div>
       )}
       {unfinishedFields(draft).length > 0 && (
         <p className="obm-unfinished">
@@ -839,8 +843,8 @@ export default function ObMobileRound(p: Props) {
           </strong>
           <span className="obm-meta">
             {unfinishedFields(note).length > 0 && <em>Mallfält kvar</em>}
-            {note.risk_text?.trim() && <em>Risk</em>}
-            {note.ftu_text?.trim() && <em>Utredning</em>}
+            {note.risk_text?.trim() && <em className="obm-risk">Risk</em>}
+            {note.ftu_text?.trim() && <em className="obm-investigation">Utredning</em>}
             {images.length > 0 && (
               <span>
                 <ImageIcon size={14} />

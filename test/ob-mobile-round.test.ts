@@ -9,7 +9,7 @@ const { getInitialObSection, isObRoundSection, restoreRoundDraft } = await impor
 const { matchesWords, noteMatchRank, unfinishedFields } = await import(searchModule) as typeof import('../src/lib/ob/roundSearch')
 const { getObTextDraftStorageKey, getObTextDraftInspectionPrefix } = await import(draftModule) as typeof import('../src/lib/ob/localTextDrafts')
 
-test('both rounds have their own section; ordinary links keep the original start page', () => {
+test('round section aliases remain recognized; ordinary links keep the original start page', () => {
   assert.equal(getInitialObSection(''), 'grunddata')
   assert.equal(getInitialObSection('?round=unknown'), 'grunddata')
   assert.equal(getInitialObSection('?round=mobile-v2'), 'runda-ny')
@@ -51,8 +51,10 @@ test('production integration uses existing writes and the draft guard, not the t
   assert.match(round, /onCamera=\{openCameraCapture\}/)
   assert.match(round, /onGallery=\{openGalleryPicker\}/)
   assert.match(round, /linkSelectedImagesToControlItem\(note.id, \[image\]\)/)
-  assert.match(page, /\{ key: 'runda', label: 'ÖB-runda' \}/)
-  assert.match(page, /\{ key: 'runda-ny', label: 'ÖB-runda \(ny\)' \}/)
+  assert.doesNotMatch(page, /\{ key: 'runda', label:/)
+  assert.match(page, /\{ key: 'runda-ny', label: 'ÖB-runda' \}/)
+  assert.doesNotMatch(page, /ÖB-runda \(ny\)/)
+  assert.match(page, /activeSection === 'runda' \|\|/)
   assert.match(wizard, /case 'runda':\s+case 'runda-ny':\s+return <ObStepRunda/)
   assert.match(wizard, /mobileLayout=\{activeSection === 'runda-ny'\}/)
   assert.match(page, /showStatus=\{!isRoundSection\}/)
