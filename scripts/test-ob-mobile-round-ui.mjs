@@ -17,6 +17,7 @@ import { testRoomNameImages } from '../test/helpers/ob-room-name-images-browser.
 import { testRoomSwipe } from '../test/helpers/ob-room-swipe-browser.mjs'
 import { testRoundBack } from '../test/helpers/ob-round-back-browser.mjs'
 import { testImagePlace } from '../test/helpers/ob-image-place-browser.mjs'
+import { testDraftFeedback } from '../test/helpers/ob-draft-feedback-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -25,7 +26,7 @@ const output = resolve('tmp/ob-mobile-round-ui')
 await mkdir(output, { recursive: true })
 await new Promise((ok, fail) => webpack({
   mode: 'development', devtool: false,
-  entry: { view: resolve('test/fixtures/ob-mobile-round-page.tsx'), navigation: resolve('test/fixtures/ob-round-page.tsx'), buildings: resolve('test/fixtures/ob-buildings-page.tsx') },
+  entry: { view: resolve('test/fixtures/ob-mobile-round-page.tsx'), navigation: resolve('test/fixtures/ob-round-page.tsx'), buildings: resolve('test/fixtures/ob-buildings-page.tsx'), feedback: resolve('test/fixtures/ob-draft-feedback.tsx') },
   output: { path: output, filename: '[name].js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve('test/fixtures/ob-mobile-round-client.ts'),
@@ -42,6 +43,7 @@ const css = `${globalCss.css}\n${await readFile('src/components/ob/mobile-round.
 const js = await readFile(resolve(output, 'view.js'))
 const navigationJs = await readFile(resolve(output, 'navigation.js'))
 const buildingsJs = await readFile(resolve(output, 'buildings.js'))
+const feedbackJs = await readFile(resolve(output, 'feedback.js'))
 const photo = await readFile('public/landing/Background1.png')
 const brandFont = await readFile('public/ob/brand/manrope.ttf')
 const brandLogo = await readFile('public/report-assets/BesiktApp.png')
@@ -71,6 +73,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(405); response.end('No data writes in this preview'); return
   }
   if (url.pathname === '/view.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(js); return }
+  if (url.pathname === '/feedback.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(feedbackJs); return }
   if (url.pathname === '/buildings.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(buildingsJs); return }
   if (url.pathname === '/navigation.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(navigationJs); return }
   if (url.pathname === '/photo.png') { response.setHeader('Content-Type', 'image/png'); response.end(photo); return }
@@ -91,7 +94,7 @@ const server = createServer(async (request, response) => {
     response.end('<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · testuppgifter</title><style>html,body{margin:0;height:100%;background:#edf1f2}iframe{display:block;width:min(100%,390px);height:100dvh;margin:auto;border:0;background:white}</style></head><body><iframe src="/" title="ÖB mobilrunda med testuppgifter"></iframe></body></html>')
     return
   }
-  response.end(`<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · syntetisk förhandsvisning</title><style>${css}</style></head><body><div id="root"></div><script src="/${url.pathname === '/navigation' ? 'navigation' : url.pathname === '/buildings' ? 'buildings' : 'view'}.js"></script></body></html>`)
+  response.end(`<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>ÖB mobilrunda · syntetisk förhandsvisning</title><style>${css}</style></head><body><div id="root"></div><script src="/${url.pathname === '/navigation' ? 'navigation' : url.pathname === '/buildings' ? 'buildings' : url.pathname === '/draft-feedback' ? 'feedback' : 'view'}.js"></script></body></html>`)
 })
 const serve = process.argv.includes('--serve')
 const portArg = process.argv.indexOf('--port')
@@ -112,6 +115,12 @@ if (serve) {
       else { external.push(request.url()); void request.abort() }
     })
     await page.setViewport({ width: 390, height: 844 })
+    if (process.argv.includes('--feedback-only')) {
+      await testDraftFeedback({ page, base, output })
+      assert.deepEqual(errors, [])
+      assert.deepEqual(external, [])
+    } else {
+    if (!process.argv.includes('--core-only')) {
     await page.goto(`${base}/buildings`)
     await page.waitForSelector('section[aria-label="Byggnader"]')
     await page.locator('button').filter(button => button.textContent.includes('Lägg till byggnad')).click()
@@ -150,6 +159,7 @@ if (serve) {
       await testImageBank(page, base, output)
       if (!process.argv.includes('--image-bank-only')) await testImageImport(page, base, output)
       if (!process.argv.includes('--images-only') && !process.argv.includes('--image-bank-only')) await testFloorEditor(page, base, output)
+    }
     }
     }
     }
@@ -288,6 +298,7 @@ if (serve) {
     assert.equal(await page.evaluate(() => window.__obMobileTest.images[0].control_item_id), 'note-1', 'image picker resolves the fresh server image after upload')
 
     await testRoundParity({ page, click, fresh, fill, noOverflow, output })
+    await testDraftFeedback({ page, base, output })
     await fresh('?locked')
     await page.click('.obm-place-row')
     assert.equal(await page.$eval('.obm-room-actions button', node => node.disabled), true)
@@ -323,12 +334,20 @@ if (serve) {
       assert.equal(await page.$eval('[data-inspection-id]', node => node.dataset.inspectionId), 'synthetic-mobile-inspection')
       await page.evaluate(() => localStorage.setItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending', 'test draft'))
       await openStepMenu()
-      page.once('dialog', dialog => void dialog.dismiss())
-      await chooseSection('Granska')
-      assert.equal(await selectedSection(), 'runda-ny', 'cancelled unsaved-text warning keeps the round mounted')
-      page.once('dialog', dialog => void dialog.accept())
+      let internalDialogs = 0
+      const unexpectedDialog = dialog => { internalDialogs++; void dialog.dismiss() }
+      page.on('dialog', unexpectedDialog)
       await chooseSection('Granska')
       await page.waitForSelector('[data-selected-ob-section="review"]')
+      page.off('dialog', unexpectedDialog)
+      assert.equal(internalDialogs, 0, 'internal navigation does not repeatedly warn about an unrelated draft')
+      assert.equal(await page.evaluate(() => localStorage.getItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending')), 'test draft')
+      await openStepMenu()
+      let exitWarnings = 0
+      page.once('dialog', dialog => { exitWarnings++; void dialog.dismiss() })
+      await page.click('.obm-menu-back')
+      assert.equal(exitWarnings, 1, 'actually leaving the inspection still protects unsaved text')
+      await page.click('dialog [aria-label="Tillbaka"]')
       await page.evaluate(() => localStorage.removeItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending'))
       assert.equal(await page.$('body.ob-round-fullscreen'), null)
       await noOverflow()
@@ -345,6 +364,7 @@ if (serve) {
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
     console.log('PASS: mobile/desktop layouts, one renamed round in the real step menu, switching/draft guard, deep link, apartment menu, paginated search, autosave/recovery, image linking, locked/paused states. No external requests.')
+    }
     }
   } catch (error) {
     if (page) {

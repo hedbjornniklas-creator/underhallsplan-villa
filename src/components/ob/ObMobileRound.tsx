@@ -32,6 +32,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { AppToastProvider } from '@/components/ui/AppToastProvider'
 import {
   hasNote,
   matchesWords,
@@ -461,6 +462,10 @@ function Editor({
 }
 
 export default function ObMobileRound(p: Props) {
+  return <AppToastProvider><MobileRound {...p} /></AppToastProvider>
+}
+
+function MobileRound(p: Props) {
   const [view, setView] = useState<'places' | 'room' | 'notes' | 'pending'>(
     'places',
   )

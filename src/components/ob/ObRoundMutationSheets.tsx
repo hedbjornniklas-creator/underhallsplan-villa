@@ -32,6 +32,7 @@ import ImageNoteForm, { type ImageNoteCatalog } from './ObImageNoteForm'
 import { useObBuilding } from './ObBuildingContext'
 import { supabase } from '@/lib/supabaseClient'
 import { modelFloorLabel, floorModelKeys } from '@/lib/ob/floorModel'
+import { useToast } from '@/components/ui/AppToastProvider'
 
 export function ImageLinkSheet({
   photo,
@@ -54,10 +55,10 @@ export function ImageLinkSheet({
   onLinked: () => void
   onDelete: () => void
 }) {
+  const toast = useToast()
   const [query, setQuery] = useState(''),
     [selectedId, setSelectedId] = useState('')
   const [busy, setBusy] = useState(false),
-    [error, setError] = useState(''),
     flight = useRef(false)
   const [tab, setTab] = useState<'existing' | 'new'>('existing')
   const [draft, setDraft] = useState<ImageNoteDraft>({
@@ -144,18 +145,15 @@ export function ImageLinkSheet({
     setCheckedPlacement(null)
     setChecking(false)
     setPlaceError('')
-    setError('')
   }
   function changeTab(next: 'existing' | 'new') {
     if (flight.current) return
     setTab(next)
-    setError('')
   }
   async function create() {
     if (!placement || checking || flight.current || p.locked || p.mutationBlocked) return
     flight.current = true
     setBusy(true)
-    setError('')
     const fingerprint = JSON.stringify({ token: placement.token, target: requestTarget, draft })
     if (retry.current?.fingerprint !== fingerprint)
       retry.current = { fingerprint, requestId: crypto.randomUUID() }
@@ -169,11 +167,7 @@ export function ImageLinkSheet({
       })
       onLinked()
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Noteringen och bildkopplingen kunde inte sparas.',
-      )
+      toast.error(e, 'Noteringen och bildkopplingen kunde inte sparas.')
     } finally {
       flight.current = false
       setBusy(false)
@@ -223,23 +217,17 @@ export function ImageLinkSheet({
   function search(value: string) {
     setQuery(value)
     setSelectedId('')
-    setError('')
   }
   async function link() {
     if (!selected || p.locked || p.mutationBlocked || flight.current) return
     flight.current = true
     setBusy(true)
-    setError('')
     try {
       if (!(await p.onLinkImage(photo, selected)))
         throw Error('Bilden kunde inte kopplas. Försök igen.')
       onLinked()
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Bilden kunde inte kopplas. Försök igen.',
-      )
+      toast.error(e, 'Bilden kunde inte kopplas. Försök igen.')
     } finally {
       flight.current = false
       setBusy(false)
@@ -347,11 +335,6 @@ export function ImageLinkSheet({
           </button>
         ))}
       </div>
-      {error && (
-        <p role="alert" className="obm-error">
-          {error}
-        </p>
-      )}
       {p.locked && (
         <p role="alert" className="obm-error">
           Besiktningen är låst.
@@ -414,7 +397,6 @@ export function ImageLinkSheet({
                       checked={selectedId === note.id}
                       onChange={() => {
                         setSelectedId(note.id!)
-                        setError('')
                       }}
                     />
                     <span>
@@ -504,7 +486,6 @@ export function ImageLinkSheet({
           draft={draft}
           onChange={(value) => {
             setDraft(value)
-            setError('')
           }}
           catalog={catalog}
           disabled={busy || p.locked}

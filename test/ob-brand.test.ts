@@ -40,10 +40,12 @@ test('risk and investigation keep distinct text and style hooks', () => {
   assert.match(editor, /className="obm-investigation">Utredning/)
   assert.match(css.toString(), /\.obm-meta \.obm-investigation\s*\{[^}]*var\(--obm-info\)/)
 })
-test('restyled step menu still delegates selection and retains the page draft guard', () => {
+test('step menu allows returning to drafts; leaving the inspection retains its guard', () => {
   const page = read('src/app/(app)/properties/[id]/ob/[inspectionId]/page.tsx')
   assert.match(page, /<ObStepMenu sections=\{visibleSections\}/)
-  assert.match(page, /onSelect=\{section => \{\s*if \(.*!confirmLeaveIfTextDrafts\(\)\) return/)
+  const selection = page.slice(page.indexOf('onSelect={section => {'))
+  assert.doesNotMatch(selection, /confirmLeaveIfTextDrafts/)
+  assert.match(page, /const handleBackToInspections = useCallback\(\(\) => \{\s*if \(!confirmLeaveIfTextDrafts\(\)\) return/)
   assert.match(page, /if \(section.partId\) setSelectedBuildingId\(section.partId\)/)
   const menu = read('src/components/ob/ObStepMenu.tsx')
   assert.match(menu, /onClick=\{\(\) => onSelect\(section\)\}/)
