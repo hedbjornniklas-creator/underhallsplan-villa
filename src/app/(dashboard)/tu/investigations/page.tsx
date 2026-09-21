@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ChevronsLeft, Download, Loader2, LockOpen, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, Download, Loader2, LockOpen, Plus, Send, Trash2 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import { useToast } from '@/components/ui/AppToastProvider'
 
 type InvestigationItem = {
   inspectionId: string
@@ -25,6 +26,9 @@ type InvestigationItem = {
   scopeDescription: string | null
   reportLockedAt: string | null
   hasReadyPdf?: boolean
+  hasPublishedLink?: boolean
+  resendUsesSameLink?: boolean
+  publishedRevisionNumber?: number | null
   createdAt: string | null
   updatedAt: string | null
 }
@@ -191,6 +195,7 @@ function UnlockInvestigationActionButton({
 export default function TuInvestigationsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { error: showErrorToast, success: showSuccessToast } = useToast()
   const organizationId = searchParams.get('orgId')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -206,6 +211,9 @@ export default function TuInvestigationsPage() {
   const [unlockReason, setUnlockReason] = useState('')
   const [unlockSubmitting, setUnlockSubmitting] = useState(false)
   const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [resendTarget, setResendTarget] = useState<InvestigationItem | null>(null)
+  const [resendEmail, setResendEmail] = useState('')
+  const [resendSubmitting, setResendSubmitting] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -397,6 +405,40 @@ export default function TuInvestigationsPage() {
     setUnlockError(null)
     setUnlockTarget(item)
     setUnlockReason('')
+  }
+
+  const submitResend = async () => {
+    if (!resendTarget || resendSubmitting || !organizationId) return
+    const email = resendEmail.trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showErrorToast('Ange en giltig mottagaradress.', 'Ange en giltig mottagaradress.', { appearance: 'dark' })
+      return
+    }
+    setResendSubmitting(true)
+    try {
+      const response = await fetch(
+        organizationUrl(`/api/tu/investigations/${encodeURIComponent(resendTarget.inspectionId)}/report-delivery`, organizationId),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'resend', primary_recipient: email }),
+        }
+      )
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; sentRecipients?: string[] }
+      if (!response.ok || !payload.sentRecipients?.includes(email)) {
+        throw new Error(payload.error ?? 'Kunde inte skicka om utlåtandet.')
+      }
+      setItems((current) => current.map((item) => item.inspectionId === resendTarget.inspectionId
+        ? { ...item, resendUsesSameLink: true }
+        : item))
+      setResendTarget(null)
+      setResendEmail('')
+      showSuccessToast(`Utlåtandet skickades till ${email}.`, { appearance: 'dark' })
+    } catch (error) {
+      showErrorToast(error, 'Kunde inte skicka om utlåtandet.', { appearance: 'dark' })
+    } finally {
+      setResendSubmitting(false)
+    }
   }
 
   const closeUnlockDialog = () => {
@@ -622,6 +664,22 @@ export default function TuInvestigationsPage() {
                                 organizationId={organizationId}
                               />
                             ) : null}
+                            {item.hasPublishedLink ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  event.stopPropagation()
+                                  setResendTarget(item)
+                                  setResendEmail(item.customerEmail ?? '')
+                                }}
+                                title="Skicka om publicerat utlåtande"
+                                aria-label={`Skicka om publicerat utlåtande: ${item.title}`}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-violet-200 bg-white/95 text-violet-700 transition hover:bg-violet-50"
+                              >
+                                <Send size={13} aria-hidden />
+                              </button>
+                            ) : null}
                             {item.reportLockedAt ? (
                               <UnlockInvestigationActionButton
                                 onClick={() => openUnlockDialog(item)}
@@ -675,6 +733,45 @@ export default function TuInvestigationsPage() {
                 </div>
               </footer>
             </>
+          ) : null}
+
+          {resendTarget ? (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="tuResendDialogTitle">
+              <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl">
+                <h2 id="tuResendDialogTitle" className="text-base font-semibold text-gray-950">
+                  Skicka om utlåtandet
+                </h2>
+                <p className="mt-2 text-sm text-gray-700">{resendTarget.title} · {getAddress(resendTarget)}</p>
+                {resendTarget.publishedRevisionNumber ? (
+                  <p className="mt-1 text-xs font-medium text-violet-800">Publicerad revision {resendTarget.publishedRevisionNumber}</p>
+                ) : null}
+                <p className="mt-3 text-sm leading-6 text-gray-600">
+                  {resendTarget.resendUsesSameLink
+                    ? 'Samma fastställda revision och samma länk skickas igen. Tidigare delade länkar fortsätter fungera.'
+                    : 'Samma fastställda revision skickas. En ny länk skapas eftersom den äldre länken inte kan återskapas; tidigare delade länkar fortsätter fungera.'}
+                </p>
+                {!resendTarget.reportLockedAt ? (
+                  <p className="mt-2 text-sm text-amber-800">Pågående ändringar i utkastet skickas inte med.</p>
+                ) : null}
+                <label htmlFor="tuResendEmail" className="mt-4 block text-xs font-medium text-gray-700">Mottagarens e-postadress</label>
+                <input
+                  id="tuResendEmail"
+                  type="email"
+                  autoFocus
+                  value={resendEmail}
+                  onChange={(event) => setResendEmail(event.target.value)}
+                  disabled={resendSubmitting}
+                  className="mt-1 h-10 w-full rounded-md border border-gray-300 px-3 text-sm text-gray-950 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-100"
+                />
+                <div className="mt-5 flex justify-end gap-2">
+                  <button type="button" onClick={() => setResendTarget(null)} disabled={resendSubmitting} className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 disabled:opacity-50">Avbryt</button>
+                  <button type="button" onClick={() => void submitResend()} disabled={resendSubmitting} className="inline-flex items-center gap-2 rounded-md bg-violet-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                    {resendSubmitting ? <Loader2 size={15} className="animate-spin" aria-hidden /> : <Send size={15} aria-hidden />}
+                    {resendSubmitting ? 'Skickar...' : 'Skicka om'}
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : null}
 
           {unlockTarget ? (

@@ -125,7 +125,8 @@ test('non-TU accepted notices retain the responsible profile reply-to address', 
 })
 
 test('new TU report finalization requires the frozen inspector organization card', () => {
-  assert.match(reportRoute, /const usesFrozenRevision = action === 'send_and_lock'/u)
+  assert.match(reportRoute, /const usesFrozenRevision = action === 'resend' \|\| \(action === 'send_and_lock' && Boolean\(investigation\.reportLockedAt\)\)/u)
+  assert.match(reportRoute, /if \(action !== 'regenerate_pdf' && !usesFrozenRevision\)/u)
   assert.match(reportRoute, /profileId: investigation\.inspectorProfileId/u)
   assert.match(reportRoute, /await requireTuOrganizationProfileCard/u)
   assert.match(reportRoute, /Fyll i företagsvisitkortet för ansvarig besiktningsman/u)

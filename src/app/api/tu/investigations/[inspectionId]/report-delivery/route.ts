@@ -1,6 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
+import { decryptTuReportLinkToken, encryptTuReportLinkToken } from '@/lib/tu/reportLinkToken'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
 import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
@@ -37,7 +38,7 @@ export const maxDuration = 300
 
 const TEMPLATE_KEY = 'tu_report_delivery'
 
-type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
+type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only' | 'resend'
 type ReportDeliveryPostAction = DeliveryAction | 'regenerate_pdf'
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
@@ -95,6 +96,15 @@ type ReportSnapshotLinkRow = {
   assignment_id: string | null
   snapshot_schema_version: string | null
   snapshot_payload: unknown
+}
+
+type PublishedTuLinkRow = {
+  id: string
+  org_id: string
+  inspection_id: string
+  token_hash: string
+  tu_token_ciphertext: string | null
+  revoked_at: string | null
 }
 
 function normalizePdfStatus(value: unknown): PdfStatus {
@@ -166,6 +176,7 @@ function resolveReportDraftRecipientEmail(
 function parseAction(value: unknown): ReportDeliveryPostAction {
   const normalized = normalizeText(value)
   if (normalized === 'regenerate_pdf') return 'regenerate_pdf'
+  if (normalized === 'resend') return 'resend'
   if (normalized === 'send_open') return 'send_open'
   if (normalized === 'lock_only') return 'lock_only'
   return 'send_and_lock'
@@ -438,6 +449,11 @@ function isMissingRevisionTable(error: unknown) {
   return message.includes('tu_report_revisions') || message.includes('42p01') || message.includes('does not exist')
 }
 
+function isMissingTuTokenColumn(error: unknown) {
+  const message = String((error as { message?: unknown } | null)?.message ?? error ?? '').toLowerCase()
+  return message.includes('tu_token_ciphertext') || message.includes('pgrst204')
+}
+
 async function getCurrentTuRevision(
   admin: AdminClient,
   orgId: string,
@@ -457,6 +473,83 @@ async function getCurrentTuRevision(
     throw new Error(error.message ?? 'Kunde inte läsa TU-revisionen.')
   }
   return (data as TuReportRevisionRow | null) ?? null
+}
+
+async function getPublishedTuRevision(
+  admin: AdminClient,
+  orgId: string,
+  inspectionId: string
+): Promise<TuReportRevisionRow | null> {
+  const { data, error } = await admin
+    .from('tu_report_revisions')
+    .select('id,revision_number,snapshot_link_id,published_link_id,status,finalized_at,published_at')
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .eq('status', 'published')
+    .order('revision_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) {
+    if (isMissingRevisionTable(error)) return null
+    throw new Error(error.message ?? 'Kunde inte läsa publicerad TU-revision.')
+  }
+  return (data as TuReportRevisionRow | null) ?? null
+}
+
+async function getPublishedTuLink(
+  admin: AdminClient,
+  orgId: string,
+  inspectionId: string,
+  revision: TuReportRevisionRow | null
+): Promise<PublishedTuLinkRow | null> {
+  if (revision?.status !== 'published' || !revision.published_link_id) return null
+  const { data, error } = await admin
+    .from('inspection_report_links')
+    .select('id,org_id,inspection_id,token_hash,tu_token_ciphertext,revoked_at')
+    .eq('id', revision.published_link_id)
+    .eq('org_id', orgId)
+    .eq('inspection_id', inspectionId)
+    .maybeSingle()
+  if (error && isMissingTuTokenColumn(error)) {
+    const fallback = await admin
+      .from('inspection_report_links')
+      .select('id,org_id,inspection_id,token_hash,revoked_at')
+      .eq('id', revision.published_link_id)
+      .eq('org_id', orgId)
+      .eq('inspection_id', inspectionId)
+      .maybeSingle()
+    if (fallback.error) {
+      console.error('[tu.report-delivery] failed to read legacy published link', fallback.error)
+      throw new Error('Kunde inte läsa den publicerade rapportlänken. Försök igen.')
+    }
+    return fallback.data ? { ...(fallback.data as Omit<PublishedTuLinkRow, 'tu_token_ciphertext'>), tu_token_ciphertext: null } : null
+  }
+  if (error) {
+    console.error('[tu.report-delivery] failed to read published link', error)
+    throw new Error('Kunde inte läsa den publicerade rapportlänken. Försök igen.')
+  }
+  return data as PublishedTuLinkRow | null
+}
+
+async function replacePublishedTuLink(
+  admin: AdminClient,
+  input: { orgId: string; inspectionId: string; revisionId: string; previousLinkId: string; newLinkId: string }
+) {
+  const { data, error } = await admin
+    .from('tu_report_revisions')
+    .update({ published_link_id: input.newLinkId })
+    .eq('id', input.revisionId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('status', 'published')
+    .eq('published_link_id', input.previousLinkId)
+    .select('id')
+    .maybeSingle()
+  if (error) {
+    console.error('[tu.report-delivery] failed to replace legacy published link', error)
+    throw new Error('Kunde inte uppdatera rapportlänken. Kontrollera utskickshistoriken innan du försöker igen.')
+  }
+  if (!data) throw new Error('Den publicerade länken har ändrats. Kontrollera utskickshistoriken innan du försöker igen.')
 }
 
 async function getReportSnapshotLink(admin: AdminClient, orgId: string, linkId: string) {
@@ -831,6 +924,11 @@ export async function GET(
     ])
     const ordererEmail = resolveDefaultRecipient(investigation)
     const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
+    const publishedRevision = revision?.status === 'published'
+      ? revision
+      : await getPublishedTuRevision(admin, org.orgId, inspectionId)
+    const publishedLink = await getPublishedTuLink(admin, org.orgId, inspectionId, publishedRevision)
+    const hasPublishedLink = Boolean(publishedLink && !publishedLink.revoked_at)
 
     return NextResponse.json({
       inspectionId,
@@ -839,6 +937,8 @@ export async function GET(
       defaultRecipientEmail: ordererEmail,
       ordererEmail,
       hasActiveLink: Boolean(activeLink),
+      hasPublishedLink,
+      resendUsesSameLink: hasPublishedLink && Boolean(publishedLink?.tu_token_ciphertext),
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
@@ -849,6 +949,7 @@ export async function GET(
       activityLog,
       revisionNumber: revision?.revision_number ?? null,
       revisionStatus: revision?.status ?? null,
+      publishedRevisionNumber: hasPublishedLink ? publishedRevision?.revision_number ?? null : null,
       revisionFinalizedAt: revision?.finalized_at ?? null,
       revisionPublishedAt: revision?.published_at ?? null,
       qualityIssues,
@@ -895,7 +996,7 @@ export async function POST(
       inspectionId,
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
-    const usesFrozenRevision = action === 'send_and_lock' && Boolean(investigation.reportLockedAt)
+    const usesFrozenRevision = action === 'resend' || (action === 'send_and_lock' && Boolean(investigation.reportLockedAt))
     if (action !== 'regenerate_pdf' && !usesFrozenRevision) {
       if (!investigation.inspectorProfileId) {
         return jsonError('TU-utredningen saknar ansvarig besiktningsman.', 409)
@@ -1004,12 +1105,17 @@ export async function POST(
 
     let publicLink = ''
     let linkId = ''
-    let currentRevision = await getCurrentTuRevision(admin, org.orgId, inspectionId)
+    let currentRevision = action === 'resend'
+      ? await getPublishedTuRevision(admin, org.orgId, inspectionId)
+      : await getCurrentTuRevision(admin, org.orgId, inspectionId)
     const sentRecipients: string[] = []
     const failedRecipients: Array<{ email: string; error: string }> = []
 
     const deliveryDocuments = await listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId })
-    const sendingFinalizedRevision = action === 'send_and_lock' && Boolean(investigation.reportLockedAt)
+    const sendingFinalizedRevision = usesFrozenRevision
+    if (action === 'resend' && currentRevision?.status !== 'published') {
+      return jsonError('Skicka den fastställda revisionen först.', 409)
+    }
     let snapshotPayload: unknown
     let snapshotSchemaVersion = 'tu_v1'
     let snapshotAssignmentId = investigation.assignmentId
@@ -1060,41 +1166,64 @@ export async function POST(
       }
       snapshotPayload = reportSnapshot
     }
-    const token = generateAssignmentToken()
-    const tokenHash = hashAssignmentToken(token)
+    const publishedLink = sendingFinalizedRevision
+      ? await getPublishedTuLink(admin, org.orgId, inspectionId, currentRevision)
+      : null
+    if (currentRevision?.status === 'published' && (!publishedLink || publishedLink.revoked_at)) {
+      return jsonError('Den publicerade länken är inte aktiv. Kontakta administratören innan ett nytt utskick.', 409)
+    }
+    const reusingPublishedLink = Boolean(publishedLink?.tu_token_ciphertext)
+    let token: string
+    if (publishedLink?.tu_token_ciphertext) {
+      try {
+        token = decryptTuReportLinkToken(publishedLink.tu_token_ciphertext)
+      } catch {
+        throw new Error('TU_REPORT_LINK_TOKEN_INVALID')
+      }
+      if (hashAssignmentToken(token) !== publishedLink.token_hash) {
+        throw new Error('TU_REPORT_LINK_TOKEN_INVALID')
+      }
+      linkId = publishedLink.id
+    } else {
+      token = generateAssignmentToken()
+      const { data: linkData, error: linkError } = await admin
+        .from('inspection_report_links')
+        .insert({
+          org_id: org.orgId,
+          inspection_id: inspectionId,
+          assignment_id: snapshotAssignmentId,
+          token_hash: hashAssignmentToken(token),
+          tu_token_ciphertext: encryptTuReportLinkToken(token),
+          delivery_mode: 'link_only',
+          snapshot_schema_version: snapshotSchemaVersion,
+          snapshot_payload: snapshotPayload,
+          pdf_status: 'pending',
+          pdf_error: null,
+          pdf_attempts: 0,
+          pdf_started_at: null,
+          pdf_generated_at: null,
+          created_by: org.userId,
+        })
+        .select('id')
+        .single()
 
-    const { data: linkData, error: linkError } = await admin
-      .from('inspection_report_links')
-      .insert({
-        org_id: org.orgId,
-        inspection_id: inspectionId,
-        assignment_id: snapshotAssignmentId,
-        token_hash: tokenHash,
-        delivery_mode: 'link_only',
-        snapshot_schema_version: snapshotSchemaVersion,
-        snapshot_payload: snapshotPayload,
-        pdf_status: 'pending',
-        pdf_error: null,
-        pdf_attempts: 0,
-        pdf_started_at: null,
-        pdf_generated_at: null,
-        created_by: org.userId,
-      })
-      .select('id')
-      .single()
-
-    if (linkError || !linkData) throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
-    linkId = linkData.id as string
-
+      if (linkError || !linkData) {
+        if (isMissingTuTokenColumn(linkError)) throw new Error('TU_REPORT_LINK_MIGRATION_REQUIRED')
+        throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
+      }
+      linkId = linkData.id as string
+    }
     const publicBaseUrl = resolvePublicBaseUrl(request)
     publicLink = `${publicBaseUrl}/rapport/${encodeURIComponent(token)}`
-    after(async () => {
-      await runInspectionReportPdfBatch({
-        origin: publicBaseUrl,
-        linkId,
-        limit: 1,
+    if (!reusingPublishedLink) {
+      after(async () => {
+        await runInspectionReportPdfBatch({
+          origin: publicBaseUrl,
+          linkId,
+          limit: 1,
+        })
       })
-    })
+    }
 
     if (action !== 'lock_only') {
       const recipients = [
@@ -1183,7 +1312,7 @@ export async function POST(
         throw lockError
       }
     } else if (sentRecipients.length > 0) {
-      if (action === 'send_and_lock') {
+      if (action === 'send_and_lock' || action === 'resend') {
         if (!sendingFinalizedRevision) {
           currentRevision = await createTuRevision(admin, {
             orgId: org.orgId,
@@ -1193,33 +1322,53 @@ export async function POST(
           })
         }
         if (!currentRevision) throw new Error('Den fastställda TU-revisionen saknas.')
-        await publishTuRevision(admin, {
-          orgId: org.orgId,
-          inspectionId,
-          revisionId: currentRevision.id,
-          publishedLinkId: linkId,
-          userId: org.userId,
-        })
-        reportLockedAt = reportLockedAt ?? (await lockTuInvestigation(admin, {
-          orgId: org.orgId,
-          inspectionId,
-          userId: org.userId,
-        }))
+        if (currentRevision.status === 'published' && currentRevision.published_link_id) {
+          if (!reusingPublishedLink) {
+            await replacePublishedTuLink(admin, {
+              orgId: org.orgId,
+              inspectionId,
+              revisionId: currentRevision.id,
+              previousLinkId: currentRevision.published_link_id,
+              newLinkId: linkId,
+            })
+          }
+        } else {
+          await publishTuRevision(admin, {
+            orgId: org.orgId,
+            inspectionId,
+            revisionId: currentRevision.id,
+            publishedLinkId: linkId,
+            userId: org.userId,
+          })
+        }
+        if (action !== 'resend') {
+          reportLockedAt = reportLockedAt ?? (await lockTuInvestigation(admin, {
+            orgId: org.orgId,
+            inspectionId,
+            userId: org.userId,
+          }))
+        }
       }
-      await revokeOlderReportLinks(admin, org.orgId, inspectionId, linkId)
+      if (!publishedLink) await revokeOlderReportLinks(admin, org.orgId, inspectionId, linkId)
     } else {
-      await admin
-        .from('inspection_report_links')
-        .update({ revoked_at: new Date().toISOString() })
-        .eq('org_id', org.orgId)
-        .eq('id', linkId)
+      if (!reusingPublishedLink) {
+        await admin
+          .from('inspection_report_links')
+          .update({ revoked_at: new Date().toISOString() })
+          .eq('org_id', org.orgId)
+          .eq('id', linkId)
+      }
     }
 
-    const [history, unlockHistory, activeLink] = await Promise.all([
+    const [history, unlockHistory, activeLink, latestRevision, publishedRevision] = await Promise.all([
       getDeliveryHistory(admin, org.orgId, inspectionId),
       getUnlockHistory(admin, org.orgId, inspectionId),
       getLatestReportLink(admin, org.orgId, inspectionId),
+      getCurrentTuRevision(admin, org.orgId, inspectionId),
+      getPublishedTuRevision(admin, org.orgId, inspectionId),
     ])
+    const currentPublishedLink = await getPublishedTuLink(admin, org.orgId, inspectionId, publishedRevision)
+    const hasPublishedLink = Boolean(currentPublishedLink && !currentPublishedLink.revoked_at)
     const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
 
     return NextResponse.json({
@@ -1227,7 +1376,7 @@ export async function POST(
       reportLockedAt,
       inspectionStatus: action === 'send_and_lock' || action === 'lock_only' ? 'completed' : investigation.status,
       deliveryMode: 'link_only',
-      publicLink,
+      publicLink: action === 'lock_only' || sentRecipients.length > 0 ? publicLink : null,
       primaryRecipientEmail: primaryRecipient,
       defaultRecipientEmail: resolveDefaultRecipient(investigation),
       ordererEmail: resolveDefaultRecipient(investigation),
@@ -1236,17 +1385,17 @@ export async function POST(
       history,
       activityLog,
       hasActiveLink: Boolean(activeLink),
+      hasPublishedLink,
+      resendUsesSameLink: hasPublishedLink && Boolean(currentPublishedLink?.tu_token_ciphertext),
       pdfStatus: activeLink?.pdf_status ?? null,
       pdfError: activeLink?.pdf_error ?? null,
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
       digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
       deliveryDocuments,
       linkId,
-      revisionNumber: currentRevision?.revision_number ?? null,
-      revisionStatus:
-        action === 'send_and_lock' && sentRecipients.length > 0
-          ? 'published'
-          : currentRevision?.status ?? null,
+      revisionNumber: latestRevision?.revision_number ?? null,
+      revisionStatus: latestRevision?.status ?? null,
+      publishedRevisionNumber: hasPublishedLink ? publishedRevision?.revision_number ?? null : null,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
@@ -1262,6 +1411,12 @@ export async function POST(
     }
     if (message === 'TU_REVISIONS_NOT_ACTIVATED') {
       return jsonError('TU-revisioner är inte aktiverade i databasen ännu.', 409)
+    }
+    if (message === 'TU_REPORT_LINK_MIGRATION_REQUIRED') {
+      return jsonError('Databasen behöver uppdateras innan utlåtandet kan skickas.', 409)
+    }
+    if (message === 'TU_REPORT_LINK_TOKEN_INVALID') {
+      return jsonError('Den sparade rapportlänken kunde inte läsas. Ingen ny länk har skapats.', 409)
     }
     if (message.includes('RESEND_API_KEY')) return jsonError('Servern saknar mejlkonfiguration.', 500)
     if (message.includes('ASSIGNMENTS_MAIL_FROM')) {

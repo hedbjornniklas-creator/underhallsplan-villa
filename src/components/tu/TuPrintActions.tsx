@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Download, ExternalLink, LockKeyhole, LockOpen, RefreshCw, Send } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 
-type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only'
+type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only' | 'resend'
 
 type DeliveryHistoryItem = {
   id: string
@@ -38,6 +38,8 @@ type DeliveryResponse = {
   defaultRecipientEmail: string | null
   ordererEmail: string | null
   hasActiveLink: boolean
+  hasPublishedLink?: boolean
+  resendUsesSameLink?: boolean
   pdfStatus: string | null
   pdfError: string | null
   downloadUrl: string | null
@@ -50,6 +52,7 @@ type DeliveryResponse = {
   deliveryDocuments?: DeliveryDocumentItem[]
   revisionNumber?: number | null
   revisionStatus?: 'finalized' | 'published' | null
+  publishedRevisionNumber?: number | null
   analysisStale?: boolean
   analysisStaleAt?: string | null
   qualityIssues?: Array<{
@@ -255,6 +258,9 @@ export default function TuPrintActions({
       if (action === 'lock_only') {
         const revisionLabel = payload.revisionNumber ? `Revision ${payload.revisionNumber}` : 'Utlåtandet'
         setResult(`${revisionLabel} är fastställd. PDF skapas i bakgrunden och kan därefter skickas.`)
+      } else if (action === 'resend') {
+        const sentCount = payload.sentRecipients?.length ?? 0
+        setResult(`Utlåtandet skickades till ${sentCount} mottagare.${failedText} Tidigare delade länkar fungerar fortfarande.`)
       } else {
         const sentCount = payload.sentRecipients?.length ?? 0
         const lockText = action === 'send_and_lock' ? ' Utlåtandet är låst.' : ' Utlåtandet är fortsatt upplåst.'
@@ -344,7 +350,8 @@ export default function TuPrintActions({
   }
 
   const locked = Boolean(meta?.reportLockedAt)
-  const hasPublishedVersion = Boolean(meta?.hasActiveLink)
+  const hasPublishedVersion = Boolean(meta?.hasPublishedLink)
+  const hasNewFinalizedVersion = locked && meta?.revisionStatus === 'finalized'
   const unlockedWithPublishedVersion = !locked && hasPublishedVersion
   const downloadUrl = meta?.downloadUrl
     ? organizationUrl(meta.downloadUrl, organizationId)
@@ -352,7 +359,7 @@ export default function TuPrintActions({
   const digitalReportUrl =
     meta?.publicLink ??
     (meta?.digitalUrl ? organizationUrl(meta.digitalUrl, organizationId) : null)
-  const canSend = locked && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
+  const canSend = (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
   const effectiveFinalizationBlockedReason = meta?.analysisStale ? null : finalizationBlockedReason
   const canFinalize = !locked
@@ -382,6 +389,16 @@ export default function TuPrintActions({
             <p className="mt-1 text-sm leading-6 text-gray-600">
               Fastställ först en fryst revision. Välj därefter mottagare och skicka exakt den versionen.
             </p>
+            {hasNewFinalizedVersion && hasPublishedVersion ? (
+              <p className="mt-2 text-sm text-amber-800">
+                En tidigare revision är fortfarande publicerad. Skicka den nya revisionen när den ska ersätta den tidigare.
+              </p>
+            ) : null}
+            {hasPublishedVersion && !hasNewFinalizedVersion && !meta?.resendUsesSameLink ? (
+              <p className="mt-2 text-sm text-amber-800">
+                Den äldre länken kan inte återskapas. Första omskicket skapar en ny länk till samma version, men tidigare delade länkar fortsätter fungera.
+              </p>
+            ) : null}
             {unlockedWithPublishedVersion ? (
               <p className="mt-2 max-w-3xl rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-5 text-amber-900">
                 Utlåtandet är upplåst för redigering. Mottagare ser fortfarande den publicerade versionen tills du publicerar en ny.
@@ -600,7 +617,7 @@ export default function TuPrintActions({
           </div>
         ) : null}
 
-        {locked ? (
+        {locked || hasPublishedVersion ? (
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="space-y-1">
             <span className="text-xs font-medium text-gray-700">Huvudmottagare</span>
@@ -663,8 +680,14 @@ export default function TuPrintActions({
               <h3 className="text-sm font-semibold text-slate-950">Nästa handling</h3>
               <p className="text-xs leading-5 text-slate-500">
                 {locked
-                  ? 'Den fastställda revisionen ändras inte när den skickas.'
-                  : 'Fastställandet låser utlåtandet och skapar en oföränderlig revision.'}
+                  ? hasNewFinalizedVersion
+                    ? 'Den nya fastställda revisionen skickas och ersätter den tidigare publicerade länken.'
+                    : hasPublishedVersion
+                    ? 'Samma fastställda revision skickas igen. Befintliga länkar fortsätter fungera.'
+                    : 'Den fastställda revisionen ändras inte när den skickas.'
+                  : hasPublishedVersion
+                    ? 'Du kan skicka om den tidigare publicerade revisionen. Pågående ändringar skickas inte med.'
+                    : 'Fastställandet låser utlåtandet och skapar en oföränderlig revision.'}
               </p>
             </div>
             <button
@@ -682,12 +705,16 @@ export default function TuPrintActions({
           {locked ? (
             <button
               type="button"
-              onClick={() => void runDelivery('send_and_lock')}
+              onClick={() => void runDelivery(hasPublishedVersion && !hasNewFinalizedVersion ? 'resend' : 'send_and_lock')}
               disabled={!canSend}
               className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
-              {busyAction === 'send_and_lock' ? <RefreshCw size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
-              {busyAction === 'send_and_lock' ? 'Skickar utlåtandet...' : 'Skicka utlåtandet'}
+              {busyAction === 'send_and_lock' || busyAction === 'resend' ? <RefreshCw size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
+              {busyAction === 'send_and_lock' || busyAction === 'resend'
+                ? 'Skickar utlåtandet...'
+                : hasPublishedVersion && !hasNewFinalizedVersion
+                  ? meta?.resendUsesSameLink ? 'Skicka om samma länk' : 'Skicka om samma version'
+                  : 'Skicka utlåtandet'}
             </button>
           ) : (
             <button
@@ -704,6 +731,19 @@ export default function TuPrintActions({
                   : 'Fastställ utlåtandet'}
             </button>
           )}
+          {hasPublishedVersion && (!locked || hasNewFinalizedVersion) ? (
+            <button
+              type="button"
+              onClick={() => void runDelivery('resend')}
+              disabled={!canSend}
+              className="inline-flex h-11 items-center gap-2 rounded-md border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busyAction === 'resend' ? <RefreshCw size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
+              {busyAction === 'resend'
+                ? 'Skickar...'
+                : `Skicka om publicerad version${meta?.publishedRevisionNumber ? ` ${meta.publishedRevisionNumber}` : ''}`}
+            </button>
+          ) : null}
           {locked ? (
           <button
             type="button"
