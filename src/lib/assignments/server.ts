@@ -1752,7 +1752,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const tokenHash = hashAssignmentToken(token)
   const assignmentColumns =
-    'assignments(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,invoice_name,invoice_address,invoice_email,personal_identity_number,orderer_role,accepted_at,assignment_details)'
+    'assignments:assignments!assignment_links_org_assignment_fkey(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,invoice_name,invoice_address,invoice_email,personal_identity_number,orderer_role,accepted_at,assignment_details)'
   const currentColumns =
     `id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,issuer_snapshot_schema_version,issuer_identity_snapshot,${assignmentColumns}`
   const legacyColumns =
