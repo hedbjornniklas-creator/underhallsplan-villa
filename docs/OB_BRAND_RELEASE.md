@@ -66,3 +66,46 @@ The release build and Git/Vercel revision/domain checks must be observed before
 reporting the extension as live. Revert only the extension commit to roll back;
 no database rollback is needed. Mobile resume/navigation is a separate follow-up
 and is not claimed fixed by this form release.
+
+Observed release result: commit `109ba3729be5685735a6495801c95d15fa12b110`
+is Ready / Production on `hushub.se`, deployment
+`2ApgoAXa8pLwPpfXXjrLQYi3yuU1`, verified in Vercel on 2026-09-21.
+The live property form rendered OB Manrope and 48px text inputs; the step menu
+contained one OB-runda entry. Verification did not edit inspection fields.
+Source work is synced as `f8e6bb7` on the development backup branch.
+
+The isolated local build passed with `next build --webpack` and placeholder
+connection values. Default local Turbopack could not resolve the worktree's
+external node_modules junction; no production configuration was changed for this.
+The normal Vercel production build completed successfully. The 26 selected tests
+and synthetic form browser checks also passed in the isolated checkout.
+
+## Mobile resume investigation (not a published correction)
+
+Tested the production inspection page and round UI with synthetic adapters at
+390px, plus the assignment-workflow regression suite. No customer data was edited.
+
+- Reproduced: reloading the inspection after entering a room from the normal
+  menu starts at Grunddata. The page only initializes from `?round=mobile-v2`
+  and does not persist the selected section/building. The round itself stores
+  its room/view in sessionStorage, but only restores it after mounting again.
+- Reproduced: a failed workflow GET on focus disables the fieldset containing
+  the round. The raw visible error is `Failed to fetch`. A later successful
+  focus refresh re-enables the same room without reloading. The GET has no
+  timeout; retries currently use focus and a 30-second visible-page interval,
+  not visibilitychange/pageshow/online. Keep paused/locked/error protections.
+- Not reproduced: an immediate return to Grunddata after selecting the round.
+  The synthetic router does not model all Next history behavior. Round history
+  cleanup calls history.back(), so the interaction with restored history needs
+  a real Next/Android regression before changing it.
+- Simulated Chromium freeze/resume alone retained the active room and working
+  controls. This does not establish what happened on the user's Android device.
+  Chrome may freeze/discard background tabs; see the official Page Lifecycle API:
+  https://developer.chrome.com/docs/web-platform/page-lifecycle-api
+
+Recommended next implementation: persist validated section/building selection
+per inspection/tab, restore it before mounting the round, then verify reload,
+menu re-entry and browser Back together. Add bounded, deduplicated workflow reads
+and retry on return/online with a clear reconnect message, without bypassing
+authorization/paused-state checks or replaying mutations. Verify on Android with
+app switching, weak/offline network, pending note saves and image uploads.
