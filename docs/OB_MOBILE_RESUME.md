@@ -48,6 +48,26 @@ deduplication, hung-request timeout, preserved note text, 401/403, and paused-st
 guards. The full round regression retains save-error, local-draft, image queue,
 link/unlink/delete, swipe, Back and lock coverage.
 
+## Publication Receipt
+
+Verified on 2026-09-21 at 22:50 CEST:
+
+- Source commit `1b53daa` is pushed on `codex/ob-staging-cleanup-2026-09-13`.
+- Only this fix was cherry-picked onto production as
+  `a3b11e16ad2fc7b384e5fbcbd11cf43caed20fad`, following `109ba37`.
+- All 29 targeted unit/static tests, both browser regression suites, the
+  production-built Next router integration and full source TypeScript check pass.
+- The isolated full application `next build --webpack` passes. Its build uses
+  non-working environment placeholders, not production credentials.
+- Vercel deployment `78omne2w7Fq5nQHxWBYAEGwCXDrA` reports Ready, Production,
+  commit `a3b11e1`, with `hushub.se` assigned.
+- Read-only live verification loads the authenticated inspection form and menu,
+  with one `OB-runda` entry and no captured browser console errors. No fields,
+  rooms, notes, images or customer data were changed during this check.
+- Unrelated Uppdrag/RenoApp work is excluded. No SQL was run or is required.
+
+Deployment: https://vercel.com/niklas-projects-65efdd50/underhallsplan-villa/78omne2w7Fq5nQHxWBYAEGwCXDrA
+
 ## Remaining Real-Device Check
 
 The exact Android app-switch failure cannot be asserted as reproduced end to end.
