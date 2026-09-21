@@ -65,7 +65,7 @@ export function clarificationAnswerError(questions: ClarificationQuestion[], ans
 export const CLARIFICATION_ERRORS: Record<string, string> = {
   CLARIFICATION_CHANGED: 'Klarläggandet har ändrats. Ladda om ärendet innan du fortsätter.',
   CLARIFICATION_ANSWER_REQUIRED: 'Besvara de begärda klarläggandena. Beskriv vad som återstår om frågan inte är utredd.',
-  CLARIFICATION_REVIEW_REQUIRED: 'Klarlägg kvarstående frågor eller bedöm dem som inte relevanta med en motivering före godkännande.',
+  CLARIFICATION_REVIEW_REQUIRED: 'Ett svar behöver ha kommit in innan frågan kan markeras som klarlagd.',
   CLARIFICATION_NOTE_REQUIRED: 'Skriv en kort motivering till bedömningen.',
   CLARIFICATION_ROUND_OPEN: 'Sökanden har en pågående komplettering. Invänta svaret innan frågan bedöms.',
 }

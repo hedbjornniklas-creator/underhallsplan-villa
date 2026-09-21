@@ -1,6 +1,6 @@
 # RenoApp - produktprinciper och beslut
 
-Senast uppdaterad: 2026-09-17.
+Senast uppdaterad: 2026-09-21.
 Beslutsansvarig: HusHubs produktansvarige.
 Grund: produktbeslut och förtydliganden i RenoApp-arbetets chatthistorik.
 
@@ -38,6 +38,13 @@ RenoApp ska föreslå relevanta underlag utifrån vald renovering och sökandens
 Styrelsen väljer vad som behöver begäras in och fattar beslut om ansökan.
 Systemet ska inte framställa förslag, uppladdningar eller automatiska kontroller
 som en teknisk granskning eller garanti för att åtgärden är tillåten.
+
+Systemet ska inte rangordna kvarstående uppgifter efter viktighet eller göra
+dem till beslutsspärrar. Behörig styrelse kan godkänna en inskickad ansökan,
+med eller utan villkor, även om frågor eller underlag återstår. Endast utkast
+är låsta för beslut. Behörighetskontroller och skydd mot sparfel behålls.
+Alla beslut kräver en motivering, även godkännande. Villkorat godkännande
+kräver dessutom villkorstext. Systemet bedömer inte motiveringens innehåll.
 
 Sakkunnig hjälp är ett separat, aktivt val. En beställning av sådan hjälp ska
 inte i sig innebära att renoveringen har godkänts.
@@ -111,11 +118,13 @@ för styrelsen. Styrelsen väljer om den ska tas med i en uttrycklig
 kompletteringsbegäran. Sökanden svarar i samma ärende; endast den begärda
 frågan får besvaras på nytt. Grundansökans omfattning förblir låst.
 
-Ett inkommet besked är inte automatiskt klarlagt. Styrelsen behöver bedöma det
-som klarlagt, eller bedöma frågan som inte relevant, med motivering. Godkännande
-och godkännande med villkor blockeras medan en klarläggandepunkt är öppen.
-Avslag blockeras inte. Ett fortsatt osäkert svar kräver en förklaring och lämnar
-frågan öppen. Svar, bedömningar och tidigare begäranden bevaras.
+Ett inkommet besked är inte automatiskt klarlagt. Styrelsen kan bedöma det som
+klarlagt, eller frågan som inte relevant, med motivering. Det är inte ett krav
+för att fatta beslut: öppna frågor visas sakligt men blockerar varken
+godkännande eller godkännande med villkor. Ett beslut får inte automatiskt
+markera frågorna som klarlagda eller irrelevanta. Ett fortsatt osäkert svar
+kräver en förklaring och lämnar frågan öppen. Svar, bedömningar och tidigare
+begäranden bevaras.
 
 Inga nya ärendestatusar införs. Nya svar räknar om underlagsförslagen men
 skickar inte automatiskt en ny begäran. Generell utrullning till fler frågor
@@ -245,6 +254,7 @@ tillstånd att ändra produktionskonfiguration.
 
 | Datum | Beslut eller dokumentändring | Grund |
 | --- | --- | --- |
+| 2026-09-21 | Styrelsen får fatta beslut trots kvarstående frågor, saknade handlingar och uppgifter. RenoApp föreslår utan att prioritera brister eller spärra beslut; endast utkast är låsta för beslut. Motivering är obligatorisk även vid godkännande, och villkor krävs dessutom vid villkorat godkännande. Öppna frågor bevaras utan automatisk slutbedömning. | Uttryckligt förtydligande av styrelsens beslutsansvar och svaret "obligatorisk". Ersätter pilotens tidigare godkännandespärr. |
 | 2026-09-17 | Ärendepriset sätts till 1 500 kr exkl. moms, utan abonnemangsavgift, när styrelsen väljer att starta handläggningen. Kompletteringar i samma ärende ingår. Sakkunnig hjälp beställs separat. | Slutligt förtydligande: "1500 kr skall vi köra på", efter begäran att uppdatera alla platser. |
 | 2026-09-16 | Förenkla BRF-aktiveringen och låt den personliga inbjudan välja mellan inloggning och kontoskapande. Behåll identitetskontroll och skydd mot dubbelkonton. | Godkänt förslag följt av "Kör". |
 | 2026-09-16 | Använd RenoApp-teamet genomgående i mejlhälsningar och i text om handläggaren. BRF-kvittot säger "När BRF:en godkänns" i stället för "Om". Godkännandeflödet ändras inte. | Uttryckligt önskemål efter mottaget produktionsmejl. |

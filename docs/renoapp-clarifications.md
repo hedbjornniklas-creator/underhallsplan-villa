@@ -20,9 +20,11 @@ tolkning av fritext, ett nytt krav pa alla ansokningar eller en ny arendestatus.
 6. Vid inskickning sparas svaret atomart med kompletteringen. Ett bestamt svar
    ger `answered`, fortsatt utredning ger `pending` och kraver en forklaring.
    Ovriga grunduppgifter, svar och tidigare filer ligger kvar.
-7. Styrelsen bedomer inkommet svar som klarlagt (`resolved`) eller fragan som
-   inte relevant (`not_relevant`), med motivering. En oppen punkt blockerar bade
-   godkannande och villkorat godkannande i UI och databas. Avslag ar tillatet.
+7. Styrelsen kan bedoma inkommet svar som klarlagt (`resolved`) eller fragan som
+   inte relevant (`not_relevant`), med motivering. Oppna punkter visas sakligt
+   men blockerar inget beslut. Godkannande, villkorat godkannande och avslag
+   kraver beslutsmotivering; villkorat godkannande kraver aven villkorstext.
+   Beslut andrar inte klarlaggandets svar, status eller bedomningshistorik.
 8. En ny begaran kan skickas i samma arende. Bedomningen kan ateroppnas med
    motivering innan arendet avslutats. En fraga i en oppen skickad omgang far
    inte slutbedomas innan sokanden svarat eller omgangen ersatts.
@@ -54,6 +56,24 @@ begarda foretagsbekraftelser och klarlaggandesvar kontrolleras daremot.
 ## Driftsattning
 
 Ingenting har automatiskt korts i produktion genom denna kodandring.
+
+### Andrat beslutsansvar 2026-09-21
+
+Kor `docs/db/2026-09-21_01_renoapp_board_decision_authority.sql` efter den
+befintliga klarlaggandemigrationen och fore publicering av den uppdaterade koden.
+Den ersatter godkannandesparren men behaller registreringen av osakra svar vid
+inskickning. Inga befintliga svar, beslut eller bedomningar andras. Utkast far
+inte godkannas eller avslas. Beslutsmotivering valideras i granssnitt och server
+for nya beslut; tidigare beslut utan motivering ligger kvar oforandrade.
+Kontrollpunkterna i styrelsens beslutsvy visas neutralt och i alfabetisk ordning,
+utan filtrering eller fargkodning efter allvarlighetsgrad. Befintliga katalogfalt
+for risk/allvarlighetsgrad bevaras; detta ar ingen databasrensning.
+
+Vid nyinstallation: kor grundstegen nedan och sedan migrationen 2026-09-21.
+Kor inte om enbart den aldre grundmigrationen efterat, eftersom den skulle
+aterinfora den tidigare beslutssparren.
+
+### Grundinstallation
 
 1. Verifiera backup och att tidigare migration for kompletteringsomgangar finns.
 2. Kor hela `docs/db/2026-09-16_01_renoapp_clarifications.sql`.

@@ -86,7 +86,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'NEED_INFO_MESSAGE_REQUIRED') {
       return jsonError('Skriv vad medlemmen behöver komplettera.', 400)
     }
-    if (message === 'DECISION_REASON_REQUIRED') return jsonError('Motivering krävs för avslag.', 400)
+    if (message === 'DECISION_REASON_REQUIRED') return jsonError('Motivering krävs för beslutet.', 400)
     if (message === 'DECISION_CONDITIONS_REQUIRED') {
       return jsonError('Villkor krävs för villkorat beslut.', 400)
     }
