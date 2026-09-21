@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'next/navigation'
 import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react'
 import {
@@ -230,6 +230,11 @@ export default function AssignmentAcceptPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorReference, setErrorReference] = useState<string | null>(null)
+  const [retryable, setRetryable] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const loadedToken = useRef<string | null>(null)
+  const loadedTerms = useRef<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [data, setData] = useState<AcceptReadResponse | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
@@ -244,17 +249,29 @@ export default function AssignmentAcceptPage() {
   const canSubmit = data?.state === 'open'
 
   useEffect(() => {
+    let cancelled = false
     const load = async () => {
       try {
         setLoading(true)
         setError(null)
+        setErrorReference(null)
+        setRetryable(false)
+        if (loadedToken.current !== token) {
+          setData(null)
+          setForm(null)
+        }
 
         const response = await fetch(`/api/assignments/accept/${token}`, { cache: 'no-store' })
         const payload = (await response.json().catch(() => ({}))) as {
           error?: string
+          reference?: string
+          retryable?: boolean
         } & Partial<AcceptReadResponse>
+        if (cancelled) return
 
         if (!response.ok) {
+          setErrorReference(payload.reference ?? null)
+          setRetryable(payload.retryable === true || response.status >= 500)
           throw new Error(payload.error ?? 'Kunde inte läsa uppdragslänken.')
         }
 
@@ -262,7 +279,17 @@ export default function AssignmentAcceptPage() {
         setData(resolved)
         setWithdrawalName(resolved.assignment.customer_name ?? '')
         setWithdrawalEmail(resolved.assignment.customer_email ?? '')
-        setForm(
+        const preserveDraft = loadedToken.current === token
+        const termsSignature = JSON.stringify(resolved.terms)
+        const preserveConsent = loadedTerms.current === termsSignature
+        loadedToken.current = token
+        loadedTerms.current = termsSignature
+        setForm((current) => preserveDraft && current ? {
+          ...current,
+          termsAccepted: preserveConsent && current.termsAccepted,
+          consumerWithdrawalAcknowledged: preserveConsent && current.consumerWithdrawalAcknowledged,
+          startDuringWithdrawalPeriod: preserveConsent && current.startDuringWithdrawalPeriod,
+        } :
           toFormState(
             resolved.assignment,
             resolved.addonOffers ?? [],
@@ -270,14 +297,17 @@ export default function AssignmentAcceptPage() {
           )
         )
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Kunde inte läsa uppdragslänken.')
+        if (cancelled) return
+        if (loadError instanceof TypeError) setRetryable(true)
+        setError(loadError instanceof TypeError ? 'Kunde inte ansluta. Kontrollera internetanslutningen och försök igen.' : loadError instanceof Error ? loadError.message : 'Kunde inte läsa uppdragslänken.')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
     void load()
-  }, [token])
+    return () => { cancelled = true }
+  }, [token, loadAttempt])
 
   useEffect(() => {
     setInspectorAvatarLoadError(false)
@@ -291,7 +321,7 @@ export default function AssignmentAcceptPage() {
         resolveAssignmentCustomerType('TU', data.assignment.assignment_details) === 'consumer'
       return isConsumerTu
         ? 'Uppdragsbekräftelsen är godkänd. Uppgifterna visas skrivskyddade.'
-        : 'Den här länken är redan använd.'
+        : 'Uppdragsbekräftelsen är redan godkänd. Du behöver inte godkänna igen.'
     }
     if (data.state === 'expired') return 'Den här länken har gått ut.'
     if (data.state === 'revoked') return 'Den här länken är inte längre aktiv.'
@@ -410,7 +440,9 @@ export default function AssignmentAcceptPage() {
   }, [data, form])
 
   const handleSubmit = async () => {
-    if (!form || !data || !canSubmit) return
+    if (!form || !data || !canSubmit || saving) return
+    setErrorReference(null)
+    setRetryable(false)
 
     if (!form.termsAccepted) {
       setError(`Du måste acceptera villkoren (version ${data.terms.version}) för att fortsätta.`)
@@ -510,9 +542,11 @@ export default function AssignmentAcceptPage() {
         }),
       })
 
-      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; reference?: string; retryable?: boolean; confirmationEmailSent?: boolean }
 
       if (!response.ok) {
+        setErrorReference(payload.reference ?? null)
+        setRetryable(payload.retryable === true || response.status >= 500 || response.status === 409)
         throw new Error(payload.error ?? 'Kunde inte acceptera uppdraget.')
       }
 
@@ -523,7 +557,7 @@ export default function AssignmentAcceptPage() {
             : isEbAssignment
               ? 'Entreprenadbesiktning'
               : roleToLabel(lockedOrdererRole)
-        }).`
+        }).${payload.confirmationEmailSent === false ? ' Godkännandet är sparat, men bekräftelsemejlet kunde inte skickas.' : ''}`
       )
       const acceptedAt = new Date().toISOString()
       setWithdrawalName(form.customerName)
@@ -539,7 +573,8 @@ export default function AssignmentAcceptPage() {
           : prev
       )
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Kunde inte acceptera uppdraget.')
+      if (submitError instanceof TypeError) setRetryable(true)
+      setError(submitError instanceof TypeError ? 'Anslutningen avbröts. Kontrollera status innan du försöker godkänna igen. Dina uppgifter finns kvar på sidan.' : submitError instanceof Error ? submitError.message : 'Kunde inte acceptera uppdraget.')
     } finally {
       setSaving(false)
     }
@@ -669,7 +704,16 @@ export default function AssignmentAcceptPage() {
           </div>
         ) : null}
         {error ? (
-          <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
+          <div role="alert" className="space-y-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+            <p>{error}</p>
+            {errorReference ? <p className="break-all">Felreferens: {errorReference}</p> : null}
+            {retryable ? <button type="button" disabled={loading || saving}
+              onClick={() => setLoadAttempt(attempt => attempt + 1)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-rose-300 bg-white px-3 font-semibold disabled:opacity-50">
+              <RotateCcw size={16} aria-hidden />{data ? 'Kontrollera status' : 'Försök igen'}
+            </button> : null}
+            {data?.inspector?.email ? <p><a className="underline" href={`mailto:${data.inspector.email}`}>Kontakta besiktningsmannen</a></p> : null}
+          </div>
         ) : null}
         {success ? (
           <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">

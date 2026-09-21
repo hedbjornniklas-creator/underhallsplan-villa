@@ -1,4 +1,6 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
+import { randomUUID } from 'node:crypto'
+import { publicLinkErrorCode, recordPublicLinkFailure, resolvePublicLinkFailures, type LinkOperation } from '@/lib/assignments/linkIncidents'
 import { isIP } from 'node:net'
 import {
   consumeAssignmentToken,
@@ -114,6 +116,20 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
 }
 
+function technicalFailure(error: unknown, token: string, operation: LinkOperation) {
+  const reference = randomUUID()
+  const code = publicLinkErrorCode(error)
+  console.error('[assignments.link] request failed', { reference, operation, code })
+  if (token.length >= 20) after(() => recordPublicLinkFailure({ token, operation, reference, code }))
+  const message = operation === 'open'
+    ? 'Uppdragsbekräftelsen kunde inte laddas just nu.'
+    : 'Det gick inte att bekräfta att godkännandet sparades.'
+  return NextResponse.json({
+    error: `${message} Försök igen. Om felet kvarstår, kontakta besiktningsmannen och ange felreferensen.`,
+    reference, retryable: true,
+  }, { status: 500 })
+}
+
 function normalizeAssignment(row: PublicLink) {
   const assignmentValue = row.assignments
   if (!assignmentValue) return null
@@ -205,8 +221,11 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ token: string }> }
 ) {
+  let tokenForFailure = ''
+  const startedAt = new Date().toISOString()
   try {
     const { token } = await context.params
+    tokenForFailure = token
     if (!token || token.length < 20) return jsonError('Ogiltig länk.', 400)
 
     const link = await resolvePublicAssignmentByToken(token)
@@ -342,8 +361,8 @@ export async function GET(
           })
         } catch (addonError) {
           console.error('[assignments.accept] failed to load addon offers', {
-            token_prefix: token.slice(0, 8),
-            error: addonError instanceof Error ? addonError.message : String(addonError),
+            assignmentId: assignment.id,
+            code: publicLinkErrorCode(addonError),
           })
         }
 
@@ -390,6 +409,7 @@ export async function GET(
       }
     }
 
+    after(() => resolvePublicLinkFailures(token, assignment.accepted_at ? 'accept' : 'open', startedAt))
     return NextResponse.json({
       state: toState(link as PublicLink),
       expiresAt: link.expires_at ?? null,
@@ -440,8 +460,8 @@ export async function GET(
         },
       },
     })
-  } catch {
-    return jsonError('Kunde inte läsa uppdragslänken.', 500)
+  } catch (error) {
+    return technicalFailure(error, tokenForFailure, 'open')
   }
 }
 
@@ -450,6 +470,7 @@ export async function POST(
   context: { params: Promise<{ token: string }> }
 ) {
   let tokenForLog = ''
+  const startedAt = new Date().toISOString()
 
   try {
     const { token } = await context.params
@@ -700,7 +721,8 @@ export async function POST(
 
     // Keep customer postal code/city in sync even if RPC function is older in DB.
     const admin = createSupabaseAdminClient()
-    const { error: contactUpdateError } = await admin
+    try {
+      const { error: contactUpdateError } = await admin
       .from('assignments')
       .update({
         customer_postal_code: payload.customer_postal_code,
@@ -716,11 +738,12 @@ export async function POST(
       .eq('org_id', link.org_id)
       .eq('id', assignment.id)
 
-    if (contactUpdateError) {
+      if (contactUpdateError) throw contactUpdateError
+    } catch (contactUpdateError) {
       console.error('[assignments.accept] failed to update customer postal/city after consume', {
         assignmentId: assignment.id,
         orgId: link.org_id,
-        error: contactUpdateError.message,
+        code: publicLinkErrorCode(contactUpdateError),
       })
     }
 
@@ -744,25 +767,21 @@ export async function POST(
       }
     } catch (mailError) {
       console.error('[assignments.accept] failed to send automatic confirmation email', {
-        token_prefix: token.slice(0, 8),
-        error: mailError instanceof Error ? mailError.message : String(mailError),
+        assignmentId: assignment.id,
+        code: publicLinkErrorCode(mailError),
       })
     }
 
+    after(() => resolvePublicLinkFailures(token, 'accept', startedAt))
     return NextResponse.json({
       ok: true,
-      assignmentId: typeof body.assignmentId === 'string' ? body.assignmentId : null,
+      assignmentId: assignment.id,
       termsVersion: terms.version,
       confirmationEmailSent,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     const lowered = message.toLowerCase()
-
-    console.error('[assignments.accept] unhandled error', {
-      token_prefix: tokenForLog.slice(0, 8),
-      message,
-    })
 
     if (message.includes('token_not_valid_or_expired')) {
       return jsonError('Länken är ogiltig eller har gått ut.', 410)
@@ -797,16 +816,6 @@ export async function POST(
     if (lowered.includes('invalid input syntax for type inet')) {
       return jsonError('Kunde inte verifiera anslutningsinformation. Försök igen.', 400)
     }
-    if (
-      lowered.includes('could not find the function public.consume_assignment_token') ||
-      lowered.includes('schema cache')
-    ) {
-      return jsonError('Servern saknar senaste databasfunktion för godkännande.', 500)
-    }
-    if (lowered.includes('function digest(') && lowered.includes('does not exist')) {
-      return jsonError('Servern saknar pgcrypto-konfiguration för godkännande.', 500)
-    }
-
-    return jsonError('Kunde inte acceptera uppdraget.', 500)
+    return technicalFailure(error, tokenForLog, 'accept')
   }
 }

@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
+import { AssignmentLinkIssueBadge, AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
+import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import { Archive, ArrowLeft, Ban, ChevronsLeft, Play, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
 
@@ -31,6 +33,7 @@ type AssignmentItem = {
 }
 
 type ListResponse = {
+  linkIssues?: AssignmentLinkIssues
   items: AssignmentItem[]
 }
 
@@ -231,6 +234,7 @@ export default function ObAssignmentsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<AssignmentItem[]>([])
+  const [linkIssues, setLinkIssues] = useState<AssignmentLinkIssues | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortField, setSortField] = useState<SortField>('status')
@@ -256,6 +260,7 @@ export default function ObAssignmentsPage() {
 
       const data = (await response.json()) as ListResponse
       setItems(data.items ?? [])
+      setLinkIssues(data.linkIssues ?? { available: false, items: [] })
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'Kunde inte hämta uppdrag.'
       setError(message)
@@ -722,6 +727,7 @@ export default function ObAssignmentsPage() {
           </section>
 
           {loading ? <div className="text-sm text-blue-100">Laddar uppdragsbekräftelser...</div> : null}
+          {!loading && linkIssues?.available === false ? <AssignmentLinkIssueNotice issues={linkIssues} /> : null}
           {error && !loading ? (
             <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>
           ) : null}
@@ -833,6 +839,7 @@ export default function ObAssignmentsPage() {
                                 </span>
                               ) : null}
                             </div>
+                            {linkIssues?.items.some(issue => issue.assignment_id === item.id) ? <AssignmentLinkIssueBadge /> : null}
                           </td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">

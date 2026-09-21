@@ -1781,7 +1781,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
   }
 
   if (result.error) {
-    throw new Error(result.error.message ?? 'Kunde inte verifiera token.')
+    throw Object.assign(new Error(result.error.message ?? 'Kunde inte verifiera token.'), { code: result.error.code })
   }
 
   const data = result.data as Record<string, unknown> | null
