@@ -40,7 +40,7 @@ and pending images.
 
 ```powershell
 node --experimental-strip-types --test test/ob-draft-reconciliation.test.ts test/ob-mobile-round.test.ts test/ob-brand.test.ts test/ob-forms-brand.test.ts test/ob-room-name-images.test.ts test/eb-report-editing.test.ts test/ob-inspection-navigation.test.ts test/ob-workflow-read.test.ts
-node scripts/test-ob-mobile-round-ui.mjs
+node scripts/test-ob-mobile-round-ui.mjs --core-only
 node scripts/test-ob-resume-next.mjs
 npx tsc --noEmit
 ```
@@ -52,3 +52,21 @@ cover retry and automatic error-toast dismissal without discarding entered text.
 Menu tests verify internal navigation with retained drafts, and cancellation when
 actually leaving the inspection. All fixtures use synthetic data and block
 external requests. The live customer's local draft contents are not inspected.
+
+## Publication Receipt, 2026-09-21
+
+- Source commit: `672688691b2111b114779c43415d67b34db667b7`.
+- Production commit: `4acefeb0de23ee92be5c0c238a0d3e7dc6ea4847`, isolated from
+  unrelated Uppdrag and RenoApp work and pushed to `main` after verification.
+- Vercel deployment: `AwEo7zM1UhQELhG8D88wPZpceP3g`, created at 23:22:38 CEST.
+  Verified Ready, Production, current domain `hushub.se`, and the exact commit.
+- 41 unit/static tests passed, together with TypeScript, the core browser suite,
+  the Next.js navigation/resume test and an isolated `next build --webpack`.
+  The initial full browser suite caught the clean-blur regression; after fixing
+  it, the core suite passed. The full default suite was not rerun to completion.
+- Mobile and desktop toast screenshots were visually inspected. Browser checks
+  verified visibility above a native modal and automatic error dismissal.
+- Read-only live smoke: the existing test inspection opened after authentication
+  and its step menu rendered. No fields, rooms, notes or images were changed.
+- No SQL migration is required. Reload only after pending saves/uploads finish;
+  do not clear browser storage containing drafts or queued images.
