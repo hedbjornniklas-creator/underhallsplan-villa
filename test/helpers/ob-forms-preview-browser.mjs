@@ -1,0 +1,167 @@
+import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
+import puppeteer from 'puppeteer-core'
+
+export async function testFormsPreview(base, output) {
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+  const page = await browser.newPage()
+  const errors = [], external = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setRequestInterception(true)
+  page.on('request', request => {
+    if (request.url().startsWith('data:') || request.url().startsWith('blob:') || new URL(request.url()).origin === base) void request.continue()
+    else { external.push(request.url()); void request.abort() }
+  })
+  async function click(text, selector = 'button') {
+    for (const element of await page.$$(selector)) {
+      if (await element.evaluate((node, text) => (node.getAttribute('aria-label') || node.textContent).trim().includes(text), text)) { await element.click(); return }
+    }
+    throw Error(`Missing ${selector}: ${text}`)
+  }
+  async function openConditions() {
+    await page.click('[aria-label="Öppna stegmeny"]')
+    await click('Förutsättningar', '.obm-menu-step')
+    await page.waitForSelector('.ob-form-list-row')
+  }
+  async function layout(label) {
+    await page.evaluate(() => document.fonts.ready)
+    await page.waitForFunction(() => [...document.images].every(img => img.complete && img.naturalWidth > 0))
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label}: document overflow`)
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.ob-form-root, .obm-sheet-body, .ob-form-pair, .ob-form-field')]
+      .filter(node => node.checkVisibility() && node.scrollWidth > node.clientWidth + 1).map(node => node.className)), [], `${label}: panel overflow`)
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.ob-form-root button, .ob-form-root select, .ob-form-root input:not([type=checkbox], [type=radio], [type=file])')]
+      .filter(node => node.checkVisibility() && node.getBoundingClientRect().height < 48).map(node => node.outerHTML)), [], `${label}: touch target`)
+    assert.equal(await page.$eval('.ob-form-root', node => getComputedStyle(node).fontFamily.includes('Manrope')), true)
+  }
+  async function fill(label, value, waitForSave = true) {
+    const element = await page.evaluateHandle(label => {
+      const fieldLabel = [...document.querySelectorAll('label')].find(node => node.textContent.trim() === label)
+      return fieldLabel?.control ?? document.querySelector(`[aria-label="${label}"]`)
+    }, label)
+    assert.ok(element.asElement(), `Missing field: ${label}`)
+    await element.asElement().click()
+    if (waitForSave) await page.waitForFunction(() => ![...document.querySelectorAll('[role=status]')].some(node => node.textContent.startsWith('Sparar')))
+    await page.keyboard.down('Control')
+    await page.keyboard.press('KeyA')
+    await page.keyboard.up('Control')
+    await page.keyboard.press('Backspace')
+    await element.asElement().type(value)
+    await page.keyboard.press('Tab')
+    if (waitForSave) await page.waitForFunction(() => ![...document.querySelectorAll('[role=status]')].some(node => node.textContent.startsWith('Sparar')))
+  }
+  try {
+    for (const width of [320, 390, 768, 1280]) {
+      await page.setViewport({ width, height: 844 })
+      await page.goto(`${base}/round`, { waitUntil: 'networkidle0' })
+      await page.waitForSelector('.ob-form-columns')
+      await layout(`property ${width}`)
+      await page.screenshot({ path: resolve(output, `property-${width}.png`), fullPage: true })
+      assert.equal(await page.evaluate(() => window.__obFormTest.writes.length), 0, 'Rendering must not change the inspection')
+      await openConditions()
+      await layout(`conditions ${width}`)
+      await page.screenshot({ path: resolve(output, `conditions-${width}.png`), fullPage: true })
+      await click('Väder', '.ob-form-list-row')
+      await page.waitForSelector('dialog[open] select')
+      assert.equal((await page.$$('dialog[open] textarea')).length, 1, 'One mounted form, not desktop/mobile duplicates')
+      await layout(`weather ${width}`)
+      await page.keyboard.press('Escape')
+      await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+      assert.match(await page.evaluate(() => document.activeElement.textContent), /Väder/)
+      await click('Byggnadsår', '.ob-form-list-row')
+      await page.waitForSelector('dialog[open] select')
+      await click('Lägg till byggnadsår')
+      assert.equal((await page.$$('dialog textarea')).length, 2)
+      await layout(`repeatable ${width}`)
+      await page.screenshot({ path: resolve(output, `detail-${width}.png`) })
+      await page.click('dialog [aria-label="Tillbaka"]')
+      await click('Bjälklag', '.ob-form-list-row')
+      assert.equal((await page.$$('dialog textarea')).length, 2, 'Separate floor fields')
+      await layout(`floors ${width}`)
+    }
+
+    await page.goto(`${base}/round`, { waitUntil: 'networkidle0' })
+    await page.evaluate(() => { window.__obFormTest.saveDelay = 500 })
+    await fill('Adress', 'Testgatan 22', false)
+    await fill('Uppdragsgivare', 'Ny testkund', false)
+    await fill('Kommun', 'Ny testkommun', false)
+    await fill('Telefon', '0709999999', false)
+    await fill('Uppdragsgivare', 'Senaste testkunden', false)
+    await page.waitForFunction(() => ![...document.querySelectorAll('[role=status]')].some(node => node.textContent.startsWith('Sparar')), { timeout: 15000 })
+    const draft = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.ob-form-field label')]
+      .filter(node => ['Uppdragsgivare', 'Telefon', 'Kommun'].includes(node.textContent)).map(node => [node.textContent, node.control.value])))
+    assert.deepEqual(draft, { Uppdragsgivare: 'Senaste testkunden', Telefon: '0709999999', Kommun: 'Ny testkommun' }, 'Late save must not reset another field')
+    assert.equal(await page.evaluate(() => window.__obFormTest.writes.filter(row => row.values?.customer_name).at(-1).values.customer_name), 'Senaste testkunden')
+    await page.evaluate(() => { window.__obFormTest.saveDelay = 30 })
+    await fill('E-post', '  TEST@EXAMPLE.INVALID  ')
+    assert.equal(await page.$eval('input[placeholder="namn@epost.se"]', node => node.value), 'test@example.invalid', 'Matching save normalizes the field')
+    await fill('Adress', 'Testgatan 22')
+    await page.waitForFunction(() => window.__obFormTest.writes.some(row => row.table === 'ob_property_snapshot' && row.values.address === 'Testgatan 22'))
+    await fill('Uppdragsgivare', 'Ny testkund')
+    await page.waitForFunction(() => window.__obFormTest.writes.some(row => row.table === 'inspections' && row.values.customer_name === 'Ny testkund'))
+    await fill('Övriga närvarande (namn och roll)', 'Kim (testroll)')
+    await page.waitForFunction(() => window.__obFormTest.writes.some(row => row.values?.attendees_other === 'Kim (testroll)'))
+    await page.evaluate(() => { window.__obFormTest.failSaves = true })
+    await fill('Kommun', 'Test av sparfel')
+    await page.waitForSelector('[role=alert]')
+    assert.match(await page.$eval('[role=alert]', node => node.textContent), /Kunde inte spara/)
+    await page.evaluate(() => { window.__obFormTest.failSaves = false })
+    await fill('Kommun', 'Testkommun')
+    await page.waitForFunction(() => !document.querySelector('[role=alert]'))
+    await openConditions()
+    assert.equal(await page.$eval('input[capture="environment"]', node => node.accept), 'image/*')
+    const fileChooser = page.waitForFileChooser()
+    await click('Välj bild')
+    await (await fileChooser).accept([resolve('test/fixtures/ob-brand-assets/bathroom-demo.png')])
+    await page.waitForFunction(() => window.__obFormTest.writes.some(row => row.operation === 'edit' && row.payload.coverPath.includes('/building-covers/')))
+    await click('Väder', '.ob-form-list-row')
+    await page.select('dialog select', 'rain')
+    await page.waitForFunction(() => window.__obFormTest.writes.some(row => row.values?.values?.weather === 'rain'))
+    await page.type('dialog textarea', 'Syntetisk vädernotering')
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => window.__obFormTest.writes.some(row => row.values?.note === 'Syntetisk vädernotering'))
+    await click('Väder', '.ob-form-list-row')
+    await page.waitForFunction(() => document.querySelector('dialog textarea')?.value === 'Syntetisk vädernotering')
+    await click('Nästa', 'dialog button')
+    await page.waitForSelector('dialog[aria-label="Byggnadstyp"]')
+    await layout('floor editor')
+    await page.click('dialog [aria-label="Tillbaka"]')
+    await page.click('[aria-label="Öppna stegmeny"]')
+    await click('Förutsättningar · Gästhus', '.obm-menu-step')
+    await page.waitForSelector('.ob-form-list-row')
+    await click('Väder', '.ob-form-list-row')
+    assert.equal(await page.$eval('dialog select', node => node.value), 'clear', 'Building selections must stay isolated')
+    assert.equal(await page.$eval('dialog textarea', node => node.value), '')
+
+    await page.setViewport({ width: 390, height: 844 })
+    await page.goto(`${base}/round?locked`, { waitUntil: 'networkidle0' })
+    await layout('locked property')
+    assert.equal(await page.$$eval('.ob-form-root input', nodes => nodes.every(node => node.disabled)), true)
+    await openConditions()
+    await click('Väder', '.ob-form-list-row')
+    assert.equal(await page.$$eval('dialog select, dialog textarea', nodes => nodes.every(node => node.disabled)), true)
+    assert.equal(await page.evaluate(() => window.__obFormTest.writes.length), 0)
+    await page.screenshot({ path: resolve(output, 'locked-390.png') })
+
+    await page.goto(`${base}/round?legacy`, { waitUntil: 'networkidle0' })
+    await layout('legacy property')
+    assert.equal(await page.$$eval('img[alt="Omslagsbild"]', nodes => nodes.length), 1)
+    assert.equal(await page.evaluate(() => window.__obFormTest.writes.length), 0)
+    for (const section of ['', '&section=conditions']) {
+      await page.goto(`${base}/round?large-text${section}`, { waitUntil: 'networkidle0' })
+      await layout(`200% ${section || 'property'}`)
+      if (section) {
+        await click('Byggnadsår', '.ob-form-list-row')
+        await page.waitForSelector('dialog[open] select')
+        await layout('200% detail')
+      }
+      await page.screenshot({ path: resolve(output, `large-text-${section ? 'detail' : 'property'}.png`), fullPage: !section })
+    }
+    assert.deepEqual(external, [], 'Preview must not contact external systems')
+    assert.deepEqual(errors, [], 'Browser runtime errors')
+    console.log('PASS: OB forms layout, 48px controls, 200% text, scoped writes, back/focus, locks and legacy cover')
+  } catch (error) {
+    console.log('Failure context:', JSON.stringify(await page.evaluate(() => ({ writes: window.__obFormTest?.writes, alerts: [...document.querySelectorAll('[role=alert]')].map(node => node.textContent) }))))
+    await page.screenshot({ path: resolve(output, 'failure.png') })
+    throw error
+  } finally { await browser.close() }
+}

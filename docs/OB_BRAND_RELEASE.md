@@ -44,3 +44,25 @@ areas remain in the baseline; unfinished work in other tasks stays untouched.
 Do not call the last checks complete until their results have been observed.
 For rollback, revert only this release commit on the then-current main branch.
 No database restore or migration rollback is required for these UI changes.
+
+## Form extension and autosave correction, 2026-09-21
+
+The user approved publishing the latest forms and the identified autosave fix
+before investigating mobile app-switch/navigation behavior. The isolated release
+starts from `980b4b3ab5b1b57f02d2f745a7c6ea32977703cd` on main.
+
+Scope: Grunddata and conditions styling, shared form-sheet navigation, scoped
+form CSS and mobile heading, plus dirty-field protection and serialized Grunddata
+writes. Supporting files are synthetic form fixtures, browser/queue tests and
+this documentation. Other tasks' files are excluded. No SQL or configuration
+changes, customer records or outbound emails are part of publication.
+
+Preflight: 26 selected unit/static tests, delayed-write form browser tests and
+TypeScript passed. The form suite covers 320/390/768/1280px and 200% text. Existing
+round-brand browser regression passed with the same styling changes in the prior
+turn. Physical Android testing remains outstanding for the new form layout.
+
+The release build and Git/Vercel revision/domain checks must be observed before
+reporting the extension as live. Revert only the extension commit to roll back;
+no database rollback is needed. Mobile resume/navigation is a separate follow-up
+and is not claimed fixed by this form release.

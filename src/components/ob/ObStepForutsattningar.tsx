@@ -1,6 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, ClipboardList, CloudSun, Droplets, Flame, House, Layers, Plus, Trash2, Wind, type LucideIcon } from 'lucide-react'
+import Sheet from './ObRoundSheet'
+import './ob-forms.css'
 import type { Tables } from '@/types/supabase'
 import DebouncedTextarea from './DebouncedTextarea'
 import { useObFloorModel } from './ObFloorProvider'
@@ -633,33 +636,33 @@ export default function ObStepForutsattningar({
   // -----------------------------
   // UI helpers (endast layout)
   // -----------------------------
-  const itemEmoji: Record<string, string> = {
-    weather: '🌤️',
-    building_type: '🏠',
-    building_year: '📅',
-    foundation: '🧱',
-    structure: '🏗️',
-    joist: '🪵',
-    facade: '🧱',
-    windows: '🪟',
-    roof: '🏡',
-    heating: '🔥',
-    ventilation: '💨',
-    water: '🚰',
-    sewage: '🕳️',
+  const itemIcons: Record<string, LucideIcon> = {
+    weather: CloudSun,
+    building_type: House,
+    building_year: CalendarDays,
+    foundation: Layers,
+    structure: Layers,
+    joist: Layers,
+    facade: House,
+    windows: House,
+    roof: House,
+    heating: Flame,
+    ventilation: Wind,
+    water: Droplets,
+    sewage: Droplets,
   }
 
   const panelEntries = [
     {
       key: SPECIAL_CONDITIONS_COLLAPSE_KEY,
       label: 'Särskilda förutsättningar',
-      emoji: '•',
+      icon: ClipboardList,
       item: null as ItemBundle | null,
     },
     ...items.map(item => ({
       key: item.id,
       label: item.label,
-      emoji: itemEmoji[item.key] || '•',
+      icon: itemIcons[item.key] || ClipboardList,
       item,
     })),
   ]
@@ -740,10 +743,10 @@ export default function ObStepForutsattningar({
       typeof value === 'boolean' ? String(value) : (value ?? '')
 
     return (
-      <div className="grid grid-cols-1 gap-1 md:grid-cols-[140px_1fr] md:items-center md:gap-2">
-      <label className="text-xs font-medium text-gray-700 md:text-sm md:text-gray-800 md:whitespace-nowrap">
+      <label className="ob-form-field">
+      <span className="ob-form-label">
         {label}
-      </label>
+      </span>
 
       <select
         value={normalizedValue}
@@ -764,7 +767,7 @@ export default function ObStepForutsattningar({
           </option>
         ))}
       </select>
-    </div>
+    </label>
     )
   }
 
@@ -791,7 +794,7 @@ export default function ObStepForutsattningar({
 
     return (
       <div className="space-y-3">
-        <div className={`grid grid-cols-1 gap-3 ${rightGroups.length > 0 ? 'md:grid-cols-2' : ''}`}>
+        <div className="ob-form-pair">
           {/* Vänster: vad är det? */}
           <div className="space-y-3">
             {leftGroups.map(g => (
@@ -826,8 +829,8 @@ export default function ObStepForutsattningar({
 
         {/* Notering */}
         {item.note_enabled && (
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-gray-700">Notering (valfritt)</label>
+          <label className="ob-form-field">
+            <span className="ob-form-label">Notering (valfritt)</span>
             <DebouncedTextarea
             draftKey={`ob:${draftScope}:forutsattningar:${item.id}:${sel.floor_key ?? 'nofloor'}:${sel.set_index}:note`}
               value={sel.note ?? ''}
@@ -837,7 +840,7 @@ export default function ObStepForutsattningar({
               rows={2}
               className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
             />
-          </div>
+          </label>
         )}
       </div>
     )
@@ -877,9 +880,9 @@ export default function ObStepForutsattningar({
           {arr.map((sel, idx) => (
             <div
               key={`${sel.set_index}`}
-              className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4 space-y-3"
+              className="ob-form-repeat"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-gray-900">
                   {getRepeatableItemTitle(item, sel, idx)}
                 </div>
@@ -889,9 +892,11 @@ export default function ObStepForutsattningar({
                     type="button"
                     onClick={() => removeSet(item.id, sel.set_index)}
                     disabled={isInspectionLocked}
-                    className="text-xs text-red-600 hover:underline"
+                    className="ob-form-danger"
+                    aria-label={`Ta bort ${getRepeatableItemTitle(item, sel, idx)}`}
+                    title={`Ta bort ${getRepeatableItemTitle(item, sel, idx)}`}
                   >
-                    Ta bort
+                    <Trash2 size={20} />
                   </button>
                 )}
               </div>
@@ -907,7 +912,7 @@ export default function ObStepForutsattningar({
             className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium
                        text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            + Lägg till {item.label.toLowerCase()}
+            <Plus size={20} />Lägg till {item.label.toLowerCase()}
           </button>
         </div>
       )
@@ -966,7 +971,7 @@ export default function ObStepForutsattningar({
         {next.map((sel, idx) => (
           <div
             key={sel.floor_key ?? idx}
-            className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3 md:p-4 space-y-3"
+            className="ob-form-repeat"
           >
             <div className="text-xs font-semibold text-gray-900">
               {floorLabel(sel.floor_key)}
@@ -983,8 +988,8 @@ export default function ObStepForutsattningar({
 
   const renderSpecialConditionsContent = () => (
     <>
-      <div className="text-sm text-gray-900">
-        Utrymmet var{' '}
+      <label className="ob-form-field">
+        <span className="ob-form-label">Möblering vid besiktningstillfället</span>
         <select
           value={furnishing}
           onChange={e => {
@@ -993,15 +998,12 @@ export default function ObStepForutsattningar({
             saveFurnishing(lvl)
           }}
           disabled={isInspectionLocked}
-          className="mx-1 h-9 rounded-lg border border-gray-300 bg-gray-50 px-2 text-sm
-                     focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:opacity-70"
         >
           <option value="fullt_moblerad">fullt möblerad</option>
           <option value="delvis_moblerad">delvis möblerad</option>
           <option value="omoblerad">omöblerad</option>
-        </select>{' '}
-        vid besiktningstillfället.
-      </div>
+        </select>
+      </label>
 
       <p className="text-sm text-gray-700">
         Besiktning har skett av de delar som varit normalt åtkomliga utan omflyttning av
@@ -1021,17 +1023,13 @@ export default function ObStepForutsattningar({
   )
 
   if (loading) {
-    return <div className="p-4 text-sm text-gray-600">Laddar förutsättningar…</div>
+    return <div role="status" className="ob-form-root ob-form-muted p-4">Laddar förutsättningar…</div>
   }
 
   if (error) {
     return (
-      <div className="p-4 text-sm text-red-600">
+      <div role="alert" className="ob-form-root ob-form-error">
         {error}
-        <div className="mt-2 text-xs text-gray-500">
-          Tips: Om detta händer direkt efter du skapade tabellerna är det ofta RLS/policy
-          som blockerar. Kontrollera att du är inloggad och att policies finns.
-        </div>
       </div>
     )
   }
@@ -1046,130 +1044,76 @@ export default function ObStepForutsattningar({
       panelIndex >= 0 && panelIndex < panelEntries.length - 1
         ? panelEntries[panelIndex + 1]
         : null
-    const closePanel = () => setActivePanelKey(null)
+    const closePanel = () => {
+      // Escape must flush a focused text field just like clicking Back.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+      setActivePanelKey(null)
+    }
     const panelContent = panelEntry ? (
-      <>
-        <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 md:px-6">
-          <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Förutsättning
-            </div>
-            <h3 className="mt-1 truncate text-xl font-semibold text-gray-900">
-              <span className="mr-2">{panelEntry.emoji}</span>
-              {panelEntry.label}
-            </h3>
-            <p className="mt-1 text-xs text-gray-500">
-              {getPanelEntrySummary(panelEntry)}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={closePanel}
-            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            Stäng
-          </button>
-        </header>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
-          <div className="space-y-3">
-            {panelEntry.item
-              ? renderItem(panelEntry.item)
-              : renderSpecialConditionsContent()}
-          </div>
-        </div>
-
-        <footer className="flex items-center justify-between gap-2 border-t border-gray-200 px-4 py-3 md:px-6">
-          <button
-            type="button"
+      <Sheet title={panelEntry.label} onClose={closePanel} className="ob-form-root ob-form-panel"
+        footer={<div className="ob-form-panel-nav">
+          <button type="button"
             onClick={() => previousPanelEntry && setActivePanelKey(previousPanelEntry.key)}
-            disabled={!previousPanelEntry}
-            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Föregående
+            disabled={!previousPanelEntry}>
+            <ArrowLeft size={20} />Föregående
           </button>
-          <button
-            type="button"
+          <button type="button"
             onClick={() => nextPanelEntry && setActivePanelKey(nextPanelEntry.key)}
-            disabled={!nextPanelEntry}
-            className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Nästa
+            disabled={!nextPanelEntry}>
+            Nästa<ArrowRight size={20} />
           </button>
-        </footer>
-      </>
+        </div>}>
+        {building?.part && <p className="ob-form-muted">{building.part.name}</p>}
+        <div key={panelEntry.key} className="space-y-5">
+          {panelEntry.item ? renderItem(panelEntry.item) : renderSpecialConditionsContent()}
+        </div>
+        {saving && <p role="status" className="ob-form-muted">Sparar…</p>}
+      </Sheet>
     ) : null
-
     return (
-      <div className="space-y-3">
+      <div className="ob-form-root space-y-5">
         <header>
           <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
         </header>
         <ObBuildingCover legacyPath={inspection.cover_path ?? null} locked={isInspectionLocked} />
 
         {isInspectionLocked ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <div role="status" className="ob-form-notice">
             Besiktningen är låst. Förutsättningar är skrivskyddade.
           </div>
         ) : null}
 
         <section className="bg-white">
-          <div className="divide-y divide-gray-200 border-y border-gray-200">
+          <div className="ob-form-list">
             {panelEntries.map(entry => {
-              const isActive = panelEntry?.key === entry.key
+              const Icon = entry.icon
               return (
                 <button
                   key={entry.key}
                   type="button"
                   onClick={() => setActivePanelKey(entry.key)}
-                  className={`flex w-full items-center gap-3 py-4 text-left transition ${
-                    isActive
-                      ? 'bg-gray-50 text-gray-950'
-                      : 'bg-white text-gray-900 hover:bg-gray-50'
-                  }`}
+                  className="ob-form-list-row"
+                  aria-haspopup="dialog"
                 >
-                  <span aria-hidden="true" className="w-7 shrink-0 text-center">
-                    {entry.emoji}
-                  </span>
-                  <div className="grid min-w-0 flex-1 gap-1 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
-                    <div className="truncate text-sm font-semibold">
+                  <Icon size={24} aria-hidden="true" />
+                  <div className="ob-form-list-text">
+                    <div className="font-semibold">
                       {entry.label}
                     </div>
-                    <div
-                      className={`truncate text-xs md:text-sm ${
-                        isActive ? 'text-gray-600' : 'text-gray-500'
-                      }`}
-                    >
+                    <div className="ob-form-muted">
                       {getPanelEntrySummary(entry)}
                     </div>
                   </div>
-                  <span
-                    aria-hidden="true"
-                    className={`shrink-0 text-lg leading-none ${
-                      isActive ? 'text-gray-500' : 'text-gray-400'
-                    }`}
-                  >
-                    ›
-                  </span>
+                  <ChevronRight size={20} aria-hidden="true" />
                 </button>
               )
             })}
           </div>
         </section>
 
-        {panelEntry && panelContent ? (
-          <>
-            <div className="fixed inset-0 z-50 hidden bg-black/20 lg:block" onClick={closePanel} />
-            <aside className="fixed inset-y-0 right-0 z-50 hidden w-full max-w-3xl border-l border-gray-200 bg-white shadow-2xl lg:flex lg:flex-col">
-              {panelContent}
-            </aside>
-            <section className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
-              {panelContent}
-            </section>
-          </>
-        ) : null}
+        {panelContent}
 
-        {saving && <div className="text-xs text-gray-500">Sparar…</div>}
+        {!panelEntry && saving && <div role="status" className="ob-form-muted">Sparar…</div>}
       </div>
     )
   }
@@ -1219,7 +1163,6 @@ export default function ObStepForutsattningar({
             >
               <header className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-semibold text-gray-900">
-                  <span className="mr-2">{itemEmoji[item.key] || '•'}</span>
                   {item.label}
                 </h3>
                 <button

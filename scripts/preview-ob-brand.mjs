@@ -10,21 +10,22 @@ import { Smartphone, Monitor, RotateCcw, ALargeSmall, WifiOff } from 'lucide-rea
 
 const require = createRequire(import.meta.url)
 const { webpack } = require('next/dist/compiled/webpack/webpack')
-const output = resolve('tmp/ob-brand-preview')
+const forms = process.argv.includes('--forms')
+const output = resolve(forms ? 'tmp/ob-forms-preview' : 'tmp/ob-brand-preview')
 await mkdir(output, { recursive: true })
 await new Promise((ok, fail) => webpack({
-  mode: 'development', devtool: false, entry: resolve('test/fixtures/ob-brand-preview.tsx'),
+  mode: 'development', devtool: false, entry: resolve(forms ? 'test/fixtures/ob-forms-preview.tsx' : 'test/fixtures/ob-brand-preview.tsx'),
   output: { path: output, filename: 'view.js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
-    '@/lib/supabaseClient': resolve('test/fixtures/ob-brand-preview-client.ts'),
-    './mobile-round.css': false, '@': resolve('src'),
+    '@/lib/supabaseClient': resolve(forms ? 'test/fixtures/ob-forms-client.ts' : 'test/fixtures/ob-brand-preview-client.ts'),
+    './mobile-round.css': false, './ob-forms.css': false, '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
 const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const css = [globalCss.css, ...await Promise.all([
-  'src/components/ob/mobile-round.css', 'test/fixtures/ob-brand-preview.css',
-].map(path => readFile(path, 'utf8')))].join('\n')
+  'src/components/ob/mobile-round.css', 'src/components/ob/ob-forms.css', 'test/fixtures/ob-brand-preview.css',
+].map(path => readFile(path, 'utf8')))].join('\n').replace("@import './mobile-round.css';", '')
 const assets = new Map()
 for (const [url, path, type] of [
   ['/view.js', resolve(output, 'view.js'), 'text/javascript'],
@@ -77,6 +78,9 @@ await new Promise((ok, fail) => { server.once('error', fail); server.listen(port
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB brand preview (synthetic only): ${base}`)
 if (process.argv.includes('--test')) {
-  try { const { testBrandPreview } = await import('../test/helpers/ob-brand-preview-browser.mjs'); await testBrandPreview(base, output) }
+  try {
+    if (forms) { const { testFormsPreview } = await import('../test/helpers/ob-forms-preview-browser.mjs'); await testFormsPreview(base, output) }
+    else { const { testBrandPreview } = await import('../test/helpers/ob-brand-preview-browser.mjs'); await testBrandPreview(base, output) }
+  }
   finally { server.close() }
 }

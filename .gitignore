@@ -160,6 +160,7 @@ vite.config.ts.timestamp-*
 /tmp/ob-early-start-ui/
 /tmp/ob-mobile-round-ui/
 /tmp/ob-brand-preview/
+/tmp/ob-forms-preview/
 /tmp/renoapp-resident-journey/
 /tmp/renoapp-brand-ui/
 /tmp/renoapp-brand-next/

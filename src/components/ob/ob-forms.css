@@ -1,0 +1,239 @@
+@import './mobile-round.css';
+
+/* Only the two migrated OB forms and their detail dialog use these rules. */
+.ob-form-root,
+.ob-form-shell {
+  color-scheme: light;
+  font: 1rem/1.5 var(--obm-font);
+  color: var(--obm-ink);
+  letter-spacing: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ob-form-root {
+  background: white;
+}
+.ob-form-root *,
+.ob-form-shell * {
+  box-sizing: border-box;
+  letter-spacing: 0;
+}
+.ob-form-root :where(h2, h3) {
+  color: var(--obm-ink);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.ob-form-root :where(input:not([type=checkbox], [type=radio], [type=file]), select, textarea) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--obm-control);
+  border-radius: 6px;
+  background: white;
+  color: var(--obm-ink);
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.5;
+}
+.ob-form-root :where(textarea) {
+  resize: vertical;
+}
+.ob-form-root :where(input, textarea)::placeholder {
+  color: var(--obm-muted);
+  opacity: 1;
+}
+.ob-form-root :where(button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  min-width: 48px;
+  max-width: 100%;
+  height: auto;
+  padding: 10px 14px;
+  border: 1px solid var(--obm-control);
+  border-radius: 6px;
+  font: inherit;
+  line-height: 1.4;
+  color: var(--obm-blue);
+  background: white;
+  cursor: pointer;
+  white-space: normal;
+}
+.ob-form-root :where(button:not(:disabled)):hover {
+  background: var(--obm-selected);
+}
+.ob-form-root :where(button, input, select, textarea):focus-visible {
+  outline: 3px solid var(--obm-blue);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.ob-form-root :where(button, input, select, textarea):disabled,
+.ob-form-root :where(input, textarea):read-only:not([type=checkbox], [type=radio], [type=file]) {
+  color: var(--obm-muted);
+  background: var(--obm-paper);
+  border-color: var(--obm-line);
+  opacity: 1;
+  cursor: not-allowed;
+}
+.ob-form-root :where(svg) {
+  flex-shrink: 0;
+}
+.ob-form-root :where(.obm-primary) {
+  background: var(--obm-blue);
+  border-color: var(--obm-blue);
+  color: white;
+}
+.ob-form-root :where(.obm-primary:not(:disabled)):hover {
+  background: var(--obm-hover);
+}
+.ob-form-root button.ob-form-danger,
+.ob-form-root button.obm-delete-icon {
+  color: var(--obm-error);
+}
+.ob-form-root .ob-form-danger:not(:disabled):hover {
+  background: var(--obm-error-bg);
+}
+.ob-form-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  gap: 24px 32px;
+}
+.ob-form-section {
+  min-width: 0;
+  border-top: 1px solid var(--obm-line);
+  padding: 20px 0;
+}
+.ob-form-section > * + * {
+  margin-top: 20px;
+}
+.ob-form-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 16px;
+}
+.ob-form-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+.ob-form-label {
+  display: block;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--obm-ink);
+}
+.ob-form-muted {
+  color: var(--obm-muted);
+  font-size: .875rem;
+  line-height: 1.6;
+}
+.ob-form-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 0;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.ob-form-root :where(input[type=checkbox], input[type=radio]) {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--obm-blue);
+}
+.ob-form-notice {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-left: 3px solid var(--obm-warning);
+  background: var(--obm-warning-bg);
+  color: var(--obm-warning);
+  font-size: .875rem;
+}
+.ob-form-error {
+  padding: 12px 16px;
+  background: var(--obm-error-bg);
+  color: var(--obm-error);
+  border-left: 3px solid var(--obm-error);
+}
+.ob-form-list {
+  border-top: 1px solid var(--obm-line);
+}
+.ob-form-root .ob-form-list-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 20px;
+  gap: 12px;
+  width: 100%;
+  padding: 20px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--obm-line);
+  border-radius: 0;
+  text-align: left;
+  color: var(--obm-ink);
+}
+.ob-form-list-row > svg {
+  color: var(--obm-blue);
+}
+.ob-form-list-text {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 4px 24px;
+  min-width: 0;
+}
+.ob-form-repeat {
+  border-top: 1px solid var(--obm-line);
+  padding: 16px 0;
+}
+.ob-form-repeat > * + * {
+  margin-top: 16px;
+}
+.ob-form-root .ob-form-panel-nav {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+}
+.ob-form-panel .obm-sheet-body {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+.ob-form-panel .obm-sheet-header-back h2 {
+  font-size: 1.25rem;
+}
+.ob-form-shell .ob-form-mobile-header {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--obm-line);
+  background: white;
+}
+.ob-form-mobile-header button {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  color: var(--obm-blue);
+  border-radius: 6px;
+}
+.ob-form-mobile-header button:focus-visible {
+  outline: 3px solid var(--obm-blue);
+}
+.ob-form-step-count {
+  color: var(--obm-blue);
+  font-size: .875rem;
+  padding: 8px;
+  background: var(--obm-selected);
+  border-radius: 6px;
+}
+@media (min-width: 768px) {
+  .ob-form-shell .ob-form-mobile-header { display: none; }
+}

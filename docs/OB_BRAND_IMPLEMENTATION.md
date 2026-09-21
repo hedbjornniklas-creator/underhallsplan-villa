@@ -60,4 +60,61 @@ profile has not been tested with a physical Android keyboard. The reduced-height
 browser test is only a keyboard-layout approximation; real-device checks remain
 a follow-up, not evidence claimed by this release.
 Review and commit only task-related changes; parallel Uppdrag work is separate.
-Broader forms, assignment pages and report/mail branding are later steps.
+Assignment pages and report/mail branding are later steps.
+
+## Form rollout, 2026-09-21
+
+The next approved step covers **Fastighet & uppdrag** and **Förutsättningar**.
+The user approved publication together with the autosave correction below.
+This is a separate release from the initial round/menu profile above.
+
+- `ob-forms.css` reuses the same profile tokens and local font. Its selectors are
+  limited to OB form surfaces; other modules keep their existing styling.
+- Property, customer and inspector sections use unframed responsive columns,
+  readable supporting text, associated field labels and 48px controls.
+- Conditions use wrapping summary rows and Lucide icons. The existing shared
+  sheet supplies a back arrow, keyboard focus and Escape behavior. Only one copy
+  of the detail fields is mounted on both desktop and mobile.
+- Escape blurs the active field before closing, preserving the existing
+  textarea save-on-blur behavior. Conditions draft keys, building scope,
+  revision checks and inspection locks remain unchanged.
+- The mobile step heading uses blue styling and shows the step count once.
+- Existing legacy cover-image fallback and frozen inspector data are retained.
+
+Local review uses the real form components with an in-memory adapter:
+
+```powershell
+node scripts/preview-ob-brand.mjs --forms --test
+node --experimental-strip-types --test test/ob-forms-brand.test.ts
+node scripts/preview-ob-brand.mjs --forms --port 57123
+```
+
+The preview never reads environment files or credentials and has no external
+network fallback. Database writes are simulated in memory. Screenshots are
+generated under `tmp/ob-forms-preview` (not release assets).
+
+Validation covers 320/390/768/1280px, 200% text, field saving, scoped building
+values, repeatable/per-floor fields, Escape/focus, locked inspections, legacy
+cover images and the existing round/menu regression suite. Physical Android
+keyboard and camera checks are still a separate real-device follow-up.
+
+Results: form browser checks and round-brand browser regression passed, as did
+18 selected unit/static checks, TypeScript and the production build. The build
+retains the two pre-existing PDF filesystem-pattern warnings noted above.
+The local form preview is available at `http://127.0.0.1:57123/` on this computer.
+
+### Autosave correction
+
+Grunddata previously replaced entire local forms when parent props changed.
+A delayed save could therefore interrupt editing in another field. Local dirty
+fields now survive parent refreshes; a successful save acknowledges only the
+values it submitted, retaining any newer text. Saves are queued per inspection
+and callbacks merge property patches into the latest state. Pending counters
+keep the saving indicator visible until all queued work has finished.
+
+The browser regression now simulates 500ms write latency, rapid edits across
+object/contact fields and successive edits to the same contact field, including
+server normalization. It checks both visible values and the final write.
+Queue tests cover ordering, independent inspections, the comparison save barrier
+and recovery after rejection. The extended 26-test selection, form browser suite
+and TypeScript passed. This does not add offline storage or change lock rules.

@@ -1,7 +1,10 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { recordObGrunddataWriteResult, trackObGrunddataWrite } from '@/lib/ob/grunddataWrites'
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { Camera, Image as ImageIcon } from 'lucide-react'
+import './ob-forms.css'
+import { enqueueObGrunddataWrite, recordObGrunddataWriteResult, trackObGrunddataWrite } from '@/lib/ob/grunddataWrites'
+import { useObFormDraft } from './useObFormDraft'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
@@ -120,6 +123,10 @@ const CUSTOMER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 function normalizeTextOrNull(value: string): string | null {
   const normalized = value.trim()
   return normalized.length > 0 ? normalized : null
+}
+
+function formValues(patch: object): Record<string, string> {
+  return Object.fromEntries(Object.entries(patch).map(([key, value]) => [key, value == null ? '' : String(value)]))
 }
 
 // Hjälpare: tolka/spara listor som semikolon-separerad text
@@ -248,7 +255,7 @@ export default function ObStepGrunddata({
   onInspectionAddonSelectionChanged,
 }: ObStepGrunddataProps) {
   // Lokalt formulär-state - vi utgår från inkommande props
-  const [propForm, setPropForm] = useState({
+  const [propForm, setPropForm, acknowledgeProperty] = useObFormDraft(inspection.id, {
     cadastral_id: property.cadastral_id ?? '',
     address: property.address ?? '',
     postal_code: property.postal_code ?? '',
@@ -260,7 +267,7 @@ export default function ObStepGrunddata({
     apartment_holder_name: property.apartment_holder_name ?? '',
   })
 
-  const [inspForm, setInspForm] = useState({
+  const [inspForm, setInspForm, acknowledgeInspection] = useObFormDraft(inspection.id, {
     status: normalizeInspectionStatus(inspection.status),
     cover_path: inspection.cover_path ?? '',
     assignment_number: inspection.assignment_number ?? '',
@@ -273,7 +280,7 @@ export default function ObStepGrunddata({
     attendees_other: inspection.attendees_other ?? '',
     inspection_side: normalizeInspectionSide(inspection.inspection_side),
   })
-  const [ordererForm, setOrdererForm] = useState({
+  const [ordererForm, setOrdererForm, acknowledgeOrderer] = useObFormDraft(inspection.id, {
     customer_name: property.customer_name ?? inspection.client_name ?? '',
     customer_address: property.customer_address ?? '',
     customer_postal_code: property.customer_postal_code ?? '',
@@ -282,9 +289,16 @@ export default function ObStepGrunddata({
     customer_email: property.customer_email ?? '',
   })
 
-  const [savingProp, setSavingProp] = useState(false)
-  const [savingInsp, setSavingInsp] = useState(false)
-  const [savingOrderer, setSavingOrderer] = useState(false)
+  const [pendingProp, setPendingProp] = useState(0)
+  const [pendingInsp, setPendingInsp] = useState(0)
+  const [pendingOrderer, setPendingOrderer] = useState(0)
+  const savingProp = pendingProp > 0
+  const savingInsp = pendingInsp > 0
+  const savingOrderer = pendingOrderer > 0
+  const latestProperty = useRef(property)
+  const latestInspection = useRef<ObInspection & { locked_at?: string | null }>(inspection)
+  latestProperty.current = property
+  latestInspection.current = inspection
   const [uploadingCover, setUploadingCover] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const coverCameraInputRef = useRef<HTMLInputElement | null>(null)
@@ -308,48 +322,6 @@ export default function ObStepGrunddata({
     },
     [onInspectionAddonSelectionChanged]
   )
-
-  // Om vi får nya props (t.ex. efter save utifrån) uppdaterar vi lokalt state
-  useEffect(() => {
-    setPropForm({
-      cadastral_id: property.cadastral_id ?? '',
-      address: property.address ?? '',
-      postal_code: property.postal_code ?? '',
-      city: property.city ?? '',
-      municipality: property.municipality ?? '',
-      owner_name: property.owner_name ?? '',
-      brf_name: property.brf_name ?? '',
-      apartment_number: property.apartment_number ?? '',
-      apartment_holder_name: property.apartment_holder_name ?? '',
-    })
-  }, [property])
-
-  useEffect(() => {
-    setInspForm({
-      status: normalizeInspectionStatus(inspection.status),
-      cover_path: inspection.cover_path ?? '',
-      assignment_number: inspection.assignment_number ?? '',
-      assignment_confirmation_delivered_date:
-        inspection.assignment_confirmation_delivered_date ?? '',
-      scope: inspection.scope ?? '',
-      date: inspection.date ?? '',
-      inspection_time: inspection.inspection_time ?? '',
-      attendees: inspection.attendees ?? '',
-      attendees_other: inspection.attendees_other ?? '',
-      inspection_side: normalizeInspectionSide(inspection.inspection_side),
-    })
-  }, [inspection])
-
-  useEffect(() => {
-    setOrdererForm({
-      customer_name: property.customer_name ?? inspection.client_name ?? '',
-      customer_address: property.customer_address ?? '',
-      customer_postal_code: property.customer_postal_code ?? '',
-      customer_city: property.customer_city ?? '',
-      customer_phone: property.customer_phone ?? '',
-      customer_email: property.customer_email ?? '',
-    })
-  }, [property, inspection.client_name])
 
   useEffect(() => {
     let cancelled = false
@@ -482,10 +454,12 @@ export default function ObStepGrunddata({
   }, [inspection.id, inspection.scope, notifyAddonSelection])
 
   // Hjälpare: spara property-fält
-  const saveProperty = (patch: Partial<Property>) => trackObGrunddataWrite(inspection.id, async () => {
-    if (isInspectionLocked) return
+  const saveProperty = (patch: Partial<Property>) => {
+    if (isInspectionLocked) return Promise.resolve()
+    setPendingProp(count => count + 1)
+    return enqueueObGrunddataWrite(inspection.id, async () => {
+    if (latestInspection.current.id !== inspection.id || latestInspection.current.locked_at) return
     setError(null)
-    setSavingProp(true)
 
     const payload = {
       inspection_id: inspection.id,
@@ -500,30 +474,35 @@ export default function ObStepGrunddata({
 
     recordObGrunddataWriteResult(inspection.id, Object.keys(patch).map(key => `property:${key}`), Boolean(updErr))
 
-    setSavingProp(false)
-
     if (updErr) {
       console.error(updErr)
       setError('Kunde inte spara objektets uppgifter i ÖB.')
       return
     }
 
-    if (onPropertyUpdated) {
-      onPropertyUpdated({ ...property, ...patch } as Property)
-    }
-  })
+    if (latestInspection.current.id !== inspection.id) return
+    latestProperty.current = { ...latestProperty.current, ...patch }
+    acknowledgeProperty(formValues(patch))
+    onPropertyUpdated?.(latestProperty.current)
+    }).finally(() => setPendingProp(count => count - 1))
+  }
 
   // Hjälpare: spara inspection-fält
   const saveInspection = useCallback(async (
     patch: Partial<Inspection>,
     options?: { throwOnError?: boolean }
-  ): Promise<Inspection | null> => trackObGrunddataWrite(inspection.id, async () => {
+  ): Promise<Inspection | null> => {
     if (isInspectionLocked) {
       if (options?.throwOnError) throw new Error('Besiktningen ar last och kan inte redigeras.')
       return null
     }
+    setPendingInsp(count => count + 1)
+    return enqueueObGrunddataWrite(inspection.id, async () => {
+    if (latestInspection.current.id !== inspection.id || latestInspection.current.locked_at) {
+      if (options?.throwOnError) throw new Error('Besiktningen kan inte längre redigeras.')
+      return null
+    }
     setError(null)
-    setSavingInsp(true)
 
     const { error: updErr, data } = await Promise.resolve(supabase
       .from('inspections')
@@ -534,7 +513,6 @@ export default function ObStepGrunddata({
       .catch(error => ({ error, data: null }))
 
     recordObGrunddataWriteResult(inspection.id, Object.keys(patch).map(key => `inspection:${key}`), Boolean(updErr))
-    setSavingInsp(false)
 
     if (updErr) {
       console.error(updErr)
@@ -543,16 +521,18 @@ export default function ObStepGrunddata({
       return null
     }
 
-    if (data && onInspectionUpdated) {
-      onInspectionUpdated(data as Inspection)
+    if (data && latestInspection.current.id === inspection.id) {
+      latestInspection.current = data as Inspection
+      acknowledgeInspection(formValues(patch), formValues(data))
+      onInspectionUpdated?.(data as Inspection)
     }
 
     return (data as Inspection | null) ?? null
-  }), [inspection.id, isInspectionLocked, onInspectionUpdated])
+    }).finally(() => setPendingInsp(count => count - 1))
+  }, [inspection.id, isInspectionLocked, onInspectionUpdated, acknowledgeInspection])
 
   const saveOrdererToInspection = (nextOrderer: typeof ordererForm) => trackObGrunddataWrite(inspection.id, async () => {
     if (isInspectionLocked) return
-    setSavingOrderer(true)
 
     const customerName = normalizeTextOrNull(nextOrderer.customer_name)
     const customerAddress = normalizeTextOrNull(nextOrderer.customer_address)
@@ -562,11 +542,12 @@ export default function ObStepGrunddata({
     const customerEmail = normalizeTextOrNull(nextOrderer.customer_email)?.toLowerCase() ?? null
 
     if (customerEmail && !CUSTOMER_EMAIL_REGEX.test(customerEmail)) {
-      setSavingOrderer(false)
       setError('Ogiltig e-postadress för uppdragsgivare.')
       return
     }
 
+    setPendingOrderer(count => count + 1)
+    try {
     const clientContact = [customerPhone, customerEmail].filter(Boolean).join(' | ') || null
     const savedInspection = await saveInspection({
       client_name: customerName,
@@ -578,19 +559,20 @@ export default function ObStepGrunddata({
       customer_phone: customerPhone,
       customer_email: customerEmail,
     } as Partial<Inspection>)
-    setSavingOrderer(false)
+    if (!savedInspection || latestInspection.current.id !== inspection.id) return
 
-    if (!savedInspection || !onPropertyUpdated) return
-
-    onPropertyUpdated({
-      ...property,
+    const savedOrderer = {
       customer_name: customerName,
       customer_address: customerAddress,
       customer_postal_code: customerPostalCode,
       customer_city: customerCity,
       customer_phone: customerPhone,
       customer_email: customerEmail,
-    } as Property)
+    }
+    acknowledgeOrderer(nextOrderer, formValues(savedOrderer))
+    latestProperty.current = { ...latestProperty.current, ...savedOrderer }
+    onPropertyUpdated?.(latestProperty.current)
+    } finally { setPendingOrderer(count => count - 1) }
   })
 
   // Autogenerera uppdragsnummer baserat på datum + löpnummer
@@ -691,10 +673,7 @@ export default function ObStepGrunddata({
       return
     }
 
-    await saveOrdererToInspection({
-      ...ordererForm,
-      [field]: normalizedValue ?? '',
-    })
+    await saveOrdererToInspection(ordererForm)
   }
 
   // Checkboxar för omfattning
@@ -919,25 +898,20 @@ export default function ObStepGrunddata({
   const buildingContext = useObBuilding()
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
-        Grunduppgifter för objekt, uppdragsgivare och besiktningsman. Ändringar sparas
-        automatiskt när du lämnar ett fält. Uppdragsnummer skapas automatiskt när
-        besiktningsdatum är satt.
-      </div>
+    <div className="ob-form-root space-y-4">
       {isInspectionLocked ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div role="status" className="ob-form-notice">
           Besiktningen är låst. Grunddata visas i läsläge.
         </div>
       ) : null}
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p role="alert" className="ob-form-error">{error}</p>}
 
       <ObBuildingOverview locked={isInspectionLocked} />
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="ob-form-columns">
         {/* --- Kolumn 1: Objekt --- */}
-        <section className="rounded-xl border bg-white p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Objekt</h2>
+        <section className="ob-form-section">
+          <h2>Objekt</h2>
 
           <Field
             label="Adress"
@@ -947,7 +921,7 @@ export default function ObStepGrunddata({
             readOnly={isInspectionLocked}
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="ob-form-pair">
             <Field
               label="Postnummer"
               value={propForm.postal_code ?? ''}
@@ -1019,7 +993,7 @@ export default function ObStepGrunddata({
           ) : null}
 
           {!buildingContext?.overview.structure && <div className="space-y-2">
-            <div className="text-xs font-medium text-gray-600">Omslagsbild</div>
+            <div className="ob-form-label">Omslagsbild</div>
             <div
               onDragOver={event => {
                 event.preventDefault()
@@ -1037,7 +1011,7 @@ export default function ObStepGrunddata({
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
+                <div className="flex h-full w-full items-center justify-center ob-form-muted">
                   Släpp en bild här eller välj Kamera/Fil
                 </div>
               )}
@@ -1065,43 +1039,41 @@ export default function ObStepGrunddata({
                 <button
                   type="button"
                   onClick={() => coverCameraInputRef.current?.click()}
-                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
                   disabled={uploadingCover || savingInsp}
                 >
-                  Kamera
+                  <Camera size={20} />Ta bild
                 </button>
                 <button
                   type="button"
                   onClick={() => coverLibraryInputRef.current?.click()}
-                  className="rounded-full border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-800 hover:bg-gray-50"
                   disabled={uploadingCover || savingInsp}
                 >
-                  Fil
+                  <ImageIcon size={20} />Välj bild
                 </button>
               </div>
             ) : null}
             {uploadingCover ? (
-              <p className="text-[11px] text-gray-400">Laddar upp omslagsbild...</p>
+              <p className="ob-form-muted">Laddar upp omslagsbild...</p>
             ) : null}
             {isInspectionLocked ? (
-              <p className="text-[11px] text-gray-500">
+              <p className="ob-form-muted">
                 Besiktningen är klar och omslagsbilden är låst.
               </p>
             ) : null}
           </div>}
-          {savingProp && <p className="mt-1 text-[11px] text-gray-400">Sparar objekt...</p>}
+          {savingProp && <p role="status" className="mt-1 ob-form-muted">Sparar objekt...</p>}
         </section>
 
         {/* --- Kolumn 2: Uppdragsgivare & besiktningsuppdrag --- */}
-        <section className="rounded-xl border bg-white p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">
+        <section className="ob-form-section">
+          <h2>
             Uppdragsgivare & besiktningsuppdrag
           </h2>
 
           <div className="space-y-1">
-            <div className="text-xs font-medium text-gray-600">Typ av uppdrag</div>
-            <div className="flex flex-wrap gap-4 text-xs text-gray-700">
-              <label className="flex items-center gap-2">
+            <div className="ob-form-label">Typ av uppdrag</div>
+            <div className="flex flex-wrap gap-x-5">
+              <label className="ob-form-choice">
                 <input
                   type="radio"
                   className="h-3 w-3"
@@ -1111,7 +1083,7 @@ export default function ObStepGrunddata({
                 />
                 <span>Köparbesiktning</span>
               </label>
-              <label className="flex items-center gap-2">
+              <label className="ob-form-choice">
                 <input
                   type="radio"
                   className="h-3 w-3"
@@ -1121,7 +1093,7 @@ export default function ObStepGrunddata({
                 />
                 <span>Säljarbesiktning</span>
               </label>
-              <label className="flex items-center gap-2">
+              <label className="ob-form-choice">
                 <input
                   type="radio"
                   className="h-3 w-3"
@@ -1152,7 +1124,7 @@ export default function ObStepGrunddata({
             readOnly={isInspectionLocked}
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="ob-form-pair">
             <Field
               label="Postnummer"
               value={ordererForm.customer_postal_code}
@@ -1171,7 +1143,7 @@ export default function ObStepGrunddata({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="ob-form-pair">
             <Field
               label="Telefon"
               value={ordererForm.customer_phone}
@@ -1200,13 +1172,13 @@ export default function ObStepGrunddata({
           />
 
           <div className="space-y-2">
-            <div className="text-xs font-medium text-gray-600">Omfattning</div>
+            <div className="ob-form-label">Omfattning</div>
             <div className="space-y-1">
               {inspectionAddonLoading && hasInspectionAddonSnapshot === false ? (
-                <div className="text-xs text-gray-500">Laddar omfattning...</div>
+                <div className="ob-form-muted">Laddar omfattning...</div>
               ) : hasInspectionAddonSnapshot ? (
                 inspectionAddonOrders.map(row => (
-                  <label key={row.id} className="flex items-start gap-2 text-xs text-gray-700">
+                  <label key={row.id} className="ob-form-choice">
                     <input
                       type="checkbox"
                       className="mt-0.5 h-3 w-3"
@@ -1219,7 +1191,7 @@ export default function ObStepGrunddata({
                 ))
               ) : (
                 SCOPE_OPTIONS.map(opt => (
-                  <label key={opt.key} className="flex items-start gap-2 text-xs text-gray-700">
+                  <label key={opt.key} className="ob-form-choice">
                     <input
                       type="checkbox"
                       className="mt-0.5 h-3 w-3"
@@ -1234,7 +1206,7 @@ export default function ObStepGrunddata({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mt-3">
+          <div className="ob-form-pair mt-3">
             <Field
               label="Besiktningsdag"
               type="date"
@@ -1253,11 +1225,11 @@ export default function ObStepGrunddata({
           </div>
 
           <div className="mt-3 space-y-3">
-            <div className="text-xs font-medium text-gray-600">Närvarande</div>
+            <div className="ob-form-label">Närvarande</div>
 
             <div className="space-y-1">
               {attendeeOptionsToShow.map(opt => (
-                <label key={opt.key} className="flex items-start gap-2 text-xs text-gray-700">
+                <label key={opt.key} className="ob-form-choice">
                   <input
                     type="checkbox"
                     className="mt-0.5 h-3 w-3"
@@ -1271,10 +1243,11 @@ export default function ObStepGrunddata({
             </div>
 
               <div className="space-y-1">
-                <div className="text-xs font-medium text-gray-600">
+                <div className="ob-form-label">
                   Övriga närvarande (namn och roll)
                 </div>
                 <DebouncedTextarea
+                  aria-label="Övriga närvarande (namn och roll)"
                   className={`w-full rounded-md border px-3 py-2 text-xs ${
                     isInspectionLocked ? 'bg-gray-100 text-gray-600' : ''
                   }`}
@@ -1306,7 +1279,7 @@ export default function ObStepGrunddata({
                 readOnly={isInspectionLocked}
               />
 
-              <div className="mt-1 text-[11px] text-gray-500">
+              <div className="mt-1 ob-form-muted">
                 {inspForm.attendees && inspForm.attendees.trim() !== '' ? (
                   <>Registrerade närvarande (huvudroller): {inspForm.attendees}</>
                 ) : (
@@ -1316,13 +1289,13 @@ export default function ObStepGrunddata({
           </div>
 
           {(savingInsp || savingOrderer) && (
-            <p className="mt-1 text-[11px] text-gray-400">Sparar uppdrag...</p>
+            <p role="status" className="mt-1 ob-form-muted">Sparar uppdrag...</p>
           )}
         </section>
 
         {/* --- Kolumn 3: Besiktningsman (read-only) --- */}
-        <section className="rounded-xl border bg-white p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Besiktningsman</h2>
+        <section className="ob-form-section">
+          <h2>Besiktningsman</h2>
 
           {inspectorAvatarSrc && !inspectorAvatarLoadError ? (
             <img
@@ -1332,7 +1305,7 @@ export default function ObStepGrunddata({
               onError={() => setInspectorAvatarLoadError(true)}
             />
           ) : (
-            <div className="flex h-20 w-20 items-center justify-center rounded-full border border-gray-300 bg-gray-100 text-xs text-gray-500">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full border border-gray-300 bg-gray-100 ob-form-muted">
               Ingen bild
             </div>
           )}
@@ -1341,32 +1314,32 @@ export default function ObStepGrunddata({
             <div className="font-semibold">{inspectorName}</div>
             {inspectorCertificationLines.length > 0 ? (
               inspectorCertificationLines.map((line) => (
-                <div key={line} className="text-xs text-gray-600">
+                <div key={line} className="ob-form-muted">
                   {line}
                 </div>
               ))
             ) : (
               <>
-                <div className="text-xs text-gray-600">{inspectorSbrLine1}</div>
-                <div className="text-xs text-gray-600">{inspectorSbrLine2}</div>
+                <div className="ob-form-muted">{inspectorSbrLine1}</div>
+                <div className="ob-form-muted">{inspectorSbrLine2}</div>
 
-                <div className="mt-2 text-xs text-gray-600">Medlemsnummer: {inspectorMemberNumber}</div>
+                <div className="mt-2 ob-form-muted">Medlemsnummer: {inspectorMemberNumber}</div>
                 {inspectorCertificationNumber ? (
-                  <div className="text-xs text-gray-600">
+                  <div className="ob-form-muted">
                     Certifieringsnummer: {inspectorCertificationNumber}
                   </div>
                 ) : null}
               </>
             )}
-            <div className="text-xs text-gray-600">Telefon: {inspectorPhone}</div>
-            <div className="text-xs text-gray-600">E-post: {inspectorEmail}</div>
+            <div className="ob-form-muted">Telefon: {inspectorPhone}</div>
+            <div className="ob-form-muted">E-post: {inspectorEmail}</div>
 
-            <div className="mt-2 text-xs text-gray-600">{inspectorCompany}</div>
-            <div className="text-xs text-gray-600">Org.nr: {inspectorOrgNumber}</div>
-            <div className="text-xs text-gray-600">{inspectorAddressLine}</div>
+            <div className="mt-2 ob-form-muted">{inspectorCompany}</div>
+            <div className="ob-form-muted">Org.nr: {inspectorOrgNumber}</div>
+            <div className="ob-form-muted">{inspectorAddressLine}</div>
           </div>
 
-          <p className="mt-2 text-xs text-gray-600">
+          <p className="mt-2 ob-form-muted">
             {isInspectionLocked
               ? hasFrozenInspectorSnapshot
                 ? 'Uppgifterna är låsta och hämtas från senaste sparade utlåtandeversion.'
@@ -1399,11 +1372,13 @@ function Field({
   multiline?: boolean
   readOnly?: boolean
 }) {
+  const id = useId()
   return (
-    <div className="space-y-1">
-      <div className="text-xs font-medium text-gray-600">{label}</div>
+    <div className="ob-form-field">
+      <label htmlFor={id} className="ob-form-label">{label}</label>
       {multiline ? (
         <DebouncedTextarea
+          id={id}
           className={`w-full rounded-md border px-3 py-2 text-sm ${readOnly ? 'bg-gray-100 text-gray-600' : ''}`}
           value={value}
           onValueChange={onChange}
@@ -1418,6 +1393,7 @@ function Field({
         />
       ) : (
         <input
+          id={id}
           type={type}
           className={`w-full rounded-md border px-3 py-2 text-sm ${readOnly ? 'bg-gray-100 text-gray-600' : ''}`}
           value={value}

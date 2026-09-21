@@ -9,6 +9,8 @@
 /* Profile 1.1 is scoped to OB work surfaces, never to body or shared forms. */
 .obm-root,
 .obm-sheet,
+.ob-form-root,
+.ob-form-shell,
 .ob-step-menu-toggle,
 .obm-input {
   --obm-blue: #245eb5;

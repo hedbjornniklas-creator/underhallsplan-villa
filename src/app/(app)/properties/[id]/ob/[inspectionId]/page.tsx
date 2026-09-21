@@ -278,6 +278,7 @@ export default function InspectionDetailPage() {
     if (activeSection === 'runda' || (buildingOverview?.structure && ['insida','utsida'].includes(activeSection))) setActiveSection('runda-ny')
   }, [buildingOverview?.structure, activeSection])
   const mobileRoundV2 = activeSection === 'runda-ny'
+  const brandedForm = activeSection === 'grunddata' || activeSection === 'forutsattningar'
   const isRoundSection = isObRoundSection(activeSection)
 
   useEffect(() => {
@@ -705,13 +706,24 @@ export default function InspectionDetailPage() {
         <div className="pointer-events-none absolute inset-0 bg-white/8" />
 
         <div
-          className={`relative mx-auto w-full ${
+          className={`relative mx-auto w-full ${brandedForm ? 'ob-form-shell' : ''} ${
             isRoundSection || activeSection === 'review'
               ? 'max-w-none space-y-0'
               : 'max-w-7xl space-y-3 md:space-y-4'
           }`}
         >
-          {!isRoundSection ? (
+          {brandedForm ? (
+            <header className="ob-form-mobile-header">
+              <button type="button" onClick={handleBackToInspections} aria-label="Tillbaka" title="Tillbaka">
+                <ArrowLeft size={23} />
+              </button>
+              <div className="min-w-0">
+                <p className="ob-form-muted">Överlåtelsebesiktning</p>
+                <h1 className="font-semibold">{activeSectionLabel}</h1>
+              </div>
+              <span className="ob-form-step-count">{activeSectionIndex + 1}/{visibleSections.length}</span>
+            </header>
+          ) : !isRoundSection ? (
             <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
               <button
                 type="button"
@@ -751,6 +763,7 @@ export default function InspectionDetailPage() {
                 activeSection === 'areamatning' ||
                 activeSection === 'fuktkontroll'
                   ? 'p-0 md:p-0'
+                  : brandedForm ? 'bg-white px-3 py-4 md:p-5'
                   : 'md:rounded-2xl md:border md:border-white/45 md:bg-white/95 md:p-4 md:shadow-xl md:ring-1 md:ring-black/5'
               }
                 min-w-0 max-w-full overflow-x-hidden
