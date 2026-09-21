@@ -43,6 +43,8 @@ const js = await readFile(resolve(output, 'view.js'))
 const navigationJs = await readFile(resolve(output, 'navigation.js'))
 const buildingsJs = await readFile(resolve(output, 'buildings.js'))
 const photo = await readFile('public/landing/Background1.png')
+const brandFont = await readFile('public/ob/brand/manrope.ttf')
+const brandLogo = await readFile('public/report-assets/BesiktApp.png')
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
   response.setHeader('Cache-Control', 'no-store')
@@ -72,6 +74,8 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/buildings.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(buildingsJs); return }
   if (url.pathname === '/navigation.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(navigationJs); return }
   if (url.pathname === '/photo.png') { response.setHeader('Content-Type', 'image/png'); response.end(photo); return }
+  if (url.pathname === '/ob/brand/manrope.ttf') { response.setHeader('Content-Type', 'font/ttf'); response.end(brandFont); return }
+  if (url.pathname === '/report-assets/BesiktApp.png') { response.setHeader('Content-Type', 'image/png'); response.end(brandLogo); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
   if (url.pathname === '/history-before') {
     response.end('<!doctype html><html lang="sv"><body><h1>Besiktningar</h1></body></html>'); return
@@ -113,7 +117,7 @@ if (serve) {
     await page.locator('button').filter(button => button.textContent.includes('Lägg till byggnad')).click()
     await page.waitForSelector('dialog[open]')
     await page.type('dialog input[maxlength="100"]', 'Garage')
-    await (await page.$$('dialog select'))[1].select('garage')
+    await page.select('dialog select', 'garage')
     await page.locator('dialog footer button').click()
     await page.waitForFunction(() => !document.querySelector('dialog[open]'))
     assert.match(await page.$eval('section[aria-label="Byggnader"]', el => el.textContent), /Garage/)
@@ -184,7 +188,7 @@ if (serve) {
       assert.ok(await page.evaluate(() => {
         const title = document.querySelector('.obm-place-header-row h1').getBoundingClientRect()
         const mode = document.querySelector('.obm-segment').getBoundingClientRect()
-        return title.right <= mode.left && Math.abs(title.y - mode.y) < 20
+        return innerWidth < 360 ? title.bottom <= mode.top : title.right <= mode.left && Math.abs(title.y - mode.y) < 20
       }), 'title is left of the area selector')
       assert.equal(await page.$$eval('.obm-place-controls label', nodes => nodes.some(node => node.textContent.trim() === 'Plan')), false)
       await noOverflow()
@@ -300,7 +304,7 @@ if (serve) {
       await page.waitForSelector('[role="dialog"]')
     }
     async function chooseSection(label) {
-      await page.evaluate(label => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.firstElementChild?.textContent === label).click(), label)
+      await page.evaluate(label => [...document.querySelectorAll('.obm-menu-step')].find(button => button.getAttribute('aria-label') === label).click(), label)
     }
     async function selectedSection() { return page.$eval('[data-selected-ob-section]', node => node.dataset.selectedObSection) }
     for (const width of [390, 1280]) {
@@ -308,39 +312,38 @@ if (serve) {
       await page.goto(base + '/navigation', { waitUntil: 'networkidle0' })
       assert.equal(await selectedSection(), 'grunddata')
       await openStepMenu()
-      assert.ok(await page.$eval('[role="dialog"]', node => node.textContent.includes('ÖB-runda (ny)')))
+      assert.deepEqual(await page.$$eval('[role="dialog"] button', buttons => buttons
+        .map(button => button.getAttribute('aria-label')).filter(label => label?.startsWith('ÖB-runda'))), ['ÖB-runda'])
       await page.screenshot({ path: resolve(output, `step-menu-${width}.png`) })
-      await chooseSection('ÖB-runda (ny)')
+      await chooseSection('ÖB-runda')
       await page.waitForSelector('[data-selected-ob-section="runda-ny"]')
       assert.equal(await page.$eval('main', node => node.dataset.obMobileRound), 'true')
       assert.ok(await page.$('body.ob-round-fullscreen'))
       assert.equal(await page.$eval('[data-inspection-id]', node => node.dataset.inspectionId), 'synthetic-mobile-inspection')
-      await openStepMenu(); await chooseSection('ÖB-runda')
-      await page.waitForSelector('[data-selected-ob-section="runda"]')
-      assert.equal(await page.$eval('main', node => node.dataset.obMobileRound), 'false')
-      assert.ok(await page.$('body.ob-round-fullscreen'))
       await page.evaluate(() => localStorage.setItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending', 'test draft'))
       await openStepMenu()
       page.once('dialog', dialog => void dialog.dismiss())
-      await chooseSection('ÖB-runda (ny)')
-      assert.equal(await selectedSection(), 'runda', 'cancelled unsaved-text warning keeps the old round mounted')
+      await chooseSection('Granska')
+      assert.equal(await selectedSection(), 'runda-ny', 'cancelled unsaved-text warning keeps the round mounted')
       page.once('dialog', dialog => void dialog.accept())
-      await chooseSection('ÖB-runda (ny)')
-      await page.waitForSelector('[data-selected-ob-section="runda-ny"]')
-      await page.evaluate(() => localStorage.removeItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending'))
-      await openStepMenu(); await chooseSection('Granska')
+      await chooseSection('Granska')
       await page.waitForSelector('[data-selected-ob-section="review"]')
+      await page.evaluate(() => localStorage.removeItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending'))
       assert.equal(await page.$('body.ob-round-fullscreen'), null)
       await noOverflow()
+      await openStepMenu(); await chooseSection('ÖB-runda')
+      await page.waitForSelector('[data-selected-ob-section="runda-ny"]')
+      assert.equal(await page.$eval('main', node => node.dataset.obMobileRound), 'true')
     }
     await page.goto(base + '/navigation?round=mobile-v2&apartment', { waitUntil: 'networkidle0' })
     assert.equal(await selectedSection(), 'runda-ny', 'new round deep link works without environment flags')
     await openStepMenu()
     assert.equal(await page.$eval('[role="dialog"]', node => node.textContent.includes('Byggnad - utsida')), false)
-    assert.ok(await page.$eval('[role="dialog"]', node => node.textContent.includes('ÖB-runda (ny)')))
+    assert.deepEqual(await page.$$eval('[role="dialog"] button', buttons => buttons
+      .map(button => button.getAttribute('aria-label')).filter(label => label?.startsWith('ÖB-runda'))), ['ÖB-runda'])
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
-    console.log('PASS: mobile/desktop layouts, real step menu with both rounds, switching/draft guard, deep link, apartment menu, paginated search, autosave/recovery, image linking, locked/paused states. No external requests.')
+    console.log('PASS: mobile/desktop layouts, one renamed round in the real step menu, switching/draft guard, deep link, apartment menu, paginated search, autosave/recovery, image linking, locked/paused states. No external requests.')
     }
   } catch (error) {
     if (page) {

@@ -179,14 +179,19 @@ const qa = {
 }
 Object.assign(window, { __obMobileTest: qa })
 
-function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
+type FixtureProps = {
+  onOpenStepMenu?: () => void
+  buildingName?: string
+  storageKey?: string
+}
+function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }: FixtureProps) {
   const { model } = useObFloorModel()
   const [mutating, setMutating] = useState(false)
   const receipts = useRef(new Map<string, unknown>())
   const [roomRows, setRoomRows] = useState(rooms)
   const [notes, setNotes] = useState<Note[]>(
     () =>
-      JSON.parse(localStorage.getItem('fixture-notes') || 'null') ||
+      JSON.parse(localStorage.getItem(storageKey) || 'null') ||
       initialNotes,
   )
   const [images, setImages] = useState<Image[]>(() =>
@@ -203,6 +208,18 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
   const [floor, setFloor] = useState(newFloors ? 'plan0' : 'plan1'),
     [roomId, setRoomId] = useState('room-1')
   const [menu, setMenu] = useState(false)
+  const cameraInput = useRef<HTMLInputElement>(null)
+  const galleryInput = useRef<HTMLInputElement>(null)
+  const mediaNote = useRef<string | null>(null)
+  function addPreviewFiles(files: File[], noteId: string | null) {
+    setImages(rows => [...rows, ...files.filter(file => file.type.startsWith('image/')).map((file, index) => ({
+      ...initialImages[0], id: crypto.randomUUID(), file_path: URL.createObjectURL(file),
+      label: file.name, control_item_id: noteId, interior_room_id: area === 'interior' ? roomId : null,
+      exterior_observation_id: area === 'exterior' ? 'observation-1' : null,
+      processing_status: noteId ? 'linked' as const : 'unprocessed' as const,
+      sort_order: 100 + index,
+    }))])
+  }
   const locked = new URLSearchParams(location.search).has('locked')
   const paused = new URLSearchParams(location.search).has('paused')
   useEffect(() => {
@@ -224,8 +241,8 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
     }
   }, [])
   useEffect(() => {
-    localStorage.setItem('fixture-notes', JSON.stringify(notes))
-  }, [notes])
+    localStorage.setItem(storageKey, JSON.stringify(notes))
+  }, [notes, storageKey])
   const activeRoom = roomRows.find((room) => room.id === roomId) || null
   function createNote(patch: Partial<Note>) {
     const next = {
@@ -263,10 +280,18 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
   }
   return (
     <main data-ob-mobile-round="true">
+      {buildingName && <>
+        <input hidden ref={cameraInput} type="file" accept="image/*" capture="environment" aria-label="Testkamera"
+          onChange={event => { addPreviewFiles(Array.from(event.target.files ?? []), mediaNote.current); event.target.value = '' }} />
+        <input hidden ref={galleryInput} type="file" accept="image/*" multiple aria-label="Testbilder"
+          onChange={event => { addPreviewFiles(Array.from(event.target.files ?? []), mediaNote.current); event.target.value = '' }} />
+      </>}
       <fieldset disabled={paused} style={{ padding: 0, margin: 0, border: 0 }}>
         <div className="ob-mobile-round-host [&_textarea]:text-sm [&_textarea]:leading-5">
           <ObMobileRound
             inspectionId={inspectionId}
+            buildingName={buildingName}
+            scopeId={buildingName ? storageKey : undefined}
             inspectionSide="buyer"
             address="Testgatan 1 (syntetiskt objekt)"
             onOpenMenu={onOpenStepMenu ?? (() => setMenu(true))}
@@ -342,11 +367,19 @@ function Fixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
             }}
             onCamera={(id) => {
               qa.calls.push({ kind: 'camera', id: id || 'place' })
+              if (buildingName) { mediaNote.current = id; cameraInput.current?.click() }
             }}
             onGallery={(id) => {
               qa.calls.push({ kind: 'gallery', id: id || 'place' })
+              if (buildingName) { mediaNote.current = id; galleryInput.current?.click() }
             }}
             onImportImages={files => queueImageBatch(files, async (file, index) => {
+              if (buildingName) {
+                setImages(rows => [...rows, { ...initialImages[0], id: crypto.randomUUID(), file_path: URL.createObjectURL(file),
+                  label: file.name, interior_room_id: null, exterior_observation_id: null, control_item_id: null,
+                  processing_status: 'unprocessed', sort_order: 100 + index }])
+                return
+              }
               qa.calls.push({ kind: 'import', id: file.name })
               await new Promise(resolve => setTimeout(resolve, qa.delayMs))
               if (qa.failSaves) throw Error('Synthetic local save failure')
@@ -607,12 +640,12 @@ function imageNoteObservation(image: Image, destination: MoveTarget, target?: Mo
   const originalId = target ? null : image.exterior_observation_id || image.origin_exterior_observation_id
   return observations.find(row => row.id === originalId) ?? observations.find(row => row.exterior_item_id === destination.exteriorItemId)!
 }
-function FloorFixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
+function FloorFixture(props: FixtureProps) {
   const [model, update] = useState<ObFloorModel>({ revision: 1, levels: [
     { level: 0, name: 'Entr\u00e9plan' }, { level: 1, name: '' }, { level: -1, name: 'Suterr\u00e4ng' },
   ] })
-  return <ObFloorContext.Provider value={{ model, update }}><Fixture onOpenStepMenu={onOpenStepMenu} /></ObFloorContext.Provider>
+  return <ObFloorContext.Provider value={{ model, update }}><Fixture {...props} /></ObFloorContext.Provider>
 }
-export default function MobileRoundFixture({ onOpenStepMenu }: { onOpenStepMenu?: () => void }) {
-  return newFloors ? <FloorFixture onOpenStepMenu={onOpenStepMenu} /> : <Fixture onOpenStepMenu={onOpenStepMenu} />
+export default function MobileRoundFixture(props: FixtureProps) {
+  return newFloors ? <FloorFixture {...props} /> : <Fixture {...props} />
 }

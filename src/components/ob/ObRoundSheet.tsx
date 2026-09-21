@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useRef } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import './mobile-round.css'
 
 export default function Sheet({
   title,
@@ -9,6 +10,7 @@ export default function Sheet({
   footer,
   actions,
   closeDisabled = false,
+  className = '',
 }: {
   title: string
   onClose: () => void
@@ -16,19 +18,27 @@ export default function Sheet({
   footer?: React.ReactNode
   actions?: React.ReactNode
   closeDisabled?: boolean
+  className?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const dialog = ref.current!
+    const returnFocus = document.activeElement
     dialog.showModal()
-    return () => dialog.close()
+    return () => {
+      dialog.close()
+      // React may remove the dialog before the browser restores its opener.
+      if (returnFocus instanceof HTMLElement && returnFocus.isConnected) {
+        returnFocus.focus({ preventScroll: true })
+      }
+    }
   }, [])
   return (
     <dialog
       ref={ref}
       role="dialog"
       aria-label={title}
-      className="obm-sheet"
+      className={`obm-sheet ${className}`.trim()}
       onCancel={(event) => {
         event.preventDefault()
         if (!closeDisabled) onClose()

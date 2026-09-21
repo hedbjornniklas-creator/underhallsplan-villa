@@ -1,59 +1,53 @@
-# Knapp-plan for OB-modulen
+# OB: knapp- och profilregler 1.1
 
-Denna plan beskriver hur knappar i OB-modulen ska fargsattas efter funktion. Syftet ar att undvika svarta knappar och gora atgardernas betydelse konsekvent mellan uppdragsbekraftelse, besiktningsrunda, bildbank, installningar och rapportflode.
+Beslut 2026-09-21: den bla varumarkesprofilen ersatter tidigare regler om
+indigo, sky och violet i denna plan. Bevara befintlig BesiktApp-logotyp.
 
-## Grundprinciper
+## Omfattning
 
-- Knappar ska fargsattas efter funktion, inte efter sida.
-- Svart eller nara svart (`bg-black`, `bg-gray-900`, `hover:bg-black`) ska inte anvandas for vanliga knappar, aktiva filter eller val.
-- Morka overlays over bilder eller modaler far anvandas nar de ar bakgrund/kontrastyta, inte som knappvariant.
-- Disabled-lagen ska ha explicita farger nar knappen annars ar starkt fargad. Anvand inte enbart lag opacity for viktiga knappar.
-- Statusfarger far vara semantiska och ska inte blandas ihop med primara atgarder.
+Forsta implementationen omfattar OB-rundan, rum, noteringar, bildhantering
+och besiktningens byggnadsgrupperade stegmeny. Stilarna ar avgransade till
+`obm-root`, `obm-sheet` och `ob-step-menu-toggle` i
+`src/components/ob/mobile-round.css`.
 
-## Funktionella knappvarianter
+Detta ar inte ett besked om att alla OB-sidor redan foljer profilen.
+Uppdragsbekraftelse, ovriga formular, rapporter och mejl anpassas separat.
+Delade TU/EB-vyer och andra moduler ska inte arva OB-stilar automatiskt.
 
-| Funktion | Rekommenderad farg |
+## Knappar och tillstand
+
+| Funktion | Regel |
 | --- | --- |
-| Primar atgard: skapa, spara, skicka, fortsatt | `bg-indigo-600 text-white hover:bg-indigo-700` |
-| Sekundar atgard: tillbaka, avbryt, stang | `bg-white border-slate-300 text-slate-700 hover:bg-slate-50` |
-| Aktivt neutralt val/filter/flik | `border-indigo-600 bg-indigo-600 text-white` |
-| Destruktiv atgard: ta bort, avbryt uppdrag | `bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100` eller `bg-rose-600 text-white` for skarp destruktiv primar |
-| Varning/aterskick/kraver uppmarksamhet | `bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100` |
-| Framgang/slutfort/godkant | `bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100` eller `bg-emerald-600 text-white` for primar slutfor-knapp |
-| Bild/kamera/uppladdning/bildval | `bg-sky-50 border-sky-200 text-sky-800 hover:bg-sky-100` for sekundara bildatgarder, `bg-sky-600 text-white hover:bg-sky-700` for primar bildatgard |
-| AI/smart sok | `bg-violet-600 text-white hover:bg-violet-700` |
-| Inaktiv/disabled primarknapp | Exempel: `disabled:bg-indigo-50 disabled:text-indigo-700 disabled:ring-1 disabled:ring-indigo-200` |
+| Primar atgard | Bla `#245EB5`, vit text; hover `#1D4890` |
+| Sekundar atgard och bildval | Vit, kontrollkant `#78838F`, text `#25313B` |
+| Aktiv flik eller menypost | Bla text, vald yta `#EDF3FC`, aven markering/aria-tillstand |
+| Radera | Rod `#A23140`; bekraftande destruktiv knapp har vit text |
+| Inaktiv | Explicit ljusgra yta och lasbar gra text; inte enbart opacity |
+| Tangentbordsfokus | Tydlig bla kontur med avstand till kontrollen |
+| Pagaende sparande | Befintlig status och blockering bevaras; inget falskt kvitto |
+| Sparfel | Rod yta/text, kvarvarande utkast, synlig aterforsoksknapp |
 
-## Statusknappar
+Manrope levereras lokalt under `public/ob/brand` med SIL Open Font License.
+Typsnittsnamnet `OB Manrope` isolerar laddningen fran andra modulers profiler.
+Normal brodtext ar 16px/24px, stodtext 14px, kompakta statusetiketter 12px.
+Textstorlekar ar rem-baserade. Tryckytor ar minst 48px hoga, ikonknappar 48x48px,
+hornen 6px. Langa namn far radbrytas; viktig text far inte kapas.
 
-Statusknappar och statusflikar far behalla egna semantiska farger:
+## Semantik
 
-- Utkast: ljus slate/gra
-- Skickad: bla
-- Bestalld/godkand: gul
-- Bokad/accepterad: orange
-- Slutford: gron
-- Avbruten: rod
-- Utgangen/arkiverad: gra
+- Gront betyder bekraftat sparat, inte att en byggnad ar godkand.
+- Risk: `#81551A` pa `#FFF2DA`.
+- Fortsatt teknisk utredning: `#265C7B` pa `#EAF2F8`.
+- Sparfel: `#A23140` pa `#FCEEF0`.
+- Status visas aven med ord, aldrig enbart med farg.
+- Sparad/lokalt sparad far endast visas nar motsvarande sparflode bekraftat det.
 
-Aktivt statuslage ska ha tillracklig kontrast och far anvanda morkare nyans av sin statusfarg. Det ska inte anvanda svart som standard.
+## Navigation och kvalitet
 
-## OB-ytor som ska folja planen
-
-- Uppdragslista och uppdragsbekraftelse
-- Ny och uppdaterad uppdragsbekraftelse
-- OB-startsida
-- Besiktningsrundan
-- Utsida och insida
-- Bildbank och bildurval
-- Kontrollpunktssok och AI-sok
-- Rapportgranskning och utskrift
-- Installningar
-
-## Kanda tillampningar
-
-- Primara spara/skicka/starta-atgarder ska vara indigo.
-- Kontrollpunktssokets AI-atgard ska vara violet.
-- Bildbankens markeringar och kopplingsatgarder ska vara sky.
-- Aktiva filter och chip-val ska vara indigo nar de inte ar status- eller bildspecifika.
-- Svarta/morkgra primar- eller aktivknappar ska ersattas med ovanstaende varianter.
+- Tillbakapil i rum, noteringar, bildvyer och stegmenyn.
+- Forutsattningar och OB-runda under respektive byggnadsrubrik.
+- Stegordning, byggnads-ID, behorighet och skydd for osparade utkast bevaras.
+- Pa smala skarmar far flytt/radering en egen verktygsrad.
+- Testa 320/360/390px, dator, langa namn, storre text, fokus och sparfel.
+- Verifiera riktigt Android-tangentbord fore publicering.
+- Ingen SQL-migrering eller andring av gamla PDF:er ingar.

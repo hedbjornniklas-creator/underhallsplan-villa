@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Menu, X } from 'lucide-react'
+import { ArrowLeft, Menu } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
+import ObStepMenu from '@/components/ob/ObStepMenu'
 import { getObAssignmentReconciliationPatches, type ObAssignmentReconciledDetail } from '@/lib/ob/assignmentWorkflow'
 import { ObBuildingContext } from '@/components/ob/ObBuildingContext'
 import type { ObBuildingOverview } from '@/lib/ob/buildingStructure'
@@ -176,8 +177,7 @@ const SECTIONS: Section[] = [
   { key: 'grunddata', label: 'Fastighet & uppdrag' },
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
   { key: 'forutsattningar', label: 'Förutsättningar' },
-  { key: 'runda', label: 'ÖB-runda' },
-  { key: 'runda-ny', label: 'ÖB-runda (ny)' },
+  { key: 'runda-ny', label: 'ÖB-runda' },
   { key: 'utsida', label: 'Byggnad - utsida' },
   { key: 'insida', label: 'Byggnad - insida' },
 ]
@@ -275,7 +275,7 @@ export default function InspectionDetailPage() {
   const activeBuilding = buildingOverview?.parts.find(part => part.id === selectedBuildingId)
     ?? buildingOverview?.parts.find(part => part.id === buildingOverview.structure?.primary_part_id) ?? null
   useEffect(() => {
-    if (buildingOverview?.structure && ['runda','insida','utsida'].includes(activeSection)) setActiveSection('runda-ny')
+    if (activeSection === 'runda' || (buildingOverview?.structure && ['insida','utsida'].includes(activeSection))) setActiveSection('runda-ny')
   }, [buildingOverview?.structure, activeSection])
   const mobileRoundV2 = activeSection === 'runda-ny'
   const isRoundSection = isObRoundSection(activeSection)
@@ -791,7 +791,7 @@ export default function InspectionDetailPage() {
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Öppna stegmeny"
           title="Öppna stegmeny"
-          className="fixed left-4 top-28 z-[60] hidden h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:inline-flex"
+          className="ob-step-menu-toggle fixed left-4 top-28 z-[60] hidden h-12 w-12 items-center justify-center md:inline-flex"
         >
           <Menu size={25} strokeWidth={2.35} />
         </button>
@@ -801,76 +801,21 @@ export default function InspectionDetailPage() {
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Öppna stegmeny"
           title="Öppna stegmeny"
-          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-950/30 ring-1 ring-white/50 transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 md:hidden"
+          className="ob-step-menu-toggle fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 w-14 items-center justify-center md:hidden"
         >
           <Menu size={25} strokeWidth={2.35} />
         </button>
 
         {mobileMenuOpen ? (
-          <div className="fixed inset-0 z-[70]" role="dialog" aria-modal="true">
-            <button
-              type="button"
-              aria-label="Stäng stegmeny"
-              className="absolute inset-0 h-full w-full bg-black/40"
-              onClick={() => setMobileMenuOpen(false)}
-            />
-            <div className="absolute inset-x-0 bottom-0 rounded-t-[2rem] border border-white/40 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl md:inset-y-0 md:left-0 md:right-auto md:w-[320px] md:rounded-none md:border-r md:p-5">
-              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-gray-300 md:hidden" />
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Steg</div>
-                  <div className="text-lg font-semibold text-gray-900">Överlåtelsebesiktning</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen(false)}
-                  aria-label="Stäng"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-700"
-                >
-                  <X size={20} strokeWidth={2.25} />
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={handleBackToInspections}
-                className="mb-3 inline-flex w-full items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50"
-              >
-                <ArrowLeft size={17} strokeWidth={2} />
-                Tillbaka till besiktningar
-              </button>
-              <div className="grid max-h-[62vh] gap-2 overflow-auto pr-1">
-                {visibleSections.map((section, index) => (
-                  <button
-                    key={`${section.key}:${section.partId ?? ''}`}
-                    type="button"
-                    onClick={() => {
-                      if ((activeSection !== section.key || section.partId !== activeBuilding?.id) && !confirmLeaveIfTextDrafts()) return
-                      if (section.partId) setSelectedBuildingId(section.partId)
-                      setActiveSection(section.key)
-                      setMobileMenuOpen(false)
-                    }}
-                    aria-current={activeSectionIndex === index ? 'step' : undefined}
-                    className={`flex items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
-                      activeSectionIndex === index
-                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/15'
-                        : 'bg-gray-50 text-gray-800 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span>{section.label}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        activeSectionIndex === index
-                          ? 'bg-white/18 text-white'
-                          : 'bg-white text-gray-500'
-                      }`}
-                    >
-                      {index + 1}/{visibleSections.length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          <ObStepMenu sections={visibleSections} buildings={buildingOverview?.parts ?? []}
+            activeIndex={activeSectionIndex} onClose={() => setMobileMenuOpen(false)}
+            onBack={handleBackToInspections}
+            onSelect={section => {
+              if ((activeSection !== section.key || section.partId !== activeBuilding?.id) && !confirmLeaveIfTextDrafts()) return
+              if (section.partId) setSelectedBuildingId(section.partId)
+              setActiveSection(section.key)
+              setMobileMenuOpen(false)
+            }} />
         ) : null}
       </main>
     </Protected>
