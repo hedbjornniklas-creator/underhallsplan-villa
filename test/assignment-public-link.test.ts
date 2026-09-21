@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { isIP } from 'node:net'
 import test from 'node:test'
 import ts from 'typescript'
+import type * as PublicApi from '../src/app/api/assignments/accept/[token]/route'
 
-function load(file: string, dependencies: Record<string, unknown>) {
+function load<T>(file: string, dependencies: Record<string, unknown>): T {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
-  const compiled = { exports: {} as Record<string, (...args: any[]) => Promise<any>> }
+  const compiled = { exports: {} }
   new Function('require', 'module', 'exports', output)(
     (name: string) => {
       if (name in dependencies) return dependencies[name]
@@ -20,7 +21,7 @@ function load(file: string, dependencies: Record<string, unknown>) {
       throw new Error(`Unexpected import: ${name}`)
     }, compiled, compiled.exports,
   )
-  return compiled.exports
+  return compiled.exports as T
 }
 
 const TOKEN = 'synthetic-assignment-token-for-tests'
@@ -53,7 +54,7 @@ function resolverHarness(results: Array<{ data: unknown; error: unknown }>) {
     }
     return query
   } }
-  const server = load('src/lib/assignments/server.ts', {
+  const server = load<{ resolvePublicAssignmentByToken: (token: string) => Promise<ReturnType<typeof link> | null> }>('src/lib/assignments/server.ts', {
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/tokens': { hashAssignmentToken: hash },
   })
@@ -63,7 +64,7 @@ function resolverHarness(results: Array<{ data: unknown; error: unknown }>) {
 test('public resolver selects the organization-scoped relationship and hashes the token', async () => {
   const row = link()
   const h = resolverHarness([{ data: row, error: null }])
-  assert.equal((await h.resolve(TOKEN)).assignments.id, ID)
+  assert.equal((await h.resolve(TOKEN))?.assignments.id, ID)
   assert.match(h.calls[0].columns, /assignments:assignments!assignment_links_org_assignment_fkey\(/)
   assert.deepEqual(h.calls[0].filters, [['token_hash', hash(TOKEN)]])
   assert.ok(!h.calls[0].columns.includes(TOKEN))
@@ -74,7 +75,7 @@ test('legacy issuer-column fallback retains the same organization-scoped relatio
     { data: null, error: { code: '42703', message: 'issuer_identity_snapshot does not exist' } },
     { data: link(), error: null },
   ])
-  assert.equal((await h.resolve(TOKEN)).assignments.id, ID)
+  assert.equal((await h.resolve(TOKEN))?.assignments.id, ID)
   assert.equal(h.calls.length, 2)
   for (const call of h.calls) {
     assert.match(call.columns, /assignments!assignment_links_org_assignment_fkey\(/)
@@ -90,26 +91,34 @@ test('unknown links stay missing and unexpected database failures fail closed', 
   assert.equal(h.calls.length, 1)
 })
 
-function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = false) {
+function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = false, options: { resolveFails?: boolean; contactFails?: boolean } = {}) {
   let consumed = false
   let acceptedCount = 0
   let mails = 0
   const writes: Array<[string, unknown]> = []
+  const jobs: Array<() => Promise<void>> = []
+  const incidents: unknown[] = []
   const admin = { from(table: string) {
-    const query = { update(value: unknown) { writes.push([table, value]); return query },
+    const query = { update(value: unknown) { if (options.contactFails) throw new Error('Synthetic contact sync failure'); writes.push([table, value]); return query },
       eq() { return query }, then(resolve: (value: unknown) => unknown) { return Promise.resolve({ error: null }).then(resolve) } }
     return query
   } }
-  const api = load('src/app/api/assignments/accept/[token]/route.ts', {
-    'next/server': { NextResponse: { json: (data: unknown, init?: ResponseInit) => Response.json(data, init) } },
+  const api = load<typeof PublicApi>('src/app/api/assignments/accept/[token]/route.ts', {
+    'next/server': { after: (job: () => Promise<void>) => jobs.push(job), NextResponse: { json: (data: unknown, init?: ResponseInit) => Response.json(data, init) } },
     'node:net': { isIP },
+    'node:crypto': { randomUUID },
+    '@/lib/assignments/linkIncidents': {
+      publicLinkErrorCode: () => 'TEST_FAILURE',
+      recordPublicLinkFailure: async (input: unknown) => { incidents.push(input) },
+      resolvePublicLinkFailures: async () => {},
+    },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/terms': {
       resolveAssignmentTermsRole: () => 'buyer', getAssignmentTermsDocument: () => terms,
       getAllAssignmentTermsDocuments: () => Object.fromEntries(['seller', 'buyer', 'apartment', 'technical', 'construction', 'constructionBusiness', 'constructionConsumer'].map(k => [k, terms])),
     },
     '@/lib/assignments/server': {
-      resolvePublicAssignmentByToken: async () => row,
+      resolvePublicAssignmentByToken: async () => { if (options.resolveFails) throw new Error(`private database error ${TOKEN}`); return row },
       consumeAssignmentToken: async () => {
         if (consumed || row?.used_at) throw new Error('token_already_used')
         if (row?.revoked_at || Date.parse(row?.expires_at ?? '') < Date.now()) throw new Error('token_not_valid_or_expired')
@@ -131,6 +140,7 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, ...overrides }),
     }), context),
     counts: () => ({ acceptedCount, mails, writes: writes.length }),
+    runJobs: async () => { for (const job of jobs) await job(); return incidents },
   }
 }
 
@@ -180,4 +190,34 @@ test('a mail transport failure does not turn a saved acceptance into a failed ac
   assert.equal(response.status, 200)
   assert.equal((await response.json()).confirmationEmailSent, false)
   assert.equal(h.counts().acceptedCount, 1)
+})
+
+test('technical open and acceptance failures return a reference and defer diagnostics without exposing internals', async () => {
+  for (const operation of ['get', 'post'] as const) {
+    const h = routeHarness(link(), false, { resolveFails: true })
+    const response = await h[operation]()
+    assert.equal(response.status, 500)
+    const data = await response.json()
+    assert.equal(data.retryable, true)
+    assert.match(data.reference, /^[0-9a-f-]{36}$/)
+    assert.ok(!JSON.stringify(data).includes(TOKEN))
+    assert.ok(!JSON.stringify(data).includes('database'))
+    assert.equal((await h.runJobs()).length, 1)
+    assert.equal(h.counts().acceptedCount, 0)
+  }
+})
+
+test('a thrown follow-up contact sync failure cannot undo a saved acceptance', async () => {
+  const h = routeHarness(link(), false, { contactFails: true })
+  assert.equal((await h.post()).status, 200)
+  assert.equal(h.counts().acceptedCount, 1)
+})
+
+test('expected invalid-link and consent errors do not create incident notifications', async () => {
+  const missing = routeHarness(null)
+  assert.equal((await missing.get()).status, 404)
+  assert.deepEqual(await missing.runJobs(), [])
+  const h = routeHarness()
+  await h.post({ termsAccepted: false })
+  assert.deepEqual(await h.runJobs(), [])
 })

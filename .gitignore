@@ -164,6 +164,7 @@ vite.config.ts.timestamp-*
 /tmp/renoapp-brand-next/
 /tmp/renoapp-brand-check.json
 /tmp/renoapp-brand-preview.err
+/tmp/assignment-link-ui/
 
 # next.js
 /.next/

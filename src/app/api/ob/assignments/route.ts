@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import {
   createAssignment,
   listAssignmentsByOrg,
@@ -24,6 +25,7 @@ export async function GET() {
 
     return NextResponse.json({
       items,
+      linkIssues: await listAssignmentLinkIssues(context.orgId, items.map(item => item.id)),
       org: {
         id: context.orgId,
         name: context.orgName,

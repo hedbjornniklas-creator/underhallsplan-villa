@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
+import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import { ArrowLeft, ChevronsLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
@@ -221,6 +223,7 @@ export default function AssignmentDetailsPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [assignment, setAssignment] = useState<AssignmentDetails | null>(null)
   const [addonOrders, setAddonOrders] = useState<AssignmentAddonOrder[]>([])
+  const [linkIssues, setLinkIssues] = useState<AssignmentLinkIssues | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const formRef = useRef<FormState | null>(null)
@@ -265,11 +268,13 @@ export default function AssignmentDetailsPage() {
       const typedPayload = payload as {
         assignment: AssignmentDetails
         addonOrders?: AssignmentAddonOrder[]
+        linkIssues?: AssignmentLinkIssues
       }
       const row = typedPayload.assignment
       const nextForm = toFormState(row)
       setAssignment(row)
       setAddonOrders(typedPayload.addonOrders ?? [])
+      setLinkIssues(typedPayload.linkIssues ?? { available: false, items: [] })
       setForm(nextForm)
       lastSavedFingerprintRef.current = formFingerprint(nextForm)
       setSaveState('idle')
@@ -660,6 +665,7 @@ export default function AssignmentDetailsPage() {
               </div>
           </dialog> : null}
           {assignment?.inspection_id ? <ObAssignmentWorkflowBoundary key={assignment.inspection_id} inspectionId={assignment.inspection_id} onStatusChange={handleWorkflowStatusChange} /> : null}
+          <AssignmentLinkIssueNotice issues={linkIssues} />
 
           {error ? (
             <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div>

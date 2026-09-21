@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import {
   getAssignmentById,
   getProfileContact,
@@ -48,7 +49,7 @@ export async function GET(
       })
     }
 
-    return NextResponse.json({ assignment, addonOrders })
+    return NextResponse.json({ assignment, addonOrders, linkIssues: await listAssignmentLinkIssues(org.orgId, [id]) })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
