@@ -17,6 +17,7 @@ let unknown: string
 const read = (name: string) => readFileSync(new URL(`../docs/db/${name}`, import.meta.url), 'utf8')
 const foundation = read('2026-09-16_01_renoapp_clarifications.sql')
 const pilot = read('2026-09-16_02_renoapp_municipal_clarification_pilot.sql')
+const boardAuthority = read('2026-09-21_01_renoapp_board_decision_authority.sql')
 before(async () => {
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
@@ -50,6 +51,7 @@ before(async () => {
   await db.exec(foundation)
   await db.exec(pilot)
   await db.exec(read('2026-09-07_02_renoapp_renovation_rules.sql'))
+  await db.exec(boardAuthority)
   unknown = (await db.query<{id:string}>("select id from renoapp_apply_question_options where question_id=$1 and key='needs_investigation'", [q])).rows[0].id
 })
 after(async () => { await db.close() })
@@ -150,19 +152,40 @@ test('pilot submission publishes rules consent and clarification atomically, inc
     assert.equal(receipt.rules_version_id,version)
     assert.ok(receipt.rules_checked_at)
     assert.equal((await row(f.id)).state,'pending')
-    await assert.rejects(status(f.id,'approved'), /CLARIFICATION_REVIEW_REQUIRED/)
+    await status(f.id,'approved')
+    assert.equal((await row(f.id)).state,'pending')
   }
 })
 
-test('open uncertainty blocks both approval types, not rejection, and requires explicit motivated assessment', async () => {
+test('board can decide with pending questions without altering answers or assessment', async () => {
   const f = await fixture()
-  for (const s of ['approved','conditional','approved_with_conditions']) await assert.rejects(status(f.id,s), /CLARIFICATION_REVIEW_REQUIRED/)
+  const original = await row(f.id)
+  for (const s of ['approved','conditional','approved_with_conditions','rejected']) {
+    await status(f.id,s)
+    assert.deepEqual(await row(f.id),original)
+  }
+  await status(f.id,'review')
   await assert.rejects(review(f.id,'resolve','Reviewed'), /CLARIFICATION_REVIEW_REQUIRED/)
   await assert.rejects(review(f.id,'not_relevant',' '), /CLARIFICATION_NOTE_REQUIRED/)
   await review(f.id,'not_relevant','Municipal question does not apply to this work')
   await status(f.id,'approved')
   assert.equal((await row(f.id)).review_note,'Municipal question does not apply to this work')
   await status((await fixture()).id,'rejected')
+})
+
+test('drafts cannot receive decisions; a sent clarification round does not block board decisions', async () => {
+  const draft = await fixture('draft')
+  for (const s of ['approved','conditional','approved_with_conditions','rejected']) {
+    await assert.rejects(status(draft.id,s), /DRAFT_CASE_LOCKED/)
+  }
+  assert.equal(await row(draft.id),undefined)
+  const f = await fixture(); await review(f.id); const request = await publish(f.id)
+  const original = await row(f.id)
+  const round = (await db.query('select * from renoapp_completion_requests where id=$1',[request])).rows[0]
+  await status(f.id,'approved')
+  assert.deepEqual(await row(f.id),original)
+  assert.deepEqual((await db.query('select * from renoapp_completion_requests where id=$1',[request])).rows[0],round)
+  await assert.rejects(save(f,request,answer(no)), /COMPLETION_CHANGED/)
 })
 
 test('board choices send nothing until published, freeze the request and reject stale revisions', async () => {
@@ -196,7 +219,10 @@ test('drafts preserve base answers; submitted answer updates just the requested 
   assert.equal((await row(f.id)).original_answer,'Jag behöver undersöka detta')
   assert.equal((await db.query<{option_id:string}>('select option_id from renoapp_case_question_answers where case_id=$1 and question_id=$2',[f.id,otherQ])).rows[0].option_id,otherOption)
   assert.deepEqual((await db.query('select status,description from renovation_cases where id=$1',[f.id])).rows[0],{status:'review',description:'Original scope'})
-  await assert.rejects(status(f.id,'approved'), /CLARIFICATION_REVIEW_REQUIRED/)
+  const received = await row(f.id)
+  await status(f.id,'approved')
+  assert.deepEqual(await row(f.id),received)
+  await status(f.id,'review')
   await review(f.id,'resolve','Answer and basis checked')
   await status(f.id,'conditional')
   const history = (await db.query<{metadata:{previousAnswers:Array<{optionId:string}>}}>("select metadata from renovation_case_messages where case_id=$1 and message='Svar på klarläggande registrerat.'",[f.id])).rows[0]
@@ -230,7 +256,8 @@ test('repeated rounds retain history, carry drafts and invalidate older links to
   await review(f.id,'resolve','No municipal notification according to the response')
   await review(f.id,'reopen','New contradictory information')
   assert.equal((await row(f.id)).state,'answered')
-  await assert.rejects(status(f.id,'approved'), /CLARIFICATION_REVIEW_REQUIRED/)
+  await status(f.id,'approved')
+  assert.equal((await row(f.id)).state,'answered')
 })
 
 test('access tokens and database roles do not bypass the completion permissions', async () => {
@@ -272,7 +299,9 @@ test('mixed completions remain atomic and ordinary completions retain company ch
 
 test('migrations are rerunnable without duplicating options or changing case history', async () => {
   const f = await fixture(); const before = await row(f.id)
-  await db.exec(foundation); await db.exec(pilot)
+  await db.exec(foundation); await db.exec(pilot); await db.exec(boardAuthority); await db.exec(boardAuthority)
+  assert.deepEqual(await row(f.id),before)
+  await status(f.id,'approved')
   assert.deepEqual(await row(f.id),before)
   assert.equal((await db.query('select * from renoapp_apply_question_options where question_id=$1',[q])).rows.length,3)
 })

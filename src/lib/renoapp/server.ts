@@ -7957,7 +7957,7 @@ export async function updateRenoAppCaseStatus(
   const conditions = normalizeText(input.conditions)
 
 
-  if (input.status === 'rejected' && !reason) {
+  if (decisionStatuses.has(input.status) && !reason) {
     throw new Error('DECISION_REASON_REQUIRED')
   }
 
@@ -8015,7 +8015,7 @@ export async function updateRenoAppCaseStatus(
 
     const decisionMessage =
       input.status === 'conditional'
-        ? conditions
+        ? `${reason}\n\nVillkor:\n${conditions}`
         : reason ?? `Status uppdaterad till ${input.status}.`
 
     await insertCaseMessage({

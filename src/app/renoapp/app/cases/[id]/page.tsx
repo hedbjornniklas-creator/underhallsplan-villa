@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, ChevronDown } from 'lucide-react'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { completionMessage, selectCompletionItems } from '@/lib/renoapp/completion'
-import { clarificationItems, isOpenClarification, CLARIFICATION_ERRORS, type Clarification } from '@/lib/renoapp/clarifications'
+import { clarificationItems, isOpenClarification, type Clarification } from '@/lib/renoapp/clarifications'
 import RenoAppCaseDecisionView, {
   type RenoAppCaseDetail,
   type RenoAppCaseStatusAction,
@@ -224,10 +224,6 @@ export default function RenoAppCaseDetailPage() {
       setActionError('Klarläggandevalen måste sparas innan beslutet skickas.')
       return
     }
-    if (['approved', 'conditional'].includes(selectedStatus) && item?.clarifications?.some(isOpenClarification)) {
-      setActionError(CLARIFICATION_ERRORS.CLARIFICATION_REVIEW_REQUIRED)
-      return
-    }
 
     if (!caseId) {
       setActionError('Ogiltigt RenoApp-ärende.')
@@ -239,8 +235,8 @@ export default function RenoAppCaseDetailPage() {
       return
     }
 
-    if (selectedStatus === 'rejected' && !reason.trim()) {
-      setActionError('Skriv en motivering till avslaget.')
+    if (['approved', 'conditional', 'rejected'].includes(selectedStatus) && !reason.trim()) {
+      setActionError('Skriv en motivering till beslutet.')
       return
     }
 
@@ -272,7 +268,7 @@ export default function RenoAppCaseDetailPage() {
         },
         body: JSON.stringify({
           status: selectedStatus,
-          reason: selectedStatus === 'conditional' ? null : reason,
+          reason,
           completionRequestId: completionAttemptRef.current.id,
           selectedRequirementIds,
           selectedClarifications,

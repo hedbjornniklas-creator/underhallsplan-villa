@@ -36,6 +36,95 @@ const common = load<typeof import('../src/lib/renoapp/completion')>('src/lib/ren
 const clarifications = load<typeof import('../src/lib/renoapp/clarifications')>('src/lib/renoapp/clarifications.ts', {})
 const templates = load<Record<string, unknown>>('src/lib/renoapp/emailTemplate.ts', {})
 
+function boardDecisionFixture(currentStatus = 'review', authorized = true) {
+  const writes: Array<{ table: string; value: Record<string, unknown> }> = []
+  const messages: Array<Record<string, unknown>> = []
+  const detail = { id: 'case', status: currentStatus, clarifications: [{ state: 'pending' }] }
+  const admin = { from(table: string) {
+    return {
+      select() { return { eq() { return { maybeSingle: async () => ({ error: null,
+        data: { id: 'case', brf_id: 'brf', status: currentStatus },
+      }) } } } },
+      update(value: Record<string, unknown>) { return { eq: async () => {
+        writes.push({ table, value }); return { error: null }
+      } } },
+      async insert(value: Record<string, unknown>) { writes.push({ table, value }); return { error: null } },
+    }
+  } }
+  const service = serviceFunction<typeof import('../src/lib/renoapp/server').updateRenoAppCaseStatus>(
+    ['updateRenoAppCaseStatus', 'normalizeText'], {
+      exports: {}, createSupabaseAdminClient: () => admin,
+      requireRenoAppViewerContext: async () => ({ profile: { id: 'actor' }, authorizedBrfIds: authorized ? ['brf'] : ['another-brf'] }),
+      getRenoAppCaseDetail: async () => detail,
+      insertCaseMessage: async (message: Record<string, unknown>) => { messages.push(message) },
+      publishRenoAppCompletion: async () => detail,
+    })
+  return { writes, messages, detail, submit: (input: UpdateRenoAppCaseStatusInput) => service('case', input) }
+}
+
+test('every board decision requires a nonblank reason before any write; conditional also requires conditions', async () => {
+  for (const status of ['approved', 'conditional', 'rejected'] as const) {
+    for (const reason of [undefined, null, '', ' \n\t ']) {
+      const f = boardDecisionFixture()
+      await assert.rejects(f.submit({ status, reason, conditions: 'Conditions' }), /DECISION_REASON_REQUIRED/)
+      assert.deepEqual(f.writes, [])
+    }
+  }
+  const f = boardDecisionFixture()
+  await assert.rejects(f.submit({ status: 'conditional', reason: 'Board assessment', conditions: ' ' }), /DECISION_CONDITIONS_REQUIRED/)
+  assert.deepEqual(f.writes, [])
+})
+
+test('approval preserves open questions and saves the reason separately from conditions', async () => {
+  for (const status of ['approved', 'conditional', 'rejected'] as const) {
+    const f = boardDecisionFixture('need_info')
+    await f.submit({ status, reason: ' Board assessment ', conditions: status === 'conditional' ? 'Before starting' : null })
+    assert.deepEqual(f.writes[0], { table: 'renovation_cases', value: { status } })
+    assert.equal(f.writes[1].table, 'renovation_case_decisions')
+    assert.equal(f.writes[1].value.reason, 'Board assessment')
+    assert.equal(f.writes[1].value.conditions, status === 'conditional' ? 'Before starting' : null)
+    assert.equal(f.writes.length, 2)
+    assert.deepEqual(f.detail.clarifications, [{ state: 'pending' }])
+    assert.match(String(f.messages[0].message), /Board assessment/)
+    if (status === 'conditional') assert.match(String(f.messages[0].message), /Before starting/)
+  }
+})
+
+test('draft and cross-association protections remain; requesting completion does not require a decision reason', async () => {
+  for (const status of ['approved', 'conditional', 'rejected'] as const) {
+    const draft = boardDecisionFixture('draft')
+    await assert.rejects(draft.submit({ status, reason: 'Reason', conditions: 'Conditions' }), /DRAFT_CASE_LOCKED/)
+    assert.deepEqual(draft.writes, [])
+  }
+  const other = boardDecisionFixture('review', false)
+  await assert.rejects(other.submit({ status: 'approved', reason: 'Reason' }), /CASE_NOT_FOUND/)
+  assert.deepEqual(other.writes, [])
+  const f = boardDecisionFixture()
+  await f.submit({ status: 'need_info' })
+  assert.deepEqual(f.writes, [])
+})
+
+test('decision API returns a neutral required-reason error for approval and preserves the supplied reason', async () => {
+  let input: UpdateRenoAppCaseStatusInput | undefined
+  const route = load<typeof import('../src/app/api/renoapp/app/cases/[id]/route')>(
+    'src/app/api/renoapp/app/cases/[id]/route.ts', {
+      '@/lib/renoapp/server': { updateRenoAppCaseStatus: async (_id: string, body: UpdateRenoAppCaseStatusInput) => {
+        input = body
+        if (!body.reason?.trim()) throw new Error('DECISION_REASON_REQUIRED')
+        return { id: 'case' }
+      } },
+      '@/lib/renoapp/completion': common, '@/lib/renoapp/clarifications': clarifications,
+    })
+  for (const reason of ['', 'Assessment']) {
+    const response = await route.POST(new Request('https://example.test/api/renoapp/app/cases/case', {
+      method: 'POST', body: JSON.stringify({ status: 'conditional', reason, conditions: 'Conditions' }),
+    }), { params: Promise.resolve({ id: 'case' }) })
+    assert.equal(response.status, reason ? 200 : 400)
+    assert.equal(input?.reason, reason)
+    if (!reason) assert.deepEqual(await response.json(), { error: 'Motivering krävs för beslutet.' })
+  }
+})
+
 function confirmationFixture(status: 'new' | 'draft' | 'need_info', requestedRoles = ['plumber']) {
   const form = {
     applicantName: 'Applicant', applicantEmail: 'applicant@example.test', applicantPhone: '0700000000',

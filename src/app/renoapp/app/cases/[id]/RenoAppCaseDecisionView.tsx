@@ -347,7 +347,7 @@ function buildCaseSummaryChips(item: RenoAppCaseDetail) {
 }
 
 function getMissingReviewFlags(item: RenoAppCaseDetail) {
-  return item.reviewFlags.filter((flag) => flag.severity !== 'info' || flag.sourceType === 'missing_document')
+  return [...item.reviewFlags].sort((left, right) => left.label.localeCompare(right.label, 'sv'))
 }
 
 function CaseSection({ children, className }: { children: ReactNode; className?: string }) {
@@ -530,7 +530,7 @@ function CaseHeaderSummary({ item }: { item: RenoAppCaseDetail }) {
         {item.rulesAcceptance ? <div className="mt-4"><RenovationRulesReceipt acceptance={item.rulesAcceptance} /></div> : null}
         {item.blockedAt ? (
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-            <p className="font-semibold">Ärendet är spärrat</p>
+            <p className="font-semibold">Registrerad ärendemarkering</p>
             <p>Tidpunkt: {formatDateTime(item.blockedAt)}</p>
             <p>Orsak: {displayText(item.blockedReason, 'Ingen orsak angiven.')}</p>
           </div>
@@ -1023,15 +1023,16 @@ function BoardDecisionPanel({
             </label>
           ) : null}
 
-          {selectedStatus === 'approved' ? (
+          {['approved', 'conditional'].includes(selectedStatus) ? (
             <label className="grid gap-2 text-sm text-[var(--reno-muted)]">
-              <span className="font-semibold text-[var(--reno-ink)]">Intern beslutsnotering</span>
+              <span className="font-semibold text-[var(--reno-ink)]">Beslutsmotivering</span>
               <textarea
+                required
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={4}
                 className="reno-field border bg-white px-4 py-3 text-[var(--reno-ink)]"
-                placeholder="Valfri intern notering."
+                placeholder="Ange styrelsens motivering till beslutet."
               />
             </label>
           ) : null}
@@ -1052,6 +1053,7 @@ function BoardDecisionPanel({
                 ))}
               </div>
               <textarea
+                required
                 value={conditions}
                 onChange={(event) => onConditionsChange(event.target.value)}
                 rows={5}
@@ -1077,6 +1079,7 @@ function BoardDecisionPanel({
                 ))}
               </div>
               <textarea
+                required
                 value={reason}
                 onChange={(event) => onReasonChange(event.target.value)}
                 rows={5}
@@ -1180,14 +1183,7 @@ function ReviewFlagsCard({ flags }: { flags: ReviewFlag[] }) {
         {flags.map((flag) => (
           <div
             key={flag.id}
-            className={cx(
-              'rounded-lg border p-4 text-sm leading-6',
-              flag.severity === 'high'
-                ? 'border-rose-200 bg-rose-50 text-rose-900'
-                : flag.severity === 'warning'
-                  ? 'border-amber-200 bg-amber-50 text-amber-900'
-                  : 'border-sky-200 bg-sky-50 text-sky-900'
-            )}
+            className="border-b border-[var(--reno-line)] py-4 text-sm leading-6 text-[var(--reno-ink)] last:border-0"
           >
             <p className="font-semibold">{displayText(flag.label)}</p>
             {flag.description ? <p className="mt-1">{displayText(flag.description)}</p> : null}
@@ -1329,10 +1325,13 @@ export default function RenoAppCaseDecisionView({
       </fieldset>
       <ConsultantReviewOrder key={item.id} caseId={item.id} brfName={item.brf.name} isDraft={item.status === 'draft'} />
       <div id="board-decision" className="scroll-mt-24">
+      {item.status !== 'draft' && item.clarifications?.some(isOpenClarification) && (
+        <p role="status" className="mb-4 text-sm leading-6 text-[var(--reno-muted)]">
+          Det finns kvarstående frågor i ärendet. Styrelsen kan ändå fatta beslut. Frågorna och deras svar finns kvar oförändrade vid ett godkännande.
+        </p>
+      )}
       <BoardDecisionPanel
-        blockedReason={clarificationBusy ? 'Klarläggandevalen måste sparas innan beslutet skickas.'
-          : ['approved', 'conditional'].includes(selectedStatus) && item.clarifications?.some(isOpenClarification)
-            ? 'Kvarstående frågor behöver klarläggas eller bedömas som inte relevanta före godkännande.' : null}
+        blockedReason={clarificationBusy ? 'Klarläggandevalen måste sparas innan beslutet skickas.' : null}
         isDraftCase={item.status === 'draft'}
         selectedStatus={selectedStatus}
         reason={reason}

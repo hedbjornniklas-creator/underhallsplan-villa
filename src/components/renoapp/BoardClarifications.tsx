@@ -78,7 +78,7 @@ function ClarificationRow({ row, ...props }: Omit<Props, 'rows'> & { row: Clarif
               onChange={event => { setRequested(event.target.checked); save(event.target.checked ? 'request' : 'not_requested') }} />
             Ta med i kompletteringsbegäran
           </label>}
-          {unsent && <p role="status" className="text-sm text-amber-900">Begäran behöver skickas till sökanden.</p>}
+          {unsent && !final && <p role="status" className="text-sm text-amber-900">Begäran behöver skickas till sökanden.</p>}
           {inSentRound ? <p className="text-sm text-[var(--reno-muted)]">Begäran är skickad. Inväntar sökandens komplettering.</p> : !final && (
             <details>
               <summary className="cursor-pointer py-2 text-sm font-semibold">Styrelsens bedömning</summary>
