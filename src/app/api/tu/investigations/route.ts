@@ -85,6 +85,59 @@ async function listLatestReportLinks(orgId: string, inspectionIds: string[]) {
   return latestByInspectionId
 }
 
+async function listPublishedReportLinks(orgId: string, inspectionIds: string[]) {
+  const result = new Map<string, { resendUsesSameLink: boolean; revisionNumber: number }>()
+  if (inspectionIds.length === 0) return result
+  const admin = createSupabaseAdminClient()
+  const revisions = await admin
+    .from('tu_report_revisions')
+    .select('inspection_id,published_link_id,revision_number')
+    .eq('org_id', orgId)
+    .eq('status', 'published')
+    .in('inspection_id', inspectionIds)
+  if (revisions.error) {
+    console.error('[api/tu/investigations] failed to read published revisions', revisions.error)
+    return result
+  }
+  const rows = (revisions.data ?? []) as Array<{ inspection_id: string; published_link_id: string | null; revision_number: number }>
+  const linkIds = rows.map((row) => row.published_link_id).filter((id): id is string => Boolean(id))
+  if (linkIds.length === 0) return result
+  const links = await admin
+    .from('inspection_report_links')
+    .select('id,tu_token_ciphertext')
+    .eq('org_id', orgId)
+    .is('revoked_at', null)
+    .in('id', linkIds)
+  let linkRows: Array<{ id: string; tu_token_ciphertext: string | null }> = []
+  if (links.error && String(links.error.message ?? '').includes('tu_token_ciphertext')) {
+    const fallback = await admin
+      .from('inspection_report_links')
+      .select('id')
+      .eq('org_id', orgId)
+      .is('revoked_at', null)
+      .in('id', linkIds)
+    if (fallback.error) {
+      console.error('[api/tu/investigations] failed to read published report links', fallback.error)
+      return result
+    }
+    linkRows = (fallback.data ?? []).map((row) => ({ id: row.id, tu_token_ciphertext: null }))
+  } else if (links.error) {
+    console.error('[api/tu/investigations] failed to read published report links', links.error)
+    return result
+  } else {
+    linkRows = (links.data ?? []) as Array<{ id: string; tu_token_ciphertext: string | null }>
+  }
+  const byId = new Map(linkRows.map((row) => [row.id, row]))
+  for (const revision of rows) {
+    const link = revision.published_link_id ? byId.get(revision.published_link_id) : null
+    if (link) result.set(revision.inspection_id, {
+      resendUsesSameLink: Boolean(link.tu_token_ciphertext),
+      revisionNumber: revision.revision_number,
+    })
+  }
+  return result
+}
+
 export async function GET(request: Request) {
   try {
     const searchParams = new URL(request.url).searchParams
@@ -96,15 +149,19 @@ export async function GET(request: Request) {
     }
     const context = await requireTuContext(searchParams.get('orgId'))
     const items = await listTuInvestigations(context.orgId)
-    const reportLinks = await listLatestReportLinks(
-      context.orgId,
-      items.map((item) => item.inspectionId)
-    )
+    const inspectionIds = items.map((item) => item.inspectionId)
+    const [reportLinks, publishedLinks] = await Promise.all([
+      listLatestReportLinks(context.orgId, inspectionIds),
+      listPublishedReportLinks(context.orgId, inspectionIds),
+    ])
     return NextResponse.json({
       org: { id: context.orgId, name: context.orgName },
       items: items.map((item) => ({
         ...item,
         hasReadyPdf: hasReadyPdf(reportLinks.get(item.inspectionId)),
+        hasPublishedLink: publishedLinks.has(item.inspectionId),
+        resendUsesSameLink: publishedLinks.get(item.inspectionId)?.resendUsesSameLink ?? false,
+        publishedRevisionNumber: publishedLinks.get(item.inspectionId)?.revisionNumber ?? null,
       })),
     })
   } catch (error) {
