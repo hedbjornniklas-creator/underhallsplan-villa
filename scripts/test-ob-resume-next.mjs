@@ -125,9 +125,42 @@ try {
   await page.click('a')
   await page.waitForSelector('[data-view="places"]')
   assert.match(await page.$eval('.obm-root', el => el.textContent), /Gästhus/)
+  console.log('Next router: internal step changes with a retained local draft')
+  await select('Fastighet & uppdrag')
+  await waitSection('grunddata')
+  const draftKey = 'ob:text-draft:v1:ob:synthetic-mobile-inspection:handlingar:retained'
+  const draftValue = JSON.stringify({ value: 'Retained synthetic local text' })
+  await page.evaluate((key, value) => localStorage.setItem(key, value), draftKey, draftValue)
+  const acceptFixtureReload = dialog => void dialog.accept()
+  page.on('dialog', acceptFixtureReload)
+  await page.reload({ waitUntil: 'networkidle0' })
+  page.off('dialog', acceptFixtureReload)
+  await waitSection('grunddata')
+  await page.waitForFunction(() => history.state?.obTextDraftGuard === true)
+  const unexpectedDialogs = [], documentRequests = []
+  const onDialog = dialog => { unexpectedDialogs.push(dialog.type()); void dialog.dismiss() }
+  const onRequest = request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentRequests.push(request.url()) }
+  page.on('dialog', onDialog)
+  page.on('request', onRequest)
+  for (let i = 0; i < 3; i++) {
+    await select('ÖB-runda · Huvudbyggnad')
+    await page.waitForSelector('.obm-root nav')
+    await tab('Platser')
+    await page.waitForSelector('.obm-place-row')
+    await page.click('.obm-place-row')
+    await page.waitForSelector('.obm-room-header')
+    await select('Fastighet & uppdrag')
+    await waitSection('grunddata')
+    await page.waitForFunction(() => !history.state?.__obRoundBack)
+  }
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), draftKey), draftValue)
+  assert.deepEqual(unexpectedDialogs, [], 'Internal navigation must not trigger leave/reload dialogs')
+  assert.deepEqual(documentRequests, [], 'Internal navigation must not reload the document')
+  page.off('dialog', onDialog)
+  page.off('request', onRequest)
   assert.deepEqual(external, [])
   assert.deepEqual(errors, [])
-  console.log('PASS: real Next router, multi-building round/conditions reload, room Back, repeated menu re-entry, return events, root exit and inspection re-entry. No external requests.')
+  console.log('PASS: real Next router, multi-building round/conditions reload, room Back, repeated menu re-entry, return events, root exit, inspection re-entry and retained drafts across reload/internal navigation. No external requests.')
 } catch (error) {
   if (page) {
     console.error('Failure page:', page.url(), await page.$eval('body', el => el.innerText))
