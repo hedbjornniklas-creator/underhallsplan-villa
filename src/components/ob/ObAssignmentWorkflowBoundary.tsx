@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, RefreshCw } from 'lucide-react'
 import { formatObAssignmentValue, getObAssignmentChanges, getObAssignmentTransferRows, obAssignmentFieldLabels, obAssignmentTransferFields, type ObAssignmentTransferField, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 import { ObGrunddataWriteError, waitForObGrunddataWrites } from '@/lib/ob/grunddataWrites'
+import { OB_WORKFLOW_CONNECTION_ERROR, OB_WORKFLOW_READ_TIMEOUT_MS, ObWorkflowAccessError, startObWorkflowRead } from '@/lib/ob/workflowRead'
 
 export default function ObAssignmentWorkflowBoundary({ inspectionId, children, onStatusChange, showStatus = true }: {
   inspectionId: string
@@ -25,45 +26,86 @@ export default function ObAssignmentWorkflowBoundary({ inspectionId, children, o
   const [success, setSuccess] = useState<string | null>(null)
   const posting = useRef(false)
   const requestSequence = useRef(0)
-  const load = useCallback(async () => {
+  const readRequest = useRef<ReturnType<typeof startObWorkflowRead<ObAssignmentWorkflow | null>> | null>(null)
+  const load = useCallback((replace = false) => {
     if (posting.current) return
+    if (readRequest.current) {
+      if (!replace && Date.now() - readRequest.current.startedAt < OB_WORKFLOW_READ_TIMEOUT_MS) return
+      readRequest.current.cancel()
+    }
     const sequence = ++requestSequence.current
     setRefreshing(true)
-    try {
+    const request = startObWorkflowRead(async signal => {
       try {
         await waitForObGrunddataWrites(inspectionId)
+        signal.throwIfAborted()
         if (sequence === requestSequence.current) setWriteError(null)
       } catch (failure) {
+        signal.throwIfAborted()
         if (!(failure instanceof ObGrunddataWriteError)) throw failure
         if (sequence === requestSequence.current) { setWriteError(failure.message); setConfirmed(false) }
         // Still refresh approval/paused state. Failed local saves only block an
         // import, not the user's ability to close the comparison and retry editing.
       }
-      if (sequence !== requestSequence.current || posting.current) return
-      const response = await fetch(`/api/ob/inspections/${inspectionId}/assignment-workflow`, { cache: 'no-store' })
+      signal.throwIfAborted()
+      const response = await fetch(`/api/ob/inspections/${inspectionId}/assignment-workflow`, { cache: 'no-store', signal })
+      if (response.status === 401) throw new ObWorkflowAccessError('Inloggningen behöver förnyas. Logga in igen för att fortsätta.')
+      if (response.status === 403) throw new ObWorkflowAccessError('Du saknar åtkomst till uppdraget. Kontakta administratören om detta inte stämmer.')
       const body = await response.json()
+      if (!response.ok) throw new Error(OB_WORKFLOW_CONNECTION_ERROR)
+      if (!Object.hasOwn(body ?? {}, 'workflow') || body.workflow !== null && (
+        body.workflow?.inspectionId !== inspectionId || typeof body.workflow?.paused !== 'boolean'
+      )) {
+        throw new Error(OB_WORKFLOW_CONNECTION_ERROR)
+      }
+      return body.workflow as ObAssignmentWorkflow | null
+    })
+    readRequest.current = request
+    void request.promise.then(next => {
       if (sequence !== requestSequence.current) return
-      if (!response.ok) throw new Error(body.error)
-      setWorkflow(body.workflow)
+      setWorkflow(next)
       setError(null)
-      if (body.workflow) onStatusChange?.(body.workflow)
-    } catch (failure) {
+      if (next) onStatusChange?.(next)
+    }).catch(failure => {
       if (sequence === requestSequence.current) {
         if (failure instanceof ObGrunddataWriteError) { setWriteError(failure.message); setConfirmed(false) }
-        else setError(failure instanceof Error ? failure.message : 'Kunde inte läsa uppdragsstatus.')
+        else setError(failure instanceof ObWorkflowAccessError ? failure.message : OB_WORKFLOW_CONNECTION_ERROR)
       }
-    } finally { if (sequence === requestSequence.current) setRefreshing(false) }
+    }).finally(() => {
+      if (readRequest.current === request) readRequest.current = null
+      if (sequence === requestSequence.current) setRefreshing(false)
+    })
   }, [inspectionId, onStatusChange])
   useEffect(() => {
     void load()
-    const refresh = () => { if (document.visibilityState === 'visible') void load() }
+    let interrupted = false
+    const interrupt = () => { interrupted = true }
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') { interrupt(); return }
+      const replace = interrupted
+      interrupted = false
+      void load(replace)
+    }
+    const invalidate = () => { if (document.visibilityState === 'visible') void load(true) }
     window.addEventListener('focus', refresh)
-    window.addEventListener('ob-assignment-workflow-updated', refresh)
+    window.addEventListener('pageshow', refresh)
+    window.addEventListener('online', refresh)
+    window.addEventListener('offline', interrupt)
+    document.addEventListener('visibilitychange', refresh)
+    document.addEventListener('resume', refresh)
+    window.addEventListener('ob-assignment-workflow-updated', invalidate)
     const timer = window.setInterval(refresh, 30000)
     return () => {
       requestSequence.current += 1
+      readRequest.current?.cancel()
+      readRequest.current = null
       window.removeEventListener('focus', refresh)
-      window.removeEventListener('ob-assignment-workflow-updated', refresh)
+      window.removeEventListener('pageshow', refresh)
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('offline', interrupt)
+      document.removeEventListener('visibilitychange', refresh)
+      document.removeEventListener('resume', refresh)
+      window.removeEventListener('ob-assignment-workflow-updated', invalidate)
       window.clearInterval(timer)
     }
   }, [load])
@@ -84,6 +126,8 @@ export default function ObAssignmentWorkflowBoundary({ inspectionId, children, o
     setSaving(true)
     setSuccess(null)
     requestSequence.current += 1
+    readRequest.current?.cancel()
+    readRequest.current = null
     try {
       await waitForObGrunddataWrites(inspectionId)
       const response = await fetch(`/api/ob/inspections/${inspectionId}/assignment-workflow`, {
@@ -112,7 +156,7 @@ export default function ObAssignmentWorkflowBoundary({ inspectionId, children, o
   return <>
     {workflow === undefined && !error ? <p role="status" className="mb-3 text-sm text-slate-600">Kontrollerar uppdragsstatus...</p> : null}
     {error || writeError ? <div role="alert" className="mb-3 flex items-center gap-2 border-l-4 border-rose-500 bg-rose-50 p-3 text-sm text-rose-800">
-      {error || writeError}<button type="button" onClick={() => void load()} disabled={saving || refreshing} title="Uppdatera uppdragsstatus" aria-label="Uppdatera uppdragsstatus" className="ml-auto p-2"><RefreshCw size={18} /></button>
+      <span>{refreshing && error ? 'Kontrollerar anslutningen...' : error || writeError}</span><button type="button" onClick={() => void load()} disabled={saving || refreshing} title="Uppdatera uppdragsstatus" aria-label="Uppdatera uppdragsstatus" className="ml-auto inline-flex h-12 w-12 shrink-0 items-center justify-center"><RefreshCw size={20} /></button>
     </div> : null}
     {workflow && showStatus ? <div className={`mb-4 border-l-4 p-3 text-sm ${workflow.canDeliver ? 'border-emerald-600 bg-emerald-50 text-emerald-900' : 'border-amber-500 bg-amber-50 text-amber-950'}`}>
       <div className="flex flex-wrap items-center gap-2">

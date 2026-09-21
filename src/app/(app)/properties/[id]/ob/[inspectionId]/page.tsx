@@ -14,6 +14,7 @@ import { parseScopeCodes } from '@/lib/report/scopeText'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 import { isObRoundBackManaged } from '@/lib/ob/roundBackHistory'
 import { getInitialObSection, isObRoundSection } from '@/lib/ob/mobileRound'
+import { inspectionNavigationKey, restoreInspectionNavigation } from '@/lib/ob/inspectionNavigation'
 import ObWizard, {
   ObSectionKey,
   ObWizardInspectionInput,
@@ -231,6 +232,7 @@ export default function InspectionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedAddonKeys, setSelectedAddonKeys] = useState<string[]>([])
+  const [addonsLoadedFor, setAddonsLoadedFor] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [buildingOverview, setBuildingOverview] = useState<ObBuildingOverview | null>(null)
   const [buildingError, setBuildingError] = useState<string | null>(null)
@@ -270,8 +272,8 @@ export default function InspectionDetailPage() {
     setSelectedAddonKeys((prev) => (areAddonKeyListsEqual(prev, keys) ? prev : keys))
   }, [])
 
-  // Starta på Grunddata
   const [activeSection, setActiveSection] = useState<ObSectionKey>('grunddata')
+  const [navigationReadyFor, setNavigationReadyFor] = useState<string | null>(null)
   const activeBuilding = buildingOverview?.parts.find(part => part.id === selectedBuildingId)
     ?? buildingOverview?.parts.find(part => part.id === buildingOverview.structure?.primary_part_id) ?? null
   useEffect(() => {
@@ -280,10 +282,6 @@ export default function InspectionDetailPage() {
   const mobileRoundV2 = activeSection === 'runda-ny'
   const brandedForm = activeSection === 'grunddata' || activeSection === 'forutsattningar'
   const isRoundSection = isObRoundSection(activeSection)
-
-  useEffect(() => {
-    setActiveSection(getInitialObSection(window.location.search))
-  }, [inspectionId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -564,6 +562,8 @@ export default function InspectionDetailPage() {
     }
 
     let cancelled = false
+    setAddonsLoadedFor(null)
+    setSelectedAddonKeys([])
 
     const loadInspectionAddonSelections = async () => {
       try {
@@ -595,6 +595,8 @@ export default function InspectionDetailPage() {
         if (!cancelled) {
           setSelectedAddonKeys((prev) => (prev.length === 0 ? prev : []))
         }
+      } finally {
+        if (!cancelled) setAddonsLoadedFor(inspectionId)
       }
     }
 
@@ -622,22 +624,42 @@ export default function InspectionDetailPage() {
   const activeSectionLabel = visibleSections[activeSectionIndex]?.label ?? ''
 
   useEffect(() => {
+    if (loading || inspection?.id !== inspectionId || !buildingOverview || navigationReadyFor === inspectionId) return
+    let raw: string | null = null
+    try { raw = sessionStorage.getItem(inspectionNavigationKey(inspectionId)) } catch {}
+    // Add-on visibility is reconciled once its independent request completes.
+    const sections = getVisibleSections(isApartmentInspection, true, true, buildingOverview)
+    const position = restoreInspectionNavigation(raw, sections, 'grunddata', buildingOverview.structure?.primary_part_id ?? null,
+      getInitialObSection(window.location.search) === 'runda-ny')
+    setActiveSection(position.section)
+    setSelectedBuildingId(position.partId)
+    setNavigationReadyFor(inspectionId)
+  }, [loading, inspection?.id, inspectionId, buildingOverview, navigationReadyFor, isApartmentInspection])
+
+  useEffect(() => {
+    if (loading || navigationReadyFor !== inspectionId || !buildingOverview) return
+    try {
+      sessionStorage.setItem(inspectionNavigationKey(inspectionId), JSON.stringify({ section: activeSection, partId: activeBuilding?.id ?? null }))
+    } catch {}
+  }, [loading, navigationReadyFor, inspectionId, buildingOverview, activeSection, activeBuilding?.id])
+
+  useEffect(() => {
     if (isApartmentInspection && activeSection === 'utsida') {
       setActiveSection('insida')
     }
   }, [isApartmentInspection, activeSection])
 
   useEffect(() => {
-    if (!showAreaMeasurement && activeSection === 'areamatning') {
+    if (addonsLoadedFor === inspectionId && !showAreaMeasurement && activeSection === 'areamatning') {
       setActiveSection('insida')
     }
-  }, [showAreaMeasurement, activeSection])
+  }, [addonsLoadedFor, inspectionId, showAreaMeasurement, activeSection])
 
   useEffect(() => {
-    if (!showMoistureControl && activeSection === 'fuktkontroll') {
+    if (addonsLoadedFor === inspectionId && !showMoistureControl && activeSection === 'fuktkontroll') {
       setActiveSection(showAreaMeasurement ? 'areamatning' : 'insida')
     }
-  }, [activeSection, showAreaMeasurement, showMoistureControl])
+  }, [addonsLoadedFor, inspectionId, activeSection, showAreaMeasurement, showMoistureControl])
 
   useEffect(() => {
     setMobileMenuOpen(false)
@@ -781,7 +803,7 @@ export default function InspectionDetailPage() {
               <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={!isRoundSection}>
               {buildingError ? <div role="alert" className="p-4 text-red-700">{buildingError}
                 <button type="button" className="ml-3 underline" onClick={() => void reloadBuildings().catch(error => setBuildingError(error.message))}>Försök igen</button>
-              </div> : !buildingOverview ? <p role="status" className="p-4">Hämtar byggnader...</p> :
+              </div> : !buildingOverview || navigationReadyFor !== inspectionId ? <p role="status" className="p-4">Hämtar byggnader...</p> :
               <ObBuildingContext.Provider value={{ inspectionId, overview: buildingOverview, part: activeBuilding, reload: reloadBuildings }}>
               <ObWizard
                 property={property}
