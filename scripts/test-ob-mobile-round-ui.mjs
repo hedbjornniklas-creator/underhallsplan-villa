@@ -309,6 +309,7 @@ if (serve) {
     async function selectedSection() { return page.$eval('[data-selected-ob-section]', node => node.dataset.selectedObSection) }
     for (const width of [390, 1280]) {
       await page.setViewport({ width, height: 820 })
+      await page.evaluate(() => sessionStorage.removeItem('ob:inspection-navigation:v1:synthetic-mobile-inspection'))
       await page.goto(base + '/navigation', { waitUntil: 'networkidle0' })
       assert.equal(await selectedSection(), 'grunddata')
       await openStepMenu()

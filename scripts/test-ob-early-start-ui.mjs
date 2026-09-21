@@ -25,6 +25,7 @@ await new Promise((ok, fail) => webpack({
 const { css } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const js = await readFile(resolve(output, 'view.js'))
 let assignment, workflow, readFails = false, reviewFails = false
+let workflowReadDelay = 0, workflowReadHangs = false, workflowReads = 0, workflowReadStatus = 200
 const posts = []
 function reset() {
   assignment = { id: 'test-assignment', org_id: 'test-org', status: 'sent', assignment_type: 'OB',
@@ -39,6 +40,7 @@ function reset() {
     reconciliationToken: 'test-reconciliation-token', inspectionLocked: false,
     reviewToken: 'test-review-token', needsReview: true, paused: false, canDeliver: false, reason: 'Inväntar kundens godkännande.' }
   posts.length = 0; readFails = false; reviewFails = false
+  workflowReadDelay = 0; workflowReadHangs = false; workflowReads = 0; workflowReadStatus = 200
 }
 reset()
 const server = createServer(async (request, response) => {
@@ -46,8 +48,12 @@ const server = createServer(async (request, response) => {
   if (route.startsWith('/api/')) {
     response.setHeader('Content-Type', 'application/json; charset=utf-8')
     if (route.endsWith('/assignment-workflow') && request.method === 'GET') {
-      response.statusCode = readFails ? 503 : 200
-      response.end(JSON.stringify(readFails ? { error: 'Uppdragsstatus kunde inte kontrolleras.' } : { workflow })); return
+      workflowReads++
+      if (workflowReadHangs) return
+      const payload = readFails ? { error: 'Uppdragsstatus kunde inte kontrolleras.' } : { workflow }
+      response.statusCode = readFails ? 503 : workflowReadStatus
+      if (workflowReadDelay) await new Promise(ok => setTimeout(ok, workflowReadDelay))
+      response.end(JSON.stringify(payload)); return
     }
     if (request.method === 'GET') { response.end(JSON.stringify({ assignment, addonOrders: [] })); return }
     let raw = ''; for await (const chunk of request) raw += chunk
@@ -195,6 +201,64 @@ try {
     await page.waitForSelector('[role=alert]')
     assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true)
   }
+  reset()
+  await page.goto(`${base}/boundary?round`, { waitUntil: 'networkidle0' })
+  const noteBeforeResume = await page.$eval('#test-note', node => node.value)
+  for (const event of ['visibilitychange', 'pageshow', 'online', 'resume']) {
+    readFails = true
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await page.waitForSelector('[role=alert]')
+    assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true)
+    readFails = false
+    await page.evaluate(name => (['visibilitychange', 'resume'].includes(name) ? document : window).dispatchEvent(new Event(name)), event)
+    await page.waitForFunction(() => !document.querySelector('#test-note').matches(':disabled'))
+    assert.equal(await page.$eval('#test-note', node => node.value), noteBeforeResume)
+  }
+  workflowReadDelay = 500
+  const beforeBurst = workflowReads
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('pageshow'))
+    window.dispatchEvent(new Event('online'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    document.dispatchEvent(new Event('resume'))
+  })
+  await new Promise(ok => setTimeout(ok, 800))
+  assert.equal(workflowReads, beforeBurst + 1, 'return-to-app event burst shares one read')
+  workflowReadDelay = 0
+  workflowReadHangs = true
+  const beforeOffline = workflowReads
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await new Promise(ok => setTimeout(ok, 200))
+  assert.equal(workflowReads, beforeOffline + 1)
+  await page.evaluate(() => window.dispatchEvent(new Event('offline')))
+  workflowReadHangs = false
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await new Promise(ok => setTimeout(ok, 200))
+  assert.equal(workflowReads, beforeOffline + 2, 'return online replaces an interrupted request without waiting for the deadline')
+  workflowReadHangs = true
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await page.waitForSelector('[role=alert]', { timeout: 20000 })
+  assert.match(await page.$eval('[role=alert]', node => node.textContent), /Kontrollera anslutningen/)
+  assert.equal(await page.$eval('[aria-label="Uppdatera uppdragsstatus"]', node => node.disabled), false, 'hung request times out and retry becomes usable')
+  workflowReadHangs = false
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await page.waitForFunction(() => !document.querySelector('#test-note').matches(':disabled'))
+  assert.equal(await page.$eval('#test-note', node => node.value), noteBeforeResume)
+  for (const [status, message] of [[401, 'Inloggningen behöver förnyas'], [403, 'Du saknar åtkomst']]) {
+    workflowReadStatus = status
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await page.waitForFunction(text => document.querySelector('[role=alert]')?.textContent.includes(text), {}, message)
+    assert.equal(await page.$eval('#test-note', node => node.matches(':disabled')), true)
+  }
+  workflowReadStatus = 200
+  workflow = { ...workflow, paused: true }
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await page.waitForFunction(() => !document.querySelector('[role=alert]'))
+  await page.waitForFunction(() => document.querySelector('#test-note').matches(':disabled'))
+  assert.deepEqual(posts, [], 'resume retries never replay a mutation')
+  console.log('PASS: mobile return/online recovery, deduplicated reads, hanging-request timeout, preserved note and paused-state guard.')
+
   reset(); setAccepted()
   await page.goto(`${base}/boundary`, { waitUntil: 'networkidle0' })
   await openComparison()
