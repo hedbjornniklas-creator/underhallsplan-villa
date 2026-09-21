@@ -70,3 +70,22 @@ external requests. The live customer's local draft contents are not inspected.
   and its step menu rendered. No fields, rooms, notes or images were changed.
 - No SQL migration is required. Reload only after pending saves/uploads finish;
   do not clear browser storage containing drafts or queued images.
+
+## Follow-up: Native Reload Warning
+
+After publication the user reported Chrome's native reload warning directly when
+moving from the round to property/assignment, without pressing Reload. This is
+not the removed internal-menu confirmation, and its cause is not yet confirmed.
+
+The Next router regression now also seeds a retained local draft, reloads the
+synthetic inspection, and repeats round-to-property navigation three times. It
+passes without a document navigation or a dialog, and retains the exact draft.
+The affected live inspection's initial page also loads in the separate in-app
+browser session; no customer fields were edited and the round was not entered,
+since entering it can initialize defaults. This does not establish the state of
+the user's Chrome tab or its local drafts.
+
+The next diagnostic is opening the same inspection in a new Chrome tab while
+keeping the original tab intact. That loads the published code with fresh tab
+history without clearing browser storage. Do not classify the inspection as
+corrupt, discard drafts, or remove the actual leave/reload guard without evidence.
