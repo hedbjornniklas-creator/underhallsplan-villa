@@ -136,3 +136,17 @@ Verification before publication:
   modal toast expiry, navigation and 320-1280px layouts. No external requests.
 - The removal-error mobile screenshot and desktop toast screenshot were visually
   inspected. No real customer deletion or move was used for verification.
+
+## Publication Receipt, 2026-09-22
+
+- Source commits: `6b95bd0` (runtime fix) and `61d1215` (verification).
+- Production commit: `7d79a35bbbd914598e4e2ca2f02fcaa4d5f22a5c`, pushed to
+  `main` from the clean, isolated release worktree. Unrelated work was excluded.
+- Vercel deployment: `AsqnxFx3UVgfjzKmuM8cUh5ByHww`, created at
+  08:54:25 CEST. Verified Ready, Latest, Production, domain `hushub.se`, and
+  the exact production commit in the deployment overview.
+- Verification results are recorded above. No customer data was moved, removed
+  or edited to test the release. No SQL migration is required.
+- The native reload warning remains unconfirmed. To compare the published
+  version, open the inspection in a new tab and keep the old tab intact. Do not
+  clear browser storage containing local drafts or queued images.
