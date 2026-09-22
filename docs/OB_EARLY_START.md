@@ -55,3 +55,31 @@ Do not roll back by deleting workflow rows or removing delivery guards after ear
 - Staging checklist: double-click/retry start; race customer approval against start and reissue from separate connections; approve with changed object/customer/addons; reconcile; complete and send; reissue unlocked work; verify old tokens and report links no longer work; check unauthorized and archived cases.
 
 The PGlite tests cover transaction rollback, repeated calls, actor checks, evidence protection, delayed approval/addons, stale reconciliation, version handover, pausing, final-delivery guards and existing lock guards. They do not replace simultaneous-connection, live RLS/storage and email-provider checks in staging.
+
+## Production Reconciliation Preflight, 2026-09-22
+
+The disabled review checkbox was traced to a missing deployment prerequisite,
+not a lost inspection snapshot. Read-only production checks found the original
+`ob_assignment_workflow_state(uuid)` implementation, no
+`ob_assignment_inspection_snapshot(uuid)` helper and no
+`ob_reconcile_assignment_workflow(uuid,uuid,uuid,text,text,text[])` function.
+The affected inspection has its property snapshot. Customer acceptance exists,
+but inspector booking is still pending and must be completed by the inspector.
+
+Required migration: `docs/db/2026-09-12_12_ob_assignment_reconciliation.sql`.
+The 47 early-start, API, reconciliation, Grunddata-queue and workflow-read tests
+passed, followed by `node scripts/test-ob-early-start-ui.mjs` on desktop/mobile.
+The production SQL preflight used a read-only transaction. At this checkpoint,
+installation is awaiting user approval; no migration, customer-data update,
+booking or reconciliation has been performed.
+
+### Installation Confirmed
+
+The user subsequently reported running the migration. Read-only production
+verification confirmed that the affected workflow now returns a nonempty
+`inspectionSnapshot` and `reconciliationToken`, and the service API exposes
+`ob_reconcile_assignment_workflow` with the expected six parameters. The
+inspection is neither paused nor locked. Customer acceptance exists, but
+inspector booking is still pending (`ordered`), so final reconciliation and
+delivery remain guarded. No booking, reconciliation or customer-data mutation
+was performed during verification.

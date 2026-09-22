@@ -6,6 +6,7 @@ import { ArrowLeft, Menu } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
 import ObStepMenu from '@/components/ob/ObStepMenu'
+import ObLocalDraftStatus from '@/components/ob/ObLocalDraftStatus'
 import { getObAssignmentReconciliationPatches, type ObAssignmentReconciledDetail } from '@/lib/ob/assignmentWorkflow'
 import { ObBuildingContext } from '@/components/ob/ObBuildingContext'
 import type { ObBuildingOverview } from '@/lib/ob/buildingStructure'
@@ -800,6 +801,7 @@ export default function InspectionDetailPage() {
                 [&_select]:text-gray-900
                 [&_select]:border-gray-300`}
             >
+              <ObLocalDraftStatus key={`drafts:${inspection.id}`} inspectionId={inspection.id} />
               <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={!isRoundSection}>
               {buildingError ? <div role="alert" className="p-4 text-red-700">{buildingError}
                 <button type="button" className="ml-3 underline" onClick={() => void reloadBuildings().catch(error => setBuildingError(error.message))}>Försök igen</button>

@@ -66,6 +66,8 @@ export default function DebouncedTextarea({
   const [isFocused, setIsFocused] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [fieldsetDisabled, setFieldsetDisabled] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draftRef = useRef(value)
   const isDirtyRef = useRef(false)
@@ -80,6 +82,19 @@ export default function DebouncedTextarea({
   }
 
   useEffect(() => {
+    // Workflow locks are inherited from fieldsets, not always passed as props.
+    const fieldsets: HTMLElement[] = []
+    for (let parent = textareaRef.current?.parentElement; parent; parent = parent.parentElement) {
+      if (parent.tagName === 'FIELDSET') fieldsets.push(parent)
+    }
+    const refresh = () => setFieldsetDisabled(Boolean(textareaRef.current?.matches(':disabled')))
+    const observer = new MutationObserver(refresh)
+    fieldsets.forEach(fieldset => observer.observe(fieldset, { attributes: true, attributeFilter: ['disabled'] }))
+    refresh()
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
     latestValueRef.current = value
     if (!isFocused && !isDirty) {
       setDraft(value)
@@ -88,6 +103,7 @@ export default function DebouncedTextarea({
   }, [isDirty, isFocused, value])
 
   useEffect(() => {
+    if (disabled || readOnly || textareaRef.current?.matches(':disabled')) return
     const storedDraft = readStoredDraft(draftKey)
     if (storedDraft === null || storedDraft === value) {
       if (storedDraft === value && !isDirty && !isSaving) {
@@ -95,11 +111,20 @@ export default function DebouncedTextarea({
       }
       return
     }
+    if (isDirtyRef.current || isSaving) return
     draftRef.current = storedDraft
     setDraft(storedDraft)
     markDirty(true)
     onValueChange?.(storedDraft)
-  }, [draftKey, isDirty, isSaving, onValueChange, value])
+    // Restoring an interrupted edit must restart autosave without requiring blur.
+    scheduleSave(storedDraft)
+  }, [disabled, readOnly, fieldsetDisabled, draftKey, isDirty, isSaving, onValueChange, value])
+
+  useEffect(() => {
+    if (!disabled && !readOnly && !textareaRef.current?.matches(':disabled') && isDirtyRef.current) {
+      scheduleSave(draftRef.current)
+    }
+  }, [disabled, readOnly, fieldsetDisabled])
 
   useEffect(() => {
     return () => {
@@ -135,7 +160,7 @@ export default function DebouncedTextarea({
     draftVersion = draftVersionRef.current
   ) => {
     clearTimer()
-    if (disabled || readOnly) return
+    if (disabled || readOnly || textareaRef.current?.readOnly || textareaRef.current?.matches(':disabled')) return
     if (!isDirtyRef.current) return
     if (inFlightDraftVersionsRef.current.has(draftVersion)) return
 
@@ -151,6 +176,7 @@ export default function DebouncedTextarea({
       clearStoredDraft(draftKey)
       markDirty(false)
     } catch {
+      if (saveVersionRef.current !== version || draftRef.current !== nextValue) return
       writeStoredDraft(draftKey, nextValue)
       markDirty(true)
     } finally {
@@ -174,6 +200,7 @@ export default function DebouncedTextarea({
   return (
     <textarea
       {...props}
+      ref={textareaRef}
       value={isFocused || isDirty ? draft : value}
       disabled={disabled}
       readOnly={readOnly}
