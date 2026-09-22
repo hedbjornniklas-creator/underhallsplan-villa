@@ -20,7 +20,7 @@ export async function GET() {
   try {
     const context = await requireOrgContext()
     const items = (await listAssignmentsByOrg(context.orgId)).filter(
-      (item) => item.assignment_type !== 'TU'
+      (item) => item.assignment_type === 'OB'
     )
 
     return NextResponse.json({

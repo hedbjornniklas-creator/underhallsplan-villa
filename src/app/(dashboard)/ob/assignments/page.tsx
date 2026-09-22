@@ -11,7 +11,7 @@ type AssignmentItem = {
   id: string
   org_id: string
   status: 'draft' | 'sent' | 'ordered' | 'booked' | 'completed' | 'expired' | 'cancelled'
-  assignment_type: 'OB' | 'STATUS' | 'UHP' | 'EB'
+  assignment_type: 'OB'
   customer_name: string | null
   customer_email: string
   customer_phone: string | null
