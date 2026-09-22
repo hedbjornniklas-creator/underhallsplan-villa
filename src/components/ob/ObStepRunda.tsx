@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabaseClient'
 import DebouncedTextarea from './DebouncedTextarea'
 import ObMobileRound from './ObMobileRound'
 import { requestRoundMutation, type MoveResult, type RemovalResult, type ImageNoteResult, type RoundMutationOperation } from '@/lib/ob/roundMutations'
-import { clearConfirmedObNoteDrafts, hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
+import { clearConfirmedObNoteDrafts, hasObTextDraftsForRoundTarget } from '@/lib/ob/localTextDrafts'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
   type ControlPointSearchResult,
@@ -1529,6 +1529,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
           : [...prev, saved].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       })
       if (saved.control_point_id) await ensureControlPointData([saved.control_point_id])
+      clearConfirmedObNoteDrafts(inspection.id, [saved], draftScope)
       return saved
     } catch (e: unknown) {
       console.error('upsert control item in OB round failed:', e)
@@ -1563,9 +1564,12 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     roundMutationRef.current = true
     setRoundMutating(true)
     try {
-      // Creating a separate image note cannot overwrite or delete an existing text draft.
-      if (operation !== 'image-note' && hasObTextDraftsForInspection(inspection.id)) {
-        throw Error('Det finns osparad text. Öppna noteringen och spara innan du fortsätter.')
+      const target = payload as { kind?: string; id?: string }
+      if ((operation === 'move' || operation === 'remove') &&
+        hasObTextDraftsForRoundTarget(inspection.id, target, controlItems)) {
+        throw Error(target.kind === 'room'
+          ? 'Det finns osparad text i det här rummet. Spara texten innan du flyttar eller raderar rummet.'
+          : 'Den här noteringen har osparad text. Öppna och spara den innan du flyttar eller raderar den.')
       }
       if ((await listRoundImageUploadItems(inspection.id)).length) {
         throw Error('Vänta tills alla bilder har laddats upp.')
@@ -1594,7 +1598,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     roundMutationRef.current = true
     setRoundMutating(true)
     try {
-      if (hasObTextDraftsForInspection(inspection.id)) throw Error('Det finns osparad text. Spara noteringen innan du fortsätter.')
+      // Renaming the label does not modify notes, their IDs or their local draft keys.
       if ((await listRoundImageUploadItems(inspection.id)).length) throw Error('Vänta tills alla bilder har laddats upp.')
       const updated = await renameRoundRoom(supabase, inspection.id, room.id, room.room_label ?? null, name) as InteriorRoom
       setRooms(rows => rows.map(row => row.id === updated.id ? updated : row).sort(sortRooms))

@@ -89,3 +89,35 @@ The next diagnostic is opening the same inspection in a new Chrome tab while
 keeping the original tab intact. That loads the published code with fresh tab
 history without clearing browser storage. Do not classify the inspection as
 corrupt, discard drafts, or remove the actual leave/reload guard without evidence.
+
+## Targeted Mutation Guards, 2026-09-22
+
+The user then reported the same unsaved-text message when deleting a note. The
+remaining move/removal guard was still inspection-wide: a draft in documents,
+conditions, another note or a removed editor could block every deletion. The
+previous release only exempted new image-note creation from that check. This is
+a confirmed application defect, not evidence that the inspection is corrupt.
+The native reload warning above remains a separate, unconfirmed issue.
+
+- Note moves/removals now inspect drafts for that exact note ID, including old
+  editors and all building scopes within the same inspection.
+- Room moves/removals inspect that room's notes and local quick note. Other rooms
+  and shared-step drafts do not block them. Existing server checks still reject
+  deleting rooms with contents, stale confirmations and unauthorized operations.
+- Image deletion retains note text, so text drafts do not block it. Renaming a
+  room label likewise leaves note identity, contents and draft keys unchanged.
+- Target drafts are protected even if their JSON is unreadable. Inaccessible
+  local storage fails closed for note/room mutations. The guard clears no data.
+- A successful note-write response may reconcile an identical draft using the
+  existing exact-match cleanup. Different or unknown drafts are never discarded.
+- Move/removal action errors now use the global auto-dismiss toast. Failed
+  preview loading and locked/occupied states remain persistent; destructive
+  confirmation, retry identity and the ability to recheck content remain intact.
+- Pending saves/uploads, inspection-exit guards, server authorization and locks
+  are unchanged. No SQL or customer-data maintenance is needed.
+
+The user approved publication after passing tests. Regression coverage includes
+unrelated retained drafts, a target draft introduced after deletion preview,
+legacy/cross-building keys, room protection, retry with a lost response, toast
+expiry and unchanged unrelated draft text. Synthetic fixtures use the production
+target-selection helper; a separate adapter contract test verifies its wiring.
