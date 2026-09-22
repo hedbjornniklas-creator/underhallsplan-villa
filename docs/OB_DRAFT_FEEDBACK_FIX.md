@@ -193,3 +193,24 @@ Verification before publication:
   background return and retained drafts across internal step changes.
 - Additional browser checks cover restored autosave without focus/blur, explicit
   and inherited locks, late failures and read-only comparison cleanup.
+
+### Publication Receipt: Restored Autosave
+
+- Source commit: `8dffefc`. Production commit:
+  `e091f508b80777ec5156e4f618c124a070eaae23`.
+- The final core browser regression passed again after the inherited fieldset
+  lock checks. The isolated full `next build --webpack` passed, including
+  TypeScript and all 62 static pages, using non-working build placeholders.
+- Production was pushed from the clean release worktree. Only the ten scoped
+  implementation, test and documentation files were included. Parallel Uppdrag
+  and assignment-list changes remain untouched in the original workspace.
+- Vercel deployment `6pTRqrditfP4kwerrXgD5vK2yX1N` was verified Ready, Latest,
+  Production, with domain `hushub.se` and the exact production commit above.
+  The deployment completed at 23:05:25 CEST on 2026-09-22. The public home page
+  loaded successfully afterward.
+- No SQL is needed for this release. No customer inspection record or the
+  user's actual local drafts were modified during testing or verification.
+- The user's separate Chrome draft contents and the initiator of the reported
+  reload remain unverified. Open the inspection in a new tab while retaining
+  the original, then inspect **Visa texter** / **Kontrollera mot sparat**.
+  Do not clear browser storage as a workaround.
