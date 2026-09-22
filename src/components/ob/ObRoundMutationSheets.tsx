@@ -518,6 +518,7 @@ export function MoveSheet({
   const building = useObBuilding()
   const [targetPartId, setTargetPartId] = useState(building?.part?.id ?? '')
   const targetPart = building?.overview.parts.find(part => part.id === targetPartId)
+  const toast = useToast()
   const otherBuilding = Boolean(building?.part && targetPartId !== building.part.id)
   const [targetRooms, setTargetRooms] = useState<InteriorRoom[]>([])
   const [loadingTarget, setLoadingTarget] = useState(false)
@@ -604,7 +605,7 @@ export function MoveSheet({
         } as MoveRequest),
       )
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Flytten kunde inte sparas.')
+      toast.error(e, 'Flytten kunde inte sparas.')
     } finally {
       flight.current = false
       setBusy(false)
@@ -770,6 +771,8 @@ export function RemovalSheet({
   onClose: () => void
   onRemoved: (result: RemovalResult) => void
 }) {
+  const toast = useToast()
+  const [needsRecheck, setNeedsRecheck] = useState(false)
   const [preview, setPreview] = useState<RemovalPreview | null>(null),
     [error, setError] = useState('')
   const [checking, setChecking] = useState(false),
@@ -800,6 +803,7 @@ export function RemovalSheet({
         if (active) {
           setChecking(false)
           setPreview(value)
+          setNeedsRecheck(false)
         }
       })
       .catch((e) => {
@@ -828,7 +832,8 @@ export function RemovalSheet({
     try {
       onRemoved(await p.onRemove(subject.request, preview.token, requestId))
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Kunde inte radera.')
+      toast.error(e, 'Kunde inte radera.')
+      setNeedsRecheck(true)
     } finally {
       flight.current = false
       setBusy(false)
@@ -910,22 +915,18 @@ export function RemovalSheet({
           Besiktningen är låst.
         </p>
       )}
-      {error && (
-        <>
-          <p role="alert" className="obm-error">
-            {error}
-          </p>
-          <button
-            className="obm-text-action"
-            disabled={busy || checking || p.mutationBlocked || p.locked}
-            onClick={() => {
-              setPreview(null)
-              setAttempt((value) => value + 1)
-            }}
-          >
-            Kontrollera igen
-          </button>
-        </>
+      {error && <p role="alert" className="obm-error">{error}</p>}
+      {(error || needsRecheck) && (
+        <button
+          className="obm-text-action"
+          disabled={busy || checking || p.mutationBlocked || p.locked}
+          onClick={() => {
+            setPreview(null)
+            setAttempt((value) => value + 1)
+          }}
+        >
+          Kontrollera igen
+        </button>
       )}
     </Sheet>
   )

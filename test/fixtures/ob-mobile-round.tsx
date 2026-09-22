@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import ObMobileRound, {
   type ObMobileRoundProps,
 } from '../../src/components/ob/ObMobileRound'
-import { hasObTextDraftsForInspection } from '../../src/lib/ob/localTextDrafts'
+import { hasObTextDraftsForInspection, hasObTextDraftsForRoundTarget } from '../../src/lib/ob/localTextDrafts'
 import { queueImageBatch, unplacedImagePlacement } from '../../src/lib/ob/roundImageImport'
 import { putRoundImageUploadItem, listRoundImageUploadItems } from '../../src/lib/ob/roundImageUploadQueue'
 import { ObFloorContext, useObFloorModel } from '../../src/components/ob/ObFloorProvider'
@@ -261,7 +261,11 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
     kind: string,
     requestId: string,
     action: () => T,
+    target?: { kind: string; id: string },
   ): Promise<T> {
+    if (target && hasObTextDraftsForRoundTarget(inspectionId, target, notes)) {
+      throw Error('Det finns osparad text för det valda innehållet.')
+    }
     qa.calls.push({ kind, id: requestId })
     setMutating(true)
     try {
@@ -499,7 +503,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
                   images: linked,
                   observation: null,
                 }
-              })
+              }, request)
             }
             onPreviewRemoval={async (request) => {
               const linked = images.filter((row) =>
@@ -565,7 +569,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
                   images: detached,
                   archiveId: 'synthetic-archive',
                 }
-              })
+              }, request)
             }
             onPreviewImageNote={async (imageId, target) => {
               const image = images.find(image => image.id === imageId)!

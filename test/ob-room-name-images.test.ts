@@ -69,10 +69,10 @@ test('image location follows linked/current placement, never displaying a moved 
   assert.deepEqual(roundImageLocation({ ...image, interior_room_id: null, exterior_observation_id: 'missing' }, [], observations), { roomId: null, exteriorItemId: null })
 })
 
-test('production rename blocks drafts/uploads and does not rewrite image origins or reports', () => {
+test('production rename blocks uploads but preserves unrelated drafts and image origins', () => {
   const source = readFileSync('src/components/ob/ObStepRunda.tsx', 'utf8')
   const rename = source.slice(source.indexOf('async function renameRoomLabel'), source.indexOf('const deleteControlItem'))
-  assert.ok(rename.includes('hasObTextDraftsForInspection(inspection.id)'))
+  assert.ok(!rename.includes('hasObTextDraftsForInspection'))
   assert.ok(rename.includes('listRoundImageUploadItems(inspection.id)'))
   assert.ok(rename.includes('roundMutationRef.current = true'))
   assert.ok(rename.includes('renameRoundRoom(supabase, inspection.id, room.id, room.room_label ?? null, name)'))

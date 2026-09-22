@@ -2,6 +2,16 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 
 export async function testRoundParity({ page, click, fresh, fill, noOverflow, output }) {
+  const draftPrefix = 'ob:text-draft:v1:ob:synthetic-mobile-inspection:'
+  const unrelatedDrafts = [
+    [draftPrefix + 'handlingar:defect_disclosures', JSON.stringify({ value: 'Annat moments osparade text' })],
+    [draftPrefix + 'mobile-round:outside-note', JSON.stringify({ note: 'Annan noterings osparade text', risk_text: '', ftu_text: '' })],
+  ]
+  const seedUnrelated = () => page.evaluate(entries => entries.forEach(([key, value]) => localStorage.setItem(key, value)), unrelatedDrafts)
+  const checkUnrelated = async () => assert.deepEqual(await page.evaluate(entries => entries.map(([key]) => [key, localStorage.getItem(key)]), unrelatedDrafts), unrelatedDrafts)
+  const targetDraft = draftPrefix + 'building:prior-building:utsida:control-item:note-1:note'
+  const waitToast = () => page.waitForSelector('dialog [aria-label="Meddelanden"] [role="alert"]')
+  const closeToast = () => page.click('[aria-label="Stäng felmeddelande"]')
   async function waitSheet(title) {
     await page.waitForSelector(`dialog[aria-label="${title}"][open]`)
     assert.ok(await page.$('dialog header [aria-label="Tillbaka"]'))
@@ -20,6 +30,7 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
     await waitSheet('Koppla bild')
   }
   await fresh()
+  await seedUnrelated()
   await page.click('.obm-place-row')
   await page.click('[aria-label="Flytta rum"]')
   await waitSheet('Flytta rum')
@@ -29,8 +40,15 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
   assert.equal(await page.evaluate(() => window.__obMobileTest.calls.length), 0)
   await page.click('[aria-label="Flytta rum"]')
   await page.select('[aria-label="Till plan"]', 'plan2')
+  await page.evaluate(key => localStorage.setItem(key, JSON.stringify({ value: 'Osparad text i rummet' })), targetDraft)
+  await click('Flytta rum', 'dialog footer')
+  await waitToast()
+  assert.equal(await page.evaluate(() => window.__obMobileTest.calls.length), 0, 'room move protects its own notes')
+  await page.evaluate(key => localStorage.removeItem(key), targetDraft)
+  await closeToast()
   await click('Flytta rum', 'dialog footer')
   await closed()
+  await checkUnrelated()
   assert.equal(await page.evaluate(() => window.__obMobileTest.rooms[0].floor_label), 'plan2')
   assert.equal(await page.evaluate(() => window.__obMobileTest.notes[0].interior_room_id), 'room-1')
   await page.click('[aria-label="Radera rum"]')
@@ -42,6 +60,7 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
 
   // Move flushes the editor first and keeps linked photos with the note.
   await fresh()
+  await seedUnrelated()
   await imageSheet()
   await page.click('input[value="note-1"]')
   await click('Koppla till notering', 'dialog')
@@ -70,9 +89,19 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
   await page.click('[aria-label="Radera notering"]')
   await waitSheet('Radera notering')
   await page.waitForFunction(() => !document.querySelector('dialog .obm-danger').disabled)
+  await page.evaluate(key => localStorage.setItem(key, JSON.stringify({ value: 'Skyddad text i noteringen' })), targetDraft)
+  await click('Radera notering', 'dialog footer')
+  await waitToast()
+  assert.equal(await page.evaluate(() => window.__obMobileTest.calls.filter(row => row.kind === 'remove').length), 0, 'target draft is checked again after preview')
+  assert.equal(await page.$('dialog .obm-sheet-body > .obm-error'), null)
+  await page.evaluate(key => localStorage.removeItem(key), targetDraft)
+  await closeToast()
   await page.evaluate(() => { window.__obMobileTest.dropMutationResponse = true })
   await click('Radera notering', 'dialog footer')
-  await page.waitForSelector('dialog [role="alert"]')
+  await waitToast()
+  await page.screenshot({ path: resolve(output, 'remove-note-error-toast.png') })
+  await page.waitForSelector('[aria-label="Meddelanden"]', { hidden: true, timeout: 10000 })
+  assert.ok(await page.$('dialog[aria-label="Radera notering"]'), 'automatic error dismissal keeps the confirmation open')
   await page.waitForFunction(() => !document.querySelector('dialog .obm-danger').disabled)
   await click('Radera notering', 'dialog footer')
   await closed()
@@ -80,6 +109,7 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
     const qa = window.__obMobileTest, calls = qa.calls.filter(row => row.kind === 'remove')
     return [qa.notes.some(row => row.id === 'note-1'), qa.images[0].control_item_id, calls.length, new Set(calls.map(row => row.id)).size]
   }), [false, null, 2, 1])
+  await checkUnrelated()
   await imageSheet()
   await page.click('[aria-label="Radera bild"]')
   await waitSheet('Radera bild')
@@ -96,6 +126,7 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
 
   // Empty room removal is available inside the room, never on the place list.
   await fresh()
+  await seedUnrelated()
   assert.equal(await page.$('[aria-label="Radera rum"]'), null)
   await page.select('select[aria-label="Plan"]', 'plan2')
   await page.click('.obm-place-row')
@@ -105,6 +136,7 @@ export async function testRoundParity({ page, click, fresh, fill, noOverflow, ou
   await click('Radera rum', 'dialog footer')
   await closed()
   assert.equal(await page.evaluate(() => window.__obMobileTest.rooms.length), 1)
+  await checkUnrelated()
 
   // New-image drafts stay local, survive tab changes, and produce no empty note on cancel.
   await fresh()
