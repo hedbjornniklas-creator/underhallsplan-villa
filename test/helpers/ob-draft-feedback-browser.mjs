@@ -26,6 +26,8 @@ export async function testDraftFeedback({ page, base, output }) {
   await click('Visa textfält')
   assert.equal(JSON.parse(await page.evaluate(key => localStorage.getItem(key), key)).value, 'Osparad text får inte rensas')
   await click('Visa textfält')
+  // The stored draft is restored by the textarea's mount effect, after its first render.
+  await page.waitForFunction(() => document.querySelector('textarea')?.value === 'Osparad text får inte rensas')
   assert.equal(await page.$eval('textarea', node => node.value), 'Osparad text får inte rensas')
   await click('Sparfel: true')
   await page.focus('textarea')

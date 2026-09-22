@@ -121,3 +121,18 @@ unrelated retained drafts, a target draft introduced after deletion preview,
 legacy/cross-building keys, room protection, retry with a lost response, toast
 expiry and unchanged unrelated draft text. Synthetic fixtures use the production
 target-selection helper; a separate adapter contract test verifies its wiring.
+
+Verification before publication:
+
+- 81 unit/static/API tests passed (the eight draft/navigation/brand suites above,
+  plus `ob-round-mutations.test.ts` and `ob-round-mutation-api.test.ts`).
+- `npx tsc --noEmit` and the isolated full `next build --webpack` passed.
+- The full mobile-round browser run passed the earlier building, image, Back,
+  swipe, room, suggestion, floor and mutation checks. Its feedback test then
+  sampled a newly mounted field before its restore effect. The test now waits
+  for the restored value; no textarea runtime code changed for this timing fix.
+- `node scripts/test-ob-mobile-round-ui.mjs --core-only` subsequently passed,
+  including scoped mutation guards, draft preservation, failed-response retries,
+  modal toast expiry, navigation and 320-1280px layouts. No external requests.
+- The removal-error mobile screenshot and desktop toast screenshot were visually
+  inspected. No real customer deletion or move was used for verification.
