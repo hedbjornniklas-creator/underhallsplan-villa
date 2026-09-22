@@ -150,3 +150,46 @@ Verification before publication:
 - The native reload warning remains unconfirmed. To compare the published
   version, open the inspection in a new tab and keep the old tab intact. Do not
   clear browser storage containing local drafts or queued images.
+
+## Visible Local Drafts And Resumed Autosave, 2026-09-22
+
+The browser's native reload message does not identify a field. The inspection
+guard currently sees every local draft key; image upload queues can also trigger
+the same native message. This report does not establish which key or queue item
+exists in the user's separate Chrome session. Do not claim all local text is
+unsaved or that this diagnosis establishes why a reload was initiated.
+
+Confirmed code defect: a restored `DebouncedTextarea` marked its text dirty but
+did not schedule autosave until focus/blur or another edit. Restored editable
+text now resumes the existing debounce/save path. Disabled/read-only fields
+never autosave; this includes inherited workflow fieldset locks and a lock
+introduced while waiting for the debounce. Unlocking resumes the pending edit.
+A late failed save cannot replace
+newer local text or recreate an older draft after a successful newer save.
+
+The inspection now lists its local text drafts via **Visa texter**. It displays
+their step, text and, where comparison is supported, the server's version.
+**Kontrollera mot sparat** issues only inspection-scoped reads. It removes a
+local copy only when all recognized text fields exactly match a successful
+server read and the stored raw draft has not changed during that read.
+Different, missing, malformed or unsupported/composite drafts remain untouched.
+Comparison currently supports round notes, document/disclosure notes and the
+two inspection-level text fields; other forms are visible but not auto-cleared.
+Unknown extra payload fields also prevent cleanup. No server record is changed.
+
+The native exit guard remains as protection against genuine pending work.
+The user approved publishing these changes after tests. Verification uses
+synthetic text only, including late failures, locking, restoration without blur,
+unknown records, failed reads, concurrent edits and mobile/desktop layouts.
+
+Verification before publication:
+
+- 37 unit/static tests passed across draft inventory/comparison, scoped draft
+  reconciliation, mobile-round wiring, inspection navigation, workflow reads
+  and the shared textarea's EB consumers.
+- The core mobile-round browser regression passed, including 320-1280px layouts,
+  autosave/recovery, image linking, paused/locked states, global toasts and drafts.
+- The isolated real Next router test passed reload, Back, repeated menu entry,
+  background return and retained drafts across internal step changes.
+- Additional browser checks cover restored autosave without focus/blur, explicit
+  and inherited locks, late failures and read-only comparison cleanup.
