@@ -1,6 +1,7 @@
 # Gemensam uppdragslista för ÖB
 
-Implementerad lokalt 2026-09-23. Inte publicerad som del av detta arbete.
+Implementerad 2026-09-23. Publiceringsunderlag och verifieringsgränser finns i
+[OB_OVERVIEW_RELEASE.md](OB_OVERVIEW_RELEASE.md).
 
 ## Omfattning
 
@@ -118,5 +119,8 @@ Verifierat 2026-09-23:
 - Laddnings-/åtkomstfel är bestående listtillstånd enligt
   [UI_FEEDBACK_STANDARD.md](UI_FEEDBACK_STANDARD.md), inte tillfälliga toasts.
 
-Före publicering återstår användarens utvärdering och ett inloggat lästest mot
-den avsedda miljön. Ingen kundbesiktning har skapats/ändrats som test här.
+Användaren har godkänt publicering. Den isolerade produktionsbyggningen och
+klicktesterna är godkända. Ett avgränsat, skrivskyddat läsprov mot produktionens
+databas gav 86 rader, varav 41 med besiktning. Det använde admin-klienten och
+verifierar därför inte en inloggad användares RLS eller webbläsarsession.
+Inloggat slutprov i produktion återstår. Ingen kundbesiktning har skapats/ändrats.

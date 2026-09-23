@@ -15,7 +15,8 @@ The subsequent user-approved implementation adds `ObOverview` below the four
 existing dashboard cards, with collapsible mobile shortcuts. Separate confirmation
 and inspection states, ID-based linking, filters and read-only aggregation are
 documented in [OB_OVERVIEW.md](OB_OVERVIEW.md). The old list pages remain available.
-This implementation is local and has not been published. No SQL migration is added.
+Publication is authorized; see [OB_OVERVIEW_RELEASE.md](OB_OVERVIEW_RELEASE.md)
+for isolated release checks and remaining verification. No SQL migration is added.
 
 ## Scope, 2026-09-21
 
