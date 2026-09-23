@@ -1,0 +1,10 @@
+/*.pdf
+/*.zip
+/qa-*.png
+/assets/fonts/*.ttf
+/assets/fonts/OFL.txt
+/assets/*.png
+!/assets/gizmo-gecko-white.png
+!/assets/gizmo-original-reference.png
+/assets/reference/
+__pycache__/

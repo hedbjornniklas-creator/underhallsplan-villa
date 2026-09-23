@@ -1,0 +1,30 @@
+/* Gizmo profile tokens. Reference only; application CSS is unchanged. */
+:root {
+  --gizmo-ink: #252A2D;
+  --gizmo-hover: #101518;
+  --gizmo-accent: #F2D76A;
+  --gizmo-selected: #FFF7D6;
+  --gizmo-gecko: #4D929A;
+  --gizmo-white: #FFFFFF;
+  --gizmo-paper: #F4F6F6;
+  --gizmo-muted: #596368;
+  --gizmo-line: #D5DCDD;
+  --gizmo-control: #7C888D;
+  --gizmo-link: #206961;
+  --gizmo-focus: #206961;
+  --gizmo-success: #24664B;
+  --gizmo-success-bg: #EAF4EE;
+  --gizmo-warning: #7B5012;
+  --gizmo-warning-bg: #FFF1DB;
+  --gizmo-error: #A52E42;
+  --gizmo-error-bg: #FCEEF0;
+  --gizmo-info: #285D82;
+  --gizmo-info-bg: #EAF2F9;
+  --gizmo-font: "Manrope", Arial, sans-serif;
+  --gizmo-radius: 6px;
+  --gizmo-space-unit: 4px;
+  --gizmo-control-height: 44px;
+  --gizmo-row-height: 56px;
+  --gizmo-focus-width: 2px;
+  --gizmo-focus-offset: 2px;
+}
