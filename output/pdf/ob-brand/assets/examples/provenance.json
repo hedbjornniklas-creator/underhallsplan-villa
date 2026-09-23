@@ -1,0 +1,13 @@
+{
+  "profileVersion": "1.2",
+  "designDirectionApprovedAt": "2026-09-23",
+  "kind": "AI-generated visual references, not implemented application screenshots",
+  "tool": "Built-in image generation",
+  "data": "Fictional records",
+  "modifiedAfterGeneration": false,
+  "specification": "docs/OB_BRAND_PROFILE.md",
+  "files": {
+    "desktop-v1.2.png": "93bf5d250b1786a438b9d916dc423642348258c9e6c389f8719fe5c8c8b05f0e",
+    "mobile-v1.2.png": "a7374f1c848c21da778581068d76c115e4fe438f06051fa87d418898606ca897"
+  }
+}

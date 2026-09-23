@@ -1,0 +1,42 @@
+/* OB profile 1.2. Design tokens only; this file does not apply them to the app. */
+.ob-brand {
+  --ob-brand-primary: #245EB5;
+  --ob-brand-hover: #1D4890;
+  --ob-brand-selected: #EDF3FC;
+  --ob-brand-ink: #25313B;
+  --ob-brand-muted: #596571;
+  --ob-brand-white: #FFFFFF;
+  --ob-brand-paper: #F4F6F8;
+  --ob-brand-line: #D4DCE4;
+  --ob-brand-control: #78838F;
+  --ob-brand-link: #245EB5;
+  --ob-brand-focus: #245EB5;
+  --ob-brand-success: #276144;
+  --ob-brand-success-bg: #EAF4EC;
+  --ob-brand-warning: #81551A;
+  --ob-brand-warning-bg: #FFF2DA;
+  --ob-brand-error: #A23140;
+  --ob-brand-error-bg: #FCEEF0;
+  --ob-brand-info: #265C7B;
+  --ob-brand-info-bg: #EAF2F8;
+  --ob-brand-font: "Manrope", Arial, sans-serif;
+  --ob-brand-radius: 6px;
+  --ob-brand-space-unit: 4px;
+  --ob-brand-control-height: 48px;
+  --ob-brand-body-size: 16px;
+  --ob-brand-body-line-height: 24px;
+  --ob-brand-overview-title-size: 26px;
+  --ob-brand-overview-title-line-height: 34px;
+  --ob-brand-mobile-title-size: 22px;
+  --ob-brand-mobile-title-line-height: 30px;
+  --ob-brand-list-size: 16px;
+  --ob-brand-list-line-height: 24px;
+  --ob-brand-list-meta-size: 14px;
+  --ob-brand-list-meta-line-height: 20px;
+  --ob-brand-list-marker-width: 3px;
+  --ob-brand-list-divider-width: 1px;
+  --ob-brand-heading-weight: 600;
+  --ob-brand-control-min-height: 44px;
+  --ob-brand-focus-width: 3px;
+  --ob-brand-focus-offset: 2px;
+}

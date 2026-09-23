@@ -1,0 +1,41 @@
+{
+  "profileVersion": "1.2",
+  "designDirection": "approved",
+  "newListImplemented": false,
+  "colors": {
+    "primary": "#245EB5",
+    "hover": "#1D4890",
+    "selected": "#EDF3FC",
+    "ink": "#25313B",
+    "muted": "#596571",
+    "white": "#FFFFFF",
+    "paper": "#F4F6F8",
+    "line": "#D4DCE4",
+    "control": "#78838F",
+    "link": "#245EB5",
+    "focus": "#245EB5",
+    "success": "#276144",
+    "success-bg": "#EAF4EC",
+    "warning": "#81551A",
+    "warning-bg": "#FFF2DA",
+    "error": "#A23140",
+    "error-bg": "#FCEEF0",
+    "info": "#265C7B",
+    "info-bg": "#EAF2F8"
+  },
+  "textContrastRatios": {
+    "white/primary": 6.28,
+    "white/hover": 8.82,
+    "ink/white": 13.28,
+    "ink/paper": 12.26,
+    "muted/white": 5.96,
+    "muted/paper": 5.5,
+    "primary/selected": 5.63,
+    "link/white": 6.28,
+    "success/success-bg": 6.48,
+    "warning/warning-bg": 5.84,
+    "error/error-bg": 6.11,
+    "info/info-bg": 6.4
+  },
+  "controlContrast": 3.86
+}
