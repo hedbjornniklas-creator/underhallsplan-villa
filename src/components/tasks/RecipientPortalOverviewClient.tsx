@@ -26,7 +26,7 @@ import type {
   RecipientPortalOverview,
   RecipientPortalTaskSummary,
 } from '@/lib/tasks/recipientPortal'
-import { SigneMark } from './SigneMark'
+import UppdragBrand from './UppdragBrand'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
 type FilterKey = 'active' | 'needs_action' | 'overdue' | 'completed' | 'all'
@@ -241,18 +241,19 @@ export default function RecipientPortalOverviewClient({
   ]
 
   return (
-    <main className="min-h-dvh bg-[#f6f4ef] text-slate-950">
-      <header className="sticky top-0 z-30 border-b border-amber-200/70 bg-white/95 backdrop-blur">
+    <main className="uppdrag-public-main min-h-dvh text-slate-950">
+      <header className="uppdrag-public-header sticky top-0 z-30">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-3 sm:px-6">
-          <SigneMark />
+          <UppdragBrand compact />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Mina uppdrag</p>
+            <p className="text-sm font-semibold text-slate-950">HusHub Uppdrag</p>
             <p className="truncate text-sm text-slate-600">Hej {initialOverview.recipientName}</p>
           </div>
           <button
             type="button"
             onClick={() => void signOut()}
             disabled={signingOut}
+            aria-label={signingOut ? 'Loggar ut' : 'Logga ut'}
             className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
           >
             <LogOut size={17} aria-hidden="true" />
@@ -262,15 +263,10 @@ export default function RecipientPortalOverviewClient({
       </header>
 
       <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-9">
-        <section className="overflow-hidden rounded-[2rem] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5 shadow-xl shadow-amber-950/5 sm:p-8">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo håller koll</p>
+        <section className="uppdrag-summary">
           <div className="mt-2 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Det här behöver bli gjort</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-                Här finns bara uppdrag som är tilldelade till dig. Öppna en uppgift för att svara,
-                ladda upp underlag eller meddela om något hindrar arbetet.
-              </p>
+              <h1>Mina uppdrag</h1>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:min-w-[25rem]">
               <div className="rounded-2xl border border-white/80 bg-white/85 p-3 shadow-sm">
@@ -331,7 +327,7 @@ export default function RecipientPortalOverviewClient({
           <section
             id="recipient-statistics-panel"
             role="tabpanel"
-            className="mt-5 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-7"
+            className="mt-5 border-t border-slate-200 py-5 sm:py-7"
             aria-labelledby="recipient-statistics-heading"
           >
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

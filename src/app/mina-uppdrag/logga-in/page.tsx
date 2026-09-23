@@ -1,10 +1,10 @@
 'use client'
 
-import Image from 'next/image'
+import UppdragBrand from '@/components/tasks/UppdragBrand'
 import Link from 'next/link'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, KeyRound, ListChecks, LoaderCircle, Mail } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, KeyRound, LoaderCircle, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import ActionButton from '@/components/ui/ActionButton'
 import {
@@ -207,43 +207,13 @@ export default function RecipientLoginPage() {
   }
 
   return (
-    <main className="relative min-h-dvh overflow-hidden bg-[#f5f3ee] text-stone-950">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_15%,rgba(245,158,11,0.16),transparent_30%),radial-gradient(circle_at_88%_85%,rgba(59,130,246,0.1),transparent_28%)]"
-      />
-
-      <div className="relative mx-auto grid min-h-dvh w-full max-w-[1400px] lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="flex flex-col justify-between px-6 py-8 sm:px-10 lg:px-16 lg:py-12">
+    <main className="uppdrag-auth">
+        <header>
           <Link href="/" className="flex w-fit items-center gap-3" aria-label="Till HusHubs startsida">
-            <Image
-              src="/landing/Hushub-check2.png"
-              alt=""
-              width={40}
-              height={40}
-              className="h-9 w-9 object-contain"
-              priority
-            />
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-900">HusHub</span>
+            <UppdragBrand />
           </Link>
-
-          <div className="py-14 lg:py-10">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800">
-              <ListChecks size={24} aria-hidden="true" />
-            </div>
-            <p className="mt-7 text-xs font-semibold uppercase tracking-[0.24em] text-amber-800">Mina uppdrag</p>
-            <h1 className="mt-5 max-w-[12ch] text-4xl font-semibold tracking-[-0.04em] sm:text-5xl lg:text-6xl">
-              Allt du ansvarar för på ett ställe.
-            </h1>
-            <p className="mt-6 max-w-xl text-base leading-8 text-stone-700 sm:text-lg">
-              Öppna nya uppdrag, lämna underlag och se vad som väntar på dig utan att leta efter gamla mejl.
-            </p>
-          </div>
-
-          <p className="text-xs leading-6 text-stone-500">Mina uppdrag är en del av HusHub.</p>
-        </section>
-
-        <section className="flex items-center border-t border-stone-200/80 bg-white/80 px-6 py-12 backdrop-blur-sm sm:px-10 lg:border-l lg:border-t-0 lg:px-16">
+        </header>
+        <section className="uppdrag-auth-form">
           <div className="mx-auto w-full max-w-md">
             {initializing ? (
               <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
@@ -252,16 +222,16 @@ export default function RecipientLoginPage() {
               </div>
             ) : (
               <>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
+                <p className="uppdrag-kicker">
                   {view === 'recovery' ? 'Nytt lösenord' : view === 'forgot' ? 'Återställ lösenord' : 'Inloggning'}
                 </p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight">
+                <h1 className="mt-3">
                   {view === 'recovery'
                     ? 'Välj ett nytt lösenord'
                     : view === 'forgot'
                       ? 'Få en återställningslänk'
                       : 'Logga in till Mina uppdrag'}
-                </h2>
+                </h1>
                 <p className="mt-3 text-sm leading-7 text-stone-600">
                   {view === 'recovery'
                     ? `Lösenordet ska vara minst ${MIN_PASSWORD_LENGTH} tecken.`
@@ -318,7 +288,7 @@ export default function RecipientLoginPage() {
                         setError(null)
                         setNotice(null)
                       }}
-                      className="text-sm font-semibold text-amber-800 transition hover:text-amber-950"
+                      className="uppdrag-auth-link text-sm font-semibold"
                     >
                       Glömt lösenordet?
                     </button>
@@ -399,7 +369,6 @@ export default function RecipientLoginPage() {
             )}
           </div>
         </section>
-      </div>
     </main>
   )
 }

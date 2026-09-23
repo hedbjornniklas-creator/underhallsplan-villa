@@ -156,7 +156,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
     try { return await onCostAction('generate_cost_suggestions', {}) } finally { setGenerating(false) }
   })
   if (typeof document === 'undefined') return null
-  return createPortal(<div className="fixed inset-0 z-50 flex justify-end bg-black/40">
+  return createPortal(<div className="uppdrag-scope fixed inset-0 z-50 flex justify-end bg-black/40">
     <div ref={dialog} role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby="action-item-title" className="h-dvh w-full max-w-3xl bg-white text-slate-950 shadow-2xl outline-none" onKeyDown={(event) => {
       if (event.key === 'Escape') { event.preventDefault(); close() }
       if (event.key !== 'Tab') return

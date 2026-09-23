@@ -3,7 +3,7 @@ import { getRfqPublicView } from '@/lib/action-cases/rfqDeliveryServer'
 import ActionCaseRfqFiles from '@/components/tasks/ActionCaseRfqFiles'
 
 export const dynamic = 'force-dynamic'
-export const metadata: Metadata = { title: 'Offertunderlag | HusHub', robots: { index: false, follow: false }, referrer: 'no-referrer' }
+export const metadata: Metadata = { title: { absolute: 'Offertunderlag | HusHub Uppdrag' }, robots: { index: false, follow: false }, referrer: 'no-referrer' }
 
 export default async function RfqPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params

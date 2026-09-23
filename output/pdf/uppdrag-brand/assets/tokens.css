@@ -1,0 +1,29 @@
+/* Proposed design tokens, not applied to the application. */
+:root {
+  --uppdrag-ink: #252A2D;
+  --uppdrag-hover: #101518;
+  --uppdrag-accent: #F2D76A;
+  --uppdrag-selected: #FFF7D6;
+  --uppdrag-white: #FFFFFF;
+  --uppdrag-paper: #F4F6F6;
+  --uppdrag-muted: #596368;
+  --uppdrag-line: #D5DCDD;
+  --uppdrag-control: #7C888D;
+  --uppdrag-link: #206961;
+  --uppdrag-focus: #206961;
+  --uppdrag-success: #24664B;
+  --uppdrag-success-bg: #EAF4EE;
+  --uppdrag-warning: #7B5012;
+  --uppdrag-warning-bg: #FFF1DB;
+  --uppdrag-error: #A52E42;
+  --uppdrag-error-bg: #FCEEF0;
+  --uppdrag-info: #285D82;
+  --uppdrag-info-bg: #EAF2F9;
+  --uppdrag-font: "Manrope", Arial, sans-serif;
+  --uppdrag-radius: 6px;
+  --uppdrag-space-unit: 4px;
+  --uppdrag-control-height: 44px;
+  --uppdrag-row-height: 56px;
+  --uppdrag-focus-width: 2px;
+  --uppdrag-focus-offset: 2px;
+}

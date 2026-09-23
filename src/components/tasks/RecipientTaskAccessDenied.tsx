@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { AlertTriangle, ArrowRight, LoaderCircle, LogOut } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { recipientLoginUrl, recipientTaskPath } from '@/lib/tasks/recipientAuthPaths'
-import { SigneMark } from './SigneMark'
+import UppdragBrand from './UppdragBrand'
 
 type Props = {
   taskId: string
@@ -32,9 +32,9 @@ export default function RecipientTaskAccessDenied({ taskId, signedInEmail }: Pro
   }
 
   return (
-    <main className="flex min-h-dvh items-center bg-[#f6f4ef] px-4 py-10 text-slate-950">
+    <main className="uppdrag-public-main flex min-h-dvh items-center px-4 py-10 text-slate-950">
       <section className="mx-auto w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
-        <SigneMark />
+        <UppdragBrand />
         <div className="mt-7 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800">
           <AlertTriangle size={23} aria-hidden="true" />
         </div>

@@ -172,7 +172,7 @@ export default function TaskIssuerAnalyticsPanel({
   ]
 
   return (
-    <section className="mt-5 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="issuer-statistics-heading">
+    <section className="mt-5 border-t border-slate-200 py-5 sm:py-7" aria-labelledby="issuer-statistics-heading">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Uppdrag utfärdade av dig</p>

@@ -39,8 +39,8 @@ export default function ActionCaseImageViewer({ caseId, images, openedId, onOpen
     return () => { document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus() }
   }, [])
   if (!opened || typeof document === 'undefined') return null
-  return createPortal(<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-2 sm:p-5" onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose() }}>
-    <div ref={dialog} role="dialog" aria-modal="true" aria-label="Granska bild" tabIndex={-1} className="flex h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-neutral-950 text-white shadow-2xl outline-none" onKeyDown={(e) => {
+  return createPortal(<div className="uppdrag-scope fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-2 sm:p-5" onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose() }}>
+    <div ref={dialog} role="dialog" aria-modal="true" aria-label="Granska bild" tabIndex={-1} className="uppdrag-image-dialog flex h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-neutral-950 text-white shadow-2xl outline-none" onKeyDown={(e) => {
       // Keep keyboard actions inside this preview, not the underlying request sheet.
       e.stopPropagation()
       if (e.key === 'Escape') { e.preventDefault(); onClose() }

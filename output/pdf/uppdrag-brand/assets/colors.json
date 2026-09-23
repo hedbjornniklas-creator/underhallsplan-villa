@@ -1,0 +1,39 @@
+{
+  "proposalVersion": "1.0",
+  "colors": {
+    "ink": "#252A2D",
+    "hover": "#101518",
+    "accent": "#F2D76A",
+    "selected": "#FFF7D6",
+    "white": "#FFFFFF",
+    "paper": "#F4F6F6",
+    "muted": "#596368",
+    "line": "#D5DCDD",
+    "control": "#7C888D",
+    "link": "#206961",
+    "focus": "#206961",
+    "success": "#24664B",
+    "success-bg": "#EAF4EE",
+    "warning": "#7B5012",
+    "warning-bg": "#FFF1DB",
+    "error": "#A52E42",
+    "error-bg": "#FCEEF0",
+    "info": "#285D82",
+    "info-bg": "#EAF2F9"
+  },
+  "textContrastRatios": {
+    "white/ink": 14.51,
+    "ink/white": 14.51,
+    "ink/accent": 10.16,
+    "ink/selected": 13.49,
+    "muted/white": 6.16,
+    "muted/paper": 5.68,
+    "link/white": 6.45,
+    "success/success-bg": 6.07,
+    "warning/warning-bg": 6.29,
+    "error/error-bg": 6.07,
+    "info/info-bg": 6.23
+  },
+  "controlContrast": 3.64,
+  "focusContrast": 6.45
+}

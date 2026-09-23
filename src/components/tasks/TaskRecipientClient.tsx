@@ -44,7 +44,7 @@ import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import TaskTimeProgress from './TaskTimeProgress'
-import { SigneMark } from './SigneMark'
+import UppdragBrand from './UppdragBrand'
 import { TaskStatusBadge } from './TaskStatusBadge'
 
 type Props = {
@@ -694,13 +694,12 @@ export default function TaskRecipientClient({
   if (workspace.accessState !== 'open') {
     const copy = accessClosedCopy(workspace.accessState)
     return (
-      <main className="flex min-h-dvh items-center bg-[#f6f4ef] px-4 py-10 text-slate-950">
+      <main className="uppdrag-public-main flex min-h-dvh items-center px-4 py-10 text-slate-950">
         <section className="mx-auto w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
-          <SigneMark />
+          <UppdragBrand />
           <div className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700">
             <Link2Off size={23} aria-hidden="true" />
           </div>
-          <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">{copy.title}</h1>
           <p className="mt-3 text-sm leading-7 text-slate-600">{copy.text}</p>
         </section>
@@ -753,8 +752,8 @@ export default function TaskRecipientClient({
   }
 
   return (
-    <main className={`min-h-dvh bg-[#f6f4ef] text-slate-950 ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
-      <header className="border-b border-amber-200/70 bg-white/90 backdrop-blur">
+    <main className={`uppdrag-public-main min-h-dvh text-slate-950 ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
+      <header className="uppdrag-public-header">
         <div className="mx-auto flex w-full max-w-xl items-center gap-3 px-4 py-4 sm:px-6">
           {backHref ? (
             <Link
@@ -766,9 +765,9 @@ export default function TaskRecipientClient({
               <span className="hidden sm:inline">{backLabel}</span>
             </Link>
           ) : null}
-          <SigneMark />
+          <UppdragBrand compact />
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo följer upp</p>
+            <p className="text-sm font-semibold text-slate-950">HusHub Uppdrag</p>
             <p className="mt-0.5 truncate text-sm text-slate-600">Hej {workspace.recipientName}</p>
           </div>
           {showRecipientAccountAction ? (
@@ -784,8 +783,8 @@ export default function TaskRecipientClient({
       <div className="mx-auto w-full max-w-xl px-4 py-5 sm:px-6 sm:py-7">
         <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} />
 
-        <section className="mt-3 overflow-hidden rounded-3xl border border-amber-200/80 bg-white shadow-xl shadow-amber-950/5">
-          <div className="bg-gradient-to-br from-amber-50 via-white to-orange-50 px-5 py-5 sm:px-6">
+        <section className="uppdrag-detail-summary mt-3 overflow-hidden bg-white">
+          <div className="px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-center gap-2">
               <TaskStatusBadge status={task.status} />
               {task.contextLabel ? <span className="text-xs font-semibold text-slate-500">{task.contextLabel}</span> : null}

@@ -452,7 +452,7 @@ export default function RecipientAccountAction({
 
       {open && typeof document !== 'undefined' ? createPortal(
         <div
-          className="fixed inset-0 z-[80] flex min-h-0 items-stretch justify-center overflow-hidden bg-slate-950/55 backdrop-blur-[2px] sm:items-center sm:p-5"
+          className="uppdrag-scope fixed inset-0 z-[80] flex min-h-0 items-stretch justify-center overflow-hidden bg-slate-950/55 backdrop-blur-[2px] sm:items-center sm:p-5"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setOpen(false)
           }}
@@ -463,7 +463,7 @@ export default function RecipientAccountAction({
             aria-modal="true"
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
-            className="relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-lg sm:rounded-[28px] sm:border sm:border-white/70"
+            className="relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-lg sm:rounded-lg sm:border sm:border-slate-200"
           >
             <div className="z-10 flex shrink-0 items-start gap-4 border-b border-slate-200 bg-white/95 px-5 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] backdrop-blur sm:px-6 sm:pt-4">
               <div className="min-w-0 flex-1">

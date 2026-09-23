@@ -1,6 +1,6 @@
 'use client'
 
-import Image from 'next/image'
+import UppdragBrand from '@/components/tasks/UppdragBrand'
 import Link from 'next/link'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -170,23 +170,11 @@ export default function RecipientActivationPage() {
   }
 
   return (
-    <main className="relative min-h-dvh overflow-hidden bg-[#f5f3ee] px-5 py-8 text-stone-950 sm:px-8 sm:py-12">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_12%,rgba(245,158,11,0.17),transparent_29%),radial-gradient(circle_at_86%_88%,rgba(59,130,246,0.1),transparent_28%)]"
-      />
+    <main className="uppdrag-public-main min-h-dvh px-5 py-8 text-stone-950 sm:px-8 sm:py-12">
       <div className="relative mx-auto w-full max-w-3xl">
         <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-3" aria-label="Till HusHubs startsida">
-            <Image
-              src="/landing/Hushub-check2.png"
-              alt=""
-              width={40}
-              height={40}
-              className="h-9 w-9 object-contain"
-              priority
-            />
-            <span className="text-xs font-semibold uppercase tracking-[0.32em] text-stone-900">HusHub</span>
+            <UppdragBrand />
           </Link>
           {preview?.currentUser.email ? (
             <button
@@ -201,7 +189,7 @@ export default function RecipientActivationPage() {
           ) : null}
         </div>
 
-        <section className="rounded-[32px] border border-stone-200/80 bg-white/92 p-5 shadow-[0_28px_90px_-48px_rgba(41,37,36,0.55)] backdrop-blur-sm sm:p-8">
+        <section className="rounded-lg border border-stone-200 bg-white p-5 sm:p-8">
           {loading ? (
             <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
               <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />

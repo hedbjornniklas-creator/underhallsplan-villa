@@ -30,7 +30,7 @@ const RISK_CLASSES: Record<TaskRisk, string> = {
 
 export function TaskStatusBadge({ status }: { status: TaskStatus }) {
   return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_CLASSES[status]}`}>
+    <span data-status={status} className={`uppdrag-status inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_CLASSES[status]}`}>
       {STATUS_LABELS[status]}
     </span>
   )

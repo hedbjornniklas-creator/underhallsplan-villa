@@ -40,7 +40,7 @@ import TaskDetailSheet from './TaskDetailSheet'
 import TaskIssuerAnalyticsPanel from './TaskIssuerAnalyticsPanel'
 import ActionCaseWorkspace from './ActionCaseWorkspace'
 import type { ActionCaseWorkspace as ActionCaseWorkspaceData } from '@/lib/action-cases/contracts'
-import { SigneCheckIcon } from './SigneMark'
+import UppdragBrand from './UppdragBrand'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
@@ -795,17 +795,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
   return (
     <Protected>
       <main className="relative min-h-full bg-slate-50">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-br from-amber-100 via-orange-50 to-transparent" />
         <div className="relative mx-auto w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 sm:pb-12 sm:pt-9">
-          <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <header className="uppdrag-heading flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
-                <SigneCheckIcon size={17} /> Gizmo håller i uppföljningen
-              </div>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">Uppdrag</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                Se vem som har bollen, vad som riskerar att stanna och vad som väntar på din kontroll.
-              </p>
+              <h1><UppdragBrand /></h1>
             </div>
             <button
               type="button"

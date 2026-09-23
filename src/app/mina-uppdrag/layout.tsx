@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
+import UppdragScope from '@/components/tasks/UppdragScope'
 
 export const metadata: Metadata = {
-  title: 'Mina uppdrag',
+  title: { absolute: 'Mina uppdrag | HusHub Uppdrag' },
+  icons: { icon: '/uppdrag/brand/symbol.svg' },
   description: 'Dina tilldelade uppdrag och nästa steg.',
   robots: {
     index: false,
@@ -11,5 +13,5 @@ export const metadata: Metadata = {
 }
 
 export default function RecipientPortalLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return <UppdragScope>{children}</UppdragScope>
 }

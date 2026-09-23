@@ -4,7 +4,7 @@ import { FileText, MapPin } from 'lucide-react'
 import { getActionCasePortal } from '@/lib/action-cases/server'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Åtgärdsärende', robots: { index: false, follow: false } }
+export const metadata = { title: { absolute: 'Åtgärdsärende | HusHub Uppdrag' }, robots: { index: false, follow: false } }
 
 export default async function ActionCasePortalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params

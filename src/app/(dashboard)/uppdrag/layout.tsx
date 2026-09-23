@@ -2,6 +2,9 @@ import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+import UppdragScope from '@/components/tasks/UppdragScope'
+
+export const metadata = { title: { absolute: 'Uppdrag | HusHub' }, icons: { icon: '/uppdrag/brand/symbol.svg' } }
 
 export default async function TasksLayout({ children }: { children: ReactNode }) {
   try {
@@ -18,7 +21,7 @@ export default async function TasksLayout({ children }: { children: ReactNode })
     }
 
     return (
-      <main className="mx-auto w-full max-w-5xl px-6 py-12">
+      <UppdragScope><main className="mx-auto w-full max-w-5xl px-6 py-12">
         <section className="rounded-lg border border-rose-200 bg-rose-50 p-8 text-rose-900">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-rose-500">Åtkomst</p>
           <h1 className="mt-4 text-3xl font-semibold tracking-tight">Åtkomst nekad</h1>
@@ -26,9 +29,9 @@ export default async function TasksLayout({ children }: { children: ReactNode })
             Uppdrag kräver egen modulbehörighet. Be en administratör aktivera Uppdrag för din användare.
           </p>
         </section>
-      </main>
+      </main></UppdragScope>
     )
   }
 
-  return <>{children}</>
+  return <UppdragScope>{children}</UppdragScope>
 }
