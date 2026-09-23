@@ -29,14 +29,37 @@ On mobile the existing cards are grouped under Genvagar.
 
 ## Release verification
 
-Push only the isolated release to main, without force. Confirm the matching
-GitHub Vercel status succeeds, then check hushub.se for the new overview client
-and an unauthenticated API response of 401 with private, no-store caching.
+Published 2026-09-23 with a normal fast-forward push to main:
+
+- Production code commit: `6779e4f`; production tip including this release's
+  preflight documentation: `f076e54`.
+- GitHub commit status `Vercel` succeeded for `f076e54`.
+- Deployment: `dpl_2EpBDpBNzCkuhEYutpNwePP9BLTD`.
+  [Vercel deployment](https://vercel.com/niklas-projects-65efdd50/underhallsplan-villa/2EpBDpBNzCkuhEYutpNwePP9BLTD).
+- Public hushub.se login-page assets identify that same deployment.
+- Anonymous `/ob` correctly redirects to `/login` (HTTP 307).
+- `GET /api/ob/overview` returns HTTP 401, `Cache-Control: private, no-store`,
+  and the new route's explicit sign-in error. No customer rows are exposed.
+- Scoped ESLint passed on the isolated release after the build and UI tests.
 
 The in-app browser tool failed to initialize during this publication task.
 An authenticated end-to-end browser check on production remains outstanding;
 synthetic browser tests and the database read must not be represented as that.
 The user should check their own rows and both existing detail links after login.
+
+## Working branch cleanup
+
+Saved separately on `codex/ob-staging-cleanup-2026-09-13`, not published:
+
+- `74b0f21`: Uppdrag scoped visual implementation, assets and synthetic UI tests.
+  Its browser suite passed on eight routes at 344, 390, 1024 and 1440 pixels.
+- `c1d29ce`: Gizmo profile sources and original visual assets. This is a profile
+  package, not an app identity change; the older Uppdrag profile remains history.
+- `76644bf`: copied the existing RenoApp test report into docs and ignored four
+  generated preview/test directories. Original temporary files remain on disk.
+
+The backup branch was pushed with normal Git sync; automatic Vercel deployment
+is disabled for that branch. No source files or customer data were deleted.
 
 ## Rollback
 
