@@ -152,6 +152,10 @@ vite.config.ts.timestamp-*
 # testing
 /coverage
 /tmp/renoapp-completion-ui/
+/tmp/renoapp-clarifications-ui/
+/tmp/renoapp-draft-save/
+/tmp/renoapp-e2e-20260919/
+/tmp/renoapp-email-preview/
 /tmp/renoapp-cases-list-ui/
 /tmp/renoapp-rules-ui/
 /tmp/eb-follow-up-ui/
