@@ -1,5 +1,22 @@
 # OB profile 1.1 implementation
 
+## Design update 1.2, 2026-09-23
+
+The approved direction for overview/list screens is now documented in
+[OB_BRAND_PROFILE.md](OB_BRAND_PROFILE.md). It adopts RenoApp's quiet list
+patterns with OB colors, separate confirmation/inspection states, and mobile
+shortcuts with stacked rows. The profile PDF and reference images are design
+artifacts only. This does not implement or deploy the combined list, remove
+the existing entry points, or change the 1.1 release history below.
+
+## Combined overview implementation, 2026-09-23
+
+The subsequent user-approved implementation adds `ObOverview` below the four
+existing dashboard cards, with collapsible mobile shortcuts. Separate confirmation
+and inspection states, ID-based linking, filters and read-only aggregation are
+documented in [OB_OVERVIEW.md](OB_OVERVIEW.md). The old list pages remain available.
+This implementation is local and has not been published. No SQL migration is added.
+
 ## Scope, 2026-09-21
 
 Implemented and approved for publication after the user's desktop review.

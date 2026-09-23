@@ -1,0 +1,8 @@
+*.pdf
+*.zip
+*.png
+!assets/examples/desktop-v1.2.png
+!assets/examples/mobile-v1.2.png
+qa-*.json
+assets/fonts/
+assets/icons/

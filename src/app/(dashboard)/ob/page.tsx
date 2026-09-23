@@ -10,6 +10,7 @@ import { resolveInspectorCertificationSummary } from '@/lib/certifications/profi
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import InspectorProfileDetails from '@/components/ob/InspectorProfileDetails'
 import GettingStarted from '@/components/besiktapp/GettingStarted'
+import ObOverview, { ObDashboardShortcuts } from '@/components/ob/ObOverview'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 
 type DashboardCard = {
@@ -589,7 +590,7 @@ function ProfileMiniCard({ profile }: { profile: ProfileCardInfo | null }) {
   )
 }
 
-function AssignmentConfirmationsCard() {
+function AssignmentConfirmationsCard({ onSent }: { onSent: () => void }) {
   type QuickOrdererRole = 'seller' | 'buyer' | 'apartment' | ''
 
   const [email, setEmail] = useState('')
@@ -666,6 +667,7 @@ function AssignmentConfirmationsCard() {
       setPreferredTime('')
       setPriceAmount('')
       setSuccessMessage('Uppdragsbekräftelse skickad.')
+      onSent()
     } catch {
       setErrorMessage('Kunde inte skicka uppdragsbekräftelse.')
     } finally {
@@ -788,6 +790,7 @@ function AssignmentConfirmationsCard() {
   )
 }
 export default function OverlatelsebesiktningPage() {
+  const [overviewRefreshKey, setOverviewRefreshKey] = useState(0)
   const [inspections, setInspections] = useState<InspectionListItem[]>([])
   const [inspectionsLoading, setInspectionsLoading] = useState(true)
   const [inspectionsError, setInspectionsError] = useState<string | null>(null)
@@ -982,18 +985,9 @@ export default function OverlatelsebesiktningPage() {
 
   return (
     <Protected>
-      <main className="relative min-h-full overflow-hidden">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'linear-gradient(135deg, #f7fbff 0%, #ffffff 52%, #f3f9ff 100%)',
-          }}
-        />
-        <div className="pointer-events-none absolute inset-0 bg-transparent" />
-
+      <main className="obo-home relative min-h-full">
         <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
-          <header className="mx-auto w-full max-w-7xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm backdrop-blur-sm md:p-5">
+          <header className="obo-home-heading mx-auto w-full max-w-7xl">
             <div className="flex items-center gap-3">
               <Link
                 href="/dashboard-v1"
@@ -1008,6 +1002,7 @@ export default function OverlatelsebesiktningPage() {
           </header>
 
           <GettingStarted module="ob" />
+          <ObDashboardShortcuts>
           <section className="mx-auto mt-4 grid w-full max-w-7xl grid-cols-1 gap-5 place-items-center sm:grid-cols-2 sm:place-items-center lg:grid-cols-4">
             {MODULES.map((module) => (
               <div key={module.id} className="w-full max-w-[260px] sm:max-w-[300px]">
@@ -1024,13 +1019,15 @@ export default function OverlatelsebesiktningPage() {
                     bookedAssignmentsError={bookedAssignmentsError}
                   />
                 ) : module.id === 'assignments' ? (
-                  <AssignmentConfirmationsCard />
+                  <AssignmentConfirmationsCard onSent={() => setOverviewRefreshKey(value => value + 1)} />
                 ) : (
                   <ProfileMiniCard profile={profileInfo} />
                 )}
               </div>
             ))}
           </section>
+          </ObDashboardShortcuts>
+          <ObOverview refreshKey={overviewRefreshKey} />
         </div>
       </main>
     </Protected>
