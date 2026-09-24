@@ -39,14 +39,13 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
   return <>
     <tr data-marker={item.marker} data-row-id={item.id}>
       <td className="obo-date">{item.date ? <time dateTime={item.date}>{dateLabel(item.date)}</time> : 'Datum saknas'}</td>
-      <td className="obo-number obo-desktop-only"><span className="obo-cell-text" title={item.assignmentNumber || 'Uppdragsnummer saknas'}>{item.assignmentNumber || '-'}</span></td>
       <td className="obo-identity">
         <span className="obo-address obo-cell-text" title={item.address}>{item.address}</span>
-        <span className="obo-desktop-only obo-city obo-cell-text" title={item.city}>{item.city || '\u00a0'}</span>
         <span className="obo-mobile-only">{item.customer}</span>
-        {(item.city || item.assignmentNumber) && <span className="obo-mobile-only obo-meta">{[item.city, item.assignmentNumber].filter(Boolean).join(' · ')}</span>}
+        {item.city && <span className="obo-mobile-only obo-meta">{item.city}</span>}
         {item.attention.length > 0 && <ul className="obo-attention obo-mobile-only">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       </td>
+      <td className="obo-city obo-desktop-only"><span className="obo-cell-text" title={item.city}>{item.city || '-'}</span></td>
       <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
       <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Bekräftelse</span><span className="obo-cell-text" title={item.confirmation}>{item.confirmation}</span></td>
       <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Besiktning</span><span className="obo-cell-text" title={item.inspection}>{item.inspection}</span></td>
@@ -70,8 +69,8 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
       <div id={detailsId} className="obo-row-details">
         <dl>
           <div><dt>Besiktningsdag</dt><dd>{dateLabel(item.date)}</dd></div>
-          <div><dt>Uppdragsnummer</dt><dd>{item.assignmentNumber || 'Saknas'}</dd></div>
-          <div><dt>Adress</dt><dd>{[item.address, item.city].filter(Boolean).join(', ')}</dd></div>
+          <div><dt>Adress</dt><dd>{item.address}</dd></div>
+          <div><dt>Ort</dt><dd>{item.city || '-'}</dd></div>
           <div><dt>Kund</dt><dd>{item.customer}</dd></div>
           <div><dt>Uppdragsbekräftelse</dt><dd>{item.confirmation}</dd></div>
           <div><dt>Besiktning</dt><dd>{item.inspection}</dd></div>
@@ -191,7 +190,7 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
       </div> : null}
       {rows.length > 0 && <table className="obo-table">
         <caption className="obo-sr">ÖB-uppdrag med separata statusar för uppdragsbekräftelse och besiktning</caption>
-        <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Uppdragsnr</th><th scope="col">Adress</th><th scope="col">Kund</th>
+        <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Adress</th><th scope="col">Ort</th><th scope="col">Kund</th>
           <th scope="col">Uppdragsbekräftelse</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Detaljer och åtgärdsbehov</span></th>
           <th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead>
         <tbody>{rows.map(item => <OverviewRow key={item.id} item={item} />)}</tbody>

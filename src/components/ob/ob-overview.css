@@ -54,8 +54,8 @@
 .obo-table { table-layout: fixed; border-collapse: collapse; width: 100%; text-align: left; }
 .obo-table th { background: #f4f6f8; color: #596571; font-weight: 600; padding: .65rem .625rem; border-bottom: 1px solid var(--obo-line); text-align: left; }
 .obo-table th:nth-child(1) { width: 7.5rem; }
-.obo-table th:nth-child(2) { width: 8.5rem; }
-.obo-table th:nth-child(4) { width: 20%; }
+.obo-table th:nth-child(3) { width: 10%; }
+.obo-table th:nth-child(4) { width: 18%; }
 .obo-table th:nth-child(5) { width: 14.5rem; }
 .obo-table th:nth-child(6) { width: 6.75rem; }
 .obo-table th:nth-child(7) { width: 3.5rem; }
@@ -69,8 +69,8 @@
 .obo-table tr[data-marker=closed] td:first-child { box-shadow: inset 3px 0 #52705e; }
 .obo-cell-text { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .obo-address { font-weight: 600; }
-.obo-city, .obo-meta { color: #596571; }
-.obo-date, .obo-number { font-variant-numeric: tabular-nums; }
+.obo-meta { color: #596571; }
+.obo-date { font-variant-numeric: tabular-nums; }
 .obo-attention { list-style: none; padding: 0; margin: .5rem 0 0; color: #785016; }
 .obo-attention li + li { margin-top: .25rem; }
 .obo-action-links { display: grid; grid-template-columns: 44px 44px; justify-content: end; }
@@ -111,8 +111,20 @@
   .obo-shortcuts[data-open=false] .obo-shortcuts-content { display: none; }
 }
 
-/* Reflow on available width, including enlarged text, rather than squeezing columns. */
-@container ob-overview (max-width: 67.99rem) {
+/* Keep a table in side panels and smaller desktop windows. */
+@container ob-overview (min-width: 56rem) and (max-width: 67.99rem) {
+  .obo-toolbar { grid-template-columns: minmax(12rem, 1fr) max-content max-content; gap: .75rem; }
+  .obo-table th, .obo-table td { padding-left: .5rem; padding-right: .5rem; }
+  .obo-table th:nth-child(4) { width: 15%; }
+  .obo-table th:nth-child(5) { width: 11.75rem; }
+  .obo-table th:nth-child(6) { width: 6rem; }
+  .obo-table th:nth-child(7) { width: 3.25rem; }
+  .obo-table th:nth-child(8) { width: 6.5rem; }
+  .obo-table .obo-details-toggle { padding-left: .25rem; padding-right: .25rem; }
+}
+
+/* Reflow only when the table no longer fits, including enlarged text. */
+@container ob-overview (width < 56rem) {
   .obo-workspace { font-size: 1rem; line-height: 1.5; }
   .obo-toolbar { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; }
   .obo-search { flex: 1 1 100%; }

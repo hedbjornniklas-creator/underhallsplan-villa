@@ -16,15 +16,25 @@ De äldre kortens interna utseende är inte ombyggt.
 
 ### Visuell uppföljning 2026-09-24
 
-Användaren har godkänt publicering av den tätare listvyn.
+Användaren har godkänt publicering av den tätare listvyn samt uppföljningen
+med ortkolumn, dolt uppdragsnummer och rättad layout för mellanbredder.
 
 - Bredare listyta (sidbehållare upp till 1856 px), utan att bredda övriga moduler.
-- Dator: 14/20 px genom tabellen, egna kund-/nummerkolumner och 56 px standardrader.
+- Dator: 14/20 px genom tabellen, egna ort- och kundkolumner och 56 px standardrader.
+- Uppföljning: ort visas i en egen kolumn efter adress, inte på adressens
+  andra rad. Mobilen behåller orten i den staplade raden. Saknad ort visas
+  som ett streck i tabellen; fullständiga långa ortnamn finns i detaljraden.
+- Uppföljning efter publiceringen: uppdragsnumret visas inte längre i listan,
+  mobilraderna eller detaljraden. Det behålls i data och sökningen.
 - Långa värden trunkeras visuellt, men full text och åtgärdsorsaker kan öppnas
   i en detaljrad med mus eller tangentbord. De finns även i ikonernas/cellernas tooltip.
 - Två 44 px ikonlänkar för befintliga flöden. Statusar och länkadresser är oförändrade.
 - En containerstyrd staplad layout behåller fullständiga texter, synliga
   åtgärdslänkar och 48 px kontroller när bredd eller textstorlek kräver det.
+- Rättning efter granskning i sidopanel: tabellen behålls från 56 rem
+  innehållsbredd (896 px vid normal textstorlek), med smalare kolumner upp
+  till 68 rem. Tidigare växlade den redan under 68 rem till höga mobilrader.
+  Testerna kräver nu kompakt tabell även på mellanbredder och vid panelvisning.
 - Klicktestet kontrollerar även 1920 px, jämna rader, gemensam textstorlek,
   utnyttjad bredd och utfällda detaljer med långa texter. Ingen ny SQL.
 
@@ -121,7 +131,8 @@ npm run build
 
 Browserprovet använder den riktiga startsidan/listkomponenten, men en separat
 Supabase-stub och fiktiva uppdrag. Inga kundmejl skickas eller data sparas.
-Det kontrollerar 320/360/390/430/768/1024/1280/1440 px, 200 % text, genvägar,
+Det kontrollerar 320/360/390/430/768/960/1024/1080/1120/1280/1440/1920 px,
+sju panelbredder kring brytpunkterna vid 125 % pixeltäthet, 200 % text, genvägar,
 sökning, filter, länkar, sidbläddring, laddning, tom lista, återförsök och
 avbrutna äldre svar. Skärmbilder hamnar under `tmp/ob-overview-preview/`.
 
