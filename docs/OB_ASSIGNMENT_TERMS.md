@@ -9,13 +9,14 @@
 - Corrections require a new confirmation, not editing the accepted document.
   This initial implementation has one acceptance document per assignment.
 
-## Published, archive activation pending
+## Published, activation setting confirmed
 
 The code was published on 2026-09-24 as `a6b5ce9`. Production deployment
 identity and anonymous access checks passed; see `OB_CONFIRMATION_RELEASE.md`.
-The user confirmed applying SQL. The archive activation flag and authenticated
-live acceptance/email verification remain unconfirmed. Publication alone does
-not establish that new snapshot capture is active.
+The user confirmed applying SQL and then saving the Production archive flag
+as `true`. A fresh deployment of the same application code is being triggered
+to apply it. Authenticated live acceptance/email verification remains outstanding;
+the public deployment checks do not independently verify new snapshot capture.
 
 The inspector's details page shows approved terms outside its disabled form,
 with a shortcut near the approval summary. PDF download is read-only and

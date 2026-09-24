@@ -36,7 +36,10 @@ module workflows. Exact SBR original layout is not part of this release.
 Production requires `OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED=true` in Vercel, saved
 before the deployment that should enable capture. The browser/desktop control
 tools failed to initialize, and no Vercel CLI credential was available. The
-user has been asked to save that setting; activation is not yet verified.
+user confirmed saving the Production setting on 2026-09-24 after checking its
+name, value and environment in the Vercel UI. A fresh deployment of unchanged
+application code is being triggered to pick it up. Direct runtime confirmation
+of the flag and an end-to-end live acceptance remain outstanding.
 
 Until activation the existing acceptance/email behavior continues. Archived
 document read endpoints do not require the flag. After activation, only new
@@ -61,8 +64,16 @@ database over the immutable archive or overwrite accepted documents.
 - Anonymous `/ob` redirects to `/login` (307). Anonymous terms/PDF GETs and
   confirmation POST with an all-zero synthetic assignment ID return 401 and
   `Cache-Control: private, no-store`. No real assignment was used or changed.
-- Code publication is complete. The archive activation flag is still awaiting
-  user confirmation and has not been independently verified on this deployment.
-  If the flag is saved after deployment creation, deploy again to activate it.
-- This verification receipt is saved on the working/backup branch only; it
-  does not itself trigger another production deployment.
+- That deployment completed before the user confirmed saving the archive flag;
+  it is not evidence that the flag was active on that deployment.
+- This receipt was initially saved on the working/backup branch. It is now
+  promoted together with the activation record to trigger the required rebuild,
+  without bringing any parallel application work into production.
+
+## Activation rebuild, 2026-09-24
+
+The user confirmed `OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED=true` was saved for
+Production and authorized the new deployment. The isolated release worktree
+contains documentation-only changes since `a6b5ce9`; application code remains
+the tested `91aece9` implementation. No SQL, customer acceptance, email or
+historical document is modified by this activation deployment.
