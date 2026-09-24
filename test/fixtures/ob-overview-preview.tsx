@@ -18,9 +18,20 @@ window.fetch = async (input, init) => {
   window.__obOverviewTest.reads++
   const responseState = { ...window.__obOverviewTest }
   await new Promise(resolve => setTimeout(resolve, responseState.delay))
+  const items = overviewDemoItems()
+  if (new URL(location.href).searchParams.get('density') === 'stress') {
+    Object.assign(items[0], {
+      date: null, assignmentNumber: '', city: '',
+      address: 'Södra Strandpromenaden vid Östra Långholmens allé 128 B, gårdshuset',
+      customer: 'mycket-langt-kundnamn-for-att-testa-tabellens-fullstandiga-text@example.invalid',
+      confirmation: 'Arkiverad · Godkännande behöver kontrolleras',
+      attention: ['Arbetet är pausat. Uppdragsbekräftelsen behöver vara aktuell och skickad.', 'Stäm av kundens uppgifter i besiktningen'],
+      marker: 'attention',
+    })
+  }
   return responseState.fail
     ? Response.json({ error: 'Uppdragslistan kunde inte hämtas. Försök igen.' }, { status: 503 })
-    : Response.json({ items: responseState.empty ? [] : overviewDemoItems() })
+    : Response.json({ items: responseState.empty ? [] : items })
 }
 
 createRoot(document.getElementById('root')!).render(<>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileCheck2, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import ActionButton from '@/components/ui/ActionButton'
 import PendingLink from '@/components/ui/PendingLink'
 import { selectObOverview, type ObOverviewItem, type OverviewFilter, type OverviewSort } from '@/lib/ob/overview'
@@ -27,8 +27,60 @@ function dateLabel(value: string | null) {
   if (!value) return 'Datum saknas'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? 'Datum saknas' : date.toLocaleDateString('sv-SE', {
-    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/Stockholm',
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Stockholm',
   })
+}
+
+function OverviewRow({ item }: { item: ObOverviewItem }) {
+  const [expanded, setExpanded] = useState(false)
+  const detailsId = useId()
+  const detailsLabel = `${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.address}`
+  const attentionLabel = item.attention.length ? `Åtgärd krävs: ${item.attention.join('. ')}. ` : ''
+  return <>
+    <tr data-marker={item.marker} data-row-id={item.id}>
+      <td className="obo-date">{item.date ? <time dateTime={item.date}>{dateLabel(item.date)}</time> : 'Datum saknas'}</td>
+      <td className="obo-number obo-desktop-only"><span className="obo-cell-text" title={item.assignmentNumber || 'Uppdragsnummer saknas'}>{item.assignmentNumber || '-'}</span></td>
+      <td className="obo-identity">
+        <span className="obo-address obo-cell-text" title={item.address}>{item.address}</span>
+        <span className="obo-desktop-only obo-city obo-cell-text" title={item.city}>{item.city || '\u00a0'}</span>
+        <span className="obo-mobile-only">{item.customer}</span>
+        {(item.city || item.assignmentNumber) && <span className="obo-mobile-only obo-meta">{[item.city, item.assignmentNumber].filter(Boolean).join(' · ')}</span>}
+        {item.attention.length > 0 && <ul className="obo-attention obo-mobile-only">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul>}
+      </td>
+      <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
+      <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Bekräftelse</span><span className="obo-cell-text" title={item.confirmation}>{item.confirmation}</span></td>
+      <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Besiktning</span><span className="obo-cell-text" title={item.inspection}>{item.inspection}</span></td>
+      <td className="obo-details-toggle obo-desktop-only">
+        <button type="button" className="obo-icon obo-row-toggle" aria-label={attentionLabel + detailsLabel}
+          title={attentionLabel + detailsLabel} aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined}
+          data-attention={item.attention.length > 0} onClick={() => setExpanded(value => !value)}>
+          {item.attention.length ? <TriangleAlert size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
+        </button>
+      </td>
+      <td className="obo-actions"><div className="obo-action-links">
+        {item.inspectionHref && <PendingLink className="obo-inspection-link" href={item.inspectionHref} prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
+          aria-label={`Öppna besiktning: ${item.address}`} title="Öppna besiktning"
+          icon={<ClipboardList size={18} aria-hidden="true" />}>Öppna besiktning</PendingLink>}
+        {item.confirmationHref && <PendingLink className="obo-confirmation-link" href={item.confirmationHref} prefetch={false} autoPending pendingLabel="Öppnar bekräftelse…"
+          aria-label={`${item.confirmationAction}: ${item.address}`} title={item.confirmationAction}
+          icon={<FileCheck2 size={18} aria-hidden="true" />}>{item.confirmationAction}</PendingLink>}
+      </div></td>
+    </tr>
+    {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={8}>
+      <div id={detailsId} className="obo-row-details">
+        <dl>
+          <div><dt>Besiktningsdag</dt><dd>{dateLabel(item.date)}</dd></div>
+          <div><dt>Uppdragsnummer</dt><dd>{item.assignmentNumber || 'Saknas'}</dd></div>
+          <div><dt>Adress</dt><dd>{[item.address, item.city].filter(Boolean).join(', ')}</dd></div>
+          <div><dt>Kund</dt><dd>{item.customer}</dd></div>
+          <div><dt>Uppdragsbekräftelse</dt><dd>{item.confirmation}</dd></div>
+          <div><dt>Besiktning</dt><dd>{item.inspection}</dd></div>
+        </dl>
+        {item.attention.length > 0 && <div className="obo-detail-attention"><strong>Kräver åtgärd</strong>
+          <ul className="obo-attention">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
+      </div>
+    </td></tr>}
+  </>
 }
 
 export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) {
@@ -139,25 +191,10 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
       </div> : null}
       {rows.length > 0 && <table className="obo-table">
         <caption className="obo-sr">ÖB-uppdrag med separata statusar för uppdragsbekräftelse och besiktning</caption>
-        <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Adress / kund</th>
-          <th scope="col">Uppdragsbekräftelse</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Åtgärder</span></th></tr></thead>
-        <tbody>{rows.map(item => <tr key={item.id} data-marker={item.marker} data-row-id={item.id}>
-          <td className="obo-date">{item.date ? <time dateTime={item.date}>{dateLabel(item.date)}</time> : 'Datum saknas'}</td>
-          <td className="obo-identity">
-            <span className="obo-address">{item.address}</span>
-            <span>{item.customer}</span>
-            {(item.city || item.assignmentNumber) && <small>{[item.city, item.assignmentNumber].filter(Boolean).join(' · ')}</small>}
-            {item.attention.length > 0 && <ul className="obo-attention">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul>}
-          </td>
-          <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Bekräftelse</span><span>{item.confirmation}</span></td>
-          <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Besiktning</span><span>{item.inspection}</span></td>
-          <td className="obo-actions">
-            {item.inspectionHref && <PendingLink href={item.inspectionHref} prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
-              icon={<ArrowRight size={16} aria-hidden="true" />}>Öppna besiktning</PendingLink>}
-            {item.confirmationHref && <PendingLink href={item.confirmationHref} prefetch={false} autoPending pendingLabel="Öppnar bekräftelse…"
-              icon={<ArrowRight size={16} aria-hidden="true" />}>{item.confirmationAction}</PendingLink>}
-          </td>
-        </tr>)}</tbody>
+        <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Uppdragsnr</th><th scope="col">Adress</th><th scope="col">Kund</th>
+          <th scope="col">Uppdragsbekräftelse</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Detaljer och åtgärdsbehov</span></th>
+          <th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead>
+        <tbody>{rows.map(item => <OverviewRow key={item.id} item={item} />)}</tbody>
       </table>}
       {items !== null && <div className="obo-pagination">
         <span role="status" aria-live="polite">{filtered.length ? `${start + 1}–${start + rows.length} av ${filtered.length} uppdrag` : '0 uppdrag'}</span>
