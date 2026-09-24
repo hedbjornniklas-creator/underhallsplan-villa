@@ -73,14 +73,19 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 - En rad representerar ett uppdrag, inte en fastighet. Flera besiktningar på
   samma fastighet ska inte slås ihop. Ersatta bekräftelser hör till historiken
   för samma uppdrag, inte till dubbla aktiva rader.
-- Datum, uppdragsnummer, adress, kund, uppdragsbekräftelse och besiktning har
-  egna kolumner. Ort ligger på adressens andra rad. Adressen får vikt 600;
+- Datum, adress, ort, kund, uppdragsbekräftelse och besiktning har
+  egna kolumner. Ort ligger direkt efter adress. Adressen får vikt 600;
   övriga cellvärden har samma textstorlek och normalt vikt 400.
+- Uppdragsnummer visas inte i listan eller dess detaljrad, inte heller på
+  mobil. Numret behålls i data och kan fortfarande användas för sökning.
 - Utnyttja sidans bredd, upp till 1856 px inklusive sidmarginaler. Behåll de
   fyra befintliga verktygens avgränsade bredd; listan får breda ut sig under dem.
 - Standardrader är 56 px vid normal textstorlek, oavsett antal länkar eller
   åtgärdsorsaker. Utfällda detaljer är ett avsiktligt undantag, inte ett sätt
   att tvinga in fullständiga långa texter i en fast höjd.
+- Behåll tabellayouten även i mindre datorfönster och sidopaneler. Från
+  56 rem innehållsbredd används tabell med kompaktare kolumner; under den
+  bredden används mobilens staplade rader. Brytpunkten följer textstorleken.
 - Långa cellvärden får ellips på datorn. Fullständig text finns både som
   tooltip och i en tangentbordstillgänglig detaljrad. Åtgärdsbehov markeras
   med en namngiven varningsikon som öppnar orsakerna; inte bara med färg.
@@ -177,3 +182,5 @@ mobiltest, ett funktionstest eller en publicering av listan.
 | 2026-09-23 | Använd RenoApps lugna listformspråk med ÖB:s blå profil. Den senaste datorriktningen och mobilexemplet blir referens för 1.2. | Användaren bad att uppdatera profilen efter godkännande av mobilexemplet. Äldre ingångar behålls under övergången. Ingen appimplementation eller publicering i denna leverans. |
 | 2026-09-23 | Bygg den nya gemensamma listan under de fyra korten på ÖB:s startsida. | Separat lokal implementation för utvärdering. Båda gamla listorna och deras arbetsflöden behålls. Ingen publicering eller pensionering av gamla listor. |
 | 2026-09-24 | Tätare datorlista efter jämförelsen med Fortnox: bredare yta, jämn typografi och stabila standardrader. | Visuell uppföljning. Detaljer är åtkomliga utan hover, mobilen behåller textlänkar och goda pekmål. Ingen ändring av statusregler eller arbetsflöden. |
+| 2026-09-24 | Ta bort uppdragsnummer från översiktens visning. | Gäller dator, mobil och detaljrad. Nummer, sökning och ID-kopplingar behålls; ingen datamigrering. |
+| 2026-09-24 | Visa ort i en egen kolumn efter adressen. | Dator och mellanbredder använder separata kolumner. Mobilen behåller orten i den staplade raden. Ingen ändring av sparade uppgifter. |

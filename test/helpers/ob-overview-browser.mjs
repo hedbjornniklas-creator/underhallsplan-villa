@@ -32,8 +32,25 @@ export async function testOverview(base, output) {
       return node.clientWidth >= textWidth + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 20
     }), true, `${label}: full page-size value fits beside the native arrow`)
   }
+  async function tableMode(label, expected) {
+    const metrics = await page.evaluate(() => ({
+      table: getComputedStyle(document.querySelector('.obo-table tr[data-row-id]')).display === 'table-row',
+      heights: [...document.querySelectorAll('.obo-table tr[data-row-id]')].map(row => row.getBoundingClientRect().height),
+      fonts: [...document.querySelectorAll('.obo-table td, .obo-table .obo-cell-text')].filter(node => node.checkVisibility()).map(node => getComputedStyle(node).fontSize),
+    }))
+    assert.equal(metrics.table, expected, `${label}: table versus mobile layout`)
+    assert.equal(await page.$eval('.obo-actions a > span', node => node.checkVisibility()), !expected, `${label}: action labels follow layout`)
+    assert.equal(await page.$eval('.obo-filter-buttons', node => node.checkVisibility()), expected, `${label}: desktop filters remain compact`)
+    assert.equal(await page.$eval('tr[data-row-id] .obo-city', node => node.checkVisibility()), expected, `${label}: separate city column on desktop only`)
+    assert.equal(await page.$eval('tr[data-row-id] .obo-meta', node => node.checkVisibility()), !expected, `${label}: city remains in the mobile row`)
+    if (expected) {
+      assert.ok(Math.max(...metrics.heights) - Math.min(...metrics.heights) < 1, `${label}: consistent row heights`)
+      assert.ok(Math.max(...metrics.heights) <= 56, `${label}: compact rows`)
+      assert.deepEqual([...new Set(metrics.fonts)], ['14px'], `${label}: consistent table typography`)
+    }
+  }
   try {
-    for (const width of [320, 360, 390, 430, 768, 1024, 1280, 1440, 1920]) {
+    for (const width of [320, 360, 390, 430, 768, 960, 1024, 1080, 1120, 1280, 1440, 1920]) {
       await page.setViewport({ width, height: 1000 })
       await page.goto(`${base}/ob`, { waitUntil: 'networkidle0' })
       await ready()
@@ -47,34 +64,45 @@ export async function testOverview(base, output) {
         await page.click('.obo-shortcuts-toggle')
       }
       assert.equal(await page.$eval('[data-row-id="inspection:inspection-1"]', node => node.textContent.includes('Inväntar kund') && node.textContent.includes('Pågår')), true)
+      assert.equal(await page.$eval('[data-row-id="inspection:inspection-1"]', node => node.textContent.includes('2026-0925-01')), false, 'Assignment number is omitted on desktop and mobile')
+      assert.equal((await page.$$('.obo-table thead th')).length, 8)
+      assert.deepEqual(await page.$$eval('.obo-table thead th', nodes => nodes.slice(0, 4).map(node => node.textContent)), ['Besiktningsdag', 'Adress', 'Ort', 'Kund'])
+      assert.equal(await page.$eval('[data-row-id="inspection:inspection-1"] .obo-city', node => node.textContent), 'Täby')
       const links = await page.$$eval('[data-row-id="inspection:inspection-1"] a', nodes => nodes.map(node => node.getAttribute('href')))
       assert.deepEqual(links, ['/properties/property-1/ob/inspection-1', '/ob/assignments/assignment-1'])
-      if (width >= 1280) {
-        const metrics = await page.evaluate(() => ({
-          heights: [...document.querySelectorAll('.obo-table tr[data-row-id]')].map(row => row.getBoundingClientRect().height),
-          fonts: [...document.querySelectorAll('.obo-table td, .obo-table .obo-cell-text')].filter(node => node.checkVisibility()).map(node => getComputedStyle(node).fontSize),
-          width: document.querySelector('.obo-workspace').getBoundingClientRect().width,
-        }))
-        assert.ok(Math.max(...metrics.heights) - Math.min(...metrics.heights) < 1, `width ${width}: consistent row heights`)
-        assert.ok(Math.max(...metrics.heights) <= 56, `width ${width}: compact rows`)
-        assert.deepEqual([...new Set(metrics.fonts)], ['14px'], `width ${width}: consistent table typography`)
-        assert.ok(metrics.width >= width * .93, `width ${width}: use available page width`)
-        assert.equal(await page.$eval('.obo-actions a > span', node => node.checkVisibility()), false, 'Desktop actions use labelled icons')
-      } else {
-        assert.equal(await page.$eval('.obo-actions a > span', node => node.checkVisibility()), true, 'Reflowed actions retain visible text')
+      await tableMode(`width ${width}`, width >= 960)
+      if (width >= 960) {
+        const listWidth = await page.$eval('.obo-workspace', node => node.getBoundingClientRect().width)
+        assert.ok(listWidth >= width * .93, `width ${width}: use available page width`)
       }
       await page.screenshot({ path: resolve(output, `overview-${width}.png`), fullPage: true })
       if (width === 390) await page.screenshot({ path: resolve(output, 'overview-mobile-390.png') })
-      if (width >= 1280) {
+      if (width >= 960) {
         await page.$eval('.obo-heading', node => node.scrollIntoView())
         await page.screenshot({ path: resolve(output, `overview-dense-${width}.png`) })
       }
     }
+    // A wide browser may still host a narrow list in a docked preview panel.
+    await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1.25 })
+    for (const width of [895, 896, 920, 960, 1032, 1087, 1088]) {
+      await page.$eval('.obo', (node, size) => { node.style.width = `${size}px` }, width)
+      await layout(`panel ${width}`)
+      await tableMode(`panel ${width}`, width >= 896)
+      if (width === 1032) {
+        await page.$eval('.obo-heading', node => node.scrollIntoView())
+        await page.screenshot({ path: resolve(output, 'overview-panel-1032.png') })
+      }
+    }
+    await page.$eval('.obo', node => { node.style.width = '' })
+    await page.setViewport({ width: 1920, height: 1000, deviceScaleFactor: 1 })
     const actionRow = '[data-row-id="assignment:assignment-2"]'
     await page.focus(`${actionRow} .obo-row-toggle`)
     await page.keyboard.press('Enter')
     assert.equal(await page.$eval(`${actionRow} .obo-row-toggle`, node => node.getAttribute('aria-expanded')), 'true')
     assert.match(await page.$eval('.obo-row-details', node => node.textContent), /Acceptera uppdraget/)
+    assert.doesNotMatch(await page.$eval('.obo-row-details', node => node.textContent), /Uppdragsnummer/)
+    assert.equal(await page.$eval('.obo-detail-row td', node => node.colSpan), 8)
+    assert.equal(await page.$eval('.obo-row-details', node => [...node.querySelectorAll('dt')].find(term => term.textContent === 'Ort').nextElementSibling.textContent), 'Täby')
     await layout('expanded action details')
     await page.keyboard.press('Enter')
     assert.equal((await page.$$('.obo-detail-row')).length, 0)
@@ -82,6 +110,7 @@ export async function testOverview(base, output) {
     await ready()
     await page.select('.obo-page-size select', '25')
     const longRow = '[data-row-id="inspection:inspection-1"]'
+    assert.equal(await page.$eval(`${longRow} .obo-city`, node => node.textContent), '-', 'Missing city uses a stable placeholder')
     const heights = await page.$$eval('.obo-table tr[data-row-id]', nodes => nodes.map(node => node.getBoundingClientRect().height))
     assert.ok(Math.max(...heights) - Math.min(...heights) < 1, 'Long text and missing values must not resize collapsed rows')
     await page.click(`${longRow} .obo-row-toggle`)
@@ -104,6 +133,10 @@ export async function testOverview(base, output) {
     await page.type('[aria-label="Sök uppdrag"]', 'lindvägen')
     assert.equal((await page.$$('.obo-table tbody tr')).length, 1)
     assert.match(await page.$eval('.obo-pagination', node => node.textContent), /1–1 av 1/)
+    await page.click('[aria-label="Rensa sökning"]')
+    await page.type('[aria-label="Sök uppdrag"]', '2026-0925-01')
+    assert.equal((await page.$$('.obo-table tbody tr[data-row-id]')).length, 1, 'Assignment number remains searchable without being displayed')
+    assert.equal(await page.$eval('.obo-table tbody tr[data-row-id]', node => node.dataset.rowId), 'inspection:inspection-1')
     await page.click('[aria-label="Rensa sökning"]')
     await page.click('.obo-filter-buttons button:nth-child(3)')
     assert.equal((await page.$$('.obo-table tbody tr')).length, 9)
@@ -147,6 +180,6 @@ export async function testOverview(base, output) {
     await new Promise(resolve => setTimeout(resolve, 600))
     assert.equal((await page.$$('.obo-error')).length, 0, 'Aborted stale response cannot overwrite the latest successful refresh')
     assert.deepEqual(errors, [])
-    console.log('OB overview browser checks passed: 9 widths, uniform compact rows, consistent typography, full-width desktop, keyboard details, long text, 200% text, shortcuts, search, filters, pagination, links, refresh, errors, empty state; no writes.')
+    console.log('OB overview browser checks passed: 12 widths, 7 panel widths with 125% pixel density, uniform compact rows, consistent typography, full-width desktop, keyboard details, long text, 200% text, shortcuts, search, filters, pagination, links, refresh, errors, empty state; no writes.')
   } finally { await browser.close() }
 }
