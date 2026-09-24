@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import DebouncedTextarea from './DebouncedTextarea'
+import ObFormSaveStatus from './ObFormSaveStatus'
 
 export type TenureType = 'freehold' | 'bostadsratt' | null
 export type DwellingType = 'house' | 'apartment' | null
@@ -208,8 +209,6 @@ export default function ObStepHandlingar({
   const [savingDisclosure, setSavingDisclosure] = useState(false)
   const [savingDefect, setSavingDefect] = useState(false)
   const [uploadingDisclosureImage, setUploadingDisclosureImage] = useState(false)
-  const [savedDisclosure, setSavedDisclosure] = useState(false)
-  const [savedDefect, setSavedDefect] = useState(false)
 
   const [documentTypes, setDocumentTypes] = useState<DocumentType[]>([])
   const [documentsRaw, setDocumentsRaw] = useState<InspectionDocument[]>([])
@@ -597,7 +596,6 @@ export default function ObStepHandlingar({
     if (isInspectionLocked) return
     if (!disclosure) return
 
-    setSavedDisclosure(false)
     setSavingDisclosure(true)
 
     const { error } = await supabase
@@ -612,16 +610,12 @@ export default function ObStepHandlingar({
       setError('Kunde inte spara upplysningar.')
       throw error
     }
-
-    setSavedDisclosure(true)
-    setTimeout(() => setSavedDisclosure(false), 1500)
   }
 
   const saveDefectText = async (value: string) => {
     if (isInspectionLocked) return
     if (!inspection?.id) return
 
-    setSavedDefect(false)
     let valueToSave = value
 
     if (!valueToSave || valueToSave.trim() === '') {
@@ -643,9 +637,6 @@ export default function ObStepHandlingar({
       setError('Kunde inte spara upplysningar om fel.')
       throw error
     }
-
-    setSavedDefect(true)
-    setTimeout(() => setSavedDefect(false), 1500)
   }
 
   const handleDisclosureImageUpload = async (file: File | null) => {
@@ -758,7 +749,7 @@ export default function ObStepHandlingar({
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Handlingar</h2>
           </div>
-          {savingDocs && <span className="text-sm text-gray-600">Sparar handling...</span>}
+          <ObFormSaveStatus saving={savingDocs} />
         </div>
 
         <div className="space-y-3 md:hidden">
@@ -992,11 +983,8 @@ export default function ObStepHandlingar({
       ======================== */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-lg font-semibold text-gray-900">Upplysningar</h2>
-          {savingDisclosure && <span className="text-sm text-gray-600">Sparar...</span>}
-          {!savingDisclosure && savedDisclosure && (
-            <span className="text-xs text-emerald-600">Sparad</span>
-          )}
+          <h2 className="min-w-0 flex-1 text-lg font-semibold text-gray-900">Upplysningar</h2>
+          <ObFormSaveStatus saving={savingDisclosure} />
         </div>
 
         <DebouncedTextarea
@@ -1059,11 +1047,8 @@ export default function ObStepHandlingar({
       ======================== */}
       <section>
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-lg font-semibold text-gray-900">Upplysningar om fel i fastigheten</h2>
-          {savingDefect && <span className="text-sm text-gray-600">Sparar...</span>}
-          {!savingDefect && savedDefect && (
-            <span className="text-xs text-emerald-600">Sparad</span>
-          )}
+          <h2 className="min-w-0 flex-1 text-lg font-semibold text-gray-900">Upplysningar om fel i fastigheten</h2>
+          <ObFormSaveStatus saving={savingDefect} />
         </div>
 
         <DebouncedTextarea
