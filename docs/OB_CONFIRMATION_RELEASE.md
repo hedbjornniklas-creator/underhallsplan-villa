@@ -38,7 +38,7 @@ before the deployment that should enable capture. The browser/desktop control
 tools failed to initialize, and no Vercel CLI credential was available. The
 user confirmed saving the Production setting on 2026-09-24 after checking its
 name, value and environment in the Vercel UI. A fresh deployment of unchanged
-application code is being triggered to pick it up. Direct runtime confirmation
+application code has completed after that confirmation. Direct runtime confirmation
 of the flag and an end-to-end live acceptance remain outstanding.
 
 Until activation the existing acceptance/email behavior continues. Archived
@@ -77,3 +77,20 @@ Production and authorized the new deployment. The isolated release worktree
 contains documentation-only changes since `a6b5ce9`; application code remains
 the tested `91aece9` implementation. No SQL, customer acceptance, email or
 historical document is modified by this activation deployment.
+
+### Activation deployment receipt
+
+- Commit `7d3849c577cb76f4e684046c787312aa0f2e7d1c` was published to `main`
+  after the user confirmed the Production setting was saved.
+- Vercel reported success for `dpl_BDiCUc4gNhoPPSiADoFB1ELqFtWz`.
+- The live `hushub.se/login` page returned 200 with that exact deployment ID;
+  `/ob` redirected anonymous requests to `/login` (307).
+- Anonymous terms/PDF reads and confirmation POST returned 401 with
+  `private, no-store`, using only an all-zero synthetic assignment ID.
+- Changes since `a6b5ce9` are limited to the two release/feature documents.
+  The previously tested application code is unchanged.
+- The setting is user-confirmed, not read directly from the live server. These
+  public checks verify deployment and authentication boundaries, not the full
+  new-acceptance/snapshot/PDF/email workflow. That live test remains outstanding.
+- This final receipt is saved on the working/backup branch only to avoid a
+  redundant production build. Unrelated parallel plans remain untouched.

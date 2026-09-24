@@ -14,8 +14,9 @@
 The code was published on 2026-09-24 as `a6b5ce9`. Production deployment
 identity and anonymous access checks passed; see `OB_CONFIRMATION_RELEASE.md`.
 The user confirmed applying SQL and then saving the Production archive flag
-as `true`. A fresh deployment of the same application code is being triggered
-to apply it. Authenticated live acceptance/email verification remains outstanding;
+as `true`. A fresh deployment of the same application code completed as
+`7d3849c` after that confirmation, and its live identity was verified.
+Authenticated live acceptance/email verification remains outstanding;
 the public deployment checks do not independently verify new snapshot capture.
 
 The inspector's details page shows approved terms outside its disabled form,
