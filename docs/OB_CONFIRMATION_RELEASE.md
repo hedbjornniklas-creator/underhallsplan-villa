@@ -45,8 +45,24 @@ acceptances opt in; no older PDFs or acceptances are reconstructed or backfilled
 An authenticated production click test and a new synthetic acceptance/email
 delivery on the live deployment remain outstanding. No real customer approval,
 email or inspection was used as a test. Deployment identity and anonymous route
-checks will be recorded separately after Vercel reports success.
+checks are recorded below.
 
 Rollback must preserve the archive tables and their contents. Disabling the
 flag stops new capture/retry, not original-file reads. Do not restore an older
 database over the immutable archive or overwrite accepted documents.
+
+## Production deployment verified, 2026-09-24
+
+- Published commit `a6b5ce9ae109131fdb2b8c9345b86e0d5defb1c3` to `main`
+  using a normal fast-forward push from the isolated release worktree.
+- Vercel reports success for deployment
+  `dpl_G1NuEYsx6mREtdHsu1f5LtqBurqc`. The public `hushub.se/login` HTML
+  references the same deployment ID and responds with HTTP 200.
+- Anonymous `/ob` redirects to `/login` (307). Anonymous terms/PDF GETs and
+  confirmation POST with an all-zero synthetic assignment ID return 401 and
+  `Cache-Control: private, no-store`. No real assignment was used or changed.
+- Code publication is complete. The archive activation flag is still awaiting
+  user confirmation and has not been independently verified on this deployment.
+  If the flag is saved after deployment creation, deploy again to activate it.
+- This verification receipt is saved on the working/backup branch only; it
+  does not itself trigger another production deployment.
