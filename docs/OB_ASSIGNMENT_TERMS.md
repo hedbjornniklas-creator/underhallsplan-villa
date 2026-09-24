@@ -9,7 +9,13 @@
 - Corrections require a new confirmation, not editing the accepted document.
   This initial implementation has one acceptance document per assignment.
 
-## Implemented locally, not published or enabled
+## Published, archive activation pending
+
+The code was published on 2026-09-24 as `a6b5ce9`. Production deployment
+identity and anonymous access checks passed; see `OB_CONFIRMATION_RELEASE.md`.
+The user confirmed applying SQL. The archive activation flag and authenticated
+live acceptance/email verification remain unconfirmed. Publication alone does
+not establish that new snapshot capture is active.
 
 The inspector's details page shows approved terms outside its disabled form,
 with a shortcut near the approval summary. PDF download is read-only and
@@ -89,8 +95,9 @@ new snapshot version rather than silently changing that renderer.
 5. Exercise renderer/archive/mail failure recovery and manual retry. Verify the
    acceptance remains recorded and the first successful PDF is reused.
 6. Production rollout requires explicit approval after staging verification.
-   Apply SQL before enabling the application flag. No production SQL, emails,
-   acceptances or deployment were performed by this local task.
+   Apply SQL before enabling the application flag. The user has confirmed SQL
+   application and authorized publication; deployment is recorded in the release
+   log. No production customer emails or acceptances were used as tests.
 
 Disabling the flag stops new opt-in captures and manual resend operations; it
 does not remove archives. Read-only terms/PDF access continues. Do not drop
