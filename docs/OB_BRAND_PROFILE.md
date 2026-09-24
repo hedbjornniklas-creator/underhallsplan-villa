@@ -17,7 +17,7 @@ en enskild pixel i en mockup är inte en ny funktionsregel.
   denna dokumentuppdatering.
 - **Efterföljande implementation:** den gemensamma ÖB-listan publicerades
   2026-09-23, se [publiceringskvittot](OB_OVERVIEW_RELEASE.md). Den tätare
-  datorlayouten från 2026-09-24 är en lokal uppföljning för utvärdering.
+  datorlayouten från 2026-09-24 är godkänd för publicering av användaren.
 
 Formspråket utgår från `src/components/renoapp/renoapp-theme.css` och
 `src/app/renoapp/app/cases/page.tsx`: neutrala statustexter, smal markering vid

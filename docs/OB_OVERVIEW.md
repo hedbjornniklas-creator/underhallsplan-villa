@@ -14,7 +14,9 @@ Manrope, neutrala statustexter och vita rader med tunna avdelare. Mobilen
 använder samma rader och länkar i en vertikal layout utan sidscroll.
 De äldre kortens interna utseende är inte ombyggt.
 
-### Visuell uppföljning 2026-09-24, lokalt för utvärdering
+### Visuell uppföljning 2026-09-24
+
+Användaren har godkänt publicering av den tätare listvyn.
 
 - Bredare listyta (sidbehållare upp till 1856 px), utan att bredda övriga moduler.
 - Dator: 14/20 px genom tabellen, egna kund-/nummerkolumner och 56 px standardrader.
@@ -25,6 +27,10 @@ De äldre kortens interna utseende är inte ombyggt.
   åtgärdslänkar och 48 px kontroller när bredd eller textstorlek kräver det.
 - Klicktestet kontrollerar även 1920 px, jämna rader, gemensam textstorlek,
   utnyttjad bredd och utfällda detaljer med långa texter. Ingen ny SQL.
+
+Verifierat i en isolerad produktionskopia baserad på `f076e54`: 37 funktionstester,
+klicktester på nio bredder (320 till 1920 px), 200 % textförstoring och riktad
+ESLint godkända. Testerna använder fiktiva uppdrag utan skrivning eller utskick.
 
 ## Datakoppling och åtkomst
 
