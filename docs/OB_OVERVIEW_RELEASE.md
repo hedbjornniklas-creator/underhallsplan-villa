@@ -1,5 +1,36 @@
 # OB overview release, 2026-09-23
 
+## City column and narrow-window correction, 2026-09-24
+
+Published after the user's explicit approval:
+
+- Source commit: `d28ede4`; production commit: `696c9f1`, based on `8bd72d6`.
+- City has its own column immediately after address. Assignment numbers are
+  hidden in desktop/mobile rows and expanded details, but remain searchable.
+- The compact table is retained from 56 rem of available content width.
+  Smaller screens and enlarged text retain the stacked mobile layout.
+- Only five scoped component/CSS/profile/documentation/test files changed.
+  Parallel assignment-confirmation documents were left untouched. No SQL,
+  stored-data, API, access, workflow or environment changes were published.
+- All 37 regression tests passed in the isolated production worktree.
+- Synthetic browser checks passed at 12 viewport widths and seven panel
+  widths, including 125 percent pixel density, 200 percent text, city column
+  visibility, missing city, hidden-number search, uniform rows and details.
+  Fresh desktop/panel and mobile screenshots were visually reviewed.
+- Scoped ESLint and `next build --webpack`, including TypeScript, passed.
+  The local build used non-working placeholder Supabase values.
+- Vercel succeeded for `696c9f1`:
+  [deployment](https://vercel.com/niklas-projects-65efdd50/underhallsplan-villa/3a7cp2kmz221jgePHXRBfPBfxzrP).
+- Public hushub.se login-page assets identify that deployment:
+  `dpl_3a7cp2kmz221jgePHXRBfPBfxzrP`. The login page returns 200, anonymous
+  `/ob` redirects to `/login` with 307, and `/api/ob/overview` returns 401
+  with `private, no-store`. No authenticated production click test was run.
+- Code was synced to main and the working/backup branch. This verification
+  receipt is kept on the backup branch without triggering another release.
+
+To roll back only this follow-up, revert `696c9f1` on current main and deploy.
+No database restore is needed; preserve unrelated later changes.
+
 ## Compact list update, 2026-09-24
 
 Published the user-approved density update, isolated from other work:
