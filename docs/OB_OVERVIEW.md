@@ -14,6 +14,18 @@ Manrope, neutrala statustexter och vita rader med tunna avdelare. Mobilen
 använder samma rader och länkar i en vertikal layout utan sidscroll.
 De äldre kortens interna utseende är inte ombyggt.
 
+### Visuell uppföljning 2026-09-24, lokalt för utvärdering
+
+- Bredare listyta (sidbehållare upp till 1856 px), utan att bredda övriga moduler.
+- Dator: 14/20 px genom tabellen, egna kund-/nummerkolumner och 56 px standardrader.
+- Långa värden trunkeras visuellt, men full text och åtgärdsorsaker kan öppnas
+  i en detaljrad med mus eller tangentbord. De finns även i ikonernas/cellernas tooltip.
+- Två 44 px ikonlänkar för befintliga flöden. Statusar och länkadresser är oförändrade.
+- En containerstyrd staplad layout behåller fullständiga texter, synliga
+  åtgärdslänkar och 48 px kontroller när bredd eller textstorlek kräver det.
+- Klicktestet kontrollerar även 1920 px, jämna rader, gemensam textstorlek,
+  utnyttjad bredd och utfällda detaljer med långa texter. Ingen ny SQL.
+
 ## Datakoppling och åtkomst
 
 - `GET /api/ob/overview` använder samma organisationskontext som den befintliga

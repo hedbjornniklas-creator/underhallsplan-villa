@@ -1,6 +1,7 @@
 # ÖB - varumärkesprofil 1.2
 
 Beslutad designriktning: 2026-09-23.
+Listdensitet justerad efter användarens återkoppling: 2026-09-24.
 Omfattning: ÖB i BesiktApp. Ingen ändring av RenoApp, TU, EB eller Uppdrag.
 
 ## Status och källor
@@ -14,9 +15,9 @@ en enskild pixel i en mockup är inte en ny funktionsregel.
 - **Dokumenterad implementation:** se [införandet av 1.1](OB_BRAND_IMPLEMENTATION.md)
   och [utgivningshistoriken](OB_BRAND_RELEASE.md). Version 1.2 är inte införd genom
   denna dokumentuppdatering.
-- **Efterföljande implementation:** den gemensamma ÖB-listan har byggts lokalt
-  enligt [OB_OVERVIEW.md](OB_OVERVIEW.md), med dokumenterad datamappning och
-  testfall. Användarutvärdering och beslut om publicering återstår.
+- **Efterföljande implementation:** den gemensamma ÖB-listan publicerades
+  2026-09-23, se [publiceringskvittot](OB_OVERVIEW_RELEASE.md). Den tätare
+  datorlayouten från 2026-09-24 är en lokal uppföljning för utvärdering.
 
 Formspråket utgår från `src/components/renoapp/renoapp-theme.css` och
 `src/app/renoapp/app/cases/page.tsx`: neutrala statustexter, smal markering vid
@@ -53,15 +54,16 @@ eller globala CSS ska inte följa med automatiskt.
 | Yta | Dator | Mobil |
 | --- | --- | --- |
 | Sidrubrik i översikt | 26/34 px, vikt 600 | 22/30 px, vikt 600 |
-| Sektionsrubrik | 22/30 px, vikt 600 | 22/30 px, vikt 600 |
-| Huvudinnehåll i listan | 16/24 px, vikt 400/600 | 16/24 px, vikt 400/600 |
+| Sektionsrubrik | 20/28 px, vikt 600 | 20/28 px, vikt 600 |
+| Huvudinnehåll i listan | 14/20 px, vikt 400/600 | 16/24 px, vikt 400/600 |
 | Sekundär radinformation | 14/20 px, vikt 400 | 14/20 px, vikt 400 |
-| Inmatning | minst 16 px | minst 16 px |
-| Pekmål | minst 44 px, mål 48 px | minst 44 px, mål 48 px |
+| Inmatning i listans verktygsrad | 14 px | minst 16 px |
+| Pekmål | minst 44 px | minst 44 px, mål 48 px |
 
 Storlekarna gäller översikter och listor. Rum och noteringsdialoger behåller
-sina dokumenterade mönster tills de uttryckligen ändras. Förminska inte text
-eller pekmål för att passa fler kolumner; byt layout eller radbryt.
+sina dokumenterade mönster tills de uttryckligen ändras. Datortabellens 14 px
+är en fast, gemensam textstorlek, inte en storlek som krymper med fönstret.
+Vid smalare tillgänglig yta eller större text byter listan till staplad layout.
 
 ## ÖB-listan på dator
 
@@ -71,8 +73,17 @@ eller pekmål för att passa fler kolumner; byt layout eller radbryt.
 - En rad representerar ett uppdrag, inte en fastighet. Flera besiktningar på
   samma fastighet ska inte slås ihop. Ersatta bekräftelser hör till historiken
   för samma uppdrag, inte till dubbla aktiva rader.
-- Datum, kund/adress, uppdragsbekräftelse och besiktning har tydligt åtskilda
-  kolumner. Kund/adress får högre visuell vikt än stödtexten.
+- Datum, uppdragsnummer, adress, kund, uppdragsbekräftelse och besiktning har
+  egna kolumner. Ort ligger på adressens andra rad. Adressen får vikt 600;
+  övriga cellvärden har samma textstorlek och normalt vikt 400.
+- Utnyttja sidans bredd, upp till 1856 px inklusive sidmarginaler. Behåll de
+  fyra befintliga verktygens avgränsade bredd; listan får breda ut sig under dem.
+- Standardrader är 56 px vid normal textstorlek, oavsett antal länkar eller
+  åtgärdsorsaker. Utfällda detaljer är ett avsiktligt undantag, inte ett sätt
+  att tvinga in fullständiga långa texter i en fast höjd.
+- Långa cellvärden får ellips på datorn. Fullständig text finns både som
+  tooltip och i en tangentbordstillgänglig detaljrad. Åtgärdsbehov markeras
+  med en namngiven varningsikon som öppnar orsakerna; inte bara med färg.
 - Sökning och filter samlas i en verktygsrad. Filter använder text och tunn
   blå understrykning, inte en rad färgade statusknappar. Sidstorlek och
   sidbläddring är nedtonade stödverktyg.
@@ -80,9 +91,9 @@ eller pekmål för att passa fler kolumner; byt layout eller radbryt.
   statustext. Undvik vertikala rutnät, färgade helrader och statuspiller.
 - En smal markering vid vänsterkanten kan ge extra vägledning. Betydelsen
   ska alltid finnas i text; markeringen ersätter inte någon av statuskolumnerna.
-- Gör nästa handling begriplig. Använd exempelvis **Öppna besiktning** och
-  **Acceptera uppdrag** i stället för tvetydiga kortord som **Öppna** eller
-  **Acceptera** när sammanhanget inte räcker.
+- Datorns två öppna-handlingar använder Lucide-ikoner med tooltip och
+  tillgängliga namn som **Öppna besiktning** och **Acceptera uppdrag**.
+  Mobilen behåller synlig text. Ikoner får inte ersätta statuskolumnerna.
 
 ## Mobil
 
@@ -139,12 +150,15 @@ exakta pixelmått. Textreglerna ovan gäller vid avvikelser, exempelvis korta
 åtgärdsnamn i datorbilden. Referensernas ursprung står i
 `assets/examples/README.md` och kontrollsummor i `provenance.json`.
 
+Referensbilderna/PDF:en är fortfarande version 1.2 och visar inte det tätare
+listtillägget från 2026-09-24. Textreglerna ovan anger denna uppföljning.
+
 Version 1.1 behålls som historik. Version 1.2 ersätter dess generella riktning
 för översikter/listor och kompletterar, inte ersätter, ÖB-rundans arbetsvyer.
 
 ## Kontroll före införande
 
-- Dator: 1024, 1280 och 1440 px. Mobil: 320, 360, 390 och 430 px.
+- Dator: 1024, 1280, 1440 och 1920 px. Mobil: 320, 360, 390 och 430 px.
 - 200 % textförstoring, långa adresser/kundnamn och svenska tecken utan
   överlapp, dold statustext eller horisontell sidrullning.
 - Tangentbord, synligt fokus, namngivna ikonverktyg, etiketter och pekmål.
@@ -162,3 +176,4 @@ mobiltest, ett funktionstest eller en publicering av listan.
 | --- | --- | --- |
 | 2026-09-23 | Använd RenoApps lugna listformspråk med ÖB:s blå profil. Den senaste datorriktningen och mobilexemplet blir referens för 1.2. | Användaren bad att uppdatera profilen efter godkännande av mobilexemplet. Äldre ingångar behålls under övergången. Ingen appimplementation eller publicering i denna leverans. |
 | 2026-09-23 | Bygg den nya gemensamma listan under de fyra korten på ÖB:s startsida. | Separat lokal implementation för utvärdering. Båda gamla listorna och deras arbetsflöden behålls. Ingen publicering eller pensionering av gamla listor. |
+| 2026-09-24 | Tätare datorlista efter jämförelsen med Fortnox: bredare yta, jämn typografi och stabila standardrader. | Visuell uppföljning. Detaljer är åtkomliga utan hover, mobilen behåller textlänkar och goda pekmål. Ingen ändring av statusregler eller arbetsflöden. |

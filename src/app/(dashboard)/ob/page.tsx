@@ -986,8 +986,8 @@ export default function OverlatelsebesiktningPage() {
   return (
     <Protected>
       <main className="obo-home relative min-h-full">
-        <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
-          <header className="obo-home-heading mx-auto w-full max-w-7xl">
+        <div className="obo-home-inner relative mx-auto w-full p-4 md:p-6">
+          <header className="obo-home-heading w-full">
             <div className="flex items-center gap-3">
               <Link
                 href="/dashboard-v1"
