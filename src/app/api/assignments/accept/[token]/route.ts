@@ -711,10 +711,14 @@ export async function POST(
           : null,
     }
 
+    const documentSource = assignment.assignment_type === 'OB' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true'
+      ? await (await import('@/lib/assignments/obConfirmationSnapshot')).prepareObConfirmationSource({ ...assignment, org_id: link.org_id }, terms)
+      : null
+
     await consumeAssignmentToken({
       token,
       termsVersion: terms.version,
-      payload,
+      payload: documentSource ? { ...payload, ob_document_source: documentSource } : payload,
       ip: getClientIp(request),
       userAgent: request.headers.get('user-agent'),
     })

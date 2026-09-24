@@ -91,13 +91,15 @@ test('unknown links stay missing and unexpected database failures fail closed', 
   assert.equal(h.calls.length, 1)
 })
 
-function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = false, options: { resolveFails?: boolean; contactFails?: boolean } = {}) {
+function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = false, options: { resolveFails?: boolean; contactFails?: boolean; snapshotFails?: boolean } = {}) {
   let consumed = false
   let acceptedCount = 0
   let mails = 0
   const writes: Array<[string, unknown]> = []
   const jobs: Array<() => Promise<void>> = []
   const incidents: unknown[] = []
+  let consumedPayload: unknown = null
+  let prepared = 0
   const admin = { from(table: string) {
     const query = { update(value: unknown) { if (options.contactFails) throw new Error('Synthetic contact sync failure'); writes.push([table, value]); return query },
       eq() { return query }, then(resolve: (value: unknown) => unknown) { return Promise.resolve({ error: null }).then(resolve) } }
@@ -113,16 +115,24 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
       resolvePublicLinkFailures: async () => {},
     },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
+    '@/lib/assignments/obConfirmationSnapshot': { prepareObConfirmationSource: async (assignment: { org_id: string }, actualTerms: unknown) => {
+      prepared++
+      assert.equal(assignment.org_id, ORG)
+      assert.deepEqual(actualTerms, terms)
+      if (options.snapshotFails) throw new Error('OB_CONFIRMATION_ARCHIVE_NOT_CONFIGURED')
+      return { schemaVersion: 'ob-confirmation-v1', terms }
+    } },
     '@/lib/assignments/terms': {
       resolveAssignmentTermsRole: () => 'buyer', getAssignmentTermsDocument: () => terms,
       getAllAssignmentTermsDocuments: () => Object.fromEntries(['seller', 'buyer', 'apartment', 'technical', 'construction', 'constructionBusiness', 'constructionConsumer'].map(k => [k, terms])),
     },
     '@/lib/assignments/server': {
       resolvePublicAssignmentByToken: async () => { if (options.resolveFails) throw new Error(`private database error ${TOKEN}`); return row },
-      consumeAssignmentToken: async () => {
+      consumeAssignmentToken: async (input: { payload: unknown }) => {
         if (consumed || row?.used_at) throw new Error('token_already_used')
         if (row?.revoked_at || Date.parse(row?.expires_at ?? '') < Date.now()) throw new Error('token_not_valid_or_expired')
         consumed = true
+        consumedPayload = input.payload
         acceptedCount++
       },
       getAssignmentById: async () => row?.assignments,
@@ -140,9 +150,64 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, ...overrides }),
     }), context),
     counts: () => ({ acceptedCount, mails, writes: writes.length }),
+    snapshot: () => ({ consumedPayload, prepared }),
     runJobs: async () => { for (const job of jobs) await job(); return incidents },
   }
 }
+
+test('snapshot rollout captures server terms atomically with acceptance, and setup failures leave the token unused', async () => {
+  const previous = process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED
+  try {
+    process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = 'true'
+    const h = routeHarness()
+    assert.equal((await h.post({ ob_document_source: { terms: 'forged client terms' } })).status, 200)
+    assert.deepEqual((h.snapshot().consumedPayload as Record<string, unknown>).ob_document_source, { schemaVersion: 'ob-confirmation-v1', terms })
+    assert.equal(h.snapshot().prepared, 1)
+    const broken = routeHarness(link(), false, { snapshotFails: true })
+    assert.equal((await broken.post()).status, 500)
+    assert.deepEqual(broken.counts(), { acceptedCount: 0, mails: 0, writes: 0 })
+    process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = 'false'
+    const legacy = routeHarness()
+    assert.equal((await legacy.post()).status, 200)
+    assert.equal(legacy.snapshot().prepared, 0)
+    assert.equal('ob_document_source' in (legacy.snapshot().consumedPayload as object), false)
+  } finally {
+    if (previous === undefined) delete process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED
+    else process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = previous
+  }
+})
+
+test('accepted mail dispatcher uses only the frozen flow for opted-in OB, leaving TU/EB and flag-off unchanged', async () => {
+  const previousFlag = process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED
+  const previousFrom = process.env.ASSIGNMENTS_MAIL_FROM
+  let frozenSends = 0
+  let currentTermsLookups = 0
+  try {
+    process.env.ASSIGNMENTS_MAIL_FROM = 'test@example.test'
+    const server = load<{ sendAssignmentAcceptedNotice: (input: Record<string, unknown>) => Promise<void> }>('src/lib/assignments/server.ts', {
+      '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({}) },
+      '@/lib/assignments/obConfirmationDelivery': { sendFrozenObConfirmation: async (input: Record<string, unknown>) => {
+        frozenSends++; assert.equal(input.orgId, ORG); assert.equal(input.assignmentId, ID)
+      } },
+      '@/lib/assignments/terms': { resolveAssignmentTermsRole: () => { currentTermsLookups++; return null } },
+    })
+    const send = (type: string) => server.sendAssignmentAcceptedNotice({ assignment: {
+      id: ID, org_id: ORG, assignment_type: type, accepted_at: '2026-09-24T10:00:00Z', responsible_profile_id: 'inspector',
+    }, acceptancePayload: {}, requestedByUserId: 'inspector' })
+    process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = 'true'
+    await send('OB')
+    assert.equal(frozenSends, 1); assert.equal(currentTermsLookups, 0)
+    for (const type of ['TU', 'EB']) await assert.rejects(send(type), /ORDERER_ROLE_REQUIRED/)
+    process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = 'false'
+    await assert.rejects(send('OB'), /ORDERER_ROLE_REQUIRED/)
+    assert.equal(frozenSends, 1); assert.equal(currentTermsLookups, 3)
+  } finally {
+    if (previousFlag === undefined) delete process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED
+    else process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = previousFlag
+    if (previousFrom === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM
+    else process.env.ASSIGNMENTS_MAIL_FROM = previousFrom
+  }
+})
 
 test('GET returns the expected assignment, terms and link states without accepting anything', async () => {
   for (const [overrides, state] of [

@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useParams, useRouter } from 'next/navigation'
 import { AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
 import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
-import { ArrowLeft, ChevronsLeft } from 'lucide-react'
+import { ArrowLeft, BookOpen, ChevronsLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
+import ObAcceptedAssignmentTerms from '@/components/ob/ObAcceptedAssignmentTerms'
 import { validateObEarlyStartReason, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 
 type AssignmentStatus =
@@ -706,6 +707,12 @@ export default function AssignmentDetailsPage() {
                     value={summary?.acceptedByInspectorAt ?? '-'}
                   />
                 </div>
+                {assignment.assignment_type === 'OB' && assignment.accepted_at ? (
+                  <a href="#approved-terms" className="inline-flex min-h-11 items-center gap-2 text-sm text-blue-700 underline underline-offset-4">
+                    <BookOpen className="h-4 w-4" aria-hidden="true" />
+                    Läs godkända villkor
+                  </a>
+                ) : null}
                 <fieldset
                   className="space-y-4 border-0 p-0"
                   disabled={isEditingLocked || sending}
@@ -899,7 +906,12 @@ export default function AssignmentDetailsPage() {
                   )}
                 </SectionCard>
               </section>
-
+              {assignment.assignment_type === 'OB' && assignment.accepted_at ? (
+                <ObAcceptedAssignmentTerms
+                  key={`${assignment.id}:${assignment.accepted_at}`}
+                  assignmentId={assignment.id}
+                />
+              ) : null}
             </>
           )}
         </div>
