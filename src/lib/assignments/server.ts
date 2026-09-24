@@ -1372,6 +1372,15 @@ export async function sendAssignmentAcceptedNotice(input: {
     throw new Error('ASSIGNMENT_NOT_ACCEPTED')
   }
 
+  if (input.assignment.assignment_type === 'OB' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true') {
+    const { sendFrozenObConfirmation } = await import('@/lib/assignments/obConfirmationDelivery')
+    return sendFrozenObConfirmation({
+      orgId: input.assignment.org_id, assignmentId: input.assignment.id,
+      requestedByUserId: input.requestedByUserId ?? input.assignment.responsible_profile_id ?? null,
+      fromAddress: getMailFromAddress(),
+    })
+  }
+
   const termsRole = getTermsRoleForAssignment(input.assignment)
   if (!termsRole) {
     throw new Error('ORDERER_ROLE_REQUIRED')
