@@ -65,3 +65,24 @@ untouched. No SQL or environment changes are required. The production candidate
 is based on `7d3849c`; build and deployment verification are recorded separately.
 A physical Android keyboard test is still recommended after publication;
 no real inspection was used by the automated tests.
+
+## Published and verified, 2026-09-24
+
+- Saved the 12 scoped implementation/test/documentation files in `e7ff4f2` on
+  the working branch and cherry-picked them onto the isolated production
+  worktree as `97b2d2a90bbf468afcb044dbabd158445ef7f950`.
+- Verified all 12 files match the tested working-branch commit exactly.
+- Re-ran all 16 unit/contract tests successfully in the production worktree.
+- `next build --webpack` passed there, including TypeScript and 62 static pages.
+  Local build credentials were non-working placeholders. Vercel builds from
+  source with its own unchanged production settings.
+- Published via a normal fast-forward push to `main`. Vercel reported success
+  for deployment `dpl_AyRFy8D23hv55o1du1rWfsF1nzjL`.
+- Live `hushub.se/login` returned 200 with that exact deployment ID. Anonymous
+  `/ob` and a synthetic inspection-page URL both redirected to `/login` (307),
+  also reporting that deployment ID. No real inspection data was read or written.
+- No SQL or environment changes were made. The source changes and this receipt
+  are committed and pushed on the working/backup branch; parallel plans remain
+  untouched. This receipt alone does not trigger another production deployment.
+- Physical Android keyboard verification remains a user follow-up. The live
+  checks establish publication/authentication, not an authenticated mobile test.
