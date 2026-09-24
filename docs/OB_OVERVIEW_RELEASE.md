@@ -1,5 +1,33 @@
 # OB overview release, 2026-09-23
 
+## Compact list update, 2026-09-24
+
+Published the user-approved density update, isolated from other work:
+
+- Source code commit: `2c5fc16`; production code commit: `cdffba1`.
+- Production tip including approval documentation: `8bd72d6`, based on `f076e54`.
+- Wider list, uniform 14/20 px desktop typography and 56 px standard rows,
+  separate customer/number columns, labelled icon links and keyboard-accessible
+  full-text detail rows. Mobile retains full text and visible action labels.
+- Only seven OB page/component/profile/test files differ from the previous
+  production version. No SQL, API, data model, access or workflow changes.
+- All 37 regression tests passed in the isolated production worktree.
+- Real-component synthetic browser suite passed at nine widths from 320 to
+  1920 px, including 200 percent text, long values, equal row heights,
+  full-width layout, keyboard details, page-size value fit and existing flows.
+- Scoped ESLint and `next build --webpack` (including TypeScript) passed.
+  The isolated local build used non-working placeholder Supabase values.
+- Vercel status succeeded for `8bd72d6`:
+  [deployment](https://vercel.com/niklas-projects-65efdd50/underhallsplan-villa/8ffx3cZzq9RQX3GkAU1uMFUJ3ZGA).
+- The public hushub.se login-page assets identify that same deployment,
+  `dpl_8ffx3cZzq9RQX3GkAU1uMFUJ3ZGA`. Anonymous `/ob` redirects to `/login`
+  (307); the overview API returns 401 with `private, no-store`.
+- The browser tool still fails during initialization. An authenticated live
+  click test was not performed; synthetic UI checks are not that test.
+
+To roll back this visual update only, revert `cdffba1` on current main and
+deploy. Keep the overview feature and unrelated releases; no DB restore.
+
 ## Scope
 
 The user authorized publishing the combined overview below the existing four
