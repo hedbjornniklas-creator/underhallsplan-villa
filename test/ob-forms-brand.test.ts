@@ -35,3 +35,20 @@ test('conditions mount one shared sheet with back navigation and preserve text b
   assert.match(source, /key=\{panelEntry.key\}/)
   assert.match(source, /onSave=\{note => updateSelectionNote/)
 })
+
+test('background save feedback reserves its geometry on all three OB forms', () => {
+  const indicator = read('src/components/ob/ObFormSaveStatus.tsx')
+  assert.match(indicator, /h-6 w-20 shrink-0 whitespace-nowrap/)
+  assert.match(indicator, /role="status"/)
+  assert.doesNotMatch(indicator, /return null|setTimeout|useToast/)
+  for (const name of ['ObStepHandlingar', 'ObStepForutsattningar', 'ObStepGrunddata']) {
+    const source = read(`src/components/ob/${name}.tsx`)
+    assert.match(source, /<ObFormSaveStatus saving=/)
+    assert.doesNotMatch(source, /saving\w* && <(?:p|span|div)/)
+  }
+  const documents = read('src/components/ob/ObStepHandlingar.tsx')
+  assert.doesNotMatch(documents, /savedDisclosure|savedDefect|setTimeout/)
+  const drafts = read('src/components/ob/ObLocalDraftStatus.tsx')
+  assert.doesNotMatch(drafts, /if \(!entries.length.*return null/)
+  assert.match(drafts, /Visa lokala textutkast/)
+})

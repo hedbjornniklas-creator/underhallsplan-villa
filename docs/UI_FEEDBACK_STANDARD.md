@@ -15,6 +15,9 @@ not one toast per internal step.
 
 ## Do not use a toast for
 
+- routine background autosave: do not repeat a success notification after each
+  edit. Keep any progress indicator in a reserved space so typing, focus and
+  scroll position are unaffected. Save errors must remain actionable;
 - field validation: show the message next to the affected field;
 - a page or workspace that cannot load: show a persistent page-level state;
 - access denied or missing database setup: show a persistent page-level state;
@@ -38,6 +41,12 @@ Confirmed on 2026-09-21: keep the existing upper-right desktop placement. Intern
 OB step navigation must not repeatedly prompt about drafts from another step;
 keep those drafts locally. The browser's leave/reload data-loss confirmation is
 a decision, not an action-error toast, and remains when text is still pending.
+
+OB forms, 2026-09-24: local text drafts exist during ordinary autosave as well as
+after interrupted edits. Their review control remains in place at zero drafts;
+the count is not a per-save live announcement or a claim that every field is
+saved. Do not insert/remove a warning banner above an active text field on each
+draft inventory refresh. Storage failures still have an explicit error state.
 
 The legacy EB `EbToastProvider` and `useEbToast()` are compatibility adapters to
 the same global queue. New code must use `useToast()` directly.

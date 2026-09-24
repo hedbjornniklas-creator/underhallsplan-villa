@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import ObFormSaveStatus from './ObFormSaveStatus'
 import { Camera, Image as ImageIcon } from 'lucide-react'
 import './ob-forms.css'
 import { enqueueObGrunddataWrite, recordObGrunddataWriteResult, trackObGrunddataWrite } from '@/lib/ob/grunddataWrites'
@@ -1061,7 +1062,7 @@ export default function ObStepGrunddata({
               </p>
             ) : null}
           </div>}
-          {savingProp && <p role="status" className="mt-1 ob-form-muted">Sparar objekt...</p>}
+          <ObFormSaveStatus saving={savingProp} />
         </section>
 
         {/* --- Kolumn 2: Uppdragsgivare & besiktningsuppdrag --- */}
@@ -1288,9 +1289,7 @@ export default function ObStepGrunddata({
             </div>
           </div>
 
-          {(savingInsp || savingOrderer) && (
-            <p role="status" className="mt-1 ob-form-muted">Sparar uppdrag...</p>
-          )}
+          <ObFormSaveStatus saving={savingInsp || savingOrderer} />
         </section>
 
         {/* --- Kolumn 3: Besiktningsman (read-only) --- */}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import ObFormSaveStatus from './ObFormSaveStatus'
 import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, ClipboardList, CloudSun, Droplets, Flame, House, Layers, Plus, Trash2, Wind, type LucideIcon } from 'lucide-react'
 import Sheet from './ObRoundSheet'
 import './ob-forms.css'
@@ -1067,7 +1068,7 @@ export default function ObStepForutsattningar({
         <div key={panelEntry.key} className="space-y-5">
           {panelEntry.item ? renderItem(panelEntry.item) : renderSpecialConditionsContent()}
         </div>
-        {saving && <p role="status" className="ob-form-muted">Sparar…</p>}
+        <ObFormSaveStatus saving={saving} />
       </Sheet>
     ) : null
     return (
@@ -1113,7 +1114,7 @@ export default function ObStepForutsattningar({
 
         {panelContent}
 
-        {!panelEntry && saving && <div role="status" className="ob-form-muted">Sparar…</div>}
+        <ObFormSaveStatus saving={!panelEntry && saving} />
       </div>
     )
   }
@@ -1181,7 +1182,7 @@ export default function ObStepForutsattningar({
         })}
       </section>
 
-      {saving && <div className="text-xs text-gray-500">Sparar…</div>}
+      <ObFormSaveStatus saving={saving} />
     </div>
   )
 }

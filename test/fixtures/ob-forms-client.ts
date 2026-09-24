@@ -16,6 +16,7 @@ export const inspection: Row = { id: inspectionId, property_id: 'synthetic-prope
   inspection_side: 'seller', locked_at: new URLSearchParams(location.search).has('locked') ? '2026-09-21T10:00:00Z' : null,
   assignment_number: '2026-0921-01', date: '2026-09-21', inspection_time: '09:00', scope: '',
   cover_path: `${location.origin}/photo.png`, client_name: 'Alex Testsson', attendees: 'Fastighetsägare', attendees_other: '',
+  defect_disclosures: 'Inga kända fel enligt fastighetsägaren.',
 }
 export const property: Row = { id: 'synthetic-property', address: 'Testgatan 1', postal_code: '123 45', city: 'Teststad',
   municipality: 'Testkommun', cadastral_id: 'Exemplet 1:2', owner_name: 'Alex Testsson', customer_name: 'Alex Testsson',
@@ -46,6 +47,9 @@ const choices: Record<string, string[][]> = {
 }
 export const db: Record<string, Row[]> = {
   inspections: [inspection], ob_property_snapshot: [], org_members: [],
+  document_types: [{ id: 'document-type', label: 'Ritningar', scope: 'building', is_active: true, applicable_modules: ['ob'] }],
+  inspection_documents: [{ id: 'document', inspection_id: inspectionId, document_type_id: 'document-type', title: 'Ritningar', status: 'present', note: 'Planritning', document_date: null }],
+  inspection_disclosures: [{ id: 'disclosure', inspection_id: inspectionId, title: 'upplysningar', note: 'Säljaren förvärvade fastigheten 2010.', source_image_url: null }],
   profiles: [{ id: 'synthetic-inspector', full_name: 'Kim Besiktningsman', email: 'inspector@example.invalid',
     phone: '0700000000', company_name: 'BesiktApp testbolag', company_address: 'Provvägen 2', company_city: 'Teststad' }],
   settings_overview_items: items, settings_overview_groups: groups,
@@ -64,7 +68,7 @@ export const db: Record<string, Row[]> = {
   })))),
 }
 if (new URLSearchParams(location.search).has('legacy')) db.inspection_overview_selections = db.inspection_overview_selections.filter(row => row.building_part_id === parts[0].id)
-export const qa = { failSaves: false, saveDelay: 30, writes: [] as Row[] }
+export const qa = { failSaves: false, saveDelay: 30, writes: [] as Row[], reads: [] as string[] }
 Object.assign(window, { __obFormTest: qa, __obMobileTest: qa })
 function write(table: string, operation: string, values: Row, filters: ((row: Row) => boolean)[]) {
   qa.writes.push({ table, operation, values: structuredClone(values), failed: qa.failSaves })
@@ -99,6 +103,7 @@ class Query implements PromiseLike<any> {
     fail?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null): PromiseLike<TResult1 | TResult2> {
     const result = new Promise(resolve => setTimeout(() => {
       try {
+        if (this.operation === 'read') qa.reads.push(this.table)
         const rows = this.operation === 'read' ? db[this.table].filter(row => this.filters.every(filter => filter(row))).slice(0, this.max)
           : write(this.table, this.operation, this.values, this.filters)
         resolve({ data: structuredClone(this.singleRow ? rows[0] ?? null : rows), error: null })
@@ -118,6 +123,7 @@ window.fetch = async (input, init) => {
   if (url === `/api/ob/inspections/${inspectionId}/addon-orders` && !init?.method) return Response.json({ addonOrders: [] })
   if (url !== `/api/ob/inspections/${inspectionId}/buildings` || init?.method !== 'POST') throw Error(`Blocked fixture request: ${url}`)
   const { operation, payload } = JSON.parse(String(init.body))
+  await new Promise(resolve => setTimeout(resolve, qa.saveDelay))
   try {
     if (operation === 'row') {
       const data = write(payload.table, payload.operation, { ...payload.row,

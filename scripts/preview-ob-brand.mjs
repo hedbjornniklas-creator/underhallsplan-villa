@@ -77,9 +77,10 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB brand preview (synthetic only): ${base}`)
-if (process.argv.includes('--test')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-autosave')) {
   try {
-    if (forms) { const { testFormsPreview } = await import('../test/helpers/ob-forms-preview-browser.mjs'); await testFormsPreview(base, output) }
+    if (process.argv.includes('--test-autosave')) { const { testFormAutosave } = await import('../test/helpers/ob-form-autosave-browser.mjs'); await testFormAutosave(base, output) }
+    else if (forms) { const { testFormsPreview } = await import('../test/helpers/ob-forms-preview-browser.mjs'); await testFormsPreview(base, output) }
     else { const { testBrandPreview } = await import('../test/helpers/ob-brand-preview-browser.mjs'); await testBrandPreview(base, output) }
   }
   finally { server.close() }

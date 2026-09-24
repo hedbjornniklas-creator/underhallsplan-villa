@@ -47,11 +47,12 @@ export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDra
     } finally { setChecking(false) }
   }
   const verified = Object.values(comparisons).filter(result => result.status === 'saved').length
-  if (!entries.length && !storageError && !open) return null
+  // Drafts also exist briefly during normal typing. Never insert/remove a banner
+  // above the focused form as those drafts are written and acknowledged.
   return <>
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-950" role="status">
-      <span>{storageError ? 'Lokala utkast kunde inte läsas.' : `${entries.length} lokala textutkast`}</span>
-      <button type="button" className="inline-flex min-h-11 items-center gap-2 underline" onClick={() => { setComparisons({}); setOpen(true) }}>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-gray-200 px-4 py-2 text-sm text-gray-600">
+      <span>{storageError ? <span role="alert">Lokala utkast kunde inte läsas.</span> : <><span className="inline-block min-w-[3ch] tabular-nums">{entries.length}</span> lokala textutkast</>}</span>
+      <button type="button" className="inline-flex min-h-11 items-center gap-2 underline" aria-label="Visa lokala textutkast" onClick={() => { setComparisons({}); setOpen(true) }}>
         <FileClock size={18} />Visa texter
       </button>
     </div>
