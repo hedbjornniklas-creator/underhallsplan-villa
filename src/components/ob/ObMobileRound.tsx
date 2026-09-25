@@ -22,6 +22,7 @@ import {
   Link as LinkIcon,
   MapPin,
   Menu,
+  MoreHorizontal,
   PenLine,
   Plus,
   Search,
@@ -59,6 +60,8 @@ import ObRoundImageActions from './ObRoundImageActions'
 import ObRoundNoteSuggestion from './ObRoundNoteSuggestion'
 import ObRoundRenameRoom from './ObRoundRenameRoom'
 import ObRoundPlaceImages from './ObRoundPlaceImages'
+import ObRoundImageTrash from './ObRoundImageTrash'
+import type { ImageTrashPage, ImageRestoreResult } from '@/lib/ob/imageTrash'
 import { useObRoomSwipe } from './useObRoomSwipe'
 import { useObRoundBack } from './useObRoundBack'
 import { roundImageLocation } from '@/lib/ob/roundImageLocation'
@@ -126,6 +129,8 @@ export type ObMobileRoundProps = {
   onUnlinkImage: (image: RoundImage, note: Note) => Promise<void>
   onSuggestNote: (suggestion: ObNoteSuggestion) => Promise<void>
   onRenameRoom: (room: InteriorRoom, name: string) => Promise<InteriorRoom>
+  onLoadImageTrash: (beforeEventId?: string) => Promise<ImageTrashPage>
+  onRestoreImage: (eventId: string, requestId: string) => Promise<ImageRestoreResult>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
   onRemove: (
@@ -755,7 +760,7 @@ function MobileRound(p: Props) {
     return `Utsida · ${p.exteriorItems.find((item) => item.id === observation?.exterior_item_id)?.label ?? 'Plats saknas'}`
   }
   function imagePlace(image: RoundImage) {
-    const location = imageLocations.get(image.id)!
+    const location = imageLocations.get(image.id) ?? roundImageLocation(image, p.notes, p.observations)
     const room = p.rooms.find(room => room.id === location.roomId)
     if (room) return `${p.floorLabel(room.floor_label)} · ${room.room_label}`
     const item = p.exteriorItems.find(row => row.id === location.exteriorItemId)
@@ -1400,6 +1405,8 @@ function MobileRound(p: Props) {
           {pendingCount === 0 && (
             <p className="obm-empty">Inga lösa bilder eller utkast.</p>
           )}
+          <ObRoundImageTrash key={p.scopeId ?? p.inspectionId} p={p}
+            imagePlace={image => imagePlace({ ...image, control_item_id: null })} />
         </>
       )}
       <nav className="obm-bottom-nav" aria-label="Mobilrunda">
@@ -1518,7 +1525,7 @@ function MobileRound(p: Props) {
           p={p}
           onClose={() => {
             setEditorId(removalSubject.returnEditorId ?? null)
-            setPhotoId(removalSubject.returnPhoto?.id ?? null)
+            setEnlargedPhotoId(removalSubject.returnImageId ?? null)
             setRemovalSubject(null)
           }}
           onRemoved={(result) => {
@@ -1540,7 +1547,7 @@ function MobileRound(p: Props) {
               result.roomId
                 ? 'Rummet raderat'
                 : result.imageIds.length
-                  ? 'Bilden raderad'
+                  ? 'Bilden flyttad till papperskorgen'
                   : result.images.length
                     ? 'Noteringen raderad. Bilderna finns under Att bearbeta.'
                     : 'Noteringen raderad',
@@ -1602,6 +1609,25 @@ function MobileRound(p: Props) {
         <Sheet
           title="Bild"
           onClose={() => setEnlargedPhotoId(null)}
+          actions={!enlargedPhoto.control_item_id && (
+            <details key={enlargedPhoto.id} className="obm-image-actions">
+              <summary aria-label="Bildåtgärder" title="Bildåtgärder"><MoreHorizontal size={22} /></summary>
+              <button type="button" className="obm-delete-icon"
+                disabled={p.locked || p.mutationBlocked || Boolean(enlargedPhoto.local_queue_id)}
+                onClick={() => {
+                  setRemovalSubject({
+                    request: { kind: 'image', id: enlargedPhoto.id },
+                    place: imagePlace(enlargedPhoto),
+                    image: enlargedPhoto,
+                    returnImageId: enlargedPhoto.id,
+                  })
+                  setEnlargedPhotoId(null)
+                }}>
+                <Trash2 size={18} />
+                Radera bild från besiktningen
+              </button>
+            </details>
+          )}
           footer={
             <button
               type="button"
@@ -1659,15 +1685,6 @@ function MobileRound(p: Props) {
           placeOf={placeOf}
           imagePlace={imagePlace(photo)}
           onClose={() => setPhotoId(null)}
-          onDelete={() => {
-            setPhotoId(null)
-            setRemovalSubject({
-              request: { kind: 'image', id: photo.id },
-              place: imagePlace(photo),
-              image: photo,
-              returnPhoto: photo,
-            })
-          }}
           onLinked={() => {
             setPhotoId(null)
             setNotice('Bilden kopplad')

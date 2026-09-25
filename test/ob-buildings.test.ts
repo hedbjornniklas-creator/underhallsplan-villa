@@ -76,6 +76,9 @@ before(async () => {
     await db.exec(read(name)); await db.exec(read(name))
   }
   await db.exec("select set_config('request.jwt.claim.role','service_role',false)")
+  await db.exec("create schema storage; create table storage.objects(bucket_id text,name text); insert into storage.objects values('inspection-images','test-original.jpg')")
+  await db.exec(read('2026-09-25_01_ob_image_trash.sql'))
+  await db.exec(read('2026-09-25_01_ob_image_trash.sql'))
 })
 after(()=>db.close())
 async function overview(id: string) {
@@ -103,6 +106,147 @@ async function activate(id:string) {
 async function round(id:string, partId:string, operation:string, payload:Record<string,unknown>) {
   return (await one('select ob_building_round_mutate($1,$2,$3,$4,$5,$6) as data',[id,org,actor,operation,payload,partId])).data
 }
+
+async function trash(id: string, partId: string | null = null, operation = 'list', payload: Record<string, unknown> = {}, user = actor, organization = org) {
+  return (await one('select ob_round_image_trash($1,$2,$3,$4,$5,$6) as data', [id, organization, user, operation, payload, partId])).data
+}
+async function trashImage(f: Awaited<ReturnType<typeof fixture>>, partId: string | null = null, imageId = f.img.id) {
+  const invoke = (operation: string, payload: Record<string, unknown>) => partId ? round(f.i.id, partId, operation, payload)
+    : one('select ob_round_mutate($1,$2,$3,$4,$5) as data', [f.i.id, org, actor, operation, payload]).then(row => row.data)
+  const preview = await invoke('remove-preview', { kind: 'image', id: imageId })
+  return invoke('remove', { kind: 'image', id: imageId, token: preview.token, requestId: randomUUID() })
+}
+
+test('image trash restores a legacy image unlinked with a new identity, retaining archives, files, notes and reports', async () => {
+  const f = await fixture()
+  const report = await one('insert into inspection_report_links(inspection_id,snapshot_payload) values($1,$2) returning *', [f.i.id, { image: f.img }])
+  const removed = await trashImage(f)
+  const archive = await one('select * from ob_round_mutation_events where id=$1', [removed.archiveId])
+  const page = await trash(f.i.id)
+  assert.equal(page.items.length, 1)
+  assert.equal(page.items[0].daysRemaining, 30)
+  const request = { eventId: removed.archiveId, requestId: randomUUID() }
+  const result = await trash(f.i.id, null, 'restore', request)
+  assert.notEqual(result.image.id, f.img.id)
+  assert.equal(result.image.control_item_id, null)
+  assert.equal(result.image.processing_status, 'unprocessed')
+  assert.equal(result.image.file_path, f.img.file_path)
+  assert.equal(result.image.interior_room_id, f.r.id)
+  assert.equal(result.image.origin_interior_room_id, f.r.id)
+  assert.deepEqual(await one('select * from inspection_control_items where id=$1', [f.n.id]), f.n)
+  assert.deepEqual(await one('select * from inspection_report_links where id=$1', [report.id]), report)
+  assert.deepEqual(await one('select * from ob_round_mutation_events where id=$1', [removed.archiveId]), archive)
+  assert.equal((await trash(f.i.id)).items.length, 0)
+  assert.deepEqual(await trash(f.i.id, null, 'restore', request), result)
+  assert.deepEqual(await trash(f.i.id, null, 'restore', { ...request, requestId: randomUUID() }), result)
+  await assert.rejects(one('insert into inspection_images(id,inspection_id) values($1,$2)', [f.img.id, f.i.id]), /OB_ROUND_REMOVED/)
+  await trashImage(f, null, result.image.id)
+  assert.equal((await trash(f.i.id, null, 'restore', request)).image, null, 'retry never resurrects a later deletion')
+})
+
+test('image trash scopes reads and restoration by owner, family, active membership and building', async () => {
+  const f = await fixture(), other = await fixture()
+  const state = await activate(f.i.id), primary = state.parts[0].id
+  const added = await command(f.i.id, 'add', { name: 'Garage', buildingId: null, categoryKey: 'garage' })
+  const garage = added.parts.find((part: any) => part.id !== primary).id
+  const removed = await trashImage(f, primary)
+  assert.equal((await trash(f.i.id, primary)).items.length, 1)
+  assert.equal((await trash(f.i.id, garage)).items.length, 0)
+  await assert.rejects(trash(f.i.id), /OB_ROUND_FOREIGN/)
+  await assert.rejects(trash(f.i.id, randomUUID()), /OB_ROUND_FOREIGN/)
+  await assert.rejects(trash(f.i.id, primary, 'list', {}, stranger), /OB_ROUND_FORBIDDEN/)
+  await assert.rejects(trash(f.i.id, primary, 'list', {}, actor, randomUUID()), /OB_ROUND_FORBIDDEN/)
+  await assert.rejects(trash(other.i.id, null, 'restore', { eventId: removed.archiveId, requestId: randomUUID() }), /OB_TRASH_NOT_FOUND/)
+  await assert.rejects(trash(f.i.id, garage, 'restore', { eventId: removed.archiveId, requestId: randomUUID() }), /OB_ROUND_FOREIGN/)
+  const restored = await trash(f.i.id, primary, 'restore', { eventId: removed.archiveId, requestId: randomUUID() })
+  assert.equal(restored.image.building_part_id, primary)
+  assert.equal(restored.image.interior_room_id, f.r.id)
+  await db.query("update inspections set inspection_family='TU' where id=$1", [other.i.id])
+  await assert.rejects(trash(other.i.id), /OB_ROUND_FORBIDDEN/)
+})
+
+test('archives from before building activation resolve to the current primary building', async () => {
+  const f = await fixture(), removed = await trashImage(f)
+  const state = await activate(f.i.id), part = state.parts[0].id
+  assert.equal((await trash(f.i.id, part)).items[0].eventId, removed.archiveId)
+  const result = await trash(f.i.id, part, 'restore', { eventId: removed.archiveId, requestId: randomUUID() })
+  assert.equal(result.image.building_part_id, part)
+  assert.equal(result.image.interior_room_id, f.r.id)
+})
+
+test('expired trash is excluded and server-enforced; archives and storage are never purged', async () => {
+  const f = await fixture(), removed = await trashImage(f)
+  await db.query("update ob_round_mutation_events set created_at=now()-interval '30 days'+interval '1 minute' where id=$1", [removed.archiveId])
+  assert.equal((await trash(f.i.id)).items[0].daysRemaining, 1)
+  await db.query("update ob_round_mutation_events set created_at=now()-interval '30 days' where id=$1", [removed.archiveId])
+  assert.equal((await trash(f.i.id)).items.length, 0)
+  await assert.rejects(trash(f.i.id, null, 'restore', { eventId: removed.archiveId, requestId: randomUUID() }), /OB_TRASH_EXPIRED/)
+  assert.ok(await one('select id from ob_round_mutation_events where id=$1', [removed.archiveId]))
+  assert.ok(await one('select name from storage.objects where name=$1', [f.img.file_path]))
+})
+
+test('locked/completed/paused inspections allow viewing trash but cannot restore', async () => {
+  const f = await fixture(), removed = await trashImage(f)
+  const restore = () => trash(f.i.id, null, 'restore', { eventId: removed.archiveId, requestId: randomUUID() })
+  await db.query('update inspections set locked_at=now() where id=$1', [f.i.id])
+  assert.equal((await trash(f.i.id)).items.length, 1)
+  await assert.rejects(restore(), /OB_ROUND_LOCKED/)
+  const completed = await fixture(), completedRemoval = await trashImage(completed)
+  await db.query("update inspections set status='completed' where id=$1", [completed.i.id])
+  assert.equal((await trash(completed.i.id)).items.length, 1)
+  await assert.rejects(trash(completed.i.id, null, 'restore', { eventId: completedRemoval.archiveId, requestId: randomUUID() }), /OB_ROUND_LOCKED/)
+  const paused = await fixture(), pausedRemoval = await trashImage(paused)
+  await db.query('insert into test_paused values($1)', [paused.i.id])
+  assert.equal((await trash(paused.i.id)).items.length, 1)
+  await assert.rejects(trash(paused.i.id, null, 'restore', { eventId: pausedRemoval.archiveId, requestId: randomUUID() }), /OB_ROUND_PAUSED/)
+})
+
+test('missing files fail safely and a missing room restores an unplaced image without reviving the room', async () => {
+  const missing = await fixture()
+  await db.query("update inspection_images set file_path='missing.jpg' where id=$1", [missing.img.id])
+  const missingRemoval = await trashImage(missing)
+  await assert.rejects(trash(missing.i.id, null, 'restore', { eventId: missingRemoval.archiveId, requestId: randomUUID() }), /OB_TRASH_FILE_MISSING/)
+  assert.equal((await trash(missing.i.id)).items.length, 1)
+  const f = await fixture(), removed = await trashImage(f)
+  await db.query('delete from inspection_interior_rooms where id=$1', [f.r.id])
+  const result = await trash(f.i.id, null, 'restore', { eventId: removed.archiveId, requestId: randomUUID() })
+  assert.equal(result.image.interior_room_id, null)
+  assert.equal(result.image.origin_interior_room_id, null)
+  assert.equal(result.image.control_item_id, null)
+  assert.equal(await one('select * from inspection_interior_rooms where id=$1', [f.r.id]), undefined)
+})
+
+test('trash uses stable paged reads and rejects forged cursors', async () => {
+  const f = await fixture()
+  for (let k = 0; k < 53; k++) {
+    const img = await one('insert into inspection_images(inspection_id,interior_room_id) values($1,$2) returning *', [f.i.id, f.r.id])
+    await trashImage(f, null, img.id)
+  }
+  const first = await trash(f.i.id)
+  assert.equal(first.items.length, 50)
+  assert.ok(first.nextCursor)
+  const second = await trash(f.i.id, null, 'list', { beforeEventId: first.nextCursor })
+  assert.equal(second.items.length, 3)
+  assert.equal(second.nextCursor, null)
+  assert.equal(new Set([...first.items, ...second.items].map(item => item.eventId)).size, 53)
+  await assert.rejects(trash(f.i.id, null, 'list', { beforeEventId: randomUUID() }), /OB_ROUND_INVALID/)
+})
+
+test('restore receipts cannot be reused for a different source and failure rolls the insert back', async () => {
+  const f = await fixture(), removed = await trashImage(f)
+  const requestId = randomUUID()
+  await db.exec("create function test_fail_restore() returns trigger language plpgsql as $$ begin if new.operation='image-restore' then raise exception 'test restore failure'; end if; return new; end $$; create trigger test_fail_restore before insert on ob_round_mutation_events for each row execute function test_fail_restore()")
+  await assert.rejects(trash(f.i.id, null, 'restore', { eventId: removed.archiveId, requestId }), /test restore failure/)
+  assert.equal((await one('select count(*)::int as n from inspection_images where inspection_id=$1', [f.i.id])).n, 0)
+  assert.equal((await trash(f.i.id)).items.length, 1)
+  await db.exec('drop trigger test_fail_restore on ob_round_mutation_events; drop function test_fail_restore()')
+  await trash(f.i.id, null, 'restore', { eventId: removed.archiveId, requestId })
+  await assert.rejects(trash(f.i.id, null, 'restore', { eventId: randomUUID(), requestId }), /OB_ROUND_STALE/)
+  for (const role of ['anon', 'authenticated']) {
+    assert.equal((await one("select has_function_privilege($1,'ob_round_image_trash(uuid,uuid,uuid,text,jsonb,uuid)','EXECUTE') as allowed", [role])).allowed, false)
+    assert.equal((await one("select has_table_privilege($1,'ob_round_mutation_events','SELECT') as allowed", [role])).allowed, false)
+  }
+})
 
 test('purpose migrations are repeatable without rewriting a legacy category, report or related content', async () => {
   const f = await fixture()

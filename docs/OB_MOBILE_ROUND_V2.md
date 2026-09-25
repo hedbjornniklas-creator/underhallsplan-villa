@@ -81,7 +81,13 @@ do not replace physical-device, production-database and report acceptance.
   the expected note link so another editor's changed link is not removed.
   An already-unlinked image is accepted when retrying a lost response.
   Deletion still uses the separate confirmation/archiving flow; the note and
-  stored files remain. Deletion in the image link sheet is unchanged.
+  stored files remain. As of 2026-09-25, Koppla bild has no delete action:
+  its footer offers Avbryt and the link/create command. Cancel closes the flow
+  without modifying the image or creating a note. Unlinked image deletion is
+  under Bildåtgärder in the enlarged image viewer, explicitly labelled
+  Radera bild från besiktningen. It opens the existing image confirmation;
+  cancelling that confirmation returns to the image viewer. Locked inspections,
+  pending mutations/uploads and locally queued images cannot use that action.
 - Existing/new note tabs in Koppla bild. New notes use free or editable catalog
   text and default to the image's saved place, never the last visited room.
   Under Ny notering, select Insida → Plan → Rum or Utsida → Byggnadsdel to
@@ -98,8 +104,8 @@ do not replace physical-device, production-database and report acceptance.
 - Replacing the control-point data model or changing how "nothing to note"
   records contribute to existing counts. The user explicitly chose to leave
   this behavior unchanged and remove unwanted entries manually.
-- Automatic user-facing undo/recovery. Deletion recovery is an administrative
-  operation using archived rows and the retained storage files.
+- Recovery of deleted notes/rooms. Image recovery is available for 30 days in
+  the collapsed Papperskorg under Att bearbeta; see [Image trash](OB_IMAGE_TRASH.md).
 - Cross-device concurrent-edit conflict resolution or fully offline inspection
   creation. Existing remote writes still require connectivity; the text draft
   fallback is on the current device only.

@@ -83,6 +83,7 @@ export default function RecoveryPage() {
     onNewNote: fail, onAddOutcome: fail, onAddRoom: fail, onCamera: () => {}, onGallery: () => {}, onImportImages: fail,
     onLinkImage: fail, onLinkImages: fail, onUnlinkImage: fail, onSuggestNote: fail, onRenameRoom: fail, onMove: fail,
     onPreviewRemoval: fail, onRemove: fail, onPreviewImageNote: fail, onCreateImageNote: fail,
+    onLoadImageTrash: async () => ({ items: [], nextCursor: null }), onRestoreImage: fail,
   }
   return <main style={{ maxWidth: 390, margin: '0 auto', background: 'white' }}>
     <section aria-label="Recovery test controls" style={{ padding: 12, display: 'grid', gap: 8 }}>
