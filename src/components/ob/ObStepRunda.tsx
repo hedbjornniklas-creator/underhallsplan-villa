@@ -5,6 +5,7 @@ import { queueImageBatch, unplacedImagePlacement } from '@/lib/ob/roundImageImpo
 import { unlinkRoundImage } from '@/lib/ob/unlinkRoundImage'
 import { submitObNoteSuggestion } from '@/lib/ob/noteSuggestion'
 import { renameRoundRoom } from '@/lib/ob/renameRoundRoom'
+import { requestImageTrash, type ImageRestoreResult } from '@/lib/ob/imageTrash'
 import { useObFloorModel } from './ObFloorProvider'
 import { useObBuilding, useObBuildingData } from './ObBuildingContext'
 import { buildingDraftScope, requestBuildingCommand } from '@/lib/ob/buildingStructure'
@@ -2447,6 +2448,23 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             return result
           }}
           onPreviewRemoval={request => scopedRoundMutation('remove-preview', request)}
+          onLoadImageTrash={beforeEventId => requestImageTrash(inspection.id, partId, { beforeEventId })}
+          onRestoreImage={async (eventId, requestId) => {
+            if (isInspectionLocked) throw Error('Besiktningen är låst.')
+            if (saving || roundMutationRef.current || pendingUploadCount > 0) throw Error('Vänta tills sparandet och bilduppladdningen är klara.')
+            roundMutationRef.current = true
+            setRoundMutating(true)
+            try {
+              if ((await listRoundImageUploadItems(inspection.id)).length) throw Error('Vänta tills alla bilder har laddats upp.')
+              const result = await requestImageTrash<ImageRestoreResult>(inspection.id, partId, { eventId, requestId })
+              remember(result)
+              if (result.image) setImages(rows => [...rows.filter(row => row.id !== result.image!.id), result.image!])
+              return result
+            } finally {
+              roundMutationRef.current = false
+              setRoundMutating(false)
+            }
+          }}
           onRemove={async (request, token, requestId) => {
             const result = await runRoundMutation<RemovalResult>('remove', { ...request, token, requestId })
             setRooms(rows => rows.filter(row => row.id !== result.roomId))

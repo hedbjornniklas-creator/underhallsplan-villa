@@ -1201,6 +1201,73 @@ body:has(dialog.obm-sheet[open]) {
   display: flex;
   background: var(--obm-paper);
 }
+.obm-image-actions {
+  position: relative;
+}
+.obm-image-trash {
+  margin-top: 24px;
+  border-top: 1px solid var(--obm-line);
+}
+.obm-image-trash > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.obm-image-trash > summary::-webkit-details-marker { display: none; }
+.obm-image-trash > summary > span { flex: 1; }
+.obm-image-trash[open] > summary > svg:last-child { transform: rotate(180deg); }
+.obm-trash-content { padding: 0 16px 16px; }
+.obm-trash-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--obm-line);
+}
+.obm-trash-row p { margin: 4px 0 0; font-size: .875rem; color: var(--obm-muted); }
+.obm-trash-row > div { min-width: 0; overflow-wrap: anywhere; }
+.obm-trash-row .obm-image-thumb { width: 76px; height: 90px; }
+.obm-root .obm-trash-restore, .obm-sheet .obm-trash-restore { color: var(--obm-blue); }
+@media (max-width: 480px) {
+  .obm-trash-row { grid-template-columns: 76px minmax(0, 1fr); }
+  .obm-trash-row > .obm-trash-restore { grid-column: 2; justify-self: start; }
+}
+.obm-sheet > header.obm-sheet-header-back:has(.obm-image-actions) {
+  grid-template-columns: 48px minmax(0, 1fr) 44px;
+}
+.obm-sheet-header-back > .obm-sheet-actions:has(.obm-image-actions) {
+  grid-column: 3;
+}
+.obm-image-actions > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--obm-muted);
+}
+.obm-image-actions > summary::-webkit-details-marker {
+  display: none;
+}
+.obm-sheet .obm-image-actions > button {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1;
+  width: min(280px, calc(100vw - 40px));
+  background: #fff;
+  border: 1px solid var(--obm-line);
+  border-radius: 4px;
+  padding: 12px;
+  text-align: left;
+}
 .obm-image-viewer img {
   width: 100%;
   height: 100%;

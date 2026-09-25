@@ -43,7 +43,6 @@ export function ImageLinkSheet({
   onClose,
   onGoToPlace,
   onLinked,
-  onDelete,
 }: {
   photo: RoundImage
   p: Props
@@ -53,7 +52,6 @@ export function ImageLinkSheet({
   onClose: () => void
   onGoToPlace: () => void
   onLinked: () => void
-  onDelete: () => void
 }) {
   const toast = useToast()
   const [query, setQuery] = useState(''),
@@ -240,40 +238,36 @@ export function ImageLinkSheet({
     <Sheet
       title="Koppla bild"
       closeDisabled={busy}
-      actions={
-        <button
-          className="obm-icon obm-delete-icon"
-          title="Radera bild"
-          aria-label="Radera bild"
-          disabled={busy || p.locked}
-          onClick={onDelete}
-        >
-          <Trash2 size={20} />
-        </button>
-      }
       onClose={() => {
         if (!flight.current) onClose()
       }}
       footer={
-        <button
-          className="obm-primary"
-          disabled={
-            busy ||
-            p.locked ||
-            p.mutationBlocked ||
-            (tab === 'existing' ? !selected : !canCreate || checking)
-          }
-          onClick={() => void (tab === 'existing' ? link() : create())}
-        >
-          <LinkIcon size={18} />
-          {busy
-            ? tab === 'new'
-              ? 'Sparar…'
-              : 'Kopplar…'
-            : tab === 'new'
-              ? 'Skapa och koppla'
-              : 'Koppla till notering'}
-        </button>
+        <>
+          <button type="button" disabled={busy} onClick={() => {
+            if (!flight.current) onClose()
+          }}>
+            Avbryt
+          </button>
+          <button
+            className="obm-primary"
+            disabled={
+              busy ||
+              p.locked ||
+              p.mutationBlocked ||
+              (tab === 'existing' ? !selected : !canCreate || checking)
+            }
+            onClick={() => void (tab === 'existing' ? link() : create())}
+          >
+            <LinkIcon size={18} />
+            {busy
+              ? tab === 'new'
+                ? 'Sparar…'
+                : 'Kopplar…'
+              : tab === 'new'
+                ? 'Skapa och koppla'
+                : 'Koppla till notering'}
+          </button>
+        </>
       }
     >
       <div className="obm-link-image-context">
@@ -757,7 +751,7 @@ export type RemovalSubject = {
   place: string
   image?: RoundImage
   returnEditorId?: string
-  returnPhoto?: RoundImage
+  returnImageId?: string
 }
 
 export function RemovalSheet({
@@ -898,7 +892,7 @@ export function RemovalSheet({
               {kind === 'note'
                 ? `Noteringen med eventuell risktext och utredning tas bort.${preview.counts.images ? ' Kopplade bilder behålls och hamnar under ”Att bearbeta”.' : ''}`
                 : kind === 'image'
-                  ? 'Bilden tas bort från besiktningen. Eventuell notering och dess text behålls.'
+                  ? 'Bilden flyttas till papperskorgen under Att bearbeta och kan återställas i 30 dagar. Eventuell notering och dess text behålls.'
                   : 'Det tomma rummet tas bort från platslistan.'}
             </p>
           )}

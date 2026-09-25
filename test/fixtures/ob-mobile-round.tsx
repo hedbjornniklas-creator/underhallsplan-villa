@@ -10,6 +10,7 @@ import { ObFloorEditor } from '../../src/components/ob/ObFloorEditor'
 import ObRoundSheet from '../../src/components/ob/ObRoundSheet'
 import { floorModelKeys, modelFloorLabel, type ObFloorModel } from '../../src/lib/ob/floorModel'
 import type { MoveTarget } from '../../src/lib/ob/roundMutations'
+import type { TrashedRoundImage } from '../../src/lib/ob/imageTrash'
 
 type Note = ObMobileRoundProps['notes'][number]
 type Room = ObMobileRoundProps['rooms'][number]
@@ -154,6 +155,9 @@ if (imagePlaceFixture) {
   observations.push({ ...observations[0], id: 'observation-2', exterior_item_id: 'exterior-2' })
 }
 const qa = {
+  failTrashLoad: false,
+  failRestore: false,
+  trash: [] as TrashedRoundImage[],
   failSaves: false,
   partialLink: false,
   holdLinks: false,
@@ -187,6 +191,12 @@ type FixtureProps = {
 function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }: FixtureProps) {
   const { model } = useObFloorModel()
   const [mutating, setMutating] = useState(false)
+  const [trashed, setTrashed] = useState<TrashedRoundImage[]>(() => new URLSearchParams(location.search).has('trash') ? [{
+    eventId: 'trash-event-1', deletedAt: new Date(Date.now() - 86400000).toISOString(),
+    expiresAt: new Date(Date.now() + 29 * 86400000).toISOString(), daysRemaining: 29,
+    image: { ...initialImages[0], id: 'deleted-image-1', label: 'Raderad testbild' },
+  }] : [])
+  useEffect(() => { qa.trash = trashed }, [trashed])
   const receipts = useRef(new Map<string, unknown>())
   const [roomRows, setRoomRows] = useState(rooms)
   const [notes, setNotes] = useState<Note[]>(
@@ -532,8 +542,27 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
                     : null,
               }
             }}
+            onLoadImageTrash={async () => {
+              qa.calls.push({ kind: 'trash-list', id: inspectionId })
+              if (qa.failTrashLoad) throw Error('Synthetic trash read failure')
+              return { items: trashed, nextCursor: null }
+            }}
+            onRestoreImage={(eventId, requestId) => mutate('restore-image', requestId, () => {
+              if (qa.failRestore) throw Error('Synthetic restore failure')
+              const source = trashed.find(item => item.eventId === eventId)
+              if (!source) return { image: null }
+              const restored = { ...source.image, id: crypto.randomUUID(), control_item_id: null, processing_status: 'unprocessed' as const }
+              setImages(rows => [...rows, restored])
+              setTrashed(rows => rows.filter(item => item.eventId !== eventId))
+              return { image: restored }
+            })}
             onRemove={(request, _token, requestId) =>
               mutate('remove', requestId, () => {
+                if (request.kind === 'image') {
+                  const image = images.find(row => row.id === request.id)!
+                  setTrashed(rows => [...rows, { eventId: requestId, image,
+                    deletedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(), daysRemaining: 30 }])
+                }
                 const detached =
                   request.kind === 'note'
                     ? images

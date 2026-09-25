@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict'
+import { resolve } from 'node:path'
+
+export async function testImageTrash(page, base, output) {
+  async function click(selector) {
+    await page.$eval(selector, el => el.scrollIntoView({ block: 'center' }))
+    await page.click(selector)
+  }
+  async function fresh(query = '?trash') {
+    await page.goto(base)
+    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
+    await page.goto(base + '/' + query, { waitUntil: 'networkidle0' })
+    await page.click('nav button:last-child')
+    await page.waitForSelector('.obm-image-trash')
+  }
+  for (const [width, height] of [[320, 820], [390, 844], [1280, 820], [820, 390]]) {
+    await page.setViewport({ width, height })
+    await fresh()
+    assert.equal(await page.$eval('.obm-image-trash', el => el.open), false)
+    assert.equal(await page.evaluate(() => window.__obMobileTest.calls.some(call => call.kind === 'trash-list')), false)
+    await click('.obm-image-trash summary')
+    await page.waitForSelector('.obm-trash-row')
+    assert.match(await page.$eval('.obm-trash-row', el => el.textContent), /29 dagar kvar/)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await page.$eval('.obm-trash-row', el => el.scrollIntoView({ block: 'center' }))
+    await page.screenshot({ path: resolve(output, `image-trash-${width}.png`) })
+    await click('.obm-trash-row .obm-image-thumb')
+    await page.waitForSelector('dialog[aria-label="Raderad bild"]')
+    await page.waitForFunction(() => document.querySelector('dialog .obm-image-viewer img').naturalWidth > 0)
+    await page.screenshot({ path: resolve(output, `image-trash-preview-${width}.png`) })
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+    assert.equal(await page.evaluate(() => window.__obMobileTest.calls.some(call => call.kind === 'restore-image')), false)
+  }
+  await page.setViewport({ width: 390, height: 844 })
+  await fresh()
+  const before = await page.evaluate(() => ({ images: window.__obMobileTest.images, notes: window.__obMobileTest.notes }))
+  await click('.obm-image-trash summary')
+  await page.waitForSelector('.obm-trash-row')
+  await page.evaluate(() => { window.__obMobileTest.failRestore = true })
+  await click('.obm-trash-restore')
+  await page.waitForFunction(() => !document.querySelector('.obm-trash-restore').disabled)
+  assert.equal(await page.$$eval('.obm-trash-row', rows => rows.length), 1)
+  await page.evaluate(() => { window.__obMobileTest.failRestore = false })
+  await click('.obm-trash-restore')
+  await page.waitForFunction(() => document.querySelector('.obm-trash-content').textContent.includes('Papperskorgen är tom'))
+  const after = await page.evaluate(() => ({ images: window.__obMobileTest.images, notes: window.__obMobileTest.notes }))
+  assert.equal(after.images.length, before.images.length + 1)
+  assert.equal(after.images.at(-1).control_item_id, null)
+  assert.deepEqual(after.notes, before.notes)
+  await fresh()
+  await page.evaluate(() => { window.__obMobileTest.failTrashLoad = true })
+  await click('.obm-image-trash summary')
+  await page.waitForFunction(() => document.querySelector('.obm-trash-content').textContent.includes('kunde inte läsas'))
+  await page.evaluate(() => { window.__obMobileTest.failTrashLoad = false })
+  await click('.obm-trash-content button')
+  await page.waitForSelector('.obm-trash-row')
+  await fresh('')
+  await click('.obm-image-trash summary')
+  await page.waitForFunction(() => document.querySelector('.obm-trash-content').textContent.includes('Papperskorgen är tom'))
+  console.log('PASS: image trash collapsed/lazy, previews at four sizes, restore/failure/retry, note preservation and empty state.')
+}
