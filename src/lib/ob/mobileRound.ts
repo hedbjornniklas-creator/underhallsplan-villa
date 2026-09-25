@@ -10,7 +10,8 @@ export function isObRoundSection(section: string) {
 
 // URL hint only; the inspection page also validates its saved navigation.
 export function getInitialObSection(search: string): 'grunddata' | 'runda-ny' {
-  return new URLSearchParams(search).get('round') === 'mobile-v2'
+  const params = new URLSearchParams(search)
+  return params.get('round') === 'mobile-v2' || ['runda', 'runda-ny', 'insida', 'utsida'].includes(params.get('section') ?? '')
     ? 'runda-ny'
     : 'grunddata'
 }

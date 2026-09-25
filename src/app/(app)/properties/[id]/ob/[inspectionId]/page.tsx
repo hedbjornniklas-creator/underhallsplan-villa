@@ -180,8 +180,6 @@ const SECTIONS: Section[] = [
   { key: 'handlingar', label: 'Handlingar & upplysningar' },
   { key: 'forutsattningar', label: 'Förutsättningar' },
   { key: 'runda-ny', label: 'ÖB-runda' },
-  { key: 'utsida', label: 'Byggnad - utsida' },
-  { key: 'insida', label: 'Byggnad - insida' },
 ]
 
 function getVisibleSections(
@@ -278,7 +276,7 @@ export default function InspectionDetailPage() {
   const activeBuilding = buildingOverview?.parts.find(part => part.id === selectedBuildingId)
     ?? buildingOverview?.parts.find(part => part.id === buildingOverview.structure?.primary_part_id) ?? null
   useEffect(() => {
-    if (activeSection === 'runda' || (buildingOverview?.structure && ['insida','utsida'].includes(activeSection))) setActiveSection('runda-ny')
+    if (['runda', 'insida', 'utsida'].includes(activeSection)) setActiveSection('runda-ny')
   }, [buildingOverview?.structure, activeSection])
   const mobileRoundV2 = activeSection === 'runda-ny'
   const brandedForm = activeSection === 'grunddata' || activeSection === 'forutsattningar'
@@ -646,19 +644,19 @@ export default function InspectionDetailPage() {
 
   useEffect(() => {
     if (isApartmentInspection && activeSection === 'utsida') {
-      setActiveSection('insida')
+      setActiveSection('runda-ny')
     }
   }, [isApartmentInspection, activeSection])
 
   useEffect(() => {
     if (addonsLoadedFor === inspectionId && !showAreaMeasurement && activeSection === 'areamatning') {
-      setActiveSection('insida')
+      setActiveSection('runda-ny')
     }
   }, [addonsLoadedFor, inspectionId, showAreaMeasurement, activeSection])
 
   useEffect(() => {
     if (addonsLoadedFor === inspectionId && !showMoistureControl && activeSection === 'fuktkontroll') {
-      setActiveSection(showAreaMeasurement ? 'areamatning' : 'insida')
+      setActiveSection(showAreaMeasurement ? 'areamatning' : 'runda-ny')
     }
   }, [addonsLoadedFor, inspectionId, activeSection, showAreaMeasurement, showMoistureControl])
 

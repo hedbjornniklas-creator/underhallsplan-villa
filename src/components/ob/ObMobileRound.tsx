@@ -61,6 +61,7 @@ import ObRoundNoteSuggestion from './ObRoundNoteSuggestion'
 import ObRoundRenameRoom from './ObRoundRenameRoom'
 import ObRoundPlaceImages from './ObRoundPlaceImages'
 import ObRoundImageTrash from './ObRoundImageTrash'
+import ObRoundLegacyNotes from './ObRoundLegacyNotes'
 import type { ImageTrashPage, ImageRestoreResult } from '@/lib/ob/imageTrash'
 import { useObRoomSwipe } from './useObRoomSwipe'
 import { useObRoundBack } from './useObRoundBack'
@@ -130,6 +131,8 @@ export type ObMobileRoundProps = {
   onSuggestNote: (suggestion: ObNoteSuggestion) => Promise<void>
   onRenameRoom: (room: InteriorRoom, name: string) => Promise<InteriorRoom>
   onLoadImageTrash: (beforeEventId?: string) => Promise<ImageTrashPage>
+  legacyExteriorNotes?: InspectionExteriorObservation[]
+  onUpdateLegacyNote?: (id: string, patch: Partial<Pick<InspectionExteriorObservation, 'note' | 'risk_text' | 'ftu_text'>>) => Promise<void>
   onRestoreImage: (eventId: string, requestId: string) => Promise<ImageRestoreResult>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
@@ -554,7 +557,8 @@ function MobileRound(p: Props) {
       ? p.floorLabel(p.activeRoom?.floor_label ?? p.activeFloor)
       : 'Utsida'
   const unmatched = p.images.filter(
-    (image) => !image.control_item_id && image.processing_status !== 'ignored',
+    (image) => !image.control_item_id && image.processing_status !== 'ignored' &&
+      !p.legacyExteriorNotes?.some(row => row.id === image.exterior_observation_id),
   )
   const pendingPhotoIndex = view === 'pending'
     ? unmatched.findIndex(image => image.id === enlargedPhoto?.id) : -1
@@ -1018,7 +1022,7 @@ function MobileRound(p: Props) {
             {view === 'places'
               ? `${p.rooms.length} rum · ${p.exteriorItems.length} byggnadsdelar ute`
               : view === 'notes'
-                ? `${written.length} noteringar`
+                ? `${written.length + (p.legacyExteriorNotes?.length ?? 0)} noteringar`
                 : `${unmatched.length} bilder utan notering · ${drafts.length} att komplettera`}
           </p>
           {view === 'pending' && (
@@ -1237,6 +1241,7 @@ function MobileRound(p: Props) {
           {!query && <ObRoundPlaceImages key={`${p.area}:${p.activeRoom?.id}:${p.activeExteriorItem?.id}`}
             images={targetImages} title={p.area === 'interior' ? 'Bilder i rummet' : 'Bilder på platsen'}
             imageSrc={p.imageSrc} onOpen={image => setEnlargedPhotoId(image.id)} />}
+          {p.area === 'exterior' && p.activeExteriorItem && <ObRoundLegacyNotes p={p} exteriorItemId={p.activeExteriorItem.id} query={query} />}
           <section className="obm-catalog">
             <div className="obm-section-title">
               <h2>{query ? 'Sökresultat' : 'Noteringsförslag'}</h2>
@@ -1312,7 +1317,8 @@ function MobileRound(p: Props) {
               ),
             )
             .map(noteRow)}
-          {!written.length && (
+          <ObRoundLegacyNotes p={p} query={query} />
+          {!written.length && !p.legacyExteriorNotes?.length && (
             <p className="obm-empty">Inga noteringar ännu.</p>
           )}
         </>

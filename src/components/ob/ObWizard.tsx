@@ -1,12 +1,11 @@
 ﻿'use client'
 
 import Link from 'next/link'
+import { ExternalLink } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import ObStepGrunddata from './ObStepGrunddata'
 import ObStepHandlingar from './ObStepHandlingar'
 import ObStepForutsattningar from './ObStepForutsattningar'
-import ObStepUtsida from './ObStepUtsida'
-import ObStepInsida from './ObStepInsida'
 import ObStepRunda from './ObStepRunda'
 import ObStepAreamatning from './ObStepAreamatning'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
@@ -622,6 +621,16 @@ function ObWizardContent({
 
             {hasValidIds ? (
               <div className="space-y-4">
+                <Link
+                  href={reportHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                >
+                  <ExternalLink size={18} aria-hidden="true" />
+                  Öppna digitalt utlåtande
+                  <span className="sr-only"> (öppnas i ny flik)</span>
+                </Link>
                 <aside className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">
@@ -923,18 +932,14 @@ function ObWizardContent({
 
     case 'runda':
     case 'runda-ny':
+    case 'utsida':
+    case 'insida':
       return <ObStepRunda
         inspection={normalizedInspection}
-        mobileLayout={activeSection === 'runda-ny'}
+        mobileLayout
         address={normalizedProperty.address || normalizedProperty.name}
         onOpenMenu={onOpenStepMenu}
       />
-
-    case 'utsida':
-      return <ObStepUtsida inspection={normalizedInspection} />
-
-    case 'insida':
-      return <ObStepInsida inspection={normalizedInspection} />
 
     case 'areamatning':
       return (

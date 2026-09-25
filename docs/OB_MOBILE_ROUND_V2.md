@@ -101,6 +101,30 @@ do not replace physical-device, production-database and report acceptance.
 
 ## Not Included Yet
 
+### Inside/Outside Editor Retirement Decision (2026-09-25)
+
+The user approved hiding Byggnad - insida and Byggnad - utsida for all
+inspections, not only those enrolled in building structure. Saved navigation,
+section URL hints and wizard aliases resolve to the current OB round. Existing
+report section headings remain unchanged.
+
+Existing exterior observation/free-note rows are exposed in the round's note
+list and at their exterior place, including risk, FTU and directly attached
+images. Text autosaves to the original observation row through the existing
+building-scoped client/permission guards. Opening a row does not convert,
+copy or update it. Legacy draft keys remain compatible. No report snapshots,
+PDFs, image files, note identities or relationships are migrated. Existing
+legacy images are not counted as loose images awaiting a note.
+
+The user declined room-type editing, the Inget att notera command and batch
+image download. Extra legacy room-field editors are not introduced in the
+round; stored values are retained. The old source components remain on disk
+but the wizard no longer mounts them. There is no database migration.
+
+Verification: navigation/alias tests and
+`node scripts/test-ob-mobile-round-ui.mjs --legacy-notes-only` (synthetic data).
+This change is not yet published.
+
 - Replacing the control-point data model or changing how "nothing to note"
   records contribute to existing counts. The user explicitly chose to leave
   this behavior unchanged and remove unwanted entries manually.
