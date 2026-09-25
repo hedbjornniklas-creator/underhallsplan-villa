@@ -53,3 +53,41 @@ Executed against an isolated checkout of the production commit:
 
 Synthetic browser fixtures were used for interaction checks; no inspection
 content was changed in production to test the release.
+
+## Cover Panel Follow-Up - 2026-09-25
+
+Source commit: `a2154da`. Production candidate:
+`99ce38d8f07ce4938b042f149c0f18e11f77f09e`, based on `6030fa1`.
+Status: published and verified at the deployment level. Vercel reported success
+for `dpl_9SNGWwJ4K2xGFJDdVhry8x58mK3t`; fresh hushub.se login HTML returned
+HTTP 200 and the same deployment identifier. Anonymous HTML only exposes the
+page shell, so this is not an authenticated production interaction test.
+
+- Conditions now includes a closed-by-default Byggnadsbild row in the same
+  list and panel navigation as other sections, on desktop and mobile.
+- The same location applies without an activated building structure. The
+  property workspace no longer shows a separate legacy cover control.
+- Existing image paths are read in place. Building-specific covers still use
+  building commands; unstructured inspections update only their existing
+  `cover_path`, through the existing write queue and with a lock guard.
+- Nested image-bank Escape handling closes only the topmost panel. The review
+  page retains its existing cover presentation.
+- No SQL, building activation, historical snapshot rewrite or image migration
+  is included. Unrelated assignment-confirmation work is excluded.
+
+Release-checkout verification:
+
+- 25 targeted tests passed for forms, cover URLs, copy-only image selection,
+  queued saves, building overview and published-report access.
+- The forms browser suite passed at seven widths from 320 to 1920 pixels,
+  including large text, panel navigation, nested bank dismissal, building
+  separation, legacy image display/upload/retry, locked controls and unchanged
+  inspection data when opening panels. Mobile and desktop captures inspected.
+- Cover-bank browser tests passed at 320, 390 and 1280 pixels.
+- Targeted ESLint: no errors; six existing image/dependency warnings.
+- Production build passed with placeholder Supabase configuration, including
+  TypeScript and all 62 static pages. The first local attempt failed inside
+  webpack's WasmHash; the unchanged retry completed successfully.
+
+These interaction tests use synthetic local fixtures, not production customer
+records. No customer email was sent.
