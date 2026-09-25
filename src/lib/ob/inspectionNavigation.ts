@@ -20,7 +20,7 @@ export function restoreInspectionNavigation<K extends string>(
   const partIds = new Set(sections.map(section => section.partId).filter(Boolean))
   const partId = typeof saved.partId === 'string' && partIds.has(saved.partId)
     ? saved.partId : primaryPartId
-  const key = forceRound || saved.section === 'runda' ? 'runda-ny' : saved.section
+  const key = forceRound || ['runda', 'insida', 'utsida'].includes(String(saved.section)) ? 'runda-ny' : saved.section
   const match = sections.find(section => section.key === key && (!section.partId || section.partId === partId))
   const missingBuilding = saved.partId != null && saved.partId !== partId && Boolean(match?.partId)
   return { section: match && !missingBuilding ? match.key : fallback, partId }

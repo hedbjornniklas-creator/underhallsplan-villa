@@ -396,6 +396,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
 
   const [exteriorItems, setExteriorItems] = useState<SettingsExteriorItem[]>([])
   const [exteriorObservations, setExteriorObservations] = useState<InspectionExteriorObservation[]>([])
+  const [legacyExteriorNotes, setLegacyExteriorNotes] = useState<InspectionExteriorObservation[]>([])
   const [activeExteriorItemId, setActiveExteriorItemId] = useState<string>('')
   const [exteriorDialogOpen, setExteriorDialogOpen] = useState(false)
 
@@ -1059,6 +1060,9 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       setRooms(normalizedRooms.sort(sortRooms))
       setExteriorItems((exteriorRows ?? []) as SettingsExteriorItem[])
       setExteriorObservations(normalizedObservations)
+      setLegacyExteriorNotes(((observationRows ?? []) as InspectionExteriorObservation[]).filter(row =>
+        row.is_free_note === true || row.values?._free_note === true ||
+        Boolean(row.note?.trim() || row.risk_text?.trim() || row.ftu_text?.trim())))
       const confirmedNotes = (controlRows ?? []) as InspectionControlItem[]
       clearConfirmedObNoteDrafts(inspection.id, confirmedNotes, draftScope)
       setControlItems(confirmedNotes.map(normalizeControlItem))
@@ -2385,6 +2389,16 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
           area={area}
           exteriorItems={exteriorItems}
           observations={exteriorObservations}
+          legacyExteriorNotes={legacyExteriorNotes}
+          onUpdateLegacyNote={async (id, patch) => {
+            if (isInspectionLocked) throw Error('Besiktningen är låst.')
+            if (!legacyExteriorNotes.some(row => row.id === id)) throw Error('Noteringen finns inte i denna byggnad.')
+            const { data, error } = await supabase.from('inspection_exterior_observations')
+              .update(patch).eq('inspection_id', inspection.id).eq('id', id).select('*').single()
+            if (error) throw error
+            if (!data) throw Error('Noteringen kunde inte sparas.')
+            setLegacyExteriorNotes(rows => rows.map(row => row.id === id ? data as InspectionExteriorObservation : row))
+          }}
           activeExteriorItem={activeExteriorItem}
           notes={controlItems}
           images={roundImages}

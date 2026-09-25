@@ -1204,6 +1204,11 @@ body:has(dialog.obm-sheet[open]) {
 .obm-image-actions {
   position: relative;
 }
+.obm-legacy-fields { display: grid; gap: 16px; padding: 16px; }
+.obm-legacy-fields label { display: grid; gap: 6px; min-width: 0; }
+.obm-legacy-fields textarea { width: 100%; min-height: 100px; border: 1px solid var(--obm-control); border-radius: 4px; padding: 12px; font-size: 16px; line-height: 1.5; color: var(--obm-ink); background: white; }
+.obm-legacy-images { display: flex; flex-wrap: wrap; gap: 8px; }
+.obm-legacy-images .obm-image-thumb { width: 90px; height: 90px; }
 .obm-image-trash {
   margin-top: 24px;
   border-top: 1px solid var(--obm-line);

@@ -28,3 +28,10 @@ test('round deep links and the retired alias resolve to the current round', () =
 test('legacy inspections remain usable without building parts or valid storage', () => {
   assert.deepEqual(restore('{"section":"runda-ny"}', [{ key: 'grunddata' }, { key: 'runda-ny' }], 'grunddata', null), { section: 'runda-ny', partId: null })
 })
+
+test('retired inside/outside steps resolve to the round without losing the building', () => {
+  for (const section of ['insida', 'utsida']) {
+    assert.deepEqual(restore(JSON.stringify({ section, partId: 'guest' }), sections, 'grunddata', 'main'), { section: 'runda-ny', partId: 'guest' })
+    assert.deepEqual(restore(JSON.stringify({ section }), [{ key: 'grunddata' }, { key: 'runda-ny' }], 'grunddata', null), { section: 'runda-ny', partId: null })
+  }
+})

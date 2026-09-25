@@ -189,6 +189,10 @@ type FixtureProps = {
   storageKey?: string
 }
 function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }: FixtureProps) {
+  const [legacyNotes, setLegacyNotes] = useState<import('@/components/ob/ObStepRunda').InspectionExteriorObservation[]>(new URLSearchParams(location.search).has('legacy-notes') ? [{
+    ...observations[0], id: 'legacy-observation', part_label: 'Äldre fasadnotering', is_free_note: true,
+    note: 'Spricka vid fönster', risk_text: 'Risk för fukt', ftu_text: 'Kontrollera anslutning',
+  }] : [])
   const { model } = useObFloorModel()
   const [mutating, setMutating] = useState(false)
   const [trashed, setTrashed] = useState<TrashedRoundImage[]>(() => new URLSearchParams(location.search).has('trash') ? [{
@@ -211,7 +215,9 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
           local_queue_id: 'queue-1',
           local_upload_status: 'uploading',
         }))
-      : initialImages,
+      : new URLSearchParams(location.search).has('legacy-notes')
+        ? [...initialImages, { ...initialImages[0], id: 'legacy-image', interior_room_id: null, control_item_id: null, exterior_observation_id: 'legacy-observation' }]
+        : initialImages,
   )
   const [area, setArea] = useState<'interior' | 'exterior'>('interior')
   const [exteriorId, setExteriorId] = useState('exterior-1')
@@ -334,6 +340,12 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
             exteriorItems={exteriorItems}
             activeExteriorItem={exteriorItems.find(item => item.id === exteriorId) ?? null}
             observations={observations}
+            legacyExteriorNotes={legacyNotes}
+            onUpdateLegacyNote={async (id, patch) => {
+              if (qa.failSaves) throw Error('Test save failure')
+              qa.calls.push({ kind: 'legacy-note', id, patch })
+              setLegacyNotes(rows => rows.map(row => row.id === id ? { ...row, ...patch } : row))
+            }}
             notes={notes}
             images={images}
             quickNotes={[]}
