@@ -117,6 +117,30 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 - Inget innehåll döljs permanent bakom meny, tangentbord eller en fast kontroll.
   Den vanliga vertikala sidrullningen räcker.
 
+## Fastighet & uppdrag
+
+Beslutad uppföljning 2026-09-25. Detta är en sidlokal formulärlayout, inte en
+ändring av övriga ÖB-formulär eller rapportmallar.
+
+- På bred datorvy: tre sektioner för **Objekt**, **Uppdragsgivare** och
+  **Besiktningsuppdrag**. Omfattning och Närvarande ligger under dessa,
+  bredvid varandra när utrymmet räcker. Smalare vyer staplar innehållet utan
+  dubbla uppsättningar inmatningsfält.
+- Byggnader ligger under objektuppgifterna som en kompakt lista med antal,
+  byggnadsnamn och namngivna ikonverktyg för tillägg, redigering och borttagning.
+  Ingen stor byggnadssektion ovanför formuläret och inga kort runt byggnaderna.
+- Dator med mus: 14 px formulärtext vid normal textstorlek, 20 px
+  sektionsrubriker med vikt 600, minst 44 px kontroller och 12 px fältavstånd.
+  Mobil behåller minst 16 px inmatningstext och 48 px pekmål.
+- Vita ytor, tunna avdelare, neutrala texter och ÖB-blå handlingar enligt
+  profilens befintliga färger. Ingen ny generell krympning av sidans innehåll.
+- Besiktningsmannens informationssektion visas inte på Fastighet & uppdrag.
+  Visningen i Granska samt profil, certifieringar, rapportdata, PDF:er och
+  historiska snapshots är oförändrade.
+- Autosparande, lokala utkast, låsning, tillägg och byggnadskommandon behåller
+  befintlig funktion. Sparstatus har reserverat utrymme och får inte flytta
+  formuläret under inmatning.
+
 ## Status är information, inte en ny arbetsprocess
 
 **Uppdragsbekräftelse** beskriver kundens och uppdragets bekräftelseflöde.
@@ -184,3 +208,4 @@ mobiltest, ett funktionstest eller en publicering av listan.
 | 2026-09-24 | Tätare datorlista efter jämförelsen med Fortnox: bredare yta, jämn typografi och stabila standardrader. | Visuell uppföljning. Detaljer är åtkomliga utan hover, mobilen behåller textlänkar och goda pekmål. Ingen ändring av statusregler eller arbetsflöden. |
 | 2026-09-24 | Ta bort uppdragsnummer från översiktens visning. | Gäller dator, mobil och detaljrad. Nummer, sökning och ID-kopplingar behålls; ingen datamigrering. |
 | 2026-09-24 | Visa ort i en egen kolumn efter adressen. | Dator och mellanbredder använder separata kolumner. Mobilen behåller orten i den staplade raden. Ingen ändring av sparade uppgifter. |
+| 2026-09-25 | Kompakt datorlayout på Fastighet & uppdrag, med byggnader under Objekt och utan besiktningsmannens informationssektion. | Endast denna arbetsvy. Mobilens pekytor, Granska, sparfunktioner och all besiktningsmannadata och dokumenthistorik bevaras. |

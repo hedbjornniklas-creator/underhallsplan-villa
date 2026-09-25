@@ -8,9 +8,10 @@ import { readObDraftSavedText } from '@/lib/ob/draftReviewClient'
 
 type Comparison = { raw: string; status: 'saved' | 'different' | 'unknown' | 'error'; saved?: Record<string, string> }
 
-export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDraftSavedText }: {
+export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDraftSavedText, compact = false }: {
   inspectionId: string
   readSaved?: typeof readObDraftSavedText
+  compact?: boolean
 }) {
   const [entries, setEntries] = useState<ObDraftEntry[]>([])
   const [storageError, setStorageError] = useState(false)
@@ -50,7 +51,7 @@ export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDra
   // Drafts also exist briefly during normal typing. Never insert/remove a banner
   // above the focused form as those drafts are written and acknowledged.
   return <>
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-gray-200 px-4 py-2 text-sm text-gray-600">
+    <div className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-gray-200 text-sm text-gray-600 ${compact ? 'px-0 py-0' : 'px-4 py-2'}`}>
       <span>{storageError ? <span role="alert">Lokala utkast kunde inte läsas.</span> : <><span className="inline-block min-w-[3ch] tabular-nums">{entries.length}</span> lokala textutkast</>}</span>
       <button type="button" className="inline-flex min-h-11 items-center gap-2 underline" aria-label="Visa lokala textutkast" onClick={() => { setComparisons({}); setOpen(true) }}>
         <FileClock size={18} />Visa texter

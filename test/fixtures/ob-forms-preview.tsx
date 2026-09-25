@@ -32,8 +32,9 @@ function App() {
           <p className="ob-form-muted">Testgatan 1 · syntetiska testuppgifter</p>
           <h1 style={{ fontSize: '1.5rem', marginTop: 12 }}>{sections[section].label}</h1>
         </header>
-        <ObLocalDraftStatus inspectionId={inspectionId} />
+        <ObLocalDraftStatus inspectionId={inspectionId} compact={section === 0 && !params.has('review')} />
         {section === 0 ? <ObStepGrunddata property={propertyData as any} inspection={inspectionData as any}
+          workspace={!params.has('review')}
           onPropertyUpdated={setProperty} onInspectionUpdated={setInspection} /> : section === sections.length - 1 ?
           <ObStepHandlingar property={propertyData as any} inspection={inspectionData as any} /> :
           <ObStepForutsattningar key={part.id} inspection={inspectionData as any} property={propertyData as any} />}

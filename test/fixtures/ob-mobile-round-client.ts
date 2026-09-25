@@ -25,10 +25,28 @@ const outcome = {
 export const supabase = {
   storage: { from: () => ({
     getPublicUrl: () => ({ data: { publicUrl: '/photo.png' } }),
+    download: async () => ({ data: await (await fetch('/photo.png')).blob(), error: null }),
     upload: async () => ({ data: {}, error: null }),
     remove: () => { throw Error('The building cover must not delete any files') },
   }) },
   from(table: string) {
+    if (table === 'inspection_images') {
+      let inspection = false
+      let building = false
+      const builder = {
+        select: () => builder,
+        eq: (key: string) => { inspection = key === 'inspection_id'; return builder },
+        or: (value: string) => { building = value.includes('building_part_id.eq.') && value.includes('building_part_id.is.null'); return builder },
+        order: () => builder,
+        range: async () => {
+          if (!inspection || !building) throw Error('Cover bank is missing its inspection/building scope')
+          const params = new URLSearchParams(location.search)
+          return { data: params.has('empty-bank') ? [] : [{ id: 'bank-1', file_path: 'synthetic-mobile-inspection/round/test.png', label: 'Fasad' }],
+            error: params.has('failed-bank') ? Error('Synthetic load failure') : null }
+        },
+      }
+      return builder
+    }
     if (['inspections', 'properties', 'ob_property_snapshot', 'assignments'].includes(table)) {
       const data = table === 'inspections'
         ? { id: 'synthetic-mobile-inspection', property_id: 'synthetic-property', inspection_side: new URLSearchParams(location.search).has('apartment') ? 'apartment' : 'buyer' }

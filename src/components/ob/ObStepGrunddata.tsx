@@ -17,6 +17,7 @@ import {
 } from '@/lib/inspections/assignmentNumber'
 import DebouncedTextarea from './DebouncedTextarea'
 import ObBuildingOverview from './ObBuildingOverview'
+import ObCoverImageBank from './ObCoverImageBank'
 import { useObBuilding } from './ObBuildingContext'
 
 export type ObInspection = Tables<'inspections'>
@@ -71,6 +72,7 @@ type FrozenInspectorApiResponse = {
 interface ObStepGrunddataProps {
   property: Property
   inspection: ObInspection
+  workspace?: boolean
   onPropertyUpdated?: (p: Property) => void
   onInspectionUpdated?: (i: ObInspection) => void
   onInspectionAddonSelectionChanged?: (selectedAddonKeys: string[]) => void
@@ -251,6 +253,7 @@ function normalizeInspectionSide(value: InspectionSide | string | null | undefin
 export default function ObStepGrunddata({
   property,
   inspection,
+  workspace = false,
   onPropertyUpdated,
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
@@ -325,6 +328,7 @@ export default function ObStepGrunddata({
   )
 
   useEffect(() => {
+    if (workspace) return
     let cancelled = false
 
     const loadInspectorProfile = async () => {
@@ -373,9 +377,10 @@ export default function ObStepGrunddata({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [workspace])
 
   useEffect(() => {
+    if (workspace) return
     let cancelled = false
 
     const loadFrozenInspectorProfile = async () => {
@@ -401,7 +406,7 @@ export default function ObStepGrunddata({
     return () => {
       cancelled = true
     }
-  }, [inspection.id, isInspectionLocked])
+  }, [inspection.id, isInspectionLocked, workspace])
 
   useEffect(() => {
     let cancelled = false
@@ -798,7 +803,7 @@ export default function ObStepGrunddata({
   const uploadInspectionCoverFile = async (file: File) => {
     if (isInspectionLocked) {
       setError('Besiktningen är klar. Omslagsbild kan inte ändras.')
-      return
+      return false
     }
 
     try {
@@ -815,29 +820,17 @@ export default function ObStepGrunddata({
 
       if (uploadError) throw uploadError
 
-      const previousPath = inspForm.cover_path || null
       const saved = await saveInspection({ cover_path: filePath } as Partial<Inspection>)
-      if (!saved) return
+      if (!saved) return false
 
       setInspForm(prev => ({ ...prev, cover_path: saved.cover_path ?? filePath }))
 
-      if (
-        previousPath &&
-        previousPath !== filePath &&
-        !previousPath.startsWith('http://') &&
-        !previousPath.startsWith('https://') &&
-        !previousPath.startsWith('/')
-      ) {
-        const { error: removeError } = await supabase.storage
-          .from(COVER_IMAGE_BUCKET)
-          .remove([previousPath])
-        if (removeError) {
-          console.warn('Kunde inte ta bort tidigare omslagsbild:', removeError.message)
-        }
-      }
+      // Earlier report snapshots may still reference the previous cover file.
+      return true
     } catch (e: unknown) {
       console.error('uploadInspectionCoverFile failed:', e)
       setError(e instanceof Error ? e.message : 'Kunde inte ladda upp omslagsbild.')
+      return false
     } finally {
       setUploadingCover(false)
     }
@@ -898,20 +891,8 @@ export default function ObStepGrunddata({
   const inspectionCoverSrc = resolveInspectionImageUrl(inspForm.cover_path || null)
   const buildingContext = useObBuilding()
 
-  return (
-    <div className="ob-form-root space-y-4">
-      {isInspectionLocked ? (
-        <div role="status" className="ob-form-notice">
-          Besiktningen är låst. Grunddata visas i läsläge.
-        </div>
-      ) : null}
-
-      {error && <p role="alert" className="ob-form-error">{error}</p>}
-
-      <ObBuildingOverview locked={isInspectionLocked} />
-      <div className="ob-form-columns">
-        {/* --- Kolumn 1: Objekt --- */}
-        <section className="ob-form-section">
+  const objectSection = (
+        <section className="ob-form-section ob-property-object">
           <h2>Objekt</h2>
 
           <Field
@@ -993,6 +974,8 @@ export default function ObStepGrunddata({
             </>
           ) : null}
 
+          {workspace && <ObBuildingOverview locked={isInspectionLocked} compact />}
+
           {!buildingContext?.overview.structure && <div className="space-y-2">
             <div className="ob-form-label">Omslagsbild</div>
             <div
@@ -1051,6 +1034,8 @@ export default function ObStepGrunddata({
                 >
                   <ImageIcon size={20} />Välj bild
                 </button>
+                <ObCoverImageBank inspectionId={inspection.id} disabled={uploadingCover || savingInsp || isInspectionLocked}
+                  onSelect={uploadInspectionCoverFile} />
               </div>
             ) : null}
             {uploadingCover ? (
@@ -1064,16 +1049,11 @@ export default function ObStepGrunddata({
           </div>}
           <ObFormSaveStatus saving={savingProp} />
         </section>
-
-        {/* --- Kolumn 2: Uppdragsgivare & besiktningsuppdrag --- */}
-        <section className="ob-form-section">
-          <h2>
-            Uppdragsgivare & besiktningsuppdrag
-          </h2>
-
-          <div className="space-y-1">
-            <div className="ob-form-label">Typ av uppdrag</div>
-            <div className="flex flex-wrap gap-x-5">
+  )
+  const inspectionTypeField = (
+          <fieldset className="min-w-0 space-y-1">
+            <legend className="ob-form-label">Typ av uppdrag</legend>
+            <div className="ob-property-type-options flex flex-wrap gap-x-5">
               <label className="ob-form-choice">
                 <input
                   type="radio"
@@ -1105,8 +1085,10 @@ export default function ObStepGrunddata({
                 <span>Lägenhetsbesiktning</span>
               </label>
             </div>
-          </div>
-
+          </fieldset>
+  )
+  const customerFields = (
+        <>
           <Field
             label="Uppdragsgivare"
             value={ordererForm.customer_name}
@@ -1163,6 +1145,9 @@ export default function ObStepGrunddata({
             />
           </div>
 
+        </>
+  )
+  const assignmentNumberField = (
           <Field
             label="Uppdragsnummer"
             value={inspForm.assignment_number}
@@ -1171,10 +1156,11 @@ export default function ObStepGrunddata({
             placeholder="Skapas automatiskt när datum är satt"
             readOnly
           />
-
+  )
+  const scopeFields = (
           <div className="space-y-2">
-            <div className="ob-form-label">Omfattning</div>
-            <div className="space-y-1">
+            {!workspace && <div className="ob-form-label">Omfattning</div>}
+            <div className="ob-property-scope-options space-y-1">
               {inspectionAddonLoading && hasInspectionAddonSnapshot === false ? (
                 <div className="ob-form-muted">Laddar omfattning...</div>
               ) : hasInspectionAddonSnapshot ? (
@@ -1206,7 +1192,8 @@ export default function ObStepGrunddata({
               )}
             </div>
           </div>
-
+  )
+  const dateFields = (
           <div className="ob-form-pair mt-3">
             <Field
               label="Besiktningsdag"
@@ -1224,11 +1211,26 @@ export default function ObStepGrunddata({
               readOnly={isInspectionLocked}
             />
           </div>
+  )
+  const confirmationField = (
+              <Field
+                label="Uppdragsbekräftelse överlämnad"
+                type="date"
+                value={inspForm.assignment_confirmation_delivered_date}
+                onChange={v =>
+                  handleInspChange('assignment_confirmation_delivered_date', v)
+                }
+                onBlur={() =>
+                  handleInspBlur('assignment_confirmation_delivered_date')
+                }
+                readOnly={isInspectionLocked}
+              />
+  )
+  const attendeesFields = (
+          <div className="space-y-3">
+            {!workspace && <div className="ob-form-label">Närvarande</div>}
 
-          <div className="mt-3 space-y-3">
-            <div className="ob-form-label">Närvarande</div>
-
-            <div className="space-y-1">
+            <div className="ob-property-attendee-options space-y-1">
               {attendeeOptionsToShow.map(opt => (
                 <label key={opt.key} className="ob-form-choice">
                   <input
@@ -1267,18 +1269,7 @@ export default function ObStepGrunddata({
                 />
               </div>
 
-              <Field
-                label="Uppdragsbekräftelse överlämnad"
-                type="date"
-                value={inspForm.assignment_confirmation_delivered_date}
-                onChange={v =>
-                  handleInspChange('assignment_confirmation_delivered_date', v)
-                }
-                onBlur={() =>
-                  handleInspBlur('assignment_confirmation_delivered_date')
-                }
-                readOnly={isInspectionLocked}
-              />
+              {!workspace && confirmationField}
 
               <div className="mt-1 ob-form-muted">
                 {inspForm.attendees && inspForm.attendees.trim() !== '' ? (
@@ -1288,11 +1279,8 @@ export default function ObStepGrunddata({
               )}
             </div>
           </div>
-
-          <ObFormSaveStatus saving={savingInsp || savingOrderer} />
-        </section>
-
-        {/* --- Kolumn 3: Besiktningsman (read-only) --- */}
+  )
+  const inspectorSection = (
         <section className="ob-form-section">
           <h2>Besiktningsman</h2>
 
@@ -1346,6 +1334,56 @@ export default function ObStepGrunddata({
               : 'Uppgifterna hämtas från den inloggade besiktningsmannens profil.'}
           </p>
         </section>
+  )
+
+  return (
+    <div className={`ob-form-root space-y-4${workspace ? ' ob-property-workspace' : ''}`}>
+      {isInspectionLocked ? (
+        <div role="status" className="ob-form-notice">
+          Besiktningen är låst. Grunddata visas i läsläge.
+        </div>
+      ) : null}
+      {error && <p role="alert" className="ob-form-error">{error}</p>}
+      {!workspace && <ObBuildingOverview locked={isInspectionLocked} />}
+      <div className="ob-form-columns">
+        {objectSection}
+        {workspace ? <>
+          <section className="ob-form-section ob-property-customer">
+            <h2>Uppdragsgivare</h2>
+            {customerFields}
+            <ObFormSaveStatus saving={savingOrderer} />
+          </section>
+          <section className="ob-form-section ob-property-assignment">
+            <h2>Besiktningsuppdrag</h2>
+            {inspectionTypeField}
+            {dateFields}
+            {assignmentNumberField}
+            {confirmationField}
+            <ObFormSaveStatus saving={savingInsp} />
+          </section>
+          <div className="ob-property-details">
+            <section className="ob-form-section">
+              <h2>Omfattning</h2>
+              {scopeFields}
+            </section>
+            <section className="ob-form-section">
+              <h2>Närvarande</h2>
+              {attendeesFields}
+            </section>
+          </div>
+        </> : <>
+          <section className="ob-form-section">
+            <h2>Uppdragsgivare & besiktningsuppdrag</h2>
+            {inspectionTypeField}
+            {customerFields}
+            {assignmentNumberField}
+            {scopeFields}
+            {dateFields}
+            {attendeesFields}
+            <ObFormSaveStatus saving={savingInsp || savingOrderer} />
+          </section>
+          {inspectorSection}
+        </>}
       </div>
     </div>
   )

@@ -20,6 +20,7 @@ import { testImagePlace } from '../test/helpers/ob-image-place-browser.mjs'
 import { testDraftFeedback } from '../test/helpers/ob-draft-feedback-browser.mjs'
 import { testImageTrash } from '../test/helpers/ob-image-trash-browser.mjs'
 import { testLegacyNotes } from '../test/helpers/ob-legacy-notes-browser.mjs'
+import { testCoverBank } from '../test/helpers/ob-cover-bank-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -117,7 +118,11 @@ if (serve) {
       else { external.push(request.url()); void request.abort() }
     })
     await page.setViewport({ width: 390, height: 844 })
-    if (process.argv.includes('--legacy-notes-only')) {
+    if (process.argv.includes('--cover-bank-only')) {
+      await testCoverBank(page, base, output)
+      assert.deepEqual(errors, [])
+      assert.deepEqual(external, [])
+    } else if (process.argv.includes('--legacy-notes-only')) {
       await testLegacyNotes(page, base, output)
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])

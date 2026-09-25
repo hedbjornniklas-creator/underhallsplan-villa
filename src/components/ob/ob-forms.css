@@ -237,3 +237,134 @@
 @media (min-width: 768px) {
   .ob-form-shell .ob-form-mobile-header { display: none; }
 }
+
+/* Property workspace only; review editors and the other OB forms are unchanged. */
+.ob-property-workspace {
+  container: ob-property / inline-size;
+}
+.ob-property-workspace > .ob-form-columns {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 24px;
+}
+.ob-property-details {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 24px;
+  min-width: 0;
+}
+.ob-property-workspace .ob-form-section > h2 {
+  font-weight: 600;
+}
+.ob-property-workspace .ob-form-pair {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 12px;
+}
+.ob-form-root .ob-building-overview-compact {
+  min-width: 0;
+  border-top: 1px solid var(--obm-line);
+  padding-top: 8px;
+}
+.ob-building-overview-compact > header {
+  gap: 8px;
+}
+.ob-form-root .ob-building-overview-compact > header > h3 {
+  font: inherit;
+  font-weight: 600;
+  margin: 0;
+}
+.ob-building-overview-compact > ul {
+  margin-top: 0;
+}
+.ob-building-overview-compact > ul > li {
+  min-height: 48px;
+  gap: 8px;
+  padding: 4px 0;
+}
+.ob-form-root .ob-building-overview-compact > header > button,
+.ob-form-root .ob-building-overview-compact > ul > li > button {
+  width: 48px;
+  flex-shrink: 0;
+  padding: 12px;
+  border-color: transparent;
+}
+@container ob-property (min-width: 42rem) {
+  .ob-property-workspace > .ob-form-columns,
+  .ob-property-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ob-property-assignment {
+    grid-column: 1 / -1;
+  }
+  .ob-property-attendee-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 20px;
+  }
+  .ob-property-attendee-options > * {
+    margin-top: 0;
+  }
+}
+@container ob-property (min-width: 64rem) {
+  .ob-property-workspace > .ob-form-columns {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .ob-property-assignment {
+    grid-column: auto;
+  }
+  .ob-property-scope-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+    align-items: start;
+  }
+  .ob-property-scope-options > * {
+    margin-top: 0;
+  }
+}
+@media (min-width: 768px) and (pointer: fine) {
+  .ob-property-workspace {
+    font-size: .875rem;
+    line-height: 1.45;
+  }
+  .ob-property-workspace .ob-form-section {
+    padding: 16px 0;
+  }
+  .ob-property-workspace .ob-form-section > * + * {
+    margin-top: 12px;
+  }
+  .ob-property-workspace .ob-form-section > h2 {
+    font-size: 1.25rem;
+    line-height: 1.4;
+  }
+  .ob-property-workspace .ob-form-field {
+    gap: 4px;
+  }
+  .ob-property-workspace :where(input:not([type=checkbox], [type=radio], [type=file]), select, textarea) {
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+  .ob-property-workspace button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+  .ob-property-workspace .ob-form-choice {
+    min-height: 44px;
+    padding: 6px 0;
+    gap: 8px;
+    font-size: inherit;
+  }
+  .ob-property-workspace .ob-form-muted {
+    line-height: 1.45;
+  }
+  .ob-property-workspace .ob-building-overview-compact > ul > li {
+    min-height: 44px;
+    padding: 2px 0;
+  }
+  .ob-property-workspace .ob-building-overview-compact > header > button,
+  .ob-property-workspace .ob-building-overview-compact > ul > li > button {
+    width: 44px;
+    padding: 10px;
+  }
+}
