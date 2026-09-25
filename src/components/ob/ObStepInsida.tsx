@@ -14,6 +14,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { searchOutcomeRows } from '@/lib/ob/searchOutcomeRows'
 import DebouncedTextarea from './DebouncedTextarea'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
@@ -4319,13 +4320,7 @@ function RoomControlPointsSection({
         return
       }
 
-      const { data: outcomeRows, error: outcomesError } = await supabase
-        .from('settings_control_point_outcomes')
-        .select('control_point_id, label, note_template, risk_template, ftu_template')
-        .eq('is_active', true)
-        .or(
-          `label.ilike.${like},note_template.ilike.${like},risk_template.ilike.${like},ftu_template.ilike.${like}`
-        )
+      const { data: outcomeRows, error: outcomesError } = await searchOutcomeRows(supabase, trimmed)
 
       if (outcomesError) {
         console.error('search control point outcomes failed:', outcomesError)

@@ -51,6 +51,7 @@ export const noteMatchRank = (
     note_template?: string | null
     risk_template?: string | null
     ftu_template?: string | null
+    tags?: unknown
   },
   query: string,
 ) =>
@@ -58,7 +59,8 @@ export const noteMatchRank = (
     ? 0
     : matchesWords(row.label, query)
       ? 3
-      : matchesWords(row.note_template ?? '', query)
+      : matchesWords(row.note_template ?? '', query) ||
+          matchesWords(JSON.stringify(row.tags) ?? '', query)
         ? 2
         : matchesWords(
               `${row.risk_template ?? ''} ${row.ftu_template ?? ''}`,

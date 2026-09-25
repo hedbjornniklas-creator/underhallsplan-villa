@@ -12,6 +12,7 @@ import { buildingDraftScope, requestBuildingCommand } from '@/lib/ob/buildingStr
 import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { searchOutcomeRows } from '@/lib/ob/searchOutcomeRows'
 import DebouncedTextarea from './DebouncedTextarea'
 import ObMobileRound from './ObMobileRound'
 import { requestRoundMutation, type MoveResult, type RemovalResult, type ImageNoteResult, type RoundMutationOperation } from '@/lib/ob/roundMutations'
@@ -125,6 +126,7 @@ export type ControlPointOutcome = {
   note_template: string | null
   risk_template: string | null
   ftu_template: string | null
+  tags?: unknown
   sort_order: number
   is_active: boolean
 }
@@ -2237,11 +2239,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
         return
       }
 
-      const { data: outcomeRows, error: outcomesError } = await supabase
-        .from('settings_control_point_outcomes')
-        .select('control_point_id, label, note_template, risk_template, ftu_template')
-        .eq('is_active', true)
-        .or(`label.ilike.${like},note_template.ilike.${like},risk_template.ilike.${like},ftu_template.ilike.${like}`)
+      const { data: outcomeRows, error: outcomesError } = await searchOutcomeRows(supabase, trimmed)
       if (outcomesError) throw outcomesError
 
       const controlPointIds = Array.from(

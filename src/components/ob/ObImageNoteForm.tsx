@@ -49,6 +49,7 @@ export default function ImageNoteForm({
                 outcome.note_template,
                 outcome.risk_template,
                 outcome.ftu_template,
+                JSON.stringify(outcome.tags),
                 point.title,
                 point.key,
                 JSON.stringify(point.tags),
