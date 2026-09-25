@@ -76,7 +76,7 @@ function inspectionState(status: string | null) {
   }
 }
 
-function makeItem(
+export function makeObOverviewItem(
   assignment: OverviewAssignment | undefined,
   inspection: OverviewInspection | undefined,
   workflow: OverviewWorkflow | undefined,
@@ -170,7 +170,7 @@ export function buildObOverview(
     const inspection = inspectionMap.get(workflow.inspection_id)
     for (const id of [workflow.initial_assignment_id, workflow.current_assignment_id,
       ...(linked.get(workflow.inspection_id) ?? []).map(item => item.id)]) consumed.add(id)
-    if (current || inspection) rows.push(makeItem(current, inspection, workflow))
+    if (current || inspection) rows.push(makeObOverviewItem(current, inspection, workflow))
   }
   for (const inspection of inspections) {
     if (workflowMap.has(inspection.id)) continue
@@ -178,16 +178,34 @@ export function buildObOverview(
     // Do not silently discard an ambiguous linkage: keep the extra confirmations visible.
     const assignment = candidates.length === 1 ? candidates[0] : undefined
     if (assignment) consumed.add(assignment.id)
-    rows.push(makeItem(assignment, inspection, undefined))
+    rows.push(makeObOverviewItem(assignment, inspection, undefined))
   }
   for (const assignment of assignments) {
-    if (!consumed.has(assignment.id)) rows.push(makeItem(assignment, undefined, undefined))
+    if (!consumed.has(assignment.id)) rows.push(makeObOverviewItem(assignment, undefined, undefined))
   }
   return rows
 }
 
 export type OverviewFilter = 'all' | 'active' | 'closed'
 export type OverviewSort = 'date-desc' | 'date-asc' | 'customer' | 'address'
+
+export type OverviewPageOptions = {
+  search: string
+  filter: OverviewFilter
+  sort: OverviewSort
+  attentionOnly: boolean
+  showArchived: boolean
+  page: number
+  pageSize: 10 | 25 | 50
+}
+
+export type ObOverviewPage = {
+  items: ObOverviewItem[]
+  total: number
+  counts: Record<OverviewFilter, number>
+  page: number
+  pageSize: number
+}
 
 export function selectObOverview(items: ObOverviewItem[], options: {
   search: string; filter: OverviewFilter; attentionOnly: boolean; showArchived: boolean; sort: OverviewSort

@@ -4,9 +4,6 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import type * as Domain from '../src/lib/ob/overview'
 import type * as Fixtures from './fixtures/ob-overview-data'
-import type * as Loader from '../src/lib/ob/overviewLoader'
-import type * as Route from '../src/app/api/ob/overview/route'
-import type { SupabaseClient } from '@supabase/supabase-js'
 
 function load<T>(path: string, dependencies: Record<string, unknown> = {}): T {
   const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -23,7 +20,6 @@ const { overviewAssignment: assignment, overviewInspection: inspection } = load<
   '../../src/lib/ob/overview': domain,
 })
 const { buildObOverview: build, selectObOverview: select } = domain
-const loader = load<typeof Loader>('src/lib/ob/overviewLoader.ts', { './overview': domain })
 const options = { search: '', filter: 'all' as const, sort: 'date-desc' as const, attentionOnly: false, showArchived: false }
 
 test('early start shows waiting for customer AND ongoing in one row', () => {
@@ -128,90 +124,4 @@ test('missing dates sort last with stable tie breakers in either direction', () 
   const rows = build([], [inspection({ id: 'a', date: null }), inspection({ id: 'b' }), inspection({ id: 'c', date: '2026-09-01' })], [])
   assert.deepEqual(select(rows, options).map(row => row.id), ['inspection:b', 'inspection:c', 'inspection:a'])
   assert.deepEqual(select(rows, { ...options, sort: 'date-asc' }).map(row => row.id), ['inspection:c', 'inspection:b', 'inspection:a'])
-})
-test('page reader crosses Supabase default 1000-row limit and fails closed on query error', async () => {
-  const values = Array.from({ length: 1203 }, (_, id) => ({ id }))
-  assert.equal((await loader.readOverviewPages(async (from, to) => ({ data: values.slice(from, to + 1), error: null }))).length, 1203)
-  await assert.rejects(loader.readOverviewPages(async () => ({ data: null, error: { message: 'denied' } })), /denied/)
-})
-
-type Row = Record<string, unknown>
-function client(tables: Record<string, Row[]>, calls: string[], rpcAssignment = 'assignment-1') {
-  return {
-    from(table: string) {
-      calls.push(table)
-      let rows = tables[table] ?? []
-      const query = {
-        select: () => query,
-        eq: (key: string, value: unknown) => { rows = rows.filter(row => row[key] === value); return query },
-        in: (key: string, values: unknown[]) => { rows = rows.filter(row => values.includes(row[key])); return query },
-        is: (key: string, value: unknown) => { rows = rows.filter(row => (row[key] ?? null) === value); return query },
-        order: () => query,
-        range: async (from: number, to: number) => ({ data: rows.slice(from, to + 1).map(row => ({ ...row })), error: null }),
-      }
-      return query
-    },
-    rpc: async () => ({ data: { assignmentId: rpcAssignment, needsReview: false, paused: false, reason: null }, error: null }),
-  } as unknown as SupabaseClient
-}
-test('loader scopes assignments to organization/OB, inspections to owner/OB, and honors snapshots', async () => {
-  const adminCalls: string[] = [], userCalls: string[] = []
-  const admin = client({
-    assignments: [
-      { ...assignment(), org_id: 'org', assignment_type: 'OB' },
-      { ...assignment({ id: 'foreign' }), org_id: 'other', assignment_type: 'OB' },
-      { ...assignment({ id: 'tu' }), org_id: 'org', assignment_type: 'TU' },
-    ],
-    assignment_links: [{ id: 'link', assignment_id: 'assignment-1', expires_at: '2099-01-01', used_at: null, revoked_at: null }],
-  }, adminCalls)
-  const userClient = client({
-    properties: [{ id: 'property-1', owner: 'me', address: 'Current property address' }, { id: 'other', owner: 'someone' }],
-    inspections: [{ ...inspection(), inspection_family: 'OB' }, { ...inspection({ id: 'forbidden', property_id: 'other' }), inspection_family: 'OB' },
-      { ...inspection({ id: 'tu' }), inspection_family: 'TU' }],
-    ob_property_snapshot: [{ inspection_id: 'inspection-1', address: 'Historical snapshot', city: 'Täby', client_name: 'Snapshot customer' }],
-  }, userCalls)
-  const rows = await loader.loadObOverview({ admin, userClient, userId: 'me', orgId: 'org' })
-  assert.equal(rows.length, 2)
-  assert.equal(rows.find(row => row.id === 'inspection:inspection-1')?.address, 'Historical snapshot')
-  assert.equal(rows.find(row => row.id === 'assignment:assignment-1')?.confirmation, 'Inväntar kund')
-  assert.ok(!adminCalls.includes('inspections'))
-  assert.ok(!adminCalls.includes('properties'))
-  assert.deepEqual(userCalls, ['properties', 'inspections', 'ob_property_snapshot'])
-})
-test('concurrent reissue fails rather than combining two versions', async () => {
-  const admin = client({ assignments: [{ ...assignment(), org_id: 'org', assignment_type: 'OB' }],
-    ob_assignment_workflows: [{ inspection_id: 'inspection-1', current_assignment_id: 'assignment-1', initial_assignment_id: 'assignment-1', org_id: 'org' }],
-  }, [], 'replacement')
-  await assert.rejects(loader.loadObOverview({ admin, userClient: client({}, []), orgId: 'org', userId: 'me' }), /ändrades/)
-})
-
-test('API requires authentication/membership before creating either data client', async () => {
-  for (const [code, status] of [['UNAUTHORIZED', 401], ['ORG_MEMBERSHIP_REQUIRED', 403]] as const) {
-    const forbidden = () => { throw Error('Data access before authentication') }
-    const route = load<typeof Route>('src/app/api/ob/overview/route.ts', {
-      'next/server': { NextResponse: Response },
-      '@/lib/assignments/server': { requireOrgContext: async () => { throw Error(code) } },
-      '@/lib/supabase/admin': { createSupabaseAdminClient: forbidden },
-      '@/lib/supabase/server': { createSupabaseServerClient: forbidden },
-      '@/lib/ob/overviewLoader': { loadObOverview: forbidden },
-    })
-    const response = await route.GET()
-    assert.equal(response.status, status)
-    assert.equal(response.headers.get('Cache-Control'), 'private, no-store')
-  }
-})
-test('API uses server-derived user and organization and returns no-store data', async () => {
-  const route = load<typeof Route>('src/app/api/ob/overview/route.ts', {
-    'next/server': { NextResponse: Response },
-    '@/lib/assignments/server': { requireOrgContext: async () => ({ userId: 'me', orgId: 'org' }) },
-    '@/lib/supabase/admin': { createSupabaseAdminClient: () => 'admin' },
-    '@/lib/supabase/server': { createSupabaseServerClient: () => 'user' },
-    '@/lib/ob/overviewLoader': { loadObOverview: async (input: unknown) => {
-      assert.deepEqual(input, { userId: 'me', orgId: 'org', admin: 'admin', userClient: 'user' })
-      return []
-    } },
-  })
-  const response = await route.GET()
-  assert.deepEqual(await response.json(), { items: [] })
-  assert.equal(response.headers.get('Cache-Control'), 'private, no-store')
 })

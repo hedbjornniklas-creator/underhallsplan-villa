@@ -111,19 +111,42 @@ under läsningen krävs omladdning i stället för att blanda två versioner.
 
 ## Drift och verifiering
 
-Ingen ny SQL-migrering. Befintliga tabeller för tidig start, godkännanden och
-länkincidenter måste finnas, precis som för motsvarande befintliga funktioner.
-Databasläsningar hämtas i ordnade sidor om 500 poster och ID-filter i grupper
-om 100, så Supabases standardgräns inte tyst kapar listan vid 1000 poster.
-Arbetsflödets avstämningar läses med högst fyra samtidiga anrop.
+### Sidindelning i databasen, 2026-09-25
 
-Den första versionen filtrerar/sorterar det behöriga underlaget i klienten.
-Vid större volymer bör samma modell flyttas till serverpaginerad aggregering,
-utan att ändra statusarnas betydelse. Den är inte prestandatestad för stora
-organisationer med tusentals tidigt startade arbetsflöden.
+Uppdateringen ersätter hämtning av hela registret med en sida per API-anrop.
+Installera först [SQL-migreringen](db/2026-09-25_01_ob_overview_pagination.sql),
+sedan appversionen. Saknad migrering ger ett uttryckligt läsfel; API:t faller
+inte tillbaka till att hämta allt. Publiceringsstatus redovisas separat i
+[releaseunderlaget](OB_OVERVIEW_RELEASE.md).
+
+- API:t tar `search`, `filter`, `sort`, `attentionOnly`, `showArchived`, `page`
+  och `pageSize`. Sidstorlek är 10, 25 eller 50, med 10 som standard.
+- Sökning, sortering, arkivfilter, statusfilter, koppling och deduplicering
+  sker före sidindelningen. Sökningen omfattar alltså även andra sidor.
+- Svaret innehåller endast sidans rader samt totalt antal, filterräknare,
+  faktisk sida och sidstorlek. Räknarna följer sökning/arkiv/åtgärdsfilter
+  men räknas före valet Alla/Aktuella/Avslutade.
+- `ob_overview_page` körs som inloggad användare med befintlig RLS.
+  En snäv hjälpfunktion verifierar organisationsmedlemskap och returnerar
+  endast översiktens statusflaggor, aldrig kundsnapshots eller granskningstoken.
+- Vanlig listvisning kontrollerar arbetsflöden endast för sidans rader.
+  **Kräver åtgärd** behöver däremot bedöma alla behöriga kandidater som
+  matchar sökningen för att träffar och antal ska bli korrekta. Det filtret
+  kan därför fortfarande ta längre tid vid många arbetsflöden.
+- Sökning väntar 250 ms efter inmatning. Samtidiga fokus-/synlighetshändelser
+  delar pågående hämtning; nyss hämtade uppgifter uppdateras automatiskt först
+  efter fem sekunder. Manuellt återförsök och uppdatering efter mutation
+  hämtar alltid på nytt. Ingen bestående kunddatacache införs.
+- Gamla svar kan inte skriva över nyare. Vid fel behålls det senaste lyckade
+  svaret tillsammans med dess sidmetadata och en tydlig feltext.
+
+Databasen behöver fortfarande söka och räkna det behöriga underlaget, men
+webbläsaren och appservern hämtar inte längre alla uppdrag eller alla detaljerade
+arbetsflödesbedömningar för vanlig listvisning. Ingen mätning för tusentals
+arbetsflöden i produktion påstås av de syntetiska testerna.
 
 ```powershell
-node --experimental-strip-types --test test/ob-overview.test.ts
+node --experimental-strip-types --test test/ob-overview.test.ts test/ob-overview-page.test.ts test/ob-overview-pagination.test.ts test/ob-overview-refresh.test.ts
 node scripts/preview-ob-overview.mjs --test
 node node_modules/typescript/bin/tsc --noEmit --incremental false
 npm run build
