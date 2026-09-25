@@ -33,3 +33,21 @@ this feature and may remove its archive through existing cascades.
 - SQL regressions: `node --experimental-strip-types --test test/ob-buildings.test.ts`
 - UI regressions: `node scripts/test-ob-mobile-round-ui.mjs --image-trash-only`
 - Type check: `npx tsc --noEmit`
+
+## Production Verification, 2026-09-25
+
+- User confirmed the SQL was run and explicitly authorized publication.
+- Read-only RPC preflight reached the production function and returned
+  `OB_ROUND_FORBIDDEN` for synthetic identities, confirming deployment and guard.
+- Source commit: `e9d6221`; isolated release on current main: `6bed6a9`.
+  The backup-only recovery test fixture is not included in the production branch.
+- All 61 scoped tests passed on the isolated release, along with the trash
+  browser suite at four viewport sizes and `next build --webpack` (62 pages).
+  The local build used placeholder Supabase settings, not production credentials.
+- Fast-forward push to main triggered successful Vercel deployment
+  `dpl_915jbv1SemprEgWhENhgb59P5SpZ`.
+- The public login page identifies that deployment. Anonymous image-trash GET
+  returns HTTP 401, `Cache-Control: no-store`, and `Inte inloggad.`
+- No production inspection/image writes, restoration, deletion or emails were
+  performed. Authenticated production UI restoration remains for user checking;
+  synthetic tests are not an authenticated live test.
