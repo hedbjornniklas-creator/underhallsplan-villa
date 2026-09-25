@@ -3110,7 +3110,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                   draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:risk_text`}
                   rows={4}
                   value={item.risk_text ?? ''}
-                  onSave={value => updateControlItem(item.id!, { risk_text: value || null }, { throwOnError: true })}
+                  onSave={value => updateControlItem(item.id!, { risk_text: value }, { throwOnError: true })}
                   readOnly={isInspectionLocked}
                   placeholder="Risktext..."
                   className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -3123,7 +3123,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                   draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:ftu_text`}
                   rows={4}
                   value={item.ftu_text ?? ''}
-                  onSave={value => updateControlItem(item.id!, { ftu_text: value || null }, { throwOnError: true })}
+                  onSave={value => updateControlItem(item.id!, { ftu_text: value }, { throwOnError: true })}
                   readOnly={isInspectionLocked}
                   placeholder="Fortsatt teknisk utredning..."
                   className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -3267,7 +3267,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                     draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:risk_text`}
                     rows={4}
                     value={item.risk_text ?? ''}
-                    onSave={value => updateControlItem(item.id!, { risk_text: value || null }, { throwOnError: true })}
+                    onSave={value => updateControlItem(item.id!, { risk_text: value }, { throwOnError: true })}
                     readOnly={isInspectionLocked}
                     placeholder="Risktext..."
                     className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
@@ -3280,7 +3280,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                     draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:ftu_text`}
                     rows={4}
                     value={item.ftu_text ?? ''}
-                    onSave={value => updateControlItem(item.id!, { ftu_text: value || null }, { throwOnError: true })}
+                    onSave={value => updateControlItem(item.id!, { ftu_text: value }, { throwOnError: true })}
                     readOnly={isInspectionLocked}
                     placeholder="Fortsatt teknisk utredning..."
                     className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
