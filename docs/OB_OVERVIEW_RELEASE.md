@@ -41,9 +41,28 @@ Pre-publication verification:
   no authenticated execution of the full workflow-state RPC, invoker page
   function and restricted definer flag helper. No customer records changed.
 
-Application deployment and authenticated browser verification are recorded
-after publication. To roll back, deploy the previous application first, then
-optionally remove only the two new functions as documented in
+Published with a normal fast-forward push to main:
+
+- Source commit `ae85ae3`; isolated production commit `40a2e27`, based on
+  `97b2d2a`. Vercel reported success for that production commit:
+  [deployment](https://vercel.com/niklas-projects-65efdd50/underhallsplan-villa/2z3D7AKTrGeMXArS2A9Z8ekMqLjV).
+- The public login page returned 200 and identified the matching deployment
+  `dpl_2z3D7AKTrGeMXArS2A9Z8ekMqLjV`. Anonymous overview API returned 401
+  with `no-store, private`.
+- Fresh authenticated production browser checks passed: first page 10/50,
+  second page 10 distinct rows with zero overlap, search for an address from
+  page two found its one result on page one, action-required filter found one
+  row, and page size 25 returned 25/50. Standard page size was restored and
+  the temporary tab closed. These are actual production UI checks.
+- A separate direct browser navigation to the JSON API was blocked by the
+  browser client. The authenticated checks above used the real overview UI;
+  the blocked navigation is not claimed as an API-response inspection.
+- A fresh post-commit catalogue check confirmed both deployed function hashes
+  and expected execution privileges. The final receipt is stored on the working
+  branch without triggering another application deployment.
+
+To roll back, revert `40a2e27` on current main and deploy the previous loader
+first, then optionally remove only the two new functions as documented in
 `docs/db/2026-09-25_01_ob_overview_pagination.sql`.
 
 ## City column and narrow-window correction, 2026-09-24
