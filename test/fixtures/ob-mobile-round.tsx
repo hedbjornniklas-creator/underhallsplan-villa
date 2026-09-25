@@ -18,6 +18,7 @@ type Image = ObMobileRoundProps['images'][number]
 const inspectionId = 'synthetic-mobile-inspection'
 const newFloors = new URLSearchParams(location.search).has('levels')
 const imagePlaceFixture = new URLSearchParams(location.search).has('image-place')
+const searchOrderFixture = new URLSearchParams(location.search).has('search-order')
 const rooms: Room[] = [
   {
     id: 'room-1',
@@ -159,6 +160,8 @@ const qa = {
   failRestore: false,
   trash: [] as TrashedRoundImage[],
   failSaves: false,
+  failAdds: false,
+  holdAdds: false,
   partialLink: false,
   holdLinks: false,
   holdUnlink: false,
@@ -316,7 +319,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
             address="Testgatan 1 (syntetiskt objekt)"
             onOpenMenu={onOpenStepMenu ?? (() => setMenu(true))}
             pointApplies={() => true}
-            pointMatchesRoom={() => true}
+            pointMatchesRoom={(point, roomType) => !searchOrderFixture || (Array.isArray(point.trigger_room_types) && point.trigger_room_types.includes(roomType))}
             locked={locked}
             mutationBlocked={
               mutating || images.some((image) => image.local_queue_id)
@@ -373,8 +376,11 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
               return room
             }}
             onNewNote={async () => createNote({})}
-            onAddOutcome={async (point, outcome) =>
-              createNote({
+            onAddOutcome={async (point, outcome) => {
+              if (searchOrderFixture) qa.calls.push({ kind: 'add-outcome', id: outcome.id })
+              while (qa.holdAdds) await new Promise(resolve => setTimeout(resolve, 20))
+              if (qa.failAdds) throw Error('Synthetic add failure')
+              return createNote({
                 control_point_id: point.id,
                 selected_outcome_id: outcome.id,
                 title: point.title,
@@ -382,7 +388,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
                 risk_text: outcome.risk_template,
                 ftu_text: outcome.ftu_template,
               })
-            }
+            }}
             onUpdateNote={async (id, patch) => {
               qa.calls.push({ kind: 'save', id, patch })
               await new Promise((resolve) => setTimeout(resolve, qa.delayMs))

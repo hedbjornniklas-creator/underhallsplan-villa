@@ -22,6 +22,23 @@ const outcome = {
   is_active: true,
 }
 
+const searchPoints = [
+  { ...point, id: 'search-local', title: 'Platsens konstruktion' },
+  { ...point, id: 'search-remote', title: 'Annan konstruktion', exterior_item_key: 'tak', trigger_room_types: ['vind'] },
+  { ...point, id: 'search-other', title: 'Ytterligare konstruktion', exterior_item_key: 'grund', trigger_room_types: ['kallare'] },
+]
+const searchOutcomes = searchPoints.flatMap((row, index) =>
+  Array.from({ length: index === 0 ? 12 : 2 }, (_, i) => ({
+    ...outcome,
+    id: `${row.id}-${i}`,
+    control_point_id: row.id,
+    label: `Fukt i trä, ${row.title.toLowerCase()} ${i + 1}`,
+    note_template: 'Fukt noterades i träkonstruktionen.',
+    // Off-place outcomes sort first once they wrongly become "relevant" after an add.
+    sort_order: index === 0 ? 100 + i : i,
+  })),
+)
+
 export const supabase = {
   storage: { from: () => ({
     getPublicUrl: () => ({ data: { publicUrl: '/photo.png' } }),
@@ -69,6 +86,10 @@ export const supabase = {
       eq: () => builder,
       order: () => builder,
       range: async (from: number, to: number) => {
+        if (new URLSearchParams(location.search).has('search-order')) {
+          const rows = table === 'settings_control_points' ? searchPoints : searchOutcomes
+          return { data: rows.slice(from, to + 1), error: null }
+        }
         const rows =
           table === 'settings_control_points'
             ? [point]

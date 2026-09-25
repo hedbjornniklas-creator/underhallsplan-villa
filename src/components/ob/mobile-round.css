@@ -109,6 +109,7 @@ body:has(dialog.obm-sheet[open]) {
   background: #fff;
 }
 .obm-root button:disabled,
+.obm-root .obm-result > button[aria-disabled="true"],
 .obm-sheet button:disabled {
   background: var(--obm-paper);
   color: var(--obm-muted);
@@ -153,7 +154,7 @@ body:has(dialog.obm-sheet[open]) {
 .obm-sheet .obm-primary:not(:disabled):hover {
   background: var(--obm-hover);
 }
-.obm-root button:not(.obm-primary, .obm-danger, .obm-delete-icon):not(:disabled):hover,
+.obm-root button:not(.obm-primary, .obm-danger, .obm-delete-icon):not(:disabled):not([aria-disabled="true"]):hover,
 .obm-sheet button:not(.obm-primary, .obm-danger, .obm-delete-icon):not(:disabled):hover {
   background: var(--obm-selected);
 }

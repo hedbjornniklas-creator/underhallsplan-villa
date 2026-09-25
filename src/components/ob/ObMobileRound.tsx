@@ -693,10 +693,8 @@ function MobileRound(p: Props) {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' })
   }, [view, p.activeRoom?.id, p.activeExteriorItem?.id])
-  const relevant = useCallback(
+  const matchesPlace = useCallback(
     (point: Point) => {
-      if (targetNotes.some((note) => note.control_point_id === point.id))
-        return true
       if (p.area === 'exterior')
         return (
           normalize(point.exterior_item_key) ===
@@ -705,7 +703,12 @@ function MobileRound(p: Props) {
         )
       return p.pointMatchesRoom(point, p.activeRoom?.room_type_key ?? '')
     },
-    [targetNotes, p],
+    [p],
+  )
+  // Saved notes expand the local library, but must never change result ranking.
+  const relevant = useCallback(
+    (point: Point) => matchesPlace(point) || targetNotes.some(note => note.control_point_id === point.id),
+    [matchesPlace, targetNotes],
   )
   const candidates = useMemo(
     () =>
@@ -734,11 +737,11 @@ function MobileRound(p: Props) {
         .sort(
           (a, b) =>
             noteMatchRank(b, query) - noteMatchRank(a, query) ||
-            Number(relevant(pointMap.get(b.control_point_id)!)) -
-              Number(relevant(pointMap.get(a.control_point_id)!)) ||
-            a.sort_order - b.sort_order,
+            Number(matchesPlace(pointMap.get(b.control_point_id)!)) -
+              Number(matchesPlace(pointMap.get(a.control_point_id)!)) ||
+            a.sort_order - b.sort_order || a.id.localeCompare(b.id),
         ),
-    [outcomes, pointMap, query, everywhere, relevant],
+    [outcomes, pointMap, query, everywhere, relevant, matchesPlace],
   )
   const groups = useMemo(
     () =>
@@ -748,13 +751,13 @@ function MobileRound(p: Props) {
         )
         .sort(
           (a, b) =>
-            Number(relevant(b)) - Number(relevant(a)) ||
+            Number(matchesPlace(b)) - Number(matchesPlace(a)) ||
             (a.title || a.label || a.key).localeCompare(
               b.title || b.label || b.key,
               'sv',
-            ),
+            ) || a.id.localeCompare(b.id),
         ),
-    [applicablePoints, candidates, relevant],
+    [applicablePoints, candidates, matchesPlace],
   )
   function placeOf(note: Note) {
     const room = p.rooms.find((room) => room.id === note.interior_room_id)
@@ -807,15 +810,17 @@ function MobileRound(p: Props) {
     })
   }
   function addOutcome(outcome: Outcome) {
+    if (p.locked || busyRef.current) return
+    const existing = targetNotes.find(
+      (note) => note.selected_outcome_id === outcome.id,
+    )
+    if (existing?.id) {
+      setError('')
+      setEditorId(existing.id)
+      setPreview(null)
+      return
+    }
     void action(async () => {
-      const existing = targetNotes.find(
-        (note) => note.selected_outcome_id === outcome.id,
-      )
-      if (existing?.id) {
-        setEditorId(existing.id)
-        setPreview(null)
-        return
-      }
       const point = pointMap.get(outcome.control_point_id)!
       const note = await p.onAddOutcome(point, outcome)
       if (!note?.id) throw Error('Noteringen kunde inte sparas.')
@@ -877,16 +882,20 @@ function MobileRound(p: Props) {
     )
   }
   function resultRow(outcome: Outcome) {
-    const added = targetNotes.some(
+    const existing = targetNotes.find(
       (note) => note.selected_outcome_id === outcome.id,
     )
+    const added = Boolean(existing?.id)
     return (
       <div className="obm-result" key={outcome.id} data-outcome-id={outcome.id}>
         <button
           className="obm-result-text"
+          aria-disabled={busy}
           onClick={() => {
+            if (busyRef.current) return
             setError('')
-            setPreview(outcome)
+            if (existing?.id) setEditorId(existing.id)
+            else setPreview(outcome)
           }}
         >
           {query && (
@@ -912,7 +921,8 @@ function MobileRound(p: Props) {
         </button>
         <button
           className={'obm-icon ' + (added ? 'obm-added' : 'obm-add')}
-          disabled={busy || p.locked}
+          disabled={p.locked}
+          aria-disabled={busy || p.locked}
           onClick={() => addOutcome(outcome)}
           title={added ? 'Öppna tillagd notering' : 'Lägg till notering'}
           aria-label={`${added ? 'Öppna' : 'Lägg till'}: ${outcome.label}`}
