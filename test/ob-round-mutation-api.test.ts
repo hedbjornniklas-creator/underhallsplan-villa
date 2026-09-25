@@ -83,6 +83,23 @@ test('floor helpers preserve old numbering and sort explicit negative/zero/posit
   assert.equal(modelHelpers.validFloorLevels([...model.levels, { level: 0, name: '' }]), false)
 })
 
+test('known no-attic choices do not infer a separate attic floor for either overview alias', () => {
+  const old = floors as typeof import('../src/lib/ob/overviewFloors')
+  for (const key of ['attic', 'vind']) {
+    for (const value of ['ingen', 'oppet_till_nock', ' INGEN ', ' ÖPPET_TILL_NOCK ']) {
+      assert.deepEqual(old.buildInteriorFloorKeysFromOverview({ floors: '1_5', basement: 'suterrang', [key]: value }),
+        ['suterräng', 'plan1', 'plan2'], `${key}: ${value}`)
+    }
+    for (const value of ['kallvind', 'inredd_vind', 'kattvind', 'future_attic_type']) {
+      assert.deepEqual(old.buildInteriorFloorKeysFromOverview({ floors: 2, basement: 'ja', [key]: value }),
+        ['källare', 'plan1', 'plan2', 'vind'], `${key}: ${value}`)
+    }
+  }
+  assert.deepEqual(helpers.roundFloorKeys({
+    rooms: [{ floor_label: 'vind' }], values: { floors: 1, attic: 'ingen' }, groups: [],
+  }), ['ovrigt', 'vind', 'plan1'], 'existing attic rooms remain available even when overview says no attic')
+})
+
 test('floor model reads only fall back for absent migration or absent model, never network/access errors', async () => {
   const store = load<typeof import('../src/lib/ob/floorModelStore')>('src/lib/ob/floorModelStore.ts', { './floorModel': modelHelpers })
   const read = (data: unknown, error: unknown) => store.readObFloorModel({
