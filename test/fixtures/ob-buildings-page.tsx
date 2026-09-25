@@ -45,7 +45,7 @@ function Preview() {
           {data.parts.map(part => <button key={part.id} onClick={() => { setPartId(part.id); setView('conditions') }} className="flex min-h-14 w-full items-center gap-3 py-3 text-left text-blue-700">
             <ClipboardList size={21} /><span className="min-w-0 break-words">Förutsättningar · {part.name}</span></button>)}
         </nav>
-      </> : <ObBuildingCover locked={new URLSearchParams(location.search).has('locked')} legacyPath="legacy-cover.jpg" />}
+      </> : <ObBuildingCover inspectionId={root} locked={new URLSearchParams(location.search).has('locked')} legacyPath="legacy-cover.jpg" />}
     </main>
   </ObBuildingContext.Provider>
 }

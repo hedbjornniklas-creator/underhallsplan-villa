@@ -219,7 +219,7 @@ export default function ObStepGranska({
       case 'handlingar':
         return <ObStepHandlingar property={property} inspection={inspection} />
       case 'forutsattningar':
-        return <ObStepForutsattningar property={property} inspection={inspection} />
+        return <ObStepForutsattningar property={property} inspection={inspection} onInspectionUpdated={onInspectionUpdated} />
       case 'utsida':
         return <ObStepUtsida inspection={inspection} />
       case 'insida':

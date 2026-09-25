@@ -935,6 +935,7 @@ function ObWizardContent({
         <ObStepForutsattningar
           property={normalizedProperty}
           inspection={normalizedInspection}
+          onInspectionUpdated={onInspectionUpdated}
         />
       )
 

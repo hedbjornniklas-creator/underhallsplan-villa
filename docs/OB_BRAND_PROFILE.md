@@ -141,6 +141,18 @@ Beslutad uppföljning 2026-09-25. Detta är en sidlokal formulärlayout, inte en
   befintlig funktion. Sparstatus har reserverat utrymme och får inte flytta
   formuläret under inmatning.
 
+## Förutsättningar
+
+- Byggnadsbild visas som en kompakt rad i samma lista som övriga sektioner,
+  med statusen **Bild finns** eller **Ingen bild vald**. Panelen är stängd
+  från början på både dator och mobil.
+- Bilden och valen Ta bild, Välj bild och Bildbank visas först när raden öppnas.
+  Använd samma panel och Föregående/Nästa-navigering som övriga förutsättningar.
+  Låsta besiktningar tillåter visning men inte ändring av bilden.
+- Placeringen gäller även besiktningar utan aktiverad byggnadsindelning.
+  Fastighet & uppdrag visar inget separat bildval. Befintlig bildlagring behålls;
+  detta kräver ingen migrering och ändrar inga publicerade rapporter.
+
 ## Status är information, inte en ny arbetsprocess
 
 **Uppdragsbekräftelse** beskriver kundens och uppdragets bekräftelseflöde.

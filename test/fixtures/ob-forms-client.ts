@@ -4,7 +4,7 @@ export const inspectionId = '10000000-0000-4000-8000-000000000001'
 export const parts = ['Huvudbyggnad', 'Gästhus med förråd och övernattningsrum'].map((name, index) => ({
   id: `10000000-0000-4000-8000-00000000001${index}`, inspection_id: inspectionId,
   building_id: `10000000-0000-4000-8000-00000000002${index}`, name,
-  category_key: index ? 'guesthouse' : 'main', cover_path: 'synthetic-cover.png', scope_note: null,
+  category_key: index ? 'guesthouse' : 'main', cover_path: new URLSearchParams(location.search).has('no-cover') ? null : 'synthetic-cover.png', scope_note: null,
   sort_order: index, revision: 1, floor_model: { revision: 1, levels: [{ level: 0, name: 'Entréplan' }, { level: 1, name: 'Övre plan' }] },
 }))
 export const overview = { available: true,
@@ -15,7 +15,7 @@ export const overview = { available: true,
 export const inspection: Row = { id: inspectionId, property_id: 'synthetic-property', status: 'ongoing',
   inspection_side: 'seller', locked_at: new URLSearchParams(location.search).has('locked') ? '2026-09-21T10:00:00Z' : null,
   assignment_number: '2026-0921-01', date: '2026-09-21', inspection_time: '09:00', scope: '',
-  cover_path: `${location.origin}/photo.png`, client_name: 'Alex Testsson', attendees: 'Fastighetsägare', attendees_other: '',
+  cover_path: new URLSearchParams(location.search).has('no-cover') ? null : `${location.origin}/photo.png`, client_name: 'Alex Testsson', attendees: 'Fastighetsägare', attendees_other: '',
   defect_disclosures: 'Inga kända fel enligt fastighetsägaren.',
 }
 export const property: Row = { id: 'synthetic-property', address: 'Testgatan 1', postal_code: '123 45', city: 'Teststad',
@@ -46,7 +46,7 @@ const choices: Record<string, string[][]> = {
   'heating-kind': [['pump', 'Värmepump'], ['electric', 'Direktverkande el']],
 }
 export const db: Record<string, Row[]> = {
-  inspections: [inspection], ob_property_snapshot: [], org_members: [],
+  inspections: [inspection], ob_property_snapshot: [], org_members: [], inspection_images: [],
   document_types: [{ id: 'document-type', label: 'Ritningar', scope: 'building', is_active: true, applicable_modules: ['ob'] }],
   inspection_documents: [{ id: 'document', inspection_id: inspectionId, document_type_id: 'document-type', title: 'Ritningar', status: 'present', note: 'Planritning', document_date: null }],
   inspection_disclosures: [{ id: 'disclosure', inspection_id: inspectionId, title: 'upplysningar', note: 'Säljaren förvärvade fastigheten 2010.', source_image_url: null }],
@@ -92,6 +92,8 @@ class Query implements PromiseLike<any> {
   is(key: string, value: unknown) { return this.eq(key, value) }
   in(key: string, values: unknown[]) { this.filters.push(row => values.includes(row[key])); return this }
   order() { return this }
+  range() { return this }
+  or() { return this }
   limit(max: number) { this.max = max; return this }
   single() { this.singleRow = true; return this }
   maybeSingle() { return this.single() }

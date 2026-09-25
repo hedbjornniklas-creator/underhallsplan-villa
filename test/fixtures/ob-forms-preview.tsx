@@ -37,7 +37,7 @@ function App() {
           workspace={!params.has('review')}
           onPropertyUpdated={setProperty} onInspectionUpdated={setInspection} /> : section === sections.length - 1 ?
           <ObStepHandlingar property={propertyData as any} inspection={inspectionData as any} /> :
-          <ObStepForutsattningar key={part.id} inspection={inspectionData as any} property={propertyData as any} />}
+          <ObStepForutsattningar key={part.id} inspection={inspectionData as any} property={propertyData as any} onInspectionUpdated={setInspection} />}
         {menu && <ObStepMenu sections={sections} buildings={parts.map(part => ({ id: part.id, name: part.name }))} activeIndex={section}
           onClose={() => setMenu(false)} onBack={() => { setSection(0); setMenu(false) }}
           onSelect={next => { setSection(sections.indexOf(next)); setMenu(false) }} />}

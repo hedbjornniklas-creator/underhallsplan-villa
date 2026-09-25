@@ -19,6 +19,7 @@ import DebouncedTextarea from './DebouncedTextarea'
 import ObBuildingOverview from './ObBuildingOverview'
 import ObCoverImageBank from './ObCoverImageBank'
 import { useObBuilding } from './ObBuildingContext'
+import { resolveInspectionCoverUrl } from '@/lib/ob/inspectionCoverUrl'
 
 export type ObInspection = Tables<'inspections'>
 
@@ -185,29 +186,6 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
   return `${base}/storage/v1/object/public/property-media/${path}`
 }
 
-function resolveInspectionImageUrl(path: string | null | undefined) {
-  if (!path) return null
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path
-  }
-
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
-  if (!base) return null
-
-  if (path.startsWith('/storage/')) {
-    return `${base}${path}`
-  }
-
-  if (path.startsWith('storage/')) {
-    return `${base}/${path}`
-  }
-
-  if (path.startsWith('/')) {
-    return path
-  }
-
-  return `${base}/storage/v1/object/public/${COVER_IMAGE_BUCKET}/${path}`
-}
 function normalizeInspectionStatus(value: string | null | undefined): string {
   const raw = (value ?? '').trim()
   const normalized = raw.toLowerCase()
@@ -888,7 +866,7 @@ export default function ObStepGrunddata({
           .join(', ')
       : INSPECTOR_CARD.addressLine
   const inspectorAvatarSrc = resolvePublicMediaUrl(inspectorProfile?.avatar_path)
-  const inspectionCoverSrc = resolveInspectionImageUrl(inspForm.cover_path || null)
+  const inspectionCoverSrc = resolveInspectionCoverUrl(inspForm.cover_path, value => supabase.storage.from(COVER_IMAGE_BUCKET).getPublicUrl(value).data.publicUrl)
   const buildingContext = useObBuilding()
 
   const objectSection = (
@@ -976,7 +954,7 @@ export default function ObStepGrunddata({
 
           {workspace && <ObBuildingOverview locked={isInspectionLocked} compact />}
 
-          {!buildingContext?.overview.structure && <div className="space-y-2">
+          {!workspace && !buildingContext?.overview.structure && <div className="space-y-2">
             <div className="ob-form-label">Omslagsbild</div>
             <div
               onDragOver={event => {

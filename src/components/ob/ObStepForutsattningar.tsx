@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ObFormSaveStatus from './ObFormSaveStatus'
-import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, ClipboardList, CloudSun, Droplets, Flame, House, Layers, Plus, Trash2, Wind, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, ChevronRight, ClipboardList, CloudSun, Droplets, Flame, House, Image as ImageIcon, Layers, Plus, Trash2, Wind, type LucideIcon } from 'lucide-react'
 import Sheet from './ObRoundSheet'
 import './ob-forms.css'
 import type { Tables } from '@/types/supabase'
 import DebouncedTextarea from './DebouncedTextarea'
 import { useObFloorModel } from './ObFloorProvider'
 import { useObBuilding, useObBuildingData } from './ObBuildingContext'
-import { buildingDraftScope } from '@/lib/ob/buildingStructure'
+import { buildingCoverPath, buildingDraftScope } from '@/lib/ob/buildingStructure'
 import ObBuildingCover from './ObBuildingCover'
 import { ObFloorEditor } from './ObFloorEditor'
 import { floorModelKeys, modelFloorLabel } from '@/lib/ob/floorModel'
@@ -84,6 +84,7 @@ type ItemBundle = SettingsOverviewItem & {
 }
 
 const SPECIAL_CONDITIONS_COLLAPSE_KEY = '__special_conditions__'
+const BUILDING_COVER_PANEL_KEY = '__building_cover__'
 const YEAR_OPTION_START = 1850
 
 const toErrorLike = (error: unknown): Record<string, unknown> | null => {
@@ -158,9 +159,11 @@ const parseAppliesTo = (item: SettingsOverviewItem): InspectionSide[] | null => 
 
 export default function ObStepForutsattningar({
   inspection,
+  onInspectionUpdated,
 }: {
   property: Property
   inspection: Inspection
+  onInspectionUpdated?: (inspection: Inspection) => void
 }) {
   const building = useObBuilding()
   const { client: supabase } = useObBuildingData()
@@ -184,6 +187,12 @@ export default function ObStepForutsattningar({
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
   const [usePanelLayout] = useState(true)
   const [activePanelKey, setActivePanelKey] = useState<string | null>(null)
+  const [savedCover, setSavedCover] = useState<{ inspectionId: string; path: string | null } | null>(null)
+  const legacyCoverPath = savedCover?.inspectionId === inspection.id ? savedCover.path : inspection.cover_path ?? null
+  const handleCoverUpdated = (saved: Inspection) => {
+    setSavedCover({ inspectionId: saved.id, path: saved.cover_path })
+    onInspectionUpdated?.(saved)
+  }
   const isSpecialConditionsCollapsed = collapsedItemIds.has(SPECIAL_CONDITIONS_COLLAPSE_KEY)
 
   // Ignore stale save responses if the same note is saved again before Supabase responds.
@@ -655,6 +664,12 @@ export default function ObStepForutsattningar({
 
   const panelEntries = [
     {
+      key: BUILDING_COVER_PANEL_KEY,
+      label: 'Byggnadsbild',
+      icon: ImageIcon,
+      item: null as ItemBundle | null,
+    },
+    {
       key: SPECIAL_CONDITIONS_COLLAPSE_KEY,
       label: 'Särskilda förutsättningar',
       icon: ClipboardList,
@@ -700,6 +715,11 @@ export default function ObStepForutsattningar({
   }
 
   const getPanelEntrySummary = (entry: (typeof panelEntries)[number]) => {
+    if (entry.key === BUILDING_COVER_PANEL_KEY) {
+      return buildingCoverPath(
+        building?.part ?? null, building?.overview.structure?.primary_part_id ?? null, legacyCoverPath
+      ) ? 'Bild finns' : 'Ingen bild vald'
+    }
     if (!entry.item) {
       if (furnishing === 'delvis_moblerad') return 'Delvis möblerad'
       if (furnishing === 'omoblerad') return 'Omöblerad'
@@ -1066,7 +1086,9 @@ export default function ObStepForutsattningar({
         </div>}>
         {building?.part && <p className="ob-form-muted">{building.part.name}</p>}
         <div key={panelEntry.key} className="space-y-5">
-          {panelEntry.item ? renderItem(panelEntry.item) : renderSpecialConditionsContent()}
+          {panelEntry.key === BUILDING_COVER_PANEL_KEY ? (
+            <ObBuildingCover inspectionId={inspection.id} legacyPath={legacyCoverPath} locked={isInspectionLocked} embedded onInspectionUpdated={handleCoverUpdated} />
+          ) : panelEntry.item ? renderItem(panelEntry.item) : renderSpecialConditionsContent()}
         </div>
         <ObFormSaveStatus saving={saving} />
       </Sheet>
@@ -1076,8 +1098,6 @@ export default function ObStepForutsattningar({
         <header>
           <h2 className="text-xl font-semibold text-gray-900">Förutsättningar</h2>
         </header>
-        <ObBuildingCover legacyPath={inspection.cover_path ?? null} locked={isInspectionLocked} />
-
         {isInspectionLocked ? (
           <div role="status" className="ob-form-notice">
             Besiktningen är låst. Förutsättningar är skrivskyddade.
@@ -1135,7 +1155,7 @@ export default function ObStepForutsattningar({
       ) : null}
 
       {/* SÄRSKILDA FÖRUTSÄTTNINGAR */}
-      <ObBuildingCover legacyPath={inspection.cover_path ?? null} locked={isInspectionLocked} />
+      <ObBuildingCover inspectionId={inspection.id} legacyPath={legacyCoverPath} locked={isInspectionLocked} onInspectionUpdated={handleCoverUpdated} />
       <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 p-4 md:p-5 space-y-3">
         <header className="flex items-center justify-between gap-3">
           <h3 className="text-base font-semibold text-gray-900">Särskilda förutsättningar</h3>

@@ -41,6 +41,7 @@ export default function Sheet({
       className={`obm-sheet ${className}`.trim()}
       onCancel={(event) => {
         event.preventDefault()
+        event.stopPropagation()
         if (!closeDisabled) onClose()
       }}
     >
