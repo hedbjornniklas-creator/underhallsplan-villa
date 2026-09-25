@@ -1,5 +1,51 @@
 # OB overview release, 2026-09-23
 
+## Database pagination and refresh correction, 2026-09-25
+
+The user requested fixing the slow overview and avoiding fetching every
+inspection as the register grows. This update returns 10 rows by default
+(25/50 selectable), with global search/filter/sort/counts in the database.
+Ordinary pages evaluate authoritative workflow details only for their rows.
+The action-required filter still evaluates all matching candidates for exact
+results. Focus/visibility refreshes are deduplicated for five seconds; manual
+refresh and mutation-triggered refresh remain immediate.
+
+The isolated production candidate starts at `97b2d2a`. Only the overview's
+component, API, loader/model/query parser, migration, tests and documentation
+are included. The working branch's unpublished visual changes are excluded.
+
+Pre-publication verification:
+
+- 44 Node tests passed (39 overview tests plus five early-start API tests),
+  with additional existing module/profile/dashboard assertions passing.
+- SQL integration tests verify 50 workflows return 10 rows and 10 workflow
+  evaluations normally; action-required filtering correctly evaluates all 50.
+  RLS, org/owner boundaries, private fields, reissue/legacy links, paging limits,
+  page clamping, counts and Swedish ordering are covered.
+- Real-component synthetic browser checks passed at 12 viewport widths and
+  seven panel widths, including search debounce, pagination, focus races,
+  error recovery, 200 percent text and existing links.
+- Scoped ESLint and the isolated production `next build --webpack`, including
+  TypeScript and 62 static pages, passed using non-working Supabase values.
+  Turbopack cannot use the external node_modules junction; no app configuration
+  was changed to work around that local limitation.
+- The production SQL was rehearsed in a transaction and rolled back, then
+  installed before the application update. An authenticated-role SQL check
+  returned 10 of 50 rows, 10 distinct rows on page two, one action-required row
+  and page five when requesting beyond the last page. First query durations
+  were 282.9 ms in the rehearsal and 28.3 ms in the warm installation check;
+  these are individual database observations, not whole-page benchmarks.
+- Production function bodies match the reviewed migration (Windows CRLF body
+  MD5: page `616b90889e4841409f3e198fcdbffcde`, flags
+  `694a75816f012ccc336596187854432f`). ACL checks passed: no anon execution,
+  no authenticated execution of the full workflow-state RPC, invoker page
+  function and restricted definer flag helper. No customer records changed.
+
+Application deployment and authenticated browser verification are recorded
+after publication. To roll back, deploy the previous application first, then
+optionally remove only the two new functions as documented in
+`docs/db/2026-09-25_01_ob_overview_pagination.sql`.
+
 ## City column and narrow-window correction, 2026-09-24
 
 Published after the user's explicit approval:

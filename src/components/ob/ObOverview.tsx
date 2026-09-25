@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileCheck2, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import ActionButton from '@/components/ui/ActionButton'
 import PendingLink from '@/components/ui/PendingLink'
-import { selectObOverview, type ObOverviewItem, type OverviewFilter, type OverviewSort } from '@/lib/ob/overview'
+import type { ObOverviewItem, ObOverviewPage, OverviewFilter, OverviewSort } from '@/lib/ob/overview'
 import './ob-overview.css'
 
 export function ObDashboardShortcuts({ children }: { children: ReactNode }) {
@@ -22,6 +22,8 @@ export function ObDashboardShortcuts({ children }: { children: ReactNode }) {
 const filters: { value: OverviewFilter; label: string }[] = [
   { value: 'all', label: 'Alla' }, { value: 'active', label: 'Aktuella' }, { value: 'closed', label: 'Avslutade' },
 ]
+const AUTO_REFRESH_FRESHNESS_MS = 5_000
+type OverviewPage = ObOverviewPage & { filtered: boolean }
 
 function dateLabel(value: string | null) {
   if (!value) return 'Datum saknas'
@@ -83,10 +85,11 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
 }
 
 export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) {
-  const [items, setItems] = useState<ObOverviewItem[] | null>(null)
+  const [result, setResult] = useState<OverviewPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filter, setFilter] = useState<OverviewFilter>('all')
   const [sort, setSort] = useState<OverviewSort>('date-desc')
   const [attentionOnly, setAttentionOnly] = useState(false)
@@ -94,29 +97,49 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
   const [pageSize, setPageSize] = useState(10)
   const [page, setPage] = useState(1)
   const request = useRef<AbortController | null>(null)
+  const lastLoaded = useRef<{ query: string; at: number } | null>(null)
   const heading = useId()
-  const load = useCallback(async () => {
+  useEffect(() => {
+    if (search === debouncedSearch) return
+    const timer = setTimeout(() => { setDebouncedSearch(search); setPage(1) }, 250)
+    return () => clearTimeout(timer)
+  }, [search, debouncedSearch])
+
+  const query = new URLSearchParams({ search: debouncedSearch, filter, sort,
+    attentionOnly: String(attentionOnly), showArchived: String(showArchived), page: String(page), pageSize: String(pageSize) }).toString()
+  const filtered = Boolean(debouncedSearch.trim() || filter !== 'all' || attentionOnly)
+  const load = useCallback(async (automatic = false) => {
+    // Focus and visibilitychange often arrive together. Explicit refreshes still supersede old requests.
+    if (automatic && (request.current || (lastLoaded.current?.query === query && Date.now() - lastLoaded.current.at < AUTO_REFRESH_FRESHNESS_MS))) return
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
     setLoading(true)
     try {
-      const response = await fetch('/api/ob/overview', { signal: controller.signal, cache: 'no-store' })
+      const response = await fetch(`/api/ob/overview?${query}`, { signal: controller.signal, cache: 'no-store' })
       const payload = await response.json()
-      if (!response.ok || !Array.isArray(payload.items)) throw new Error(payload.error || 'Uppdragslistan kunde inte hämtas.')
+      if (!response.ok || !Array.isArray(payload.items) || !Number.isInteger(payload.total) || payload.total < 0 ||
+        !payload.counts || !filters.every(({ value }) => Number.isInteger(payload.counts[value]) && payload.counts[value] >= 0) ||
+        !Number.isInteger(payload.page) || payload.page < 1 || ![10, 25, 50].includes(payload.pageSize)) {
+        throw new Error(payload.error || 'Uppdragslistan kunde inte hämtas.')
+      }
       if (controller.signal.aborted) return
-      setItems(payload.items)
+      setResult({ ...payload, filtered })
+      lastLoaded.current = { query, at: Date.now() }
       setError(null)
     } catch (caught) {
       if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Uppdragslistan kunde inte hämtas.')
     } finally {
-      if (!controller.signal.aborted) setLoading(false)
+      if (request.current === controller) {
+        request.current = null
+        if (!controller.signal.aborted) setLoading(false)
+      }
     }
-  }, [])
+  }, [query, filtered])
 
   useEffect(() => {
     void load()
-    const visible = () => { if (document.visibilityState === 'visible') void load() }
+    const visible = () => { if (document.visibilityState === 'visible') void load(true) }
     window.addEventListener('focus', visible)
     document.addEventListener('visibilitychange', visible)
     return () => {
@@ -126,14 +149,15 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
     }
   }, [load, refreshKey])
 
-  const selection = { search, filter, sort, attentionOnly, showArchived }
-  const filtered = selectObOverview(items ?? [], selection)
-  const pages = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const currentPage = Math.min(page, pages)
-  const start = (currentPage - 1) * pageSize
-  const rows = filtered.slice(start, start + pageSize)
+  // Rows, totals and the displayed page always come from the same successful response.
+  const rows = result?.items ?? []
+  const total = result?.total ?? 0
+  const currentPage = result?.page ?? 1
+  const loadedPageSize = result?.pageSize ?? pageSize
+  const pages = Math.max(1, Math.ceil(total / loadedPageSize))
+  const start = (currentPage - 1) * loadedPageSize
   function changeFilter(value: OverviewFilter) { setFilter(value); setPage(1) }
-  function resetFilters() { setSearch(''); setFilter('all'); setAttentionOnly(false); setPage(1) }
+  function resetFilters() { setSearch(''); setDebouncedSearch(''); setFilter('all'); setAttentionOnly(false); setPage(1) }
 
   return <section className="obo" aria-labelledby={heading} aria-busy={loading}>
     <div className="obo-heading">
@@ -149,10 +173,10 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
       <div className="obo-toolbar">
         <div className="obo-search">
           <Search size={20} aria-hidden="true" />
-          <input type="search" aria-label="Sök uppdrag" title="Sök adress, kund eller uppdragsnummer" placeholder="Sök uppdrag"
-            value={search} onChange={event => { setSearch(event.target.value); setPage(1) }} />
+          <input type="search" aria-label="Sök uppdrag" title="Sök adress, kund eller uppdragsnummer" placeholder="Sök uppdrag" maxLength={200}
+            value={search} onChange={event => setSearch(event.target.value.slice(0, 200))} />
           {search && <button type="button" className="obo-icon" aria-label="Rensa sökning" title="Rensa sökning"
-            onClick={() => { setSearch(''); setPage(1) }}><X size={18} aria-hidden="true" /></button>}
+            onClick={() => { setSearch(''); setDebouncedSearch(''); setPage(1) }}><X size={18} aria-hidden="true" /></button>}
         </div>
         <label className="obo-sort"><span>Sortering</span>
           <select value={sort} onChange={event => { setSort(event.target.value as OverviewSort); setPage(1) }}>
@@ -169,7 +193,7 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
       <div className="obo-filters">
         <div className="obo-filter-buttons" role="group" aria-label="Filtrera uppdrag">
           {filters.map(option => <button type="button" key={option.value} aria-pressed={filter === option.value}
-            onClick={() => changeFilter(option.value)}>{option.label}<span>{selectObOverview(items ?? [], { ...selection, filter: option.value }).length}</span></button>)}
+            onClick={() => changeFilter(option.value)}>{option.label}<span>{result?.counts[option.value] ?? 0}</span></button>)}
         </div>
         <label className="obo-filter-select"><span>Visa</span>
           <select value={filter} onChange={event => changeFilter(event.target.value as OverviewFilter)}>
@@ -181,12 +205,13 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
         <label className="obo-check"><input type="checkbox" checked={showArchived}
           onChange={event => { setShowArchived(event.target.checked); setPage(1) }} />Visa arkiverade</label>
       </div>
-      {error && <div className="obo-error" role="alert"><p>{error}{items ? ' Listan nedan visar senast hämtade uppgifter.' : ''}</p>
+      {error && <div className="obo-error" role="alert"><p>{error}{result ? ' Listan nedan visar senast hämtade uppgifter.' : ''}</p>
         <ActionButton className="obo-retry" tone="secondary" onClick={() => void load()} busy={loading} busyLabel="Hämtar…">Försök igen</ActionButton></div>}
-      {items === null && !error ? <p className="obo-empty" role="status">Hämtar uppdrag…</p> : null}
-      {items !== null && rows.length === 0 ? <div className="obo-empty" role="status">
-        <p>{items.length === 0 ? 'Inga ÖB-uppdrag ännu.' : 'Inga uppdrag matchar dina val.'}</p>
-        {items.length > 0 && <button type="button" onClick={resetFilters}>Rensa filter</button>}
+      {result === null && !error ? <p className="obo-empty" role="status">Hämtar uppdrag…</p> : null}
+      {result !== null && loading ? <p className="obo-empty" role="status">Uppdaterar uppdragslistan… Senast hämtade uppgifter visas tills hämtningen är klar.</p> : null}
+      {result !== null && rows.length === 0 && !loading ? <div className="obo-empty" role="status">
+        <p>{result.filtered ? 'Inga uppdrag matchar dina val.' : 'Inga ÖB-uppdrag ännu.'}</p>
+        {result.filtered && <button type="button" onClick={resetFilters}>Rensa filter</button>}
       </div> : null}
       {rows.length > 0 && <table className="obo-table">
         <caption className="obo-sr">ÖB-uppdrag med separata statusar för uppdragsbekräftelse och besiktning</caption>
@@ -195,13 +220,13 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
           <th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead>
         <tbody>{rows.map(item => <OverviewRow key={item.id} item={item} />)}</tbody>
       </table>}
-      {items !== null && <div className="obo-pagination">
-        <span role="status" aria-live="polite">{filtered.length ? `${start + 1}–${start + rows.length} av ${filtered.length} uppdrag` : '0 uppdrag'}</span>
+      {result !== null && <div className="obo-pagination">
+        <span role="status" aria-live="polite">{total ? `${start + 1}–${start + rows.length} av ${total} uppdrag` : '0 uppdrag'}</span>
         <nav aria-label="Sidbläddring uppdrag">
-          <button type="button" className="obo-icon" aria-label="Föregående sida" title="Föregående sida" disabled={currentPage === 1}
+          <button type="button" className="obo-icon" aria-label="Föregående sida" title="Föregående sida" disabled={loading || Boolean(error) || currentPage === 1}
             onClick={() => setPage(currentPage - 1)}><ChevronLeft size={20} aria-hidden="true" /></button>
           <span>{currentPage} / {pages}</span>
-          <button type="button" className="obo-icon" aria-label="Nästa sida" title="Nästa sida" disabled={currentPage >= pages}
+          <button type="button" className="obo-icon" aria-label="Nästa sida" title="Nästa sida" disabled={loading || Boolean(error) || currentPage >= pages}
             onClick={() => setPage(currentPage + 1)}><ChevronRight size={20} aria-hidden="true" /></button>
         </nav>
       </div>}
