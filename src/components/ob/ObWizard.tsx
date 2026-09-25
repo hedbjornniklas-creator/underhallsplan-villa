@@ -13,6 +13,7 @@ import ObStepGranska from './ObStepGranska'
 import type { Tables } from '@/types/supabase'
 import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
+import { obPublishedReportHref } from '@/lib/ob/publishedReportLink'
 
 type DbInspection = Tables<'inspections'>
 type DbProperty = Tables<'properties'>
@@ -107,6 +108,7 @@ type ReportDeliveryLogEntry = {
 }
 
 type ReportDeliveryMeta = {
+  digitalReportUrl?: string | null
   inspectionId: string
   inspectionStatus: string
   canSend: boolean
@@ -287,6 +289,10 @@ function ObWizardContent({
       deliveryMeta?.hasStoredPdf &&
       deliveryMeta.pdfStatus === 'ready'
   )
+  const visibleDeliveryLog = deliveryMeta?.activityLog.slice(0, 20) ?? []
+  const pdfDownloadLogId = visibleDeliveryLog.find(
+    (entry) => entry.type === 'report_sent' && entry.download_url
+  )?.id
   const deliveryActionDisabled =
     !hasValidIds ||
     !inspectionId ||
@@ -473,6 +479,7 @@ function ObWizardContent({
           ordererEmail: okPayload.ordererEmail,
           history: okPayload.history ?? [],
           activityLog: okPayload.activityLog ?? prev?.activityLog ?? [],
+          digitalReportUrl: okPayload.linkId ? obPublishedReportHref(inspectionId, okPayload.linkId) : prev?.digitalReportUrl ?? null,
       }))
       if (action !== 'complete_only') {
         setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
@@ -621,16 +628,16 @@ function ObWizardContent({
 
             {hasValidIds ? (
               <div className="space-y-4">
-                <Link
-                  href={reportHref}
+                {deliveryMeta?.digitalReportUrl ? <Link
+                  href={deliveryMeta.digitalReportUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex min-h-11 items-center gap-2 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                 >
                   <ExternalLink size={18} aria-hidden="true" />
-                  Öppna digitalt utlåtande
+                  Öppna kundens digitala utlåtande
                   <span className="sr-only"> (öppnas i ny flik)</span>
-                </Link>
+                </Link> : deliveryMeta && !deliveryMetaLoading && !deliveryMetaError ? <p className="text-sm text-gray-600">Inget publicerat digitalt utlåtande ännu.</p> : null}
                 <aside className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">
@@ -785,7 +792,7 @@ function ObWizardContent({
                                 ? 'Misslyckades'
                                 : 'Väntar på generering'}
                         </div>
-                        {canDownloadGeneratedPdf && reportPdfDownloadHref ? (
+                        {!pdfDownloadLogId && canDownloadGeneratedPdf && reportPdfDownloadHref ? (
                           <a
                             href={reportPdfDownloadHref}
                             target="_blank"
@@ -814,11 +821,11 @@ function ObWizardContent({
                     </div>
                   ) : null}
 
-                  {deliveryMeta?.activityLog?.length ? (
+                  {visibleDeliveryLog.length ? (
                     <div className="rounded-md border border-gray-200 bg-white p-2">
                       <div className="mb-1 text-xs font-semibold text-gray-800">Logg</div>
                       <ul className="space-y-1 text-xs text-gray-700">
-                        {deliveryMeta.activityLog.slice(0, 20).map((entry) => (
+                        {visibleDeliveryLog.map((entry) => (
                           <li key={entry.id} className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{entry.title}</span>
                             {entry.subtitle ? (
@@ -827,7 +834,7 @@ function ObWizardContent({
                             <span className="text-gray-500">
                               {new Date(entry.occurred_at).toLocaleString('sv-SE')}
                             </span>
-                            {entry.download_url ? (
+                            {entry.id === pdfDownloadLogId && entry.download_url ? (
                               <a
                                 href={entry.download_url}
                                 target="_blank"
@@ -906,6 +913,7 @@ function ObWizardContent({
     case 'grunddata':
       return (
         <ObStepGrunddata
+          workspace
           property={normalizedProperty}
           inspection={normalizedInspection}
           onPropertyUpdated={onPropertyUpdated}

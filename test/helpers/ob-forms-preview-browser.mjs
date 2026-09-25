@@ -30,7 +30,9 @@ export async function testFormsPreview(base, output) {
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.ob-form-root, .obm-sheet-body, .ob-form-pair, .ob-form-field')]
       .filter(node => node.checkVisibility() && node.scrollWidth > node.clientWidth + 1).map(node => node.className)), [], `${label}: panel overflow`)
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.ob-form-root button, .ob-form-root select, .ob-form-root input:not([type=checkbox], [type=radio], [type=file])')]
-      .filter(node => node.checkVisibility() && node.getBoundingClientRect().height < 48).map(node => node.outerHTML)), [], `${label}: touch target`)
+      .filter(node => node.checkVisibility() && node.getBoundingClientRect().height <
+        (node.closest('.ob-property-workspace') && matchMedia('(min-width: 768px) and (pointer: fine)').matches ? 44 : 48))
+      .map(node => node.outerHTML)), [], `${label}: touch target`)
     assert.equal(await page.$eval('.ob-form-root', node => getComputedStyle(node).fontFamily.includes('Manrope')), true)
   }
   async function fill(label, value, waitForSave = true) {
@@ -50,11 +52,16 @@ export async function testFormsPreview(base, output) {
     if (waitForSave) await page.waitForFunction(() => ![...document.querySelectorAll('[role=status]')].some(node => node.textContent.startsWith('Sparar')))
   }
   try {
-    for (const width of [320, 390, 768, 1280]) {
+    for (const width of [320, 390, 768, 1024, 1280, 1440, 1920]) {
       await page.setViewport({ width, height: 844 })
       await page.goto(`${base}/round`, { waitUntil: 'networkidle0' })
       await page.waitForSelector('.ob-form-columns')
       await layout(`property ${width}`)
+      assert.equal(await page.$eval('.ob-property-object [aria-label="Byggnader"]', node => node.classList.contains('ob-building-overview-compact')), true)
+      assert.equal(await page.$$eval('.ob-form-section > h2', nodes => nodes.some(node => node.textContent === 'Besiktningsman')), false)
+      assert.equal(await page.$eval('.ob-form-columns', node => getComputedStyle(node).gridTemplateColumns.split(' ').length), width >= 1280 ? 3 : width >= 768 ? 2 : 1)
+      assert.equal(await page.$eval('.ob-property-object input', node => parseFloat(getComputedStyle(node).fontSize)), width >= 768 ? 14 : 16)
+      assert.equal(await page.evaluate(() => window.__obFormTest.reads.includes('profiles')), false, 'Workspace does not fetch the hidden inspector card')
       await page.screenshot({ path: resolve(output, `property-${width}.png`), fullPage: true })
       assert.equal(await page.evaluate(() => window.__obFormTest.writes.length), 0, 'Rendering must not change the inspection')
       await openConditions()
@@ -78,6 +85,46 @@ export async function testFormsPreview(base, output) {
       assert.equal((await page.$$('dialog textarea')).length, 2, 'Separate floor fields')
       await layout(`floors ${width}`)
     }
+
+    await page.goto(`${base}/round`, { waitUntil: 'networkidle0' })
+    await page.click('.ob-building-overview-compact [aria-label="Lägg till byggnad"]')
+    await page.waitForSelector('dialog[aria-label="Lägg till byggnad"]')
+    await layout('add building')
+    await page.keyboard.press('Escape')
+    await page.click('.ob-building-overview-compact [aria-label="Ändra Huvudbyggnad"]')
+    await page.waitForSelector('dialog[aria-label="Ändra byggnad"] input')
+    await page.click('dialog input')
+    await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control')
+    await page.type('dialog input', 'Huvudbyggnad testnamn')
+    await click('Spara', 'dialog footer button')
+    await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+    await page.waitForSelector('[aria-label="Ändra Huvudbyggnad testnamn"]')
+    await page.click('[aria-label="Ändra Huvudbyggnad testnamn"]')
+    await page.click('dialog input')
+    await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control')
+    await page.type('dialog input', 'Huvudbyggnad')
+    await click('Spara', 'dialog footer button')
+    await page.waitForFunction(() => !document.querySelector('dialog[open]'))
+    await page.click('.ob-building-overview-compact button[title="Ta bort byggnad"]')
+    await page.waitForSelector('dialog[aria-label="Ta bort byggnad"]')
+    await page.keyboard.press('Escape')
+    assert.equal(await page.$$eval('.ob-building-overview-compact > ul > li', nodes => nodes.length), 2)
+
+    await page.goto(`${base}/round?review`, { waitUntil: 'networkidle0' })
+    await page.waitForFunction(() => document.body.textContent.includes('Kim Besiktningsman'))
+    assert.equal(await page.$$eval('.ob-form-section > h2', nodes => nodes.some(node => node.textContent === 'Besiktningsman')), true, 'Review retains the inspector card')
+    assert.equal(await page.evaluate(() => window.__obFormTest.writes.length), 0)
+
+    await page.goto(`${base}/round`, { waitUntil: 'networkidle0' })
+    await click('Lägenhetsbesiktning', '.ob-form-choice')
+    await page.waitForFunction(() => [...document.querySelectorAll('.ob-form-field label')].some(node => node.textContent === 'Bostadsrättsförening'))
+    assert.equal(await page.$$eval('.ob-form-field label', nodes => nodes.some(node => node.textContent === 'Fastighetsbeteckning')), false)
+    await fill('Bostadsrättsförening', 'Testföreningen')
+    await page.waitForFunction(() => window.__obFormTest.writes.some(row => row.table === 'ob_property_snapshot' && row.values.brf_name === 'Testföreningen'))
+    await click('Köparbesiktning', '.ob-form-choice')
+    await page.waitForFunction(() => [...document.querySelectorAll('.ob-form-field label')].some(node => node.textContent === 'Fastighetsbeteckning'))
+    assert.equal(await page.$$eval('.ob-form-field label', nodes => nodes.some(node => node.textContent === 'Bostadsrättsförening')), false)
+    assert.equal(await page.evaluate(() => window.__obFormTest.writes.some(row => row.table === 'profiles')), false)
 
     await page.goto(`${base}/round`, { waitUntil: 'networkidle0' })
     await page.evaluate(() => { window.__obFormTest.saveDelay = 500 })
@@ -136,6 +183,7 @@ export async function testFormsPreview(base, output) {
     await page.goto(`${base}/round?locked`, { waitUntil: 'networkidle0' })
     await layout('locked property')
     assert.equal(await page.$$eval('.ob-form-root input', nodes => nodes.every(node => node.disabled)), true)
+    assert.equal(await page.$$eval('.ob-building-overview-compact button', nodes => nodes.every(node => node.disabled)), true)
     await openConditions()
     await click('Väder', '.ob-form-list-row')
     assert.equal(await page.$$eval('dialog select, dialog textarea', nodes => nodes.every(node => node.disabled)), true)
@@ -156,9 +204,14 @@ export async function testFormsPreview(base, output) {
       }
       await page.screenshot({ path: resolve(output, `large-text-${section ? 'detail' : 'property'}.png`), fullPage: !section })
     }
+    await page.setViewport({ width: 1280, height: 900 })
+    await page.goto(`${base}/round?large-text`, { waitUntil: 'networkidle0' })
+    await layout('desktop 200% property')
+    assert.equal(await page.$eval('.ob-form-columns', node => getComputedStyle(node).gridTemplateColumns.split(' ').length), 1)
+    await page.screenshot({ path: resolve(output, 'large-text-property-desktop.png'), fullPage: true })
     assert.deepEqual(external, [], 'Preview must not contact external systems')
     assert.deepEqual(errors, [], 'Browser runtime errors')
-    console.log('PASS: OB forms layout, 48px controls, 200% text, scoped writes, back/focus, locks and legacy cover')
+    console.log('PASS: OB workspace columns, compact buildings, preserved inspector review, 44/48px controls, 200% text, scoped writes, back/focus, locks and legacy cover')
   } catch (error) {
     console.log('Failure context:', JSON.stringify(await page.evaluate(() => ({ writes: window.__obFormTest?.writes, alerts: [...document.querySelectorAll('[role=alert]')].map(node => node.textContent) }))))
     await page.screenshot({ path: resolve(output, 'failure.png') })

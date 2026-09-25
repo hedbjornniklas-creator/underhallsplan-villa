@@ -5,6 +5,7 @@ import { Camera, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useObBuilding } from './ObBuildingContext'
 import { buildingCoverPath, requestBuildingCommand } from '@/lib/ob/buildingStructure'
+import ObCoverImageBank from './ObCoverImageBank'
 
 export default function ObBuildingCover({ legacyPath, locked }: { legacyPath: string | null; locked: boolean }) {
   const context = useObBuilding()
@@ -18,15 +19,15 @@ export default function ObBuildingCover({ legacyPath, locked }: { legacyPath: st
   const src = path ? /^https?:\/\//.test(path) ? path : supabase.storage.from('inspection-images').getPublicUrl(path).data.publicUrl : null
   const buttonClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 text-sm text-blue-700 hover:bg-blue-50 disabled:opacity-50'
   const save = async (file?: File) => {
-    if (busy || locked || !context.part) return
+    if (busy || locked || !context.part) return false
     if (file) {
-      if (!file.type.startsWith('image/')) { setError('Välj en bildfil.'); return }
+      if (!file.type.startsWith('image/')) { setError('Välj en bildfil.'); return false }
       const ext = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
       pending.current = { file, partId: context.part.id, revision: context.part.revision, requestId: crypto.randomUUID(),
         path: `${context.inspectionId}/building-covers/${context.part.id}/${crypto.randomUUID()}.${ext}` }
     }
     const selected = pending.current
-    if (!selected) return
+    if (!selected) return false
     setBusy(true); setError(null)
     try {
       const { error: uploadError } = await supabase.storage.from('inspection-images').upload(selected.path, selected.file, { upsert: true, cacheControl: '3600' })
@@ -34,7 +35,8 @@ export default function ObBuildingCover({ legacyPath, locked }: { legacyPath: st
       await requestBuildingCommand(context.inspectionId, 'edit', { partId: selected.partId, revision: selected.revision, coverPath: selected.path, requestId: selected.requestId })
       pending.current = null
       await context.reload()
-    } catch (e) { setError(e instanceof Error ? e.message : 'Byggnadsbilden kunde inte sparas.') }
+      return true
+    } catch (e) { setError(e instanceof Error ? e.message : 'Byggnadsbilden kunde inte sparas.'); return false }
     finally { setBusy(false) }
   }
   return <section aria-label="Byggnadsbild" className="border-y border-gray-200 py-4">
@@ -43,6 +45,8 @@ export default function ObBuildingCover({ legacyPath, locked }: { legacyPath: st
     <div className="flex flex-wrap gap-2">
       <button type="button" className={buttonClass} disabled={busy || locked} onClick={() => camera.current?.click()}><Camera size={20} />Ta bild</button>
       <button type="button" className={buttonClass} disabled={busy || locked} onClick={() => library.current?.click()}><ImageIcon size={20} />Välj bild</button>
+      <ObCoverImageBank key={context.part.id} inspectionId={context.inspectionId} partId={context.part.id}
+        disabled={busy || locked} buttonClass={buttonClass} onSelect={save} />
       {error && pending.current && <button type="button" className={buttonClass} disabled={busy || locked} onClick={() => void save()}><RefreshCw size={18} />Försök igen</button>}
     </div>
     <input ref={camera} type="file" accept="image/*" capture="environment" hidden disabled={busy || locked} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void save(f) }} />

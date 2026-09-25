@@ -799,7 +799,7 @@ export default function InspectionDetailPage() {
                 [&_select]:text-gray-900
                 [&_select]:border-gray-300`}
             >
-              <ObLocalDraftStatus key={`drafts:${inspection.id}`} inspectionId={inspection.id} />
+              <ObLocalDraftStatus key={`drafts:${inspection.id}`} inspectionId={inspection.id} compact={activeSection === 'grunddata'} />
               <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={!isRoundSection}>
               {buildingError ? <div role="alert" className="p-4 text-red-700">{buildingError}
                 <button type="button" className="ml-3 underline" onClick={() => void reloadBuildings().catch(error => setBuildingError(error.message))}>Försök igen</button>

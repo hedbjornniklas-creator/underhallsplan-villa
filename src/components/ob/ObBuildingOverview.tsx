@@ -12,7 +12,7 @@ import ObBuildingPurposePicker from './ObBuildingPurposePicker'
 import './mobile-round.css'
 
 type Dialog = { mode: 'activate' | 'add' | 'edit' | 'remove'; part?: ObBuildingPart }
-export default function ObBuildingOverview({ locked }: { locked: boolean }) {
+export default function ObBuildingOverview({ locked, compact = false }: { locked: boolean; compact?: boolean }) {
   const context = useObBuilding()
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [name, setName] = useState('')
@@ -52,12 +52,15 @@ export default function ObBuildingOverview({ locked }: { locked: boolean }) {
     finally { setBusy(false) }
   }
   const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm text-blue-700 disabled:opacity-50'
-  return <section aria-label="Byggnader" className="border-y border-gray-200 bg-white py-4 text-gray-900">
+  const Heading = compact ? 'h3' : 'h2'
+  const addLabel = overview.structure ? 'Lägg till byggnad' : 'Välj huvudbyggnad'
+  return <section aria-label="Byggnader" className={compact ? 'ob-building-overview-compact' : 'border-y border-gray-200 bg-white py-4 text-gray-900'}>
     <header className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-lg font-semibold text-gray-900">Byggnader <span className="ml-2 text-sm font-normal text-gray-500">{overview.parts.length || 1}</span></h2>
+      <Heading className="text-lg font-semibold text-gray-900">Byggnader <span className="ml-2 text-sm font-normal text-gray-500">{overview.parts.length || 1}</span></Heading>
       <button type="button" disabled={locked || !overview.available} className={button}
+        aria-label={addLabel} title={addLabel}
         onClick={() => open({ mode: overview.structure ? 'add' : 'activate' })}>
-        <Plus size={18} />{overview.structure ? 'Lägg till byggnad' : 'Välj huvudbyggnad'}
+        <Plus size={18} />{!compact && addLabel}
       </button>
     </header>
     <ul className="mt-3 divide-y divide-gray-200">

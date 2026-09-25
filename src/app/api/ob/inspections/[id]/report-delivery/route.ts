@@ -13,6 +13,7 @@ import {
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
+import { getLatestObPublishedReportId, obPublishedReportHref } from '@/lib/ob/publishedReport'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -737,6 +738,7 @@ export async function GET(
     const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
     const inspectionStatus = normalizeInspectionStatus(inspection.status)
     const pdfState = await getReportPdfState(admin, id)
+    const publishedReportId = await getLatestObPublishedReportId(admin, id, org.orgId)
     const activityLog = await buildDeliveryActivityLog({
       admin,
       orgId: org.orgId,
@@ -748,6 +750,7 @@ export async function GET(
       inspectionId: id,
       inspectionStatus,
       canSend: inspectionStatus !== 'archived' && workflow?.canDeliver !== false,
+      digitalReportUrl: obPublishedReportHref(id, publishedReportId),
       reason:
         inspectionStatus === 'archived'
           ? 'Arkiverad besiktning kan inte skickas.'
@@ -869,6 +872,7 @@ export async function POST(
         inspectionId: id,
         inspectionStatus,
         canSend: inspectionStatus !== 'archived',
+        digitalReportUrl: obPublishedReportHref(id, await getLatestObPublishedReportId(admin, id, org.orgId)),
         reason: null,
         defaultRecipientEmail: fallbackOrdererEmail,
         ordererEmail: fallbackOrdererEmail,
