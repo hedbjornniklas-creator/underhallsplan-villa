@@ -101,7 +101,7 @@ do not replace physical-device, production-database and report acceptance.
 
 ## Stable Catalog Selection (2026-09-25)
 
-Implemented locally; not yet published. Adding an outcome no longer boosts its
+Published on 2026-09-25. Adding an outcome no longer boosts its
 control point in search results or category order. Ranking uses query match,
 room type/exterior key, catalogue order and a deterministic ID tie-breaker.
 Saved notes still make their control point available under Denna plats, but do
@@ -119,6 +119,23 @@ control points whose sort order previously promoted them after selection.
 Coverage includes desktop/mobile, interior/exterior, both library scopes,
 main/extra building contexts, repeated adds, edit/back, slow/failing saves,
 locks, scroll/focus and category order.
+
+Release verification:
+
+- Source commit: `d012822`; production commit:
+  `8132f0c352361de67a1c60eb87886c9c5fd61fc0`, based on `99ce38d`.
+- Isolated production checkout: 11 targeted tests, the search-order browser
+  suite (16 desktop/mobile, scope, area and building combinations plus failure,
+  lock and group-order checks), and `next build --webpack` passed. Build used
+  placeholder Supabase configuration, not production credentials.
+- The broader `--core-only` round browser suite and TypeScript check passed in
+  the source workspace before release. Targeted ESLint reported no errors and
+  four existing image warnings. Mobile and desktop captures were inspected.
+- Vercel reported success for `dpl_7FFR3eSfdwJraeJoCjV1UCYWwMuj`. Fresh
+  hushub.se login HTML returned HTTP 200 and the same deployment identifier.
+  This verifies deployment, not authenticated production interactions; all
+  interaction tests used synthetic records. No customer data or mail changed.
+- Unrelated assignment-confirmation work was excluded from the release.
 
 ## Not Included Yet
 
