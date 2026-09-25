@@ -172,7 +172,10 @@ export const buildInteriorFloorKeysFromOverview = (
     keys.push(`plan${floor}`)
   }
 
-  if (atticVal !== null && atticVal !== undefined && String(atticVal).trim() !== '') {
+  if (
+    atticVal !== null && atticVal !== undefined && String(atticVal).trim() !== '' &&
+    !['ingen', 'oppettillnock'].includes(compactToken(atticVal))
+  ) {
     keys.push('vind')
   }
 
