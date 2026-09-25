@@ -123,7 +123,13 @@ but the wizard no longer mounts them. There is no database migration.
 
 Verification: navigation/alias tests and
 `node scripts/test-ob-mobile-round-ui.mjs --legacy-notes-only` (synthetic data).
-This change is not yet published.
+Published on 2026-09-25 in production commit `1100fce` (source `aec68f4`).
+The delivery step also links to the existing authenticated digital report in a
+new tab; opening it does not create a delivery or change a historical report.
+Verification: 13 targeted tests, legacy-note browser tests at 320/390/1280px,
+and the production build passed. ESLint reported no errors (two image warnings).
+Vercel deployment `dpl_HwsaA7Y6FofjBLrTnWNEh12Aba5r` was verified on hushub.se.
+No SQL, floor conversion, or production inspection data edits were performed.
 
 - Replacing the control-point data model or changing how "nothing to note"
   records contribute to existing counts. The user explicitly chose to leave
