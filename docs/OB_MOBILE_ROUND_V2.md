@@ -99,6 +99,27 @@ do not replace physical-device, production-database and report acceptance.
   guards, stale preflight checks and idempotency receipts. Local pending text
   drafts and uploads block these actions; editor actions flush text first.
 
+## Stable Catalog Selection (2026-09-25)
+
+Implemented locally; not yet published. Adding an outcome no longer boosts its
+control point in search results or category order. Ranking uses query match,
+room type/exterior key, catalogue order and a deterministic ID tie-breaker.
+Saved notes still make their control point available under Denna plats, but do
+not affect ranking in either scope. The query and selected scope stay intact.
+
+Adding stays in the list and changes the plus to a check. Clicking the text or
+check of an already added result opens its saved note directly. Closing the
+editor retains the search, list position and opener focus. Busy adds cannot
+be duplicated; locked inspections remain non-editable. No SQL, content
+migration or historical-report changes are required.
+
+Regression command: `node scripts/test-ob-mobile-round-ui.mjs --search-order-only`.
+The real component runs against synthetic multi-point data, including unrelated
+control points whose sort order previously promoted them after selection.
+Coverage includes desktop/mobile, interior/exterior, both library scopes,
+main/extra building contexts, repeated adds, edit/back, slow/failing saves,
+locks, scroll/focus and category order.
+
 ## Not Included Yet
 
 ### Inside/Outside Editor Retirement Decision (2026-09-25)

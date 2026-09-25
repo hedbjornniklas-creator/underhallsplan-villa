@@ -21,6 +21,7 @@ import { testDraftFeedback } from '../test/helpers/ob-draft-feedback-browser.mjs
 import { testImageTrash } from '../test/helpers/ob-image-trash-browser.mjs'
 import { testLegacyNotes } from '../test/helpers/ob-legacy-notes-browser.mjs'
 import { testCoverBank } from '../test/helpers/ob-cover-bank-browser.mjs'
+import { testSearchOrder } from '../test/helpers/ob-search-order-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
@@ -118,7 +119,11 @@ if (serve) {
       else { external.push(request.url()); void request.abort() }
     })
     await page.setViewport({ width: 390, height: 844 })
-    if (process.argv.includes('--cover-bank-only')) {
+    if (process.argv.includes('--search-order-only')) {
+      await testSearchOrder(page, base, output)
+      assert.deepEqual(errors, [])
+      assert.deepEqual(external, [])
+    } else if (process.argv.includes('--cover-bank-only')) {
       await testCoverBank(page, base, output)
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
@@ -135,6 +140,7 @@ if (serve) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
     } else {
+    if (!process.argv.some(arg => arg.endsWith('-only'))) await testSearchOrder(page, base, output)
     if (!process.argv.includes('--core-only')) {
     await page.goto(`${base}/buildings`)
     await page.waitForSelector('section[aria-label="Byggnader"]')
