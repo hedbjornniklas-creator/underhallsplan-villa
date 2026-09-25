@@ -721,6 +721,7 @@ function MobileRound(p: Props) {
                 outcome.note_template,
                 outcome.risk_template,
                 outcome.ftu_template,
+                JSON.stringify(outcome.tags),
                 point.title,
                 point.label,
                 point.key,
