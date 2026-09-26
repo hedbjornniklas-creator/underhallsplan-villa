@@ -336,6 +336,38 @@ test('activation preserves identities, text, files, floors and old cover, with i
   for(const name of ['Gaststuga','Verkstad']) await command(f.i.id,'add',{name,categoryKey:'complement',buildingId:null})
   assert.equal((await overview(f.i.id)).parts.length,4)
 })
+test('garage floor edits preserve main building, existing data and frozen reports, rejecting stale or occupied-level removal',async()=>{
+  const f = await fixture()
+  const main = (await activate(f.i.id)).parts[0]
+  const garage = (await command(f.i.id,'add',{name:'Garage',categoryKey:'garage',buildingId:null})).parts.find((part:any)=>part.id!==main.id)
+  const room = await row(f.i.id,garage.id,'inspection_interior_rooms',{floor_label:'plan0',room_label:'Garage'})
+  const note = await row(f.i.id,garage.id,'inspection_control_items',{interior_room_id:room.id,title:'Test',note:'Bevara'})
+  const image = await row(f.i.id,garage.id,'inspection_images',{interior_room_id:room.id,control_item_id:note.id,origin_floor_label:'plan0'})
+  const report = await one('insert into inspection_report_links(inspection_id,snapshot_payload) values($1,$2) returning *',[f.i.id,{reportData:{obBuildingRevision:(await overview(f.i.id)).structure.revision,buildings:[main,garage]}}])
+  const tables = ['inspection_interior_rooms','inspection_control_items','inspection_images','inspection_overview_selections','inspection_report_links']
+  const snapshot = async () => {
+    const data: Record<string,unknown> = {}
+    for (const table of tables) data[table] = (await db.query(`select * from ${table} where inspection_id=$1 order by id`,[f.i.id])).rows
+    return data
+  }
+  const before = await snapshot()
+  const levels = [{level:0,name:'Entreplan'},{level:-1,name:'Suterrang'}]
+  const saved = await command(f.i.id,'floors',{partId:garage.id,revision:garage.floor_model.revision,levels})
+  const model = saved.parts.find((part:any)=>part.id===garage.id).floor_model
+  assert.deepEqual(model.levels,levels)
+  assert.equal(model.revision,garage.floor_model.revision+1)
+  assert.deepEqual(saved.parts.find((part:any)=>part.id===main.id),main)
+  assert.deepEqual(await snapshot(),before)
+  assert.deepEqual(await one('select * from inspection_report_links where id=$1',[report.id]),report)
+  await assert.rejects(command(f.i.id,'floors',{partId:garage.id,revision:garage.floor_model.revision,levels}),/OB_ROUND_STALE/)
+  await assert.rejects(command(f.i.id,'floors',{partId:main.id,revision:1,levels}),/OB_FLOOR_LEGACY/)
+  await row(f.i.id,garage.id,'inspection_interior_rooms',{floor_label:'plan-1',room_label:'Underplan'})
+  await assert.rejects(command(f.i.id,'floors',{partId:garage.id,revision:model.revision,levels:levels.slice(0,1)}),/OB_FLOOR_IN_USE/)
+  await db.query('update inspections set locked_at=now() where id=$1',[f.i.id])
+  await assert.rejects(command(f.i.id,'floors',{partId:garage.id,revision:model.revision,levels}),/OB_ROUND_LOCKED/)
+  assert.deepEqual(await one('select * from inspection_images where id=$1',[image.id]),image)
+})
+
 test('installed overview constraint permits distinct buildings but still rejects duplicates within a building or legacy root',async()=>{
   const f = await fixture()
   const item = randomUUID()

@@ -16,6 +16,12 @@ export const levelKey = (level: number) => `plan${level}`
 export const floorModelKeys = (model: ObFloorModel) =>
   [...model.levels].sort((a, b) => a.level - b.level).map(row => levelKey(row.level))
 
+export const isFloorCountGroup = (key: string) =>
+  ['floors', 'v\u00e5ningar', 'v\u00e5ning'].includes(key.trim().toLowerCase())
+
+export const floorModelSummary = (model: ObFloorModel) =>
+  floorModelKeys(model).map(key => modelFloorLabel(model, key)).join(', ')
+
 export function modelFloorLabel(model: ObFloorModel, key: string): string {
   if (key === 'ovrigt' || key === '\u00f6vrigt') return 'Allm\u00e4nt'
   const row = model.levels.find(item => levelKey(item.level) === key)

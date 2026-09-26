@@ -11,9 +11,10 @@
 - New model: Plan 0 is the entrance reference by default. Positive integers are
   above it, negative integers below it. Names are independent of numbers. Allmant
   (`ovrigt`) is not a physical floor. Suterrang is a name, not an inferred elevation.
-- Configure explicit levels under Forutsattningar > Byggnadstyp > Plan. Initially
+- Configure explicit levels under Forutsattningar > Vaningsplan. Initially
   only Plan 0 exists. Add the actual levels and optional names, then save.
-  Building-type answers remain descriptive report data; they do not renumber floors.
+  The legacy floor-count dropdown is hidden when an explicit model exists.
+  Basement/attic answers remain descriptive data; they do not add or renumber levels.
 - Supported range: -99..199, up to 64 unique levels, names up to 80 characters.
   Plan 0 cannot be removed. Renumbering an occupied level means adding its target
   and explicitly moving rooms; editing a name does not move anything.
@@ -28,6 +29,33 @@ owner/org authorization and assignment/inspection locking order. Locked, complet
 and paused inspections cannot be changed. Revision checks prevent overwriting another
 editor's configuration. Every successful edit retains before/after data in
 `ob_floor_changes`, accessible only to the service role.
+
+## Building-scoped conditions correction (2026-09-26)
+
+- Extra buildings use `ob_building_floor_models`; the primary building preserves
+  the inspection's existing model when building support is activated. This can
+  mean a legacy primary model and an explicit extra-building model in the same
+  inspection, even when both buildings were created on the same day.
+- The conditions page now exposes the existing explicit model in its own
+  collapsible Vaningsplan panel, using the shared `ObFloorEditor`. Its summary
+  shows the saved count and numbered/named levels. The round reads that same model.
+- Explicit model changes use the existing revision-checked `floors` building
+  command. They require Spara plan; unsaved edits disable panel navigation until
+  saved or cancelled. Save errors retain the draft. Opening a panel writes nothing.
+- The hidden legacy count is preserved in storage, not cleared or overwritten.
+  New report data and template parts derive the count and names from the explicit
+  model, with basement/attic types shown as descriptions, not extra levels.
+  Historical snapshots, PDFs and room/image identities are not rewritten.
+- This correction does not migrate legacy models, enable enrollment, infer a
+  suterrang elevation, create rooms or change existing room assignments. These
+  require a separate controlled decision. No new SQL migration is required.
+- Verification uses synthetic data only: main/extra isolation, negative levels,
+  save failure/retry, cancel/navigation guards, locks, legacy behavior, report
+  consistency and preservation of existing data during building-floor RPC calls.
+  Production deployment and editing the ongoing garage inspection are separate
+  steps; neither is performed by these tests.
+
+## Floor reference protection
 
 Deleting a level is rejected while rooms, per-floor answers (even empty saved rows),
 or image capture origins refer to it. Room, answer and image-origin writes validate
@@ -73,6 +101,8 @@ this change and must explicitly preserve their original floor model.
 - `node --experimental-strip-types --test test/ob-round-mutations.test.ts`
 - `node --experimental-strip-types --test test/ob-round-mutation-api.test.ts test/ob-mobile-round.test.ts test/ob-early-start-api.test.ts`
 - `node scripts/test-ob-mobile-round-ui.mjs`
+- `node scripts/preview-ob-brand.mjs --forms --test-floors`
+- `node --experimental-strip-types --test test/ob-buildings.test.ts`
 - `npx tsc --noEmit`
 
 The SQL tests execute both migrations in PGlite. Browser tests use production UI with

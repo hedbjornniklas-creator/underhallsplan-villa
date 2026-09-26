@@ -12,7 +12,7 @@ import { useObBuilding, useObBuildingData } from './ObBuildingContext'
 import { buildingCoverPath, buildingDraftScope } from '@/lib/ob/buildingStructure'
 import ObBuildingCover from './ObBuildingCover'
 import { ObFloorEditor } from './ObFloorEditor'
-import { floorModelKeys, modelFloorLabel } from '@/lib/ob/floorModel'
+import { floorModelKeys, floorModelSummary, isFloorCountGroup, modelFloorLabel } from '@/lib/ob/floorModel'
 import {
   buildInteriorFloorKeysFromOverview,
   buildOverviewFloorOptionLookup,
@@ -85,6 +85,7 @@ type ItemBundle = SettingsOverviewItem & {
 
 const SPECIAL_CONDITIONS_COLLAPSE_KEY = '__special_conditions__'
 const BUILDING_COVER_PANEL_KEY = '__building_cover__'
+const FLOOR_PANEL_KEY = '__floors__'
 const YEAR_OPTION_START = 1850
 
 const toErrorLike = (error: unknown): Record<string, unknown> | null => {
@@ -187,6 +188,7 @@ export default function ObStepForutsattningar({
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(() => new Set())
   const [usePanelLayout] = useState(true)
   const [activePanelKey, setActivePanelKey] = useState<string | null>(null)
+  const [floorPending, setFloorPending] = useState(false)
   const [savedCover, setSavedCover] = useState<{ inspectionId: string; path: string | null } | null>(null)
   const legacyCoverPath = savedCover?.inspectionId === inspection.id ? savedCover.path : inspection.cover_path ?? null
   const handleCoverUpdated = (saved: Inspection) => {
@@ -675,6 +677,12 @@ export default function ObStepForutsattningar({
       icon: ClipboardList,
       item: null as ItemBundle | null,
     },
+    ...(floorModel ? [{
+      key: FLOOR_PANEL_KEY,
+      label: 'Våningsplan',
+      icon: Layers,
+      item: null as ItemBundle | null,
+    }] : []),
     ...items.map(item => ({
       key: item.id,
       label: item.label,
@@ -715,6 +723,7 @@ export default function ObStepForutsattningar({
   }
 
   const getPanelEntrySummary = (entry: (typeof panelEntries)[number]) => {
+    if (entry.key === FLOOR_PANEL_KEY && floorModel) return `${floorModel.levels.length} plan · ${floorModelSummary(floorModel)}`
     if (entry.key === BUILDING_COVER_PANEL_KEY) {
       return buildingCoverPath(
         building?.part ?? null, building?.overview.structure?.primary_part_id ?? null, legacyCoverPath
@@ -727,7 +736,8 @@ export default function ObStepForutsattningar({
     }
 
     const rows = getItemSelections(entry.item.id)
-    const groups = entry.item.groups
+    const groups = entry.item.groups.filter(group =>
+      !(floorModel && entry.item?.key === 'building_type' && isFloorCountGroup(group.key)))
     const values = rows.flatMap(row =>
       groups
         .map(group => resolveOptionLabel(group, row.values?.[group.key]))
@@ -809,7 +819,8 @@ export default function ObStepForutsattningar({
   const renderSelectionSet = (item: ItemBundle, sel: InspectionOverviewSelection, selIndex: number) => {
     const values = sel.values || {}
 
-    const visibleGroups = item.groups.filter(g => groupVisible(g, values))
+    const visibleGroups = item.groups.filter(g => groupVisible(g, values) &&
+      !(floorModel && item.key === 'building_type' && isFloorCountGroup(g.key)))
     const leftGroups = visibleGroups.filter(g => !isRightGroupKey(g.key))
     const rightGroups = visibleGroups.filter(g => isRightGroupKey(g.key))
 
@@ -883,9 +894,7 @@ export default function ObStepForutsattningar({
   }
 
   const renderItem = (item: ItemBundle) => {
-    return <>{renderItemFields(item)}{item.key === 'building_type' && floorModel &&
-        <ObFloorEditor inspectionId={inspection.id} disabled={isInspectionLocked || ['completed', 'klar', 'done'].includes(inspection.status ?? '')} />
-    }</>
+    return renderItemFields(item)
   }
 
   const renderItemFields = (item: ItemBundle) => {
@@ -1066,21 +1075,23 @@ export default function ObStepForutsattningar({
         ? panelEntries[panelIndex + 1]
         : null
     const closePanel = () => {
+      if (floorPending) return
       // Escape must flush a focused text field just like clicking Back.
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
       setActivePanelKey(null)
     }
     const panelContent = panelEntry ? (
       <Sheet title={panelEntry.label} onClose={closePanel} className="ob-form-root ob-form-panel"
+        closeDisabled={floorPending}
         footer={<div className="ob-form-panel-nav">
           <button type="button"
             onClick={() => previousPanelEntry && setActivePanelKey(previousPanelEntry.key)}
-            disabled={!previousPanelEntry}>
+            disabled={!previousPanelEntry || floorPending}>
             <ArrowLeft size={20} />Föregående
           </button>
           <button type="button"
             onClick={() => nextPanelEntry && setActivePanelKey(nextPanelEntry.key)}
-            disabled={!nextPanelEntry}>
+            disabled={!nextPanelEntry || floorPending}>
             Nästa<ArrowRight size={20} />
           </button>
         </div>}>
@@ -1088,6 +1099,10 @@ export default function ObStepForutsattningar({
         <div key={panelEntry.key} className="space-y-5">
           {panelEntry.key === BUILDING_COVER_PANEL_KEY ? (
             <ObBuildingCover inspectionId={inspection.id} legacyPath={legacyCoverPath} locked={isInspectionLocked} embedded onInspectionUpdated={handleCoverUpdated} />
+          ) : panelEntry.key === FLOOR_PANEL_KEY ? (
+            <ObFloorEditor inspectionId={inspection.id}
+              disabled={isInspectionLocked || ['completed', 'klar', 'done'].includes(inspection.status ?? '')}
+              onPendingChange={setFloorPending} />
           ) : panelEntry.item ? renderItem(panelEntry.item) : renderSpecialConditionsContent()}
         </div>
         <ObFormSaveStatus saving={saving} />

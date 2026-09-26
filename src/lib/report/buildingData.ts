@@ -2,7 +2,7 @@ import 'server-only'
 
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
-import { modelFloorLabel, modelFloorRank, type ObFloorModel } from '@/lib/ob/floorModel'
+import { floorModelSummary, modelFloorLabel, modelFloorRank, type ObFloorModel } from '@/lib/ob/floorModel'
 
 type BuildingDataRubric =
   | 'V\u00e4derlek:'
@@ -330,7 +330,8 @@ const renderBasementText = (raw: unknown, label?: string) => {
 const resolveBuildingTypeParts = (
   row: OverviewSelection,
   groups: OverviewGroup[],
-  optionsByGroupId: Map<string, Map<string, string>>
+  optionsByGroupId: Map<string, Map<string, string>>,
+  floorModel?: ObFloorModel | null
 ) => {
   const values = (row.values ?? {}) as Record<string, unknown>
   const typeValue = resolveGroupValue(values, 'type', groups, optionsByGroupId)
@@ -343,6 +344,15 @@ const resolveBuildingTypeParts = (
   const floorsText = floorsValue && floorsValue.trim().length > 0 ? floorsValue : '--'
   const atticText =
     atticValue && atticValue.trim().length > 0 ? ` samt ${atticValue}` : ''
+
+  // Explicit levels already include basement/attic levels. Their types are
+  // descriptions, not additional floors; ignore the legacy floor-count answer.
+  if (floorModel) return {
+    TYPE: typeText,
+    FLOORS_TEXT: `${floorModel.levels.length} plan (${floorModelSummary(floorModel)})`,
+    ATTIC_TEXT: atticValue ? `, vindtyp: ${lowercaseFirst(atticValue)}` : '',
+    BASEMENT_TEXT: basementValue ? `, k\u00e4llartyp: ${lowercaseFirst(basementValue)}` : '',
+  }
 
   return {
     TYPE: typeText,
@@ -358,8 +368,9 @@ const renderBuildingTypeSentenceFromParts = (parts: BuildingTypeParts) =>
 const renderBuildingTypeSentence = (
   row: OverviewSelection,
   groups: OverviewGroup[],
-  optionsByGroupId: Map<string, Map<string, string>>
-) => renderBuildingTypeSentenceFromParts(resolveBuildingTypeParts(row, groups, optionsByGroupId))
+  optionsByGroupId: Map<string, Map<string, string>>,
+  floorModel?: ObFloorModel | null
+) => renderBuildingTypeSentenceFromParts(resolveBuildingTypeParts(row, groups, optionsByGroupId, floorModel))
 
 const formatSelectionRow = (
   row: OverviewSelection,
@@ -492,12 +503,14 @@ export function buildBuildingTypeParts({
   groups,
   options,
   conditions,
+  floorModel,
 }: {
   selections: OverviewSelection[]
   items: OverviewItem[]
   groups: OverviewGroup[]
   options: OverviewOption[]
   conditions?: InspectionConditions | null
+  floorModel?: ObFloorModel | null
 }): BuildingTypeParts {
   const context = createBuildingDataContext({ selections, items, groups, options })
   const buildingTypeDef = COMPONENT_DEFS.find((def) => def.rubric === 'Byggnadstyp:')
@@ -511,7 +524,7 @@ export function buildBuildingTypeParts({
     )
     return {
       TYPE: fallbackType,
-      FLOORS_TEXT: '--',
+      FLOORS_TEXT: floorModel ? `${floorModel.levels.length} plan (${floorModelSummary(floorModel)})` : '--',
       ATTIC_TEXT: '',
       BASEMENT_TEXT: '',
     }
@@ -528,13 +541,13 @@ export function buildBuildingTypeParts({
     )
     return {
       TYPE: fallbackType,
-      FLOORS_TEXT: '--',
+      FLOORS_TEXT: floorModel ? `${floorModel.levels.length} plan (${floorModelSummary(floorModel)})` : '--',
       ATTIC_TEXT: '',
       BASEMENT_TEXT: '',
     }
   }
 
-  return resolveBuildingTypeParts(rows[0], groupsForItem, context.optionsByGroupId)
+  return resolveBuildingTypeParts(rows[0], groupsForItem, context.optionsByGroupId, floorModel)
 }
 
 export function buildBuildingDataMap({
@@ -582,7 +595,8 @@ export function buildBuildingDataMap({
         selectionValue = renderBuildingTypeSentence(
           rows[0],
           groupsForItem,
-          context.optionsByGroupId
+          context.optionsByGroupId,
+          floorModel
         )
         const noteText = (rows[0].note ?? '').trim()
         if (noteText) {
@@ -606,7 +620,8 @@ export function buildBuildingDataMap({
           conditions?.building_type ?? conditions?.building_form ?? null,
           '--'
         )
-        resolvedValue = `Byggnaden \u00e4r uppf\u00f6rd som ${typeFallback} med --.`
+        const floors = floorModel ? `${floorModel.levels.length} plan (${floorModelSummary(floorModel)})` : '--'
+        resolvedValue = `Byggnaden \u00e4r uppf\u00f6rd som ${typeFallback} med ${floors}.`
       } else if (def.kind === 'weather') {
         const weatherNote = String(conditions?.weather_note ?? '').trim()
         const weather = String(conditions?.weather ?? '').trim()
