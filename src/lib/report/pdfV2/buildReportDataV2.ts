@@ -1,6 +1,7 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
+import { readObNoteText } from '@/lib/ob/noteText'
 import { readBuildingReportState, assertBuildingReportRevision } from '@/lib/ob/buildingReport'
 import { buildingCoverPath, type ObBuildingPart } from '@/lib/ob/buildingStructure'
 import { modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
@@ -41,16 +42,6 @@ type ExteriorControlItemRow = {
   ftu_text: string | null
   sort_order: number | null
   selected_outcome_id: string | null
-}
-
-type ControlPointOutcomeRow = {
-  id: string
-  control_point_id: string
-  label: string | null
-  risk_template: string | null
-  ftu_template: string | null
-  sort_order: number | null
-  is_active: boolean | null
 }
 
 type InteriorRoomRow = {
@@ -944,32 +935,6 @@ const supabase: any = createSupabaseServerClient()
     console.error('Kunde inte hamta utsida-kontrollpunkter', exteriorControlItemsError)
   }
 
-  const exteriorControlItemsForIds =
-    (exteriorControlItems ?? []) as ExteriorControlItemRow[]
-
-  const selectedOutcomeIds = Array.from(
-    new Set(
-      exteriorControlItemsForIds
-        .map((item) => item.selected_outcome_id)
-        .filter((id): id is string => Boolean(id))
-    )
-  )
-
-  // Historical selections remain valid after an outcome is archived or moved.
-  const { data: outcomeRows, error: outcomesError } = selectedOutcomeIds.length
-    ? await supabase
-        .from('settings_control_point_outcomes')
-        .select(
-          'id, control_point_id, label, risk_template, ftu_template, sort_order, is_active'
-        )
-        .in('id', selectedOutcomeIds)
-        .order('sort_order', { ascending: true })
-    : { data: [], error: null }
-
-  if (outcomesError) {
-    console.error('Kunde inte hamta utfall (utsida)', outcomesError)
-  }
-
   const { data: interiorRooms, error: interiorRoomsError } = await buildingFrom('inspection_interior_rooms')
     .select('id, floor_label, room_label, room_type_key, note, order_index')
     .eq('inspection_id', resolvedParams.inspectionId)
@@ -1013,28 +978,6 @@ const supabase: any = createSupabaseServerClient()
 
   const interiorControlItemsRows =
     (interiorControlItems ?? []) as InteriorControlItemRow[]
-  const interiorSelectedOutcomeIds = Array.from(
-    new Set(
-      interiorControlItemsRows
-        .map((item) => item.selected_outcome_id)
-        .filter((id): id is string => Boolean(id))
-    )
-  )
-
-  const { data: interiorOutcomeRows, error: interiorOutcomesError } =
-    interiorSelectedOutcomeIds.length > 0
-      ? await supabase
-          .from('settings_control_point_outcomes')
-          .select(
-            'id, control_point_id, label, risk_template, ftu_template, sort_order, is_active'
-          )
-          .in('id', interiorSelectedOutcomeIds)
-          .order('sort_order', { ascending: true })
-      : { data: [], error: null }
-
-  if (interiorOutcomesError) {
-    console.error('Kunde inte hamta utfall (insida)', interiorOutcomesError)
-  }
 
   const { data: exteriorImages, error: exteriorImagesError } = await buildingFrom('inspection_images')
     .select('id, control_item_id, exterior_observation_id, file_path, sort_order, created_at')
@@ -1044,15 +987,6 @@ const supabase: any = createSupabaseServerClient()
 
   if (exteriorImagesError) {
     console.error('Kunde inte hamta utsida-bilder', exteriorImagesError)
-  }
-
-  const baseOutcomeRows = (outcomeRows ?? []) as ControlPointOutcomeRow[]
-  const interiorOutcomeRowsTyped = (interiorOutcomeRows ?? []) as ControlPointOutcomeRow[]
-  const outcomeById = new Map<string, ControlPointOutcomeRow>(
-    baseOutcomeRows.map((row) => [row.id, row])
-  )
-  for (const row of interiorOutcomeRowsTyped) {
-    outcomeById.set(row.id, row)
   }
 
   const exteriorItemsSorted = (exteriorItems ?? []) as ExteriorItemRow[]
@@ -1121,10 +1055,8 @@ const supabase: any = createSupabaseServerClient()
     const blocksForItem: InspectionBlock[] = []
 
     controlItemsForItem.forEach((controlItem) => {
-      const note = trimText(controlItem.note)
-      const outcome = controlItem.selected_outcome_id
-        ? outcomeById.get(controlItem.selected_outcome_id) ?? null
-        : null
+      const savedText = readObNoteText(controlItem)
+      const note = trimText(savedText.note)
       const hasOutcome = Boolean(controlItem.selected_outcome_id)
       const isFreeControlItem = controlItem.control_point_id === null
 
@@ -1134,8 +1066,8 @@ const supabase: any = createSupabaseServerClient()
         .map((image) => buildInspectionImageUrl(image.file_path))
         .filter((url): url is string => Boolean(url))
 
-      const riskText = trimText(controlItem.risk_text ?? outcome?.risk_template ?? '')
-      const ftuText = trimText(controlItem.ftu_text ?? outcome?.ftu_template ?? '')
+      const riskText = trimText(savedText.risk_text)
+      const ftuText = trimText(savedText.ftu_text)
 
       if (isFreeControlItem) {
         if (!note && riskText.length === 0 && ftuText.length === 0) return
@@ -1284,10 +1216,8 @@ const supabase: any = createSupabaseServerClient()
     )
 
     roomControlItems.forEach((controlItem) => {
-      const note = trimText(controlItem.note)
-      const outcome = controlItem.selected_outcome_id
-        ? outcomeById.get(controlItem.selected_outcome_id) ?? null
-        : null
+      const savedText = readObNoteText(controlItem)
+      const note = trimText(savedText.note)
       const hasOutcome = Boolean(controlItem.selected_outcome_id)
 
       const controlItemImages =
@@ -1296,14 +1226,14 @@ const supabase: any = createSupabaseServerClient()
         .map((image) => buildInspectionImageUrl(image.file_path))
         .filter((url): url is string => Boolean(url))
 
-      const riskText = trimText(controlItem.risk_text ?? outcome?.risk_template ?? '')
+      const riskText = trimText(savedText.risk_text)
       if (riskText.length > 0) {
         riskLines.push(roomTitle)
         riskLines.push(riskText)
         riskLines.push('')
       }
 
-      const ftuText = trimText(controlItem.ftu_text ?? outcome?.ftu_template ?? '')
+      const ftuText = trimText(savedText.ftu_text)
       if (ftuText.length > 0) {
         ftuLines.push(roomTitle)
         ftuLines.push(ftuText)

@@ -7,6 +7,7 @@ import { queueImageBatch, unplacedImagePlacement } from '../../src/lib/ob/roundI
 import { putRoundImageUploadItem, listRoundImageUploadItems } from '../../src/lib/ob/roundImageUploadQueue'
 import { ObFloorContext, useObFloorModel } from '../../src/components/ob/ObFloorProvider'
 import { ObFloorEditor } from '../../src/components/ob/ObFloorEditor'
+import { copyObOutcomeText } from '../../src/lib/ob/noteText'
 import ObRoundSheet from '../../src/components/ob/ObRoundSheet'
 import { floorModelKeys, modelFloorLabel, type ObFloorModel } from '../../src/lib/ob/floorModel'
 import type { MoveTarget } from '../../src/lib/ob/roundMutations'
@@ -118,7 +119,7 @@ if (new URLSearchParams(location.search).has('room-images')) {
 if (new URLSearchParams(location.search).has('image-preview-nav')) {
   initialImages[0] = { ...initialImages[0], file_path: '/photo.png?image=first', label: 'Första bilden', sort_order: 40 }
   // Pending navigation follows the rendered source order, not IDs or sort_order.
-  // Interleaved linked/ignored rows must never become navigation targets.
+  // Interleaved linked/ignored rows are excluded only in the unmatched filter.
   initialImages.push(
     { ...initialImages[0], id: 'preview-linked', file_path: '/photo.png?image=linked', control_item_id: 'note-1', processing_status: 'linked' },
     { ...initialImages[0], id: 'preview-middle', file_path: '/photo.png?image=middle', label: 'Andra bilden', interior_room_id: 'room-2', sort_order: 10 },
@@ -212,7 +213,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
       initialNotes,
   )
   const [images, setImages] = useState<Image[]>(() =>
-    new URLSearchParams(location.search).has('queued')
+    new URLSearchParams(location.search).has('empty-images') ? [] : new URLSearchParams(location.search).has('queued')
       ? initialImages.map((image) => ({
           ...image,
           local_queue_id: 'queue-1',
@@ -384,9 +385,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
                 control_point_id: point.id,
                 selected_outcome_id: outcome.id,
                 title: point.title,
-                note: outcome.note_template,
-                risk_text: outcome.risk_template,
-                ftu_text: outcome.ftu_template,
+                ...copyObOutcomeText(outcome),
               })
             }}
             onUpdateNote={async (id, patch) => {

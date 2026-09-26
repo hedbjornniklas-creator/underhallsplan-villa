@@ -21,6 +21,13 @@ const outcome = {
   sort_order: 10,
   is_active: true,
 }
+const noteCopyParams = new URLSearchParams(location.search)
+if (noteCopyParams.has('filled-template') || noteCopyParams.has('changed-template')) {
+  Object.assign(outcome, { risk_template: 'Risk vid skapandet', ftu_template: 'FTU vid skapandet' })
+}
+if (noteCopyParams.has('changed-template')) {
+  Object.assign(outcome, { note_template: 'Changed catalogue note', risk_template: 'Changed catalogue risk', ftu_template: 'Changed catalogue FTU' })
+}
 
 const searchPoints = [
   { ...point, id: 'search-local', title: 'Platsens konstruktion' },
@@ -86,6 +93,7 @@ export const supabase = {
       eq: () => builder,
       order: () => builder,
       range: async (from: number, to: number) => {
+        if (table === 'settings_control_point_outcomes' && noteCopyParams.has('retired-template')) return { data: [], error: null }
         if (new URLSearchParams(location.search).has('search-order')) {
           const rows = table === 'settings_control_points' ? searchPoints : searchOutcomes
           return { data: rows.slice(from, to + 1), error: null }

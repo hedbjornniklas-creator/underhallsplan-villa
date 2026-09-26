@@ -11,6 +11,8 @@ import { testFloorEditor } from '../test/helpers/ob-floor-browser.mjs'
 import { testImageImport } from '../test/helpers/ob-image-import-browser.mjs'
 import { testImageBank } from '../test/helpers/ob-image-bank-browser.mjs'
 import { testImagePreview } from '../test/helpers/ob-image-preview-browser.mjs'
+import { testPendingImages } from '../test/helpers/ob-pending-images-browser.mjs'
+import { testNoteCopy } from '../test/helpers/ob-note-copy-browser.mjs'
 import { testImageRemoval } from '../test/helpers/ob-image-removal-browser.mjs'
 import { testNoteSuggestion } from '../test/helpers/ob-note-suggestion-browser.mjs'
 import { testRoomNameImages } from '../test/helpers/ob-room-name-images-browser.mjs'
@@ -119,7 +121,16 @@ if (serve) {
       else { external.push(request.url()); void request.abort() }
     })
     await page.setViewport({ width: 390, height: 844 })
-    if (process.argv.includes('--search-order-only')) {
+    if (process.argv.includes('--note-copy-only')) {
+      await testNoteCopy(page, base, output)
+      assert.deepEqual(errors, [])
+      assert.deepEqual(external, [])
+    } else if (process.argv.includes('--pending-images-only')) {
+      await testPendingImages(page, base, output)
+      await testImagePreview(page, base, output)
+      assert.deepEqual(errors, [])
+      assert.deepEqual(external, [])
+    } else if (process.argv.includes('--search-order-only')) {
       await testSearchOrder(page, base, output)
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
@@ -140,6 +151,8 @@ if (serve) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
     } else {
+    if (!process.argv.some(arg => arg.endsWith('-only'))) await testPendingImages(page, base, output)
+    if (!process.argv.some(arg => arg.endsWith('-only'))) await testNoteCopy(page, base, output)
     if (!process.argv.some(arg => arg.endsWith('-only'))) await testSearchOrder(page, base, output)
     if (!process.argv.includes('--core-only')) {
     await page.goto(`${base}/buildings`)

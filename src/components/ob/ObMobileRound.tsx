@@ -1,5 +1,7 @@
 'use client'
 
+import { readObNoteText } from '@/lib/ob/noteText'
+
 import React, {
   useCallback,
   useEffect,
@@ -169,11 +171,7 @@ function Editor({
   const key = getObTextDraftStorageKey(
     `ob:${p.scopeId ?? p.inspectionId}:mobile-round:${note.id}`,
   )!
-  const original = {
-    note: note.note ?? '',
-    risk_text: note.risk_text ?? '',
-    ftu_text: note.ftu_text ?? '',
-  }
+  const original = readObNoteText(note)
   const [initial] = useState(() => {
     if (p.locked) return { draft: original, pending: false }
     try {
@@ -490,6 +488,7 @@ function MobileRound(p: Props) {
     [preview, setPreview] = useState<Outcome | null>(null)
   const [photoId, setPhotoId] = useState<string | null>(null)
   const [enlargedPhotoId, setEnlargedPhotoId] = useState<string | null>(null)
+  const [pendingImageFilter, setPendingImageFilter] = useState<'unmatched' | 'all'>('unmatched')
   const [renameRoom, setRenameRoom] = useState<InteriorRoom | null>(null)
   const [moveSubject, setMoveSubject] = useState<MoveSubject | null>(null)
   const [removalSubject, setRemovalSubject] = useState<RemovalSubject | null>(
@@ -498,6 +497,8 @@ function MobileRound(p: Props) {
   const photo = p.images.find((image) => image.id === photoId)
   const enlargedPhoto = p.images.find((image) => image.id === enlargedPhotoId)
   const enlargedPhotoNote = p.notes.find(note => note.id === enlargedPhoto?.control_item_id)
+  const enlargedLegacyPhotoNote = p.legacyExteriorNotes?.find(note => note.id === enlargedPhoto?.exterior_observation_id)
+  const enlargedLegacyPlace = p.exteriorItems.find(item => item.id === enlargedLegacyPhotoNote?.exterior_item_id)
   const [addRoomOpen, setAddRoomOpen] = useState(false),
     [roomType, setRoomType] = useState(''),
     [roomLabel, setRoomLabel] = useState('')
@@ -542,7 +543,8 @@ function MobileRound(p: Props) {
         )
   const targetNotes = p.notes.filter(atTarget),
     written = p.notes.filter(hasNote)
-  const imageLocations = new Map(p.images.map(image => [image.id, roundImageLocation(image, p.notes, p.observations)]))
+  const imageObservations = [...p.observations, ...(p.legacyExteriorNotes ?? [])]
+  const imageLocations = new Map(p.images.map(image => [image.id, roundImageLocation(image, p.notes, imageObservations)]))
   const targetImages = p.images.filter(image => {
     const place = imageLocations.get(image.id)!
     return p.area === 'interior' ? Boolean(p.activeRoom?.id && place.roomId === p.activeRoom.id)
@@ -560,10 +562,11 @@ function MobileRound(p: Props) {
     (image) => !image.control_item_id && image.processing_status !== 'ignored' &&
       !p.legacyExteriorNotes?.some(row => row.id === image.exterior_observation_id),
   )
+  const pendingImages = pendingImageFilter === 'all' ? p.images : unmatched
   const pendingPhotoIndex = view === 'pending'
-    ? unmatched.findIndex(image => image.id === enlargedPhoto?.id) : -1
-  const previousPendingPhoto = pendingPhotoIndex > 0 ? unmatched[pendingPhotoIndex - 1] : null
-  const nextPendingPhoto = pendingPhotoIndex >= 0 ? unmatched[pendingPhotoIndex + 1] : null
+    ? pendingImages.findIndex(image => image.id === enlargedPhoto?.id) : -1
+  const previousPendingPhoto = pendingPhotoIndex > 0 ? pendingImages[pendingPhotoIndex - 1] : null
+  const nextPendingPhoto = pendingPhotoIndex >= 0 ? pendingImages[pendingPhotoIndex + 1] : null
   const drafts = p.notes.filter(
     (note) =>
       (!note.control_point_id && !hasNote(note)) ||
@@ -768,7 +771,7 @@ function MobileRound(p: Props) {
     return `Utsida · ${p.exteriorItems.find((item) => item.id === observation?.exterior_item_id)?.label ?? 'Plats saknas'}`
   }
   function imagePlace(image: RoundImage) {
-    const location = imageLocations.get(image.id) ?? roundImageLocation(image, p.notes, p.observations)
+    const location = imageLocations.get(image.id) ?? roundImageLocation(image, p.notes, imageObservations)
     const room = p.rooms.find(room => room.id === location.roomId)
     if (room) return `${p.floorLabel(room.floor_label)} · ${room.room_label}`
     const item = p.exteriorItems.find(row => row.id === location.exteriorItemId)
@@ -1385,45 +1388,62 @@ function MobileRound(p: Props) {
             </section>
           )}
           <div className="obm-section-title">
-            <h2>Bilder utan notering</h2>
-            <span>{unmatched.length}</span>
+            <h2>Bilder</h2>
+            <span>{pendingImages.length}</span>
+          </div>
+          <div className="obm-search-scope" role="group" aria-label="Visa bilder">
+            <button type="button" aria-pressed={pendingImageFilter === 'unmatched'}
+              onClick={() => setPendingImageFilter('unmatched')}>Bilder utan notering</button>
+            <button type="button" aria-pressed={pendingImageFilter === 'all'}
+              onClick={() => setPendingImageFilter('all')}>Alla bilder</button>
           </div>
           <div className="obm-image-list">
-            {unmatched.map((image) => (
-              <div
-                key={image.id}
-                className="obm-image-row"
-              >
-                <button
-                  type="button"
-                  className="obm-image-thumb"
-                  aria-label={`Förstora bild: ${imagePlace(image)}`}
-                  title="Förstora bild"
-                  onClick={() => setEnlargedPhotoId(image.id)}
+            {pendingImages.map((image) => {
+              const note = p.notes.find(note => note.id === image.control_item_id)
+              const linked = Boolean(image.control_item_id || p.legacyExteriorNotes?.some(row => row.id === image.exterior_observation_id))
+              const ignored = image.processing_status === 'ignored'
+              const actionLabel = note ? 'Öppna notering' : linked || ignored ? 'Visa bild' : 'Koppla bild'
+              return (
+                <div
+                  key={image.id}
+                  data-image-id={image.id}
+                  className="obm-image-row"
                 >
-                  <img src={p.imageSrc(image)} alt={image.label || 'Besiktningsbild'} />
-                </button>
-                <button
-                  type="button"
-                  className="obm-image-link"
-                  aria-label={`Koppla bild: ${imagePlace(image)}`}
-                  onClick={() => setPhotoId(image.id)}
-                >
-                  <span>
-                    <strong>{imagePlace(image)}</strong>
-                    <small>
-                      {image.local_upload_status
-                        ? 'Lokal bild · ' + image.local_upload_status
-                        : 'Ej kopplad'}
-                    </small>
-                  </span>
-                  <ChevronRight size={19} />
-                </button>
-              </div>
-            ))}
+                  <button
+                    type="button"
+                    className="obm-image-thumb"
+                    aria-label={`Förstora bild: ${imagePlace(image)}`}
+                    title="Förstora bild"
+                    onClick={() => setEnlargedPhotoId(image.id)}
+                  >
+                    <img src={p.imageSrc(image)} alt={image.label || 'Besiktningsbild'} />
+                  </button>
+                  <button
+                    type="button"
+                    className="obm-image-link"
+                    aria-label={`${actionLabel}: ${imagePlace(image)}`}
+                    onClick={() => {
+                      if (note) openNote(note)
+                      else if (linked || ignored) setEnlargedPhotoId(image.id)
+                      else setPhotoId(image.id)
+                    }}
+                  >
+                    <span>
+                      <strong>{imagePlace(image)}</strong>
+                      <small className={linked || ignored ? 'obm-muted' : undefined}>
+                        {image.local_upload_status
+                          ? 'Lokal bild · ' + image.local_upload_status
+                          : linked ? 'Kopplad till notering' : ignored ? 'Undantagen' : 'Ej kopplad'}
+                      </small>
+                    </span>
+                    <ChevronRight size={19} />
+                  </button>
+                </div>
+              )
+            })}
           </div>
-          {pendingCount === 0 && (
-            <p className="obm-empty">Inga lösa bilder eller utkast.</p>
+          {pendingImages.length === 0 && (
+            <p className="obm-empty">{pendingImageFilter === 'all' ? 'Inga bilder ännu.' : 'Inga bilder utan notering.'}</p>
           )}
           <ObRoundImageTrash key={p.scopeId ?? p.inspectionId} p={p}
             imagePlace={image => imagePlace({ ...image, control_item_id: null })} />
@@ -1653,17 +1673,21 @@ function MobileRound(p: Props) {
               type="button"
               className="obm-primary"
               disabled={enlargedPhoto.control_item_id ? !enlargedPhotoNote
+                : enlargedLegacyPhotoNote ? !enlargedLegacyPlace
                 : p.locked || p.mutationBlocked || Boolean(enlargedPhoto.local_queue_id) || enlargedPhoto.processing_status === 'ignored'}
               onClick={() => {
                 if (enlargedPhoto.control_item_id) {
                   if (!enlargedPhotoNote) return
                   openNote(enlargedPhotoNote)
+                } else if (enlargedLegacyPhotoNote) {
+                  if (!enlargedLegacyPlace) return
+                  goExterior(enlargedLegacyPlace)
                 } else setPhotoId(enlargedPhoto.id)
                 setEnlargedPhotoId(null)
               }}
             >
-              {enlargedPhoto.control_item_id ? <FileText size={18} /> : <LinkIcon size={18} />}
-              {enlargedPhoto.control_item_id ? 'Öppna notering' : 'Koppla till notering'}
+              {enlargedPhoto.control_item_id ? <FileText size={18} /> : enlargedLegacyPhotoNote ? <MapPin size={18} /> : <LinkIcon size={18} />}
+              {enlargedPhoto.control_item_id ? 'Öppna notering' : enlargedLegacyPhotoNote ? 'Öppna plats' : 'Koppla till notering'}
             </button>
           }
         >
@@ -1676,7 +1700,7 @@ function MobileRound(p: Props) {
               </button>
               <div role="status" aria-live="polite" aria-atomic="true">
                 <p className="obm-place-label"><MapPin size={16} />{imagePlace(enlargedPhoto)}</p>
-                <span>{pendingPhotoIndex + 1} av {unmatched.length}</span>
+                <span>{pendingPhotoIndex + 1} av {pendingImages.length}</span>
               </div>
               <button type="button" className="obm-icon" aria-label="Nästa bild" title="Nästa bild"
                 disabled={!nextPendingPhoto}

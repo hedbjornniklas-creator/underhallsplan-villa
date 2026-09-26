@@ -1,5 +1,7 @@
 'use client'
 
+import { copyObOutcomeText } from '@/lib/ob/noteText'
+
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { queueImageBatch, unplacedImagePlacement } from '@/lib/ob/roundImageImport'
 import { unlinkRoundImage } from '@/lib/ob/unlinkRoundImage'
@@ -1683,9 +1685,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       control_point_id: baseItem.control_point_id,
       title: baseItem.title,
       status: 'remark',
-      note: (outcome.note_template ?? '').trim() || null,
-      risk_text: (outcome.risk_template ?? '').trim() || null,
-      ftu_text: (outcome.ftu_template ?? '').trim() || null,
+      ...copyObOutcomeText(outcome),
       sort_order: sortOrder,
       selected_outcome_id: outcome.id,
     })
@@ -1780,8 +1780,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       title: 'Fri notering',
       status: RED_STATUS,
       note,
-      risk_text: null,
-      ftu_text: null,
+      risk_text: '',
+      ftu_text: '',
       sort_order: sortOrder,
       selected_outcome_id: null,
     })
@@ -3593,9 +3593,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                     void updateControlItem(baseItem.id, {
                       status: 'remark',
                       selected_outcome_id: outcome.id,
-                      note: (outcome.note_template ?? '').trim() || null,
-                      risk_text: (outcome.risk_template ?? '').trim() || null,
-                      ftu_text: (outcome.ftu_template ?? '').trim() || null,
+                      ...copyObOutcomeText(outcome),
                     })
                   } else {
                     void addOutcomeControlItem(baseItem, outcome)

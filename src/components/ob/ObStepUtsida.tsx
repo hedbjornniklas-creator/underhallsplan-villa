@@ -11,6 +11,7 @@ import {
   type DragEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
+import { copyObOutcomeText, readObNoteText } from '@/lib/ob/noteText'
 import { supabase } from '@/lib/supabaseClient'
 import { searchOutcomeRows } from '@/lib/ob/searchOutcomeRows'
 import { useObFloorModel } from './ObFloorProvider'
@@ -1438,9 +1439,7 @@ export default function ObStepUtsida({ inspection }: { inspection: Inspection })
       control_point_id: baseItem.control_point_id,
       title: baseItem.title,
       status: 'remark',
-      note: (outcome.note_template ?? '').trim() || null,
-      risk_text: (outcome.risk_template ?? '').trim() || null,
-      ftu_text: (outcome.ftu_template ?? '').trim() || null,
+      ...copyObOutcomeText(outcome),
       sort_order: maxSort + 10,
       selected_outcome_id: outcome.id,
     }
@@ -4054,18 +4053,19 @@ function ExteriorControlPointsSection({
                             }
                           } else {
                             if (selectedItems.length === 0) {
+                              const copiedText = copyObOutcomeText(outcome)
                               onUpdateItem(baseItem.id, {
                                 status: 'remark',
                                 selected_outcome_id: outcome.id,
-                                note: (outcome.note_template ?? '').trim() || null,
+                                ...copiedText,
                                 risk_text:
                                   (baseItem.risk_text ?? '').trim().length > 0
                                     ? baseItem.risk_text
-                                    : (outcome.risk_template ?? '').trim() || null,
+                                    : copiedText.risk_text,
                                 ftu_text:
                                   (baseItem.ftu_text ?? '').trim().length > 0
                                     ? baseItem.ftu_text
-                                    : (outcome.ftu_template ?? '').trim() || null,
+                                    : copiedText.ftu_text,
                               })
                             } else {
                               onAddOutcomeItem(baseItem, outcome)
@@ -4129,10 +4129,9 @@ function ExteriorControlPointsSection({
                     const selectedOutcome = ci.selected_outcome_id
                       ? selectedOutcomes[ci.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) ?? null
                       : null
-                    const riskTemplate = (selectedOutcome?.risk_template ?? '').trim()
-                    const ftuTemplate = (selectedOutcome?.ftu_template ?? '').trim()
-                    const riskText = (ci.risk_text ?? riskTemplate).trim()
-                    const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
+                    const savedText = readObNoteText(ci)
+                    const riskText = savedText.risk_text.trim()
+                    const ftuText = savedText.ftu_text.trim()
                     const ciId = ci.id ?? ''
                     const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
 

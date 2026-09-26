@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+// @ts-expect-error Native Node tests require the explicit TypeScript extension.
+import { copyObOutcomeText, readObNoteText } from '../src/lib/ob/noteText.ts'
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const round = read('src/components/ob/ObStepRunda.tsx')
@@ -31,12 +33,12 @@ assert.ok(payload, 'round persistence payload must be exercised')
 
 function reportTexts(item: Item, field: 'risk_text' | 'ftu_text') {
   return reports.flatMap(([name, source]) => {
-    const expressions = [...source.matchAll(new RegExp(`const \\w+ = (trimText\\(controlItem\\.${field}[^\\r\\n]+)`, 'g'))]
+    const expressions = [...source.matchAll(new RegExp(`const \\w+ = (trimText\\(savedText\\.${field}[^\\r\\n]+)`, 'g'))]
     assert.equal(expressions.length, 2, `${name}: exercise both interior and exterior report paths`)
     return expressions.map(([, expression]) => ({
       name,
       text: evaluate<string>(expression, {
-        controlItem: item, outcome, trimText: (value: string) => value.trim(),
+        savedText: readObNoteText(item), trimText: (value: string) => value.trim(),
       }),
     }))
   })
@@ -70,8 +72,45 @@ for (const field of ['risk_text', 'ftu_text'] as const) {
         assert.equal(result.text, '', `${result.name} must respect explicitly cleared ${field}`)
       }
       for (const result of reportTexts({ ...saved, [field]: null }, field)) {
-        assert.equal(result.text, template, `${result.name} must preserve legacy null fallback`)
+        assert.equal(result.text, '', `${result.name} must treat legacy null as empty without reading the template`)
       }
     }
   })
 }
+
+test('all three fields are independent copies, including empty and null template fields', () => {
+  for (const empty of [null, undefined, '']) {
+    const template = { note_template: 'Observation', risk_template: empty, ftu_template: empty }
+    const copy = copyObOutcomeText(template)
+    assert.deepEqual(copy, { note: 'Observation', risk_text: '', ftu_text: '' })
+    template.note_template = 'Changed observation'
+    template.risk_template = 'New risk'
+    template.ftu_template = 'New FTU'
+    assert.deepEqual(readObNoteText(copy), { note: 'Observation', risk_text: '', ftu_text: '' })
+    const serialized = JSON.parse(JSON.stringify(copy))
+    assert.deepEqual(readObNoteText(serialized), copy)
+    assert.deepEqual(copyObOutcomeText(template), {
+      note: 'Changed observation', risk_text: 'New risk', ftu_text: 'New FTU',
+    }, 'only a new explicit selection takes the changed template')
+  }
+  assert.deepEqual(copyObOutcomeText({ note_template: '  Text\n', risk_template: 'Risk', ftu_template: 'FTU' }), {
+    note: '  Text\n', risk_text: 'Risk', ftu_text: 'FTU',
+  }, 'copying preserves the original text without formatting changes')
+  const historical = { note: null, risk_text: null, ftu_text: null }
+  assert.deepEqual(readObNoteText(historical), { note: '', risk_text: '', ftu_text: '' })
+  assert.deepEqual(historical, { note: null, risk_text: null, ftu_text: null }, 'reading does not mutate old records')
+})
+
+test('working reports never query catalogue outcomes; every report text comes from saved notes', () => {
+  for (const [name, source] of reports) {
+    assert.doesNotMatch(source, /settings_control_point_outcomes|risk_template|ftu_template|note_template/, name)
+    assert.equal([...source.matchAll(/const savedText = readObNoteText\(controlItem\)/g)].length, 2, name)
+  }
+  for (const file of ['ObStepRunda.tsx', 'ObStepInsida.tsx', 'ObStepUtsida.tsx', 'ObImageNoteForm.tsx']) {
+    assert.match(read('src/components/ob/' + file), /copyObOutcomeText\(outcome\)/, `${file}: shared copy rule`)
+  }
+  for (const file of ['ObMobileRound.tsx', 'ObStepInsida.tsx', 'ObStepUtsida.tsx']) {
+    assert.match(read('src/components/ob/' + file), /readObNoteText\(/, `${file}: saved text only`)
+    assert.doesNotMatch(read('src/components/ob/' + file), /\?\?\s*(?:outcome\?|riskTemplate|ftuTemplate)/)
+  }
+})

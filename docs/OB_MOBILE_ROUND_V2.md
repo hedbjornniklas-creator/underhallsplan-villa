@@ -314,10 +314,27 @@ and `node scripts/test-ob-mobile-round-ui.mjs --images-only`.
 Image-bank checks: `node --experimental-strip-types --test test/ob-round-image-bank.test.ts`
 and `node scripts/test-ob-mobile-round-ui.mjs --image-bank-only`.
 Image-preview checks: `node scripts/test-ob-mobile-round-ui.mjs --image-preview-only`.
+Pending-image filter checks: `node scripts/test-ob-mobile-round-ui.mjs --pending-images-only`.
 Image removal choices: `node scripts/test-ob-mobile-round-ui.mjs --image-removal-only`
 and `node --experimental-strip-types --test test/ob-round-image-unlink.test.ts`.
 Room rename and place-image checks: `node --experimental-strip-types --test test/ob-room-name-images.test.ts`
 and `node scripts/test-ob-mobile-round-ui.mjs --room-name-images-only`.
+
+### Pending Image Filters
+
+- Under "Att bearbeta", "Bilder utan notering" is the default. "Alla bilder"
+  includes linked and ignored active images, plus local uploads, from the current
+  building's existing scoped image collection. Deleted images remain exclusively
+  in the initially collapsed trash section.
+- The image section count follows the selected filter. The bottom navigation's
+  pending count still counts only unmatched images and unfinished notes.
+- Thumbnail previews and their previous/next buttons follow the visible list.
+  Linked images open their existing note; older exterior-note images open their
+  place. Ignored images can be viewed but are not offered for linking.
+- Switching filters or browsing never changes image relations or inspection
+  records. Linking an image removes it only from the unmatched view. The filter
+  survives closing a preview/editor but defaults on a fresh round mount.
+- This is a shared round UI change, with no SQL, report or storage changes.
 
 ### Touch navigation between rooms
 

@@ -74,5 +74,5 @@ test('legacy editors resolve selected inactive and reparented outcomes without a
   }
   const mobile = read('ObMobileRound')
   assert.match(mobile, /\.from\(table\)[\s\S]*?\.eq\('is_active', true\)/)
-  assert.match(mobile, /note: note\.note \?\? ''/)
+  assert.match(mobile, /const original = readObNoteText\(note\)/)
 })

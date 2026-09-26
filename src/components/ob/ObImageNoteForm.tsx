@@ -1,4 +1,6 @@
 'use client'
+
+import { copyObOutcomeText } from '@/lib/ob/noteText'
 import React, { useRef, useState } from 'react'
 import { ChevronDown, PenLine, Search, X } from 'lucide-react'
 import {
@@ -67,9 +69,7 @@ export default function ImageNoteForm({
   function choose(outcome: Outcome) {
     onChange({
       outcomeId: outcome.id,
-      note: outcome.note_template ?? '',
-      risk_text: outcome.risk_template ?? '',
-      ftu_text: outcome.ftu_template ?? '',
+      ...copyObOutcomeText(outcome),
     })
     setQuery('')
     text.current?.focus()
