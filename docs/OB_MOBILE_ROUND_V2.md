@@ -151,10 +151,25 @@ Typing a new search continues to select Hela biblioteket automatically.
 Adding outcomes still keeps the search and result order unchanged. This
 supersedes the previous ability to retain a query under Denna plats.
 
-Implemented locally, not yet published. No SQL is needed. Regression coverage
+Published on 2026-09-26. No SQL is needed. Regression coverage
 is in `node scripts/test-ob-mobile-round-ui.mjs --search-order-only`, including
 returning from an empty result set, repeated clicks, no persistence calls and
 starting another search after returning.
+
+Release verification:
+
+- Source commit `534ca8dfd9884b183a5bd3ea6aebf5356c48e69e`; production commit
+  `f8d614b430bbdd3970f02b6c4c9684605fe85bcd`, based on production `8132f0c`.
+- The isolated production candidate passed all 11 targeted unit tests and
+  browser checks at 390/1280px for interior/exterior and main/extra buildings,
+  including stable ordering, direct editing, slow/failed saves and locks.
+- The production build passed TypeScript and generated all 62 static pages
+  using placeholder configuration. Mobile and desktop screenshots were inspected.
+- Vercel reported success for `dpl_9uFivdpVE2LRwFnZb7LfGDLbiKGh`;
+  hushub.se login HTML returned HTTP 200 and the same deployment identifier.
+  This verifies deployment, not authenticated production interactions; all
+  interaction tests used synthetic records. No SQL, customer data or mail changed.
+- Unrelated assignment-confirmation work was excluded from the release.
 
 ## Not Included Yet
 
