@@ -1228,7 +1228,10 @@ function MobileRound(p: Props) {
             <div className="obm-search-scope">
               <button
                 aria-pressed={!everywhere}
-                onClick={() => setEverywhere(false)}
+                onClick={() => {
+                  setQuery('')
+                  setEverywhere(false)
+                }}
               >
                 Denna plats
               </button>
