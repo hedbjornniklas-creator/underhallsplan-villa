@@ -638,6 +638,7 @@ export default async function Page({
   })
 
   const buildingTypeParts = buildBuildingTypeParts({
+    floorModel,
     selections: overviewSelections ?? [],
     items: overviewItemsRows,
     groups: overviewGroupsRows,

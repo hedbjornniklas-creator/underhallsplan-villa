@@ -1,11 +1,14 @@
 // In-memory adapter only. No environment, credentials or network fallback.
+import { validFloorLevels } from '@/lib/ob/floorModel'
 type Row = Record<string, any>
+const garageExample = new URLSearchParams(location.search).has('garage')
 export const inspectionId = '10000000-0000-4000-8000-000000000001'
 export const parts = ['Huvudbyggnad', 'Gästhus med förråd och övernattningsrum'].map((name, index) => ({
   id: `10000000-0000-4000-8000-00000000001${index}`, inspection_id: inspectionId,
-  building_id: `10000000-0000-4000-8000-00000000002${index}`, name,
+  building_id: `10000000-0000-4000-8000-00000000002${index}`, name: garageExample && index ? 'Garage' : name,
   category_key: index ? 'guesthouse' : 'main', cover_path: new URLSearchParams(location.search).has('no-cover') ? null : 'synthetic-cover.png', scope_note: null,
-  sort_order: index, revision: 1, floor_model: { revision: 1, levels: [{ level: 0, name: 'Entréplan' }, { level: 1, name: 'Övre plan' }] },
+  sort_order: index, revision: 1, floor_model: { revision: 1, levels: garageExample && index
+    ? [{ level: 0, name: 'Entréplan' }] : [{ level: 0, name: 'Entréplan' }, { level: 1, name: 'Övre plan' }] },
 }))
 export const overview = { available: true,
   structure: { inspection_id: inspectionId, primary_part_id: parts[0].id, revision: 1 }, parts,
@@ -31,6 +34,9 @@ const items = [
 const groups: Row[] = [
   { id: 'weather-kind', overview_item_id: 'weather', key: 'weather', label: 'Väderlek' },
   { id: 'building-kind', overview_item_id: 'building_type', key: 'kind', label: 'Byggnadstyp' },
+  { id: 'building-floors', overview_item_id: 'building_type', key: 'floors', label: 'Våningar' },
+  { id: 'building-basement', overview_item_id: 'building_type', key: 'basement', label: 'Källare' },
+  { id: 'building-attic', overview_item_id: 'building_type', key: 'attic', label: 'Vind' },
   { id: 'year-part', overview_item_id: 'building_year', key: 'part', label: 'Byggnadsdel' },
   { id: 'year-built', overview_item_id: 'building_year', key: 'install_year', label: 'Byggnadsår', field_type: 'year' },
   { id: 'joist-kind', overview_item_id: 'joist', key: 'kind', label: 'Material' },
@@ -41,6 +47,9 @@ const groups: Row[] = [
 const choices: Record<string, string[][]> = {
   'weather-kind': [['clear', 'Klart väder'], ['rain', 'Regn']],
   'building-kind': [['villa', 'Friliggande enbostadshus']],
+  'building-floors': [['1', '1 plan'], ['2', '2 plan'], ['5', '5 plan']],
+  'building-basement': [['suterrang', 'Suterräng'], ['nej', 'Ingen källare']],
+  'building-attic': [['ingen', 'Ingen vind / plant tak']],
   'year-part': [['huvudbyggnad', 'Huvudbyggnad'], ['tillbyggnad', 'Tillbyggnad']],
   'joist-kind': [['wood', 'Trä'], ['concrete', 'Betong']],
   'heating-kind': [['pump', 'Värmepump'], ['electric', 'Direktverkande el']],
@@ -62,13 +71,15 @@ export const db: Record<string, Row[]> = {
   inspection_overview_selections: parts.flatMap(part => items.flatMap(item => (item.key === 'joist' ? ['plan0', 'plan1'] : [null]).map(floor_key => ({
     id: `${part.id}-${item.id}-${floor_key}`, inspection_id: inspectionId, building_part_id: part.id, ob_revision: 1,
     overview_item_id: item.id, set_index: 0, floor_key, note: null,
-    values: item.key === 'weather' ? { weather: 'clear' } : item.key === 'building_type' ? { kind: 'villa' }
+    values: item.key === 'weather' ? { weather: 'clear' } : item.key === 'building_type' ? { kind: 'villa', floors: '5', basement: 'suterrang', attic: 'ingen' }
       : item.key === 'building_year' ? { part: 'huvudbyggnad', install_year: '1986' }
         : item.key === 'heating' ? { kind: 'pump', install_year: '2018' } : { kind: 'wood' },
   })))),
 }
 if (new URLSearchParams(location.search).has('legacy')) db.inspection_overview_selections = db.inspection_overview_selections.filter(row => row.building_part_id === parts[0].id)
-export const qa = { failSaves: false, saveDelay: 30, writes: [] as Row[], reads: [] as string[] }
+export const qa = { failSaves: false, saveDelay: 30, writes: [] as Row[], reads: [] as string[],
+  snapshot: () => structuredClone({ parts, db }),
+}
 Object.assign(window, { __obFormTest: qa, __obMobileTest: qa })
 function write(table: string, operation: string, values: Row, filters: ((row: Row) => boolean)[]) {
   qa.writes.push({ table, operation, values: structuredClone(values), failed: qa.failSaves })
@@ -137,6 +148,16 @@ window.fetch = async (input, init) => {
       qa.writes.push({ operation, payload }); if (qa.failSaves) throw Error('Simulerat sparfel')
       const part = parts.find(part => part.id === payload.partId)!
       Object.assign(part, { name: payload.name ?? part.name, cover_path: payload.coverPath ?? part.cover_path, revision: part.revision + 1 })
+      return Response.json({ data: overview })
+    }
+    if (operation === 'floors') {
+      qa.writes.push({ operation, payload })
+      if (qa.failSaves) throw Error('Simulerat sparfel')
+      const part = parts.find(part => part.id === payload.partId)!
+      if (inspection.locked_at) throw Error('Besiktningen är låst')
+      if (part.floor_model.revision !== payload.revision) throw Error('Planen har ändrats. Ladda om.')
+      if (!validFloorLevels(payload.levels)) throw Error('Ogiltiga plan')
+      part.floor_model = { revision: part.floor_model.revision + 1, levels: structuredClone(payload.levels) }
       return Response.json({ data: overview })
     }
     throw Error(`Unsupported fixture operation: ${operation}`)

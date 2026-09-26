@@ -135,6 +135,43 @@ test('new-model room moves only trust configured levels, not legacy overview inf
   assert.deepEqual(calls[1].p_floor_keys, ['ovrigt','plan-1','plan0'])
 })
 
+test('explicit building floors override stale counts in new report data without mutating legacy answers', () => {
+  const report = load<typeof import('../src/lib/report/buildingData')>('src/lib/report/buildingData.ts', {
+    'server-only': {}, '@/content/standardtexts/loadStandardText': {}, '@/lib/ob/floorModel': modelHelpers,
+  })
+  for (const key of ['floors', 'Våningar', 'våning']) assert.equal(modelHelpers.isFloorCountGroup(key), true)
+  assert.equal(modelHelpers.isFloorCountGroup('basement'), false)
+  const data = { items: [{ id: 'type', key: 'building_type' }],
+    groups: ['type', 'floors', 'basement', 'attic'].map(key => ({ id: key, overview_item_id: 'type', key })),
+    options: [
+      { group_id: 'type', value: 'villa', label: 'Villa' },
+      { group_id: 'basement', value: 'suterrang', label: 'Suterräng' },
+      { group_id: 'attic', value: 'ingen', label: 'Ingen vind / plant tak' },
+    ],
+    selections: [{ overview_item_id: 'type', values: { type: 'villa', floors: '5', basement: 'suterrang', attic: 'ingen' } }],
+  }
+  const original = structuredClone(data)
+  const floorModel = { revision: 3, levels: [{ level: 0, name: 'Entréplan' }, { level: -1, name: 'Suterräng' }] }
+  const modelBefore = structuredClone(floorModel)
+  const expected = 'Byggnaden är uppförd som Villa med 2 plan (Plan -1 · Suterräng, Plan 0 · Entréplan), vindtyp: ingen vind / plant tak, källartyp: suterräng.'
+  const map = report.buildBuildingDataMap({ ...data, floorModel })
+  assert.equal(map['Byggnadstyp:'], expected)
+  const parts = report.buildBuildingTypeParts({ ...data, floorModel })
+  assert.equal(parts.FLOORS_TEXT, '2 plan (Plan -1 · Suterräng, Plan 0 · Entréplan)')
+  assert.equal(report.renderBuildingDataText(map, 'Byggnadstyp: Byggnaden är uppförd som {TYPE} med {FLOORS_TEXT}{ATTIC_TEXT}{BASEMENT_TEXT}.', parts).split('\n')[0], `Byggnadstyp: ${expected}`)
+  const legacy = 'Byggnaden är uppförd som Villa med 5 våningsplan samt Ingen vind / plant tak och suterräng.'
+  assert.equal(report.buildBuildingDataMap(data)['Byggnadstyp:'], legacy)
+  assert.equal(report.buildBuildingDataMap({ ...data, floorModel: null })['Byggnadstyp:'], legacy)
+  assert.equal(report.buildBuildingTypeParts(data).FLOORS_TEXT, '5 våningsplan')
+  for (const items of [data.items, []]) {
+    const empty = { ...data, items, selections: [], floorModel, conditions: { building_type: 'Garage' } }
+    assert.equal(report.buildBuildingTypeParts(empty).FLOORS_TEXT, parts.FLOORS_TEXT)
+    assert.equal(report.buildBuildingDataMap(empty)['Byggnadstyp:'], `Byggnaden är uppförd som Garage med ${parts.FLOORS_TEXT}.`)
+  }
+  assert.deepEqual(data, original)
+  assert.deepEqual(floorModel, modelBefore)
+})
+
 test('floor API uses authenticated identity, validates input and returns actionable conflicts', async () => {
   const calls: Record<string, unknown>[] = []
   let failure = ''

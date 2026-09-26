@@ -1,13 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Save, Trash2, X } from 'lucide-react'
 import { validFloorLevels, type ObFloorLevel, type ObFloorModel } from '@/lib/ob/floorModel'
 import { useObFloorModel } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
 import { requestBuildingCommand, type ObBuildingOverview } from '@/lib/ob/buildingStructure'
 
-export function ObFloorEditor({ inspectionId, disabled }: { inspectionId: string; disabled: boolean }) {
+export function ObFloorEditor({ inspectionId, disabled, onPendingChange }: {
+  inspectionId: string
+  disabled: boolean
+  onPendingChange?: (pending: boolean) => void
+}) {
   const { model, update } = useObFloorModel()
   const building = useObBuilding()
   const [draft, setDraft] = useState<ObFloorLevel[] | null>(null)
@@ -15,6 +19,10 @@ export function ObFloorEditor({ inspectionId, disabled }: { inspectionId: string
   const [number, setNumber] = useState('1')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    onPendingChange?.(draft !== null || busy)
+    return () => onPendingChange?.(false)
+  }, [draft, busy, onPendingChange])
   if (!model) return null
   const rows = draft ?? model.levels
   const change = (next: ObFloorLevel[]) => {

@@ -624,6 +624,7 @@ const supabase: any = createSupabaseServerClient()
   })
 
   const buildingTypeParts = buildBuildingTypeParts({
+    floorModel,
     selections: overviewSelections ?? [],
     items: overviewItemsRows,
     groups: overviewGroupsRows,

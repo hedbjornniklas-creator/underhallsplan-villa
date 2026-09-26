@@ -13,7 +13,7 @@ import { inspectionId, inspection, property, overview, parts } from './ob-forms-
 const params = new URLSearchParams(location.search)
 const sections: ObMenuSection[] = [{ key: 'grunddata', label: 'Fastighet & uppdrag' }, ...parts.map(part => ({ key: 'forutsattningar' as const, label: `Förutsättningar · ${part.name}`, partId: part.id })), { key: 'handlingar', label: 'Handlingar & upplysningar' }]
 function App() {
-  const [section, setSection] = useState(params.get('section') === 'documents' ? sections.length - 1 : params.get('section') === 'conditions' ? 1 : 0)
+  const [section, setSection] = useState(params.get('section') === 'documents' ? sections.length - 1 : params.get('section') === 'conditions' ? (params.has('extra') ? 2 : 1) : 0)
   const [menu, setMenu] = useState(false)
   const [propertyData, setProperty] = useState(property)
   const [inspectionData, setInspection] = useState(inspection)
@@ -22,7 +22,7 @@ function App() {
   const legacy = params.has('legacy')
   return <ObBuildingContext.Provider value={{ inspectionId, overview: legacy ? { ...data, structure: null } : data,
     part: legacy ? null : part, reload: async () => setData({ ...overview }) }}>
-    <ObFloorContext.Provider value={{ model: part.floor_model, update: () => {} }}>
+    <ObFloorContext.Provider value={{ model: params.has('legacy-floors') ? null : part.floor_model, update: () => {} }}>
       <main className="ob-form-shell" style={{ maxWidth: 1280, padding: 20, margin: 'auto', background: 'white' }}>
         <header className="obm-root" style={{ paddingBottom: 20, minHeight: 0 }}>
           <div className="flex items-center justify-between gap-3">
