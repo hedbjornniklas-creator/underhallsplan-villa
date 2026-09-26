@@ -55,6 +55,20 @@ editor's configuration. Every successful edit retains before/after data in
   Production deployment and editing the ongoing garage inspection are separate
   steps; neither is performed by these tests.
 
+### Release verification
+
+Published on 2026-09-26 after explicit user approval. Source commit `ca589e4`,
+production commit `6db18e25aefbad66746fefb5c18da78260324334`, based on `4b1e989`.
+The isolated production candidate passed 90 unit/database/API tests, the
+conditions-floor browser checks at 320/390/1280px and an optimized production
+build including TypeScript and 62 static pages. The local build used placeholder
+configuration, not production credentials. Candidate screenshots were inspected.
+Vercel reported success for `dpl_7VWFqhrKqAEAKZeHqsj829gTC7xz`; hushub.se login
+HTML returned HTTP 200 with that same deployment identifier. This verifies
+deployment, not authenticated live editing. No SQL, customer floor configuration,
+rooms, notes, images, stored reports or PDFs were changed by the release process.
+Unrelated assignment-confirmation and RenoApp work was excluded.
+
 ## Floor reference protection
 
 Deleting a level is rejected while rooms, per-floor answers (even empty saved rows),
