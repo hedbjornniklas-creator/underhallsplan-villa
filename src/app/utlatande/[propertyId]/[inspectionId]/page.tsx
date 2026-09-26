@@ -1007,22 +1007,22 @@ export default async function Page({
   const exteriorControlItemsForIds =
     (exteriorControlItems ?? []) as ExteriorControlItemRow[]
 
-  const controlPointIds = Array.from(
+  const selectedOutcomeIds = Array.from(
     new Set(
       exteriorControlItemsForIds
-        .map((item) => item.control_point_id)
+        .map((item) => item.selected_outcome_id)
         .filter((id): id is string => Boolean(id))
     )
   )
 
-  const { data: outcomeRows, error: outcomesError } = controlPointIds.length
+  // Historical selections remain valid after an outcome is archived or moved.
+  const { data: outcomeRows, error: outcomesError } = selectedOutcomeIds.length
     ? await supabase
         .from('settings_control_point_outcomes')
         .select(
           'id, control_point_id, label, risk_template, ftu_template, sort_order, is_active'
         )
-        .in('control_point_id', controlPointIds)
-        .eq('is_active', true)
+        .in('id', selectedOutcomeIds)
         .order('sort_order', { ascending: true })
     : { data: [], error: null }
 
@@ -1075,23 +1075,22 @@ export default async function Page({
 
   const interiorControlItemsRows =
     (interiorControlItems ?? []) as InteriorControlItemRow[]
-  const interiorControlPointIds = Array.from(
+  const interiorSelectedOutcomeIds = Array.from(
     new Set(
       interiorControlItemsRows
-        .map((item) => item.control_point_id)
+        .map((item) => item.selected_outcome_id)
         .filter((id): id is string => Boolean(id))
     )
   )
 
   const { data: interiorOutcomeRows, error: interiorOutcomesError } =
-    interiorControlPointIds.length > 0
+    interiorSelectedOutcomeIds.length > 0
       ? await supabase
           .from('settings_control_point_outcomes')
           .select(
             'id, control_point_id, label, risk_template, ftu_template, sort_order, is_active'
           )
-          .in('control_point_id', interiorControlPointIds)
-          .eq('is_active', true)
+          .in('id', interiorSelectedOutcomeIds)
           .order('sort_order', { ascending: true })
       : { data: [], error: null }
 

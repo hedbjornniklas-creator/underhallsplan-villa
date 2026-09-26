@@ -16,6 +16,7 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import { searchOutcomeRows } from '@/lib/ob/searchOutcomeRows'
 import DebouncedTextarea from './DebouncedTextarea'
+import { useSelectedOutcomes } from './useSelectedOutcomes'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
   type ControlPointSearchResult,
@@ -4065,6 +4066,7 @@ function RoomControlPointsSection({
   onPreviewImage,
   onUnlinkImage,
 }: RoomControlPointsSectionProps) {
+  const selectedOutcomes = useSelectedOutcomes<ControlPointOutcome>(items)
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<ControlPointLite[]>([])
   const [searching, setSearching] = useState(false)
@@ -4541,7 +4543,7 @@ function RoomControlPointsSection({
     const selectedOutcomeLabels = selectedItems
       .map(ci =>
         ci.selected_outcome_id
-          ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id)?.label ?? null
+          ? (selectedOutcomes[ci.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === ci.selected_outcome_id))?.label ?? null
           : null
       )
       .filter((label): label is string => Boolean(label))
@@ -4777,10 +4779,9 @@ function RoomControlPointsSection({
                 ? renderItemDetails(baseItem, isGreen ? 'Inget att notera' : 'Notering')
                 : selectedItems.map(ci => {
                     const selectedOutcome = ci.selected_outcome_id
-                      ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
+                      ? selectedOutcomes[ci.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) ?? null
                       : null
-                    if (!selectedOutcome) return null
-                    return renderItemDetails(ci, selectedOutcome.label, selectedOutcome)
+                    return renderItemDetails(ci, selectedOutcome?.label ?? ci.title, selectedOutcome ?? undefined)
                   })}
             </div>
 
@@ -5250,11 +5251,10 @@ function RoomControlPointsSection({
                 <div className="space-y-3">
                   {selectedItems.map(ci => {
                     const selectedOutcome = ci.selected_outcome_id
-                      ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
+                      ? selectedOutcomes[ci.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) ?? null
                       : null
-                    if (!selectedOutcome) return null
-                    const riskTemplate = (selectedOutcome.risk_template ?? '').trim()
-                    const ftuTemplate = (selectedOutcome.ftu_template ?? '').trim()
+                    const riskTemplate = (selectedOutcome?.risk_template ?? '').trim()
+                    const ftuTemplate = (selectedOutcome?.ftu_template ?? '').trim()
                     const riskText = (ci.risk_text ?? riskTemplate).trim()
                     const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
                     const ciId = ci.id ?? ''
@@ -5267,7 +5267,7 @@ function RoomControlPointsSection({
                       >
                         <div className="flex items-center justify-between">
                           <div className="text-xs font-semibold text-gray-900">
-                            {selectedOutcome.label}
+                            {selectedOutcome?.label ?? ci.title}
                           </div>
                         </div>
 

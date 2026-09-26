@@ -16,6 +16,7 @@ import { searchOutcomeRows } from '@/lib/ob/searchOutcomeRows'
 import { useObFloorModel } from './ObFloorProvider'
 import { modelFloorLabel } from '@/lib/ob/floorModel'
 import DebouncedTextarea from './DebouncedTextarea'
+import { useSelectedOutcomes } from './useSelectedOutcomes'
 import ControlPointSearchDialog, {
   type ControlPointSearchMode,
 } from './ControlPointSearchDialog'
@@ -3543,6 +3544,7 @@ function ExteriorControlPointsSection({
   onPreviewImage,
   onUnlinkImageFromNote,
 }: ExteriorControlPointsSectionProps) {
+  const selectedOutcomes = useSelectedOutcomes<ControlPointOutcome>(items)
   const groupedItems = useMemo(() => {
     const map = new Map<string, InspectionControlItem[]>()
     for (const ci of items) {
@@ -4125,11 +4127,10 @@ function ExteriorControlPointsSection({
                 <div className="space-y-3">
                   {selectedItems.map(ci => {
                     const selectedOutcome = ci.selected_outcome_id
-                      ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
+                      ? selectedOutcomes[ci.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) ?? null
                       : null
-                    if (!selectedOutcome) return null
-                    const riskTemplate = (selectedOutcome.risk_template ?? '').trim()
-                    const ftuTemplate = (selectedOutcome.ftu_template ?? '').trim()
+                    const riskTemplate = (selectedOutcome?.risk_template ?? '').trim()
+                    const ftuTemplate = (selectedOutcome?.ftu_template ?? '').trim()
                     const riskText = (ci.risk_text ?? riskTemplate).trim()
                     const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
                     const ciId = ci.id ?? ''
@@ -4142,7 +4143,7 @@ function ExteriorControlPointsSection({
                       >
                         <div className="flex items-center justify-between">
                           <div className="text-xs font-semibold text-gray-900">
-                            {selectedOutcome.label}
+                            {selectedOutcome?.label ?? ci.title}
                           </div>
                         </div>
 

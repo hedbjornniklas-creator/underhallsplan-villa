@@ -14,6 +14,7 @@ import { Camera, Check, FileText, Image as ImageIcon, Plus, RefreshCw, Search, T
 import { supabase } from '@/lib/supabaseClient'
 import { searchOutcomeRows } from '@/lib/ob/searchOutcomeRows'
 import DebouncedTextarea from './DebouncedTextarea'
+import { useSelectedOutcomes } from './useSelectedOutcomes'
 import ObMobileRound from './ObMobileRound'
 import { requestRoundMutation, type MoveResult, type RemovalResult, type ImageNoteResult, type RoundMutationOperation } from '@/lib/ob/roundMutations'
 import { clearConfirmedObNoteDrafts, hasObTextDraftsForRoundTarget } from '@/lib/ob/localTextDrafts'
@@ -403,6 +404,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
   const [exteriorDialogOpen, setExteriorDialogOpen] = useState(false)
 
   const [controlItems, setControlItems] = useState<InspectionControlItem[]>([])
+  const selectedOutcomes = useSelectedOutcomes<ControlPointOutcome>(controlItems)
   const [outcomesByControlPointId, setOutcomesByControlPointId] = useState<Record<string, ControlPointOutcome[]>>({})
   const [controlPointMetaById, setControlPointMetaById] = useState<Record<string, ControlPointLite>>({})
   const [quickNotes, setQuickNotes] = useState<QuickNote[]>([])
@@ -3223,7 +3225,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
 
     const outcomes = item.control_point_id ? outcomesByControlPointId[item.control_point_id] ?? [] : []
     const selectedOutcome = item.selected_outcome_id
-      ? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
+      ? selectedOutcomes[item.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
       : null
     const linkedImages = roundImages.filter(image => image.control_item_id === item.id)
     const detailLabel =
@@ -3626,7 +3628,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     isFreeNote: boolean
   ) {
     const selectedOutcome = item.selected_outcome_id
-      ? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
+      ? selectedOutcomes[item.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
       : null
     const linkedImages = roundImages.filter(image => image.control_item_id === item.id)
     const hasRiskText = Boolean(item.risk_text?.trim())
