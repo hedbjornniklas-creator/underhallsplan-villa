@@ -105,7 +105,8 @@ Published on 2026-09-25. Adding an outcome no longer boosts its
 control point in search results or category order. Ranking uses query match,
 room type/exterior key, catalogue order and a deterministic ID tie-breaker.
 Saved notes still make their control point available under Denna plats, but do
-not affect ranking in either scope. The query and selected scope stay intact.
+not affect ranking in either scope. The query and selected scope stay intact
+when adding an outcome.
 
 Adding stays in the list and changes the plus to a check. Clicking the text or
 check of an already added result opens its saved note directly. Closing the
@@ -136,6 +137,24 @@ Release verification:
   This verifies deployment, not authenticated production interactions; all
   interaction tests used synthetic records. No customer data or mail changed.
 - Unrelated assignment-confirmation work was excluded from the release.
+
+## Return To Place Decision (2026-09-26)
+
+The user chose to make Denna plats a return to the normal place view, rather
+than a filter retaining the current search. Clicking it clears only the search
+query and selects the local library. Saved notes, the place image section and
+grouped suggestions appear again. No note, image or draft is changed or saved
+by this navigation. The same behavior applies to exterior parts and extra
+buildings, and remains available in locked inspections.
+
+Typing a new search continues to select Hela biblioteket automatically.
+Adding outcomes still keeps the search and result order unchanged. This
+supersedes the previous ability to retain a query under Denna plats.
+
+Implemented locally, not yet published. No SQL is needed. Regression coverage
+is in `node scripts/test-ob-mobile-round-ui.mjs --search-order-only`, including
+returning from an empty result set, repeated clicks, no persistence calls and
+starting another search after returning.
 
 ## Not Included Yet
 

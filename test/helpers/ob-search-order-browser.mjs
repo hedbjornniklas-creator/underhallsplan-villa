@@ -15,7 +15,7 @@ export async function testSearchOrder(page, base, output) {
     }
     throw Error(`Missing button: ${text}`)
   }
-  async function fresh({ area = 'interior', extra = false, locked = false, local = false } = {}) {
+  async function fresh({ area = 'interior', extra = false, locked = false } = {}) {
     await page.goto(base)
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear() })
     await page.goto(`${base}/?search-order&strict${extra ? '&extra-building' : ''}${locked ? '&locked' : ''}`)
@@ -24,7 +24,25 @@ export async function testSearchOrder(page, base, output) {
     await page.click('.obm-place-row')
     await page.type('[aria-label="S\u00f6k notering"]', query)
     await page.waitForSelector(result('search-local-0'))
-    if (local) await clickText('Denna plats')
+  }
+  const records = () => page.evaluate(() => JSON.stringify({
+    notes: window.__obMobileTest.notes,
+    images: window.__obMobileTest.images,
+    calls: window.__obMobileTest.calls,
+  }))
+  async function returnToPlace(area = 'interior') {
+    const before = await records()
+    await clickText('Denna plats')
+    await page.waitForFunction(() => document.querySelector('[aria-label="S\u00f6k notering"]').value === '')
+    assert.equal(await page.$eval('.obm-search-scope [aria-pressed="true"]', el => el.textContent.trim()), 'Denna plats')
+    assert.equal(await page.$eval('.obm-catalog h2', el => el.textContent), 'Noteringsf\u00f6rslag')
+    assert.ok(await page.$('.obm-category'), 'room suggestions return to their usual groups')
+    assert.ok(await page.$(`[data-note-id="${area === 'interior' ? 'note-1' : 'outside-note'}"]`), 'saved notes return')
+    assert.equal(await page.$eval('.obm-place-images h2', el => el.textContent), area === 'interior' ? 'Bilder i rummet' : 'Bilder p\u00e5 platsen')
+    assert.ok(await page.$(result('search-local-0')))
+    assert.equal(await page.$(result('search-other-0')), null, 'unrelated suggestions are hidden again')
+    assert.equal(await records(), before, 'returning changes no notes, images or persistence calls')
+    await assertFocus('.obm-search-scope [aria-pressed="true"]')
   }
   async function snapshot(id) {
     return page.evaluate(id => {
@@ -68,47 +86,58 @@ export async function testSearchOrder(page, base, output) {
     await page.setViewport({ width, height: 844 })
     for (const area of ['interior', 'exterior']) {
       for (const extra of [false, true]) {
-        for (const local of [false, true]) {
-          await fresh({ area, extra, local })
-          const id = local ? 'search-local-10' : 'search-remote-0'
-          const before = await position(id)
-          assert.ok(before.scroll > 0, 'exercise a result below the first viewport')
-          assert.equal(before.ids.length, local ? 12 : 16)
-          await page.click(action(id))
-          await added(id)
-          await unchanged(before, id)
-          await assertFocus(action(id))
-          assert.equal(await page.$('dialog[open]'), null, 'adding does not open an editor')
+        await fresh({ area, extra })
+        const id = 'search-remote-0'
+        const before = await position(id)
+        assert.ok(before.scroll > 0, 'exercise a result below the first viewport')
+        assert.equal(before.ids.length, 16)
+        await page.click(action(id))
+        await added(id)
+        await unchanged(before, id)
+        await assertFocus(action(id))
+        assert.equal(await page.$('dialog[open]'), null, 'adding does not open an editor')
 
-          await page.click(`${result(id)} .obm-result-text`)
-          await page.waitForSelector('dialog[aria-label="Notering"][open] textarea')
-          await page.click('dialog textarea')
-          await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control')
-          await page.type('dialog textarea', 'Justerad sparad notering')
-          await page.click('dialog [aria-label="Tillbaka"]')
-          await closed()
-          await unchanged(before, id)
-          await assertFocus(`${result(id)} .obm-result-text`)
+        await page.click(`${result(id)} .obm-result-text`)
+        await page.waitForSelector('dialog[aria-label="Notering"][open] textarea')
+        await page.click('dialog textarea')
+        await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control')
+        await page.type('dialog textarea', 'Justerad sparad notering')
+        await page.click('dialog [aria-label="Tillbaka"]')
+        await closed()
+        await unchanged(before, id)
+        await assertFocus(`${result(id)} .obm-result-text`)
 
-          await page.click(action(id))
-          await page.waitForSelector('dialog[aria-label="Notering"][open] textarea')
-          assert.equal(await page.$eval('dialog textarea', el => el.value), 'Justerad sparad notering', 'check opens the saved note, not the template')
-          await page.click('dialog [aria-label="Tillbaka"]')
-          await closed()
-          await unchanged(before, id)
-          await assertFocus(action(id))
-          assert.equal(await page.evaluate(id => window.__obMobileTest.notes.filter(note => note.selected_outcome_id === id).length, id), 1)
+        await page.click(action(id))
+        await page.waitForSelector('dialog[aria-label="Notering"][open] textarea')
+        assert.equal(await page.$eval('dialog textarea', el => el.value), 'Justerad sparad notering', 'check opens the saved note, not the template')
+        await page.click('dialog [aria-label="Tillbaka"]')
+        await closed()
+        await unchanged(before, id)
+        await assertFocus(action(id))
+        assert.equal(await page.evaluate(id => window.__obMobileTest.notes.filter(note => note.selected_outcome_id === id).length, id), 1)
 
-          const sibling = local ? 'search-local-11' : 'search-remote-1'
-          const beforeSibling = await position(sibling)
-          await page.click(action(sibling))
-          await added(sibling)
-          await unchanged(beforeSibling, sibling)
-          assert.equal(await page.evaluate(() => window.__obMobileTest.calls.filter(call => call.kind === 'create').length), 2)
-          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-          await page.screenshot({ path: resolve(output, `search-stable-${width}-${area}-${extra ? 'extra' : 'main'}-${local ? 'local' : 'all'}.png`) })
-          console.log(`PASS: search ${width}px, ${area}, ${extra ? 'extra' : 'main'} building, ${local ? 'local' : 'all'} scope`)
-        }
+        const sibling = 'search-remote-1'
+        const beforeSibling = await position(sibling)
+        await page.click(action(sibling))
+        await added(sibling)
+        await unchanged(beforeSibling, sibling)
+        assert.equal(await page.evaluate(() => window.__obMobileTest.calls.filter(call => call.kind === 'create').length), 2)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+        await page.screenshot({ path: resolve(output, `search-stable-${width}-${area}-${extra ? 'extra' : 'main'}-all.png`) })
+        await returnToPlace(area)
+        assert.equal(await page.$('[aria-label="Rensa s\u00f6kning"]'), null)
+        assert.equal(await page.$$eval('.obm-result', nodes => nodes.length), 14, 'local suggestions include the point already used here')
+        await page.screenshot({ path: resolve(output, `search-return-${width}-${area}-${extra ? 'extra' : 'main'}.png`) })
+
+        const afterReturn = await records()
+        await page.type('[aria-label="S\u00f6k notering"]', query)
+        await page.waitForSelector(result('search-other-0'))
+        assert.equal(await page.$eval('.obm-search-scope [aria-pressed="true"]', el => el.textContent.trim()), 'Hela biblioteket')
+        assert.equal(await page.$$eval('.obm-result', nodes => nodes.length), 16)
+        assert.ok(await page.$(`${result(id)} .obm-added`), 'saved result stays checked in a new search')
+        assert.equal(await page.$('.obm-place-images'), null)
+        assert.equal(await records(), afterReturn)
+        console.log(`PASS: stable search and return to place, ${width}px, ${area}, ${extra ? 'extra' : 'main'} building`)
       }
     }
   }
@@ -142,6 +171,15 @@ export async function testSearchOrder(page, base, output) {
   assert.equal(await page.evaluate(() => window.__obMobileTest.calls.filter(call => call.kind === 'create').length), 0)
   await page.click('dialog [aria-label="Tillbaka"]')
   await closed()
+  await returnToPlace()
+  assert.equal(await page.$$eval('.obm-result', nodes => nodes.length), 12, 'no unused control points enter the local library')
+
+  // An empty result set must also offer a way back, without changing records.
+  await fresh()
+  await page.type('[aria-label="S\u00f6k notering"]', ' qzxnomatch')
+  await page.waitForFunction(() => document.querySelectorAll('.obm-result').length === 0)
+  await returnToPlace()
+  await returnToPlace()
 
   // Group order must also be independent of saved outcomes when no query is entered.
   await fresh()
@@ -156,5 +194,5 @@ export async function testSearchOrder(page, base, output) {
   await clickText('Denna plats')
   assert.ok(await page.$(result('search-remote-1')), 'local scope still includes the control point already used here')
   assert.equal(await page.$(result('search-other-0')), null)
-  console.log('PASS: stable search order, row geometry, scroll/focus, direct edit/back, multi-add, slow/failed saves and locks; desktop/mobile, both areas, scopes and building contexts.')
+  console.log('PASS: stable search, direct edit/back, slow/failed saves and locks; Denna plats clears search and restores local notes/images/groups without writes; new searches reopen the full library.')
 }
