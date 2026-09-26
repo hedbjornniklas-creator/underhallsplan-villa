@@ -46,3 +46,28 @@ queries. Browser checks use synthetic data at mobile and desktop sizes for main
 and extra buildings, including catalogue retirement and autosave/reload. Existing
 published-report tests verify snapshot-only reads and refusal to fall back to
 live inspection data. No customer inspection needs to be opened or changed.
+
+## Production release, 2026-09-26
+
+Published after the user's explicit approval together with the pending-image
+filters documented in `OB_MOBILE_ROUND_V2.md`. Source commit `388ae32` was applied
+to current production `6db18e2`, producing release commit
+`0350f5c637efd72a12a8c3facab3eb1d78525524`.
+
+The production-only selected-outcome visibility correction from `4b1e989` was
+preserved. Its report lookup is superseded by inspection-owned text; retired or
+missing templates still cannot hide saved notes. The corresponding report and
+editor tests were updated in the release checkout, not discarded.
+
+The exact production candidate passed 101 unit/database/API tests, pending-image
+and note-copy browser suites, and the full optimized Next.js build including
+TypeScript and 62 static pages. Screenshots at mobile and desktop sizes were
+inspected. All tests used synthetic data; the local build used placeholder
+configuration, not production credentials.
+
+Vercel reported successful deployment `dpl_4NRZnCSNNsJxCAfjHunE4T8rq6VK`.
+At 18:24 UTC, hushub.se/login returned HTTP 200 and that exact deployment ID.
+This verifies deployment, not authenticated customer editing. No SQL, customer
+record edits, historical review/backfill, snapshot regeneration or PDF changes
+were performed. Other chats' assignment-confirmation and RenoApp work was left
+untouched and excluded from the release.
