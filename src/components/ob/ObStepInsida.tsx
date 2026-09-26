@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useObFloorModel } from './ObFloorProvider'
+import { copyObOutcomeText, readObNoteText } from '@/lib/ob/noteText'
 import { floorModelKeys, modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
 import {
   useEffect,
@@ -1622,9 +1623,7 @@ export default function ObStepInsida({ inspection }: ObStepInsidaProps) {
       control_point_id: baseItem.control_point_id,
       title: baseItem.title,
       status: 'remark',
-      note: (outcome.note_template ?? '').trim() || null,
-      risk_text: (outcome.risk_template ?? '').trim() || null,
-      ftu_text: (outcome.ftu_template ?? '').trim() || null,
+      ...copyObOutcomeText(outcome),
       sort_order: maxSort + 10,
       selected_outcome_id: outcome.id,
     }
@@ -4464,18 +4463,19 @@ function RoomControlPointsSection({
     }
 
     if (selectedItems.length === 0) {
+      const copiedText = copyObOutcomeText(outcome)
       onUpdateItem(baseItem.id, {
         status: 'remark',
         selected_outcome_id: outcome.id,
-        note: (outcome.note_template ?? '').trim() || null,
+        ...copiedText,
         risk_text:
           (baseItem.risk_text ?? '').trim().length > 0
             ? baseItem.risk_text
-            : (outcome.risk_template ?? '').trim() || null,
+            : copiedText.risk_text,
         ftu_text:
           (baseItem.ftu_text ?? '').trim().length > 0
             ? baseItem.ftu_text
-            : (outcome.ftu_template ?? '').trim() || null,
+            : copiedText.ftu_text,
       })
     } else {
       onAddOutcomeItem(baseItem, outcome)
@@ -4570,11 +4570,11 @@ function RoomControlPointsSection({
 
     const renderItemDetails = (
       ci: InspectionControlItem,
-      label: string,
-      outcome?: ControlPointOutcome | null
+      label: string
     ) => {
-      const riskText = (ci.risk_text ?? outcome?.risk_template ?? '').trim()
-      const ftuText = (ci.ftu_text ?? outcome?.ftu_template ?? '').trim()
+      const savedText = readObNoteText(ci)
+      const riskText = savedText.risk_text.trim()
+      const ftuText = savedText.ftu_text.trim()
       const ciImages = ci.id ? imagesByControlItemId[ci.id] || [] : []
       const hasRiskText = riskText.length > 0
       const hasFtuText = ftuText.length > 0
@@ -4780,7 +4780,7 @@ function RoomControlPointsSection({
                       ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
                       : null
                     if (!selectedOutcome) return null
-                    return renderItemDetails(ci, selectedOutcome.label, selectedOutcome)
+                    return renderItemDetails(ci, selectedOutcome.label)
                   })}
             </div>
 
@@ -5185,18 +5185,19 @@ function RoomControlPointsSection({
                             }
                           } else {
                             if (selectedItems.length === 0) {
+                              const copiedText = copyObOutcomeText(outcome)
                               onUpdateItem(baseItem.id, {
                                 status: 'remark',
                                 selected_outcome_id: outcome.id,
-                                note: (outcome.note_template ?? '').trim() || null,
+                                ...copiedText,
                                 risk_text:
                                   (baseItem.risk_text ?? '').trim().length > 0
                                     ? baseItem.risk_text
-                                    : (outcome.risk_template ?? '').trim() || null,
+                                    : copiedText.risk_text,
                                 ftu_text:
                                   (baseItem.ftu_text ?? '').trim().length > 0
                                     ? baseItem.ftu_text
-                                    : (outcome.ftu_template ?? '').trim() || null,
+                                    : copiedText.ftu_text,
                               })
                             } else {
                               onAddOutcomeItem(baseItem, outcome)
@@ -5253,10 +5254,9 @@ function RoomControlPointsSection({
                       ? outcomes.find(outcome => outcome.id === ci.selected_outcome_id) || null
                       : null
                     if (!selectedOutcome) return null
-                    const riskTemplate = (selectedOutcome.risk_template ?? '').trim()
-                    const ftuTemplate = (selectedOutcome.ftu_template ?? '').trim()
-                    const riskText = (ci.risk_text ?? riskTemplate).trim()
-                    const ftuText = (ci.ftu_text ?? ftuTemplate).trim()
+                    const savedText = readObNoteText(ci)
+                    const riskText = savedText.risk_text.trim()
+                    const ftuText = savedText.ftu_text.trim()
                     const ciId = ci.id ?? ''
                     const ciImages = ciId ? imagesByControlItemId[ciId] || [] : []
 
