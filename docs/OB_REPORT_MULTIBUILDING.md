@@ -53,3 +53,24 @@ historisk rapport ändrades vid kontrollen.
 Verifiering: `test/report-building-layout.test.ts`, `test/report-pagination.test.ts`
 och `node scripts/test-report-building-layout.mjs`. Webbläsartestet använder
 syntetiska uppgifter, riktiga rapportkomponenter och lokala standardtexter.
+
+### Publicerat 2026-09-27
+
+- Avgränsad release: `bc92d06883cb867c1202866047d2e277f0825597`, baserad på
+  dåvarande `origin/main` (`0350f5c637efd72a12a8c3facab3eb1d78525524`).
+  Endast de 19 rapport-/profilfilerna ingår; övrigt lokalt arbete är orört.
+- 78 regressionstester och webbläsartesterna godkända i releasekopian.
+  Optimerat Next-bygge, TypeScript och samtliga 62 statiska sidor godkända.
+  Lokal byggverifiering använde stagingkonfiguration, inte produktionsnycklar.
+- Vercel visar Ready i Production, med rätt commit och domänen `hushub.se`:
+  https://vercel.com/niklas-projects-65efdd50/underhallsplan-villa/B2eBg4n51x3somn8DoHMzMzjj73r
+- Inloggad, skrivskyddad kontroll på hushub.se visar `Hemsida (valfritt)`.
+  Inga profilfält ändrades vid kontrollen.
+- Den aktuella tvåbyggnadsbesiktningens liveförhandsgranskning lästes utan
+  utskick eller arkivering. PDF-läget har 34 sidor: Garage börjar på sida 21,
+  Bilaga 1 på sida 27. Samtliga bilder laddas; inga överhöga A4-sidor eller
+  ensamma avsnittsrubriker hittades i den färdigberäknade layouten.
+- Den tidigare tillhandahållna kundlänken och dess lagrade PDF svarar HTTP 200.
+  PDF:ens 19 960 502 byte är identiska före/efter publicering (SHA-256
+  `2a748b7aaef26cdeb0451a22d41f14b974ba3e6bf56ce5a5a6a0b68355bd9839`).
+  Ingen historisk PDF återskapades och inga kundmejl skickades.
