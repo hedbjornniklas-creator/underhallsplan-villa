@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+// @ts-expect-error Native Node tests require the .ts extension.
 import { createRoundBackHistory, isObRoundBackManaged } from '../src/lib/ob/roundBackHistory.ts'
 
 test('a building handoff consumes the shared Back boundary once and ignores retired owners', () => {
