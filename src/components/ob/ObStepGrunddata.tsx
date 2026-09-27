@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import ObFormSaveStatus from './ObFormSaveStatus'
+import { ObFormField, ObFormSection } from './ObFormPrimitives'
 import { Camera, Image as ImageIcon } from 'lucide-react'
 import './ob-forms.css'
 import { enqueueObGrunddataWrite, recordObGrunddataWriteResult, trackObGrunddataWrite } from '@/lib/ob/grunddataWrites'
@@ -870,8 +871,7 @@ export default function ObStepGrunddata({
   const buildingContext = useObBuilding()
 
   const objectSection = (
-        <section className="ob-form-section ob-property-object">
-          <h2>Objekt</h2>
+        <ObFormSection title="Objekt" className="ob-property-object">
 
           <Field
             label="Adress"
@@ -1026,7 +1026,7 @@ export default function ObStepGrunddata({
             ) : null}
           </div>}
           <ObFormSaveStatus saving={savingProp} />
-        </section>
+        </ObFormSection>
   )
   const inspectionTypeField = (
           <fieldset className="min-w-0 space-y-1">
@@ -1315,7 +1315,7 @@ export default function ObStepGrunddata({
   )
 
   return (
-    <div className={`ob-form-root space-y-4${workspace ? ' ob-property-workspace' : ''}`}>
+    <div className={`ob-form-root space-y-4${workspace ? ' ob-property-workspace ob-form-compact' : ''}`}>
       {isInspectionLocked ? (
         <div role="status" className="ob-form-notice">
           Besiktningen är låst. Grunddata visas i läsläge.
@@ -1326,28 +1326,24 @@ export default function ObStepGrunddata({
       <div className="ob-form-columns">
         {objectSection}
         {workspace ? <>
-          <section className="ob-form-section ob-property-customer">
-            <h2>Uppdragsgivare</h2>
+          <ObFormSection title="Uppdragsgivare" className="ob-property-customer">
             {customerFields}
             <ObFormSaveStatus saving={savingOrderer} />
-          </section>
-          <section className="ob-form-section ob-property-assignment">
-            <h2>Besiktningsuppdrag</h2>
+          </ObFormSection>
+          <ObFormSection title="Besiktningsuppdrag" className="ob-property-assignment">
             {inspectionTypeField}
             {dateFields}
             {assignmentNumberField}
             {confirmationField}
             <ObFormSaveStatus saving={savingInsp} />
-          </section>
+          </ObFormSection>
           <div className="ob-property-details">
-            <section className="ob-form-section">
-              <h2>Omfattning</h2>
+            <ObFormSection title="Omfattning">
               {scopeFields}
-            </section>
-            <section className="ob-form-section">
-              <h2>Närvarande</h2>
+            </ObFormSection>
+            <ObFormSection title="Närvarande">
               {attendeesFields}
-            </section>
+            </ObFormSection>
           </div>
         </> : <>
           <section className="ob-form-section">
@@ -1389,8 +1385,7 @@ function Field({
 }) {
   const id = useId()
   return (
-    <div className="ob-form-field">
-      <label htmlFor={id} className="ob-form-label">{label}</label>
+    <ObFormField label={label} id={id}>
       {multiline ? (
         <DebouncedTextarea
           id={id}
@@ -1419,7 +1414,7 @@ function Field({
           disabled={readOnly}
         />
       )}
-    </div>
+    </ObFormField>
   )
 }
 

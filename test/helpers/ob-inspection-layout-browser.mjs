@@ -43,6 +43,19 @@ export async function testInspectionLayout(base, output) {
       await page.evaluate(() => { sessionStorage.clear(); localStorage.clear() })
       await page.waitForSelector('.ob-property-workspace input')
       const menuRight = await measure('property', width)
+      const propertyForm = await page.evaluate(() => {
+        const root = document.querySelector('.ob-property-workspace')
+        const input = root.querySelector('.ob-form-field input')
+        return {
+          font: getComputedStyle(input).fontSize,
+          height: input.getBoundingClientRect().height,
+          heading: getComputedStyle(root.querySelector('.ob-form-section h2')).fontSize,
+          label: getComputedStyle(root.querySelector('.ob-form-field label')).fontSize,
+        }
+      })
+      assert.deepEqual(propertyForm, width < 768
+        ? { font: '16px', height: 48, heading: '18px', label: '14px' }
+        : { font: '14px', height: 44, heading: '16px', label: '13px' })
       await choose('Handlingar & upplysningar')
       await page.waitForSelector('.ob-documents-workspace textarea')
       assert.equal(await measure('documents', width), menuRight)

@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
 import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
@@ -8,6 +8,9 @@ import { ArrowLeft, BookOpen, ChevronsLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
 import ObAcceptedAssignmentTerms from '@/components/ob/ObAcceptedAssignmentTerms'
+import { ObFormField, ObFormSection } from '@/components/ob/ObFormPrimitives'
+import '@/components/ob/ob-forms.css'
+import '@/components/ob/ob-assignment-form.css'
 import { validateObEarlyStartReason, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 
 type AssignmentStatus =
@@ -560,25 +563,16 @@ export default function AssignmentDetailsPage() {
   }
   return (
     <Protected>
-      <main className="relative min-h-full overflow-hidden">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'linear-gradient(135deg, #f7fbff 0%, #ffffff 52%, #f3f9ff 100%)',
-          }}
-        />
-        <div className="pointer-events-none absolute inset-0 bg-transparent" />
-
-        <div className="relative mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
-          <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm backdrop-blur-sm md:p-5">
+      <main className="ob-form-shell ob-assignment-page">
+        <div className="ob-assignment-shell space-y-4">
+          <header className="ob-form-root ob-form-compact ob-assignment-header">
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => router.push('/ob')}
                 aria-label="Till huvudsidan"
                 title="Till huvudsidan"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                className="ob-assignment-nav"
               >
                 <ChevronsLeft size={15} strokeWidth={2.2} />
               </button>
@@ -586,13 +580,14 @@ export default function AssignmentDetailsPage() {
                 type="button"
                 onClick={() => router.push('/ob/assignments')}
                 aria-label="Tillbaka"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                title="Tillbaka"
+                className="ob-assignment-nav"
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </button>
-              <h1 className="text-2xl font-semibold text-slate-950">Uppdragsbekräftelse</h1>
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <span className="px-2 text-xs font-medium text-slate-500">
+              <h1>Uppdragsbekräftelse</h1>
+              <div className="ob-assignment-actions">
+                <span className="ob-assignment-save-status" role="status">
                   {saveState === 'saving' ? 'Sparar...' : saveState === 'saved' ? 'Sparat' : ''}
                 </span>
                 {assignment?.status === 'draft' ? (
@@ -601,7 +596,7 @@ export default function AssignmentDetailsPage() {
                     onClick={() => void handleSend()}
                     disabled={!canSend || sending || booking || converting || reissuing || saving || loading}
                     title="Skickar uppdragsbekräftelsen till kunden för godkännande."
-                    className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-[0_10px_20px_-14px_rgba(15,23,42,0.9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none"
+                    className="obm-primary"
                   >
                     {sending ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
                   </button>
@@ -612,7 +607,6 @@ export default function AssignmentDetailsPage() {
                     onClick={() => void handleReissue()}
                     disabled={reissuing || sending || booking || converting || saving || loading}
                     title="Skapar en ny utkastversion baserad på befintliga uppgifter. Du kan redigera den och sedan skicka för nytt godkännande."
-                    className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 transition duration-200 hover:-translate-y-0.5 hover:bg-amber-100 hover:shadow-[0_10px_20px_-12px_rgba(245,158,11,0.45)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-50 disabled:text-amber-600 disabled:shadow-none"
                   >
                     {reissuing ? 'Skapar ny...' : 'Skicka om uppdragsbekräftelse'}
                   </button>
@@ -622,7 +616,6 @@ export default function AssignmentDetailsPage() {
                   onClick={() => void handleBook()}
                   disabled={!canBook || booking || sending || converting || reissuing || saving || loading}
                   title="Accepterar uppdraget som besiktningsman och skickar full beställningsbekräftelse."
-                  className="rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-[0_12px_24px_-12px_rgba(16,185,129,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700 disabled:shadow-none"
                 >
                   {booking ? 'Accepterar...' : 'Acceptera uppdrag'}
                 </button>
@@ -631,13 +624,13 @@ export default function AssignmentDetailsPage() {
                   onClick={() => void handleConvert()}
                   disabled={(!canConvert && !assignment?.inspection_id) || converting || booking || sending || reissuing || saving || loading}
                   title="Startar besiktningen och öppnar besiktningsvyn."
-                  className="rounded-lg border border-indigo-600 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition duration-200 hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-[0_10px_20px_-12px_rgba(79,70,229,0.95)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:border-indigo-200 disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
+                  className="obm-primary"
                 >
                   {converting ? 'Startar...' : assignment?.inspection_id ? 'Öppna besiktning' : 'Starta besiktning'}
                 </button> : null}
                 {canStartEarly ? <button type="button" onClick={() => setEarlyStartOpen(true)}
                   disabled={converting || booking || sending || reissuing || saving || loading}
-                  className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:text-amber-700">
+                >
                   Starta före godkännande
                 </button> : null}
               </div>
@@ -691,22 +684,21 @@ export default function AssignmentDetailsPage() {
           ) : null}
 
           {loading || !form || !assignment ? (
-            <div className="rounded-2xl border border-white/30 bg-white/85 p-5 text-sm text-gray-700">
+            <div role="status" className="py-5 text-sm text-gray-700">
               Laddar uppdrag...
             </div>
           ) : (
             <>
-              <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
-                <div className="grid gap-2 md:grid-cols-4">
-                  <ReadOnly compact label="Status" value={assignmentStatusToLabel(assignment.status)} />
-                  <ReadOnly compact label="Skickad" value={summary?.sentAt ?? '-'} />
-                  <ReadOnly compact label="Godkänd (kund)" value={summary?.approvedByCustomerAt ?? '-'} />
+              <section className="ob-form-root ob-form-compact ob-assignment-form">
+                <dl className="ob-assignment-summary">
+                  <ReadOnly label="Status" value={assignmentStatusToLabel(assignment.status)} />
+                  <ReadOnly label="Skickad" value={summary?.sentAt ?? '-'} />
+                  <ReadOnly label="Godkänd (kund)" value={summary?.approvedByCustomerAt ?? '-'} />
                   <ReadOnly
-                    compact
                     label="Accepterad (besiktningsman)"
                     value={summary?.acceptedByInspectorAt ?? '-'}
                   />
-                </div>
+                </dl>
                 {assignment.assignment_type === 'OB' && assignment.accepted_at ? (
                   <a href="#approved-terms" className="inline-flex min-h-11 items-center gap-2 text-sm text-blue-700 underline underline-offset-4">
                     <BookOpen className="h-4 w-4" aria-hidden="true" />
@@ -714,18 +706,17 @@ export default function AssignmentDetailsPage() {
                   </a>
                 ) : null}
                 <fieldset
-                  className="space-y-4 border-0 p-0"
+                  className="ob-assignment-columns"
                   disabled={isEditingLocked || sending}
                   aria-label="Uppdragsdata"
                 >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <SectionCard title="Objekt">
+                  <ObFormSection title="Objekt">
                     <Field
                       label="Adress"
                       value={form.propertyAddress}
                       onChange={(value) => updateField('propertyAddress', value)}
                     />
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="ob-form-pair">
                       <Field
                         label="Postnummer"
                         value={form.propertyPostalCode}
@@ -774,29 +765,9 @@ export default function AssignmentDetailsPage() {
                         />
                       </>
                     )}
-                  </SectionCard>
+                  </ObFormSection>
 
-                  <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-sm font-semibold text-gray-900">Uppdragsgivare</h3>
-                      <div className="flex items-center gap-2">
-                        <RoleChip
-                          label="Säljare"
-                          active={form.ordererRole === 'seller'}
-                          onClick={() => updateField('ordererRole', 'seller')}
-                        />
-                        <RoleChip
-                          label="Köpare"
-                          active={form.ordererRole === 'buyer'}
-                          onClick={() => updateField('ordererRole', 'buyer')}
-                        />
-                        <RoleChip
-                          label="Lägenhet"
-                          active={form.ordererRole === 'apartment'}
-                          onClick={() => updateField('ordererRole', 'apartment')}
-                        />
-                      </div>
-                    </div>
+                  <ObFormSection title="Uppdragsgivare">
                     <Field
                       label="Namn"
                       value={form.customerName}
@@ -807,7 +778,7 @@ export default function AssignmentDetailsPage() {
                       value={form.customerAddress}
                       onChange={(value) => updateField('customerAddress', value)}
                     />
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="ob-form-pair">
                       <Field
                         label="Postnummer"
                         value={form.customerPostalCode}
@@ -819,23 +790,32 @@ export default function AssignmentDetailsPage() {
                         onChange={(value) => updateField('customerCity', value)}
                       />
                     </div>
-                    <Field
-                      label="Telefon"
-                      value={form.customerPhone}
-                      onChange={(value) => updateField('customerPhone', value)}
-                      type="tel"
-                    />
-                    <Field
-                      label="E-post"
-                      value={form.customerEmail}
-                      onChange={(value) => updateField('customerEmail', value)}
-                      type="email"
-                    />
-                  </section>
-                </div>
+                    <div className="ob-form-pair">
+                      <Field
+                        label="Telefon"
+                        value={form.customerPhone}
+                        onChange={(value) => updateField('customerPhone', value)}
+                        type="tel"
+                      />
+                      <Field
+                        label="E-post"
+                        value={form.customerEmail}
+                        onChange={(value) => updateField('customerEmail', value)}
+                        type="email"
+                      />
+                    </div>
+                  </ObFormSection>
 
-                <SectionCard title="Besiktningsdag">
-                  <div className="grid gap-3 md:grid-cols-3">
+                <ObFormSection title="Besiktningsuppdrag" className="ob-assignment-schedule">
+                  <fieldset className="min-w-0 space-y-1">
+                    <legend className="ob-form-label">Typ av uppdrag</legend>
+                    <div className="flex flex-wrap gap-x-5">
+                      <RoleChoice label="Köparbesiktning" active={form.ordererRole === 'buyer'} onChange={() => updateField('ordererRole', 'buyer')} />
+                      <RoleChoice label="Säljarbesiktning" active={form.ordererRole === 'seller'} onChange={() => updateField('ordererRole', 'seller')} />
+                      <RoleChoice label="Lägenhetsbesiktning" active={form.ordererRole === 'apartment'} onChange={() => updateField('ordererRole', 'apartment')} />
+                    </div>
+                  </fieldset>
+                  <div className="ob-form-pair">
                     <Field
                       label="Datum"
                       value={form.preferredDate}
@@ -848,24 +828,24 @@ export default function AssignmentDetailsPage() {
                       onChange={(value) => updateField('preferredTime', value)}
                       type="time"
                     />
-                    <Field
-                      label="Pris (SEK)"
-                      value={form.priceAmount}
-                      onChange={(value) => updateField('priceAmount', value)}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                    />
                   </div>
-                </SectionCard>
+                  <Field
+                    label="Pris (SEK)"
+                    value={form.priceAmount}
+                    onChange={(value) => updateField('priceAmount', value)}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                  />
+                </ObFormSection>
                 </fieldset>
 
-                <SectionCard title="Beställda tilläggsuppdrag">
+                <ObFormSection title="Beställda tilläggsuppdrag">
                   {addonOrders.length === 0 ? (
                     <p className="text-sm text-gray-600">Inga tilläggsuppdrag är valda ännu.</p>
                   ) : (
                     <div className="space-y-3">
-                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                      <div className="overflow-x-auto border-y border-gray-200">
                         <table className="min-w-full text-sm">
                           <thead>
                             <tr className="bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-600">
@@ -890,7 +870,7 @@ export default function AssignmentDetailsPage() {
                         </table>
                       </div>
 
-                      <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                      <div className="py-2 text-sm">
                         Valda tilläggsuppdrag: <strong>{addonSummary.count}</strong>
                         {' · '}
                         Summa:{' '}
@@ -904,7 +884,7 @@ export default function AssignmentDetailsPage() {
                       </div>
                     </div>
                   )}
-                </SectionCard>
+                </ObFormSection>
               </section>
               {assignment.assignment_type === 'OB' && assignment.accepted_at ? (
                 <ObAcceptedAssignmentTerms
@@ -920,37 +900,20 @@ export default function AssignmentDetailsPage() {
   )
 }
 
-function SectionCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-function RoleChip({
+function RoleChoice({
   label,
   active,
-  onClick,
+  onChange,
 }: {
   label: string
   active: boolean
-  onClick: () => void
+  onChange: () => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        'inline-flex h-[18px] items-center rounded-full border px-3 text-[11px] leading-none transition',
-        active
-          ? 'border-indigo-600 bg-indigo-600 text-white'
-          : 'border-gray-300 bg-white text-gray-700 hover:border-indigo-400 hover:text-indigo-700',
-      ].join(' ')}
-    >
-      {label}
-    </button>
+    <label className="ob-form-choice">
+      <input type="radio" name="assignment-role" checked={active} onChange={onChange} />
+      <span>{label}</span>
+    </label>
   )
 }
 
@@ -969,42 +932,32 @@ function Field({
   step?: string
   min?: string
 }) {
+  const id = useId()
   return (
-    <label className="space-y-1">
-      <span className="block text-xs font-medium text-gray-600">{label}</span>
+    <ObFormField label={label} id={id}>
       <input
+        id={id}
         type={type}
         value={value}
         step={step}
         min={min}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />
-    </label>
+    </ObFormField>
   )
 }
 
 function ReadOnly({
   label,
   value,
-  compact = false,
 }: {
   label: string
   value: string
-  compact?: boolean
 }) {
   return (
-    <div
-      className={
-        compact
-          ? 'rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5'
-          : 'rounded-lg border border-gray-200 bg-gray-50 px-3 py-2'
-      }
-    >
-      <div className={compact ? 'text-[10px] font-medium text-gray-500' : 'text-xs font-medium text-gray-500'}>
-        {label}
-      </div>
-      <div className={compact ? 'mt-0.5 text-xs text-gray-900' : 'mt-0.5 text-sm text-gray-900'}>{value}</div>
+    <div>
+      <dt className="ob-form-label">{label}</dt>
+      <dd>{value}</dd>
     </div>
   )
 }

@@ -1,0 +1,96 @@
+/* Inspector's working form only. Archived terms and PDF rendering are unchanged. */
+.ob-assignment-page {
+  min-height: 100%;
+  background: white;
+  padding: 12px;
+}
+.ob-assignment-shell {
+  width: 100%;
+  max-width: 1280px;
+  min-width: 0;
+  margin: 0 auto;
+}
+.ob-assignment-header {
+  border-bottom: 1px solid var(--obm-line);
+  padding: 8px 0 16px;
+}
+.ob-assignment-header h1 {
+  min-width: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ob-assignment-header .ob-assignment-nav {
+  width: 48px;
+  padding: 12px;
+  flex-shrink: 0;
+  border-color: transparent;
+}
+.ob-assignment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.ob-assignment-save-status {
+  order: 1;
+  margin-left: auto;
+  width: 5rem;
+  min-height: 24px;
+  flex-shrink: 0;
+  color: var(--obm-muted);
+  font-size: .8125rem;
+}
+.ob-assignment-form {
+  container: ob-assignment / inline-size;
+}
+.ob-assignment-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: 12px 24px;
+  padding: 4px 0 20px;
+}
+.ob-assignment-summary dd {
+  margin-top: 4px;
+}
+.ob-assignment-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 24px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.ob-assignment-form .ob-form-pair {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 12px;
+}
+@container ob-assignment (min-width: 42rem) {
+  .ob-assignment-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ob-assignment-schedule {
+    grid-column: 1 / -1;
+  }
+}
+@container ob-assignment (min-width: 64rem) {
+  .ob-assignment-columns {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .ob-assignment-schedule {
+    grid-column: auto;
+  }
+}
+@media (min-width: 768px) {
+  .ob-assignment-page {
+    padding: 24px;
+  }
+}
+@media (min-width: 768px) and (pointer: fine) {
+  .ob-assignment-header .ob-assignment-nav {
+    width: 44px;
+    padding: 10px;
+  }
+}

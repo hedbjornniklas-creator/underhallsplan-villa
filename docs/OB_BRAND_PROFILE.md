@@ -150,9 +150,8 @@ Beslutad uppföljning 2026-09-25. Detta är en sidlokal formulärlayout, inte en
 - Byggnader ligger under objektuppgifterna som en kompakt lista med antal,
   byggnadsnamn och namngivna ikonverktyg för tillägg, redigering och borttagning.
   Ingen stor byggnadssektion ovanför formuläret och inga kort runt byggnaderna.
-- Dator med mus: 14 px formulärtext vid normal textstorlek, 20 px
-  sektionsrubriker med vikt 600, minst 44 px kontroller och 12 px fältavstånd.
-  Mobil behåller minst 16 px inmatningstext och 48 px pekmål.
+- Formulärstorlekar följer den gemensamma regeln för UB och Fastighet & uppdrag
+  nedan. Den ersätter sidans tidigare sektionsrubriker på 20 px.
 - Vita ytor, tunna avdelare, neutrala texter och ÖB-blå handlingar enligt
   profilens befintliga färger. Ingen ny generell krympning av sidans innehåll.
 - Besiktningsmannens informationssektion visas inte på Fastighet & uppdrag.
@@ -161,6 +160,38 @@ Beslutad uppföljning 2026-09-25. Detta är en sidlokal formulärlayout, inte en
 - Autosparande, lokala utkast, låsning, tillägg och byggnadskommandon behåller
   befintlig funktion. Sparstatus har reserverat utrymme och får inte flytta
   formuläret under inmatning.
+
+## UB och Fastighet & uppdrag
+
+Beslutad uppföljning 2026-09-27 efter användarens jämförelse av sidorna.
+Lokal implementation för granskning; ingen publicering ingår i detta beslut.
+
+- Använd gemensamma fältetiketter, sektionskomponenter och kompakta stilar.
+  Båda arbetsformulären använder Manrope och befintliga ÖB-färger.
+- Dator med mus: 14 px inmatning, 13 px neutrala fältetiketter, 16 px
+  sektionsrubriker med vikt 600, minst 44 px kontroller och 12 px fältavstånd.
+  Kompaktheten hämtas från UB, inte dess äldre Arial-typografi eller kort.
+- Mobil: 16 px inmatning, 14 px etiketter, 18 px sektionsrubriker, minst
+  48 px pekmål och 16 px fältavstånd. Ingen förminskning för att få plats.
+- Objekt, Uppdragsgivare och Besiktningsuppdrag ligger i tre kolumner när
+  innehållsbredden är minst 64 rem, två från 42 rem, annars en. Postnummer
+  och ort samt datum och tid kan delas i par när utrymmet räcker.
+- UB:s dekorativa ytterkort, sektionskort, gradient och skuggor tas bort.
+  Status och datum visas som etiketter med värden, inte små separata kort.
+  Tunna avdelare används som på Fastighet & uppdrag; arbetsbredd högst 1280 px.
+- UB:s uppdragstyp använder namngivna radioval i Besiktningsuppdrag, liksom
+  Fastighet & uppdrag. Sparstatus behåller reserverat utrymme.
+- Sidorna behåller sina olika arbetsflöden. Inga ändringar av autosparande,
+  låsning, tidig start, acceptans, utskick, villkor, snapshots eller PDF:er.
+  Bekräftelsens globala produktnavigation behålls; den är inte ett moment
+  inne i besiktningen. Övriga ÖB-formulär och moduler påverkas inte.
+
+Lokal verifiering 2026-09-27: 32 riktade tester och produktionsbygget är
+godkända. Webbläsartester och granskade skärmbilder täcker dator, mobilbredder
+från 320 px och 200 % text. Autosparande behåller fokus och rullningsläge;
+låsning, godkända villkor och byte-identisk hämtning av arkiverad PDF har
+kontrollerats med syntetiska testdata. Ingen publicering eller ändring av
+kunddata har gjorts i denna etapp.
 
 ## Förutsättningar
 
@@ -264,6 +295,7 @@ mobiltest, ett funktionstest eller en publicering av listan.
 
 | Datum | Beslut | Avgränsning |
 | --- | --- | --- |
+| 2026-09-27 | Gemensam kompakt, ramfri formulärstil för UB och Fastighet & uppdrag. | Endast arbetsvyerna. 16 px sektionsrubriker på dator, 14 px fälttext, 44 px kontroller; mobilen behåller 48 px pekmål. Inga ändringar av historiska dokument eller spar- och godkännandeflöden. Lokal implementation, inte publicering. |
 | 2026-09-27 | Samordna besiktningens sidhuvud, meny och grundstilar. | Första etappen omfattar arbetsvyn, inte rapporter eller datalagring. ÖB-rundans större datorlayout följer separat. Användaren godkände publicering efter den lokala förhandsvisningen och godkända tester. |
 | 2026-09-23 | Använd RenoApps lugna listformspråk med ÖB:s blå profil. Den senaste datorriktningen och mobilexemplet blir referens för 1.2. | Användaren bad att uppdatera profilen efter godkännande av mobilexemplet. Äldre ingångar behålls under övergången. Ingen appimplementation eller publicering i denna leverans. |
 | 2026-09-23 | Bygg den nya gemensamma listan under de fyra korten på ÖB:s startsida. | Separat lokal implementation för utvärdering. Båda gamla listorna och deras arbetsflöden behålls. Ingen publicering eller pensionering av gamla listor. |

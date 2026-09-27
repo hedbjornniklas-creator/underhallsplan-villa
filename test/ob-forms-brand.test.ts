@@ -36,7 +36,8 @@ test('form migration keeps snapshots, draft scope and locks rather than importin
   const source = read('src/components/ob/ObStepGrunddata.tsx')
   assert.match(source, /from\('ob_property_snapshot'\)/)
   assert.match(source, /hasFrozenInspectorSnapshot/)
-  assert.match(source, /htmlFor=\{id\}/)
+  assert.match(source, /<ObFormField label=\{label\} id=\{id\}/)
+  assert.match(read('src/components/ob/ObFormPrimitives.tsx'), /htmlFor=\{id\}/)
   assert.match(read('src/components/ob/ObStepForutsattningar.tsx'), /buildingDraftScope\(inspection.id, building\?\.part\?\.id\)/)
 })
 test('conditions mount one shared sheet with back navigation and preserve text blur on Escape', () => {

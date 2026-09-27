@@ -226,6 +226,14 @@
 .ob-property-workspace .ob-form-section > h2 {
   font-weight: 600;
 }
+.ob-form-compact .ob-form-section > h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ob-form-compact .ob-form-section > * + * {
+  margin-top: 16px;
+}
 .ob-property-workspace .ob-form-pair {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
   gap: 12px;
@@ -293,39 +301,44 @@
   }
 }
 @media (min-width: 768px) and (pointer: fine) {
-  .ob-property-workspace {
+  .ob-form-compact {
     font-size: .875rem;
     line-height: 1.45;
   }
-  .ob-property-workspace .ob-form-section {
+  .ob-form-compact .ob-form-section {
     padding: 16px 0;
   }
-  .ob-property-workspace .ob-form-section > * + * {
+  .ob-form-compact .ob-form-section > * + * {
     margin-top: 12px;
   }
-  .ob-property-workspace .ob-form-section > h2 {
-    font-size: 1.25rem;
+  .ob-form-compact .ob-form-section > h2 {
+    font-size: 1rem;
     line-height: 1.4;
   }
-  .ob-property-workspace .ob-form-field {
+  .ob-form-compact .ob-form-field {
     gap: 4px;
   }
-  .ob-property-workspace :where(input:not([type=checkbox], [type=radio], [type=file]), select, textarea) {
+  .ob-form-compact .ob-form-label {
+    font-size: .8125rem;
+    font-weight: 400;
+    color: var(--obm-muted);
+  }
+  .ob-form-compact :where(input:not([type=checkbox], [type=radio], [type=file]), select, textarea) {
     min-height: 44px;
     padding: 8px 10px;
   }
-  .ob-property-workspace button {
+  .ob-form-compact button {
     min-width: 44px;
     min-height: 44px;
     padding: 8px 10px;
   }
-  .ob-property-workspace .ob-form-choice {
+  .ob-form-compact .ob-form-choice {
     min-height: 44px;
     padding: 6px 0;
     gap: 8px;
     font-size: inherit;
   }
-  .ob-property-workspace .ob-form-muted {
+  .ob-form-compact .ob-form-muted {
     line-height: 1.45;
   }
   .ob-property-workspace .ob-building-overview-compact > ul > li {
