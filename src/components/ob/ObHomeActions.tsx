@@ -91,7 +91,6 @@ function CreateInspectionButton() {
 
     try {
       setCreating(true)
-      
 
       const {
         data: { user },
