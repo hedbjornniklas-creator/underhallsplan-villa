@@ -1,7 +1,7 @@
 'use client'
 
 import {
-  ArrowLeft, Building2, ClipboardCheck, ClipboardList, Droplets,
+  ArrowLeft, Building2, ClipboardList, Droplets,
   FileText, House, Ruler, Send, Settings2,
 } from 'lucide-react'
 import type { ObSectionKey } from './ObWizard'
@@ -11,7 +11,7 @@ export type ObMenuSection = { key: ObSectionKey; label: string; partId?: string 
 
 const icons = {
   grunddata: House, handlingar: FileText, forutsattningar: Settings2,
-  'runda-ny': ClipboardList, runda: ClipboardList, review: ClipboardCheck,
+  'runda-ny': ClipboardList, runda: ClipboardList,
   delivery: Send, areamatning: Ruler, fuktkontroll: Droplets,
 }
 

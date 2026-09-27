@@ -135,8 +135,8 @@ Beslutad uppföljning 2026-09-25. Detta är en sidlokal formulärlayout, inte en
 - Vita ytor, tunna avdelare, neutrala texter och ÖB-blå handlingar enligt
   profilens befintliga färger. Ingen ny generell krympning av sidans innehåll.
 - Besiktningsmannens informationssektion visas inte på Fastighet & uppdrag.
-  Visningen i Granska samt profil, certifieringar, rapportdata, PDF:er och
-  historiska snapshots är oförändrade.
+  Profil, certifieringar, rapportdata, PDF:er och historiska snapshots är
+  oförändrade. Det separata steget Granska har avvecklats enligt beslutet nedan.
 - Autosparande, lokala utkast, låsning, tillägg och byggnadskommandon behåller
   befintlig funktion. Sparstatus har reserverat utrymme och får inte flytta
   formuläret under inmatning.
@@ -152,6 +152,19 @@ Beslutad uppföljning 2026-09-25. Detta är en sidlokal formulärlayout, inte en
 - Placeringen gäller även besiktningar utan aktiverad byggnadsindelning.
   Fastighet & uppdrag visar inget separat bildval. Befintlig bildlagring behålls;
   detta kräver ingen migrering och ändrar inga publicerade rapporter.
+
+## Granskning och leverans
+
+Beslutad uppföljning 2026-09-27:
+
+- Det separata menysteget Granska och dess egen komponent tas bort för alla
+  besiktningar. Skicka utlåtande behåller sitt namn och sin förhandsgranskning.
+- Sparad navigering till Granska öppnar Skicka utlåtande. Vald byggnad bevaras
+  om den finns kvar; en uttrycklig länk till ÖB-rundan har fortsatt företräde.
+- Gemensam rapportmotor, PDF-layout, kundens digitala utlåtande, leverans,
+  godkännandekontroller och låsning ändras inte. Ingen datamigrering behövs.
+- Publicerade snapshots och dokumenthistorik får inte skrivas om. Den lokala
+  granskningen av textutkast är en annan funktion och finns kvar.
 
 ## Status är information, inte en ny arbetsprocess
 

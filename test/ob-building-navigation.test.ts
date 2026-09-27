@@ -26,8 +26,8 @@ test('each building has its conditions immediately followed by its round, preser
     const before = structuredClone(parts)
     const sections = getSections(false, false, false, { structure: {}, parts })
     assert.deepEqual(sections.map(row => row.key), ['grunddata', 'handlingar',
-      ...parts.flatMap(() => ['forutsattningar', 'runda-ny']), 'review', 'delivery'])
-    assert.deepEqual(sections.slice(2, -2).map(row => row.partId), parts.flatMap(part => [part.id, part.id]))
+      ...parts.flatMap(() => ['forutsattningar', 'runda-ny']), 'delivery'])
+    assert.deepEqual(sections.slice(2, -1).map(row => row.partId), parts.flatMap(part => [part.id, part.id]))
     for (const [key, label] of [['forutsattningar', 'Förutsättningar'], ['runda-ny', 'ÖB-runda']]) {
       assert.deepEqual(sections.filter(row => row.key === key), parts.map(part => ({
         key, label: `${label} · ${part.name}`, partId: part.id,
@@ -39,7 +39,7 @@ test('each building has its conditions immediately followed by its round, preser
 })
 
 test('all inspections expose the round without the retired inside/outside editors', () => {
-  const keys = ['grunddata', 'handlingar', 'forutsattningar', 'runda-ny', 'review', 'delivery']
+  const keys = ['grunddata', 'handlingar', 'forutsattningar', 'runda-ny', 'delivery']
   for (const buildings of [undefined, null, { structure: null, parts: [] }]) {
     assert.deepEqual(getSections(false, false, false, buildings).map(row => row.key), keys)
     assert.deepEqual(getSections(true, false, false, buildings).map(row => row.key), keys.filter(key => key !== 'utsida'))
@@ -51,9 +51,9 @@ test('all inspections expose the round without the retired inside/outside editor
 
 test('shared add-ons and completion steps follow all building rounds', () => {
   const sections = getSections(false, true, true, { structure: {}, parts: [{ id: 'a', name: 'Hus' }, { id: 'b', name: 'Hus' }] })
-  assert.deepEqual(sections.slice(-4), [
+  assert.deepEqual(sections.slice(-3), [
     { key: 'areamatning', label: 'Areamätning' }, { key: 'fuktkontroll', label: 'Fuktkontroll' },
-    { key: 'review', label: 'Granska' }, { key: 'delivery', label: 'Skicka utlåtande' },
+    { key: 'delivery', label: 'Skicka utlåtande' },
   ])
   assert.deepEqual(sections.filter(row => row.key === 'runda-ny').map(row => row.partId), ['a', 'b'])
 })

@@ -3,10 +3,6 @@ import test from 'node:test'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { createElement, type ComponentType } from 'react'
-import * as React from 'react'
-import * as jsxRuntime from 'react/jsx-runtime'
-import { renderToStaticMarkup } from 'react-dom/server'
 // @ts-expect-error Native Node tests require the .ts extension.
 import { buildReportSpec } from '../src/lib/report/reportSpec.ts'
 
@@ -93,27 +89,4 @@ test('building appendices have independent source paths, full note blocks and TO
     assert.ok(toc.type==='toc'&&toc.entries.some(e=>e.sectionId===section.id))
   }
   assert.deepEqual(buildReportSpec({inspectionSide:'buyer'}),legacy,'generating appendices must not mutate the global spec')
-})
-
-test('enrolled review renders the complete report and never mounts unscoped legacy editors',()=>{
-  let active = true
-  const dependencies: Record<string, unknown> = {
-    react: React, 'react/jsx-runtime': jsxRuntime, 'lucide-react': { ExternalLink: () => null },
-    './ObBuildingContext': { useObBuilding: () => active ? { overview: {
-      structure: { revision: 7 }, parts: [{ name: 'Huvudbyggnad' }, { name: 'Garage' }],
-    } } : null },
-  }
-  for (const name of ['ObStepAreamatning','ObStepForutsattningar','ObStepFuktkontroll','ObStepGrunddata','ObStepHandlingar','ObStepInsida','ObStepUtsida']) {
-    dependencies['./'+name] = { default: () => createElement('div', { 'data-legacy-editor': name }) }
-  }
-  const { default: Review } = load<{default: ComponentType<Record<string, unknown>>}>('src/components/ob/ObStepGranska.tsx', dependencies)
-  const props = { property: { id: 'property' }, inspection: { id: root }, availableSections: ['grunddata','forutsattningar','runda-ny'] }
-  const scoped = renderToStaticMarkup(createElement(Review, props))
-  assert.ok(scoped.includes(`/utlatande/property/${root}?embed=1&amp;revision=7`))
-  assert.match(scoped, /Garage/)
-  assert.doesNotMatch(scoped, /data-legacy-editor/)
-  active = false
-  const legacy = renderToStaticMarkup(createElement(Review, props))
-  assert.match(legacy, /data-legacy-editor/)
-  assert.doesNotMatch(legacy, /<iframe/)
 })

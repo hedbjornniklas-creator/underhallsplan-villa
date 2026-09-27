@@ -7,10 +7,10 @@ const sections = [
   { key: 'grunddata' }, { key: 'handlingar' },
   { key: 'forutsattningar', partId: 'main' }, { key: 'runda-ny', partId: 'main' },
   { key: 'forutsattningar', partId: 'guest' }, { key: 'runda-ny', partId: 'guest' },
-  { key: 'review' }, { key: 'delivery' },
+  { key: 'delivery' },
 ]
 test('restores section and exact building, including after visiting a shared step', () => {
-  for (const section of ['runda-ny', 'forutsattningar', 'handlingar', 'review']) {
+  for (const section of ['runda-ny', 'forutsattningar', 'handlingar', 'delivery']) {
     assert.deepEqual(restore(JSON.stringify({ section, partId: 'guest' }), sections, 'grunddata', 'main'), { section, partId: 'guest' })
   }
   assert.notEqual(inspectionNavigationKey('first'), inspectionNavigationKey('second'))
@@ -27,6 +27,15 @@ test('round deep links and the retired alias resolve to the current round', () =
 })
 test('legacy inspections remain usable without building parts or valid storage', () => {
   assert.deepEqual(restore('{"section":"runda-ny"}', [{ key: 'grunddata' }, { key: 'runda-ny' }], 'grunddata', null), { section: 'runda-ny', partId: null })
+})
+
+test('retired review restores delivery and preserves the selected building', () => {
+  const raw = JSON.stringify({ section: 'review', partId: 'guest' })
+  assert.deepEqual(restore(raw, sections, 'grunddata', 'main'), { section: 'delivery', partId: 'guest' })
+  assert.deepEqual(restore(raw, sections, 'grunddata', 'main', true), { section: 'runda-ny', partId: 'guest' })
+  assert.deepEqual(restore('{"section":"review","partId":"removed"}', sections, 'grunddata', 'main'), { section: 'delivery', partId: 'main' })
+  assert.deepEqual(restore('{"section":"review"}', [{ key: 'grunddata' }, { key: 'delivery' }], 'grunddata', null), { section: 'delivery', partId: null })
+  assert.deepEqual(restore(raw, [{ key: 'grunddata' }], 'grunddata', null), { section: 'grunddata', partId: null })
 })
 
 test('retired inside/outside steps resolve to the round without losing the building', () => {

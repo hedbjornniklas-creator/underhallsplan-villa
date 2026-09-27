@@ -15,14 +15,13 @@ test('OB form styling remains scoped and uses the existing profile tokens', () =
   assert.match(css.toString(), /var\(--obm-control\)/)
 })
 
-test('compact property workspace is opt-in and leaves the review inspector display intact', () => {
+test('compact property workspace is opt-in and preserves shared inspector data rendering', () => {
   const source = read('src/components/ob/ObStepGrunddata.tsx')
   assert.match(source, /workspace = false/)
   assert.match(source, /workspace && <ObBuildingOverview locked=\{isInspectionLocked\} compact/)
   assert.match(source, /const inspectorSection = \(/)
   assert.match(source, /\{inspectorSection\}/)
   assert.match(read('src/components/ob/ObWizard.tsx'), /<ObStepGrunddata\s+workspace/)
-  assert.doesNotMatch(read('src/components/ob/ObStepGranska.tsx'), /<ObStepGrunddata[^>]*\bworkspace/)
   const styles = read('src/components/ob/ob-forms.css')
   assert.match(styles, /@media \(min-width: 768px\) and \(pointer: fine\)/)
   assert.match(styles, /@container ob-property \(min-width: 64rem\)/)

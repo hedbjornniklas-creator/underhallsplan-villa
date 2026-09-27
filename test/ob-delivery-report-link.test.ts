@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
+
+test('delivery retains report preview after removal of the separate review step', () => {
+  const source = readFileSync(new URL('../src/components/ob/ObWizard.tsx', import.meta.url), 'utf8')
+  const delivery = source.slice(source.indexOf("case 'delivery':"), source.indexOf("case 'grunddata':"))
+  assert.doesNotMatch(source, /ObStepGranska|case 'review':|\| 'review'|availableSections/)
+  assert.equal(existsSync(new URL('../src/components/ob/ObStepGranska.tsx', import.meta.url)), false)
+  assert.match(source, /const iframeSrc = hasValidIds \? `\$\{reportHref\}\?embed=1&pdf=1`/)
+  assert.match(source, /const reportDeliveryPreviewHref = iframeSrc/)
+  assert.match(delivery, /Förhandsgranska utlåtande/)
+  assert.match(delivery, /<iframe\s+title="Utlåtande för granskning"\s+src=\{reportDeliveryPreviewHref\}/)
+  assert.match(delivery, /href=\{reportDeliveryPreviewHref\}/)
+})
 
 test('delivery opens the frozen customer report, never the live print preview', () => {
   const source = readFileSync(new URL('../src/components/ob/ObWizard.tsx', import.meta.url), 'utf8')

@@ -9,7 +9,6 @@ import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepRunda from './ObStepRunda'
 import ObStepAreamatning from './ObStepAreamatning'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
-import ObStepGranska from './ObStepGranska'
 import type { Tables } from '@/types/supabase'
 import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
@@ -64,7 +63,6 @@ export type InspectionSide = Tables<'inspections'>['inspection_side']
 export type ObSectionKey =
   | 'overview'
   | 'delivery'
-  | 'review'
   | 'grunddata'
   | 'handlingar'
   | 'forutsattningar'
@@ -84,7 +82,6 @@ interface ObWizardProps {
   onPropertyUpdated?: (p: ObWizardProperty) => void
   onInspectionUpdated?: (i: ObWizardInspection) => void
   onInspectionAddonSelectionChanged?: (selectedAddonKeys: string[]) => void
-  availableSections?: ObSectionKey[]
   onOpenStepMenu?: () => void
 }
 
@@ -195,7 +192,6 @@ function ObWizardContent({
   onPropertyUpdated,
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
-  availableSections,
   onOpenStepMenu,
 }: ObWizardProps) {
   const normalizedProperty = useMemo<ObWizardProperty>(
@@ -897,18 +893,6 @@ function ObWizardContent({
           </div>
         )
       }
-
-    case 'review':
-      return (
-        <ObStepGranska
-          property={normalizedProperty}
-          inspection={normalizedInspection}
-          availableSections={availableSections ?? []}
-          onPropertyUpdated={onPropertyUpdated}
-          onInspectionUpdated={onInspectionUpdated}
-          onInspectionAddonSelectionChanged={onInspectionAddonSelectionChanged}
-        />
-      )
 
     case 'grunddata':
       return (

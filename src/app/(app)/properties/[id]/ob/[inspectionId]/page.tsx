@@ -201,7 +201,6 @@ function getVisibleSections(
   if (showMoistureControl) {
     sections.push({ key: 'fuktkontroll', label: 'Fuktkontroll' })
   }
-  sections.push({ key: 'review', label: 'Granska' })
   sections.push({ key: 'delivery', label: 'Skicka utlåtande' })
 
   if (!isApartmentInspection) return sections
@@ -728,7 +727,7 @@ export default function InspectionDetailPage() {
 
         <div
           className={`relative mx-auto w-full ${brandedForm ? 'ob-form-shell' : ''} ${
-            isRoundSection || activeSection === 'review'
+            isRoundSection
               ? 'max-w-none space-y-0'
               : 'max-w-7xl space-y-3 md:space-y-4'
           }`}
@@ -780,7 +779,6 @@ export default function InspectionDetailPage() {
                 activeSection === 'insida' ||
                 activeSection === 'utsida' ||
                 isRoundSection ||
-                activeSection === 'review' ||
                 activeSection === 'areamatning' ||
                 activeSection === 'fuktkontroll'
                   ? 'p-0 md:p-0'
@@ -813,7 +811,6 @@ export default function InspectionDetailPage() {
                 onPropertyUpdated={(updated) => setProperty(updated as Property)}
                 onInspectionUpdated={(updated) => setInspection(updated as Inspection)}
                 onInspectionAddonSelectionChanged={handleInspectionAddonSelectionChanged}
-                availableSections={visibleSections.map((section) => section.key)}
               />
               </ObBuildingContext.Provider>}
               </ObAssignmentWorkflowBoundary>
