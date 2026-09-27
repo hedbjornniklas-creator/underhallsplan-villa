@@ -230,7 +230,8 @@ function formatSnapshotTimestamp(value: string | null | undefined) {
   return date.toLocaleString('sv-SE')
 }
 
-function renderBlocks(items: SnapshotInspectionBlock[]) {
+function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3) {
+  const Heading = headingLevel === 4 ? 'h4' : 'h3'
   if (items.length === 0) {
     return <p className="text-sm text-gray-600">Inga noteringar.</p>
   }
@@ -248,7 +249,7 @@ function renderBlocks(items: SnapshotInspectionBlock[]) {
             key={`${title}-${index}`}
             className="rounded-lg border border-gray-200 bg-white p-3"
           >
-            <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+            <Heading className="text-sm font-semibold text-gray-900">{title}</Heading>
             <p className="mt-1 flex items-start gap-2 whitespace-pre-wrap text-sm text-gray-700">
               <SnapshotIcon name="note" />
               <span>{note}</span>
@@ -276,6 +277,60 @@ function renderBlocks(items: SnapshotInspectionBlock[]) {
         )
       })}
     </div>
+  )
+}
+
+function SnapshotBuilding({ building, index }: { building: Record<string, unknown>; index: number }) {
+  const name = toText(building.name, `Byggnad ${index + 2}`)
+  const introductions = asRecordArray(building.introduction)
+  const furnishing = getTextByPath(building, 'conditions.furnishing_level', '')
+  const buildingData = getTextByPath(building, 'buildingData.text', '')
+
+  return (
+    <section
+      aria-label={name}
+      data-snapshot-building={toText(building.id, String(index))}
+      className="space-y-6 border-t-4 border-[#5b9bd5] bg-white p-4 [overflow-wrap:anywhere] sm:p-6"
+    >
+      <h2 className="text-2xl font-semibold text-[#315b83]">{name}</h2>
+      {introductions.map((introduction, introIndex) => {
+        const scope = toText(introduction.noteText, '')
+        const photos = Array.isArray(introduction.photoUrls)
+          ? introduction.photoUrls.filter((photo): photo is string => typeof photo === 'string')
+          : []
+        return (
+          <div key={introIndex} className="space-y-3">
+            {photos.map((photo, photoIndex) => {
+              const src = toImageUrl(photo)
+              return src ? (
+                <img
+                  key={photoIndex}
+                  src={src}
+                  alt={`Byggnadsbild: ${name}`}
+                  className="mx-auto block max-h-80 max-w-full object-contain"
+                />
+              ) : null
+            })}
+            {scope ? <p className="whitespace-pre-wrap text-sm text-slate-700">{scope}</p> : null}
+          </div>
+        )
+      })}
+      {furnishing || buildingData ? (
+        <div className="space-y-2 text-sm text-slate-700">
+          <h3 className="font-semibold text-slate-900">Förutsättningar</h3>
+          {furnishing ? <p>Möblering: {furnishing}</p> : null}
+          {buildingData ? <p className="whitespace-pre-wrap">{buildingData}</p> : null}
+        </div>
+      ) : null}
+      {(['exterior', 'interior'] as const).map((side) => (
+        <div key={side} className="space-y-3">
+          <h3 className="text-sm font-semibold text-slate-900">
+            {side === 'exterior' ? 'Noteringar - byggnad utsida' : 'Noteringar - byggnad insida'}
+          </h3>
+          {renderBlocks(getBlockArrayByPath(building, `${side}.blocks`), 4)}
+        </div>
+      ))}
+    </section>
   )
 }
 
@@ -376,6 +431,8 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const appendix2Text = loadAppendixText('APPENDIX_2_LITEN_BYGGORDBOK_SBR')
   const appendix3Text = loadAppendixText('APPENDIX_3_LIFESPAN_TABLE_SBR')
   const appendices = asRecord(mock.appendices)
+  // Extra buildings must come from this published snapshot, never the live inspection.
+  const buildings = asRecordArray(appendices.buildings)
   const areaMeasurementAppendix = asRecord(appendices.area_measurement)
   const moistureControlAppendix = asRecord(appendices.moisture_control)
   const areaMeasurementEnabled = areaMeasurementAppendix.enabled === true
@@ -715,6 +772,10 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
           </h2>
           <div className="mt-3">{renderBlocks(interiorBlocks)}</div>
         </section>
+
+        {buildings.map((building, index) => (
+          <SnapshotBuilding key={`${toText(building.id, '')}-${index}`} building={building} index={index} />
+        ))}
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Bilagor</h2>

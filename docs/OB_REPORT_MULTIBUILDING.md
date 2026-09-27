@@ -35,6 +35,28 @@ positiva plan i hela programmet är ett separat kvarstående arbete efter att
 det aktuella utlåtandet är klart. Vinduppgifterna lämnas enligt användarens
 beslut. Den överflödiga noteringen har användaren tagit bort själv.
 
+## Digital kundvy
+
+Kundlänken använder `ReportSnapshotView`, inte den paginerade PDF-komponenten.
+Extrabyggnader ska visas även där, efter huvudbyggnaden och före bilagorna,
+med egen rubrik, centrerad byggnadsbild, omfattning, förutsättningar och samtliga
+noteringar, risktexter, FTU-texter och noteringsbilder.
+
+Underlaget är endast `snapshot.reportData.mock.appendices.buildings`. Att
+visa tidigare utelämnat, redan fryst innehåll är en visningsrättning: ingen
+snapshot, lagrad PDF eller besiktning skrivs om. Saknas byggnader i en äldre
+snapshot hämtas de inte från dagens besiktning eller bibliotek.
+
+Regression: `node --experimental-strip-types --test test/report-snapshot-buildings.test.ts`
+och `node scripts/test-report-snapshot-buildings.mjs`. Dessa testar den faktiska
+kundkomponenten, inte bara PDF-komponenten i ett webbläsarfönster.
+
+Verifierat lokalt 2026-09-27: 30 regressionstester och TypeScript-kontroll
+godkända. Kundvyn testad vid 375, 390, 768, 1280 och 1600 px, med flera
+byggnader, öppning/stängning av noteringsbilder och äldre rapport utan
+extrabyggnader. Skärmbilder på mobil och dator visuellt granskade. Rättningen
+kräver ingen SQL och är ännu inte publicerad.
+
 ## SBR-avgränsning
 
 SBR:s offentliga information beskriver rapportens innehåll men ger inget
