@@ -1,23 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { FileClock, RefreshCw } from 'lucide-react'
+import { useEffect, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import { FileCheck2, FileClock, RefreshCw, TriangleAlert } from 'lucide-react'
 import Sheet from './ObRoundSheet'
 import { clearVerifiedObDraft, listObDraftEntries, obDraftFieldLabels, type ObDraftEntry } from '@/lib/ob/draftReview'
 import { readObDraftSavedText } from '@/lib/ob/draftReviewClient'
 
 type Comparison = { raw: string; status: 'saved' | 'different' | 'unknown' | 'error'; saved?: Record<string, string> }
 
-export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDraftSavedText, compact = false }: {
+export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDraftSavedText, portalContainer, onOpenChange }: {
   inspectionId: string
   readSaved?: typeof readObDraftSavedText
-  compact?: boolean
+  portalContainer?: RefObject<HTMLDivElement | null>
+  onOpenChange?: (open: boolean) => void
 }) {
   const [entries, setEntries] = useState<ObDraftEntry[]>([])
+  const [loadedFor, setLoadedFor] = useState<string | null>(null)
   const [storageError, setStorageError] = useState(false)
   const [open, setOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [comparisons, setComparisons] = useState<Record<string, Comparison>>({})
+  const changeOpen = (value: boolean) => { setOpen(value); onOpenChange?.(value) }
+  useEffect(() => () => onOpenChange?.(false), [onOpenChange])
   useEffect(() => {
     const refresh = () => {
       try {
@@ -25,6 +30,7 @@ export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDra
         setEntries(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next)
         setStorageError(false)
       } catch { setStorageError(true) }
+      finally { setLoadedFor(inspectionId) }
     }
     refresh()
     const timer = window.setInterval(refresh, 1000)
@@ -48,16 +54,20 @@ export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDra
     } finally { setChecking(false) }
   }
   const verified = Object.values(comparisons).filter(result => result.status === 'saved').length
-  // Drafts also exist briefly during normal typing. Never insert/remove a banner
-  // above the focused form as those drafts are written and acknowledged.
+  const status = loadedFor !== inspectionId ? 'loading' : storageError ? 'error' : entries.length ? 'pending' : 'clear'
+  const description = status === 'loading' ? 'Kontrollerar lokala textutkast' : status === 'error'
+    ? 'Lokala utkast kunde inte läsas' : entries.length ? `${entries.length} lokala textutkast` : 'Inga lokala textutkast'
+  const Icon = status === 'error' ? TriangleAlert : status === 'clear' ? FileCheck2 : FileClock
+  // The fixed icon slot stays mounted throughout autosave, without shifting the form.
   return <>
-    <div className={`grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-gray-200 text-sm text-gray-600 ${compact ? 'px-0 py-0' : 'px-4 py-2'}`}>
-      <span>{storageError ? <span role="alert">Lokala utkast kunde inte läsas.</span> : <><span className="inline-block min-w-[3ch] tabular-nums">{entries.length}</span> lokala textutkast</>}</span>
-      <button type="button" className="inline-flex min-h-11 items-center gap-2 underline" aria-label="Visa lokala textutkast" onClick={() => { setComparisons({}); setOpen(true) }}>
-        <FileClock size={18} />Visa texter
-      </button>
-    </div>
-    {open && <Sheet title="Lokala textutkast" onClose={() => setOpen(false)} closeDisabled={checking}
+    <button type="button" className="ob-draft-status" data-state={status}
+      title={`${description}. Visa texter och kontrollera sparandet.`}
+      aria-label={`Visa lokala textutkast: ${description}`} aria-haspopup="dialog" aria-expanded={open}
+      onClick={() => { setComparisons({}); changeOpen(true) }}>
+      <Icon size={20} aria-hidden="true" />
+      {status === 'pending' && <span className="ob-draft-count" aria-hidden="true">{entries.length > 99 ? '99+' : entries.length}</span>}
+    </button>
+    {open && createPortal(<Sheet title="Lokala textutkast" onClose={() => changeOpen(false)} closeDisabled={checking}
       footer={<button type="button" className="obm-primary" disabled={checking || !entries.length || storageError} onClick={() => void compare()}>
         <RefreshCw size={18} />{checking ? 'Kontrollerar...' : 'Kontrollera mot sparat'}
       </button>}>
@@ -85,6 +95,6 @@ export default function ObLocalDraftStatus({ inspectionId, readSaved = readObDra
           {comparison?.status === 'error' && <p role="alert" className="mt-2 text-sm">Kunde inte läsa sparad text. Försök igen. Det lokala utkastet finns kvar.</p>}
         </section>
       })}
-    </Sheet>}
+    </Sheet>, portalContainer?.current ?? document.body)}
   </>
 }

@@ -63,6 +63,12 @@ test('background save feedback reserves its geometry on all three OB forms', () 
   const drafts = read('src/components/ob/ObLocalDraftStatus.tsx')
   assert.doesNotMatch(drafts, /if \(!entries.length.*return null/)
   assert.match(drafts, /Visa lokala textutkast/)
+  assert.match(drafts, /aria-haspopup="dialog"/)
+  assert.match(drafts, /createPortal\(<Sheet/)
+  assert.doesNotMatch(drafts, /compact =|border-b border-gray-200/)
+  const page = read('src/app/(app)/properties/[id]/ob/[inspectionId]/page.tsx')
+  assert.match(page, /!isRoundSection && <ObInspectionHeader/)
+  assert.doesNotMatch(page, /<ObLocalDraftStatus/)
 })
 
 test('building cover is opened through the shared conditions panel, not displayed above the list', () => {

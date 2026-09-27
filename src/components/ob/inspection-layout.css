@@ -1,0 +1,65 @@
+/* The inspection workspace only; report documents and other modules are isolated. */
+body.ob-inspection-active [data-app-topbar='true'] { display: none; }
+.ob-inspection-page { min-height: 100dvh; padding: 0 12px 24px; background: #fff; }
+.ob-inspection-shell { width: 100%; max-width: 1280px; margin: 0 auto; }
+.ob-inspection-content { min-width: 0; padding: 20px 0; }
+.ob-inspection-content-round { padding: 0; }
+.ob-inspection-shell .ob-mobile-round-host { max-width: none; }
+.ob-inspection-shell .obm-root > :not(.ob-inspection-header):not(dialog):not(.obm-toast) {
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.ob-inspection-shell .obm-root > .ob-inspection-header { width: 100%; }
+.ob-inspection-notice {
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-left: 3px solid var(--obm-warning);
+  background: var(--obm-warning-bg);
+  color: var(--obm-warning);
+  font-size: .875rem;
+}
+.ob-inspection-shell .ob-form-root :where(h2, h3) { font-weight: 600; }
+.ob-form-root.ob-documents-workspace,
+.ob-form-root.ob-delivery-workspace { font-size: 1rem; }
+.ob-documents-workspace > section + section,
+.ob-delivery-section { border-top: 1px solid var(--obm-line); padding-top: 20px; }
+.ob-document-row { padding: 16px 0; border-bottom: 1px solid var(--obm-line); }
+.ob-documents-workspace .ob-document-table { border-top: 1px solid var(--obm-line); }
+.ob-document-table th { text-transform: none; font-size: inherit; }
+.ob-form-root .ob-form-upload,
+.ob-delivery-workspace .ob-delivery-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--obm-control);
+  border-radius: 6px;
+  color: var(--obm-blue);
+  background: #fff;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+.ob-delivery-link:hover { background: var(--obm-selected); }
+.ob-delivery-link:focus-visible { outline: 3px solid var(--obm-blue); outline-offset: 2px; }
+.ob-delivery-fields { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.ob-delivery-workspace .ob-delivery-state { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: .875rem; }
+.ob-delivery-workspace .ob-delivery-log { display: grid; gap: 12px; font-size: .875rem; }
+.ob-delivery-workspace .ob-delivery-log a { color: var(--obm-blue); text-decoration: underline; }
+.ob-delivery-workspace .ob-delivery-preview { border-top: 1px solid var(--obm-line); padding-top: 20px; }
+@media (min-width: 768px) {
+  .ob-inspection-page { padding: 0 24px 32px; }
+  .ob-delivery-fields { grid-template-columns: 1fr 1fr; }
+}
+@media (min-width: 768px) and (pointer: fine) {
+  .ob-form-root.ob-documents-workspace,
+  .ob-form-root.ob-delivery-workspace { font-size: .875rem; }
+  .ob-form-root.ob-documents-workspace :where(input, select, textarea, button),
+  .ob-form-root.ob-delivery-workspace :where(input, textarea, button),
+  .ob-form-root .ob-form-upload,
+  .ob-delivery-workspace .ob-delivery-link { min-height: 44px; }
+  .ob-form-root.ob-documents-workspace :where(h2),
+  .ob-form-root.ob-delivery-workspace :where(h2, h3) { font-size: 1.25rem; }
+}

@@ -20,6 +20,7 @@ import { testRoomSwipe } from '../test/helpers/ob-room-swipe-browser.mjs'
 import { testRoundBack } from '../test/helpers/ob-round-back-browser.mjs'
 import { testImagePlace } from '../test/helpers/ob-image-place-browser.mjs'
 import { testDraftFeedback } from '../test/helpers/ob-draft-feedback-browser.mjs'
+import { testDraftStatus } from '../test/helpers/ob-draft-status-browser.mjs'
 import { testImageTrash } from '../test/helpers/ob-image-trash-browser.mjs'
 import { testLegacyNotes } from '../test/helpers/ob-legacy-notes-browser.mjs'
 import { testCoverBank } from '../test/helpers/ob-cover-bank-browser.mjs'
@@ -41,12 +42,12 @@ await new Promise((ok, fail) => webpack({
     '@/components/ob/ObWizard': resolve('test/fixtures/ob-round-wizard.tsx'),
     'next/navigation': resolve('test/fixtures/ob-round-navigation.tsx'),
     'next/link': resolve('test/helpers/preview-link.tsx'),
-    './mobile-round.css': false, '@': resolve('src'),
+    './mobile-round.css': false, '@/components/ob/ob-forms.css': false, '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
 const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
-const css = `${globalCss.css}\n${await readFile('src/components/ob/mobile-round.css', 'utf8')}`
+const css = `${globalCss.css}\n${await readFile('src/components/ob/mobile-round.css', 'utf8')}\n${await readFile('src/components/ob/inspection-layout.css', 'utf8')}`
 const js = await readFile(resolve(output, 'view.js'))
 const navigationJs = await readFile(resolve(output, 'navigation.js'))
 const buildingsJs = await readFile(resolve(output, 'buildings.js'))
@@ -152,6 +153,7 @@ if (serve) {
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
     } else if (process.argv.includes('--feedback-only')) {
+      await testDraftStatus(page, base, output)
       await testDraftFeedback({ page, base, output })
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])
@@ -244,17 +246,17 @@ if (serve) {
       await page.screenshot({ path: resolve(output, `places-${width}.png`) })
       await page.select('select[aria-label="Plan"]', 'plan2')
       await page.click('.obm-place-row')
-      assert.equal(await page.$('.obm-inspection-header'), null)
+      assert.ok(await page.$('.ob-inspection-header'))
       await noOverflow()
       await page.screenshot({ path: resolve(output, `room-${width}.png`) })
       await page.click('[aria-label="Till platser"]')
       await click('Utsida')
       await page.click('.obm-place-row')
       await page.waitForSelector('[data-note-id="outside-note"]')
-      assert.equal(await page.$('.obm-inspection-header'), null)
+      assert.ok(await page.$('.ob-inspection-header'))
       await page.click('[aria-label="Till platser"]')
       await click('Att bearbeta', 'nav')
-      assert.ok(await page.$('.obm-inspection-header'))
+      assert.ok(await page.$('.ob-inspection-header'))
       await page.click('[data-note-id="empty-note"]')
       await page.waitForSelector('dialog[open] textarea')
       assert.equal(await page.$eval('dialog textarea', node => getComputedStyle(node).fontSize), '16px')
@@ -337,6 +339,7 @@ if (serve) {
     assert.equal(await page.evaluate(() => window.__obMobileTest.images[0].control_item_id), 'note-1', 'image picker resolves the fresh server image after upload')
 
     await testRoundParity({ page, click, fresh, fill, noOverflow, output })
+    await testDraftStatus(page, base, output)
     await testDraftFeedback({ page, base, output })
     await fresh('?locked')
     await page.click('.obm-place-row')
@@ -369,7 +372,7 @@ if (serve) {
       await chooseSection('ÖB-runda')
       await page.waitForSelector('[data-selected-ob-section="runda-ny"]')
       assert.equal(await page.$eval('main', node => node.dataset.obMobileRound), 'true')
-      assert.ok(await page.$('body.ob-round-fullscreen'))
+      assert.ok(await page.$('body.ob-inspection-active'))
       assert.equal(await page.$eval('[data-inspection-id]', node => node.dataset.inspectionId), 'synthetic-mobile-inspection')
       await page.evaluate(() => localStorage.setItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending', 'test draft'))
       await openStepMenu()
@@ -388,7 +391,7 @@ if (serve) {
       assert.equal(exitWarnings, 1, 'actually leaving the inspection still protects unsaved text')
       await page.click('dialog [aria-label="Tillbaka"]')
       await page.evaluate(() => localStorage.removeItem('ob:text-draft:v1:ob:synthetic-mobile-inspection:pending'))
-      assert.equal(await page.$('body.ob-round-fullscreen'), null)
+      assert.ok(await page.$('body.ob-inspection-active'), 'shared shell remains active on delivery')
       await noOverflow()
       await openStepMenu(); await chooseSection('ÖB-runda')
       await page.waitForSelector('[data-selected-ob-section="runda-ny"]')

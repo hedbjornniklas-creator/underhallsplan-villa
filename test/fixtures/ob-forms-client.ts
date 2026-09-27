@@ -1,5 +1,6 @@
 // In-memory adapter only. No environment, credentials or network fallback.
 import { validFloorLevels } from '@/lib/ob/floorModel'
+import { supabase as roundCatalog } from './ob-mobile-round-client'
 type Row = Record<string, any>
 const garageExample = new URLSearchParams(location.search).has('garage')
 export const inspectionId = '10000000-0000-4000-8000-000000000001'
@@ -126,7 +127,8 @@ class Query implements PromiseLike<any> {
   }
 }
 export const supabase: any = {
-  from: (table: string) => new Query(table),
+  from: (table: string) => ['settings_control_points', 'settings_control_point_outcomes'].includes(table)
+    ? roundCatalog.from(table) : new Query(table),
   auth: { getUser: async () => ({ data: { user: { id: 'synthetic-inspector' } }, error: null }) },
   storage: { from: () => ({ getPublicUrl: () => ({ data: { publicUrl: '/photo.png' } }), upload: async () => ({ error: null }) }) },
 }
@@ -134,6 +136,11 @@ window.fetch = async (input, init) => {
   const url = String(input)
   if (url === `/api/ob/inspections/${inspectionId}/frozen-inspector`) return Response.json({ locked: true, hasSnapshot: true, profile: db.profiles[0] })
   if (url === `/api/ob/inspections/${inspectionId}/addon-orders` && !init?.method) return Response.json({ addonOrders: [] })
+  if (url === `/api/ob/inspections/${inspectionId}/report-delivery` && !init?.method) return Response.json({
+    inspectionStatus: 'ongoing', canSend: false, reason: 'Syntetisk förhandsvisning. Inga mejl skickas.',
+    pdfStatus: 'ready', hasStoredPdf: true, canDownloadPdf: true, history: [], activityLog: [],
+    defaultRecipientEmail: 'test@example.invalid', ordererEmail: 'test@example.invalid',
+  })
   if (url !== `/api/ob/inspections/${inspectionId}/buildings` || init?.method !== 'POST') throw Error(`Blocked fixture request: ${url}`)
   const { operation, payload } = JSON.parse(String(init.body))
   await new Promise(resolve => setTimeout(resolve, qa.saveDelay))

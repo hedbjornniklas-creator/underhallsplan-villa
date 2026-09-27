@@ -734,9 +734,9 @@ export default function ObStepHandlingar({
   if (error) return <div className="p-4 text-red-600">{error}</div>
 
   return (
-    <div className="space-y-8">
+    <div className="ob-form-root ob-documents-workspace space-y-8">
       {isInspectionLocked ? (
-        <section className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <section className="ob-form-notice">
           Besiktningen är låst. Handlingar och upplysningar är skrivskyddade.
         </section>
       ) : null}
@@ -762,7 +762,7 @@ export default function ObStepHandlingar({
             return (
               <article
                 key={doc.id}
-                className="min-w-0 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm"
+                className="ob-document-row min-w-0"
               >
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -863,7 +863,7 @@ export default function ObStepHandlingar({
           ) : null}
         </div>
 
-        <div className="hidden overflow-x-auto rounded-lg border border-gray-300 bg-white md:block">
+        <div className="ob-document-table hidden overflow-x-auto md:block">
           <table className="min-w-[720px] w-full text-sm text-gray-900">
             <thead className="bg-gray-100">
               <tr>
@@ -1003,7 +1003,7 @@ export default function ObStepHandlingar({
 
         <div className="mt-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50">
+            <label className="ob-form-upload cursor-pointer">
               <input
                 type="file"
                 accept="image/*"

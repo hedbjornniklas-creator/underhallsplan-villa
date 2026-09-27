@@ -16,11 +16,15 @@ function Fixture() {
   failRef.current = fail
   const toast = useToast()
   return <main>
-    <ObLocalDraftStatus inspectionId="feedback" readSaved={async (_id, entry) => {
+    <header className="ob-inspection-header">
+      <button className="ob-inspection-back" aria-label="Tillbaka">Tillbaka</button>
+      <div className="ob-inspection-heading"><h1>Fastighet & uppdrag</h1></div>
+      <ObLocalDraftStatus inspectionId="feedback" readSaved={async (_id, entry) => {
       if (entry.path.includes('read-failure')) throw Error('Synthetic read error')
       if (entry.path.includes('unknown')) return null
       return { note: 'Serverns text', risk_text: '', ftu_text: '' }
-    }} />
+      }} />
+    </header>
     <button onClick={() => setOpen(value => !value)}>Visa textfält</button>
     <button onClick={() => setFail(value => !value)}>Sparfel: {String(fail)}</button>
     <button onClick={() => setLocked(value => !value)}>Låst: {String(locked)}</button>

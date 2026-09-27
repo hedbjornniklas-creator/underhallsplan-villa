@@ -117,6 +117,27 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 - Inget innehåll döljs permanent bakom meny, tangentbord eller en fast kontroll.
   Den vanliga vertikala sidrullningen räcker.
 
+## Gemensam besiktningslayout
+
+Beslutad uppföljning 2026-09-27, första etappen implementerad och godkänd
+av användaren för publicering efter verifiering:
+
+- Alla moment använder samma kompakta besiktningshuvud med adress, moment,
+  stegnummer och byggnadsnamn där momentet hör till en byggnad. Menyn ligger
+  till höger och den fasta utkastikonen bredvid. På dator finns även tillbaka
+  till besiktningslistan; på mobil finns samma utgång i stegmenyn.
+- BesiktApps globala toppfält ersätts av besiktningshuvudet genom hela denna
+  arbetsvy, inte bara i ÖB-rundan. Övriga sidor i produkten påverkas inte.
+- Samma vita, oframade sidyta och sidmarginaler, med högst 1280 px arbetsbredd.
+  ÖB-rundans innehåll behåller tills vidare sin läsbara bredd på 800 px inom
+  denna yta. En separat datoranpassning av själva rundan återstår.
+- Handlingar och Skicka utlåtande använder Manrope, ÖB-blå handlingar,
+  gemensamma formulärkontroller och tunna avdelare i stället för dekorativa
+  paneler. Mobilens inmatning är minst 16 px och pekmål minst 48 px.
+- Utkastdialogen behåller telefonens tillbakafunktion även från ett rum.
+  Autosparande, låsning, behörigheter och utskick ändras inte. Rapportens
+  förhandsgranskning och frysta kunddokument har oförändrad rendering.
+
 ## Fastighet & uppdrag
 
 Beslutad uppföljning 2026-09-25. Detta är en sidlokal formulärlayout, inte en
@@ -165,6 +186,21 @@ Beslutad uppföljning 2026-09-27:
   godkännandekontroller och låsning ändras inte. Ingen datamigrering behövs.
 - Publicerade snapshots och dokumenthistorik får inte skrivas om. Den lokala
   granskningen av textutkast är en annan funktion och finns kvar.
+
+## Lokala textutkast
+
+Beslutad uppföljning 2026-09-27:
+
+- Visa lokala textutkast som en diskret ikon i sidhuvudet, inte som en egen rad
+  ovanför innehållet. Samma funktion används i formulären och i ÖB-rundans
+  plats-, rums-, noterings- och bildvyer för alla byggnader.
+- Ikonen har en fast plats på 48 x 48 px även vid noll utkast. Antalet visas
+  bara när utkast finns. Läsfel får en varningssymbol och förklarande text.
+  Statusändringar får inte flytta innehållet eller störa fokus vid inmatning.
+- Tooltip och tillgängligt namn beskriver lokala utkast. Noll utkast får inte
+  benämnas "Allt sparat": kontrollen omfattar inte alla besiktningsdata.
+- Klick öppnar den befintliga granskningen och jämförelsen med sparad text.
+  Avvikande texter behålls; bara verifierat identiska lokala kopior rensas.
 
 ## Status är information, inte en ny arbetsprocess
 
@@ -228,6 +264,7 @@ mobiltest, ett funktionstest eller en publicering av listan.
 
 | Datum | Beslut | Avgränsning |
 | --- | --- | --- |
+| 2026-09-27 | Samordna besiktningens sidhuvud, meny och grundstilar. | Första etappen omfattar arbetsvyn, inte rapporter eller datalagring. ÖB-rundans större datorlayout följer separat. Användaren godkände publicering efter den lokala förhandsvisningen och godkända tester. |
 | 2026-09-23 | Använd RenoApps lugna listformspråk med ÖB:s blå profil. Den senaste datorriktningen och mobilexemplet blir referens för 1.2. | Användaren bad att uppdatera profilen efter godkännande av mobilexemplet. Äldre ingångar behålls under övergången. Ingen appimplementation eller publicering i denna leverans. |
 | 2026-09-23 | Bygg den nya gemensamma listan under de fyra korten på ÖB:s startsida. | Separat lokal implementation för utvärdering. Båda gamla listorna och deras arbetsflöden behålls. Ingen publicering eller pensionering av gamla listor. |
 | 2026-09-24 | Tätare datorlista efter jämförelsen med Fortnox: bredare yta, jämn typografi och stabila standardrader. | Visuell uppföljning. Detaljer är åtkomliga utan hover, mobilen behåller textlänkar och goda pekmål. Ingen ändring av statusregler eller arbetsflöden. |

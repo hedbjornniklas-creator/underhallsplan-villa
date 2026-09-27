@@ -1,5 +1,7 @@
 const HISTORY_KEY = '__obRoundBack'
 const managed = new Map<symbol, string>()
+const activeOwners = new Map<string, symbol>()
+const pendingRemovals = new Set<string>()
 
 export function isObRoundBackManaged(inspectionId: string) {
   return Array.from(managed.values()).includes(inspectionId)
@@ -23,16 +25,19 @@ export function createRoundBackHistory(inspectionId: string, onBack: () => void)
   let owner = previous?.inspectionId === inspectionId ? previous.owner : crypto.randomUUID()
   let owned = previous?.inspectionId === inspectionId
   let enabled = false
-  let removing = false
+  let removing = pendingRemovals.has(inspectionId)
   let disposed = false
+  // A building switch may mount the next round before the previous cleanup runs.
+  activeOwners.set(inspectionId, registration)
 
   function detach() {
     managed.delete(registration)
+    if (activeOwners.get(inspectionId) === registration) activeOwners.delete(inspectionId)
     window.removeEventListener('popstate', pop, true)
   }
 
   function push() {
-    if (disposed || removing || window.location.href !== url) return
+    if (disposed || removing || activeOwners.get(inspectionId) !== registration || window.location.href !== url) return
     managed.set(registration, inspectionId)
     if (owned) return
     window.history.pushState({
@@ -43,9 +48,15 @@ export function createRoundBackHistory(inspectionId: string, onBack: () => void)
   }
 
   function remove() {
+    if (activeOwners.get(inspectionId) !== registration) {
+      owned = false
+      detach()
+      return
+    }
     if (removing) return
     if (owned && window.location.href === url && marker(window.history.state)?.owner === owner) {
       removing = true
+      pendingRemovals.add(inspectionId)
       window.history.back()
     } else {
       owned = false
@@ -55,8 +66,14 @@ export function createRoundBackHistory(inspectionId: string, onBack: () => void)
   }
 
   function pop(event: PopStateEvent) {
+    if (activeOwners.get(inspectionId) !== registration) {
+      owned = false
+      detach()
+      return
+    }
     if (window.location.href !== url) {
       owned = false
+      pendingRemovals.delete(inspectionId)
       managed.delete(registration)
       if (disposed) detach()
       return
@@ -76,6 +93,7 @@ export function createRoundBackHistory(inspectionId: string, onBack: () => void)
     managed.delete(registration)
     if (removing || disposed) {
       removing = false
+      pendingRemovals.delete(inspectionId)
       if (disposed) detach()
       else if (enabled) push()
       return

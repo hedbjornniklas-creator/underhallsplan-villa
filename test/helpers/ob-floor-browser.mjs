@@ -17,7 +17,7 @@ export async function testFloorEditor(page, base, output) {
     assert.deepEqual(await page.$$eval('select[aria-label="Plan"] option', rows => rows.map(row => row.value)), ['ovrigt','plan-1','plan0','plan1'])
     assert.ok((await page.$eval('select[aria-label="Plan"]', node => node.textContent)).includes('Plan 0'))
     // The fixture's menu exposes the actual production floor editor.
-    await page.click('.obm-inspection-header button')
+    await page.click('.ob-inspection-header [aria-label="Öppna stegmeny"]')
     await page.waitForSelector('section[aria-label="Plan"]')
     assert.equal(await page.$eval('button[aria-label="Ta bort plan 0"]', node => node.disabled), true)
     await fill('input[aria-label="Nytt plannummer"]', '-2')
@@ -32,7 +32,7 @@ export async function testFloorEditor(page, base, output) {
     await page.click('dialog [aria-label="Tillbaka"]')
     await page.select('select[aria-label="Plan"]', 'plan-2')
     assert.ok((await page.$eval('select[aria-label="Plan"]', node => node.selectedOptions[0].textContent)).includes('Underplan'))
-    await page.click('.obm-inspection-header button')
+    await page.click('.ob-inspection-header [aria-label="Öppna stegmeny"]')
     await page.click('button[aria-label="Ta bort plan 1"]')
     await clickText('Spara plan')
     await page.waitForSelector('section [role="alert"]')
@@ -40,6 +40,6 @@ export async function testFloorEditor(page, base, output) {
     assert.ok(await page.$('input[aria-label="Namn p\u00e5 plan 1"]'))
   }
   await page.goto(`${base}/?levels&locked`, { waitUntil: 'networkidle0' })
-  await page.click('.obm-inspection-header button')
+  await page.click('.ob-inspection-header [aria-label="Öppna stegmeny"]')
   assert.equal(await page.$eval('section fieldset', node => node.disabled), true)
 }

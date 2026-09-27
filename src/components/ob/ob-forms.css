@@ -1,6 +1,7 @@
 @import './mobile-round.css';
+@import './inspection-layout.css';
 
-/* Only the two migrated OB forms and their detail dialog use these rules. */
+/* Shared OB forms; report contents and other modules do not use these classes. */
 .ob-form-root,
 .ob-form-shell {
   color-scheme: light;
@@ -207,37 +208,6 @@
 .ob-form-panel .obm-sheet-header-back h2 {
   font-size: 1.25rem;
 }
-.ob-form-shell .ob-form-mobile-header {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--obm-line);
-  background: white;
-}
-.ob-form-mobile-header button {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  color: var(--obm-blue);
-  border-radius: 6px;
-}
-.ob-form-mobile-header button:focus-visible {
-  outline: 3px solid var(--obm-blue);
-}
-.ob-form-step-count {
-  color: var(--obm-blue);
-  font-size: .875rem;
-  padding: 8px;
-  background: var(--obm-selected);
-  border-radius: 6px;
-}
-@media (min-width: 768px) {
-  .ob-form-shell .ob-form-mobile-header { display: none; }
-}
-
 /* Property workspace only; review editors and the other OB forms are unchanged. */
 .ob-property-workspace {
   container: ob-property / inline-size;

@@ -18,14 +18,15 @@ await new Promise((ok, fail) => webpack({
   output: { path: output, filename: 'view.js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve(forms ? 'test/fixtures/ob-forms-client.ts' : 'test/fixtures/ob-brand-preview-client.ts'),
+    'next/link': resolve('test/helpers/preview-link.tsx'),
     './mobile-round.css': false, './ob-forms.css': false, '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
 const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const css = [globalCss.css, ...await Promise.all([
-  'src/components/ob/mobile-round.css', 'src/components/ob/ob-forms.css', 'test/fixtures/ob-brand-preview.css',
-].map(path => readFile(path, 'utf8')))].join('\n').replace("@import './mobile-round.css';", '')
+  'src/components/ob/mobile-round.css', 'src/components/ob/ob-forms.css', 'src/components/ob/inspection-layout.css', 'test/fixtures/ob-brand-preview.css',
+].map(path => readFile(path, 'utf8')))].join('\n').replace("@import './mobile-round.css';", '').replace("@import './inspection-layout.css';", '')
 const assets = new Map()
 for (const [url, path, type] of [
   ['/view.js', resolve(output, 'view.js'), 'text/javascript'],
@@ -43,6 +44,10 @@ const server = createServer(async (request, response) => {
   response.setHeader('X-Content-Type-Options', 'nosniff')
   if (url.pathname === '/favicon.ico') { response.writeHead(204); response.end(); return }
   if (request.method !== 'GET') { response.writeHead(405); response.end('Read-only preview server'); return }
+  if (forms && url.pathname.startsWith('/utlatande/')) {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8')
+    response.end('<!doctype html><html lang="sv"><body><h1>Syntetiskt utlåtande</h1><p>Rapportinnehållet ersätts i detta layoutprov.</p></body></html>'); return
+  }
   if (assets.has(url.pathname)) {
     const asset = assets.get(url.pathname); response.setHeader('Content-Type', asset.type); response.end(asset.body); return
   }
@@ -77,9 +82,10 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB brand preview (synthetic only): ${base}`)
-if (process.argv.includes('--test') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors') || process.argv.includes('--test-layout')) {
   try {
-    if (process.argv.includes('--test-floors')) { const { testConditionFloors } = await import('../test/helpers/ob-condition-floors-browser.mjs'); await testConditionFloors(base, output) }
+    if (process.argv.includes('--test-layout')) { const { testInspectionLayout } = await import('../test/helpers/ob-inspection-layout-browser.mjs'); await testInspectionLayout(base, output) }
+    else if (process.argv.includes('--test-floors')) { const { testConditionFloors } = await import('../test/helpers/ob-condition-floors-browser.mjs'); await testConditionFloors(base, output) }
     else if (process.argv.includes('--test-autosave')) { const { testFormAutosave } = await import('../test/helpers/ob-form-autosave-browser.mjs'); await testFormAutosave(base, output) }
     else if (forms) { const { testFormsPreview } = await import('../test/helpers/ob-forms-preview-browser.mjs'); await testFormsPreview(base, output) }
     else { const { testBrandPreview } = await import('../test/helpers/ob-brand-preview-browser.mjs'); await testBrandPreview(base, output) }

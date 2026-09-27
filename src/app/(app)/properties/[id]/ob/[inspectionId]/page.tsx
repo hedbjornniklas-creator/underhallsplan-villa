@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Menu } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
 import ObStepMenu from '@/components/ob/ObStepMenu'
-import ObLocalDraftStatus from '@/components/ob/ObLocalDraftStatus'
+import ObInspectionHeader, { ObInspectionNavigationContext } from '@/components/ob/ObInspectionHeader'
+import '@/components/ob/ob-forms.css'
 import { getObAssignmentReconciliationPatches, type ObAssignmentReconciledDetail } from '@/lib/ob/assignmentWorkflow'
 import { ObBuildingContext } from '@/components/ob/ObBuildingContext'
 import type { ObBuildingOverview } from '@/lib/ob/buildingStructure'
@@ -278,7 +278,6 @@ export default function InspectionDetailPage() {
     if (['runda', 'insida', 'utsida'].includes(activeSection)) setActiveSection('runda-ny')
   }, [buildingOverview?.structure, activeSection])
   const mobileRoundV2 = activeSection === 'runda-ny'
-  const brandedForm = activeSection === 'grunddata' || activeSection === 'forutsattningar'
   const isRoundSection = isObRoundSection(activeSection)
 
   useEffect(() => {
@@ -664,12 +663,12 @@ export default function InspectionDetailPage() {
   }, [activeSection])
 
   useEffect(() => {
-    document.body.classList.toggle('ob-round-fullscreen', isRoundSection)
+    document.body.classList.add('ob-inspection-active')
 
     return () => {
-      document.body.classList.remove('ob-round-fullscreen')
+      document.body.classList.remove('ob-inspection-active')
     }
-  }, [isRoundSection])
+  }, [])
 
   useEffect(() => {
     if (!mobileMenuOpen) return
@@ -712,92 +711,20 @@ export default function InspectionDetailPage() {
     <Protected>
       <main
         data-ob-mobile-round={mobileRoundV2}
-        className={`relative min-h-full overflow-hidden ${
-          isRoundSection ? 'p-0' : 'px-2 pb-24 pt-3 sm:px-3 md:p-6'
-        }`}
+        className="ob-inspection-page"
       >
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'linear-gradient(135deg, #f7fbff 0%, #ffffff 52%, #f3f9ff 100%)',
-          }}
-        />
-        <div className="pointer-events-none absolute inset-0 bg-white/8" />
-
-        <div
-          className={`relative mx-auto w-full ${brandedForm ? 'ob-form-shell' : ''} ${
-            isRoundSection
-              ? 'max-w-none space-y-0'
-              : 'max-w-7xl space-y-3 md:space-y-4'
-          }`}
-        >
-          {brandedForm ? (
-            <header className="ob-form-mobile-header">
-              <button type="button" onClick={handleBackToInspections} aria-label="Tillbaka" title="Tillbaka">
-                <ArrowLeft size={23} />
-              </button>
-              <div className="min-w-0">
-                <p className="ob-form-muted">Överlåtelsebesiktning</p>
-                <h1 className="font-semibold">{activeSectionLabel}</h1>
-              </div>
-              <span className="ob-form-step-count">{activeSectionIndex + 1}/{visibleSections.length}</span>
-            </header>
-          ) : !isRoundSection ? (
-            <div className="flex items-center justify-between gap-2 rounded-full border border-white/45 bg-white/90 px-2.5 py-2 shadow-lg ring-1 ring-black/5 md:hidden">
-              <button
-                type="button"
-                onClick={handleBackToInspections}
-                aria-label="Tillbaka"
-                title="Tillbaka"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-              >
-                <ArrowLeft size={17} strokeWidth={2} />
-              </button>
-              <div className="min-w-0 flex-1 text-center">
-                <div className="truncate text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                  Överlåtelsebesiktning
-                </div>
-                <div className="truncate text-sm font-semibold text-gray-900">
-                  {activeSectionLabel}
-                  {activeSectionIndex >= 0 ? (
-                    <span className="ml-1 text-xs font-medium text-gray-500">
-                      {activeSectionIndex + 1}/{visibleSections.length}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="inline-flex h-9 min-w-9 items-center justify-center rounded-full bg-indigo-50 px-2 text-xs font-semibold text-indigo-700">
-                {activeSectionIndex >= 0 ? `${activeSectionIndex + 1}/${visibleSections.length}` : null}
-              </div>
-            </div>
-          ) : null}
+        <ObInspectionNavigationContext.Provider value={{ address: property.address ?? '',
+          step: activeSectionIndex + 1, total: visibleSections.length, onBack: handleBackToInspections }}>
+        <div className="ob-form-shell ob-inspection-shell">
+          {!isRoundSection && <ObInspectionHeader inspectionId={inspection.id} title={activeSectionLabel}
+            onOpenMenu={() => setMobileMenuOpen(true)} />}
+          {isRoundSection && (buildingError || !buildingOverview || navigationReadyFor !== inspectionId) &&
+            <ObInspectionHeader inspectionId={inspection.id} title={activeSectionLabel || 'ÖB-runda'} onOpenMenu={() => setMobileMenuOpen(true)} />}
 
           <div className="grid min-w-0 items-start">
             <div
-              className={`${
-                activeSection === 'insida' ||
-                activeSection === 'utsida' ||
-                isRoundSection ||
-                activeSection === 'areamatning' ||
-                activeSection === 'fuktkontroll'
-                  ? 'p-0 md:p-0'
-                  : brandedForm ? 'bg-white px-3 py-4 md:p-5'
-                  : 'md:rounded-2xl md:border md:border-white/45 md:bg-white/95 md:p-4 md:shadow-xl md:ring-1 md:ring-black/5'
-              }
-                min-w-0 max-w-full overflow-x-hidden
-                [&_input]:text-gray-900
-                [&_input]:placeholder:text-gray-500
-                [&_input]:border-gray-300
-                [&_textarea]:text-gray-900
-                [&_textarea]:placeholder:text-gray-500
-                [&_textarea]:border-gray-300
-                [&_textarea]:text-sm
-                [&_textarea]:leading-5
-                [&_select]:text-gray-900
-                [&_select]:border-gray-300`}
+              className={`ob-inspection-content${isRoundSection ? ' ob-inspection-content-round' : ''}`}
             >
-              <ObLocalDraftStatus key={`drafts:${inspection.id}`} inspectionId={inspection.id} compact={activeSection === 'grunddata'} />
               <ObAssignmentWorkflowBoundary key={inspection.id} inspectionId={inspection.id} showStatus={!isRoundSection}>
               {buildingError ? <div role="alert" className="p-4 text-red-700">{buildingError}
                 <button type="button" className="ml-3 underline" onClick={() => void reloadBuildings().catch(error => setBuildingError(error.message))}>Försök igen</button>
@@ -817,26 +744,7 @@ export default function InspectionDetailPage() {
             </div>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(true)}
-          aria-label="Öppna stegmeny"
-          title="Öppna stegmeny"
-          className="ob-step-menu-toggle fixed left-4 top-28 z-[60] hidden h-12 w-12 items-center justify-center md:inline-flex"
-        >
-          <Menu size={25} strokeWidth={2.35} />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setMobileMenuOpen(true)}
-          aria-label="Öppna stegmeny"
-          title="Öppna stegmeny"
-          className="ob-step-menu-toggle fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex h-14 w-14 items-center justify-center md:hidden"
-        >
-          <Menu size={25} strokeWidth={2.35} />
-        </button>
+        </ObInspectionNavigationContext.Provider>
 
         {mobileMenuOpen ? (
           <ObStepMenu sections={visibleSections} buildings={buildingOverview?.parts ?? []}

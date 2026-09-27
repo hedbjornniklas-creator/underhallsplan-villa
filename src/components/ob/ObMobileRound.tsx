@@ -23,7 +23,6 @@ import {
   Layers,
   Link as LinkIcon,
   MapPin,
-  Menu,
   MoreHorizontal,
   PenLine,
   Plus,
@@ -57,6 +56,7 @@ import type {
   MoveTarget,
 } from '@/lib/ob/roundMutations'
 import Sheet from './ObRoundSheet'
+import ObInspectionHeader from './ObInspectionHeader'
 import ObRoundImageBank from './ObRoundImageBank'
 import ObRoundImageActions from './ObRoundImageActions'
 import ObRoundNoteSuggestion from './ObRoundNoteSuggestion'
@@ -489,6 +489,7 @@ function MobileRound(p: Props) {
   const [photoId, setPhotoId] = useState<string | null>(null)
   const [enlargedPhotoId, setEnlargedPhotoId] = useState<string | null>(null)
   const [pendingImageFilter, setPendingImageFilter] = useState<'unmatched' | 'all'>('unmatched')
+  const [draftReviewOpen, setDraftReviewOpen] = useState(false)
   const [renameRoom, setRenameRoom] = useState<InteriorRoom | null>(null)
   const [moveSubject, setMoveSubject] = useState<MoveSubject | null>(null)
   const [removalSubject, setRemovalSubject] = useState<RemovalSubject | null>(
@@ -580,7 +581,7 @@ function MobileRound(p: Props) {
   useObRoundBack({
     inspectionId: p.inspectionId,
     ready: restored,
-    canGoBack: view !== 'places' || Boolean(editor || preview || photo || enlargedPhoto || renameRoom || moveSubject || removalSubject || addRoomOpen),
+    canGoBack: view !== 'places' || Boolean(editor || preview || photo || enlargedPhoto || renameRoom || moveSubject || removalSubject || addRoomOpen || draftReviewOpen),
     root: placeSwipe.ref,
     onBack: () => {
       setView('places')
@@ -937,22 +938,9 @@ function MobileRound(p: Props) {
   }
   return (
     <div className="obm-root" data-view={view} data-area={p.area} {...placeSwipe}>
-      {view !== 'room' && (
-        <header className="obm-inspection-header">
-          <div>
-            <strong>Överlåtelsebesiktning</strong>
-            <span>{p.address}</span>
-          </div>
-          <button
-            className="obm-icon"
-            title="Öppna stegmeny"
-            aria-label="Öppna stegmeny"
-            onClick={p.onOpenMenu}
-          >
-            <Menu size={22} />
-          </button>
-        </header>
-      )}
+      <ObInspectionHeader inspectionId={p.inspectionId} address={p.address}
+        title={p.buildingName ? `ÖB-runda · ${p.buildingName}` : 'ÖB-runda'}
+        onOpenMenu={p.onOpenMenu} portalContainer={placeSwipe.ref} onDraftOpenChange={setDraftReviewOpen} />
       {view === 'room' ? (
         <header
           className={
@@ -1089,7 +1077,7 @@ function MobileRound(p: Props) {
           {notice}
         </div>
       )}
-      {p.locked && <p className="obm-error">Besiktningen är låst.</p>}
+      {p.locked && <p className="ob-inspection-notice">Besiktningen är låst.</p>}
       {view === 'places' && (
         <>
           {p.area === 'interior' && (

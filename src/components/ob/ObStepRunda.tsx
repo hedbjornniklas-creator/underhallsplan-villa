@@ -18,6 +18,7 @@ import { searchOutcomeRows } from '@/lib/ob/searchOutcomeRows'
 import DebouncedTextarea from './DebouncedTextarea'
 import { useSelectedOutcomes } from './useSelectedOutcomes'
 import ObMobileRound from './ObMobileRound'
+import ObInspectionHeader from './ObInspectionHeader'
 import { requestRoundMutation, type MoveResult, type RemovalResult, type ImageNoteResult, type RoundMutationOperation } from '@/lib/ob/roundMutations'
 import { clearConfirmedObNoteDrafts, hasObTextDraftsForRoundTarget } from '@/lib/ob/localTextDrafts'
 import ControlPointSearchDialog, {
@@ -2339,9 +2340,11 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-white/50 bg-white/95 p-4 text-sm text-gray-700 shadow-xl">
-        Läser ÖB-runda...
-      </div>
+      <>
+        {mobileLayout && <ObInspectionHeader inspectionId={inspection.id} address={address}
+          title={building?.part?.name ? `ÖB-runda · ${building.part.name}` : 'ÖB-runda'} onOpenMenu={onOpenMenu} />}
+        <p role="status" className="py-5">Läser ÖB-runda...</p>
+      </>
     )
   }
 

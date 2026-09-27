@@ -617,27 +617,23 @@ function ObWizardContent({
     case 'delivery':
       {
         return (
-          <div className="space-y-3 text-sm text-gray-700">
-            <div className="rounded-xl border bg-white p-4">
-              <h2 className="text-base font-semibold text-gray-900">Skicka utlåtande</h2>
-            </div>
-
+          <div className="ob-form-root ob-delivery-workspace space-y-5">
             {hasValidIds ? (
               <div className="space-y-4">
                 {deliveryMeta?.digitalReportUrl ? <Link
                   href={deliveryMeta.digitalReportUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                  className="ob-delivery-link"
                 >
                   <ExternalLink size={18} aria-hidden="true" />
                   Öppna kundens digitala utlåtande
                   <span className="sr-only"> (öppnas i ny flik)</span>
                 </Link> : deliveryMeta && !deliveryMetaLoading && !deliveryMetaError ? <p className="text-sm text-gray-600">Inget publicerat digitalt utlåtande ännu.</p> : null}
-                <aside className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-3">
+                <aside className="ob-delivery-section space-y-4">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">
-                      Granska utlåtandet och skicka sedan som länk till nedanstående kontakter.
+                      Mottagare och utskick
                     </h3>
                   </div>
 
@@ -653,9 +649,9 @@ function ObWizardContent({
                     </div>
                   ) : null}
 
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+                  <div className="ob-delivery-fields">
                     <label className="space-y-1">
-                      <span className="text-xs font-medium text-gray-700">
+                      <span className="ob-form-label">
                         Huvudmottagare (obligatorisk)
                       </span>
                       <input
@@ -665,7 +661,7 @@ function ObWizardContent({
                         placeholder="namn@epost.se"
                         className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
-                      <div className="text-[11px] text-gray-500">
+                      <div className="ob-form-muted">
                         Föreslagen huvudmottagare:{' '}
                         {deliveryMeta?.ordererEmail ? (
                           <span className="font-medium text-gray-700">{deliveryMeta.ordererEmail}</span>
@@ -676,7 +672,7 @@ function ObWizardContent({
                     </label>
 
                     <label className="space-y-1">
-                      <span className="text-xs font-medium text-gray-700">Extra mottagare</span>
+                      <span className="ob-form-label">Extra mottagare</span>
                       <textarea
                         value={extraRecipientsInput}
                         onChange={(event) => setExtraRecipientsInput(event.target.value)}
@@ -705,24 +701,12 @@ function ObWizardContent({
                     </div>
                   ) : null}
 
-                  <div className="rounded-md border border-gray-200 bg-white p-3">
-                    <div className="flex flex-wrap gap-2 text-xs">
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-1 font-medium ${
-                          isCurrentlyLocked
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                            : 'border-amber-200 bg-amber-50 text-amber-800'
-                        }`}
-                      >
+                  <div className="ob-delivery-section">
+                    <div className="ob-delivery-state">
+                      <span>
                         {isCurrentlyLocked ? 'Nuvarande läge: Låst' : 'Nuvarande läge: Upplåst'}
                       </span>
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-1 font-medium ${
-                          isCurrentlyCompleted
-                            ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                            : 'border-gray-200 bg-gray-50 text-gray-700'
-                        }`}
-                      >
+                      <span>
                         {isCurrentlyCompleted ? 'Status: Klarmarkerad' : 'Status: Pågående/utkast'}
                       </span>
                     </div>
@@ -744,7 +728,7 @@ function ObWizardContent({
                         type="button"
                         onClick={() => void handleSendActionChoice('lock')}
                         disabled={deliverySendDisabled}
-                        className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-50 disabled:text-indigo-700 disabled:shadow-none"
+                        className="obm-primary"
                       >
                         {isCurrentlyCompleted
                           ? 'Skicka och behåll låst'
@@ -754,7 +738,7 @@ function ObWizardContent({
                         type="button"
                         onClick={() => void handleSendActionChoice('send_open')}
                         disabled={deliverySendDisabled}
-                        className="inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="ob-delivery-secondary"
                       >
                         {isCurrentlyCompleted
                           ? 'Skicka och lämna upplåst'
@@ -764,7 +748,7 @@ function ObWizardContent({
                         type="button"
                         onClick={() => void handleSendActionChoice('complete_only')}
                         disabled={deliveryActionDisabled}
-                        className="inline-flex items-center rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="ob-delivery-secondary"
                       >
                         Enbart klarmarkera
                       </button>
@@ -776,7 +760,7 @@ function ObWizardContent({
                   </div>
 
                   {deliveryMeta ? (
-                    <div className="rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-700">
+                    <div className="ob-delivery-section text-sm">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <span className="font-semibold">PDF-status:</span>{' '}
@@ -793,7 +777,7 @@ function ObWizardContent({
                             href={reportPdfDownloadHref}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                            className="ob-delivery-link"
                           >
                             Ladda ner PDF
                           </a>
@@ -818,9 +802,9 @@ function ObWizardContent({
                   ) : null}
 
                   {visibleDeliveryLog.length ? (
-                    <div className="rounded-md border border-gray-200 bg-white p-2">
-                      <div className="mb-1 text-xs font-semibold text-gray-800">Logg</div>
-                      <ul className="space-y-1 text-xs text-gray-700">
+                    <div className="ob-delivery-section">
+                      <h3 className="mb-3">Logg</h3>
+                      <ul className="ob-delivery-log">
                         {visibleDeliveryLog.map((entry) => (
                           <li key={entry.id} className="flex flex-wrap items-center gap-2">
                             <span className="font-medium">{entry.title}</span>
@@ -835,7 +819,7 @@ function ObWizardContent({
                                 href={entry.download_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-700 hover:bg-indigo-100"
+                                className="ob-delivery-link"
                               >
                                 Ladda ner PDF
                               </a>
@@ -847,14 +831,14 @@ function ObWizardContent({
                   ) : null}
                 </aside>
 
-                <section className="space-y-3">
+                <section className="ob-delivery-preview space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">Förhandsgranska utlåtande</h3>
                     <Link
                       href={reportDeliveryPreviewHref}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50"
+                      className="ob-delivery-link"
                     >
                       Öppna i ny flik
                     </Link>
