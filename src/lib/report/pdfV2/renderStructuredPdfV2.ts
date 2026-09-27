@@ -113,6 +113,7 @@ export async function renderStructuredPdfV2(
       ? (appendices.moisture_control as Record<string, unknown>)
       : {}
   const spec = buildReportSpec({
+    layoutVersion: 2,
     inspectionSide: specInspectionSide,
     dynamicAppendices: {
       includeAreaMeasurement: areaMeasurementAppendix.enabled === true,

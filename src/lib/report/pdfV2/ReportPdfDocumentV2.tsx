@@ -586,7 +586,7 @@ const renderBlock = (
     ))
   }
 
-  if (block.type === 'inspectionBlocks') {
+  if (block.type === 'inspectionBlocks' || block.type === 'buildingIntroduction') {
     const items = getValueAtPath(data, block.itemsPath) as InspectionBlock[]
     if (!Array.isArray(items) || items.length === 0) return null
 
@@ -599,9 +599,9 @@ const renderBlock = (
 
       return (
         <View key={`${item.title}-${index}`} style={styles.block} wrap>
-          <Text style={styles.blockTitle} minPresenceAhead={40}>
+          {block.type !== 'buildingIntroduction' && <Text style={styles.blockTitle} minPresenceAhead={40}>
             {item.title}
-          </Text>
+          </Text>}
           {noteText && noteText !== '--' && (
             <Text style={styles.blockNote}>{noteText}</Text>
           )}

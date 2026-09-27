@@ -10,6 +10,7 @@ import {
   type InspectionDocumentReportLineInput,
 } from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
+import { readReportWebsite } from '@/lib/report/profileWebsite'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { readBuildingReportState } from '@/lib/ob/buildingReport'
 import {
@@ -121,7 +122,7 @@ export default async function Page({
       {isAutoPrint && <AutoPrintTrigger />}
       {!isEmbed && <ReportToolbar backHref={`/properties/${resolvedParams.propertyId}/ob/${resolvedParams.inspectionId}`} />}
       <ReportRenderer mockData={data} inspectionSide={side} rootClassName={isPdf ? 'report-root--pdf' : undefined}
-        spec={buildReportSpec({ inspectionSide: side, dynamicAppendices: {
+        spec={buildReportSpec({ layoutVersion: 2, inspectionSide: side, dynamicAppendices: {
           includeAreaMeasurement: appendices.area_measurement?.enabled === true,
           includeMoistureControl: appendices.moisture_control?.enabled === true,
           buildings: appendices.buildings,
@@ -1381,6 +1382,7 @@ export default async function Page({
         company_name: valueOrFallback(
           frozenProfileFromSnapshot?.company_name ?? profile?.company_name ?? null
         ),
+        company_website: await readReportWebsite(supabase, userId, frozenProfileFromSnapshot),
         company_orgno: valueOrFallback(
           frozenProfileFromSnapshot?.company_orgno ?? profile?.company_orgno ?? null
         ),
@@ -1555,6 +1557,7 @@ export default async function Page({
     content = (
       <ReportRenderer
         spec={buildReportSpec({
+          layoutVersion: 2,
           inspectionSide,
           dynamicAppendices: {
             includeAreaMeasurement: appendices.area_measurement?.enabled === true,

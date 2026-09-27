@@ -89,3 +89,19 @@ test('an appendix starting at a subsection retains the building heading and rese
   const entries = [block('previous', 90), { ...block('interior', 10, 'Guesthouse'), keepWithNext: true }, block('note', 75)]
   assert.deepEqual(ids(paginate(entries)), [['previous'], ['heading:Guesthouse', 'interior', 'note']])
 })
+
+test('a complete observation moves with its risk, investigation and photos when it fits a page', () => {
+  const entries = [block('previous', 65),
+    { ...block('note', 15, 'Garage'), keepWithNext: true },
+    { ...block('risk', 15, 'Garage'), keepWithNext: true },
+    { ...block('ftu', 10, 'Garage'), keepWithNext: true }, block('photo', 35, 'Garage')]
+  assert.deepEqual(ids(paginate(entries)), [['previous'], ['heading:Garage', 'note', 'risk', 'ftu', 'photo']])
+})
+
+test('floor headings stay with observations and oversized photo groups still preserve every entry', () => {
+  const entries = [block('previous', 80), { ...block('floor', 10), keepWithNext: true },
+    { ...block('note', 20), keepWithNext: true }, block('photo', 40)]
+  assert.deepEqual(ids(paginate(entries)), [['previous'], ['floor', 'note', 'photo']])
+  const large = Array.from({ length: 5 }, (_, i) => ({ ...block(`photo${i}`, 55, 'Garage'), keepWithNext: i < 4 }))
+  assert.deepEqual(paginate(large).flat().filter(e => !e.id.startsWith('heading:')), large)
+})

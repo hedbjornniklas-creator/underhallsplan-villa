@@ -21,6 +21,7 @@ type ReportPageProps = {
   footerLeftLines?: string[]
   footerRightLines?: string[]
   footerCenterLines?: string[]
+  wrapFooterContact?: boolean
 }
 
 export default function ReportPage({
@@ -32,6 +33,7 @@ export default function ReportPage({
   footerLeftLines = [],
   footerRightLines = [],
   footerCenterLines = [],
+  wrapFooterContact = false,
 }: ReportPageProps) {
   const footerInfoHeightMm = 12
   const footerInfoGapMm = 4
@@ -84,14 +86,16 @@ export default function ReportPage({
             left: mmToPx(PAGE_PADDING_MM.left),
             right: mmToPx(PAGE_PADDING_MM.right),
             bottom: mmToPx(FOOTER_MARK_HEIGHT_MM + footerInfoGapMm),
-            height: mmToPx(footerInfoHeightMm),
+            height: wrapFooterContact ? undefined : mmToPx(footerInfoHeightMm),
+            minHeight: wrapFooterContact ? mmToPx(footerInfoHeightMm) : undefined,
             display: 'flex',
             justifyContent: 'space-between',
             fontSize: '11pt',
             color: '#000000',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: mmToPx(1) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: mmToPx(1),
+            maxWidth: wrapFooterContact ? '48%' : undefined, overflowWrap: wrapFooterContact ? 'anywhere' : undefined }}>
             {footerLeftLines.map((line, index) => (
               <div key={`footer-left-${index}`}>{line}</div>
             ))}
@@ -102,6 +106,8 @@ export default function ReportPage({
               flexDirection: 'column',
               gap: mmToPx(1),
               textAlign: 'right',
+              maxWidth: wrapFooterContact ? '48%' : undefined,
+              overflowWrap: wrapFooterContact ? 'anywhere' : undefined,
             }}
           >
             {footerRightLines.map((line, index) => (

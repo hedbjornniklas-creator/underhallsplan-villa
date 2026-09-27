@@ -89,6 +89,12 @@ export type ReportBlock =
       marginBottomMm: number
     }
   | {
+      type: 'buildingIntroduction'
+      itemsPath: string
+      marginTopMm: number
+      marginBottomMm: number
+    }
+  | {
       type: 'inspectionBlocks'
       itemsPath: string
       marginTopMm: number
@@ -128,6 +134,7 @@ export type ReportBlock =
 
 export type ReportSection = {
   id: string
+  layoutVersion?: 2
   title?: string
   startOnNewPage: boolean
   type?: 'cover' | 'standard' | 'appendix'
@@ -668,6 +675,7 @@ function repairReportSpecText<T>(value: T): T {
 }
 
 export function buildReportSpec(params?: {
+  layoutVersion?: 2
   inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
   dynamicAppendices?: DynamicAppendixConfig
 }): ReportSection[] {
@@ -693,6 +701,8 @@ export function buildReportSpec(params?: {
         : 'APPENDIX_1_VILLKOR_BUYER_SBR'
 
   const spec = JSON.parse(JSON.stringify(REPORT_SPEC)) as ReportSection[]
+  const modernLayout = params?.layoutVersion === 2
+  if (modernLayout) spec[0].layoutVersion = 2
 
   const tocSection = spec.find((section) => section.id === 'toc')
   const tocBlock = tocSection?.blocks.find((block) => block.type === 'toc') as
@@ -1264,21 +1274,30 @@ export function buildReportSpec(params?: {
   const buildingAppendices = params?.dynamicAppendices?.buildings ?? []
   buildingAppendices.forEach((building, index) => {
     const number = 4 + Number(includeAreaMeasurement) + Number(includeMoistureControl) + index
-    const id = `appendix-building-${building.id}`
-    const title = `Bilaga ${number}: ${building.name}`
+    const id = modernLayout ? `building-${building.id}` : `appendix-building-${building.id}`
+    const title = modernLayout ? building.name : `Bilaga ${number}: ${building.name}`
     const path = `mock.appendices.buildings.${index}`
     const heading = (text: string): ReportBlock => ({ type: 'heading', level: 3, text, marginTopMm: 3, marginBottomMm: 2 })
     const items = (field: string): ReportBlock => ({ type: 'inspectionBlocks', itemsPath: `${path}.${field}`, marginTopMm: 0, marginBottomMm: 4 })
-    spec.push({ id, title, startOnNewPage: true, type: 'standard', blocks: [
+    const section: ReportSection = { id, title, startOnNewPage: true, type: 'standard', blocks: [
       { type: 'heading', level: 2, text: title, marginTopMm: 0, marginBottomMm: 4 },
-      items('introduction'), heading('Förutsättningar'),
+      modernLayout
+        ? { type: 'buildingIntroduction', itemsPath: `${path}.introduction`, marginTopMm: 0, marginBottomMm: 4 }
+        : items('introduction'),
+      heading('Förutsättningar'),
       { type: 'twoColumn', labelWidthMm: 50, rowGapMm: 1.4, marginTopMm: 0, marginBottomMm: 4,
         rows: [{ label: 'Möblering:', value: { kind: 'mock', path: `${path}.conditions.furnishing_level` } }] },
       { type: 'text', source: { kind: 'mock', path: `${path}.buildingData.text` }, layout: 'buildingData', marginTopMm: 0, marginBottomMm: 4 },
       heading('Byggnad - utsida'), items('exterior.blocks'), heading('Byggnad - insida'), items('interior.blocks'),
       { type: 'boxedText', source: { kind: 'standardText', id: 'STD_FTU_GENERAL_NOTICE' }, marginTopMm: 2, marginBottomMm: 0 },
-    ] })
-    tocBlock?.entries.push({ label: title, sectionId: id })
+    ] }
+    if (modernLayout) {
+      spec.splice(spec.findIndex(entry => entry.id === 'appendix-1'), 0, section)
+      if (tocBlock) tocBlock.entries.splice(tocBlock.entries.findIndex(entry => entry.sectionId === 'appendix-1'), 0, { label: title, sectionId: id })
+    } else {
+      spec.push(section)
+      tocBlock?.entries.push({ label: title, sectionId: id })
+    }
   })
   return repairReportSpecText(spec)
 }

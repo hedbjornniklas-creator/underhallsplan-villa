@@ -893,6 +893,7 @@ export default function ReportRendererClient({
     ? 'UTKAST - uppdragets godkännande eller avstämning saknas'
     : undefined
   const isPdfMode = rootClasses.includes('report-root--pdf')
+  const modernLayout = spec.some(section => section.layoutVersion === 2)
 
   const [pagePlan, setPagePlan] = useState<{
     pages: PagePlan[]
@@ -1171,7 +1172,7 @@ export default function ReportRendererClient({
         }
 
         if (block.type === 'inspectionBlocks') {
-          const isBuildingNotes = section.id.startsWith('appendix-building-')
+          const isBuildingNotes = section.id.startsWith('appendix-building-') || (modernLayout && section.id.startsWith('building-') && section.id !== 'building-data')
           const isInteriorNotes = section.id === 'notes-interior' || isBuildingNotes && block.itemsPath.endsWith('interior.blocks')
           const isExteriorNotes = section.id === 'notes' || isBuildingNotes && block.itemsPath.endsWith('exterior.blocks')
           const items = getMockArray<InspectionBlockItem>(mockData, block.itemsPath)
@@ -1205,6 +1206,7 @@ export default function ReportRendererClient({
                       kind: 'block',
                       id: `${section.id}-floor-header-${blockIndex}-${groupIndex}`,
                       sectionId: section.id,
+                      keepWithNext: modernLayout,
                       sectionStartOnNewPage:
                         section.startOnNewPage && blockIndex === 0 && groupIndex === 0,
                       block: {
@@ -1227,6 +1229,7 @@ export default function ReportRendererClient({
                         kind: 'block',
                         id: `${section.id}-room-group-${blockIndex}-${groupIndex}-${itemIndex}-${segment.segment}-${segmentIndex}`,
                         sectionId: section.id,
+                        keepWithNext: modernLayout && !isLastSegment,
                         sectionStartOnNewPage:
                           !isInteriorNotes &&
                           section.startOnNewPage &&
@@ -1315,7 +1318,7 @@ export default function ReportRendererClient({
           id: `${section.id}-block-${blockIndex}`,
           sectionId: section.id,
           sectionStartOnNewPage: section.startOnNewPage && blockIndex === 0,
-          keepWithNext: section.id.startsWith('appendix-building-') && block.type === 'heading',
+          keepWithNext: (modernLayout || section.id.startsWith('appendix-building-')) && block.type === 'heading',
           block,
         })
       })
@@ -1335,11 +1338,11 @@ export default function ReportRendererClient({
       }
     })
     return entries
-  }, [contentSections, isPdfMode, mockData, sectionSpacingPx])
+  }, [contentSections, isPdfMode, mockData, sectionSpacingPx, modernLayout])
 
   const continuationEntries = useMemo(() => {
     const headings = new Map<string, Entry>()
-    for (const section of contentSections.filter(section => section.id.startsWith('appendix-building-'))) {
+    for (const section of contentSections.filter(section => section.id.startsWith('appendix-building-') || (modernLayout && section.id.startsWith('building-') && section.id !== 'building-data'))) {
       const id = `${section.id}-continuation`
       headings.set(id, {
         kind: 'block', id, sectionId: section.id, sectionStartOnNewPage: false,
@@ -1355,7 +1358,7 @@ export default function ReportRendererClient({
       })
     }
     return headings
-  }, [contentEntries, contentSections])
+  }, [contentEntries, contentSections, modernLayout])
 
   const appendices = useMemo(() => {
     const pages: Array<{ section: ResolvedReportSection; rawText: string; showTitle: boolean }> = []
@@ -1599,6 +1602,7 @@ export default function ReportRendererClient({
   const companyStreet = getMockValue(mockData, 'mock.profile.company_address')
   const companyPostal = getMockValue(mockData, 'mock.profile.company_postal_code')
   const companyCity = getMockValue(mockData, 'mock.profile.company_city')
+  const companyWebsite = getMockValue(mockData, 'mock.profile.company_website')
 
   const addressParts = [companyStreet, companyPostal, companyCity].filter(
     part => part && part !== 'saknas'
@@ -1620,10 +1624,10 @@ export default function ReportRendererClient({
   ]
 
   const footerRightLines = [
-    'www.webbadress.se',
+    modernLayout ? (companyWebsite === 'saknas' ? '' : companyWebsite) : 'www.webbadress.se',
     companyEmail === 'saknas' ? 'E-post: saknas' : `E-post: ${companyEmail}`,
     companyOrgno === 'saknas' ? 'Org.nr: saknas' : `Org.nr: ${companyOrgno}`,
-  ]
+  ].filter(Boolean)
 
   const footerCenterLines = [
     'VÅR KUNSKAP ÄR DIN TRYGGHET',
@@ -2156,6 +2160,20 @@ export default function ReportRendererClient({
     index: number,
     sectionPageMap: Map<string, number>
   ) => {
+    if (block.type === 'buildingIntroduction') {
+      const items = getMockArray<InspectionBlockItem>(mockData, block.itemsPath)
+      return <div key={`${sectionId}-introduction-${index}`} data-report-building-introduction="1" style={blockMargins(block)}>
+        {items.map((item, itemIndex) => <div key={itemIndex}>
+          {item.noteText?.trim() && <p style={{ whiteSpace: 'pre-line', margin: `0 0 ${mmToPx(3)}` }}>{item.noteText}</p>}
+          {getInspectionPhotoUrls(item).map((src, photoIndex) => <ReportPhoto
+            key={photoIndex} src={src} alt={`Byggnadsbild: ${item.title ?? ''}`}
+            style={{ display: 'block', maxWidth: '100%', maxHeight: mmToPx(65), objectFit: 'contain' }}
+            maxLongSidePx={isPdfMode ? PHOTO_POLICY.pdfMaxLongSidePx : PHOTO_POLICY.digitalMaxLongSidePx}
+            onSettled={notifyReportImageSettled}
+          />)}
+        </div>)}
+      </div>
+    }
     if (block.type === 'inspectionContinuationHeader') {
       return (
         <div key={`${sectionId}-continuation-${index}`} data-report-continuation-context="1"
@@ -3087,6 +3105,7 @@ export default function ReportRendererClient({
               pageNumber={page.pageNumber}
               footerLeftLines={footerLeftLines}
               footerRightLines={footerRightLines}
+              wrapFooterContact={modernLayout}
               footerCenterLines={footerCenterLines}
               header={undefined}
             >
@@ -3148,7 +3167,7 @@ export default function ReportRendererClient({
                 return <div key={`${entry.id}-page`} style={{ height: `${entry.heightPx}px` }} />
               }
               return (
-                <div key={`${entry.id}-page`}>
+                <div key={`${entry.id}-page`} data-report-entry={entry.id} data-report-block={entry.block.type}>
                   {renderBlock(entry.block, entry.sectionId, index, pagePlan.sectionPageMap)}
                 </div>
               )

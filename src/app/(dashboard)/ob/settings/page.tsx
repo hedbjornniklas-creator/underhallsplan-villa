@@ -10,6 +10,7 @@ import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
 import SettingsNav from '@/components/settings/SettingsNav'
 import { supabase } from '@/lib/supabaseClient'
 import { isCustomerSelectableAddonKey } from '@/lib/assignments/addons'
+import { normalizeProfileWebsite, readProfileWebsite } from '@/lib/report/profileWebsite'
 
 type ProfileRow = {
   id: string
@@ -27,6 +28,7 @@ type ProfileRow = {
 }
 
 type ProfileForm = {
+  company_website: string
   full_name: string
   phone: string
   email: string
@@ -110,6 +112,7 @@ type CertificationFormRow = {
 
 function serializeProfileForm(form: ProfileForm) {
   return JSON.stringify({
+    company_website: form.company_website ?? '',
     full_name: form.full_name ?? '',
     phone: form.phone ?? '',
     email: form.email ?? '',
@@ -165,6 +168,7 @@ export default function ObSettingsPage() {
   const [logoLoadError, setLogoLoadError] = useState(false)
   const [signatureLoadError, setSignatureLoadError] = useState(false)
   const [signaturePathSupported, setSignaturePathSupported] = useState(true)
+  const [websiteSupported, setWebsiteSupported] = useState(false)
   const [orgId, setOrgId] = useState<string | null>(null)
   const [addonLoading, setAddonLoading] = useState(false)
   const [addonSaving, setAddonSaving] = useState(false)
@@ -180,6 +184,7 @@ export default function ObSettingsPage() {
   const lastSavedProfileSnapshotRef = useRef<string>('')
 
   const [form, setForm] = useState<ProfileForm>({
+    company_website: '',
     full_name: '',
     phone: '',
     email: '',
@@ -253,7 +258,15 @@ export default function ObSettingsPage() {
       }
 
       const profile = profileResult.data as ProfileRow | null
+      let website = { supported: false, value: null as string | null }
+      try {
+        website = await readProfileWebsite(supabase, user.id)
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Kunde inte hämta hemsidan.')
+      }
+      setWebsiteSupported(website.supported)
       const loadedForm: ProfileForm = {
+        company_website: website.value ?? '',
         full_name: profile?.full_name ?? '',
         phone: profile?.phone ?? '',
         email: profile?.email ?? user.email ?? '',
@@ -469,6 +482,7 @@ export default function ObSettingsPage() {
   }
 
   const handleChange = (key: keyof ProfileForm, value: string) => {
+    if (key === 'company_website') setError(null)
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
@@ -499,6 +513,15 @@ export default function ObSettingsPage() {
       if (signaturePathSupported) {
         Object.assign(payload, { signature_path: form.signature_path })
       }
+      if (websiteSupported) {
+        try {
+          Object.assign(payload, { company_website: normalizeProfileWebsite(form.company_website) })
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Kontrollera hemsidans adress.')
+          setSaving(false)
+          return
+        }
+      }
 
       const { error: saveError } = await supabase.from('profiles').upsert(payload)
 
@@ -515,7 +538,7 @@ export default function ObSettingsPage() {
     }, 700)
 
     return () => window.clearTimeout(timeoutId)
-  }, [form, loading, signaturePathSupported, userId, saveRetry])
+  }, [form, loading, signaturePathSupported, websiteSupported, userId, saveRetry])
 
   const handleAddonToggle = (addonServiceId: string, checked: boolean) => {
     setAddonRows((prev) =>
@@ -943,6 +966,12 @@ export default function ObSettingsPage() {
                       onChange={(value) => handleChange('company_orgno', value)}
                     />
                   </div>
+                  {websiteSupported ? <Field
+                    label="Hemsida (valfritt)"
+                    inputMode="url"
+                    value={form.company_website}
+                    onChange={(value) => handleChange('company_website', value)}
+                  /> : <p className="text-sm text-gray-600">Hemsida blir tillgängligt när databasuppdateringen har körts.</p>}
                 </div>
               </div>
             ) : null}
@@ -1123,16 +1152,19 @@ function Field({
   label,
   value,
   onChange,
+  inputMode,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
+  inputMode?: 'url'
 }) {
   return (
     <label className="space-y-1">
       <span className="block text-xs font-medium text-gray-600">{label}</span>
       <input
         value={value}
+        inputMode={inputMode}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
       />

@@ -961,6 +961,7 @@ export async function POST(
         ? (appendices.moisture_control as Record<string, unknown>)
         : {}
     const reportSpec = buildReportSpec({
+      layoutVersion: 2,
       inspectionSide: specInspectionSide,
       dynamicAppendices: {
         includeAreaMeasurement: areaMeasurementAppendix.enabled === true,

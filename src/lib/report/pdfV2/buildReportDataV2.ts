@@ -1,6 +1,7 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
+import { readReportWebsite } from '@/lib/report/profileWebsite'
 import { readObNoteText } from '@/lib/ob/noteText'
 import { readBuildingReportState, assertBuildingReportRevision } from '@/lib/ob/buildingReport'
 import { buildingCoverPath, type ObBuildingPart } from '@/lib/ob/buildingStructure'
@@ -1330,6 +1331,7 @@ const supabase: any = createSupabaseServerClient()
         company_name: valueOrFallback(
           (frozenProfileFromSnapshot?.company_name as string | null | undefined) ?? profile?.company_name ?? null
         ),
+        company_website: await readReportWebsite(supabase, userId, frozenProfileFromSnapshot),
         company_orgno: valueOrFallback(
           (frozenProfileFromSnapshot?.company_orgno as string | null | undefined) ?? profile?.company_orgno ?? null
         ),
