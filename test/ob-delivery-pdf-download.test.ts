@@ -35,6 +35,7 @@ function renderDelivery(activityLog: ReturnType<typeof entry>[], ready = true) {
     if (name === 'react/jsx-runtime' || name === 'lucide-react') return require(name)
     if (name === 'next/link') return { default: 'a' }
     if (name.startsWith('./ObStep')) return { default: () => null }
+    if (name === './ObUnlockInspection') return { default: () => null }
     if (name === './ObBuildingContext') return { useObBuilding: () => null }
     if (name === './ObFloorProvider') return {
       ObFloorProvider: ({ children }: React.PropsWithChildren) => children,

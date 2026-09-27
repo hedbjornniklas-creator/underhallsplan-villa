@@ -82,9 +82,11 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB brand preview (synthetic only): ${base}`)
-if (process.argv.includes('--test') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors') || process.argv.includes('--test-layout')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors') || process.argv.includes('--test-layout') || process.argv.includes('--test-documents') || process.argv.includes('--test-unlock')) {
   try {
-    if (process.argv.includes('--test-layout')) { const { testInspectionLayout } = await import('../test/helpers/ob-inspection-layout-browser.mjs'); await testInspectionLayout(base, output) }
+    if (process.argv.includes('--test-unlock')) { const { testUnlock } = await import('../test/helpers/ob-unlock-browser.mjs'); await testUnlock(base, output) }
+    else if (process.argv.includes('--test-documents')) { const { testDocumentLayout } = await import('../test/helpers/ob-document-layout-browser.mjs'); await testDocumentLayout(base, output) }
+    else if (process.argv.includes('--test-layout')) { const { testInspectionLayout } = await import('../test/helpers/ob-inspection-layout-browser.mjs'); await testInspectionLayout(base, output) }
     else if (process.argv.includes('--test-floors')) { const { testConditionFloors } = await import('../test/helpers/ob-condition-floors-browser.mjs'); await testConditionFloors(base, output) }
     else if (process.argv.includes('--test-autosave')) { const { testFormAutosave } = await import('../test/helpers/ob-form-autosave-browser.mjs'); await testFormAutosave(base, output) }
     else if (forms) { const { testFormsPreview } = await import('../test/helpers/ob-forms-preview-browser.mjs'); await testFormsPreview(base, output) }

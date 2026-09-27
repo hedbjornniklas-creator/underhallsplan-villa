@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { AppToastProvider } from '@/components/ui/AppToastProvider'
 import { ObBuildingContext } from '@/components/ob/ObBuildingContext'
 import { ObFloorContext } from '@/components/ob/ObFloorProvider'
 import ObStepGrunddata from '@/components/ob/ObStepGrunddata'
@@ -40,7 +41,8 @@ function App() {
           onPropertyUpdated={setProperty} onInspectionUpdated={setInspection} /> : section === documentsIndex ?
           <ObStepHandlingar property={propertyData as any} inspection={inspectionData as any} /> : round ?
           <MobileRoundFixture key={part.id} buildingName={part.name} onOpenStepMenu={() => setMenu(true)} storageKey={`layout:${part.id}`} /> : sections[section].key === 'delivery' ?
-          <ObWizard property={{ ...propertyData, id: '10000000-0000-4000-8000-000000000099' } as any} inspection={inspectionData as any} activeSection="delivery" /> :
+          <ObWizard property={{ ...propertyData, id: '10000000-0000-4000-8000-000000000099' } as any} inspection={inspectionData as any}
+            onInspectionUpdated={setInspection} activeSection="delivery" /> :
           <ObStepForutsattningar key={part.id} inspection={inspectionData as any} property={propertyData as any} onInspectionUpdated={setInspection} />}
         </div>
         </div>
@@ -52,4 +54,4 @@ function App() {
     </ObFloorContext.Provider>
   </ObBuildingContext.Provider>
 }
-createRoot(document.getElementById('root')!).render(<App />)
+createRoot(document.getElementById('root')!).render(<AppToastProvider><App /></AppToastProvider>)

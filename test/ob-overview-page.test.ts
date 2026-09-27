@@ -22,7 +22,12 @@ function load<T>(path: string, dependencies: Record<string, unknown> = {}): T {
 const domain = load<typeof Domain>('src/lib/ob/overview.ts')
 const query = load<typeof Query>('src/lib/ob/overviewQuery.ts')
 const fixtures = load<typeof Fixtures>('test/fixtures/ob-overview-data.ts', { '../../src/lib/ob/overview': domain })
-const loader = load<typeof Loader>('src/lib/ob/overviewLoader.ts', { './overview': domain })
+const pdfCalls: { orgId: string; ids: string[] }[] = []
+const loader = load<typeof Loader>('src/lib/ob/overviewLoader.ts', { './overview': domain,
+  './overviewPdfs': { loadOverviewPdfIds: async (_client: unknown, orgId: string, ids: string[]) => {
+    pdfCalls.push({ orgId, ids }); return new Set()
+  } },
+})
 const options = query.parseOverviewQuery(new URLSearchParams())
 const rawPage = {
   rows: [{ assignment: null, inspection: fixtures.overviewInspection(), workflow: null }],
@@ -48,7 +53,7 @@ test('invalid page, page size, filter, boolean and excessive search fail explici
   }
 })
 
-test('one user-context RPC fetches one page without admin or table reads', async () => {
+test('one user-context RPC fetches one page and scopes PDF metadata to visible inspection IDs', async () => {
   const rpc = rpcClient(rawPage)
   const result = await loader.loadObOverview({ userClient: rpc.client, orgId: 'server-org', options: { ...options, page: 2, search: 'Täby' } })
   assert.equal(result.items.length, 1)
@@ -56,6 +61,7 @@ test('one user-context RPC fetches one page without admin or table reads', async
   assert.equal(result.total, 51)
   assert.equal(result.page, 2)
   assert.deepEqual(result.counts, rawPage.counts)
+  assert.deepEqual(pdfCalls.at(-1), { orgId: 'server-org', ids: ['inspection-1'] })
   assert.deepEqual(rpc.calls, [{ name: 'ob_overview_page', args: {
     p_org_id: 'server-org', p_search: 'Täby', p_filter: 'all', p_sort: 'date-desc',
     p_attention_only: false, p_show_archived: false, p_page: 2, p_page_size: 10,
@@ -69,6 +75,21 @@ test('page loader retains legacy and authoritative paused-workflow rendering', a
   const rpc = rpcClient({ ...rawPage, rows: [{ assignment, inspection: fixtures.overviewInspection(), workflow }] })
   const result = await loader.loadObOverview({ userClient: rpc.client, orgId: 'org', options })
   assert.deepEqual(result.items, domain.buildObOverview([assignment], [fixtures.overviewInspection()], [workflow]))
+})
+
+test('only visible inspections with stored PDFs receive authenticated download links', async () => {
+  const pdfLoader = load<typeof Loader>('src/lib/ob/overviewLoader.ts', { './overview': domain,
+    './overviewPdfs': { loadOverviewPdfIds: async () => new Set(['inspection-1', 'foreign-inspection']) },
+  })
+  const rpc = rpcClient({ ...rawPage, rows: [
+    rawPage.rows[0],
+    { assignment: fixtures.overviewAssignment({ id: 'without-inspection' }), inspection: null, workflow: null },
+  ] })
+  const result = await pdfLoader.loadObOverview({ userClient: rpc.client, orgId: 'org', options })
+  assert.equal(result.items[0].pdfHref, '/api/report-v2/inspection-1/pdf')
+  assert.equal(result.items[0].inspection, 'Pågår', 'a stored PDF is not the same as a completed inspection')
+  assert.equal(result.items[1].pdfHref, undefined)
+  assert.doesNotMatch(JSON.stringify(result), /foreign-inspection|pdf_base64|token/)
 })
 
 test('missing migration/query error fails closed rather than reverting to all-data reads', async () => {

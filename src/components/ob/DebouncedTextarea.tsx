@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TextareaHTMLAttributes } from 'react'
 import { getObTextDraftStorageKey } from '@/lib/ob/localTextDrafts'
 
@@ -11,6 +11,7 @@ type DebouncedTextareaProps = Omit<
   value: string
   debounceMs?: number
   draftKey?: string
+  autoGrow?: boolean
   onValueChange?: (value: string) => void
   onSave: (value: string) => void | Promise<void>
 }
@@ -55,6 +56,7 @@ export default function DebouncedTextarea({
   value,
   debounceMs = 700,
   draftKey,
+  autoGrow = false,
   disabled,
   readOnly,
   onValueChange,
@@ -75,6 +77,47 @@ export default function DebouncedTextarea({
   const inFlightDraftVersionsRef = useRef(new Set<number>())
   const saveVersionRef = useRef(0)
   const latestValueRef = useRef(value)
+  const renderedValue = isFocused || isDirty ? draft : value
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    if (!autoGrow || !textarea) return
+    let lastWidth = 0
+    const resize = () => {
+      const width = textarea.getBoundingClientRect().width
+      if (!width) return
+      lastWidth = width
+      // Measure outside the flow; collapsing the live field can move page scroll.
+      const measure = textarea.cloneNode() as HTMLTextAreaElement
+      measure.removeAttribute('id')
+      measure.removeAttribute('name')
+      measure.setAttribute('aria-hidden', 'true')
+      measure.tabIndex = -1
+      measure.value = textarea.value
+      Object.assign(measure.style, {
+        position: 'fixed', visibility: 'hidden', pointerEvents: 'none',
+        top: '0', left: '0', width: `${width}px`, height: '0',
+        minHeight: '0', maxHeight: 'none', overflow: 'hidden',
+      })
+      textarea.parentElement?.appendChild(measure)
+      const style = getComputedStyle(measure)
+      const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+      const height = measure.scrollHeight + (style.boxSizing === 'border-box' ? border : -padding)
+      measure.remove()
+      textarea.style.height = `${height}px`
+    }
+    resize()
+    const observer = new ResizeObserver(() => {
+      if (textarea.getBoundingClientRect().width !== lastWidth) resize()
+    })
+    observer.observe(textarea)
+    document.fonts.addEventListener('loadingdone', resize)
+    return () => {
+      observer.disconnect()
+      document.fonts.removeEventListener('loadingdone', resize)
+    }
+  }, [autoGrow, renderedValue])
 
   const markDirty = (next: boolean) => {
     isDirtyRef.current = next
@@ -201,7 +244,7 @@ export default function DebouncedTextarea({
     <textarea
       {...props}
       ref={textareaRef}
-      value={isFocused || isDirty ? draft : value}
+      value={renderedValue}
       disabled={disabled}
       readOnly={readOnly}
       onBlur={event => {

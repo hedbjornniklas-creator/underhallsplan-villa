@@ -22,6 +22,14 @@ body.ob-inspection-active [data-app-topbar='true'] { display: none; }
 .ob-inspection-shell .ob-form-root :where(h2, h3) { font-weight: 600; }
 .ob-form-root.ob-documents-workspace,
 .ob-form-root.ob-delivery-workspace { font-size: 1rem; }
+.obm-sheet.ob-unlock-sheet { max-width: 36rem; }
+.ob-delivery-state { align-items: center; }
+@media (min-width: 768px) {
+  .obm-sheet.ob-unlock-sheet { height: fit-content; max-height: calc(100dvh - 3rem); margin: auto; border-radius: 6px; }
+}
+.ob-unlock-sheet .obm-sheet-body { display: flex; flex-direction: column; gap: 1rem; }
+.ob-unlock-reason { display: flex; flex-direction: column; gap: .5rem; }
+.ob-unlock-reason textarea { width: 100%; min-height: 6rem; padding: .75rem; border: 1px solid #78838f; border-radius: 4px; font: inherit; }
 .ob-documents-workspace > section + section,
 .ob-delivery-section { border-top: 1px solid var(--obm-line); padding-top: 20px; }
 .ob-document-row { padding: 16px 0; border-bottom: 1px solid var(--obm-line); }

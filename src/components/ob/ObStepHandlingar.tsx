@@ -734,7 +734,7 @@ export default function ObStepHandlingar({
   if (error) return <div className="p-4 text-red-600">{error}</div>
 
   return (
-    <div className="ob-form-root ob-documents-workspace space-y-8">
+    <div className="ob-form-root ob-documents-workspace ob-form-compact space-y-6">
       {isInspectionLocked ? (
         <section className="ob-form-notice">
           Besiktningen är låst. Handlingar och upplysningar är skrivskyddade.
@@ -827,7 +827,9 @@ export default function ObStepHandlingar({
                       <label className="min-w-0 space-y-1">
                         <span className="text-xs font-medium text-gray-600">Notering</span>
                         <DebouncedTextarea
-                          className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                          className="ob-document-note w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+                          rows={1}
+                          autoGrow
                           value={viewDoc.note}
                           disabled={isInspectionLocked}
                           draftKey={`ob:${inspection.id}:handlingar:document:${doc.id}:note`}
@@ -865,6 +867,12 @@ export default function ObStepHandlingar({
 
         <div className="ob-document-table hidden overflow-x-auto md:block">
           <table className="min-w-[720px] w-full text-sm text-gray-900">
+            <colgroup>
+              <col className="ob-document-title-column" />
+              <col className="ob-document-status-column" />
+              <col className="ob-document-date-column" />
+              <col />
+            </colgroup>
             <thead className="bg-gray-100">
               <tr>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-700">Handling</th>
@@ -911,6 +919,7 @@ export default function ObStepHandlingar({
 
                     <td className="px-3 py-2 align-top">
                       <select
+                        aria-label={`Status för ${typedDocument.title}`}
                         className="w-full min-w-[11rem] rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={docStatus}
                         disabled={isInspectionLocked}
@@ -930,6 +939,7 @@ export default function ObStepHandlingar({
 
                     <td className="px-3 py-2 align-top">
                       <input
+                        aria-label={`Datum för ${typedDocument.title}`}
                         type="date"
                         className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
                         value={typedDocument.document_date ?? ''}
@@ -942,7 +952,10 @@ export default function ObStepHandlingar({
 
                     <td className="px-3 py-2 align-top">
                       <DebouncedTextarea
-                        className="min-h-[2.5rem] w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
+                        className="ob-document-note w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-900"
+                        aria-label={`Notering för ${typedDocument.title}`}
+                        rows={1}
+                        autoGrow
                         value={typedDocument.note ?? ''}
                         disabled={isInspectionLocked}
                         draftKey={`ob:${inspection.id}:handlingar:document:${doc.id}:note`}

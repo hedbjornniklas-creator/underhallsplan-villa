@@ -5,14 +5,37 @@ Implementerad 2026-09-23. Publiceringsunderlag och verifieringsgränser finns i
 
 ## Omfattning
 
-`/ob` har en ny lista, **ÖB-uppdrag**, under de fyra befintliga korten.
+`/ob` har en gemensam lista, **ÖB-uppdrag**. Den lokala uppföljningen
+2026-09-27 ersätter korten med skapa-knappar och utfällbart snabbskick.
 De gamla listorna `/ob/assignments` och `/inspections` samt deras funktioner
-finns kvar. På skärmar under 1024 px samlas korten under **Genvägar**.
+finns kvar som länkar. Visitkortet tas bort från startsidan, inte från profilen.
 
 Listan följer [varumärkesprofil 1.2](OB_BRAND_PROFILE.md): blå handlingar,
 Manrope, neutrala statustexter och vita rader med tunna avdelare. Mobilen
 använder samma rader och länkar i en vertikal layout utan sidscroll.
-De äldre kortens interna utseende är inte ombyggt.
+
+### Startsida och rapportåtgärder 2026-09-27 (lokalt, inte publicerat)
+
+- Direkt åtkomst till ny tom besiktning och ny uppdragsbekräftelse.
+- Snabbskick använder befintligt API och samma fält, i en normalt stängd,
+  blå/neutral formulärsektion. Fel och bekräftelser följer gemensam toaststandard.
+- Start från befintlig bekräftelse går fortsatt via listans bekräftelselänk.
+- PDF-hämtning finns för synliga besiktningar som har lagrad PDF. Metadata
+  läses under användarens RLS och organisation, för enbart den aktuella sidan.
+  De senaste 25 icke återkallade rapporterna kontrolleras per besiktning,
+  samma urval som nedladdningsvägen. PDF-innehåll och kundtoken läses inte in
+  i listan; äldre base64-filer kontrolleras med begränsade ID-frågor.
+- Upplåsning på Skicka utlåtande återanvänder ägarkontroll, anledning om minst
+  tio tecken och loggning i befintligt API. Låsstatus uppdateras utan omladdning.
+  Historiska snapshots, PDF-filer och kundlänkar skrivs inte om.
+- Ingen ny SQL. Ingen publicering eller ändring av kunddata i denna leverans.
+
+Verifierat med syntetiska data: 12 skärmbredder och 7 panelbredder, jämna rader,
+200 % text, öppet/stängt snabbskick, skapande med snapshot och felåterställning,
+mejlfel, PDF-länkar samt upplåsning på 320/390/1280 px. Riktade enhetstester
+kontrollerar status, sidindelning, PDF-urval och befintliga rapportlänkar.
+Projektets fulla typkontroll har ett sedan tidigare känt fel i
+`test/ob-round-history-transfer.test.ts:3` (TS5097).
 
 ### Visuell uppföljning 2026-09-24
 
@@ -106,7 +129,7 @@ under läsningen krävs omladdning i stället för att blanda två versioner.
   **Acceptera uppdrag** och **Starta besiktning** går till den befintliga
   bekräftelsesidan. Accept/start måste därefter utföras med befintliga
   kontroller; ett klick i listan accepterar eller skapar aldrig något.
-- Listan uppdateras efter snabbskick från kortet, när sidan återfår fokus,
+- Listan uppdateras efter snabbskick, när sidan återfår fokus,
   samt med uppdateringsknappen. Äldre svar får inte skriva över nyare svar.
 
 ## Drift och verifiering

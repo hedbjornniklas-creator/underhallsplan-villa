@@ -1,4 +1,6 @@
 import { createRoot } from 'react-dom/client'
+import { AppToastProvider } from '../../src/components/ui/AppToastProvider'
+import { homeTest } from './ob-overview-client'
 import Page from '../../src/app/(dashboard)/ob/page'
 import { overviewDemoItems } from './ob-overview-data'
 import { selectObOverview, type OverviewFilter, type OverviewSort } from '../../src/lib/ob/overview'
@@ -13,6 +15,12 @@ window.__obOverviewTest = { fail: state === 'error', empty: state === 'empty', d
 const realNow = Date.now
 Date.now = () => realNow() + window.__obOverviewTest.clockOffset
 window.fetch = async (input, init) => {
+  if (new URLSearchParams(location.search).has('actions') && String(input) === '/api/ob/assignments/quick-send' && init?.method === 'POST') {
+    homeTest.requests.push({ url: String(input), body: JSON.parse(String(init.body)) })
+    await new Promise(resolve => setTimeout(resolve, homeTest.delay))
+    return Response.json(homeTest.quickStatus === 200 ? { ok: true } :
+      { error: 'Syntetiskt utskicksfel', acceptUrl: '/synthetic-customer-link' }, { status: homeTest.quickStatus })
+  }
   if ((init?.method ?? 'GET') !== 'GET') {
     window.__obOverviewTest.writes++
     throw Error('This preview does not send or save anything')
@@ -24,6 +32,9 @@ window.fetch = async (input, init) => {
   const responseState = { ...window.__obOverviewTest }
   await new Promise(resolve => setTimeout(resolve, responseState.delay))
   const items = overviewDemoItems()
+  items.filter(item => item.inspection === 'Klar').forEach(item => {
+    item.pdfHref = `/api/report-v2/${item.id.replace('inspection:', '')}/pdf`
+  })
   if (new URL(location.href).searchParams.get('density') === 'stress') {
     Object.assign(items[0], {
       date: null, assignmentNumber: '', city: '',
@@ -50,7 +61,7 @@ window.fetch = async (input, init) => {
   return Response.json({ items: pageItems, total: selected.length, counts, page, pageSize })
 }
 
-createRoot(document.getElementById('root')!).render(<>
+createRoot(document.getElementById('root')!).render(<AppToastProvider>
   <div className="preview-notice">Förhandsvisning med testdata · Inte publicerad</div>
   <header className="preview-header">
     {/* Standalone fixture: no Next image optimizer is running. */}
@@ -58,4 +69,4 @@ createRoot(document.getElementById('root')!).render(<>
     <img src="/report-assets/BesiktApp.png" alt="BesiktApp" /><span>Överlåtelsebesiktning</span>
   </header>
   <Page />
-</>)
+</AppToastProvider>)

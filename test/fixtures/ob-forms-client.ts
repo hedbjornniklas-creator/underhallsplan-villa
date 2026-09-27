@@ -77,6 +77,15 @@ export const db: Record<string, Row[]> = {
         : item.key === 'heating' ? { kind: 'pump', install_year: '2018' } : { kind: 'wood' },
   })))),
 }
+if (new URLSearchParams(location.search).has('documents-density')) {
+  db.document_types = ['Energideklaration', 'Kvalitetsdokument för våtrum', 'OVK', 'Radonmätning, korttid', 'Radonmätning, långtid', 'Stadgar (Brf)', 'Ritningar'].map((label, index) => ({
+    id: `document-type-${index}`, label, scope: 'building', is_active: true, applicable_modules: ['ob'],
+  }))
+  db.inspection_documents = db.document_types.map((type, index) => ({
+    id: `document-${index}`, inspection_id: inspectionId, document_type_id: type.id,
+    title: type.label, status: 'missing', note: '', document_date: null,
+  }))
+}
 if (new URLSearchParams(location.search).has('legacy')) db.inspection_overview_selections = db.inspection_overview_selections.filter(row => row.building_part_id === parts[0].id)
 export const qa = { failSaves: false, saveDelay: 30, writes: [] as Row[], reads: [] as string[],
   snapshot: () => structuredClone({ parts, db }),
@@ -134,6 +143,16 @@ export const supabase: any = {
 }
 window.fetch = async (input, init) => {
   const url = String(input)
+  if (url === `/api/ob/inspections/${inspectionId}/unlock` && init?.method === 'POST') {
+    const { reason } = JSON.parse(String(init.body))
+    await new Promise(resolve => setTimeout(resolve, qa.saveDelay))
+    if (qa.failSaves) return Response.json({ error: 'Du får bara låsa upp dina egna besiktningar.' }, { status: 403 })
+    if (reason.trim().length < 10) return Response.json({ error: 'Anledning måste vara minst 10 tecken.' }, { status: 400 })
+    inspection.locked_at = null
+    inspection.locked_by = null
+    qa.writes.push({ table: 'inspection_lock_events', operation: 'unlock', values: { reason } })
+    return Response.json({ ok: true, inspection_id: inspectionId, locked_at: null, locked_by: null })
+  }
   if (url === `/api/ob/inspections/${inspectionId}/frozen-inspector`) return Response.json({ locked: true, hasSnapshot: true, profile: db.profiles[0] })
   if (url === `/api/ob/inspections/${inspectionId}/addon-orders` && !init?.method) return Response.json({ addonOrders: [] })
   if (url === `/api/ob/inspections/${inspectionId}/report-delivery` && !init?.method) return Response.json({

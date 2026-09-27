@@ -6,7 +6,7 @@
   font-display: swap;
 }
 
-.obo, .obo-shortcuts-toggle {
+.obo {
   --obo-blue: #245eb5;
   --obo-line: #d4dce4;
   color: #25313b;
@@ -15,7 +15,7 @@
   line-height: 1.25rem;
   letter-spacing: 0;
 }
-.obo *, .obo-shortcuts-toggle { box-sizing: border-box; letter-spacing: 0; }
+.obo * { box-sizing: border-box; letter-spacing: 0; }
 .obo-home { background: #f4f6f8; }
 .obo-home-inner { max-width: 116rem; }
 .obo-home-heading { padding: .5rem 0 1rem; font-family: 'ObOverviewManrope', sans-serif; }
@@ -31,7 +31,7 @@
 .obo button { background: #fff; border: 1px solid var(--obo-line); border-radius: 4px; min-height: 44px; padding: .5rem .75rem; }
 .obo button:disabled { cursor: default; color: #78838f; background: #f4f6f8; }
 .obo button:not(:disabled):hover, .obo a:hover { background: #edf3fc; color: #1d4890; }
-.obo :is(a, button, input, select):focus-visible, .obo-shortcuts-toggle:focus-visible { outline: 3px solid #245eb5; outline-offset: 3px; }
+.obo :is(a, button, input, select):focus-visible { outline: 3px solid #245eb5; outline-offset: 3px; }
 .obo .obo-icon { display: inline-flex; flex: 0 0 44px; width: 44px; height: 44px; gap: 0; padding: 0; align-items: center; justify-content: center; }
 .obo-toolbar { padding: .75rem 1rem; display: grid; grid-template-columns: minmax(12rem, 28rem) max-content max-content; justify-content: start; gap: 1rem; align-items: center; }
 .obo-search { display: flex; min-width: 0; align-items: center; gap: .5rem; border: 1px solid #78838f; border-radius: 4px; padding-left: .75rem; }
@@ -59,7 +59,7 @@
 .obo-table th:nth-child(5) { width: 14.5rem; }
 .obo-table th:nth-child(6) { width: 6.75rem; }
 .obo-table th:nth-child(7) { width: 3.5rem; }
-.obo-table th:nth-child(8) { width: 6.75rem; }
+.obo-table th:nth-child(8) { width: 9.5rem; }
 .obo-table tr[data-row-id] { height: 3.5rem; }
 .obo-table td { vertical-align: middle; padding: .25rem .625rem; border-bottom: 1px solid var(--obo-line); }
 .obo-table tr[data-row-id]:hover { background: #f7faff; }
@@ -73,9 +73,10 @@
 .obo-date { font-variant-numeric: tabular-nums; }
 .obo-attention { list-style: none; padding: 0; margin: .5rem 0 0; color: #785016; }
 .obo-attention li + li { margin-top: .25rem; }
-.obo-action-links { display: grid; grid-template-columns: 44px 44px; justify-content: end; }
+.obo-action-links { display: grid; grid-template-columns: repeat(3, 44px); justify-content: end; }
 .obo-inspection-link { grid-column: 1; }
 .obo-confirmation-link { grid-column: 2; }
+.obo-pdf-link { grid-column: 3; }
 .obo-actions a { display: inline-flex; align-items: center; justify-content: center; gap: 0; flex: 0 0 44px; width: 44px; min-height: 44px; border-radius: 4px; color: #245eb5; text-decoration: none; }
 .obo-actions svg { flex: 0 0 18px; }
 .obo-actions a > span, .obo-mobile-label, .obo-table .obo-mobile-only { display: none; }
@@ -98,7 +99,6 @@
 .obo-error p { flex: 1 1 220px; margin: 0; }
 .obo .obo-retry { min-width: 9rem; }
 .obo-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-.obo-shortcuts-toggle { display: none; }
 .obo-spinning { animation: obo-spin 1.5s linear infinite; }
 @keyframes obo-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .obo-spinning { animation: none; } }
@@ -106,9 +106,6 @@
 @media (max-width: 1023px) {
   .obo-home-heading h1 { font-size: 1.375rem; }
   .obo { margin-top: 1.5rem; }
-  .obo-shortcuts-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 0; min-height: 48px; background: transparent; border: 0; border-bottom: 1px solid #d4dce4; cursor: pointer; font-size: 1rem; }
-  .obo-shortcuts[data-open=true] .obo-shortcuts-toggle svg { transform: rotate(180deg); }
-  .obo-shortcuts[data-open=false] .obo-shortcuts-content { display: none; }
 }
 
 /* Keep a table in side panels and smaller desktop windows. */
@@ -119,7 +116,7 @@
   .obo-table th:nth-child(5) { width: 11.75rem; }
   .obo-table th:nth-child(6) { width: 6rem; }
   .obo-table th:nth-child(7) { width: 3.25rem; }
-  .obo-table th:nth-child(8) { width: 6.5rem; }
+  .obo-table th:nth-child(8) { width: 9.25rem; }
   .obo-table .obo-details-toggle { padding-left: .25rem; padding-right: .25rem; }
 }
 

@@ -72,6 +72,19 @@ test('background save feedback reserves its geometry on all three OB forms', () 
   assert.doesNotMatch(page, /<ObLocalDraftStatus/)
 })
 
+test('document notes start at one row and opt into growth without changing other editors', () => {
+  const source = read('src/components/ob/ObStepHandlingar.tsx')
+  assert.match(source, /ob-documents-workspace ob-form-compact/)
+  assert.equal(source.match(/rows=\{1\}\s+autoGrow/g)?.length, 2)
+  assert.doesNotMatch(source, /min-h-20|min-h-\[2.5rem\]/)
+  assert.match(source, /aria-label=\{`Notering för/)
+  const textarea = read('src/components/ob/DebouncedTextarea.tsx')
+  assert.match(textarea, /autoGrow = false/)
+  assert.match(textarea, /cloneNode\(\)/)
+  assert.match(textarea, /observer.disconnect\(\)/)
+  assert.match(textarea, /\[autoGrow, renderedValue\]/)
+})
+
 test('building cover is opened through the shared conditions panel, not displayed above the list', () => {
   const source = read('src/components/ob/ObStepForutsattningar.tsx')
   assert.match(source, /key: BUILDING_COVER_PANEL_KEY/)

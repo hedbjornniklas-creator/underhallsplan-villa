@@ -6,4 +6,7 @@ export default function PreviewLink({ href, children, prefetch: _prefetch, ...pr
   void _prefetch
   return <a href={href} {...props}>{children}</a>
 }
-export function useRouter() { return { push() {}, replace() {}, refresh() {} } }
+export function useRouter() { return {
+  push(href: string) { window.__obHomeTest.navigations.push(href) },
+  replace(href: string) { window.__obHomeTest.navigations.push(href) }, refresh() {},
+} }

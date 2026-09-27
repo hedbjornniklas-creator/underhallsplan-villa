@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict'
+import puppeteer from 'puppeteer-core'
+import { resolve } from 'node:path'
+
+export async function testHomeActions(base, output) {
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+  const page = await browser.newPage()
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setRequestInterception(true)
+  page.on('request', request => request.url().startsWith(base) || request.url().startsWith('data:') ? request.continue() : request.abort())
+  try {
+    await page.setViewport({ width: 1440, height: 1000 })
+    await page.goto(`${base}/ob?actions`, { waitUntil: 'networkidle0' })
+    await page.waitForSelector('.obo-pdf-link')
+    assert.equal(await page.$eval('.obo-pdf-link', a => a.getAttribute('href')), '/api/report-v2/inspection-3/pdf')
+    assert.equal((await page.$$('[data-row-id="inspection:inspection-1"] .obo-pdf-link')).length, 0)
+    assert.equal(await page.$eval('.obo-pdf-link', a => a.title), 'Ladda ner utlåtande (PDF)')
+    await page.click('.obh-actions > button')
+    await page.waitForFunction(() => window.__obHomeTest.navigations.length === 1)
+    const creation = await page.evaluate(() => window.__obHomeTest)
+    assert.deepEqual(creation.writes.map(row => row.table), ['properties', 'inspections', 'inspection_conditions', 'ob_property_snapshot'])
+    assert.equal(creation.writes[1].values.inspection_family, 'OB')
+    assert.equal(creation.writes[3].values.source_property_id, 'new-property')
+    assert.deepEqual(creation.navigations, ['/properties/new-property/ob/new-inspection'])
+    await page.click('.obh-quick summary')
+    await page.click('.obh-roles label:first-child')
+    await page.type('.obh-email input', 'TEST@example.invalid')
+    await page.type('.obh-quick-form input[inputmode=decimal]', '10900,50')
+    await page.evaluate(() => { window.__obHomeTest.delay = 500 })
+    const reads = await page.evaluate(() => window.__obOverviewTest.reads)
+    await page.click('.obh-quick-form button[type=submit]')
+    assert.equal(await page.$eval('.obh-quick-form button[type=submit]', node => node.disabled), true)
+    await page.waitForFunction(count => window.__obOverviewTest.reads > count, {}, reads)
+    const requests = await page.evaluate(() => window.__obHomeTest.requests)
+    assert.equal(requests.length, 1)
+    assert.deepEqual(requests[0].body, { customerEmail: 'test@example.invalid', ordererRole: 'seller', preferredDate: '', preferredTime: '', priceAmount: '10900,50' })
+    assert.equal(await page.$eval('.obh-email input', node => node.value), '')
+    await page.type('.obh-email input', 'failure@example.invalid')
+    await page.type('.obh-quick-form input[inputmode=decimal]', '500')
+    await page.evaluate(() => { window.__obHomeTest.quickStatus = 502 })
+    await page.click('.obh-quick-form button[type=submit]')
+    await page.waitForSelector('.obh-feedback a')
+    assert.equal(await page.$eval('.obh-email input', node => node.value), 'failure@example.invalid')
+    assert.equal(await page.$eval('.obh-feedback a', node => node.getAttribute('href')), '/synthetic-customer-link')
+    await page.click('.obh-quick summary')
+    await page.click('.obh-quick summary')
+    assert.equal(await page.$eval('.obh-email input', node => node.value), 'failure@example.invalid', 'collapsing keeps unsent data')
+    await page.evaluate(() => { window.__obHomeTest.createFailAt = 'inspection_conditions' })
+    await page.click('.obh-actions > button')
+    await page.waitForFunction(() => window.__obHomeTest.writes.filter(row => row.operation === 'delete').length === 2)
+    assert.equal(await page.evaluate(() => window.__obHomeTest.navigations.length), 1, 'failure must not navigate')
+    for (const width of [320, 390, 1440]) {
+      await page.setViewport({ width, height: 1000 })
+      await page.evaluate(() => document.documentElement.setAttribute('data-large-text', ''))
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, '200% open quick form must fit')
+      await page.screenshot({ path: resolve(output, `home-actions-large-${width}.png`), fullPage: true })
+    }
+    assert.deepEqual(errors, [])
+    console.log('Home actions: synthetic creation, snapshot, rollback, navigation, quick-send payload, busy state, list refresh, failure recovery, preserved form, PDF links and 200% reflow passed.')
+  } finally { await browser.close() }
+}

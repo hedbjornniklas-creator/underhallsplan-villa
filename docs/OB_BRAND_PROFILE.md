@@ -67,9 +67,10 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 
 ## ÖB-listan på dator
 
-- Den gemensamma listan placeras under de fyra befintliga verktygen på ÖB:s
-  startsida. Uppdragsbekräftelser, Starta besiktning, Mina besiktningar och
-  Visitkort finns kvar under övergången.
+- Startsidan har två tydliga handlingar: **Skapa ny besiktning** och
+  **Skapa uppdragsbekräftelse**. Snabbskick ligger i en kompakt, normalt stängd
+  sektion före listan. Visitkortet tas bort här, inte från inställningar eller
+  rapportunderlag. De gamla listorna behålls som textlänkar under övergången.
 - En rad representerar ett uppdrag, inte en fastighet. Flera besiktningar på
   samma fastighet ska inte slås ihop. Ersatta bekräftelser hör till historiken
   för samma uppdrag, inte till dubbla aktiva rader.
@@ -78,8 +79,8 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
   övriga cellvärden har samma textstorlek och normalt vikt 400.
 - Uppdragsnummer visas inte i listan eller dess detaljrad, inte heller på
   mobil. Numret behålls i data och kan fortfarande användas för sökning.
-- Utnyttja sidans bredd, upp till 1856 px inklusive sidmarginaler. Behåll de
-  fyra befintliga verktygens avgränsade bredd; listan får breda ut sig under dem.
+- Utnyttja sidans bredd, upp till 1856 px inklusive sidmarginaler.
+  Skapa-handlingar, snabbskick och lista använder samma sidmarginaler.
 - Standardrader är 56 px vid normal textstorlek, oavsett antal länkar eller
   åtgärdsorsaker. Utfällda detaljer är ett avsiktligt undantag, inte ett sätt
   att tvinga in fullständiga långa texter i en fast höjd.
@@ -99,12 +100,15 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 - Datorns två öppna-handlingar använder Lucide-ikoner med tooltip och
   tillgängliga namn som **Öppna besiktning** och **Acceptera uppdrag**.
   Mobilen behåller synlig text. Ikoner får inte ersätta statuskolumnerna.
+- En tredje ikon hämtar sparat utlåtande som PDF när en fil finns. Den skapar
+  inte ett nytt utlåtande. Upplåsning ligger på **Skicka utlåtande** och kräver
+  anledning samt befintlig behörighetskontroll och loggning.
 
 ## Mobil
 
-- Samla de fyra verktygen under en utfällbar **Genvägar**-rad. Funktionerna
-  finns kvar men deras formulär ska inte skjuta uppdragslistan långt ned.
-  Visa öppet/stängt läge och stöd för tangentbord och skärmläsare.
+- Skapa-knapparna är direkt tillgängliga, även på mobil. Snabbskicket är
+  normalt stängt; oskickade fältvärden behålls när det fälls ihop.
+  Formuläret får staplas utan sidscroll och inmatning använder minst 16 px.
 - Byt tabellen mot en sammanhängande vertikal lista, inte en sidscrollande
   miniatyrtabell. Tunna avdelare skiljer raderna; undvik flytande kort per uppdrag.
 - Varje rad visar adress, kund och datum, följt av två etiketter med värden:
@@ -192,6 +196,29 @@ från 320 px och 200 % text. Autosparande behåller fokus och rullningsläge;
 låsning, godkända villkor och byte-identisk hämtning av arkiverad PDF har
 kontrollerats med syntetiska testdata. Ingen publicering eller ändring av
 kunddata har gjorts i denna etapp.
+
+## Handlingar & upplysningar
+
+Lokal uppföljning 2026-09-27 efter användarens önskemål om tätare layout.
+Inte publicerad i denna etapp.
+
+- Samma kompakta Manrope-typografi som UB och Fastighet & uppdrag: 14 px
+  fälttext och 16 px sektionsrubriker på dator, minst 44 px kontroller.
+  Mobilen behåller 16 px fälttext, 18 px rubriker och minst 48 px pekmål.
+- Handlingstabellen har tydliga kolumner för handling, status, datum och
+  notering, tunn radavdelare och cirka 57 px standardradhöjd på dator.
+  Långa beskrivningar och noteringar får öka höjden utan att text klipps.
+- Notering börjar med en rad på både dator och mobil och växer med innehållet.
+  Sparandet i sig ska inte ändra fältets höjd, fokus eller rullningsläge.
+- De större fritextfälten för upplysningar och kända fel behåller sin yta.
+  Sparregler, utkastnycklar, låsning och rapportinnehåll ändras inte.
+
+Verifiering: 25 riktade kodtester, layoutprov på 320/390/768/1280/1920 px,
+återställda utkast, låst vy, 200 % text och autosparningsprov på samtliga tre
+formulär godkända med syntetiska data. Skärmbilder granskade på dator och mobil.
+Full `tsc --noEmit --incremental false` stoppas av det befintliga felet
+TS5097 i `test/ob-round-history-transfer.test.ts:3`; filen och projektets
+typkontrollkonfiguration är oförändrade. Ingen publicering har gjorts.
 
 ## Förutsättningar
 
@@ -295,7 +322,9 @@ mobiltest, ett funktionstest eller en publicering av listan.
 
 | Datum | Beslut | Avgränsning |
 | --- | --- | --- |
-| 2026-09-27 | Gemensam kompakt, ramfri formulärstil för UB och Fastighet & uppdrag. | Endast arbetsvyerna. 16 px sektionsrubriker på dator, 14 px fälttext, 44 px kontroller; mobilen behåller 48 px pekmål. Inga ändringar av historiska dokument eller spar- och godkännandeflöden. Lokal implementation, inte publicering. |
+| 2026-09-27 | Ersätt startsidans kort med skapa-handlingar och utfällbart snabbskick, ta bort visitkortet här, visa PDF-hämtning i listan och upplåsning på Skicka utlåtande. | Gamla listor och profilinformation utanför startsidan behålls. Befintliga skapa-, skicka-, PDF- och upplåsningsflöden återanvänds. Lokal implementation, inte publicerad. |
+| 2026-09-27 | Kompaktare Handlingar & upplysningar, med enradsstart och automatisk höjd för handlingarnas noteringar. | Endast arbetsvyn. Datorns standardrader blir tätare; mobilens pekytor och befintlig sparlogik bevaras. Lokal implementation, inte publicerad. |
+| 2026-09-27 | Gemensam kompakt, ramfri formulärstil för UB och Fastighet & uppdrag. | Endast arbetsvyerna. 16 px sektionsrubriker på dator, 14 px fälttext, 44 px kontroller; mobilen behåller 48 px pekmål. Inga ändringar av historiska dokument eller spar- och godkännandeflöden. Publicerad efter användarens separata godkännande och godkända tester. |
 | 2026-09-27 | Samordna besiktningens sidhuvud, meny och grundstilar. | Första etappen omfattar arbetsvyn, inte rapporter eller datalagring. ÖB-rundans större datorlayout följer separat. Användaren godkände publicering efter den lokala förhandsvisningen och godkända tester. |
 | 2026-09-23 | Använd RenoApps lugna listformspråk med ÖB:s blå profil. Den senaste datorriktningen och mobilexemplet blir referens för 1.2. | Användaren bad att uppdatera profilen efter godkännande av mobilexemplet. Äldre ingångar behålls under övergången. Ingen appimplementation eller publicering i denna leverans. |
 | 2026-09-23 | Bygg den nya gemensamma listan under de fyra korten på ÖB:s startsida. | Separat lokal implementation för utvärdering. Båda gamla listorna och deras arbetsflöden behålls. Ingen publicering eller pensionering av gamla listor. |

@@ -1,0 +1,54 @@
+.obh { margin-top: 1.25rem; color: #25313b; font: .875rem/1.5 'ObOverviewManrope', sans-serif; letter-spacing: 0; container: ob-home-actions / inline-size; }
+.obh * { box-sizing: border-box; letter-spacing: 0; }
+.obh :is(a, button, summary, span) { min-width: 0; overflow-wrap: anywhere; }
+.obh-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; }
+.obh :is(button, input) { font: inherit; color: inherit; min-width: 0; }
+.obh-actions > :is(button, a), .obh-quick-form > button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; padding: .5rem 1rem; border: 1px solid #b5c4d3; border-radius: 4px; background: white; color: #245eb5; text-decoration: none; cursor: pointer; }
+.obh svg { flex-shrink: 0; }
+.obh .obh-primary { background: #245eb5; border-color: #245eb5; color: white; }
+.obh .obh-primary:not(:disabled):hover { background: #194b94; }
+.obh button:disabled { cursor: wait; opacity: .65; }
+.obh-list-links { margin-left: auto; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; }
+.obh-list-links a { color: #245eb5; display: inline-flex; align-items: center; min-height: 44px; text-underline-offset: 3px; }
+.obh :is(a, button, input, summary):focus-visible { outline: 3px solid #245eb5; outline-offset: 3px; }
+.obh-quick { margin-top: 1rem; border-block: 1px solid #d4dce4; background: #fff; }
+.obh-quick summary { display: flex; align-items: center; gap: .5rem; padding: .75rem 1rem; min-height: 48px; font-weight: 600; cursor: pointer; list-style: none; }
+.obh-quick summary::-webkit-details-marker { display: none; }
+.obh-quick summary > svg:last-child { margin-left: auto; }
+.obh-quick[open] summary > svg:last-child { transform: rotate(180deg); }
+.obh-quick-form { display: grid; grid-template-columns: max-content minmax(12rem, 1fr) 10rem 7rem 8rem max-content; align-items: end; gap: 1rem; padding: .25rem 1rem 1rem; }
+.obh-quick-form > label { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.obh-quick-form input:not([type=radio]) { width: 100%; min-height: 44px; padding: .5rem .65rem; border: 1px solid #78838f; border-radius: 4px; background: #fff; }
+.obh fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.obh legend { padding: 0; margin-bottom: .25rem; }
+.obh-roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.obh-roles label { position: relative; }
+.obh-roles input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.obh-roles span { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: .5rem .75rem; border: 1px solid #b5c4d3; cursor: pointer; }
+.obh-roles label + label span { border-left: 0; }
+.obh-roles label:first-child span { border-radius: 4px 0 0 4px; }
+.obh-roles label:last-child span { border-radius: 0 4px 4px 0; }
+.obh-roles input:checked + span { background: #edf3fc; color: #194b94; box-shadow: inset 0 -2px #245eb5; }
+.obh-roles input:focus-visible + span { outline: 3px solid #245eb5; outline-offset: 3px; position: relative; z-index: 1; }
+.obh-feedback { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; color: #315e45; }
+.obh-error { color: #912f32; }
+@container ob-home-actions (width < 22rem) {
+  .obh .obh-quick-form { grid-template-columns: minmax(0, 1fr); }
+  .obh .obh-email { grid-column: 1; }
+  .obh-roles span { padding-inline: .35rem; }
+}
+@container ob-home-actions (width < 78rem) {
+  .obh-quick-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .obh-email { grid-column: span 2; }
+  .obh-quick-form > button { grid-column: 1 / -1; justify-self: start; }
+}
+@container ob-home-actions (width < 42rem) {
+  .obh-actions > :is(button, a) { flex: 1 1 100%; }
+  .obh-list-links { margin-left: 0; }
+  .obh-quick-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .obh-quick-form > fieldset, .obh-email { grid-column: 1 / -1; }
+  .obh-roles label { flex: 1; }
+  .obh-quick-form > button { justify-self: stretch; }
+  .obh-quick-form input:not([type=radio]) { font-size: 1rem; min-height: 48px; }
+  .obh-actions > :is(button, a), .obh-roles span { min-height: 48px; }
+}

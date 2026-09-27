@@ -9,6 +9,7 @@ import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepRunda from './ObStepRunda'
 import ObStepAreamatning from './ObStepAreamatning'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
+import ObUnlockInspection from './ObUnlockInspection'
 import type { Tables } from '@/types/supabase'
 import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
@@ -709,6 +710,12 @@ function ObWizardContent({
                       <span>
                         {isCurrentlyCompleted ? 'Status: Klarmarkerad' : 'Status: Pågående/utkast'}
                       </span>
+                      {isCurrentlyLocked && <ObUnlockInspection inspectionId={inspectionId!}
+                        disabled={sendingReport || regeneratingPdf}
+                        onUnlocked={() => {
+                          onInspectionUpdated?.({ ...normalizedInspection, locked_at: null, locked_by: null })
+                          setWorkflowRevision(value => value + 1)
+                        }} />}
                     </div>
 
                     <div className="mt-3 space-y-2 text-xs text-gray-600">

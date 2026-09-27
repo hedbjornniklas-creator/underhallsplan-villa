@@ -1,23 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileCheck2, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Download, FileCheck2, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import ActionButton from '@/components/ui/ActionButton'
 import PendingLink from '@/components/ui/PendingLink'
 import type { ObOverviewItem, ObOverviewPage, OverviewFilter, OverviewSort } from '@/lib/ob/overview'
 import './ob-overview.css'
-
-export function ObDashboardShortcuts({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false)
-  const id = useId()
-  return <div className="obo-shortcuts" data-open={open}>
-    <button type="button" className="obo-shortcuts-toggle" aria-expanded={open} aria-controls={id}
-      onClick={() => setOpen(value => !value)}>
-      <span>Genvägar</span><ChevronDown size={20} aria-hidden="true" />
-    </button>
-    <div className="obo-shortcuts-content" id={id}>{children}</div>
-  </div>
-}
 
 const filters: { value: OverviewFilter; label: string }[] = [
   { value: 'all', label: 'Alla' }, { value: 'active', label: 'Aktuella' }, { value: 'closed', label: 'Avslutade' },
@@ -65,6 +53,10 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
         {item.confirmationHref && <PendingLink className="obo-confirmation-link" href={item.confirmationHref} prefetch={false} autoPending pendingLabel="Öppnar bekräftelse…"
           aria-label={`${item.confirmationAction}: ${item.address}`} title={item.confirmationAction}
           icon={<FileCheck2 size={18} aria-hidden="true" />}>{item.confirmationAction}</PendingLink>}
+        {item.pdfHref && <a className="obo-pdf-link" href={item.pdfHref} target="_blank" rel="noopener noreferrer"
+          aria-label={`Ladda ner utlåtande som PDF: ${item.address}`} title="Ladda ner utlåtande (PDF)">
+          <Download size={18} aria-hidden="true" /><span>Ladda ner PDF</span>
+        </a>}
       </div></td>
     </tr>
     {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={8}>

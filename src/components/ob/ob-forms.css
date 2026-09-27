@@ -234,6 +234,21 @@
 .ob-form-compact .ob-form-section > * + * {
   margin-top: 16px;
 }
+.ob-form-root.ob-documents-workspace.ob-form-compact h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.ob-form-root.ob-documents-workspace .ob-document-note {
+  display: block;
+  overflow-y: hidden;
+}
+.ob-form-root.ob-documents-workspace .ob-document-table table {
+  table-layout: fixed;
+  font: inherit;
+}
+.ob-form-root.ob-documents-workspace .ob-document-title-column { width: 27%; }
+.ob-form-root.ob-documents-workspace .ob-document-status-column { width: 13.5rem; }
+.ob-form-root.ob-documents-workspace .ob-document-date-column { width: 10.5rem; }
 .ob-property-workspace .ob-form-pair {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
   gap: 12px;
@@ -301,6 +316,23 @@
   }
 }
 @media (min-width: 768px) and (pointer: fine) {
+  .ob-form-root.ob-documents-workspace.ob-form-compact h2 {
+    font-size: 1rem;
+  }
+  .ob-form-root.ob-documents-workspace .ob-document-table :where(th, td) {
+    padding: 6px 8px;
+  }
+  .ob-form-root.ob-documents-workspace .ob-document-table td:first-child {
+    vertical-align: middle;
+  }
+  .ob-form-root.ob-documents-workspace .ob-document-table th {
+    font-size: .8125rem;
+    font-weight: 600;
+    color: var(--obm-muted);
+  }
+  .ob-form-root.ob-documents-workspace .ob-document-table select {
+    min-width: 0;
+  }
   .ob-form-compact {
     font-size: .875rem;
     line-height: 1.45;

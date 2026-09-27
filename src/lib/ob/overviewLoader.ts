@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { loadOverviewPdfIds } from './overviewPdfs'
 import {
   makeObOverviewItem, type ObOverviewPage, type OverviewAssignment, type OverviewInspection,
   type OverviewPageOptions, type OverviewWorkflow,
@@ -44,5 +45,12 @@ export async function loadObOverview(input: {
     return makeObOverviewItem(row.assignment ?? undefined, row.inspection ?? undefined, row.workflow ?? undefined)
   })
   if (new Set(items.map(item => item.id)).size !== items.length) throw new Error('Uppdragslistan innehåller dubbla rader.')
+  const pdfIds = await loadOverviewPdfIds(userClient, orgId,
+    result.rows.flatMap(row => row.inspection ? [row.inspection.id] : []))
+  result.rows.forEach((row, index) => {
+    if (row.inspection && pdfIds.has(row.inspection.id)) {
+      items[index].pdfHref = `/api/report-v2/${row.inspection.id}/pdf`
+    }
+  })
   return { items, total: result.total, counts: result.counts, page: result.page, pageSize: result.pageSize }
 }
