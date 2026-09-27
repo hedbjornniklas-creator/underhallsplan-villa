@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react'
 import type { ReportSnapshotPayloadV1 } from '@/lib/report/reportSnapshotPayload'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { loadAppendixText } from '@/lib/report/loadAppendixText'
+import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
 import {
   defaultCoverIllustrationSrc,
   footerImageSrc,
@@ -283,7 +284,7 @@ function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3)
 function SnapshotBuilding({ building, index }: { building: Record<string, unknown>; index: number }) {
   const name = toText(building.name, `Byggnad ${index + 2}`)
   const introductions = asRecordArray(building.introduction)
-  const furnishing = getTextByPath(building, 'conditions.furnishing_level', '')
+  const furnishing = formatFurnishingLevel(getTextByPath(building, 'conditions.furnishing_level', ''))
   const buildingData = getTextByPath(building, 'buildingData.text', '')
 
   return (

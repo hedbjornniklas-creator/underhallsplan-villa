@@ -76,6 +76,8 @@ else {
       for (const building of buildings) assert.ok(building.headingFits && building.imagesLoaded && building.centered, JSON.stringify(building))
       assert.match(buildings[0].text, /Garagets frysta risktext/)
       assert.match(buildings[0].text, /Garagets frysta FTU-text/)
+      assert.match(buildings[0].text, /Möblering: fullt möblerad/)
+      assert.match(buildings[1].text, /Möblering: omöblerad/)
       assert.doesNotMatch(buildings[1].text, /Risk:|FTU:/)
       const garage = await page.$('[data-snapshot-building="garage"]')
       await garage.evaluate(element => element.scrollIntoView())

@@ -20,7 +20,7 @@ export function snapshotWithBuildings(): ReportSnapshotPayloadV1 {
         {
           id: 'garage', name: 'Garage',
           introduction: [{ title: 'Garage', noteText: '', photoUrls: [photo] }],
-          conditions: { furnishing_level: 'fullt möblerad' },
+          conditions: { furnishing_level: 'fullt_moblerad' },
           buildingData: { text: 'Byggnadsår: 2023\nGrundläggning: Platta på mark\nPlan 0 - Garage\nPlan 1 - Kontor' },
           exterior: { blocks: [{ ...note('Yttertak', 'Garagets sparade taknotering'), riskText: 'Garagets frysta risktext' }] },
           interior: { blocks: [{ ...note('Plan 1 - Kök', 'Garagets sparade köksnotering'), ftuText: 'Garagets frysta FTU-text' }] },
@@ -28,7 +28,7 @@ export function snapshotWithBuildings(): ReportSnapshotPayloadV1 {
         {
           id: 'guest-house', name: 'Gästhus med en längre byggnadsrubrik för kontroll av mobilvyn',
           introduction: [{ title: 'Gästhus', noteText: 'Endast den avtalade byggnadsdelen.', photoUrls: [] }],
-          conditions: { furnishing_level: 'omöblerad' },
+          conditions: { furnishing_level: 'omoblerad' },
           buildingData: { text: 'Byggnadsår: 1998' },
           exterior: { blocks: [] }, interior: { blocks: [note('Plan 1 - Kök', 'Gästhusets sparade köksnotering')] },
         },

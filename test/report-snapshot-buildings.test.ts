@@ -103,3 +103,16 @@ test('building names and note text remain escaped as data', () => {
   assert.doesNotMatch(html, /<script>|<img onerror/)
   assert.match(html, /&lt;script&gt;/)
 })
+
+test('frozen furnishing codes use the PDF labels while legacy free text stays intact', () => {
+  for (const [value, label] of [['fullt_moblerad', 'fullt möblerad'], ['delvis_moblerad', 'delvis möblerad'],
+    ['omoblerad', 'omöblerad'], ['Sparad fritext', 'Sparad fritext']]) {
+    const snapshot = snapshotWithBuildings()
+    Object.assign(snapshot.reportData.mock, { appendices: { buildings: [{
+      name: 'Garage', conditions: { furnishing_level: value },
+    }] } })
+    const html = render(snapshot)
+    assert.ok(html.includes(label), `Missing label for ${value}`)
+    if (value !== label) assert.ok(!html.includes(value), `Leaked storage code ${value}`)
+  }
+})
