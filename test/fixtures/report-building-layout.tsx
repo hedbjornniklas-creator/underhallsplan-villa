@@ -34,7 +34,21 @@ const data = { mock: {
     note('Plan 2 - Badrum', 'HUVUD-BADRUM'), note('Plan 2 - Sovrum', 'HUVUD-SOVRUM', stress ? 6 : 1)] },
   appendices: { buildings },
 } }
+const spec = buildReportSpec({ layoutVersion: legacy ? undefined : 2, inspectionSide: 'buyer', dynamicAppendices: { buildings } })
+if (query.has('frozen-cover')) delete spec[0].coverImageFrame
+if (query.has('frozen-building')) {
+  for (const section of spec.filter(section => section.id.startsWith('building-') && section.id !== 'building-data')) {
+    const heading = section.blocks[0]
+    if (heading.type === 'heading') {
+      delete heading.divider
+      delete heading.fontSizePt
+      delete heading.accent
+      heading.marginBottomMm = 4
+    }
+    for (const block of section.blocks) if (block.type === 'buildingIntroduction') delete block.imageAlign
+  }
+}
 createRoot(document.getElementById('root')!).render(<ReportRenderer
-  spec={buildReportSpec({ layoutVersion: legacy ? undefined : 2, inspectionSide: 'buyer', dynamicAppendices: { buildings } })}
-  mockData={data} inspectionSide="buyer" rootClassName="report-root--pdf"
+  spec={spec}
+  mockData={data} inspectionSide="buyer" rootClassName={query.has('digital') ? undefined : 'report-root--pdf'}
 /> )

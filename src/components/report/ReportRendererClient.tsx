@@ -2167,7 +2167,8 @@ export default function ReportRendererClient({
           {item.noteText?.trim() && <p style={{ whiteSpace: 'pre-line', margin: `0 0 ${mmToPx(3)}` }}>{item.noteText}</p>}
           {getInspectionPhotoUrls(item).map((src, photoIndex) => <ReportPhoto
             key={photoIndex} src={src} alt={`Byggnadsbild: ${item.title ?? ''}`}
-            style={{ display: 'block', maxWidth: '100%', maxHeight: mmToPx(65), objectFit: 'contain' }}
+            style={{ display: 'block', maxWidth: '100%', maxHeight: mmToPx(65), objectFit: 'contain',
+              marginInline: block.imageAlign === 'center' ? 'auto' : undefined }}
             maxLongSidePx={isPdfMode ? PHOTO_POLICY.pdfMaxLongSidePx : PHOTO_POLICY.digitalMaxLongSidePx}
             onSettled={notifyReportImageSettled}
           />)}
@@ -2290,6 +2291,11 @@ export default function ReportRendererClient({
           className="report-heading"
           style={{
             ...blockMargins(block),
+            ...(block.divider ? {
+              borderBottom: `${mmToPx(0.8)} solid ${ACCENT_COLOR}`,
+              paddingBottom: mmToPx(3),
+              overflowWrap: 'anywhere',
+            } : {}),
             ...(isNotesMainHeading
               ? {
                   backgroundColor: ACCENT_COLOR,
@@ -3119,6 +3125,7 @@ export default function ReportRendererClient({
                 inspectionDate={inspectionDate}
                 assignmentNumber={assignmentNumber}
                 coverIllustrationUrl={coverIllustrationUrl}
+                showImageFrame={coverSection?.coverImageFrame !== false}
                 coverNotice={coverNotice}
               />
             </ReportPage>

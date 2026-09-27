@@ -32,6 +32,7 @@ export type ReportBlock =
       marginTopMm: number
       marginBottomMm: number
       accent?: boolean
+      divider?: boolean
       fontSizePt?: number
       align?: 'left' | 'center' | 'right'
     }
@@ -91,6 +92,7 @@ export type ReportBlock =
   | {
       type: 'buildingIntroduction'
       itemsPath: string
+      imageAlign?: 'left' | 'center'
       marginTopMm: number
       marginBottomMm: number
     }
@@ -135,6 +137,7 @@ export type ReportBlock =
 export type ReportSection = {
   id: string
   layoutVersion?: 2
+  coverImageFrame?: boolean
   title?: string
   startOnNewPage: boolean
   type?: 'cover' | 'standard' | 'appendix'
@@ -702,7 +705,10 @@ export function buildReportSpec(params?: {
 
   const spec = JSON.parse(JSON.stringify(REPORT_SPEC)) as ReportSection[]
   const modernLayout = params?.layoutVersion === 2
-  if (modernLayout) spec[0].layoutVersion = 2
+  if (modernLayout) {
+    spec[0].layoutVersion = 2
+    spec[0].coverImageFrame = false
+  }
 
   const tocSection = spec.find((section) => section.id === 'toc')
   const tocBlock = tocSection?.blocks.find((block) => block.type === 'toc') as
@@ -1280,9 +1286,10 @@ export function buildReportSpec(params?: {
     const heading = (text: string): ReportBlock => ({ type: 'heading', level: 3, text, marginTopMm: 3, marginBottomMm: 2 })
     const items = (field: string): ReportBlock => ({ type: 'inspectionBlocks', itemsPath: `${path}.${field}`, marginTopMm: 0, marginBottomMm: 4 })
     const section: ReportSection = { id, title, startOnNewPage: true, type: 'standard', blocks: [
-      { type: 'heading', level: 2, text: title, marginTopMm: 0, marginBottomMm: 4 },
+      { type: 'heading', level: 2, text: title, marginTopMm: 0, marginBottomMm: modernLayout ? 6 : 4,
+        ...(modernLayout ? { fontSizePt: 20, accent: true, divider: true } : {}) },
       modernLayout
-        ? { type: 'buildingIntroduction', itemsPath: `${path}.introduction`, marginTopMm: 0, marginBottomMm: 4 }
+        ? { type: 'buildingIntroduction', itemsPath: `${path}.introduction`, imageAlign: 'center', marginTopMm: 0, marginBottomMm: 4 }
         : items('introduction'),
       heading('Förutsättningar'),
       { type: 'twoColumn', labelWidthMm: 50, rowGapMm: 1.4, marginTopMm: 0, marginBottomMm: 4,

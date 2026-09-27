@@ -14,11 +14,17 @@ test('new reports put all buildings before unchanged standard appendices; histor
   const before = structuredClone(old)
   const spec = buildReportSpec({ layoutVersion: 2, inspectionSide: 'buyer', dynamicAppendices })
   assert.equal(spec[0].layoutVersion, 2)
+  assert.equal(spec[0].coverImageFrame, false)
+  assert.equal(old[0].coverImageFrame, undefined)
   const firstAppendix = spec.findIndex(s => s.id === 'appendix-1')
   assert.deepEqual(spec.slice(firstAppendix - 2, firstAppendix).map(s => s.title), ['Garage', 'Gästhus'])
   for (const [index, building] of dynamicAppendices.buildings.entries()) {
     const section = spec.find(s => s.id === `building-${building.id}`)!
+    assert.equal(section.startOnNewPage, true)
+    assert.deepEqual(section.blocks[0], { type: 'heading', level: 2, text: building.name,
+      marginTopMm: 0, marginBottomMm: 6, fontSizePt: 20, accent: true, divider: true })
     assert.ok(section.blocks.some(b => b.type === 'buildingIntroduction' && b.itemsPath === `mock.appendices.buildings.${index}.introduction`))
+    assert.ok(section.blocks.some(b => b.type === 'buildingIntroduction' && b.imageAlign === 'center'))
     assert.ok(!section.title?.includes('Bilaga'))
   }
   for (const section of spec.filter(s => s.type === 'appendix')) assert.deepEqual(section, old.find(s => s.id === section.id))
@@ -31,6 +37,9 @@ test('new reports put all buildings before unchanged standard appendices; histor
   assert.deepEqual(old, before)
   assert.deepEqual(buildReportSpec({ inspectionSide: 'buyer', dynamicAppendices }), before)
   assert.equal(old.find(s => s.id === 'appendix-building-garage')?.title, 'Bilaga 6: Garage')
+  assert.deepEqual(old.find(s => s.id === 'appendix-building-garage')?.blocks[0], {
+    type: 'heading', level: 2, text: 'Bilaga 6: Garage', marginTopMm: 0, marginBottomMm: 4,
+  })
 })
 
 test('website accepts blank, domain and HTTP(S), not invalid protocols or credentials', () => {

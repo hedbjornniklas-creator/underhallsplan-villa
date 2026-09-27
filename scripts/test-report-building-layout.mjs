@@ -62,7 +62,7 @@ else {
     await page.setRequestInterception(true)
     page.on('request', request => new URL(request.url()).origin === base ? request.continue() : request.abort())
     await page.setViewport({ width: 1360, height: 1000 })
-    for (const scenario of ['', '?website', '?website&long', '?legacy', '?stress']) {
+    for (const scenario of ['', '?website', '?website&long', '?legacy', '?frozen-cover', '?frozen-building', '?stress', '?digital']) {
       await page.goto(base + '/' + scenario, { waitUntil: 'networkidle0' })
       await page.waitForFunction(() => document.querySelector('[data-report-pagination-ready="1"]'))
       const result = await page.evaluate(() => {
@@ -75,6 +75,18 @@ else {
         }))
       })
       assert.ok(result.length > 5)
+      const cover = await page.$('.report-page img[alt="Omslagsillustration"]')
+      const coverStyle = await cover.evaluate(img => {
+        const frame = getComputedStyle(img.parentElement)
+        const rect = img.parentElement.getBoundingClientRect()
+        return { border: frame.borderTopWidth, background: frame.backgroundColor,
+          fit: getComputedStyle(img).objectFit, height: rect.height }
+      })
+      const framed = scenario.includes('legacy') || scenario.includes('frozen-cover')
+      assert.equal(coverStyle.border, framed ? '1px' : '0px')
+      assert.equal(coverStyle.background, framed ? 'rgb(248, 250, 252)' : 'rgba(0, 0, 0, 0)')
+      assert.equal(coverStyle.fit, 'contain')
+      assert.ok(Math.abs(coverStyle.height - 110 * 96 / 25.4) < 1, 'Cover dimensions changed')
       const allText = result.map(p => p.text).join('\n')
       if (!scenario.includes('legacy')) {
         assert.doesNotMatch(allText, /www\.webbadress\.se|Bilaga 4: Garage/)
@@ -83,13 +95,36 @@ else {
         const appendixIndex = result.findIndex((p, i) => i > 1 && p.text.includes('BILAGA 1:'))
         assert.ok(garageIndex > 0 && garageIndex < appendixIndex)
         assert.equal(result[garageIndex].intro[0], '')
+        const introductions = await page.$$eval('.report-page [data-report-building-introduction]', nodes => nodes.map(intro => {
+          const heading = intro.closest('.report-page').querySelector('.report-heading')
+          const style = getComputedStyle(heading)
+          const bounds = intro.getBoundingClientRect()
+          const image = intro.querySelector('img').getBoundingClientRect()
+          return { fontSize: parseFloat(style.fontSize), divider: parseFloat(style.borderBottomWidth),
+            centered: Math.abs((image.left + image.right) / 2 - (bounds.left + bounds.right) / 2) < 1,
+            alignedLeft: Math.abs(image.left - bounds.left) < 1,
+            headingBeforeImage: heading.getBoundingClientRect().bottom <= image.top,
+            headingFits: heading.scrollWidth <= heading.clientWidth,
+          }
+        }))
+        assert.equal(introductions.length, scenario.includes('stress') ? 3 : 1)
+        for (const intro of introductions) {
+          if (scenario.includes('frozen-building')) {
+            assert.equal(intro.divider, 0)
+            assert.ok(intro.fontSize < 20 && intro.alignedLeft, 'Saved building layout changed')
+          } else {
+            assert.ok(Math.abs(intro.fontSize - 20 * 96 / 72) < 0.1 && intro.divider > 2, `Building heading is not prominent: ${JSON.stringify(intro)}`)
+            assert.ok(intro.centered, 'Building image is not centered')
+          }
+          assert.ok(intro.headingBeforeImage && intro.headingFits, 'Building heading overlaps or overflows')
+        }
         for (const p of result) {
           const last = p.entries.at(-1)
           assert.ok(!last || !['heading', 'inspectionFloorHeader'].includes(last.type), `Orphan heading: ${last?.text}`)
-          assert.ok(p.height < 1130, `Oversized A4 page: ${p.height}`)
+          if (!scenario.includes('digital')) assert.ok(p.height < 1130, `Oversized A4 page: ${p.height}`)
           assert.ok(p.images, 'Broken image')
         }
-        if (!scenario.includes('stress')) {
+        if (!scenario.includes('stress') && !scenario.includes('digital')) {
           for (const name of ['HUVUD-MARK', 'HUVUD-TAK', 'HUVUD-KÖK', 'HUVUD-TEKNIK', 'HUVUD-BADRUM', 'HUVUD-SOVRUM', 'Garage-TAK', 'Garage-TEKNIK', 'Garage-KÖK', 'Garage-SOVRUM']) {
             const p = result.find(p => p.entries.some(e => e.text.includes(name)))
             assert.ok(p, `Missing ${name}`)
@@ -103,6 +138,7 @@ else {
         await page.pdf({ path: resolve(output, 'two-buildings-test.pdf'), format: 'A4', printBackground: true, preferCSSPageSize: true })
         const garageIndex = result.findIndex(p => p.intro.length)
         await page.locator('.report-page').wait() // Ensure pages remain mounted after printing.
+        await (await page.$$('.report-page'))[0].screenshot({ path: resolve(output, 'cover.png') })
         await (await page.$$('.report-page'))[garageIndex].screenshot({ path: resolve(output, 'garage.png') })
       }
       console.log(JSON.stringify({ scenario: scenario || 'empty website', pages: result.length }))

@@ -8,11 +8,19 @@ Beslut 2026-09-27 efter granskning av det första utlåtandet med Garage.
   Rubrik och innehållsförteckning använder byggnadens namn, utan bilagenummer.
 - Byggnadsbild och eventuell omfattningstext är en introduktion, inte en
   besiktningsnotering. Tom introduktion får ingen automatisk `--`-bedömning.
+- Varje extrabyggnad börjar på en ny sida med byggnadens namn i en större
+  blå rubrik (20 pt), blå skiljelinje och centrerad byggnadsbild utan ram.
+  Formateringen lagras i rapportmallen; äldre mallar behåller sin tidigare
+  mindre rubrik och bildplacering. Fortsättningssidor behåller diskret rubrik.
 - Rubriker följer med efterföljande innehåll. Notering, risk, FTU och bilder
   hålls ihop när gruppen ryms på en sida. Längre grupper kan fortsätta på flera
   sidor med byggnads-/platsrubrik; inga texter eller bilder utelämnas.
 - Frivillig hemsida finns i ÖB:s profilinställningar. Tomt fält utelämnas i
   nya utlåtanden. Hemsidan kopieras till rapportsnapshoten.
+- Nya rapportmallar anger `coverImageFrame: false` på omslaget: ingen kantlinje
+  eller grå bakgrund runt bilden. Storlek, centrering och bildproportioner
+  behålls. Sparade mallar utan detta val behåller tidigare utseende, även om
+  de redan använder `layoutVersion: 2`.
 
 ## Historik och avgränsning
 

@@ -383,7 +383,10 @@ const renderBlock = (
         ? styles.heading2
         : styles.heading3
     return (
-      <Text key={`${block.text}-${block.level}`} style={style}>
+      <Text key={`${block.text}-${block.level}`} style={block.divider ? [style, {
+        fontSize: block.fontSizePt ?? 20, color: '#5B9BD5',
+        borderBottomWidth: 2.3, borderBottomColor: '#5B9BD5', paddingBottom: 8.5, marginBottom: 17,
+      }] : style}>
         {block.text}
       </Text>
     )
@@ -616,7 +619,8 @@ const renderBlock = (
             </Text>
           )}
           {resolvedImage && (
-            <View style={styles.imageWrap} wrap={false}>
+            <View style={block.type === 'buildingIntroduction' && block.imageAlign === 'center'
+              ? [styles.imageWrap, { alignItems: 'center' }] : styles.imageWrap} wrap={false}>
               <Image src={resolvedImage} style={styles.image} />
             </View>
           )}

@@ -17,6 +17,7 @@ type ReportCoverPageProps = {
   inspectionDate?: string
   assignmentNumber?: string
   coverIllustrationUrl?: string | null
+  showImageFrame?: boolean
   coverNotice?: string
 }
 
@@ -30,6 +31,7 @@ export default function ReportCoverPage({
   inspectionDate,
   assignmentNumber,
   coverIllustrationUrl,
+  showImageFrame = true,
   coverNotice = '',
 }: ReportCoverPageProps) {
   const coverSrc = coverIllustrationUrl || defaultCoverIllustrationSrc
@@ -163,11 +165,11 @@ export default function ReportCoverPage({
           marginTop: mmToPx(8),
           marginBottom: mmToPx(6),
           height: mmToPx(110),
-          border: '1px solid #cbd5e1',
+          border: showImageFrame ? '1px solid #cbd5e1' : 'none',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#f8fafc',
+          backgroundColor: showImageFrame ? '#f8fafc' : 'transparent',
         }}
       >
         {coverSrc ? (
