@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import type * as AccessServer from '../src/lib/access/server'
 import type * as OrganizationServer from '../src/lib/organizations/server'
+import type * as AccessManagementClient from '../src/app/(app)/admin/access/AccessManagementClient'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { organizationSwitchDestination, organizationSwitcherRoot, organizationSwitcherSurfaceForPath } from '../src/lib/organizations/navigation.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
@@ -13,7 +14,7 @@ const read = (file: string) => readFileSync(new URL(`../${file}`, import.meta.ur
 
 function load<T>(file: string, dependencies: Record<string, unknown>): T {
   const code = ts.transpileModule(read(file), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText
   const compiled = { exports: {} }
   new Function('require', 'module', 'exports', code)(
@@ -192,4 +193,74 @@ test('organization context endpoint accepts moisture, keeps responses private an
   assert.equal(duplicate.status, 400)
   const unknown = await route.GET(new Request('https://hushub.test/api/organizations/context?surface=unknown'))
   assert.equal(unknown.status, 400)
+})
+
+const adminUi = load<typeof AccessManagementClient>('src/app/(app)/admin/access/AccessManagementClient.tsx', {
+  react: {},
+  'react/jsx-runtime': {},
+  '@/components/Protected': {},
+})
+type DashboardGrant = Parameters<typeof AccessManagementClient.createDashboardRows>[1][number]
+const dashboardModules = ['inspections', 'construction_inspections', 'technical_investigations', 'moisture_safety']
+  .map(key => ({ id: `module-${key}`, key, label: key, description: null }))
+
+function dashboardGrant(id: string, changes: Partial<DashboardGrant> = {}): DashboardGrant {
+  return {
+    id, productId: 'dashboard-id', productKey: 'dashboard', productLabel: 'BesiktApp',
+    moduleId: 'module-inspections', moduleKey: 'inspections', moduleLabel: 'ÖB',
+    roleId: 'inspector-id', roleKey: 'inspector', roleLabel: 'Besiktningsman',
+    scopeType: 'global', scopeId: null, scopeLabel: 'Global',
+    grantedReason: 'Behåll denna anteckning', expiresAt: '2099-01-01T00:00:00Z', createdAt: '2026-01-01T00:00:00Z',
+    ...changes,
+  }
+}
+
+const ownerGrants = [
+  dashboardGrant('org-admin', { moduleId: null, moduleKey: null, roleId: 'admin-id', roleKey: 'dashboard_admin', scopeType: 'organization', scopeId: 'org-a' }),
+  dashboardGrant('org-tasks', { moduleId: 'module-tasks', moduleKey: 'tasks', roleId: 'task-role', roleKey: 'task_coordinator', scopeType: 'organization', scopeId: 'org-a' }),
+  ...dashboardModules.slice(0, 3).map(module => dashboardGrant(`global-${module.key}`, { moduleId: module.id, moduleKey: module.key })),
+]
+
+test('activating moisture is additive for the owner and leaves organization admin, tasks and unchanged grants intact', () => {
+  const before = structuredClone(ownerGrants)
+  const rows = adminUi.createDashboardRows(dashboardModules, ownerGrants)
+  assert.deepEqual(rows.map(row => row.enabled), [true, true, true, false])
+  const updated = rows.map(row => row.moduleId === 'module-moisture_safety' ? { ...row, enabled: true } : row)
+  assert.deepEqual(adminUi.dashboardAssignmentChanges(updated, ownerGrants), [
+    { kind: 'grant', moduleId: 'module-moisture_safety' },
+  ])
+  assert.deepEqual(adminUi.dashboardAssignmentChanges(rows, ownerGrants), [])
+  assert.deepEqual(ownerGrants, before)
+})
+
+test('global module toggles are never inferred from organization grants or broad legacy grants', () => {
+  const grants = [
+    ownerGrants[0], ownerGrants[1],
+    dashboardGrant('legacy-global', { moduleId: null, moduleKey: null }),
+    dashboardGrant('legacy-org', { moduleId: null, moduleKey: null, scopeType: 'organization', scopeId: 'org-a' }),
+    ...dashboardModules.map(module => dashboardGrant(`org-${module.key}`, {
+      moduleId: module.id, moduleKey: module.key, scopeType: 'organization', scopeId: 'org-a',
+    })),
+  ]
+  const rows = adminUi.createDashboardRows(dashboardModules, grants)
+  assert.ok(rows.every(row => !row.enabled && row.assignmentId === null))
+  assert.deepEqual(adminUi.dashboardAssignmentChanges(rows, grants), [])
+})
+
+test('disabling one global module revokes only that grant and preserves matching organization and broad legacy access', () => {
+  const grants = [
+    ...ownerGrants,
+    dashboardGrant('org-eb', { moduleId: 'module-construction_inspections', moduleKey: 'construction_inspections', scopeType: 'organization', scopeId: 'org-b' }),
+    dashboardGrant('broad-global', { moduleId: null, moduleKey: null }),
+  ]
+  const rows = adminUi.createDashboardRows(dashboardModules, grants)
+    .map(row => row.moduleId === 'module-construction_inspections' ? { ...row, enabled: false } : row)
+  assert.deepEqual(adminUi.dashboardAssignmentChanges(rows, grants), [
+    { kind: 'revoke', assignmentId: 'global-construction_inspections' },
+  ])
+})
+
+test('an incomplete module catalog never removes or rewrites grants that have no rendered toggle', () => {
+  const rows = adminUi.createDashboardRows(dashboardModules.filter(module => module.key === 'moisture_safety'), ownerGrants)
+  assert.deepEqual(adminUi.dashboardAssignmentChanges(rows, ownerGrants), [])
 })

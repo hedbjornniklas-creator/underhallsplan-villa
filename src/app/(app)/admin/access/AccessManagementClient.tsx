@@ -72,18 +72,43 @@ const UI_RULES: Record<ProductKey, { modules: string[]; roles: string[] }> = {
 }
 
 function isDashboardAssignmentForCurrentUi(assignment: UserAssignment) {
-  if (assignment.productKey !== 'dashboard') return false
-  if (assignment.moduleKey === 'inspections' && assignment.roleKey === 'inspector') return true
-  if (assignment.moduleKey === 'construction_inspections' && assignment.roleKey === 'inspector') return true
-  if (assignment.moduleKey === 'technical_investigations' && assignment.roleKey === 'inspector') return true
-  // This dialog edits global grants; keep organization-specific moisture access intact.
-  if (assignment.moduleKey === 'moisture_safety' && assignment.roleKey === 'inspector') {
-    return assignment.scopeType === 'global'
-  }
-  if (!assignment.moduleKey && (assignment.roleKey === 'inspector' || assignment.roleKey === 'dashboard_admin')) {
-    return true
-  }
-  return false
+  // Module toggles manage only explicit global inspector grants. Organization
+  // roles and broad legacy grants belong to other access controls.
+  return assignment.productKey === 'dashboard' &&
+    assignment.scopeType === 'global' &&
+    assignment.scopeId === null &&
+    assignment.roleKey === 'inspector' &&
+    Boolean(assignment.moduleId) &&
+    UI_RULES.dashboard.modules.includes(assignment.moduleKey ?? '')
+}
+
+export function createDashboardRows(modules: ProductItem['modules'], assignments: UserAssignment[]): DashboardRow[] {
+  const managed = assignments.filter(isDashboardAssignmentForCurrentUi)
+  return modules.map((module) => {
+    const assignment = managed.find((item) => item.moduleId === module.id)
+    return {
+      moduleId: module.id,
+      label: dashboardModuleLabel(module.key, module.label),
+      assignmentId: assignment?.id ?? null,
+      enabled: Boolean(assignment),
+    }
+  })
+}
+
+type DashboardAssignmentChange =
+  | { kind: 'grant'; moduleId: string }
+  | { kind: 'revoke'; assignmentId: string }
+
+export function dashboardAssignmentChanges(rows: DashboardRow[], assignments: UserAssignment[]): DashboardAssignmentChange[] {
+  const managed = assignments.filter(isDashboardAssignmentForCurrentUi)
+  return rows.flatMap((row): DashboardAssignmentChange[] => {
+    const existing = managed.filter((item) => item.moduleId === row.moduleId)
+    if (row.enabled) {
+      // Preserve the reason, expiry and identity of every unchanged grant.
+      return existing.length === 0 ? [{ kind: 'grant', moduleId: row.moduleId }] : []
+    }
+    return existing.map((assignment) => ({ kind: 'revoke', assignmentId: assignment.id }))
+  })
 }
 
 function draftId() {
@@ -320,22 +345,8 @@ export default function AccessManagementClient() {
       return
     }
     if (dialog.kind === 'dashboard') {
-      const legacyDashboardAssignment =
-        activeUser.uiAssignments.dashboard.find((item) => !item.moduleId) ?? null
       setDashboardRows(
-        (byKey.get('dashboard')?.modules ?? []).map((module) => {
-          const assignment =
-            activeUser.uiAssignments.dashboard.find((item) => item.moduleId === module.id) ??
-            ((module.key === 'inspections' || module.key === 'construction_inspections')
-              ? legacyDashboardAssignment
-              : null)
-          return {
-            moduleId: module.id,
-            label: dashboardModuleLabel(module.key, module.label),
-            assignmentId: assignment?.id ?? null,
-            enabled: Boolean(assignment),
-          }
-        })
+        createDashboardRows(byKey.get('dashboard')?.modules ?? [], activeUser.assignments)
       )
       return
     }
@@ -471,33 +482,22 @@ export default function AccessManagementClient() {
     setSaving(true)
     setDialogError(null)
     try {
-      const originals = activeUser.uiAssignments.dashboard
-      const handled = new Set<string>()
-      for (const row of dashboardRows) {
-        const original = row.assignmentId ? originals.find((item) => item.id === row.assignmentId) ?? null : null
-        if (original?.id) handled.add(original.id)
-        if (!row.enabled) {
-          if (original?.id) await deleteAssignment(original.id)
+      const changes = dashboardAssignmentChanges(dashboardRows, activeUser.assignments)
+      for (const change of changes) {
+        if (change.kind === 'revoke') {
+          await deleteAssignment(change.assignmentId)
           continue
         }
-        const assignmentNeedsMigration =
-          Boolean(original) &&
-          (original?.moduleId !== row.moduleId || original?.roleKey !== 'inspector' || original?.scopeType !== 'global')
-
-        if (original?.id && assignmentNeedsMigration) await deleteAssignment(original.id)
         await postAssignment({
           profileId: activeUser.id,
           productId: product.id,
-          moduleId: row.moduleId,
+          moduleId: change.moduleId,
           roleId,
           scopeType: 'global',
           scopeId: null,
           grantedReason: null,
           expiresAt: null,
         })
-      }
-      for (const original of originals) {
-        if (!handled.has(original.id)) await deleteAssignment(original.id)
       }
       await load()
       closeDialog()
@@ -941,7 +941,7 @@ export default function AccessManagementClient() {
         {dialog?.kind === 'dashboard' && activeUser ? (
           <Modal
             title={`Dashboard för ${userName(activeUser)}`}
-            subtitle="Välj vilka aktiva Dashboard-moduler användaren ska kunna öppna. Rollen sätts automatiskt till inspector."
+            subtitle="Hantera globala modultilldelningar för BesiktApp. Behörigheter för en viss organisation och övergripande roller hanteras separat."
             onClose={closeDialog}
           >
             <div className="p-6 sm:p-8">
