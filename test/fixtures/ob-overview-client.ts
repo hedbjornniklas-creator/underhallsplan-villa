@@ -32,7 +32,10 @@ export const supabase = {
       delete: () => { operation = 'delete'; return builder },
       select: () => builder, eq: () => builder, is: () => builder, order: () => builder, limit: () => builder,
       single: execute,
-      maybeSingle: async () => ({ data: null, error: null }),
+      maybeSingle: async () => table === 'profiles' ? {
+        data: new URLSearchParams(location.search).has('missing-profile') ? null : { full_name: 'Testperson', email: 'test@example.invalid', company_name: 'Testbolag' },
+        error: null,
+      } : ({ data: null, error: null }),
       then: (resolve: (value: unknown) => void) => execute().then(resolve),
     }
     return builder

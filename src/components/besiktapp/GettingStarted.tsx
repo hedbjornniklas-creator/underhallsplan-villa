@@ -1,13 +1,15 @@
 'use client'
 import { useEffect, useId, useState } from 'react'
+import type { ReactNode } from 'react'
 import Link from 'next/link'
+import { CircleHelp } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { BESIKT_START, missingStartProfile, startStorageKey, type BesiktStartModule } from '@/lib/besiktapp/gettingStarted'
 import { PUBLIC_BESIKTAPP_CONTACT_EMAIL } from '@/lib/publicCompanyInfo'
 
 const linkStyle = 'inline-flex min-h-11 items-center py-2 font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-700'
-type Props = { module: 'ob'; onStart?: never } | { module: Exclude<BesiktStartModule, 'ob'>; onStart: () => void }
-export default function GettingStarted({ module, onStart }: Props) {
+type Props = { module: 'ob'; onStart?: never; heading?: ReactNode } | { module: Exclude<BesiktStartModule, 'ob'>; onStart: () => void; heading?: never }
+export default function GettingStarted({ module, onStart, heading }: Props) {
   const content = BESIKT_START[module]
   const panelId = useId()
   const [open, setOpen] = useState(false)
@@ -40,11 +42,17 @@ export default function GettingStarted({ module, onStart }: Props) {
     const next = !open; setOpen(next)
     try { if (storageKey) window.localStorage.setItem(storageKey, next ? 'open' : 'closed') } catch { /* Still usable without local storage. */ }
   }
-  return <section aria-label={`Kom igång med ${content.name}`} className="@container my-4 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm text-slate-800">
-    <button type="button" onClick={toggle} aria-expanded={open} aria-controls={panelId} className="flex min-h-11 w-full items-center justify-between gap-4 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-700">
+  const trigger = <button type="button" onClick={toggle} aria-expanded={open} aria-controls={panelId}
+    aria-label={heading ? (open ? 'Dölj guide' : 'Visa guide') : undefined}
+    title={heading ? (open ? 'Dölj guide' : 'Visa guide') : undefined}
+    className={heading ? 'obo-guide-trigger' : 'flex min-h-11 w-full items-center justify-between gap-4 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-700'}>
+    {heading ? <><CircleHelp size={20} aria-hidden="true" /><span>{open ? 'Dölj guide' : 'Visa guide'}</span></> : <>
       <span className="font-semibold">Kom igång med {content.name.toLocaleLowerCase('sv-SE')}</span><span className="shrink-0 text-xs text-slate-600">{open ? 'Dölj guide −' : 'Visa guide +'}</span>
-    </button>
-    <div id={panelId} hidden={!open}>
+    </>}
+  </button>
+  return <section aria-label={`Kom igång med ${content.name}`} className={heading ? 'obo-home-guide @container' : '@container my-4 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm text-slate-800'}>
+    {heading ? <header className="obo-home-heading flex items-center gap-3">{heading}{trigger}</header> : trigger}
+    <div id={panelId} hidden={!open} className={heading ? 'obo-guide-content' : undefined}>
       <p className="mt-2 max-w-2xl text-slate-600">En hjälp inför ditt första uppdrag. Du kan stänga guiden och fortsätta arbeta som vanligt.</p>
       <ol className="my-5 grid gap-6 @2xl:grid-cols-3">
         <li><h2 className="font-semibold">1. Kontrollera din profil</h2>

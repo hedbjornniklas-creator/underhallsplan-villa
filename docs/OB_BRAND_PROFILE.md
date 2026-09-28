@@ -68,8 +68,9 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 ## ÖB-listan på dator
 
 - Startsidan har två tydliga handlingar: **Skapa ny besiktning** och
-  **Skapa uppdragsbekräftelse**. Snabbskick ligger i en kompakt, normalt stängd
-  sektion före listan. Visitkortet tas bort här, inte från inställningar eller
+  **Skapa uppdragsbekräftelse**. Enligt uppföljande beslut 2026-09-28 ligger
+  **Snabbskicka UB** som en knapp till höger om Skapa uppdragsbekräftelse på
+  datorn och öppnar en dialog med snabbformuläret. Visitkortet tas bort här, inte från inställningar eller
   rapportunderlag. De gamla listorna behålls som textlänkar under övergången.
 - En rad representerar ett uppdrag, inte en fastighet. Flera besiktningar på
   samma fastighet ska inte slås ihop. Ersatta bekräftelser hör till historiken
@@ -106,8 +107,8 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 
 ## Mobil
 
-- Skapa-knapparna är direkt tillgängliga, även på mobil. Snabbskicket är
-  normalt stängt; oskickade fältvärden behålls när det fälls ihop.
+- Skapa-knapparna är direkt tillgängliga, även på mobil. Snabbskicket öppnas
+  i en dialog; oskickade fältvärden behålls när den stängs och öppnas igen.
   Formuläret får staplas utan sidscroll och inmatning använder minst 16 px.
 - Byt tabellen mot en sammanhängande vertikal lista, inte en sidscrollande
   miniatyrtabell. Tunna avdelare skiljer raderna; undvik flytande kort per uppdrag.

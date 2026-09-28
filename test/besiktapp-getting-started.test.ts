@@ -15,7 +15,7 @@ function loadComponent(path: string, react = React) {
   const code = ts.transpileModule(source(path), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   new Function('require', 'module', 'exports', code)((key: string) => {
     if (key === 'react') return react
-    if (key === 'react/jsx-runtime') return require(key)
+    if (key === 'react/jsx-runtime' || key === 'lucide-react') return require(key)
     if (key === 'next/link') return { default: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => React.createElement('a', props, children) }
     if (key.endsWith('/gettingStarted')) return start
     if (key.endsWith('/publicCompanyInfo')) return { PUBLIC_BESIKTAPP_CONTACT_EMAIL: 'public@example.test' }
@@ -55,8 +55,22 @@ test('profile return never offers navigation while saving or on failure', () => 
   assert.ok(render(false, 'save error').includes('Försök igen'))
   assert.ok(render(false, null).includes('href="/tu"'))
 })
+
+test('OB can place the same guide trigger in its page heading without a separate card', () => {
+  const Component = loadComponent('src/components/besiktapp/GettingStarted.tsx')
+  const html = renderToStaticMarkup(React.createElement(Component, {
+    module: 'ob', heading: React.createElement('h1', null, 'Överlåtelsebesiktning'),
+  }))
+  assert.match(html, /<header[^>]*><h1>Överlåtelsebesiktning<\/h1><button/)
+  assert.match(html, /aria-label="Visa guide"/)
+  assert.match(html, /aria-expanded="false"/)
+  assert.match(html, /class="obo-guide-content"/)
+  assert.ok(html.includes('1. Kontrollera din profil'))
+  assert.ok(html.includes('/settings?besiktStart=ob'))
+  assert.ok(!html.includes('rounded-xl'))
+})
 test('dashboard integration opens existing forms, and profile return waits for the saved snapshot', () => {
-  assert.ok(source('src/app/(dashboard)/ob/page.tsx').includes('<GettingStarted module="ob" />'))
+  assert.ok(source('src/app/(dashboard)/ob/page.tsx').includes('<GettingStarted module="ob" heading='))
   assert.ok(source('src/components/eb/EbDashboardClient.tsx').includes('onStart={() => setDialogOpen(true)}'))
   const tu = source('src/components/tu/TuDashboardClient.tsx')
   assert.ok(tu.includes("onStart={() => openCreationDialog('scratch')}"))

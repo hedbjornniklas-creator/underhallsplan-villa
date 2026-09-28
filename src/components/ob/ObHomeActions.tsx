@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useId, useRef, useState, type RefObject } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ClipboardPlus, FilePlus2, Send } from 'lucide-react'
+import { ClipboardPlus, FilePlus2, Send, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/AppToastProvider'
 import './ob-home.css'
@@ -183,9 +183,10 @@ function CreateInspectionButton() {
   </button>
 }
 
-function QuickSend({ onSent }: { onSent: () => void }) {
+function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefObject<HTMLDialogElement | null> }) {
   type QuickOrdererRole = 'seller' | 'buyer' | 'apartment' | ''
 
+  const titleId = useId()
   const [email, setEmail] = useState('')
   const [ordererRole, setOrdererRole] = useState<QuickOrdererRole>('')
   const [preferredDate, setPreferredDate] = useState('')
@@ -257,6 +258,7 @@ function QuickSend({ onSent }: { onSent: () => void }) {
       setPreferredDate('')
       setPreferredTime('')
       setPriceAmount('')
+      dialogRef.current?.close()
       toast.success('Uppdragsbekräftelse skickad.')
       onSent()
     } catch {
@@ -267,7 +269,14 @@ function QuickSend({ onSent }: { onSent: () => void }) {
   }
 
 
-  return <form className="obh-quick-form" onSubmit={event => { event.preventDefault(); void handleQuickSend() }}>
+  return <dialog ref={dialogRef} className="obh-dialog" aria-labelledby={titleId}
+    onCancel={event => { if (isSending) event.preventDefault() }}>
+    <header className="obh-dialog-heading">
+      <h2 id={titleId}>Snabbskicka uppdragsbekräftelse</h2>
+      <button type="button" className="obh-dialog-close" aria-label="Stäng" title="Stäng"
+        disabled={isSending} onClick={() => dialogRef.current?.close()}><X size={20} aria-hidden="true" /></button>
+    </header>
+    <form className="obh-quick-form" aria-busy={isSending} onSubmit={event => { event.preventDefault(); void handleQuickSend() }}>
     <fieldset disabled={isSending}>
       <legend>Uppdragsgivare</legend>
       <div className="obh-roles">
@@ -289,30 +298,35 @@ function QuickSend({ onSent }: { onSent: () => void }) {
     <label>Tid
       <input type="time" value={preferredTime} onChange={event => setPreferredTime(event.target.value)} disabled={isSending} />
     </label>
-    <label>Pris (SEK)
+    <label className="obh-price">Pris (SEK)
       <input type="text" inputMode="decimal" value={priceAmount} onChange={event => setPriceAmount(event.target.value)}
         placeholder="0" required disabled={isSending} />
     </label>
-    <button type="submit" className="obh-primary" disabled={isSending}>
-      <Send size={18} aria-hidden="true" /><span>{isSending ? 'Skickar...' : 'Skicka bekräftelse'}</span>
-    </button>
     {createdLink && <p className="obh-feedback">Bekräftelsen är skapad. <a href={createdLink} target="_blank" rel="noopener noreferrer">Öppna kundlänk</a></p>}
-  </form>
+    <div className="obh-dialog-actions">
+      <button type="button" disabled={isSending} onClick={() => dialogRef.current?.close()}>Avbryt</button>
+      <button type="submit" className="obh-primary" disabled={isSending}>
+        <Send size={18} aria-hidden="true" /><span>{isSending ? 'Skickar...' : 'Skicka bekräftelse'}</span>
+      </button>
+    </div>
+    </form>
+  </dialog>
 }
 
 export default function ObHomeActions({ onSent }: { onSent: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
   return <section className="obh" aria-label="Skapa ÖB-uppdrag">
     <div className="obh-actions">
       <CreateInspectionButton />
       <Link href="/ob/assignments/new"><FilePlus2 size={18} aria-hidden="true" /><span>Skapa uppdragsbekräftelse</span></Link>
+      <button type="button" className="obh-quick-trigger" aria-haspopup="dialog" onClick={() => dialogRef.current?.showModal()}>
+        <Send size={18} aria-hidden="true" /><span>Snabbskicka UB</span>
+      </button>
       <nav aria-label="Separata listor" className="obh-list-links">
         <Link href="/ob/assignments">Uppdragsbekräftelser</Link>
         <Link href="/inspections">Besiktningar</Link>
       </nav>
     </div>
-    <details className="obh-quick">
-      <summary><Send size={18} aria-hidden="true" /><span>Snabbskicka uppdragsbekräftelse</span><ChevronDown size={18} aria-hidden="true" /></summary>
-      <QuickSend onSent={onSent} />
-    </details>
+    <QuickSend onSent={onSent} dialogRef={dialogRef} />
   </section>
 }

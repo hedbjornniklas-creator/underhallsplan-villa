@@ -16,7 +16,6 @@ await new Promise((ok, fail) => webpack({
     '@/lib/supabaseClient': resolve('test/fixtures/ob-overview-client.ts'),
     'next/link': resolve('test/fixtures/ob-overview-navigation.tsx'),
     'next/navigation': resolve('test/fixtures/ob-overview-navigation.tsx'),
-    '@/components/besiktapp/GettingStarted': resolve('test/fixtures/ob-overview-empty.tsx'),
     './ob-overview.css': false, './ob-home.css': false, '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
@@ -51,9 +50,11 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB overview preview (synthetic only): ${base}/ob`)
-if (process.argv.includes('--test') || process.argv.includes('--test-actions')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-actions') || process.argv.includes('--test-guide')) {
   try {
-    if (process.argv.includes('--test-actions')) {
+    if (process.argv.includes('--test-guide')) {
+      const { testHomeGuide } = await import('../test/helpers/ob-home-guide-browser.mjs'); await testHomeGuide(base, output)
+    } else if (process.argv.includes('--test-actions')) {
       const { testHomeActions } = await import('../test/helpers/ob-home-actions-browser.mjs'); await testHomeActions(base, output)
     } else { const { testOverview } = await import('../test/helpers/ob-overview-browser.mjs'); await testOverview(base, output) }
   }
