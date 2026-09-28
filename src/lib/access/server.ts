@@ -370,6 +370,8 @@ async function hasLegacyAccess<TProduct extends PlatformProductKey>(
   }
 
   if (input.productKey === 'dashboard') {
+    // Fuktsäkerhet is enabled only by an explicit platform module assignment.
+    if (input.moduleKey === 'moisture_safety') return false
     if (identity.isLegacyAdmin) return true
     const orgMember = await loadLegacyOrgMembership(identity.profileId, input.scopeId)
     if (!orgMember) return false

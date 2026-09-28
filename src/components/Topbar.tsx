@@ -134,10 +134,12 @@ function TopbarContent() {
   const isObHome = normalizedPath === '/ob'
   const isEbHome = normalizedPath === '/eb'
   const isTuHome = normalizedPath === '/tu'
+  const isMoistureHome = normalizedPath === '/fuktsakerhet'
   const isTasksHome = normalizedPath === '/uppdrag'
   const isObContext = normalizedPath.includes('/ob')
   const isEbContext = normalizedPath.includes('/eb')
   const isTuContext = normalizedPath.includes('/tu')
+  const isMoistureContext = isMoistureHome || normalizedPath.startsWith('/fuktsakerhet/')
   const isTasksContext = isTasksHome || normalizedPath.startsWith('/uppdrag/')
   const showModuleSwitcher =
     hasUser &&
@@ -145,6 +147,7 @@ function TopbarContent() {
     (isObContext ||
       isEbContext ||
       isTuContext ||
+      isMoistureContext ||
       isTasksContext ||
       normalizedPath.startsWith('/inspections'))
   const modules = [
@@ -170,6 +173,13 @@ function TopbarContent() {
       active: isTuContext,
     },
     {
+      code: 'FS',
+      label: 'Fuktsäkerhet',
+      description: 'Fuktsäkerhet / uppdrag och underlag',
+      href: organizationHref('/fuktsakerhet'),
+      active: isMoistureContext,
+    },
+    {
       code: 'UP',
       label: 'Uppdrag',
       description: 'Uppdrag / ansvar och uppföljning',
@@ -183,17 +193,19 @@ function TopbarContent() {
     ? '/admin'
     : isDashboardLanding
       ? '/'
-      : isObHome || isEbHome || isTuHome || isTasksHome
+      : isObHome || isEbHome || isTuHome || isMoistureHome || isTasksHome
         ? '/dashboard-v1'
         : isEbContext
           ? '/eb'
           : isTuContext
             ? organizationHref('/tu')
-            : isTasksContext
-              ? '/uppdrag'
-              : isObContext
-                ? '/ob'
-                : '/'
+            : isMoistureContext
+              ? organizationHref('/fuktsakerhet')
+              : isTasksContext
+                ? '/uppdrag'
+                : isObContext
+                  ? '/ob'
+                  : '/'
   const logoSrc = isAdminContext || isDashboardLanding ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
   const logoAlt = isAdminContext || isDashboardLanding ? 'HusHub' : 'BesiktApp'
   const srLabel = isAdminContext ? 'HusHub Admin' : isDashboardLanding ? 'HusHub' : 'BesiktApp'

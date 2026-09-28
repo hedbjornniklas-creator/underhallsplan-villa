@@ -38,6 +38,16 @@ const MODULE_CATALOG: Array<
     badgeClass: 'border-violet-200 bg-violet-50 text-violet-700',
   },
   {
+    id: 'moisture',
+    moduleKey: 'moisture_safety',
+    title: 'Fuktsäkerhet',
+    description:
+      'Samla uppdrag, fastighetsuppgifter och underlag för fuktsäkerhetsarbetet i en gemensam guide.',
+    href: '/fuktsakerhet',
+    accentClass: 'from-cyan-600 to-teal-400',
+    badgeClass: 'border-cyan-200 bg-cyan-50 text-cyan-800',
+  },
+  {
     id: 'tasks',
     moduleKey: 'tasks',
     title: 'Uppdrag',

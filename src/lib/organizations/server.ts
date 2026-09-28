@@ -3,9 +3,11 @@ import 'server-only'
 import { hasCurrentUserAccess } from '@/lib/access/server'
 import { getOrganizationCustomerNavigationContext } from '@/lib/customers/server'
 import { requireTuContext } from '@/lib/tu/server'
+import { requireMoistureContext } from '@/lib/moisture/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import type { OrganizationSwitcherSurface } from './navigation'
 
-export type OrganizationSwitcherSurface = 'tu' | 'customers'
+export type { OrganizationSwitcherSurface } from './navigation'
 
 export type OrganizationSwitcherOption = {
   id: string
@@ -51,7 +53,10 @@ export async function getOrganizationSwitcherContext(
     }
   }
 
-  const selected = await requireTuContext(requestedOrgId)
+  const selected = surface === 'moisture'
+    ? await requireMoistureContext(requestedOrgId)
+    : await requireTuContext(requestedOrgId)
+  const moduleKey = surface === 'moisture' ? 'moisture_safety' : 'technical_investigations'
 
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
@@ -77,7 +82,7 @@ export async function getOrganizationSwitcherContext(
 
   const hasGlobalAccess = await hasCurrentUserAccess({
     productKey: 'dashboard',
-    moduleKey: 'technical_investigations',
+    moduleKey,
     scopeType: 'global',
   })
 
@@ -87,7 +92,7 @@ export async function getOrganizationSwitcherContext(
         id: organization.id,
         allowed: await hasCurrentUserAccess({
           productKey: 'dashboard',
-          moduleKey: 'technical_investigations',
+          moduleKey,
           scopeType: 'organization',
           scopeId: organization.id,
         }),

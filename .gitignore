@@ -197,3 +197,7 @@ next-env.d.ts
 # Office / Word temp files
 ~$*.doc
 ~$*.docx
+
+# Fuktsakerhet local verification
+/tmp/moisture-preview/
+/tmp/moisture-typecheck.log

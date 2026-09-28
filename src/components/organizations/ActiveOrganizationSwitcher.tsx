@@ -4,6 +4,11 @@ import Link from 'next/link'
 import { Building2, ChevronDown } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import {
+  organizationSwitchDestination,
+  organizationSwitcherRoot,
+  organizationSwitcherSurfaceForPath,
+} from '@/lib/organizations/navigation'
 
 type OrganizationOption = {
   id: string
@@ -15,15 +20,6 @@ type OrganizationResponse = {
   organization?: OrganizationOption
   organizations?: OrganizationOption[]
   error?: string
-}
-
-function surfaceForPath(pathname: string) {
-  const normalized = pathname.toLowerCase()
-  if (normalized === '/tu' || normalized.startsWith('/tu/')) return 'tu'
-  if (normalized === '/settings/kunder' || normalized.startsWith('/settings/kunder/')) {
-    return 'customers'
-  }
-  return null
 }
 
 export default function ActiveOrganizationSwitcher({
@@ -41,7 +37,7 @@ export default function ActiveOrganizationSwitcher({
   const router = useRouter()
   const searchParams = useSearchParams()
   const search = searchParams.toString()
-  const surface = surfaceForPath(pathname)
+  const surface = organizationSwitcherSurfaceForPath(pathname)
   const organizationSelections = searchParams.getAll('orgId')
   const invalidOrganizationSelection = organizationSelections.length > 1
   const requestedOrgId = searchParams.get('orgId')
@@ -164,7 +160,7 @@ export default function ActiveOrganizationSwitcher({
   }
 
   if (invalidOrganizationSelection) {
-    const resetHref = surface === 'tu' ? '/tu' : '/settings/kunder'
+    const resetHref = organizationSwitcherRoot(surface)
     return (
       <Link
         href={resetHref}
@@ -181,7 +177,7 @@ export default function ActiveOrganizationSwitcher({
   }
 
   if (visibleError || !visibleOrganization) {
-    const resetHref = surface === 'tu' ? '/tu' : '/settings/kunder'
+    const resetHref = organizationSwitcherRoot(surface)
     return (
       <Link
         href={resetHref}
@@ -199,15 +195,14 @@ export default function ActiveOrganizationSwitcher({
       return
     }
 
-    const onSafeRoot =
-      pathname === '/tu' ||
-      pathname === '/tu/settings/profile' ||
-      pathname === '/settings/kunder'
-    const targetPath = onSafeRoot ? pathname : surface === 'tu' ? '/tu' : '/settings/kunder'
-    const next = onSafeRoot ? new URLSearchParams(search) : new URLSearchParams()
-    next.set('orgId', orgId)
+    const canSwitch = window.dispatchEvent(new CustomEvent('hushub:before-organization-switch', {
+      cancelable: true,
+      detail: { fromOrgId: visibleOrganization.id, orgId },
+    }))
+    if (!canSwitch) return
+
     setOpenSelectionKey(null)
-    router.push(`${targetPath}?${next.toString()}`)
+    router.push(organizationSwitchDestination({ pathname, search, surface, orgId }))
   }
 
   return (

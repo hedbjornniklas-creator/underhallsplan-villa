@@ -65,7 +65,7 @@ type DashboardRow = {
 const UI_RULES: Record<ProductKey, { modules: string[]; roles: string[] }> = {
   renoapp: { modules: ['board_portal'], roles: ['board_member', 'renoapp_admin'] },
   dashboard: {
-    modules: ['inspections', 'construction_inspections', 'technical_investigations'],
+    modules: ['inspections', 'construction_inspections', 'technical_investigations', 'moisture_safety'],
     roles: ['inspector'],
   },
   hushub_admin: { modules: [], roles: ['hushub_superadmin'] },
@@ -76,6 +76,10 @@ function isDashboardAssignmentForCurrentUi(assignment: UserAssignment) {
   if (assignment.moduleKey === 'inspections' && assignment.roleKey === 'inspector') return true
   if (assignment.moduleKey === 'construction_inspections' && assignment.roleKey === 'inspector') return true
   if (assignment.moduleKey === 'technical_investigations' && assignment.roleKey === 'inspector') return true
+  // This dialog edits global grants; keep organization-specific moisture access intact.
+  if (assignment.moduleKey === 'moisture_safety' && assignment.roleKey === 'inspector') {
+    return assignment.scopeType === 'global'
+  }
   if (!assignment.moduleKey && (assignment.roleKey === 'inspector' || assignment.roleKey === 'dashboard_admin')) {
     return true
   }
@@ -94,6 +98,7 @@ function dashboardModuleLabel(key: string, fallback: string) {
   if (key === 'inspections') return 'Överlåtelsebesiktning'
   if (key === 'construction_inspections') return 'Entreprenadbesiktning'
   if (key === 'technical_investigations') return 'Tekniska utredningar'
+  if (key === 'moisture_safety') return 'Fuktsäkerhet'
   return fallback
 }
 

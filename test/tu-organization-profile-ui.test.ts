@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { organizationSwitchDestination } from '../src/lib/organizations/navigation.ts'
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const compact = (value: string) => value.replace(/\s+/gu, ' ')
@@ -34,9 +36,10 @@ test('TU dashboard and organization switcher preserve the selected organization 
     /href=\{organizationUrl\('\/tu\/settings\/profile', organizationId\)\}/u
   )
   assert.match(dashboard, /> Öppna företagsprofil <\/PendingLink>/u)
-  assert.match(switcher, /pathname === '\/tu\/settings\/profile'/u)
-  assert.match(switcher, /next\.set\('orgId', orgId\)/u)
-  assert.match(switcher, /router\.push\(`\$\{targetPath\}\?\$\{next\.toString\(\)\}`\)/u)
+  assert.match(switcher, /router\.push\(organizationSwitchDestination\(\{ pathname, search, surface, orgId \}\)\)/u)
+  assert.equal(organizationSwitchDestination({
+    pathname: '/tu/settings/profile', search: 'orgId=old', surface: 'tu', orgId: 'new',
+  }), '/tu/settings/profile?orgId=new')
 })
 
 test('profile editor scopes save and upload requests to the currently rendered workspace', () => {

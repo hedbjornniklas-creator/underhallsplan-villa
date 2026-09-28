@@ -13,6 +13,7 @@ export const PLATFORM_MODULE_KEYS = {
     'inspections',
     'construction_inspections',
     'technical_investigations',
+    'moisture_safety',
     'tasks',
     'maintenance_plan',
     'reports',
