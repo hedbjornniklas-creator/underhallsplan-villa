@@ -12,6 +12,7 @@ import { ObBuildingContext } from '@/components/ob/ObBuildingContext'
 import type { ObBuildingOverview } from '@/lib/ob/buildingStructure'
 import { supabase } from '@/lib/supabaseClient'
 import { parseScopeCodes } from '@/lib/report/scopeText'
+import { hasEnvironmentalSelection } from '@/lib/ob/environmentalProtocol'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 import { isObRoundBackManaged } from '@/lib/ob/roundBackHistory'
 import { getInitialObSection, isObRoundSection } from '@/lib/ob/mobileRound'
@@ -186,7 +187,9 @@ function getVisibleSections(
   isApartmentInspection: boolean,
   showAreaMeasurement: boolean,
   showMoistureControl: boolean,
-  buildings?: ObBuildingOverview | null
+  buildings?: ObBuildingOverview | null,
+  showRadon = false,
+  showMould = false,
 ) {
   const sections: Section[] = buildings?.structure ? [
     ...SECTIONS.slice(0, 2),
@@ -201,6 +204,8 @@ function getVisibleSections(
   if (showMoistureControl) {
     sections.push({ key: 'fuktkontroll', label: 'Fuktkontroll' })
   }
+  if (showRadon) sections.push({ key: 'radon', label: 'Radonindikering' })
+  if (showMould) sections.push({ key: 'mould', label: 'Mögelprov' })
   sections.push({ key: 'delivery', label: 'Skicka utlåtande' })
 
   if (!isApartmentInspection) return sections
@@ -611,11 +616,15 @@ export default function InspectionDetailPage() {
     inspection?.scope ?? null
   )
   const showMoistureControl = hasMoistureControlSelection(selectedAddonKeys, inspection?.scope ?? null)
+  const showRadon = hasEnvironmentalSelection(selectedAddonKeys, parseScopeCodes(inspection?.scope), 'radon')
+  const showMould = hasEnvironmentalSelection(selectedAddonKeys, parseScopeCodes(inspection?.scope), 'mould')
   const visibleSections = getVisibleSections(
     isApartmentInspection,
     showAreaMeasurement,
     showMoistureControl,
-    buildingOverview
+    buildingOverview,
+    showRadon,
+    showMould,
   )
   const activeSectionIndex = visibleSections.findIndex(section => section.key === activeSection && (!section.partId || section.partId === activeBuilding?.id))
   const activeSectionLabel = visibleSections[activeSectionIndex]?.label ?? ''
@@ -625,7 +634,7 @@ export default function InspectionDetailPage() {
     let raw: string | null = null
     try { raw = sessionStorage.getItem(inspectionNavigationKey(inspectionId)) } catch {}
     // Add-on visibility is reconciled once its independent request completes.
-    const sections = getVisibleSections(isApartmentInspection, true, true, buildingOverview)
+    const sections = getVisibleSections(isApartmentInspection, true, true, buildingOverview, true, true)
     const position = restoreInspectionNavigation(raw, sections, 'grunddata', buildingOverview.structure?.primary_part_id ?? null,
       getInitialObSection(window.location.search) === 'runda-ny')
     setActiveSection(position.section)
@@ -657,6 +666,10 @@ export default function InspectionDetailPage() {
       setActiveSection(showAreaMeasurement ? 'areamatning' : 'runda-ny')
     }
   }, [addonsLoadedFor, inspectionId, activeSection, showAreaMeasurement, showMoistureControl])
+
+  useEffect(() => {
+    if (addonsLoadedFor === inspectionId && ((activeSection === 'radon' && !showRadon) || (activeSection === 'mould' && !showMould))) setActiveSection('grunddata')
+  }, [addonsLoadedFor, inspectionId, activeSection, showRadon, showMould])
 
   useEffect(() => {
     setMobileMenuOpen(false)

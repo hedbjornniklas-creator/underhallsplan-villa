@@ -212,6 +212,7 @@ export default async function PublicReportPageContent({
 
   return (
     <ReportSnapshotView
+      environmentalFilesEndpoint={`/api/reports/public/${encodeURIComponent(normalizedToken)}/environmental-files`}
       snapshot={snapshot}
       heading={snapshot.inspectionSide === 'apartment' ? 'Lägenhetsbesiktning' : 'Besiktningsutlåtande'}
       pdfInlineUrl={pdfInlineUrl}

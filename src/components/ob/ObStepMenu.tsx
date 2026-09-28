@@ -2,7 +2,7 @@
 
 import {
   ArrowLeft, Building2, ClipboardList, Droplets,
-  FileText, House, Ruler, Send, Settings2,
+  FileText, House, Ruler, Send, Settings2, Radiation, FlaskConical,
 } from 'lucide-react'
 import type { ObSectionKey } from './ObWizard'
 import Sheet from './ObRoundSheet'
@@ -13,6 +13,7 @@ const icons = {
   grunddata: House, handlingar: FileText, forutsattningar: Settings2,
   'runda-ny': ClipboardList, runda: ClipboardList,
   delivery: Send, areamatning: Ruler, fuktkontroll: Droplets,
+  radon: Radiation, mould: FlaskConical,
 }
 
 export default function ObStepMenu({ sections, buildings, activeIndex, onSelect, onClose, onBack }: {

@@ -10,6 +10,7 @@ import {
   type InspectionDocumentReportLineInput,
 } from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
+import { readEnvironmentalAppendices } from '@/lib/report/environmentalAppendices'
 import { readReportWebsite } from '@/lib/report/profileWebsite'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { readBuildingReportState } from '@/lib/ob/buildingReport'
@@ -126,6 +127,7 @@ export default async function Page({
           includeAreaMeasurement: appendices.area_measurement?.enabled === true,
           includeMoistureControl: appendices.moisture_control?.enabled === true,
           buildings: appendices.buildings,
+          environmental: appendices.environmental,
         } })} />
     </div>
   }
@@ -1554,6 +1556,10 @@ export default async function Page({
 
   try {
     const appendices = (mockData.mock?.appendices as Record<string, any> | undefined) ?? {}
+    appendices.environmental = (await readEnvironmentalAppendices(supabase, resolvedParams.inspectionId)).map(appendix => ({ ...appendix,
+      details: [`Uppdragsnummer: ${valueOrFallback(inspection?.assignment_number)}`, `Adress: ${valueOrFallback(fullAddress)}`, appendix.details].filter(Boolean).join('\n'),
+      conclusion: [appendix.conclusion, companyNameForSigning, inspectorNameForSigning, inspectorMembershipLineForSigning].filter(Boolean).join('\n'),
+    }))
     content = (
       <ReportRenderer
         spec={buildReportSpec({
@@ -1562,6 +1568,7 @@ export default async function Page({
           dynamicAppendices: {
             includeAreaMeasurement: appendices.area_measurement?.enabled === true,
             includeMoistureControl: appendices.moisture_control?.enabled === true,
+            environmental: appendices.environmental,
           },
         })}
         mockData={mockData}

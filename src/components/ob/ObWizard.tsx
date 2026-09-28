@@ -8,6 +8,7 @@ import ObStepHandlingar from './ObStepHandlingar'
 import ObStepForutsattningar from './ObStepForutsattningar'
 import ObStepRunda from './ObStepRunda'
 import ObStepAreamatning from './ObStepAreamatning'
+import ObStepEnvironmental from './ObStepEnvironmental'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
 import ObUnlockInspection from './ObUnlockInspection'
 import type { Tables } from '@/types/supabase'
@@ -73,6 +74,8 @@ export type ObSectionKey =
   | 'insida'
   | 'areamatning'
   | 'fuktkontroll'
+  | 'radon'
+  | 'mould'
   | 'risk'
   | 'ftu'
 
@@ -940,6 +943,10 @@ function ObWizardContent({
           inspection={normalizedInspection}
         />
       )
+
+    case 'radon':
+    case 'mould':
+      return <ObStepEnvironmental key={`${normalizedInspection.id}:${activeSection}`} kind={activeSection} inspection={normalizedInspection} property={normalizedProperty} />
 
     case 'risk':
       return (

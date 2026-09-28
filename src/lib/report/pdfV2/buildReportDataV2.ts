@@ -3,6 +3,7 @@ import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTy
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
 import { readReportWebsite } from '@/lib/report/profileWebsite'
 import { readObNoteText } from '@/lib/ob/noteText'
+import { readEnvironmentalAppendices } from '@/lib/report/environmentalAppendices'
 import { readBuildingReportState, assertBuildingReportRevision } from '@/lib/ob/buildingReport'
 import { buildingCoverPath, type ObBuildingPart } from '@/lib/ob/buildingStructure'
 import { modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
@@ -1285,6 +1286,10 @@ const supabase: any = createSupabaseServerClient()
   const ftuText = trimText(ftuLines.join('\n'))
 
   const assignmentWorkflow = inspection ? await getObAssignmentWorkflow(resolvedParams.inspectionId) : null
+  const environmental = (scopedPart ? [] : await readEnvironmentalAppendices(supabase, params.inspectionId)).map(appendix => ({ ...appendix,
+    details: [`Uppdragsnummer: ${valueOrFallback(inspection?.assignment_number)}`, `Adress: ${valueOrFallback(fullAddress)}`, appendix.details].filter(Boolean).join('\n'),
+    conclusion: [appendix.conclusion, companyNameForSigning, inspectorNameForSigning, inspectorMembershipLineForSigning].filter(Boolean).join('\n'),
+  }))
   const mockData = {
     mock: {
       assignment_workflow_draft: assignmentWorkflow?.canDeliver === false,
@@ -1414,6 +1419,7 @@ const supabase: any = createSupabaseServerClient()
         text: ftuText || fallback,
       },
       appendices: {
+        environmental,
         area_measurement: {
           enabled: areaMeasurementEnabled,
           object: {

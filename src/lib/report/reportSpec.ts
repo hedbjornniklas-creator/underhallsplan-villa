@@ -43,6 +43,7 @@ export type ReportBlock =
       marginBottomMm: number
       small?: boolean
       layout?: 'buildingData'
+      paginate?: boolean
     }
   | {
       type: 'boxedText'
@@ -146,6 +147,7 @@ export type ReportSection = {
 }
 
 export type DynamicAppendixConfig = {
+  environmental?: { kind: string; title: string; rows?: { location: string; result: string }[] }[]
   includeAreaMeasurement?: boolean
   includeMoistureControl?: boolean
   buildings?: { id: string; name: string }[]
@@ -1305,6 +1307,25 @@ export function buildReportSpec(params?: {
       spec.push(section)
       tocBlock?.entries.push({ label: title, sectionId: id })
     }
+  })
+  ;(params?.dynamicAppendices?.environmental ?? []).forEach((appendix, index) => {
+    const number = 4 + Number(includeAreaMeasurement) + Number(includeMoistureControl) + (modernLayout ? 0 : buildingAppendices.length) + index
+    const id = `appendix-environmental-${appendix.kind}`
+    const title = `Bilaga ${number}: ${appendix.title}`
+    const path = `mock.appendices.environmental.${index}`
+    const text = (field: string): ReportBlock => ({ type: 'text', source: { kind: 'mock', path: `${path}.${field}` }, paginate: true, marginTopMm: 0, marginBottomMm: 4 })
+    spec.push({ id, title, type: 'standard', startOnNewPage: true, blocks: [
+      { type: 'heading', level: 2, text: title, marginTopMm: 0, marginBottomMm: 5 },
+      text('source'), text('details'),
+      { type: 'heading', level: 3, text: 'Resultat', marginTopMm: 2, marginBottomMm: 3 },
+      ...(appendix.rows ?? []).flatMap((row, rowIndex): ReportBlock[] => [
+        { type: 'heading', level: 3, text: row.location, marginTopMm: 2, marginBottomMm: 2 },
+        text(`rows.${rowIndex}.result`),
+      ]),
+      text('conclusion'), text('notice'),
+      text('fileSummary'),
+    ] })
+    tocBlock?.entries.push({ label: title, sectionId: id })
   })
   return repairReportSpecText(spec)
 }

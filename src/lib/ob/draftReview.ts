@@ -49,7 +49,7 @@ export function listObDraftEntries(inspectionId: string, storage: Storage): ObDr
         preview = JSON.stringify(row.value ?? row, null, 2)
       }
     } catch { /* Keep malformed drafts visible and unchanged. */ }
-    const detail = path[1] === 'disclosure' ? 'Upplysningar' : path[1] === 'document' ? 'Handling' :
+    const detail = path[0] === 'environmental' ? ({ radon: 'Radonindikering', mould: 'Mögelprov' } as Record<string, string>)[path[1]] : path[1] === 'disclosure' ? 'Upplysningar' : path[1] === 'document' ? 'Handling' :
       obDraftFieldLabels[path.at(-1) || '']
     entries.push({ key, raw, path, buildingId, title: [steps[path[0]] || 'Lokalt utkast', detail].filter(Boolean).join(' · '), values, preview })
   }

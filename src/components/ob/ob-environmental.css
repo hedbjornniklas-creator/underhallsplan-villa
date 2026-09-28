@@ -1,0 +1,16 @@
+.ob-env { padding: 0 16px; }
+.ob-env-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.ob-env-header h2, .ob-env-header h3, .ob-env-header p { margin: 0; }
+.ob-env-save { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: .875rem; color: var(--obm-muted); }
+.ob-env-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.ob-env-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.ob-env-wide { grid-column: 1 / -1; }
+.ob-env-row { border-top: 1px solid var(--obm-line); padding: 16px 0; }
+.ob-env-row .ob-env-header { margin-bottom: 12px; }
+.ob-env-files { list-style: none; padding: 0; }
+.ob-env-files li, .ob-env-files a { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ob-env-files li { justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--obm-line); }
+.ob-env-files a { color: var(--obm-blue); overflow-wrap: anywhere; }
+.ob-env-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.ob-env-compare { white-space: pre-wrap; overflow-wrap: anywhere; font: .875rem/1.5 monospace; }
+@media (max-width: 639px) { .ob-env-grid { grid-template-columns: minmax(0, 1fr); } .ob-env { padding: 0; } }

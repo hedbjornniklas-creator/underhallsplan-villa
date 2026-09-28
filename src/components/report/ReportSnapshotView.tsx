@@ -18,6 +18,7 @@ import {
 } from '@/lib/report/inspectionDocumentReportLine'
 import ReportShareButton from './ReportShareButton'
 import SnapshotPhotoGrid from './SnapshotPhotoGrid'
+import type { EnvironmentalAppendix } from '@/lib/ob/environmentalProtocol'
 
 type SnapshotInspectionBlock = {
   title?: string | null
@@ -140,6 +141,7 @@ type ReportSnapshotViewProps = {
   showHeader?: boolean
   shareEndpoint?: string | null
   shareUrl?: string | null
+  environmentalFilesEndpoint?: string
 }
 
 function repairMojibake(value: string) {
@@ -436,6 +438,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const buildings = asRecordArray(appendices.buildings)
   const areaMeasurementAppendix = asRecord(appendices.area_measurement)
   const moistureControlAppendix = asRecord(appendices.moisture_control)
+  const environmentalAppendices = (Array.isArray(appendices.environmental) ? appendices.environmental : []) as EnvironmentalAppendix[]
   const areaMeasurementEnabled = areaMeasurementAppendix.enabled === true
   const moistureControlEnabled = moistureControlAppendix.enabled === true
   const areaMeasurementNumber = areaMeasurementEnabled ? 4 : null
@@ -1029,6 +1032,18 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 </div>
               </details>
             ) : null}
+            {environmentalAppendices.map((appendix, index) => <details key={appendix.kind} className="border-t border-slate-200 py-4">
+              <summary className="cursor-pointer font-semibold">Bilaga {4 + Number(areaMeasurementEnabled) + Number(moistureControlEnabled) + index} - {appendix.title}</summary>
+              <div className="space-y-4 pt-4">
+                <p className="text-sm text-slate-600">{appendix.source}</p>
+                <p className="whitespace-pre-wrap">{appendix.details}</p>
+                {appendix.rows.map((row, rowIndex) => <div key={rowIndex} className="border-t border-slate-200 py-3"><h3 className="font-semibold">{row.location}</h3><p className="whitespace-pre-wrap">{row.result}</p></div>)}
+                <p className="whitespace-pre-wrap">{appendix.conclusion}</p><p className="whitespace-pre-wrap text-sm">{appendix.notice}</p>
+                {appendix.files.map(file => <p key={file.id}>{props.environmentalFilesEndpoint
+                  ? <a className="text-blue-700 underline" href={`${props.environmentalFilesEndpoint}?file=${encodeURIComponent(file.id)}`}>{file.name}</a>
+                  : file.name}</p>)}
+              </div>
+            </details>)}
           </div>
         </section>
 

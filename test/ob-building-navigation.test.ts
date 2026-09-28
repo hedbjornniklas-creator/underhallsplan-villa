@@ -17,7 +17,8 @@ const getSections = new Function(ts.transpileModule(menuSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText + '\nreturn getVisibleSections;')() as (
   apartment: boolean, area: boolean, moisture: boolean,
-  buildings?: { structure: object | null; parts: { id: string; name: string }[] } | null
+  buildings?: { structure: object | null; parts: { id: string; name: string }[] } | null,
+  radon?: boolean, mould?: boolean,
 ) => { key: string; label: string; partId?: string }[]
 
 test('each building has its conditions immediately followed by its round, preserving order and identity', () => {
@@ -56,4 +57,14 @@ test('shared add-ons and completion steps follow all building rounds', () => {
     { key: 'delivery', label: 'Skicka utlåtande' },
   ])
   assert.deepEqual(sections.filter(row => row.key === 'runda-ny').map(row => row.partId), ['a', 'b'])
+})
+
+test('radon and mould are shared steps after all buildings, only when selected', () => {
+  for (const radon of [false, true]) for (const mould of [false, true]) {
+    const sections = getSections(false, false, false, { structure: {}, parts: [{ id: 'main', name: 'Hus' }, { id: 'garage', name: 'Garage' }] }, radon, mould)
+    assert.equal(sections.filter(s => s.key === 'radon').length, Number(radon))
+    assert.equal(sections.filter(s => s.key === 'mould').length, Number(mould))
+    assert.ok(sections.filter(s => ['radon', 'mould'].includes(s.key)).every(s => !s.partId))
+    assert.equal(sections.at(-1)?.key, 'delivery')
+  }
 })

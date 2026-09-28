@@ -1,4 +1,5 @@
 'use client'
+import { protocolTextChunks } from '@/lib/report/protocolTextChunks'
 
 import {
   useCallback,
@@ -933,6 +934,17 @@ export default function ReportRendererClient({
     const entries: Entry[] = []
     contentSections.forEach((section, sectionIndex) => {
       section.blocks.forEach((block, blockIndex) => {
+        if (block.type === 'text' && block.paginate) {
+          const chunks = protocolTextChunks(resolveText(block.source, mockData))
+          chunks.forEach((chunk, index) => entries.push({
+            kind: 'block', id: `${section.id}-protocol-${blockIndex}-${index}`, sectionId: section.id,
+            sectionStartOnNewPage: section.startOnNewPage && blockIndex === 0 && index === 0,
+            block: { ...block, source: { kind: 'static', text: chunk },
+              marginTopMm: index === 0 ? block.marginTopMm : 0,
+              marginBottomMm: index === chunks.length - 1 ? block.marginBottomMm : 0 },
+          }))
+          return
+        }
         if (
           block.type === 'text' &&
           section.id === 'risk' &&
@@ -2931,6 +2943,7 @@ export default function ReportRendererClient({
             fontWeight: preset.fontWeight,
             color: preset.color,
             whiteSpace: 'pre-wrap',
+            overflowWrap: block.paginate ? 'anywhere' : undefined,
           }}
         >
           {content}

@@ -964,6 +964,7 @@ export async function POST(
       layoutVersion: 2,
       inspectionSide: specInspectionSide,
       dynamicAppendices: {
+        environmental: reportData.mock.appendices?.environmental,
         includeAreaMeasurement: areaMeasurementAppendix.enabled === true,
         includeMoistureControl: moistureControlAppendix.enabled === true,
         buildings: reportData.mock.appendices?.buildings,
