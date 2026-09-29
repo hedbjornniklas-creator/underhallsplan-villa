@@ -75,6 +75,10 @@ function draftInput(email: unknown, resumed = false): Service.CreatePublicApplic
 function fixture(resumed = false) {
   const mutations: Mutation[] = []
   const emails: Email[] = []
+  const cases = new Map<string, Record<string, unknown>>(resumed ? [[existingCase.id, { ...existingCase }]] : [])
+  const links: Record<string, unknown>[] = []
+  let caseSequence = 0
+  let failCaseWrite = false
   const unexpected = () => { throw new Error('Unexpected non-draft service dependency') }
   const writeTables = new Set([
     'renovation_cases', 'renovation_case_action_types',
@@ -93,24 +97,43 @@ function fixture(resumed = false) {
     }
     function result() {
       if (mutation) {
-        return { data: table === 'renovation_cases' && mutation.operation === 'insert' ? { id: 'new-case' } : null, error: null }
+        if (table === 'renovation_cases') {
+          if (failCaseWrite) return { data: null, error: { message: 'Simulated save failure' } }
+          if (mutation.operation === 'insert') {
+            const id = ++caseSequence === 1 ? 'new-case' : `new-case-${caseSequence}`
+            cases.set(id, { id, ...mutation.payload })
+            return { data: { id }, error: null }
+          }
+          const row = cases.get(String(filters.id))
+          if (row) Object.assign(row, mutation.payload)
+        }
+        if (table === 'case_access_links' && mutation.operation === 'insert') links.push({ id: `link-${links.length}`, ...mutation.payload })
+        if (table === 'case_access_links' && mutation.operation === 'update') {
+          for (const row of links.filter(row => Object.entries(filters).every(([key, value]) => row[key] === value))) Object.assign(row, mutation.payload)
+        }
+        return { data: null, error: null }
       }
       if (table === 'brf_associations') return { data: brf, error: null }
       if (table === 'case_access_links') {
+        if (links.length) return { data: links.find(row => row.token_hash === filters.token_hash) ?? null, error: null }
         assert.ok(resumed, 'Only resumed drafts should read a token')
         return { data: { case_id: existingCase.id, revoked_at: null, expires_at: '2099-01-01T00:00:00.000Z' }, error: null }
       }
-      if (table === 'renovation_cases' && selection === 'case_number') return { data: [], error: null }
-      if (table === 'renovation_cases' && resumed) {
-        assert.equal(filters.id, existingCase.id)
-        assert.equal(filters.brf_id, brf.id)
-        return { data: existingCase, error: null }
+      if (table === 'renovation_cases' && selection === 'case_number') return { data: [...cases.values()].reverse(), error: null }
+      if (table === 'renovation_cases') {
+        const row = cases.get(String(filters.id))
+        return { data: row && (!filters.brf_id || row.brf_id === filters.brf_id) ? row : null, error: null }
       }
+      if (['renovation_case_action_types', 'renovation_action_types', 'renovation_case_documents',
+        'renoapp_case_question_answers', 'renoapp_case_participants', 'renoapp_apply_questions',
+        'renoapp_apply_question_options', 'renovation_case_messages', 'renovation_document_types',
+        'renoapp_participant_roles'].includes(table)) return { data: [], error: null }
       throw new Error(`Unexpected read from ${table}: ${selection}`)
     }
     const builder = {
       select: (columns: string) => { selection = columns; return builder },
       eq: (column: string, value: unknown) => { filters[column] = value; return builder },
+      in: (column: string, value: unknown) => { filters[column] = value; return builder },
       like: (column: string, value: unknown) => { filters[column] = value; return builder },
       order: () => builder,
       limit: () => builder,
@@ -136,15 +159,15 @@ function fixture(resumed = false) {
     } },
     '@/lib/renoapp/emailTemplate': loadSource('src/lib/renoapp/emailTemplate.ts', {}),
     '@/lib/renoapp/completion': completion,
-    '@/lib/renoapp/completionServer': { getLatestCompletion: unexpected, saveCompletion: unexpected },
+    '@/lib/renoapp/completionServer': { getLatestCompletion: async () => null, saveCompletion: unexpected },
     '@/lib/access/server': { getCurrentUserPlatformAccessContext: unexpected },
     '@/lib/renoapp/brfAdminAccess': { requireBrfAdminContext: unexpected },
     '@/lib/renoapp/consultantReviewAccess': { requireConsultantReviewAccess: unexpected },
     '@/lib/renoapp/onboarding': { issueBrfInviteForAuthorizedUser: unexpected },
-    '@/lib/renoapp/renovationRulesServer': { getPublishedRules: unexpected, getCaseRulesAcceptance: unexpected },
+    '@/lib/renoapp/renovationRulesServer': { getPublishedRules: unexpected, getCaseRulesAcceptance: async () => null },
     '@/lib/renoapp/renovationRules': rules,
   })
-  return { service, mutations, emails }
+  return { service, mutations, emails, cases, failCaseWrites: () => { failCaseWrite = true } }
 }
 
 const rejectedEmails = [
@@ -238,4 +261,63 @@ test('public applications route maps missing and invalid draft email to HTTP 400
     assert.deepEqual(mutations, [])
     assert.deepEqual(emails, [])
   }
+})
+
+test('apartment number added after first save and corrected later survives actual draft and case reads', async () => {
+  const f = fixture()
+  const input = { ...draftInput('applicant@example.test'), applicantName: 'Applicant',
+    applicantPhone: '0700000000', unitNumberInternal: '11' }
+  const created = await f.service.upsertPublicApplication(input, 'https://example.test')
+  const token = new URL(created.resumeUrl).searchParams.get('draft')!
+  for (const value of ['11', '111', '1101', '0101']) {
+    await f.service.upsertPublicApplication({ ...input, draftToken: token, unitNumberSkatteverket: value }, 'https://example.test')
+    const reloaded = await f.service.getPublicApplicationDraftByToken(token)
+    assert.equal(reloaded?.form.unitNumberSkatteverket, value)
+    assert.equal(reloaded?.form.unitNumberInternal, '11')
+    const access = await f.service.getCaseAccessByToken(token)
+    assert.equal(access?.unit.unitNumberSkatteverket, value)
+    assert.equal(access?.contact.email, input.applicantEmail)
+  }
+  assert.equal(f.cases.size, 1)
+  assert.equal(f.emails.length, 1)
+})
+
+test('same numbers, email or phone never reuse another case or update its applicant', async () => {
+  const f = fixture()
+  const input = { ...draftInput('same@example.test'), applicantName: 'First applicant',
+    applicantPhone: '0700000000', unitNumberInternal: '253', unitNumberSkatteverket: '1101' }
+  const first = await f.service.upsertPublicApplication(input, 'https://example.test')
+  const second = await f.service.upsertPublicApplication({ ...input, applicantName: 'Second applicant' }, 'https://example.test')
+  const third = await f.service.upsertPublicApplication({ ...input, unitNumberInternal: '254', applicantEmail: 'other@example.test' }, 'https://example.test')
+  assert.equal(new Set([first.caseId, second.caseId, third.caseId]).size, 3)
+  assert.equal(new Set([first.caseNumber, second.caseNumber, third.caseNumber]).size, 3)
+  const firstBefore = structuredClone(f.cases.get(first.caseId))
+  const secondToken = new URL(second.resumeUrl).searchParams.get('draft')!
+  await f.service.upsertPublicApplication({ ...input, draftToken: secondToken, applicantName: 'Changed name',
+    applicantEmail: 'changed@example.test', applicantPhone: '0711111111', unitNumberInternal: '999', unitNumberSkatteverket: '1202' }, 'https://example.test')
+  assert.deepEqual(f.cases.get(first.caseId), firstBefore)
+  const firstRead = await f.service.getPublicApplicationDraftByToken(new URL(first.resumeUrl).searchParams.get('draft')!)
+  assert.equal(firstRead?.form.applicantName, 'First applicant')
+  assert.equal(firstRead?.form.unitNumberSkatteverket, '1101')
+  const secondRead = await f.service.getPublicApplicationDraftByToken(secondToken)
+  assert.equal(secondRead?.form.applicantName, 'Changed name')
+  assert.equal(secondRead?.form.applicantEmail, 'changed@example.test')
+  assert.equal(secondRead?.form.applicantPhone, '0711111111')
+  assert.equal(secondRead?.form.unitNumberInternal, '999')
+  assert.equal(secondRead?.form.unitNumberSkatteverket, '1202')
+  for (const row of f.cases.values()) {
+    assert.equal(row.unit_id, null)
+    assert.equal(row.applicant_contact_id, null)
+  }
+  assert.deepEqual(f.emails.map(email => email.to), ['same@example.test', 'same@example.test', 'other@example.test'])
+})
+
+test('failed case write fails the save and preserves the previously saved number', async () => {
+  const f = fixture()
+  const input = { ...draftInput('applicant@example.test'), unitNumberInternal: '11', unitNumberSkatteverket: '1101' }
+  const created = await f.service.upsertPublicApplication(input, 'https://example.test')
+  const token = new URL(created.resumeUrl).searchParams.get('draft')!
+  f.failCaseWrites()
+  await assert.rejects(f.service.upsertPublicApplication({ ...input, draftToken: token, unitNumberSkatteverket: '1201' }, 'https://example.test'), /Simulated save failure/)
+  assert.equal((await f.service.getPublicApplicationDraftByToken(token))?.form.unitNumberSkatteverket, '1101')
 })

@@ -1,6 +1,6 @@
 # RenoApp - produktprinciper och beslut
 
-Senast uppdaterad: 2026-09-21.
+Senast uppdaterad: 2026-09-29.
 Beslutsansvarig: HusHubs produktansvarige.
 Grund: produktbeslut och förtydliganden i RenoApp-arbetets chatthistorik.
 
@@ -89,6 +89,23 @@ ska tas bort.
 Efter första inskickningen ska grundansökans omfattning inte kunna ändras fritt
 under en komplettering. Om den planerade renoveringen ändras väsentligt behövs
 ett särskilt produktbeslut om hur det ska hanteras, inte ett tyst upplåsande.
+
+Varje ansökan är ett självständigt ärende med eget ärendenummer och egna
+lägenhets- och sökandeuppgifter. Internt lägenhetsnummer, Skatteverkets nummer,
+namn, mejl och telefon får inte hämtas från eller uppdatera andra ansökningar
+genom automatisk matchning. Samma nummer, mejl eller telefon kan förekomma i
+flera ärenden. Även inom en förening är lägenhetsnummer inte en unik identitet.
+
+Föreningen behöver inte registrera lägenheter eller huskroppar för att börja
+använda RenoApp. Ett framtida lägenhetsregister är en separat funktion och ska
+inte kräva efterhandsklassificering av äldre ansökningar. Personliga konton och
+styrelsebehörighet påverkas inte av denna separation av ansökningsuppgifter.
+Ärendehistoriken knyts till ärendenumret; kompletteringar hör till samma ärende.
+
+Vid rättningen 2026-09-29 görs ingen historisk överföring eller massrättning av
+testärenden. Den pågående testansökan görs om efter publicering. Fullständig
+gallring av personuppgifter är en separat uppgift, inte något denna rättning
+automatiskt inför. Se [Självständiga ansökningar](renoapp-independent-applications.md).
 
 Styrelsen ska kunna ändra sina underlagsval. Nya saknade krav ska ge en tydlig
 varning om att kompletteringsbegäran behöver skickas igen. Redan skickade
@@ -201,6 +218,7 @@ tester. Läs relevant dokument tillsammans med aktuell kod inför en ändring.
 | Område | Dokument |
 | --- | --- |
 | Kompletteringsomgångar, låst grundansökan, sparande och utskick | [Kompletteringar](renoapp-completion-rounds.md) |
+| Egna lägenhets- och sökandeuppgifter per ärende | [Självständiga ansökningar](renoapp-independent-applications.md) |
 | Osäkra svar, begärt klarläggande och styrelsens bedömning | [Klarlägganden](renoapp-clarifications.md) |
 | Gemensamma definitioner, flytta/kopiera/ta bort kopplingar och bakgrundssparande | [Flödesbyggaren](renoapp-flow-editor.md) |
 | Borttagna tekniska klassificeringsval och kvarvarande logik | [Teknisk klassificering](renoapp-technical-classification-retirement.md) |
@@ -254,6 +272,7 @@ tillstånd att ändra produktionskonfiguration.
 
 | Datum | Beslut eller dokumentändring | Grund |
 | --- | --- | --- |
+| 2026-09-29 | Ansökningar äger sina egna lägenhets- och sökandeuppgifter. Ingen automatisk matchning mot lägenheter eller kontakter från andra ärenden. Inget krav på lägenhetsregister vid anslutning och ingen historisk migrering av testärenden. | Användaren förtydligade att tjänsten fortfarande testas och beställde rättningen med separata uppgifter per ansökan. Pavlinas test kan göras om. |
 | 2026-09-21 | Styrelsen får fatta beslut trots kvarstående frågor, saknade handlingar och uppgifter. RenoApp föreslår utan att prioritera brister eller spärra beslut; endast utkast är låsta för beslut. Motivering är obligatorisk även vid godkännande, och villkor krävs dessutom vid villkorat godkännande. Öppna frågor bevaras utan automatisk slutbedömning. | Uttryckligt förtydligande av styrelsens beslutsansvar och svaret "obligatorisk". Ersätter pilotens tidigare godkännandespärr. |
 | 2026-09-17 | Ärendepriset sätts till 1 500 kr exkl. moms, utan abonnemangsavgift, när styrelsen väljer att starta handläggningen. Kompletteringar i samma ärende ingår. Sakkunnig hjälp beställs separat. | Slutligt förtydligande: "1500 kr skall vi köra på", efter begäran att uppdatera alla platser. |
 | 2026-09-16 | Förenkla BRF-aktiveringen och låt den personliga inbjudan välja mellan inloggning och kontoskapande. Behåll identitetskontroll och skydd mot dubbelkonton. | Godkänt förslag följt av "Kör". |

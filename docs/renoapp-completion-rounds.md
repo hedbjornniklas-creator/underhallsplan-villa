@@ -4,6 +4,11 @@ Klarlagganden for osakra svar beskrivs i [Klarlagganden](renoapp-clarifications.
 Piloten ateranvander detta flode och tillater bara omsvar pa uttryckligen begarda
 fragor, inte fri redigering av grundansokan.
 
+Fran 2026-09-29 ager varje ansokan sina lagenhets- och sokandeuppgifter.
+Se [Sjalvstandiga ansokningar](renoapp-independent-applications.md).
+Obligatoriska lagenhetsnummer kontrolleras vid forsta inskickning, inte som
+en ny sparr mot komplettering av redan lasta grunduppgifter.
+
 ## Flode
 
 1. Styrelsens underlagsval sparas som tidigare, men andrar inte en redan skickad begaran. Om nya saknade underlag eller foretagsuppgifter begars visas en varning om att kompletteringsbegaran behover skickas igen. Jamforelsen gors mot den senaste sparade omgangen och finns kvar efter omladdning. Angrade val och redan inkommet material ger ingen varning.

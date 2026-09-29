@@ -160,7 +160,7 @@ function confirmationFixture(status: 'new' | 'draft' | 'need_info', requestedRol
     getPublishedRules: async () => null, rulesAcceptanceFields: () => ({}),
     getPublicApplicationDraftByToken: async () => ({ state: 'open', case: { id: 'case' }, form,
       completionRequest: { id: 'round', requestedParticipants: requestedRoles.map(participantRoleId => ({ participantRoleId })) } }),
-    upsertPublicApplicationContact: () => persist('INITIAL_SAVE'),
+    computeRiskLevelFromActionTypes: () => { calls.push('INITIAL_SAVE'); throw new Error('REACHED_INITIAL_SAVE') },
     saveCompletion: () => persist('COMPLETION_SAVE'), buildAbsoluteUrl: (origin: string, path: string) => origin + path,
   })
   return { input, form, calls, save: () => service(input, 'https://example.test') }
@@ -172,6 +172,21 @@ test('new applications and resumed initial drafts reach persistence without conf
     // Both action-linked and answer-triggered companies are suggested, not yet requested by the board.
     await assert.rejects(f.save(), /REACHED_INITIAL_SAVE/)
     assert.deepEqual(f.calls, ['INITIAL_SAVE'])
+  }
+})
+
+test('completion does not revalidate locked apartment numbers but cannot change base data', async () => {
+  const f = confirmationFixture('need_info', [])
+  f.form.unitNumberSkatteverket = ''
+  f.input.unitNumberSkatteverket = ''
+  await assert.rejects(f.save(), /REACHED_COMPLETION_SAVE/)
+  f.input.unitNumberSkatteverket = '1101'
+  await assert.rejects(f.save(), /COMPLETION_BASE_FIELDS_LOCKED/)
+  for (const status of ['new', 'draft'] as const) {
+    const initial = confirmationFixture(status)
+    initial.input.unitNumberSkatteverket = ''
+    await assert.rejects(initial.save(), /UNIT_NUMBER_SKATTEVERKET_REQUIRED/)
+    assert.deepEqual(initial.calls, [])
   }
 })
 

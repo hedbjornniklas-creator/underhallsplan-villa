@@ -265,27 +265,14 @@ type CaseRequirementDecisionRow = {
   decided_at: string
 }
 
-type ContactRow = {
-  id: string
-  name: string
-  email: string | null
-  phone: string | null
-}
-
-type UnitRow = {
-  id: string
-  brf_id: string
-  unit_number_internal: string | null
-  unit_number_skatteverket: string | null
-  status: string
-  updated_at: string
-}
-
 type CaseRow = {
   id: string
   brf_id: string
-  unit_id: string | null
-  applicant_contact_id: string | null
+  applicant_name: string | null
+  applicant_email: string | null
+  applicant_phone: string | null
+  unit_number_internal: string | null
+  unit_number_skatteverket: string | null
   action_type_id: string | null
   case_number: string
   title: string
@@ -3115,201 +3102,6 @@ function buildPublicCaseTitle(actionTypes: ActionTypeRow[]) {
   return `Renovering: ${actionTypes.map((item) => item.label).join(', ')}`
 }
 
-async function ensureUnitForPublicApplication(input: {
-  admin: SupabaseAdminClient
-  brfId: string
-  unitNumberInternal: string | null
-  unitNumberSkatteverket: string | null
-}) {
-  const { admin, brfId, unitNumberInternal, unitNumberSkatteverket } = input
-
-  if (!unitNumberInternal && !unitNumberSkatteverket) {
-    return null
-  }
-
-  let unit: UnitRow | null = null
-
-  if (unitNumberInternal) {
-    const { data } = await admin
-      .from('brf_units')
-      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
-      .eq('brf_id', brfId)
-      .eq('unit_number_internal', unitNumberInternal)
-      .limit(1)
-      .maybeSingle()
-    unit = (data ?? null) as UnitRow | null
-  }
-
-  if (!unit && unitNumberSkatteverket) {
-    const { data } = await admin
-      .from('brf_units')
-      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
-      .eq('brf_id', brfId)
-      .eq('unit_number_skatteverket', unitNumberSkatteverket)
-      .limit(1)
-      .maybeSingle()
-    unit = (data ?? null) as UnitRow | null
-  }
-
-  if (!unit) {
-    const { data, error } = await admin
-      .from('brf_units')
-      .insert({
-        brf_id: brfId,
-        unit_number_internal: unitNumberInternal,
-        unit_number_skatteverket: unitNumberSkatteverket,
-        status: 'preliminary',
-      })
-      .select('id,brf_id,unit_number_internal,unit_number_skatteverket,status,updated_at')
-      .single()
-
-    if (error) {
-      throw new Error(error.message ?? 'Kunde inte skapa lÃ¤genhet.')
-    }
-
-    unit = data as UnitRow
-  }
-
-  return unit
-}
-
-async function ensureCurrentUnitContact(input: {
-  admin: SupabaseAdminClient
-  unitId: string | null
-  contactId: string | null
-}) {
-  const { admin, unitId, contactId } = input
-  if (!unitId || !contactId) return
-
-  const { data: existingUnitContact } = await admin
-    .from('unit_contacts')
-    .select('id')
-    .eq('unit_id', unitId)
-    .eq('contact_id', contactId)
-    .eq('is_current', true)
-    .limit(1)
-    .maybeSingle()
-
-  if (!existingUnitContact) {
-    const { error } = await admin.from('unit_contacts').insert({
-      unit_id: unitId,
-      contact_id: contactId,
-      relationship_type: 'unknown',
-      verification_status: 'unverified',
-      is_current: true,
-    })
-
-    if (error) {
-      throw new Error(error.message ?? 'Kunde inte koppla kontakt till lÃ¤genhet.')
-    }
-  }
-}
-
-async function upsertPublicApplicationContact(input: {
-  admin: SupabaseAdminClient
-  existingContactId?: string | null
-  applicantName: string | null
-  applicantEmail: string | null
-  applicantPhone: string | null
-  requireContact: boolean
-}) {
-  const { admin, existingContactId, applicantName, applicantEmail, applicantPhone, requireContact } = input
-
-  if (!applicantName && !applicantEmail && !applicantPhone) {
-    if (requireContact) {
-      throw new Error('APPLICANT_NAME_REQUIRED')
-    }
-    return null
-  }
-
-  if (applicantEmail) {
-    assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
-  }
-
-  if (!applicantName || (!applicantEmail && !applicantPhone)) {
-    if (requireContact) {
-      if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
-      throw new Error('APPLICANT_EMAIL_INVALID')
-    }
-    return null
-  }
-
-  if (existingContactId) {
-    const { data, error } = await admin
-      .from('contacts')
-      .update({
-        name: applicantName,
-        email: applicantEmail,
-        phone: applicantPhone,
-      })
-      .eq('id', existingContactId)
-      .select('id,name,email,phone')
-      .single()
-
-    if (error || !data) {
-      throw new Error(error?.message ?? 'Kunde inte uppdatera kontakt.')
-    }
-
-    return data as ContactRow
-  }
-
-  let contact: ContactRow | null = null
-  const applicantEmailValue = applicantEmail as string
-
-  const { data: byEmail } = await admin
-    .from('contacts')
-    .select('id,name,email,phone')
-    .eq('email', applicantEmailValue)
-    .limit(1)
-    .maybeSingle()
-  contact = (byEmail ?? null) as ContactRow | null
-
-  if (!contact && applicantPhone) {
-    const { data: byPhone } = await admin
-      .from('contacts')
-      .select('id,name,email,phone')
-      .eq('phone', applicantPhone)
-      .limit(1)
-      .maybeSingle()
-    contact = (byPhone ?? null) as ContactRow | null
-  }
-
-  if (contact) {
-    const { data, error } = await admin
-      .from('contacts')
-      .update({
-        name: applicantName,
-        email: applicantEmail,
-        phone: applicantPhone,
-      })
-      .eq('id', contact.id)
-      .select('id,name,email,phone')
-      .single()
-
-    if (error || !data) {
-      throw new Error(error?.message ?? 'Kunde inte uppdatera kontakt.')
-    }
-
-    return data as ContactRow
-  }
-
-  const { data, error } = await admin
-    .from('contacts')
-    .insert({
-      name: applicantName,
-      email: applicantEmail,
-      phone: applicantPhone,
-    })
-    .select('id,name,email,phone')
-    .single()
-
-  if (error || !data) {
-    throw new Error(error?.message ?? 'Kunde inte skapa kontakt.')
-  }
-
-  return data as ContactRow
-}
-
 async function replaceCaseActionTypes(admin: SupabaseAdminClient, caseId: string, actionTypeIds: string[]) {
   const { error: deleteError } = await admin.from('renovation_case_action_types').delete().eq('case_id', caseId)
   if (deleteError) {
@@ -3497,7 +3289,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
   const { data: caseData, error: caseError } = await admin
     .from('renovation_cases')
     .select(
-      'id,brf_id,unit_id,applicant_contact_id,case_number,description,contractor_name,contractor_org_number,contractor_email,contractor_phone,contractor_has_required_certification,status,submitted_at,updated_at'
+      'id,brf_id,applicant_name,applicant_email,applicant_phone,unit_number_internal,unit_number_skatteverket,case_number,description,contractor_name,contractor_org_number,contractor_email,contractor_phone,contractor_has_required_certification,status,submitted_at,updated_at'
     )
     .eq('id', String(access.case_id ?? ''))
     .maybeSingle()
@@ -3513,8 +3305,6 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
   const brfId = String(caseRow.brf_id ?? '')
   const [
     brfResult,
-    contactResult,
-    unitResult,
     actionTypeRows,
     actionTypes,
     documentsResult,
@@ -3528,16 +3318,6 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     participantRolesResult,
   ] = await Promise.all([
     admin.from('brf_associations').select('id,name,slug').eq('id', brfId).maybeSingle(),
-    caseRow.applicant_contact_id
-      ? admin.from('contacts').select('id,name,email,phone').eq('id', String(caseRow.applicant_contact_id)).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    caseRow.unit_id
-      ? admin
-          .from('brf_units')
-          .select('id,unit_number_internal,unit_number_skatteverket,status')
-          .eq('id', String(caseRow.unit_id))
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
     listCaseActionTypes(admin, [String(caseRow.id ?? '')]),
     listActiveActionTypes(admin),
     admin
@@ -3564,8 +3344,6 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
   ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
-  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte lÃ¤sa kontakt.')
-  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte lÃ¤sa lÃ¤genhet.')
 
   if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte lasa dokument.')
   if (questionRows.error) throw new Error(questionRows.error.message ?? 'Kunde inte lasa frÃ¥gor.')
@@ -3641,11 +3419,11 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
       slug: String(brfResult.data?.slug ?? ''),
     },
     form: {
-      applicantName: (contactResult.data?.name as string | null | undefined) ?? '',
-      applicantEmail: (contactResult.data?.email as string | null | undefined) ?? String(access.email ?? ''),
-      applicantPhone: (contactResult.data?.phone as string | null | undefined) ?? '',
-      unitNumberInternal: (unitResult.data?.unit_number_internal as string | null | undefined) ?? '',
-      unitNumberSkatteverket: (unitResult.data?.unit_number_skatteverket as string | null | undefined) ?? '',
+      applicantName: (caseRow.applicant_name as string | null | undefined) ?? '',
+      applicantEmail: (caseRow.applicant_email as string | null | undefined) ?? '',
+      applicantPhone: (caseRow.applicant_phone as string | null | undefined) ?? '',
+      unitNumberInternal: (caseRow.unit_number_internal as string | null | undefined) ?? '',
+      unitNumberSkatteverket: (caseRow.unit_number_skatteverket as string | null | undefined) ?? '',
       description: (caseRow.description as string | null | undefined) ?? '',
       contractorName: (caseRow.contractor_name as string | null | undefined) ?? '',
       contractorOrgNumber: (caseRow.contractor_org_number as string | null | undefined) ?? '',
@@ -3870,15 +3648,6 @@ export async function upsertPublicApplication(
     assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
   }
 
-  if (mode === 'submit') {
-    if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
-    if (!applicantEmail) throw new Error('APPLICANT_EMAIL_REQUIRED')
-    assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
-    if (!applicantPhone) throw new Error('APPLICANT_PHONE_REQUIRED')
-    if (!unitNumberInternal) throw new Error('UNIT_NUMBER_INTERNAL_REQUIRED')
-    if (!unitNumberSkatteverket) throw new Error('UNIT_NUMBER_SKATTEVERKET_REQUIRED')
-  }
-
   const selectedActionTypes = await loadActiveActionTypesByKeys(admin, actionTypeKeys)
   const publicQuestionConfig =
     selectedActionTypes.length > 0
@@ -3926,7 +3695,7 @@ export async function upsertPublicApplication(
   if (draftCaseId) {
     const { data: caseData, error: caseError } = await admin
       .from('renovation_cases')
-      .select('id,applicant_contact_id,unit_id,case_number,status,submitted_at')
+      .select('id,case_number,status,submitted_at')
       .eq('id', draftCaseId)
       .eq('brf_id', brf.id)
       .maybeSingle()
@@ -3948,6 +3717,12 @@ export async function upsertPublicApplication(
 
   const isCompletionCase = existingStatus === 'need_info'
   if (mode === 'submit' && !isCompletionCase) {
+    if (!applicantName) throw new Error('APPLICANT_NAME_REQUIRED')
+    if (!applicantEmail) throw new Error('APPLICANT_EMAIL_REQUIRED')
+    assertValidEmail(applicantEmail, 'APPLICANT_EMAIL_INVALID')
+    if (!applicantPhone) throw new Error('APPLICANT_PHONE_REQUIRED')
+    if (!unitNumberInternal) throw new Error('UNIT_NUMBER_INTERNAL_REQUIRED')
+    if (!unitNumberSkatteverket) throw new Error('UNIT_NUMBER_SKATTEVERKET_REQUIRED')
     const currentRules = await getPublishedRules(brf.id)
     if ((input.rulesVersionId || null) !== (currentRules?.id ?? null)) throw new Error('RULES_VERSION_CHANGED')
     if (currentRules && input.rulesAccepted !== true) throw new Error('RULES_ACCEPTANCE_REQUIRED')
@@ -4085,27 +3860,16 @@ export async function upsertPublicApplication(
 
   if (Object.keys(input.clarificationAnswers ?? {}).length) throw new Error('COMPLETION_BASE_FIELDS_LOCKED')
 
-  const contact = await upsertPublicApplicationContact({
-    admin,
-    existingContactId: (existingCase?.applicant_contact_id as string | null | undefined) ?? null,
-    applicantName,
-    applicantEmail,
-    applicantPhone,
-    requireContact: false,
-  })
-
-  const unit = await ensureUnitForPublicApplication({
-    admin,
-    brfId: brf.id,
-    unitNumberInternal,
-    unitNumberSkatteverket,
-  })
-
-  await ensureCurrentUnitContact({
-    admin,
-    unitId: unit?.id ?? null,
-    contactId: contact?.id ?? null,
-  })
+  const applicationFields = {
+    applicant_name: applicantName,
+    applicant_email: applicantEmail,
+    applicant_phone: applicantPhone,
+    unit_number_internal: unitNumberInternal,
+    unit_number_skatteverket: unitNumberSkatteverket,
+    // Do not retain a shared identity when an old test draft is saved again.
+    unit_id: null,
+    applicant_contact_id: null,
+  }
 
   const riskLevel = computeRiskLevelFromActionTypes(selectedActionTypes)
   const title = buildPublicCaseTitle(selectedActionTypes)
@@ -4131,9 +3895,8 @@ export async function upsertPublicApplication(
       .from('renovation_cases')
       .insert({
         brf_id: brf.id,
-        unit_id: unit?.id ?? null,
+        ...applicationFields,
         ...acceptanceFields,
-        applicant_contact_id: contact?.id ?? null,
         action_type_id: selectedActionTypes[0]?.id ?? null,
         case_number: caseNumber,
         title,
@@ -4161,9 +3924,8 @@ export async function upsertPublicApplication(
     const { error: updateCaseError } = await admin
       .from('renovation_cases')
       .update({
-        unit_id: unit?.id ?? null,
+        ...applicationFields,
         ...acceptanceFields,
-        applicant_contact_id: contact?.id ?? null,
         action_type_id: selectedActionTypes[0]?.id ?? null,
         title,
         description,
@@ -4304,7 +4066,7 @@ export async function upsertPublicApplication(
   }
   const resumeUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/brf/${brf.slug}/apply?draft=${token}`)
   const caseAdminUrl = buildAbsoluteUrl(requestOrigin, `/renoapp/app/cases/${caseId}`)
-  const applicantDisplayName = contact?.name ?? applicantName ?? 'OkÃ¤nd sÃ¶kande'
+  const applicantDisplayName = applicantName ?? 'Okänd sökande'
   const caseTitle = title.trim()
   if (mode === 'submit') {
     await insertCaseMessage({
@@ -4312,7 +4074,7 @@ export async function upsertPublicApplication(
       caseId,
       type: 'status_change',
       authorRole: 'applicant',
-      authorContactId: contact?.id ?? null,
+      authorContactId: null,
       message: 'Ansökan inkommen.',
       metadata: {
         nextStatus,
@@ -4472,7 +4234,7 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
 
   const { data: caseData, error: caseError } = await admin
     .from('renovation_cases')
-    .select('id,brf_id,unit_id,applicant_contact_id,action_type_id,case_number,title,description,status,risk_level,blocked_at,blocked_reason,submitted_at,updated_at')
+    .select('id,brf_id,applicant_name,applicant_email,applicant_phone,unit_number_internal,unit_number_skatteverket,action_type_id,case_number,title,description,status,risk_level,blocked_at,blocked_reason,submitted_at,updated_at')
     .eq('id', access.case_id)
     .maybeSingle()
 
@@ -4482,18 +4244,8 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
 
   const caseRow = caseData as CaseRow
 
-  const [brfResult, contactResult, unitResult, actionResult, documentsResult] = await Promise.all([
+  const [brfResult, actionResult, documentsResult] = await Promise.all([
     admin.from('brf_associations').select('id,name,slug').eq('id', caseRow.brf_id).maybeSingle(),
-    caseRow.applicant_contact_id
-      ? admin.from('contacts').select('id,name,email,phone').eq('id', caseRow.applicant_contact_id).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    caseRow.unit_id
-      ? admin
-          .from('brf_units')
-          .select('id,unit_number_internal,unit_number_skatteverket,status')
-          .eq('id', caseRow.unit_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
     caseRow.action_type_id
       ? admin.from('renovation_action_types').select('key,label').eq('id', caseRow.action_type_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -4505,8 +4257,6 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
   ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte hÃ¤mta BRF.')
-  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte hÃ¤mta kontakt.')
-  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte hÃ¤mta lÃ¤genhet.')
   if (actionResult.error) throw new Error(actionResult.error.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdstyp.')
   if (documentsResult.error) throw new Error(documentsResult.error.message ?? 'Kunde inte hÃ¤mta dokument.')
 
@@ -4551,16 +4301,16 @@ export async function getCaseAccessByToken(token: string): Promise<RenoAppCaseAc
         : null,
     },
     contact: {
-      id: (contactResult.data?.id as string | null | undefined) ?? null,
-      name: (contactResult.data?.name as string | null | undefined) ?? null,
-      email: (contactResult.data?.email as string | null | undefined) ?? null,
-      phone: (contactResult.data?.phone as string | null | undefined) ?? null,
+      id: null,
+      name: (caseRow.applicant_name as string | null | undefined) ?? null,
+      email: (caseRow.applicant_email as string | null | undefined) ?? null,
+      phone: (caseRow.applicant_phone as string | null | undefined) ?? null,
     },
     unit: {
-      id: (unitResult.data?.id as string | null | undefined) ?? null,
-      unitNumberInternal: (unitResult.data?.unit_number_internal as string | null | undefined) ?? null,
-      unitNumberSkatteverket: (unitResult.data?.unit_number_skatteverket as string | null | undefined) ?? null,
-      status: (unitResult.data?.status as string | null | undefined) ?? null,
+      id: null,
+      unitNumberInternal: (caseRow.unit_number_internal as string | null | undefined) ?? null,
+      unitNumberSkatteverket: (caseRow.unit_number_skatteverket as string | null | undefined) ?? null,
+      status: null,
     },
     documents: ((documentsResult.data ?? []) as Array<Record<string, unknown>>).map((document) => ({
       id: String(document.id ?? ''),
@@ -4905,7 +4655,7 @@ export async function listRenoAppCases(): Promise<RenoAppCaseListItem[]> {
   const casesQuery = applyBrfScope(
     admin
       .from('renovation_cases')
-      .select('id,brf_id,applicant_contact_id,action_type_id,case_number,title,status,risk_level,submitted_at,updated_at')
+      .select('id,brf_id,applicant_name,applicant_email,action_type_id,case_number,title,status,risk_level,submitted_at,updated_at')
       .order('updated_at', { ascending: false })
       .limit(100),
     context.accessibleBrfIds
@@ -4920,23 +4670,17 @@ export async function listRenoAppCases(): Promise<RenoAppCaseListItem[]> {
   const rows = (data ?? []) as Array<Record<string, unknown>>
   const brfIds = Array.from(new Set(rows.map((row) => String(row.brf_id ?? '')).filter(Boolean)))
   const actionTypeIds = Array.from(new Set(rows.map((row) => String(row.action_type_id ?? '')).filter(Boolean)))
-  const contactIds = Array.from(new Set(rows.map((row) => String(row.applicant_contact_id ?? '')).filter(Boolean)))
-
-  const [brfsResult, actionTypesResult, contactsResult] = await Promise.all([
+  const [brfsResult, actionTypesResult] = await Promise.all([
     brfIds.length > 0
       ? admin.from('brf_associations').select('id,name,slug').in('id', brfIds)
       : Promise.resolve({ data: [], error: null }),
     actionTypeIds.length > 0
       ? admin.from('renovation_action_types').select('id,key,label').in('id', actionTypeIds)
       : Promise.resolve({ data: [], error: null }),
-    contactIds.length > 0
-      ? admin.from('contacts').select('id,name,email').in('id', contactIds)
-      : Promise.resolve({ data: [], error: null }),
   ])
 
   if (brfsResult.error) throw new Error(brfsResult.error.message ?? 'Kunde inte hÃ¤mta BRF-data.')
   if (actionTypesResult.error) throw new Error(actionTypesResult.error.message ?? 'Kunde inte hÃ¤mta Ã¥tgÃ¤rdstyper.')
-  if (contactsResult.error) throw new Error(contactsResult.error.message ?? 'Kunde inte hÃ¤mta kontakter.')
 
   const brfMap = new Map(
     ((brfsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
@@ -4957,20 +4701,9 @@ export async function listRenoAppCases(): Promise<RenoAppCaseListItem[]> {
       },
     ])
   )
-  const contactMap = new Map(
-    ((contactsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
-      String(row.id ?? ''),
-      {
-        name: (row.name as string | null | undefined) ?? null,
-        email: (row.email as string | null | undefined) ?? null,
-      },
-    ])
-  )
-
   return rows.map((row) => {
     const brfId = String(row.brf_id ?? '')
     const actionTypeId = String(row.action_type_id ?? '')
-    const contactId = String(row.applicant_contact_id ?? '')
 
     return {
       id: String(row.id ?? ''),
@@ -4982,7 +4715,10 @@ export async function listRenoAppCases(): Promise<RenoAppCaseListItem[]> {
       submittedAt: String(row.submitted_at ?? ''),
       brf: brfMap.get(brfId) ?? { id: brfId, name: null, slug: null },
       actionType: actionTypeId ? actionMap.get(actionTypeId) ?? null : null,
-      applicant: contactId ? contactMap.get(contactId) ?? { name: null, email: null } : { name: null, email: null },
+      applicant: {
+        name: (row.applicant_name as string | null) ?? null,
+        email: (row.applicant_email as string | null) ?? null,
+      },
     }
   })
 }
@@ -7448,7 +7184,7 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
   const { data: caseData, error: caseError } = await admin
     .from('renovation_cases')
     .select(
-      'id,brf_id,unit_id,applicant_contact_id,action_type_id,case_number,title,description,status,risk_level,blocked_at,blocked_reason,submitted_at,updated_at'
+      'id,brf_id,applicant_name,applicant_email,applicant_phone,unit_number_internal,unit_number_skatteverket,action_type_id,case_number,title,description,status,risk_level,blocked_at,blocked_reason,submitted_at,updated_at'
     )
     .eq('id', caseId)
     .maybeSingle()
@@ -7468,8 +7204,6 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
 
   const [
     brfResult,
-    contactResult,
-    unitResult,
     docsResult,
     decisionsResult,
     linksResult,
@@ -7487,16 +7221,6 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
   ] =
     await Promise.all([
       admin.from('brf_associations').select('id,name,slug').eq('id', caseRow.brf_id).maybeSingle(),
-      caseRow.applicant_contact_id
-        ? admin.from('contacts').select('id,name,email,phone').eq('id', caseRow.applicant_contact_id).maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-      caseRow.unit_id
-        ? admin
-            .from('brf_units')
-            .select('id,unit_number_internal,unit_number_skatteverket,status')
-            .eq('id', caseRow.unit_id)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
       admin
         .from('renovation_case_documents')
         .select('id,document_type_id,participant_role_id,document_scope,file_name,status,uploaded_at,note')
@@ -7536,8 +7260,6 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
     ])
 
   if (brfResult.error) throw new Error(brfResult.error.message ?? 'Kunde inte lÃ¤sa BRF.')
-  if (contactResult.error) throw new Error(contactResult.error.message ?? 'Kunde inte lÃ¤sa kontakt.')
-  if (unitResult.error) throw new Error(unitResult.error.message ?? 'Kunde inte lÃ¤sa lÃ¤genhet.')
   if (docsResult.error) throw new Error(docsResult.error.message ?? 'Kunde inte lÃ¤sa dokument.')
   if (decisionsResult.error) throw new Error(decisionsResult.error.message ?? 'Kunde inte lÃ¤sa beslut.')
   if (linksResult.error) throw new Error(linksResult.error.message ?? 'Kunde inte lÃ¤sa access links.')
@@ -7549,20 +7271,6 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
     throw new Error(requirementDecisionRows.error.message ?? 'Kunde inte lÃ¤sa kompletteringsval.')
   }
 
-  const currentContactsResult =
-    caseRow.unit_id
-      ? await admin
-          .from('unit_contacts')
-          .select('contact_id,verification_status,relationship_type')
-          .eq('unit_id', caseRow.unit_id)
-          .eq('is_current', true)
-      : { data: [], error: null }
-
-  if (currentContactsResult.error) {
-    throw new Error(currentContactsResult.error.message ?? 'Kunde inte lÃ¤sa kontaktkopplingar.')
-  }
-
-  const currentContactRows = (currentContactsResult.data ?? []) as Array<Record<string, unknown>>
   const caseActionTypeIds = Array.from(
     new Set([
       ...((caseActionTypesResult ?? []) as CaseActionTypeRow[]).map((row) => row.action_type_id),
@@ -7571,9 +7279,6 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
   )
   const selectedActionTypes = await loadActiveActionTypesByIds(admin, caseActionTypeIds)
   const selectedActionTypeIds = new Set(selectedActionTypes.map((item) => item.id))
-  const currentContactIds = Array.from(
-    new Set(currentContactRows.map((row) => String(row.contact_id ?? '')).filter(Boolean))
-  )
   const documentTypeIds = Array.from(
     new Set(
       ((docsResult.data ?? []) as Array<Record<string, unknown>>)
@@ -7582,33 +7287,17 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
     )
   )
 
-  const [currentContactsLookup, documentTypesLookup, requirements] = await Promise.all([
-    currentContactIds.length > 0
-      ? admin.from('contacts').select('id,name,email').in('id', currentContactIds)
-      : Promise.resolve({ data: [], error: null }),
+  const [documentTypesLookup, requirements] = await Promise.all([
     documentTypeIds.length > 0
       ? admin.from('renovation_document_types').select('id,label').in('id', documentTypeIds)
       : Promise.resolve({ data: [], error: null }),
     selectedActionTypeIds.size > 0 ? listRequirements(admin, caseRow.brf_id) : Promise.resolve([] as RequirementRow[]),
   ])
 
-  if (currentContactsLookup.error) {
-    throw new Error(currentContactsLookup.error.message ?? 'Kunde inte lÃ¤sa kontaktdata.')
-  }
   if (documentTypesLookup.error) {
     throw new Error(documentTypesLookup.error.message ?? 'Kunde inte lÃ¤sa dokumenttyper.')
   }
 
-  const contactMap = new Map(
-    ((currentContactsLookup.data ?? []) as Array<Record<string, unknown>>).map((row) => [
-      String(row.id ?? ''),
-      {
-        id: String(row.id ?? ''),
-        name: (row.name as string | null | undefined) ?? null,
-        email: (row.email as string | null | undefined) ?? null,
-      },
-    ])
-  )
   const documentTypeMap = new Map(
     ((documentTypesLookup.data ?? []) as Array<Record<string, unknown>>).map((row) => [
       String(row.id ?? ''),
@@ -7712,27 +7401,18 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
         label: actionType.label,
       })),
     applicant: {
-      id: (contactResult.data?.id as string | null | undefined) ?? null,
-      name: (contactResult.data?.name as string | null | undefined) ?? null,
-      email: (contactResult.data?.email as string | null | undefined) ?? null,
-      phone: (contactResult.data?.phone as string | null | undefined) ?? null,
+      id: null,
+      name: (caseRow.applicant_name as string | null | undefined) ?? null,
+      email: (caseRow.applicant_email as string | null | undefined) ?? null,
+      phone: (caseRow.applicant_phone as string | null | undefined) ?? null,
     },
     unit: {
-      id: (unitResult.data?.id as string | null | undefined) ?? null,
-      unitNumberInternal: (unitResult.data?.unit_number_internal as string | null | undefined) ?? null,
-      unitNumberSkatteverket: (unitResult.data?.unit_number_skatteverket as string | null | undefined) ?? null,
-      status: (unitResult.data?.status as string | null | undefined) ?? null,
+      id: null,
+      unitNumberInternal: (caseRow.unit_number_internal as string | null | undefined) ?? null,
+      unitNumberSkatteverket: (caseRow.unit_number_skatteverket as string | null | undefined) ?? null,
+      status: null,
     },
-    currentContacts: currentContactRows.map((row) => {
-      const contact = contactMap.get(String(row.contact_id ?? '')) ?? { id: String(row.contact_id ?? ''), name: null, email: null }
-      return {
-        id: contact.id,
-        name: contact.name,
-        email: contact.email,
-        verificationStatus: String(row.verification_status ?? ''),
-        relationshipType: String(row.relationship_type ?? ''),
-      }
-    }),
+    currentContacts: [],
     documents: ((docsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id ?? ''),
       documentTypeId: (row.document_type_id as string | null | undefined) ?? null,
@@ -7967,7 +7647,7 @@ export async function updateRenoAppCaseStatus(
 
   const { data: caseData, error: caseError } = await admin
     .from('renovation_cases')
-    .select('id,brf_id,status,case_number,title,applicant_contact_id')
+    .select('id,brf_id,status,case_number,title')
     .eq('id', caseId)
     .maybeSingle()
 
