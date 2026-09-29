@@ -214,6 +214,11 @@ export default function TuAnalysisWorkspace({
 
   const failed = workflow?.run?.status === 'failed'
   const queuePending = queueCounts.total > 0
+  const updatingExistingAnalysis = Boolean(
+    workflow?.status === 'in_progress'
+    && workflow.analysisStaleAt
+    && workflow.run?.status === 'completed'
+  )
   const progressStep = getTuAnalysisProgressStep(workflow?.run)
   const progressMessage = getTuAnalysisProgressMessage(workflow?.run)
 
@@ -242,6 +247,17 @@ export default function TuAnalysisWorkspace({
 
         {workflow?.status === 'in_progress' ? (
           <div className="space-y-4">
+            {updatingExistingAnalysis ? (
+              <div className="flex gap-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+                <RefreshCw size={19} className="mt-0.5 shrink-0 text-amber-700" aria-hidden />
+                <div>
+                  <h3 className="font-semibold text-amber-950">Underlaget har ändrats</h3>
+                  <p className="mt-1 text-sm leading-5 text-amber-900">
+                    Uppdatera helhetsbedömningen mot den rättade uppgiften. Din nuvarande rapporttext ligger kvar och ersätts inte förrän du väljer att använda ett nytt förslag.
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="border-b border-gray-200 pb-3">
                 <div className="text-2xl font-semibold text-gray-950">{validation?.observationCount ?? 0}</div>
@@ -278,7 +294,7 @@ export default function TuAnalysisWorkspace({
                 className="inline-flex h-11 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 {actionBusy === 'complete' ? <Loader2 size={17} className="animate-spin" aria-hidden /> : <FileText size={17} aria-hidden />}
-                Skapa hela utlåtandet
+                {updatingExistingAnalysis ? 'Uppdatera analysen' : 'Skapa hela utlåtandet'}
               </button>
               <button
                 type="button"
@@ -350,7 +366,7 @@ export default function TuAnalysisWorkspace({
                 <div>
                   <h3 className="font-semibold text-amber-950">Kontrollera avläsningen innan utlåtandet skapas</h3>
                   <p className="mt-1 text-sm leading-5 text-amber-900">
-                    Ett registrerat mätvärde skiljer sig från vad AI:n kunde läsa på en kopplad bild. Du avgör vilken uppgift som är riktig.
+                    Ett registrerat mätvärde skiljer sig tydligt från vad AI:n kunde läsa på en kopplad bild. Små skillnader som bara beror på avrundning godtas automatiskt.
                   </p>
                 </div>
               </div>

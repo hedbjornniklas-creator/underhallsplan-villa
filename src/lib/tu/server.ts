@@ -1776,6 +1776,9 @@ export async function updateTuInvestigationDraft(input: {
     title?: string | null
     projectType?: string | null
     scopeDescription?: string | null
+    propertyAddress?: string | null
+    propertyPostalCode?: string | null
+    propertyCity?: string | null
     objectType?: TuObjectType | null
     cadastralId?: string | null
     brfName?: string | null
@@ -1794,6 +1797,25 @@ export async function updateTuInvestigationDraft(input: {
   })
   if (!existing) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   if (existing.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
+
+  const hasPropertyLocationPatch =
+    'propertyAddress' in input.patch
+    || 'propertyPostalCode' in input.patch
+    || 'propertyCity' in input.patch
+  const nextPropertyAddress = 'propertyAddress' in input.patch
+    ? cleanText(input.patch.propertyAddress)
+    : cleanText(existing.property?.address)
+  const nextPropertyPostalCode = 'propertyPostalCode' in input.patch
+    ? cleanText(input.patch.propertyPostalCode)
+    : cleanText(existing.property?.postal_code)
+  const nextPropertyCity = 'propertyCity' in input.patch
+    ? cleanText(input.patch.propertyCity)
+    : cleanText(existing.property?.city)
+  const propertyLocationChanged = hasPropertyLocationPatch && (
+    nextPropertyAddress !== cleanText(existing.property?.address)
+    || nextPropertyPostalCode !== cleanText(existing.property?.postal_code)
+    || nextPropertyCity !== cleanText(existing.property?.city)
+  )
 
   const payload: Record<string, unknown> = {
     updated_by: input.updatedBy,
@@ -1844,18 +1866,85 @@ export async function updateTuInvestigationDraft(input: {
 
   if (error) throw new Error(error.message ?? 'Kunde inte spara TU-utredning.')
 
-  if (existing.propertyId && ('objectType' in input.patch || 'cadastralId' in input.patch)) {
+  if (hasPropertyLocationPatch && !existing.propertyId) throw new Error('TU_PROPERTY_NOT_FOUND')
+
+  if (existing.propertyId && (
+    'objectType' in input.patch
+    || 'cadastralId' in input.patch
+    || hasPropertyLocationPatch
+  )) {
+    const propertyPayload: Record<string, unknown> = {
+      cadastral_id:
+        resolvedObjectType === 'villa'
+          ? cleanText('cadastralId' in input.patch ? input.patch.cadastralId : existing.cadastralId)
+          : null,
+    }
+    if (hasPropertyLocationPatch) {
+      propertyPayload.address = nextPropertyAddress
+      propertyPayload.postal_code = nextPropertyPostalCode
+      propertyPayload.city = nextPropertyCity
+      if (
+        !cleanText(existing.property?.name)
+        || cleanText(existing.property?.name) === cleanText(existing.property?.address)
+      ) {
+        propertyPayload.name = toPropertyName(nextPropertyAddress, existing.title)
+      }
+      if (
+        !cleanText(existing.property?.municipality)
+        || cleanText(existing.property?.municipality) === cleanText(existing.property?.city)
+      ) {
+        propertyPayload.municipality = nextPropertyCity
+      }
+    }
     const { error: propertyError } = await admin
       .from('properties')
-      .update({
-        cadastral_id:
-          resolvedObjectType === 'villa'
-            ? cleanText('cadastralId' in input.patch ? input.patch.cadastralId : existing.cadastralId)
-            : null,
-      })
+      .update(propertyPayload)
       .eq('id', existing.propertyId)
 
     if (propertyError) throw new Error(propertyError.message ?? 'Kunde inte spara TU-objekt.')
+  }
+
+  if (propertyLocationChanged) {
+    const { data: workflowData, error: workflowReadError } = await admin
+      .from('tu_analysis_workflows')
+      .select('status,current_analysis_run_id')
+      .eq('org_id', input.orgId)
+      .eq('inspection_id', input.inspectionId)
+      .maybeSingle()
+    if (workflowReadError) throw new Error(workflowReadError.message ?? 'Kunde inte uppdatera analysstatus.')
+    const workflow = workflowData as {
+      status?: string | null
+      current_analysis_run_id?: string | null
+    } | null
+    if (workflow && workflow.status !== 'in_progress') {
+      const staleAt = new Date().toISOString()
+      if (workflow.current_analysis_run_id) {
+        const { error: runError } = await admin
+          .from('tu_ai_runs')
+          .update({
+            status: 'cancelled',
+            error_message: 'Källunderlaget ändrades efter att analysen startades.',
+            progress_stage: 'cancelled',
+            progress_message: 'Analysen avbröts eftersom underlaget ändrades.',
+            heartbeat_at: staleAt,
+            completed_at: staleAt,
+          })
+          .eq('id', workflow.current_analysis_run_id)
+          .in('status', ['queued', 'processing'])
+        if (runError) throw new Error(runError.message ?? 'Kunde inte avbryta den tidigare analysen.')
+      }
+      const { error: workflowError } = await admin
+        .from('tu_analysis_workflows')
+        .update({
+          status: 'in_progress',
+          analysis_approved_at: null,
+          analysis_approved_by: null,
+          analysis_stale_at: staleAt,
+        })
+        .eq('org_id', input.orgId)
+        .eq('inspection_id', input.inspectionId)
+      if (workflowError) throw new Error(workflowError.message ?? 'Kunde inte uppdatera analysstatus.')
+    }
   }
 
   if ('scopeDescription' in input.patch || 'reportDraft' in input.patch) {

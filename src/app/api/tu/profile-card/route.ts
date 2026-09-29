@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   getOrganizationProfileWorkspace,
+  importLegacyOrganizationProfileMedia,
   saveOrganizationProfileCard,
 } from '@/lib/organizations/profileCard'
 import { parseOrganizationProfileCardValues } from '@/lib/organizations/profileCardTypes'
@@ -70,7 +71,66 @@ function mapError(error: unknown) {
       message
     )
   }
+  if (message === 'ORG_PROFILE_CARD_REQUIRED') {
+    return jsonError('Spara företagsprofilen innan äldre profilbilder hämtas.', 409, message)
+  }
+  if (message === 'ORG_PROFILE_CARD_LEGACY_MEDIA_NOT_FOUND') {
+    return jsonError('Det finns inga äldre profilbilder att hämta.', 409, message)
+  }
+  if (message === 'ORG_PROFILE_CARD_LEGACY_MEDIA_INVALID') {
+    return jsonError(
+      'En äldre profilbild kunde inte läsas. Ladda upp bilden på nytt i stället.',
+      409,
+      message
+    )
+  }
   return null
+}
+
+export async function POST(request: Request) {
+  try {
+    assertSameOrigin(request)
+    const contentType = request.headers.get('content-type')?.toLowerCase() ?? ''
+    if (!contentType.startsWith('application/json')) {
+      return jsonError('Begäran måste vara JSON.', 415, 'ORG_PROFILE_CARD_INPUT_INVALID')
+    }
+
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    if (
+      !body
+      || Object.keys(body).length !== 3
+      || body.action !== 'import_legacy_media'
+      || typeof body.orgId !== 'string'
+      || typeof body.expectedVersion !== 'number'
+      || !Number.isSafeInteger(body.expectedVersion)
+      || body.expectedVersion <= 0
+    ) {
+      return jsonError('Begäran är ogiltig.', 400, 'ORG_PROFILE_CARD_INPUT_INVALID')
+    }
+
+    const context = await requireTuContext(body.orgId)
+    await importLegacyOrganizationProfileMedia({
+      orgId: context.orgId,
+      profileId: context.userId,
+      actorProfileId: context.userId,
+      expectedVersion: body.expectedVersion,
+    })
+    const workspace = await getOrganizationProfileWorkspace({
+      orgId: context.orgId,
+      orgName: context.orgName,
+      profileId: context.userId,
+      role: context.role,
+    })
+    return NextResponse.json({ workspace }, { headers: RESPONSE_HEADERS })
+  } catch (error) {
+    const mapped = mapError(error)
+    if (mapped) return mapped
+    return jsonError(
+      'De äldre profilbilderna kunde inte hämtas.',
+      500,
+      'ORG_PROFILE_CARD_IMPORT_FAILED'
+    )
+  }
 }
 
 export async function PUT(request: Request) {

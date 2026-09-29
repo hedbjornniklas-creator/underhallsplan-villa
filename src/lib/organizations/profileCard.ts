@@ -71,6 +71,50 @@ const ORGANIZATION_PROFILE_MEDIA_FILE_PATTERNS = {
     /^signaturePath-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:png|jpg|webp)$/u,
 } as const satisfies Record<OrganizationProfileMediaField, RegExp>
 
+const MAX_IMPORTED_MEDIA_SIZE = 5 * 1024 * 1024
+
+function isImportableLegacyMediaPath(value: string | null | undefined) {
+  const path = clean(value)
+  return Boolean(
+    path
+    && !path.startsWith('/')
+    && !path.includes('\\')
+    && !path.split('/').includes('..')
+    && !path.includes('/organizations/')
+    && !/^[a-z][a-z0-9+.-]*:/iu.test(path)
+  )
+}
+
+function legacyMediaAvailability(profile: LegacyProfileRow) {
+  return {
+    avatarPath: isImportableLegacyMediaPath(profile.avatar_path),
+    logoPath: isImportableLegacyMediaPath(profile.logo_path),
+    signaturePath: isImportableLegacyMediaPath(profile.signature_path),
+  }
+}
+
+function detectStoredImage(buffer: Buffer) {
+  if (
+    buffer.length >= 8
+    && buffer.subarray(0, 8).equals(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    )
+  ) {
+    return { extension: 'png', contentType: 'image/png' }
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { extension: 'jpg', contentType: 'image/jpeg' }
+  }
+  if (
+    buffer.length >= 12
+    && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
+    && buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return { extension: 'webp', contentType: 'image/webp' }
+  }
+  return null
+}
+
 function clean(value: string | null | undefined) {
   const normalized = value?.trim()
   return normalized || null
@@ -209,6 +253,7 @@ export async function resolveOrganizationProfileCard(input: {
   const memberships = (membershipsResult.data ?? []) as MembershipRow[]
   const selectedMembership = memberships.find((membership) => membership.org_id === input.orgId)
   if (!selectedMembership) throw new Error('ORG_MEMBERSHIP_REQUIRED')
+  const availableLegacyMedia = legacyMediaAvailability(profile)
 
   if (row) {
     return {
@@ -222,6 +267,7 @@ export async function resolveOrganizationProfileCard(input: {
       version: row.version,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      legacyMediaAvailable: availableLegacyMedia,
       ...rowValues(row),
     }
   }
@@ -244,6 +290,7 @@ export async function resolveOrganizationProfileCard(input: {
     version: null,
     createdAt: null,
     updatedAt: null,
+    legacyMediaAvailable: availableLegacyMedia,
     ...values,
   }
 }
@@ -304,7 +351,106 @@ export async function getOrganizationProfileWorkspace(input: {
     migrationRequired: resolved.migrationRequired,
     version: resolved.version,
     source: resolved.source,
+    legacyMediaAvailable: resolved.legacyMediaAvailable,
     card,
+  }
+}
+
+export async function importLegacyOrganizationProfileMedia(input: {
+  orgId: string
+  profileId: string
+  actorProfileId: string
+  expectedVersion: number
+}) {
+  const admin = createSupabaseAdminClient()
+  const current = await resolveOrganizationProfileCard({
+    orgId: input.orgId,
+    profileId: input.profileId,
+  })
+  if (current.migrationRequired) throw new Error('ORG_PROFILE_CARD_MIGRATION_REQUIRED')
+  if (current.source !== 'organization_card' || current.version === null) {
+    throw new Error('ORG_PROFILE_CARD_REQUIRED')
+  }
+  if (current.version !== input.expectedVersion) throw new Error('ORG_PROFILE_CARD_CONFLICT')
+  if (input.actorProfileId !== input.profileId) {
+    throw new Error('ORG_PROFILE_CARD_ADMIN_REQUIRED')
+  }
+
+  const { data: profileData, error: profileError } = await admin
+    .from('profiles')
+    .select('avatar_path,logo_path,signature_path')
+    .eq('id', input.profileId)
+    .maybeSingle()
+  if (profileError || !profileData) {
+    throw new Error(profileError?.message ?? 'ORG_PROFILE_NOT_FOUND')
+  }
+
+  const legacyPaths = {
+    avatarPath: clean((profileData as Pick<LegacyProfileRow, 'avatar_path'>).avatar_path),
+    logoPath: clean((profileData as Pick<LegacyProfileRow, 'logo_path'>).logo_path),
+    signaturePath: clean((profileData as Pick<LegacyProfileRow, 'signature_path'>).signature_path),
+  }
+  const fields = ORGANIZATION_PROFILE_MEDIA_FIELDS.filter((field) => (
+    !current[field] && isImportableLegacyMediaPath(legacyPaths[field])
+  ))
+  if (fields.length === 0) throw new Error('ORG_PROFILE_CARD_LEGACY_MEDIA_NOT_FOUND')
+
+  const bucket = admin.storage.from('property-media')
+  const importedPaths: Partial<Record<OrganizationProfileMediaField, string>> = {}
+  const uploadedPaths: string[] = []
+  try {
+    for (const field of fields) {
+      const sourcePath = legacyPaths[field]!
+      const { data, error } = await bucket.download(sourcePath)
+      if (error || !data || data.size <= 0 || data.size > MAX_IMPORTED_MEDIA_SIZE) {
+        throw new Error('ORG_PROFILE_CARD_LEGACY_MEDIA_INVALID')
+      }
+      const buffer = Buffer.from(await data.arrayBuffer())
+      const detected = detectStoredImage(buffer)
+      if (!detected) throw new Error('ORG_PROFILE_CARD_LEGACY_MEDIA_INVALID')
+
+      const storagePath = [
+        'profiles',
+        input.profileId,
+        'organizations',
+        input.orgId,
+        `${field}-${crypto.randomUUID()}.${detected.extension}`,
+      ].join('/')
+      const { error: uploadError } = await bucket.upload(storagePath, buffer, {
+        cacheControl: '31536000',
+        contentType: detected.contentType,
+        upsert: false,
+      })
+      if (uploadError) throw uploadError
+      importedPaths[field] = storagePath
+      uploadedPaths.push(storagePath)
+    }
+
+    const values: OrganizationProfileCardValues = {
+      displayName: current.displayName,
+      title: current.title,
+      phone: current.phone,
+      email: current.email,
+      companyName: current.companyName,
+      companyOrgNo: current.companyOrgNo,
+      companyAddress: current.companyAddress,
+      companyPostalCode: current.companyPostalCode,
+      companyCity: current.companyCity,
+      avatarPath: importedPaths.avatarPath ?? current.avatarPath,
+      logoPath: importedPaths.logoPath ?? current.logoPath,
+      signaturePath: importedPaths.signaturePath ?? current.signaturePath,
+      reportFooterText: current.reportFooterText,
+    }
+    return await saveOrganizationProfileCard({
+      orgId: input.orgId,
+      profileId: input.profileId,
+      actorProfileId: input.actorProfileId,
+      expectedVersion: input.expectedVersion,
+      values,
+    })
+  } catch (error) {
+    if (uploadedPaths.length > 0) await bucket.remove(uploadedPaths).catch(() => undefined)
+    throw error
   }
 }
 

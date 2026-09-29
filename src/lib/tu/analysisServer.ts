@@ -18,6 +18,7 @@ import {
 } from '@/lib/tu/analysis'
 import {
   parseTuAnalysisBackgroundState,
+  reusableTuImageAnalyses,
   tuImageBatchMaxOutputTokens,
   tuAnalysisFailureMessage,
   tuAnalysisBackgroundPayload,
@@ -695,6 +696,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         caption: image.caption,
         sortOrder: image.sortOrder,
         createdAt: image.createdAt,
+        updatedAt: image.updatedAt,
       })),
     },
   }
@@ -752,6 +754,54 @@ export async function createTuInspectionAnalysisRun(input: {
     const imageCount = Array.isArray(snapshot.images)
       ? Math.min(snapshot.images.length, configuredMaxImages())
       : 0
+    let reusableImageAnalysis: unknown[] | null = null
+    if (imageCount > 0) {
+      const { data: previousRuns, error: previousRunError } = await admin
+        .from('tu_ai_runs')
+        .select('input_snapshot,output_payload,completed_at')
+        .eq('org_id', input.orgId)
+        .eq('inspection_id', input.inspectionId)
+        .eq('operation', 'inspection_analysis')
+        .eq('status', 'completed')
+        .eq('model', TU_ANALYSIS_MODEL)
+        .eq('ruleset_key', RULESET_KEY)
+        .eq('ruleset_version', RULESET_VERSION)
+        .order('completed_at', { ascending: false })
+        .limit(1)
+      if (previousRunError) {
+        console.warn('[tu.analysis] Could not read reusable image analysis', {
+          inspectionId: input.inspectionId,
+          error: previousRunError,
+        })
+      } else {
+        const previousRun = (previousRuns?.[0] ?? null) as {
+          input_snapshot?: unknown
+          output_payload?: unknown
+          completed_at?: string | null
+        } | null
+        if (previousRun) {
+          reusableImageAnalysis = reusableTuImageAnalyses({
+            currentSnapshot: snapshot,
+            previousSnapshot: previousRun.input_snapshot,
+            previousOutput: previousRun.output_payload,
+            previousCompletedAt: previousRun.completed_at,
+            maxImageCount: configuredMaxImages(),
+          })
+        }
+      }
+    }
+    const reusableImageCount = reusableImageAnalysis?.length ?? 0
+    const initialBackgroundState = reusableImageAnalysis
+      ? tuAnalysisBackgroundPayload({
+          stage: 'image_batch_ready',
+          responseId: null,
+          submittedAt: null,
+          nextImageIndex: imageCount,
+          batchImageIds: [],
+          imageAnalyses: reusableImageAnalysis,
+          analysisDraft: null,
+        })
+      : undefined
     const { data: runData, error: runError } = await admin
       .from('tu_ai_runs')
       .insert({
@@ -764,11 +814,14 @@ export async function createTuInspectionAnalysisRun(input: {
         ruleset_version: RULESET_VERSION,
         input_snapshot: snapshot,
         input_hash: inputHash,
+        ...(initialBackgroundState ? { output_payload: initialBackgroundState } : {}),
         attempt_count: 0,
         progress_stage: 'queued',
-        progress_current: 0,
+        progress_current: reusableImageCount,
         progress_total: imageCount,
-        progress_message: 'Analysen väntar på att starta.',
+        progress_message: reusableImageAnalysis
+          ? 'Återanvänder redan analyserade bilder och uppdaterar helhetsbedömningen.'
+          : 'Analysen väntar på att starta.',
         heartbeat_at: now,
         created_by: input.userId,
       })

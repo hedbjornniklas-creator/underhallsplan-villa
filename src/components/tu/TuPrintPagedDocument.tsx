@@ -734,12 +734,12 @@ function SignatureBlock({ signature }: { signature: TuPrintSignature }) {
 
   return (
     <section
-      className="tu-report-block tu-report-signature-block border-t border-violet-200 pt-3"
-      style={{ marginTop: mm(2), marginBottom: mm(BLOCK_GAP_MM) }}
+      className="tu-report-block tu-report-signature-block border-t border-violet-200 pt-5"
+      style={{ marginTop: mm(4), marginBottom: mm(6) }}
     >
-      <div className="flex items-start gap-4">
+      <div className="w-[72mm]">
         {signature.avatarUrl ? (
-          <div className="h-[20mm] w-[20mm] shrink-0 overflow-hidden bg-white">
+          <div className="mb-2 h-[26mm] w-[26mm] overflow-hidden bg-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={signature.avatarUrl}
@@ -748,33 +748,32 @@ function SignatureBlock({ signature }: { signature: TuPrintSignature }) {
             />
           </div>
         ) : null}
-        <div className="min-w-0 w-[72mm]">
-          <div className="text-[12px] font-semibold leading-4 text-gray-950">
-            {signature.locationAndDate}
-          </div>
 
-          {signature.signatureUrl ? (
-            <div className="mt-1.5 flex h-[12mm] w-[38mm] items-center overflow-hidden bg-white">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={signature.signatureUrl}
-                alt={`Underskrift ${signature.inspectorName}`}
-                className="max-h-full max-w-full object-contain"
-              />
-            </div>
-          ) : null}
-
-          <div className="mt-1 text-[12px] font-semibold leading-4 text-gray-950">
-            {signature.inspectorName}
-          </div>
-          {hasCredentials ? (
-            <div className="mt-0.5 space-y-0.5 text-[11px] leading-4 text-gray-950">
-              {signature.credentialLines.map((line) => (
-                <div key={line}>{line}</div>
-              ))}
-            </div>
-          ) : null}
+        <div className="text-[13px] font-semibold leading-5 text-gray-950">
+          {signature.locationAndDate}
         </div>
+
+        {signature.signatureUrl ? (
+          <div className="mt-3 flex h-[16mm] w-[42mm] items-center overflow-hidden bg-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={signature.signatureUrl}
+              alt={`Underskrift ${signature.inspectorName}`}
+              className="max-h-full max-w-full object-contain"
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-2 text-[13px] font-semibold leading-5 text-gray-950">
+          {signature.inspectorName}
+        </div>
+        {hasCredentials ? (
+          <div className="mt-0.5 space-y-0.5 text-[12px] leading-5 text-gray-950">
+            {signature.credentialLines.map((line) => (
+              <div key={line}>{line}</div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </section>
   )

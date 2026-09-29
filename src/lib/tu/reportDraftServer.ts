@@ -38,6 +38,7 @@ import {
   TU_POST_DAMAGE_SOURCE_POLICY,
 } from '@/lib/tu/reportTemplates'
 import { validateTuReportSections } from '@/lib/tu/reportGroundingServer'
+import { buildTuReportScopeAddressReview } from '@/lib/tu/reportScope'
 import type {
   TuWholeReportDraftRun,
   TuWholeReportDraftAction,
@@ -457,6 +458,13 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   }
 
   const chronologicalObservations = sortTuEvidenceChronologically(observations)
+  const assignmentScopeText = sections.find((section) => section.key === 'assignment_scope')
+    ?.currentText ?? null
+  const scopeAddressReview = buildTuReportScopeAddressReview({
+    canonicalAddress: investigation.propertyAddress,
+    currentScopeText: assignmentScopeText,
+    observations: chronologicalObservations,
+  })
   const imageById = new Map(sourceImages.map((image) => [image.id, image]))
   const evidence = {
     chronologyInstruction:
@@ -598,6 +606,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
         apartmentNumber: investigation.apartmentNumber,
       },
       sections,
+      scopeAddressReview,
       sourceFields,
       sourcePolicy: isTuPostDamageReport(investigation.reportTemplateKey)
         ? TU_POST_DAMAGE_SOURCE_POLICY
@@ -741,6 +750,9 @@ function editorialRequestBody(snapshot: JsonRecord) {
         'Om en controlPlan finns är den endast en intern kontrollinriktning för kontrollens huvudfråga. Planera inte en rapportdel per uppmärksamhetsområde och använd inte kontrollinriktningen som rapportdisposition.',
         'Aktuella resultat och bedömningar ska i första hand väljas direkt från dagens observationer, bilder och kvalificerade mätningar. En tidigare rekommendation eller uppgift om utförd åtgärd är kontext, inte ett verifierat kontrollresultat.',
         'Äldre ärenden kan innehålla kontrollstatus. not_verifiable betyder att ett förhållande inte kunde verifieras och reported_not_verifiable att utförandet uppges vara gjort men inte kunde verifieras. Skriv aldrig om någon av dessa statusar till en verifierad åtgärd.',
+        'Följ scopeAddressReview. En plats som dokumenterats i dagens observationer får aldrig sorteras bort enbart för att den formella objektadressen är snävare.',
+        'När scopeAddressReview.status är confirmed är currentScopeText besiktningsmannens bekräftade omfattning och adresserna där ska bevaras.',
+        'När scopeAddressReview.status är review_required ska observationer som tydligt visar att kontroll utförts på den extra adressen väljas till relevant rapportdel. Lägg samtidigt en kort internalWarning om att objektuppgiften bör kontrolleras. Skriv aldrig i rapporten att adressen ligger utanför uppdraget utan uttryckligt källstöd för det.',
         `Fältet ${TU_POST_DAMAGE_ASSIGNMENT_NATURE_FIELD_KEY}, när det finns, ska väljas till rapportdelen assignment_scope och får inte användas i någon annan rapportdel.`,
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget. Använd endast id:n och field keys som finns i JSON-underlaget.',
         'internalWarnings är för besiktningsmannens granskning och ska aldrig bli rapporttext.',
@@ -828,6 +840,7 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
         'Bevara relevanta manuella texter när de stöds av de valda källorna, men redigera helheten till konsekvent språk och disposition.',
+        'Följ scopeAddressReview och bevara uttryckligen bekräftade adresser i currentScopeText. En snävare object.address får inte ensam användas för att utesluta en plats där dagens valda observationer visar att kontroll utförts.',
         'Följ sourcePolicy. Tidigare handlingar får endast beskrivas kort i uppdragets bakgrund och får aldrig framställas som bevis för dagens förhållanden eller för att åtgärder har utförts.',
         'När rapportmallen gäller kontroll efter skadeåtgärd ska texten byggas runt den aktuella kontrollens observationer och grupperas efter område eller förhållande, inte efter kontrollinriktningens uppmärksamhetsområden.',
         'Använd vid behov formuleringarna verifierad i kontrollerbar del, avvikelse noterad, kan inte verifieras, inte åtkomlig eller inte kontrollerad. Använd inte godkänd eller underkänd.',

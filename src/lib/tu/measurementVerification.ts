@@ -39,18 +39,25 @@ function textArray(value: unknown) {
     : []
 }
 
-function numericValue(value: string) {
+function numericReading(value: string) {
   const match = value.replace(/\s/g, '').match(/[-+]?\d+(?:[.,]\d+)?/u)
   if (!match) return null
   const parsed = Number.parseFloat(match[0].replace(',', '.'))
-  return Number.isFinite(parsed) ? parsed : null
+  if (!Number.isFinite(parsed)) return null
+  const decimalPart = match[0].split(/[.,]/u)[1] ?? ''
+  return {
+    value: parsed,
+    decimalPlaces: decimalPart.length,
+  }
 }
 
 function readingsMatch(recordedValue: string, displayReading: string) {
-  const recordedNumber = numericValue(recordedValue)
-  const displayNumber = numericValue(displayReading)
-  if (recordedNumber !== null && displayNumber !== null) {
-    return Math.abs(recordedNumber - displayNumber) < 0.001
+  const recorded = numericReading(recordedValue)
+  const displayed = numericReading(displayReading)
+  if (recorded && displayed) {
+    const leastPreciseDecimals = Math.min(recorded.decimalPlaces, displayed.decimalPlaces)
+    const roundingTolerance = 0.5 * (10 ** -leastPreciseDecimals)
+    return Math.abs(recorded.value - displayed.value) < roundingTolerance
   }
   return recordedValue.trim().toLocaleLowerCase('sv-SE')
     === displayReading.trim().toLocaleLowerCase('sv-SE')

@@ -4,10 +4,12 @@ import test from 'node:test'
 import ts from 'typescript'
 
 type ProfileCardRoute = {
+  POST: (request: Request) => Promise<Response>
   PUT: (request: Request) => Promise<Response>
 }
 
 type RouteHarnessOptions = {
+  importError?: Error
   saveError?: Error
 }
 
@@ -75,8 +77,10 @@ function routeHarness(options: RouteHarnessOptions = {}) {
     migrationRequired: false,
     version: 5,
     source: 'organization_card',
+    legacyMediaAvailable: { avatarPath: true, logoPath: true, signaturePath: true },
     card: values,
   }
+  const importCalls: unknown[] = []
 
   const route = load<ProfileCardRoute>('src/app/api/tu/profile-card/route.ts', {
     'next/server': nextServer,
@@ -98,6 +102,10 @@ function routeHarness(options: RouteHarnessOptions = {}) {
       },
     },
     '@/lib/organizations/profileCard': {
+      importLegacyOrganizationProfileMedia: async (input: unknown) => {
+        importCalls.push(input)
+        if (options.importError) throw options.importError
+      },
       saveOrganizationProfileCard: async (input: unknown) => {
         saveCalls.push(input)
         if (options.saveError) throw options.saveError
@@ -116,6 +124,7 @@ function routeHarness(options: RouteHarnessOptions = {}) {
     contextCalls,
     parserCalls,
     saveCalls,
+    importCalls,
     workspaceCalls,
   }
 }
@@ -180,6 +189,56 @@ test('profile-card PUT derives both target and actor profile from authenticated 
     role: 'inspector',
   }])
   assertPrivateNoStore(response)
+})
+
+test('profile-card POST imports legacy media only into the authenticated organization card', async () => {
+  const harness = routeHarness()
+  const response = await harness.route.POST(request(JSON.stringify({
+    action: 'import_legacy_media',
+    orgId: ORG_ID,
+    expectedVersion: 5,
+  })))
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(await json(response), { workspace: harness.workspace })
+  assert.deepEqual(harness.contextCalls, [ORG_ID])
+  assert.deepEqual(harness.importCalls, [{
+    orgId: ORG_ID,
+    profileId: PROFILE_ID,
+    actorProfileId: PROFILE_ID,
+    expectedVersion: 5,
+  }])
+  assert.deepEqual(harness.workspaceCalls, [{
+    orgId: ORG_ID,
+    orgName: 'Vald organisation',
+    profileId: PROFILE_ID,
+    role: 'inspector',
+  }])
+  assertPrivateNoStore(response)
+})
+
+test('profile-card POST rejects malformed import envelopes and keeps storage errors opaque', async () => {
+  const invalid = routeHarness()
+  const invalidResponse = await invalid.route.POST(request(JSON.stringify({
+    action: 'import_legacy_media',
+    orgId: ORG_ID,
+    expectedVersion: null,
+  })))
+  assert.equal(invalidResponse.status, 400)
+  assert.deepEqual(invalid.contextCalls, [])
+  assert.deepEqual(invalid.importCalls, [])
+
+  const failed = routeHarness({ importError: new Error('private storage diagnostic') })
+  const failedResponse = await failed.route.POST(request(JSON.stringify({
+    action: 'import_legacy_media',
+    orgId: ORG_ID,
+    expectedVersion: 5,
+  })))
+  const failedBody = await json(failedResponse)
+  assert.equal(failedResponse.status, 500)
+  assert.equal(failedBody.code, 'ORG_PROFILE_CARD_IMPORT_FAILED')
+  assert.doesNotMatch(JSON.stringify(failedBody), /private storage diagnostic/u)
+  assertPrivateNoStore(failedResponse)
 })
 
 test('profile-card PUT rejects cross-site, oversized and non-JSON requests before context work', async () => {
@@ -287,6 +346,9 @@ test('persistence and SQL contracts keep every card scoped to an active organiza
   assert.match(server, /org_id: input\.orgId, profile_id: input\.profileId/u)
   assert.match(server, /selectedMembership = memberships\.find\(\(membership\) => membership\.org_id === input\.orgId\)/u)
   assert.match(server, /if \(!selectedMembership\) throw new Error\('ORG_MEMBERSHIP_REQUIRED'\)/u)
+  assert.match(server, /bucket\.download\(sourcePath\)/u)
+  assert.match(server, /'profiles', input\.profileId, 'organizations', input\.orgId/u)
+  assert.match(server, /return await saveOrganizationProfileCard/u)
 
   assert.match(sql, /unique \(org_id, profile_id\)/u)
   assert.match(sql, /foreign key \(org_id, profile_id\) references public\.org_members \(org_id, profile_id\)/u)

@@ -5,6 +5,12 @@ export type OrganizationProfileCardSource =
   | 'legacy_profile'
   | 'unconfigured'
 
+export type OrganizationProfileLegacyMediaAvailability = {
+  avatarPath: boolean
+  logoPath: boolean
+  signaturePath: boolean
+}
+
 export type OrganizationProfileCardValues = {
   displayName: string
   title: string | null
@@ -32,6 +38,7 @@ export type ResolvedOrganizationProfileCard = OrganizationProfileCardValues & {
   version: number | null
   createdAt: string | null
   updatedAt: string | null
+  legacyMediaAvailable: OrganizationProfileLegacyMediaAvailability
 }
 
 export type OrganizationProfileWorkspace = {
@@ -46,6 +53,7 @@ export type OrganizationProfileWorkspace = {
   migrationRequired: boolean
   version: number | null
   source: OrganizationProfileCardSource
+  legacyMediaAvailable: OrganizationProfileLegacyMediaAvailability
   card: OrganizationProfileCardValues
 }
 

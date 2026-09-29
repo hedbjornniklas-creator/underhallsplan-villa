@@ -4,7 +4,15 @@
 
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { Building2, CheckCircle2, ImagePlus, Save, ShieldCheck, UserRound } from 'lucide-react'
+import {
+  Building2,
+  CheckCircle2,
+  Download,
+  ImagePlus,
+  Save,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react'
 import type {
   OrganizationProfileCardValues,
   OrganizationProfileWorkspace,
@@ -47,6 +55,7 @@ export default function TuOrganizationProfileEditor({
   const [form, setForm] = useState(initialWorkspace.card)
   const [savedSnapshot, setSavedSnapshot] = useState(() => serialize(initialWorkspace.card))
   const [saving, setSaving] = useState(false)
+  const [importingLegacyMedia, setImportingLegacyMedia] = useState(false)
   const [uploadingField, setUploadingField] = useState<MediaField | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -55,9 +64,22 @@ export default function TuOrganizationProfileEditor({
   const canSave =
     !workspace.migrationRequired &&
     !saving &&
+    !importingLegacyMedia &&
     !uploadingField &&
     form.displayName.trim().length > 0 &&
     form.companyName.trim().length > 0
+  const legacyMediaFields = (['avatarPath', 'logoPath', 'signaturePath'] as const).filter(
+    (field) => !form[field] && workspace.legacyMediaAvailable[field]
+  )
+  const canImportLegacyMedia =
+    workspace.configured
+    && !workspace.migrationRequired
+    && workspace.version !== null
+    && legacyMediaFields.length > 0
+    && !dirty
+    && !saving
+    && !uploadingField
+    && !importingLegacyMedia
 
   useEffect(() => {
     setWorkspace(initialWorkspace)
@@ -94,7 +116,7 @@ export default function TuOrganizationProfileEditor({
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>, field: MediaField) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file || workspace.migrationRequired) return
+    if (!file || workspace.migrationRequired || importingLegacyMedia) return
 
     setUploadingField(field)
     setError(null)
@@ -121,6 +143,50 @@ export default function TuOrganizationProfileEditor({
       setError(uploadError instanceof Error ? uploadError.message : 'Bilden kunde inte laddas upp.')
     } finally {
       setUploadingField(null)
+    }
+  }
+
+  const handleLegacyMediaImport = async () => {
+    if (!canImportLegacyMedia || workspace.version === null) return
+
+    setImportingLegacyMedia(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const response = await fetch('/api/tu/profile-card', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'import_legacy_media',
+          orgId: workspace.organization.id,
+          expectedVersion: workspace.version,
+        }),
+        cache: 'no-store',
+        credentials: 'same-origin',
+      })
+      const payload = await readApiBody(response)
+      if (!response.ok || !payload.workspace) {
+        throw new Error(payload.error || 'De tidigare profilbilderna kunde inte hämtas.')
+      }
+      if (payload.workspace.organization.id !== workspace.organization.id) {
+        throw new Error('Servern svarade med fel organisation. Ladda om sidan.')
+      }
+
+      setWorkspace(payload.workspace)
+      setForm(payload.workspace.card)
+      setSavedSnapshot(serialize(payload.workspace.card))
+      setSuccess('Tidigare profilbild, logotyp och underskrift har hämtats där de saknades.')
+    } catch (importError) {
+      setError(
+        importError instanceof Error
+          ? importError.message
+          : 'De tidigare profilbilderna kunde inte hämtas.'
+      )
+    } finally {
+      setImportingLegacyMedia(false)
     }
   }
 
@@ -207,6 +273,27 @@ export default function TuOrganizationProfileEditor({
           </div>
         )}
 
+        {legacyMediaFields.length > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-violet-950">Tidigare profilbilder finns</p>
+              <p className="mt-0.5 text-xs leading-5 text-violet-800">
+                Hämta saknade bilder till just {organizationName}. Befintliga bilder ersätts inte.
+                {dirty ? ' Spara först dina övriga ändringar.' : ''}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!canImportLegacyMedia}
+              onClick={() => void handleLegacyMediaImport()}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-violet-300 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <Download size={16} aria-hidden />
+              {importingLegacyMedia ? 'Hämtar…' : 'Hämta bilder'}
+            </button>
+          </div>
+        ) : null}
+
         {error ? (
           <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
             {error}
@@ -251,7 +338,7 @@ export default function TuOrganizationProfileEditor({
             value={form.avatarPath}
             shape="round"
             busy={uploadingField === 'avatarPath'}
-            disabled={workspace.migrationRequired || Boolean(uploadingField)}
+            disabled={workspace.migrationRequired || Boolean(uploadingField) || importingLegacyMedia}
             onUpload={handleUpload}
             onRemove={() => setMedia('avatarPath', null)}
           />
@@ -260,7 +347,7 @@ export default function TuOrganizationProfileEditor({
             field="logoPath"
             value={form.logoPath}
             busy={uploadingField === 'logoPath'}
-            disabled={workspace.migrationRequired || Boolean(uploadingField)}
+            disabled={workspace.migrationRequired || Boolean(uploadingField) || importingLegacyMedia}
             onUpload={handleUpload}
             onRemove={() => setMedia('logoPath', null)}
           />
@@ -269,7 +356,7 @@ export default function TuOrganizationProfileEditor({
             field="signaturePath"
             value={form.signaturePath}
             busy={uploadingField === 'signaturePath'}
-            disabled={workspace.migrationRequired || Boolean(uploadingField)}
+            disabled={workspace.migrationRequired || Boolean(uploadingField) || importingLegacyMedia}
             onUpload={handleUpload}
             onRemove={() => setMedia('signaturePath', null)}
           />

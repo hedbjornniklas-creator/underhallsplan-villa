@@ -411,20 +411,21 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
 
   .tu-report-page {
     width: 210mm !important;
-    height: 297mm !important;
-    min-height: 297mm !important;
+    height: 296.5mm !important;
+    min-height: 296.5mm !important;
+    max-height: 296.5mm !important;
     margin: 0 !important;
     box-shadow: none !important;
     border: none !important;
     outline: none !important;
-    break-after: page;
-    page-break-after: always;
+    break-after: auto;
+    page-break-after: auto;
     overflow: hidden !important;
   }
 
-  .tu-report-page:last-child {
-    break-after: auto;
-    page-break-after: auto;
+  .tu-report-page + .tu-report-page {
+    break-before: page;
+    page-break-before: always;
   }
 
   .tu-report-page,

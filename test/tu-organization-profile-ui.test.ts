@@ -49,6 +49,7 @@ test('profile editor scopes save and upload requests to the currently rendered w
   )
   assert.match(editor, /fetch\(`\/api\/tu\/profile-card\/media\?\$\{params\.toString\(\)\}`/u)
   assert.match(editor, /fetch\('\/api\/tu\/profile-card'/u)
+  assert.match(editor, /action: 'import_legacy_media'/u)
   assert.match(
     editor,
     /JSON\.stringify\(\{ orgId: workspace\.organization\.id, expectedVersion: workspace\.version, card: form, \}\)/u
@@ -57,8 +58,8 @@ test('profile editor scopes save and upload requests to the currently rendered w
     editor,
     /payload\.workspace\.organization\.id !== workspace\.organization\.id/u
   )
-  assert.equal(editor.match(/credentials: 'same-origin'/gu)?.length, 2)
-  assert.equal(editor.match(/cache: 'no-store'/gu)?.length, 2)
+  assert.equal(editor.match(/credentials: 'same-origin'/gu)?.length, 3)
+  assert.equal(editor.match(/cache: 'no-store'/gu)?.length, 3)
 
   assert.doesNotMatch(editor, /profileId\s*:/u)
   assert.doesNotMatch(editor, /actorProfileId\s*:/u)
@@ -78,11 +79,12 @@ test('profile editor resets organization-bound state and makes organization and 
 
 test('migration-required mode prevents profile writes and media uploads in the UI', () => {
   assert.match(editor, /const canSave = !workspace\.migrationRequired/u)
-  assert.match(editor, /if \(!file \|\| workspace\.migrationRequired\) return/u)
+  assert.match(editor, /if \(!file \|\| workspace\.migrationRequired \|\| importingLegacyMedia\) return/u)
   assert.equal(
-    editor.match(/disabled=\{workspace\.migrationRequired \|\| Boolean\(uploadingField\)\}/gu)?.length,
+    editor.match(/disabled=\{workspace\.migrationRequired \|\| Boolean\(uploadingField\) \|\| importingLegacyMedia\}/gu)?.length,
     3
   )
+  assert.match(editor, /workspace\.configured && !workspace\.migrationRequired/u)
   assert.match(editor, /disabled=\{!canSave \|\| !dirty\}/u)
   assert.match(editor, /SQL 07 behöver köras/u)
 })

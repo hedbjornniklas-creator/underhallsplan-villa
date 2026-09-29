@@ -115,6 +115,11 @@ test('a second organization fails closed instead of inheriting global company da
   assert.equal(card.phone, null)
   assert.equal(card.logoPath, null)
   assert.equal(card.signaturePath, null)
+  assert.deepEqual(card.legacyMediaAvailable, {
+    avatarPath: true,
+    logoPath: true,
+    signaturePath: true,
+  })
 })
 
 test('the default flag alone never enables legacy branding in a multi-org account', async () => {

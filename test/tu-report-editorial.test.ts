@@ -2,11 +2,18 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { buildTuReportWriterSnapshot, parseTuReportEditorialPlan } from '../src/lib/tu/reportEditorial.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { buildTuReportScopeAddressReview } from '../src/lib/tu/reportScope.ts'
 
 const snapshot = {
   ruleset: 'test',
   reportTemplate: { key: 'moisture_damage_investigation' },
   sourcePolicy: { reportNature: 'observation_driven' },
+  scopeAddressReview: {
+    status: 'confirmed',
+    canonicalAddress: 'Testgatan 1',
+    currentScopeText: 'Kontrollen omfattar Testgatan 1 och 3.',
+  },
   sections: [
     { id: 'scope', title: 'Uppdrag', currentText: '' },
     { id: 'assessment', title: 'Bedömning', currentText: '' },
@@ -94,10 +101,42 @@ test('writer snapshot excludes sources rejected by the editorial selection', () 
   })
   const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan })
   const serialized = JSON.stringify(writerSnapshot)
+  const selectedSections = JSON.stringify(writerSnapshot.sections)
   assert.deepEqual(writerSnapshot.sourcePolicy, snapshot.sourcePolicy)
+  assert.deepEqual(writerSnapshot.scopeAddressReview, snapshot.scopeAddressReview)
   assert.match(serialized, /Fläck i innertak/)
   assert.doesNotMatch(serialized, /Taket lades 2010/)
-  assert.doesNotMatch(serialized, /Testgatan 1/)
+  assert.doesNotMatch(selectedSections, /Testgatan 1/)
+})
+
+test('flags a second street number from field evidence instead of silently excluding it', () => {
+  const review = buildTuReportScopeAddressReview({
+    canonicalAddress: 'Bokbindarvägen 28, Stockholm',
+    currentScopeText: 'Kontroll av vinden på Bokbindarvägen 28.',
+    observations: [{
+      id: 'observation-26',
+      location: 'Vind Bokbindarvägen 26',
+      noteText: 'Kontrollen fortsatte på den andra vinden på Bokbindarvägen 26.',
+    }],
+  })
+
+  assert.equal(review.status, 'review_required')
+  assert.deepEqual(review.additionalObservedAddresses, [{
+    address: 'Bokbindarvägen 26',
+    observationIds: ['observation-26'],
+  }])
+  assert.match(review.instruction, /Sortera inte bort dem/u)
+})
+
+test('treats a manually expanded scope as confirmed for the report writer', () => {
+  const review = buildTuReportScopeAddressReview({
+    canonicalAddress: 'Bokbindarvägen 28, Stockholm',
+    currentScopeText: 'Kontrollen omfattar vindarna på Bokbindarvägen 26-28.',
+    observations: [{ id: 'observation-26', noteText: 'Bokbindarvägen 26 kontrollerades.' }],
+  })
+
+  assert.equal(review.status, 'confirmed')
+  assert.match(review.instruction, /Bevara detta som bekräftad omfattning/u)
 })
 
 test('rejects source ids that do not exist in the approved snapshot', () => {

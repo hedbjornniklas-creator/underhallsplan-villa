@@ -21,6 +21,7 @@ function mapError(error: unknown) {
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
+  if (message === 'TU_PROPERTY_NOT_FOUND') return jsonError('Objektet kunde inte uppdateras.', 409)
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   return null
 }
@@ -67,6 +68,15 @@ export async function PATCH(
     if ('projectType' in body) patch.projectType = typeof body.projectType === 'string' ? body.projectType : null
     if ('scopeDescription' in body) {
       patch.scopeDescription = typeof body.scopeDescription === 'string' ? body.scopeDescription : null
+    }
+    if ('propertyAddress' in body) {
+      patch.propertyAddress = typeof body.propertyAddress === 'string' ? body.propertyAddress : null
+    }
+    if ('propertyPostalCode' in body) {
+      patch.propertyPostalCode = typeof body.propertyPostalCode === 'string' ? body.propertyPostalCode : null
+    }
+    if ('propertyCity' in body) {
+      patch.propertyCity = typeof body.propertyCity === 'string' ? body.propertyCity : null
     }
     if ('objectType' in body) {
       patch.objectType = body.objectType === 'apartment' ? 'apartment' : 'villa'

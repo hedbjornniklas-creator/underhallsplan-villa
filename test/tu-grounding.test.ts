@@ -250,3 +250,27 @@ test('flags a different readable instrument display for inspector review', () =>
   assert.equal(verification.status, 'conflict')
   assert.deepEqual(verification.imageReadings, ['26'])
 })
+
+test('accepts a display reading that only adds decimal precision', () => {
+  const [verification] = deriveTuMeasurementImageVerifications({
+    observations: [{
+      id: 'observation-1',
+      imageIds: ['image-1'],
+      measurements: [{ id: 'measurement-1', type: 'Fuktindikering', value: '45' }],
+    }],
+  }, [{ imageId: 'image-1', displayReadings: ['45,1'] }])
+
+  assert.equal(verification.status, 'match')
+})
+
+test('still flags a material difference beyond the recorded precision', () => {
+  const [verification] = deriveTuMeasurementImageVerifications({
+    observations: [{
+      id: 'observation-1',
+      imageIds: ['image-1'],
+      measurements: [{ id: 'measurement-1', type: 'Fuktindikering', value: '45' }],
+    }],
+  }, [{ imageId: 'image-1', displayReadings: ['45,6'] }])
+
+  assert.equal(verification.status, 'conflict')
+})

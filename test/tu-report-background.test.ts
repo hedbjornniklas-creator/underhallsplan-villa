@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { parseTuAnalysisBackgroundState, tuAnalysisBackgroundPayload, tuAnalysisFailureMessage, tuImageBatchMaxOutputTokens } from '../src/lib/tu/analysisBackground.ts'
+import { parseTuAnalysisBackgroundState, reusableTuImageAnalyses, tuAnalysisBackgroundPayload, tuAnalysisFailureMessage, tuImageBatchMaxOutputTokens } from '../src/lib/tu/analysisBackground.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { shouldRejectGeneratedAnalysisItem } from '../src/lib/tu/analysis.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
@@ -38,6 +38,78 @@ test('scales image-analysis output budget with the batch size', () => {
   assert.equal(tuImageBatchMaxOutputTokens(8), 8_000)
   assert.equal(tuImageBatchMaxOutputTokens(100), 12_000)
   assert.equal(tuImageBatchMaxOutputTokens(Number.NaN), 4_000)
+})
+
+test('reuses completed image analysis when the image sources are unchanged', () => {
+  const images = [{
+    id: 'image-1',
+    sectionKey: 'bank',
+    caption: 'Mätpunkt vid golvbrunn',
+    sortOrder: 100,
+    createdAt: '2026-09-09T10:00:00.000Z',
+    updatedAt: '2026-09-09T10:00:00.000Z',
+  }]
+  const analysis = { imageId: 'image-1', visibleFacts: ['Instrumentdisplay synlig'] }
+
+  assert.deepEqual(reusableTuImageAnalyses({
+    currentSnapshot: { images },
+    previousSnapshot: { images },
+    previousOutput: { imageAnalyses: [analysis] },
+    maxImageCount: 80,
+  }), [analysis])
+})
+
+test('does not reuse image analysis after an image or caption changed', () => {
+  const previousImages = [{
+    id: 'image-1',
+    sectionKey: 'bank',
+    caption: 'Mätpunkt',
+    sortOrder: 100,
+    createdAt: '2026-09-09T10:00:00.000Z',
+    updatedAt: '2026-09-09T10:00:00.000Z',
+  }]
+  const currentImages = [{ ...previousImages[0], caption: 'Mätpunkt vid golvbrunn' }]
+
+  assert.equal(reusableTuImageAnalyses({
+    currentSnapshot: { images: currentImages },
+    previousSnapshot: { images: previousImages },
+    previousOutput: { imageAnalyses: [{ imageId: 'image-1' }] },
+    maxImageCount: 80,
+  }), null)
+})
+
+test('safely reuses a legacy snapshot when images were not updated after completion', () => {
+  const currentImages = [{
+    id: 'image-1',
+    sectionKey: 'bank',
+    caption: 'Mätpunkt',
+    sortOrder: 100,
+    createdAt: '2026-09-09T10:00:00.000Z',
+    updatedAt: '2026-09-09T10:30:00.000Z',
+  }]
+  const previousImages = [{
+    id: currentImages[0].id,
+    sectionKey: currentImages[0].sectionKey,
+    caption: currentImages[0].caption,
+    sortOrder: currentImages[0].sortOrder,
+    createdAt: currentImages[0].createdAt,
+  }]
+
+  assert.deepEqual(reusableTuImageAnalyses({
+    currentSnapshot: { images: currentImages },
+    previousSnapshot: { images: previousImages },
+    previousOutput: { imageAnalyses: [{ imageId: 'image-1' }] },
+    previousCompletedAt: '2026-09-09T11:00:00.000Z',
+    maxImageCount: 80,
+  }), [{ imageId: 'image-1' }])
+
+  assert.equal(reusableTuImageAnalyses({
+    currentSnapshot: { images: currentImages },
+    previousSnapshot: { images: previousImages },
+    previousOutput: { imageAnalyses: [{ imageId: 'image-1' }] },
+    previousCompletedAt: '2026-09-09T10:15:00.000Z',
+    maxImageCount: 80,
+  }), null)
 })
 
 test('does not expose technical analysis errors to users', () => {

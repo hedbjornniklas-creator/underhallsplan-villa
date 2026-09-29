@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Images, Loader2, MessageSquareText, MoveDown, MoveUp, Paperclip, Pencil, Plus, Printer, Sparkles, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Images, Loader2, MessageSquareText, MoveDown, MoveUp, Paperclip, Pencil, Plus, Printer, Sparkles, Trash2, Upload, X } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
@@ -18,6 +18,7 @@ import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { useTuFieldQueue, type TuFieldServerImage } from '@/hooks/useTuFieldQueue'
 import { useTuWorkflowState } from '@/hooks/useTuWorkflowState'
 import { supabase } from '@/lib/supabaseClient'
+import { TU_ANALYSIS_UPDATED_EVENT } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
@@ -136,6 +137,13 @@ type ObjectDetailsForm = {
   brfName: string
   apartmentNumber: string
   apartmentHolderName: string
+}
+
+type AssignmentScopeForm = {
+  propertyAddress: string
+  propertyPostalCode: string
+  propertyCity: string
+  scopeDescription: string
 }
 
 type AssignmentPartiesField = {
@@ -547,6 +555,15 @@ function ReadOnlyInfoRow({ label, value }: { label: string; value: string | null
   )
 }
 
+function buildAssignmentScopeForm(investigation: TuInvestigationDetails): AssignmentScopeForm {
+  return {
+    propertyAddress: investigation.property?.address ?? investigation.propertyAddress ?? '',
+    propertyPostalCode: investigation.property?.postal_code ?? '',
+    propertyCity: investigation.property?.city ?? investigation.propertyCity ?? '',
+    scopeDescription: investigation.scopeDescription ?? '',
+  }
+}
+
 function cloneDraftWithSection(draft: TuReportDraft, key: TuReportSectionKey, text: string): TuReportDraft {
   let updated = false
   return {
@@ -786,6 +803,12 @@ export default function TuInvestigationEditorClient({
   const [appendixDropActive, setAppendixDropActive] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set())
   const [reportDetailsOpen, setReportDetailsOpen] = useState(false)
+  const [assignmentScopeEditorOpen, setAssignmentScopeEditorOpen] = useState(false)
+  const [assignmentScopeSaving, setAssignmentScopeSaving] = useState(false)
+  const [analysisRefreshRevision, setAnalysisRefreshRevision] = useState(0)
+  const [assignmentScopeForm, setAssignmentScopeForm] = useState<AssignmentScopeForm>(() =>
+    buildAssignmentScopeForm(initialInvestigation)
+  )
   const [imageBankOpen, setImageBankOpen] = useState(false)
   const [deliveryDocumentsOpen, setDeliveryDocumentsOpen] = useState(false)
   const [newSectionKey, setNewSectionKey] = useState<TuReportSectionKey>(sectionTypeOptions[0]?.key ?? '')
@@ -1012,6 +1035,37 @@ export default function TuInvestigationEditorClient({
       })
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara.')
+    }
+  }
+
+  const openAssignmentScopeEditor = () => {
+    setAssignmentScopeForm(buildAssignmentScopeForm(investigation))
+    setAssignmentScopeEditorOpen(true)
+  }
+
+  const saveAssignmentScope = async () => {
+    if (!assignmentScopeForm.propertyAddress.trim()) {
+      toast.error('Ange minst en objektadress.')
+      return
+    }
+    setAssignmentScopeSaving(true)
+    try {
+      await savePatch({
+        propertyAddress: assignmentScopeForm.propertyAddress,
+        propertyPostalCode: assignmentScopeForm.propertyPostalCode,
+        propertyCity: assignmentScopeForm.propertyCity,
+        scopeDescription: assignmentScopeForm.scopeDescription,
+      })
+      setAnalysisRefreshRevision((current) => current + 1)
+      window.dispatchEvent(new CustomEvent(TU_ANALYSIS_UPDATED_EVENT, {
+        detail: { inspectionId: investigation.inspectionId },
+      }))
+      setAssignmentScopeEditorOpen(false)
+      toast.success('Uppdrag och objekt är uppdaterade.', { appearance: 'dark' })
+    } catch (saveError) {
+      toast.error(saveError, 'Kunde inte spara uppdrag och objekt.')
+    } finally {
+      setAssignmentScopeSaving(false)
     }
   }
 
@@ -2322,6 +2376,15 @@ export default function TuInvestigationEditorClient({
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={openAssignmentScopeEditor}
+                disabled={locked}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+              >
+                <Pencil size={15} aria-hidden />
+                Redigera uppdrag
+              </button>
               <p className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-gray-600" aria-live="polite">
                 <span className={`size-2 rounded-full ${systemStatusTone}`} />
                 {systemStatusText}
@@ -2397,7 +2460,7 @@ export default function TuInvestigationEditorClient({
           <TuEvidenceWorkspace
             inspectionId={investigation.inspectionId}
             organizationId={investigation.orgId}
-            refreshToken={fieldQueue.completedRevision}
+            refreshToken={fieldQueue.completedRevision + analysisRefreshRevision}
             locked={locked}
             queue={fieldQueue}
             sections={draft.sections}
@@ -2415,7 +2478,7 @@ export default function TuInvestigationEditorClient({
           <TuAnalysisWorkspace
             inspectionId={investigation.inspectionId}
             organizationId={investigation.orgId}
-            refreshToken={fieldQueue.completedRevision}
+            refreshToken={fieldQueue.completedRevision + analysisRefreshRevision}
             locked={locked}
             sections={draft.sections}
             images={images}
@@ -3777,6 +3840,131 @@ export default function TuInvestigationEditorClient({
         )}
           </div>
         </div>
+        {assignmentScopeEditorOpen ? (
+          <div
+            className="fixed inset-0 z-[95] flex items-end justify-center bg-gray-950/45 p-0 sm:items-center sm:p-4"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !assignmentScopeSaving) {
+                setAssignmentScopeEditorOpen(false)
+              }
+            }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="tu-assignment-scope-title"
+              className="max-h-[94dvh] w-full overflow-y-auto rounded-t-xl border border-violet-100 bg-white shadow-2xl sm:max-w-2xl sm:rounded-xl"
+            >
+              <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-4 sm:px-5">
+                <div>
+                  <p className="text-xs font-semibold uppercase text-violet-700">Uppgifter för hela ärendet</p>
+                  <h2 id="tu-assignment-scope-title" className="mt-1 text-lg font-semibold text-gray-950">
+                    Uppdrag och objekt
+                  </h2>
+                  <p className="mt-1 text-sm leading-5 text-gray-600">
+                    Ändringarna används i fortsatt analys och i utlåtandet.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAssignmentScopeEditorOpen(false)}
+                  disabled={assignmentScopeSaving}
+                  aria-label="Stäng"
+                  className="inline-flex size-9 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  <X size={18} aria-hidden />
+                </button>
+              </header>
+
+              <div className="space-y-5 px-4 py-5 sm:px-5">
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-semibold text-gray-950">Objektadress eller adresser *</span>
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    value={assignmentScopeForm.propertyAddress}
+                    onChange={(event) => setAssignmentScopeForm((current) => ({
+                      ...current,
+                      propertyAddress: event.target.value,
+                    }))}
+                    disabled={assignmentScopeSaving}
+                    placeholder={'Exempel:\nBokbindarvägen 24\nBokbindarvägen 26'}
+                    className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2.5 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                  />
+                  <span className="block text-xs leading-5 text-gray-500">
+                    Ange samtliga adresser som ingår. Skriv gärna en adress per rad.
+                  </span>
+                </label>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-sm font-semibold text-gray-950">Postnummer</span>
+                    <input
+                      value={assignmentScopeForm.propertyPostalCode}
+                      onChange={(event) => setAssignmentScopeForm((current) => ({
+                        ...current,
+                        propertyPostalCode: event.target.value,
+                      }))}
+                      disabled={assignmentScopeSaving}
+                      className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-sm font-semibold text-gray-950">Ort</span>
+                    <input
+                      value={assignmentScopeForm.propertyCity}
+                      onChange={(event) => setAssignmentScopeForm((current) => ({
+                        ...current,
+                        propertyCity: event.target.value,
+                      }))}
+                      disabled={assignmentScopeSaving}
+                      className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                    />
+                  </label>
+                </div>
+
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-semibold text-gray-950">Uppdragets omfattning</span>
+                  <textarea
+                    rows={7}
+                    value={assignmentScopeForm.scopeDescription}
+                    onChange={(event) => setAssignmentScopeForm((current) => ({
+                      ...current,
+                      scopeDescription: event.target.value,
+                    }))}
+                    disabled={assignmentScopeSaving}
+                    placeholder="Beskriv vad som ska kontrolleras och viktiga avgränsningar."
+                    className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2.5 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                  />
+                </label>
+
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                  Om analysen redan är klar behöver den uppdateras mot de nya uppgifterna. Text som du själv har redigerat ersätts inte automatiskt.
+                </div>
+              </div>
+
+              <footer className="flex flex-col-reverse gap-2 border-t border-gray-200 px-4 py-4 sm:flex-row sm:justify-end sm:px-5">
+                <button
+                  type="button"
+                  onClick={() => setAssignmentScopeEditorOpen(false)}
+                  disabled={assignmentScopeSaving}
+                  className="h-10 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Avbryt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveAssignmentScope()}
+                  disabled={assignmentScopeSaving || !assignmentScopeForm.propertyAddress.trim()}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {assignmentScopeSaving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : null}
+                  {assignmentScopeSaving ? 'Sparar...' : 'Spara uppgifter'}
+                </button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
         {reportReviewTarget !== undefined ? (
           <TuReportReviewDrawer
             inspectionId={investigation.inspectionId}

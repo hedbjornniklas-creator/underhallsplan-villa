@@ -46,6 +46,68 @@ function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function snapshotImages(value: unknown, maxImageCount: number) {
+  const root = record(value)
+  const limit = Number.isFinite(maxImageCount) && maxImageCount > 0
+    ? Math.floor(maxImageCount)
+    : 0
+  return (Array.isArray(root.images) ? root.images : [])
+    .slice(0, limit)
+    .map(record)
+    .map((image) => ({
+      id: cleanText(image.id),
+      sectionKey: cleanText(image.sectionKey),
+      caption: cleanText(image.caption),
+      sortOrder: typeof image.sortOrder === 'number' && Number.isFinite(image.sortOrder)
+        ? image.sortOrder
+        : 0,
+      createdAt: cleanText(image.createdAt),
+      updatedAt: cleanText(image.updatedAt),
+    }))
+    .filter((image) => image.id)
+}
+
+export function reusableTuImageAnalyses(input: {
+  currentSnapshot: unknown
+  previousSnapshot: unknown
+  previousOutput: unknown
+  previousCompletedAt?: unknown
+  maxImageCount: number
+}) {
+  const currentImages = snapshotImages(input.currentSnapshot, input.maxImageCount)
+  const previousImages = snapshotImages(input.previousSnapshot, input.maxImageCount)
+  const previousCompletedAt = Date.parse(cleanText(input.previousCompletedAt))
+  const sameSources = currentImages.length === previousImages.length && currentImages.every((current, index) => {
+    const previous = previousImages[index]
+    if (!previous) return false
+    const sameDescriptor = current.id === previous.id
+      && current.sectionKey === previous.sectionKey
+      && current.caption === previous.caption
+      && current.sortOrder === previous.sortOrder
+      && current.createdAt === previous.createdAt
+    if (!sameDescriptor) return false
+    if (previous.updatedAt) return current.updatedAt === previous.updatedAt
+
+    const currentSourceTime = Date.parse(current.updatedAt || current.createdAt)
+    return Number.isFinite(previousCompletedAt)
+      && Number.isFinite(currentSourceTime)
+      && currentSourceTime <= previousCompletedAt
+  })
+  if (currentImages.length === 0 || !sameSources) {
+    return null
+  }
+
+  const output = record(input.previousOutput)
+  const analyses = Array.isArray(output.imageAnalyses) ? output.imageAnalyses : []
+  const analysisByImageId = new Map(
+    analyses
+      .map((analysis) => [cleanText(record(analysis).imageId), analysis] as const)
+      .filter(([imageId]) => imageId)
+  )
+  if (currentImages.some((image) => !analysisByImageId.has(image.id))) return null
+  return currentImages.map((image) => analysisByImageId.get(image.id) as unknown)
+}
+
 function isStage(value: unknown): value is TuAnalysisBackgroundStage {
   return value === 'image_batch_ready'
     || value === 'image_batch_pending'
