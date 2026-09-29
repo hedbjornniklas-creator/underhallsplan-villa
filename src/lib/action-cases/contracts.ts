@@ -209,6 +209,7 @@ export type ActionCaseWorkspace = {
 }
 
 export type ActionCasePortal = {
+  customerOffers?: { enabled: boolean; offers: import('./customerOffers').CustomerOffer[] }
   accessState: 'open' | 'expired' | 'revoked'
   participant: ActionCaseParticipantView
   actionCase: Pick<ActionCaseView, 'id' | 'title' | 'propertyAddress' | 'description' | 'status'> & {

@@ -1,0 +1,187 @@
+@font-face {
+  font-family: 'Uppdrag Manrope';
+  src: url('/uppdrag/brand/manrope.ttf') format('truetype');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+/* Local utility tokens retain existing layouts and state logic. Portals opt in explicitly. */
+.uppdrag-scope {
+  --uppdrag-ink: #252a2d;
+  --uppdrag-hover: #101518;
+  --uppdrag-accent: #f2d76a;
+  --uppdrag-selected: #fff7d6;
+  --uppdrag-paper: #f4f6f6;
+  --uppdrag-muted: #596368;
+  --uppdrag-line: #d5dcdd;
+  --uppdrag-control: #7c888d;
+  --uppdrag-link: #206961;
+  --uppdrag-success: #24664b;
+  --uppdrag-success-bg: #eaf4ee;
+  --uppdrag-warning: #7b5012;
+  --uppdrag-warning-bg: #fff1db;
+  --uppdrag-error: #a52e42;
+  --uppdrag-error-bg: #fceef0;
+  --uppdrag-info: #285d82;
+  --uppdrag-info-bg: #eaf2f9;
+  --color-slate-50: var(--uppdrag-paper);
+  --color-slate-100: var(--uppdrag-paper);
+  --color-slate-200: var(--uppdrag-line);
+  --color-slate-300: var(--uppdrag-control);
+  --color-slate-400: var(--uppdrag-muted);
+  --color-slate-500: var(--uppdrag-muted);
+  --color-slate-600: var(--uppdrag-muted);
+  --color-slate-700: var(--uppdrag-ink);
+  --color-slate-800: var(--uppdrag-hover);
+  --color-slate-900: var(--uppdrag-ink);
+  --color-slate-950: var(--uppdrag-ink);
+  --color-stone-50: var(--uppdrag-paper);
+  --color-stone-100: var(--uppdrag-paper);
+  --color-stone-200: var(--uppdrag-line);
+  --color-stone-300: var(--uppdrag-control);
+  --color-stone-400: var(--uppdrag-muted);
+  --color-stone-500: var(--uppdrag-muted);
+  --color-stone-600: var(--uppdrag-muted);
+  --color-stone-700: var(--uppdrag-ink);
+  --color-stone-800: var(--uppdrag-ink);
+  --color-stone-900: var(--uppdrag-ink);
+  --color-stone-950: var(--uppdrag-ink);
+  --color-violet-50: var(--uppdrag-selected);
+  --color-violet-100: var(--uppdrag-selected);
+  --color-violet-200: var(--uppdrag-line);
+  --color-violet-300: var(--uppdrag-control);
+  --color-violet-400: var(--uppdrag-muted);
+  --color-violet-500: var(--uppdrag-link);
+  --color-violet-600: var(--uppdrag-ink);
+  --color-violet-700: var(--uppdrag-ink);
+  --color-violet-800: var(--uppdrag-hover);
+  --color-violet-900: var(--uppdrag-ink);
+  --color-violet-950: var(--uppdrag-ink);
+  --color-indigo-50: var(--uppdrag-info-bg);
+  --color-indigo-100: var(--uppdrag-info-bg);
+  --color-indigo-200: var(--uppdrag-line);
+  --color-indigo-400: var(--uppdrag-control);
+  --color-indigo-500: var(--uppdrag-info);
+  --color-indigo-600: var(--uppdrag-info);
+  --color-indigo-700: var(--uppdrag-info);
+  --color-indigo-800: var(--uppdrag-info);
+  --color-indigo-900: var(--uppdrag-info);
+  --color-indigo-950: var(--uppdrag-ink);
+  --color-blue-50: var(--uppdrag-info-bg);
+  --color-blue-100: var(--uppdrag-info-bg);
+  --color-blue-200: var(--uppdrag-line);
+  --color-blue-300: var(--uppdrag-control);
+  --color-blue-400: var(--uppdrag-muted);
+  --color-blue-600: var(--uppdrag-info);
+  --color-blue-700: var(--uppdrag-info);
+  --color-blue-800: var(--uppdrag-info);
+  --color-blue-950: var(--uppdrag-ink);
+  --color-emerald-50: var(--uppdrag-success-bg);
+  --color-emerald-100: var(--uppdrag-success-bg);
+  --color-emerald-200: var(--uppdrag-line);
+  --color-emerald-400: var(--uppdrag-muted);
+  --color-emerald-500: var(--uppdrag-success);
+  --color-emerald-600: var(--uppdrag-success);
+  --color-emerald-700: var(--uppdrag-success);
+  --color-emerald-800: var(--uppdrag-success);
+  --color-emerald-900: var(--uppdrag-success);
+  --color-amber-50: var(--uppdrag-warning-bg);
+  --color-amber-100: var(--uppdrag-warning-bg);
+  --color-amber-200: var(--uppdrag-line);
+  --color-amber-300: var(--uppdrag-control);
+  --color-amber-400: var(--uppdrag-accent);
+  --color-amber-500: var(--uppdrag-warning);
+  --color-amber-600: var(--uppdrag-warning);
+  --color-amber-700: var(--uppdrag-warning);
+  --color-amber-800: var(--uppdrag-warning);
+  --color-amber-900: var(--uppdrag-warning);
+  --color-amber-950: var(--uppdrag-warning);
+  --color-orange-50: var(--uppdrag-warning-bg);
+  --color-orange-100: var(--uppdrag-warning-bg);
+  --color-orange-200: var(--uppdrag-line);
+  --color-orange-500: var(--uppdrag-warning);
+  --color-orange-700: var(--uppdrag-warning);
+  --color-orange-800: var(--uppdrag-warning);
+  --color-orange-900: var(--uppdrag-warning);
+  --color-rose-50: var(--uppdrag-error-bg);
+  --color-rose-100: var(--uppdrag-error-bg);
+  --color-rose-200: var(--uppdrag-line);
+  --color-rose-300: var(--uppdrag-control);
+  --color-rose-400: var(--uppdrag-muted);
+  --color-rose-500: var(--uppdrag-error);
+  --color-rose-600: var(--uppdrag-error);
+  --color-rose-700: var(--uppdrag-error);
+  --color-rose-800: var(--uppdrag-error);
+  --color-rose-900: var(--uppdrag-error);
+  --color-rose-950: var(--uppdrag-error);
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
+  color: var(--uppdrag-ink);
+  font-family: 'Uppdrag Manrope', Arial, sans-serif;
+  letter-spacing: 0;
+  color-scheme: light;
+}
+.uppdrag-scope.uppdrag-page { min-height: 100vh; background: var(--uppdrag-paper); }
+.uppdrag-scope :where(h1, h2, h3, h4, p, a, span, button, input, select, textarea, label) { letter-spacing: 0; }
+.uppdrag-scope :where(button, input, select, textarea) { font-family: inherit; }
+.uppdrag-scope :where(h1, h2, h3, p, label, dt, dd) { overflow-wrap: anywhere; }
+.uppdrag-scope h1 { font-size: 28px; line-height: 36px; font-weight: 700; }
+.uppdrag-scope h2 { font-weight: 700; }
+.uppdrag-scope [role='dialog'] h2 { font-size: 20px; line-height: 28px; }
+.uppdrag-scope :is(button, input:not([type='checkbox']):not([type='radio']):not([type='file']), select) { min-height: 44px; }
+.uppdrag-scope :is(button, input:not([type='checkbox']):not([type='radio']), select, textarea) { border-radius: 6px; }
+.uppdrag-scope :is(input, select, textarea) { max-width: 100%; min-width: 0; }
+.uppdrag-scope :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { border-color: var(--uppdrag-control); }
+.uppdrag-scope :is(input, select, textarea)[aria-invalid='true'] { border-color: var(--uppdrag-error); }
+.uppdrag-scope :is(input[type='checkbox'], input[type='radio']) { accent-color: var(--uppdrag-ink); }
+.uppdrag-scope :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--uppdrag-link);
+  outline-offset: 3px;
+  --tw-ring-color: transparent;
+}
+.uppdrag-scope :is(button, a):disabled { cursor: not-allowed; }
+.uppdrag-scope button[aria-busy='true'] { cursor: wait; }
+.uppdrag-scope button > svg { flex-shrink: 0; }
+.uppdrag-scope :is(.shadow-sm, .shadow-lg, .shadow-xl) { box-shadow: none; }
+.uppdrag-scope :is(a, button).text-white:is(.bg-amber-700, .bg-violet-700, .bg-indigo-700, .bg-blue-700) { background: var(--uppdrag-ink); color: white; }
+.uppdrag-scope :is(a, button).text-white:is(.bg-amber-700, .bg-violet-700, .bg-indigo-700, .bg-blue-700):hover:not(:disabled) { background: var(--uppdrag-hover); }
+.uppdrag-scope :is(a.text-violet-700, a.text-violet-800) { color: var(--uppdrag-link); }
+.uppdrag-scope [role='tablist'] { border-radius: 0; border: 0; border-bottom: 1px solid var(--uppdrag-line); background: transparent; padding: 0; gap: 4px; box-shadow: none; }
+.uppdrag-scope [role='tab'] { border-radius: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--uppdrag-muted); padding: 12px 16px; }
+.uppdrag-scope [role='tab'][aria-selected='true'] { background: var(--uppdrag-selected); border-bottom-color: var(--uppdrag-ink); color: var(--uppdrag-ink); }
+.uppdrag-scope .uppdrag-brand { display: inline-flex; flex-shrink: 0; flex-direction: column; gap: 0; max-width: 100%; }
+.uppdrag-scope .uppdrag-brand-image { display: block; width: 180px; height: auto; }
+.uppdrag-scope .uppdrag-brand-endorsement { margin-left: 55px; color: var(--uppdrag-muted); font-size: 12px; line-height: 18px; font-weight: 400; }
+.uppdrag-scope .uppdrag-brand-compact .uppdrag-brand-image { width: 40px; height: 40px; }
+.uppdrag-scope .uppdrag-heading { padding-bottom: 24px; border-bottom: 1px solid var(--uppdrag-line); }
+.uppdrag-scope .uppdrag-kicker { color: var(--uppdrag-muted); font-size: 12px; font-weight: 600; text-transform: none; }
+.uppdrag-scope .uppdrag-kicker::before { content: ''; display: inline-block; width: 16px; height: 3px; margin: 0 8px 3px 0; background: var(--uppdrag-accent); }
+.uppdrag-scope .uppdrag-summary { border-radius: 0; border: 0; border-bottom: 1px solid var(--uppdrag-line); background: transparent; padding: 0 0 24px; box-shadow: none; }
+.uppdrag-scope .uppdrag-summary > div > div > .rounded-2xl { background: transparent; border: 0; border-left: 1px solid var(--uppdrag-line); border-radius: 0; }
+.uppdrag-scope .uppdrag-public-main { background: var(--uppdrag-paper); }
+.uppdrag-scope .uppdrag-public-header { border-bottom: 1px solid var(--uppdrag-line); background: white; }
+.uppdrag-scope .uppdrag-external-header { border-bottom: 1px solid var(--uppdrag-line); padding: 16px max(20px, calc((100% - 960px) / 2)); background: white; }
+.uppdrag-scope .uppdrag-auth { width: 100%; max-width: 520px; margin: auto; padding: 32px 24px 48px; }
+.uppdrag-scope .uppdrag-auth > header { padding-bottom: 24px; }
+.uppdrag-scope .uppdrag-auth-form { background: white; padding: 28px; border: 1px solid var(--uppdrag-line); border-radius: 8px; }
+.uppdrag-scope .uppdrag-auth-link { color: var(--uppdrag-link); }
+.uppdrag-scope .uppdrag-status[data-status='ready_for_review'] { border-color: var(--uppdrag-line); background: var(--uppdrag-info-bg); color: var(--uppdrag-info); }
+.uppdrag-scope .uppdrag-image-dialog { --uppdrag-link: #f2d76a; }
+.uppdrag-scope .uppdrag-image-dialog :is(input[type='checkbox'], input[type='radio']) { accent-color: var(--uppdrag-accent); }
+.uppdrag-scope .uppdrag-detail-summary { border-radius: 0; border: 0; border-bottom: 1px solid var(--uppdrag-line); box-shadow: none; }
+.uppdrag-scope .uppdrag-detail-summary > div:first-child { background: white; }
+.uppdrag-scope .uppdrag-auth-form :is(.rounded-2xl, .rounded-3xl) { border-radius: 6px; }
+
+@media (max-width: 639px) {
+  .uppdrag-scope h1 { font-size: 24px; line-height: 32px; }
+  .uppdrag-scope :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { font-size: 16px; }
+  .uppdrag-scope .uppdrag-auth { padding: 24px 16px 40px; }
+  .uppdrag-scope .uppdrag-auth-form { padding: 20px; }
+  .uppdrag-scope [role='tab'] { padding-inline: 10px; font-size: 13px; }
+  .uppdrag-scope .uppdrag-heading { padding-bottom: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .uppdrag-scope :is(button, a, input, textarea, select) { transition: none; }
+}

@@ -13,6 +13,7 @@ import { mapQuotePackage, PACKAGE_VIEW_COLUMNS } from './quotePackages'
 import { mapRfqDelivery, RFQ_DELIVERY_COLUMNS } from './rfqDelivery'
 import { calculateActionCaseCostTotals } from './domain'
 import { createQuoteWorkLine } from './quotesServer'
+import { getSharedCustomerOffers } from './customerOffersServer'
 
 type Context = { orgId: string; userId: string }
 
@@ -109,13 +110,15 @@ function mapCostLine(row: Record<string, unknown>): ActionCaseCostLineView {
   }
 }
 
-export async function getActionCaseWorkspace(context: Context): Promise<ActionCaseWorkspace> {
+export async function getActionCaseWorkspace(context: Context, caseId?: string): Promise<ActionCaseWorkspace> {
   const admin = createSupabaseAdminClient()
-  const { data: cases, error: casesError } = await admin
+  let query = admin
     .from('action_cases')
     .select('*')
     .eq('org_id', context.orgId)
     .order('updated_at', { ascending: false })
+  if (caseId) query = query.eq('id', caseId)
+  const { data: cases, error: casesError } = await query
 
   if (casesError) {
     if (casesError.message.includes('action_cases')) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
@@ -628,6 +631,10 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
     admin.from('action_case_items').select('id,title,scope,status,sort_order').eq('action_case_id', access.action_case_id).eq('org_id', access.org_id).order('sort_order'),
   ])
   if (!participant || !actionCase) return null
+  if (accessState !== 'open') return { accessState, participant: { id: participant.id, role: participant.role, name: '', companyName: null, email: null, phone: null }, actionCase: { id: actionCase.id, title: '', propertyAddress: '', description: null, status: actionCase.status, items: [], attachments: [] } }
+  const customerOffers = participant.role === 'customer'
+    ? await getSharedCustomerOffers(access.org_id, access.action_case_id, participant.id)
+    : undefined
   const { data: grants } = await admin.from('action_case_attachment_grants').select('attachment_id').eq('participant_id', access.participant_id)
   const attachmentIds = (grants ?? []).map((grant) => grant.attachment_id)
   const { data: attachments } = attachmentIds.length
@@ -652,14 +659,15 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
   )
   return {
     accessState,
+    customerOffers,
     participant: { id: participant.id, role: participant.role, name: participant.name, companyName: participant.company_name, email: participant.email, phone: participant.phone },
     actionCase: {
       id: actionCase.id,
-      title: actionCase.title,
-      propertyAddress: actionCase.property_address,
-      description: actionCase.description,
+      title: customerOffers?.offers[0]?.snapshot.projectTitle ?? actionCase.title,
+      propertyAddress: customerOffers?.offers[0]?.snapshot.propertyAddress ?? actionCase.property_address,
+      description: customerOffers?.enabled ? null : actionCase.description,
       status: actionCase.status,
-      items: visibleItems.map((item) => ({ id: item.id, title: item.title, scope: item.scope, status: item.status, sortOrder: item.sort_order })),
+      items: customerOffers?.enabled ? [] : visibleItems.map((item) => ({ id: item.id, title: item.title, scope: item.scope, status: item.status, sortOrder: item.sort_order })),
       attachments: mappedAttachments,
     },
   }
