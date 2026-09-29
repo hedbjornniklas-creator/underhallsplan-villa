@@ -6,6 +6,8 @@ import {
   normalizeCustomerOffer,
   emptyCustomerOffer,
   customerOfferTotal,
+  customerOfferBaseAmount,
+  selectCustomerOfferOption,
   offerPublishIssues,
   parseKronor,
   mapCustomerOffer
@@ -43,6 +45,8 @@ before(async () => {
   )
   await db.exec(migration())
   await db.exec(migration())
+  await db.exec(sql('2026-09-29_02_customer_offer_pricing'))
+  await db.exec(sql('2026-09-29_02_customer_offer_pricing'))
 })
 after(async () => {
   await db.close()
@@ -174,6 +178,84 @@ async function fixture() {
     challenge
   }
 }
+
+function itemized(draft) {
+  return normalizeCustomerOffer({
+    ...draft,
+    pricingMode: 'itemized',
+    baseAmountOre: 1,
+    items: [
+      { id: id(21), title: 'Grund', scope: 'Grundarbete', kind: 'included', amountOre: 1230050 },
+      { id: id(22), title: 'Stomme', scope: 'Stomarbete', kind: 'included', amountOre: 4500000 },
+      { id: id(23), title: 'Fönster A', scope: 'Leverantör A', kind: 'option', amountOre: 1000000, optionGroup: 'Fönster' },
+      { id: id(24), title: 'Fönster B', scope: 'Leverantör B', kind: 'option', amountOre: 2000000, optionGroup: 'Fönster' },
+      { id: id(25), title: 'Altan', scope: 'Tillval', kind: 'option', amountOre: 500000 },
+      { id: id(26), title: 'El', scope: 'Projekteras senare. Ingår inte.', kind: 'excluded', amountOre: null }
+    ]
+  })
+}
+
+test('itemized prices derive the base total; missing is not zero; legacy drafts retain their exact shape', () => {
+  const legacy = emptyCustomerOffer('Test')
+  assert.deepEqual(normalizeCustomerOffer(legacy), legacy)
+  const draft = itemized(legacy)
+  assert.equal(draft.baseAmountOre, 5730050)
+  assert.equal(customerOfferTotal(draft, [id(23), id(25)]), 7230050)
+  draft.items[0].amountOre = null
+  assert.equal(customerOfferBaseAmount(draft), null)
+  assert.equal(normalizeCustomerOffer(draft).baseAmountOre, null)
+  assert.ok(offerPublishIssues(draft).includes('Ange delpris för Grund.'))
+  assert.throws(() => customerOfferTotal(draft, []))
+  draft.items[0].amountOre = 0
+  assert.equal(customerOfferBaseAmount(draft), 4500000)
+  assert.equal(normalizeCustomerOffer({ ...draft, pricingMode: 'total', baseAmountOre: 9900 }).baseAmountOre, 9900)
+  assert.equal(normalizeCustomerOffer({ ...draft, pricingMode: 'total', baseAmountOre: 9900 }).items[1].amountOre, 4500000)
+  for (const invalid of [-1, 0.5, 100000000001, '100']) {
+    assert.throws(() => normalizeCustomerOffer({ ...draft, items: [{ ...draft.items[0], amountOre: invalid }] }))
+  }
+  assert.throws(() => normalizeCustomerOffer({ ...draft, pricingMode: 'estimate' }))
+})
+
+test('alternative groups replace only their own selection and reject combinations from the same group', () => {
+  const draft = itemized(emptyCustomerOffer())
+  assert.deepEqual(selectCustomerOfferOption(draft, [id(23), id(25)], id(24)), [id(25), id(24)])
+  assert.deepEqual(selectCustomerOfferOption(draft, [id(24)], id(25)), [id(24), id(25)])
+  assert.throws(() => customerOfferTotal(draft, [id(23), id(24)]), /INVALID/)
+  assert.equal(customerOfferTotal(draft, []), 5730050)
+  assert.equal(normalizeCustomerOffer({ ...draft, items: [{ ...draft.items[2], optionGroup: '  Fönster  ' }] }).items[0].optionGroup, 'Fönster')
+  assert.ok(offerPublishIssues({ ...draft, items: draft.items.filter((i) => i.id !== id(24)) }).some((i) => i.includes('minst två alternativ')))
+})
+
+test('database checks itemized totals and freezes one alternative plus independent options through acceptance', async () => {
+  const f = await fixture()
+  const draft = itemized(f.draft)
+  await assert.rejects(f.write('save', { revision: 1, body: { ...draft, baseAmountOre: 1 } }), /INVALID/)
+  await f.write('save', { revision: 1, body: draft })
+  const publication = { ...f.publication, revision: 2, snapshot: { ...f.snapshot, ...draft } }
+  await f.write('publish', publication)
+  await assert.rejects(f.respond('challenge', { ...f.challenge, selection: [id(23), id(24)] }), /INVALID/)
+  await f.respond('challenge', { ...f.challenge, selection: [id(24), id(25)] })
+  await f.respond('accept', { challengeId: f.challengeId, codeHash: 'good-hash', selection: [id(23)], total: 1 })
+  const accepted = await get('action_case_customer_offers', f.offerId)
+  assert.equal(Number(accepted.accepted_total_ore), 8230050)
+  assert.deepEqual(accepted.accepted_option_ids, [id(24), id(25)])
+  await db.exec(sql('2026-09-29_02_customer_offer_pricing'))
+  assert.deepEqual(await get('action_case_customer_offers', f.offerId), accepted)
+})
+
+test('incomplete itemized drafts can be saved but not published; acceptance cannot carry a tampered total', async () => {
+  const f = await fixture()
+  const draft = itemized(f.draft)
+  draft.items[0].amountOre = null
+  draft.baseAmountOre = null
+  await f.write('save', { revision: 1, body: draft })
+  await assert.rejects(f.write('publish', { ...f.publication, revision: 2, snapshot: { ...f.snapshot, ...draft } }), /INVALID|INCOMPLETE/)
+  const g = await fixture()
+  await g.write('publish', g.publication)
+  await assert.rejects(db.query("update action_case_customer_offers set status='accepted', accepted_total_ore=1 where id=$1", [g.offerId]), /INVALID/)
+  const acl = (await db.query("select has_function_privilege('anon', 'assert_customer_offer_pricing(jsonb,jsonb,boolean)', 'execute') allowed")).rows[0]
+  assert.equal(acl.allowed, false)
+})
 
 test('money, template normalization, publication readiness and selected option totals', () => {
   for (const [value, expected] of [

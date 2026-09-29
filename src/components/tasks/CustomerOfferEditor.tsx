@@ -21,6 +21,8 @@ import type {
   ActionCasePortal
 } from '@/lib/action-cases/contracts'
 import {
+  customerOfferBaseAmount,
+  customerOfferOptionGroup,
   money,
   offerPublishIssues,
   parseKronor,
@@ -104,6 +106,7 @@ export default function CustomerOfferEditor({
     toast = useToast()
   const [confirmed, setConfirmed] = useState(false),
     [selected, setSelected] = useState<string[]>([])
+  const [confirmItemized, setConfirmItemized] = useState(false)
   const customer = actionCase.participants.find((p) => p.role === 'customer')
   const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft)
   const locked = workspace.offers.some((o) => o.status === 'accepted')
@@ -114,9 +117,17 @@ export default function CustomerOfferEditor({
       : [])
   ]
   const files = actionCase.attachments.filter((f) => !f.isQuoteDocument)
+  const baseAmount = customerOfferBaseAmount(draft)
+  const optionGroups = [
+    ...new Set(draft.items.map(customerOfferOptionGroup).filter(Boolean))
+  ]
+  const missingPriceCount = draft.items.filter(
+    (i) => i.kind === 'included' && i.amountOre === null
+  ).length
   const update = (patch: Partial<CustomerOfferDraft>) => {
     setDraft((d) => ({ ...d, ...patch }))
     setConfirmed(false)
+    setSelected([])
   }
   useEffect(() => {
     if (previousView.current === view) return
@@ -365,11 +376,29 @@ export default function CustomerOfferEditor({
                 />
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
-                <PriceInput
-                  label="Grundpris inkl. moms (kr) *"
-                  value={draft.baseAmountOre}
-                  onChange={(baseAmountOre) => update({ baseAmountOre })}
-                />
+                <label className="block text-sm font-medium">
+                  Prissättning av grundåtagandet
+                  <select
+                    className={field}
+                    value={draft.pricingMode ?? 'total'}
+                    onChange={(e) => {
+                      const pricingMode = e.target
+                        .value as CustomerOfferDraft['pricingMode']
+                      if (
+                        pricingMode === 'itemized' &&
+                        draft.baseAmountOre !== null
+                      ) {
+                        setConfirmItemized(true)
+                        return
+                      }
+                      setConfirmItemized(false)
+                      update({ pricingMode, baseAmountOre: baseAmount })
+                    }}
+                  >
+                    <option value="total">Fast klumpsumma</option>
+                    <option value="itemized">Fast pris per arbetsdel</option>
+                  </select>
+                </label>
                 <label className="block text-sm font-medium">
                   Giltig till och med *
                   <input
@@ -380,6 +409,30 @@ export default function CustomerOfferEditor({
                   />
                 </label>
               </div>
+              {confirmItemized && (
+                <div role="alert" className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm">
+                  <p>
+                    Klumpsumman {money(draft.baseAmountOre)} ersätts av summan av
+                    arbetsdelarnas priser. Beloppet fördelas inte automatiskt.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button className={`${button} bg-white`} onClick={() => {
+                      update({ pricingMode: 'itemized' })
+                      setConfirmItemized(false)
+                    }}><Check size={17} /> Byt till delpriser</button>
+                    <button className={button} onClick={() => setConfirmItemized(false)}>
+                      <ArrowLeft size={17} /> Avbryt
+                    </button>
+                  </div>
+                </div>
+              )}
+              {draft.pricingMode !== 'itemized' && (
+                <PriceInput
+                  label="Grundpris inkl. moms (kr) *"
+                  value={draft.baseAmountOre}
+                  onChange={(baseAmountOre) => update({ baseAmountOre })}
+                />
+              )}
             </section>
             <section className="border-t border-slate-200 pt-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -484,7 +537,8 @@ export default function CustomerOfferEditor({
                                 ? {
                                     ...i,
                                     kind: e.target.value as typeof i.kind,
-                                    amountOre: null
+                                    amountOre: null,
+                                    optionGroup: null
                                   }
                                 : i
                             )
@@ -496,9 +550,12 @@ export default function CustomerOfferEditor({
                         <option value="excluded">Utanför vårt åtagande</option>
                       </select>
                     </label>
-                    {item.kind === 'option' && (
+                    {(item.kind === 'option' ||
+                      (item.kind === 'included' && draft.pricingMode === 'itemized')) && (
                       <PriceInput
-                        label="Tillvalspris inkl. moms (kr) *"
+                        label={item.kind === 'option'
+                          ? 'Tillvalspris inkl. moms (kr) *'
+                          : 'Delpris inkl. moms (kr) *'}
                         value={item.amountOre}
                         onChange={(amountOre) =>
                           update({
@@ -508,6 +565,25 @@ export default function CustomerOfferEditor({
                           })
                         }
                       />
+                    )}
+                    {item.kind === 'option' && (
+                      <label className="text-sm sm:col-span-2">
+                        Alternativgrupp (högst ett val, valfri)
+                        <input
+                          className={field}
+                          list="customer-offer-option-groups"
+                          placeholder="Exempel: Fönsterleverantör"
+                          maxLength={100}
+                          value={item.optionGroup ?? ''}
+                          onChange={(e) => update({
+                            items: draft.items.map((i) =>
+                              i.id === item.id
+                                ? { ...i, optionGroup: e.target.value }
+                                : i
+                            )
+                          })}
+                        />
+                      </label>
                     )}
                   </div>
                   <label className="mt-3 block text-sm">
@@ -529,6 +605,11 @@ export default function CustomerOfferEditor({
                   </label>
                 </div>
               ))}
+              <datalist id="customer-offer-option-groups">
+                {optionGroups.map((group) => (
+                  <option key={group} value={group} />
+                ))}
+              </datalist>
               <button
                 className={`${button} mt-5`}
                 onClick={() =>
@@ -682,11 +763,18 @@ export default function CustomerOfferEditor({
             <div className="lg:sticky lg:top-6">
               <h2 className="text-lg">Offertstatus</h2>
               <p className="mt-3 text-2xl font-semibold">
-                {money(draft.baseAmountOre)}
+                {money(baseAmount)}
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                Grundpris inklusive moms
+                {draft.pricingMode === 'itemized'
+                  ? 'Summa grundåtagande inklusive moms'
+                  : 'Grundpris inklusive moms'}
               </p>
+              {draft.pricingMode === 'itemized' && baseAmount === null && (
+                <p className="mt-2 text-sm text-amber-700">
+                  {missingPriceCount} {missingPriceCount === 1 ? 'arbetsdel saknar' : 'arbetsdelar saknar'} pris
+                </p>
+              )}
               {locked ? (
                 <p className="mt-5 border-l-4 border-emerald-600 bg-emerald-50 p-3 text-sm">
                   Avtalet är godkänt. Denna version är låst.
@@ -696,6 +784,7 @@ export default function CustomerOfferEditor({
                   <button
                     disabled={
                       Boolean(busy) || (!dirty && workspace.revision > 0)
+                      || confirmItemized
                     }
                     className={`${button} mt-5 w-full bg-white`}
                     onClick={() => void action('save')}
@@ -717,7 +806,7 @@ export default function CustomerOfferEditor({
                   {issues.length > 0 && (
                     <details className="mt-5 text-sm">
                       <summary className="cursor-pointer font-semibold text-amber-700">
-                        {issues.length} saker kvar inför utskick
+                        {issues.length} {issues.length === 1 ? 'sak' : 'saker'} kvar inför utskick
                       </summary>
                       <ul className="mt-3 space-y-2 text-slate-600">
                         {issues.map((i) => (
@@ -743,6 +832,7 @@ export default function CustomerOfferEditor({
                   <button
                     disabled={
                       Boolean(busy) ||
+                      confirmItemized ||
                       dirty ||
                       !workspace.revision ||
                       issues.length > 0 ||

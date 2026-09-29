@@ -145,6 +145,8 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (name === 'assert_customer_offer_pricing' && options.pricingMissing)
+        return { error: { code: '42883' } }
       if (args.p_operation === 'publish') {
         if (options.publishFailed || options.uncertain)
           return { error: { message: 'CUSTOMER_OFFER_STALE' } }
@@ -250,6 +252,38 @@ function harness(options = {}) {
       )
   }
 }
+
+test('itemized save computes totals and requires the database guard; legacy saves remain compatible', async () => {
+  const ctx = { orgId: id(90), userId: id(91) }
+  const h = harness()
+  const draft = { ...h.draft, pricingMode: 'itemized', baseAmountOre: 1,
+    items: h.draft.items.map((i) => i.kind === 'included' ? { ...i, amountOre: 990050 } : i) }
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft })
+  assert.equal(h.calls[0].name, 'assert_customer_offer_pricing')
+  assert.equal(h.calls[0].p_body.baseAmountOre, 990050)
+  assert.equal(h.calls[1].p_data.body.baseAmountOre, 990050)
+  const unmigrated = harness({ pricingMissing: true })
+  await assert.rejects(unmigrated.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft }), /SCHEMA/)
+  assert.equal(unmigrated.calls.length, 1)
+  await unmigrated.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: unmigrated.draft })
+  assert.equal(unmigrated.calls.at(-1).p_operation, 'save')
+  Object.assign(unmigrated.draft, draft)
+  await assert.rejects(unmigrated.run(), /SCHEMA/)
+  assert.equal(unmigrated.sent.length, 0)
+})
+
+test('grouped alternatives are checked before an email code is sent', async () => {
+  const h = harness()
+  h.draft.items[1].optionGroup = 'Fönster'
+  h.draft.items.push({ ...h.draft.items[1], id: id(13), title: 'Alternativ B' })
+  await h.run()
+  const sentBefore = h.sent.length
+  await assert.rejects(h.api.respondCustomerOffer(token, h.saved().id, {
+    operation: 'challenge', selection: [id(11), id(13)], signerName: 'Anna', confirmed: true
+  }, 'https://ignored.example.test'), /INVALID/)
+  assert.equal(h.sent.length, sentBefore)
+  assert.ok(!h.calls.some((c) => c.p_operation === 'challenge'))
+})
 
 test('publish freezes selected files, uses configured origin/recipient, and a retry never duplicates a confirmed email', async () => {
   const h = harness()

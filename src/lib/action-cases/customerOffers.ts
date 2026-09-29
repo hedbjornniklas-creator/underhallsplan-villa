@@ -4,11 +4,13 @@ export type CustomerOfferItem = {
   scope: string
   kind: 'included' | 'option' | 'excluded'
   amountOre: number | null
+  optionGroup?: string | null
 }
 export type CustomerOfferDraft = {
   title: string
   introduction: string
   baseAmountOre: number | null
+  pricingMode?: 'total' | 'itemized'
   validUntil: string
   contractForm: 'abs18' | 'custom'
   terms: string
@@ -81,6 +83,11 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     throw new Error('CUSTOMER_OFFER_INVALID')
   const d = value as Record<string, unknown>
   if (
+    d.pricingMode !== undefined &&
+    !['total', 'itemized'].includes(String(d.pricingMode))
+  )
+    throw new Error('CUSTOMER_OFFER_INVALID')
+  if (
     !Array.isArray(d.items) ||
     d.items.length > 200 ||
     !Array.isArray(d.attachmentIds) ||
@@ -98,7 +105,15 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
       title: text(i.title, 250),
       scope: text(i.scope, 12000),
       kind: i.kind as CustomerOfferItem['kind'],
-      amountOre: i.kind === 'option' ? amount(i.amountOre) : null
+      amountOre: i.kind === 'excluded' ? null : amount(i.amountOre),
+      ...(i.optionGroup !== undefined
+        ? {
+            optionGroup:
+              i.kind === 'option' && i.optionGroup !== null
+                ? text(i.optionGroup, 100) || null
+                : null
+          }
+        : {})
     }
   })
   const attachmentIds = d.attachmentIds.map(offerId)
@@ -122,10 +137,13 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     : null
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
-  return {
+  const draft: CustomerOfferDraft = {
     title: text(d.title, 250),
     introduction: text(d.introduction, 12000),
-    baseAmountOre: amount(d.baseAmountOre),
+    baseAmountOre: d.pricingMode === 'itemized' ? null : amount(d.baseAmountOre),
+    ...(d.pricingMode !== undefined
+      ? { pricingMode: d.pricingMode as CustomerOfferDraft['pricingMode'] }
+      : {}),
     validUntil,
     contractForm: d.contractForm as CustomerOfferDraft['contractForm'],
     terms: text(d.terms, 20000),
@@ -135,6 +153,41 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     termsAttachmentId,
     items
   }
+  draft.baseAmountOre = customerOfferBaseAmount(draft)
+  return draft
+}
+
+export function customerOfferBaseAmount(d: CustomerOfferDraft): number | null {
+  if (d.pricingMode !== 'itemized') return d.baseAmountOre
+  const included = d.items.filter((i) => i.kind === 'included')
+  if (!included.length || included.some((i) => i.amountOre === null)) return null
+  return included.reduce((sum, i) => sum + (i.amountOre ?? 0), 0)
+}
+
+export function customerOfferOptionGroup(item: CustomerOfferItem): string {
+  return item.kind === 'option' ? item.optionGroup?.trim() ?? '' : ''
+}
+
+export function selectCustomerOfferOption(
+  d: CustomerOfferDraft,
+  selected: string[],
+  id: string
+): string[] {
+  const option = d.items.find((i) => i.id === id && i.kind === 'option')
+  if (!option || option.amountOre === null) return selected
+  const group = customerOfferOptionGroup(option)
+  return [
+    ...selected.filter((selectedId) => {
+      const current = d.items.find((i) => i.id === selectedId)
+      return (
+        current?.kind === 'option' &&
+        current.amountOre !== null &&
+        selectedId !== id &&
+        (!group || customerOfferOptionGroup(current) !== group)
+      )
+    }),
+    id
+  ]
 }
 export function offerPublishIssues(
   d: CustomerOfferDraft,
@@ -144,13 +197,26 @@ export function offerPublishIssues(
 ): string[] {
   const issues: string[] = []
   if (!d.title.trim()) issues.push('Ange en offertrubrik.')
-  if (d.baseAmountOre === null) issues.push('Ange grundpriset inklusive moms.')
+  if (d.pricingMode === 'itemized') {
+    const missing = d.items.filter(
+      (i) => i.kind === 'included' && i.amountOre === null
+    )
+    for (const i of missing)
+      issues.push(`Ange delpris för ${i.title.trim() || 'namnlöst arbete'}.`)
+  } else if (d.baseAmountOre === null) issues.push('Ange grundpriset inklusive moms.')
   if (!d.items.some((i) => i.kind === 'included'))
     issues.push('Lägg till minst ett arbete i grundåtagandet.')
   if (d.items.some((i) => !i.title.trim() || !i.scope.trim()))
     issues.push('Beskriv omfattningen för varje arbete.')
   if (d.items.some((i) => i.kind === 'option' && i.amountOre === null))
     issues.push('Ange pris för samtliga tillval.')
+  const groups = new Set(d.items.map(customerOfferOptionGroup).filter(Boolean))
+  for (const group of groups) {
+    if (
+      d.items.filter((i) => customerOfferOptionGroup(i) === group).length < 2
+    )
+      issues.push(`Lägg till minst två alternativ i ${group}, eller ta bort gruppen.`)
+  }
   if (!d.validUntil || d.validUntil < today)
     issues.push('Ange en giltighetstid som inte har passerat.')
   if (!d.terms.trim())
@@ -165,16 +231,21 @@ export function customerOfferTotal(
   d: CustomerOfferDraft,
   selectedIds: string[]
 ) {
+  const baseAmount = customerOfferBaseAmount(d)
   if (
-    d.baseAmountOre === null ||
+    baseAmount === null ||
     new Set(selectedIds).size !== selectedIds.length
   )
     throw new Error('CUSTOMER_OFFER_INVALID')
-  let total = d.baseAmountOre
+  let total = baseAmount
+  const groups = new Set<string>()
   for (const id of selectedIds) {
     const option = d.items.find((i) => i.id === id && i.kind === 'option')
     if (!option || option.amountOre === null)
       throw new Error('CUSTOMER_OFFER_INVALID')
+    const group = customerOfferOptionGroup(option)
+    if (group && groups.has(group)) throw new Error('CUSTOMER_OFFER_INVALID')
+    if (group) groups.add(group)
     total += option.amountOre
   }
   if (!Number.isSafeInteger(total)) throw new Error('CUSTOMER_OFFER_INVALID')

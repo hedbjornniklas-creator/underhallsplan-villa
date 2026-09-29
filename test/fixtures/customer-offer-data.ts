@@ -125,6 +125,22 @@ export function snapshot(draft = workspace.draft): CustomerOfferSnapshot {
     replyEmail: 'byggare@example.test'
   }
 }
+export function itemizedWorkspace(): CustomerOfferWorkspace {
+  const result = structuredClone(workspace)
+  result.draft.pricingMode = 'itemized'
+  result.draft.baseAmountOre = 100000000
+  result.draft.items = [
+    { id: id(10), title: 'Mark och grund', scope: 'Grundläggning enligt granskad ritning.', kind: 'included', amountOre: 30000000 },
+    { id: id(14), title: 'Stomme och tak', scope: 'Stomme och tak. Fönster och ytterdörrar ingår inte.', kind: 'included', amountOre: 70000000 },
+    { id: id(11), title: 'Altan', scope: 'Separat tillval.', kind: 'option', amountOre: 8500000 },
+    { id: id(15), title: 'Fönster från Exempelfönster A', scope: 'Leverans och montage enligt separat specifikation.', kind: 'option', amountOre: 14000000, optionGroup: 'Fönsterleverantör' },
+    { id: id(16), title: 'Fönster från Exempelfönster B', scope: 'Leverans och montage enligt separat specifikation.', kind: 'option', amountOre: 17500000, optionGroup: 'Fönsterleverantör' },
+    { id: id(12), title: 'El och målning', scope: 'Ingår inte. Separat beställning och pris krävs för senare arbeten.', kind: 'excluded', amountOre: null }
+  ]
+  result.draft.title = 'FIKTIV TESTOFFERT - delpriser och leverantörsval'
+  result.draft.introduction = 'Fiktiva testpriser. Detta är inte offerten för Lokevägen 6.'
+  return result
+}
 export function published(draft = workspace.draft): CustomerOffer {
   return {
     id: id(20),

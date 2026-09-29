@@ -1,9 +1,13 @@
 'use client'
 
+import { useId } from 'react'
 import { Check, Download, FileText } from 'lucide-react'
 import {
+  customerOfferBaseAmount,
+  customerOfferOptionGroup,
   customerOfferTotal,
   money,
+  selectCustomerOfferOption,
   type CustomerOffer
 } from '@/lib/action-cases/customerOffers'
 
@@ -22,6 +26,8 @@ export default function CustomerOfferDocument({
 }) {
   const s = offer.snapshot,
     accepted = offer.status === 'accepted'
+  const groupId = useId()
+  const groups = [...new Set(s.items.map(customerOfferOptionGroup).filter(Boolean))]
   const selection = accepted
     ? offer.acceptedOptionIds
     : selected.filter((id) =>
@@ -29,8 +35,8 @@ export default function CustomerOfferDocument({
           (i) => i.id === id && i.kind === 'option' && i.amountOre !== null
         )
       )
-  const total =
-    s.baseAmountOre === null ? null : customerOfferTotal(s, selection)
+  const baseAmount = customerOfferBaseAmount(s)
+  const total = baseAmount === null ? null : customerOfferTotal(s, selection)
   return (
     <article className="min-w-0 break-words bg-white" aria-label="Kundoffert">
       <header className="border-b border-slate-200 py-6">
@@ -68,26 +74,29 @@ export default function CustomerOfferDocument({
       <section className="py-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h3 className="text-lg font-semibold">Grundåtagande</h3>
-          <strong className="text-xl">{money(s.baseAmountOre)}</strong>
+          <strong className="text-xl">{money(baseAmount)}</strong>
         </div>
         <p className="mt-1 text-sm text-slate-500">Fast pris inklusive moms</p>
         {s.items
           .filter((i) => i.kind === 'included')
           .map((i) => (
             <div className="mt-5 border-t border-slate-100 pt-4" key={i.id}>
-              <h4 className="font-semibold">{i.title}</h4>
+              <div className="flex flex-wrap justify-between gap-2">
+                <h4 className="font-semibold">{i.title}</h4>
+                {s.pricingMode === 'itemized' && <strong>{money(i.amountOre)}</strong>}
+              </div>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                 {i.scope}
               </p>
             </div>
           ))}
       </section>
-      {s.items.some((i) => i.kind === 'option') && (
+      {s.items.some((i) => i.kind === 'option' && !customerOfferOptionGroup(i)) && (
         <section className="border-t border-slate-200 py-6">
           <h3 className="text-lg font-semibold">Tillval</h3>
           <div className="mt-3 divide-y divide-slate-200">
             {s.items
-              .filter((i) => i.kind === 'option')
+              .filter((i) => i.kind === 'option' && !customerOfferOptionGroup(i))
               .map((i) => (
                 <label key={i.id} className="flex items-start gap-3 py-4">
                   <input
@@ -100,7 +109,7 @@ export default function CustomerOfferDocument({
                     onChange={(e) =>
                       onSelect?.(
                         e.target.checked
-                          ? [...selection, i.id]
+                          ? selectCustomerOfferOption(s, selection, i.id)
                           : selection.filter((id) => id !== i.id)
                       )
                     }
@@ -119,6 +128,48 @@ export default function CustomerOfferDocument({
           </div>
         </section>
       )}
+      {groups.map((group, index) => {
+        const options = s.items.filter((i) => customerOfferOptionGroup(i) === group)
+        const chosen = options.find((i) => selection.includes(i.id))
+        return (
+          <fieldset key={group} className="min-w-0 border-t border-slate-200 py-6">
+            <legend className="text-lg font-semibold">{group}</legend>
+            <p className="text-sm text-slate-500">Valfritt tillval · Högst ett alternativ · Inklusive moms</p>
+            <div className="mt-3 divide-y divide-slate-200">
+              {options.map((i) => (
+                <label key={i.id} className="flex items-start gap-3 py-4">
+                  <input
+                    type="radio"
+                    name={`${groupId}-${index}`}
+                    className="mt-1 h-5 w-5 shrink-0"
+                    checked={chosen?.id === i.id}
+                    disabled={readOnly || accepted || !onSelect || i.amountOre === null}
+                    onChange={() => onSelect?.(selectCustomerOfferOption(s, selection, i.id))}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap justify-between gap-2">
+                      <strong>{i.title}</strong>
+                      <strong>+ {money(i.amountOre)}</strong>
+                    </span>
+                    <span className="mt-2 block whitespace-pre-wrap text-sm leading-6 text-slate-700">{i.scope}</span>
+                  </span>
+                </label>
+              ))}
+              <label className="flex items-center gap-3 py-4 text-sm">
+                <input
+                  type="radio"
+                  name={`${groupId}-${index}`}
+                  className="h-5 w-5 shrink-0"
+                  checked={!chosen}
+                  disabled={readOnly || accepted || !onSelect}
+                  onChange={() => onSelect?.(selection.filter((id) => !options.some((i) => i.id === id)))}
+                />
+                Inget av dessa tillval
+              </label>
+            </div>
+          </fieldset>
+        )
+      })}
       {s.items.some((i) => i.kind === 'excluded') && (
         <section className="border-t border-slate-200 py-6">
           <h3 className="text-lg font-semibold">Utanför vårt åtagande</h3>

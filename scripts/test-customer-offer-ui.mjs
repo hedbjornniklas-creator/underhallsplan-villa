@@ -9,6 +9,7 @@ import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 import {
   workspace,
+  itemizedWorkspace,
   published,
   id
 } from '../test/fixtures/customer-offer-data.ts'
@@ -62,10 +63,10 @@ const { css: base } = await postcss([tailwind()]).process(
 const theme = await readFile('src/components/tasks/uppdrag-theme.css', 'utf8'),
   js = await readFile(resolve(output, 'view.js')),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
-let state = structuredClone(workspace),
+let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
   challenge = null,
   failSave = false
-if (process.argv.includes('--serve')) state.offers = [published()]
+if (process.argv.includes('--serve')) state.offers = [published(state.draft)]
 const writes = []
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname

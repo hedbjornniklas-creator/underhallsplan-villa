@@ -17,6 +17,7 @@ import {
   offerId,
   offerPublishIssues,
   type CustomerOffer,
+  type CustomerOfferDraft,
   type CustomerOfferWorkspace
 } from './customerOffers'
 
@@ -95,10 +96,24 @@ export async function saveCustomerOffer(
 ) {
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
+  const draft = normalizeCustomerOffer(payload.draft)
+  await checkPricingSchema(draft)
   await write(ctx, caseId, 'save', {
     revision: payload.revision,
-    body: normalizeCustomerOffer(payload.draft)
+    body: draft
   })
+}
+async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+  if (
+    draft.pricingMode !== 'itemized' &&
+    !draft.items.some((i) => i.optionGroup)
+  ) return
+  const result = await createSupabaseAdminClient().rpc('assert_customer_offer_pricing', {
+    p_body: draft,
+    p_selection: null,
+    p_complete: complete
+  })
+  checked(result.error)
 }
 function mailConfig(origin?: string) {
   const from = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
@@ -160,6 +175,7 @@ export async function publishCustomerOffer(
   const draft = workspace.draft
   if (offerPublishIssues(draft).length)
     throw new Error('CUSTOMER_OFFER_INCOMPLETE')
+  await checkPricingSchema(draft, true)
   const recipient = await db
     .from('action_case_participants')
     .select('id,name,email')

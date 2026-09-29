@@ -10,8 +10,16 @@ Datum: 2026-09-29.
 - Forsta leveransen ar offert, omfattning/tillval och delade bilder/dokument.
   Grafer for fakturering och tidplan byggs nar dessa har verkliga datakallor.
   Saknade belopp eller datum visas inte som noll eller som fiktiva framsteg.
-- Kundpriser anges inklusive moms. Grundatagandet har ett fast klumpsummepris.
-  Varje tillval har ett eget kundpris. Arbete utanfor vart atagande visas separat.
+- Kundpriser anges inklusive moms. Grundatagandet kan ha ett fast klumpsummepris
+  eller fasta delpriser som summeras automatiskt. Befintliga offerter behaller
+  klumpsumma; inget gammalt pris fordelas automatiskt. Saknade delpriser ar inte
+  noll och blockerar publicering, men ofullstandiga utkast kan sparas.
+- Varje tillval har ett eget kundpris. Valfria alternativgrupper, exempelvis
+  fonsterleverantor, tillater hogst ett val per grupp och visas med radioval.
+  Alternativen i samma grupp har exakt samma gruppnamn; befintliga namn foreslas
+  i redigeraren. Oberoende tillval anvander kryssrutor. Ingen grupp ar obligatorisk
+  i detta steg: kunden kan avsta. Arbete utanfor atagandet visas separat och
+  raknas aldrig in i grundpris eller godkanda tillval.
 - Kundofferten ar inte UE-forfragan eller intern kalkyl. Import av arbeten kopierar
   bara rubrik och omfattning, aldrig inkopspriser, marginaler eller UE-svar.
 - Denna forsta avtalsmodell ar avsedd for referensfallet privatkund/tillbyggnad.
@@ -21,8 +29,10 @@ Datum: 2026-09-29.
 ## Anvandarresa
 
 1. Intern anvandare oppnar Uppdrag > Atgardsarenden > projekt > Kundvy och offert.
-2. Ange rubrik, kundens grundpris och giltighet. Hamta arbeten fran projektet eller
+2. Ange rubrik, prismodell och giltighet. Hamta arbeten fran projektet eller
    lagg till dem manuellt. Markera grundatagande, tillval eller utanfor atagandet.
+   Ange grundpris eller delpriser. Tillval som ar alternativ till varandra far
+   samma alternativgrupp och egna priser. Granska summeringen i offertutkastet.
 3. Komplettera tider, betalningsvillkor, villkor och utvalda bilagor. En PDF bland
    bilagorna maste utses till avtalshandling nar ABS 18 valts.
 4. Spara utkast och granska offertutkastet. Kundens startsida visar bara det som
@@ -82,6 +92,11 @@ Datum: 2026-09-29.
 - Checklistan kontrollerar verklig text, inte enbart mellanslag. Villkor,
   betalningsvillkor och tider redovisas var for sig. Saknad mottagaradress visas
   ocksa som hinder for utskick.
+- Servern beraknar grundpriset fran arbetsdelarna vid sparning i delprislage.
+  Databasen verifierar summan vid sparning/publicering och avvisar flera val ur
+  samma alternativgrupp vid kodbegaran och godkannande. Kvittensen anvander
+  versionens frysta priser och kodbegarans sparade val, aldrig ett klienttotal.
+  Publicering kraver minst tva prissatta alternativ per alternativgrupp.
 
 ## Aktivering
 
@@ -96,6 +111,11 @@ kundoffertsidorna. Ovriga sidors varumarkesandringar ingar inte i denna release.
    Migrationen ar transaktionell och omkorbar. Den skriver inte om gamla projekt,
    kalkyler, rapporter eller statusar. Nya tabeller anvander restriktiva FK:n sa
    historiska avtal inte forsvinner genom projektradering.
+   Delpriser/alternativ kraver aven
+   `docs/db/2026-09-29_02_customer_offer_pricing.sql` fore publicering av appen.
+   Den nya migrationen lagger endast till valideringsfunktioner och triggers;
+   inga offerter skrivs om. Appen avvisar sparning/publicering med de nya
+   prisfunktionerna om databasskyddet saknas. Vanliga klumpsummor fungerar som tidigare.
 3. Kontrollera `APP_BASE_URL` (produktionsdomann med HTTPS), `ASSIGNMENTS_MAIL_FROM`
    och `RESEND_API_KEY`. Ingen hemlighet skickas till klienten.
 4. Publicera appkoden och prova intern offert -> kontrollerad testbrevlada ->
@@ -119,6 +139,16 @@ kundoffertsidorna. Ovriga sidors varumarkesandringar ingar inte i denna release.
 - `npx tsc --noEmit --incremental false` och riktad ESLint.
 - Lokal demo: `node --experimental-strip-types scripts/test-customer-offer-ui.mjs --serve`.
   Satt `PREVIEW_PORT` for fast port. Testkod: `123456`. Data finns bara i minnet.
+  Lagg till `--itemized` for ett separat, uttryckligen fiktivt testfall med
+  delpriser, oberoende tillval och tva alternativa fonsterleverantorer.
+
+## Beslutslogg
+
+- 2026-09-29: Utokat grundpriset med frivilligt delprislage och tillval med
+  hogst-ett-val-grupper for referensprojektets behov. Tidigare versioners
+  klumpsummor och godkannanden behalls oforandrade. El som inte projekterats och
+  senare malning bestalls inte genom att anges som undantag; en senare ATA
+  kraver ett separat flode. Verkliga delpriser maste anges av anvandaren.
 
 ## Senare steg, inte implementerade
 
