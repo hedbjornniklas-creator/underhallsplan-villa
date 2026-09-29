@@ -8,6 +8,7 @@ import {
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
+import { normalizePlannedItems, type CustomerPlanning, type CustomerPlannedItem } from './customerPlanning'
 import {
   CUSTOMER_OFFER_BUCKET,
   CUSTOMER_OFFER_COLUMNS,
@@ -98,6 +99,7 @@ export async function getCustomerOfferWorkspace(
       : emptyCustomerOffer(c.title)
   return {
     draft: body,
+    planning: await getCustomerPlanning(ctx, caseId),
     costingAvailable,
     costing: normalizeCustomerOfferCosting(savedDraft?.internal_costing, body.items),
     revision: savedDraft?.revision ?? 0,
@@ -132,6 +134,12 @@ export async function saveCustomerOffer(
   })
 }
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+  if (draft.contractDetails) {
+    const guard = await createSupabaseAdminClient().rpc('assert_customer_contract', {
+      p_body: draft, p_complete: complete
+    })
+    checked(guard.error)
+  }
   if (
     draft.pricingMode !== 'itemized' &&
     !draft.items.some((i) => i.optionGroup)
@@ -382,7 +390,7 @@ export async function getSharedCustomerOffers(
   orgId: string,
   caseId: string,
   participantId: string
-): Promise<{ enabled: boolean; offers: CustomerOffer[] }> {
+): Promise<{ enabled: boolean; offers: CustomerOffer[]; plannedItems?: CustomerPlannedItem[] }> {
   const db = createSupabaseAdminClient()
   const rows = await db
     .from('action_case_customer_offers')
@@ -393,10 +401,37 @@ export async function getSharedCustomerOffers(
     .order('version', { ascending: false })
   if (schemaMissing(rows.error?.code)) return { enabled: false, offers: [] }
   checked(rows.error)
+  const planning = await db.from('action_case_customer_planning').select('shared_items')
+    .eq('org_id', orgId).eq('action_case_id', caseId).eq('participant_id', participantId).maybeSingle()
+  if (!schemaMissing(planning.error?.code)) checked(planning.error)
+  const plannedItems = normalizePlannedItems(planning.data?.shared_items ?? [])
   return {
-    enabled: Boolean(rows.data?.length),
+    enabled: Boolean(rows.data?.length || plannedItems.length),
+    ...(plannedItems.length ? { plannedItems } : {}),
     offers: (rows.data ?? []).map(mapCustomerOffer)
   }
+}
+export async function getCustomerPlanning(ctx: Context, caseId: string): Promise<CustomerPlanning> {
+  await requireCase(ctx, caseId)
+  const result = await createSupabaseAdminClient().from('action_case_customer_planning')
+    .select('revision,items,shared_items').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+  if (schemaMissing(result.error?.code)) return { available: false, revision: 0, items: [], sharedItems: [] }
+  checked(result.error)
+  return { available: true, revision: result.data?.revision ?? 0,
+    items: normalizePlannedItems(result.data?.items ?? []), sharedItems: normalizePlannedItems(result.data?.shared_items ?? []) }
+}
+export async function writeCustomerPlanning(ctx: Context, caseId: string, payload: Payload) {
+  await requireCase(ctx, caseId)
+  if (!['save', 'share', 'unshare'].includes(String(payload.operation)) || !Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
+    throw new Error('CUSTOMER_OFFER_INVALID')
+  if (payload.operation === 'share' && payload.confirmed !== true) throw new Error('CUSTOMER_OFFER_CONFIRM')
+  const result = await createSupabaseAdminClient().rpc('write_customer_planning', {
+    p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
+    p_operation: payload.operation,
+    p_data: { revision: payload.revision, confirmed: payload.confirmed === true,
+      items: payload.operation === 'unshare' ? [] : normalizePlannedItems(payload.items, payload.operation === 'share') }
+  })
+  checked(result.error)
 }
 async function resolveOffer(token: string, id: string) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token))

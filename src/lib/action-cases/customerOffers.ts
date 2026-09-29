@@ -1,4 +1,6 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { contractDetailsIssues, normalizeContractDetails, type CustomerContractDetails } from './customerContract.ts'
 
 export type CustomerOfferItem = {
   id: string
@@ -9,6 +11,7 @@ export type CustomerOfferItem = {
   optionGroup?: string | null
 }
 export type CustomerOfferDraft = {
+  contractDetails?: CustomerContractDetails
   title: string
   introduction: string
   baseAmountOre: number | null
@@ -50,6 +53,7 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  planning?: import('./customerPlanning').CustomerPlanning
   costing?: CustomerOfferCosting
   costingAvailable?: boolean
   draft: CustomerOfferDraft
@@ -142,6 +146,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.contractDetails === undefined ? {} : { contractDetails: normalizeContractDetails(d.contractDetails) }),
     title: text(d.title, 250),
     introduction: text(d.introduction, 12000),
     baseAmountOre: d.pricingMode === 'itemized' ? null : amount(d.baseAmountOre),
@@ -199,7 +204,7 @@ export function offerPublishIssues(
     timeZone: 'Europe/Stockholm'
   })
 ): string[] {
-  const issues: string[] = []
+  const issues: string[] = contractDetailsIssues(d.contractDetails)
   if (!d.title.trim()) issues.push('Ange en offertrubrik.')
   if (d.pricingMode === 'itemized') {
     const missing = d.items.filter(

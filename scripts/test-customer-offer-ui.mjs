@@ -18,6 +18,7 @@ import {
   normalizeCustomerOffer
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
+import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -68,6 +69,7 @@ let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structur
   challenge = null,
   failSave = false
 if (process.argv.includes('--serve')) state.offers = [published(state.draft)]
+state.planning = { available: true, revision: 0, items: [], sharedItems: [] }
 const writes = []
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
@@ -109,6 +111,19 @@ const server = createServer(async (req, res) => {
         json({ accepted: true, offer })
         return
       }
+    } else if (path.endsWith('/customer-planning')) {
+      if (body.revision !== state.planning.revision) { json({ error: 'Planeringen har ändrats. Uppdatera vyn.' }, 409); return }
+      try {
+        if (body.operation === 'save') state.planning.items = normalizePlannedItems(body.items)
+        else if (body.operation === 'share') {
+          if (!body.confirmed || JSON.stringify(body.items) !== JSON.stringify(state.planning.items)) throw new Error('Bekräfta den sparade planeringen.')
+          state.planning.sharedItems = normalizePlannedItems(body.items, true)
+        } else if (body.operation === 'unshare') state.planning.sharedItems = []
+        else throw new Error('Okänd åtgärd')
+        state.planning.revision++
+        json(state.planning)
+      } catch (error) { json({ error: error.message }, 400) }
+      return
     } else if (path.endsWith('/customer-offers')) {
       if (body.operation === 'save') {
         if (failSave) {
@@ -141,6 +156,7 @@ const server = createServer(async (req, res) => {
     json(state)
     return
   }
+  if (path.endsWith('/customer-planning')) { json(state.planning); return }
   if (path.startsWith('/api/')) {
     res.setHeader('Content-Type', 'image/png')
     res.end(img)
@@ -230,6 +246,7 @@ else {
       ))
     )
     // Private worksheet is saved separately; using a calculated price is explicit.
+    await page.locator('::-p-xpath(//button[@role="tab" and contains(.,"Val vid godkännande")])').click()
     await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
     await fill('Inköpspris exkl. moms (kr) *', '10000')
     await fill('Påslag på inköpspriset (%, valfritt)', '10')
@@ -257,6 +274,7 @@ else {
     await page.waitForFunction(() => document.querySelector('main [role="status"]')?.textContent === 'Sparat')
     assert.equal(state.costing[id(11)].purchaseOre, 1000000)
     await page.reload({ waitUntil: 'networkidle0' })
+    await page.locator('::-p-xpath(//button[@role="tab" and contains(.,"Val vid godkännande")])').click()
     await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
     assert.equal(await page.$eval('[aria-label="Inköpspris exkl. moms (kr) *"]', (el) => el.value), '10000')
     assert.equal(await page.$eval('[aria-label="Tillvalspris inkl. moms (kr) *"]', (el) => el.value), '17500')

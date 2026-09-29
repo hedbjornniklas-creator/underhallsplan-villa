@@ -6,6 +6,8 @@ import ts from 'typescript'
 import * as domain from '../src/lib/action-cases/customerOffers.ts'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
 import * as costingDomain from '../src/lib/action-cases/customerOfferCosting.ts'
+import * as planningDomain from '../src/lib/action-cases/customerPlanning.ts'
+import { emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import {
   workspace,
   snapshot,
@@ -56,6 +58,8 @@ function harness(options = {}) {
       const read = { table, columns: '', filters: [] }
       reads.push(read)
       const result = () => {
+        if (table === 'action_case_customer_planning' && options.planningMissing)
+          return { error: { code: '42P01' } }
         if (table === 'action_case_customer_offer_drafts' && read.columns.includes('internal_costing') && options.costingMissing)
           return { error: { code: '42703' } }
         if (table === 'action_case_customer_offers') {
@@ -78,6 +82,7 @@ function harness(options = {}) {
               property_address: 'Address'
             },
             action_case_customer_offer_drafts: { body: draft, revision: 1, internal_costing: options.costing ?? {} },
+            action_case_customer_planning: options.planning ?? null,
             action_case_participants: participant,
             organizations: { name: 'Exempelbygg AB' },
             profiles: { email: 'byggare@example.test' },
@@ -148,6 +153,8 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (name === 'assert_customer_contract' && options.contractMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'save_customer_offer_costing' && options.costingMissing)
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_pricing' && options.pricingMissing)
@@ -203,6 +210,7 @@ function harness(options = {}) {
     './quotes': quotes,
     './customerOffers': domain,
     './customerOfferCosting': costingDomain,
+    './customerPlanning': planningDomain,
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/tokens': {
       generateAssignmentToken: () => token,
@@ -450,4 +458,38 @@ test('unmigrated or unpublished customer flows keep the existing portal', async 
     await harness().api.getSharedCustomerOffers(id(90), id(1), id(2)),
     { enabled: false, offers: [] }
   )
+})
+
+test('shared planning is projected from shared_items only and scoped to its customer', async () => {
+  const item = { id: id(80), title: 'Målning', scope: 'Senare beslut', status: 'deferred', budgetOre: null, decisionBy: '' }
+  const h = harness({ planning: { revision: 2, items: [{ ...item, scope: 'Privat arbetsutkast' }], shared_items: [item] } })
+  const result = await h.api.getSharedCustomerOffers(id(90), id(1), id(2))
+  assert.equal(result.enabled, true)
+  assert.deepEqual(result.plannedItems, [item])
+  assert.equal(JSON.stringify(result).includes('Privat arbetsutkast'), false)
+  const read = h.reads.find((r) => r.table === 'action_case_customer_planning')
+  assert.equal(read.columns, 'shared_items')
+  assert.deepEqual(read.filters, [['org_id', id(90)], ['action_case_id', id(1)], ['participant_id', id(2)]])
+})
+
+test('planning writes are private, explicitly shared and migration-aware', async () => {
+  const h = harness(), ctx = { orgId: id(90), userId: id(91) }
+  const item = { id: id(80), title: 'Målning', scope: 'Senare beslut', status: 'deferred', budgetOre: null, decisionBy: '' }
+  await h.api.writeCustomerPlanning(ctx, id(1), { operation: 'save', revision: 0, items: [item] })
+  assert.equal(h.calls.at(-1).name, 'write_customer_planning')
+  assert.deepEqual(h.calls.at(-1).p_data.items, [item])
+  assert.equal(h.sent.length, 0)
+  await assert.rejects(h.api.writeCustomerPlanning(ctx, id(1), { operation: 'share', revision: 1, items: [item] }), /CONFIRM/)
+  await assert.rejects(h.api.writeCustomerPlanning(ctx, id(1), { operation: 'share', revision: 1, items: [{ ...item, scope: '' }], confirmed: true }), /INCOMPLETE|INVALID/)
+  const missing = harness({ planningMissing: true })
+  assert.equal((await missing.api.getCustomerPlanning(ctx, id(1))).available, false)
+  assert.deepEqual(await missing.api.getSharedCustomerOffers(id(90), id(1), id(2)), { enabled: false, offers: [] })
+})
+
+test('new contract details require their database guard while old drafts still save', async () => {
+  const h = harness({ contractMissing: true }), ctx = { orgId: id(90), userId: id(91) }
+  await assert.rejects(h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: { ...h.draft, contractDetails: emptyContractDetails() } }), /SCHEMA/)
+  assert.equal(h.calls.length, 1)
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft })
+  assert.equal(h.calls.at(-1).p_operation, 'save')
 })

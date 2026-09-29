@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
+import { emptyContractDetails, contractDetailsIssues, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
+import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import {
   normalizeCustomerOffer,
   emptyCustomerOffer,
@@ -49,9 +51,117 @@ before(async () => {
   await db.exec(sql('2026-09-29_02_customer_offer_pricing'))
   await db.exec(sql('2026-09-29_03_customer_offer_internal_costing'))
   await db.exec(sql('2026-09-29_03_customer_offer_internal_costing'))
+  await db.exec(sql('2026-09-29_04_customer_offer_planning'))
+  await db.exec(sql('2026-09-29_04_customer_offer_planning'))
 })
 after(async () => {
   await db.close()
+})
+
+function completeContract() {
+  const result = emptyContractDetails()
+  result.advice.status = 'none'
+  for (const entry of Object.values(result.fields)) {
+    entry.status = 'document'
+    entry.text = 'Referens till granskat projektavtal, punkt 1 (test).'
+  }
+  return result
+}
+function planningWrite(f, operation, data, org = id(1)) {
+  return db.query('select write_customer_planning($1,$2,$3,$4,$5::jsonb)', [org, f.caseId, id(2), operation, JSON.stringify(data)])
+}
+const planningRead = async (f) => (await db.query('select * from action_case_customer_planning where action_case_id=$1', [f.caseId])).rows[0]
+const planned = () => ({ id: id(seq++), title: 'Senare invändig målning', scope: 'Separat beslut efter huvudavtalet.', status: 'deferred', budgetOre: null, decisionBy: '' })
+
+test('contract details never manufacture advice and preserve legacy snapshots', () => {
+  assert.equal(emptyContractDetails().advice.status, 'unreviewed')
+  assert.equal(normalizeCustomerOffer(emptyCustomerOffer()).contractDetails, undefined)
+  assert.deepEqual(contractDetailsIssues(undefined), [])
+  assert.equal(contractDetailsIssues(emptyContractDetails()).length, 13)
+  const details = completeContract()
+  assert.deepEqual(contractDetailsIssues(details), [])
+  details.advice.work = 'Olämpligt arbete'
+  assert.match(contractDetailsIssues(details).join(' '), /ingen avrådan/)
+  details.advice.status = 'given'
+  assert.match(contractDetailsIssues(details).join(' '), /Komplettera avrådan/)
+  Object.assign(details.advice, { reason: 'Risk för skada', communicatedAt: '2026-09-29', customerResponse: 'Avstår från arbetet' })
+  assert.deepEqual(contractDetailsIssues(details), [])
+  assert.deepEqual(normalizeCustomerOffer({ ...emptyCustomerOffer(), contractDetails: details }).contractDetails, details)
+  details.advice.communicatedAt = '2026-02-30'
+  assert.throws(() => normalizeContractDetails(details), /INVALID/)
+})
+
+test('planned items cannot contain binding state, duplicate ids or hidden purchase prices', () => {
+  const item = planned()
+  assert.deepEqual(normalizePlannedItems([{ ...item, purchaseOre: 10, approved: true }]), [item])
+  for (const value of [[{ ...item, status: 'accepted' }], [item, item], [{ ...item, budgetOre: -1 }], [{ ...item, budgetOre: 1.1 }], [{ ...item, decisionBy: '2026-02-30' }]])
+    assert.throws(() => normalizePlannedItems(value), /INVALID/)
+  assert.doesNotThrow(() => normalizePlannedItems([{ ...item, title: '', scope: '' }]))
+  assert.throws(() => normalizePlannedItems([{ ...item, title: '' }], true), /INCOMPLETE|INVALID/)
+})
+
+test('contract SQL permits draft work but blocks incomplete publication and loss from older clients', async () => {
+  const f = await fixture(), details = emptyContractDetails()
+  await f.write('save', { revision: 1, body: { ...f.draft, contractDetails: details } })
+  await assert.rejects(f.write('save', { revision: 2, body: f.draft }), /INVALID/)
+  await assert.rejects(f.write('publish', { ...f.publication, revision: 2, snapshot: { ...f.snapshot, contractDetails: details } }), /INCOMPLETE/)
+  const completed = completeContract()
+  await f.write('save', { revision: 2, body: { ...f.draft, contractDetails: completed } })
+  await f.write('publish', { ...f.publication, revision: 3, snapshot: { ...f.snapshot, contractDetails: completed } })
+  assert.deepEqual((await get('action_case_customer_offers', f.offerId)).snapshot.contractDetails, completed)
+})
+
+test('SQL contract validator rejects contradictory advice and invalid dates', async () => {
+  const details = completeContract()
+  details.advice.reason = 'En kvarvarande avrådan'
+  await assert.rejects(db.query('select assert_customer_contract($1,true)', [{ contractDetails: details }]), /INCOMPLETE/)
+  details.advice.status = 'given'
+  await assert.rejects(db.query('select assert_customer_contract($1,true)', [{ contractDetails: details }]), /INCOMPLETE/)
+  details.advice.communicatedAt = '2026-02-30'
+  await assert.rejects(db.query('select assert_customer_contract($1,false)', [{ contractDetails: details }]), /INVALID/)
+})
+
+test('planning saves privately; sharing needs a confirmed exact revision and supports withdrawal', async () => {
+  const f = await fixture(), items = [planned()]
+  await planningWrite(f, 'save', { revision: 0, items })
+  assert.deepEqual((await planningRead(f)).shared_items, [])
+  await assert.rejects(planningWrite(f, 'share', { revision: 1, items }), /CONFIRM/)
+  await assert.rejects(planningWrite(f, 'save', { revision: 0, items }), /STALE/)
+  await assert.rejects(planningWrite(f, 'save', { revision: 1, items }, id(9)), /NOT_FOUND/)
+  await assert.rejects(planningWrite(f, 'share', { revision: 1, items: [], confirmed: true }), /CONFIRM/)
+  await planningWrite(f, 'share', { revision: 1, items, confirmed: true })
+  assert.deepEqual((await planningRead(f)).shared_items, items)
+  assert.equal((await planningRead(f)).participant_id, f.recipientId)
+  const changed = [{ ...items[0], scope: 'Intern ändring, ännu inte delad.' }]
+  await planningWrite(f, 'save', { revision: 2, items: changed })
+  assert.deepEqual((await planningRead(f)).shared_items, items)
+  await planningWrite(f, 'unshare', { revision: 3 })
+  assert.deepEqual((await planningRead(f)).shared_items, [])
+  assert.deepEqual((await planningRead(f)).items, changed)
+})
+
+test('planning can change after acceptance without changing the contract, sum or selection', async () => {
+  const f = await fixture(), items = [{ ...planned(), budgetOre: 99900000 }]
+  await planningWrite(f, 'save', { revision: 0, items })
+  await f.write('publish', f.publication)
+  await assert.rejects(f.respond('challenge', { ...f.challenge, selection: [items[0].id] }), /SELECTION|INVALID/)
+  await f.respond('challenge', f.challenge)
+  await f.respond('accept', { challengeId: f.challengeId, codeHash: 'good-hash' })
+  const original = await get('action_case_customer_offers', f.offerId)
+  await planningWrite(f, 'save', { revision: 1, items: [{ ...items[0], budgetOre: 12000000 }] })
+  await planningWrite(f, 'share', { revision: 2, items: [{ ...items[0], budgetOre: 12000000 }], confirmed: true })
+  assert.deepEqual(await get('action_case_customer_offers', f.offerId), original)
+  assert.equal(Number(original.accepted_total_ore), customerOfferTotal(f.draft, f.challenge.selection))
+})
+
+test('anonymous and authenticated clients cannot directly read or write planning', async () => {
+  for (const role of ['anon', 'authenticated']) {
+    await db.exec(`set role ${role}`)
+    try {
+      await assert.rejects(db.query('select * from action_case_customer_planning'), /permission denied/)
+      await assert.rejects(db.query('select write_customer_planning($1,$2,$3,$4,$5)', [id(1), id(2), id(2), 'save', {}]), /permission denied/)
+    } finally { await db.exec('reset role') }
+  }
 })
 
 async function fixture() {

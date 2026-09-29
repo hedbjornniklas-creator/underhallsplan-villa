@@ -6,6 +6,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  CalendarClock,
   Check,
   Eye,
   FilePlus2,
@@ -36,6 +37,9 @@ import ActionCaseCustomerPortal from './ActionCaseCustomerPortal'
 import PriceInput from './CustomerOfferPriceInput'
 import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
 import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
+import CustomerContractFields from './CustomerContractFields'
+import CustomerPlanningEditor from './CustomerPlanningEditor'
+import { emptyContractDetails } from '@/lib/action-cases/customerContract'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -53,9 +57,15 @@ export default function CustomerOfferEditor({
   replyEmail: string
 }) {
   const [workspace, setWorkspace] = useState(initial),
-    [draft, setDraft] = useState(initial.draft)
+    [draft, setDraft] = useState(() => initial.revision === 0
+      ? { ...initial.draft, contractDetails: initial.draft.contractDetails ?? emptyContractDetails() }
+      : initial.draft)
   const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
-  const [view, setView] = useState<'edit' | 'document' | 'customer'>('edit')
+  const [view, setView] = useState<'edit' | 'document' | 'customer' | 'planning'>('edit')
+  const [itemView, setItemView] = useState<'included' | 'option' | 'excluded'>('included')
+  const [removeId, setRemoveId] = useState<string | null>(null)
+  const [planningDirty, setPlanningDirty] = useState(false)
+  const [planning, setPlanning] = useState(initial.planning)
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
   const [busy, setBusy] = useState(''),
@@ -98,14 +108,14 @@ export default function CustomerOfferEditor({
     heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }, [view])
   useEffect(() => {
-    if (!dirty) return
+    if (!dirty && !planningDirty) return
     const prevent = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', prevent)
     return () => window.removeEventListener('beforeunload', prevent)
-  }, [dirty])
+  }, [dirty, planningDirty])
   async function action(
     operation: string,
     extra: Record<string, unknown> = {}
@@ -170,9 +180,10 @@ export default function CustomerOfferEditor({
     }
   }
   function move(index: number, delta: number) {
-    const items = [...draft.items],
-      other = index + delta
-    if (other < 0 || other >= items.length) return
+    const items = [...draft.items]
+    const peers = items.map((item, position) => ({ item, position })).filter(({ item }) => item.kind === items[index].kind)
+    const other = peers[peers.findIndex(({ position }) => position === index) + delta]?.position
+    if (other === undefined) return
     ;[items[index], items[other]] = [items[other], items[index]]
     update({ items })
   }
@@ -215,7 +226,7 @@ export default function CustomerOfferEditor({
       companyName: null,
       phone: null
     },
-    customerOffers: { enabled: true, offers: workspace.offers },
+    customerOffers: { enabled: true, offers: workspace.offers, plannedItems: planning?.sharedItems },
     actionCase: {
       id: actionCase.id,
       title: workspace.offers[0]?.snapshot.projectTitle ?? actionCase.title,
@@ -236,7 +247,7 @@ export default function CustomerOfferEditor({
         <a
           href="/uppdrag"
           onClick={(e) => {
-            if (dirty && !window.confirm('Lämna osparade ändringar?'))
+            if ((dirty || planningDirty) && !window.confirm('Lämna osparade ändringar?'))
               e.preventDefault()
           }}
           className="inline-flex items-center gap-2 text-sm text-violet-700"
@@ -253,7 +264,7 @@ export default function CustomerOfferEditor({
           <p className="text-sm text-slate-500" role="status">
             {busy
               ? 'Arbetar…'
-              : dirty
+              : dirty || planningDirty
                 ? 'Osparade ändringar'
                 : workspace.revision
                   ? 'Sparat'
@@ -267,6 +278,7 @@ export default function CustomerOfferEditor({
       >
         {[
           ['edit', 'Redigera offert'],
+          ['planning', 'Planerade tillval'],
           ['document', 'Granska offertutkast'],
           ['customer', 'Kundens startsida']
         ].map(([key, label]) => (
@@ -276,14 +288,17 @@ export default function CustomerOfferEditor({
             aria-pressed={view === key}
             className={`${button} shrink-0 ${view === key ? 'bg-violet-50' : 'bg-white'}`}
           >
-            {key === 'edit' ? <FilePlus2 size={17} /> : <Eye size={17} />}
+            {key === 'edit' ? <FilePlus2 size={17} /> : key === 'planning' ? <CalendarClock size={17} /> : <Eye size={17} />}
             {label}
           </button>
         ))}
       </nav>
-      {view === 'customer' ? (
+      <div hidden={view !== 'planning'}>
+        <CustomerPlanningEditor caseId={actionCase.id} initial={initial.planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />
+      </div>
+      {view === 'planning' ? null : view === 'customer' ? (
         <ActionCaseCustomerPortal
-          key={JSON.stringify(workspace.offers)}
+          key={JSON.stringify([workspace.offers, planning?.sharedItems])}
           portal={portal}
           preview
           previewCaseId={actionCase.id}
@@ -400,10 +415,11 @@ export default function CustomerOfferEditor({
             </section>
             <section className="border-t border-slate-200 pt-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg">Omfattning och tillval</h2>
+                <h2 className="text-lg">Avtalets omfattning</h2>
                 <button
                   className={button}
-                  onClick={() =>
+                  onClick={() => {
+                    setItemView('included')
                     update({
                       items: [
                         ...draft.items,
@@ -420,19 +436,22 @@ export default function CustomerOfferEditor({
                           }))
                       ]
                     })
-                  }
+                  }}
                 >
                   <Plus size={17} /> Hämta från arbeten
                 </button>
               </div>
-              {draft.items.map((item, index) => (
+              <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+                {([['included', 'Grundåtagande'], ['option', 'Val vid godkännande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
+              </div>
+              {draft.items.filter((item) => item.kind === itemView).map((item, visibleIndex, visibleItems) => (
                 <div
                   key={item.id}
                   className="mt-5 border-t border-slate-200 pt-5"
                 >
                   <div className="flex items-start gap-2">
                     <span className="pt-3 text-sm text-slate-500">
-                      {index + 1}.
+                      {visibleIndex + 1}.
                     </span>
                     <label className="min-w-0 flex-1 text-sm">
                       Arbetsrubrik *
@@ -458,11 +477,11 @@ export default function CustomerOfferEditor({
                           aria-label={`${delta === -1 ? 'Flytta upp' : 'Flytta ned'} ${item.title}`}
                           disabled={
                             delta === -1
-                              ? index === 0
-                              : index === draft.items.length - 1
+                              ? visibleIndex === 0
+                              : visibleIndex === visibleItems.length - 1
                           }
                           className="inline-flex h-11 w-9 items-center justify-center border border-slate-200 disabled:opacity-30"
-                          onClick={() => move(index, delta)}
+                          onClick={() => move(draft.items.findIndex((i) => i.id === item.id), delta)}
                         >
                           {delta === -1 ? (
                             <ArrowUp size={16} />
@@ -475,26 +494,21 @@ export default function CustomerOfferEditor({
                         title="Ta bort arbete"
                         aria-label={`Ta bort ${item.title}`}
                         className="inline-flex h-11 w-9 items-center justify-center text-rose-700"
-                        onClick={() => {
-                          if (
-                            window.confirm('Ta bort arbetet ur offertutkastet?')
-                          )
-                            update({
-                              items: draft.items.filter((i) => i.id !== item.id)
-                            })
-                        }}
+                        onClick={() => setRemoveId(item.id)}
                       >
                         <Trash2 size={17} />
                       </button>
                     </div>
                   </div>
+                  {removeId === item.id && <div role="alert" className="mt-3 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm"><p>Ta bort {item.title || 'arbetet'} ur offertutkastet?</p><div className="mt-3 flex flex-wrap gap-2"><button className={button} onClick={() => { update({ items: draft.items.filter((i) => i.id !== item.id) }); setRemoveId(null) }}><Trash2 size={16} /> Ta bort från utkast</button><button className={button} onClick={() => setRemoveId(null)}>Avbryt</button></div></div>}
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="text-sm">
                       Ingår som
                       <select
                         className={field}
                         value={item.kind}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          setItemView(e.target.value as typeof itemView)
                           update({
                             items: draft.items.map((i) =>
                               i.id === item.id
@@ -507,11 +521,11 @@ export default function CustomerOfferEditor({
                                 : i
                             )
                           })
-                        }
+                        }}
                       >
                         <option value="included">Grundåtagande</option>
-                        <option value="option">Tillval</option>
-                        <option value="excluded">Utanför vårt åtagande</option>
+                        <option value="option">Val vid godkännande</option>
+                        <option value="excluded">Relevant avgränsning</option>
                       </select>
                     </label>
                     {(item.kind === 'option' ||
@@ -599,16 +613,17 @@ export default function CustomerOfferEditor({
                         id: crypto.randomUUID(),
                         title: '',
                         scope: '',
-                        kind: 'included',
+                        kind: itemView,
                         amountOre: null
                       }
                     ]
                   })
                 }
               >
-                <Plus size={17} /> Lägg till arbete
+                <Plus size={17} /> {itemView === 'included' ? 'Lägg till arbete' : itemView === 'option' ? 'Lägg till val' : 'Lägg till avgränsning'}
               </button>
             </section>
+            <CustomerContractFields value={draft.contractDetails} onChange={(contractDetails) => update({ contractDetails })} />
             <section className="space-y-4 border-t border-slate-200 pt-6">
               <h2 className="text-lg">Tider och villkor</h2>
               <label className="block text-sm">

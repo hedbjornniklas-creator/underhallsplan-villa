@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardList,
+  ListChecks,
   FileText,
   FolderOpen,
   Loader2,
@@ -23,6 +24,7 @@ import {
   type CustomerOffer
 } from '@/lib/action-cases/customerOffers'
 import CustomerOfferDocument from './CustomerOfferDocument'
+import { CustomerPlannedItems } from './CustomerPlanningEditor'
 
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
@@ -37,7 +39,7 @@ export default function ActionCaseCustomerPortal({
   preview?: boolean
   previewCaseId?: string
 }) {
-  const [view, setView] = useState<'overview' | 'offer' | 'files' | 'work'>(
+  const [view, setView] = useState<'overview' | 'offer' | 'files' | 'work' | 'planning'>(
     'overview'
   )
   const [offers, setOffers] = useState(portal.customerOffers?.offers ?? [])
@@ -55,8 +57,10 @@ export default function ActionCaseCustomerPortal({
     latest = offers[0],
     offer = offers.find((o) => o.id === offerId) ?? latest
   const accepted = offers.find((o) => o.status === 'accepted')
+  const plannedItems = portal.customerOffers?.plannedItems ?? []
+  const offeredOptions = latest?.snapshot.items.filter((i) => i.kind === 'option') ?? []
   const workCount = latest
-    ? latest.snapshot.items.filter((i) => i.kind === 'included').length
+    ? latest.snapshot.items.filter((i) => i.kind === 'included' || (i.kind === 'option' && accepted?.acceptedOptionIds.includes(i.id))).length
     : c.items.length
   const sharedFiles = c.attachments.filter(
     (f) => !latest?.files.some((copy) => copy.id === f.id)
@@ -195,7 +199,7 @@ export default function ActionCaseCustomerPortal({
               </button>
             )}
           </section>
-          <div className="grid divide-y divide-slate-200 border-b border-slate-200 md:grid-cols-3 md:divide-x md:divide-y-0">
+          <div className="grid divide-y divide-slate-200 border-b border-slate-200 md:grid-cols-2 md:divide-y-0 lg:grid-cols-4">
             <button
               onClick={() => navigate(latest ? 'offer' : 'work')}
               className="min-w-0 p-6 text-left hover:bg-white"
@@ -225,15 +229,20 @@ export default function ActionCaseCustomerPortal({
               className="min-w-0 p-6 text-left hover:bg-white"
             >
               <ClipboardList size={23} className="text-violet-700" />
-              <h2 className="mt-4 text-base">Arbeten och tillval</h2>
+              <h2 className="mt-4 text-base">Avtalets omfattning</h2>
               <p className="mt-2 text-xl font-semibold">
                 {workCount} {workCount === 1 ? 'arbete' : 'arbeten'}
               </p>
               <p className="mt-2 text-sm text-slate-500">
-                {latest?.snapshot.items.some((i) => i.kind === 'option')
-                  ? `${latest.snapshot.items.filter((i) => i.kind === 'option').length} tillval i offerten`
-                  : 'Delad omfattning'}
+                Grundåtagande och avgränsningar
               </p>
+              <ArrowRight className="mt-5" size={18} />
+            </button>
+            <button onClick={() => navigate('planning')} className="min-w-0 p-6 text-left hover:bg-white">
+              <ListChecks size={23} className="text-violet-700" />
+              <h2 className="mt-4 text-base">Val och tillval</h2>
+              <p className="mt-2 text-xl font-semibold">{plannedItems.length} {plannedItems.length === 1 ? 'planerat' : 'planerade'}</p>
+              <p className="mt-2 text-sm text-slate-500">{offeredOptions.length} alternativ i {accepted ? 'avtalshistoriken' : 'offerten'}</p>
               <ArrowRight className="mt-5" size={18} />
             </button>
             <button
@@ -409,11 +418,19 @@ export default function ActionCaseCustomerPortal({
           </div>
         </>
       )}
+      {view === 'planning' && <div className="bg-white px-5 sm:px-8">
+        <CustomerPlannedItems items={plannedItems} />
+        {offeredOptions.length > 0 && <section className="border-t border-slate-200 py-6">
+          <h2 className="text-xl">{accepted ? 'Val i huvudavtalet' : 'Val vid offertens godkännande'}</h2>
+          {offeredOptions.map((item) => <div key={item.id} className="border-b border-slate-200 py-4"><div className="flex flex-wrap justify-between gap-3"><h3 className="font-semibold">{item.title}</h3><span className="text-sm">{money(item.amountOre)}</span></div><p className="mt-2 text-sm">{accepted ? accepted.acceptedOptionIds.includes(item.id) ? 'Ingår i godkänt avtal' : 'Inte beställt' : 'Beställs endast om det väljs vid offertens godkännande'}</p></div>)}
+          <button className={`${button} mt-5`} onClick={() => { setOfferId(latest.id); navigate('offer') }}><FileText size={17} /> {accepted ? 'Visa huvudavtal' : 'Granska offert och välj'}</button>
+        </section>}
+      </div>}
       {view === 'work' && (
         <section className="bg-white px-5 py-6 sm:px-8">
           <h2 className="text-xl">Arbeten</h2>
           {latest
-            ? latest.snapshot.items.map((i) => (
+            ? latest.snapshot.items.filter((i) => i.kind !== 'option' || accepted?.acceptedOptionIds.includes(i.id)).map((i) => (
                 <article key={i.id} className="border-b border-slate-200 py-5">
                   <div className="flex flex-wrap justify-between gap-2">
                     <h3 className="font-semibold">{i.title}</h3>

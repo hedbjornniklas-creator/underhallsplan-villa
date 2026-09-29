@@ -27,7 +27,7 @@ async function start() {
   const portal = {
     accessState: 'open' as const,
     participant: customer,
-    customerOffers: { enabled: true, offers: workspace.offers },
+    customerOffers: { enabled: true, offers: workspace.offers, plannedItems: workspace.planning?.sharedItems },
     actionCase: {
       ...actionCase,
       items: [],

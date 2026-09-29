@@ -126,6 +126,43 @@ Datum: 2026-09-29.
 
 ## Aktivering
 
+### Avtalsuppgifter och separat planering (2026-09-29)
+
+- Grundatagande, val vid godkannande och avgransningar har egna vyer i
+  offertredigeringen. Ett avgransningsfalt ska beskriva relevanta forvantningar,
+  diskuterade arbeten eller ansvar som annars kan vara oklart, inte en lista
+  over alla arbeten som inte ingar. Ingen juridisk friskrivning fylls i automatiskt.
+- Exempel: malning som diskuterats men skjutits upp kan beskrivas kort under
+  avgransningar och planeras separat. Den ska inte vara ett bestallningsbart
+  offerttillval innan pris och omfattning ar overenskomna. Inga befintliga
+  projektrader flyttas eller omklassificeras automatiskt.
+- Avraden registreras aktivt: ej kontrollerad, ingen avraden lamnad eller
+  avraden lamnad. I sista fallet dokumenteras arbete, skal/konsekvenser, datum
+  och bestallarens besked. Beskedet innebar ingen automatisk ansvarsfrihet.
+- Kompletterande avtalsfalt omfattar parter, fastighet, handlingar/rangordning,
+  kontroll, arbetsmiljo, bestallarens arbeten, ATA-prissattning, forsening,
+  besiktning, forsakringar, fardigstallandeskydd och sakerheter. Dessa kan
+  beskrivas, hanvisas till i en identifierad avtalshandling eller markeras som
+  ej aktuella med skal. Systemet avgor inte den juridiska tillampligheten.
+- Nya utkast far falten. Befintliga utkast kompletteras genom ett aktivt val;
+  signerade snapshots andras aldrig. Nar falten aktiverats kan de inte tappas
+  bort av en aldre klient. Ofullstandiga uppgifter kan sparas men inte publiceras.
+  Detta ar kompletterande uppgifter, inte en omarbetning av ABS18-standardformularet.
+- Planerade tillval har egen tabell, revision och sparning, oberoende av
+  huvudavtalets lasning. Intern sparning andrar inte kundens vy. Ett separat,
+  bekraftat publiceringssteg delar en kopia med projektets bestallare, utan mejl.
+  Kopian kan doljas igen. UE ser inte denna planering genom sin portal.
+- En eventuell planeringsbudget ar inte ett bestallningsbart pris och ingar
+  aldrig i offertens totalsumma. Kunden kan inte godkanna planerade poster.
+  Etiketten ersatter inte behovet att bedoma prisuppgifters avtalsrattsliga betydelse.
+- Kundens nya vy heter `Val och tillval`. Prissatta val som kan accepteras med
+  huvudofferten skiljs fran planerade, ej bestallda arbeten. Separata ATA med
+  pris-/tidskonsekvens och eget godkannande aterstar fortfarande.
+- Kor `docs/db/2026-09-29_04_customer_offer_planning.sql` fore apppublicering.
+  Den ar transaktionell och omkorbar, med inga omskrivningar av befintliga avtal.
+  Saknas migrationen avaktiveras planering och nya avtalsfalt kan inte sparas
+  utan databasskydd. Tidigare offertformat fungerar fortsatt.
+
 Releasekontroll 2026-09-29: produktionens tre offerttabeller, bada RPC-funktioner
 och privata bucket finns. Anonym tabellatkomst nekas. Publiceringspaketet
 innehaller de gemensamma varumarkesfilerna, men temat aktiveras bara pa de nya
@@ -154,6 +191,17 @@ kundoffertsidorna. Ovriga sidors varumarkesandringar ingar inte i denna release.
    redan utskickade avtal. Ta inte bort migrationen eller originalhistoriken.
 
 ## Tester
+
+Kontroll av avtalsuppgifter/planering 2026-09-29: 148 action-case-tester passerar,
+inklusive 32 offert-/planeringstester med servermock och riktiga SQL-migrationer
+i PGlite. Typkontroll och riktad ESLint passerar. Manuell klickkontroll med
+riktiga komponenter och fiktiv HTTP-backend omfattar intern sparning, separat
+kunddelning, oforandrad grundsumma, angring av borttagning, avtalsreferenser efter
+omladdning, ofullstandig avraden och mobilbredd 390 px. Inga riktiga kunddata,
+mejl eller godkannanden anvandes. Vid publiceringskontrollen verifierades att
+produktionens planeringstabell och bada nya RPC-funktioner finns. Anonym
+tabellatkomst nekas. Ingen migration behovde koras eller kunddata andras i
+samband med apppubliceringen.
 
 - `node --experimental-strip-types --test --test-concurrency=1 test/action-cases-*.test.mjs`
   Inkluderar PGlite med faktiska migrationer: revisioner, organisationsgranser,

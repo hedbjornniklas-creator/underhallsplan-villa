@@ -2,6 +2,7 @@
 
 import { useId } from 'react'
 import { Check, Download, FileText } from 'lucide-react'
+import { CustomerContractDocument } from './CustomerContractFields'
 import {
   customerOfferBaseAmount,
   customerOfferOptionGroup,
@@ -93,7 +94,7 @@ export default function CustomerOfferDocument({
       </section>
       {s.items.some((i) => i.kind === 'option' && !customerOfferOptionGroup(i)) && (
         <section className="border-t border-slate-200 py-6">
-          <h3 className="text-lg font-semibold">Tillval</h3>
+          <h3 className="text-lg font-semibold">Tillval vid godkännande</h3>
           <div className="mt-3 divide-y divide-slate-200">
             {s.items
               .filter((i) => i.kind === 'option' && !customerOfferOptionGroup(i))
@@ -172,7 +173,7 @@ export default function CustomerOfferDocument({
       })}
       {s.items.some((i) => i.kind === 'excluded') && (
         <section className="border-t border-slate-200 py-6">
-          <h3 className="text-lg font-semibold">Utanför vårt åtagande</h3>
+          <h3 className="text-lg font-semibold">Avgränsningar i åtagandet</h3>
           {s.items
             .filter((i) => i.kind === 'excluded')
             .map((i) => (
@@ -185,6 +186,7 @@ export default function CustomerOfferDocument({
             ))}
         </section>
       )}
+      <CustomerContractDocument value={s.contractDetails} />
       <section className="grid gap-6 border-y border-slate-200 py-6 sm:grid-cols-2">
         {[
           ['Tider', s.schedule],
