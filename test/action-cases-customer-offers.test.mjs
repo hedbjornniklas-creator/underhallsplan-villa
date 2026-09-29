@@ -47,6 +47,8 @@ before(async () => {
   await db.exec(migration())
   await db.exec(sql('2026-09-29_02_customer_offer_pricing'))
   await db.exec(sql('2026-09-29_02_customer_offer_pricing'))
+  await db.exec(sql('2026-09-29_03_customer_offer_internal_costing'))
+  await db.exec(sql('2026-09-29_03_customer_offer_internal_costing'))
 })
 after(async () => {
   await db.close()
@@ -194,6 +196,36 @@ function itemized(draft) {
     ]
   })
 }
+
+test('private costing transaction retains revision/organization/acceptance guards and immutable public snapshots', async () => {
+  const f = await fixture()
+  const costing = { [f.draft.items[1].id]: { purchaseOre: 123456, fixedMarkupOre: 10000, markupBasisPoints: 1000, additions: [] } }
+  const save = (revision, privateData = costing, org = id(1)) => db.query(
+    'select save_customer_offer_costing($1,$2,$3,$4::jsonb)',
+    [org, f.caseId, id(2), JSON.stringify({ revision, body: f.draft, costing: privateData })]
+  )
+  const stored = async () => (await db.query('select * from action_case_customer_offer_drafts where action_case_id=$1', [f.caseId])).rows[0]
+  await save(1)
+  const saved = await stored()
+  assert.equal(saved.revision, 2)
+  assert.deepEqual(saved.internal_costing, costing)
+  assert.deepEqual(saved.body, f.draft)
+  await assert.rejects(save(1), /STALE/)
+  await assert.rejects(save(2, costing, id(9)), /NOT_FOUND/)
+  await assert.rejects(save(2, []), /INVALID/)
+  assert.deepEqual(await stored(), saved)
+  await f.write('publish', { ...f.publication, revision: 2 })
+  assert.deepEqual((await get('action_case_customer_offers', f.offerId)).snapshot, f.snapshot)
+  await f.respond('challenge', f.challenge)
+  await f.respond('accept', { challengeId: f.challengeId, codeHash: 'good-hash' })
+  await assert.rejects(save(2), /ACCEPTED/)
+  for (const role of ['anon', 'authenticated']) {
+    const privilege = (await db.query(`select has_function_privilege('${role}', 'save_customer_offer_costing(uuid,uuid,uuid,jsonb)', 'execute') allowed`)).rows[0]
+    assert.equal(privilege.allowed, false)
+    const read = (await db.query(`select has_column_privilege('${role}', 'action_case_customer_offer_drafts', 'internal_costing', 'select') allowed`)).rows[0]
+    assert.equal(read.allowed, false)
+  }
+})
 
 test('itemized prices derive the base total; missing is not zero; legacy drafts retain their exact shape', () => {
   const legacy = emptyCustomerOffer('Test')

@@ -7,6 +7,7 @@ import {
 } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { quoteRequestHtml } from './quotes'
+import { normalizeCustomerOfferCosting } from './customerOfferCosting'
 import {
   CUSTOMER_OFFER_BUCKET,
   CUSTOMER_OFFER_COLUMNS,
@@ -69,11 +70,22 @@ export async function getCustomerOfferWorkspace(
     db = createSupabaseAdminClient()
   const draft = await db
     .from('action_case_customer_offer_drafts')
-    .select('body,revision')
+    .select('body,revision,internal_costing')
     .eq('action_case_id', caseId)
     .eq('org_id', ctx.orgId)
     .maybeSingle()
-  checked(draft.error)
+  let costingAvailable = true
+  let savedDraft = draft.data
+  let draftError = draft.error
+  if (draft.error && ['42703', 'PGRST204'].includes(draft.error.code)) {
+    // Older deployments retain manual pricing until migration 03 is applied.
+    costingAvailable = false
+    const legacy = await db.from('action_case_customer_offer_drafts')
+      .select('body,revision').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle()
+    savedDraft = legacy.data ? { ...legacy.data, internal_costing: {} } : null
+    draftError = legacy.error
+  }
+  checked(draftError)
   const offers = await db
     .from('action_case_customer_offers')
     .select(CUSTOMER_OFFER_COLUMNS)
@@ -81,11 +93,14 @@ export async function getCustomerOfferWorkspace(
     .eq('org_id', ctx.orgId)
     .order('version', { ascending: false })
   checked(offers.error)
+  const body = savedDraft
+      ? normalizeCustomerOffer(savedDraft.body)
+      : emptyCustomerOffer(c.title)
   return {
-    draft: draft.data
-      ? normalizeCustomerOffer(draft.data.body)
-      : emptyCustomerOffer(c.title),
-    revision: draft.data?.revision ?? 0,
+    draft: body,
+    costingAvailable,
+    costing: normalizeCustomerOfferCosting(savedDraft?.internal_costing, body.items),
+    revision: savedDraft?.revision ?? 0,
     offers: (offers.data ?? []).map(mapCustomerOffer)
   }
 }
@@ -97,7 +112,20 @@ export async function saveCustomerOffer(
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft = normalizeCustomerOffer(payload.draft)
+  const costing = payload.costing === undefined
+    ? undefined
+    : normalizeCustomerOfferCosting(payload.costing, draft.items)
   await checkPricingSchema(draft)
+  if (costing !== undefined) {
+    const result = await createSupabaseAdminClient().rpc('save_customer_offer_costing', {
+      p_org_id: ctx.orgId,
+      p_case_id: offerId(caseId),
+      p_user_id: ctx.userId,
+      p_data: { revision: payload.revision, body: draft, costing }
+    })
+    checked(result.error)
+    return
+  }
   await write(ctx, caseId, 'save', {
     revision: payload.revision,
     body: draft

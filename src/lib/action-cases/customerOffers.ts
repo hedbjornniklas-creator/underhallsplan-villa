@@ -1,3 +1,5 @@
+import type { CustomerOfferCosting } from './customerOfferCosting'
+
 export type CustomerOfferItem = {
   id: string
   title: string
@@ -48,6 +50,8 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  costing?: CustomerOfferCosting
+  costingAvailable?: boolean
   draft: CustomerOfferDraft
   revision: number
   offers: CustomerOffer[]

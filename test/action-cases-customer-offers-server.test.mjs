@@ -5,6 +5,7 @@ import * as crypto from 'node:crypto'
 import ts from 'typescript'
 import * as domain from '../src/lib/action-cases/customerOffers.ts'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
+import * as costingDomain from '../src/lib/action-cases/customerOfferCosting.ts'
 import {
   workspace,
   snapshot,
@@ -55,6 +56,8 @@ function harness(options = {}) {
       const read = { table, columns: '', filters: [] }
       reads.push(read)
       const result = () => {
+        if (table === 'action_case_customer_offer_drafts' && read.columns.includes('internal_costing') && options.costingMissing)
+          return { error: { code: '42703' } }
         if (table === 'action_case_customer_offers') {
           if (options.schemaMissing) return { error: { code: '42P01' } }
           if (
@@ -74,7 +77,7 @@ function harness(options = {}) {
               title: 'Project',
               property_address: 'Address'
             },
-            action_case_customer_offer_drafts: { body: draft, revision: 1 },
+            action_case_customer_offer_drafts: { body: draft, revision: 1, internal_costing: options.costing ?? {} },
             action_case_participants: participant,
             organizations: { name: 'Exempelbygg AB' },
             profiles: { email: 'byggare@example.test' },
@@ -145,6 +148,8 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (name === 'save_customer_offer_costing' && options.costingMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_pricing' && options.pricingMissing)
         return { error: { code: '42883' } }
       if (args.p_operation === 'publish') {
@@ -197,6 +202,7 @@ function harness(options = {}) {
     'node:crypto': crypto,
     './quotes': quotes,
     './customerOffers': domain,
+    './customerOfferCosting': costingDomain,
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/tokens': {
       generateAssignmentToken: () => token,
@@ -270,6 +276,39 @@ test('itemized save computes totals and requires the database guard; legacy save
   Object.assign(unmigrated.draft, draft)
   await assert.rejects(unmigrated.run(), /SCHEMA/)
   assert.equal(unmigrated.sent.length, 0)
+})
+
+test('costing saves atomically with public draft; missing schema cannot silently drop private edits', async () => {
+  const h = harness(), ctx = { orgId: id(90), userId: id(91) }
+  const costing = { [id(11)]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 10000 } }
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, costing })
+  assert.equal(h.calls.length, 1)
+  assert.equal(h.calls[0].name, 'save_customer_offer_costing')
+  assert.equal(h.calls[0].p_org_id, id(90))
+  assert.deepEqual(h.calls[0].p_data.costing, costing)
+  assert.equal(h.calls[0].p_data.body.costing, undefined)
+  const legacy = harness({ costingMissing: true })
+  const result = await legacy.api.getCustomerOfferWorkspace(ctx, id(1))
+  assert.equal(result.costingAvailable, false)
+  assert.deepEqual(result.costing, {})
+  await assert.rejects(legacy.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, costing }), /SCHEMA/)
+  assert.equal(legacy.calls.length, 1)
+})
+
+test('private worksheets are returned internally but never published, emailed or exposed by portal', async () => {
+  const costing = { [id(11)]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 9876543 } }
+  const h = harness({ costing })
+  const result = await h.api.getCustomerOfferWorkspace({ orgId: id(90), userId: id(91) }, id(1))
+  assert.deepEqual(result.costing, costing)
+  assert.equal(result.costingAvailable, true)
+  await h.run()
+  const portal = await h.api.getSharedCustomerOffers(id(90), id(1), id(2))
+  for (const value of [h.saved().snapshot, h.sent, portal]) {
+    const serialized = JSON.stringify(value)
+    assert.ok(!serialized.includes('purchaseOre'))
+    assert.ok(!serialized.includes('9876543'))
+    assert.ok(!serialized.includes('costing'))
+  }
 })
 
 test('grouped alternatives are checked before an email code is sent', async () => {

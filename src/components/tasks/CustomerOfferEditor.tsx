@@ -25,7 +25,6 @@ import {
   customerOfferOptionGroup,
   money,
   offerPublishIssues,
-  parseKronor,
   type CustomerOffer,
   type CustomerOfferDraft,
   type CustomerOfferSnapshot,
@@ -34,57 +33,14 @@ import {
 import { useToast } from '@/components/ui/AppToastProvider'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import ActionCaseCustomerPortal from './ActionCaseCustomerPortal'
+import PriceInput from './CustomerOfferPriceInput'
+import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
+import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
-function PriceInput({
-  value,
-  onChange,
-  label,
-  disabled
-}: {
-  value: number | null
-  onChange: (v: number | null) => void
-  label: string
-  disabled?: boolean
-}) {
-  const formatted =
-    value === null
-      ? ''
-      : (value % 100 === 0
-          ? String(value / 100)
-          : (value / 100).toFixed(2)
-        ).replace('.', ',')
-  const [raw, setRaw] = useState<string | null>(null)
-  return (
-    <label className="block text-sm font-medium">
-      {label}
-      <input
-        className={field}
-        aria-label={label}
-        type="text"
-        inputMode="decimal"
-        disabled={disabled}
-        value={raw ?? formatted}
-        onFocus={() => setRaw(formatted)}
-        onBlur={() => setRaw(null)}
-        onChange={(e) => {
-          const next = e.target.value.replace(/\s/g, '')
-          if (!/^(\d+([,.]\d{0,2})?)?$/.test(next)) return
-          try {
-            const amount = parseKronor(next.replace(/[,.]$/, ''))
-            setRaw(next)
-            onChange(amount)
-          } catch {
-            /* Keep the previous value outside the supported amount range. */
-          }
-        }}
-      />
-    </label>
-  )
-}
 export default function CustomerOfferEditor({
   actionCase,
   initial,
@@ -98,6 +54,7 @@ export default function CustomerOfferEditor({
 }) {
   const [workspace, setWorkspace] = useState(initial),
     [draft, setDraft] = useState(initial.draft)
+  const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
   const [view, setView] = useState<'edit' | 'document' | 'customer'>('edit')
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
@@ -108,7 +65,8 @@ export default function CustomerOfferEditor({
     [selected, setSelected] = useState<string[]>([])
   const [confirmItemized, setConfirmItemized] = useState(false)
   const customer = actionCase.participants.find((p) => p.role === 'customer')
-  const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft)
+  const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft) ||
+    JSON.stringify(costing) !== JSON.stringify(workspace.costing ?? {})
   const locked = workspace.offers.some((o) => o.status === 'accepted')
   const issues = [
     ...offerPublishIssues(draft),
@@ -126,6 +84,10 @@ export default function CustomerOfferEditor({
   ).length
   const update = (patch: Partial<CustomerOfferDraft>) => {
     setDraft((d) => ({ ...d, ...patch }))
+    if (patch.items) {
+      const ids = new Set(patch.items.map((item) => item.id))
+      setCosting((current) => Object.fromEntries(Object.entries(current).filter(([id]) => ids.has(id))))
+    }
     setConfirmed(false)
     setSelected([])
   }
@@ -163,6 +125,7 @@ export default function CustomerOfferEditor({
               : JSON.stringify({
                   operation,
                   draft,
+                  ...(workspace.costingAvailable ? { costing } : {}),
                   revision: workspace.revision,
                   confirmed,
                   ...extra
@@ -174,6 +137,7 @@ export default function CustomerOfferEditor({
         throw new Error(data.error || 'Offerten kunde inte hanteras.')
       setWorkspace(data)
       setDraft(data.draft)
+      setCosting(data.costing ?? {})
       setConfirmed(false)
       toast.success(
         operation === 'publish' || operation === 'send'
@@ -586,6 +550,21 @@ export default function CustomerOfferEditor({
                       </label>
                     )}
                   </div>
+                  {workspace.costingAvailable && (item.kind === 'option' ||
+                    (item.kind === 'included' && draft.pricingMode === 'itemized')) && (
+                    <CustomerOfferCostCalculator
+                      value={costing[item.id]}
+                      customerPrice={item.amountOre}
+                      onChange={(calculation) => {
+                        setCosting((current) => ({ ...current, [item.id]: calculation }))
+                        setConfirmed(false)
+                      }}
+                      onApply={(amountOre) => {
+                        update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) })
+                        toast.success('Kundpriset har uppdaterats i utkastet.')
+                      }}
+                    />
+                  )}
                   <label className="mt-3 block text-sm">
                     Omfattning och avgränsningar *
                     <textarea

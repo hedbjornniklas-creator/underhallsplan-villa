@@ -17,6 +17,7 @@ import {
   customerOfferTotal,
   normalizeCustomerOffer
 } from '../src/lib/action-cases/customerOffers.ts'
+import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -120,6 +121,7 @@ const server = createServer(async (req, res) => {
           return
         }
         state.draft = normalizeCustomerOffer(body.draft)
+        state.costing = normalizeCustomerOfferCosting(body.costing, state.draft.items)
         state.revision++
       } else if (body.operation === 'publish')
         state.offers = [published(state.draft)]
@@ -227,6 +229,42 @@ else {
         document.body.textContent.includes('Privat UE-offert')
       ))
     )
+    // Private worksheet is saved separately; using a calculated price is explicit.
+    await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
+    await fill('Inköpspris exkl. moms (kr) *', '10000')
+    await fill('Påslag på inköpspriset (%, valfritt)', '10')
+    await fill('Fast påslag exkl. moms (kr, valfritt)', '1000')
+    await click('Lägg till tillägg')
+    await fill('Tillägg 1 *', 'Montage')
+    assert.equal(await page.$('::-p-xpath(//button[normalize-space(.)="Använd kundpris"])'), null)
+    await fill('Belopp tillägg 1 (kr) *', '2000')
+    await page.keyboard.press('Tab')
+    assert.equal(await page.$eval('[aria-label="Tillvalspris inkl. moms (kr) *"]', (el) => el.value), '185000')
+    for (const width of [1440, 390]) {
+      await page.setViewport({ width, height: 980 })
+      await page.$eval('fieldset details', (el) => el.scrollIntoView({ block: 'start' }))
+      await layout(`${width} private calculation`)
+      await page.screenshot({ path: resolve(output, `${width}-cost-calculator.png`), fullPage: false })
+    }
+    await page.setViewport({ width: 1440, height: 980 })
+    await click('Använd kundpris')
+    assert.equal(await page.$eval('[aria-label="Tillvalspris inkl. moms (kr) *"]', (el) => el.value), '17500')
+    failSave = true
+    await click('Spara utkast')
+    await page.waitForFunction(() => document.body.textContent.includes('Tillfälligt anslutningsfel'))
+    assert.equal(state.costing[id(11)], undefined)
+    await click('Spara utkast')
+    await page.waitForFunction(() => document.querySelector('main [role="status"]')?.textContent === 'Sparat')
+    assert.equal(state.costing[id(11)].purchaseOre, 1000000)
+    await page.reload({ waitUntil: 'networkidle0' })
+    await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
+    assert.equal(await page.$eval('[aria-label="Inköpspris exkl. moms (kr) *"]', (el) => el.value), '10000')
+    assert.equal(await page.$eval('[aria-label="Tillvalspris inkl. moms (kr) *"]', (el) => el.value), '17500')
+    // Existing manual prices remain editable even when a private worksheet exists.
+    await fill('Tillvalspris inkl. moms (kr) *', '185000')
+    await page.keyboard.press('Tab')
+    await click('Spara utkast')
+    await page.waitForFunction(() => document.querySelector('main [role="status"]')?.textContent === 'Sparat')
     // Decimal input, save failure preserves draft, then retry.
     const price = await page.$('[aria-label="Grundpris inkl. moms (kr) *"]')
     await price.click({ clickCount: 3 })
@@ -334,7 +372,7 @@ else {
         'rgb(255, 255, 255)',
         'Visible primary action label'
       )
-      for (const word of ['marginal', 'inköpspriser', 'ue-hemlig'])
+      for (const word of ['marginal', 'inköpspriser', 'ue-hemlig', 'Intern priskalkyl', 'Påslag på inköpspriset'])
         assert.equal(
           await page.evaluate(
             (t) => document.body.textContent.includes(t),

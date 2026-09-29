@@ -98,6 +98,32 @@ Datum: 2026-09-29.
   versionens frysta priser och kodbegarans sparade val, aldrig ett klienttotal.
   Publicering kraver minst tva prissatta alternativ per alternativgrupp.
 
+## Intern priskalkyl (2026-09-29)
+
+- Varje prissatt arbetsdel/tillval kan ha en privat kalkyl. Inkopspris anges
+  exklusive moms; valfritt procentpaslag beraknas enbart pa inkopspriset.
+  Ett fast paslag i kronor kan anvandas separat eller tillsammans med procent.
+- Montage, maskiner och andra namngivna tillagg anges som kundbelopp exklusive
+  moms. Dessa far inget ytterligare automatiskt paslag. Summeringen far 25 %
+  moms; procentbelopp och moms avrundas till hela ore med heltalsaritmetik.
+  Andra momssatser, omvand moms och ROT ingar inte i denna forsta modell.
+- Kalkylen ar ett arbetsblad, inte offertpriset. `Anvand kundpris` kopierar den
+  aktuella summan till kundprisfaltet. Senare kalkylandringar skriver inte over
+  kundpriset automatiskt. Bade beraknat och nuvarande kundpris visas.
+  Ett tidigare manuellt kundpris kan fortsatt anvandas.
+- Saknat inkopspris eller ofullstandiga tillaggsrader ger ingen beraknad summa.
+  Tomma valfria paslag ar noll; ett uttryckligt nollpris tillats. Kalkylen kan
+  sparas ofullstandig och foljer samma utkastrevision som offerten.
+- `internal_costing` lagras separat fran `body`. Den interna serverrutten laser
+  kalkylen, men publicerade snapshots, mejl och portalprojektioner gor det inte.
+  Den befintliga skrivfunktionen ateranvands i en transaktionell wrapper sa
+  offert och kalkyl sparas tillsammans. Organisationskontroll, revisionskonflikt
+  och lasning efter godkannande galler aven kalkylen.
+- Kor `docs/db/2026-09-29_03_customer_offer_internal_costing.sql` fore aktivering.
+  Saknas kolumnen visas inte kalkylfunktionen, och befintlig manuell prissattning
+  fungerar fortfarande. Ett misslyckat kalkylsparande far aldrig tyst falla
+  tillbaka till att bara spara den publika offerten.
+
 ## Aktivering
 
 Releasekontroll 2026-09-29: produktionens tre offerttabeller, bada RPC-funktioner

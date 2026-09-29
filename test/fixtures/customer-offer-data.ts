@@ -70,6 +70,8 @@ export const actionCase: ActionCaseView = {
   ]
 }
 export const workspace: CustomerOfferWorkspace = {
+  costing: {},
+  costingAvailable: true,
   revision: 1,
   offers: [],
   draft: {
