@@ -76,6 +76,12 @@ Datum: 2026-09-29.
 - Koder galler i 10 minuter, hogst 5 forsok, hogst en kod/minut och 5 koder/timme
   per offert. Felaktiga forsok sparas trots felmeddelandet. Ny kod ersatter gammal.
 - Tillfalliga meddelanden anvander den befintliga `AppToastProvider`.
+- Byte mellan offertvyer flyttar skroll och tangentbordsfokus till sidrubriken.
+  Granskningen har aven en atergang till redigering langst ned. Osparade uppgifter
+  bevaras vid vybyte; granskning sparar eller publicerar ingenting.
+- Checklistan kontrollerar verklig text, inte enbart mellanslag. Villkor,
+  betalningsvillkor och tider redovisas var for sig. Saknad mottagaradress visas
+  ocksa som hinder for utskick.
 
 ## Aktivering
 

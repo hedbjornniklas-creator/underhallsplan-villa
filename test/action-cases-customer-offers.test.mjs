@@ -217,6 +217,53 @@ test('money, template normalization, publication readiness and selected option t
   )
 })
 
+test('publication checklist treats whitespace as missing and identifies each required field', () => {
+  const draft = {
+    ...emptyCustomerOffer('Offert'),
+    baseAmountOre: 0,
+    validUntil: '2099-12-31',
+    contractForm: 'custom',
+    terms: 'Villkor',
+    paymentTerms: 'Betalningsplan',
+    schedule: 'Tidplan',
+    items: [
+      {
+        id: id(10),
+        title: 'Arbete',
+        scope: 'Omfattning',
+        kind: 'included',
+        amountOre: null
+      }
+    ]
+  }
+  assert.deepEqual(offerPublishIssues(draft, '2026-09-29'), [])
+  for (const [field, message] of [
+    ['title', 'Ange en offertrubrik.'],
+    ['terms', 'Komplettera villkor och hänvisning till avtalshandling.'],
+    ['paymentTerms', 'Ange betalningsvillkor.'],
+    ['schedule', 'Ange tider och förutsättningar.']
+  ]) {
+    const incomplete = { ...draft, [field]: ' \n\t ' }
+    assert.deepEqual(offerPublishIssues(incomplete, '2026-09-29'), [message])
+    assert.deepEqual(
+      offerPublishIssues(incomplete, '2026-09-29'),
+      offerPublishIssues(normalizeCustomerOffer(incomplete), '2026-09-29')
+    )
+  }
+  for (const field of ['title', 'scope']) {
+    assert.deepEqual(
+      offerPublishIssues(
+        {
+          ...draft,
+          items: [{ ...draft.items[0], [field]: '   ' }]
+        },
+        '2026-09-29'
+      ),
+      ['Beskriv omfattningen för varje arbete.']
+    )
+  }
+})
+
 test('migration is rerunnable; drafts use revisions and tenant boundaries; publication is frozen and idempotent', async () => {
   const f = await fixture()
   await assert.rejects(f.write('save', { revision: 0, body: f.draft }), /STALE/)

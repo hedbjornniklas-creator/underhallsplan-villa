@@ -97,6 +97,8 @@ export default function CustomerOfferEditor({
   const [workspace, setWorkspace] = useState(initial),
     [draft, setDraft] = useState(initial.draft)
   const [view, setView] = useState<'edit' | 'document' | 'customer'>('edit')
+  const heading = useRef<HTMLHeadingElement>(null)
+  const previousView = useRef(view)
   const [busy, setBusy] = useState(''),
     running = useRef(false),
     toast = useToast()
@@ -105,12 +107,23 @@ export default function CustomerOfferEditor({
   const customer = actionCase.participants.find((p) => p.role === 'customer')
   const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft)
   const locked = workspace.offers.some((o) => o.status === 'accepted')
-  const issues = offerPublishIssues(draft)
+  const issues = [
+    ...offerPublishIssues(draft),
+    ...(!customer?.email?.trim()
+      ? ['Ange beställarens e-postadress i uppdraget.']
+      : [])
+  ]
   const files = actionCase.attachments.filter((f) => !f.isQuoteDocument)
   const update = (patch: Partial<CustomerOfferDraft>) => {
     setDraft((d) => ({ ...d, ...patch }))
     setConfirmed(false)
   }
+  useEffect(() => {
+    if (previousView.current === view) return
+    previousView.current = view
+    heading.current?.focus({ preventScroll: true })
+    heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }, [view])
   useEffect(() => {
     if (!dirty) return
     const prevent = (event: BeforeUnloadEvent) => {
@@ -259,7 +272,9 @@ export default function CustomerOfferEditor({
           {actionCase.propertyAddress}
         </p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
-          <h1>Kundvy och offert</h1>
+          <h1 ref={heading} tabIndex={-1} className="scroll-mt-6">
+            Kundvy och offert
+          </h1>
           <p className="text-sm text-slate-500" role="status">
             {busy
               ? 'Arbetar…'
@@ -299,16 +314,26 @@ export default function CustomerOfferEditor({
           previewCaseId={actionCase.id}
         />
       ) : view === 'document' ? (
-        <div className="mt-5 bg-white px-6">
-          <CustomerOfferDocument
-            offer={draftOffer}
-            selected={selected}
-            onSelect={setSelected}
-            fileUrl={(id) =>
-              `/api/action-cases/${actionCase.id}/attachments/${id}`
-            }
-          />
-        </div>
+        <>
+          <div className="mt-5 bg-white px-6">
+            <CustomerOfferDocument
+              offer={draftOffer}
+              selected={selected}
+              onSelect={setSelected}
+              fileUrl={(id) =>
+                `/api/action-cases/${actionCase.id}/attachments/${id}`
+              }
+            />
+          </div>
+          <div className="py-5 print:hidden">
+            <button
+              className={`${button} bg-white`}
+              onClick={() => setView('edit')}
+            >
+              <ArrowLeft size={17} /> Tillbaka till redigering
+            </button>
+          </div>
+        </>
       ) : (
         <div className="grid gap-8 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <fieldset

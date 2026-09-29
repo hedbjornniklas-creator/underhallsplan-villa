@@ -247,13 +247,55 @@ else {
       path: resolve(output, 'desktop-editor.png'),
       fullPage: true
     })
-    await click('Granska offertutkast')
+    const previewWrites = writes.length
+    await fill('Rubrik *', 'Tillbyggnad - osparad komplettering')
+    await page
+      .locator(
+        '::-p-xpath(//aside//button[normalize-space(.)="Granska offertutkast"])'
+      )
+      .click()
+    await page.waitForSelector('article[aria-label="Kundoffert"]')
+    assert.equal(
+      await page.$eval('h1', (el) => {
+        const r = el.getBoundingClientRect()
+        return (
+          r.top >= 0 &&
+          r.bottom <= innerHeight &&
+          document.activeElement === el
+        )
+      }),
+      true,
+      'Preview from the bottom opens at the heading with keyboard focus'
+    )
     await layout('draft preview')
     await page.screenshot({
       path: resolve(output, 'desktop-offer.png'),
       fullPage: true
     })
-    await click('Redigera offert')
+    await click('Tillbaka till redigering')
+    await page.waitForSelector('fieldset')
+    assert.equal(
+      await page.$eval(
+        'h1',
+        (el) => document.activeElement === el && el.getBoundingClientRect().top >= 0
+      ),
+      true,
+      'Return from the document restores focus at the editor heading'
+    )
+    assert.equal(
+      await page.$eval('[aria-label="Grundpris inkl. moms (kr) *"]', (el) => el.value),
+      '1250000,50'
+    )
+    assert.equal(
+      await page.$eval('fieldset input', (el) => el.value),
+      'Tillbyggnad - osparad komplettering',
+      'Preview navigation preserves unsaved text'
+    )
+    assert.equal(writes.length, previewWrites, 'Preview does not save or publish')
+    await click('Spara utkast')
+    await page.waitForFunction(
+      () => document.querySelector('main [role="status"]')?.textContent === 'Sparat'
+    )
     await page
       .locator(
         '::-p-xpath(//label[contains(. ,"Jag har granskat kundofferten")]//input)'
@@ -376,6 +418,22 @@ else {
     await click('Granska offertutkast')
     await layout('empty preview')
     state.offers = [published()]
+    await page.goto(origin + '/intern?no-email', { waitUntil: 'networkidle0' })
+    await page.locator('aside summary').click()
+    assert.match(
+      await page.$eval('aside', (el) => el.textContent),
+      /Ange beställarens e-postadress i uppdraget\./
+    )
+    await page
+      .locator(
+        '::-p-xpath(//label[contains(.,"Jag har granskat kundofferten")]//input)'
+      )
+      .click()
+    assert.equal(
+      await page.$eval('aside button.bg-slate-950', (el) => el.disabled),
+      true,
+      'Missing recipient still blocks publication after confirmation'
+    )
     await page.goto(origin + '/kund?expired', { waitUntil: 'networkidle0' })
     await click('Visa offert')
     assert.equal(
@@ -389,7 +447,7 @@ else {
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
     console.log(
-      'PASS real component click flow: edit, decimal prices, failed save/retry, preview, send, option, code error/retry, server receipt, reload/locked, empty/expired, files; four viewport widths; no external traffic'
+      'PASS real component click flow: edit, decimal prices, failed save/retry, preview scroll/focus, unsaved text preserved, missing recipient, send, option, code error/retry, server receipt, reload/locked, empty/expired, files; four viewport widths; no external traffic'
     )
   } finally {
     await browser.close()

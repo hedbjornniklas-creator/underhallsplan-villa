@@ -10,6 +10,13 @@ import { actionCase, customer, token } from './customer-offer-data'
 async function start() {
   const workspace = await (await fetch('/fixture')).json()
   const params = new URLSearchParams(location.search)
+  const editorCase = params.has('no-email')
+    ? {
+        ...actionCase,
+        customerEmail: null,
+        participants: [{ ...customer, email: null }]
+      }
+    : actionCase
   if (params.has('empty')) {
     workspace.draft = emptyCustomerOffer()
     workspace.revision = 0
@@ -48,7 +55,7 @@ async function start() {
           <ActionCaseCustomerPortal portal={portal} token={token} />
         ) : (
           <CustomerOfferEditor
-            actionCase={actionCase}
+            actionCase={editorCase}
             initial={workspace}
             issuerName="Exempelbygg AB"
             replyEmail="byggare@example.test"
