@@ -137,32 +137,30 @@ export function buildTuReportWriterSnapshot(input: {
     scopeAddressReview: input.snapshot.scopeAddressReview,
     editorialFocus: input.plan.focus,
     scopeBoundary: input.plan.scopeBoundary,
+    sourceRegistry: {
+      analysisContext: {
+        overview: approvedAnalysis.overview,
+        timelineSummary: approvedAnalysis.timelineSummary,
+        warnings: approvedAnalysis.warnings,
+      },
+      analysisItems,
+      observations,
+      fields,
+      images,
+    },
     sections: input.plan.sections.map((sectionPlan) => {
       const section = sectionsById.get(sectionPlan.sectionId) ?? {}
-      const selectedAnalysisItems = analysisItems.filter((item) => (
-        sectionPlan.selectedAnalysisItemIds.includes(cleanText(item.id))
-      ))
-      const selectedObservations = observations.filter((observation) => (
-        sectionPlan.selectedObservationIds.includes(cleanText(observation.id))
-      ))
-      const selectedFields = fields.filter((field) => (
-        sectionPlan.selectedFieldKeys.includes(cleanText(field.key))
-      ))
-      const selectedImageIds = new Set([
-        ...selectedAnalysisItems.flatMap((item) => stringArray(item.source_image_ids)),
-        ...selectedObservations.flatMap((observation) => stringArray(observation.imageIds)),
-      ])
 
       return {
         section,
         editorialPurpose: sectionPlan.purpose,
         include: sectionPlan.include,
-        selectedSources: {
-          analysisItems: selectedAnalysisItems,
-          observations: selectedObservations,
-          fields: selectedFields,
-          images: images.filter((image) => selectedImageIds.has(cleanText(image.id))),
+        prioritySourceIds: {
+          analysisItemIds: sectionPlan.selectedAnalysisItemIds,
+          observationIds: sectionPlan.selectedObservationIds,
+          fieldKeys: sectionPlan.selectedFieldKeys,
         },
+        internalWarnings: sectionPlan.internalWarnings,
       }
     }),
   }

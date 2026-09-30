@@ -120,6 +120,25 @@ test('blocks internal source language in the customer report', () => {
   assert.ok(issues.some((issue) => issue.id === 'internal-source-language-in-report'))
 })
 
+test('warns when the report writer uses first-person language', () => {
+  const issues = evaluateTuReportQuality({
+    reportText: 'Sammantaget bedömer jag att lokal fuktpåverkan finns i mätpunkten.',
+    observations: [],
+    appendixImages: [],
+  })
+  const issue = issues.find((item) => item.id === 'first-person-report-language')
+  assert.equal(issue?.severity, 'warning')
+})
+
+test('accepts the same assessment in neutral report language', () => {
+  const issues = evaluateTuReportQuality({
+    reportText: 'Sammantaget bedöms lokal fuktpåverkan finnas i mätpunkten.',
+    observations: [],
+    appendixImages: [],
+  })
+  assert.ok(!issues.some((issue) => issue.id === 'first-person-report-language'))
+})
+
 test('blocks an audit-style list of missing measurement metadata', () => {
   const issues = evaluateTuReportQuality({
     reportText: 'För kontrollen redovisas inte instrument, mätmetod, enhet eller jämförelsegrund.',

@@ -70,7 +70,7 @@ test('validates and restores the report template section order', () => {
   assert.deepEqual(plan.sections.map((section) => section.sectionId), ['scope', 'assessment'])
 })
 
-test('writer snapshot excludes sources rejected by the editorial selection', () => {
+test('writer snapshot keeps the full source registry while preserving editorial priorities', () => {
   const plan = parseTuReportEditorialPlan({
     snapshot,
     value: {
@@ -105,8 +105,16 @@ test('writer snapshot excludes sources rejected by the editorial selection', () 
   assert.deepEqual(writerSnapshot.sourcePolicy, snapshot.sourcePolicy)
   assert.deepEqual(writerSnapshot.scopeAddressReview, snapshot.scopeAddressReview)
   assert.match(serialized, /Fläck i innertak/)
-  assert.doesNotMatch(serialized, /Taket lades 2010/)
+  assert.match(serialized, /Taket lades 2010/)
   assert.doesNotMatch(selectedSections, /Testgatan 1/)
+  assert.deepEqual(
+    writerSnapshot.sections[1]?.prioritySourceIds,
+    {
+      analysisItemIds: ['assessment-current'],
+      observationIds: ['observation-relevant'],
+      fieldKeys: [],
+    }
+  )
 })
 
 test('flags a second street number from field evidence instead of silently excluding it', () => {

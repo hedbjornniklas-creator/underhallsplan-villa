@@ -402,7 +402,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
         sectionTypeKey: 'assignment_scope',
         titleOverride: 'Uppdrag och avgränsning',
         aiInstruction:
-          'Beskriv kort den tekniska frågan, vad som kontrollerades och relevanta avgränsningar i besiktningsmannens egen röst.',
+          'Beskriv kort den tekniska frågan, vad som kontrollerades och relevanta avgränsningar i neutral och opersonlig rapportform.',
         sortOrder: 100,
         isRequired: true,
         includeInToc: true,

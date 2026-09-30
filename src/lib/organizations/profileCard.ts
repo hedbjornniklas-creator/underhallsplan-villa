@@ -72,24 +72,46 @@ const ORGANIZATION_PROFILE_MEDIA_FILE_PATTERNS = {
 } as const satisfies Record<OrganizationProfileMediaField, RegExp>
 
 const MAX_IMPORTED_MEDIA_SIZE = 5 * 1024 * 1024
+const LEGACY_PUBLIC_MEDIA_PREFIX = '/storage/v1/object/public/property-media/'
 
-function isImportableLegacyMediaPath(value: string | null | undefined) {
-  const path = clean(value)
-  return Boolean(
+function importableLegacyMediaPath(value: string | null | undefined) {
+  const storedValue = clean(value)
+  if (!storedValue) return null
+
+  let path = storedValue
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(storedValue)) {
+    const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL)
+    if (!supabaseUrl) return null
+    try {
+      const sourceUrl = new URL(storedValue)
+      const expectedOrigin = new URL(supabaseUrl).origin
+      if (
+        sourceUrl.protocol !== 'https:'
+        || sourceUrl.origin !== expectedOrigin
+        || !sourceUrl.pathname.startsWith(LEGACY_PUBLIC_MEDIA_PREFIX)
+      ) {
+        return null
+      }
+      path = decodeURIComponent(sourceUrl.pathname.slice(LEGACY_PUBLIC_MEDIA_PREFIX.length))
+    } catch {
+      return null
+    }
+  }
+
+  return (
     path
     && !path.startsWith('/')
     && !path.includes('\\')
     && !path.split('/').includes('..')
     && !path.includes('/organizations/')
-    && !/^[a-z][a-z0-9+.-]*:/iu.test(path)
-  )
+  ) ? path : null
 }
 
 function legacyMediaAvailability(profile: LegacyProfileRow) {
   return {
-    avatarPath: isImportableLegacyMediaPath(profile.avatar_path),
-    logoPath: isImportableLegacyMediaPath(profile.logo_path),
-    signaturePath: isImportableLegacyMediaPath(profile.signature_path),
+    avatarPath: Boolean(importableLegacyMediaPath(profile.avatar_path)),
+    logoPath: Boolean(importableLegacyMediaPath(profile.logo_path)),
+    signaturePath: Boolean(importableLegacyMediaPath(profile.signature_path)),
   }
 }
 
@@ -386,12 +408,18 @@ export async function importLegacyOrganizationProfileMedia(input: {
   }
 
   const legacyPaths = {
-    avatarPath: clean((profileData as Pick<LegacyProfileRow, 'avatar_path'>).avatar_path),
-    logoPath: clean((profileData as Pick<LegacyProfileRow, 'logo_path'>).logo_path),
-    signaturePath: clean((profileData as Pick<LegacyProfileRow, 'signature_path'>).signature_path),
+    avatarPath: importableLegacyMediaPath(
+      (profileData as Pick<LegacyProfileRow, 'avatar_path'>).avatar_path
+    ),
+    logoPath: importableLegacyMediaPath(
+      (profileData as Pick<LegacyProfileRow, 'logo_path'>).logo_path
+    ),
+    signaturePath: importableLegacyMediaPath(
+      (profileData as Pick<LegacyProfileRow, 'signature_path'>).signature_path
+    ),
   }
   const fields = ORGANIZATION_PROFILE_MEDIA_FIELDS.filter((field) => (
-    !current[field] && isImportableLegacyMediaPath(legacyPaths[field])
+    !current[field] && Boolean(legacyPaths[field])
   ))
   if (fields.length === 0) throw new Error('ORG_PROFILE_CARD_LEGACY_MEDIA_NOT_FOUND')
 

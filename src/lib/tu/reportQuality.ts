@@ -339,7 +339,16 @@ export function evaluateTuReportQuality(input: {
     issues.push({
       id: 'internal-source-language-in-report',
       severity: 'blocker',
-      message: 'Utlåtandet hänvisar till interna fält, anteckningar eller AI-processen. Formulera texten i besiktningsmannens egen röst.',
+      message: 'Utlåtandet hänvisar till interna fält, anteckningar eller AI-processen. Formulera texten som ett direkt och opersonligt tekniskt utlåtande.',
+    })
+  }
+
+  const firstPersonReportVoice = /\b(?:jag|vi|min|mitt|mina|vår|vårt|våra)\b/iu
+  if (firstPersonReportVoice.test(input.reportText)) {
+    issues.push({
+      id: 'first-person-report-language',
+      severity: 'warning',
+      message: 'Utlåtandet använder jag- eller vi-form. Formulera rapportförfattarens bedömningar i neutral och opersonlig rapportform.',
     })
   }
 

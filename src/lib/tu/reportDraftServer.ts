@@ -23,6 +23,10 @@ import {
   type TuReportEditorialPlan,
 } from '@/lib/tu/reportEditorial'
 import {
+  parseTuReportCoverageReview,
+  type TuReportCoverageReview,
+} from '@/lib/tu/reportCoverage'
+import {
   normalizeTuReportProviderResponse,
   parseTuReportBackgroundState,
   tuReportBackgroundPayload,
@@ -51,14 +55,15 @@ const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
   || 'gpt-5.6'
-const RULESET_KEY = 'tu_ai_assisted_report_v1'
-const RULESET_VERSION = 1
+const RULESET_KEY = 'tu_ai_assisted_report_v2'
+const RULESET_VERSION = 2
 const STALE_RUN_MINUTES = 12
 const PROVIDER_CREATE_TIMEOUT_MS = 30_000
 const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
 const PROVIDER_MAX_JOB_AGE_MS = 8 * 60 * 1_000
 const EDITORIAL_MAX_OUTPUT_TOKENS = 24_000
 const REPORT_MAX_OUTPUT_TOKENS = 32_000
+const COVERAGE_MAX_OUTPUT_TOKENS = 40_000
 const NON_EDITABLE_SECTION_KEYS = new Set(['assignment_parties', 'signature'])
 
 type JsonRecord = Record<string, unknown>
@@ -694,15 +699,8 @@ export async function createTuWholeReportDraftRun(input: {
   return String((data as { id: string }).id)
 }
 
-function parseGeneratedReport(payload: OpenAiResponse): GeneratedReport {
-  const text = responseText(payload)
-  if (!text) throw new Error('OPENAI_EMPTY_RESPONSE')
-  let parsed: JsonRecord
-  try {
-    parsed = JSON.parse(text) as JsonRecord
-  } catch {
-    throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
-  }
+function parseGeneratedReportValue(value: unknown): GeneratedReport {
+  const parsed = record(value)
   const sections = Array.isArray(parsed.sections)
     ? parsed.sections.map(record).map((section) => ({
         sectionId: cleanText(section.sectionId),
@@ -726,6 +724,31 @@ function parseGeneratedReport(payload: OpenAiResponse): GeneratedReport {
   }
 }
 
+function parseResponseJson(payload: OpenAiResponse) {
+  const text = responseText(payload)
+  if (!text) throw new Error('OPENAI_EMPTY_RESPONSE')
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    throw new Error('OPENAI_INCOMPLETE_REPORT_DRAFT')
+  }
+}
+
+function parseGeneratedReport(payload: OpenAiResponse): GeneratedReport {
+  return parseGeneratedReportValue(parseResponseJson(payload))
+}
+
+function parseCoverageResult(payload: OpenAiResponse, writerSnapshot: JsonRecord) {
+  const parsed = record(parseResponseJson(payload))
+  return {
+    generated: parseGeneratedReportValue(parsed),
+    coverageReview: parseTuReportCoverageReview({
+      value: parsed.coverage,
+      writerSnapshot,
+    }),
+  }
+}
+
 function editorialRequestBody(snapshot: JsonRecord) {
   return {
       model: TU_REPORT_MODEL,
@@ -735,14 +758,15 @@ function editorialRequestBody(snapshot: JsonRecord) {
       instructions: [
         'Du är redaktör för ett svenskt tekniskt utlåtande och planerar innehållet innan någon rapporttext skrivs.',
         'Identifiera uppdragets huvudsakliga tekniska fråga och avgränsa rapporten till det som behövs för att besvara den.',
-        'Välj endast källor som behövs för uppdraget, genomförandet, avgörande iakttagelser, den samlade tekniska bedömningen eller en proportionerlig rekommendation.',
-        'En uppgift kan vara korrekt men ändå sakna betydelse för den aktuella frågan. Sådana sidospår ska inte väljas.',
+        'Prioritera de källor som tydligast behövs för uppdraget, genomförandet, avgörande iakttagelser, den samlade tekniska bedömningen eller en proportionerlig rekommendation.',
+        'Urvalet blir en redaktionell prioritering och får inte beskrivas som att övriga källor saknar giltighet. Hela källregistret följer med till rapportförfattaren och den efterföljande täckningsgranskningen.',
+        'En uppgift kan vara korrekt men ändå sakna betydelse för den aktuella frågan. Sådana sidospår ska inte prioriteras.',
         'Den godkända current_assessment och godkända konfliktlösningar styr vilka slutsatser och benämningar som är aktuella.',
         'Besiktningsmannens observationer och egna bilder är dokumentation av den genomförda undersökningen, inte externt bildmaterial.',
-        'Systemfält och deras etiketter är intern metadata. Välj ett fältvärde endast när själva sakuppgiften behövs i rapporten.',
+        'Systemfält och deras etiketter är intern metadata. Prioritera ett fältvärde endast när själva sakuppgiften behövs i rapporten.',
         'Bristande metadata om en mätning är i första hand en intern granskningsvarning. Välj inte en uppräkning av saknade fält som rapportinnehåll.',
         'Ett granskat indikationsvärde är ett användbart aktuellt kontrollresultat. Det får redovisas med mätpunkt, metod och instrument utan att omvandlas till fukthalt. Klassificera det endast enligt besiktningsmannens uttryckliga measurement.assessment.',
-        'Om en faktisk begränsning påverkar möjligheten att besvara huvudfrågan får begränsningen väljas, men den ska beskrivas proportionerligt och utan intern kontrolljargong.',
+        'Om en faktisk begränsning påverkar möjligheten att besvara huvudfrågan får begränsningen prioriteras, men den ska beskrivas proportionerligt och utan intern kontrolljargong.',
         'Placera varje sakuppgift i en primär rapportdel. Undvik att planera samma resonemang i flera delar.',
         'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
         'En rapportdel med isRequired true ska planeras med relevant källstöd när sådant finns. Om stöd verkligen saknas ska den utelämnas och få en tydlig internalWarning.',
@@ -826,9 +850,13 @@ function reportRequestBody(snapshot: JsonRecord) {
       store: false,
       reasoning: { effort: 'high' },
       instructions: [
-        'Du skriver ansvarig besiktningsmans svenska tekniska utlåtande utifrån ett redan redaktionellt gallrat underlag.',
-        'Skriv som den besiktningsman som har utfört undersökningen, inte som ett system eller en extern granskare av källmaterial.',
-        'Rapporten ska besvara editorialFocus och hålla sig inom scopeBoundary. Använd endast selectedSources i respektive rapportdel.',
+        'Du skriver ansvarig besiktningsmans svenska tekniska utlåtande utifrån ett komplett källregister och en redaktionell prioritering.',
+        'Skriv i neutral och opersonlig rapportform som ett färdigt utlåtande från ansvarig besiktningsman, inte som ett system eller en extern granskare av källmaterial.',
+        'Använd inte jag-form eller vi-form och skriv inte jag, vi, min, mitt, mina, vår, vårt eller våra om rapportförfattaren. Skriv exempelvis "Sammantaget bedöms" i stället för "Sammantaget bedömer jag".',
+        'Rapporten ska besvara editorialFocus och hålla sig inom scopeBoundary.',
+        'sourceRegistry innehåller hela det godkända underlaget. Läs hela registret innan rapporten skrivs och använd relevanta uppgifter därifrån.',
+        'prioritySourceIds i varje rapportdel är redaktörens prioritering och förslag till primär placering, inte en begränsning av vilka källor som får användas.',
+        'En relevant uppgift får inte utelämnas enbart för att dess id saknas i prioritySourceIds. Placera den i den rapportdel där den gör helheten tydligast.',
         'Interna id:n, fältnamn, etiketter, transkriberingar, fältanteckningar, AI-analyser och granskningsprocessen får aldrig omnämnas i rapporttexten.',
         'Egna fotografier är dokumentation av iakttagelser. Beskriv sakförhållandet direkt och kalla dem inte bildmaterial eller underlag.',
         'Skilj sakligt mellan egna iakttagelser, uttryckligt angivna partsuppgifter och tekniska bedömningar utan att beskriva den interna datakällan.',
@@ -839,7 +867,7 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Ta bara med begränsningar som har faktisk betydelse för slutsatsen och formulera dem i besiktningsmannens direkta fackspråk.',
         'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
-        'Bevara relevanta manuella texter när de stöds av de valda källorna, men redigera helheten till konsekvent språk och disposition.',
+        'Bevara relevanta manuella texter när de stöds av källregistret, men redigera helheten till konsekvent språk och disposition.',
         'Följ scopeAddressReview och bevara uttryckligen bekräftade adresser i currentScopeText. En snävare object.address får inte ensam användas för att utesluta en plats där dagens valda observationer visar att kontroll utförts.',
         'Följ sourcePolicy. Tidigare handlingar får endast beskrivas kort i uppdragets bakgrund och får aldrig framställas som bevis för dagens förhållanden eller för att åtgärder har utförts.',
         'När rapportmallen gäller kontroll efter skadeåtgärd ska texten byggas runt den aktuella kontrollens observationer och grupperas efter område eller förhållande, inte efter kontrollinriktningens uppmärksamhetsområden.',
@@ -849,7 +877,7 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Följ varje rapportsdels aiInstruction och editorialPurpose. Skriv inte rubriken i texten.',
         'Returnera varje sectionId exakt en gång och i samma ordning som underlaget.',
         'Varje stycke måste ange minst en verklig källa via sourceAnalysisItemIds, sourceObservationIds eller sourceFieldKeys.',
-        'Käll-id:n får bara hämtas från selectedSources i den aktuella rapportdelen.',
+        'Käll-id:n får hämtas från hela sourceRegistry och måste motsvara en verklig post där.',
         'Ett stycke utan källor får inte skapas. Skriv i stället en varning på rapportdelen och lämna paragraphs tom.',
         'Skriv koncist, precist och proportionerligt. Textens omfattning ska styras av huvudfrågan och underlaget, inte av antalet tillgängliga fakta.',
       ].join('\n'),
@@ -911,10 +939,147 @@ function reportRequestBody(snapshot: JsonRecord) {
   }
 }
 
+function coverageRequestBody(input: {
+  writerSnapshot: JsonRecord
+  generated: GeneratedReport
+}) {
+  return {
+    model: TU_REPORT_MODEL,
+    background: true,
+    store: false,
+    reasoning: { effort: 'high' },
+    instructions: [
+      'Du är slutredaktör och täckningsgranskare för ett svenskt tekniskt utlåtande.',
+      'Jämför initialDraft mot hela sourceRegistry. Granska varje analysis item, observation och source field innan slutversionen lämnas.',
+      'Syftet är inte att ta med varje detalj. Syftet är att säkerställa att alla materiella uppgifter för huvudfrågan antingen finns i rapporten, medvetet har utelämnats som sidospår eller har markerats för användarens kontroll.',
+      'prioritySourceIds är en redaktionell prioritering och får inte användas för att dölja en relevant uppgift i sourceRegistry.',
+      'Bevara fungerande text i initialDraft. Ändra bara det som behövs för fullständighet, korrekthet, konsekvens, källstöd eller för att ta bort onödig upprepning.',
+      'Rätta relevanta utelämnanden, motsägelser, adresser, platser, väderstreck och mätuppgifter när sourceRegistry ger ett tydligt svar.',
+      'Den godkända current_assessment och resolved conflicts styr över preliminära eller motsägande tidigare uppgifter.',
+      'Om en materiell motsägelse inte kan lösas ur det godkända underlaget ska du inte gissa. Behåll endast säkra uppgifter, lägg till en needs_user_review-finding och en kort intern warning.',
+      'Skriv i neutral och opersonlig rapportform. Använd inte jag-form eller vi-form om rapportförfattaren.',
+      'Interna id:n, fältnamn, transkriberingar, fältanteckningar, AI-processen och täckningsgranskningen får aldrig omnämnas i rapporttexten.',
+      'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
+      'Varje rapportstycke måste ange minst en verklig källa från sourceRegistry.',
+      'Returnera samtliga rapportdelar exakt en gång och i samma ordning som i sections.',
+      'Rapportdelar där include är false ska behålla en tom paragraphs-array.',
+      'coverage.reviewedAnalysisItemIds ska innehålla samtliga id:n i sourceRegistry.analysisItems exakt en gång.',
+      'coverage.reviewedObservationIds ska innehålla samtliga id:n i sourceRegistry.observations exakt en gång.',
+      'coverage.reviewedFieldKeys ska innehålla samtliga keys i sourceRegistry.fields exakt en gång.',
+      'coverage.findings ska innehålla exakt en post för varje analysis item, observation och source field i sourceRegistry.',
+      'Markera varje källa som already_covered, added_to_report, intentionally_omitted eller needs_user_review och ange ett kort konkret skäl. targetSectionId ska vara tom sträng när ingen rapportdel är aktuell.',
+      'Övriga regler i writerContext gäller även slutversionen.',
+    ].join('\n'),
+    input: JSON.stringify({
+      writerContext: input.writerSnapshot,
+      initialDraft: input.generated,
+    }, null, 2),
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'tu_report_coverage_review',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties: {
+            overview: { type: 'string' },
+            warnings: { type: 'array', items: { type: 'string' } },
+            sections: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  sectionId: { type: 'string' },
+                  paragraphs: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        text: { type: 'string' },
+                        sourceAnalysisItemIds: { type: 'array', items: { type: 'string' } },
+                        sourceObservationIds: { type: 'array', items: { type: 'string' } },
+                        sourceFieldKeys: { type: 'array', items: { type: 'string' } },
+                        warnings: { type: 'array', items: { type: 'string' } },
+                      },
+                      required: [
+                        'text',
+                        'sourceAnalysisItemIds',
+                        'sourceObservationIds',
+                        'sourceFieldKeys',
+                        'warnings',
+                      ],
+                      additionalProperties: false,
+                    },
+                  },
+                  warnings: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['sectionId', 'paragraphs', 'warnings'],
+                additionalProperties: false,
+              },
+            },
+            coverage: {
+              type: 'object',
+              properties: {
+                summary: { type: 'string' },
+                reviewedAnalysisItemIds: { type: 'array', items: { type: 'string' } },
+                reviewedObservationIds: { type: 'array', items: { type: 'string' } },
+                reviewedFieldKeys: { type: 'array', items: { type: 'string' } },
+                findings: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      sourceType: {
+                        type: 'string',
+                        enum: ['analysis_item', 'observation', 'field'],
+                      },
+                      sourceId: { type: 'string' },
+                      disposition: {
+                        type: 'string',
+                        enum: [
+                          'already_covered',
+                          'added_to_report',
+                          'intentionally_omitted',
+                          'needs_user_review',
+                        ],
+                      },
+                      targetSectionId: { type: 'string' },
+                      reason: { type: 'string' },
+                    },
+                    required: [
+                      'sourceType',
+                      'sourceId',
+                      'disposition',
+                      'targetSectionId',
+                      'reason',
+                    ],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: [
+                'summary',
+                'reviewedAnalysisItemIds',
+                'reviewedObservationIds',
+                'reviewedFieldKeys',
+                'findings',
+              ],
+              additionalProperties: false,
+            },
+          },
+          required: ['overview', 'warnings', 'sections', 'coverage'],
+          additionalProperties: false,
+        },
+      },
+    },
+    max_output_tokens: COVERAGE_MAX_OUTPUT_TOKENS,
+  }
+}
+
 async function startBackgroundResponse(input: {
   apiKey: string
   body: JsonRecord
-  operation: 'editorial' | 'writer'
+  operation: 'editorial' | 'writer' | 'coverage'
 }) {
   let response: Response
   try {
@@ -976,7 +1141,12 @@ async function retrieveBackgroundResponse(input: { apiKey: string; responseId: s
 
 function publicRunFailureMessage(error: unknown) {
   const code = error instanceof Error ? error.message : ''
-  if (code === 'OPENAI_EMPTY_RESPONSE' || code === 'OPENAI_INCOMPLETE_REPORT_DRAFT') {
+  if (
+    code === 'OPENAI_EMPTY_RESPONSE'
+    || code === 'OPENAI_INCOMPLETE_REPORT_DRAFT'
+    || code === 'OPENAI_INCOMPLETE_REPORT_COVERAGE'
+    || code === 'OPENAI_INVALID_REPORT_COVERAGE'
+  ) {
     return 'AI-svaret blev ofullständigt. Försök igen.'
   }
   if (code === 'OPENAI_RESPONSE_NOT_FOUND') {
@@ -1018,10 +1188,11 @@ async function finalizeTuWholeReportDraft(input: {
   snapshot: JsonRecord
   editorialPlan: TuReportEditorialPlan
   generated: GeneratedReport
+  coverageReview: TuReportCoverageReview
   progressTotal: number | null
 }) {
   const admin = createSupabaseAdminClient()
-  const { snapshot, editorialPlan, generated } = input
+  const { snapshot, editorialPlan, generated, coverageReview } = input
   try {
     const expectedSections = Array.isArray(snapshot.sections) ? snapshot.sections.map(record) : []
     const expectedIds = expectedSections.map((section) => cleanText(section.id)).filter(Boolean)
@@ -1108,6 +1279,9 @@ async function finalizeTuWholeReportDraft(input: {
       ...editorialPlan.internalWarnings,
       ...editorialPlan.sections.flatMap((section) => section.internalWarnings),
     ]
+    const coverageWarnings = coverageReview.findings
+      .filter((finding) => finding.disposition === 'needs_user_review')
+      .map((finding) => finding.reason)
     const { error: completeError } = await admin.from('tu_ai_runs').update({
       status: 'completed',
       output_payload: {
@@ -1115,11 +1289,15 @@ async function finalizeTuWholeReportDraft(input: {
         warnings: [...new Set([
           ...editorialWarnings,
           ...generated.warnings,
+          ...coverageWarnings,
           ...groundingWarnings,
         ])],
         editorialFocus: editorialPlan.focus,
         scopeBoundary: editorialPlan.scopeBoundary,
         editorialPlan,
+        coverageReview,
+        coverageFindingCount: coverageReview.findings.length,
+        coverageNeedsReviewCount: coverageWarnings.length,
         sectionCount: rows.length,
         blockedSectionCount,
         needsSourceSectionCount,
@@ -1129,8 +1307,8 @@ async function finalizeTuWholeReportDraft(input: {
       progress_stage: 'completed',
       progress_current: total,
       progress_total: total,
-      progress_message: blockedSectionCount || needsSourceSectionCount
-        ? `Rapportutkastet är klart. ${blockedSectionCount + needsSourceSectionCount} rapportdelar behöver din kontroll.`
+      progress_message: blockedSectionCount || needsSourceSectionCount || coverageWarnings.length
+        ? `Rapportutkastet är klart. ${blockedSectionCount + needsSourceSectionCount + coverageWarnings.length} punkt${blockedSectionCount + needsSourceSectionCount + coverageWarnings.length === 1 ? '' : 'er'} behöver din kontroll.`
         : 'Hela rapportutkastet är klart för granskning.',
       heartbeat_at: completedAt,
     }).eq('id', input.runId).eq('status', 'processing')
@@ -1142,13 +1320,15 @@ async function finalizeTuWholeReportDraft(input: {
 
 async function savePendingProviderRun(input: {
   runId: string
-  stage: 'editorial_pending' | 'writer_pending'
+  stage: 'editorial_pending' | 'writer_pending' | 'coverage_pending'
   envelope: { responseId: string }
   editorialPlan: TuReportEditorialPlan | null
+  generatedReport?: GeneratedReport | null
 }) {
   const admin = createSupabaseAdminClient()
   const now = new Date().toISOString()
   const isEditorial = input.stage === 'editorial_pending'
+  const isCoverage = input.stage === 'coverage_pending'
   const { error } = await admin.from('tu_ai_runs').update({
     status: 'processing',
     output_payload: tuReportBackgroundPayload({
@@ -1156,12 +1336,15 @@ async function savePendingProviderRun(input: {
       responseId: input.envelope.responseId,
       submittedAt: now,
       editorialPlan: input.editorialPlan,
-      generatedReport: null,
+      generatedReport: input.generatedReport ?? null,
+      coverageReview: null,
     }),
     progress_stage: isEditorial ? 'preparing' : 'synthesizing',
     progress_message: isEditorial
       ? 'AI:n planerar rapportens innehåll och avgränsning.'
-      : 'AI:n skriver rapportens delar som en sammanhängande helhet.',
+      : isCoverage
+        ? 'AI:n jämför utkastet med hela underlaget och kontrollerar att relevanta uppgifter inte saknas.'
+        : 'AI:n skriver rapportens delar som en sammanhängande helhet.',
     heartbeat_at: now,
   }).eq('id', input.runId).eq('status', 'processing')
   if (error) throw new Error(error.message)
@@ -1258,12 +1441,40 @@ export async function runTuWholeReportDraft(input: {
         value: workflow.editorialPlan,
         snapshot,
       })
-      const generated = workflow.generatedReport as GeneratedReport
+      const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan: editorialPlan })
+      const generated = parseGeneratedReportValue(workflow.generatedReport)
+      const envelope = await startBackgroundResponse({
+        apiKey,
+        body: coverageRequestBody({ writerSnapshot, generated }),
+        operation: 'coverage',
+      })
+      await savePendingProviderRun({
+        runId: input.runId,
+        stage: 'coverage_pending',
+        envelope,
+        editorialPlan,
+        generatedReport: generated,
+      })
+      return
+    }
+
+    if (workflow.stage === 'coverage_ready') {
+      const editorialPlan = parseTuReportEditorialPlan({
+        value: workflow.editorialPlan,
+        snapshot,
+      })
+      const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan: editorialPlan })
+      const generated = parseGeneratedReportValue(workflow.generatedReport)
+      const coverageReview = parseTuReportCoverageReview({
+        value: workflow.coverageReview,
+        writerSnapshot,
+      })
       await finalizeTuWholeReportDraft({
         ...input,
         snapshot,
         editorialPlan,
         generated,
+        coverageReview,
         progressTotal: run.progress_total,
       })
       return
@@ -1276,9 +1487,13 @@ export async function runTuWholeReportDraft(input: {
 }
 
 function pendingProgressMessage(workflow: TuReportBackgroundState) {
-  return workflow.stage === 'editorial_pending'
-    ? 'AI:n planerar rapportens innehåll och avgränsning.'
-    : 'AI:n skriver rapportens delar som en sammanhängande helhet.'
+  if (workflow.stage === 'editorial_pending') {
+    return 'AI:n planerar rapportens innehåll och avgränsning.'
+  }
+  if (workflow.stage === 'coverage_pending') {
+    return 'AI:n jämför utkastet med hela underlaget och kontrollerar att relevanta uppgifter inte saknas.'
+  }
+  return 'AI:n skriver rapportens delar som en sammanhängande helhet.'
 }
 
 export async function pollTuWholeReportDraft(input: {
@@ -1302,7 +1517,11 @@ export async function pollTuWholeReportDraft(input: {
   const expectedHeartbeat = cleanText((data as { heartbeat_at?: unknown }).heartbeat_at)
   if (
     !workflow
-    || (workflow.stage !== 'editorial_pending' && workflow.stage !== 'writer_pending')
+    || (
+      workflow.stage !== 'editorial_pending'
+      && workflow.stage !== 'writer_pending'
+      && workflow.stage !== 'coverage_pending'
+    )
     || !workflow.responseId
     || !workflow.submittedAt
   ) return
@@ -1377,9 +1596,42 @@ export async function pollTuWholeReportDraft(input: {
           submittedAt: null,
           editorialPlan,
           generatedReport: null,
+          coverageReview: null,
         }),
         progress_stage: 'queued',
         progress_message: 'Dispositionen är klar. Rapporttexten förbereds.',
+        heartbeat_at: now,
+      })
+        .eq('id', input.runId)
+        .eq('status', 'processing')
+        .eq('heartbeat_at', expectedHeartbeat)
+        .select('id')
+        .maybeSingle()
+      if (readyError) throw new Error(readyError.message)
+      if (!readyData) return
+      await runTuWholeReportDraft(input)
+      return
+    }
+
+    if (workflow.stage === 'coverage_pending') {
+      const editorialPlan = parseTuReportEditorialPlan({
+        value: workflow.editorialPlan,
+        snapshot,
+      })
+      const writerSnapshot = buildTuReportWriterSnapshot({ snapshot, plan: editorialPlan })
+      const { generated, coverageReview } = parseCoverageResult(provider.payload, writerSnapshot)
+      const { data: readyData, error: readyError } = await admin.from('tu_ai_runs').update({
+        status: 'queued',
+        output_payload: tuReportBackgroundPayload({
+          stage: 'coverage_ready',
+          responseId: null,
+          submittedAt: null,
+          editorialPlan,
+          generatedReport: generated,
+          coverageReview,
+        }),
+        progress_stage: 'queued',
+        progress_message: 'Täckningsgranskningen är klar. Rapportutkastet sparas.',
         heartbeat_at: now,
       })
         .eq('id', input.runId)
@@ -1402,9 +1654,10 @@ export async function pollTuWholeReportDraft(input: {
         submittedAt: null,
         editorialPlan: workflow.editorialPlan,
         generatedReport: generated,
+        coverageReview: null,
       }),
       progress_stage: 'queued',
-      progress_message: 'Rapporttexten är klar och kvalitetskontrolleras.',
+      progress_message: 'Rapporttexten är klar. Hela underlaget täckningsgranskas.',
       heartbeat_at: now,
     })
       .eq('id', input.runId)

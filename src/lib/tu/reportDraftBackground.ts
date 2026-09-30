@@ -13,6 +13,8 @@ export type TuReportBackgroundStage =
   | 'editorial_ready'
   | 'writer_pending'
   | 'writer_ready'
+  | 'coverage_pending'
+  | 'coverage_ready'
 
 export type TuReportBackgroundState = {
   version: typeof TU_REPORT_BACKGROUND_STATE_VERSION
@@ -21,6 +23,7 @@ export type TuReportBackgroundState = {
   submittedAt: string | null
   editorialPlan: unknown | null
   generatedReport: unknown | null
+  coverageReview: unknown | null
 }
 
 type JsonRecord = Record<string, unknown>
@@ -40,6 +43,8 @@ function isStage(value: unknown): value is TuReportBackgroundStage {
     || value === 'editorial_ready'
     || value === 'writer_pending'
     || value === 'writer_ready'
+    || value === 'coverage_pending'
+    || value === 'coverage_ready'
 }
 
 export function parseTuReportBackgroundState(value: unknown): TuReportBackgroundState | null {
@@ -50,7 +55,11 @@ export function parseTuReportBackgroundState(value: unknown): TuReportBackground
   const responseId = cleanText(state.responseId) || null
   const submittedAt = cleanText(state.submittedAt) || null
   if (
-    (state.stage === 'editorial_pending' || state.stage === 'writer_pending')
+    (
+      state.stage === 'editorial_pending'
+      || state.stage === 'writer_pending'
+      || state.stage === 'coverage_pending'
+    )
     && (!responseId || !/^resp_[A-Za-z0-9_-]{8,200}$/u.test(responseId) || !submittedAt)
   ) return null
 
@@ -61,6 +70,7 @@ export function parseTuReportBackgroundState(value: unknown): TuReportBackground
     submittedAt,
     editorialPlan: state.editorialPlan ?? null,
     generatedReport: state.generatedReport ?? null,
+    coverageReview: state.coverageReview ?? null,
   }
 }
 

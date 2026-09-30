@@ -148,6 +148,7 @@ test('accepts persisted pending report jobs with a valid provider id', () => {
     submittedAt: '2026-09-09T15:00:00.000Z',
     editorialPlan: null,
     generatedReport: null,
+    coverageReview: null,
   })
 
   assert.deepEqual(parseTuReportBackgroundState(payload), {
@@ -157,7 +158,23 @@ test('accepts persisted pending report jobs with a valid provider id', () => {
     submittedAt: '2026-09-09T15:00:00.000Z',
     editorialPlan: null,
     generatedReport: null,
+    coverageReview: null,
   })
+})
+
+test('accepts a pending report coverage review with the draft preserved', () => {
+  const payload = tuReportBackgroundPayload({
+    stage: 'coverage_pending',
+    responseId: 'resp_coverage123',
+    submittedAt: '2026-09-09T15:05:00.000Z',
+    editorialPlan: { focus: 'Fukt' },
+    generatedReport: { overview: 'Utkast' },
+    coverageReview: null,
+  })
+
+  const parsed = parseTuReportBackgroundState(payload)
+  assert.equal(parsed?.stage, 'coverage_pending')
+  assert.deepEqual(parsed?.generatedReport, { overview: 'Utkast' })
 })
 
 test('rejects pending report jobs without a retrievable provider id', () => {

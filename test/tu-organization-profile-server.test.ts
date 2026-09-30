@@ -29,6 +29,11 @@ type Fixture = {
   card?: Record<string, unknown> | null
   cardError?: { code?: string; message?: string } | null
   memberships: Array<{ org_id: string; is_default: boolean }>
+  profile?: Partial<{
+    avatar_path: string | null
+    logo_path: string | null
+    signature_path: string | null
+  }>
 }
 
 function loadResolver(fixture: Fixture): ResolverModule {
@@ -58,6 +63,7 @@ function loadResolver(fixture: Fixture): ResolverModule {
     company_city: 'Stockholm',
     logo_path: 'profiles/styr-logo.png',
     signature_path: 'profiles/styr-signature.png',
+    ...fixture.profile,
   }
 
   function response(table: string) {
@@ -137,6 +143,65 @@ test('the default flag alone never enables legacy branding in a multi-org accoun
   assert.equal(card.isDefaultOrganization, true)
   assert.equal(card.source, 'unconfigured')
   assert.equal(card.configured, false)
+})
+
+test('recognizes legacy media stored as public URLs in the current Supabase project', async () => {
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project-ref.supabase.co'
+  try {
+    const resolver = loadResolver({
+      memberships: [
+        { org_id: ORG_A, is_default: true },
+        { org_id: ORG_B, is_default: false },
+      ],
+      profile: {
+        avatar_path: `https://project-ref.supabase.co/storage/v1/object/public/property-media/profiles/${PROFILE_ID}/avatar.webp?v=1`,
+        logo_path: `https://project-ref.supabase.co/storage/v1/object/public/property-media/profiles/${PROFILE_ID}/logo.png?v=2`,
+        signature_path: `https://project-ref.supabase.co/storage/v1/object/public/property-media/profiles/${PROFILE_ID}/signature.jpg?v=3`,
+      },
+    })
+    const card = await resolver.resolveOrganizationProfileCard({
+      orgId: ORG_A,
+      profileId: PROFILE_ID,
+    })
+
+    assert.deepEqual(card.legacyMediaAvailable, {
+      avatarPath: true,
+      logoPath: true,
+      signaturePath: true,
+    })
+  } finally {
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl
+  }
+})
+
+test('rejects public media URLs from another project or an organization-specific path', async () => {
+  const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project-ref.supabase.co'
+  try {
+    const resolver = loadResolver({
+      memberships: [{ org_id: ORG_A, is_default: true }],
+      profile: {
+        avatar_path: 'https://other-project.supabase.co/storage/v1/object/public/property-media/profiles/avatar.webp',
+        logo_path: `https://project-ref.supabase.co/storage/v1/object/public/property-media/profiles/${PROFILE_ID}/organizations/${ORG_B}/logo.png`,
+        signature_path: 'javascript:alert(1)',
+      },
+    })
+    const card = await resolver.resolveOrganizationProfileCard({
+      orgId: ORG_A,
+      profileId: PROFILE_ID,
+    })
+
+    assert.deepEqual(card.legacyMediaAvailable, {
+      avatarPath: false,
+      logoPath: false,
+      signaturePath: false,
+    })
+  } finally {
+    if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl
+  }
 })
 
 test('a single active organization may use the legacy profile during migration', async () => {
