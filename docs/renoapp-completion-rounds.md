@@ -21,6 +21,13 @@ en ny sparr mot komplettering av redan lasta grunduppgifter.
 
 ## Drift
 
+Vid tillfalliga laddningsfel gors hogst tre GET-forsok per initial hamtning av
+foreningskonfiguration och ansokan. Efter ett kvarstaende fel visas en svensk
+feltext med knappen "Forsok igen", utan omladdning av hela sidan. Formular visas
+inte innan bada hamtningarna lyckats. Databasfel och tekniska svar exponeras inte.
+Sparande och mejlutskick omfattas inte av dessa aterforsok. Lankarnas giltighet
+och skyddet for utgangna eller aterkallade lankar ar oforandrade.
+
 Kor hela `docs/db/2026-09-07_03_renoapp_completion_rounds.sql` i en transaktion innan applikationskoden driftsatts. Migreringen ar inte automatiskt kord i produktion.
 
 Migreringen kravs aven for att lasa gamla arenden med den nya koden. Den bygger pa befintliga tabeller for arenden, meddelanden, underlagsval, deltagare, dokument och case_access_links.

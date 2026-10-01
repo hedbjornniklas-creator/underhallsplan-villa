@@ -20,12 +20,11 @@ export async function GET(_request: Request, context: RouteContext) {
     const payload = await getPublicApplicationDraftByToken(token)
 
     if (!payload) {
-      return jsonError('Utkastet hittades inte.', 404)
+      return jsonError('Ansökan hittades inte.', 404)
     }
 
     return NextResponse.json(payload)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
-    return jsonError(message || 'Kunde inte läsa utkastet.', 500)
+  } catch {
+    return jsonError('Din ansökan kunde inte laddas just nu. Försök igen om en stund.', 503)
   }
 }

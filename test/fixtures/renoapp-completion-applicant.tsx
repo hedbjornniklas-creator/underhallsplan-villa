@@ -22,6 +22,16 @@ const persist = () => sessionStorage.setItem('completion-fixture', JSON.stringif
 persist()
 window.fetch = async (input, init) => {
   const url = String(input)
+  if (url.includes('/public/applications/draft/') || url.includes('/brf/test/public')) {
+    const kind = url.includes('/public/applications/draft/') ? 'draft' : 'config'
+    const counter = `load-count-${kind}`
+    sessionStorage.setItem(counter, String(Number(sessionStorage.getItem(counter) ?? 0) + 1))
+    const failures = Number(sessionStorage.getItem(`load-fail-${kind}`) ?? 0)
+    if (failures > 0) {
+      sessionStorage.setItem(`load-fail-${kind}`, String(failures - 1))
+      return Response.json({ error: 'private provider error' }, { status: 503 })
+    }
+  }
   if (url.includes('/public/applications/draft/')) return Response.json(draft)
   if (url.includes('/brf/test/public')) return Response.json(JSON.parse(sessionStorage.getItem('initial-application-config') ?? 'null') ?? { brf: draft.brf, actionTypes: [], questionBank: [] })
   if (url === '/api/renoapp/public/applications' && init?.method === 'POST') {

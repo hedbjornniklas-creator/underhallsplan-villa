@@ -24,8 +24,7 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     return NextResponse.json(config)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Okänt fel.'
-    return jsonError(message || 'Kunde inte hämta publik BRF-konfiguration.', 500)
+  } catch {
+    return jsonError('Din ansökan kunde inte laddas just nu. Försök igen om en stund.', 503)
   }
 }

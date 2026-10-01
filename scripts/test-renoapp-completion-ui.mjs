@@ -44,6 +44,39 @@ try {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   page.on('dialog', dialog => dialog.accept())
+  for (const width of [1440, 344]) {
+    await page.setViewport({ width, height: 900 })
+    await page.goto(`http://127.0.0.1:${server.address().port}/applicant`, { waitUntil: 'networkidle0' })
+    for (const kind of ['config', 'draft']) {
+      await page.evaluate(kind => {
+        sessionStorage.setItem(`load-fail-${kind}`, '3')
+        sessionStorage.removeItem('completion-last-request')
+      }, kind)
+      await page.reload({ waitUntil: 'networkidle0' })
+      await page.waitForSelector('[role="alert"] button')
+      assert.match(await page.$eval('[role="alert"]', el => el.textContent), /Din ansökan kunde inte laddas just nu/)
+      assert.equal(await page.$('[data-resident-application]'), null)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+      await page.screenshot({ path: resolve(output, `load-error-${kind}-${width}.png`), fullPage: true })
+      const requests = []
+      const watchNavigation = request => { if (request.isNavigationRequest()) requests.push(request.url()) }
+      page.on('request', watchNavigation)
+      await page.click('[role="alert"] button')
+      await page.waitForSelector('[data-resident-application]')
+      page.off('request', watchNavigation)
+      assert.deepEqual(requests, [], 'Retry must not reload the document')
+      assert.equal(await page.evaluate(() => sessionStorage.getItem('completion-last-request')), null, 'Loading must not save or submit')
+      console.log(`PASS ${width}px: ${kind} load failure, safe text, retry recovers without navigation or save`)
+    }
+    await page.evaluate(() => {
+      sessionStorage.setItem('load-fail-draft', '2')
+      sessionStorage.setItem('load-count-draft', '0')
+    })
+    await page.reload({ waitUntil: 'networkidle0' })
+    await page.waitForSelector('[data-resident-application]')
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('load-count-draft')), '3')
+    assert.equal(await page.$('[role="alert"]'), null)
+  }
   for (const width of [1440, 1024, 390, 344]) {
     await page.setViewport({ width, height: 1000 })
     await page.goto(`http://127.0.0.1:${server.address().port}`, { waitUntil: 'networkidle0' })

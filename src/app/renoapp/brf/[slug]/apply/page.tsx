@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { APPLICATION_LOAD_ERROR, loadPublicApplicationJson } from '@/lib/renoapp/publicApplicationLoad'
 import { RenovationRulesDocument, RenovationRulesReceipt } from '@/components/renoapp/RenovationRulesView'
 import ResidentApplicationProcess from '@/components/renoapp/ResidentApplicationProcess'
 import ApplicationHelp from '@/components/renoapp/ApplicationHelp'
@@ -8,7 +9,7 @@ import ApplicantClarifications from '@/components/renoapp/ApplicantClarification
 import { clarificationAnswerError, type ClarificationAnswers, type ClarificationQuestion } from '@/lib/renoapp/clarifications'
 import type { RenovationRulesVersion, RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, ArrowRight, CheckCircle2, MessageSquarePlus, Send } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, MessageSquarePlus, RotateCcw, Send } from 'lucide-react'
 
 type Requirement = {
   id: string
@@ -691,6 +692,10 @@ export default function RenoAppApplyPage() {
 
   const [config, setConfig] = useState<PublicConfigResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [draftLoading, setDraftLoading] = useState(Boolean(initialDraftToken))
+  const [configLoadError, setConfigLoadError] = useState<string | null>(null)
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
   const [step, setStep] = useState<number | null>(1)
@@ -741,25 +746,21 @@ export default function RenoAppApplyPage() {
     // A successful first save already has the configuration and current form in memory.
     if (createdDraft?.slug === slug && (!initialDraftToken || initialDraftToken === createdDraft.token)) return
     let active = true
+    const controller = new AbortController()
 
     const loadConfig = async () => {
       setLoading(true)
-      setError(null)
+      setConfigLoadError(null)
 
       try {
         const query = initialDraftToken ? `?draft=${encodeURIComponent(initialDraftToken)}` : ''
-        const response = await fetch(`/api/renoapp/brf/${slug}/public${query}`, { cache: 'no-store' })
-        const payload = (await response.json().catch(() => ({}))) as PublicConfigResponse & { error?: string }
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte läsa BRF-konfiguration.')
-        }
+        const payload = await loadPublicApplicationJson<PublicConfigResponse>(`/api/renoapp/brf/${slug}/public${query}`, controller.signal)
 
         if (!active) return
         setConfig(payload)
       } catch (fetchError) {
         if (!active) return
-        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa BRF-konfiguration.')
+        setConfigLoadError(fetchError instanceof Error ? fetchError.message : APPLICATION_LOAD_ERROR)
       } finally {
         if (active) {
           setLoading(false)
@@ -771,30 +772,29 @@ export default function RenoAppApplyPage() {
 
     return () => {
       active = false
+      controller.abort()
     }
-  }, [slug, initialDraftToken, createdDraft])
+  }, [slug, initialDraftToken, createdDraft, loadAttempt])
 
   useEffect(() => {
     if (createdDraft?.slug === slug && createdDraft.token === activeDraftToken && createdDraft.status === 'draft') return
     let active = true
+    const controller = new AbortController()
 
     const loadDraft = async () => {
+      setDraftLoadError(null)
       if (!activeDraftToken) {
+        setDraftLoading(false)
         setDraftInfo(null)
         setUploadedDocuments([])
         setReplyMessage('')
         return
       }
 
+      setDraftLoading(true)
       try {
-        const response = await fetch(`/api/renoapp/public/applications/draft/${activeDraftToken}`, {
-          cache: 'no-store',
-        })
-        const payload = (await response.json().catch(() => ({}))) as DraftResponse & { error?: string }
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? 'Kunde inte läsa utkastet.')
-        }
+        const payload = await loadPublicApplicationJson<DraftResponse>(
+          `/api/renoapp/public/applications/draft/${encodeURIComponent(activeDraftToken)}`, controller.signal)
 
         if (!active) return
 
@@ -833,7 +833,9 @@ export default function RenoAppApplyPage() {
         setLastAutosavedAt(payload.case.updatedAt ?? null)
       } catch (fetchError) {
         if (!active) return
-        setError(fetchError instanceof Error ? fetchError.message : 'Kunde inte läsa utkastet.')
+        setDraftLoadError(fetchError instanceof Error ? fetchError.message : APPLICATION_LOAD_ERROR)
+      } finally {
+        if (active) setDraftLoading(false)
       }
     }
 
@@ -841,8 +843,9 @@ export default function RenoAppApplyPage() {
 
     return () => {
       active = false
+      controller.abort()
     }
-  }, [activeDraftToken, createdDraft, slug])
+  }, [activeDraftToken, createdDraft, slug, loadAttempt])
 
   const selectedActions = useMemo(
     () => config?.actionTypes.filter((action) => form.actionTypeKeys.includes(action.key)) ?? [],
@@ -2221,15 +2224,20 @@ export default function RenoAppApplyPage() {
     )
   }
 
-  if (loading) {
-    return <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar ansökningsguide...</main>
+  if (loading || draftLoading) {
+    return <main role="status" className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">Laddar ansökan...</main>
   }
 
-  if (error && !config) {
+  if (configLoadError || draftLoadError) {
     return (
       <main className="mx-auto min-h-screen max-w-6xl px-6 py-14 md:px-10">
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-8 text-rose-900">
-          {error}
+        <div role="alert" className="max-w-xl border-l-4 border-[var(--reno-blue)] bg-white p-6 text-[var(--reno-ink)]">
+          <h1 className="text-xl font-semibold">Ansökan kunde inte öppnas</h1>
+          <p className="mt-3 leading-7">{configLoadError || draftLoadError}</p>
+          <button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}
+            className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--reno-blue)] px-4 py-2 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
+            <RotateCcw aria-hidden="true" className="h-4 w-4" /> Försök igen
+          </button>
         </div>
       </main>
     )

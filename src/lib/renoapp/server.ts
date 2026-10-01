@@ -3271,7 +3271,7 @@ export async function getPublicApplicationDraftByToken(token: string): Promise<R
     .maybeSingle()
 
   if (accessError) {
-    throw new Error(accessError.message ?? 'Kunde inte lÃ¤sa utkastslÃ¤nk.')
+    throw new Error('Din ansökan kunde inte laddas just nu. Försök igen om en stund.')
   }
   if (!accessData) {
     return null
