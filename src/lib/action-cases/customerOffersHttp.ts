@@ -45,6 +45,8 @@ export function customerOfferError(error: unknown) {
       'Kundofferter är inte aktiverade ännu. Administratören behöver uppdatera databasen.'
     ],
     CUSTOMER_OFFER_INVALID: [400, 'Kontrollera uppgifterna och försök igen.'],
+    CUSTOMER_OFFER_SEPARATE_CHOICES: [409, 'Flytta valen till Val och tillval innan grundavtalet skickas.'],
+    CUSTOMER_OFFER_WITHDRAW_FIRST: [409, 'Återkalla den öppna offertversionen innan valen flyttas. Ett godkänt avtal kan inte ändras.'],
     CUSTOMER_OFFER_INCOMPLETE: [
       400,
       'Komplettera offertens omfattning, priser, tider och villkor innan utskick.'

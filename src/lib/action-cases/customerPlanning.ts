@@ -1,3 +1,5 @@
+import type { CustomerOfferCosting } from './customerOfferCosting'
+
 export const planningStatuses = {
   planned: 'Planerat',
   pricing: 'Behöver prissättas',
@@ -11,12 +13,15 @@ export type CustomerPlannedItem = {
   status: keyof typeof planningStatuses
   budgetOre: number | null
   decisionBy: string
+  optionGroup?: string
 }
 export type CustomerPlanning = {
   revision: number
   items: CustomerPlannedItem[]
   sharedItems: CustomerPlannedItem[]
   available: boolean
+  costing?: CustomerOfferCosting
+  costingAvailable?: boolean
 }
 export function normalizePlannedItems(
   value: unknown,
@@ -63,7 +68,8 @@ export function normalizePlannedItems(
       scope,
       status: item.status as CustomerPlannedItem['status'],
       budgetOre: item.budgetOre as number | null,
-      decisionBy
+      decisionBy,
+      ...(item.optionGroup !== undefined ? { optionGroup: text(item.optionGroup, 100) } : {})
     }
   })
   if (new Set(items.map((i) => i.id)).size !== items.length) fail()

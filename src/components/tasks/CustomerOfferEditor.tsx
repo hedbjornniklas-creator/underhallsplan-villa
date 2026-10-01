@@ -23,7 +23,6 @@ import type {
 } from '@/lib/action-cases/contracts'
 import {
   customerOfferBaseAmount,
-  customerOfferOptionGroup,
   money,
   offerPublishIssues,
   type CustomerOffer,
@@ -62,17 +61,17 @@ export default function CustomerOfferEditor({
       : initial.draft)
   const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
   const [view, setView] = useState<'edit' | 'document' | 'customer' | 'planning'>('edit')
-  const [itemView, setItemView] = useState<'included' | 'option' | 'excluded'>('included')
+  const [itemView, setItemView] = useState<'included' | 'excluded'>('included')
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [planningDirty, setPlanningDirty] = useState(false)
   const [planning, setPlanning] = useState(initial.planning)
+  const [planningReset, setPlanningReset] = useState(0)
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
   const [busy, setBusy] = useState(''),
     running = useRef(false),
     toast = useToast()
-  const [confirmed, setConfirmed] = useState(false),
-    [selected, setSelected] = useState<string[]>([])
+  const [confirmed, setConfirmed] = useState(false)
   const [confirmItemized, setConfirmItemized] = useState(false)
   const customer = actionCase.participants.find((p) => p.role === 'customer')
   const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft) ||
@@ -86,9 +85,7 @@ export default function CustomerOfferEditor({
   ]
   const files = actionCase.attachments.filter((f) => !f.isQuoteDocument)
   const baseAmount = customerOfferBaseAmount(draft)
-  const optionGroups = [
-    ...new Set(draft.items.map(customerOfferOptionGroup).filter(Boolean))
-  ]
+  const legacyChoices = draft.items.filter((i) => i.kind === 'option')
   const missingPriceCount = draft.items.filter(
     (i) => i.kind === 'included' && i.amountOre === null
   ).length
@@ -99,7 +96,6 @@ export default function CustomerOfferEditor({
       setCosting((current) => Object.fromEntries(Object.entries(current).filter(([id]) => ids.has(id))))
     }
     setConfirmed(false)
-    setSelected([])
   }
   useEffect(() => {
     if (previousView.current === view) return
@@ -148,6 +144,11 @@ export default function CustomerOfferEditor({
       setWorkspace(data)
       setDraft(data.draft)
       setCosting(data.costing ?? {})
+      if (!planningDirty) {
+        setPlanning(data.planning)
+        setPlanningReset((value) => value + 1)
+      }
+      if (operation === 'separate_choices') setView('planning')
       setConfirmed(false)
       toast.success(
         operation === 'publish' || operation === 'send'
@@ -156,7 +157,9 @@ export default function CustomerOfferEditor({
             ? 'Offerten återkallades.'
             : operation === 'refresh'
               ? 'Statusen uppdaterades.'
-              : 'Offertutkastet sparades.'
+              : operation === 'separate_choices'
+                ? 'Valen har flyttats. Grundpriset är oförändrat. Inget har delats eller beställts.'
+                : 'Offertutkastet sparades.'
       )
     } catch (error) {
       toast.error(error, 'Offerten kunde inte hanteras.')
@@ -216,6 +219,7 @@ export default function CustomerOfferEditor({
     acceptedOptionIds: [],
     acceptedTotalOre: null
   }
+  const previewOffer = workspace.offers.find((o) => o.status === 'accepted') ?? draftOffer
   const portal: ActionCasePortal = {
     accessState: 'open',
     participant: customer ?? {
@@ -277,10 +281,10 @@ export default function CustomerOfferEditor({
         aria-label="Kundvy och offert"
       >
         {[
-          ['edit', 'Redigera offert'],
-          ['planning', 'Planerade tillval'],
-          ['document', 'Granska offertutkast'],
-          ['customer', 'Kundens startsida']
+          ['edit', 'Grundavtal'],
+          ['planning', 'Val och tillval'],
+          ['document', 'Granska grundavtal'],
+          ['customer', 'Kundens sidor']
         ].map(([key, label]) => (
           <button
             key={key}
@@ -293,8 +297,19 @@ export default function CustomerOfferEditor({
           </button>
         ))}
       </nav>
+      {legacyChoices.length > 0 && !locked && view !== 'customer' && <section className="my-5 border-l-4 border-amber-500 bg-amber-50 p-4">
+        <h2 className="text-base font-semibold">{legacyChoices.length} val behöver skiljas från grundavtalet</h2>
+        <p className="mt-2 text-sm">Priser, alternativgrupper och interna kalkyler flyttas till Val och tillval. Grundpriset ändras inte och inget delas med kunden.</p>
+        <p className="mt-2 text-sm">Kontrollera sedan inledning och avgränsningar så att grundavtalets omfattning är korrekt.</p>
+        <button className={`${button} mt-4 bg-white`} disabled={Boolean(busy) || dirty || planningDirty || !workspace.revision}
+          onClick={() => void action('separate_choices', { planningRevision: planning?.revision ?? 0 })}>
+          {busy === 'separate_choices' ? <Loader2 size={17} className="animate-spin" /> : <CalendarClock size={17} />}
+          Flytta till Val och tillval
+        </button>
+        {(dirty || planningDirty) && <p className="mt-2 text-sm">Spara ändringarna innan valen flyttas.</p>}
+      </section>}
       <div hidden={view !== 'planning'}>
-        <CustomerPlanningEditor caseId={actionCase.id} initial={initial.planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />
+        <CustomerPlanningEditor key={planningReset} caseId={actionCase.id} initial={planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />
       </div>
       {view === 'planning' ? null : view === 'customer' ? (
         <ActionCaseCustomerPortal
@@ -305,16 +320,17 @@ export default function CustomerOfferEditor({
         />
       ) : view === 'document' ? (
         <>
-          <div className="mt-5 bg-white px-6">
+          {(locked || legacyChoices.length === 0) && <div className="mt-5 bg-white px-6">
             <CustomerOfferDocument
-              offer={draftOffer}
-              selected={selected}
-              onSelect={setSelected}
+              offer={previewOffer}
+              selected={[]}
+              readOnly
               fileUrl={(id) =>
-                `/api/action-cases/${actionCase.id}/attachments/${id}`
+                locked ? `/api/action-cases/${actionCase.id}/customer-offers/${previewOffer.id}/files/${id}`
+                  : `/api/action-cases/${actionCase.id}/attachments/${id}`
               }
             />
-          </div>
+          </div>}
           <div className="py-5 print:hidden">
             <button
               className={`${button} bg-white`}
@@ -442,7 +458,7 @@ export default function CustomerOfferEditor({
                 </button>
               </div>
               <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-                {([['included', 'Grundåtagande'], ['option', 'Val vid godkännande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
+                {([['included', 'Grundåtagande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
               </div>
               {draft.items.filter((item) => item.kind === itemView).map((item, visibleIndex, visibleItems) => (
                 <div
@@ -524,16 +540,12 @@ export default function CustomerOfferEditor({
                         }}
                       >
                         <option value="included">Grundåtagande</option>
-                        <option value="option">Val vid godkännande</option>
                         <option value="excluded">Relevant avgränsning</option>
                       </select>
                     </label>
-                    {(item.kind === 'option' ||
-                      (item.kind === 'included' && draft.pricingMode === 'itemized')) && (
+                    {(item.kind === 'included' && draft.pricingMode === 'itemized') && (
                       <PriceInput
-                        label={item.kind === 'option'
-                          ? 'Tillvalspris inkl. moms (kr) *'
-                          : 'Delpris inkl. moms (kr) *'}
+                        label="Delpris inkl. moms (kr) *"
                         value={item.amountOre}
                         onChange={(amountOre) =>
                           update({
@@ -544,28 +556,8 @@ export default function CustomerOfferEditor({
                         }
                       />
                     )}
-                    {item.kind === 'option' && (
-                      <label className="text-sm sm:col-span-2">
-                        Alternativgrupp (högst ett val, valfri)
-                        <input
-                          className={field}
-                          list="customer-offer-option-groups"
-                          placeholder="Exempel: Fönsterleverantör"
-                          maxLength={100}
-                          value={item.optionGroup ?? ''}
-                          onChange={(e) => update({
-                            items: draft.items.map((i) =>
-                              i.id === item.id
-                                ? { ...i, optionGroup: e.target.value }
-                                : i
-                            )
-                          })}
-                        />
-                      </label>
-                    )}
                   </div>
-                  {workspace.costingAvailable && (item.kind === 'option' ||
-                    (item.kind === 'included' && draft.pricingMode === 'itemized')) && (
+                  {workspace.costingAvailable && item.kind === 'included' && draft.pricingMode === 'itemized' && (
                     <CustomerOfferCostCalculator
                       value={costing[item.id]}
                       customerPrice={item.amountOre}
@@ -598,11 +590,6 @@ export default function CustomerOfferEditor({
                   </label>
                 </div>
               ))}
-              <datalist id="customer-offer-option-groups">
-                {optionGroups.map((group) => (
-                  <option key={group} value={group} />
-                ))}
-              </datalist>
               <button
                 className={`${button} mt-5`}
                 onClick={() =>
@@ -620,7 +607,7 @@ export default function CustomerOfferEditor({
                   })
                 }
               >
-                <Plus size={17} /> {itemView === 'included' ? 'Lägg till arbete' : itemView === 'option' ? 'Lägg till val' : 'Lägg till avgränsning'}
+                <Plus size={17} /> {itemView === 'included' ? 'Lägg till arbete' : 'Lägg till avgränsning'}
               </button>
             </section>
             <CustomerContractFields value={draft.contractDetails} onChange={(contractDetails) => update({ contractDetails })} />

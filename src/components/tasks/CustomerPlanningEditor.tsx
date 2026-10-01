@@ -10,6 +10,8 @@ import {
 } from '@/lib/action-cases/customerPlanning'
 import { money } from '@/lib/action-cases/customerOffers'
 import PriceInput from './CustomerOfferPriceInput'
+import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
+import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
@@ -28,12 +30,14 @@ export default function CustomerPlanningEditor({
 }) {
   const [saved, setSaved] = useState(initial),
     [items, setItems] = useState(initial.items)
+  const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
   const [busy, setBusy] = useState(''),
     [confirmed, setConfirmed] = useState(false)
   const [removed, setRemoved] = useState<CustomerPlannedItem | null>(null)
   const running = useRef(false),
     toast = useToast()
-  const dirty = JSON.stringify(items) !== JSON.stringify(saved.items)
+  const dirty = JSON.stringify(items) !== JSON.stringify(saved.items) ||
+    JSON.stringify(costing) !== JSON.stringify(saved.costing ?? {})
   const shared =
     JSON.stringify(saved.items) === JSON.stringify(saved.sharedItems)
   useEffect(() => {
@@ -57,6 +61,7 @@ export default function CustomerPlanningEditor({
             operation,
             revision: saved.revision,
             items,
+            ...(saved.costingAvailable && operation === 'save' ? { costing } : {}),
             confirmed
           })
         }
@@ -66,11 +71,12 @@ export default function CustomerPlanningEditor({
         throw new Error(result.error || 'Tillvalen kunde inte sparas.')
       setSaved(result)
       setItems(result.items)
+      setCosting(result.costing ?? {})
       setConfirmed(false)
       onSaved(result)
       toast.success(
         operation === 'save'
-          ? 'Planerade tillval sparades.'
+          ? 'Val och tillval sparades.'
           : operation === 'share'
             ? 'Planerade tillval visas nu för beställaren. Inget är beställt.'
             : 'Planerade tillval är nu interna.'
@@ -83,10 +89,10 @@ export default function CustomerPlanningEditor({
     }
   }
   return (
-    <section className="py-6" aria-label="Planerade tillval">
+    <section className="py-6" aria-label="Val och tillval">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <h2 className="text-xl">Planerade tillval</h2>
+          <h2 className="text-xl">Val och tillval</h2>
           <p className="mt-2 text-sm text-slate-600">
             Inte beställda · Ingår inte i avtalssumman
           </p>
@@ -114,7 +120,7 @@ export default function CustomerPlanningEditor({
                 <div key={item.id} className="grid gap-4 py-6 sm:grid-cols-2">
                   <div className="flex items-start gap-3 sm:col-span-2">
                     <label className="min-w-0 flex-1 text-sm">
-                      Tillval *
+                      Val eller tillval *
                       <input
                         className={field}
                         value={item.title}
@@ -173,17 +179,31 @@ export default function CustomerPlanningEditor({
                     />
                   </label>
                   <PriceInput
-                    label="Planeringsbudget inkl. moms (kr, valfri)"
+                    label="Prisunderlag inkl. moms (kr, valfritt)"
                     value={item.budgetOre}
                     onChange={(budgetOre) => patch({ budgetOre })}
                   />
+                  <label className="text-sm">
+                    Alternativgrupp (valfri)
+                    <input className={field} maxLength={100} list="planned-choice-groups"
+                      value={item.optionGroup ?? ''}
+                      onChange={(e) => patch({ optionGroup: e.target.value })} />
+                  </label>
+                  {saved.costingAvailable && <div className="sm:col-span-2">
+                    <CustomerOfferCostCalculator value={costing[item.id]} customerPrice={item.budgetOre}
+                      onChange={(calculation) => setCosting((current) => ({ ...current, [item.id]: calculation }))}
+                      onApply={(budgetOre) => patch({ budgetOre })} />
+                  </div>}
                 </div>
               )
             })}
           </fieldset>
+          <datalist id="planned-choice-groups">
+            {[...new Set(items.map((i) => i.optionGroup).filter(Boolean))].map((group) => <option key={group} value={group} />)}
+          </datalist>
           {!items.length && (
             <p className="py-6 text-sm text-slate-500">
-              Inga planerade tillval.
+              Inga val eller tillval har lagts till.
             </p>
           )}
           <div className="flex flex-wrap gap-3 py-4">
@@ -204,7 +224,7 @@ export default function CustomerPlanningEditor({
                 ])
               }
             >
-              <Plus size={17} /> Lägg till planerat tillval
+              <Plus size={17} /> Lägg till val eller tillval
             </button>
             {removed && (
               <button
@@ -302,13 +322,14 @@ export function CustomerPlannedItems({
   items: CustomerPlannedItem[]
 }) {
   return (
-    <section aria-label="Planerade tillval" className="py-6">
-      <h2 className="text-xl">Planerade tillval</h2>
+    <section aria-label="Val och tillval" className="py-6">
+      <h2 className="text-xl">Val och tillval</h2>
       <p className="mt-2 text-sm text-slate-600">
         Inte beställda · Ingår inte i avtalssumman
       </p>
       {items.map((item) => (
         <article key={item.id} className="border-b border-slate-200 py-5">
+          {item.optionGroup && <p className="mb-2 text-sm font-medium text-violet-700">{item.optionGroup} · Alternativ</p>}
           <div className="flex flex-wrap justify-between gap-3">
             <h3 className="font-semibold">{item.title}</h3>
             <span className="text-sm text-slate-500">
@@ -321,7 +342,7 @@ export function CustomerPlannedItems({
           <p className="mt-3 text-sm">
             {item.budgetOre === null
               ? 'Pris ej fastställt'
-              : `Planeringsbudget: ${money(item.budgetOre)} inklusive moms · Ej offertpris`}
+              : `Prisunderlag: ${money(item.budgetOre)} inklusive moms · Inte beställt`}
           </p>
           {item.decisionBy && (
             <p className="mt-2 text-sm text-slate-500">
@@ -332,7 +353,7 @@ export function CustomerPlannedItems({
       ))}
       {!items.length && (
         <p className="mt-5 text-sm text-slate-500">
-          Inga planerade tillval har delats.
+          Inga val eller tillval har delats ännu.
         </p>
       )}
     </section>

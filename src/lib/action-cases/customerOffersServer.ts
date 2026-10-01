@@ -133,6 +133,17 @@ export async function saveCustomerOffer(
     body: draft
   })
 }
+export async function separateCustomerChoices(ctx: Context, caseId: string, payload: Payload) {
+  await requireCase(ctx, caseId)
+  if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 1 ||
+    !Number.isSafeInteger(payload.planningRevision) || Number(payload.planningRevision) < 0)
+    throw new Error('CUSTOMER_OFFER_INVALID')
+  const result = await createSupabaseAdminClient().rpc('separate_customer_choices', {
+    p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
+    p_revision: payload.revision, p_planning_revision: payload.planningRevision
+  })
+  checked(result.error)
+}
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
   if (draft.contractDetails) {
     const guard = await createSupabaseAdminClient().rpc('assert_customer_contract', {
@@ -209,6 +220,8 @@ export async function publishCustomerOffer(
   if (workspace.revision !== payload.revision || !workspace.revision)
     throw new Error('CUSTOMER_OFFER_STALE')
   const draft = workspace.draft
+  if (draft.items.some((i) => i.kind === 'option'))
+    throw new Error('CUSTOMER_OFFER_SEPARATE_CHOICES')
   if (offerPublishIssues(draft).length)
     throw new Error('CUSTOMER_OFFER_INCOMPLETE')
   await checkPricingSchema(draft, true)
@@ -255,7 +268,7 @@ export async function publishCustomerOffer(
   }
   const url = `${config.origin}/atgardsarende/${token}`
   const subject = `Offert: ${draft.title}`
-  const body = `${org.data.name} har skickat en offert för ${c.property_address}.\n\nGranska omfattning, pris, tillval och villkor i din projektöversikt. Godkännande kräver en separat kod till denna e-postadress.\n\n${url}`
+  const body = `${org.data.name} har skickat ett grundavtal för ${c.property_address}.\n\nGranska omfattning, pris och villkor under Avtal. Val och tillval hanteras separat och ingår inte i detta godkännande. Godkännande kräver en separat kod till denna e-postadress.\n\n${url}`
   const emailPayload: Email = {
     from: config.from,
     to: email,
@@ -413,23 +426,44 @@ export async function getSharedCustomerOffers(
 }
 export async function getCustomerPlanning(ctx: Context, caseId: string): Promise<CustomerPlanning> {
   await requireCase(ctx, caseId)
-  const result = await createSupabaseAdminClient().from('action_case_customer_planning')
-    .select('revision,items,shared_items').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
-  if (schemaMissing(result.error?.code)) return { available: false, revision: 0, items: [], sharedItems: [] }
-  checked(result.error)
-  return { available: true, revision: result.data?.revision ?? 0,
-    items: normalizePlannedItems(result.data?.items ?? []), sharedItems: normalizePlannedItems(result.data?.shared_items ?? []) }
+  const db = createSupabaseAdminClient()
+  const result = await db.from('action_case_customer_planning')
+    .select('revision,items,shared_items,internal_costing').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+  let saved = result.data, error = result.error
+  let costingAvailable = true
+  if (result.error && ['42703', 'PGRST204'].includes(result.error.code)) {
+    costingAvailable = false
+    const legacy = await db.from('action_case_customer_planning')
+      .select('revision,items,shared_items').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+    saved = legacy.data ? { ...legacy.data, internal_costing: {} } : null
+    error = legacy.error
+  }
+  if (schemaMissing(error?.code)) return { available: false, revision: 0, items: [], sharedItems: [] }
+  checked(error)
+  const items = normalizePlannedItems(saved?.items ?? [])
+  return { available: true, revision: saved?.revision ?? 0, costingAvailable,
+    costing: normalizeCustomerOfferCosting(saved?.internal_costing, items),
+    items, sharedItems: normalizePlannedItems(saved?.shared_items ?? []) }
 }
 export async function writeCustomerPlanning(ctx: Context, caseId: string, payload: Payload) {
   await requireCase(ctx, caseId)
   if (!['save', 'share', 'unshare'].includes(String(payload.operation)) || !Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (payload.operation === 'share' && payload.confirmed !== true) throw new Error('CUSTOMER_OFFER_CONFIRM')
+  const items = payload.operation === 'unshare' ? [] : normalizePlannedItems(payload.items, payload.operation === 'share')
+  if (payload.operation === 'save' && payload.costing !== undefined) {
+    const result = await createSupabaseAdminClient().rpc('save_customer_planning_costing', {
+      p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
+      p_data: { revision: payload.revision, items, costing: normalizeCustomerOfferCosting(payload.costing, items) }
+    })
+    checked(result.error)
+    return
+  }
   const result = await createSupabaseAdminClient().rpc('write_customer_planning', {
     p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
     p_operation: payload.operation,
     p_data: { revision: payload.revision, confirmed: payload.confirmed === true,
-      items: payload.operation === 'unshare' ? [] : normalizePlannedItems(payload.items, payload.operation === 'share') }
+      items }
   })
   checked(result.error)
 }

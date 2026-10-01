@@ -205,6 +205,8 @@ export function offerPublishIssues(
   })
 ): string[] {
   const issues: string[] = contractDetailsIssues(d.contractDetails)
+  if (d.items.some((i) => i.kind === 'option'))
+    issues.push('Flytta valen till Val och tillval innan grundavtalet skickas.')
   if (!d.title.trim()) issues.push('Ange en offertrubrik.')
   if (d.pricingMode === 'itemized') {
     const missing = d.items.filter(

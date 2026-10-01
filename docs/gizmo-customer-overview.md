@@ -1,11 +1,13 @@
 # Gizmo: bestallarens projektoversikt och kundoffert
 
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
-Datum: 2026-09-29.
+Datum: 2026-10-01.
 
 ## Beslut och omfattning
 
-- Bestallaren far en egen startsida. Den interna arbetsytan och UE-portalen
+- Bestallaren far fyra sidor: Avtal, Val och tillval, Tidsplan, Bilder och filer.
+  Avtal ar forstavy; oversiktsgenvagen Mitt uppdrag har tagits bort.
+  Den interna arbetsytan och UE-portalen
   behalls separat. Gemensamma data ateranvands, inte gemensamma behorigheter.
 - Forsta leveransen ar offert, omfattning/tillval och delade bilder/dokument.
   Grafer for fakturering och tidplan byggs nar dessa har verkliga datakallor.
@@ -14,12 +16,14 @@ Datum: 2026-09-29.
   eller fasta delpriser som summeras automatiskt. Befintliga offerter behaller
   klumpsumma; inget gammalt pris fordelas automatiskt. Saknade delpriser ar inte
   noll och blockerar publicering, men ofullstandiga utkast kan sparas.
-- Varje tillval har ett eget kundpris. Valfria alternativgrupper, exempelvis
-  fonsterleverantor, tillater hogst ett val per grupp och visas med radioval.
-  Alternativen i samma grupp har exakt samma gruppnamn; befintliga namn foreslas
-  i redigeraren. Oberoende tillval anvander kryssrutor. Ingen grupp ar obligatorisk
-  i detta steg: kunden kan avsta. Arbete utanfor atagandet visas separat och
-  raknas aldrig in i grundpris eller godkanda tillval.
+- Nya grundavtal innehaller endast grundatagande och relevanta avgransningar.
+  Fonsteralternativ och andra val ligger separat och kravs inte vid godkannandet.
+  Val kan forberedas och delas fore avtalet, men ar da planering, inte bestallning.
+  Separata bindande tillvals-/ATA-bestallningar aterstar. Inget nytt totalpris
+  skapas genom att visa ett val i planeringen.
+- Tidigare publicerade versioner behaller sin ursprungliga omfattning och sina
+  valregler. De far inte tolkas om i efterhand. Nya publiceringar med val i
+  grundavtalet stoppas bade i API och databastrigger.
 - Kundofferten ar inte UE-forfragan eller intern kalkyl. Import av arbeten kopierar
   bara rubrik och omfattning, aldrig inkopspriser, marginaler eller UE-svar.
 - Denna forsta avtalsmodell ar avsedd for referensfallet privatkund/tillbyggnad.
@@ -30,19 +34,20 @@ Datum: 2026-09-29.
 
 1. Intern anvandare oppnar Uppdrag > Atgardsarenden > projekt > Kundvy och offert.
 2. Ange rubrik, prismodell och giltighet. Hamta arbeten fran projektet eller
-   lagg till dem manuellt. Markera grundatagande, tillval eller utanfor atagandet.
-   Ange grundpris eller delpriser. Tillval som ar alternativ till varandra far
-   samma alternativgrupp och egna priser. Granska summeringen i offertutkastet.
+   lagg till dem manuellt. Markera grundatagande eller relevant avgransning.
+   Ange grundpris eller delpriser. Val och tillval har en separat redigerare
+   med alternativgrupp, prisunderlag och privata kalkyler.
 3. Komplettera tider, betalningsvillkor, villkor och utvalda bilagor. En PDF bland
    bilagorna maste utses till avtalshandling nar ABS 18 valts.
 4. Spara utkast och granska offertutkastet. Kundens startsida visar bara det som
    redan publicerats. Osparade andringar varnas vid navigation bort fran sidan.
 5. Bekrafta granskning och skicka. Servern fryser offertversion och kopior av
    bilagor innan mejlet skickas. En ny version ersatter tidigare publicerad version.
-6. Bestallaren oppnar projektoversikten, granskar offert och bilagor, valjer tillval
-   och bekraftar omfattning, villkor, mottagarroll och totalpris.
+6. Bestallaren oppnar Avtal och granskar grundatagande, pris, villkor och bilagor.
+   Inga nya fonsterval eller tillval bestalls i detta moment.
 7. En engangskod skickas till den e-postadress som frystes med offerten. Godkannande
-   binder exakt version, namn och serverlagrade tillval. Totalen beraknas pa servern.
+   binder exakt version och namn. Totalen beraknas pa servern. For historiska
+   versioner binds aven de val som ingick i den ursprungliga versionen.
 8. Kunden ser kvittens med sparad tid och totalsumma. Internt visas versionen som
    godkand. Varken ett nytt offertutkast eller en andrad kalkyl skriver over avtalet.
 
@@ -96,7 +101,8 @@ Datum: 2026-09-29.
   Databasen verifierar summan vid sparning/publicering och avvisar flera val ur
   samma alternativgrupp vid kodbegaran och godkannande. Kvittensen anvander
   versionens frysta priser och kodbegarans sparade val, aldrig ett klienttotal.
-  Publicering kraver minst tva prissatta alternativ per alternativgrupp.
+  Dessa valregler bevaras for historiska dokument. Nya publiceringar far inte
+  innehalla optionala poster alls.
 
 ## Intern priskalkyl (2026-09-29)
 
@@ -126,9 +132,30 @@ Datum: 2026-09-29.
 
 ## Aktivering
 
-### Avtalsuppgifter och separat planering (2026-09-29)
+### Separat avtal och val (2026-10-01)
 
-- Grundatagande, val vid godkannande och avgransningar har egna vyer i
+- Kor `docs/db/2026-10-01_02_customer_contract_choices.sql` fore apppublicering.
+  Migrationen ar omkorbar och skriver inte om nagra projekt eller avtal.
+- Befintliga utkast med val far en uttrycklig flyttknapp. Flytten laser projekt,
+  utkastrevision och planeringsrevision i samma transaktion. ID, ordning,
+  omfattning, alternativgrupper, belopp i ore och privata kalkyler bevaras.
+  Grundpriset andras inte. Delade planeringskopior andras inte och inga mejl skickas.
+  Om en rad krockar eller planeringen inte kan sparas aterstalls hela flytten.
+- En oppen publicerad offert maste aterkallas fore flytt; accepterade avtal kan
+  inte flyttas. Kontrollera manuellt inledning, avgransningar och bilagor efter
+  flytten. Fri avtalstext skrivs inte om automatiskt.
+- Valens kalkyler lagras i planeringens privata `internal_costing`, aldrig i
+  delad JSON. Prisunderlag ar fortfarande inte en bestallning. Redigeraren kan
+  anvandas efter grundavtalets godkannande utan att det godkanda avtalet andras.
+- Kundens tidsplan visar verklig avtalstext fran godkand version, annars senaste
+  utgivna version markerad som foreslagen. Delade beslutsdatum visas separat.
+  Ingen graf, fardiggrad eller fiktiv milstolpe skapas.
+- Saknas den nya kolumnen fungerar gammal planering utan kalkyl. Flytt och
+  kalkylsparning misslyckas tydligt om migrationen saknas; ingen tyst dataforlust.
+
+### Avtalsuppgifter och separat planering (infort 2026-09-29)
+
+- Grundatagande och avgransningar har egna vyer i
   offertredigeringen. Ett avgransningsfalt ska beskriva relevanta forvantningar,
   diskuterade arbeten eller ansvar som annars kan vara oklart, inte en lista
   over alla arbeten som inte ingar. Ingen juridisk friskrivning fylls i automatiskt.
@@ -155,8 +182,8 @@ Datum: 2026-09-29.
 - En eventuell planeringsbudget ar inte ett bestallningsbart pris och ingar
   aldrig i offertens totalsumma. Kunden kan inte godkanna planerade poster.
   Etiketten ersatter inte behovet att bedoma prisuppgifters avtalsrattsliga betydelse.
-- Kundens nya vy heter `Val och tillval`. Prissatta val som kan accepteras med
-  huvudofferten skiljs fran planerade, ej bestallda arbeten. Separata ATA med
+- Kundens nya vy heter `Val och tillval`. Alla nya val skiljs fran
+  huvudavtalet. Separata ATA med
   pris-/tidskonsekvens och eget godkannande aterstar fortfarande.
 - Kor `docs/db/2026-09-29_04_customer_offer_planning.sql` fore apppublicering.
   Den ar transaktionell och omkorbar, med inga omskrivningar av befintliga avtal.
@@ -215,8 +242,24 @@ samband med apppubliceringen.
   Satt `PREVIEW_PORT` for fast port. Testkod: `123456`. Data finns bara i minnet.
   Lagg till `--itemized` for ett separat, uttryckligen fiktivt testfall med
   delpriser, oberoende tillval och tva alternativa fonsterleverantorer.
+  Valen ligger nu separat fran grundavtalet. `--legacy-draft` behaller dem i
+  ett opublicerat gammalt utkast sa att den uttryckliga flytten kan klicktestas.
+
+Verifiering 2026-10-01: CUA-klicktest i fiktiv lokal miljo av flytt, separat
+fonsterkalkyl (10 procent + montage), sparning, uttrycklig delning, grundavtalsvy,
+fyra kundvyer och godkannande utan val. Fel kod och nytt forsok fungerade;
+grundbeloppet var oforandrat. Mobilvyer 390 och 344 px utan horisontellt overflow.
+Databastest kor den nya migrationen tva ganger och verifierar atomisk rollback,
+revisions-/orgskydd, privata kostnader och bevarade historiska godkannanden.
+Inga riktiga mejl, avtal eller produktionsdata andrades vid dessa tester.
 
 ## Beslutslogg
+
+- 2026-10-01: Anvandaren faststaller att grundavtalet ska godkannas for sig,
+  utan val av fonsterleverantor. Val och tillval hanteras separat efter detta
+  moment men kan forberedas innan. Fyra kundsidor ersatter Mitt uppdrag och
+  dubblerad omfattningsvy. Beslutet ersatter val-vid-godkannande for nya avtal,
+  inte for historiska publicerade dokument.
 
 - 2026-09-29: Utokat grundpriset med frivilligt delprislage och tillval med
   hogst-ett-val-grupper for referensprojektets behov. Tidigare versioners

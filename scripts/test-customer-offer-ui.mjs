@@ -68,8 +68,22 @@ const theme = await readFile('src/components/tasks/uppdrag-theme.css', 'utf8'),
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
   challenge = null,
   failSave = false
-if (process.argv.includes('--serve')) state.offers = [published(state.draft)]
-state.planning = { available: true, revision: 0, items: [], sharedItems: [] }
+state.planning = { available: true, revision: 0, items: [], sharedItems: [], costingAvailable: true, costing: {} }
+function separateChoices() {
+  const choices = state.draft.items.filter((i) => i.kind === 'option')
+  state.planning.items.push(...choices.map((i) => ({ id: i.id, title: i.title, scope: i.scope,
+    status: 'planned', budgetOre: i.amountOre, decisionBy: '', optionGroup: i.optionGroup ?? '' })))
+  for (const i of choices) if (state.costing?.[i.id]) {
+    state.planning.costing[i.id] = state.costing[i.id]
+    delete state.costing[i.id]
+  }
+  state.draft.items = state.draft.items.filter((i) => i.kind !== 'option')
+}
+if (!process.argv.includes('--legacy-draft')) separateChoices()
+if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')) {
+  state.offers = [published(state.draft)]
+  state.planning.sharedItems = structuredClone(state.planning.items)
+}
 const writes = []
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
@@ -114,7 +128,11 @@ const server = createServer(async (req, res) => {
     } else if (path.endsWith('/customer-planning')) {
       if (body.revision !== state.planning.revision) { json({ error: 'Planeringen har ändrats. Uppdatera vyn.' }, 409); return }
       try {
-        if (body.operation === 'save') state.planning.items = normalizePlannedItems(body.items)
+        if (body.operation === 'save') {
+          if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
+          state.planning.items = normalizePlannedItems(body.items)
+          state.planning.costing = normalizeCustomerOfferCosting(body.costing, state.planning.items)
+        }
         else if (body.operation === 'share') {
           if (!body.confirmed || JSON.stringify(body.items) !== JSON.stringify(state.planning.items)) throw new Error('Bekräfta den sparade planeringen.')
           state.planning.sharedItems = normalizePlannedItems(body.items, true)
@@ -138,8 +156,16 @@ const server = createServer(async (req, res) => {
         state.draft = normalizeCustomerOffer(body.draft)
         state.costing = normalizeCustomerOfferCosting(body.costing, state.draft.items)
         state.revision++
-      } else if (body.operation === 'publish')
+      } else if (body.operation === 'separate_choices') {
+        if (state.offers.some((o) => o.status === 'published' || o.status === 'accepted')) { json({ error: 'Återkalla den öppna versionen först.' }, 409); return }
+        if (body.revision !== state.revision || body.planningRevision !== state.planning.revision) { json({ error: 'Uppgifterna har ändrats.' }, 409); return }
+        separateChoices()
+        state.revision++
+        state.planning.revision++
+      } else if (body.operation === 'publish') {
+        if (state.draft.items.some((i) => i.kind === 'option')) { json({ error: 'Flytta valen först.' }, 409); return }
         state.offers = [published(state.draft)]
+      }
       else if (body.operation === 'withdraw')
         state.offers[0].status = 'withdrawn'
       else if (body.operation !== 'send') {
@@ -246,7 +272,7 @@ else {
       ))
     )
     // Private worksheet is saved separately; using a calculated price is explicit.
-    await page.locator('::-p-xpath(//button[@role="tab" and contains(.,"Val vid godkännande")])').click()
+    await click('Val och tillval')
     await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
     await fill('Inköpspris exkl. moms (kr) *', '10000')
     await fill('Påslag på inköpspriset (%, valfritt)', '10')
@@ -256,7 +282,7 @@ else {
     assert.equal(await page.$('::-p-xpath(//button[normalize-space(.)="Använd kundpris"])'), null)
     await fill('Belopp tillägg 1 (kr) *', '2000')
     await page.keyboard.press('Tab')
-    assert.equal(await page.$eval('[aria-label="Tillvalspris inkl. moms (kr) *"]', (el) => el.value), '185000')
+    assert.equal(await page.$eval('[aria-label="Prisunderlag inkl. moms (kr, valfritt)"]', (el) => el.value), '185000')
     for (const width of [1440, 390]) {
       await page.setViewport({ width, height: 980 })
       await page.$eval('fieldset details', (el) => el.scrollIntoView({ block: 'start' }))
@@ -265,24 +291,25 @@ else {
     }
     await page.setViewport({ width: 1440, height: 980 })
     await click('Använd kundpris')
-    assert.equal(await page.$eval('[aria-label="Tillvalspris inkl. moms (kr) *"]', (el) => el.value), '17500')
+    assert.equal(await page.$eval('[aria-label="Prisunderlag inkl. moms (kr, valfritt)"]', (el) => el.value), '17500')
     failSave = true
-    await click('Spara utkast')
+    await click('Spara planering')
     await page.waitForFunction(() => document.body.textContent.includes('Tillfälligt anslutningsfel'))
-    assert.equal(state.costing[id(11)], undefined)
-    await click('Spara utkast')
+    assert.equal(state.planning.costing[id(11)], undefined)
+    await click('Spara planering')
     await page.waitForFunction(() => document.querySelector('main [role="status"]')?.textContent === 'Sparat')
-    assert.equal(state.costing[id(11)].purchaseOre, 1000000)
+    assert.equal(state.planning.costing[id(11)].purchaseOre, 1000000)
     await page.reload({ waitUntil: 'networkidle0' })
-    await page.locator('::-p-xpath(//button[@role="tab" and contains(.,"Val vid godkännande")])').click()
+    await click('Val och tillval')
     await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
     assert.equal(await page.$eval('[aria-label="Inköpspris exkl. moms (kr) *"]', (el) => el.value), '10000')
-    assert.equal(await page.$eval('[aria-label="Tillvalspris inkl. moms (kr) *"]', (el) => el.value), '17500')
+    assert.equal(await page.$eval('[aria-label="Prisunderlag inkl. moms (kr, valfritt)"]', (el) => el.value), '17500')
     // Existing manual prices remain editable even when a private worksheet exists.
-    await fill('Tillvalspris inkl. moms (kr) *', '185000')
+    await fill('Prisunderlag inkl. moms (kr, valfritt)', '185000')
     await page.keyboard.press('Tab')
-    await click('Spara utkast')
+    await click('Spara planering')
     await page.waitForFunction(() => document.querySelector('main [role="status"]')?.textContent === 'Sparat')
+    await click('Grundavtal')
     // Decimal input, save failure preserves draft, then retry.
     const price = await page.$('[aria-label="Grundpris inkl. moms (kr) *"]')
     await price.click({ clickCount: 3 })
@@ -363,11 +390,10 @@ else {
       document.body.textContent.includes('Offerten har skickats')
     )
     assert.equal(writes.filter((op) => op === 'publish').length, 1)
-    await click('Kundens startsida')
+    await click('Kundens sidor')
     await page.waitForFunction(() =>
-      document.body.textContent.includes('Din offert är klar att granska')
+      document.body.textContent.includes('Grundavtalets pris')
     )
-    await click('Visa offert')
     await layout('customer preview')
     assert.equal(
       await page.evaluate(() =>
@@ -402,15 +428,13 @@ else {
         path: resolve(output, `${width}-overview.png`),
         fullPage: true
       })
-      await click('Visa offert')
-      await layout(`${width} offer`)
+        await layout(`${width} offer`)
       await page.screenshot({
         path: resolve(output, `${width}-offer.png`),
         fullPage: true
       })
-      await click('Projektöversikt')
       await page
-        .locator('::-p-xpath(//button[contains(.,"Bilder och dokument")])')
+        .locator('::-p-xpath(//button[contains(.,"Bilder och filer")])')
         .click()
       await page.waitForFunction(() =>
         [...document.querySelectorAll('main img')].every(
@@ -431,12 +455,7 @@ else {
     }
     await page.setViewport({ width: 1440, height: 980 })
     await page.goto(origin + '/kund', { waitUntil: 'networkidle0' })
-    await click('Visa offert')
-    await page
-      .locator(
-        '::-p-xpath(//label[contains(.,"Invändig färdigställning")]//input)'
-      )
-      .click()
+    assert.equal(await page.$('input[type="radio"]'), null, 'No choices during main agreement signing')
     await fill('Ditt fullständiga namn', 'Anna Exempel')
     await page
       .locator('::-p-xpath(//label[contains(.,"Jag är beställaren")]//input)')
@@ -455,7 +474,7 @@ else {
     await page.waitForFunction(() =>
       document.body.textContent.includes('Godkänt av Anna Exempel')
     )
-    assert.equal(state.offers[0].acceptedTotalOre, 143500050)
+    assert.equal(state.offers[0].acceptedTotalOre, 125000050)
     assert.match(
       await page.evaluate(() => document.body.textContent),
       /2026-09-29 14:34/
@@ -467,14 +486,14 @@ else {
     await page.reload({ waitUntil: 'networkidle0' })
     assert.match(
       await page.evaluate(() => document.body.textContent),
-      /Ditt avtal är klart/
+      /Godkänt avtal/
     )
     await page.goto(origin + '/intern', { waitUntil: 'networkidle0' })
     assert.equal(await page.$eval('fieldset', (el) => el.disabled), true)
     await page.goto(origin + '/intern?empty', { waitUntil: 'networkidle0' })
-    await click('Granska offertutkast')
+    await click('Granska grundavtal')
     await layout('empty preview')
-    state.offers = [published()]
+    state.offers = [published(state.draft)]
     await page.goto(origin + '/intern?no-email', { waitUntil: 'networkidle0' })
     await page.locator('aside summary').click()
     assert.match(
@@ -492,7 +511,6 @@ else {
       'Missing recipient still blocks publication after confirmation'
     )
     await page.goto(origin + '/kund?expired', { waitUntil: 'networkidle0' })
-    await click('Visa offert')
     assert.equal(
       await page.evaluate(() =>
         document.body.textContent.includes('Skicka kod till min e-post')
@@ -504,7 +522,7 @@ else {
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
     console.log(
-      'PASS real component click flow: edit, decimal prices, failed save/retry, preview scroll/focus, unsaved text preserved, missing recipient, send, option, code error/retry, server receipt, reload/locked, empty/expired, files; four viewport widths; no external traffic'
+      'PASS real component click flow: edit, decimal prices, failed save/retry, preview scroll/focus, unsaved text preserved, missing recipient, send base only, code error/retry, server receipt, reload/locked, empty/expired, files; four viewport widths; no external traffic'
     )
   } finally {
     await browser.close()

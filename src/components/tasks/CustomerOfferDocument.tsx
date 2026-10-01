@@ -233,7 +233,7 @@ export default function CustomerOfferDocument({
       <footer className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-slate-50 p-5">
         <div>
           <p className="text-sm text-slate-600">
-            {accepted ? 'Avtalat belopp' : 'Grundpris och valda tillval'}
+            {accepted ? 'Avtalat belopp' : s.items.some((i) => i.kind === 'option') ? 'Grundpris och valda tillval' : 'Grundavtalets pris'}
           </p>
           <p className="mt-1 text-2xl font-bold" aria-live="polite">
             {money(accepted ? offer.acceptedTotalOre : total)}

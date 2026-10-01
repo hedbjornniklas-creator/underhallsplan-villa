@@ -35,6 +35,7 @@ function harness(options = {}) {
     removed = [],
     signed = []
   const draft = structuredClone(workspace.draft)
+  if (!options.legacyDraft) draft.items = draft.items.filter((i) => i.kind !== 'option')
   let saved = options.saved ?? null
   let sendFailed = Boolean(options.sendFailed)
   const link = {
@@ -196,8 +197,8 @@ function harness(options = {}) {
           status: 'accepted',
           accepted_at: '2026-09-29T12:34:00Z',
           accepted_by: 'Server-stored name',
-          accepted_option_ids: [id(11)],
-          accepted_total_ore: 143500000
+          accepted_option_ids: [],
+          accepted_total_ore: 125000000
         }
         return { data: { accepted: true } }
       }
@@ -288,7 +289,7 @@ test('itemized save computes totals and requires the database guard; legacy save
 
 test('costing saves atomically with public draft; missing schema cannot silently drop private edits', async () => {
   const h = harness(), ctx = { orgId: id(90), userId: id(91) }
-  const costing = { [id(11)]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 10000 } }
+  const costing = { [id(10)]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 10000 } }
   await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, costing })
   assert.equal(h.calls.length, 1)
   assert.equal(h.calls[0].name, 'save_customer_offer_costing')
@@ -304,7 +305,7 @@ test('costing saves atomically with public draft; missing schema cannot silently
 })
 
 test('private worksheets are returned internally but never published, emailed or exposed by portal', async () => {
-  const costing = { [id(11)]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 9876543 } }
+  const costing = { [id(10)]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 9876543 } }
   const h = harness({ costing })
   const result = await h.api.getCustomerOfferWorkspace({ orgId: id(90), userId: id(91) }, id(1))
   assert.deepEqual(result.costing, costing)
@@ -319,11 +320,13 @@ test('private worksheets are returned internally but never published, emailed or
   }
 })
 
-test('grouped alternatives are checked before an email code is sent', async () => {
+test('historical grouped alternatives are checked before an email code is sent', async () => {
   const h = harness()
-  h.draft.items[1].optionGroup = 'Fönster'
-  h.draft.items.push({ ...h.draft.items[1], id: id(13), title: 'Alternativ B' })
   await h.run()
+  const old = structuredClone(workspace.draft)
+  old.items[1].optionGroup = 'Fönster'
+  old.items.push({ ...old.items[1], id: id(13), title: 'Alternativ B' })
+  h.saved().snapshot = snapshot(old)
   const sentBefore = h.sent.length
   await assert.rejects(h.api.respondCustomerOffer(token, h.saved().id, {
     operation: 'challenge', selection: [id(11), id(13)], signerName: 'Anna', confirmed: true
@@ -412,7 +415,7 @@ test('public access is revocable/customer-scoped, file URLs are scoped and the a
     offer.id,
     {
       operation: 'challenge',
-      selection: [id(11)],
+      selection: [],
       signerName: 'Anna',
       confirmed: true
     },
@@ -492,4 +495,34 @@ test('new contract details require their database guard while old drafts still s
   assert.equal(h.calls.length, 1)
   await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft })
   assert.equal(h.calls.at(-1).p_operation, 'save')
+})
+
+test('main publication stops before files or email if draft still contains choices', async () => {
+  const h = harness({ legacyDraft: true })
+  await assert.rejects(h.run(), /SEPARATE_CHOICES/)
+  assert.equal(h.copies.length, 0)
+  assert.equal(h.sent.length, 0)
+})
+
+test('choice split carries tenant identity and both revisions, never email or client snapshots', async () => {
+  const h = harness(), ctx = { orgId: id(90), userId: id(91) }
+  await h.api.separateCustomerChoices(ctx, id(1), { revision: 3, planningRevision: 6 })
+  assert.deepEqual(h.calls.at(-1), { name: 'separate_customer_choices', p_org_id: ctx.orgId, p_case_id: id(1), p_user_id: ctx.userId, p_revision: 3, p_planning_revision: 6 })
+  assert.equal(h.sent.length, 0)
+  await assert.rejects(h.api.separateCustomerChoices(ctx, id(1), { revision: 3 }), /INVALID/)
+})
+
+test('choice price calculations save privately and public projection strips unexpected internal fields', async () => {
+  const item = { id: id(80), title: 'Fönster A', scope: 'Leverans och montage', status: 'planned', budgetOre: 16264948, decisionBy: '', optionGroup: 'Fönster' }
+  const costing = { [item.id]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 998877 } }
+  const h = harness({ planning: { revision: 2, items: [item], shared_items: [{ ...item, internal_costing: costing, approved: true }], internal_costing: costing } })
+  const ctx = { orgId: id(90), userId: id(91) }
+  const internal = await h.api.getCustomerPlanning(ctx, id(1))
+  assert.deepEqual(internal.costing, costing)
+  const external = await h.api.getSharedCustomerOffers(id(90), id(1), id(2))
+  assert.deepEqual(external.plannedItems, [item])
+  assert.equal(JSON.stringify(external).includes('998877'), false)
+  await h.api.writeCustomerPlanning(ctx, id(1), { operation: 'save', revision: 2, items: [item], costing })
+  assert.equal(h.calls.at(-1).name, 'save_customer_planning_costing')
+  assert.deepEqual(h.calls.at(-1).p_data.costing, costing)
 })

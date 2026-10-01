@@ -3,10 +3,7 @@
 import Image from 'next/image'
 import { useRef, useState } from 'react'
 import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  ClipboardList,
+  CalendarClock,
   ListChecks,
   FileText,
   FolderOpen,
@@ -39,9 +36,7 @@ export default function ActionCaseCustomerPortal({
   preview?: boolean
   previewCaseId?: string
 }) {
-  const [view, setView] = useState<'overview' | 'offer' | 'files' | 'work' | 'planning'>(
-    'overview'
-  )
+  const [view, setView] = useState<'offer' | 'planning' | 'schedule' | 'files'>('offer')
   const [offers, setOffers] = useState(portal.customerOffers?.offers ?? [])
   const [offerId, setOfferId] = useState(offers[0]?.id ?? '')
   const [selection, setSelection] = useState<string[]>([])
@@ -59,9 +54,7 @@ export default function ActionCaseCustomerPortal({
   const accepted = offers.find((o) => o.status === 'accepted')
   const plannedItems = portal.customerOffers?.plannedItems ?? []
   const offeredOptions = latest?.snapshot.items.filter((i) => i.kind === 'option') ?? []
-  const workCount = latest
-    ? latest.snapshot.items.filter((i) => i.kind === 'included' || (i.kind === 'option' && accepted?.acceptedOptionIds.includes(i.id))).length
-    : c.items.length
+  const contract = accepted ?? offers.find((o) => o.status === 'published')
   const sharedFiles = c.attachments.filter(
     (f) => !latest?.files.some((copy) => copy.id === f.id)
   )
@@ -146,137 +139,33 @@ export default function ActionCaseCustomerPortal({
           {c.propertyAddress}
         </p>
       </header>
-      {view !== 'overview' && (
-        <div className="flex flex-wrap justify-between gap-3 py-5 print:hidden">
-          <button className={button} onClick={() => navigate('overview')}>
-            <ArrowLeft size={17} /> Projektöversikt
-          </button>
-          {view === 'offer' && offer && (
-            <button className={button} onClick={() => window.print()}>
-              <Printer size={17} /> Skriv ut
-            </button>
-          )}
-        </div>
-      )}
-      {view === 'overview' && (
-        <>
-          <section className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 py-6">
-            <div className="flex items-start gap-3">
-              {accepted ? (
-                <CheckCircle2 className="mt-1 text-emerald-700" size={23} />
-              ) : (
-                <ClipboardList className="mt-1 text-violet-700" size={23} />
-              )}
-              <div>
-                <h2 className="text-lg">
-                  {accepted
-                    ? 'Ditt avtal är klart'
-                    : actionable
-                      ? 'Din offert är klar att granska'
-                      : latest
-                        ? 'Ingen offert väntar på ditt godkännande'
-                        : 'Ditt uppdrag förbereds'}
-                </h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  {accepted
-                    ? `${money(accepted.acceptedTotalOre)} inklusive moms`
-                    : actionable
-                      ? `Giltig till ${latest.snapshot.validUntil}`
-                      : 'Du hittar delat underlag här.'}
-                </p>
-              </div>
-            </div>
-            {latest && (
-              <button
-                className={`${button} bg-slate-950 text-white`}
-                onClick={() => {
-                  setOfferId(latest.id)
-                  navigate('offer')
-                }}
-              >
-                {accepted ? 'Visa avtal' : 'Visa offert'}
-                <ArrowRight size={17} />
-              </button>
-            )}
-          </section>
-          <div className="grid divide-y divide-slate-200 border-b border-slate-200 md:grid-cols-2 md:divide-y-0 lg:grid-cols-4">
-            <button
-              onClick={() => navigate(latest ? 'offer' : 'work')}
-              className="min-w-0 p-6 text-left hover:bg-white"
-            >
-              <FileText size={23} className="text-violet-700" />
-              <h2 className="mt-4 text-base">
-                {accepted ? 'Offert och avtal' : 'Mitt uppdrag'}
-              </h2>
-              <p className="mt-2 text-xl font-semibold">
-                {accepted
-                  ? money(accepted.acceptedTotalOre)
-                  : latest
-                    ? money(latest.snapshot.baseAmountOre)
-                    : `${c.items.length} delade arbeten`}
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                {accepted
-                  ? 'Avtalat inklusive moms'
-                  : latest
-                    ? 'Grundpris inklusive moms'
-                    : 'Omfattning och underlag'}
-              </p>
-              <ArrowRight className="mt-5" size={18} />
-            </button>
-            <button
-              onClick={() => navigate('work')}
-              className="min-w-0 p-6 text-left hover:bg-white"
-            >
-              <ClipboardList size={23} className="text-violet-700" />
-              <h2 className="mt-4 text-base">Avtalets omfattning</h2>
-              <p className="mt-2 text-xl font-semibold">
-                {workCount} {workCount === 1 ? 'arbete' : 'arbeten'}
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                Grundåtagande och avgränsningar
-              </p>
-              <ArrowRight className="mt-5" size={18} />
-            </button>
-            <button onClick={() => navigate('planning')} className="min-w-0 p-6 text-left hover:bg-white">
-              <ListChecks size={23} className="text-violet-700" />
-              <h2 className="mt-4 text-base">Val och tillval</h2>
-              <p className="mt-2 text-xl font-semibold">{plannedItems.length} {plannedItems.length === 1 ? 'planerat' : 'planerade'}</p>
-              <p className="mt-2 text-sm text-slate-500">{offeredOptions.length} alternativ i {accepted ? 'avtalshistoriken' : 'offerten'}</p>
-              <ArrowRight className="mt-5" size={18} />
-            </button>
-            <button
-              onClick={() => navigate('files')}
-              className="min-w-0 p-6 text-left hover:bg-white"
-            >
-              <FolderOpen size={23} className="text-violet-700" />
-              <h2 className="mt-4 text-base">Bilder och dokument</h2>
-              <p className="mt-2 text-xl font-semibold">
-                {sharedFiles.length + (latest?.files.length ?? 0)} filer
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                Projektmaterial och offertbilagor
-              </p>
-              <ArrowRight className="mt-5" size={18} />
-            </button>
-          </div>
-          {latest && (
-            <section className="py-6">
-              <h2 className="text-base">Din kontakt</h2>
-              <p className="mt-2 text-sm">{latest.snapshot.issuerName}</p>
-              <a
-                href={`mailto:${latest.snapshot.replyEmail}`}
-                className="mt-2 inline-flex items-center gap-2 break-all text-sm text-violet-700"
-              >
-                <Mail size={17} />
-                {latest.snapshot.replyEmail}
-              </a>
-            </section>
-          )}
-        </>
-      )}
+      <nav aria-label="Ditt projekt" className="grid grid-cols-2 gap-1 border-b border-slate-200 py-3 sm:grid-cols-4 print:hidden">
+        {([
+          ['offer', 'Avtal', FileText],
+          ['planning', 'Val och tillval', ListChecks],
+          ['schedule', 'Tidsplan', CalendarClock],
+          ['files', 'Bilder och filer', FolderOpen]
+        ] as const).map(([key, label, Icon]) => <button key={key}
+          aria-pressed={view === key} onClick={() => navigate(key)}
+          className={`${button} min-w-0 border-transparent ${view === key ? 'bg-violet-50 text-violet-800' : 'hover:bg-white'}`}>
+          <Icon size={18} className="shrink-0" />{label}
+        </button>)}
+      </nav>
+      {view === 'offer' && !offer && <section className="py-8">
+        <h2 className="text-xl">Avtal</h2>
+        <p className="mt-3 text-sm text-slate-600">Grundavtalet förbereds. Inget avtal finns att godkänna ännu.</p>
+      </section>}
       {view === 'offer' && offer && (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-3 py-5">
+            <div>
+              <h2 className="text-xl">{offer.status === 'accepted' ? 'Godkänt avtal' : 'Grundavtal'}</h2>
+              <p className="mt-1 text-sm text-slate-600">{offer.snapshot.items.some((i) => i.kind === 'option')
+                ? 'Tidigare publicerad version. Ursprunglig omfattning och val visas oförändrade.'
+                : 'Omfattning, pris och villkor. Val och tillval beställs separat.'}</p>
+            </div>
+            <button className={`${button} print:hidden`} onClick={() => window.print()}><Printer size={17} /> Skriv ut avtal</button>
+          </div>
           {offers.length > 1 && (
             <label className="mb-5 block text-sm print:hidden">
               Offertversion
@@ -346,7 +235,7 @@ export default function ActionCaseCustomerPortal({
                     />
                     <span>
                       Jag är beställaren eller behörig företrädare och godkänner
-                      version {offer.version}, valda tillval, villkor och
+                      version {offer.version}{offer.snapshot.items.some((i) => i.kind === 'option') ? ', valda tillval' : ''}, villkor och
                       bilagor. Totalt{' '}
                       {money(customerOfferTotal(offer.snapshot, selection))}{' '}
                       inklusive moms.
@@ -356,7 +245,7 @@ export default function ActionCaseCustomerPortal({
                     <div className="mt-5">
                       <p className="text-sm text-slate-600">
                         Ange den sexsiffriga koden från mejlet. Koden gäller
-                        dina val ovan.
+                        denna avtalsversion och beloppet ovan.
                       </p>
                       <label className="mt-3 block text-sm">
                         E-postkod
@@ -419,54 +308,40 @@ export default function ActionCaseCustomerPortal({
         </>
       )}
       {view === 'planning' && <div className="bg-white px-5 sm:px-8">
+        <p className="border-b border-slate-200 py-5 text-sm text-slate-600">
+          {accepted
+            ? 'Grundavtalet är godkänt. Val och tillval nedan är ännu inte beställda och ändrar inte avtalssumman.'
+            : 'Valen kan förberedas nu. Du behöver inte välja något här för att godkänna grundavtalet.'}
+          {' '}En senare beställning behöver en separat överenskommelse om omfattning, pris och tid.
+        </p>
         <CustomerPlannedItems items={plannedItems} />
-        {offeredOptions.length > 0 && <section className="border-t border-slate-200 py-6">
-          <h2 className="text-xl">{accepted ? 'Val i huvudavtalet' : 'Val vid offertens godkännande'}</h2>
-          {offeredOptions.map((item) => <div key={item.id} className="border-b border-slate-200 py-4"><div className="flex flex-wrap justify-between gap-3"><h3 className="font-semibold">{item.title}</h3><span className="text-sm">{money(item.amountOre)}</span></div><p className="mt-2 text-sm">{accepted ? accepted.acceptedOptionIds.includes(item.id) ? 'Ingår i godkänt avtal' : 'Inte beställt' : 'Beställs endast om det väljs vid offertens godkännande'}</p></div>)}
-          <button className={`${button} mt-5`} onClick={() => { setOfferId(latest.id); navigate('offer') }}><FileText size={17} /> {accepted ? 'Visa huvudavtal' : 'Granska offert och välj'}</button>
-        </section>}
+        {offeredOptions.length > 0 && <details className="border-t border-slate-200 py-5">
+          <summary className="cursor-pointer text-sm font-semibold">Val i tidigare avtalsversion</summary>
+          {offeredOptions.map((item) => <div key={item.id} className="border-b border-slate-200 py-4">
+            <h3 className="font-semibold">{item.title}</h3>
+            <p className="mt-2 text-sm">{money(item.amountOre)} · {accepted?.acceptedOptionIds.includes(item.id) ? 'Ingår i det godkända avtalet' : 'Se ursprunglig avtalsversion'}</p>
+          </div>)}
+          <button className={`${button} mt-4`} onClick={() => { setOfferId(latest.id); navigate('offer') }}>Visa avtalsversion</button>
+        </details>}
       </div>}
-      {view === 'work' && (
-        <section className="bg-white px-5 py-6 sm:px-8">
-          <h2 className="text-xl">Arbeten</h2>
-          {latest
-            ? latest.snapshot.items.filter((i) => i.kind !== 'option' || accepted?.acceptedOptionIds.includes(i.id)).map((i) => (
-                <article key={i.id} className="border-b border-slate-200 py-5">
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <h3 className="font-semibold">{i.title}</h3>
-                    <span className="text-sm text-slate-500">
-                      {i.kind === 'included'
-                        ? 'Grundåtagande'
-                        : i.kind === 'excluded'
-                          ? 'Utanför vårt åtagande'
-                          : accepted?.acceptedOptionIds.includes(i.id)
-                            ? 'Valt tillval'
-                            : 'Tillval'}
-                    </span>
-                  </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                    {i.scope}
-                  </p>
-                </article>
-              ))
-            : c.items.map((i) => (
-                <article key={i.id} className="border-b border-slate-200 py-5">
-                  <h3 className="font-semibold">{i.title}</h3>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                    {i.scope}
-                  </p>
-                </article>
-              ))}
-          {!latest && !c.items.length && (
-            <p className="mt-4 text-slate-600">
-              Ingen omfattning har delats ännu.
-            </p>
-          )}
-        </section>
-      )}
+      {view === 'schedule' && <section className="py-6">
+        <h2 className="text-xl">Tidsplan</h2>
+        {contract?.snapshot.schedule ? <>
+          <p className="mt-3 text-sm font-medium">{accepted ? 'Avtalade tider' : 'Föreslagna tider · Avtalet är inte godkänt'}</p>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{contract.snapshot.schedule}</p>
+          <p className="mt-4 text-sm text-slate-500">Avtalsversion {contract.version}</p>
+        </> : <p className="mt-3 text-sm text-slate-600">Ingen tidsplan har delats ännu.</p>}
+        {plannedItems.some((i) => i.decisionBy) && <div className="mt-6 border-t border-slate-200 pt-5">
+          <h3 className="font-semibold">Önskade beslutsdatum</h3>
+          {plannedItems.filter((i) => i.decisionBy).sort((a,b) => a.decisionBy.localeCompare(b.decisionBy)).map((i) =>
+            <div key={i.id} className="flex flex-wrap justify-between gap-3 border-b border-slate-200 py-3 text-sm">
+              <span>{i.title}</span><time dateTime={i.decisionBy}>{i.decisionBy}</time>
+            </div>)}
+        </div>}
+      </section>}
       {view === 'files' && (
         <section>
-          <h2 className="text-xl">Bilder och dokument</h2>
+          <h2 className="pt-6 text-xl">Bilder och filer</h2>
           {latest?.files.length ? (
             <div className="mt-5 divide-y divide-slate-200">
               {latest.files.map((f) => (
@@ -522,6 +397,13 @@ export default function ActionCaseCustomerPortal({
           )}
         </section>
       )}
+      {latest && <footer className="mt-8 border-t border-slate-200 py-5 print:hidden">
+        <h2 className="text-sm font-semibold">Din kontakt</h2>
+        <p className="mt-2 text-sm">{latest.snapshot.issuerName}</p>
+        <a href={`mailto:${latest.snapshot.replyEmail}`} className="mt-2 inline-flex items-center gap-2 break-all text-sm text-violet-700">
+          <Mail size={17} className="shrink-0" />{latest.snapshot.replyEmail}
+        </a>
+      </footer>}
     </main>
   )
 }

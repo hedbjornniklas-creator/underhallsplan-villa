@@ -741,3 +741,94 @@ test('new revision supersedes old version; old links can read history but cannot
     /CLOSED/
   )
 })
+
+test('separate choices migration preserves history and protects new base agreements', async (t) => {
+  // Issue a legacy version before installing the new publication guard.
+  const legacy = await fixture()
+  await legacy.write('publish', legacy.publication)
+  const original = await get('action_case_customer_offers', legacy.offerId)
+  await db.exec(sql('2026-10-01_02_customer_contract_choices'))
+  await db.exec(sql('2026-10-01_02_customer_contract_choices'))
+  assert.deepEqual(await get('action_case_customer_offers', legacy.offerId), original)
+  const stored = async (f) => (await db.query('select * from action_case_customer_offer_drafts where action_case_id=$1', [f.caseId])).rows[0]
+  const split = (f, revision, planningRevision, org = id(1)) => db.query(
+    'select separate_customer_choices($1,$2,$3,$4,$5)', [org, f.caseId, id(2), revision, planningRevision])
+
+  await t.test('old issued version still accepts its original choices but cannot be silently split', async () => {
+    await assert.rejects(split(legacy, 1, 0), /WITHDRAW_FIRST/)
+    await legacy.respond('challenge', legacy.challenge)
+    await legacy.respond('accept', { challengeId: legacy.challengeId, codeHash: 'good-hash' })
+    const accepted = await get('action_case_customer_offers', legacy.offerId)
+    assert.deepEqual(accepted.snapshot, original.snapshot)
+    assert.deepEqual(accepted.accepted_option_ids, legacy.challenge.selection)
+    await assert.rejects(split(legacy, 1, 0), /WITHDRAW_FIRST/)
+  })
+  await t.test('atomic split retains order, groups, precise amounts, private costs and shared planning', async () => {
+    const f = await fixture(), body = itemized(f.draft), existing = [planned()]
+    const costing = { [id(23)]: { purchaseOre: 987654, markupBasisPoints: 1000, fixedMarkupOre: null, additions: [] },
+      [id(21)]: { purchaseOre: 600000, markupBasisPoints: null, fixedMarkupOre: null, additions: [] } }
+    await db.query('select save_customer_offer_costing($1,$2,$3,$4)', [id(1), f.caseId, id(2), { revision: 1, body, costing }])
+    await planningWrite(f, 'save', { revision: 0, items: existing })
+    await planningWrite(f, 'share', { revision: 1, items: existing, confirmed: true })
+    const before = await stored(f)
+    await assert.rejects(split(f, 1, 2), /STALE/)
+    await assert.rejects(split(f, 2, 1), /STALE/)
+    await assert.rejects(split(f, 2, 2, id(9)), /NOT_FOUND/)
+    assert.deepEqual(await stored(f), before)
+    await split(f, 2, 2)
+    const d = await stored(f), p = await planningRead(f)
+    assert.equal(d.body.baseAmountOre, body.baseAmountOre)
+    assert.deepEqual(d.body.items, body.items.filter((i) => i.kind !== 'option'))
+    assert.equal(d.revision, 3)
+    assert.deepEqual(p.shared_items, existing)
+    assert.equal(p.revision, 3)
+    const choices = p.items.slice(existing.length)
+    assert.deepEqual(choices.map((i) => i.id), [id(23), id(24), id(25)])
+    assert.equal(choices[0].optionGroup, 'Fönster')
+    assert.equal(choices[0].budgetOre, 1000000)
+    assert.deepEqual(p.internal_costing, { [id(23)]: costing[id(23)] })
+    assert.deepEqual(d.internal_costing, { [id(21)]: costing[id(21)] })
+    assert.equal(JSON.stringify(p.items).includes('987654'), false)
+    await split(f, 3, 3)
+    assert.deepEqual(await stored(f), d)
+    assert.deepEqual(await planningRead(f), p)
+    await f.write('publish', { ...f.publication, revision: 3, snapshot: { ...f.snapshot, ...d.body } })
+    await assert.rejects(f.respond('challenge', { ...f.challenge, selection: [id(23)] }), /INVALID|SELECTION/)
+    await f.respond('challenge', { ...f.challenge, selection: [] })
+    await f.respond('accept', { challengeId: f.challengeId, codeHash: 'good-hash' })
+    const accepted = await get('action_case_customer_offers', f.offerId)
+    assert.equal(Number(accepted.accepted_total_ore), body.baseAmountOre)
+    assert.deepEqual(accepted.accepted_option_ids, [])
+    await planningWrite(f, 'save', { revision: 3, items: [{ ...choices[0], budgetOre: 1234567 }] })
+    assert.deepEqual(await get('action_case_customer_offers', f.offerId), accepted)
+  })
+  await t.test('new publication cannot contain optional choices, even through an older client', async () => {
+    const f = await fixture()
+    await assert.rejects(f.write('publish', f.publication), /SEPARATE_CHOICES/)
+    assert.equal(await get('action_case_customer_offers', f.offerId), undefined)
+  })
+  await t.test('failed planning write rolls back the entire move', async () => {
+    const f = await fixture(), items = Array.from({ length: 200 }, planned)
+    await planningWrite(f, 'save', { revision: 0, items })
+    const before = await stored(f)
+    await assert.rejects(split(f, 1, 1), /INVALID/)
+    assert.deepEqual(await stored(f), before)
+    assert.deepEqual((await planningRead(f)).items, items)
+    assert.equal((await planningRead(f)).revision, 1)
+  })
+  await t.test('duplicate choice identity cannot overwrite an existing planned item', async () => {
+    const f = await fixture(), item = { ...planned(), id: f.draft.items[1].id }
+    await planningWrite(f, 'save', { revision: 0, items: [item] })
+    await assert.rejects(split(f, 1, 1), /STALE/)
+    assert.equal((await stored(f)).revision, 1)
+  })
+  await t.test('new private writers remain inaccessible to browser roles', async () => {
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec(`set role ${role}`)
+      try {
+        await assert.rejects(split(legacy, 1, 0), /permission denied/)
+        await assert.rejects(db.query('select save_customer_planning_costing($1,$2,$3,$4)', [id(1), legacy.caseId, id(2), {}]), /permission denied/)
+      } finally { await db.exec('reset role') }
+    }
+  })
+})
