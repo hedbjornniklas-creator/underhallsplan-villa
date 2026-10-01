@@ -154,6 +154,8 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (name === 'assert_customer_payment_plan' && options.paymentPlanMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_contract' && options.contractMissing)
         return { error: { code: 'PGRST202' } }
       if (name === 'save_customer_offer_costing' && options.costingMissing)
@@ -267,6 +269,36 @@ function harness(options = {}) {
       )
   }
 }
+
+test('payment plans require schema protection before save or publication and freeze into public versions', async () => {
+  const ctx = { orgId: id(90), userId: id(91) }
+  const h = harness()
+  h.draft.paymentPlan = { version: 1, installments: [{ id: id(80), title: 'Slutbetalning', condition: 'Efter utfört arbete.', plannedDate: '', amountOre: h.draft.baseAmountOre }] }
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft })
+  assert.deepEqual(h.calls.find((c) => c.p_operation === 'save').p_data.body.paymentPlan, h.draft.paymentPlan)
+  assert.equal(h.calls.find((c) => c.name === 'assert_customer_payment_plan').p_complete, false)
+  await h.run()
+  assert.deepEqual(h.saved().snapshot.paymentPlan, h.draft.paymentPlan)
+  const shared = await h.api.getSharedCustomerOffers(h.link, h.participant)
+  assert.deepEqual(shared.offers[0].snapshot.paymentPlan, h.draft.paymentPlan)
+  const missing = harness({ paymentPlanMissing: true })
+  missing.draft.paymentPlan = h.draft.paymentPlan
+  await assert.rejects(missing.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: missing.draft }), /SCHEMA/)
+  await assert.rejects(missing.run(), /SCHEMA/)
+  assert.equal(missing.sent.length, 0)
+  assert.equal(missing.copies.length, 0)
+  assert.equal(missing.calls.some((c) => c.p_operation === 'save'), false)
+  delete missing.draft.paymentPlan
+  await missing.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: missing.draft })
+})
+
+test('an incomplete payment plan blocks issuance before copying attachments or sending mail', async () => {
+  const h = harness()
+  h.draft.paymentPlan = { version: 1, installments: [{ id: id(80), title: 'Grund', condition: 'Efter färdig grund.', plannedDate: '', amountOre: 100 }] }
+  await assert.rejects(h.run(), /INCOMPLETE/)
+  assert.equal(h.sent.length, 0)
+  assert.equal(h.copies.length, 0)
+})
 
 test('itemized save computes totals and requires the database guard; legacy saves remain compatible', async () => {
   const ctx = { orgId: id(90), userId: id(91) }

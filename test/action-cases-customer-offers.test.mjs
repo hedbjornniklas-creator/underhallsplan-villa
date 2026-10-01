@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 import { emptyContractDetails, contractDetailsIssues, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
+import { normalizePaymentPlan, paymentPlanTotal, paymentPlanIssues } from '../src/lib/action-cases/customerPaymentPlan.ts'
 import {
   normalizeCustomerOffer,
   emptyCustomerOffer,
@@ -53,6 +54,8 @@ before(async () => {
   await db.exec(sql('2026-09-29_03_customer_offer_internal_costing'))
   await db.exec(sql('2026-09-29_04_customer_offer_planning'))
   await db.exec(sql('2026-09-29_04_customer_offer_planning'))
+  await db.exec(sql('2026-10-01_03_customer_payment_plan'))
+  await db.exec(sql('2026-10-01_03_customer_payment_plan'))
 })
 after(async () => {
   await db.close()
@@ -67,6 +70,92 @@ function completeContract() {
   }
   return result
 }
+
+const paymentPlan = (total = 10000000) => ({ version: 1, installments: [
+  { id: id(99001), title: 'Grund', condition: 'Efter färdig grund.', plannedDate: '2027-04-30', amountOre: 2500050 },
+  { id: id(99002), title: 'Slutdel', condition: 'Efter färdigställt avtalat arbete.', plannedDate: '', amountOre: total - 2500050 }
+] })
+
+test('payment plans normalize exact cents, stay opt-in and never manufacture invoice status', () => {
+  assert.equal(normalizeCustomerOffer(emptyCustomerOffer()).paymentPlan, undefined)
+  assert.equal(normalizePaymentPlan(null), null)
+  const p = paymentPlan()
+  assert.equal(paymentPlanTotal(p), 10000000)
+  assert.deepEqual(paymentPlanIssues(p, 10000000), [])
+  assert.deepEqual(normalizePaymentPlan({ ...p, internal: 'private', installments: p.installments.map((r) => ({ ...r, paid: true, invoiceId: 'secret' })) }), p)
+  for (const patch of [{ amountOre: -1 }, { amountOre: 0.5 }, { amountOre: 100000000001 }, { amountOre: undefined }, { plannedDate: '2026-02-30' }, { condition: null }, { title: 'x'.repeat(251) }])
+    assert.throws(() => normalizePaymentPlan({ ...p, installments: [{ ...p.installments[0], ...patch }] }), /INVALID/)
+  assert.throws(() => normalizePaymentPlan({ ...p, installments: [p.installments[0], p.installments[0]] }), /INVALID/)
+  assert.throws(() => normalizePaymentPlan({ ...p, installments: Array(61).fill(p.installments[0]) }), /INVALID/)
+  assert.throws(() => normalizePaymentPlan({ ...p, version: 2 }), /INVALID/)
+  assert.match(paymentPlanIssues(p, 10000001).join(), /summa/)
+  assert.match(paymentPlanIssues(p, null).join(), /pris/)
+  const incomplete = normalizePaymentPlan({ version: 1, installments: [{ ...p.installments[0], title: '', condition: '', amountOre: null }] })
+  assert.equal(paymentPlanTotal(incomplete), 0)
+  assert.equal(paymentPlanIssues(incomplete, 10000000).length, 3)
+})
+
+test('payment plan publication checklist reacts to base-price changes and empty installments', async () => {
+  const f = await fixture()
+  const d = { ...f.draft, items: f.draft.items.filter((r) => r.kind !== 'option'), paymentPlan: paymentPlan() }
+  assert.deepEqual(offerPublishIssues(d), [])
+  assert.match(offerPublishIssues({ ...d, baseAmountOre: 10000001 }).join(), /Betalningsplanens summa/)
+  assert.match(offerPublishIssues({ ...d, paymentPlan: { version: 1, installments: [] } }).join(), /delbetalning/)
+  const priced = { ...d, pricingMode: 'itemized', baseAmountOre: 10000000, items: d.items.map((r) => ({ ...r, amountOre: r.kind === 'included' ? 11000000 : null })) }
+  assert.match(offerPublishIssues(priced).join(), /Betalningsplanens summa/)
+})
+
+test('payment SQL allows incomplete private drafts but rejects mismatched totals and malformed rows', async () => {
+  const f = await fixture(), p = paymentPlan()
+  const body = { ...f.draft, paymentPlan: p }
+  await db.query('select assert_customer_payment_plan($1,true)', [body])
+  for (const patch of [{ amountOre: -1 }, { amountOre: 1.5 }, { plannedDate: '2026-02-30' }, { amountOre: undefined }, { id: 'bad' }, { condition: null }])
+    await assert.rejects(db.query('select assert_customer_payment_plan($1,false)', [{ ...body, paymentPlan: { ...p, installments: [{ ...p.installments[0], ...patch }] } }]), /INVALID/)
+  for (const plan of [{ ...p, installments: [] }, { ...p, installments: [{ ...p.installments[0], amountOre: null }] }, paymentPlan(9999999)]) {
+    await db.query('select assert_customer_payment_plan($1,false)', [{ ...body, paymentPlan: plan }])
+    await assert.rejects(db.query('select assert_customer_payment_plan($1,true)', [{ ...body, paymentPlan: plan }]), /INCOMPLETE/)
+  }
+  await assert.rejects(db.query('select assert_customer_payment_plan($1,false)', [{ ...body, paymentPlan: { ...p, installments: [p.installments[0], p.installments[0]] } }]), /INVALID/)
+  await assert.rejects(db.query('select assert_customer_payment_plan($1,true)', [{ ...body, pricingMode: 'itemized', items: [{ ...f.draft.items[0], amountOre: 10000001 }] }]), /INCOMPLETE/)
+})
+
+test('payment plans reuse revision and tenant guards, stay private until issued and freeze on acceptance', async () => {
+  const f = await fixture(), p = paymentPlan()
+  const body = { ...f.draft, paymentPlan: p }
+  await f.write('save', { revision: 1, body })
+  assert.equal(await get('action_case_customer_offers', f.offerId), undefined)
+  await assert.rejects(f.write('save', { revision: 1, body }), /STALE/)
+  await assert.rejects(f.write('save', { revision: 2, body }, id(9)), /NOT_FOUND/)
+  await assert.rejects(f.write('save', { revision: 2, body: f.draft }), /INVALID/)
+  await f.write('publish', { ...f.publication, revision: 2, snapshot: { ...f.snapshot, paymentPlan: p } })
+  const issued = await get('action_case_customer_offers', f.offerId)
+  await f.write('save', { revision: 2, body: { ...body, paymentPlan: paymentPlan(9900000) } })
+  assert.deepEqual(await get('action_case_customer_offers', f.offerId), issued)
+  const nextOfferId = id(seq++)
+  await assert.rejects(f.write('publish', { ...f.publication, id: nextOfferId, revision: 3,
+    files: [{ ...f.file, path: `${id(1)}/${f.caseId}/${nextOfferId}/${f.fileId}` }],
+    snapshot: { ...f.snapshot, paymentPlan: paymentPlan(9900000) } }), /INCOMPLETE/)
+  await f.respond('challenge', { ...f.challenge, selection: [] })
+  await f.respond('accept', { challengeId: f.challengeId, codeHash: 'good-hash' })
+  const accepted = await get('action_case_customer_offers', f.offerId)
+  assert.deepEqual(mapCustomerOffer(accepted).snapshot.paymentPlan, p)
+  await assert.rejects(f.write('save', { revision: 3, body }), /LOCKED|ACCEPTED/)
+  await assert.rejects(db.query("update action_case_customer_offers set snapshot=jsonb_set(snapshot,'{paymentPlan}','null') where id=$1", [f.offerId]), /IMMUTABLE/)
+})
+
+test('explicit payment-plan removal preserves old publications and cannot be lost by older clients', async () => {
+  const f = await fixture()
+  await f.write('save', { revision: 1, body: { ...f.draft, paymentPlan: paymentPlan() } })
+  await f.write('save', { revision: 2, body: { ...f.draft, paymentPlan: null } })
+  await assert.rejects(f.write('save', { revision: 3, body: f.draft }), /INVALID/)
+  await f.write('publish', { ...f.publication, revision: 3, snapshot: { ...f.snapshot, paymentPlan: null } })
+  assert.equal((await get('action_case_customer_offers', f.offerId)).snapshot.paymentPlan, null)
+  for (const role of ['anon', 'authenticated']) {
+    await db.exec(`set role ${role}`)
+    try { await assert.rejects(db.query('select assert_customer_payment_plan($1,false)', [f.draft]), /permission denied/) }
+    finally { await db.exec('reset role') }
+  }
+})
 function planningWrite(f, operation, data, org = id(1)) {
   return db.query('select write_customer_planning($1,$2,$3,$4,$5::jsonb)', [org, f.caseId, id(2), operation, JSON.stringify(data)])
 }

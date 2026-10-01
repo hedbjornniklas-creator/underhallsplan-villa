@@ -1,6 +1,8 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractDetailsIssues, normalizeContractDetails, type CustomerContractDetails } from './customerContract.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizePaymentPlan, paymentPlanIssues, type CustomerPaymentPlan } from './customerPaymentPlan.ts'
 
 export type CustomerOfferItem = {
   id: string
@@ -11,6 +13,7 @@ export type CustomerOfferItem = {
   optionGroup?: string | null
 }
 export type CustomerOfferDraft = {
+  paymentPlan?: CustomerPaymentPlan | null
   contractDetails?: CustomerContractDetails
   title: string
   introduction: string
@@ -146,6 +149,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.paymentPlan === undefined ? {} : { paymentPlan: normalizePaymentPlan(d.paymentPlan) }),
     ...(d.contractDetails === undefined ? {} : { contractDetails: normalizeContractDetails(d.contractDetails) }),
     title: text(d.title, 250),
     introduction: text(d.introduction, 12000),
@@ -205,6 +209,7 @@ export function offerPublishIssues(
   })
 ): string[] {
   const issues: string[] = contractDetailsIssues(d.contractDetails)
+  issues.push(...paymentPlanIssues(d.paymentPlan, customerOfferBaseAmount(d)))
   if (d.items.some((i) => i.kind === 'option'))
     issues.push('Flytta valen till Val och tillval innan grundavtalet skickas.')
   if (!d.title.trim()) issues.push('Ange en offertrubrik.')

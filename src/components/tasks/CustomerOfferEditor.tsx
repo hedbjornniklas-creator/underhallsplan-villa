@@ -15,7 +15,8 @@ import {
   RefreshCw,
   Save,
   Send,
-  Trash2
+  Trash2,
+  WalletCards
 } from 'lucide-react'
 import type {
   ActionCaseView,
@@ -39,6 +40,7 @@ import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosti
 import CustomerContractFields from './CustomerContractFields'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
 import { emptyContractDetails } from '@/lib/action-cases/customerContract'
+import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -60,7 +62,7 @@ export default function CustomerOfferEditor({
       ? { ...initial.draft, contractDetails: initial.draft.contractDetails ?? emptyContractDetails() }
       : initial.draft)
   const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
-  const [view, setView] = useState<'edit' | 'document' | 'customer' | 'planning'>('edit')
+  const [view, setView] = useState<'edit' | 'document' | 'customer' | 'planning' | 'payments'>('edit')
   const [itemView, setItemView] = useState<'included' | 'excluded'>('included')
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [planningDirty, setPlanningDirty] = useState(false)
@@ -283,6 +285,7 @@ export default function CustomerOfferEditor({
         {[
           ['edit', 'Grundavtal'],
           ['planning', 'Val och tillval'],
+          ['payments', 'Betalningsplan'],
           ['document', 'Granska grundavtal'],
           ['customer', 'Kundens sidor']
         ].map(([key, label]) => (
@@ -292,7 +295,7 @@ export default function CustomerOfferEditor({
             aria-pressed={view === key}
             className={`${button} shrink-0 ${view === key ? 'bg-violet-50' : 'bg-white'}`}
           >
-            {key === 'edit' ? <FilePlus2 size={17} /> : key === 'planning' ? <CalendarClock size={17} /> : <Eye size={17} />}
+            {key === 'edit' ? <FilePlus2 size={17} /> : key === 'planning' ? <CalendarClock size={17} /> : key === 'payments' ? <WalletCards size={17} /> : <Eye size={17} />}
             {label}
           </button>
         ))}
@@ -311,7 +314,27 @@ export default function CustomerOfferEditor({
       <div hidden={view !== 'planning'}>
         <CustomerPlanningEditor key={planningReset} caseId={actionCase.id} initial={planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />
       </div>
-      {view === 'planning' ? null : view === 'customer' ? (
+      {view === 'planning' ? null : view === 'payments' ? <section className="py-6">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-xl">Betalningsplan</h2><p className="mt-2 text-sm text-slate-600">{locked ? 'Avtalad betalningsplan · Låst med grundavtalet' : 'Internt utkast · Delas med grundavtalet, inte när du sparar'}</p></div>
+          {!locked && <button className={`${button} bg-slate-950 text-white`} disabled={Boolean(busy) || (!dirty && workspace.revision > 0) || confirmItemized} onClick={() => void action('save')}>
+            {busy === 'save' ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} Spara utkast
+          </button>}
+        </div>
+        {locked ? <>
+          <PaymentPlanDocument plan={previewOffer.snapshot.paymentPlan} paymentTerms={previewOffer.snapshot.paymentTerms} />
+          <p className="mt-4 text-sm text-slate-600">Version {previewOffer.version}. Ändringar av den avtalade planen kräver en separat överenskommelse och kan inte göras här.</p>
+        </> : <>
+          <fieldset disabled={Boolean(busy)} className="min-w-0">
+            <PaymentPlanEditor plan={draft.paymentPlan} baseAmount={baseAmount} paymentTerms={draft.paymentTerms}
+              onChange={(paymentPlan) => update({ paymentPlan })} onTermsChange={(paymentTerms) => update({ paymentTerms })} />
+          </fieldset>
+          <div className="mt-6 flex flex-wrap gap-3 border-t border-slate-200 pt-5">
+            <button className={`${button} bg-white`} onClick={() => setView('document')}><Eye size={17} /> Granska grundavtal</button>
+            <button className={button} onClick={() => setView('edit')}><ArrowLeft size={17} /> Till grundavtal</button>
+          </div>
+        </>}
+      </section> : view === 'customer' ? (
         <ActionCaseCustomerPortal
           key={JSON.stringify([workspace.offers, planning?.sharedItems])}
           portal={portal}
@@ -640,15 +663,11 @@ export default function CustomerOfferEditor({
                   onChange={(e) => update({ schedule: e.target.value })}
                 />
               </label>
-              <label className="block text-sm">
-                Betalningsvillkor *
-                <textarea
-                  className={field}
-                  rows={3}
-                  value={draft.paymentTerms}
-                  onChange={(e) => update({ paymentTerms: e.target.value })}
-                />
-              </label>
+              <div className="border-y border-slate-200 py-4 text-sm">
+                <h3 className="font-semibold">Betalning</h3>
+                <p className="mt-2 whitespace-pre-wrap">{draft.paymentTerms || 'Betalningsvillkor saknas.'}</p>
+                <button className={`${button} mt-3`} onClick={() => setView('payments')}><WalletCards size={17} /> Öppna betalningsplan</button>
+              </div>
               <label className="block text-sm">
                 Villkor och hänvisning till avtalshandling *
                 <textarea

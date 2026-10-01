@@ -15,6 +15,7 @@ import {
 } from '../test/fixtures/customer-offer-data.ts'
 import {
   customerOfferTotal,
+  offerPublishIssues,
   normalizeCustomerOffer
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
@@ -80,6 +81,15 @@ function separateChoices() {
   state.draft.items = state.draft.items.filter((i) => i.kind !== 'option')
 }
 if (!process.argv.includes('--legacy-draft')) separateChoices()
+if (process.argv.includes('--payment-plan')) {
+  const total = state.draft.baseAmountOre
+  state.draft.paymentTerms = 'FIKTIV TESTPLAN. Betalningsvillkor enligt den granskade avtalshandlingen.'
+  state.draft.paymentPlan = { version: 1, installments: [
+    { id: id(80), title: 'Grund färdig', condition: 'Efter färdigställd grund enligt avtalad omfattning.', plannedDate: '2027-04-30', amountOre: Math.floor(total / 4) },
+    { id: id(81), title: 'Stomme och tak', condition: 'Efter färdig stomme och tätt tak enligt avtalad omfattning.', plannedDate: '', amountOre: Math.floor(total / 2) },
+    { id: id(82), title: 'Återstående avtalat arbete', condition: 'Efter färdigställt återstående arbete enligt avtalet.', plannedDate: '', amountOre: total - Math.floor(total / 4) - Math.floor(total / 2) }
+  ] }
+}
 if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')) {
   state.offers = [published(state.draft)]
   state.planning.sharedItems = structuredClone(state.planning.items)
@@ -164,6 +174,7 @@ const server = createServer(async (req, res) => {
         state.planning.revision++
       } else if (body.operation === 'publish') {
         if (state.draft.items.some((i) => i.kind === 'option')) { json({ error: 'Flytta valen först.' }, 409); return }
+        if (offerPublishIssues(state.draft).length) { json({ error: 'Komplettera utkastet före utskick.' }, 400); return }
         state.offers = [published(state.draft)]
       }
       else if (body.operation === 'withdraw')

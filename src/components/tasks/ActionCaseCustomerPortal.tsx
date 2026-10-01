@@ -11,6 +11,7 @@ import {
   Mail,
   MapPin,
   Printer,
+  WalletCards,
   ShieldCheck
 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
@@ -22,6 +23,7 @@ import {
 } from '@/lib/action-cases/customerOffers'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import { CustomerPlannedItems } from './CustomerPlanningEditor'
+import { PaymentPlanDocument } from './CustomerPaymentPlan'
 
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
@@ -36,7 +38,7 @@ export default function ActionCaseCustomerPortal({
   preview?: boolean
   previewCaseId?: string
 }) {
-  const [view, setView] = useState<'offer' | 'planning' | 'schedule' | 'files'>('offer')
+  const [view, setView] = useState<'offer' | 'planning' | 'payments' | 'schedule' | 'files'>('offer')
   const [offers, setOffers] = useState(portal.customerOffers?.offers ?? [])
   const [offerId, setOfferId] = useState(offers[0]?.id ?? '')
   const [selection, setSelection] = useState<string[]>([])
@@ -139,10 +141,11 @@ export default function ActionCaseCustomerPortal({
           {c.propertyAddress}
         </p>
       </header>
-      <nav aria-label="Ditt projekt" className="grid grid-cols-2 gap-1 border-b border-slate-200 py-3 sm:grid-cols-4 print:hidden">
+      <nav aria-label="Ditt projekt" className="grid grid-cols-2 gap-1 border-b border-slate-200 py-3 lg:grid-cols-5 print:hidden">
         {([
           ['offer', 'Avtal', FileText],
           ['planning', 'Val och tillval', ListChecks],
+          ['payments', 'Betalningsplan', WalletCards],
           ['schedule', 'Tidsplan', CalendarClock],
           ['files', 'Bilder och filer', FolderOpen]
         ] as const).map(([key, label, Icon]) => <button key={key}
@@ -324,6 +327,14 @@ export default function ActionCaseCustomerPortal({
           <button className={`${button} mt-4`} onClick={() => { setOfferId(latest.id); navigate('offer') }}>Visa avtalsversion</button>
         </details>}
       </div>}
+      {view === 'payments' && <section className="py-6">
+        <h2 className="text-xl">Betalningsplan</h2>
+        {contract ? <>
+          <p className="mt-3 text-sm font-medium">{accepted ? 'Avtalad betalningsplan' : 'Föreslagen betalningsplan · Avtalet är inte godkänt'} · Version {contract.version}</p>
+          <p className="mt-2 text-sm text-slate-600">Grundavtalet · Inklusive moms. Detta är en betalningsplan, inte fakturor eller betalningskvitton.</p>
+          <PaymentPlanDocument plan={contract.snapshot.paymentPlan} paymentTerms={contract.snapshot.paymentTerms} />
+        </> : <p className="mt-3 text-sm text-slate-600">Ingen betalningsplan har delats ännu.</p>}
+      </section>}
       {view === 'schedule' && <section className="py-6">
         <h2 className="text-xl">Tidsplan</h2>
         {contract?.snapshot.schedule ? <>

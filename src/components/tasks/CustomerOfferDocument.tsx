@@ -3,6 +3,7 @@
 import { useId } from 'react'
 import { Check, Download, FileText } from 'lucide-react'
 import { CustomerContractDocument } from './CustomerContractFields'
+import { PaymentPlanDocument } from './CustomerPaymentPlan'
 import {
   customerOfferBaseAmount,
   customerOfferOptionGroup,
@@ -187,6 +188,10 @@ export default function CustomerOfferDocument({
         </section>
       )}
       <CustomerContractDocument value={s.contractDetails} />
+      {s.paymentPlan && <section className="border-t border-slate-200 py-6">
+        <h3 className="text-lg font-semibold">Betalningsplan för grundavtalet</h3>
+        <PaymentPlanDocument plan={s.paymentPlan} paymentTerms={s.paymentTerms} showTerms={false} />
+      </section>}
       <section className="grid gap-6 border-y border-slate-200 py-6 sm:grid-cols-2">
         {[
           ['Tider', s.schedule],

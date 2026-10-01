@@ -5,7 +5,7 @@ Datum: 2026-10-01.
 
 ## Beslut och omfattning
 
-- Bestallaren far fyra sidor: Avtal, Val och tillval, Tidsplan, Bilder och filer.
+- Bestallaren far fem sidor: Avtal, Val och tillval, Betalningsplan, Tidsplan, Bilder och filer.
   Avtal ar forstavy; oversiktsgenvagen Mitt uppdrag har tagits bort.
   Den interna arbetsytan och UE-portalen
   behalls separat. Gemensamma data ateranvands, inte gemensamma behorigheter.
@@ -132,6 +132,37 @@ Datum: 2026-10-01.
 
 ## Aktivering
 
+### Betalningsplan (2026-10-01)
+
+- Egen flik internt och hos bestallaren. Rubrik, belopp inklusive moms och villkor
+  for fakturering per delbetalning. Planerat faktureringsdatum ar valfritt och ar
+  inte ett forfallodatum eller ett intyg om utfort arbete.
+- Grundavtalets befintliga `paymentTerms` redigeras i denna flik. Inga nya
+  betalningsvillkor, procentsatser eller forfallotider fylls i automatiskt.
+- Planen ar valfri for bakatkompatibilitet. Aktivering lagger `paymentPlan`
+  (version 1, hogst 60 delbetalningar) i befintlig offertbody. Inga nya tabeller.
+  Saknade belopp kan sparas i utkast; vid utskick kravs positiva hela orebelopp,
+  rubriker och faktureringsvillkor. Summan maste exakt motsvara grundpriset.
+  Val/tillval/ATA blandas inte in. Prisandringar skriver inte om delbetalningarna.
+- Delbetalningar kan flyttas, tas bort med angring och fyllas med aterstaende
+  belopp. Borttagning av hela planen bekraftas och sparas som explicit null.
+- Plan och betalningsvillkor delar grundavtalets revision och sparning. Utkast
+  ar privata. Kundfliken laser endast den godkanda versionen, annars den senaste
+  fortfarande publicerade versionen. Ingen aterkallad plan presenteras som aktiv.
+- Planen ingar i avtalsgranskning, utskrift och det befintliga godkannandet.
+  Utgiven snapshot ar oforanderlig. Efter godkannande visas den last aven internt;
+  en ny plan kan inte laggas pa eller skrivas over i ett redan godkant avtal.
+  Separat overenskommelse om senare planandringar aterstar, liksom ATA-flodet.
+- Inga fakturor, betalningar, fakturerat/betalt-statusar eller betalningspaminelser
+  skapas. Dessa kravs fran en framtida faktisk fakturakalla.
+- Kor `docs/db/2026-10-01_03_customer_payment_plan.sql` fore apppublicering.
+  Omkorbara validators/triggers; inga befintliga projekt skrivs om. Sparning och
+  publicering med den nya strukturen stoppas om databasskydd saknas. Aldre
+  klienter far inte tyst ta bort faltet efter att det anvants. Org-/revisionsskydd,
+  frysta versioner och mottagarkontroll ateranvands fran kundofferten.
+- Lokal testdemo: lagg till `--payment-plan` till previewkommandot for tre
+  uttryckligen fiktiva delbetalningar. Inga belopp laggs in i riktiga projekt.
+
 ### Separat avtal och val (2026-10-01)
 
 - Kor `docs/db/2026-10-01_02_customer_contract_choices.sql` fore apppublicering.
@@ -253,7 +284,29 @@ Databastest kor den nya migrationen tva ganger och verifierar atomisk rollback,
 revisions-/orgskydd, privata kostnader och bevarade historiska godkannanden.
 Inga riktiga mejl, avtal eller produktionsdata andrades vid dessa tester.
 
+Verifiering av betalningsplan 2026-10-01: 165 action-case-tester passerar,
+varav 49 offerttester. Typkontroll och riktad ESLint passerar. PGlite kor
+betalningsplansmigrationen tva ganger och testar beloppssummor, ofullstandiga
+utkast, publiceringssparrar, versions-/organisationsskydd och explicit borttagning.
+CUA-klicktest med riktiga komponenter och fiktiv HTTP-backend omfattar decimalbelopp,
+aterstaende belopp, omordning, borttagning/angra, aterlasning, publicering och
+simulerat kundgodkannande. Sparning andrade inte kundens redan publicerade plan;
+godkannande laste planen i bada vyerna. Kundvyn provades vid 390 och 344 px och
+redigeraren vid 344 px utan sidledsoverflow eller overlappande falt. Inga riktiga
+mejl, avtal eller produktionsdata andrades i klicktestet.
+Lokal demo: `scripts/test-customer-offer-ui.mjs --serve --payment-plan`.
+
+Publiceringsforberedelse 2026-10-01: betalningsplansmigrationen kord i produktion.
+Lasande efterkontroll bekraftar att validatorn och bada triggers ar aktiva,
+service_role har korbehorighet och anon/authenticated saknar direkt korbehorighet.
+Inga befintliga kundavtal eller betalningsuppgifter skrevs om. Alla 165 tester
+och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
+
 ## Beslutslogg
+
+- 2026-10-01: Anvandaren bestaller en egen flik for betalningsplan, bade internt
+  och for bestallaren. Forsta leveransen ar en plan inom grundavtalets version,
+  inte en fakturamodul eller separat signering av planandringar.
 
 - 2026-10-01: Anvandaren faststaller att grundavtalet ska godkannas for sig,
   utan val av fonsterleverantor. Val och tillval hanteras separat efter detta
@@ -269,7 +322,7 @@ Inga riktiga mejl, avtal eller produktionsdata andrades vid dessa tester.
 
 ## Senare steg, inte implementerade
 
-- Betalplan och fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.
+- Fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.
   Avtalad totalsumma inkluderar bara accepterade tillval/ATA, inte valfria forslag.
 - Delad tidplan med milstolpar, beroenden och bara kundpublicerade datum.
 - ATA och kompletterande tillval som egna godkannanden, aldrig overskrivning av
