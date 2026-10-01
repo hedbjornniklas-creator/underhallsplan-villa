@@ -6,7 +6,10 @@ import { parseTuReportCoverageReview } from '../src/lib/tu/reportCoverage.ts'
 const writerSnapshot = {
   sourceRegistry: {
     analysisItems: [{ id: 'analysis-1' }],
-    observations: [{ id: 'observation-1' }, { id: 'observation-2' }],
+    observations: [
+      { id: 'observation-1', reportInclusion: 'include' },
+      { id: 'observation-2', reportInclusion: 'include' },
+    ],
     fields: [{ key: 'assignment.scopeDescription' }],
     images: [],
   },
@@ -110,4 +113,66 @@ test('rejects coverage findings that refer to an invented source', () => {
       }],
     },
   }), /OPENAI_INVALID_REPORT_COVERAGE/)
+})
+
+test('turns an omitted required observation into a visible review finding', () => {
+  const requiredSnapshot = {
+    ...writerSnapshot,
+    sourceRegistry: {
+      ...writerSnapshot.sourceRegistry,
+      analysisItems: [],
+      observations: [{ id: 'required-observation', reportInclusion: 'include' }],
+      fields: [],
+    },
+  }
+  const review = parseTuReportCoverageReview({
+    writerSnapshot: requiredSnapshot,
+    value: {
+      summary: 'Granskning klar.',
+      reviewedAnalysisItemIds: [],
+      reviewedObservationIds: ['required-observation'],
+      reviewedFieldKeys: [],
+      findings: [{
+        sourceType: 'observation',
+        sourceId: 'required-observation',
+        disposition: 'intentionally_omitted',
+        targetSectionId: '',
+        reason: 'Bedömdes som ett sidofynd.',
+      }],
+    },
+  })
+
+  assert.equal(review.findings[0]?.disposition, 'needs_user_review')
+  assert.match(review.findings[0]?.reason ?? '', /Ska med i utlåtandet/)
+})
+
+test('flags internal documentation that leaked into the report', () => {
+  const internalSnapshot = {
+    ...writerSnapshot,
+    sourceRegistry: {
+      ...writerSnapshot.sourceRegistry,
+      analysisItems: [],
+      observations: [{ id: 'internal-observation', reportInclusion: 'internal' }],
+      fields: [],
+    },
+  }
+  const review = parseTuReportCoverageReview({
+    writerSnapshot: internalSnapshot,
+    value: {
+      summary: 'Granskning klar.',
+      reviewedAnalysisItemIds: [],
+      reviewedObservationIds: ['internal-observation'],
+      reviewedFieldKeys: [],
+      findings: [{
+        sourceType: 'observation',
+        sourceId: 'internal-observation',
+        disposition: 'added_to_report',
+        targetSectionId: 'assessment',
+        reason: 'Lades till i bedömningen.',
+      }],
+    },
+  })
+
+  assert.equal(review.findings[0]?.disposition, 'needs_user_review')
+  assert.match(review.findings[0]?.reason ?? '', /Endast internt/)
 })

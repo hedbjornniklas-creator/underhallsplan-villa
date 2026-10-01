@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type { TuWholeReportDraftResponse } from '@/lib/tu/reportDraft'
 import {
   advanceTuWholeReportDraft,
+  cancelTuWholeReportDraftRun,
   createTuWholeReportDraftRun,
   getTuWholeReportDraftState,
 } from '@/lib/tu/reportDraftServer'
@@ -38,6 +39,9 @@ function mapError(error: unknown) {
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
   if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
+  if (message === 'TU_REPORT_DRAFT_RUN_NOT_FOUND') {
+    return jsonError('Rapportgenereringen hittades inte. Uppdatera sidan och försök igen.', 404)
+  }
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_ANALYSIS_STALE') {
     return jsonError('Underlaget har ändrats efter analysen. Uppdatera analysen innan utlåtandet skapas om.', 409)
@@ -122,12 +126,23 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  let action = ''
   try {
     const { inspectionId } = await context.params
     const { orgContext, investigation } = await requireInvestigation(request, inspectionId)
-    if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
     const body = await request.json().catch(() => ({})) as Record<string, unknown>
-    const action = cleanText(body.action)
+    action = cleanText(body.action)
+    if (action === 'cancel') {
+      const runId = cleanText(body.runId)
+      if (!runId) return jsonError('Körningen som ska avbrytas saknas.', 400)
+      await cancelTuWholeReportDraftRun({
+        orgId: orgContext.orgId,
+        inspectionId,
+        runId,
+      })
+      return stateResponse(orgContext.orgId, inspectionId)
+    }
+    if (investigation.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
     if (action !== 'start' && action !== 'retry') return jsonError('Okänd rapportåtgärd.', 400)
 
     const runId = await createTuWholeReportDraftRun({
@@ -147,7 +162,12 @@ export async function POST(request: Request, context: RouteContext) {
     const mapped = mapError(error)
     if (mapped) return mapped
     console.error('[tu.report-draft] POST failed', error)
-    return jsonError('Kunde inte starta rapportutkastet.', 500)
+    return jsonError(
+      action === 'cancel'
+        ? 'Kunde inte avbryta genereringen. Försök igen.'
+        : 'Kunde inte starta rapportutkastet.',
+      500
+    )
   }
 }
 

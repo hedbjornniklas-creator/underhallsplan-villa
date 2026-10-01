@@ -51,10 +51,19 @@ export type TuWholeReportDraftAction = {
   missingFields: string[]
 }
 
+export type TuWholeReportDraftOmission = {
+  observationId: string
+  title: string
+  summary: string
+  reason: string
+  targetSectionId: string | null
+}
+
 export type TuWholeReportDraftState = {
   run: TuWholeReportDraftRun | null
   sections: TuWholeReportDraftSection[]
   actions: TuWholeReportDraftAction[]
+  omissions: TuWholeReportDraftOmission[]
 }
 
 export type TuWholeReportDraftResponse = {

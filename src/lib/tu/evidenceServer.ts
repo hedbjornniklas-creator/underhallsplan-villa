@@ -4,12 +4,15 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   isTuMeasurementAssessment,
   isTuObservationCertainty,
+  isTuObservationReportInclusion,
   isTuObservationReviewStatus,
   isTuObservationSourceType,
+  resolveTuObservationReportInclusion,
   type TuMeasurement,
   type TuMeasurementAssessment,
   type TuObservation,
   type TuObservationCertainty,
+  type TuObservationReportInclusion,
   type TuObservationReviewStatus,
   type TuObservationSourceType,
 } from '@/lib/tu/evidence'
@@ -29,6 +32,7 @@ type TuObservationRow = {
   review_status: string
   target_section_id: string | null
   include_in_report: boolean | null
+  report_inclusion: string | null
   audio_storage_bucket: string | null
   audio_storage_path: string | null
   audio_content_type: string | null
@@ -72,6 +76,7 @@ export type TuObservationWriteInput = {
   reviewStatus?: TuObservationReviewStatus
   targetSectionId?: string | null
   includeInReport?: boolean
+  reportInclusion?: TuObservationReportInclusion
   audioStorageBucket?: string | null
   audioStoragePath?: string | null
   audioContentType?: string | null
@@ -107,6 +112,7 @@ const OBSERVATION_COLUMNS = [
   'review_status',
   'target_section_id',
   'include_in_report',
+  'report_inclusion',
   'audio_storage_bucket',
   'audio_storage_path',
   'audio_content_type',
@@ -182,7 +188,8 @@ function mapObservation(
     certainty: isTuObservationCertainty(row.certainty) ? row.certainty : 'uncertain',
     reviewStatus: isTuObservationReviewStatus(row.review_status) ? row.review_status : 'draft',
     targetSectionId: nullableText(row.target_section_id),
-    includeInReport: row.include_in_report !== false,
+    includeInReport: resolveTuObservationReportInclusion(row.report_inclusion, row.include_in_report) === 'include',
+    reportInclusion: resolveTuObservationReportInclusion(row.report_inclusion, row.include_in_report),
     imageIds,
     measurements,
     audioStorageBucket: nullableText(row.audio_storage_bucket),
@@ -199,6 +206,11 @@ function mapObservation(
 }
 
 function observationPayload(input: TuObservationWriteInput, userId: string) {
+  const reportInclusion = isTuObservationReportInclusion(input.reportInclusion)
+    ? input.reportInclusion
+    : input.includeInReport === false
+      ? 'internal'
+      : 'include'
   const payload = {
     source_type: isTuObservationSourceType(input.sourceType) ? input.sourceType : 'typed',
     location: nullableText(input.location),
@@ -210,7 +222,8 @@ function observationPayload(input: TuObservationWriteInput, userId: string) {
     certainty: isTuObservationCertainty(input.certainty) ? input.certainty : 'uncertain',
     review_status: isTuObservationReviewStatus(input.reviewStatus) ? input.reviewStatus : 'draft',
     target_section_id: nullableText(input.targetSectionId),
-    include_in_report: input.includeInReport !== false,
+    include_in_report: reportInclusion !== 'internal',
+    report_inclusion: reportInclusion,
     audio_storage_bucket: nullableText(input.audioStorageBucket),
     audio_storage_path: nullableText(input.audioStoragePath),
     audio_content_type: nullableText(input.audioContentType),

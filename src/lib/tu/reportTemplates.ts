@@ -16,7 +16,7 @@ const TU_POST_DAMAGE_SECTION_POLICY: Record<string, { title: string; aiInstructi
   },
   observed_execution: {
     title: 'Kontrollens resultat',
-    aiInstruction: 'Redovisa kontrollens relevanta aktuella observationer, bilder och kvalificerade mätningar grupperade efter område eller förhållande. Skriv observationstyrt och inte som en återgivning av den interna kontrollinriktningen eller interna statusfält. Beskriv endast vad som faktiskt kunde iakttas eller verifieras vid den aktuella kontrollen. När ett resultat behöver klassificeras, använd i sak verifierad i kontrollerbar del, avvikelse noterad, kan inte verifieras, inte åtkomlig eller inte kontrollerad. Använd inte godkänd eller underkänd.',
+    aiInstruction: 'Redovisa samtliga aktuella observationer och kvalificerade mätningar som inte markerats som interna, grupperade efter område eller förhållande. Skriv observationstyrt och inte som en återgivning av den interna kontrollinriktningen eller interna statusfält. Beskriv endast vad som faktiskt kunde iakttas eller verifieras vid den aktuella kontrollen. När ett resultat behöver klassificeras, använd i sak verifierad i kontrollerbar del, avvikelse noterad, kan inte verifieras, inte åtkomlig eller inte kontrollerad. Använd inte godkänd eller underkänd.',
   },
   technical_assessment: {
     title: 'Samlad teknisk bedömning',
@@ -201,7 +201,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
       {
         templateSectionKey: 'observed_execution',
         sectionTypeKey: 'observed_execution',
-        aiInstruction: 'Redovisa iakttagelser från platsbesök utan att blanda in åtgärdsförslag.',
+        aiInstruction: 'Redovisa samtliga dokumenterade iakttagelser från platsbesöket sakligt och koncist utan att blanda in åtgärdsförslag.',
         sortOrder: 500,
         isRequired: false,
         includeInToc: true,
@@ -291,7 +291,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
         templateSectionKey: 'observed_execution',
         sectionTypeKey: 'observed_execution',
         titleOverride: 'Iakttagelser vid platsbesök',
-        aiInstruction: 'Redovisa iakttagelser och relevanta statusnoteringar.',
+        aiInstruction: 'Redovisa samtliga dokumenterade iakttagelser och håll tekniskt självständiga förhållanden åtskilda.',
         sortOrder: 300,
         isRequired: false,
         includeInToc: true,
@@ -356,7 +356,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
         templateSectionKey: 'observed_execution',
         sectionTypeKey: 'observed_execution',
         titleOverride: 'Iakttagelser',
-        aiInstruction: 'Redovisa de iakttagelser som är relevanta för frågeställningen.',
+        aiInstruction: 'Redovisa samtliga dokumenterade iakttagelser sakligt och koncist. Låt frågeställningen styra bedömningen, inte vilka observationer som redovisas.',
         sortOrder: 200,
         isRequired: false,
         includeInToc: true,
@@ -413,7 +413,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
         sectionTypeKey: 'observed_execution',
         titleOverride: 'Genomförande och iakttagelser',
         aiInstruction:
-          'Redovisa genomförandet och de iakttagelser eller kvalificerade mätresultat som behövs för att besvara huvudfrågan. Undvik bakgrundsfakta utan betydelse för bedömningen.',
+          'Redovisa genomförandet samt samtliga dokumenterade iakttagelser och kvalificerade mätresultat. Håll tekniskt självständiga förhållanden åtskilda och låt huvudfrågan styra bedömningen, inte urvalet av observationer.',
         sortOrder: 200,
         isRequired: true,
         includeInToc: true,

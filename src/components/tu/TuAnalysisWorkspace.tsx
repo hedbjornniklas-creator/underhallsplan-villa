@@ -470,6 +470,7 @@ export default function TuAnalysisWorkspace({
             analysisWarnings={workflow.run?.warnings ?? []}
             onApplyDraft={onApplyReportDraft}
             onOpenReport={onOpenReport}
+            onOpenEvidence={onOpenEvidence}
             onOpenMeasurement={onOpenMeasurement}
           />
         ) : null}

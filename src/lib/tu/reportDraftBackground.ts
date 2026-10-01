@@ -74,6 +74,19 @@ export function parseTuReportBackgroundState(value: unknown): TuReportBackground
   }
 }
 
+export function tuReportProviderResponseIdForCancellation(value: unknown): string | null {
+  const state = parseTuReportBackgroundState(value)
+  if (
+    !state
+    || (
+      state.stage !== 'editorial_pending'
+      && state.stage !== 'writer_pending'
+      && state.stage !== 'coverage_pending'
+    )
+  ) return null
+  return state.responseId
+}
+
 export function tuReportBackgroundPayload(state: Omit<TuReportBackgroundState, 'version'>) {
   return {
     backgroundJob: {

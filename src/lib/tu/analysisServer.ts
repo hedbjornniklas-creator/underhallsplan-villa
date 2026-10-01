@@ -54,7 +54,7 @@ const TU_ANALYSIS_MODEL =
   process.env.OPENAI_TU_ANALYSIS_MODEL?.trim()
   || 'gpt-5.6'
 const RULESET_KEY = 'tu_ai_assisted_inspection_v1'
-const RULESET_VERSION = 3
+const RULESET_VERSION = 5
 const IMAGE_BATCH_SIZE = 8
 const DEFAULT_MAX_IMAGES = 80
 const STALE_RUN_MINUTES = 12
@@ -670,6 +670,7 @@ async function buildAnalysisSnapshot(input: { orgId: string; inspectionId: strin
         riskNote: observation.riskNote,
         suggestedFollowUp: observation.suggestedFollowUp,
         reviewStatus: observation.reviewStatus,
+        reportInclusion: observation.reportInclusion,
         imageIds: observation.imageIds.filter((id) => sourceImageIds.has(id)),
         imageCaptions: observation.imageIds.filter((id) => sourceImageIds.has(id)).map((id) => ({
           imageId: id,
@@ -1043,10 +1044,16 @@ function synthesisRequestBody(input: {
       'Du analyserar ett samlat besiktningsunderlag för en svensk teknisk utredning. Rapportmallens titel, projekttyp och sektionsinstruktioner anger utredningens fackliga inriktning.',
       'AI-resultatet är ett granskningsunderlag, aldrig ett färdigt utlåtande.',
       'Använd endast fakta och käll-id i underlaget. Hitta inte på mätvärden, datum, händelser, orsaker eller ansvar.',
-      'Identifiera först uppdragets huvudsakliga tekniska fråga. Bedöm därefter all information i relation till den frågan, inte som fristående poster.',
-      'Sätt includeInReport true endast när resultatet behövs för att beskriva uppdraget, en avgörande iakttagelse, den samlade bedömningen eller en proportionerlig rekommendation.',
-      'En korrekt bakgrundsuppgift kan vara irrelevant för huvudfrågan. Behåll den då för intern spårbarhet men sätt includeInReport false.',
-      'Saknade mätuppgifter och andra informationsluckor är i första hand interna granskningsvarningar. De ska bara ingå i rapportunderlaget när begränsningen faktiskt påverkar möjligheten att besvara huvudfrågan.',
+      'Identifiera först uppdragets huvudsakliga tekniska fråga för den samlade bedömningen. Använd inte huvudfrågan som ett filter som tar bort besiktningsmannens dokumenterade observationer.',
+      'Varje observation med reportInclusion include är rapportmaterial därför att besiktningsmannen har valt att dokumentera den. Bevara dess sakliga innehåll även när den inte har ett verifierat samband med uppdragets huvudfråga.',
+      'Sätt includeInReport true för analysresultat som återger observationer med reportInclusion include. Sätt endast false för evidence_conflict, verkliga dubbletter som redan täcks av ett annat analysresultat eller observationer markerade internal.',
+      'Observationens reportInclusion är bindande: include ska få ett rapportvärdigt analysresultat och internal får inte användas som rapportfynd.',
+      'Skilj mellan att redovisa en observation och att använda den i slutsatsen. Alla rapportobservationer ska kunna redovisas, men endast tekniskt stödda samband ska påverka den samlade bedömningen.',
+      'Håll isär tre led: vad som observerades, vilken teknisk betydelse förhållandet kan ha och om underlaget räcker för att fastställa ett orsakssamband. Brist på bevisad orsak får inte skrivas om till brist på teknisk relevans.',
+      'Skapa ett separat verified_observation-resultat för varje tekniskt självständigt fynd. Slå inte ihop två olika problem enbart för att de finns på samma plats eller byggnadsdel.',
+      'Om två fynd kräver olika tekniska bedömningar eller olika åtgärder ska de alltid hållas isär. Exempelvis är begränsat ventilationsflöde och bristande skydd mot fåglar eller insekter separata frågor även om båda berör samma vind.',
+      'Skapa inte ett orsakssamband mellan samtidiga eller närliggande observationer om sambandet inte uttryckligen stöds av källorna.',
+      'Saknade mätuppgifter och andra informationsluckor är i första hand interna granskningsvarningar. De ska bara ingå i rapporttexten när begränsningen faktiskt påverkar en redovisad observation eller den samlade bedömningen.',
       'Observationerna är ordnade äldst till nyast. Rekonstruera först hur uppfattningen utvecklas över tid.',
       'En senare uppgift är inte automatiskt sannare. Väg källa, kontrollmetod, mätresultat, åtkomlighet och om den senare uppgiften uttryckligen korrigerar eller ersätter en tidigare preliminär uppfattning.',
       'Skapa evidence_conflict när två uppgifter om samma plats och förhållande inte kan användas samtidigt utan förklaring. Ange tidigare källor i earlierSourceObservationIds och senare källor i laterSourceObservationIds.',
@@ -1210,6 +1217,9 @@ async function finalizeTuInspectionAnalysis(input: {
     )
     const validImageIds = new Set(images.map((image) => image.id))
     const validSectionIds = new Set(snapshotSections.map((item) => cleanText(item.id)).filter(Boolean))
+    const reportInclusionByObservationId = new Map(
+      snapshotObservations.map((item) => [cleanText(item.id), cleanText(item.reportInclusion)])
+    )
     const itemPriority = (itemType: string) => (
       itemType === 'current_assessment' ? 0
         : itemType === 'evidence_conflict' ? 1
@@ -1240,6 +1250,11 @@ async function finalizeTuInspectionAnalysis(input: {
           || sourceMeasurementIds.length > 0
         const conflictIsIncomplete = item.itemType === 'evidence_conflict'
           && (earlierSourceObservationIds.length === 0 || laterSourceObservationIds.length === 0)
+        const explicitlyIncluded = sourceObservationIds.some((id) => (
+          reportInclusionByObservationId.get(id) === 'include'
+        ))
+        const onlyInternalObservations = sourceObservationIds.length > 0
+          && sourceObservationIds.every((id) => reportInclusionByObservationId.get(id) === 'internal')
         const warnings = [...item.warnings]
         if (!hasSource) warnings.push('Analysresultatet saknar verifierbar källkoppling och kan inte användas i utlåtandet.')
         if (conflictIsIncomplete) warnings.push('Konflikten saknar tydlig koppling till både tidigare och senare fältuppgift.')
@@ -1260,7 +1275,9 @@ async function finalizeTuInspectionAnalysis(input: {
               : null,
           include_in_report: item.itemType === 'current_assessment'
             ? hasSource
-            : item.itemType !== 'evidence_conflict' && hasSource && item.includeInReport,
+            : item.itemType === 'evidence_conflict' || !hasSource || onlyInternalObservations
+              ? false
+              : explicitlyIncluded || item.includeInReport,
           source_observation_ids: sourceObservationIds,
           source_image_ids: sourceImageIds,
           source_measurement_ids: sourceMeasurementIds,

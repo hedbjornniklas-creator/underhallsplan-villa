@@ -8,6 +8,7 @@ import {
 } from '@/lib/tu/evidenceServer'
 import {
   isTuObservationCertainty,
+  isTuObservationReportInclusion,
   isTuObservationReviewStatus,
   isTuObservationSourceType,
 } from '@/lib/tu/evidence'
@@ -104,6 +105,11 @@ function observationValues(body: Record<string, unknown>, inspectionId: string):
     reviewStatus: isTuObservationReviewStatus(body.reviewStatus) ? body.reviewStatus : 'draft',
     targetSectionId: nullableText(body.targetSectionId),
     includeInReport: body.includeInReport !== false,
+    reportInclusion: isTuObservationReportInclusion(body.reportInclusion)
+      ? body.reportInclusion
+      : body.includeInReport === false
+        ? 'internal'
+        : 'include',
     audioStorageBucket,
     audioStoragePath,
     audioContentType: nullableText(body.audioContentType),

@@ -20,6 +20,7 @@ function observation(overrides: Partial<TuObservation> = {}): TuObservation {
     reviewStatus: 'reviewed',
     targetSectionId: null,
     includeInReport: true,
+    reportInclusion: 'include',
     imageIds: [],
     measurements: [{
       id: 'measurement-1',

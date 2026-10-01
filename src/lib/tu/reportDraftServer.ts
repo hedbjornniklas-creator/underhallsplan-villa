@@ -30,6 +30,7 @@ import {
   normalizeTuReportProviderResponse,
   parseTuReportBackgroundState,
   tuReportBackgroundPayload,
+  tuReportProviderResponseIdForCancellation,
   tuReportProviderFailureMessage,
   type TuReportBackgroundState,
 } from '@/lib/tu/reportDraftBackground'
@@ -46,6 +47,7 @@ import { buildTuReportScopeAddressReview } from '@/lib/tu/reportScope'
 import type {
   TuWholeReportDraftRun,
   TuWholeReportDraftAction,
+  TuWholeReportDraftOmission,
   TuWholeReportDraftSection,
   TuWholeReportDraftState,
 } from '@/lib/tu/reportDraft'
@@ -56,10 +58,11 @@ const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
   || 'gpt-5.6'
 const RULESET_KEY = 'tu_ai_assisted_report_v2'
-const RULESET_VERSION = 2
+const RULESET_VERSION = 4
 const STALE_RUN_MINUTES = 12
 const PROVIDER_CREATE_TIMEOUT_MS = 30_000
 const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
+const PROVIDER_CANCEL_TIMEOUT_MS = 10_000
 const PROVIDER_MAX_JOB_AGE_MS = 8 * 60 * 1_000
 const EDITORIAL_MAX_OUTPUT_TOKENS = 24_000
 const REPORT_MAX_OUTPUT_TOKENS = 32_000
@@ -274,6 +277,42 @@ function measurementCompletionActions(snapshot: JsonRecord): TuWholeReportDraftA
   })
 }
 
+function reportCoverageOmissions(
+  snapshot: JsonRecord,
+  outputPayload: unknown
+): TuWholeReportDraftOmission[] {
+  const evidence = record(snapshot.evidence)
+  const observations = Array.isArray(evidence.observations)
+    ? evidence.observations.map(record)
+    : []
+  const observationsById = new Map(
+    observations.map((observation) => [cleanText(observation.id), observation])
+  )
+  const coverage = record(record(outputPayload).coverageReview)
+  const findings = Array.isArray(coverage.findings) ? coverage.findings.map(record) : []
+
+  return findings.flatMap((finding): TuWholeReportDraftOmission[] => {
+    if (
+      cleanText(finding.sourceType) !== 'observation'
+      || cleanText(finding.disposition) !== 'intentionally_omitted'
+    ) return []
+    const observationId = cleanText(finding.sourceId)
+    const observation = observationsById.get(observationId)
+    if (!observation || cleanText(observation.reportInclusion) === 'internal') return []
+    const sourceText = cleanText(observation.noteText) || cleanText(observation.transcriptText)
+    const summary = sourceText.length > 260 ? `${sourceText.slice(0, 257).trimEnd()}...` : sourceText
+    return [{
+      observationId,
+      title: cleanText(observation.location)
+        || cleanText(observation.buildingComponent)
+        || `Fältpost ${Math.max(1, Number(observation.sequence) || 1)}`,
+      summary: summary || 'Fältpost utan skriven sammanfattning.',
+      reason: cleanText(finding.reason) || 'AI:n bedömde att uppgiften inte behövdes i utlåtandet.',
+      targetSectionId: cleanText(finding.targetSectionId) || null,
+    }]
+  })
+}
+
 async function markStaleRunFailed(run: TuWholeReportDraftRun) {
   const lastActivity = run.heartbeatAt ?? run.startedAt ?? run.createdAt
   const staleBefore = Date.now() - STALE_RUN_MINUTES * 60 * 1000
@@ -334,7 +373,7 @@ export async function getTuWholeReportDraftState(input: {
     ])
   if (runError) throw new Error(runError.message)
   if (workflowError) throw new Error(workflowError.message)
-  if (!runData) return { run: null, sections: [], actions: [] }
+  if (!runData) return { run: null, sections: [], actions: [], omissions: [] }
 
   const runRow = runData as unknown as RunRow
   const snapshot = record(runRow.input_snapshot)
@@ -349,7 +388,7 @@ export async function getTuWholeReportDraftState(input: {
     || cleanText(approvedAnalysis.runId) !== workflow.current_analysis_run_id
     || cleanText(approvedAnalysis.approvedAt) !== workflow.analysis_approved_at
   ) {
-    return { run: null, sections: [], actions: [] }
+    return { run: null, sections: [], actions: [], omissions: [] }
   }
 
   let run = mapRun(runRow)
@@ -366,7 +405,72 @@ export async function getTuWholeReportDraftState(input: {
     run,
     sections: ((sectionData ?? []) as unknown as SuggestionRow[]).map(mapSection),
     actions: measurementCompletionActions(snapshot),
+    omissions: reportCoverageOmissions(snapshot, runRow.output_payload),
   }
+}
+
+async function cancelTuWholeReportDraftRunInternal(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+  message: string
+}) {
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin
+    .from('tu_ai_runs')
+    .select('id,status')
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'report_draft')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data) throw new Error('TU_REPORT_DRAFT_RUN_NOT_FOUND')
+
+  const row = data as { status?: unknown }
+  const status = cleanText(row.status)
+  if (status !== 'queued' && status !== 'processing') return false
+
+  const now = new Date().toISOString()
+  const { data: cancelled, error: cancelError } = await admin
+    .from('tu_ai_runs')
+    .update({
+      status: 'cancelled',
+      error_message: null,
+      progress_stage: 'cancelled',
+      progress_message: input.message,
+      heartbeat_at: now,
+      completed_at: now,
+    })
+    .eq('id', input.runId)
+    .eq('org_id', input.orgId)
+    .eq('inspection_id', input.inspectionId)
+    .eq('operation', 'report_draft')
+    .in('status', ['queued', 'processing'])
+    .select('id,output_payload')
+    .maybeSingle()
+  if (cancelError) throw new Error(cancelError.message)
+  if (!cancelled) return false
+
+  const responseId = tuReportProviderResponseIdForCancellation(
+    (cancelled as { output_payload?: unknown }).output_payload
+  )
+  const apiKey = process.env.OPENAI_API_KEY?.trim()
+  if (apiKey && responseId) {
+    await cancelBackgroundResponse({ apiKey, responseId })
+  }
+  return true
+}
+
+export async function cancelTuWholeReportDraftRun(input: {
+  orgId: string
+  inspectionId: string
+  runId: string
+}) {
+  return cancelTuWholeReportDraftRunInternal({
+    ...input,
+    message: 'Genereringen avbröts. Inget nytt utkast skapades.',
+  })
 }
 
 export async function buildTuReportSnapshot(input: { orgId: string; inspectionId: string }) {
@@ -485,6 +589,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
       transcriptText: observation.transcriptText?.slice(0, 12000) ?? null,
       riskNote: observation.riskNote,
       suggestedFollowUp: observation.suggestedFollowUp,
+      reportInclusion: observation.reportInclusion,
       imageIds: observation.imageIds.filter((id) => sourceImageIds.has(id)),
       imageCaptions: observation.imageIds.filter((id) => sourceImageIds.has(id)).map((id) => ({
         imageId: id,
@@ -532,7 +637,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
     throw new Error('TU_ANALYSIS_NOT_APPROVED')
   }
 
-  const [{ data: analysisRun, error: analysisRunError }, { data: analysisItems, error: itemsError }] =
+  const [{ data: analysisRun, error: analysisRunError }, { data: analysisItemRows, error: itemsError }] =
     await Promise.all([
       admin
         .from('tu_ai_runs')
@@ -572,13 +677,15 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   if (analysisRunError) throw new Error(analysisRunError.message)
   if (itemsError) throw new Error(itemsError.message)
   if (!analysisRun) throw new Error('TU_ANALYSIS_NOT_APPROVED')
-  const acceptedItems = (analysisItems ?? []) as unknown as Array<Record<string, unknown>>
-  const reportItems = acceptedItems.filter((item) => (
+  const acceptedItems = (analysisItemRows ?? []) as unknown as Array<Record<string, unknown>>
+  const analysisItems = acceptedItems.filter((item) => (
     item.item_type !== 'report_image'
-    && (item.include_in_report === true || item.item_type === 'current_assessment')
+    && item.item_type !== 'evidence_conflict'
   ))
   const resolvedConflicts = acceptedItems.filter((item) => item.item_type === 'evidence_conflict')
-  if (reportItems.length === 0) throw new Error('TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS')
+  if (!analysisItems.some((item) => item.item_type === 'current_assessment')) {
+    throw new Error('TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS')
+  }
 
   const analysisOutput = record((analysisRun as { output_payload?: unknown }).output_payload)
   return {
@@ -624,7 +731,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
         overview: cleanText(analysisOutput.overview),
         timelineSummary: cleanText(analysisOutput.timelineSummary),
         warnings: stringArray(analysisOutput.warnings),
-        items: reportItems,
+        items: analysisItems,
         resolvedConflicts,
       },
     },
@@ -657,19 +764,12 @@ export async function createTuWholeReportDraftRun(input: {
       && activeInputHash === inputHash
     ) return active.id
     if (active.status === 'queued' || active.status === 'processing') {
-      const { error: cancelError } = await admin
-        .from('tu_ai_runs')
-        .update({
-          status: 'cancelled',
-          error_message: 'Den godkända analysen ändrades innan rapportutkastet blev klart.',
-          progress_stage: 'cancelled',
-          progress_message: 'Rapportutkastet avbröts eftersom analysunderlaget ändrades.',
-          heartbeat_at: now,
-          completed_at: now,
-        })
-        .eq('id', active.id)
-        .in('status', ['queued', 'processing'])
-      if (cancelError) throw new Error(cancelError.message)
+      await cancelTuWholeReportDraftRunInternal({
+        orgId: input.orgId,
+        inspectionId: input.inspectionId,
+        runId: active.id,
+        message: 'Rapportutkastet avbröts eftersom analysunderlaget ändrades.',
+      })
     }
   }
 
@@ -757,10 +857,13 @@ function editorialRequestBody(snapshot: JsonRecord) {
       reasoning: { effort: 'high' },
       instructions: [
         'Du är redaktör för ett svenskt tekniskt utlåtande och planerar innehållet innan någon rapporttext skrivs.',
-        'Identifiera uppdragets huvudsakliga tekniska fråga och avgränsa rapporten till det som behövs för att besvara den.',
-        'Prioritera de källor som tydligast behövs för uppdraget, genomförandet, avgörande iakttagelser, den samlade tekniska bedömningen eller en proportionerlig rekommendation.',
-        'Urvalet blir en redaktionell prioritering och får inte beskrivas som att övriga källor saknar giltighet. Hela källregistret följer med till rapportförfattaren och den efterföljande täckningsgranskningen.',
-        'En uppgift kan vara korrekt men ändå sakna betydelse för den aktuella frågan. Sådana sidospår ska inte prioriteras.',
+        'Identifiera uppdragets huvudsakliga tekniska fråga för bedömningen och slutsatsen. Använd den inte för att gallra bort besiktningsmannens dokumenterade observationer.',
+        'Varje observation med reportInclusion include ska planeras in i rapporten, normalt i rapportdelen med key observed_execution. Detta gäller även en fristående iakttagelse utan visat samband med huvudfrågan.',
+        'Prioritera huvudfrågan när slutsatser och rekommendationer planeras, men låt samtliga rapportobservationer ingå sakligt och koncist i redovisningen av genomförande och iakttagelser.',
+        'Planera texten så att observation, möjlig teknisk betydelse och styrkan i ett eventuellt orsakssamband hålls isär. Osäkerhet om orsaken ska uttryckas proportionerligt, inte genom att fyndet utelämnas.',
+        'Observationens reportInclusion är bindande: include ska väljas in i en rapportdel och internal ska inte väljas som rapportinnehåll.',
+        'Håll tekniskt självständiga fynd åtskilda. Gemensam plats eller byggnadsdel är inte tillräckligt skäl att slå ihop dem.',
+        'Urvalet styr primär placering och graden av teknisk analys, inte om en observation får synas. Hela källregistret följer med till rapportförfattaren och den efterföljande täckningsgranskningen.',
         'Den godkända current_assessment och godkända konfliktlösningar styr vilka slutsatser och benämningar som är aktuella.',
         'Besiktningsmannens observationer och egna bilder är dokumentation av den genomförda undersökningen, inte externt bildmaterial.',
         'Systemfält och deras etiketter är intern metadata. Prioritera ett fältvärde endast när själva sakuppgiften behövs i rapporten.',
@@ -768,7 +871,7 @@ function editorialRequestBody(snapshot: JsonRecord) {
         'Ett granskat indikationsvärde är ett användbart aktuellt kontrollresultat. Det får redovisas med mätpunkt, metod och instrument utan att omvandlas till fukthalt. Klassificera det endast enligt besiktningsmannens uttryckliga measurement.assessment.',
         'Om en faktisk begränsning påverkar möjligheten att besvara huvudfrågan får begränsningen prioriteras, men den ska beskrivas proportionerligt och utan intern kontrolljargong.',
         'Placera varje sakuppgift i en primär rapportdel. Undvik att planera samma resonemang i flera delar.',
-        'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas.',
+        'En rapportdel får utelämnas när den endast skulle upprepa en annan del eller när relevant källstöd saknas. Rapportdelen med key observed_execution får dock inte utelämnas när det finns en observation markerad include.',
         'En rapportdel med isRequired true ska planeras med relevant källstöd när sådant finns. Om stöd verkligen saknas ska den utelämnas och få en tydlig internalWarning.',
         'Följ sourcePolicy. Källor märkta historic_context får endast identifiera kontrollunderlaget och förklara uppdragets inriktning; de får inte bära rapportens aktuella resultat, tekniska bedömning eller rekommendationer.',
         'Om en controlPlan finns är den endast en intern kontrollinriktning för kontrollens huvudfråga. Planera inte en rapportdel per uppmärksamhetsområde och använd inte kontrollinriktningen som rapportdisposition.',
@@ -856,7 +959,13 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Rapporten ska besvara editorialFocus och hålla sig inom scopeBoundary.',
         'sourceRegistry innehåller hela det godkända underlaget. Läs hela registret innan rapporten skrivs och använd relevanta uppgifter därifrån.',
         'prioritySourceIds i varje rapportdel är redaktörens prioritering och förslag till primär placering, inte en begränsning av vilka källor som får användas.',
-        'En relevant uppgift får inte utelämnas enbart för att dess id saknas i prioritySourceIds. Placera den i den rapportdel där den gör helheten tydligast.',
+        'Varje observation med reportInclusion include måste återges sakligt i rapporten även om dess id saknas i prioritySourceIds eller om den saknar visat samband med huvudfrågan.',
+        'Placera sådana observationer normalt i rapportdelen med key observed_execution. En snävare sektionsinstruktion om relevans får inte användas för att utelämna dem.',
+        'Låt huvudfrågan styra den tekniska bedömningen och slutsatsen, inte vilka dokumenterade observationer som redovisas.',
+        'Håll isär observationen, dess möjliga tekniska betydelse och vad underlaget medger om orsakssambandet. Skriv inte ett möjligt samband som ett konstaterat samband.',
+        'Följ observationernas reportInclusion. include måste redovisas sakligt i en lämplig rapportdel. internal får inte användas i rapporttexten.',
+        'Skriv ett tekniskt självständigt fynd per stycke. Slå inte ihop olika fel, funktioner eller åtgärdsbehov enbart för att de finns på samma plats.',
+        'När två observationer leder till olika bedömningar eller rekommendationer ska de beskrivas i separata stycken och utan ett påhittat inbördes orsakssamband.',
         'Interna id:n, fältnamn, etiketter, transkriberingar, fältanteckningar, AI-analyser och granskningsprocessen får aldrig omnämnas i rapporttexten.',
         'Egna fotografier är dokumentation av iakttagelser. Beskriv sakförhållandet direkt och kalla dem inte bildmaterial eller underlag.',
         'Skilj sakligt mellan egna iakttagelser, uttryckligt angivna partsuppgifter och tekniska bedömningar utan att beskriva den interna datakällan.',
@@ -865,7 +974,7 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Redovisa granskade indikationsvärden som "indikationsvärde X" tillsammans med tillgänglig mätpunkt, metod och instrument. Använd measurement.assessment för bedömningen, men omvandla aldrig en indikation till fukthalt eller skadebevis.',
         'assessment no_deviation betyder ingen avvikande indikation i den dokumenterade mätpunkten, deviation betyder avvikande/förhöjd indikation i mätpunkten och not_assessable förbjuder klassificering.',
         'Ta bara med begränsningar som har faktisk betydelse för slutsatsen och formulera dem i besiktningsmannens direkta fackspråk.',
-        'Undvik sidospår, utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar.',
+        'Undvik utfyllnad, onödiga negativa konstateranden och upprepning av plats, tid eller samma slutsats i flera delar. En fristående dokumenterad observation är inte utfyllnad, men ska beskrivas proportionerligt.',
         'Hitta aldrig på observationer, mätvärden, metoder, orsaker, ansvar, fel eller utförda kontroller.',
         'Bevara relevanta manuella texter när de stöds av källregistret, men redigera helheten till konsekvent språk och disposition.',
         'Följ scopeAddressReview och bevara uttryckligen bekräftade adresser i currentScopeText. En snävare object.address får inte ensam användas för att utesluta en plats där dagens valda observationer visar att kontroll utförts.',
@@ -879,7 +988,7 @@ function reportRequestBody(snapshot: JsonRecord) {
         'Varje stycke måste ange minst en verklig källa via sourceAnalysisItemIds, sourceObservationIds eller sourceFieldKeys.',
         'Käll-id:n får hämtas från hela sourceRegistry och måste motsvara en verklig post där.',
         'Ett stycke utan källor får inte skapas. Skriv i stället en varning på rapportdelen och lämna paragraphs tom.',
-        'Skriv koncist, precist och proportionerligt. Textens omfattning ska styras av huvudfrågan och underlaget, inte av antalet tillgängliga fakta.',
+        'Skriv koncist, precist och proportionerligt. Huvudfrågan styr tyngden i bedömningen; antalet observationer styr vilka sakförhållanden som måste redovisas.',
       ].join('\n'),
       input: JSON.stringify(snapshot, null, 2),
       text: {
@@ -951,7 +1060,10 @@ function coverageRequestBody(input: {
     instructions: [
       'Du är slutredaktör och täckningsgranskare för ett svenskt tekniskt utlåtande.',
       'Jämför initialDraft mot hela sourceRegistry. Granska varje analysis item, observation och source field innan slutversionen lämnas.',
-      'Syftet är inte att ta med varje detalj. Syftet är att säkerställa att alla materiella uppgifter för huvudfrågan antingen finns i rapporten, medvetet har utelämnats som sidospår eller har markerats för användarens kontroll.',
+      'Säkerställ att varje observation med reportInclusion include finns sakligt återgiven i rapporten och att varje observation med internal har utelämnats.',
+      'En observation får inte utelämnas för att den saknar visat samband med huvudfrågan. Lägg den normalt i rapportdelen med key observed_execution och låt graden av teknisk analys vara proportionerlig.',
+      'Följ observationernas reportInclusion. include måste vara already_covered eller added_to_report. internal ska vara intentionally_omitted. Om detta inte kan följas ska källan markeras needs_user_review.',
+      'Kontrollera att tekniskt självständiga fynd ligger i separata stycken. Slå inte ihop olika fel, funktioner eller åtgärdsbehov på grund av gemensam plats och skapa inte ett orsakssamband utan uttryckligt källstöd.',
       'prioritySourceIds är en redaktionell prioritering och får inte användas för att dölja en relevant uppgift i sourceRegistry.',
       'Bevara fungerande text i initialDraft. Ändra bara det som behövs för fullständighet, korrekthet, konsekvens, källstöd eller för att ta bort onödig upprepning.',
       'Rätta relevanta utelämnanden, motsägelser, adresser, platser, väderstreck och mätuppgifter när sourceRegistry ger ett tydligt svar.',
@@ -1139,6 +1251,33 @@ async function retrieveBackgroundResponse(input: { apiKey: string; responseId: s
   return { payload, envelope }
 }
 
+async function cancelBackgroundResponse(input: { apiKey: string; responseId: string }) {
+  try {
+    const response = await fetch(
+      `${OPENAI_RESPONSES_URL}/${encodeURIComponent(input.responseId)}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(PROVIDER_CANCEL_TIMEOUT_MS),
+      }
+    )
+    if (!response.ok) {
+      console.error('[tu.report-draft] OpenAI cancellation failed', {
+        responseId: input.responseId,
+        status: response.status,
+      })
+    }
+  } catch (error) {
+    console.error('[tu.report-draft] OpenAI cancellation unavailable', {
+      responseId: input.responseId,
+      error,
+    })
+  }
+}
+
 function publicRunFailureMessage(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   if (
@@ -1320,6 +1459,7 @@ async function finalizeTuWholeReportDraft(input: {
 
 async function savePendingProviderRun(input: {
   runId: string
+  apiKey: string
   stage: 'editorial_pending' | 'writer_pending' | 'coverage_pending'
   envelope: { responseId: string }
   editorialPlan: TuReportEditorialPlan | null
@@ -1329,7 +1469,7 @@ async function savePendingProviderRun(input: {
   const now = new Date().toISOString()
   const isEditorial = input.stage === 'editorial_pending'
   const isCoverage = input.stage === 'coverage_pending'
-  const { error } = await admin.from('tu_ai_runs').update({
+  const { data, error } = await admin.from('tu_ai_runs').update({
     status: 'processing',
     output_payload: tuReportBackgroundPayload({
       stage: input.stage,
@@ -1346,8 +1486,14 @@ async function savePendingProviderRun(input: {
         ? 'AI:n jämför utkastet med hela underlaget och kontrollerar att relevanta uppgifter inte saknas.'
         : 'AI:n skriver rapportens delar som en sammanhängande helhet.',
     heartbeat_at: now,
-  }).eq('id', input.runId).eq('status', 'processing')
+  }).eq('id', input.runId).eq('status', 'processing').select('id').maybeSingle()
   if (error) throw new Error(error.message)
+  if (!data) {
+    await cancelBackgroundResponse({
+      apiKey: input.apiKey,
+      responseId: input.envelope.responseId,
+    })
+  }
 }
 
 export async function runTuWholeReportDraft(input: {
@@ -1409,6 +1555,7 @@ export async function runTuWholeReportDraft(input: {
       })
       await savePendingProviderRun({
         runId: input.runId,
+        apiKey,
         stage: 'editorial_pending',
         envelope,
         editorialPlan: null,
@@ -1429,6 +1576,7 @@ export async function runTuWholeReportDraft(input: {
       })
       await savePendingProviderRun({
         runId: input.runId,
+        apiKey,
         stage: 'writer_pending',
         envelope,
         editorialPlan,
@@ -1450,6 +1598,7 @@ export async function runTuWholeReportDraft(input: {
       })
       await savePendingProviderRun({
         runId: input.runId,
+        apiKey,
         stage: 'coverage_pending',
         envelope,
         editorialPlan,

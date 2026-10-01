@@ -75,6 +75,9 @@ export function parseTuReportCoverageReview(input: {
   const expectedObservationIds = records(registry.observations)
     .map((item) => cleanText(item.id))
     .filter(Boolean)
+  const observationsById = new Map(
+    records(registry.observations).map((item) => [cleanText(item.id), item])
+  )
   const expectedFieldKeys = records(registry.fields)
     .map((item) => cleanText(item.key))
     .filter(Boolean)
@@ -101,15 +104,15 @@ export function parseTuReportCoverageReview(input: {
   }
   const knownSections = new Set(expectedSectionIds)
   const findingKeys = new Set<string>()
-  const findings = records(parsed.findings).map((finding) => {
+  const findings: TuReportCoverageFinding[] = records(parsed.findings).map((finding) => {
     const sourceType = cleanText(finding.sourceType)
     const sourceId = cleanText(finding.sourceId)
-    const disposition = cleanText(finding.disposition)
+    const parsedDisposition = cleanText(finding.disposition)
     const targetSectionId = cleanText(finding.targetSectionId) || null
-    const reason = cleanText(finding.reason)
+    let reason = cleanText(finding.reason)
     if (
       !isSourceType(sourceType)
-      || !isDisposition(disposition)
+      || !isDisposition(parsedDisposition)
       || !sourceId
       || !knownSources[sourceType].has(sourceId)
       || (targetSectionId !== null && !knownSections.has(targetSectionId))
@@ -117,9 +120,23 @@ export function parseTuReportCoverageReview(input: {
     ) {
       throw new Error('OPENAI_INVALID_REPORT_COVERAGE')
     }
+    let disposition: TuReportCoverageDisposition = parsedDisposition
     const findingKey = `${sourceType}:${sourceId}`
     if (findingKeys.has(findingKey)) throw new Error('OPENAI_INVALID_REPORT_COVERAGE')
     findingKeys.add(findingKey)
+    if (sourceType === 'observation') {
+      const reportInclusion = cleanText(observationsById.get(sourceId)?.reportInclusion)
+      if (reportInclusion === 'include' && disposition === 'intentionally_omitted') {
+        disposition = 'needs_user_review'
+        reason = `Fältposten är markerad "Ska med i utlåtandet" men saknas i utkastet. ${reason}`
+      } else if (
+        reportInclusion === 'internal'
+        && (disposition === 'already_covered' || disposition === 'added_to_report')
+      ) {
+        disposition = 'needs_user_review'
+        reason = `Fältposten är markerad "Endast internt" men har använts i utkastet. ${reason}`
+      }
+    }
     return { sourceType, sourceId, disposition, targetSectionId, reason }
   })
   const expectedFindingKeys = [

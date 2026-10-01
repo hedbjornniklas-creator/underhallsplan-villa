@@ -7,7 +7,7 @@ import { shouldRejectGeneratedAnalysisItem } from '../src/lib/tu/analysis.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { normalizeTuOrdererRole } from '../src/lib/tu/customerRole.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { normalizeTuReportProviderResponse, parseTuReportBackgroundState, tuReportBackgroundPayload, tuReportProviderFailureMessage } from '../src/lib/tu/reportDraftBackground.ts'
+import { normalizeTuReportProviderResponse, parseTuReportBackgroundState, tuReportBackgroundPayload, tuReportProviderFailureMessage, tuReportProviderResponseIdForCancellation } from '../src/lib/tu/reportDraftBackground.ts'
 
 test('keeps image-batch progress in a resumable analysis state', () => {
   const payload = tuAnalysisBackgroundPayload({
@@ -175,6 +175,26 @@ test('accepts a pending report coverage review with the draft preserved', () => 
   const parsed = parseTuReportBackgroundState(payload)
   assert.equal(parsed?.stage, 'coverage_pending')
   assert.deepEqual(parsed?.generatedReport, { overview: 'Utkast' })
+})
+
+test('only exposes an active provider response id for cancellation', () => {
+  assert.equal(tuReportProviderResponseIdForCancellation(tuReportBackgroundPayload({
+    stage: 'writer_pending',
+    responseId: 'resp_cancel123',
+    submittedAt: '2026-09-09T15:05:00.000Z',
+    editorialPlan: { focus: 'Fukt' },
+    generatedReport: null,
+    coverageReview: null,
+  })), 'resp_cancel123')
+
+  assert.equal(tuReportProviderResponseIdForCancellation(tuReportBackgroundPayload({
+    stage: 'writer_ready',
+    responseId: null,
+    submittedAt: null,
+    editorialPlan: { focus: 'Fukt' },
+    generatedReport: { overview: 'Utkast' },
+    coverageReview: null,
+  })), null)
 })
 
 test('rejects pending report jobs without a retrievable provider id', () => {

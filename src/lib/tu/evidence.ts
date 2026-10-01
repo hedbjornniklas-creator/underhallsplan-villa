@@ -7,6 +7,7 @@ export function isTuAnalysisSourceImage(image: { sectionKey: string }) {
 export type TuObservationSourceType = 'typed' | 'voice' | 'mixed' | 'measurement'
 export type TuObservationCertainty = 'confirmed' | 'probable' | 'uncertain'
 export type TuObservationReviewStatus = 'draft' | 'reviewed'
+export type TuObservationReportInclusion = 'include' | 'internal'
 export type TuAiSuggestionStatus = 'pending' | 'accepted' | 'rejected'
 export type TuMeasurementAssessment = 'no_deviation' | 'deviation' | 'not_assessable'
 
@@ -39,6 +40,7 @@ export type TuObservation = {
   reviewStatus: TuObservationReviewStatus
   targetSectionId: string | null
   includeInReport: boolean
+  reportInclusion: TuObservationReportInclusion
   imageIds: string[]
   measurements: TuMeasurement[]
   audioStorageBucket: string | null
@@ -82,6 +84,20 @@ export function isTuObservationCertainty(value: unknown): value is TuObservation
 
 export function isTuObservationReviewStatus(value: unknown): value is TuObservationReviewStatus {
   return value === 'draft' || value === 'reviewed'
+}
+
+export function isTuObservationReportInclusion(
+  value: unknown
+): value is TuObservationReportInclusion {
+  return value === 'include' || value === 'internal'
+}
+
+export function resolveTuObservationReportInclusion(
+  reportInclusion: unknown,
+  includeInReport: boolean | null
+): TuObservationReportInclusion {
+  // Legacy exclusions remain private even before the backfill has been rerun.
+  return includeInReport === false || reportInclusion === 'internal' ? 'internal' : 'include'
 }
 
 export function isTuAiSuggestionStatus(value: unknown): value is TuAiSuggestionStatus {

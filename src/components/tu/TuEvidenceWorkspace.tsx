@@ -26,14 +26,16 @@ import TuMeasurementInstrumentSelect from '@/components/tu/TuMeasurementInstrume
 import { useToast } from '@/components/ui/AppToastProvider'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
-import type {
-  TuEvidenceAiSuggestion,
-  TuEvidenceResponse,
-  TuMeasurement,
-  TuMeasurementAssessment,
-  TuObservation,
-  TuObservationCertainty,
-  TuObservationSourceType,
+import {
+  isTuObservationReportInclusion,
+  type TuEvidenceAiSuggestion,
+  type TuEvidenceResponse,
+  type TuMeasurement,
+  type TuMeasurementAssessment,
+  type TuObservation,
+  type TuObservationCertainty,
+  type TuObservationReportInclusion,
+  type TuObservationSourceType,
 } from '@/lib/tu/evidence'
 import {
   formatTuMeasurementAssessment,
@@ -77,6 +79,7 @@ type ObservationForm = {
   reviewStatus: 'draft' | 'reviewed'
   targetSectionId: string
   includeInReport: boolean
+  reportInclusion: TuObservationReportInclusion
   imageIds: string[]
   audioStorageBucket: string
   audioStoragePath: string
@@ -207,6 +210,7 @@ function createEmptyObservation(sections: EvidenceSection[]): ObservationForm {
     reviewStatus: 'draft',
     targetSectionId: defaultSectionId(sections),
     includeInReport: true,
+    reportInclusion: 'include',
     imageIds: [],
     audioStorageBucket: '',
     audioStoragePath: '',
@@ -229,6 +233,7 @@ function toObservationForm(observation: TuObservation): ObservationForm {
     reviewStatus: observation.reviewStatus,
     targetSectionId: observation.targetSectionId ?? '',
     includeInReport: observation.includeInReport,
+    reportInclusion: observation.reportInclusion,
     imageIds: observation.imageIds,
     audioStorageBucket: observation.audioStorageBucket ?? '',
     audioStoragePath: observation.audioStoragePath ?? '',
@@ -297,7 +302,18 @@ function readStoredObservationSaveJobs(inspectionId: string): ObservationSaveBat
         && typeof job.form.transcriptText === 'string'
         && Array.isArray(job.form.imageIds)
       ) {
-        jobs[job.observationId] = job as ObservationSaveJob
+        const storedForm = job.form as ObservationForm
+        jobs[job.observationId] = {
+          ...job,
+          form: {
+            ...storedForm,
+            reportInclusion: isTuObservationReportInclusion(storedForm.reportInclusion)
+              ? storedForm.reportInclusion
+              : storedForm.includeInReport === false
+                ? 'internal'
+                : 'include',
+          },
+        } as ObservationSaveJob
       }
     }
     return jobs
@@ -351,7 +367,8 @@ function observationRequestBody(form: ObservationForm) {
     certainty: form.certainty,
     reviewStatus: form.reviewStatus,
     targetSectionId: form.targetSectionId,
-    includeInReport: form.includeInReport,
+    includeInReport: form.reportInclusion !== 'internal',
+    reportInclusion: form.reportInclusion,
     imageIds: form.imageIds,
     audioStorageBucket: form.audioStorageBucket,
     audioStoragePath: form.audioStoragePath,
@@ -382,7 +399,8 @@ function applyObservationForm(observation: TuObservation, form: ObservationForm)
     certainty: form.certainty,
     reviewStatus: form.reviewStatus,
     targetSectionId: form.targetSectionId || null,
-    includeInReport: form.includeInReport,
+    includeInReport: form.reportInclusion !== 'internal',
+    reportInclusion: form.reportInclusion,
     imageIds: [...form.imageIds],
     audioStorageBucket: form.audioStorageBucket || null,
     audioStoragePath: form.audioStoragePath || null,
@@ -1521,6 +1539,11 @@ export default function TuEvidenceWorkspace({
                         }`}>
                           {reviewComplete ? 'Kontrollerad' : 'Att kontrollera'}
                         </span>
+                        {observation.reportInclusion === 'internal' ? (
+                          <span className="rounded bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600">
+                            Endast internt
+                          </span>
+                        ) : null}
                         {!observation.location ? (
                           <span className="rounded bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">
                             Saknar plats
@@ -1856,6 +1879,46 @@ export default function TuEvidenceWorkspace({
                       />
                     </label>
                   ) : null}
+
+                  <fieldset className="mt-5 border-t border-gray-200 pt-4">
+                    <legend className="text-sm font-semibold text-gray-950">Medverkan i utlåtandet</legend>
+                    <p className="mt-1 text-xs leading-5 text-gray-600">
+                      Observationen tas med som standard. Välj endast internt om den inte ska visas för mottagaren.
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-md border border-gray-300 bg-gray-50" role="radiogroup" aria-label="Medverkan i utlåtandet">
+                      {([
+                        { value: 'include', label: 'Ska med' },
+                        { value: 'internal', label: 'Endast internt' },
+                      ] as const).map((option) => {
+                        const selected = form.reportInclusion === option.value
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => {
+                              updateForm('reportInclusion', option.value)
+                              updateForm('includeInReport', option.value !== 'internal')
+                            }}
+                            disabled={locked}
+                            className={`min-h-10 border-r border-gray-300 px-2 py-2 text-xs font-semibold transition last:border-r-0 ${
+                              selected
+                                ? 'bg-violet-700 text-white shadow-sm'
+                                : 'bg-white text-gray-700 hover:bg-gray-50'
+                            } disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            {option.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-gray-600">
+                      {form.reportInclusion === 'include'
+                        ? 'Observationen redovisas i utlåtandet. AI:n väljer en saklig formulering utan att göra den till en slutsats om underlaget inte räcker.'
+                        : 'Fältposten används för intern dokumentation men ska inte skrivas in i utlåtandet.'}
+                    </p>
+                  </fieldset>
 
             <div
               className="mt-5 border-t border-gray-200 pt-4"

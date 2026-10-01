@@ -50,7 +50,8 @@ export function parseTuReportEditorialPlan(input: {
   snapshot: JsonRecord
 }): TuReportEditorialPlan {
   const parsed = record(input.value)
-  const expectedSectionIds = records(input.snapshot.sections)
+  const snapshotSections = records(input.snapshot.sections)
+  const expectedSectionIds = snapshotSections
     .map((section) => cleanText(section.id))
     .filter(Boolean)
   const approvedAnalysis = record(input.snapshot.approvedAnalysis)
@@ -59,8 +60,18 @@ export function parseTuReportEditorialPlan(input: {
     ...records(approvedAnalysis.resolvedConflicts),
   ].map((item) => cleanText(item.id)).filter(Boolean))
   const evidence = record(input.snapshot.evidence)
-  const observationIds = new Set(
-    records(evidence.observations).map((item) => cleanText(item.id)).filter(Boolean)
+  const observations = records(evidence.observations)
+  const observationIds = new Set(observations.map((item) => cleanText(item.id)).filter(Boolean))
+  const reportObservationIds = observations
+    .filter((item) => cleanText(item.reportInclusion) !== 'internal')
+    .map((item) => cleanText(item.id))
+    .filter(Boolean)
+  const internalObservationIds = new Set(observations
+    .filter((item) => cleanText(item.reportInclusion) === 'internal')
+    .map((item) => cleanText(item.id))
+    .filter(Boolean))
+  const observedExecutionSectionId = cleanText(
+    snapshotSections.find((section) => cleanText(section.key) === 'observed_execution')?.id
   )
   const fieldKeys = new Set(
     records(input.snapshot.sourceFields).map((item) => cleanText(item.key)).filter(Boolean)
@@ -69,15 +80,23 @@ export function parseTuReportEditorialPlan(input: {
   const sections = records(parsed.sections).map((section) => {
     const sectionId = cleanText(section.sectionId)
     const selectedAnalysisItemIds = stringArray(section.selectedAnalysisItemIds)
-    const selectedObservationIds = stringArray(section.selectedObservationIds)
+    let selectedObservationIds = stringArray(section.selectedObservationIds)
+      .filter((id) => !internalObservationIds.has(id))
+    if (observedExecutionSectionId && sectionId === observedExecutionSectionId) {
+      selectedObservationIds = [...new Set([...selectedObservationIds, ...reportObservationIds])]
+    }
     const selectedFieldKeys = stringArray(section.selectedFieldKeys)
     assertKnownValues(selectedAnalysisItemIds, analysisItemIds)
     assertKnownValues(selectedObservationIds, observationIds)
     assertKnownValues(selectedFieldKeys, fieldKeys)
     return {
       sectionId,
-      include: section.include === true,
-      purpose: cleanText(section.purpose),
+      include: section.include === true
+        || (sectionId === observedExecutionSectionId && reportObservationIds.length > 0),
+      purpose: cleanText(section.purpose)
+        || (sectionId === observedExecutionSectionId && reportObservationIds.length > 0
+          ? 'Redovisa samtliga dokumenterade observationer sakligt och koncist.'
+          : ''),
       selectedAnalysisItemIds,
       selectedObservationIds,
       selectedFieldKeys,

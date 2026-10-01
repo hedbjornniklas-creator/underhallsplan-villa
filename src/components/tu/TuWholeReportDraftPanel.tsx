@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  CircleStop,
+  EyeOff,
   FileText,
   Loader2,
   Ruler,
@@ -26,6 +29,7 @@ type Props = {
   analysisWarnings?: string[]
   onApplyDraft: (sections: Array<{ sectionId: string; text: string }>) => Promise<void>
   onOpenReport: () => void
+  onOpenEvidence: () => void
   onOpenMeasurement: (observationId: string, measurementId: string) => void
 }
 
@@ -56,6 +60,7 @@ export default function TuWholeReportDraftPanel({
   analysisWarnings = [],
   onApplyDraft,
   onOpenReport,
+  onOpenEvidence,
   onOpenMeasurement,
 }: Props) {
   const [draft, setDraft] = useState<TuWholeReportDraftState | null>(null)
@@ -63,7 +68,11 @@ export default function TuWholeReportDraftPanel({
   const [actionBusy, setActionBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const autoStartAttemptedRef = useRef(false)
-  const { success: showSuccessToast } = useToast()
+  const {
+    success: showSuccessToast,
+    error: showErrorToast,
+    info: showInfoToast,
+  } = useToast()
 
   const applyPayload = useCallback((payload: TuWholeReportDraftResponse) => {
     if (!payload.draft) return
@@ -127,6 +136,38 @@ export default function TuWholeReportDraftPanel({
       setActionBusy(null)
     }
   }, [applyPayload, inspectionId, organizationId])
+
+  const cancel = useCallback(async () => {
+    const runId = draft?.run?.id
+    if (!runId) return
+    setActionBusy('cancel')
+    setError(null)
+    try {
+      const response = await fetch(
+        organizationUrl(
+          `/api/tu/investigations/${inspectionId}/report-draft`,
+          organizationId
+        ),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'cancel', runId }),
+        }
+      )
+      if (!response.ok) throw new Error(await responseError(response, 'Kunde inte avbryta genereringen.'))
+      const payload = await response.json() as TuWholeReportDraftResponse
+      applyPayload(payload)
+      if (payload.draft?.run?.status === 'cancelled') {
+        showSuccessToast('Genereringen har avbrutits.', { appearance: 'dark' })
+      } else {
+        showInfoToast('Genereringen var redan avslutad. Statusen har uppdaterats.', { appearance: 'dark' })
+      }
+    } catch (cancelError) {
+      showErrorToast(cancelError, 'Kunde inte avbryta genereringen.', { appearance: 'dark' })
+    } finally {
+      setActionBusy(null)
+    }
+  }, [applyPayload, draft?.run?.id, inspectionId, organizationId, showErrorToast, showInfoToast, showSuccessToast])
 
   useEffect(() => {
     if (
@@ -216,7 +257,8 @@ export default function TuWholeReportDraftPanel({
     )
   }
 
-  const failed = draft?.run?.status === 'failed' || draft?.run?.status === 'cancelled'
+  const failed = draft?.run?.status === 'failed'
+  const cancelled = draft?.run?.status === 'cancelled'
   const completed = draft?.run?.status === 'completed'
   const missingCount = blockedSections.length
   const totalCount = draft?.sections.length ?? 0
@@ -226,7 +268,7 @@ export default function TuWholeReportDraftPanel({
 
   return (
     <div className="space-y-5">
-      {error && draft?.run && !failed ? (
+      {error && draft?.run && !failed && !cancelled ? (
         <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
           {error}
         </div>
@@ -277,17 +319,44 @@ export default function TuWholeReportDraftPanel({
           <div className="h-1.5 overflow-hidden rounded-full bg-violet-100" aria-hidden>
             <div className="h-full w-1/3 animate-pulse rounded-full bg-violet-700" />
           </div>
-          <p className="text-xs text-gray-600">Arbetet fortsätter i bakgrunden även om du lämnar sidan.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-gray-600">Arbetet fortsätter i bakgrunden även om du lämnar sidan.</p>
+            <button
+              type="button"
+              onClick={() => void cancel()}
+              disabled={actionBusy === 'cancel'}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-rose-300 bg-white px-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              {actionBusy === 'cancel' ? (
+                <Loader2 size={16} className="animate-spin" aria-hidden />
+              ) : (
+                <CircleStop size={16} aria-hidden />
+              )}
+              {actionBusy === 'cancel' ? 'Avbryter...' : 'Avbryt generering'}
+            </button>
+          </div>
         </div>
       ) : null}
 
-      {failed ? (
+      {failed || cancelled ? (
         <div className="space-y-3">
-          <div className="flex gap-3 rounded-md border border-rose-200 bg-rose-50 px-4 py-4">
-            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-rose-700" aria-hidden />
+          <div className={`flex gap-3 rounded-md border px-4 py-4 ${
+            cancelled ? 'border-gray-200 bg-gray-50' : 'border-rose-200 bg-rose-50'
+          }`}>
+            {cancelled ? (
+              <CircleStop size={20} className="mt-0.5 shrink-0 text-gray-600" aria-hidden />
+            ) : (
+              <AlertTriangle size={20} className="mt-0.5 shrink-0 text-rose-700" aria-hidden />
+            )}
             <div>
-              <h3 className="font-semibold text-rose-950">Utlåtandet kunde inte skapas</h3>
-              <p className="mt-1 text-sm text-rose-800">{error ?? draft.run?.progressMessage ?? 'Ett oväntat fel inträffade.'}</p>
+              <h3 className={`font-semibold ${cancelled ? 'text-gray-950' : 'text-rose-950'}`}>
+                {cancelled ? 'Genereringen avbröts' : 'Utlåtandet kunde inte skapas'}
+              </h3>
+              <p className={`mt-1 text-sm ${cancelled ? 'text-gray-700' : 'text-rose-800'}`}>
+                {cancelled
+                  ? draft.run?.progressMessage ?? 'Inget nytt utkast skapades.'
+                  : error ?? draft.run?.progressMessage ?? 'Ett oväntat fel inträffade.'}
+              </p>
             </div>
           </div>
           <button
@@ -297,7 +366,7 @@ export default function TuWholeReportDraftPanel({
             className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white transition hover:bg-violet-800 disabled:bg-gray-300"
           >
             {actionBusy === 'retry' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <RotateCcw size={16} aria-hidden />}
-            Försök igen
+            {cancelled ? 'Starta om genereringen' : 'Försök igen'}
           </button>
         </div>
       ) : null}
@@ -347,6 +416,41 @@ export default function TuWholeReportDraftPanel({
                 ))}
               </div>
             </section>
+          ) : null}
+
+          {(draft.omissions ?? []).length > 0 ? (
+            <details className="group overflow-hidden rounded-md border border-gray-200 bg-white">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50">
+                <EyeOff size={18} className="shrink-0 text-gray-500" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  Granskade fältposter som inte tagits med ({draft.omissions.length})
+                </span>
+                <ChevronDown size={16} className="shrink-0 text-gray-500 transition group-open:rotate-180" aria-hidden />
+              </summary>
+              <div className="border-t border-gray-200">
+                <p className="px-4 py-3 text-sm leading-6 text-gray-600">
+                  Uppgifterna finns kvar i underlaget men bedömdes inte behövas i utkastet. Markera ett viktigt fynd som <span className="font-semibold text-gray-900">Ska med</span> under Sortera och granska.
+                </p>
+                <div className="divide-y divide-gray-200 border-y border-gray-200">
+                  {draft.omissions.map((omission) => (
+                    <article key={omission.observationId} className="px-4 py-3">
+                      <h4 className="text-sm font-semibold text-gray-950">{omission.title}</h4>
+                      <p className="mt-1 line-clamp-3 text-sm leading-5 text-gray-700">{omission.summary}</p>
+                      <p className="mt-1 text-xs leading-5 text-gray-500">{omission.reason}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={onOpenEvidence}
+                    className="inline-flex h-9 items-center rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 transition hover:bg-gray-50"
+                  >
+                    Granska urvalet
+                  </button>
+                </div>
+              </div>
+            </details>
           ) : null}
 
           {(draft.actions ?? []).length > 0 ? (
