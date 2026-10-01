@@ -5,6 +5,12 @@ Datum: 2026-10-01.
 
 ## Beslut och omfattning
 
+- Interna namn: Projektarbete (omfattning, kalkyl och UE), Offert och avtal
+  (kundpriser, villkor och betalningsplan) och Visa som bestallare (forhandsgranskning).
+  Forhandsgranskningen ar tydligt markerad och visar bara delat/publicerat innehall,
+  inte det interna avtalsutkastet. Att oppna vyerna sparar eller skickar ingenting.
+- Gemensam projektnavigering for de tva interna arbetsytorna ar ett senare steg,
+  inte genomfort i denna namnandring. Befintliga adresser och behorigheter behalls.
 - Bestallaren far fem sidor: Avtal, Val och tillval, Betalningsplan, Tidsplan, Bilder och filer.
   Avtal ar forstavy; oversiktsgenvagen Mitt uppdrag har tagits bort.
   Den interna arbetsytan och UE-portalen
@@ -32,7 +38,7 @@ Datum: 2026-10-01.
 
 ## Anvandarresa
 
-1. Intern anvandare oppnar Uppdrag > Atgardsarenden > projekt > Kundvy och offert.
+1. Intern anvandare oppnar Uppdrag > Projektarbete > projekt > Oppna offert och avtal.
 2. Ange rubrik, prismodell och giltighet. Hamta arbeten fran projektet eller
    lagg till dem manuellt. Markera grundatagande eller relevant avgransning.
    Ange grundpris eller delpriser. Val och tillval har en separat redigerare
@@ -303,6 +309,10 @@ Inga befintliga kundavtal eller betalningsuppgifter skrevs om. Alla 165 tester
 och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 
 ## Beslutslogg
+
+- 2026-10-01: Anvandaren faststaller namnen Projektarbete, Offert och avtal och
+  Visa som bestallare. Kundforhandsgranskning skiljs visuellt fran intern redigering.
+  Gemensam projektnavigering ar langsiktig riktning, inte del av denna leverans.
 
 - 2026-10-01: Anvandaren bestaller en egen flik for betalningsplan, bade internt
   och for bestallaren. Forsta leveransen ar en plan inom grundavtalets version,

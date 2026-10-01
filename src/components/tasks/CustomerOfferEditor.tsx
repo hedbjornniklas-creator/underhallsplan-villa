@@ -265,7 +265,7 @@ export default function CustomerOfferEditor({
         </p>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
           <h1 ref={heading} tabIndex={-1} className="scroll-mt-6">
-            Kundvy och offert
+            Offert och avtal
           </h1>
           <p className="text-sm text-slate-500" role="status">
             {busy
@@ -280,14 +280,14 @@ export default function CustomerOfferEditor({
       </header>
       <nav
         className="flex gap-2 overflow-x-auto border-b border-slate-200 py-3"
-        aria-label="Kundvy och offert"
+        aria-label="Offert och avtal"
       >
         {[
           ['edit', 'Grundavtal'],
           ['planning', 'Val och tillval'],
           ['payments', 'Betalningsplan'],
           ['document', 'Granska grundavtal'],
-          ['customer', 'Kundens sidor']
+          ['customer', 'Visa som beställare']
         ].map(([key, label]) => (
           <button
             key={key}

@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useRef, useState } from 'react'
 import {
   CalendarClock,
+  Eye,
   ListChecks,
   FileText,
   FolderOpen,
@@ -129,9 +130,13 @@ export default function ActionCaseCustomerPortal({
       : `/api/action-cases/public/${token}/attachments/${id}`
   return (
     <main className="mx-auto max-w-5xl break-words px-4 pb-16 sm:px-6">
+      {preview && <div className="mt-6 flex items-center gap-2 border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-semibold text-slate-900">
+        <Eye size={18} className="shrink-0" aria-hidden="true" />
+        Förhandsgranskning som beställare
+      </div>}
       <header className="border-b border-slate-200 py-7">
         <p className="text-sm font-medium text-slate-500">
-          Ditt projekt{preview ? ' · Förhandsgranskning' : ''}
+          Ditt projekt
         </p>
         <h1 ref={heading} tabIndex={-1} className="mt-2 outline-none">
           {c.title}

@@ -334,7 +334,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     finally { setBusy(false) }
   }
 
-  if (!workspace) return <section className="mt-7 border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><ClipboardList className="mx-auto text-slate-400" /><h2 className="mt-3 text-lg font-semibold">Åtgärdsärenden är inte redo</h2><p className="mt-1 text-sm text-slate-500">{error}</p></section>
+  if (!workspace) return <section className="mt-7 border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><ClipboardList className="mx-auto text-slate-400" /><h2 className="mt-3 text-lg font-semibold">Projektarbete är inte redo</h2><p className="mt-1 text-sm text-slate-500">{error}</p></section>
 
   return <>
     <section className="mt-7 grid grid-cols-2 gap-3 lg:grid-cols-6">{[
@@ -351,7 +351,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
         if (result) { setNewItemTitle(''); if (result.itemId) setSelectedItemId(result.itemId) }
       })
     }}><label className="min-w-0 flex-1 text-sm font-semibold">Ny åtgärd<input required value={newItemTitle} onChange={(event) => setNewItemTitle(event.target.value)} placeholder="Beskriv arbetet kort" className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-3 font-normal" /></label><button type="submit" disabled={busy || !newItemTitle.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white disabled:opacity-40">{busy ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />} Lägg till åtgärd</button></form> : null}
-    {selectedCase ? <div className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-white p-5"><div><h3 className="font-semibold">Beställarens projekt</h3><p className="mt-1 text-sm text-slate-500">Kundoffert och publicerade avtal</p></div><a href={`/uppdrag/${selectedCase.id}/kund`} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold"><Eye size={17} /> Kundvy och offert <ArrowRight size={17} /></a></div> : null}
+    {selectedCase ? <div className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-white p-5"><div><h3 className="font-semibold">Offert och avtal</h3><p className="mt-1 text-sm text-slate-500">Kundpriser, villkor och betalningsplan</p></div><a href={`/uppdrag/${selectedCase.id}/kund`} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold"><FileText size={17} /> Öppna offert och avtal <ArrowRight size={17} /></a></div> : null}
     {selectedCase ? <ActionCaseRequestsPanel actionCase={selectedCase} busy={busy} onOpen={(requestId) => setRequestEditor({ requestId })} /> : null}
     {selectedCase ? <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} /> : null}
     {creating ? <CreateCaseSheet busy={busy} onClose={() => setCreating(false)} onCreate={async (payload) => { const result = await action('create_case', payload); if (result) setCreating(false) }} /> : null}

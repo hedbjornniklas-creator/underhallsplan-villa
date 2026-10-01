@@ -401,7 +401,10 @@ else {
       document.body.textContent.includes('Offerten har skickats')
     )
     assert.equal(writes.filter((op) => op === 'publish').length, 1)
-    await click('Kundens sidor')
+    const customerPreviewWrites = writes.length
+    await click('Visa som beställare')
+    assert.match(await page.evaluate(() => document.body.textContent), /Förhandsgranskning som beställare/)
+    assert.equal(writes.length, customerPreviewWrites, 'Viewing as customer does not save or send')
     await page.waitForFunction(() =>
       document.body.textContent.includes('Grundavtalets pris')
     )
@@ -415,6 +418,7 @@ else {
     for (const width of [1440, 1024, 390, 344]) {
       await page.setViewport({ width, height: 900 })
       await page.goto(origin + '/kund', { waitUntil: 'networkidle0' })
+      assert.doesNotMatch(await page.evaluate(() => document.body.textContent), /Förhandsgranskning som beställare/)
       await layout(`${width} overview`)
       const primary = await page.$('button.text-white')
       assert.equal(

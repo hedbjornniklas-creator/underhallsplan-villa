@@ -25,7 +25,7 @@ export default async function CustomerOfferPage({
         <a href="/uppdrag" className="text-violet-700">
           Till uppdrag
         </a>
-        <h1 className="mt-6">Kundvy och offert</h1>
+        <h1 className="mt-6">Offert och avtal</h1>
         <p className="mt-4">
           {error instanceof Error && error.message === 'CUSTOMER_OFFER_SCHEMA'
             ? 'Kundofferter är inte aktiverade ännu. Kör databasmigrationen 2026-09-29_01_action_case_customer_offers.sql.'

@@ -861,7 +861,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   onClick={() => setWorkspaceView('action_cases')}
                   className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'action_cases' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
                 >
-                  <Wrench size={17} aria-hidden="true" /> Åtgärdsärenden
+                  <Wrench size={17} aria-hidden="true" /> Projektarbete
                 </button>
                 <button
                   type="button"
