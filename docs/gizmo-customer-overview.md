@@ -9,8 +9,8 @@ Datum: 2026-10-01.
   (kundpriser, villkor och betalningsplan) och Visa som bestallare (forhandsgranskning).
   Forhandsgranskningen ar tydligt markerad och visar bara delat/publicerat innehall,
   inte det interna avtalsutkastet. Att oppna vyerna sparar eller skickar ingenting.
-- Gemensam projektnavigering for de tva interna arbetsytorna ar ett senare steg,
-  inte genomfort i denna namnandring. Befintliga adresser och behorigheter behalls.
+- Gemensam projektnavigering samlar de interna arbetsytorna under /uppdrag/[caseId].
+  Projektlistan finns pa /uppdrag. Aldre /kund-adresser leder till Offert och avtal.
 - Bestallaren far fem sidor: Avtal, Val och tillval, Betalningsplan, Tidsplan, Bilder och filer.
   Avtal ar forstavy; oversiktsgenvagen Mitt uppdrag har tagits bort.
   Den interna arbetsytan och UE-portalen
@@ -30,15 +30,16 @@ Datum: 2026-10-01.
 - Tidigare publicerade versioner behaller sin ursprungliga omfattning och sina
   valregler. De far inte tolkas om i efterhand. Nya publiceringar med val i
   grundavtalet stoppas bade i API och databastrigger.
-- Kundofferten ar inte UE-forfragan eller intern kalkyl. Import av arbeten kopierar
-  bara rubrik och omfattning, aldrig inkopspriser, marginaler eller UE-svar.
+- Kundofferten ar inte UE-forfragan eller intern kalkyl. Import kopierar rubrik
+  och omfattning. I delprislage kan anvandaren uttryckligen ta med kontrollerade
+  kundpriser inklusive moms. Inkopspriser, marginaler och UE-svar kopieras aldrig.
 - Denna forsta avtalsmodell ar avsedd for referensfallet privatkund/tillbyggnad.
   ABS 18 kan valjas tillsammans med en manuellt granskad PDF-avtalshandling.
   Ingen avtalsmall, konsumentrattslig kontroll eller juridisk garanti genereras.
 
 ## Anvandarresa
 
-1. Intern anvandare oppnar Uppdrag > Projektarbete > projekt > Oppna offert och avtal.
+1. Intern anvandare oppnar Uppdrag > projekt > Offert och avtal.
 2. Ange rubrik, prismodell och giltighet. Hamta arbeten fran projektet eller
    lagg till dem manuellt. Markera grundatagande eller relevant avgransning.
    Ange grundpris eller delpriser. Val och tillval har en separat redigerare
@@ -137,6 +138,33 @@ Datum: 2026-10-01.
   tillbaka till att bara spara den publika offerten.
 
 ## Aktivering
+
+### Kompakta redigerare och manuell tidsplan (2026-10-01)
+
+- Offertens delar, val/tillval och delbetalningar visas som kompakta rader.
+  Klick oppnar en rad; nya rader oppnas direkt. Utkast bevaras vid ihopfallning
+  och interna vybyten. Sen inmatning skrivs inte over av ett pagaende sparforsok.
+- Moment i tidsplanen har fri projektdel, start/slut och manuellt vald status.
+  Import fran projektarbete ar valbar och skapar inte dubbletter. Det finns
+  inga beroenden, automatisk datumflytt eller beraknade fardigprocent.
+- Interna och delade rader lagras separat, med organisationskontroll och revision.
+  Bestallaren ser bara uttryckligen delad kopia. UE ser inte denna plan via sin
+  portal. Delningen skriver aldrig om avtalets tider eller accepterade version.
+- Samlat pris anges pa atgarden som kundpris och valfri intern kostnad exklusive
+  moms. Detaljkalkylen finns kvar men adderas inte till totalen. Endast uttryckligen
+  kontrollerat kundpris kan importeras till offert, med moms. Inga tidigare
+  kalkyler eller offerter omvandlas automatiskt.
+- Bilder anvander befintlig privat filatkomst och miniatyrvisning. Bildformat
+  identifieras aven fran MIME/filnamn for aldre bilagor. Inga delningsrattigheter
+  utvidgas genom att en miniatyr visas.
+- Kor `docs/db/2026-10-01_04_action_case_schedule.sql` och
+  `docs/db/2026-10-01_05_action_case_lump_sum.sql` fore aktivering i produktion.
+  De ar omkorbara och andrar inga befintliga avtalsversioner. Utan migrationerna
+  ar ny tidsplansredigering respektive samlat pris inte aktiva.
+
+Publiceringskontroll 2026-10-01: migrationerna 04 och 05 korda i produktion.
+Tabell, kolumn, validerad priskontroll, RLS och service-rollens RPC verifierade.
+Direkt klientatkomst till tidsplanen nekas. Befintliga avtal ar inte omskrivna.
 
 ### Betalningsplan (2026-10-01)
 
@@ -341,7 +369,7 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 
 - Fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.
   Avtalad totalsumma inkluderar bara accepterade tillval/ATA, inte valfria forslag.
-- Delad tidplan med milstolpar, beroenden och bara kundpublicerade datum.
+- Beroenden och automatisk produktionsplanering; manuell delad momentlista finns.
 - ATA och kompletterande tillval som egna godkannanden, aldrig overskrivning av
   grundavtalet. Flera bestallare/signatarer, foretagskund, flera momssatser och ROT.
 - Fardig genererad avtals-PDF, automatisk godkannandekopia via mejl, kundkonton och

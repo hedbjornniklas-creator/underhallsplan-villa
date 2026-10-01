@@ -32,6 +32,10 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROJECT_SCHEDULE_SCHEMA: [503, 'Tidsplaneringen behöver aktiveras av administratören.'],
+    PROJECT_SCHEDULE_INVALID: [400, 'Kontrollera momentens rubriker och datum. Slutdatum får inte ligga före startdatum.'],
+    PROJECT_SCHEDULE_NOT_FOUND: [404, 'Projektet kunde inte hittas.'],
+    PROJECT_SCHEDULE_STALE: [409, 'Tidsplanen har ändrats i en annan session. Dina ändringar är kvar. Hämta den sparade versionen innan du fortsätter.'],
     UNAUTHORIZED: [401, 'Logga in igen.'],
     MODULE_ACCESS_REQUIRED: [403, 'Du saknar behörighet till uppdraget.'],
     PRODUCT_ACCESS_REQUIRED: [403, 'Du saknar behörighet till uppdraget.'],

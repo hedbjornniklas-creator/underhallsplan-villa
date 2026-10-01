@@ -12,6 +12,8 @@ import { money } from '@/lib/action-cases/customerOffers'
 import PriceInput from './CustomerOfferPriceInput'
 import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
 import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
+import ProjectEditorRow from './ProjectEditorRow'
+import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
@@ -34,6 +36,7 @@ export default function CustomerPlanningEditor({
   const [busy, setBusy] = useState(''),
     [confirmed, setConfirmed] = useState(false)
   const [removed, setRemoved] = useState<CustomerPlannedItem | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
   const running = useRef(false),
     toast = useToast()
   const dirty = JSON.stringify(items) !== JSON.stringify(saved.items) ||
@@ -41,8 +44,8 @@ export default function CustomerPlanningEditor({
   const shared =
     JSON.stringify(saved.items) === JSON.stringify(saved.sharedItems)
   useEffect(() => {
-    onDirty(dirty)
-  }, [dirty, onDirty])
+    onDirty(dirty || Boolean(busy))
+  }, [dirty, busy, onDirty])
   function change(next: CustomerPlannedItem[]) {
     setItems(next)
     setConfirmed(false)
@@ -70,8 +73,8 @@ export default function CustomerPlanningEditor({
       if (!response.ok)
         throw new Error(result.error || 'Tillvalen kunde inte sparas.')
       setSaved(result)
-      setItems(result.items)
-      setCosting(result.costing ?? {})
+      setItems((current) => retainNewerDraft(current, items, result.items))
+      setCosting((current) => retainNewerDraft(current, costing, result.costing ?? {}))
       setConfirmed(false)
       onSaved(result)
       toast.success(
@@ -108,7 +111,7 @@ export default function CustomerPlanningEditor({
       ) : (
         <>
           <fieldset
-            disabled={Boolean(busy)}
+            disabled={Boolean(busy) && busy !== 'save'}
             className="min-w-0 divide-y divide-slate-200"
           >
             {items.map((item) => {
@@ -117,7 +120,11 @@ export default function CustomerPlanningEditor({
                   items.map((i) => (i.id === item.id ? { ...i, ...value } : i))
                 )
               return (
-                <div key={item.id} className="grid gap-4 py-6 sm:grid-cols-2">
+                <ProjectEditorRow key={item.id} title={item.title || 'Nytt val eller tillval'}
+                  summary={[item.optionGroup, planningStatuses[item.status], item.decisionBy && `Beslut ${item.decisionBy}`, !item.scope.trim() && 'Omfattning saknas'].filter(Boolean).join(' · ')}
+                  amount={item.budgetOre === null ? 'Pris ej fastställt' : money(item.budgetOre)}
+                  open={expanded === item.id} onToggle={() => setExpanded(expanded === item.id ? null : item.id)}>
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div className="flex items-start gap-3 sm:col-span-2">
                     <label className="min-w-0 flex-1 text-sm">
                       Val eller tillval *
@@ -195,6 +202,7 @@ export default function CustomerPlanningEditor({
                       onApply={(budgetOre) => patch({ budgetOre })} />
                   </div>}
                 </div>
+                </ProjectEditorRow>
               )
             })}
           </fieldset>
@@ -209,12 +217,14 @@ export default function CustomerPlanningEditor({
           <div className="flex flex-wrap gap-3 py-4">
             <button
               className={button}
-              disabled={Boolean(busy)}
-              onClick={() =>
+              disabled={Boolean(busy) && busy !== 'save'}
+              onClick={() => {
+                const id = crypto.randomUUID()
+                setExpanded(id)
                 change([
                   ...items,
                   {
-                    id: crypto.randomUUID(),
+                    id,
                     title: '',
                     scope: '',
                     status: 'planned',
@@ -222,7 +232,7 @@ export default function CustomerPlanningEditor({
                     decisionBy: ''
                   }
                 ])
-              }
+              }}
             >
               <Plus size={17} /> Lägg till val eller tillval
             </button>

@@ -23,6 +23,7 @@ import { useToast } from '@/components/ui/AppToastProvider'
 import type { ActionCaseItemView, ActionCaseView, ActionCaseWorkspace as Workspace } from '@/lib/action-cases/contracts'
 import { supabase } from '@/lib/supabaseClient'
 import ActionCaseImageBank from './ActionCaseImageBank'
+import { isImageAttachment } from '@/lib/action-cases/attachmentImages'
 import ActionCaseItemSheet from './ActionCaseItemSheet'
 import ActionCaseRequestSheet, { ActionCaseRequestsPanel } from './ActionCaseQuoteRequests'
 import { actionCaseItemCompletion, actionCaseCostCoverage } from '@/lib/action-cases/domain'
@@ -50,6 +51,7 @@ const ITEM_STATUS: Record<ActionCaseItemView['status'], string> = {
 
 function nextAction(item: ActionCaseItemView) {
   if (!item.scope?.trim()) return 'Beskriv arbetets omfattning'
+  if (item.lumpSum) return item.lumpSum.customerPrice === null ? 'Ange samlat kundpris' : item.lumpSum.verified ? 'Samlat pris kontrollerat' : 'Kontrollera det samlade priset'
   if (item.costLines.length) {
     const coverage = actionCaseCostCoverage(item.costLines)
     if (coverage.missingQuantity) return `Komplettera mängd på ${coverage.missingQuantity} rader`
@@ -242,7 +244,7 @@ function CaseDocuments({
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
             <div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div><h3 className="text-sm font-semibold text-slate-950">Dokumentbibliotek</h3><p className="mt-1 text-xs leading-5 text-slate-500">Välj mottagare före uppladdning. Intern åtkomst gäller alltid.</p></div>
+                <div><h3 className="text-sm font-semibold text-slate-950">Bilder och filer</h3><p className="mt-1 text-xs leading-5 text-slate-500">Privat som standard</p></div>
                 <button type="button" disabled={busy || uploading.length > 0} onClick={() => fileInput.current?.click()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"><Upload size={17} /> Ladda upp</button>
                 <input ref={fileInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.doc,.docx,.xls,.xlsx,.txt" className="hidden" onChange={(event) => void uploadFiles(Array.from(event.target.files ?? []))} />
               </div>
@@ -293,7 +295,7 @@ function CaseDocuments({
                 onDelete={(attachmentId) => { void runAction('delete_attachment', { caseId: actionCase.id, attachmentId }, 'Bilden togs bort.') }} />
               <h3 className="mt-5 text-sm font-semibold">Dokument</h3>
               <div className="mt-3 divide-y divide-slate-100 border-y border-slate-200">
-                {actionCase.attachments.some((file) => file.type === 'document') ? actionCase.attachments.filter((file) => file.type === 'document').map((attachment) => {
+                {actionCase.attachments.some((file) => !isImageAttachment(file)) ? actionCase.attachments.filter((file) => !isImageAttachment(file)).map((attachment) => {
                   const granted = actionCase.participants.filter((participant) => attachment.grantedParticipantIds.includes(participant.id))
                   return <div key={attachment.id} className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"><div className="flex min-w-0 items-center gap-3"><span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">{attachment.type === 'image' ? <ImageIcon size={18} /> : <FileText size={18} />}</span><span className="min-w-0"><strong className="block truncate text-sm text-slate-900">{attachment.title || attachment.fileName}</strong><span className="mt-1 block truncate text-xs text-slate-500">Internt{granted.length ? ` · ${granted.map((participant) => participant.role === 'customer' ? 'Beställare' : participant.name).join(', ')}` : ' endast'}</span></span></div><div className="flex items-center gap-2"><a href={`/api/action-cases/${actionCase.id}/attachments/${attachment.id}`} target="_blank" rel="noreferrer" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`Öppna ${attachment.fileName}`}><Eye size={17} /></a><details className="relative"><summary className="inline-flex min-h-10 cursor-pointer list-none items-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">Åtkomst</summary><div className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-3 shadow-xl"><p className="text-xs font-semibold text-slate-950">Synlig för</p><p className="mt-1 text-xs text-slate-500">Internt är alltid valt.</p><div className="mt-2 space-y-1">{actionCase.participants.map((participant) => <label key={participant.id} className="flex min-h-9 cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={attachment.grantedParticipantIds.includes(participant.id)} onChange={(event) => { const ids = event.target.checked ? [...attachment.grantedParticipantIds, participant.id] : attachment.grantedParticipantIds.filter((id) => id !== participant.id); void runAction('update_attachment_grants', { caseId: actionCase.id, attachmentId: attachment.id, participantIds: ids }, 'Åtkomsten uppdaterades.') }} className="h-4 w-4 accent-violet-600" />{participant.role === 'customer' ? `Beställare: ${participant.name}` : `UE: ${participant.name}`}</label>)}</div></div></details><button type="button" onClick={() => { if (window.confirm(`Ta bort ${attachment.fileName}?`)) void runAction('delete_attachment', { caseId: actionCase.id, attachmentId: attachment.id }, 'Filen togs bort.') }} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700" aria-label={`Ta bort ${attachment.fileName}`}><Trash2 size={17} /></button></div></div>
                 }) : <p className="py-7 text-center text-sm text-slate-500">Inga dokument har lagts till.</p>}

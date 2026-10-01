@@ -1,4 +1,4 @@
-# Gizmo / Uppdrag - varumärkesprofil 2.0
+# Gizmo / Uppdrag - varumärkesprofil 2.1
 
 Beslutad riktning: 2026-10-01. Implementation och verifiering dokumenteras nedan.
 Gäller Uppdrags interna projektlista, projektytor och tillhörande arbetsdialoger.
@@ -70,14 +70,25 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 - Betalningsplanens belopp är inte fakturerat eller betalt. Ingen faktureringsgraf
   visas innan en verklig fakturakälla finns.
 - Val/tillval ligger separat från grundavtalet. Planering är ingen beställning.
-- Tidsplan visar befintliga avtalstider och planerade beslutsdatum. Full
-  produktionsplanering med milstolpar och beroenden är fortfarande ett senare steg.
+- Tidsplan visar en manuellt redigerad lista med moment, projektdel, start, slut
+  och status. Moment kan hämtas från Projektarbete utan att befintliga datum ändras.
+  Intern sparning och delning med beställaren är separata handlingar. Avtalstider
+  och beslutsdatum visas separat. Beroenden och automatisk planering är senare steg.
 - Dokumentåtkomst och delning använder befintliga behörighetsregler.
 - Äldre /kund-länkar leder till samma projekts Offert och avtal.
 - Den interna projektmenyn och projekthuvudet ska inte följa med vid utskrift.
 
 ## Beslutslogg
 
+- 2026-10-01: Offert, val/tillval och delbetalningar får kompakta sammanfattningsrader.
+  En rad öppnas åt gången; nya rader öppnas direkt. Att fälla ihop sparar inte och
+  raderar inte något. Sammanfattningen visar rubrik, relevant status/datum och pris.
+  Inmatning kan fortsätta under sparning; senare ändringar förblir osparade och
+  ersätts inte av ett äldre serversvar. Samlat åtgärdspris är ett aktivt val,
+  inte fiktiva timmar. Detaljrader bevaras utan att dubbelräknas.
+- 2026-10-01: Manuell produktionsplan godkänns som ett första steg. Projektdel är
+  fri text med förslag såsom Mark, Grund och Stomme, inte en ny obligatorisk
+  projektstruktur. Delning ändrar inte avtalets låsta tider.
 - 2026-10-01: Användaren godkänner projektlista och gemensam projektnavigering nu,
   inte längre som enbart framtida riktning. ÖB:s formspråk är förebild, Gizmos
   färger och identitet behålls. Befintliga funktioner återanvänds.
@@ -112,3 +123,18 @@ dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering
 Den lokala UI-fixturen återanvänder produktionskomponenterna med en isolerad
 testserver. Den ersätter inte kontroll av riktiga databasbehörigheter och
 utskick efter publicering. Driftsättning verifieras separat mot publicerad commit.
+
+### Kompakta projektredigerare 2026-10-01
+
+- 188 automatiserade action-case-tester passerar, inklusive SQL-test av de nya
+  migrationerna, organisationsgränser, revisionskonflikter och privata/delade planer.
+- Lokal CUA-klickkontroll av sammanfattningsrader, fortsatt inmatning under sparning,
+  sparfel/nytt försök, omordning och ta bort/ångra delbetalning.
+- Samlat pris och uttrycklig överföring till offert provade, inklusive moms.
+- Tidsplan: valbar import, sparning och uttrycklig delning provade. Senare interna
+  ändringar ersatte inte den delade planen i beställarförhandsgranskningen.
+- Bildminiatyrens laddade pixlar samt öppning i fullformat kontrollerade.
+- Inga riktiga kunduppgifter, avtal eller utskick ändrades i dessa lokala tester.
+- Publiceringskontroll 2026-10-01: båda nya migrationerna körda i produktion.
+  Tidsplanens RLS och nekad klientåtkomst verifierade, liksom service-rollens RPC
+  och den validerade databaskontrollen för samlat pris. Inga befintliga avtal ändrades.

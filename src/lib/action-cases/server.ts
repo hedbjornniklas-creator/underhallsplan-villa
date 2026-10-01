@@ -5,6 +5,8 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import type { ActionCaseAttachmentView, ActionCaseCostLineView, ActionCaseItemView, ActionCaseParticipantView, ActionCasePortal, ActionCaseView, ActionCaseWorkspace } from './contracts'
 import { parseScopeAttachmentIds } from './scopeAttachments'
+import { getSharedProjectSchedule } from './projectScheduleServer'
+import { normalizeLumpSum } from './lumpSum'
 import { filterActionCasePortalItems } from './domain'
 import { normalizeCostLine } from './costing'
 import { mapQuote, QUOTE_VIEW_COLUMNS, quoteIsStale } from './quotes'
@@ -66,6 +68,8 @@ async function requireCase(context: Context, caseId: string) {
 
 function mapItem(row: Record<string, unknown>, costLines: ActionCaseCostLineView[] = []): ActionCaseItemView {
   return {
+    lumpSumAvailable: 'lump_sum' in row,
+    lumpSum: normalizeLumpSum(row.lump_sum ?? null),
     id: String(row.id),
     title: String(row.title),
     scope: row.scope ? String(row.scope) : null,
@@ -230,6 +234,13 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
       view.estimatedCost = totals.internalCost; view.customerPrice = totals.customerPrice
     }
     const proposal = suggestions?.find((candidate) => candidate.action_case_item_id === row.id)
+    if (view.lumpSum) {
+      view.estimatedCost = view.lumpSum.internalCost
+      view.customerPrice = view.lumpSum.customerPrice
+      if (['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(view.status)) {
+        view.status = !view.scope?.trim() ? 'scope_needed' : view.lumpSum.verified && view.lumpSum.customerPrice !== null ? 'ready_for_quote' : 'pricing_needed'
+      }
+    }
     view.costSuggestion = proposal && !proposal.applied_at ? { id: proposal.id, sourceUpdatedAt: proposal.source_updated_at, createdAt: proposal.created_at, lines: proposal.lines, warnings: proposal.warnings } : null
     list.push(view)
     itemsByCase.set(row.action_case_id, list)
@@ -669,6 +680,7 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
       status: actionCase.status,
       items: customerOffers?.enabled ? [] : visibleItems.map((item) => ({ id: item.id, title: item.title, scope: item.scope, status: item.status, sortOrder: item.sort_order })),
       attachments: mappedAttachments,
+      schedule: participant.role === 'customer' ? await getSharedProjectSchedule(access.org_id, actionCase.id) : undefined,
     },
   }
 }
@@ -700,8 +712,17 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
   if (readError || !existing) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
 
   const patch: Record<string, unknown> = { updated_by: context.userId }
+  if ('lumpSum' in payload) {
+    if (!('lump_sum' in existing)) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
+    if (!payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
+    if (!['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(existing.status)) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
+    patch.lump_sum = normalizeLumpSum(payload.lumpSum)
+  }
   if ('title' in payload) patch.title = text(payload.title)
   if ('scope' in payload) patch.scope = nullableText(payload.scope)
+  if (existing.lump_sum && patch.lump_sum !== null && ((patch.scope !== undefined && patch.scope !== existing.scope) || (patch.title !== undefined && patch.title !== existing.title))) {
+    patch.lump_sum = { ...normalizeLumpSum(patch.lump_sum ?? existing.lump_sum), verified: false }
+  }
   if ('scopeAttachmentIds' in payload) {
     if (!('scope_attachment_ids' in existing)) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
     if (!payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
@@ -724,7 +745,8 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
 
   const merged = { ...existing, ...patch }
   const scopeReady = Boolean(String(merged.scope ?? '').trim())
-  const pricingReady = Boolean(
+  const lumpSum = normalizeLumpSum(merged.lump_sum ?? null)
+  const pricingReady = lumpSum ? lumpSum.verified && lumpSum.customerPrice !== null : Boolean(
     merged.own_labor_ready
     && merged.material_price_ready
     && merged.waste_solution_ready

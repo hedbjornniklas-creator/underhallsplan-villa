@@ -95,9 +95,9 @@ test('existing costing RPC rejects an AI suggestion after a selected file change
 
 test('item API persists text and files atomically, with case/org scoping and optimistic concurrency', async () => {
   const code = ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/server.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-  function harness({ missingFile = false, stale = false, migrated = true } = {}) {
+  function harness({ missingFile = false, stale = false, migrated = true, existingLump = null, status = 'pricing_needed' } = {}) {
     const reads = [], writes = []
-    const existing = { id: id(20), org_id: id(1), action_case_id: id(10), title: 'Before', scope: 'Before', status: 'pricing_needed', ...(migrated ? { scope_attachment_ids: null } : {}) }
+    const existing = { id: id(20), org_id: id(1), action_case_id: id(10), title: 'Before', scope: 'Before', status, ...(migrated ? { scope_attachment_ids: null, lump_sum: existingLump } : {}) }
     const admin = { from(table) {
       const read = { table, filters: [] }; reads.push(read)
       let operation = 'read'
@@ -114,6 +114,7 @@ test('item API persists text and files atomically, with case/org scoping and opt
     new Function('module', 'exports', 'require', code)(mod, mod.exports, (name) => {
       if (name === '@/lib/supabase/admin') return { createSupabaseAdminClient: () => admin }
       if (name === './scopeAttachments') return scope
+      if (name === './lumpSum') return lumpSum
       return {}
     })
     return { writes, reads, save: (more = {}) => mod.exports.updateActionCaseItem({ orgId: id(1), userId: id(2) }, { itemId: id(20), expectedUpdatedAt: 'v1', title: 'Updated', scope: 'Changed', scopeAttachmentIds: [id(30)], ...more }) }
@@ -128,4 +129,16 @@ test('item API persists text and files atomically, with case/org scoping and opt
   const unmigrated = harness({ migrated: false }); await assert.rejects(unmigrated.save(), /SCHEMA_REQUIRED/); assert.equal(unmigrated.writes.length, 0)
   await assert.rejects(harness({ stale: true }).save(), /ITEM_STALE/)
   await assert.rejects(harness().save({ expectedUpdatedAt: undefined }), /ITEM_STALE/)
+  const price = { internalCost: null, customerPrice: 10000, vatRate: 25, verified: true }
+  const total = harness(); await total.save({ lumpSum: price })
+  assert.deepEqual(total.writes[0].patch.lump_sum, price)
+  assert.equal(total.writes[0].patch.status, 'ready_for_quote')
+  const changedScope = harness({ existingLump: price }); await changedScope.save()
+  assert.equal(changedScope.writes[0].patch.lump_sum.verified, false)
+  const restoredDetails = harness({ existingLump: price }); await restoredDetails.save({ lumpSum: null })
+  assert.equal(restoredDetails.writes[0].patch.lump_sum, null)
+  await assert.rejects(harness({ status: 'completed' }).save({ lumpSum: price }), /ITEM_UPDATE_FAILED/)
+  await assert.rejects(harness({ migrated: false }).save({ lumpSum: price }), /SCHEMA_REQUIRED/)
+  await assert.rejects(harness({ stale: true }).save({ lumpSum: price }), /ITEM_STALE/)
 })
+import * as lumpSum from '../src/lib/action-cases/lumpSum.ts'

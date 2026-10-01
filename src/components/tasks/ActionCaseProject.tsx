@@ -9,6 +9,8 @@ import { customerOfferBaseAmount, money, type CustomerOfferWorkspace } from '@/l
 import { parseProjectView, projectNeeds, projectStatus, projectUrl, type ProjectView } from '@/lib/action-cases/projectNavigation'
 import ActionCaseWorkspaceTools from './ActionCaseWorkspace'
 import CustomerOfferEditor, { type CustomerEditorView } from './CustomerOfferEditor'
+import ProjectScheduleEditor from './ProjectScheduleEditor'
+import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
@@ -37,6 +39,8 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const [offerDirty, setOfferDirty] = useState(false)
   const [workBusy, setWorkBusy] = useState(false)
   const [workDirty, setWorkDirty] = useState(false)
+  const [scheduleDirty, setScheduleDirty] = useState(false)
+  const [sharedSchedule, setSharedSchedule] = useState<ProjectScheduleRow[]>([])
   const [view, setView] = useState(initialView)
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
@@ -71,7 +75,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <Link className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
-        if ((offerDirty || workDirty) && !window.confirm(workBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
+        if ((offerDirty || workDirty || scheduleDirty) && !window.confirm(workBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
       }}><ArrowLeft size={17} /> Alla projekt</Link>
       <div className="gizmo-project-title"><div><p className="gizmo-eyebrow">Gizmo · Projekt</p><h1 ref={heading} tabIndex={-1}>{project.title}</h1><p className="gizmo-address"><MapPin size={16} />{project.propertyAddress}</p></div>
         <button className="gizmo-button" aria-pressed={view === 'customer'} onClick={() => navigate(view === 'customer' ? 'overview' : 'customer')}><Eye size={18} />{view === 'customer' ? 'Till intern vy' : 'Visa som beställare'}</button>
@@ -96,11 +100,12 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           section={view === 'work' || view === 'files' ? view : 'hidden'} onWorkspaceChange={setWorkspace} onBusyChange={setWorkBusy} onDirtyChange={setWorkDirty} />
         <div hidden={!offerViews[view]}>
           {initialOffer ? <CustomerOfferEditor actionCase={project} initial={initialOffer} issuerName={issuerName} replyEmail={replyEmail}
-            embedded active={Boolean(offerViews[view])} view={offerViews[view] ?? 'edit'} onViewChange={navigateOffer} onWorkspaceChange={setOffer} onDirtyChange={setOfferDirty} />
+            embedded active={Boolean(offerViews[view])} view={offerViews[view] ?? 'edit'} onViewChange={navigateOffer} onWorkspaceChange={setOffer} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} />
             : <section className="gizmo-empty" role="alert"><h2>{sectionLabel}</h2><p>{initialOfferError || 'Offertuppgifterna kunde inte hämtas. Projektarbete och filer är fortfarande tillgängliga.'}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>}
         </div>
         <section hidden={view !== 'schedule'}>
           <div className="gizmo-section-heading"><h2>Tidsplan</h2></div>
+          <ProjectScheduleEditor caseId={caseId} items={project.items} onDirty={setScheduleDirty} onShared={setSharedSchedule} />
           <section className="gizmo-schedule-section"><h3>{accepted ? 'Avtalade tider' : published ? 'Tider i publicerad offert' : 'Planerade tider i offertutkast'}</h3>
             <p className="whitespace-pre-wrap">{(contract?.snapshot.schedule ?? offer?.draft.schedule)?.trim() || 'Inga tider angivna.'}</p>
             {contract ? <p className="gizmo-secondary">Grundavtal version {contract.version}{accepted ? ' · Godkänt' : ' · Inte godkänt'}</p> : open('contract', 'Ange tider i grundavtalet')}

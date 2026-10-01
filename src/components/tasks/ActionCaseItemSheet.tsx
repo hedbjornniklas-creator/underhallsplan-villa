@@ -8,6 +8,7 @@ import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '@/lib/act
 import { normalizeCostLine } from '@/lib/action-cases/costing'
 import ActionCaseWorkQuotes from './ActionCaseWorkQuotes'
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
+import ActionCaseLumpSumEditor from './ActionCaseLumpSumEditor'
 import { scopeAttachmentIds } from '@/lib/action-cases/scopeAttachments'
 import ActionCaseDirectCostFields, { canEditDirectWork } from './ActionCaseDirectCostFields'
 import { ActionCaseWorkParts, ActionCaseWorkSelection, getWorkPartId, UNASSIGNED_WORK } from './ActionCaseWorkParts'
@@ -124,6 +125,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   const [partFilter, setPartFilter] = useState('')
   const [partEditing, setPartEditing] = useState(false)
   const [bulkEditing, setBulkEditing] = useState(false)
+  const [lumpDirty, setLumpDirty] = useState(false)
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([])
   const selectedLines = item.costLines.filter((line) => selectedLineIds.includes(line.id))
   const parts = [...(item.workParts ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title, 'sv'))
@@ -131,9 +133,9 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   const filterParts = (id: string) => { setPartFilter(id); setQuoteLineId(null) }
   const selectLines = (lineIds: string[], checked: boolean) => setSelectedLineIds((ids) => checked ? [...new Set([...ids, ...lineIds])] : ids.filter((id) => !lineIds.includes(id)))
   const working = busy || pending
-  const costDirty = Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || partEditing || bulkEditing
+  const costDirty = Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || partEditing || bulkEditing || lumpDirty
   const dirty = title !== item.title || scope !== (item.scope ?? '') || selectedFiles.length !== savedFiles.length || selectedFiles.some((id) => !savedFiles.includes(id))
-  const totals = calculateActionCaseCostTotals(item.costLines)
+  const totals = item.lumpSum ?? calculateActionCaseCostTotals(item.costLines)
   const coverage = actionCaseCostCoverage(item.costLines)
   const stale = Boolean(item.costSuggestion && item.costSuggestion.sourceUpdatedAt !== item.updatedAt)
   useEffect(() => {
@@ -185,6 +187,8 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
             {selectedFiles.some((id) => !attachments.some((file) => file.id === id)) ? <p role="status" className="mt-3 text-sm text-amber-800">En vald fil finns inte längre. <button type="button" className="underline" onClick={() => setSelectedFiles((ids) => ids.filter((id) => attachments.some((file) => file.id === id)))}>Ta bort otillgängliga val</button></p> : null}
           </section>
         </fieldset> : <>
+          {item.lumpSumAvailable && <ActionCaseLumpSumEditor key={JSON.stringify(item.lumpSum)} value={item.lumpSum ?? null} busy={working || dirty || Boolean(editing) || quoteEditing || bulkEditing || partEditing || Boolean(directDraftLineId) || !['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(item.status)} onDirty={setLumpDirty} onSave={(lumpSum) => run(async () => { const saved = await onSave({ lumpSum }); if (saved) setSelectedLineIds([]); return saved })} />}
+          {!item.lumpSum && <>
           <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Kalkylunderlag</h3><button type="button" className={primary} disabled={working || dirty || !scope.trim() || costDirty} onClick={generate}>{generating ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}{generating ? 'Skapar förslag…' : item.costSuggestion ? 'Nytt AI-förslag' : 'Föreslå kalkyl med AI'}</button></div>
           {dirty ? <p className="mt-3 text-sm text-amber-800">Omfattningen har osparade ändringar.</p> : !scope.trim() ? <p className="mt-3 text-sm text-amber-800">Arbetets omfattning saknas.</p> : null}
           {generating ? <p role="status" aria-live="polite" className="mt-3 flex items-center gap-2 text-sm text-violet-800"><Loader2 size={16} className="shrink-0 animate-spin" />AI bearbetar omfattningen. Befintliga kalkylrader är oförändrade.</p> : null}
@@ -229,6 +233,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
               {isEditing ? <CostLineForm key={editing.line?.id ?? `new-${editing.category}`} initial={editing.line} category={editing.category} busy={working || dirty} onCancel={() => setEditing(null)} onSave={(payload) => run(async () => { const saved = await onCostAction(editing.line ? 'update_cost_line' : 'create_cost_line', payload); if (saved && payload.pricingMethod === 'quotes') setQuoteLineId(String(payload.costLineId)); return saved })} /> : null}
             </section>
           })}</div>
+          </>}
         </>}
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
@@ -236,9 +241,9 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
           if (dirty && !await onSave({ title, scope, scopeAttachmentIds: selectedFiles })) return false
           setTab('cost'); return true
         })}>{working ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />} {dirty ? 'Spara och gå till kalkyl' : 'Gå till kalkyl'}</button> : <>
-          <div className="grid grid-cols-2 gap-3"><div><span className="text-xs text-slate-500">Intern kostnad, exkl. moms</span><strong className="block text-lg">{amount(totals.internalCost)}</strong></div><div><span className="text-xs text-slate-500">Kundpris, exkl. moms</span><strong className="block text-lg">{amount(totals.customerPrice)}</strong></div></div>
-          <p role="status" className={`mt-1 text-xs ${coverage.complete ? 'text-emerald-700' : 'text-amber-800'}`}>{coverage.complete ? 'Alla kalkylrader är kontrollerade' : !item.costLines.length ? 'Kalkyl saknas' : `${coverage.missingQuantity} saknar mängd · ${coverage.missingPrice} saknar pris · ${coverage.unchecked} att kontrollera`}</p>
-          {totals.internalCost === null && coverage.knownTotals.internalCost !== null ? <p className="mt-1 text-xs text-slate-500">Prissatt del: {money.format(coverage.knownTotals.internalCost)} intern kostnad</p> : null}
+          <div className="grid grid-cols-2 gap-3"><div><span className="text-xs text-slate-500">Intern kostnad, exkl. moms</span><strong className="block text-lg">{item.lumpSum && totals.internalCost === null ? 'Ej angiven' : amount(totals.internalCost)}</strong></div><div><span className="text-xs text-slate-500">Kundpris, exkl. moms</span><strong className="block text-lg">{amount(totals.customerPrice)}</strong></div></div>
+          <p role="status" className="mt-1 text-xs text-slate-600">{item.lumpSum ? item.lumpSum.verified ? 'Samlat pris kontrollerat' : 'Samlat pris behöver kontrolleras' : coverage.complete ? 'Alla kalkylrader är kontrollerade' : !item.costLines.length ? 'Kalkyl saknas' : `${coverage.missingQuantity} saknar mängd · ${coverage.missingPrice} saknar pris · ${coverage.unchecked} att kontrollera`}</p>
+          {!item.lumpSum && totals.internalCost === null && coverage.knownTotals.internalCost !== null ? <p className="mt-1 text-xs text-slate-500">Prissatt del: {money.format(coverage.knownTotals.internalCost)} intern kostnad</p> : null}
           {selectedLines.length > 30 && onRequest ? <p role="status" className="mt-2 text-xs text-amber-800">{selectedLines.length} valda. Välj högst 30 kalkylrader per offertförfrågan.</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {selectedLines.length > 0 && onRequest ? <>

@@ -3,7 +3,7 @@ import type { ActionCaseItemView, ActionCaseView, ActionCaseWorkspace } from '..
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
 function item(n: number, title: string, scope: string): ActionCaseItemView {
-  return { id: id(n), title, scope, status: scope ? 'pricing_needed' : 'scope_needed', sortOrder: n,
+  return { id: id(n), title, scope, lumpSumAvailable: true, lumpSum: null, status: scope ? 'pricing_needed' : 'scope_needed', sortOrder: n,
     ownLaborReady: false, materialPriceReady: false, subcontractorPriceReady: false, wasteSolutionReady: false,
     requiresSubcontractor: false, estimatedCost: null, customerPrice: null, costLines: [], costSuggestion: null,
     updatedAt: '2026-10-01T09:00:00Z' }

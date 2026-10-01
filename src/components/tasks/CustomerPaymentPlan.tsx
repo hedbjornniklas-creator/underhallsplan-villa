@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Plus, Trash2, Undo2 } from 'lucide-react'
 import { money } from '@/lib/action-cases/customerOffers'
 import { paymentPlanIssues, paymentPlanTotal, type CustomerPayment, type CustomerPaymentPlan } from '@/lib/action-cases/customerPaymentPlan'
 import PriceInput from './CustomerOfferPriceInput'
+import ProjectEditorRow from './ProjectEditorRow'
 
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
 const iconButton = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300 disabled:opacity-40'
@@ -42,6 +43,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, onChange, on
 }) {
   const [removed, setRemoved] = useState<{ row: CustomerPayment; index: number } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
   const total = plan ? paymentPlanTotal(plan) : 0
   const remaining = baseAmount === null ? null : baseAmount - total
   const issues = paymentPlanIssues(plan, baseAmount)
@@ -56,21 +58,28 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, onChange, on
     onChange({ ...plan, installments: rows })
   }
   function add() {
+    const id = crypto.randomUUID()
+    setExpanded(id)
     onChange({ version: 1, installments: [...(plan?.installments ?? []), {
-      id: crypto.randomUUID(), title: '', condition: '', amountOre: null, plannedDate: ''
+      id, title: '', condition: '', amountOre: null, plannedDate: ''
     }] })
   }
   return <>
-    <label className="block max-w-3xl text-sm font-medium">Betalningsvillkor *
+    <details className="border-b border-slate-200 py-3"><summary className="cursor-pointer text-sm font-semibold">Betalningsvillkor · {paymentTerms.trim() ? 'Ifyllda' : 'Saknas'}</summary>
+    <label className="mt-3 block max-w-3xl text-sm font-medium">Betalningsvillkor *
       <textarea className={field} rows={3} maxLength={6000} value={paymentTerms} onChange={(e) => onTermsChange(e.target.value)} />
     </label>
+    </details>
     <dl className="mt-6 grid gap-4 border-y border-slate-200 py-5 sm:grid-cols-3" aria-live="polite">
       {[['Grundavtal inkl. moms', baseAmount], ['Fördelat', total], [remaining !== null && remaining < 0 ? 'Överfördelat' : 'Kvar att fördela', remaining === null ? null : Math.abs(remaining)]].map(([label, value]) =>
         <div key={String(label)}><dt className="text-sm text-slate-600">{label}</dt><dd className="mt-1 text-lg font-semibold">{value === null ? 'Pris saknas' : money(Number(value))}</dd></div>)}
     </dl>
     {!plan ? <div className="py-6"><button className={button} onClick={add}><Plus size={17} /> Lägg upp betalningsplan</button></div> : <>
       <ol className="divide-y divide-slate-200">
-        {plan.installments.map((row, index) => <li className="py-6" key={row.id}>
+        {plan.installments.map((row, index) => <li key={row.id}>
+          <ProjectEditorRow title={`${index + 1}. ${row.title || 'Ny delbetalning'}`} amount={row.amountOre === null ? 'Belopp saknas' : money(row.amountOre)}
+            summary={`${row.plannedDate || 'Datum ej planerat'}${!row.condition.trim() ? ' · Faktureringsvillkor saknas' : ''}`}
+            open={expanded === row.id} onToggle={() => setExpanded(expanded === row.id ? null : row.id)}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-base font-semibold">Delbetalning {index + 1}</h3>
             <div className="flex gap-2">
@@ -88,6 +97,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, onChange, on
               <button className={button} disabled={remaining === null || remaining + (row.amountOre ?? 0) <= 0 || remaining + (row.amountOre ?? 0) > 100_000_000_000} onClick={() => update(row.id, { amountOre: (remaining ?? 0) + (row.amountOre ?? 0) })}>Använd återstående belopp</button>
             </div>
           </div>
+          </ProjectEditorRow>
         </li>)}
       </ol>
       {removed && <div className="flex flex-wrap items-center gap-3 py-3 text-sm" role="status">Delbetalningen togs bort.

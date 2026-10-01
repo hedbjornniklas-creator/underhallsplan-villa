@@ -40,7 +40,7 @@ export default function CustomerContractFields({
   return (
     <section className="space-y-4 border-t border-slate-200 pt-6">
       <h2 className="text-lg">Avtalsuppgifter</h2>
-      <details open className="border-b border-slate-200 pb-4">
+      <details className="border-b border-slate-200 pb-4">
         <summary className="cursor-pointer py-2 font-semibold">
           Avrådan{' '}
           <span className="ml-2 text-sm font-normal text-slate-500">
@@ -135,7 +135,7 @@ export default function CustomerContractFields({
             <summary className="cursor-pointer py-2 font-semibold">
               {group}{' '}
               <span className="ml-2 text-sm font-normal text-slate-500">
-                {done}/{fields.length} kontrollerade
+                {done}/{fields.length} ifyllda
               </span>
             </summary>
             <div className="space-y-5 pt-3">

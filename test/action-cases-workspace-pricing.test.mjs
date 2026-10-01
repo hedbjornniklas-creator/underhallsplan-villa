@@ -5,6 +5,7 @@ import ts from 'typescript'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
 import * as domain from '../src/lib/action-cases/domain.ts'
 import * as rfq from '../src/lib/action-cases/rfqDelivery.ts'
+import * as lumpSum from '../src/lib/action-cases/lumpSum.ts'
 
 function compile(name, dependencies) {
   const code = ts.transpileModule(readFileSync(new URL(`../src/lib/action-cases/${name}.ts`, import.meta.url), 'utf8'), {
@@ -51,7 +52,7 @@ async function workspace({ legacy = false, packageState = 'active', stalePart = 
     return chain
   } }
   const server = compile('server', { '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin }, './quotes': quotes,
-    './quoteRequests': requests, './quotePackages': packages, './domain': domain, './rfqDelivery': rfq })
+    './quoteRequests': requests, './quotePackages': packages, './domain': domain, './rfqDelivery': rfq, './lumpSum': lumpSum })
   const data = await server.getActionCaseWorkspace({ orgId: id(9), userId: id(10) })
   return { data, reads }
 }

@@ -23,6 +23,8 @@ export type ActionItemStatus =
   | 'cancelled'
 
 export type ActionCaseItemView = {
+  lumpSumAvailable?: boolean
+  lumpSum?: import('./lumpSum').ActionLumpSum | null
   workParts?: ActionCaseWorkPart[]
   scopeAttachmentIds?: string[] | null
   id: string
@@ -213,6 +215,7 @@ export type ActionCasePortal = {
   accessState: 'open' | 'expired' | 'revoked'
   participant: ActionCaseParticipantView
   actionCase: Pick<ActionCaseView, 'id' | 'title' | 'propertyAddress' | 'description' | 'status'> & {
+    schedule?: import('./projectSchedule').ProjectScheduleRow[]
     items: Array<Pick<ActionCaseItemView, 'id' | 'title' | 'scope' | 'status' | 'sortOrder'>>
     attachments: ActionCaseAttachmentView[]
   }

@@ -1,10 +1,10 @@
 'use client'
 
-import Image from 'next/image'
 import { useState } from 'react'
 import { Grid2X2, Grid3X3, Square, Trash2 } from 'lucide-react'
 import type { ActionCaseView } from '@/lib/action-cases/contracts'
-import ActionCaseImageViewer, { actionCaseImageUrl } from './ActionCaseImageViewer'
+import ActionCaseImageViewer, { ActionCaseAttachmentImage } from './ActionCaseImageViewer'
+import { isImageAttachment } from '@/lib/action-cases/attachmentImages'
 
 export default function ActionCaseImageBank({ actionCase, busy, onAccess, onDelete }: {
   actionCase: ActionCaseView
@@ -12,10 +12,9 @@ export default function ActionCaseImageBank({ actionCase, busy, onAccess, onDele
   onAccess: (id: string, participants: string[]) => void
   onDelete: (id: string) => void
 }) {
-  const images = actionCase.attachments.filter((file) => file.type === 'image')
+  const images = actionCase.attachments.filter(isImageAttachment)
   const [columns, setColumns] = useState(2)
   const [openedId, setOpenedId] = useState<string | null>(null)
-  const url = (id: string) => actionCaseImageUrl(actionCase.id, id)
   if (!images.length) return null
   return <section className="mt-5">
     <div className="mb-3 flex items-center justify-between gap-3">
@@ -28,7 +27,7 @@ export default function ActionCaseImageBank({ actionCase, busy, onAccess, onDele
       <div className={`grid gap-3 ${columns === 3 ? 'grid-cols-2 sm:grid-cols-3' : columns === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
         {images.map((image) => <article key={image.id} className="min-w-0 rounded-md border border-slate-200 bg-white">
           <button type="button" aria-label={`Granska ${image.fileName}`} onClick={() => setOpenedId(image.id)} className="relative block aspect-[4/3] w-full overflow-hidden rounded-t-md bg-slate-100">
-            <Image src={url(image.id)} alt={image.title || image.fileName} fill unoptimized className="object-cover" />
+            <ActionCaseAttachmentImage caseId={actionCase.id} file={image} />
           </button>
           <div className="p-2">
             <p className="truncate text-xs font-medium" title={image.fileName}>{image.title || image.fileName}</p>

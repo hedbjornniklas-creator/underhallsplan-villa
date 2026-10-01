@@ -321,3 +321,21 @@
   .gizmo-project-layout { display: block; }
   .gizmo-project-content { padding: 0; }
 }
+/* Compact project editors share a stable summary row on desktop and mobile. */
+.gizmo-editor-row { border-bottom: 1px solid #D5DCDD; min-width: 0; }
+.gizmo-editor-row-toggle { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 72px; padding: 12px 8px; text-align: left; }
+.gizmo-editor-row-toggle:hover { background: #F5F7F6; }
+.gizmo-editor-row-toggle:focus-visible { outline: 2px solid #206961; outline-offset: -2px; }
+.gizmo-editor-row-label { flex: 1; min-width: 0; font-size: 14px; line-height: 21px; }
+.gizmo-editor-row-label strong { display: block; overflow-wrap: anywhere; }
+.gizmo-editor-row-summary { display: block; overflow-wrap: anywhere; color: #596368; font-weight: 400; font-size: 13px; }
+.gizmo-editor-row-amount { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.gizmo-editor-row-toggle > svg { flex-shrink: 0; }
+.gizmo-editor-row-body { padding: 8px 8px 24px; }
+.gizmo-editor-row-body[hidden] { display: none; }
+@media (max-width: 540px) {
+  .gizmo-editor-row-toggle { flex-wrap: wrap; gap: 6px 10px; }
+  .gizmo-editor-row-label { flex-basis: calc(100% - 30px); }
+  .gizmo-editor-row-toggle > svg { order: 1; }
+  .gizmo-editor-row-amount { order: 2; width: 100%; }
+}

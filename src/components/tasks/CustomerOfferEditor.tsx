@@ -42,6 +42,10 @@ import CustomerContractFields from './CustomerContractFields'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
 import { emptyContractDetails } from '@/lib/action-cases/customerContract'
 import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
+import ProjectEditorRow from './ProjectEditorRow'
+import { retainNewerDraft } from '@/lib/action-cases/draftSave'
+import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
+import { importableCustomerPrice } from '@/lib/action-cases/offerImport'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -58,7 +62,8 @@ export default function CustomerOfferEditor({
   view: controlledView,
   onViewChange,
   onWorkspaceChange,
-  onDirtyChange
+  onDirtyChange,
+  sharedSchedule
 }: {
   actionCase: ActionCaseView
   initial: CustomerOfferWorkspace
@@ -70,6 +75,7 @@ export default function CustomerOfferEditor({
   onViewChange?: (view: CustomerEditorView) => void
   onWorkspaceChange?: (workspace: CustomerOfferWorkspace) => void
   onDirtyChange?: (dirty: boolean) => void
+  sharedSchedule?: ProjectScheduleRow[]
 }) {
   const [workspace, setWorkspace] = useState(initial),
     [draft, setDraft] = useState(() => initial.revision === 0
@@ -81,7 +87,13 @@ export default function CustomerOfferEditor({
   const setView = (next: CustomerEditorView) => { setInternalView(next); onViewChange?.(next) }
   const [itemView, setItemView] = useState<'included' | 'excluded'>('included')
   const [removeId, setRemoveId] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
+  const [importIds, setImportIds] = useState<string[]>([])
+  const [importPrices, setImportPrices] = useState(false)
   const [planningDirty, setPlanningDirty] = useState(false)
+  const planningDirtyRef = useRef(planningDirty)
+  planningDirtyRef.current = planningDirty
   const [planning, setPlanning] = useState(initial.planning)
   const [planningReset, setPlanningReset] = useState(0)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -162,9 +174,9 @@ export default function CustomerOfferEditor({
       if (!response.ok)
         throw new Error(data.error || 'Offerten kunde inte hanteras.')
       setWorkspace(data)
-      setDraft(data.draft)
-      setCosting(data.costing ?? {})
-      if (!planningDirty) {
+      setDraft((current) => operation === 'save' ? retainNewerDraft(current, draft, data.draft) : data.draft)
+      setCosting((current) => operation === 'save' ? retainNewerDraft(current, costing, data.costing ?? {}) : data.costing ?? {})
+      if (operation === 'separate_choices' || (operation === 'refresh' && !planningDirtyRef.current)) {
         setPlanning(data.planning)
         setPlanningReset((value) => value + 1)
       }
@@ -252,6 +264,7 @@ export default function CustomerOfferEditor({
     },
     customerOffers: { enabled: true, offers: workspace.offers, plannedItems: planning?.sharedItems },
     actionCase: {
+      schedule: sharedSchedule,
       id: actionCase.id,
       title: workspace.offers[0]?.snapshot.projectTitle ?? actionCase.title,
       propertyAddress:
@@ -337,15 +350,18 @@ export default function CustomerOfferEditor({
       {view === 'planning' ? null : view === 'payments' ? <section className="py-6">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="text-xl">Betalningsplan</h2><p className="mt-2 text-sm text-slate-600">{locked ? 'Avtalad betalningsplan · Låst med grundavtalet' : 'Internt utkast · Delas med grundavtalet, inte när du sparar'}</p></div>
-          {!locked && <button className={`${button} bg-slate-950 text-white`} disabled={Boolean(busy) || (!dirty && workspace.revision > 0) || confirmItemized} onClick={() => void action('save')}>
-            {busy === 'save' ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} Spara utkast
-          </button>}
+          {!locked && <div className="flex flex-wrap items-center gap-3">
+            <span role="status" className="text-sm text-slate-600">{busy ? 'Sparar…' : dirty ? 'Osparade ändringar' : workspace.revision > 0 ? 'Sparat internt' : 'Inte sparat ännu'}</span>
+            <button className={`${button} bg-slate-950 text-white`} disabled={Boolean(busy) || (!dirty && workspace.revision > 0) || confirmItemized} onClick={() => void action('save')}>
+              {busy === 'save' ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} {busy === 'save' ? 'Sparar…' : 'Spara utkast'}
+            </button>
+          </div>}
         </div>
         {locked ? <>
           <PaymentPlanDocument plan={previewOffer.snapshot.paymentPlan} paymentTerms={previewOffer.snapshot.paymentTerms} />
           <p className="mt-4 text-sm text-slate-600">Version {previewOffer.version}. Ändringar av den avtalade planen kräver en separat överenskommelse och kan inte göras här.</p>
         </> : <>
-          <fieldset disabled={Boolean(busy)} className="min-w-0">
+          <fieldset disabled={Boolean(busy) && busy !== 'save'} className="min-w-0">
             <PaymentPlanEditor plan={draft.paymentPlan} baseAmount={baseAmount} paymentTerms={draft.paymentTerms}
               onChange={(paymentPlan) => update({ paymentPlan })} onTermsChange={(paymentTerms) => update({ paymentTerms })} />
           </fieldset>
@@ -386,9 +402,11 @@ export default function CustomerOfferEditor({
       ) : (
         <div className="grid gap-8 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <fieldset
-            disabled={Boolean(busy) || locked}
-            className="min-w-0 space-y-7"
+            disabled={(Boolean(busy) && busy !== 'save') || locked}
+            className="min-w-0 space-y-5"
           >
+            <ProjectEditorRow title="Offertuppgifter" summary={`${customer?.name ?? actionCase.customerName} · ${draft.validUntil ? `Giltig till ${draft.validUntil}` : 'Giltighetsdatum saknas'}`}
+              open={expanded === 'offer-info'} onToggle={() => setExpanded(expanded === 'offer-info' ? null : 'offer-info')}>
             <section className="space-y-4">
               <h2 className="text-lg">
                 Offert till {customer?.name ?? actionCase.customerName}
@@ -472,41 +490,40 @@ export default function CustomerOfferEditor({
                 />
               )}
             </section>
-            <section className="border-t border-slate-200 pt-6">
+            </ProjectEditorRow>
+            <section>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-lg">Avtalets omfattning</h2>
                 <button
                   className={button}
-                  onClick={() => {
-                    setItemView('included')
-                    update({
-                      items: [
-                        ...draft.items,
-                        ...actionCase.items
-                          .filter(
-                            (i) => !draft.items.some((d) => d.id === i.id)
-                          )
-                          .map((i) => ({
-                            id: i.id,
-                            title: i.title,
-                            scope: i.scope ?? '',
-                            kind: 'included' as const,
-                            amountOre: null
-                          }))
-                      ]
-                    })
-                  }}
+                  aria-expanded={showImport}
+                  onClick={() => setShowImport(!showImport)}
                 >
                   <Plus size={17} /> Hämta från arbeten
                 </button>
               </div>
+              {showImport && <div className="border-y border-slate-200 py-4">
+                {actionCase.items.map((i) => {
+                  const exists = draft.items.some((d) => d.id === i.id), price = importableCustomerPrice(i)
+                  return <label key={i.id} className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={exists} checked={importIds.includes(i.id) && !exists} onChange={(e) => setImportIds(e.target.checked ? [...importIds, i.id] : importIds.filter((id) => id !== i.id))} /><span className="flex-1">{i.title}</span><span>{exists ? 'Redan i utkastet' : price === null ? 'Inget kontrollerat kundpris' : money(price)}</span></label>
+                })}
+                {draft.pricingMode === 'itemized' && <label className="my-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={importPrices} onChange={(e) => setImportPrices(e.target.checked)} />Hämta kontrollerade kundpriser inklusive moms</label>}
+                <button className={button} disabled={!importIds.some((id) => !draft.items.some((d) => d.id === id))} onClick={() => {
+                  const incoming = actionCase.items.filter((i) => importIds.includes(i.id) && !draft.items.some((d) => d.id === i.id))
+                  update({ items: [...draft.items, ...incoming.map((i) => ({ id: i.id, title: i.title, scope: i.scope ?? '', kind: 'included' as const, amountOre: importPrices && draft.pricingMode === 'itemized' ? importableCustomerPrice(i) : null }))] })
+                  setItemView('included'); setShowImport(false); setImportIds([])
+                }}><Plus size={17} /> Lägg till valda arbetsdelar</button>
+              </div>}
               <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
                 {([['included', 'Grundåtagande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
               </div>
               {draft.items.filter((item) => item.kind === itemView).map((item, visibleIndex, visibleItems) => (
-                <div
+                <ProjectEditorRow
                   key={item.id}
-                  className="mt-5 border-t border-slate-200 pt-5"
+                  title={`${visibleIndex + 1}. ${item.title || 'Ny arbetsdel'}`}
+                  summary={item.scope.trim() ? 'Omfattning ifylld' : 'Omfattning saknas'}
+                  amount={item.kind === 'excluded' ? 'Ingår inte' : draft.pricingMode === 'itemized' ? item.amountOre === null ? 'Pris saknas' : money(item.amountOre) : 'Ingår i grundpriset'}
+                  open={expanded === item.id} onToggle={() => setExpanded(expanded === item.id ? null : item.id)}
                 >
                   <div className="flex items-start gap-2">
                     <span className="pt-3 text-sm text-slate-500">
@@ -631,16 +648,18 @@ export default function CustomerOfferEditor({
                       }
                     />
                   </label>
-                </div>
+                </ProjectEditorRow>
               ))}
               <button
                 className={`${button} mt-5`}
-                onClick={() =>
+                onClick={() => {
+                  const id = crypto.randomUUID()
+                  setExpanded(id)
                   update({
                     items: [
                       ...draft.items,
                       {
-                        id: crypto.randomUUID(),
+                        id,
                         title: '',
                         scope: '',
                         kind: itemView,
@@ -648,14 +667,15 @@ export default function CustomerOfferEditor({
                       }
                     ]
                   })
-                }
+                }}
               >
                 <Plus size={17} /> {itemView === 'included' ? 'Lägg till arbete' : 'Lägg till avgränsning'}
               </button>
             </section>
             <CustomerContractFields value={draft.contractDetails} onChange={(contractDetails) => update({ contractDetails })} />
-            <section className="space-y-4 border-t border-slate-200 pt-6">
-              <h2 className="text-lg">Tider och villkor</h2>
+            <ProjectEditorRow title="Tider och villkor" summary={`${draft.contractForm === 'abs18' ? 'ABS 18' : 'Särskilda villkor'} · ${draft.schedule.trim() && draft.terms.trim() ? 'Ifyllda' : 'Behöver kompletteras'}`}
+              open={expanded === 'terms'} onToggle={() => setExpanded(expanded === 'terms' ? null : 'terms')}>
+            <section className="space-y-4">
               <label className="block text-sm">
                 Avtalsgrund
                 <select
@@ -698,8 +718,10 @@ export default function CustomerOfferEditor({
                 />
               </label>
             </section>
-            <section className="border-t border-slate-200 pt-6">
-              <h2 className="text-lg">Offertbilagor</h2>
+            </ProjectEditorRow>
+            <ProjectEditorRow title="Offertbilagor" summary={`${draft.attachmentIds.length} valda · ${draft.termsAttachmentId ? 'Avtalshandling vald' : 'Avtalshandling saknas'}`}
+              open={expanded === 'files'} onToggle={() => setExpanded(expanded === 'files' ? null : 'files')}>
+            <section>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {files.map((f) => (
                   <label
@@ -778,6 +800,7 @@ export default function CustomerOfferEditor({
                 </select>
               </label>
             </section>
+            </ProjectEditorRow>
           </fieldset>
           <aside className="min-w-0">
             <div className="lg:sticky lg:top-6">

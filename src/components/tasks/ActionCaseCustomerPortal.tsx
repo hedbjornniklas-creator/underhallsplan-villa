@@ -1,4 +1,6 @@
 'use client'
+import { ProjectScheduleDocument } from './ProjectScheduleEditor'
+import { isImageAttachment } from '@/lib/action-cases/attachmentImages'
 
 import Image from 'next/image'
 import { useRef, useState } from 'react'
@@ -344,11 +346,12 @@ export default function ActionCaseCustomerPortal({
       </section>}
       {view === 'schedule' && <section className="py-6">
         <h2 className="text-xl">Tidsplan</h2>
+        {portal.actionCase.schedule?.length ? <ProjectScheduleDocument rows={portal.actionCase.schedule} /> : null}
         {contract?.snapshot.schedule ? <>
           <p className="mt-3 text-sm font-medium">{accepted ? 'Avtalade tider' : 'Föreslagna tider · Avtalet är inte godkänt'}</p>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{contract.snapshot.schedule}</p>
           <p className="mt-4 text-sm text-slate-500">Avtalsversion {contract.version}</p>
-        </> : <p className="mt-3 text-sm text-slate-600">Ingen tidsplan har delats ännu.</p>}
+        </> : <p className="mt-3 text-sm text-slate-600">Inga avtalstider har delats ännu.</p>}
         {plannedItems.some((i) => i.decisionBy) && <div className="mt-6 border-t border-slate-200 pt-5">
           <h3 className="font-semibold">Önskade beslutsdatum</h3>
           {plannedItems.filter((i) => i.decisionBy).sort((a,b) => a.decisionBy.localeCompare(b.decisionBy)).map((i) =>
@@ -361,17 +364,17 @@ export default function ActionCaseCustomerPortal({
         <section>
           <h2 className="pt-6 text-xl">Bilder och filer</h2>
           {latest?.files.length ? (
-            <div className="mt-5 divide-y divide-slate-200">
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {latest.files.map((f) => (
                 <a
-                  className="flex items-center gap-3 py-4 text-sm text-violet-700"
+                  className="overflow-hidden rounded-md border border-slate-200 text-sm text-violet-700"
                   key={f.id}
                   href={fileUrl(latest, f.id)}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <FileText size={20} className="shrink-0" />
-                  <span className="break-words">
+                  {isImageAttachment(f) ? <div className="relative aspect-[4/3] bg-slate-100"><Image fill unoptimized src={fileUrl(latest, f.id)} alt={f.fileName} className="object-contain" /></div> : <div className="flex h-24 items-center justify-center bg-slate-50"><FileText size={28} /></div>}
+                  <span className="block break-words p-3">
                     {f.fileName} · Offertversion {latest.version}
                   </span>
                 </a>
@@ -387,7 +390,7 @@ export default function ActionCaseCustomerPortal({
                 rel="noreferrer"
                 className="overflow-hidden rounded-lg border border-slate-200 bg-white"
               >
-                {f.type === 'image' ? (
+                {isImageAttachment(f) ? (
                   <div className="relative aspect-[4/3] bg-slate-100">
                     <Image
                       fill

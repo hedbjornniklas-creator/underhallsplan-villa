@@ -34,7 +34,11 @@ export function actionCaseCostCoverage(input: ReadonlyArray<Pick<ActionCaseCostL
 export function actionCaseItemCompletion(item: Pick<
   ActionCaseItemView,
   'scope' | 'ownLaborReady' | 'materialPriceReady' | 'wasteSolutionReady' | 'requiresSubcontractor' | 'subcontractorPriceReady'
-> & { costLines?: ActionCaseCostLineView[] }) {
+> & { costLines?: ActionCaseCostLineView[]; lumpSum?: ActionCaseItemView['lumpSum'] }) {
+  if (item.lumpSum) {
+    const checks = [Boolean(item.scope?.trim()), item.lumpSum.customerPrice !== null, item.lumpSum.verified]
+    return Math.round(checks.filter(Boolean).length / checks.length * 100)
+  }
   const checks = [Boolean(item.scope?.trim()), item.ownLaborReady, item.materialPriceReady, item.wasteSolutionReady]
   if (item.requiresSubcontractor) checks.push(item.subcontractorPriceReady)
   if (item.costLines?.length) checks.push(actionCaseCostCoverage(item.costLines).complete)

@@ -22,6 +22,8 @@ import {
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
 import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
+import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
+import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -98,6 +100,7 @@ if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')
 }
 const writes = []
 const projects = projectFixture(actionCase)
+let schedule = { available: true, revision: 0, rows: [], sharedRows: [] }, slowSave = false
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
   const json = (body, status = 200) => {
@@ -108,11 +111,14 @@ const server = createServer(async (req, res) => {
   if (path === '/project-fixture') { json(projects); return }
   if (path === '/__test__/writes') { json(writes); return }
   if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
+  if (path === '/__test__/slow-save' && req.method === 'POST') { slowSave = true; json({ ok: true }); return }
+  if (path.endsWith('/schedule') && req.method === 'GET') { json(schedule); return }
   if (path === '/api/action-cases' && req.method === 'GET') { json({ workspace: projects }); return }
   if (req.method === 'POST') {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
+    if (slowSave && body.operation === 'save') { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 3000)) }
     writes.push(body.operation ?? body.action)
     if (path === '/api/action-cases') {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
@@ -124,6 +130,12 @@ const server = createServer(async (req, res) => {
         if (payload.title !== undefined) item.title = payload.title
         if (payload.scope !== undefined) item.scope = payload.scope
         if (payload.scopeAttachmentIds !== undefined) item.scopeAttachmentIds = payload.scopeAttachmentIds
+        if (payload.lumpSum !== undefined) {
+          item.lumpSum = normalizeLumpSum(payload.lumpSum)
+          item.estimatedCost = item.lumpSum?.internalCost ?? null
+          item.customerPrice = item.lumpSum?.customerPrice ?? null
+          item.status = !item.scope?.trim() ? 'scope_needed' : item.lumpSum?.verified ? 'ready_for_quote' : 'pricing_needed'
+        }
         item.updatedAt = new Date().toISOString()
       } else if (body.action === 'add_item') {
         const c = projects.cases.find((c) => c.id === payload.caseId)
@@ -135,6 +147,18 @@ const server = createServer(async (req, res) => {
           items: payload.items.filter((title) => title.trim()).map((title, n) => ({ ...structuredClone(projects.cases[0].items[0]), id: id(700 + writes.length * 10 + n), title, scope: '', costLines: [] })) })
       } else { json({ error: 'Denna åtgärd är inte aktiverad i den fiktiva demonstrationen.' }, 400); return }
       json({ workspace: projects, itemId, caseId }); return
+    }
+    if (path.endsWith('/schedule')) {
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
+      if (body.revision !== schedule.revision) { json({ error: 'Tidsplanen har ändrats i en annan session.' }, 409); return }
+      try {
+        if (body.operation === 'save') schedule.rows = normalizeScheduleRows(body.rows)
+        else if (body.operation === 'share' && body.confirmed) schedule.sharedRows = normalizeScheduleRows(schedule.rows, true)
+        else if (body.operation === 'unshare') schedule.sharedRows = []
+        else throw new Error('Ogiltig åtgärd')
+        schedule.revision++; json(schedule)
+      } catch (e) { json({ error: e.message }, 400) }
+      return
     }
     if (path.includes('/public/')) {
       if (body.operation === 'challenge') {
@@ -313,6 +337,7 @@ else {
     )
     // Private worksheet is saved separately; using a calculated price is explicit.
     await click('Val och tillval')
+    await page.locator('section[aria-label="Val och tillval"] .gizmo-editor-row-toggle').click()
     await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
     await fill('Inköpspris exkl. moms (kr) *', '10000')
     await fill('Påslag på inköpspriset (%, valfritt)', '10')
@@ -341,6 +366,7 @@ else {
     assert.equal(state.planning.costing[id(11)].purchaseOre, 1000000)
     await page.reload({ waitUntil: 'networkidle0' })
     await click('Val och tillval')
+    await page.locator('section[aria-label="Val och tillval"] .gizmo-editor-row-toggle').click()
     await page.locator('::-p-xpath(//summary[contains(.,"Intern priskalkyl")])').click()
     assert.equal(await page.$eval('[aria-label="Inköpspris exkl. moms (kr) *"]', (el) => el.value), '10000')
     assert.equal(await page.$eval('[aria-label="Prisunderlag inkl. moms (kr, valfritt)"]', (el) => el.value), '17500')
@@ -350,6 +376,7 @@ else {
     await click('Spara planering')
     await page.waitForFunction(() => document.querySelector('main [role="status"]')?.textContent === 'Sparat')
     await click('Grundavtal')
+    await page.locator('::-p-xpath(//button[contains(.,"Offertuppgifter")])').click()
     // Decimal input, save failure preserves draft, then retry.
     const price = await page.$('[aria-label="Grundpris inkl. moms (kr) *"]')
     await price.click({ clickCount: 3 })
