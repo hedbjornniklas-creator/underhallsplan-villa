@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   ArrowRight,
   Check,
@@ -11,10 +12,7 @@ import {
   Image as ImageIcon,
   Link2,
   Loader2,
-  Mail,
-  MapPin,
   Plus,
-  Search,
   Trash2,
   Upload,
   UserRound,
@@ -29,17 +27,18 @@ import ActionCaseItemSheet from './ActionCaseItemSheet'
 import ActionCaseRequestSheet, { ActionCaseRequestsPanel } from './ActionCaseQuoteRequests'
 import { actionCaseItemCompletion, actionCaseCostCoverage } from '@/lib/action-cases/domain'
 import type { TaskPerson } from '@/lib/tasks/contracts'
+import ActionCaseProjectList from './ActionCaseProjectList'
+import { projectUrl } from '@/lib/action-cases/projectNavigation'
 
 type Props = {
   initialWorkspace: Workspace | null
   initialError: string | null
   people?: TaskPerson[]
-}
-
-const CASE_STATUS: Record<ActionCaseView['status'], string> = {
-  preparing: 'Samla underlag', pricing: 'Kalkyl pågår', quote_ready: 'Offert klar',
-  awaiting_customer: 'Väntar på kund', approved: 'Godkänt', in_progress: 'Pågår',
-  completed: 'Slutfört', cancelled: 'Avbrutet',
+  caseId?: string
+  section?: 'work' | 'files' | 'hidden'
+  onWorkspaceChange?: (workspace: Workspace) => void
+  onBusyChange?: (busy: boolean) => void
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 const ITEM_STATUS: Record<ActionCaseItemView['status'], string> = {
@@ -71,19 +70,39 @@ function completion(item: ActionCaseItemView) {
 function CreateCaseSheet({ busy, onClose, onCreate }: { busy: boolean; onClose: () => void; onCreate: (payload: Record<string, unknown>) => Promise<void> }) {
   const [form, setForm] = useState({ title: '', customerName: '', customerEmail: '', customerPhone: '', propertyAddress: '', sourceReference: '', description: '', siteVisitAt: '' })
   const [items, setItems] = useState([''])
+  const dialog = useRef<HTMLDivElement>(null)
+  const dirty = Object.values(form).some((value) => value.trim()) || items.some((item) => item.trim())
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }))
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    dialog.current?.focus()
+    return () => { document.body.style.overflow = overflow; previous?.focus() }
+  }, [])
+  const close = () => {
+    if (busy || (dirty && !window.confirm('Stäng utan att spara projektet?'))) return
+    onClose()
+  }
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-[2px] sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="new-action-case-title">
+    <div ref={dialog} tabIndex={-1} className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-[2px] outline-none sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="new-action-case-title" onKeyDown={(event) => {
+      if (event.key === 'Escape') { event.preventDefault(); close() }
+      if (event.key !== 'Tab') return
+      const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') ?? []).filter((node) => node.getClientRects().length)
+      const first = controls[0], last = controls.at(-1)
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }}>
       <div className="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
         <header className="flex items-start justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
-          <div><p className="text-xs font-semibold uppercase text-violet-700">Nytt åtgärdsärende</p><h2 id="new-action-case-title" className="mt-1 text-xl font-semibold text-slate-950">Samla arbetena i ett ärende</h2></div>
-          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Stäng"><X size={20} /></button>
+          <h2 id="new-action-case-title" className="text-xl font-semibold text-slate-950">Nytt projekt</h2>
+          <button type="button" disabled={busy} onClick={close} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-40" aria-label="Stäng"><X size={20} /></button>
         </header>
         <div className="overflow-y-auto px-5 py-5 sm:px-6">
           <section>
-            <h3 className="text-sm font-semibold text-slate-950">Ärende och objekt</h3>
+            <h3 className="text-sm font-semibold text-slate-950">Projekt och objekt</h3>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm font-medium text-slate-700 sm:col-span-2">Ärenderubrik *<input value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Exempel: Åtgärder efter besiktning" className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 px-3 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-100" /></label>
+              <label className="text-sm font-medium text-slate-700 sm:col-span-2">Projektnamn *<input value={form.title} onChange={(e) => update('title', e.target.value)} placeholder="Exempel: Tillbyggnad" className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 px-3 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-100" /></label>
               <label className="text-sm font-medium text-slate-700 sm:col-span-2">Objektadress *<input value={form.propertyAddress} onChange={(e) => update('propertyAddress', e.target.value)} className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 px-3 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-100" /></label>
               <label className="text-sm font-medium text-slate-700">Datum för platsbesök<input type="datetime-local" value={form.siteVisitAt} onChange={(e) => update('siteVisitAt', e.target.value)} className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 px-3" /></label>
               <label className="text-sm font-medium text-slate-700">Referens till utlåtande<input value={form.sourceReference} onChange={(e) => update('sourceReference', e.target.value)} placeholder="Rapportnummer eller länk" className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-300 px-3" /></label>
@@ -98,11 +117,11 @@ function CreateCaseSheet({ busy, onClose, onCreate }: { busy: boolean; onClose: 
             </div>
           </section>
           <section className="mt-6 border-t border-slate-200 pt-5">
-            <div className="flex items-center justify-between"><div><h3 className="text-sm font-semibold text-slate-950">Åtgärder *</h3><p className="mt-1 text-xs text-slate-500">En rad per arbete som kunden ska kunna välja separat.</p></div><button type="button" onClick={() => setItems((current) => [...current, ''])} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Plus size={16} /> Lägg till</button></div>
+            <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-slate-950">Åtgärder *</h3><button type="button" onClick={() => setItems((current) => [...current, ''])} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Plus size={16} /> Lägg till</button></div>
             <div className="mt-3 space-y-2">{items.map((item, index) => <div key={index} className="flex items-center gap-2"><span className="w-7 text-center text-sm font-semibold text-slate-400">{index + 1}</span><input value={item} onChange={(e) => setItems((current) => current.map((value, itemIndex) => itemIndex === index ? e.target.value : value))} placeholder="Beskriv arbetet kort" className="min-h-11 flex-1 rounded-lg border border-slate-300 px-3" /><button type="button" disabled={items.length === 1} onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30" aria-label="Ta bort åtgärd"><Trash2 size={17} /></button></div>)}</div>
           </section>
         </div>
-        <footer className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6"><button type="button" onClick={onClose} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-slate-700">Avbryt</button><button type="button" disabled={busy || !form.title.trim() || !form.customerName.trim() || !form.propertyAddress.trim() || !items.some((item) => item.trim())} onClick={() => void onCreate({ ...form, siteVisitAt: form.siteVisitAt ? new Date(form.siteVisitAt).toISOString() : null, items })} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={17} /> : <ArrowRight size={17} />} Skapa ärende</button></footer>
+        <footer className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:px-6"><button type="button" disabled={busy} onClick={close} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-slate-700 disabled:opacity-40">Avbryt</button><button type="button" disabled={busy || !form.title.trim() || !form.customerName.trim() || !form.propertyAddress.trim() || !items.some((item) => item.trim())} onClick={() => void onCreate({ ...form, siteVisitAt: form.siteVisitAt ? new Date(form.siteVisitAt).toISOString() : null, items })} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40">{busy ? <Loader2 className="animate-spin" size={17} /> : <ArrowRight size={17} />} Skapa projekt</button></footer>
       </div>
     </div>
   )
@@ -111,6 +130,7 @@ function CreateCaseSheet({ busy, onClose, onCreate }: { busy: boolean; onClose: 
 
 type ActionResult = {
   workspace: Workspace
+  caseId?: string
   itemId?: string
   accessUrl?: string
   upload?: { bucket: string; filePath: string; token: string; contentType: string }
@@ -120,17 +140,19 @@ function CaseDocuments({
   actionCase,
   busy,
   runAction,
+  onUploading,
 }: {
   actionCase: ActionCaseView
   busy: boolean
   runAction: (name: string, payload: Record<string, unknown>, successMessage?: string | null) => Promise<ActionResult | null>
+  onUploading?: (uploading: boolean) => void
 }) {
   const toast = useToast()
   const fileInput = useRef<HTMLInputElement>(null)
   const uploadInProgress = useRef(false)
   const dragDepth = useRef(0)
   const [draggingFiles, setDraggingFiles] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const [uploading, setUploading] = useState<string[]>([])
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
@@ -138,6 +160,7 @@ function CaseDocuments({
   const [showParticipantForm, setShowParticipantForm] = useState(false)
   const customer = actionCase.participants.find((participant) => participant.role === 'customer')
   const subcontractors = actionCase.participants.filter((participant) => participant.role === 'subcontractor')
+  useEffect(() => { onUploading?.(uploading.length > 0) }, [uploading.length, onUploading])
 
   const toggleSelected = (participantId: string) => {
     setSelectedParticipantIds((current) => current.includes(participantId)
@@ -295,67 +318,100 @@ function costActionMessage(name: string, payload: Record<string, unknown>) {
   return ({ send_quote_request: 'Offertförfrågan har skickats.', generate_cost_suggestions: 'Kalkylförslaget är klart för granskning.', apply_cost_suggestions: 'Valda rader lades till i kalkylen.', delete_cost_line: 'Kalkylraden togs bort.' } as Record<string, string>)[name] ?? 'Kalkylraden sparades.'
 }
 
-export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [] }: Props) {
+export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [], caseId, section = 'work', onWorkspaceChange, onBusyChange, onDirtyChange }: Props) {
   const toast = useToast()
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
-  const [search, setSearch] = useState('')
-  const [selectedCaseId, setSelectedCaseId] = useState(initialWorkspace?.cases[0]?.id ?? null)
+  const [uploading, setUploading] = useState(false)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [initialCostLineId, setInitialCostLineId] = useState<string>()
   const [requestEditor, setRequestEditor] = useState<{ requestId: string | null; preselectedLineIds?: string[]; supplementId?: string } | null>(null)
   const [creating, setCreating] = useState(false)
   const [newItemTitle, setNewItemTitle] = useState('')
-  const selectedCase = workspace?.cases.find((item) => item.id === selectedCaseId) ?? null
+  const selectedCase = workspace?.cases.find((item) => item.id === caseId) ?? null
   const selectedItem = selectedCase?.items.find((item) => item.id === selectedItemId) ?? null
-  const filtered = useMemo(() => workspace?.cases.filter((item) => [item.title, item.customerName, item.propertyAddress].some((value) => value.toLocaleLowerCase('sv-SE').includes(search.toLocaleLowerCase('sv-SE')))) ?? [], [search, workspace])
-
+  const running = useRef(false)
+  const openingCreatedProject = useRef(false)
+  const guarded = busy || uploading || Boolean(selectedItemId) || Boolean(requestEditor) || Boolean(newItemTitle.trim())
+  useEffect(() => { onBusyChange?.(busy || uploading) }, [busy, uploading, onBusyChange])
+  useEffect(() => { onDirtyChange?.(guarded) }, [guarded, onDirtyChange])
+  useEffect(() => {
+    if (!guarded) return
+    const prevent = (event: BeforeUnloadEvent) => {
+      if (openingCreatedProject.current) return
+      event.preventDefault(); event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', prevent)
+    return () => window.removeEventListener('beforeunload', prevent)
+  }, [guarded])
+  const receive = (next: Workspace) => {
+    setWorkspace(next)
+    onWorkspaceChange?.(next)
+  }
   const action = async (name: string, payload: Record<string, unknown>, successMessage?: string | null): Promise<ActionResult | null> => {
+    if (running.current) return null
+    running.current = true
     setBusy(true)
     try {
       const response = await fetch('/api/action-cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, payload }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Kunde inte spara.')
-      setWorkspace(result.workspace)
+      receive(result.workspace)
       setError(null)
-      if (name === 'create_case') setSelectedCaseId(result.workspace.cases[0]?.id ?? null)
-      if (successMessage !== null) toast.success(successMessage ?? (name === 'create_case' ? 'Åtgärdsärendet skapades.' : 'Åtgärden sparades.'))
+      if (successMessage !== null) toast.success(successMessage ?? (name === 'create_case' ? 'Projektet skapades.' : 'Åtgärden sparades.'))
       return result as ActionResult
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
       if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'delete_attachment', 'revoke_rfq_delivery'].includes(name)) {
         await fetch('/api/action-cases').then(async (response) => {
-          if (response.ok) { const result = await response.json(); setWorkspace(result.workspace) }
+          if (response.ok) { const result = await response.json(); receive(result.workspace) }
         }).catch(() => undefined)
       }
       return null
     }
-    finally { setBusy(false) }
+    finally { running.current = false; setBusy(false) }
   }
 
-  if (!workspace) return <section className="mt-7 border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><ClipboardList className="mx-auto text-slate-400" /><h2 className="mt-3 text-lg font-semibold">Projektarbete är inte redo</h2><p className="mt-1 text-sm text-slate-500">{error}</p></section>
+  if (!workspace) return <section className="gizmo-empty" role="alert"><ClipboardList /><h2>Projekten kunde inte hämtas</h2><p>{error}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>
+  if (!caseId) return <>
+    <ActionCaseProjectList cases={workspace.cases} onCreate={() => setCreating(true)} />
+    {creating && <CreateCaseSheet busy={busy} onClose={() => { if (!busy) setCreating(false) }} onCreate={async (payload) => {
+      const result = await action('create_case', payload)
+      if (result) {
+        setCreating(false)
+        if (result.caseId) {
+          openingCreatedProject.current = true
+          window.location.assign(projectUrl(result.caseId, 'work'))
+        }
+      }
+    }} />}
+  </>
+  if (!selectedCase) return <p role="alert">Projektet är inte tillgängligt. <Link href="/uppdrag">Till projektlistan</Link></p>
 
   return <>
-    <section className="mt-7 grid grid-cols-2 gap-3 lg:grid-cols-6">{[
-      ['Aktiva ärenden', workspace.summary.active], ['Behöver kalkyl', workspace.summary.pricingNeeded], ['Väntar på UE', workspace.summary.waitingSubcontractor], ['Väntar på kund', workspace.summary.awaitingCustomer], ['Klara att planera', workspace.summary.readyToSchedule], ['Klara att fakturera', workspace.summary.readyToInvoice],
-    ].map(([label, value]) => <div key={label} className="border-b-2 border-slate-200 bg-white px-4 py-4"><strong className="block text-2xl text-slate-950">{value}</strong><span className="mt-1 block text-xs font-medium text-slate-500">{label}</span></div>)}</section>
-    <section className="mt-7 overflow-hidden border border-slate-200 bg-white shadow-sm lg:grid lg:min-h-[620px] lg:grid-cols-[360px_minmax(0,1fr)]">
-      <aside className="border-b border-slate-200 lg:border-b-0 lg:border-r"><div className="border-b border-slate-200 p-4"><div className="flex gap-2"><label className="relative flex-1"><Search className="absolute left-3 top-3 text-slate-400" size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Sök ärende" className="min-h-11 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" /></label><button type="button" onClick={() => setCreating(true)} className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-slate-950 text-white" aria-label="Nytt åtgärdsärende"><Plus size={19} /></button></div></div><div>{filtered.map((item) => <button key={item.id} type="button" onClick={() => setSelectedCaseId(item.id)} className={`w-full border-b border-slate-100 px-4 py-4 text-left hover:bg-slate-50 ${selectedCaseId === item.id ? 'border-l-4 border-l-violet-600 bg-violet-50/50' : ''}`}><div className="flex items-start justify-between gap-3"><span className="font-semibold text-slate-950">{item.title}</span><ChevronRight size={17} className="mt-1 shrink-0 text-slate-400" /></div><p className="mt-1 truncate text-sm text-slate-600">{item.propertyAddress}</p><div className="mt-2 flex items-center justify-between text-xs"><span className="font-medium text-violet-700">{CASE_STATUS[item.status]}</span><span className="text-slate-400">{item.items.length} åtgärder</span></div></button>)}</div></aside>
-      <div className="min-w-0">{selectedCase ? <><header className="border-b border-slate-200 px-5 py-5 sm:px-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase text-violet-700">{CASE_STATUS[selectedCase.status]}</p><h2 className="mt-1 text-2xl font-semibold text-slate-950">{selectedCase.title}</h2><p className="mt-2 flex items-center gap-2 text-sm text-slate-600"><MapPin size={16} /> {selectedCase.propertyAddress}</p></div><div className="rounded-lg bg-violet-50 px-4 py-3 text-sm text-violet-900"><strong className="block">Nästa steg</strong><span>Öppna den första ofullständiga åtgärden.</span></div></div><div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-600"><span className="inline-flex items-center gap-2"><UserRound size={16} /> {selectedCase.customerName}</span>{selectedCase.customerEmail ? <span className="inline-flex items-center gap-2"><Mail size={16} /> {selectedCase.customerEmail}</span> : null}</div></header><div className="px-5 py-5 sm:px-6"><div className="flex items-end justify-between"><div><h3 className="text-lg font-semibold text-slate-950">Åtgärder</h3><p className="mt-1 text-sm text-slate-500">Öppna en rad för att komplettera omfattning och prisunderlag.</p></div><span className="text-sm font-semibold text-slate-500">{selectedCase.items.filter((item) => completion(item) === 100).length}/{selectedCase.items.length} kalkylklara</span></div><div className="mt-4 overflow-hidden rounded-lg border border-slate-200">{selectedCase.items.map((item, index) => <button key={item.id} type="button" onClick={() => setSelectedItemId(item.id)} className="grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-3 py-4 text-left last:border-0 hover:bg-slate-50 sm:grid-cols-[40px_minmax(0,1fr)_140px_auto]"><span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-sm font-semibold text-slate-600">{index + 1}</span><span className="min-w-0"><strong className="block truncate text-sm text-slate-950">{item.title}</strong><span className="mt-1 block truncate text-xs text-slate-500">Nästa: {nextAction(item)}</span></span><span className="hidden sm:block"><span className="block h-1.5 overflow-hidden rounded-full bg-slate-100"><span className="block h-full bg-violet-600" style={{ width: `${completion(item)}%` }} /></span><span className="mt-1 block text-right text-[11px] font-medium text-slate-500">{completion(item)} %</span></span><span className="inline-flex items-center gap-2 text-xs font-semibold text-violet-700">{ITEM_STATUS[item.status]} <ChevronRight size={17} /></span></button>)}</div></div></> : <div className="flex min-h-[500px] items-center justify-center text-sm text-slate-500">Välj ett ärende i listan.</div>}</div>
+    <section hidden={section !== 'work'} aria-label="Projektarbete">
+      <div className="gizmo-section-heading"><div><h2>Projektarbete</h2><p>{selectedCase.items.length} åtgärder · {selectedCase.items.filter((item) => completion(item) === 100).length} kalkylklara</p></div></div>
+      <div className="gizmo-work-columns" aria-hidden="true"><span>Åtgärd</span><span>Behöver hanteras</span><span>Status</span><span /></div>
+      <div className="gizmo-work-rows">{selectedCase.items.map((item) =>
+        <button key={item.id} type="button" onClick={() => setSelectedItemId(item.id)} className="gizmo-work-row">
+          <strong>{item.title}</strong><span>{completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{ITEM_STATUS[item.status]}</span><ChevronRight size={18} aria-hidden="true" />
+        </button>)}</div>
+      {!selectedCase.items.length && <p className="gizmo-empty">Inga åtgärder ännu.</p>}
+      <form className="gizmo-add-work" onSubmit={(event) => {
+        event.preventDefault()
+        if (busy || !newItemTitle.trim()) return
+        void action('add_item', { caseId: selectedCase.id, title: newItemTitle }, 'Åtgärden lades till.').then((result) => {
+          if (result) { setNewItemTitle(''); if (result.itemId) setSelectedItemId(result.itemId) }
+        })
+      }}><label>Ny åtgärd<input required value={newItemTitle} onChange={(event) => setNewItemTitle(event.target.value)} placeholder="Beskriv arbetet kort" /></label><button type="submit" disabled={busy || !newItemTitle.trim()} className="gizmo-button">{busy ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />} Lägg till åtgärd</button></form>
+      <ActionCaseRequestsPanel actionCase={selectedCase} busy={busy} onOpen={(requestId) => setRequestEditor({ requestId })} />
     </section>
-    {selectedCase ? <form key={selectedCase.id} className="flex flex-wrap items-end gap-3 border-b border-slate-200 bg-white p-5" onSubmit={(event) => {
-      event.preventDefault()
-      if (busy || !newItemTitle.trim()) return
-      void action('add_item', { caseId: selectedCase.id, title: newItemTitle }, 'Åtgärden lades till.').then((result) => {
-        if (result) { setNewItemTitle(''); if (result.itemId) setSelectedItemId(result.itemId) }
-      })
-    }}><label className="min-w-0 flex-1 text-sm font-semibold">Ny åtgärd<input required value={newItemTitle} onChange={(event) => setNewItemTitle(event.target.value)} placeholder="Beskriv arbetet kort" className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 px-3 font-normal" /></label><button type="submit" disabled={busy || !newItemTitle.trim()} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-violet-700 px-4 text-sm font-semibold text-white disabled:opacity-40">{busy ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />} Lägg till åtgärd</button></form> : null}
-    {selectedCase ? <div className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-white p-5"><div><h3 className="font-semibold">Offert och avtal</h3><p className="mt-1 text-sm text-slate-500">Kundpriser, villkor och betalningsplan</p></div><a href={`/uppdrag/${selectedCase.id}/kund`} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-300 px-4 text-sm font-semibold"><FileText size={17} /> Öppna offert och avtal <ArrowRight size={17} /></a></div> : null}
-    {selectedCase ? <ActionCaseRequestsPanel actionCase={selectedCase} busy={busy} onOpen={(requestId) => setRequestEditor({ requestId })} /> : null}
-    {selectedCase ? <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} /> : null}
-    {creating ? <CreateCaseSheet busy={busy} onClose={() => setCreating(false)} onCreate={async (payload) => { const result = await action('create_case', payload); if (result) setCreating(false) }} /> : null}
-    {selectedItem && selectedCase ? <ActionCaseItemSheet
+    <section hidden={section !== 'files'} aria-label="Bilder och filer">
+      <div className="gizmo-section-heading"><h2>Bilder och filer</h2></div>
+      <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} onUploading={setUploading} />
+    </section>
+    {selectedItem && <ActionCaseItemSheet
       key={`${selectedItem.id}:${initialCostLineId ?? ''}`}
       item={selectedItem}
       caseId={selectedCase.id}
@@ -368,13 +424,13 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       onClose={() => { setSelectedItemId(null); setInitialCostLineId(undefined) }}
       onSave={async (payload) => Boolean(await action('update_item', { itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt, ...payload }))}
       onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, costActionMessage(name, payload)))}
-    /> : null}
-    {selectedCase && requestEditor ? <ActionCaseRequestSheet key={`${selectedCase.id}:${requestEditor.requestId ?? requestEditor.supplementId ?? 'new'}:${requestEditor.preselectedLineIds?.join(',') ?? ''}`}
+    />}
+    {requestEditor && <ActionCaseRequestSheet key={`${selectedCase.id}:${requestEditor.requestId ?? requestEditor.supplementId ?? 'new'}:${requestEditor.preselectedLineIds?.join(',') ?? ''}`}
       people={people}
       actionCase={selectedCase} {...requestEditor} busy={busy} onClose={() => setRequestEditor(null)}
       onSupplement={(request) => setRequestEditor({ requestId: null, supplementId: request.id })}
       onOpenWork={(itemId, costLineId) => { setRequestEditor(null); setSelectedItemId(itemId); setInitialCostLineId(costLineId) }}
       onAction={async (name, data) => Boolean(await action(name, data, name === 'revoke_rfq_delivery' ? 'Länken till offertunderlaget har återkallats.' : name === 'quote_package' ? data.operation === 'accept' ? 'Grupppriset används i kalkylen. Ingen beställning har skickats.' : 'Tidigare prisunderlag har återställts.' : name === 'send_grouped_quote_request' ? 'Den samlade offertförfrågan har skickats.' : data.operation === 'response' ? 'Prisvillkoren har sparats.' : data.operation === 'delete' ? 'Utkastet togs bort.' : 'Förfrågan är sparad. Granska den före utskick.'))}
-    /> : null}
+    />}
   </>
 }

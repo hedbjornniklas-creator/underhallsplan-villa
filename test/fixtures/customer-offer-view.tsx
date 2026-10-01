@@ -4,6 +4,9 @@ import UppdragScope from '@/components/tasks/UppdragScope'
 import { AppToastProvider } from '@/components/ui/AppToastProvider'
 import CustomerOfferEditor from '@/components/tasks/CustomerOfferEditor'
 import ActionCaseCustomerPortal from '@/components/tasks/ActionCaseCustomerPortal'
+import ActionCaseProject from '@/components/tasks/ActionCaseProject'
+import ActionCaseWorkspace from '@/components/tasks/ActionCaseWorkspace'
+import { parseProjectView } from '@/lib/action-cases/projectNavigation'
 import { emptyCustomerOffer } from '@/lib/action-cases/customerOffers'
 import { actionCase, customer, token } from './customer-offer-data'
 
@@ -38,6 +41,9 @@ async function start() {
     }
   }
   const external = location.pathname === '/kund'
+  const projects = location.pathname.startsWith('/uppdrag')
+  const projectWorkspace = projects ? await (await fetch('/project-fixture')).json() : null
+  const project = projectWorkspace?.cases.find((item: { id: string }) => location.pathname === `/uppdrag/${item.id}`)
   createRoot(document.getElementById('root')!).render(
     <AppToastProvider>
       <UppdragScope external>
@@ -51,7 +57,12 @@ async function start() {
             Kundvy
           </a>
         </div>
-        {external ? (
+        {projects ? <div className="gizmo-workspace">
+          <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/fail-save', { method: 'POST' })}>Simulera nästa sparfel</button></div>
+          {project ? <ActionCaseProject caseId={project.id} initialWorkspace={projectWorkspace} initialOffer={workspace}
+            initialView={parseProjectView(params.get('view'))} issuerName="Exempelbygg AB" replyEmail="byggare@example.test" />
+            : <main className="gizmo-index-inner"><p className="gizmo-eyebrow">Gizmo</p><h1>Projekt</h1><ActionCaseWorkspace initialWorkspace={projectWorkspace} initialError={null} /></main>}
+        </div> : external ? (
           <ActionCaseCustomerPortal portal={portal} token={token} />
         ) : (
           <CustomerOfferEditor

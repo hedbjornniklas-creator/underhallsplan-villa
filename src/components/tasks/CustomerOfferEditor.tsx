@@ -1,6 +1,7 @@
 'use client'
 
 import Image from 'next/image'
+import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
@@ -46,23 +47,38 @@ const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
+export type CustomerEditorView = 'edit' | 'document' | 'customer' | 'planning' | 'payments'
 export default function CustomerOfferEditor({
   actionCase,
   initial,
   issuerName,
-  replyEmail
+  replyEmail,
+  embedded = false,
+  active = true,
+  view: controlledView,
+  onViewChange,
+  onWorkspaceChange,
+  onDirtyChange
 }: {
   actionCase: ActionCaseView
   initial: CustomerOfferWorkspace
   issuerName: string
   replyEmail: string
+  embedded?: boolean
+  active?: boolean
+  view?: CustomerEditorView
+  onViewChange?: (view: CustomerEditorView) => void
+  onWorkspaceChange?: (workspace: CustomerOfferWorkspace) => void
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const [workspace, setWorkspace] = useState(initial),
     [draft, setDraft] = useState(() => initial.revision === 0
       ? { ...initial.draft, contractDetails: initial.draft.contractDetails ?? emptyContractDetails() }
       : initial.draft)
   const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
-  const [view, setView] = useState<'edit' | 'document' | 'customer' | 'planning' | 'payments'>('edit')
+  const [internalView, setInternalView] = useState<CustomerEditorView>('edit')
+  const view = controlledView ?? internalView
+  const setView = (next: CustomerEditorView) => { setInternalView(next); onViewChange?.(next) }
   const [itemView, setItemView] = useState<'included' | 'excluded'>('included')
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [planningDirty, setPlanningDirty] = useState(false)
@@ -78,6 +94,8 @@ export default function CustomerOfferEditor({
   const customer = actionCase.participants.find((p) => p.role === 'customer')
   const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft) ||
     JSON.stringify(costing) !== JSON.stringify(workspace.costing ?? {})
+  useEffect(() => { onDirtyChange?.(dirty || planningDirty || Boolean(busy)) }, [dirty, planningDirty, busy, onDirtyChange])
+  useEffect(() => { onWorkspaceChange?.({ ...workspace, planning }) }, [workspace, planning, onWorkspaceChange])
   const locked = workspace.offers.some((o) => o.status === 'accepted')
   const issues = [
     ...offerPublishIssues(draft),
@@ -100,11 +118,11 @@ export default function CustomerOfferEditor({
     setConfirmed(false)
   }
   useEffect(() => {
-    if (previousView.current === view) return
+    if (embedded || !active || previousView.current === view) return
     previousView.current = view
     heading.current?.focus({ preventScroll: true })
     heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
-  }, [view])
+  }, [view, active, embedded])
   useEffect(() => {
     if (!dirty && !planningDirty) return
     const prevent = (event: BeforeUnloadEvent) => {
@@ -247,10 +265,12 @@ export default function CustomerOfferEditor({
       )
     }
   }
+  const Container = embedded ? 'div' : 'main'
+  const Heading = embedded ? 'h2' : 'h1'
   return (
-    <main className="mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6">
-      <header className="border-b border-slate-200 py-6">
-        <a
+    <Container className={embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}>
+      {(!embedded || view === 'edit' || view === 'document') && <header className="border-b border-slate-200 py-6">
+        {!embedded && <Link
           href="/uppdrag"
           onClick={(e) => {
             if ((dirty || planningDirty) && !window.confirm('Lämna osparade ändringar?'))
@@ -259,14 +279,14 @@ export default function CustomerOfferEditor({
           className="inline-flex items-center gap-2 text-sm text-violet-700"
         >
           <ArrowLeft size={17} /> Till uppdrag
-        </a>
-        <p className="mt-6 text-sm text-slate-500">
+        </Link>}
+        {!embedded && <p className="mt-6 text-sm text-slate-500">
           {actionCase.propertyAddress}
-        </p>
+        </p>}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
-          <h1 ref={heading} tabIndex={-1} className="scroll-mt-6">
-            Offert och avtal
-          </h1>
+          <Heading ref={heading} tabIndex={-1} className="scroll-mt-6">
+            {embedded ? ({ edit: 'Offert och avtal', planning: 'Val och tillval', payments: 'Betalningsplan', document: 'Granska grundavtal', customer: 'Visa som beställare' })[view] : 'Offert och avtal'}
+          </Heading>
           <p className="text-sm text-slate-500" role="status">
             {busy
               ? 'Arbetar…'
@@ -277,8 +297,8 @@ export default function CustomerOfferEditor({
                   : 'Nytt utkast'}
           </p>
         </div>
-      </header>
-      <nav
+      </header>}
+      {!embedded && <nav
         className="flex gap-2 overflow-x-auto border-b border-slate-200 py-3"
         aria-label="Offert och avtal"
       >
@@ -299,7 +319,7 @@ export default function CustomerOfferEditor({
             {label}
           </button>
         ))}
-      </nav>
+      </nav>}
       {legacyChoices.length > 0 && !locked && view !== 'customer' && <section className="my-5 border-l-4 border-amber-500 bg-amber-50 p-4">
         <h2 className="text-base font-semibold">{legacyChoices.length} val behöver skiljas från grundavtalet</h2>
         <p className="mt-2 text-sm">Priser, alternativgrupper och interna kalkyler flyttas till Val och tillval. Grundpriset ändras inte och inget delas med kunden.</p>
@@ -935,6 +955,6 @@ export default function CustomerOfferEditor({
           </aside>
         </div>
       )}
-    </main>
+    </Container>
   )
 }

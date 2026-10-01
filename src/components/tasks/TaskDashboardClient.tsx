@@ -40,7 +40,7 @@ import TaskDetailSheet from './TaskDetailSheet'
 import TaskIssuerAnalyticsPanel from './TaskIssuerAnalyticsPanel'
 import ActionCaseWorkspace from './ActionCaseWorkspace'
 import type { ActionCaseWorkspace as ActionCaseWorkspaceData } from '@/lib/action-cases/contracts'
-import { SigneCheckIcon } from './SigneMark'
+import UppdragScope from './UppdragScope'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
@@ -58,6 +58,7 @@ type Props = {
   initialError: string | null
   initialActionCases: ActionCaseWorkspaceData | null
   initialActionCasesError: string | null
+  initialView?: WorkspaceView
 }
 
 type TaskDrilldown = {
@@ -421,14 +422,14 @@ function TaskTableRow({
   )
 }
 
-export default function TaskDashboardClient({ initialWorkspace, initialError, initialActionCases, initialActionCasesError }: Props) {
+export default function TaskDashboardClient({ initialWorkspace, initialError, initialActionCases, initialActionCasesError, initialView = 'action_cases' }: Props) {
   const { success: showSuccess, error: showError, warning: showWarning } = useToast()
   const deepLinkHandled = useRef(false)
   const taskListRef = useRef<HTMLElement>(null)
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [workspaceError, setWorkspaceError] = useState(initialError)
   const [busy, setBusy] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('current')
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(initialView)
   const [analyticsPeriod, setAnalyticsPeriod] = useState<TaskAnalyticsPeriod>(
     initialWorkspace?.analytics.defaultPeriod ?? '90d'
   )
@@ -457,6 +458,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     deepLinkHandled.current = true
     const taskId = new URLSearchParams(window.location.search).get('task')
     if (taskId && workspace.tasks.some((task) => task.id === taskId)) {
+      setWorkspaceView('current')
       setSelectedTaskId(taskId)
     }
   }, [workspace])
@@ -794,18 +796,13 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
 
   return (
     <Protected>
-      <main className="relative min-h-full bg-slate-50">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-br from-amber-100 via-orange-50 to-transparent" />
-        <div className="relative mx-auto w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 sm:pb-12 sm:pt-9">
+      <UppdragScope>
+      <main className="gizmo-workspace gizmo-index">
+        <div className="gizmo-index-inner">
           <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-amber-800">
-                <SigneCheckIcon size={17} /> Gizmo håller i uppföljningen
-              </div>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">Uppdrag</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-                Se vem som har bollen, vad som riskerar att stanna och vad som väntar på din kontroll.
-              </p>
+              <p className="gizmo-eyebrow">Gizmo</p>
+              <h1>{workspaceView === 'action_cases' ? 'Projekt' : workspaceView === 'statistics' ? 'Statistik' : 'Aktuellt'}</h1>
             </div>
             <button
               type="button"
@@ -848,20 +845,20 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 <button
                   type="button"
                   role="tab"
+                  aria-selected={workspaceView === 'action_cases'}
+                  onClick={() => setWorkspaceView('action_cases')}
+                  className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'action_cases' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                >
+                  <Wrench size={17} aria-hidden="true" /> Projekt
+                </button>
+                <button
+                  type="button"
+                  role="tab"
                   aria-selected={workspaceView === 'current'}
                   onClick={() => setWorkspaceView('current')}
                   className={`min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'current' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
                 >
                   Aktuellt
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={workspaceView === 'action_cases'}
-                  onClick={() => setWorkspaceView('action_cases')}
-                  className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'action_cases' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
-                >
-                  <Wrench size={17} aria-hidden="true" /> Projektarbete
                 </button>
                 <button
                   type="button"
@@ -1343,6 +1340,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           </>
         ) : null}
       </main>
+      </UppdragScope>
     </Protected>
   )
 }

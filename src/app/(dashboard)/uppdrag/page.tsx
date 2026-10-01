@@ -9,7 +9,8 @@ import type { ActionCaseWorkspace } from '@/lib/action-cases/contracts'
 
 export const dynamic = 'force-dynamic'
 
-export default async function TasksPage() {
+export default async function TasksPage({ searchParams }: { searchParams: Promise<{ view?: string; task?: string }> }) {
+  const query = await searchParams
   let initialWorkspace: TaskWorkspace | null = null
   let initialError: string | null = null
   let initialActionCases: ActionCaseWorkspace | null = null
@@ -43,5 +44,6 @@ export default async function TasksPage() {
       : 'Kunde inte läsa uppgifterna just nu.'
   }
 
-  return <TaskDashboardClient initialWorkspace={initialWorkspace} initialError={initialError} initialActionCases={initialActionCases} initialActionCasesError={initialActionCasesError} />
+  return <TaskDashboardClient initialWorkspace={initialWorkspace} initialError={initialError} initialActionCases={initialActionCases} initialActionCasesError={initialActionCasesError}
+    initialView={query.task || query.view === 'current' ? 'current' : query.view === 'statistics' ? 'statistics' : 'action_cases'} />
 }

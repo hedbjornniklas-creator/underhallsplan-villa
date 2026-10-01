@@ -310,6 +310,13 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 
 ## Beslutslogg
 
+- 2026-10-01: Gemensam projektnavigering är nu beställd. /uppdrag blir en
+  projektlista med Aktuellt och Statistik som separata vyer. /uppdrag/[caseId]
+  samlar arbete, offert, val, betalningsplan och filer. Äldre /kund-länkar leds
+  till Offert och avtal. Utkast bevaras vid interna vybyten, externa
+  kundprojektioner och frysta dokument behåller befintliga åtkomstregler.
+  Se [Gizmos profil 2.0](GIZMO_BRAND_PROFILE.md). Ingen datamigrering krävs.
+
 - 2026-10-01: Anvandaren faststaller namnen Projektarbete, Offert och avtal och
   Visa som bestallare. Kundforhandsgranskning skiljs visuellt fran intern redigering.
   Gemensam projektnavigering ar langsiktig riktning, inte del av denna leverans.

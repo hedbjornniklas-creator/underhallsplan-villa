@@ -128,8 +128,10 @@ export default function ActionCaseCustomerPortal({
     preview
       ? `/api/action-cases/${previewCaseId}/attachments/${id}`
       : `/api/action-cases/public/${token}/attachments/${id}`
+  const Container = preview ? 'div' : 'main'
+  const Heading = preview ? 'h2' : 'h1'
   return (
-    <main className="mx-auto max-w-5xl break-words px-4 pb-16 sm:px-6">
+    <Container className="mx-auto max-w-5xl break-words px-4 pb-16 sm:px-6">
       {preview && <div className="mt-6 flex items-center gap-2 border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-semibold text-slate-900">
         <Eye size={18} className="shrink-0" aria-hidden="true" />
         Förhandsgranskning som beställare
@@ -138,9 +140,9 @@ export default function ActionCaseCustomerPortal({
         <p className="text-sm font-medium text-slate-500">
           Ditt projekt
         </p>
-        <h1 ref={heading} tabIndex={-1} className="mt-2 outline-none">
+        <Heading ref={heading} tabIndex={-1} className="mt-2 outline-none">
           {c.title}
-        </h1>
+        </Heading>
         <p className="mt-2 flex items-center gap-2 text-sm text-slate-600">
           <MapPin size={16} className="shrink-0" />
           {c.propertyAddress}
@@ -420,6 +422,6 @@ export default function ActionCaseCustomerPortal({
           <Mail size={17} className="shrink-0" />{latest.snapshot.replyEmail}
         </a>
       </footer>}
-    </main>
+    </Container>
   )
 }

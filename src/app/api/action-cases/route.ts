@@ -141,7 +141,8 @@ export async function POST(request: Request) {
     let accessUrl: string | undefined
     let itemId: string | undefined
     let upload: Awaited<ReturnType<typeof createActionCaseSignedUpload>> | undefined
-    if (action === 'create_case') await createActionCase(ctx, payload)
+    let caseId: string | undefined
+    if (action === 'create_case') caseId = await createActionCase(ctx, payload)
     else if (action === 'update_item') await updateActionCaseItem(ctx, payload)
     else if (action === 'add_item') itemId = await addActionCaseItem(ctx, payload)
     else if (action === 'add_participant') await addActionCaseParticipant(ctx, payload)
@@ -164,6 +165,6 @@ export async function POST(request: Request) {
     else if (action === 'send_grouped_quote_request') await sendGroupedRequest(ctx, payload, new URL(request.url).origin)
     else if (action === 'revoke_rfq_delivery') await revokeRfqDelivery(ctx, payload)
     else throw new Error('ACTION_CASE_ACTION_INVALID')
-    return NextResponse.json({ workspace: await getActionCaseWorkspace(ctx), accessUrl, upload, itemId })
+    return NextResponse.json({ workspace: await getActionCaseWorkspace(ctx), accessUrl, upload, itemId, caseId })
   } catch (error) { return errorResponse(error) }
 }

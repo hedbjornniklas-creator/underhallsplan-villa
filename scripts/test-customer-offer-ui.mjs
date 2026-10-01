@@ -9,6 +9,7 @@ import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 import {
   workspace,
+  actionCase,
   itemizedWorkspace,
   published,
   id
@@ -20,6 +21,7 @@ import {
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
 import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
+import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -40,7 +42,7 @@ await new Promise((done, reject) =>
       output: { path: output, filename: 'view.js' },
       resolve: {
         extensions: ['.tsx', '.ts', '.js'],
-        alias: { '@': resolve('src') }
+        alias: { '@/lib/supabaseClient': resolve('test/helpers/project-supabase-stub.ts'), '@': resolve('src') }
       },
       module: {
         rules: [
@@ -95,6 +97,7 @@ if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')
   state.planning.sharedItems = structuredClone(state.planning.items)
 }
 const writes = []
+const projects = projectFixture(actionCase)
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
   const json = (body, status = 200) => {
@@ -102,11 +105,37 @@ const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify(body))
   }
+  if (path === '/project-fixture') { json(projects); return }
+  if (path === '/__test__/writes') { json(writes); return }
+  if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
+  if (path === '/api/action-cases' && req.method === 'GET') { json({ workspace: projects }); return }
   if (req.method === 'POST') {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
-    writes.push(body.operation)
+    writes.push(body.operation ?? body.action)
+    if (path === '/api/action-cases') {
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
+      const payload = body.payload ?? {}
+      let itemId, caseId
+      if (body.action === 'update_item') {
+        const item = projects.cases.flatMap((c) => c.items).find((i) => i.id === payload.itemId)
+        if (!item) { json({ error: 'Åtgärden saknas.' }, 404); return }
+        if (payload.title !== undefined) item.title = payload.title
+        if (payload.scope !== undefined) item.scope = payload.scope
+        if (payload.scopeAttachmentIds !== undefined) item.scopeAttachmentIds = payload.scopeAttachmentIds
+        item.updatedAt = new Date().toISOString()
+      } else if (body.action === 'add_item') {
+        const c = projects.cases.find((c) => c.id === payload.caseId)
+        itemId = id(500 + writes.length)
+        c.items.push({ ...structuredClone(projects.cases[0].items[0]), id: itemId, title: payload.title, scope: '', costLines: [] })
+      } else if (body.action === 'create_case') {
+        caseId = id(600 + writes.length)
+        projects.cases.unshift({ ...structuredClone(projects.cases[0]), id: caseId, ...payload, attachments: [], participants: [],
+          items: payload.items.filter((title) => title.trim()).map((title, n) => ({ ...structuredClone(projects.cases[0].items[0]), id: id(700 + writes.length * 10 + n), title, scope: '', costLines: [] })) })
+      } else { json({ error: 'Denna åtgärd är inte aktiverad i den fiktiva demonstrationen.' }, 400); return }
+      json({ workspace: projects, itemId, caseId }); return
+    }
     if (path.includes('/public/')) {
       if (body.operation === 'challenge') {
         challenge = { selection: body.selection, signerName: body.signerName }
@@ -229,7 +258,7 @@ await new Promise((done) =>
 const origin = `http://127.0.0.1:${server.address().port}`
 if (process.argv.includes('--serve'))
   console.log(
-    `Synthetic customer preview: ${origin}/kund ; editor: ${origin}/intern ; test email code: 123456`
+    `Synthetic customer preview: ${origin}/kund ; editor: ${origin}/intern ; projects: ${origin}/uppdrag ; test email code: 123456`
   )
 else {
   const browser = await puppeteer.launch({
