@@ -7,7 +7,7 @@ import { queueImageBatch, unplacedImagePlacement } from '../../src/lib/ob/roundI
 import { putRoundImageUploadItem, listRoundImageUploadItems } from '../../src/lib/ob/roundImageUploadQueue'
 import { ObFloorContext, useObFloorModel } from '../../src/components/ob/ObFloorProvider'
 import { ObFloorEditor } from '../../src/components/ob/ObFloorEditor'
-import { copyObOutcomeText } from '../../src/lib/ob/noteText'
+import { copyObOutcomeText, copyStatusOutcomeText } from '../../src/lib/ob/noteText'
 import ObRoundSheet from '../../src/components/ob/ObRoundSheet'
 import { floorModelKeys, modelFloorLabel, type ObFloorModel } from '../../src/lib/ob/floorModel'
 import type { MoveTarget } from '../../src/lib/ob/roundMutations'
@@ -20,6 +20,7 @@ const inspectionId = 'synthetic-mobile-inspection'
 const newFloors = new URLSearchParams(location.search).has('levels')
 const imagePlaceFixture = new URLSearchParams(location.search).has('image-place')
 const searchOrderFixture = new URLSearchParams(location.search).has('search-order')
+const statusFixture = new URLSearchParams(location.search).has('status')
 const rooms: Room[] = [
   {
     id: 'room-1',
@@ -57,8 +58,10 @@ const note: Note = {
   control_point_id: null,
   title: 'Fri notering',
   note: 'Spricka vid dörr.',
-  risk_text: null,
-  ftu_text: null,
+  risk_text: statusFixture ? 'Äldre OB-risk ska bevaras, inte omtolkas.' : null,
+  ftu_text: statusFixture ? 'Äldre OB-FTU ska bevaras, inte omtolkas.' : null,
+  recommendation_text: null,
+  comment_text: null,
   status: 'remark',
   selected_outcome_id: null,
   sort_order: 10,
@@ -271,6 +274,10 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
       interior_room_id: area === 'interior' ? roomId : null,
       exterior_observation_id: area === 'exterior' ? 'observation-1' : null,
       note: '',
+      risk_text: '',
+      ftu_text: '',
+      recommendation_text: '',
+      comment_text: '',
       ...patch,
     }
     setNotes((rows) => [...rows, next])
@@ -316,7 +323,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
             inspectionId={inspectionId}
             buildingName={buildingName}
             scopeId={buildingName ? storageKey : undefined}
-            inspectionSide="buyer"
+            inspectionSide={statusFixture ? 'status' : 'buyer'}
             address="Testgatan 1 (syntetiskt objekt)"
             onOpenMenu={onOpenStepMenu ?? (() => setMenu(true))}
             pointApplies={() => true}
@@ -385,7 +392,7 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
                 control_point_id: point.id,
                 selected_outcome_id: outcome.id,
                 title: point.title,
-                ...copyObOutcomeText(outcome),
+                ...(statusFixture ? copyStatusOutcomeText(outcome) : copyObOutcomeText(outcome)),
               })
             }}
             onUpdateNote={async (id, patch) => {
@@ -649,6 +656,8 @@ function Fixture({ onOpenStepMenu, buildingName, storageKey = 'fixture-notes' }:
                   note: request.draft.note,
                   risk_text: request.draft.risk_text,
                   ftu_text: request.draft.ftu_text,
+                  recommendation_text: request.draft.recommendation_text,
+                  comment_text: request.draft.comment_text,
                   selected_outcome_id: request.draft.outcomeId,
                 }
                 const linked = { ...image, control_item_id: created.id, interior_room_id: created.interior_room_id, exterior_observation_id: created.exterior_observation_id, processing_status: 'linked' as const }

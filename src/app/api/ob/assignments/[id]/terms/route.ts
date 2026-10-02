@@ -22,7 +22,7 @@ export async function GET(
     const org = await requireOrgContext()
     const { id } = await context.params
     const assignment = await getAssignmentById(org.orgId, id)
-    if (!assignment || assignment.assignment_type !== 'OB') {
+    if (!assignment || !['OB', 'STATUS'].includes(assignment.assignment_type)) {
       return json({ error: 'Uppdraget hittades inte.' }, 404)
     }
     const snapshot = await getObConfirmationSnapshot(org.orgId, id)
@@ -35,8 +35,11 @@ export async function GET(
       return json({
         available: true, acceptedAt: snapshot.assignment.accepted_at, document: snapshot.terms,
         confirmationDelivery: error || latest?.error_message === 'OB_CONFIRMATION_SENT_LOG_FAILED' ? 'unknown' : latest?.status ?? 'not_sent',
-        canRetryDelivery: process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true' && (latest?.status !== 'pending' || pendingExpired),
+        canRetryDelivery: (assignment.assignment_type === 'STATUS' || process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true') && (latest?.status !== 'pending' || pendingExpired),
       })
+    }
+    if (assignment.assignment_type === 'STATUS') {
+      return json({ available: false, reason: assignment.accepted_at ? 'unavailable_version' : 'not_accepted', version: assignment.terms_version })
     }
     return json(getAcceptedObTerms(assignment))
   } catch (error) {

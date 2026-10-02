@@ -14,6 +14,7 @@ import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
 import { getLatestObPublishedReportId, obPublishedReportHref } from '@/lib/ob/publishedReport'
+import { resolveObInspectionProfile } from '@/lib/ob/inspectionProfile'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,7 +42,9 @@ type InspectionForDelivery = {
   id: string
   property_id: string | null
   status: string | null
-  inspection_side: 'buyer' | 'seller' | 'apartment' | null
+  inspection_side: 'buyer' | 'seller' | 'apartment' | 'status' | null
+  inspection_variant?: string | null
+  type?: string | null
   client_contact: string | null
   client_name: string | null
   customer_address: string | null
@@ -389,7 +392,7 @@ async function revokeOlderReportLinks(
 async function getInspectionById(admin: AdminClient, inspectionId: string) {
   const { data, error } = await admin
     .from('inspections')
-    .select('id,property_id,status,inspection_side,client_name,client_contact,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city')
+    .select('id,property_id,status,inspection_side,inspection_variant,type,client_name,client_contact,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city')
     .eq('id', inspectionId)
     .maybeSingle()
 
@@ -939,13 +942,7 @@ export async function POST(
     const recipients = [primaryRecipient, ...extraRecipients]
     timing.mark('recipients_ready', { recipientCount: recipients.length })
 
-    const inspectionSide =
-      inspection.inspection_side === 'seller'
-        ? 'seller'
-        : inspection.inspection_side === 'apartment'
-          ? 'apartment'
-          : 'buyer'
-    const specInspectionSide = inspectionSide === 'seller' ? 'seller' : inspectionSide === 'apartment' ? 'apartment' : 'buyer'
+    const inspectionSide = resolveObInspectionProfile(inspection) ?? 'buyer'
     const reportData = await buildReportDataV2({
       inspectionId: id,
       propertyId,
@@ -962,7 +959,7 @@ export async function POST(
         : {}
     const reportSpec = buildReportSpec({
       layoutVersion: 2,
-      inspectionSide: specInspectionSide,
+      inspectionSide,
       dynamicAppendices: {
         environmental: reportData.mock.appendices?.environmental,
         includeAreaMeasurement: areaMeasurementAppendix.enabled === true,

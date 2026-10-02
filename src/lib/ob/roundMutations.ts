@@ -44,6 +44,8 @@ export type ImageNoteDraft = {
   note: string
   risk_text: string
   ftu_text: string
+  recommendation_text?: string
+  comment_text?: string
   outcomeId: string | null
 }
 export type ImageNotePreview = {

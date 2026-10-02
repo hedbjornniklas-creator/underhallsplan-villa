@@ -63,6 +63,7 @@ export function ImageLinkSheet({
     note: '',
     risk_text: '',
     ftu_text: '',
+    ...(p.inspectionSide === 'status' ? { recommendation_text: '', comment_text: '' } : {}),
     outcomeId: null,
   })
   const imageLocation = roundImageLocation(photo, p.notes, p.observations)
@@ -171,13 +172,15 @@ export function ImageLinkSheet({
       setBusy(false)
     }
   }
-  const notes = p.notes.filter(hasNote)
+  const notes = p.notes.filter(note => hasNote(note, p.inspectionSide === 'status'))
   const selected = notes.find((note) => note.id === selectedId)
   const noteText = (note: Note) =>
     note.note?.trim() ||
     (note.status === 'ok'
       ? 'Inget att notera'
-      : note.risk_text?.trim() || note.ftu_text?.trim() || note.title)
+      : (p.inspectionSide === 'status'
+        ? note.recommendation_text?.trim() || note.comment_text?.trim()
+        : note.risk_text?.trim() || note.ftu_text?.trim()) || note.title)
   const currentPlace = photo.interior_room_id || photo.exterior_observation_id
   const roomId =
     photo.interior_room_id ||
@@ -201,7 +204,9 @@ export function ImageLinkSheet({
         )
   const matching = notes.filter((note) =>
     matchesWords(
-      `${placeOf(note)} ${note.title} ${noteText(note)} ${note.risk_text ?? ''} ${note.ftu_text ?? ''}`,
+      `${placeOf(note)} ${note.title} ${noteText(note)} ${p.inspectionSide === 'status'
+        ? `${note.recommendation_text ?? ''} ${note.comment_text ?? ''}`
+        : `${note.risk_text ?? ''} ${note.ftu_text ?? ''}`}`,
       query,
     ),
   )
@@ -233,7 +238,7 @@ export function ImageLinkSheet({
   }
   const canCreate =
     Boolean(placement) &&
-    [draft.note, draft.risk_text, draft.ftu_text].some((value) => value.trim())
+    [draft.note, draft.risk_text, draft.ftu_text, draft.recommendation_text, draft.comment_text].some((value) => value?.trim())
   return (
     <Sheet
       title="Koppla bild"
@@ -477,6 +482,7 @@ export function ImageLinkSheet({
           </>
         )}
         <ImageNoteForm
+          statusInspection={p.inspectionSide === 'status'}
           draft={draft}
           onChange={(value) => {
             setDraft(value)

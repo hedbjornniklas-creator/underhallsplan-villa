@@ -15,7 +15,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const org = await requireOrgContext()
     const { id } = await context.params
     const assignment = await getAssignmentById(org.orgId, id)
-    if (!assignment || assignment.assignment_type !== 'OB') return failure('Uppdraget hittades inte.', 404)
+    if (!assignment || !['OB', 'STATUS'].includes(assignment.assignment_type)) return failure('Uppdraget hittades inte.', 404)
     const original = await getArchivedAssignmentPdf(org.orgId, id)
     if (!original) return failure('Ingen original-PDF finns arkiverad för denna uppdragsbekräftelse. Använd originalbilagan i kundens bekräftelsemejl. Historiska dokument återskapas inte.', 404)
     return new NextResponse(new Uint8Array(original.pdf), { headers: {

@@ -20,6 +20,8 @@ type InspectionBlock = {
   noteText: string
   riskText: string
   ftuText: string
+  recommendationText?: string
+  commentText?: string
   photoUrls: string[]
   hasDeviations: boolean
 }
@@ -364,6 +366,7 @@ const resolveTextSource = (source: TextSource, data: ReportDataV2) => {
   }
   if (source.kind === 'mock') {
     const value = getValueAtPath(data, source.path)
+    if (source.path.startsWith('mock.status_report.')) return String(value ?? '')
     if (Array.isArray(value)) return value.filter(Boolean).map((v) => repairMojibake(String(v))).join('\n')
     return repairMojibake(String(value ?? ''))
   }
@@ -595,8 +598,11 @@ const renderBlock = (
 
     return items.map((item, index) => {
       const noteText = (item.noteText ?? '').trim()
-      const riskText = (item.riskText ?? '').trim()
-      const ftuText = (item.ftuText ?? '').trim()
+      const statusInspection = data.mock?.inspections?.side === 'status'
+      const riskText = statusInspection ? '' : (item.riskText ?? '').trim()
+      const ftuText = statusInspection ? '' : (item.ftuText ?? '').trim()
+      const recommendationText = statusInspection ? (item.recommendationText ?? '').trim() : ''
+      const commentText = statusInspection ? (item.commentText ?? '').trim() : ''
       const imageUrl = item.photoUrls?.[0]
       const resolvedImage = imageUrl ? imageMap[imageUrl] ?? imageUrl : null
 
@@ -617,6 +623,12 @@ const renderBlock = (
             <Text style={styles.blockFtu}>
               <Text style={styles.blockLabel}>FTU:</Text> {ftuText}
             </Text>
+          )}
+          {recommendationText && (
+            <Text style={styles.blockNote}><Text style={styles.blockLabel}>Rekommendation:</Text> {recommendationText}</Text>
+          )}
+          {commentText && (
+            <Text style={styles.blockNote}><Text style={styles.blockLabel}>Övriga kommentarer:</Text> {commentText}</Text>
           )}
           {resolvedImage && (
             <View style={block.type === 'buildingIntroduction' && block.imageAlign === 'center'
@@ -656,12 +668,17 @@ export default function ReportPdfDocumentV2({
     'Report'
   const inspectionDate = inspectionMock.date ?? ''
   const rendererLabel = mock.assignment_workflow_draft === true ? 'UTKAST - uppdragets godkännande eller avstämning saknas' : 'Renderer: pdf-v2'
+  const visibleSpec = inspectionMock.side === 'status' && !data.mock?.exterior?.blocks?.length
+    ? spec.filter(section => section.id !== 'notes')
+    : spec
 
   return (
     <Document>
-      {spec.map((section) => {
+      {visibleSpec.map((section) => {
         const appendixText =
-          section.type === 'appendix' && section.appendixId
+          section.appendixTextPath
+            ? String(getValueAtPath(data, section.appendixTextPath) ?? '')
+            : section.type === 'appendix' && section.appendixId
             ? loadAppendixText(section.appendixId)
             : ''
 

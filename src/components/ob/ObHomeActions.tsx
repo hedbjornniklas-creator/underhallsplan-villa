@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ClipboardPlus, FilePlus2, Send, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/AppToastProvider'
+import type { ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 import './ob-home.css'
 
 type PropertySeedRow = {
@@ -184,7 +185,7 @@ function CreateInspectionButton() {
 }
 
 function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefObject<HTMLDialogElement | null> }) {
-  type QuickOrdererRole = 'seller' | 'buyer' | 'apartment' | ''
+  type QuickOrdererRole = ObInspectionProfileKey | ''
 
   const titleId = useId()
   const [email, setEmail] = useState('')
@@ -192,6 +193,8 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
   const [preferredDate, setPreferredDate] = useState('')
   const [preferredTime, setPreferredTime] = useState('')
   const [priceAmount, setPriceAmount] = useState('')
+  const [statusCancellationFee, setStatusCancellationFee] = useState('')
+  const [scopeDescription, setScopeDescription] = useState('')
   const [isSending, setIsSending] = useState(false)
   const toast = useToast()
   const [createdLink, setCreatedLink] = useState<string | null>(null)
@@ -207,7 +210,7 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
     }
 
     if (!ordererRole) {
-      toast.error('V\u00e4lj uppdragsgivare (S\u00e4ljare, K\u00f6pare eller L\u00e4genhet).')
+      toast.error('Välj Säljare, Köpare, Lägenhet eller Statusbesiktning.')
       return
     }
 
@@ -221,6 +224,15 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
       toast.error('Ange ett giltigt pris.')
       return
     }
+    const parsedCancellationFee = Number(statusCancellationFee.trim().replace(',', '.'))
+    if (ordererRole === 'status' && (!statusCancellationFee.trim() || !Number.isFinite(parsedCancellationFee) || parsedCancellationFee < 0)) {
+      toast.error('Ange en avbokningsavgift på 0 kr eller mer för statusbesiktningen.')
+      return
+    }
+    if (ordererRole === 'status' && !scopeDescription.trim()) {
+      toast.error('Ange statusbesiktningens omfattning.')
+      return
+    }
 
     try {
       setIsSending(true)
@@ -231,10 +243,13 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerEmail: normalized,
+          assignmentType: ordererRole === 'status' ? 'STATUS' : 'OB',
           ordererRole,
           preferredDate: preferredDate.trim(),
           preferredTime: preferredTime.trim(),
           priceAmount: normalizedPrice,
+          ...(ordererRole === 'status' ? { statusCancellationFee: parsedCancellationFee } : {}),
+          ...(ordererRole === 'status' ? { scopeDescription: scopeDescription.trim() } : {}),
         }),
       })
 
@@ -258,6 +273,8 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
       setPreferredDate('')
       setPreferredTime('')
       setPriceAmount('')
+      setStatusCancellationFee('')
+      setScopeDescription('')
       dialogRef.current?.close()
       toast.success('Uppdragsbekräftelse skickad.')
       onSent()
@@ -278,9 +295,9 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
     </header>
     <form className="obh-quick-form" aria-busy={isSending} onSubmit={event => { event.preventDefault(); void handleQuickSend() }}>
     <fieldset disabled={isSending}>
-      <legend>Uppdragsgivare</legend>
+      <legend>Typ av uppdrag</legend>
       <div className="obh-roles">
-        {([{ value: 'seller', label: 'Säljare' }, { value: 'buyer', label: 'Köpare' }, { value: 'apartment', label: 'Lägenhet' }] as const).map(role =>
+        {([{ value: 'seller', label: 'Säljare' }, { value: 'buyer', label: 'Köpare' }, { value: 'apartment', label: 'Lägenhet' }, { value: 'status', label: 'Statusbesiktning' }] as const).map(role =>
           <label key={role.value}>
             <input type="radio" name="quick-orderer" value={role.value} checked={ordererRole === role.value}
               onChange={() => setOrdererRole(role.value)} required />
@@ -302,6 +319,15 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
       <input type="text" inputMode="decimal" value={priceAmount} onChange={event => setPriceAmount(event.target.value)}
         placeholder="0" required disabled={isSending} />
     </label>
+    {ordererRole === 'status' && <label>Avbokningsavgift (SEK)
+      <input type="text" inputMode="decimal" value={statusCancellationFee}
+        onChange={event => setStatusCancellationFee(event.target.value)}
+        placeholder="Ange belopp, även 0" required disabled={isSending} />
+    </label>}
+    {ordererRole === 'status' && <label>Besiktningens omfattning
+      <input type="text" value={scopeDescription} onChange={event => setScopeDescription(event.target.value)}
+        placeholder="Till exempel badrum eller hela byggnaden" required disabled={isSending} />
+    </label>}
     {createdLink && <p className="obh-feedback">Bekräftelsen är skapad. <a href={createdLink} target="_blank" rel="noopener noreferrer">Öppna kundlänk</a></p>}
     <div className="obh-dialog-actions">
       <button type="button" disabled={isSending} onClick={() => dialogRef.current?.close()}>Avbryt</button>

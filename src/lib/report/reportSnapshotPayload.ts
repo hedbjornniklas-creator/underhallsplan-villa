@@ -6,7 +6,7 @@ export type ReportSnapshotPayloadV1 = {
   createdAt: string
   inspectionId: string
   propertyId: string
-  inspectionSide: 'buyer' | 'seller' | 'apartment' | null
+  inspectionSide: 'buyer' | 'seller' | 'apartment' | 'status' | null
   reportData: ReportDataV2
   reportSpec: ReportSection[]
 }
@@ -14,7 +14,7 @@ export type ReportSnapshotPayloadV1 = {
 export function createReportSnapshotPayloadV1(input: {
   inspectionId: string
   propertyId: string
-  inspectionSide: 'buyer' | 'seller' | 'apartment' | null
+  inspectionSide: 'buyer' | 'seller' | 'apartment' | 'status' | null
   reportData: ReportDataV2
   reportSpec: ReportSection[]
 }): ReportSnapshotPayloadV1 {

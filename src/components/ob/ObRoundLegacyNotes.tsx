@@ -16,7 +16,8 @@ export default function ObRoundLegacyNotes({ p, exteriorItemId, query = '' }: {
   const toast = useToast()
   const rows = (p.legacyExteriorNotes ?? []).filter(row =>
     (!exteriorItemId || row.exterior_item_id === exteriorItemId) &&
-    matchesWords([row.part_label, row.note, row.risk_text, row.ftu_text,
+    matchesWords([row.part_label, row.note, ...(p.inspectionSide === 'status'
+      ? [row.recommendation_text, row.comment_text] : [row.risk_text, row.ftu_text]),
       p.exteriorItems.find(item => item.id === row.exterior_item_id)?.label].join(' '), query))
   if (!rows.length) return null
   return <section className="obm-legacy-notes">
@@ -24,8 +25,11 @@ export default function ObRoundLegacyNotes({ p, exteriorItemId, query = '' }: {
     {rows.map(row => <details key={row.id} className="obm-category">
       <summary><span>{row.part_label || 'Fri notering'}<small>Utsida · {p.exteriorItems.find(item => item.id === row.exterior_item_id)?.label || 'Tidigare byggnadsdel'}</small></span><ChevronDown size={19} /></summary>
       <div className="obm-legacy-fields">
-        {(['note', 'risk_text', 'ftu_text'] as const).map(field => <label key={field}>
-          {field === 'note' ? 'Notering' : field === 'risk_text' ? 'Risk' : 'Fortsatt teknisk utredning'}
+        {(p.inspectionSide === 'status'
+          ? ['note', 'recommendation_text', 'comment_text'] as const
+          : ['note', 'risk_text', 'ftu_text'] as const).map(field => <label key={field}>
+          {{ note: 'Notering', risk_text: 'Risk', ftu_text: 'Fortsatt teknisk utredning',
+            recommendation_text: 'Rekommendation', comment_text: 'Övriga kommentarer' }[field]}
           <DebouncedTextarea rows={3} value={row[field] ?? ''}
             draftKey={`ob:${p.scopeId ?? p.inspectionId}:utsida:observation:${row.id}:${field}`}
             readOnly={p.locked || !p.onUpdateLegacyNote}

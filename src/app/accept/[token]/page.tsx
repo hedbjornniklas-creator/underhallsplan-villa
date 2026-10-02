@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'next/navigation'
 import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react'
+import { obInspectionProfileLabel, parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 import {
   CONSUMER_EARLY_START_CONSENT_TEXT,
   CONSUMER_WITHDRAWAL_FORM_URL,
@@ -14,7 +15,7 @@ import {
 } from '@/lib/assignments/consumer'
 
 type AcceptState = 'open' | 'used' | 'expired' | 'revoked' | 'outdated'
-type OrdererRole = 'buyer' | 'seller' | 'apartment' | ''
+type OrdererRole = ObInspectionProfileKey | ''
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -56,6 +57,7 @@ type TermsDocument = {
   hash: string
   text: string
   templateId: string
+  confirmationTexts?: { acceptance: string }
 }
 
 type InspectorProfile = {
@@ -103,6 +105,7 @@ type AcceptReadResponse = {
       seller: TermsDocument
       buyer: TermsDocument
       apartment: TermsDocument
+      status?: TermsDocument
       technical: TermsDocument
       construction: TermsDocument
       constructionBusiness: TermsDocument
@@ -165,19 +168,7 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
 }
 
 function normalizeRole(value: string | null): OrdererRole {
-  if (!value) return ''
-  const lowered = value
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-
-  if (lowered.includes('buy') || lowered.includes('kop')) return 'buyer'
-  if (lowered.includes('apt') || lowered.includes('apartment') || lowered.includes('lagenhet')) {
-    return 'apartment'
-  }
-  if (lowered.includes('sell') || lowered.includes('salj')) return 'seller'
-  return ''
+  return parseObInspectionProfile(value) ?? ''
 }
 
 function toFormState(
@@ -185,7 +176,7 @@ function toFormState(
   addonOffers: AddonOffer[],
   selectedAddonServiceIds: string[] = []
 ): FormState {
-  const role = normalizeRole(assignment.orderer_role)
+  const role = resolveObInspectionProfile(assignment) ?? normalizeRole(assignment.orderer_role)
   const availableAddonIds = new Set(addonOffers.map((offer) => offer.addon_service_id))
   const normalizedSelectedAddons = selectedAddonServiceIds.filter((id) => availableAddonIds.has(id))
   return {
@@ -217,10 +208,7 @@ function toFormState(
 }
 
 function roleToLabel(role: OrdererRole) {
-  if (role === 'buyer') return 'Köpare'
-  if (role === 'apartment') return 'Lägenhet'
-  if (role === 'seller') return 'Säljare'
-  return ''
+  return role ? obInspectionProfileLabel(role) : ''
 }
 
 export default function AssignmentAcceptPage() {
@@ -333,7 +321,7 @@ export default function AssignmentAcceptPage() {
 
   const lockedOrdererRole = useMemo<OrdererRole>(() => {
     if (!data) return ''
-    return normalizeRole(data.assignment.orderer_role)
+    return resolveObInspectionProfile(data.assignment) ?? normalizeRole(data.assignment.orderer_role)
   }, [data])
 
   const isTechnicalAssignment = data?.assignment.assignment_type === 'TU'
@@ -377,6 +365,10 @@ export default function AssignmentAcceptPage() {
     if (lockedOrdererRole === 'buyer') return data.terms.documents.buyer
     if (lockedOrdererRole === 'apartment') return data.terms.documents.apartment
     if (lockedOrdererRole === 'seller') return data.terms.documents.seller
+    if (lockedOrdererRole === 'status') {
+      const statusTerms = data.terms.documents.status
+      return statusTerms?.confirmationTexts?.acceptance ? statusTerms : null
+    }
     return null
   }, [data, ebDetails?.customerType, isEbAssignment, isTechnicalAssignment, lockedOrdererRole])
 
@@ -738,7 +730,7 @@ export default function AssignmentAcceptPage() {
                 ) : (
                   <>
                     <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                      ÖVERLÅTELSEBESIKTNING FÖR
+                      TYP AV UPPDRAG
                     </p>
                     <RoleChip
                       label="Säljare"
@@ -755,6 +747,12 @@ export default function AssignmentAcceptPage() {
                     <RoleChip
                       label="Lägenhet"
                       active={lockedOrdererRole === 'apartment'}
+                      onClick={() => undefined}
+                      disabled
+                    />
+                    <RoleChip
+                      label="Statusbesiktning"
+                      active={lockedOrdererRole === 'status'}
                       onClick={() => undefined}
                       disabled
                     />
@@ -790,9 +788,9 @@ export default function AssignmentAcceptPage() {
                     onChange={(value) => updateField('propertyMunicipality', value)}
                     disabled={!canSubmit}
                   />
-                  {isTechnicalAssignment || isEbAssignment ? (
+                  {isTechnicalAssignment || isEbAssignment || lockedOrdererRole === 'status' ? (
                     <TextAreaField
-                      label={isEbAssignment ? 'Besiktningens omfattning' : 'Utredningens omfattning'}
+                      label={isTechnicalAssignment ? 'Utredningens omfattning' : 'Besiktningens omfattning'}
                       value={form.scopeDescription}
                       onChange={(value) => updateField('scopeDescription', value)}
                       disabled
@@ -1156,10 +1154,12 @@ export default function AssignmentAcceptPage() {
                   type="checkbox"
                   checked={form.termsAccepted}
                   onChange={(event) => updateField('termsAccepted', event.target.checked)}
-                  disabled={!canSubmit}
+                  disabled={!canSubmit || !activeTerms}
                   className="mt-0.5 h-4 w-4 rounded border-gray-300"
                 />
-                <span>Jag har läst och godkänner villkoren nedan (version {data.terms.version}). *</span>
+                <span>{lockedOrdererRole === 'status'
+                  ? activeTerms?.confirmationTexts?.acceptance
+                  : <>Jag har läst och godkänner villkoren nedan (version {data.terms.version}). *</>}</span>
               </label>
 
               {isConsumerAssignment ? (
@@ -1221,7 +1221,7 @@ export default function AssignmentAcceptPage() {
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={!canSubmit || saving || !form.termsAccepted || !consumerRequirementsMet}
+                disabled={!canSubmit || !activeTerms || saving || !form.termsAccepted || !consumerRequirementsMet}
                 className={`inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-semibold text-white transition disabled:cursor-not-allowed ${
                   isTechnicalAssignment
                     ? 'bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300'

@@ -2,6 +2,8 @@ type StoredNoteText = {
   note?: string | null
   risk_text?: string | null
   ftu_text?: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
 }
 
 type OutcomeText = {
@@ -26,4 +28,26 @@ export function copyObOutcomeText(outcome: OutcomeText) {
     risk_text: outcome.risk_template,
     ftu_text: outcome.ftu_template,
   })
+}
+
+export function readStatusNoteText(note: StoredNoteText) {
+  return {
+    note: note.note ?? '',
+    risk_text: '',
+    ftu_text: '',
+    recommendation_text: note.recommendation_text ?? '',
+    comment_text: note.comment_text ?? '',
+  }
+}
+
+// Status uses the catalogue's observation only. Recommendations and comments
+// belong to the inspector and are never inferred from OB risk/FTU templates.
+export function copyStatusOutcomeText(outcome: OutcomeText) {
+  return readStatusNoteText({ note: outcome.note_template })
+}
+
+// Selecting a suggestion on an existing STB note changes its observation only.
+// Hidden legacy OB text and the inspector's manual fields must be preserved.
+export function copyExistingNoteOutcomeText(outcome: OutcomeText, statusInspection: boolean) {
+  return statusInspection ? { note: outcome.note_template ?? '' } : copyObOutcomeText(outcome)
 }

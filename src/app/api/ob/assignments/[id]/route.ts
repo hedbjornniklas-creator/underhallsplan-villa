@@ -255,6 +255,23 @@ export async function PATCH(
       if (!['OB', 'STATUS', 'UHP', 'EB'].includes(normalized)) return jsonError('Ogiltig uppdragstyp.', 400)
       patch.assignment_type = normalized as AssignmentType
     }
+    const effectiveType = patch.assignment_type ?? existing.assignment_type
+    if (effectiveType === 'STATUS' && (Object.prototype.hasOwnProperty.call(body, 'scopeDescription') ||
+      Object.prototype.hasOwnProperty.call(body, 'scope_description'))) {
+      patch.scope_description = safeString(body.scope_description ?? body.scopeDescription)
+    }
+    if (effectiveType === 'STATUS') patch.orderer_role = 'Statusbesiktning'
+    if (Object.prototype.hasOwnProperty.call(body, 'statusCancellationFee')) {
+      const raw = body.statusCancellationFee
+      const fee = raw === null || raw === '' ? null : Number(String(raw).replace(',', '.'))
+      if (fee !== null && (!Number.isFinite(fee) || fee < 0)) return jsonError('Ogiltigt avbokningsbelopp.', 400)
+      patch.assignment_details = { ...existing.assignment_details, statusCancellationFee: fee }
+    }
+    if (patch.assignment_type && patch.assignment_type !== existing.assignment_type &&
+      (patch.assignment_type === 'STATUS' || existing.assignment_type === 'STATUS') &&
+      (existing.accepted_at || ['sent', 'ordered', 'booked', 'completed'].includes(existing.status))) {
+      return jsonError('Byt inte mellan statusbesiktning och överlåtelsebesiktning på en skickad eller godkänd uppdragsbekräftelse. Skapa en ny version.', 409)
+    }
 
     const responsibleProfileId = safeString(body.responsible_profile_id ?? body.responsibleProfileId)
     if (responsibleProfileId) {

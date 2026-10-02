@@ -17,8 +17,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const org = await requireOrgContext()
     const { id } = await context.params
     const assignment = await getAssignmentById(org.orgId, id)
-    if (!assignment || assignment.assignment_type !== 'OB') return json({ error: 'Uppdraget hittades inte.' }, 404)
-    if (process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED !== 'true') {
+    if (!assignment || !['OB', 'STATUS'].includes(assignment.assignment_type)) return json({ error: 'Uppdraget hittades inte.' }, 404)
+    if (assignment.assignment_type !== 'STATUS' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED !== 'true') {
       return json({ error: 'Arkiverade bekräftelseutskick är inte aktiverade.' }, 409)
     }
     const snapshot = await getObConfirmationSnapshot(org.orgId, id)

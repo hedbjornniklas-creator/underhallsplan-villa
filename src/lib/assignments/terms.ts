@@ -3,11 +3,13 @@ import 'server-only'
 import { createHash } from 'node:crypto'
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
+import { getStatusAssignmentTermsDocument } from './statusTerms'
 
 export type AssignmentTermsRole =
   | 'seller'
   | 'buyer'
   | 'apartment'
+  | 'status'
   | 'technical'
   | 'construction'
   | 'construction_business'
@@ -22,9 +24,13 @@ export const EB_CONSUMER_ASSIGNMENT_TERMS_VERSION = '2026-08-22.eb-consumer.v1'
 export type AssignmentTermsDocument = {
   version: string
   role: AssignmentTermsRole
-  templateId: StandardTextId
+  templateId: StandardTextId | 'STD_ASSIGNMENT_TEMPLATE_STATUS_2026'
   text: string
   documentHash: string
+  sourceId?: string
+  sourceFileHash?: string
+  verbatim?: boolean
+  confirmationTexts?: Record<string, string>
 }
 
 function sha256Hex(input: string) {
@@ -42,6 +48,7 @@ function toAsciiLower(value: string) {
 export function parseAssignmentTermsRole(value: string | null | undefined): AssignmentTermsRole | null {
   const lowered = toAsciiLower(value ?? '')
   if (!lowered) return null
+  if (lowered === 'status' || lowered === 'stb' || lowered.includes('statusbesiktning')) return 'status'
   if (lowered.includes('buy') || lowered.includes('kop')) return 'buyer'
   if (lowered.includes('apt') || lowered.includes('apartment') || lowered.includes('lagenhet')) {
     return 'apartment'
@@ -77,6 +84,7 @@ export function resolveAssignmentTermsRole(input: {
   ordererRole: string | null | undefined
   assignmentDetails?: Record<string, unknown> | null
 }): AssignmentTermsRole | null {
+  if (input.assignmentType === 'STATUS') return 'status'
   if (input.assignmentType === 'TU') return 'technical'
   if (input.assignmentType === 'EB') {
     const customerType = input.assignmentDetails?.customerType
@@ -88,7 +96,10 @@ export function resolveAssignmentTermsRole(input: {
       ? parsed
       : 'construction'
   }
-  return parseAssignmentTermsRole(input.ordererRole)
+  const role = parseAssignmentTermsRole(input.ordererRole)
+  // STATUS is a service classification, not an OB seller/buyer role. Never issue
+  // its source through an OB assignment that would bypass the STB freeze.
+  return role === 'status' ? null : role
 }
 
 export function normalizeAssignmentTermsRole(
@@ -97,7 +108,8 @@ export function normalizeAssignmentTermsRole(
   return parseAssignmentTermsRole(value)
 }
 
-export function getAssignmentTermsTemplateId(role: AssignmentTermsRole): StandardTextId {
+export function getAssignmentTermsTemplateId(role: AssignmentTermsRole): StandardTextId | 'STD_ASSIGNMENT_TEMPLATE_STATUS_2026' {
+  if (role === 'status') return 'STD_ASSIGNMENT_TEMPLATE_STATUS_2026'
   if (role === 'buyer') return 'STD_ASSIGNMENT_TEMPLATE_BUYER_2026'
   if (role === 'apartment') return 'STD_ASSIGNMENT_TEMPLATE_APARTMENT_2026'
   if (role === 'technical') return 'STD_ASSIGNMENT_TEMPLATE_TU_2026'
@@ -108,8 +120,9 @@ export function getAssignmentTermsTemplateId(role: AssignmentTermsRole): Standar
 }
 
 export function getAssignmentTermsDocument(role: AssignmentTermsRole): AssignmentTermsDocument {
+  if (role === 'status') return getStatusAssignmentTermsDocument()
   const templateId = getAssignmentTermsTemplateId(role)
-  const text = loadStandardText(templateId)
+  const text = loadStandardText(templateId as StandardTextId)
 
   return {
     version:

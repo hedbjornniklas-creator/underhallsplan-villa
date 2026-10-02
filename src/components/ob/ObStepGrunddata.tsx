@@ -21,6 +21,8 @@ import ObBuildingOverview from './ObBuildingOverview'
 import ObCoverImageBank from './ObCoverImageBank'
 import { useObBuilding } from './ObBuildingContext'
 import { resolveInspectionCoverUrl } from '@/lib/ob/inspectionCoverUrl'
+import { getObInspectionClassification, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
+import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 
 export type ObInspection = Tables<'inspections'>
 
@@ -38,8 +40,16 @@ type Property = BaseProperty & {
   apartment_holder_name: string | null
 }
 type Inspection = ObInspection
-type InspectionSide = Inspection['inspection_side'] // typiskt: 'buyer' | 'seller' | null
-type EditableInspectionSide = 'buyer' | 'seller' | 'apartment'
+type EditableInspectionSide = ObInspectionProfileKey
+
+function profileChangeDraftError(inspectionId: string): string | null {
+  try {
+    if (!hasObTextDraftsForInspection(inspectionId)) return null
+  } catch {
+    return 'Lokala utkast kunde inte kontrolleras. Typ av uppdrag har inte ändrats.'
+  }
+  return 'Det finns lokala textutkast. Öppna och spara dem innan du byter till eller från statusbesiktning.'
+}
 type SupabaseUpsertClient = {
   from: (table: string) => {
     upsert: (
@@ -211,24 +221,6 @@ function normalizeInspectionStatus(value: string | null | undefined): string {
   return raw
 }
 
-function normalizeInspectionSide(value: InspectionSide | string | null | undefined): EditableInspectionSide {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-
-  if (normalized.includes('sell') || normalized.includes('salj')) return 'seller'
-  if (
-    normalized.includes('apt') ||
-    normalized.includes('apartment') ||
-    normalized.includes('lagenhet')
-  ) {
-    return 'apartment'
-  }
-  return 'buyer'
-}
-
 export default function ObStepGrunddata({
   property,
   inspection,
@@ -261,7 +253,7 @@ export default function ObStepGrunddata({
     inspection_time: inspection.inspection_time ?? '',
     attendees: inspection.attendees ?? '',
     attendees_other: inspection.attendees_other ?? '',
-    inspection_side: normalizeInspectionSide(inspection.inspection_side),
+    inspection_side: resolveObInspectionProfile(inspection) ?? 'buyer',
   })
   const [ordererForm, setOrdererForm, acknowledgeOrderer] = useObFormDraft(inspection.id, {
     customer_name: property.customer_name ?? inspection.client_name ?? '',
@@ -409,7 +401,7 @@ export default function ObStepGrunddata({
         setInspectionAddonOrders(rows)
         notifyAddonSelection(rows)
 
-        if ((inspection.scope ?? '').trim() === '' && rows.length > 0) {
+        if (resolveObInspectionProfile(inspection) !== 'status' && (inspection.scope ?? '').trim() === '' && rows.length > 0) {
           const selectedFromSnapshot = formatScopeLabels(
             rows
               .filter(row => row.is_selected)
@@ -486,6 +478,18 @@ export default function ObStepGrunddata({
     if (latestInspection.current.id !== inspection.id || latestInspection.current.locked_at) {
       if (options?.throwOnError) throw new Error('Besiktningen kan inte längre redigeras.')
       return null
+    }
+    // Recheck inside the write queue: a draft can arrive while validation or
+    // an earlier save is pending, including from another tab on this device.
+    if (patch.inspection_side !== undefined &&
+        (resolveObInspectionProfile(latestInspection.current) === 'status') !==
+        (resolveObInspectionProfile({ ...latestInspection.current, ...patch }) === 'status')) {
+      const draftError = profileChangeDraftError(inspection.id)
+      if (draftError) {
+        setError(draftError)
+        if (options?.throwOnError) throw new Error(draftError)
+        return null
+      }
     }
     setError(null)
 
@@ -638,7 +642,8 @@ export default function ObStepGrunddata({
     if (field === 'attendees_other') patch.attendees_other = val
 
     if (field === 'inspection_side') {
-      patch.inspection_side = (val as EditableInspectionSide) as InspectionSide
+      // The type selector has a separate guarded write path.
+      return
     }
 
     if (Object.keys(patch).length > 0) void saveInspection(patch)
@@ -705,9 +710,11 @@ export default function ObStepGrunddata({
       setInspectionAddonOrders(persistedRows)
       notifyAddonSelection(persistedRows)
 
-      const newScope = scopeFromInspectionAddons(persistedRows)
-      setInspForm(prev => ({ ...prev, scope: newScope }))
-      await saveInspection({ scope: newScope } as Partial<Inspection>)
+      if (inspForm.inspection_side !== 'status') {
+        const newScope = scopeFromInspectionAddons(persistedRows)
+        setInspForm(prev => ({ ...prev, scope: newScope }))
+        await saveInspection({ scope: newScope } as Partial<Inspection>)
+      }
     } catch (addonUpdateError) {
       console.error('Kunde inte uppdatera tilläggsuppdrag:', addonUpdateError)
       setInspectionAddonOrders(prev => {
@@ -750,7 +757,26 @@ export default function ObStepGrunddata({
   // Köpar-/säljarbesiktning - radioknappar
   const handleInspectionSideChange = async (side: EditableInspectionSide) => {
     if (isInspectionLocked) return
-    const patch: Partial<Inspection> = { inspection_side: side as InspectionSide }
+    const crossesStatusProfile = (inspForm.inspection_side === 'status') !== (side === 'status')
+    if (crossesStatusProfile) {
+      const draftError = profileChangeDraftError(inspection.id)
+      if (draftError) { setError(draftError); return }
+      const { data: linkedAssignments, error: assignmentError } = await supabase.from('assignments')
+        .select('status,accepted_at').eq('inspection_id', inspection.id)
+      if (assignmentError) {
+        setError('Kunde inte kontrollera uppdragsbekräftelsen. Typ av uppdrag har inte ändrats.')
+        return
+      }
+      const assignments = linkedAssignments as Array<{ status: string; accepted_at: string | null }> | null
+      if (assignments?.some(assignment => assignment.accepted_at || ['sent', 'ordered', 'booked', 'completed'].includes(assignment.status))) {
+        setError('Byte till eller från statusbesiktning kräver en ny uppdragsbekräftelse. Den kopplade bekräftelsen är redan skickad eller godkänd.')
+        return
+      }
+      if (!window.confirm('Vill du byta typ av uppdrag? Befintliga noteringar och bilder behålls. Risk och fortsatt teknisk utredning visas inte i statusbesiktning; rekommendationer och övriga kommentarer visas inte i överlåtelsebesiktning. Ingen text omvandlas.')) return
+    }
+    const patch: Partial<Inspection> = crossesStatusProfile
+      ? getObInspectionClassification(side)
+      : { inspection_side: side }
 
     // Om vi växlar till säljarbesiktning ska "Köpare" inte vara markerad
     if (side === 'seller') {
@@ -759,18 +785,14 @@ export default function ObStepGrunddata({
         const next = current.filter(l => l !== 'Köpare')
         const newAttendees = formatAttendeeLabels(next)
         patch.attendees = newAttendees
-        setInspForm(prev => ({
-          ...prev,
-          inspection_side: side,
-          attendees: newAttendees,
-        }))
-        await saveInspection(patch)
+        const saved = await saveInspection(patch)
+        if (saved) setInspForm(prev => ({ ...prev, inspection_side: side, attendees: newAttendees }))
         return
       }
     }
 
-    setInspForm(prev => ({ ...prev, inspection_side: side }))
-    await saveInspection(patch)
+    const saved = await saveInspection(patch)
+    if (saved) setInspForm(prev => ({ ...prev, inspection_side: side }))
   }
 
   // Vilka närvarorutor vi ska visa: vid säljarbesiktning, ingen "Köpare"
@@ -1062,6 +1084,16 @@ export default function ObStepGrunddata({
                 />
                 <span>Lägenhetsbesiktning</span>
               </label>
+              <label className="ob-form-choice">
+                <input
+                  type="radio"
+                  className="h-3 w-3"
+                  checked={inspForm.inspection_side === 'status'}
+                  disabled={isInspectionLocked}
+                  onChange={() => void handleInspectionSideChange('status')}
+                />
+                <span>Statusbesiktning</span>
+              </label>
             </div>
           </fieldset>
   )
@@ -1138,6 +1170,14 @@ export default function ObStepGrunddata({
   const scopeFields = (
           <div className="space-y-2">
             {!workspace && <div className="ob-form-label">Omfattning</div>}
+            {inspForm.inspection_side === 'status' && <Field
+              label="Besiktningens omfattning"
+              value={inspForm.scope}
+              onChange={value => handleInspChange('scope', value)}
+              onBlur={() => handleInspBlur('scope')}
+              placeholder="Till exempel badrum eller hela byggnaden"
+              readOnly={isInspectionLocked}
+            />}
             <div className="ob-property-scope-options space-y-1">
               {inspectionAddonLoading && hasInspectionAddonSnapshot === false ? (
                 <div className="ob-form-muted">Laddar omfattning...</div>
@@ -1154,7 +1194,7 @@ export default function ObStepGrunddata({
                     <span>{row.addon_name_snapshot}</span>
                   </label>
                 ))
-              ) : (
+              ) : inspForm.inspection_side === 'status' ? null : (
                 SCOPE_OPTIONS.map(opt => (
                   <label key={opt.key} className="ob-form-choice">
                     <input

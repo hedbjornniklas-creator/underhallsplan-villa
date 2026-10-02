@@ -83,6 +83,7 @@ export type AcceptedAssignmentConfirmationPdfInput = {
     version: string
     documentHash: string
     text: string
+    verbatim?: boolean
   }
 }
 
@@ -379,6 +380,7 @@ function assignmentTypeLabel(type: AssignmentType) {
 }
 
 function termsHeading(role: string) {
+  if (role === 'status') return 'Villkor för statusbesiktning'
   if (role === 'construction_consumer') {
     return 'Villkor för entreprenadbesiktning - privat konsument'
   }
@@ -505,12 +507,12 @@ function looksLikeHeading(line: string) {
   return true
 }
 
-function TermsText({ lines, keyPrefix }: { lines: string[]; keyPrefix: string }) {
+function TermsText({ lines, keyPrefix, verbatim = false }: { lines: string[]; keyPrefix: string; verbatim?: boolean }) {
   return h(
     React.Fragment,
     null,
     ...lines.map((rawLine, index) => {
-      const line = rawLine.trim().replace(/^•\s*/, '- ')
+      const line = verbatim ? rawLine : rawLine.trim().replace(/^•\s*/, '- ')
       if (!line) return h(View, { key: `${keyPrefix}-space-${index}`, style: styles.termsSpacer })
       if (looksLikeHeading(line)) {
         return h(
@@ -545,8 +547,8 @@ function estimateTermsLineCost(line: string) {
   return Math.max(1, Math.ceil(normalized.length / 105)) + 0.35
 }
 
-function splitTermsIntoPageChunks(text: string) {
-  const lines = normalizePdfText(text).split('\n')
+function splitTermsIntoPageChunks(text: string, verbatim = false) {
+  const lines = (verbatim ? text : normalizePdfText(text)).split('\n')
   const chunks: string[][] = []
   let current: string[] = []
   let currentCost = 0
@@ -795,7 +797,9 @@ function AcceptedAssignmentConfirmationDocument({
     }
   }
 
-  const termsChunks = splitTermsIntoPageChunks(terms.text)
+  const verbatim = assignment.assignment_type === 'STATUS' && terms.verbatim === true
+  if (assignment.assignment_type === 'STATUS' && !verbatim) throw new Error('STATUS_VERBATIM_SOURCE_REQUIRED')
+  const termsChunks = splitTermsIntoPageChunks(terms.text, verbatim)
   const factsPageCount = 3
   const totalPages = factsPageCount + termsChunks.length
 
@@ -806,7 +810,7 @@ function AcceptedAssignmentConfirmationDocument({
       { key: 'hero', style: styles.hero },
       h(Text, { style: styles.heroEyebrow }, 'UPPDRAGSBEKRÄFTELSE'),
       h(Text, { style: styles.heroTitle }, typeLabel),
-      h(Text, { style: styles.heroSubtitle }, displayText(ordererRole, resolvedIssuer))
+      h(Text, { style: styles.heroSubtitle }, assignment.assignment_type === 'STATUS' ? 'Statusbesiktning' : displayText(ordererRole, resolvedIssuer))
     ),
     h(
       View,
@@ -1010,7 +1014,7 @@ function AcceptedAssignmentConfirmationDocument({
             `Dokumentfingeravtryck (SHA-256): ${formatHash(terms.documentHash)}`
           )
         ),
-        h(TermsText, { key: `terms-text-${index}`, lines, keyPrefix: `terms-${index}` })
+        h(TermsText, { key: `terms-text-${index}`, lines, keyPrefix: `terms-${index}`, verbatim })
       )
     )
   )

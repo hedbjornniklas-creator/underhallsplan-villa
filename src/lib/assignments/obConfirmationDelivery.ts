@@ -36,7 +36,7 @@ export async function sendFrozenObConfirmation(input: {
       original = await archiveAcceptedAssignmentPdf({
         orgId: input.orgId, assignmentId: input.assignmentId, acceptedAt, pdf,
         filename: buildAcceptedAssignmentConfirmationFilename({
-          assignmentType: 'OB', assignmentId: input.assignmentId, acceptedAt,
+          assignmentType: snapshot.assignment.assignment_type, assignmentId: input.assignmentId, acceptedAt,
         }),
       })
     }

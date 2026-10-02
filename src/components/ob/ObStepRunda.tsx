@@ -1,6 +1,7 @@
 'use client'
 
-import { copyObOutcomeText } from '@/lib/ob/noteText'
+import { copyObOutcomeText, copyStatusOutcomeText, copyExistingNoteOutcomeText } from '@/lib/ob/noteText'
+import { isStatusInspection, resolveObInspectionProfile } from '@/lib/ob/inspectionProfile'
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { queueImageBatch, unplacedImagePlacement } from '@/lib/ob/roundImageImport'
@@ -46,9 +47,12 @@ type Inspection = {
   status?: string | null
   locked_at?: string | null
   inspection_side?: string | null
+  type?: string | null
+  inspection_family?: string | null
+  inspection_variant?: string | null
 }
 
-type InspectionSide = 'buyer' | 'seller' | 'apartment'
+type InspectionSide = 'buyer' | 'seller' | 'apartment' | 'status'
 type RoundArea = 'interior' | 'exterior'
 type ValueMap = Record<string, unknown>
 
@@ -91,6 +95,8 @@ export type InspectionExteriorObservation = {
   note: string | null
   risk_text?: string | null
   ftu_text?: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
 }
 
 export type InspectionControlItem = {
@@ -105,6 +111,8 @@ export type InspectionControlItem = {
   note: string | null
   risk_text?: string | null
   ftu_text?: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
   sort_order: number
   selected_outcome_id: string | null
 }
@@ -328,6 +336,9 @@ const controlPointAppliesToInspectionSide = (
   inspectionSide: InspectionSide
 ) => {
   const appliesTo = parseAppliesToSides(controlPoint.applies_to)
+  // Catalogue suitability is reviewed separately; STB currently reuses the
+  // existing suggestions, still scoped to the selected room/building part.
+  if (inspectionSide === 'status') return true
   return !appliesTo || appliesTo.includes(inspectionSide)
 }
 
@@ -380,7 +391,9 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     ? modelFloorRank(floorModel, a.floor_label) - modelFloorRank(floorModel, b.floor_label) || (a.order_index ?? 0) - (b.order_index ?? 0)
     : legacySortRooms(a, b)
   const isInspectionLocked = Boolean(inspection?.locked_at)
-  const inspectionSide = normalizeInspectionSide(inspection?.inspection_side)
+  const isStatus = isStatusInspection(inspection)
+  const inspectionSide = resolveObInspectionProfile(inspection) ?? normalizeInspectionSide(inspection?.inspection_side)
+  const copyOutcomeText = isStatus ? copyStatusOutcomeText : copyObOutcomeText
 
   const [area, setArea] = useState<RoundArea>('interior')
   const [loading, setLoading] = useState(true)
@@ -1069,7 +1082,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       setExteriorObservations(normalizedObservations)
       setLegacyExteriorNotes(((observationRows ?? []) as InspectionExteriorObservation[]).filter(row =>
         row.is_free_note === true || row.values?._free_note === true ||
-        Boolean(row.note?.trim() || row.risk_text?.trim() || row.ftu_text?.trim())))
+        Boolean(row.note?.trim() || row.risk_text?.trim() || row.ftu_text?.trim() ||
+          row.recommendation_text?.trim() || row.comment_text?.trim())))
       const confirmedNotes = (controlRows ?? []) as InspectionControlItem[]
       clearConfirmedObNoteDrafts(inspection.id, confirmedNotes, draftScope)
       setControlItems(confirmedNotes.map(normalizeControlItem))
@@ -1510,6 +1524,10 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
         note: item.note,
         risk_text: item.risk_text ?? null,
         ftu_text: item.ftu_text ?? null,
+        ...(isStatus ? {
+          recommendation_text: item.recommendation_text ?? null,
+          comment_text: item.comment_text ?? null,
+        } : {}),
         sort_order: item.sort_order,
         selected_outcome_id: item.selected_outcome_id ?? null,
       }
@@ -1686,7 +1704,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       control_point_id: baseItem.control_point_id,
       title: baseItem.title,
       status: 'remark',
-      ...copyObOutcomeText(outcome),
+      ...copyOutcomeText(outcome),
       sort_order: sortOrder,
       selected_outcome_id: outcome.id,
     })
@@ -2342,8 +2360,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     return (
       <>
         {mobileLayout && <ObInspectionHeader inspectionId={inspection.id} address={address}
-          title={building?.part?.name ? `ÖB-runda · ${building.part.name}` : 'ÖB-runda'} onOpenMenu={onOpenMenu} />}
-        <p role="status" className="py-5">Läser ÖB-runda...</p>
+          title={building?.part?.name ? `${isStatus ? 'Statusbesiktning' : 'ÖB-runda'} · ${building.part.name}` : isStatus ? 'Statusbesiktning' : 'ÖB-runda'} onOpenMenu={onOpenMenu} />}
+        <p role="status" className="py-5">{isStatus ? 'Läser statusbesiktning...' : 'Läser ÖB-runda...'}</p>
       </>
     )
   }
@@ -2352,7 +2370,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     <div className={mobileLayout ? 'ob-mobile-round-host' : 'min-h-dvh space-y-4 bg-white p-2 md:p-4'}>
       {isInspectionLocked && !mobileLayout ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          Besiktningen är låst. ÖB-rundan kan läsas men inte ändras.
+          {isStatus ? 'Besiktningen är låst. Statusbesiktningen kan läsas men inte ändras.' : 'Besiktningen är låst. ÖB-rundan kan läsas men inte ändras.'}
         </div>
       ) : null}
 
@@ -3078,6 +3096,26 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
     )
   }
 
+  function renderAdditionalNoteFields(item: InspectionControlItem, stacked = false) {
+    const fields = isStatus
+      ? [['recommendation_text', 'Rekommendation'], ['comment_text', 'Övriga kommentarer']] as const
+      : [['risk_text', 'Risk'], ['ftu_text', 'FTU']] as const
+    return <div className={stacked ? 'space-y-4' : 'grid gap-4 md:grid-cols-2'}>
+      {fields.map(([field, label]) => <div key={field} className="rounded-xl border border-gray-200 bg-white p-3">
+        <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</label>
+        <DebouncedTextarea
+          draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:${field}`}
+          rows={4}
+          value={item[field] ?? ''}
+          onSave={value => updateControlItem(item.id!, { [field]: value }, { throwOnError: true })}
+          readOnly={isInspectionLocked}
+          placeholder={isStatus ? 'Valfritt – skriv med egna ord...' : field === 'risk_text' ? 'Risktext...' : 'Fortsatt teknisk utredning...'}
+          className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+        />
+      </div>)}
+    </div>
+  }
+
   function renderFreeNoteDialog() {
     const item = controlItems.find(row => row.id === freeNoteDialogId)
     if (!item?.id) return null
@@ -3121,31 +3159,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                 />
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-3">
-                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Risk</label>
-                <DebouncedTextarea
-                  draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:risk_text`}
-                  rows={4}
-                  value={item.risk_text ?? ''}
-                  onSave={value => updateControlItem(item.id!, { risk_text: value }, { throwOnError: true })}
-                  readOnly={isInspectionLocked}
-                  placeholder="Risktext..."
-                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-white p-3">
-                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">FTU</label>
-                <DebouncedTextarea
-                  draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:ftu_text`}
-                  rows={4}
-                  value={item.ftu_text ?? ''}
-                  onSave={value => updateControlItem(item.id!, { ftu_text: value }, { throwOnError: true })}
-                  readOnly={isInspectionLocked}
-                  placeholder="Fortsatt teknisk utredning..."
-                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                />
-              </div>
+              {renderAdditionalNoteFields(item, true)}
 
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3277,33 +3291,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                 />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Risk</label>
-                  <DebouncedTextarea
-                    draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:risk_text`}
-                    rows={4}
-                    value={item.risk_text ?? ''}
-                    onSave={value => updateControlItem(item.id!, { risk_text: value }, { throwOnError: true })}
-                    readOnly={isInspectionLocked}
-                    placeholder="Risktext..."
-                    className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <div className="rounded-xl border border-gray-200 bg-white p-3">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">FTU</label>
-                  <DebouncedTextarea
-                    draftKey={`ob:${inspection.id}:runda:control-item:${item.id}:ftu_text`}
-                    rows={4}
-                    value={item.ftu_text ?? ''}
-                    onSave={value => updateControlItem(item.id!, { ftu_text: value }, { throwOnError: true })}
-                    readOnly={isInspectionLocked}
-                    placeholder="Fortsatt teknisk utredning..."
-                    className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                  />
-                </div>
-              </div>
+              {renderAdditionalNoteFields(item)}
 
               <div className="rounded-xl border border-gray-200 bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3518,6 +3506,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                   note: null,
                   risk_text: null,
                   ftu_text: null,
+                  ...(isStatus ? { recommendation_text: null, comment_text: null } : {}),
                 })
               }
             }}
@@ -3534,7 +3523,9 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                 ? roundImages.filter(image => image.control_item_id === activeItem.id).length
               : 0
             const hasDetailText = Boolean(
-              activeItem?.note?.trim() || activeItem?.risk_text?.trim() || activeItem?.ftu_text?.trim()
+              activeItem?.note?.trim() || (isStatus
+                ? activeItem?.recommendation_text?.trim() || activeItem?.comment_text?.trim()
+                : activeItem?.risk_text?.trim() || activeItem?.ftu_text?.trim())
             )
             const clearActiveItem = () => {
               if (!activeItem?.id) return
@@ -3545,6 +3536,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                   note: null,
                   risk_text: null,
                   ftu_text: null,
+                  ...(isStatus ? { recommendation_text: null, comment_text: null } : {}),
                 })
               } else {
                 void deleteControlItem(activeItem.id, true)
@@ -3596,7 +3588,7 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
                     void updateControlItem(baseItem.id, {
                       status: 'remark',
                       selected_outcome_id: outcome.id,
-                      ...copyObOutcomeText(outcome),
+                      ...copyExistingNoteOutcomeText(outcome, isStatus),
                     })
                   } else {
                     void addOutcomeControlItem(baseItem, outcome)
@@ -3632,8 +3624,8 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
       ? selectedOutcomes[item.selected_outcome_id] ?? outcomes.find(outcome => outcome.id === item.selected_outcome_id)
       : null
     const linkedImages = roundImages.filter(image => image.control_item_id === item.id)
-    const hasRiskText = Boolean(item.risk_text?.trim())
-    const hasFtuText = Boolean(item.ftu_text?.trim())
+    const hasRiskText = !isStatus && Boolean(item.risk_text?.trim())
+    const hasFtuText = !isStatus && Boolean(item.ftu_text?.trim())
     return (
       <div
         key={item.id ?? `${item.title}-${item.sort_order}`}
@@ -3701,7 +3693,9 @@ export default function ObStepRunda({ inspection, mobileLayout = false, address 
             onClick={() => item.id && setFreeNoteDialogId(item.id)}
             className="mt-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-left text-sm text-gray-700"
           >
-            {item.note?.trim() || 'Öppna för att skriva notering, risk och FTU.'}
+            {item.note?.trim() || (isStatus
+              ? item.recommendation_text?.trim() || item.comment_text?.trim() || 'Öppna för att skriva notering, rekommendation och kommentarer.'
+              : 'Öppna för att skriva notering, risk och FTU.')}
           </button>
         ) : (
           <DebouncedTextarea

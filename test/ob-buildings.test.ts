@@ -79,6 +79,9 @@ before(async () => {
   await db.exec("create schema storage; create table storage.objects(bucket_id text,name text); insert into storage.objects values('inspection-images','test-original.jpg')")
   await db.exec(read('2026-09-25_01_ob_image_trash.sql'))
   await db.exec(read('2026-09-25_01_ob_image_trash.sql'))
+  for (const name of ['2026-10-02_02_ob_status_note_fields.sql', '2026-10-02_03_ob_status_building_notes.sql']) {
+    await db.exec(read(name)); await db.exec(read(name))
+  }
 })
 after(()=>db.close())
 async function overview(id: string) {
@@ -106,6 +109,71 @@ async function activate(id:string) {
 async function round(id:string, partId:string, operation:string, payload:Record<string,unknown>) {
   return (await one('select ob_building_round_mutate($1,$2,$3,$4,$5,$6) as data',[id,org,actor,operation,payload,partId])).data
 }
+
+test('STB building image notes save manual recommendations/comments and never copy hidden OB risk/FTU', async () => {
+  const f = await fixture()
+  await db.query("update inspections set type='STATUS',inspection_side='status' where id=$1", [f.i.id])
+  const state = await activate(f.i.id), partId = state.parts[0].id
+  const point = await one("insert into settings_control_points(applies_to) values(array['buyer']) returning *")
+  const outcome = await one('insert into settings_control_point_outcomes(control_point_id) values($1) returning *', [point.id])
+  for (const outcomeId of [null, outcome.id]) {
+    const image = await row(f.i.id, partId, 'inspection_images', { interior_room_id: f.r.id, file_path: 'test-original.jpg' })
+    const preview = await round(f.i.id, partId, 'image-note-preview', { imageId: image.id })
+    const draft = { note: '', risk_text: 'Hidden OB risk', ftu_text: 'Hidden OB FTU',
+      recommendation_text: 'Kontrollera anslutningen.', comment_text: 'Endast badrummet.', outcomeId }
+    const request = { imageId: image.id, requestId: randomUUID(), token: preview.token, draft }
+    const created = await round(f.i.id, partId, 'image-note', request)
+    assert.equal(created.note.recommendation_text, draft.recommendation_text)
+    assert.equal(created.note.comment_text, draft.comment_text)
+    assert.equal(created.note.risk_text, null)
+    assert.equal(created.note.ftu_text, null)
+    assert.equal(created.note.building_part_id, partId)
+    assert.equal(created.image.control_item_id, created.note.id)
+    assert.deepEqual(await round(f.i.id, partId, 'image-note', request), created)
+  }
+})
+
+test('STB building room removal protects recommendation-only and comment-only notes', async () => {
+  const f = await fixture()
+  await db.query("update inspections set type='STATUS',inspection_side='status' where id=$1", [f.i.id])
+  const state = await activate(f.i.id), partId = state.parts[0].id
+  const point = await one('insert into settings_control_points default values returning *')
+  for (const field of ['recommendation_text', 'comment_text']) {
+    const room = await row(f.i.id, partId, 'inspection_interior_rooms', { floor_label: 'plan1', room_label: 'Skyddat rum' })
+    await row(f.i.id, partId, 'inspection_control_items', { interior_room_id: room.id,
+      control_point_id: point.id, title: 'Kontroll', [field]: 'Bevara denna text.' })
+    const preview = await round(f.i.id, partId, 'remove-preview', { kind: 'room', id: room.id })
+    assert.match(preview.blockedReason, /innehaller/)
+    await assert.rejects(round(f.i.id, partId, 'remove', { kind: 'room', id: room.id,
+      token: preview.token, requestId: randomUUID() }), /OB_ROUND_ROOM_NOT_EMPTY/)
+  }
+})
+
+test('OB building image notes retain risk/FTU and catalogue filtering, including legacy null side', async () => {
+  const point = await one("insert into settings_control_points(applies_to) values(array['buyer']) returning *")
+  const outcome = await one('insert into settings_control_point_outcomes(control_point_id) values($1) returning *', [point.id])
+  for (const side of ['buyer', null]) {
+    const f = await fixture()
+    await db.query('update inspections set inspection_side=$2 where id=$1', [f.i.id, side])
+    const state = await activate(f.i.id), partId = state.parts[0].id
+    const image = await row(f.i.id, partId, 'inspection_images', { interior_room_id: f.r.id, file_path: 'test-original.jpg' })
+    const preview = await round(f.i.id, partId, 'image-note-preview', { imageId: image.id })
+    const draft = { note: 'OB-notering', risk_text: 'OB-risk', ftu_text: 'OB-FTU',
+      recommendation_text: 'Inte OB', comment_text: 'Inte OB', outcomeId: outcome.id }
+    const created = await round(f.i.id, partId, 'image-note', {
+      imageId: image.id, requestId: randomUUID(), token: preview.token, draft })
+    assert.equal(created.note.note, draft.note)
+    assert.equal(created.note.risk_text, draft.risk_text)
+    assert.equal(created.note.ftu_text, draft.ftu_text)
+    assert.equal(created.note.recommendation_text, null)
+    assert.equal(created.note.comment_text, null)
+    const secondImage = await row(f.i.id, partId, 'inspection_images', { interior_room_id: f.r.id, file_path: 'test-original.jpg' })
+    const secondPreview = await round(f.i.id, partId, 'image-note-preview', { imageId: secondImage.id })
+    await db.query("update inspections set inspection_side='seller' where id=$1", [f.i.id])
+    await assert.rejects(round(f.i.id, partId, 'image-note', {
+      imageId: secondImage.id, requestId: randomUUID(), token: secondPreview.token, draft }), /OB_ROUND_INVALID/)
+  }
+})
 
 async function trash(id: string, partId: string | null = null, operation = 'list', payload: Record<string, unknown> = {}, user = actor, organization = org) {
   return (await one('select ob_round_image_trash($1,$2,$3,$4,$5,$6) as data', [id, organization, user, operation, payload, partId])).data

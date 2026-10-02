@@ -28,6 +28,7 @@ import { cookies } from 'next/headers'
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
 import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { isStatusInspection } from '@/lib/ob/inspectionProfile'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,7 +116,10 @@ export default async function Page({
   const isAutoPrint = resolvedSearchParams?.autoprint === '1'
   const isPdf = resolvedSearchParams?.pdf === '1'
   const supabase: any = createSupabaseServerClient()
-  if (await readBuildingReportState(supabase, resolvedParams.inspectionId)) {
+  const { data: inspectionProfile } = await supabase.from('inspections')
+    .select('inspection_side,inspection_variant,type')
+    .eq('id', resolvedParams.inspectionId).maybeSingle()
+  if (isStatusInspection(inspectionProfile ?? {}) || await readBuildingReportState(supabase, resolvedParams.inspectionId)) {
     const data = await buildReportDataV2(resolvedParams)
     const side = data.mock.inspections.side
     const appendices = data.mock.appendices

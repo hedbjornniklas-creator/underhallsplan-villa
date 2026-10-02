@@ -34,6 +34,7 @@ export async function POST(
     const known = obWorkflowError(error)
     if (known) return jsonError(known[1], known[0])
     const message = error instanceof Error ? error.message : 'Okänt fel.'
+    if (message === 'STATUS_EARLY_START_NOT_ALLOWED') return jsonError('Statusbesiktning kan startas när kunden har godkänt och uppdraget är bokat.', 409)
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message.includes('hittades inte')) return jsonError(message, 404)

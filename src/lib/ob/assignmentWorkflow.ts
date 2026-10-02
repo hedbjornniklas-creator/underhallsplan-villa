@@ -40,6 +40,7 @@ export function isObAssignmentTransferFields(value: unknown): value is ObAssignm
 
 export function normalizeObAssignmentRole(value: string) {
   const role = value.trim().toLowerCase()
+  if (role === 'status' || role === 'stb' || role.includes('statusbesiktning')) return 'status'
   if (/(sell|sälj|salj)/.test(role)) return 'seller'
   if (/(apt|apartment|lägenhet|lagenhet)/.test(role)) return 'apartment'
   return 'buyer'

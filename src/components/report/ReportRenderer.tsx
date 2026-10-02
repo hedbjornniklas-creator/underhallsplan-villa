@@ -8,7 +8,7 @@ type ReportRendererProps = {
   spec: ReportSection[]
   mockData: Record<string, unknown>
   rootClassName?: string
-  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
+  inspectionSide?: 'buyer' | 'seller' | 'apartment' | 'status' | null
 }
 
 type ResolvedReportSection = ReportSection & { appendixText?: string }
@@ -92,11 +92,17 @@ export default function ReportRenderer({
 }: ReportRendererProps) {
   const coverNoticeId =
     inspectionSide === 'seller' ? 'STD_COVER_SELLER_NOTICE' : 'STD_COVER_BUYER_DUTY_NOTICE'
-  const coverNotice = loadStandardText(coverNoticeId)
-  const resolvedSpec: ResolvedReportSection[] = spec.map((section) => {
+  const coverNotice = inspectionSide === 'status' ? '' : loadStandardText(coverNoticeId)
+  const mock = mockData.mock as { exterior?: { blocks?: unknown[] } } | undefined
+  const visibleSpec = inspectionSide === 'status' && !mock?.exterior?.blocks?.length
+    ? spec.filter(section => section.id !== 'notes')
+    : spec
+  const resolvedSpec: ResolvedReportSection[] = visibleSpec.map((section) => {
     const resolvedBlocks = section.blocks.map((block) => resolveBlock(block, mockData))
     const appendixText =
-      section.type === 'appendix' && section.appendixId
+      section.appendixTextPath
+        ? getMockValue(mockData, section.appendixTextPath)
+        : section.type === 'appendix' && section.appendixId
         ? loadAppendixText(section.appendixId)
         : undefined
     return { ...section, blocks: resolvedBlocks, appendixText }

@@ -50,7 +50,7 @@ function loadRoute(items: Array<{ id: string; assignment_type: string }>) {
   return { route: compiled.exports as AssignmentRoute, issueCalls }
 }
 
-test('the OB assignment list excludes every other module assignment type', async () => {
+test('the OB assignment list includes STATUS and excludes unrelated modules', async () => {
   const { route, issueCalls } = loadRoute([
     { id: 'ob-1', assignment_type: 'OB' },
     { id: 'tu-1', assignment_type: 'TU' },
@@ -63,6 +63,6 @@ test('the OB assignment list excludes every other module assignment type', async
   const payload = await response.json() as { items: Array<{ id: string }> }
 
   assert.equal(response.status, 200)
-  assert.deepEqual(payload.items.map((item) => item.id), ['ob-1'])
-  assert.deepEqual(issueCalls, [['ob-1']])
+  assert.deepEqual(payload.items.map((item) => item.id), ['ob-1', 'status-1'])
+  assert.deepEqual(issueCalls, [['ob-1', 'status-1']])
 })

@@ -116,3 +116,28 @@ test('frozen furnishing codes use the PDF labels while legacy free text stays in
     if (value !== label) assert.ok(!html.includes(value), `Leaked storage code ${value}`)
   }
 })
+
+test('status digital view shows inspector recommendations and comments from the frozen snapshot only', () => {
+  const snapshot = snapshotWithBuildings()
+  snapshot.inspectionSide = 'status'
+  const statusText = {
+    assignmentNotice: 'Fastställd STB-uppdragstext.', visualConditions: 'Fastställd STB-förutsättning.',
+    oralInformation: 'Fastställd STB-muntlig uppgift.', ownerInformation: 'Fastställd STB-information.',
+    terms: 'Oförändrade STB-villkor med tecknen Ã¤ och | bevarade.',
+  }
+  snapshot.reportData.mock.status_report = statusText
+  snapshot.reportData.mock.interior.blocks = [{ title: 'Badrum', noteText: 'Begränsat fuktskydd.',
+    riskText: 'OB risk should not leak', ftuText: 'OB FTU should not leak',
+    recommendationText: 'Verifiera installationen.', commentText: 'Uppdraget omfattar badrummet.' }]
+  snapshot.reportData.mock.appendices.buildings = [{ id: 'garage', name: 'Garage', interior: { blocks: [{
+    title: 'Garage', noteText: 'Rost noterades.', riskText: 'Hidden building risk', ftuText: 'Hidden building FTU',
+    recommendationText: 'Kontrollera stålkonstruktionen.', commentText: 'Besiktningen var okulär.',
+  }] } }]
+  const before = JSON.stringify(snapshot)
+  const html = render(snapshot)
+  assert.equal(JSON.stringify(snapshot), before)
+  for (const text of ['Statusbesiktning', 'Rekommendation', 'Övriga kommentarer', 'Verifiera installationen.',
+    'Uppdraget omfattar badrummet.', 'Kontrollera stålkonstruktionen.', 'Besiktningen var okulär.']) assert.ok(html.includes(text), text)
+  assert.ok(html.includes(statusText.terms), 'the frozen original terms must not undergo character repair')
+  assert.doesNotMatch(html, /OB risk should not leak|OB FTU should not leak|Hidden building risk|Hidden building FTU|Bilaga 2 - Begreppsförklaringar|Bilaga 3 - Tekniska medellivslängder/)
+})

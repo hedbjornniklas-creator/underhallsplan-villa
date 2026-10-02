@@ -143,6 +143,7 @@ export type ReportSection = {
   startOnNewPage: boolean
   type?: 'cover' | 'standard' | 'appendix'
   appendixId?: AppendixTextId
+  appendixTextPath?: string
   blocks: ReportBlock[]
 }
 
@@ -578,19 +579,22 @@ export const REPORT_SPEC: ReportSection[] = [
 const ASSIGNMENT_LABEL_SELLER = '\u00d6VERL\u00c5TELSEBESIKTNING F\u00d6R S\u00c4LJARE'
 const ASSIGNMENT_LABEL_BUYER = '\u00d6VERL\u00c5TELSEBESIKTNING F\u00d6R K\u00d6PARE'
 const ASSIGNMENT_LABEL_APARTMENT = 'L\u00c4GENHETSBESIKTNING'
+const ASSIGNMENT_LABEL_STATUS = 'STATUSBESIKTNING'
 const APPENDIX_1_LABEL_SELLER =
   'BILAGA 1: Villkor f\u00f6r \u00f6verl\u00e5telsebesiktning f\u00f6r s\u00e4ljare'
 const APPENDIX_1_LABEL_BUYER =
   'BILAGA 1: Villkor f\u00f6r \u00f6verl\u00e5telsebesiktning f\u00f6r k\u00f6pare'
 const APPENDIX_1_LABEL_APARTMENT = 'BILAGA 1: Villkor f\u00f6r l\u00e4genhetsbesiktning'
+const APPENDIX_1_LABEL_STATUS = 'BILAGA 1: VILLKOR FÖR STATUSBESIKTNING'
 
-type ReportInspectionSide = 'buyer' | 'seller' | 'apartment'
+type ReportInspectionSide = 'buyer' | 'seller' | 'apartment' | 'status'
 
 const resolveInspectionSide = (
-  inspectionSide: 'buyer' | 'seller' | 'apartment' | null | undefined
+  inspectionSide: ReportInspectionSide | null | undefined
 ): ReportInspectionSide => {
   if (inspectionSide === 'seller') return 'seller'
   if (inspectionSide === 'apartment') return 'apartment'
+  if (inspectionSide === 'status') return 'status'
   return 'buyer'
 }
 
@@ -681,7 +685,7 @@ function repairReportSpecText<T>(value: T): T {
 
 export function buildReportSpec(params?: {
   layoutVersion?: 2
-  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
+  inspectionSide?: ReportInspectionSide | null
   dynamicAppendices?: DynamicAppendixConfig
 }): ReportSection[] {
   const inspectionSide = resolveInspectionSide(params?.inspectionSide)
@@ -690,12 +694,16 @@ export function buildReportSpec(params?: {
       ? ASSIGNMENT_LABEL_SELLER
       : inspectionSide === 'apartment'
         ? ASSIGNMENT_LABEL_APARTMENT
+        : inspectionSide === 'status'
+          ? ASSIGNMENT_LABEL_STATUS
         : ASSIGNMENT_LABEL_BUYER
   const appendixLabel =
     inspectionSide === 'seller'
       ? APPENDIX_1_LABEL_SELLER
       : inspectionSide === 'apartment'
         ? APPENDIX_1_LABEL_APARTMENT
+        : inspectionSide === 'status'
+          ? APPENDIX_1_LABEL_STATUS
         : APPENDIX_1_LABEL_BUYER
   const appendixTitle = `${appendixLabel}.`
   const appendixId =
@@ -703,9 +711,16 @@ export function buildReportSpec(params?: {
       ? 'APPENDIX_1_VILLKOR_SELLER_SBR'
       : inspectionSide === 'apartment'
         ? 'APPENDIX_1_VILLKOR_APARTMENT_SBR'
+        : inspectionSide === 'status'
+          ? 'APPENDIX_1_VILLKOR_STATUS_SBR'
         : 'APPENDIX_1_VILLKOR_BUYER_SBR'
 
   const spec = JSON.parse(JSON.stringify(REPORT_SPEC)) as ReportSection[]
+  if (inspectionSide === 'status') {
+    for (let index = spec.length - 1; index >= 0; index--) {
+      if (spec[index].id === 'appendix-2' || spec[index].id === 'appendix-3') spec.splice(index, 1)
+    }
+  }
   const modernLayout = params?.layoutVersion === 2
   if (modernLayout) {
     spec[0].layoutVersion = 2
@@ -717,6 +732,9 @@ export function buildReportSpec(params?: {
     | { type: 'toc'; entries: { label: string; sectionId?: string }[] }
     | undefined
   if (tocBlock?.entries) {
+    if (inspectionSide === 'status') {
+      tocBlock.entries = tocBlock.entries.filter(entry => entry.sectionId !== 'appendix-2' && entry.sectionId !== 'appendix-3')
+    }
     tocBlock.entries = tocBlock.entries.map((entry) => {
       if (entry.sectionId === 'assignment') {
         return { ...entry, label: assignmentLabel }
@@ -811,7 +829,7 @@ export function buildReportSpec(params?: {
     const appendix3Index = spec.findIndex((section) => section.id === 'appendix-3')
     const dynamicSections: ReportSection[] = []
     const dynamicTocEntries: Array<{ label: string; sectionId: string }> = []
-    let appendixNo = 4
+    let appendixNo = inspectionSide === 'status' ? 2 : 4
 
     if (includeAreaMeasurement) {
       const sectionId = `appendix-${appendixNo}-area-measurement`
@@ -1281,7 +1299,7 @@ export function buildReportSpec(params?: {
 
   const buildingAppendices = params?.dynamicAppendices?.buildings ?? []
   buildingAppendices.forEach((building, index) => {
-    const number = 4 + Number(includeAreaMeasurement) + Number(includeMoistureControl) + index
+    const number = (inspectionSide === 'status' ? 2 : 4) + Number(includeAreaMeasurement) + Number(includeMoistureControl) + index
     const id = modernLayout ? `building-${building.id}` : `appendix-building-${building.id}`
     const title = modernLayout ? building.name : `Bilaga ${number}: ${building.name}`
     const path = `mock.appendices.buildings.${index}`
@@ -1309,7 +1327,7 @@ export function buildReportSpec(params?: {
     }
   })
   ;(params?.dynamicAppendices?.environmental ?? []).forEach((appendix, index) => {
-    const number = 4 + Number(includeAreaMeasurement) + Number(includeMoistureControl) + (modernLayout ? 0 : buildingAppendices.length) + index
+    const number = (inspectionSide === 'status' ? 2 : 4) + Number(includeAreaMeasurement) + Number(includeMoistureControl) + (modernLayout ? 0 : buildingAppendices.length) + index
     const id = `appendix-environmental-${appendix.kind}`
     const title = `Bilaga ${number}: ${appendix.title}`
     const path = `mock.appendices.environmental.${index}`
@@ -1327,7 +1345,49 @@ export function buildReportSpec(params?: {
     ] })
     tocBlock?.entries.push({ label: title, sectionId: id })
   })
-  return repairReportSpecText(spec)
+  const resolvedSpec = repairReportSpecText(spec)
+  if (inspectionSide === 'status') {
+    // Only fixed STB text comes from the pinned original in the report payload.
+    // Shared OB standard notices and FTU instructions do not belong to STB.
+    for (const section of resolvedSpec) {
+      if (section.id === 'assignment') {
+        section.blocks = section.blocks.map(block =>
+          block.type === 'text' && block.source.kind === 'standardText'
+            ? { ...block, source: { kind: 'mock', path: 'mock.status_report.assignmentNotice' } }
+            : block
+        )
+      }
+      if (section.id === 'handlingar') {
+        section.blocks = section.blocks.map(block => block.type === 'handlingarLayout'
+          ? { ...block, labels: { ...block.labels, provided: 'Tillhandahållna Handlingar:' },
+              infoDisclaimer: '', renovationsLabel: '' }
+          : block)
+      }
+      if (section.id === 'okular') {
+        section.blocks = section.blocks.map(block => block.type === 'twoColumn'
+          ? { ...block, rows: [
+            { label: 'Möblering:', value: { kind: 'mock', path: 'mock.status_report.furnishing' }, hideWhenEmpty: true },
+            ...block.rows.map(row => ({ ...row, value: {
+              kind: 'mock', path: row.label.startsWith('Muntliga')
+                ? 'mock.status_report.oralInformation'
+                : 'mock.status_report.visualConditions',
+            } } as TwoColumnRow)),
+          ] }
+          : block)
+      }
+      section.blocks = section.blocks.filter(block =>
+        !(block.type === 'boxedText' && block.source.kind === 'standardText' && block.source.id === 'STD_FTU_GENERAL_NOTICE') &&
+        !(block.type === 'text' && block.source.kind === 'static' && block.source.text.startsWith('Tilläggsuppdrag i samband med överlåtelsebesiktning.'))
+      )
+      if (section.id === 'appendix-1') section.appendixTextPath = 'mock.status_report.terms'
+    }
+    const handlingar = resolvedSpec.find(section => section.id === 'handlingar')
+    const ownerInfo = handlingar?.blocks.find(block => block.type === 'handlingarLayout')
+    if (ownerInfo?.type === 'handlingarLayout') {
+      ownerInfo.infoDisclaimer = 'Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen. '
+    }
+  }
+  return resolvedSpec
 }
 
 

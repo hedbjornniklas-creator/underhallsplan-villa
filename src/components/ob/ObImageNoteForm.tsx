@@ -1,6 +1,6 @@
 'use client'
 
-import { copyObOutcomeText } from '@/lib/ob/noteText'
+import { copyObOutcomeText, copyStatusOutcomeText } from '@/lib/ob/noteText'
 import React, { useRef, useState } from 'react'
 import { ChevronDown, PenLine, Search, X } from 'lucide-react'
 import {
@@ -26,11 +26,13 @@ export default function ImageNoteForm({
   onChange,
   catalog,
   disabled,
+  statusInspection = false,
 }: {
   draft: ImageNoteDraft
   onChange: (draft: ImageNoteDraft) => void
   catalog: ImageNoteCatalog
   disabled: boolean
+  statusInspection?: boolean
 }) {
   const [query, setQuery] = useState(''),
     [limit, setLimit] = useState(8),
@@ -69,7 +71,11 @@ export default function ImageNoteForm({
   function choose(outcome: Outcome) {
     onChange({
       outcomeId: outcome.id,
-      ...copyObOutcomeText(outcome),
+      ...(statusInspection ? copyStatusOutcomeText(outcome) : copyObOutcomeText(outcome)),
+      ...(statusInspection ? {
+        recommendation_text: draft.recommendation_text ?? '',
+        comment_text: draft.comment_text ?? '',
+      } : {}),
     })
     setQuery('')
     text.current?.focus()
@@ -181,30 +187,32 @@ export default function ImageNoteForm({
       <details
         className="obm-details"
         key={draft.outcomeId || 'free'}
-        open={Boolean(draft.risk_text || draft.ftu_text) || undefined}
+        open={Boolean(statusInspection ? draft.recommendation_text || draft.comment_text : draft.risk_text || draft.ftu_text) || undefined}
       >
         <summary>
-          Risk och fortsatt teknisk utredning
+          {statusInspection ? 'Rekommendation och övriga kommentarer' : 'Risk och fortsatt teknisk utredning'}
           <ChevronDown size={18} />
         </summary>
         <label className="obm-field">
-          Risk
+          {statusInspection ? 'Rekommendation' : 'Risk'}
           <textarea
-            aria-label="Ny risktext"
+            aria-label={statusInspection ? 'Ny rekommendation' : 'Ny risktext'}
             rows={3}
             disabled={disabled}
-            value={draft.risk_text}
-            onChange={(e) => onChange({ ...draft, risk_text: e.target.value })}
+            value={(statusInspection ? draft.recommendation_text : draft.risk_text) ?? ''}
+            maxLength={statusInspection ? 20000 : undefined}
+            onChange={(e) => onChange({ ...draft, [statusInspection ? 'recommendation_text' : 'risk_text']: e.target.value })}
           />
         </label>
         <label className="obm-field">
-          Fortsatt teknisk utredning
+          {statusInspection ? 'Övriga kommentarer' : 'Fortsatt teknisk utredning'}
           <textarea
-            aria-label="Ny utredningstext"
+            aria-label={statusInspection ? 'Ny kommentar' : 'Ny utredningstext'}
             rows={3}
             disabled={disabled}
-            value={draft.ftu_text}
-            onChange={(e) => onChange({ ...draft, ftu_text: e.target.value })}
+            value={(statusInspection ? draft.comment_text : draft.ftu_text) ?? ''}
+            maxLength={statusInspection ? 20000 : undefined}
+            onChange={(e) => onChange({ ...draft, [statusInspection ? 'comment_text' : 'ftu_text']: e.target.value })}
           />
         </label>
       </details>

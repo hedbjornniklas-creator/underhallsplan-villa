@@ -6,6 +6,7 @@ import { buildReportDataV2, type ReportDataV2 } from '@/lib/report/pdfV2/buildRe
 import { buildReportSpec, type ReportSection } from '@/lib/report/reportSpec'
 import type { ReportSnapshotPayloadV1 } from '@/lib/report/reportSnapshotPayload'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { resolveObInspectionProfile } from '@/lib/ob/inspectionProfile'
 
 type RenderStructuredPdfV2Params = {
   inspectionId: string
@@ -35,19 +36,15 @@ function stripPhotoUrls(data: ReportDataV2): ReportDataV2 {
 
 async function resolveInspectionSide(
   inspectionId: string
-): Promise<'buyer' | 'seller' | 'apartment' | null> {
+): Promise<'buyer' | 'seller' | 'apartment' | 'status' | null> {
   const supabase = createSupabaseServerClient()
   const { data } = await supabase
     .from('inspections')
-    .select('inspection_side')
+    .select('inspection_side,inspection_variant,type')
     .eq('id', inspectionId)
     .maybeSingle()
 
-  const value = String((data as { inspection_side?: string | null } | null)?.inspection_side ?? '')
-    .trim()
-    .toLowerCase()
-  if (value === 'buyer' || value === 'seller' || value === 'apartment') return value
-  return null
+  return resolveObInspectionProfile(data ?? {})
 }
 
 function createDocument(
@@ -70,7 +67,7 @@ async function renderDocumentToBuffer(document: React.ReactElement<ReactPdf.Docu
 export async function renderStructuredPdfFromSnapshot(
   snapshot: ReportSnapshotPayloadV1
 ): Promise<Buffer> {
-  const specInspectionSide = snapshot.inspectionSide === 'seller' ? 'seller' : snapshot.inspectionSide === 'apartment' ? 'apartment' : 'buyer'
+  const specInspectionSide = snapshot.inspectionSide ?? 'buyer'
   const compactData = stripPhotoUrls(snapshot.reportData)
   const snapshotAppendices =
     (compactData?.mock?.appendices as Record<string, unknown> | undefined) ?? {}
@@ -103,7 +100,7 @@ export async function renderStructuredPdfV2(
   })
   const compactData = stripPhotoUrls(data)
   const inspectionSide = await resolveInspectionSide(params.inspectionId)
-  const specInspectionSide = inspectionSide === 'seller' ? 'seller' : inspectionSide === 'apartment' ? 'apartment' : 'buyer'
+  const specInspectionSide = inspectionSide ?? 'buyer'
   const appendices = (compactData.mock?.appendices as Record<string, unknown> | undefined) ?? {}
   const areaMeasurementAppendix =
     appendices.area_measurement && typeof appendices.area_measurement === 'object'

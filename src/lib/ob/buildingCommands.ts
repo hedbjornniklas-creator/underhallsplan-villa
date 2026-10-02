@@ -3,8 +3,8 @@ import { validateRoundMutation } from './roundMutationServer'
 
 export const BUILDING_ROW_FIELDS = {
   inspection_interior_rooms: ['floor_label','order_index','room_type_key','room_label','values','note'],
-  inspection_exterior_observations: ['exterior_item_id','part_label','values','is_free_note','note','risk_text','ftu_text'],
-  inspection_control_items: ['interior_room_id','exterior_observation_id','control_point_id','title','status','note','risk_text','ftu_text','sort_order','selected_outcome_id'],
+  inspection_exterior_observations: ['exterior_item_id','part_label','values','is_free_note','note','risk_text','ftu_text','recommendation_text','comment_text'],
+  inspection_control_items: ['interior_room_id','exterior_observation_id','control_point_id','title','status','note','risk_text','ftu_text','recommendation_text','comment_text','sort_order','selected_outcome_id'],
   inspection_images: ['interior_room_id','exterior_observation_id','control_item_id','file_path','label','sort_order','capture_source','source_area','origin_building_part_id',
     'origin_interior_room_id','origin_exterior_observation_id','origin_exterior_item_id','origin_floor_label','origin_room_label','origin_room_type_key','origin_exterior_item_key',
     'captured_at','processing_status','ignored_at'],

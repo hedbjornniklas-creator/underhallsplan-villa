@@ -12,6 +12,7 @@ import { ObFormField, ObFormSection } from '@/components/ob/ObFormPrimitives'
 import '@/components/ob/ob-forms.css'
 import '@/components/ob/ob-assignment-form.css'
 import { validateObEarlyStartReason, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
+import { obInspectionProfileLabel, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 
 type AssignmentStatus =
   | 'draft'
@@ -22,7 +23,7 @@ type AssignmentStatus =
   | 'expired'
   | 'cancelled'
 type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
-type OrdererRole = 'buyer' | 'seller' | 'apartment' | ''
+type OrdererRole = ObInspectionProfileKey | ''
 
 type AssignmentDetails = {
   id: string
@@ -30,6 +31,8 @@ type AssignmentDetails = {
   status: AssignmentStatus
   archived_at: string | null
   assignment_type: AssignmentType
+  assignment_details: Record<string, unknown> | null
+  scope_description: string | null
   responsible_profile_id: string
   customer_name: string | null
   customer_email: string
@@ -101,6 +104,8 @@ type FormState = {
   preferredDate: string
   preferredTime: string
   priceAmount: string
+  statusCancellationFee: string
+  scopeDescription: string
   invoiceName: string
   invoiceAddress: string
   personalIdentityNumber: string
@@ -116,37 +121,8 @@ function jsonToErrorMessage(payload: unknown, fallback: string) {
   return fallback
 }
 
-function normalizeSearchText(value: string) {
-  return value
-    .replace(/\u00c3\u00a4/g, 'ä')
-    .replace(/\u00c3\u00a5/g, 'å')
-    .replace(/\u00c3\u00b6/g, 'ö')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-}
-
-function normalizeRole(value: string | null): OrdererRole {
-  if (!value) return ''
-  const lowered = normalizeSearchText(value)
-  if (
-    lowered.includes('lgh') ||
-    lowered.includes('lagen') ||
-    lowered.includes('apt') ||
-    lowered.includes('apart')
-  ) {
-    return 'apartment'
-  }
-  if (lowered.includes('kop') || lowered.includes('buy')) return 'buyer'
-  if (lowered.includes('salj') || lowered.includes('sell')) return 'seller'
-  return ''
-}
-
 function roleToLabel(role: OrdererRole) {
-  if (role === 'apartment') return 'Lägenhet'
-  if (role === 'buyer') return 'Köpare'
-  if (role === 'seller') return 'Säljare'
-  return ''
+  return role ? obInspectionProfileLabel(role) : ''
 }
 
 function assignmentStatusToLabel(status: AssignmentStatus) {
@@ -189,10 +165,12 @@ function toFormState(assignment: AssignmentDetails): FormState {
     customerCity: assignment.customer_city ?? '',
     customerPhone: assignment.customer_phone ?? '',
     customerEmail: assignment.customer_email ?? '',
-    ordererRole: normalizeRole(assignment.orderer_role),
+    ordererRole: resolveObInspectionProfile(assignment) ?? '',
     preferredDate: assignment.preferred_date ?? '',
     preferredTime: assignment.preferred_time ?? '',
     priceAmount: assignment.price_amount !== null ? String(assignment.price_amount) : '',
+    statusCancellationFee: assignment.assignment_details?.statusCancellationFee == null ? '' : String(assignment.assignment_details.statusCancellationFee),
+    scopeDescription: assignment.scope_description ?? '',
     invoiceName: assignment.invoice_name ?? '',
     invoiceAddress: assignment.invoice_address ?? '',
     personalIdentityNumber: assignment.personal_identity_number ?? '',
@@ -350,6 +328,12 @@ export default function AssignmentDetailsPage() {
         if (!silentValidation) setError('Ange ett giltigt pris.')
         return false
       }
+      const parsedCancellationFee = nextForm.statusCancellationFee.trim()
+        ? Number(nextForm.statusCancellationFee.trim().replace(',', '.')) : null
+      if (nextForm.ordererRole === 'status' && parsedCancellationFee !== null && (!Number.isFinite(parsedCancellationFee) || parsedCancellationFee < 0)) {
+        if (!silentValidation) setError('Ange en giltig avbokningsavgift.')
+        return false
+      }
 
       try {
         setSaving(true)
@@ -360,7 +344,7 @@ export default function AssignmentDetailsPage() {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            assignment_type: nextForm.assignmentType,
+            assignment_type: nextForm.ordererRole === 'status' ? 'STATUS' : nextForm.assignmentType === 'STATUS' ? 'OB' : nextForm.assignmentType,
             status: nextForm.status,
             customer_name: nextForm.customerName,
             customer_email: nextForm.customerEmail,
@@ -381,6 +365,8 @@ export default function AssignmentDetailsPage() {
             preferred_date: nextForm.preferredDate,
             preferred_time: nextForm.preferredTime,
             price_amount: parsedPrice,
+            ...(nextForm.ordererRole === 'status' ? { statusCancellationFee: parsedCancellationFee } : {}),
+            ...(nextForm.ordererRole === 'status' ? { scopeDescription: nextForm.scopeDescription.trim() } : {}),
             currency: 'SEK',
             orderer_role: roleToLabel(nextForm.ordererRole),
             invoice_name: nextForm.invoiceName,
@@ -450,6 +436,12 @@ export default function AssignmentDetailsPage() {
 
       if (!form) {
         throw new Error('Uppdraget är inte färdigladdat.')
+      }
+      if (form.ordererRole === 'status' && !form.statusCancellationFee.trim()) {
+        throw new Error('Ange avbokningsavgift för statusbesiktningen innan du skickar. Ange 0 om ingen avgift ska tas ut.')
+      }
+      if (form.ordererRole === 'status' && !form.scopeDescription.trim()) {
+        throw new Error('Ange statusbesiktningens omfattning innan du skickar.')
       }
 
       const currentFingerprint = formFingerprint(form)
@@ -699,7 +691,7 @@ export default function AssignmentDetailsPage() {
                     value={summary?.acceptedByInspectorAt ?? '-'}
                   />
                 </dl>
-                {assignment.assignment_type === 'OB' && assignment.accepted_at ? (
+                {['OB', 'STATUS'].includes(assignment.assignment_type) && assignment.accepted_at ? (
                   <a href="#approved-terms" className="inline-flex min-h-11 items-center gap-2 text-sm text-blue-700 underline underline-offset-4">
                     <BookOpen className="h-4 w-4" aria-hidden="true" />
                     Läs godkända villkor
@@ -813,8 +805,14 @@ export default function AssignmentDetailsPage() {
                       <RoleChoice label="Köparbesiktning" active={form.ordererRole === 'buyer'} onChange={() => updateField('ordererRole', 'buyer')} />
                       <RoleChoice label="Säljarbesiktning" active={form.ordererRole === 'seller'} onChange={() => updateField('ordererRole', 'seller')} />
                       <RoleChoice label="Lägenhetsbesiktning" active={form.ordererRole === 'apartment'} onChange={() => updateField('ordererRole', 'apartment')} />
+                      <RoleChoice label="Statusbesiktning" active={form.ordererRole === 'status'} onChange={() => updateField('ordererRole', 'status')} />
                     </div>
                   </fieldset>
+                  {form.ordererRole === 'status' && <Field
+                    label="Besiktningens omfattning *"
+                    value={form.scopeDescription}
+                    onChange={(value) => updateField('scopeDescription', value)}
+                  />}
                   <div className="ob-form-pair">
                     <Field
                       label="Datum"
@@ -837,6 +835,14 @@ export default function AssignmentDetailsPage() {
                     step="0.01"
                     min="0"
                   />
+                  {form.ordererRole === 'status' && <Field
+                    label="Avbokningsavgift (SEK) *"
+                    value={form.statusCancellationFee}
+                    onChange={(value) => updateField('statusCancellationFee', value)}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                  />}
                 </ObFormSection>
                 </fieldset>
 
@@ -886,7 +892,7 @@ export default function AssignmentDetailsPage() {
                   )}
                 </ObFormSection>
               </section>
-              {assignment.assignment_type === 'OB' && assignment.accepted_at ? (
+              {['OB', 'STATUS'].includes(assignment.assignment_type) && assignment.accepted_at ? (
                 <ObAcceptedAssignmentTerms
                   key={`${assignment.id}:${assignment.accepted_at}`}
                   assignmentId={assignment.id}

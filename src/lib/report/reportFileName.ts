@@ -18,9 +18,10 @@ export function buildReportPdfFileName(input: {
   assignmentNumber?: string | null
   inspectionDate?: string | null
   inspectionFamily?: string | null
+  inspectionSide?: string | null
   inspectionSequenceNo?: number | null
 }) {
-  const moduleLabel = reportModuleLabel(input.inspectionFamily)
+  const moduleLabel = input.inspectionSide === 'status' ? 'STB' : reportModuleLabel(input.inspectionFamily)
   const sequenceNo = Number(input.inspectionSequenceNo)
   const normalizedDate = String(input.inspectionDate ?? '').trim()
   const ebDateMatch = normalizedDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)

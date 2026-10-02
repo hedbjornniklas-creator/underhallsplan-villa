@@ -113,12 +113,14 @@ test('PDF endpoint never imports a renderer, and returns the archived bytes', as
   assert.equal(success.headers.get('content-disposition'), 'attachment; filename="Original.pdf"')
   assert.equal(success.headers.get('cache-control'), 'private, no-store')
   assert.equal(success.headers.get('content-type'), 'application/pdf')
+  type = 'STATUS'
+  assert.deepEqual(Buffer.from(await (await get()).arrayBuffer()), pdf)
   found = false
   const missing = await get()
   assert.equal(missing.status, 404)
   assert.match(await missing.text(), /Historiska dokument återskapas inte/)
   const oldReads = reads
-  for (const other of ['TU', 'EB', 'STATUS', 'UHP']) { type = other; assert.equal((await get()).status, 404) }
+  for (const other of ['TU', 'EB', 'UHP']) { type = other; assert.equal((await get()).status, 404) }
   for (const [error, status] of [['UNAUTHORIZED', 401], ['ORG_MEMBERSHIP_REQUIRED', 403]] as const) {
     authError = error
     const response = await get()

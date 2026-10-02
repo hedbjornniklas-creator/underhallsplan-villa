@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto'
 import ts from 'typescript'
 // @ts-expect-error Node's strip-types runner requires the explicit extension.
 import { validateObEarlyStartReason, isObAssignmentTransferFields } from '../src/lib/ob/assignmentWorkflow.ts'
+// @ts-expect-error Node's strip-types runner requires the explicit extension.
+import { resolveObInspectionProfile } from '../src/lib/ob/inspectionProfile.ts'
 
 type Context = { params: Promise<{ id: string; inspectionId: string }> }
 type Route = { POST: (request: Request, context: Context) => Promise<Response>; GET: (request: Request, context: Context) => Promise<Response> }
@@ -105,6 +107,7 @@ test('all final delivery actions stop before writes, PDF generation or mail', as
       '@/lib/assignments/server': { requireOrgContext: async () => org },
       '@/lib/ob/assignmentWorkflowServer': workflowDependency,
       '@/lib/ob/publishedReport': {},
+      '@/lib/ob/inspectionProfile': { resolveObInspectionProfile },
     }
     for (const path of ['assignments/tokens', 'assignments/mailer', 'report/pdfJobs', 'report/reportSnapshotPayload', 'report/pdfV2/buildReportDataV2', 'report/reportSpec', 'inspections/reportEmailTemplates']) dependencies[`@/lib/${path}`] = {}
     const route = load('src/app/api/ob/inspections/[id]/report-delivery/route.ts', dependencies)

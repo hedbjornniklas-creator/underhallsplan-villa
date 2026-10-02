@@ -17,6 +17,7 @@ import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 import { isObRoundBackManaged } from '@/lib/ob/roundBackHistory'
 import { getInitialObSection, isObRoundSection } from '@/lib/ob/mobileRound'
 import { inspectionNavigationKey, restoreInspectionNavigation } from '@/lib/ob/inspectionNavigation'
+import { parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 import ObWizard, {
   ObSectionKey,
   ObWizardInspectionInput,
@@ -159,20 +160,8 @@ function areAddonKeyListsEqual(a: string[], b: string[]) {
 
 function normalizeAssignmentRoleToInspectionSide(
   value: string | null | undefined
-): 'buyer' | 'seller' | 'apartment' | null {
-  const lowered = String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-
-  if (!lowered) return null
-  if (lowered.includes('buy') || lowered.includes('kop')) return 'buyer'
-  if (lowered.includes('sell') || lowered.includes('salj')) return 'seller'
-  if (lowered.includes('apt') || lowered.includes('apartment') || lowered.includes('lagenhet')) {
-    return 'apartment'
-  }
-  return null
+): ObInspectionProfileKey | null {
+  return parseObInspectionProfile(value)
 }
 
 type Section = { key: ObSectionKey; label: string; partId?: string }
@@ -190,14 +179,16 @@ function getVisibleSections(
   buildings?: ObBuildingOverview | null,
   showRadon = false,
   showMould = false,
+  isStatus = false,
 ) {
+  const roundLabel = isStatus ? 'Statusbesiktning' : 'ÖB-runda'
   const sections: Section[] = buildings?.structure ? [
     ...SECTIONS.slice(0, 2),
     ...buildings.parts.flatMap(part => [
       { key: 'forutsattningar' as const, label: `Förutsättningar · ${part.name}`, partId: part.id },
-      { key: 'runda-ny' as const, label: `ÖB-runda · ${part.name}`, partId: part.id },
+      { key: 'runda-ny' as const, label: `${roundLabel} · ${part.name}`, partId: part.id },
     ]),
-  ] : [...SECTIONS]
+  ] : SECTIONS.map(section => section.key === 'runda-ny' ? { ...section, label: roundLabel } : section)
   if (showAreaMeasurement) {
     sections.push({ key: 'areamatning', label: 'Areamätning' })
   }
@@ -366,6 +357,8 @@ export default function InspectionDetailPage() {
           property_id,
           date,
           type,
+          inspection_family,
+          inspection_variant,
           status,
           inspector_name,
           created_at,
@@ -487,8 +480,7 @@ export default function InspectionDetailPage() {
       }
 
       const normalizedInspectionSide =
-        normalizeAssignmentRoleToInspectionSide(inspectionRow.inspection_side) ??
-        normalizeAssignmentRoleToInspectionSide(assignment?.orderer_role) ??
+        resolveObInspectionProfile({ ...inspectionRow, ordererRole: assignment?.orderer_role }) ??
         'buyer'
       const legacyCustomerEmail = extractEmailFromLegacyContact(inspectionRow.client_contact)
       const legacyCustomerPhone = extractPhoneFromLegacyContact(inspectionRow.client_contact)
@@ -611,6 +603,7 @@ export default function InspectionDetailPage() {
 
   const isApartmentInspection =
     normalizeAssignmentRoleToInspectionSide(inspection?.inspection_side) === 'apartment'
+  const isStatusInspection = inspection ? resolveObInspectionProfile(inspection) === 'status' : false
   const showAreaMeasurement = hasAreaMeasurementSelection(
     selectedAddonKeys,
     inspection?.scope ?? null
@@ -625,6 +618,7 @@ export default function InspectionDetailPage() {
     buildingOverview,
     showRadon,
     showMould,
+    isStatusInspection,
   )
   const activeSectionIndex = visibleSections.findIndex(section => section.key === activeSection && (!section.partId || section.partId === activeBuilding?.id))
   const activeSectionLabel = visibleSections[activeSectionIndex]?.label ?? ''
@@ -634,13 +628,13 @@ export default function InspectionDetailPage() {
     let raw: string | null = null
     try { raw = sessionStorage.getItem(inspectionNavigationKey(inspectionId)) } catch {}
     // Add-on visibility is reconciled once its independent request completes.
-    const sections = getVisibleSections(isApartmentInspection, true, true, buildingOverview, true, true)
+    const sections = getVisibleSections(isApartmentInspection, true, true, buildingOverview, true, true, isStatusInspection)
     const position = restoreInspectionNavigation(raw, sections, 'grunddata', buildingOverview.structure?.primary_part_id ?? null,
       getInitialObSection(window.location.search) === 'runda-ny')
     setActiveSection(position.section)
     setSelectedBuildingId(position.partId)
     setNavigationReadyFor(inspectionId)
-  }, [loading, inspection?.id, inspectionId, buildingOverview, navigationReadyFor, isApartmentInspection])
+  }, [loading, inspection?.id, inspectionId, buildingOverview, navigationReadyFor, isApartmentInspection, isStatusInspection])
 
   useEffect(() => {
     if (loading || navigationReadyFor !== inspectionId || !buildingOverview) return
@@ -732,7 +726,7 @@ export default function InspectionDetailPage() {
           {!isRoundSection && <ObInspectionHeader inspectionId={inspection.id} title={activeSectionLabel}
             onOpenMenu={() => setMobileMenuOpen(true)} />}
           {isRoundSection && (buildingError || !buildingOverview || navigationReadyFor !== inspectionId) &&
-            <ObInspectionHeader inspectionId={inspection.id} title={activeSectionLabel || 'ÖB-runda'} onOpenMenu={() => setMobileMenuOpen(true)} />}
+            <ObInspectionHeader inspectionId={inspection.id} title={activeSectionLabel || (isStatusInspection ? 'Statusbesiktning' : 'ÖB-runda')} onOpenMenu={() => setMobileMenuOpen(true)} />}
 
           <div className="grid min-w-0 items-start">
             <div

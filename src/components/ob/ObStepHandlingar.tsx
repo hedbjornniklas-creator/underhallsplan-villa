@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
 import DebouncedTextarea from './DebouncedTextarea'
 import ObFormSaveStatus from './ObFormSaveStatus'
+import { obInspectionProfileAppliesTo, parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 
 export type TenureType = 'freehold' | 'bostadsratt' | null
 export type DwellingType = 'house' | 'apartment' | null
@@ -16,7 +17,7 @@ type InspectionDocument = Tables<'inspection_documents'>
 type InspectionDisclosure = Tables<'inspection_disclosures'>
 
 type InspectionDocumentStatus = 'present' | 'missing' | 'na'
-type InspectionSide = 'buyer' | 'seller' | 'apartment'
+type InspectionSide = ObInspectionProfileKey
 type DocumentModule = 'ob' | 'eb'
 
 type DocumentViewModel = {
@@ -81,20 +82,7 @@ const normalizeSwedishToken = (value: string) =>
     .replaceAll('ä', 'a')
     .replaceAll('ö', 'o')
 
-const parseInspectionSideToken = (value: string): InspectionSide | null => {
-  const token = normalizeSwedishToken(value)
-  if (token.includes('seller') || token.includes('salj')) return 'seller'
-  if (token.includes('apartment') || token.includes('lagenhet') || token.includes('apt')) {
-    return 'apartment'
-  }
-  if (token.includes('buyer') || token.includes('kop')) return 'buyer'
-  return null
-}
-
-const normalizeInspectionSide = (value: unknown): InspectionSide => {
-  if (typeof value !== 'string') return 'buyer'
-  return parseInspectionSideToken(value) ?? 'buyer'
-}
+const parseInspectionSideToken = parseObInspectionProfile
 
 const parseAppliesToSides = (raw: unknown): InspectionSide[] | null => {
   if (raw == null) return null
@@ -153,7 +141,7 @@ const documentTypeAppliesToInspectionSide = (
   inspectionSide: InspectionSide
 ) => {
   const appliesTo = parseAppliesToSides((documentType as DocumentTypeExtraFields).applies_to)
-  return !appliesTo || appliesTo.includes(inspectionSide)
+  return obInspectionProfileAppliesTo(inspectionSide, appliesTo)
 }
 
 const toDocumentViewModel = (
@@ -218,13 +206,15 @@ export default function ObStepHandlingar({
   const [disclosure, setDisclosure] = useState<InspectionDisclosure | null>(null)
   const [disclosureText, setDisclosureText] = useState('')
   const [disclosureImagePath, setDisclosureImagePath] = useState<string | null>(null)
+  const inspectionSide = resolveObInspectionProfile(inspectionWithExtras) ?? 'buyer'
+  const defaultDisclosureText = inspectionSide === 'status' ? '' : STANDARD_DISCLOSURE_TEXT
+  const defaultDefectText = inspectionSide === 'status' ? '' : STANDARD_DEFECT_TEXT
 
   // Upplysningar om fel/brister via inspections.defect_disclosures
   const [defectText, setDefectText] = useState(() => {
     const v = inspectionWithExtras.defect_disclosures
-    return v && v.trim() !== '' ? v : STANDARD_DEFECT_TEXT
+    return v && v.trim() !== '' ? v : defaultDefectText
   })
-  const inspectionSide = normalizeInspectionSide(inspectionWithExtras.inspection_side)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -333,7 +323,7 @@ export default function ObStepHandlingar({
         .insert({
           inspection_id: inspection.id,
           title: 'upplysningar',
-          note: STANDARD_DISCLOSURE_TEXT,
+          note: defaultDisclosureText,
         })
         .select('*')
         .single()
@@ -343,7 +333,7 @@ export default function ObStepHandlingar({
     }
 
     return row ?? null
-  }, [inspection.id, isInspectionLocked])
+  }, [inspection.id, isInspectionLocked, defaultDisclosureText])
 
   const ensureDefectTextSaved = useCallback(async () => {
     const { data: inspRow, error: inspErr } = await supabase
@@ -357,21 +347,21 @@ export default function ObStepHandlingar({
     const typedInspectionRow = (inspRow ?? null) as InspectionDefectRow | null
     const current = (typedInspectionRow?.defect_disclosures ?? '').trim()
     if (current !== '') {
-      setDefectText(typedInspectionRow?.defect_disclosures ?? STANDARD_DEFECT_TEXT)
+      setDefectText(typedInspectionRow?.defect_disclosures ?? defaultDefectText)
       return
     }
-    if (isInspectionLocked) {
-      setDefectText(STANDARD_DEFECT_TEXT)
+    if (isInspectionLocked || inspectionSide === 'status') {
+      setDefectText(defaultDefectText)
       return
     }
 
     await supabase
       .from('inspections')
-      .update({ defect_disclosures: STANDARD_DEFECT_TEXT })
+      .update({ defect_disclosures: defaultDefectText })
       .eq('id', inspection.id)
 
-    setDefectText(STANDARD_DEFECT_TEXT)
-  }, [inspection.id, isInspectionLocked])
+    setDefectText(defaultDefectText)
+  }, [inspection.id, isInspectionLocked, inspectionSide, defaultDefectText])
 
   // -------------------------------
   // LOAD ALL + ENSURE TEMPLATE DOCS
@@ -619,7 +609,7 @@ export default function ObStepHandlingar({
     let valueToSave = value
 
     if (!valueToSave || valueToSave.trim() === '') {
-      valueToSave = STANDARD_DEFECT_TEXT
+      valueToSave = defaultDefectText
       setDefectText(valueToSave)
     }
 

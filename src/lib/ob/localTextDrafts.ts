@@ -11,6 +11,8 @@ type ConfirmedNote = {
   note?: string | null
   risk_text?: string | null
   ftu_text?: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
 }
 
 // Moving/removing a note or room must not be blocked by another step's drafts.
@@ -35,7 +37,7 @@ export function hasObTextDraftsForRoundTarget(
       if (!key?.startsWith(prefix)) continue
       let path = key.slice(prefix.length).split(':')
       if (path[0] === 'building' && path[1]) path = path.slice(2)
-      if (path[0] === 'mobile-round' && noteIds.has(path[1])) return true
+      if (['mobile-round', 'mobile-round-status'].includes(path[0]) && noteIds.has(path[1])) return true
       if (['runda', 'insida', 'utsida'].includes(path[0]) &&
         path[1] === 'control-item' && noteIds.has(path[2])) return true
       if (target.kind === 'room' && path[0] === 'runda' && path[1] === 'quick-note' &&
@@ -57,7 +59,7 @@ export function clearConfirmedObNoteDrafts(
 ) {
   try { storage ??= typeof window === 'undefined' ? undefined : window.localStorage } catch { return }
   if (!storage) return
-  const fields = ['note', 'risk_text', 'ftu_text'] as const
+  const fields = ['note', 'risk_text', 'ftu_text', 'recommendation_text', 'comment_text'] as const
   const clearMatching = (draftKey: string, matches: (draft: Record<string, unknown>) => boolean) => {
     try {
       const key = getObTextDraftStorageKey(draftKey)!
@@ -72,7 +74,12 @@ export function clearConfirmedObNoteDrafts(
     if (!note.id) continue
     for (const scope of new Set([inspectionId, scopeId])) {
       clearMatching(`ob:${scope}:mobile-round:${note.id}`, draft =>
-        fields.every(field => typeof draft[field] === 'string' && draft[field] === (note[field] ?? '')))
+        fields.every(field => (['recommendation_text', 'comment_text'].includes(field) && draft[field] === undefined) ||
+          typeof draft[field] === 'string' && draft[field] === (note[field] ?? '')))
+      clearMatching(`ob:${scope}:mobile-round-status:${note.id}`, draft =>
+        ['risk_text', 'ftu_text'].every(field => draft[field] === undefined || draft[field] === '') &&
+        (['note', 'recommendation_text', 'comment_text'] as const).every(field =>
+          typeof draft[field] === 'string' && draft[field] === (note[field] ?? '')))
     }
     for (const step of ['runda', 'insida', 'utsida']) {
       for (const field of fields) {

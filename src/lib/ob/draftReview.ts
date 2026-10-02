@@ -14,11 +14,13 @@ export type ObDraftEntry = {
 const steps: Record<string, string> = {
   grunddata: 'Fastighet & uppdrag', handlingar: 'Handlingar & upplysningar',
   forutsattningar: 'Förutsättningar', runda: 'ÖB-runda', 'mobile-round': 'ÖB-runda',
+  'mobile-round-status': 'Statusbesiktning',
   insida: 'Byggnad - insida', utsida: 'Byggnad - utsida',
   areamatning: 'Areamätning', fuktkontroll: 'Fuktkontroll',
 }
 export const obDraftFieldLabels: Record<string, string> = {
   note: 'Notering', risk_text: 'Risk', ftu_text: 'Fortsatt teknisk utredning',
+  recommendation_text: 'Rekommendation', comment_text: 'Övriga kommentarer',
   attendees_other: 'Övriga närvarande', defect_disclosures: 'Upplysningar om fel',
 }
 
@@ -41,10 +43,15 @@ export function listObDraftEntries(inspectionId: string, storage: Storage): ObDr
         const row = parsed as Record<string, unknown>
         if (typeof row.value === 'string' && Object.keys(row).every(key => ['value', 'updatedAt'].includes(key))) {
           values = { [path.at(-1) || 'note']: row.value }
-        } else if (path[0] === 'mobile-round' &&
-          Object.keys(row).every(key => ['note', 'risk_text', 'ftu_text'].includes(key)) &&
+        } else if (['mobile-round', 'mobile-round-status'].includes(path[0]) &&
+          Object.keys(row).every(key => ['note', 'risk_text', 'ftu_text', 'recommendation_text', 'comment_text'].includes(key)) &&
+          Object.values(row).every(value => typeof value === 'string') &&
           ['note', 'risk_text', 'ftu_text'].every(key => typeof row[key] === 'string')) {
-          values = row as Record<string, string>
+          const status = path[0] === 'mobile-round-status'
+          if (!status || ['recommendation_text', 'comment_text'].every(field => typeof row[field] === 'string')) {
+            values = Object.fromEntries(Object.entries(row).filter(([field]) => !status ||
+              !['risk_text', 'ftu_text'].includes(field) || row[field] !== '')) as Record<string, string>
+          }
         }
         preview = JSON.stringify(row.value ?? row, null, 2)
       }

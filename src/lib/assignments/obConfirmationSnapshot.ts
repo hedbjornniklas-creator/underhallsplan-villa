@@ -15,14 +15,19 @@ export type ObConfirmationSnapshot = Omit<AcceptedAssignmentConfirmationPdfInput
 // Called before consuming the token. The database captures assignment/addons
 // after its own updates, atomically with the acceptance and this source text.
 export async function prepareObConfirmationSource(
-  assignment: { assignment_type: string; org_id: string; responsible_profile_id: string | null },
+  assignment: { assignment_type: string; org_id: string; responsible_profile_id: string | null; scope_description?: string | null; price_amount?: number | null },
   terms: AssignmentTermsDocument
 ) {
-  if (assignment.assignment_type !== 'OB' || !['buyer', 'seller', 'apartment'].includes(terms.role)) {
+  if (!((assignment.assignment_type === 'OB' && ['buyer', 'seller', 'apartment'].includes(terms.role)) ||
+    (assignment.assignment_type === 'STATUS' && terms.role === 'status'))) {
     throw new Error('OB_CONFIRMATION_MODULE_MISMATCH')
   }
   if (!assignment.responsible_profile_id) throw new Error('OB_CONFIRMATION_ISSUER_MISSING')
   const admin = createSupabaseAdminClient()
+  if (assignment.assignment_type === 'STATUS') {
+    const { error } = await admin.from('assignment_links').select('status_document_source').limit(0)
+    if (error) throw new Error('STATUS_ASSIGNMENT_SOURCE_NOT_CONFIGURED')
+  }
   const { error: setupError } = await admin.from('assignment_confirmation_snapshots').select('assignment_id').limit(0)
   if (setupError) throw new Error('OB_CONFIRMATION_ARCHIVE_NOT_CONFIGURED')
   const { data: profile, error: profileError } = await admin.from('profiles')
@@ -36,6 +41,10 @@ export async function prepareObConfirmationSource(
   })
   return {
     schemaVersion: 'ob-confirmation-v1',
+    ...(assignment.assignment_type === 'STATUS' ? {
+      statusScopeDescription: assignment.scope_description,
+      statusPriceAmount: assignment.price_amount,
+    } : {}),
     terms,
     issuerName: organization.name ?? profile.company_name,
     inspector: {
@@ -62,10 +71,11 @@ export async function getObConfirmationSnapshot(orgId: string, assignmentId: str
   const snapshot = data.snapshot_payload as ObConfirmationSnapshot | null
   if (data.schema_version !== 'ob-confirmation-v1' || !snapshot ||
     snapshot.assignment?.id !== assignmentId || snapshot.assignment?.org_id !== orgId ||
-    snapshot.assignment?.assignment_type !== 'OB' || !Number.isFinite(Date.parse(data.accepted_at)) ||
+    !['OB', 'STATUS'].includes(snapshot.assignment?.assignment_type) || !Number.isFinite(Date.parse(data.accepted_at)) ||
     Date.parse(snapshot.assignment.accepted_at ?? '') !== Date.parse(data.accepted_at) ||
     !snapshot.terms || typeof snapshot.terms.text !== 'string' ||
-    !['buyer', 'seller', 'apartment'].includes(snapshot.terms.role) ||
+    !(snapshot.assignment.assignment_type === 'STATUS' ? snapshot.terms.role === 'status' && snapshot.terms.verbatim === true :
+      ['buyer', 'seller', 'apartment'].includes(snapshot.terms.role)) ||
     snapshot.terms.version !== snapshot.assignment.terms_version ||
     snapshot.terms.documentHash !== snapshot.assignment.terms_document_hash ||
     createHash('sha256').update(snapshot.terms.text).digest('hex') !== snapshot.terms.documentHash ||

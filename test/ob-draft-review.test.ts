@@ -88,4 +88,17 @@ test('saved-text reads are inspection-scoped, bounded and never write data', asy
   assert.equal(await compiled.exports.readObDraftSavedText('i', { ...entry, path: ['unknown'] }), null)
   assert.equal(calls.length, before)
   assert.equal(storage.getItem(entry.key), entry.raw)
+  error = null
+  data = { note: 'Statusnotering', risk_text: 'Bevarad dold risk', ftu_text: 'Bevarad dold FTU',
+    recommendation_text: 'Manuellt', comment_text: 'Kommentar' }
+  storage.setItem(key('building:b:mobile-round-status:n'), JSON.stringify({ note: data.note,
+    risk_text: '', ftu_text: '', recommendation_text: data.recommendation_text, comment_text: data.comment_text }))
+  const status = listObDraftEntries('i', storage).find(item => item.path[0] === 'mobile-round-status')!
+  assert.match(status.title, /Statusbesiktning/)
+  assert.deepEqual(status.values, { note: data.note, recommendation_text: data.recommendation_text, comment_text: data.comment_text })
+  const savedStatus = await compiled.exports.readObDraftSavedText('i', status)
+  assert.deepEqual(savedStatus, status.values)
+  assert.equal(clearVerifiedObDraft(status, savedStatus, storage), true)
+  // Reviewing a status copy cannot discard the older, different OB draft.
+  assert.equal(storage.getItem(entry.key), entry.raw)
 })

@@ -11,6 +11,7 @@ import {
   sendAssignmentAcceptedNotice,
 } from '@/lib/assignments/server'
 import { parseAssignmentIssuerIdentitySnapshot } from '@/lib/assignments/issuerIdentity'
+import { requireStatusIssueSource } from '@/lib/assignments/statusIssueSource'
 import { resolveOrganizationProfileCard } from '@/lib/organizations/profileCard'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
@@ -109,6 +110,7 @@ type PublicLink = {
   terms_version: string | null
   issuer_snapshot_schema_version: string | null
   issuer_identity_snapshot: unknown
+  status_document_source?: unknown
   assignments: PublicAssignmentSummary | PublicAssignmentSummary[] | null
 }
 
@@ -206,7 +208,9 @@ function toState(link: PublicLink): PublicState {
         assignmentDetails: assignment.assignment_details,
       })
     : null
-  const expectedTermsVersion = termsRole ? getAssignmentTermsDocument(termsRole).version : null
+  const expectedTermsVersion = assignment?.assignment_type === 'STATUS'
+    ? requireStatusIssueSource(link.status_document_source, link.terms_version).terms.version
+    : termsRole ? getAssignmentTermsDocument(termsRole).version : null
   const outdated = !link.terms_version || !expectedTermsVersion || link.terms_version !== expectedTermsVersion
 
   if (cancelled) return 'revoked'
@@ -240,9 +244,12 @@ export async function GET(
       ordererRole: assignment.orderer_role,
       assignmentDetails: assignment.assignment_details,
     })
-    const assignmentTerms = assignmentTermsRole
+    const statusSource = assignment.assignment_type === 'STATUS'
+      ? requireStatusIssueSource(link.status_document_source, link.terms_version)
+      : null
+    const assignmentTerms = statusSource?.terms ?? (assignmentTermsRole
       ? getAssignmentTermsDocument(assignmentTermsRole)
-      : terms.seller
+      : terms.seller)
     let inspector: PublicInspectorProfile | null = null
     let addonOffers: PublicAddonOffer[] = []
     let selectedAddonServiceIds: string[] = []
@@ -255,7 +262,17 @@ export async function GET(
     const admin = createSupabaseAdminClient()
 
     if (assignment.responsible_profile_id) {
-      if (assignment.assignment_type === 'TU') {
+      if (statusSource) {
+        const snapshot = statusSource.inspector
+        inspector = {
+          full_name: snapshot.fullName, phone: snapshot.phone, email: snapshot.email,
+          company_name: snapshot.companyName, company_orgno: snapshot.companyOrgNo,
+          company_address: snapshot.companyAddress, company_postal_code: snapshot.companyPostalCode,
+          company_city: snapshot.companyCity, sbr_group: snapshot.sbrGroup, sbr_status: snapshot.sbrStatus,
+          membership_number: snapshot.membershipNumber, certification_number: snapshot.certificationNumber,
+          avatar_path: null,
+        }
+      } else if (assignment.assignment_type === 'TU') {
         const snapshot = parseAssignmentIssuerIdentitySnapshot(
           link.issuer_identity_snapshot,
           {
@@ -414,7 +431,7 @@ export async function GET(
       state: toState(link as PublicLink),
       expiresAt: link.expires_at ?? null,
       usedAt: link.used_at ?? null,
-      assignment,
+      assignment: statusSource ? { ...assignment, scope_description: statusSource.statusScopeDescription, price_amount: statusSource.statusPriceAmount } : assignment,
       inspector,
       addonOffers,
       selectedAddonServiceIds,
@@ -422,6 +439,12 @@ export async function GET(
       terms: {
         version: assignmentTerms.version,
         documents: {
+          ...(statusSource ? { status: {
+            hash: statusSource.terms.documentHash,
+            text: statusSource.terms.text,
+            templateId: statusSource.terms.templateId,
+            confirmationTexts: statusSource.terms.confirmationTexts,
+          } } : {}),
           seller: {
             hash: terms.seller.documentHash,
             text: terms.seller.text,
@@ -516,7 +539,10 @@ export async function POST(
     if (!termsRole) {
       return jsonError('Välj om du är köpare, säljare eller lägenhetsköpare.', 409)
     }
-    const terms = getAssignmentTermsDocument(termsRole)
+    const statusSource = assignment.assignment_type === 'STATUS'
+      ? requireStatusIssueSource(link.status_document_source, link.terms_version)
+      : null
+    const terms = statusSource?.terms ?? getAssignmentTermsDocument(termsRole)
 
     const termsVersion = typeof body.termsVersion === 'string' ? body.termsVersion.trim() : ''
     if (!termsVersion) return jsonError('Villkorsversion saknas.', 400)
@@ -603,7 +629,9 @@ export async function POST(
     }
 
     const roleLabel =
-      termsRole === 'technical'
+      termsRole === 'status'
+        ? 'Statusbesiktning'
+      : termsRole === 'technical'
         ? null
         : termsRole === 'construction_consumer'
           ? 'Entreprenadbesiktning - Konsument'
@@ -617,7 +645,7 @@ export async function POST(
             ? 'Lägenhet'
             : 'Säljare'
 
-    const priceAmount = parsePrice(assignment.price_amount)
+    const priceAmount = statusSource?.statusPriceAmount ?? parsePrice(assignment.price_amount)
     if (priceAmount === null) {
       return jsonError('Pris är obligatoriskt och måste vara giltigt.', 409)
     }
@@ -683,6 +711,7 @@ export async function POST(
       apartment_number: isApartmentObject ? apartmentNumber : null,
       apartment_holder_name: isApartmentObject ? apartmentHolderName : null,
       scope_description:
+        statusSource ? statusSource.statusScopeDescription :
         typeof body.scopeDescription === 'string' ? body.scopeDescription.trim() : assignment.scope_description,
       preferred_date: preferredDate,
       preferred_time: preferredTime,
@@ -711,9 +740,9 @@ export async function POST(
           : null,
     }
 
-    const documentSource = assignment.assignment_type === 'OB' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true'
+    const documentSource = statusSource ?? (assignment.assignment_type === 'OB' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true'
       ? await (await import('@/lib/assignments/obConfirmationSnapshot')).prepareObConfirmationSource({ ...assignment, org_id: link.org_id }, terms)
-      : null
+      : null)
 
     await consumeAssignmentToken({
       token,

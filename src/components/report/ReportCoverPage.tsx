@@ -9,7 +9,7 @@ import {
 
 type ReportCoverPageProps = {
   companyLogoUrl?: string | null
-  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
+  inspectionSide?: 'buyer' | 'seller' | 'apartment' | 'status' | null
   cadastralId?: string
   brfName?: string
   apartmentNumber?: string
@@ -36,7 +36,9 @@ export default function ReportCoverPage({
 }: ReportCoverPageProps) {
   const coverSrc = coverIllustrationUrl || defaultCoverIllustrationSrc
   const isApartment = inspectionSide === 'apartment'
-  const assignmentHeading = isApartment ? 'LÄGENHETSBESIKTNING' : 'ÖVERLÅTELSEBESIKTNING'
+  const assignmentHeading = inspectionSide === 'status'
+    ? 'STATUSBESIKTNING'
+    : isApartment ? 'LÄGENHETSBESIKTNING' : 'ÖVERLÅTELSEBESIKTNING'
 
   return (
     <div>

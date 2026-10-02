@@ -1,6 +1,6 @@
 'use client'
 
-import { readObNoteText } from '@/lib/ob/noteText'
+import { readObNoteText, readStatusNoteText } from '@/lib/ob/noteText'
 
 import React, {
   useCallback,
@@ -89,7 +89,7 @@ import type {
 } from './ObStepRunda'
 import './mobile-round.css'
 
-type Patch = Pick<Note, 'note' | 'risk_text' | 'ftu_text'>
+type Patch = Pick<Note, 'note' | 'risk_text' | 'ftu_text' | 'recommendation_text' | 'comment_text'>
 export type ObMobileRoundProps = {
   address: string
   onOpenMenu: () => void
@@ -134,7 +134,7 @@ export type ObMobileRoundProps = {
   onRenameRoom: (room: InteriorRoom, name: string) => Promise<InteriorRoom>
   onLoadImageTrash: (beforeEventId?: string) => Promise<ImageTrashPage>
   legacyExteriorNotes?: InspectionExteriorObservation[]
-  onUpdateLegacyNote?: (id: string, patch: Partial<Pick<InspectionExteriorObservation, 'note' | 'risk_text' | 'ftu_text'>>) => Promise<void>
+  onUpdateLegacyNote?: (id: string, patch: Partial<Pick<InspectionExteriorObservation, 'note' | 'risk_text' | 'ftu_text' | 'recommendation_text' | 'comment_text'>>) => Promise<void>
   onRestoreImage: (eventId: string, requestId: string) => Promise<ImageRestoreResult>
   onMove: (request: MoveRequest) => Promise<MoveResult>
   onPreviewRemoval: (request: RemovalRequest) => Promise<RemovalPreview>
@@ -169,9 +169,10 @@ function Editor({
   imagePlace: (image: RoundImage) => string
 }) {
   const key = getObTextDraftStorageKey(
-    `ob:${p.scopeId ?? p.inspectionId}:mobile-round:${note.id}`,
+    `ob:${p.scopeId ?? p.inspectionId}:${p.inspectionSide === 'status' ? 'mobile-round-status' : 'mobile-round'}:${note.id}`,
   )!
-  const original = readObNoteText(note)
+  const isStatus = p.inspectionSide === 'status'
+  const original = isStatus ? readStatusNoteText(note) : readObNoteText(note)
   const [initial] = useState(() => {
     if (p.locked) return { draft: original, pending: false }
     try {
@@ -214,7 +215,11 @@ function Editor({
           setError('')
           const currentVersion = version.current,
             snapshot = { ...values.current }
-          await update.current(note.id!, snapshot)
+          await update.current(note.id!, isStatus ? {
+            note: snapshot.note,
+            recommendation_text: snapshot.recommendation_text,
+            comment_text: snapshot.comment_text,
+          } : snapshot)
           saved.current = currentVersion
         }
         try {
@@ -231,7 +236,7 @@ function Editor({
       }
     })()
     return flight.current
-  }, [key, note.id, p.locked])
+  }, [key, note.id, p.locked, isStatus])
   function change(field: keyof Patch, value: string) {
     values.current = { ...values.current, [field]: value }
     version.current++
@@ -356,9 +361,9 @@ function Editor({
           </button>
         </div>
       )}
-      {unfinishedFields(draft).length > 0 && (
+      {unfinishedFields(draft, isStatus).length > 0 && (
         <p className="obm-unfinished">
-          Mallfält kvar: {unfinishedFields(draft).join(', ')}
+          Mallfält kvar: {unfinishedFields(draft, isStatus).join(', ')}
         </p>
       )}
       <label className="obm-field">
@@ -374,32 +379,36 @@ function Editor({
       </label>
       <details
         className="obm-details"
-        open={Boolean(draft.risk_text || draft.ftu_text) || undefined}
+        open={Boolean(isStatus ? draft.recommendation_text || draft.comment_text : draft.risk_text || draft.ftu_text) || undefined}
       >
         <summary>
-          Risk och fortsatt teknisk utredning
+          {isStatus ? 'Rekommendation och övriga kommentarer' : 'Risk och fortsatt teknisk utredning'}
           <ChevronDown size={18} />
         </summary>
         <label className="obm-field">
-          Risk
+          {isStatus ? 'Rekommendation' : 'Risk'}
           <textarea
             rows={4}
-            value={draft.risk_text ?? ''}
+            value={(isStatus ? draft.recommendation_text : draft.risk_text) ?? ''}
             readOnly={p.locked || leaving}
-            onChange={(e) => change('risk_text', e.target.value)}
+            onChange={(e) => change(isStatus ? 'recommendation_text' : 'risk_text', e.target.value)}
+            maxLength={isStatus ? 20000 : undefined}
+            placeholder={isStatus ? 'Valfritt – skriv med egna ord…' : undefined}
           />
         </label>
         <label className="obm-field">
-          Fortsatt teknisk utredning
+          {isStatus ? 'Övriga kommentarer' : 'Fortsatt teknisk utredning'}
           <textarea
             rows={4}
-            value={draft.ftu_text ?? ''}
+            value={(isStatus ? draft.comment_text : draft.ftu_text) ?? ''}
             readOnly={p.locked || leaving}
-            onChange={(e) => change('ftu_text', e.target.value)}
+            onChange={(e) => change(isStatus ? 'comment_text' : 'ftu_text', e.target.value)}
+            maxLength={isStatus ? 20000 : undefined}
+            placeholder={isStatus ? 'Valfritt – skriv med egna ord…' : undefined}
           />
         </label>
       </details>
-      {!note.control_point_id && <div className="obm-suggestion-action">
+      {!isStatus && !note.control_point_id && <div className="obm-suggestion-action">
         {sentSuggestion === suggestionVersion ? <p role="status" className="obm-saved"><Check size={16} />Förslaget har skickats till admin.</p> :
           <button type="button" disabled={p.locked || p.mutationBlocked || leaving || !draft.note?.trim()}
             onClick={() => void finish(() => setSuggestionOpen(true))}>
@@ -543,7 +552,7 @@ function MobileRound(p: Props) {
             observationIds.has(note.exterior_observation_id),
         )
   const targetNotes = p.notes.filter(atTarget),
-    written = p.notes.filter(hasNote)
+    written = p.notes.filter(note => hasNote(note, p.inspectionSide === 'status'))
   const imageObservations = [...p.observations, ...(p.legacyExteriorNotes ?? [])]
   const imageLocations = new Map(p.images.map(image => [image.id, roundImageLocation(image, p.notes, imageObservations)]))
   const targetImages = p.images.filter(image => {
@@ -570,8 +579,8 @@ function MobileRound(p: Props) {
   const nextPendingPhoto = pendingPhotoIndex >= 0 ? pendingImages[pendingPhotoIndex + 1] : null
   const drafts = p.notes.filter(
     (note) =>
-      (!note.control_point_id && !hasNote(note)) ||
-      unfinishedFields(note).length > 0,
+      (!note.control_point_id && !hasNote(note, p.inspectionSide === 'status')) ||
+      unfinishedFields(note, p.inspectionSide === 'status').length > 0,
   )
   const pendingCount =
     unmatched.length +
@@ -861,14 +870,17 @@ function MobileRound(p: Props) {
             {note.note?.trim() ||
               (note.status === 'ok'
                 ? 'Inget att notera'
-                : note.risk_text?.trim() ||
-                  note.ftu_text?.trim() ||
+                : (p.inspectionSide === 'status'
+                  ? note.recommendation_text?.trim() || note.comment_text?.trim()
+                  : note.risk_text?.trim() || note.ftu_text?.trim()) ||
                   'Tom notering')}
           </strong>
           <span className="obm-meta">
-            {unfinishedFields(note).length > 0 && <em>Mallfält kvar</em>}
-            {note.risk_text?.trim() && <em className="obm-risk">Risk</em>}
-            {note.ftu_text?.trim() && <em className="obm-investigation">Utredning</em>}
+            {unfinishedFields(note, p.inspectionSide === 'status').length > 0 && <em>Mallfält kvar</em>}
+            {p.inspectionSide !== 'status' && note.risk_text?.trim() && <em className="obm-risk">Risk</em>}
+            {p.inspectionSide !== 'status' && note.ftu_text?.trim() && <em className="obm-investigation">Utredning</em>}
+            {p.inspectionSide === 'status' && note.recommendation_text?.trim() && <em>Rekommendation</em>}
+            {p.inspectionSide === 'status' && note.comment_text?.trim() && <em>Kommentar</em>}
             {images.length > 0 && (
               <span>
                 <ImageIcon size={14} />
@@ -912,7 +924,7 @@ function MobileRound(p: Props) {
           )}
           <strong>{outcome.label}</strong>
           <span>{outcome.note_template || 'Ingen förvald noteringstext'}</span>
-          {(outcome.risk_template || outcome.ftu_template) && (
+          {p.inspectionSide !== 'status' && (outcome.risk_template || outcome.ftu_template) && (
             <small>
               {[
                 outcome.risk_template && 'Risktext',
@@ -939,7 +951,7 @@ function MobileRound(p: Props) {
   return (
     <div className="obm-root" data-view={view} data-area={p.area} {...placeSwipe}>
       <ObInspectionHeader inspectionId={p.inspectionId} address={p.address}
-        title={p.buildingName ? `ÖB-runda · ${p.buildingName}` : 'ÖB-runda'}
+        title={p.buildingName ? `${p.inspectionSide === 'status' ? 'Statusbesiktning' : 'ÖB-runda'} · ${p.buildingName}` : p.inspectionSide === 'status' ? 'Statusbesiktning' : 'ÖB-runda'}
         onOpenMenu={p.onOpenMenu} portalContainer={placeSwipe.ref} onDraftOpenChange={setDraftReviewOpen} />
       {view === 'room' ? (
         <header
@@ -998,7 +1010,7 @@ function MobileRound(p: Props) {
         </header>
       ) : (
         <header className="obm-page-header">
-          <span>{p.buildingName ?? 'ÖB-RUNDA'}</span>
+          <span>{p.buildingName ?? (p.inspectionSide === 'status' ? 'STATUSBESIKTNING' : 'ÖB-RUNDA')}</span>
           {view === 'places' ? (
             <div className="obm-place-header-row">
               <h1>Välj plats</h1>
@@ -1234,13 +1246,13 @@ function MobileRound(p: Props) {
               </button>
             </div>
           </div>
-          {!query && targetNotes.filter(hasNote).length > 0 && (
+          {!query && targetNotes.filter(note => hasNote(note, p.inspectionSide === 'status')).length > 0 && (
             <section>
               <div className="obm-section-title">
                 <h2>Noterat här</h2>
-                <span>{targetNotes.filter(hasNote).length}</span>
+                <span>{targetNotes.filter(note => hasNote(note, p.inspectionSide === 'status')).length}</span>
               </div>
-              {targetNotes.filter(hasNote).map(noteRow)}
+              {targetNotes.filter(note => hasNote(note, p.inspectionSide === 'status')).map(noteRow)}
             </section>
           )}
           {!query && <ObRoundPlaceImages key={`${p.area}:${p.activeRoom?.id}:${p.activeExteriorItem?.id}`}
@@ -1317,7 +1329,9 @@ function MobileRound(p: Props) {
           {written
             .filter((note) =>
               matchesWords(
-                `${placeOf(note)} ${note.title} ${note.note} ${note.risk_text} ${note.ftu_text}`,
+                `${placeOf(note)} ${note.title} ${note.note} ${p.inspectionSide === 'status'
+                  ? `${note.recommendation_text ?? ''} ${note.comment_text ?? ''}`
+                  : `${note.risk_text ?? ''} ${note.ftu_text ?? ''}`}`,
                 query,
               ),
             )
@@ -1560,7 +1574,7 @@ function MobileRound(p: Props) {
             for (const id of result.noteIds) {
               try {
                 const key = getObTextDraftStorageKey(
-                  `ob:${p.scopeId ?? p.inspectionId}:mobile-round:${id}`,
+                  `ob:${p.scopeId ?? p.inspectionId}:${p.inspectionSide === 'status' ? 'mobile-round-status' : 'mobile-round'}:${id}`,
                 )
                 if (key) localStorage.removeItem(key)
               } catch {}
@@ -1619,13 +1633,13 @@ function MobileRound(p: Props) {
           <p className="obm-full-text">
             {preview.note_template || 'Ingen förvald noteringstext'}
           </p>
-          {preview.risk_template && (
+          {p.inspectionSide !== 'status' && preview.risk_template && (
             <>
               <h3>Risk</h3>
               <p className="obm-full-text">{preview.risk_template}</p>
             </>
           )}
-          {preview.ftu_template && (
+          {p.inspectionSide !== 'status' && preview.ftu_template && (
             <>
               <h3>Fortsatt teknisk utredning</h3>
               <p className="obm-full-text">{preview.ftu_template}</p>

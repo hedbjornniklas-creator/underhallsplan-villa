@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
+import { getStatusAssignmentTermsDocument } from '@/lib/assignments/statusTerms'
 import {
   buildAssignmentConfirmationEmail,
   buildAssignmentAcceptedNoticeEmail,
@@ -802,7 +803,7 @@ export async function createAssignment(input: {
       invoice_name: input.invoiceName ?? null,
       invoice_address: input.invoiceAddress ?? null,
       personal_identity_number: input.personalIdentityNumber ?? null,
-      orderer_role: input.ordererRole ?? null,
+      orderer_role: input.assignmentType === 'STATUS' ? 'Statusbesiktning' : input.ordererRole ?? null,
       preferred_date: input.preferredDate ?? null,
       preferred_time: input.preferredTime ?? null,
       price_amount: input.priceAmount ?? null,
@@ -1133,15 +1134,30 @@ export async function sendAssignmentConfirmation(input: {
   if (assignmentPrice === null || !Number.isFinite(assignmentPrice) || assignmentPrice < 0) {
     throw new Error('PRICE_REQUIRED')
   }
-  const terms = getAssignmentTermsDocument(termsRole)
+  const cancellationFee = input.assignment.assignment_details?.statusCancellationFee
+  if (input.assignment.assignment_type === 'STATUS' && !input.assignment.scope_description?.trim()) {
+    throw new Error('STATUS_SCOPE_REQUIRED')
+  }
+  if (input.assignment.assignment_type === 'STATUS' &&
+    (typeof cancellationFee !== 'number' || !Number.isFinite(cancellationFee) || cancellationFee < 0)) {
+    throw new Error('STATUS_CANCELLATION_FEE_REQUIRED')
+  }
+  const terms = input.assignment.assignment_type === 'STATUS'
+    ? getStatusAssignmentTermsDocument({ priceAmount: assignmentPrice, cancellationFee: cancellationFee as number, scopeDescription: input.assignment.scope_description! })
+    : getAssignmentTermsDocument(termsRole)
+  // Status confirmations always freeze their approved SBR source at issue.
+  // Existing modules retain their established feature-flagged behavior.
+  const statusDocumentSource = input.assignment.assignment_type === 'STATUS'
+    ? await (await import('@/lib/assignments/obConfirmationSnapshot')).prepareObConfirmationSource(input.assignment, terms)
+    : null
   // Resolve the sender before invalidating the previous link. TU links retain
   // the exact organization card that was used when this issue was sent.
   const issuerIdentitySnapshot = await createTuAssignmentIssuerIdentitySnapshot(
     admin,
     input.assignment
   )
-  const resolvedOrgName = issuerIdentitySnapshot?.company.name ?? input.orgName
-  const resolvedReplyTo = issuerIdentitySnapshot?.replyToEmail ?? input.responsibleEmail
+  const resolvedOrgName = statusDocumentSource ? statusDocumentSource.issuerName : issuerIdentitySnapshot?.company.name ?? input.orgName
+  const resolvedReplyTo = statusDocumentSource ? statusDocumentSource.inspector.email : issuerIdentitySnapshot?.replyToEmail ?? input.responsibleEmail
 
   await admin
     .from('assignment_links')
@@ -1161,6 +1177,7 @@ export async function sendAssignmentConfirmation(input: {
       token_hash: tokenHash,
       expires_at: expiresAt,
       terms_version: terms.version,
+      ...(statusDocumentSource ? { status_document_source: statusDocumentSource } : {}),
       created_by: input.requestedByUserId,
       ...(issuerIdentitySnapshot
         ? {
@@ -1274,19 +1291,28 @@ export async function sendAssignmentOrderReceipt(input: {
     throw new Error('ASSIGNMENT_NOT_ACCEPTED')
   }
 
-  const terms = getAssignmentTermsDocument(termsRole)
-  const addonOrders = await listAssignmentAddonOrders({
+  const statusSnapshot = input.assignment.assignment_type === 'STATUS'
+    ? await (await import('@/lib/assignments/obConfirmationSnapshot')).getObConfirmationSnapshot(input.assignment.org_id, input.assignment.id)
+    : null
+  if (input.assignment.assignment_type === 'STATUS' && !statusSnapshot) throw new Error('OB_CONFIRMATION_SNAPSHOT_MISSING')
+  const receiptAssignment = statusSnapshot?.assignment ?? input.assignment
+  const receiptOrgName = statusSnapshot ? statusSnapshot.issuerName : input.orgName
+  const receiptReplyTo = statusSnapshot ? statusSnapshot.inspector?.email ?? null : input.responsibleEmail
+  const terms = statusSnapshot?.terms ?? getAssignmentTermsDocument(termsRole)
+  const addonOrders = statusSnapshot ? statusSnapshot.addonOrders.map(row => ({
+    addon_name_snapshot: row.name, price_amount_snapshot: row.priceAmount, currency_snapshot: row.currency,
+  })) : await listAssignmentAddonOrders({
     orgId: input.assignment.org_id,
     assignmentId: input.assignment.id,
   })
 
   const { subject, html, text } = buildAssignmentOrderReceiptEmail({
-    assignment: input.assignment,
-    orgName: input.orgName,
-    termsVersion: input.assignment.terms_version,
+    assignment: receiptAssignment,
+    orgName: receiptOrgName,
+    termsVersion: statusSnapshot?.terms.version ?? input.assignment.terms_version,
     termsRole,
     termsText: terms.text,
-    acceptedAt: input.assignment.accepted_at,
+    acceptedAt: statusSnapshot?.assignment.accepted_at ?? input.assignment.accepted_at,
     addonOrders: addonOrders.map((row) => ({
       addon_name_snapshot: row.addon_name_snapshot,
       price_amount_snapshot: row.price_amount_snapshot,
@@ -1303,12 +1329,12 @@ export async function sendAssignmentOrderReceipt(input: {
       org_id: input.assignment.org_id,
       assignment_id: input.assignment.id,
       channel: 'email',
-      recipient_email: input.assignment.customer_email,
+      recipient_email: receiptAssignment.customer_email,
       subject,
       template_key: 'assignment_order_receipt',
       status: 'pending',
       created_by: createdBy,
-      reply_to_email: input.responsibleEmail ?? null,
+      reply_to_email: receiptReplyTo,
     })
     .select('id')
     .single()
@@ -1319,9 +1345,9 @@ export async function sendAssignmentOrderReceipt(input: {
 
   try {
     const sendResult = await sendAssignmentEmail({
-      to: input.assignment.customer_email,
+      to: receiptAssignment.customer_email,
       from: fromAddress,
-      replyTo: input.responsibleEmail ?? null,
+      replyTo: receiptReplyTo,
       subject,
       html,
       text,
@@ -1372,7 +1398,8 @@ export async function sendAssignmentAcceptedNotice(input: {
     throw new Error('ASSIGNMENT_NOT_ACCEPTED')
   }
 
-  if (input.assignment.assignment_type === 'OB' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true') {
+  if (input.assignment.assignment_type === 'STATUS' ||
+    (input.assignment.assignment_type === 'OB' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true')) {
     const { sendFrozenObConfirmation } = await import('@/lib/assignments/obConfirmationDelivery')
     return sendFrozenObConfirmation({
       orgId: input.assignment.org_id, assignmentId: input.assignment.id,
@@ -1764,15 +1791,21 @@ export async function resolvePublicAssignmentByToken(token: string) {
     'assignments:assignments!assignment_links_org_assignment_fkey(id,status,assignment_type,responsible_profile_id,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city,preliminary_address,scope_description,preferred_date,preferred_time,price_amount,currency,property_address,property_postal_code,property_city,property_municipality,property_owner_name,cadastral_id,brf_name,apartment_number,apartment_holder_name,invoice_name,invoice_address,invoice_email,personal_identity_number,orderer_role,accepted_at,assignment_details)'
   const currentColumns =
     `id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,issuer_snapshot_schema_version,issuer_identity_snapshot,${assignmentColumns}`
+  const statusColumns = `status_document_source,${currentColumns}`
   const legacyColumns =
     `id,assignment_id,org_id,expires_at,used_at,revoked_at,terms_version,${assignmentColumns}`
 
   let result = await admin
     .from('assignment_links')
-    .select(currentColumns)
+    .select(statusColumns)
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
+  // Additive rollout: old OB/TU links remain readable before the STB migration.
+  // STATUS itself never falls back when its issued source is missing.
+  if (result.error && `${result.error.code ?? ''} ${result.error.message ?? ''}`.toLowerCase().includes('status_document_source')) {
+    result = await admin.from('assignment_links').select(currentColumns).eq('token_hash', tokenHash).maybeSingle()
+  }
   const errorText = `${result.error?.code ?? ''} ${result.error?.message ?? ''}`.toLowerCase()
   if (
     result.error &&
@@ -1803,6 +1836,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
         ? data.issuer_snapshot_schema_version
         : null,
     issuer_identity_snapshot: data.issuer_identity_snapshot ?? null,
+    status_document_source: data.status_document_source ?? null,
   } as
     | {
         id: string
@@ -1814,6 +1848,7 @@ export async function resolvePublicAssignmentByToken(token: string) {
         terms_version: string | null
         issuer_snapshot_schema_version: string | null
         issuer_identity_snapshot: unknown
+        status_document_source: unknown
         assignments: AssignmentDetails | AssignmentDetails[] | null
       }
 }
@@ -1926,6 +1961,13 @@ export async function convertAssignmentToInspection(input: {
 
   if (!assignment) {
     throw new Error('Uppdraget hittades inte.')
+  }
+
+  if (assignment.assignment_type === 'STATUS') {
+    if (input.earlyStartReason) throw new Error('STATUS_EARLY_START_NOT_ALLOWED')
+    return obWorkflowRpc<ConvertAssignmentResult>('ob_start_status_assignment_inspection', {
+      p_assignment_id: assignment.id, p_org_id: input.orgId, p_actor: input.requestedByUserId,
+    })
   }
 
   if (assignment.assignment_type === 'OB') {

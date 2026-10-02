@@ -44,12 +44,21 @@ export async function POST(request: Request) {
     const apartmentNumber = String(body.apartmentNumber ?? '').trim()
     const apartmentHolderName = String(body.apartmentHolderName ?? '').trim()
     const ordererRole = String(body.ordererRole ?? '').trim()
+    const cancellationFeeRaw = body.statusCancellationFee
+    const cancellationFee = cancellationFeeRaw === undefined || cancellationFeeRaw === null || cancellationFeeRaw === ''
+      ? null : Number(String(cancellationFeeRaw).replace(',', '.'))
+    if (assignmentType === 'STATUS' && (cancellationFee === null || !Number.isFinite(cancellationFee) || cancellationFee < 0)) {
+      return jsonError('Ange avbokningsbeloppet enligt uppdragsbekräftelsen (0 kr är tillåtet).', 400)
+    }
     const preferredDate = String(body.preferredDate ?? '').trim()
     const preferredTime = String(body.preferredTime ?? '').trim()
     const priceAmountRaw = String(body.priceAmount ?? '').trim()
     const parsedPrice = priceAmountRaw === '' ? null : Number(priceAmountRaw.replace(',', '.'))
     const notesInternal = String(body.notesInternal ?? '').trim()
     const responsibleProfileId = String(body.responsibleProfileId ?? context.userId).trim()
+    if (assignmentType === 'STATUS' && !String(body.scopeDescription ?? '').trim()) {
+      return jsonError('Ange vad statusbesiktningen omfattar.', 400)
+    }
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
       return jsonError('Ange en giltig mejladress.', 400)
@@ -90,6 +99,8 @@ export async function POST(request: Request) {
       priceAmount: parsedPrice,
       currency: 'SEK',
       notesInternal: notesInternal || null,
+      ...(assignmentType === 'STATUS' ? { scopeDescription: String(body.scopeDescription ?? '').trim() || null } : {}),
+      ...(assignmentType === 'STATUS' ? { assignmentDetails: { statusCancellationFee: cancellationFee } } : {}),
     })
 
     const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
@@ -126,6 +137,9 @@ export async function POST(request: Request) {
 
     if (message === 'PRICE_REQUIRED') {
       return jsonError('Ange pris (SEK) innan utskick.', 400)
+    }
+    if (message === 'STATUS_CANCELLATION_FEE_REQUIRED') {
+      return jsonError('Ange avbokningsbeloppet enligt uppdragsbekräftelsen (0 kr är tillåtet).', 400)
     }
 
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {

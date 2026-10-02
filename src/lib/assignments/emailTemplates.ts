@@ -4,6 +4,7 @@ type TermsRole =
   | 'seller'
   | 'buyer'
   | 'apartment'
+  | 'status'
   | 'technical'
   | 'construction'
   | 'construction_business'
@@ -157,6 +158,7 @@ function assignmentTypeToLabel(type: AssignmentType) {
 }
 
 function termsRoleToLabel(role: TermsRole, format: 'html' | 'text' = 'text') {
+  if (role === 'status') return 'Statusbesiktning'
   if (role === 'buyer') return format === 'html' ? 'Köpare' : 'Köpare'
   if (role === 'apartment') return format === 'html' ? 'Lägenhet' : 'Lägenhet'
   if (role === 'technical') return format === 'html' ? 'Teknisk utredning' : 'Teknisk utredning'
@@ -308,18 +310,18 @@ export function buildAssignmentConfirmationEmail(
   const isTechnicalAssignment = input.assignment.assignment_type === 'TU'
   const constructionFacts = getConstructionEmailFacts(input.assignment, input.termsRole)
   const scopeDescription = toDisplayValue(input.assignment.scope_description)
-  const assignmentHeadingHtml = isTechnicalAssignment
+  const assignmentHeadingHtml = input.assignment.assignment_type === 'STATUS' ? 'Statusbesiktning' : isTechnicalAssignment
     ? 'Teknisk utredning'
     : constructionFacts
       ? roleLabelHtml
       : `&Ouml;verl&aring;telsebesiktning f&ouml;r
                   <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>`
-  const assignmentHeadingText = isTechnicalAssignment
+  const assignmentHeadingText = input.assignment.assignment_type === 'STATUS' ? 'Statusbesiktning' : isTechnicalAssignment
     ? 'Teknisk utredning'
     : constructionFacts
       ? roleLabelText
       : `Överlåtelsebesiktning för ${roleLabelText}`
-  const roleSuffixText = isTechnicalAssignment || constructionFacts ? '' : ` (${roleLabelText})`
+  const roleSuffixText = input.assignment.assignment_type === 'STATUS' || isTechnicalAssignment || constructionFacts ? '' : ` (${roleLabelText})`
   const orgName = toDisplayValue(input.orgName, 'BesiktApp')
   const subject = `Uppdragsbekr\u00e4ftelse - ${orgName}`
   const ctaButton = buildBulletproofButton({
@@ -505,13 +507,13 @@ export function buildAssignmentOrderReceiptEmail(
   const isTechnicalAssignment = input.assignment.assignment_type === 'TU'
   const constructionFacts = getConstructionEmailFacts(input.assignment, input.termsRole)
   const scopeDescription = toDisplayValue(input.assignment.scope_description)
-  const assignmentHeadingHtml = isTechnicalAssignment
+  const assignmentHeadingHtml = input.assignment.assignment_type === 'STATUS' ? 'Statusbesiktning' : isTechnicalAssignment
     ? 'Teknisk utredning'
     : constructionFacts
       ? roleLabelHtml
       : `Överlåtelsebesiktning för
                   <span style="display:inline-block;margin-left:8px;padding:5px 12px;border-radius:999px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.45);">${roleLabelHtml}</span>`
-  const roleSuffixText = isTechnicalAssignment || constructionFacts ? '' : ` (${roleLabelText})`
+  const roleSuffixText = input.assignment.assignment_type === 'STATUS' || isTechnicalAssignment || constructionFacts ? '' : ` (${roleLabelText})`
   const orgName = toDisplayValue(input.orgName, 'HusHub')
   const subject = `Beställningsbekräftelse - ${orgName}`
 

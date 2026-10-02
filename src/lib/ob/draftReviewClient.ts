@@ -7,10 +7,19 @@ export async function readObDraftSavedText(inspectionId: string, entry: ObDraftE
   if (!entry.values) return null
   const p = entry.path
   let row: Record<string, unknown> | null = null
-  if (p[0] === 'mobile-round' || ['runda', 'insida', 'utsida'].includes(p[0]) && p[1] === 'control-item') {
-    const id = p[0] === 'mobile-round' ? p[1] : p[2]
-    const result = await supabase.from('inspection_control_items').select('note,risk_text,ftu_text')
+  if (['mobile-round', 'mobile-round-status'].includes(p[0]) || ['runda', 'insida', 'utsida'].includes(p[0]) && p[1] === 'control-item') {
+    const id = ['mobile-round', 'mobile-round-status'].includes(p[0]) ? p[1] : p[2]
+    const fields = Object.keys(entry.values).some(field => ['recommendation_text', 'comment_text'].includes(field))
+      ? 'note,risk_text,ftu_text,recommendation_text,comment_text' : 'note,risk_text,ftu_text'
+    const result = await supabase.from('inspection_control_items').select(fields)
       .eq('inspection_id', inspectionId).eq('id', id).abortSignal(AbortSignal.timeout(15000)).maybeSingle()
+    if (result.error) throw result.error
+    row = result.data
+  } else if (p[0] === 'utsida' && p[1] === 'observation') {
+    const fields = Object.keys(entry.values).some(field => ['recommendation_text', 'comment_text'].includes(field))
+      ? 'note,risk_text,ftu_text,recommendation_text,comment_text' : 'note,risk_text,ftu_text'
+    const result = await supabase.from('inspection_exterior_observations').select(fields)
+      .eq('inspection_id', inspectionId).eq('id', p[2]).abortSignal(AbortSignal.timeout(15000)).maybeSingle()
     if (result.error) throw result.error
     row = result.data
   } else if (p[0] === 'handlingar' && ['document', 'disclosure'].includes(p[1])) {

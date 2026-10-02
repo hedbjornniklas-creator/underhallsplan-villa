@@ -61,6 +61,8 @@ export function validateRoundMutation(inspectionId: string, body: unknown) {
       )
         return false
       if (draft.outcomeId !== null && !isId(draft.outcomeId)) return false
+      if (!['recommendation_text', 'comment_text'].every(key =>
+        draft[key] === undefined || typeof draft[key] === 'string' && draft[key].length <= 20000)) return false
     }
     return true
   }

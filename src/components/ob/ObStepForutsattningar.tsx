@@ -13,6 +13,7 @@ import { buildingCoverPath, buildingDraftScope } from '@/lib/ob/buildingStructur
 import ObBuildingCover from './ObBuildingCover'
 import { ObFloorEditor } from './ObFloorEditor'
 import { floorModelKeys, floorModelSummary, isFloorCountGroup, modelFloorLabel } from '@/lib/ob/floorModel'
+import { obInspectionProfileAppliesTo, parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 import {
   buildInteriorFloorKeysFromOverview,
   buildOverviewFloorOptionLookup,
@@ -20,7 +21,7 @@ import {
 
 type FurnishingLevel = 'fullt_moblerad' | 'delvis_moblerad' | 'omoblerad'
 type SelectionMode = 'single' | 'multi_set' | 'per_floor'
-type InspectionSide = 'buyer' | 'seller' | 'apartment'
+type InspectionSide = ObInspectionProfileKey
 type SelectionValue = string | number | boolean | null
 type SelectionValues = Record<string, SelectionValue>
 
@@ -111,28 +112,7 @@ const isUniqueViolation = (error: unknown) => {
   return err?.code === '23505' || text.includes('duplicate key')
 }
 
-const normalizeSwedishToken = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replaceAll('å', 'a')
-    .replaceAll('ä', 'a')
-    .replaceAll('ö', 'o')
-
-const parseInspectionSideToken = (value: string): InspectionSide | null => {
-  const token = normalizeSwedishToken(value)
-  if (token.includes('seller') || token.includes('salj')) return 'seller'
-  if (token.includes('apartment') || token.includes('lagenhet') || token.includes('apt')) {
-    return 'apartment'
-  }
-  if (token.includes('buyer') || token.includes('kop')) return 'buyer'
-  return null
-}
-
-const normalizeInspectionSide = (value: unknown): InspectionSide => {
-  if (typeof value !== 'string') return 'buyer'
-  return parseInspectionSideToken(value) ?? 'buyer'
-}
+const parseInspectionSideToken = parseObInspectionProfile
 
 const parseAppliesTo = (item: SettingsOverviewItem): InspectionSide[] | null => {
   const raw = item.applies_to
@@ -294,11 +274,11 @@ export default function ObStepForutsattningar({
           .order('sort_order', { ascending: true })
 
         if (itemsErr) throw itemsErr
-        const inspectionSide = normalizeInspectionSide(inspection.inspection_side)
+        const inspectionSide = resolveObInspectionProfile(inspection) ?? 'buyer'
         const itemsArr = (itemsData ?? []) as SettingsOverviewItem[]
         const filteredItems = itemsArr.filter(item => {
           const appliesTo = parseAppliesTo(item)
-          return !appliesTo || appliesTo.includes(inspectionSide)
+          return obInspectionProfileAppliesTo(inspectionSide, appliesTo)
         })
         const itemIds = filteredItems.map(i => i.id)
 
@@ -386,7 +366,7 @@ export default function ObStepForutsattningar({
     }
 
     if (inspection?.id) loadAll()
-  }, [inspection?.id, inspection?.inspection_side, isInspectionLocked])
+  }, [inspection?.id, inspection?.inspection_side, inspection?.type, inspection?.inspection_variant, isInspectionLocked])
 
   // -----------------------------
   // Save furnishing

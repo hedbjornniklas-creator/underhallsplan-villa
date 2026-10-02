@@ -67,6 +67,10 @@ export async function POST(
     if (message === 'PRICE_REQUIRED') {
       return jsonError('Ange pris (SEK) innan utskick.', 400)
     }
+    if (message === 'STATUS_CANCELLATION_FEE_REQUIRED') {
+      return jsonError('Ange avbokningsbeloppet enligt uppdragsbekräftelsen (0 kr är tillåtet).', 400)
+    }
+    if (message === 'STATUS_SCOPE_REQUIRED') return jsonError('Ange vad statusbesiktningen omfattar.', 400)
     if (message === 'ASSIGNMENT_NOT_ACCEPTED') {
       return jsonError('Uppdraget är inte godkänt och kan inte skickas som kopia ännu.', 409)
     }

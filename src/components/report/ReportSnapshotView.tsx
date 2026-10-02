@@ -25,6 +25,8 @@ type SnapshotInspectionBlock = {
   noteText?: string | null
   riskText?: string | null
   ftuText?: string | null
+  recommendationText?: string | null
+  commentText?: string | null
   photoUrls?: string[] | null
   hasDeviations?: boolean | null
 }
@@ -233,7 +235,7 @@ function formatSnapshotTimestamp(value: string | null | undefined) {
   return date.toLocaleString('sv-SE')
 }
 
-function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3) {
+function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3, statusInspection = false) {
   const Heading = headingLevel === 4 ? 'h4' : 'h3'
   if (items.length === 0) {
     return <p className="text-sm text-gray-600">Inga noteringar.</p>
@@ -243,9 +245,11 @@ function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3)
     <div className="space-y-3">
       {items.map((item, index) => {
         const title = toText(item.title, 'Del')
-        const note = toText(item.noteText, '--')
-        const risk = toText(item.riskText, '')
-        const ftu = toText(item.ftuText, '')
+        const note = toText(item.noteText, statusInspection ? '' : '--')
+        const risk = statusInspection ? '' : toText(item.riskText, '')
+        const ftu = statusInspection ? '' : toText(item.ftuText, '')
+        const recommendation = statusInspection ? toText(item.recommendationText, '') : ''
+        const comment = statusInspection ? toText(item.commentText, '') : ''
         const photos = Array.isArray(item.photoUrls) ? item.photoUrls.filter(Boolean) : []
         return (
           <article
@@ -253,10 +257,10 @@ function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3)
             className="rounded-lg border border-gray-200 bg-white p-3"
           >
             <Heading className="text-sm font-semibold text-gray-900">{title}</Heading>
-            <p className="mt-1 flex items-start gap-2 whitespace-pre-wrap text-sm text-gray-700">
+            {!statusInspection || note ? <p className="mt-1 flex items-start gap-2 whitespace-pre-wrap text-sm text-gray-700">
               <SnapshotIcon name="note" />
               <span>{note}</span>
-            </p>
+            </p> : null}
             {risk ? (
               <p className="mt-2 flex items-start gap-2 whitespace-pre-wrap text-xs text-rose-800">
                 <SnapshotIcon name="risk" />
@@ -273,6 +277,18 @@ function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3)
                 </span>
               </p>
             ) : null}
+            {recommendation ? (
+              <div className="mt-3 whitespace-pre-wrap text-sm text-gray-700">
+                <h4 className="font-semibold text-gray-900">Rekommendation</h4>
+                <p>{recommendation}</p>
+              </div>
+            ) : null}
+            {comment ? (
+              <div className="mt-3 whitespace-pre-wrap text-sm text-gray-700">
+                <h4 className="font-semibold text-gray-900">Övriga kommentarer</h4>
+                <p>{comment}</p>
+              </div>
+            ) : null}
             {photos.length > 0 ? (
               <SnapshotPhotoGrid photos={photos} title={title} itemIndex={index} />
             ) : null}
@@ -283,7 +299,7 @@ function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3)
   )
 }
 
-function SnapshotBuilding({ building, index }: { building: Record<string, unknown>; index: number }) {
+function SnapshotBuilding({ building, index, statusInspection = false }: { building: Record<string, unknown>; index: number; statusInspection?: boolean }) {
   const name = toText(building.name, `Byggnad ${index + 2}`)
   const introductions = asRecordArray(building.introduction)
   const furnishing = formatFurnishingLevel(getTextByPath(building, 'conditions.furnishing_level', ''))
@@ -330,7 +346,7 @@ function SnapshotBuilding({ building, index }: { building: Record<string, unknow
           <h3 className="text-sm font-semibold text-slate-900">
             {side === 'exterior' ? 'Noteringar - byggnad utsida' : 'Noteringar - byggnad insida'}
           </h3>
-          {renderBlocks(getBlockArrayByPath(building, `${side}.blocks`), 4)}
+          {renderBlocks(getBlockArrayByPath(building, `${side}.blocks`), 4, statusInspection)}
         </div>
       ))}
     </section>
@@ -357,9 +373,10 @@ function filterApartmentBuildingData(raw: string) {
 
 function normalizeInspectionSide(
   value: ReportSnapshotPayloadV1['inspectionSide']
-): 'buyer' | 'seller' | 'apartment' {
+): 'buyer' | 'seller' | 'apartment' | 'status' {
   if (value === 'seller') return 'seller'
   if (value === 'apartment') return 'apartment'
+  if (value === 'status') return 'status'
   return 'buyer'
 }
 
@@ -369,9 +386,10 @@ function interpolateAssignmentNotice(text: string, assignmentDate: string) {
     .replace(/\{\{\s*assignment_confirmation_date\s*\}\}/g, assignmentDate)
 }
 
-function resolveAppendix1Id(inspectionSide: 'buyer' | 'seller' | 'apartment') {
+function resolveAppendix1Id(inspectionSide: 'buyer' | 'seller' | 'apartment' | 'status') {
   if (inspectionSide === 'seller') return 'APPENDIX_1_VILLKOR_SELLER_SBR'
   if (inspectionSide === 'apartment') return 'APPENDIX_1_VILLKOR_APARTMENT_SBR'
+  if (inspectionSide === 'status') return 'APPENDIX_1_VILLKOR_STATUS_SBR'
   return 'APPENDIX_1_VILLKOR_BUYER_SBR'
 }
 
@@ -389,8 +407,9 @@ function toImageUrl(value: string) {
 export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const inspectionSide = normalizeInspectionSide(props.snapshot.inspectionSide)
   const isApartment = inspectionSide === 'apartment'
+  const isStatus = inspectionSide === 'status'
   const heading =
-    props.heading ?? (isApartment ? 'Lägenhetsbesiktning' : 'Besiktningsutlåtande')
+    props.heading ?? (isStatus ? 'Statusbesiktning' : isApartment ? 'Lägenhetsbesiktning' : 'Besiktningsutlåtande')
   const subtitle =
     props.subtitle ?? `Låst och publicerat: ${formatSnapshotTimestamp(props.snapshot.createdAt)}`
   const showHeader = props.showHeader !== false
@@ -423,14 +442,21 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
       : inspectionSide === 'apartment'
         ? 'STD_ASSIGNMENT_APARTMENT_NOTICE'
         : 'STD_ASSIGNMENT_BUYER_NOTICE'
-  const assignmentNoticeText = interpolateAssignmentNotice(
+  const frozenStatus = asRecord(mock.status_report)
+  const exactStatusText = (key: string) => {
+    const value = frozenStatus[key]
+    if (typeof value !== 'string' || !value.trim()) throw Error('STB_REPORT_TEXT_MISSING')
+    return value
+  }
+  const assignmentNoticeText = isStatus ? exactStatusText('assignmentNotice') : interpolateAssignmentNotice(
     loadStandardText(assignmentNoticeId),
     assignmentDate
   )
 
-  const visualConditionsText = loadStandardText('STD_VISUAL_INSPECTION_CONDITIONS')
-  const visualOralText = loadStandardText('STD_VISUAL_INSPECTION_ORAL')
-  const appendix1Text = loadAppendixText(resolveAppendix1Id(inspectionSide))
+  const visualConditionsText = isStatus ? exactStatusText('visualConditions') : loadStandardText('STD_VISUAL_INSPECTION_CONDITIONS')
+  const statusFurnishing = isStatus ? String(frozenStatus.furnishing ?? '') : ''
+  const visualOralText = isStatus ? exactStatusText('oralInformation') : loadStandardText('STD_VISUAL_INSPECTION_ORAL')
+  const appendix1Text = isStatus ? exactStatusText('terms') : loadAppendixText(resolveAppendix1Id(inspectionSide))
   const appendix2Text = loadAppendixText('APPENDIX_2_LITEN_BYGGORDBOK_SBR')
   const appendix3Text = loadAppendixText('APPENDIX_3_LIFESPAN_TABLE_SBR')
   const appendices = asRecord(mock.appendices)
@@ -441,11 +467,12 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const environmentalAppendices = (Array.isArray(appendices.environmental) ? appendices.environmental : []) as EnvironmentalAppendix[]
   const areaMeasurementEnabled = areaMeasurementAppendix.enabled === true
   const moistureControlEnabled = moistureControlAppendix.enabled === true
-  const areaMeasurementNumber = areaMeasurementEnabled ? 4 : null
+  const firstDynamicAppendix = isStatus ? 2 : 4
+  const areaMeasurementNumber = areaMeasurementEnabled ? firstDynamicAppendix : null
   const moistureControlNumber = moistureControlEnabled
     ? areaMeasurementEnabled
-      ? 5
-      : 4
+      ? firstDynamicAppendix + 1
+      : firstDynamicAppendix
     : null
   const areaObject = asRecord(areaMeasurementAppendix.object)
   const areaMeasurement = asRecord(areaMeasurementAppendix.measurement)
@@ -713,7 +740,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 Information från uppdragsgivare, fastighetsägare eller ombud
               </h3>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen.
+                {isStatus ? exactStatusText('ownerInformation') : 'Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen.'}
               </p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{disclosureInfo}</p>
 
@@ -739,6 +766,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
             Okulär besiktning
           </h2>
           <div className="mt-2 space-y-3 text-sm text-slate-700">
+            {statusFurnishing ? <p>Möblering: {statusFurnishing}</p> : null}
             <div>
               <h3 className="text-xs font-semibold uppercase text-slate-500">
                 Särskilda förutsättningar vid besiktningen
@@ -761,12 +789,12 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
           </section>
         ) : null}
 
-        {!isApartment ? (
+        {!isApartment && (!isStatus || exteriorBlocks.length > 0) ? (
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
               Noteringar - byggnad utsida
             </h2>
-            <div className="mt-3">{renderBlocks(exteriorBlocks)}</div>
+            <div className="mt-3">{renderBlocks(exteriorBlocks, 3, isStatus)}</div>
           </section>
         ) : null}
 
@@ -774,11 +802,11 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
             {isApartment ? 'Noteringar - lägenhet insida' : 'Noteringar - byggnad insida'}
           </h2>
-          <div className="mt-3">{renderBlocks(interiorBlocks)}</div>
+          <div className="mt-3">{renderBlocks(interiorBlocks, 3, isStatus)}</div>
         </section>
 
         {buildings.map((building, index) => (
-          <SnapshotBuilding key={`${toText(building.id, '')}-${index}`} building={building} index={index} />
+          <SnapshotBuilding key={`${toText(building.id, '')}-${index}`} building={building} index={index} statusInspection={isStatus} />
         ))}
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -790,18 +818,18 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               </summary>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{appendix1Text}</p>
             </details>
-            <details className="rounded-md border border-slate-200 p-3">
+            {!isStatus ? <details className="rounded-md border border-slate-200 p-3">
               <summary className="cursor-pointer text-sm font-semibold text-slate-900">
                 Bilaga 2 - Begreppsförklaringar
               </summary>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{appendix2Text}</p>
-            </details>
-            <details className="rounded-md border border-slate-200 p-3">
+            </details> : null}
+            {!isStatus ? <details className="rounded-md border border-slate-200 p-3">
               <summary className="cursor-pointer text-sm font-semibold text-slate-900">
                 Bilaga 3 - Tekniska medellivslängder
               </summary>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{appendix3Text}</p>
-            </details>
+            </details> : null}
             {areaMeasurementNumber ? (
               <details className="rounded-md border border-slate-200 p-3">
                 <summary className="cursor-pointer text-sm font-semibold text-slate-900">
@@ -1033,7 +1061,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               </details>
             ) : null}
             {environmentalAppendices.map((appendix, index) => <details key={appendix.kind} className="border-t border-slate-200 py-4">
-              <summary className="cursor-pointer font-semibold">Bilaga {4 + Number(areaMeasurementEnabled) + Number(moistureControlEnabled) + index} - {appendix.title}</summary>
+              <summary className="cursor-pointer font-semibold">Bilaga {firstDynamicAppendix + Number(areaMeasurementEnabled) + Number(moistureControlEnabled) + index} - {appendix.title}</summary>
               <div className="space-y-4 pt-4">
                 <p className="text-sm text-slate-600">{appendix.source}</p>
                 <p className="whitespace-pre-wrap">{appendix.details}</p>

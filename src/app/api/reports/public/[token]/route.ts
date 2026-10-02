@@ -589,6 +589,7 @@ export async function GET(
       assignmentNumber,
       inspectionDate,
       inspectionFamily,
+      inspectionSide: (snapshotPayload as { inspectionSide?: string } | null)?.inspectionSide,
       inspectionSequenceNo,
     })
     const pdfBase64 = String(data.pdf_base64 ?? '').trim()

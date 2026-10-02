@@ -26,15 +26,18 @@ import { testLegacyNotes } from '../test/helpers/ob-legacy-notes-browser.mjs'
 import { testCoverBank } from '../test/helpers/ob-cover-bank-browser.mjs'
 import { testSearchOrder } from '../test/helpers/ob-search-order-browser.mjs'
 import { testReviewRetirement } from '../test/helpers/ob-review-retirement-browser.mjs'
+import { testStatusRound } from '../test/helpers/ob-status-round-browser.mjs'
 
 // The production component, but synthetic records and callbacks. No database or auth access.
 const require = createRequire(import.meta.url)
 const { webpack } = require('next/dist/compiled/webpack/webpack')
 const output = resolve('tmp/ob-mobile-round-ui')
+const statusOnly = process.argv.includes('--status-only')
 await mkdir(output, { recursive: true })
 await new Promise((ok, fail) => webpack({
   mode: 'development', devtool: false,
-  entry: { view: resolve('test/fixtures/ob-mobile-round-page.tsx'), navigation: resolve('test/fixtures/ob-round-page.tsx'), buildings: resolve('test/fixtures/ob-buildings-page.tsx'), feedback: resolve('test/fixtures/ob-draft-feedback.tsx') },
+  entry: statusOnly ? { view: resolve('test/fixtures/ob-mobile-round-page.tsx') }
+    : { view: resolve('test/fixtures/ob-mobile-round-page.tsx'), navigation: resolve('test/fixtures/ob-round-page.tsx'), buildings: resolve('test/fixtures/ob-buildings-page.tsx'), feedback: resolve('test/fixtures/ob-draft-feedback.tsx') },
   output: { path: output, filename: '[name].js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve('test/fixtures/ob-mobile-round-client.ts'),
@@ -46,12 +49,15 @@ await new Promise((ok, fail) => webpack({
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
-const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
+const globalCssSource = await readFile('src/app/globals.css', 'utf8')
+const scopedCssSource = statusOnly ? globalCssSource.replace('@import "tailwindcss";',
+  '@import "tailwindcss" source(none);\n@source "../components/ob";\n@source "../components/ui";\n@source "../../test/fixtures/ob-mobile-round.tsx";') : globalCssSource
+const globalCss = await postcss([tailwind()]).process(scopedCssSource, { from: resolve('src/app/globals.css') })
 const css = `${globalCss.css}\n${await readFile('src/components/ob/mobile-round.css', 'utf8')}\n${await readFile('src/components/ob/inspection-layout.css', 'utf8')}`
 const js = await readFile(resolve(output, 'view.js'))
-const navigationJs = await readFile(resolve(output, 'navigation.js'))
-const buildingsJs = await readFile(resolve(output, 'buildings.js'))
-const feedbackJs = await readFile(resolve(output, 'feedback.js'))
+const navigationJs = statusOnly ? '' : await readFile(resolve(output, 'navigation.js'))
+const buildingsJs = statusOnly ? '' : await readFile(resolve(output, 'buildings.js'))
+const feedbackJs = statusOnly ? '' : await readFile(resolve(output, 'feedback.js'))
 const photo = await readFile('public/landing/Background1.png')
 const brandFont = await readFile('public/ob/brand/manrope.ttf')
 const brandLogo = await readFile('public/report-assets/BesiktApp.png')
@@ -123,7 +129,11 @@ if (serve) {
       else { external.push(request.url()); void request.abort() }
     })
     await page.setViewport({ width: 390, height: 844 })
-    if (process.argv.includes('--navigation-only')) {
+    if (process.argv.includes('--status-only')) {
+      await testStatusRound(page, base, output)
+      assert.deepEqual(errors, [])
+      assert.deepEqual(external, [])
+    } else if (process.argv.includes('--navigation-only')) {
       await testReviewRetirement(page, base, output)
       assert.deepEqual(errors, [])
       assert.deepEqual(external, [])

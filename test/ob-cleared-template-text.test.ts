@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 // @ts-expect-error Native Node tests require the explicit TypeScript extension.
 import { copyObOutcomeText, readObNoteText } from '../src/lib/ob/noteText.ts'
+// @ts-expect-error Native Node tests require the explicit TypeScript extension.
+import { readInspectionReportNote } from '../src/lib/report/inspectionNoteText.ts'
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const round = read('src/components/ob/ObStepRunda.tsx')
@@ -34,11 +36,12 @@ assert.ok(payload, 'round persistence payload must be exercised')
 function reportTexts(item: Item, field: 'risk_text' | 'ftu_text') {
   return reports.flatMap(([name, source]) => {
     const expressions = [...source.matchAll(new RegExp(`const \\w+ = (trimText\\(savedText\\.${field}[^\\r\\n]+)`, 'g'))]
-    assert.equal(expressions.length, 2, `${name}: exercise both interior and exterior report paths`)
+    assert.equal(expressions.length, name === 'PDF' ? 3 : 2, `${name}: exercise interior, exterior and PDF free-note report paths`)
     return expressions.map(([, expression]) => ({
       name,
       text: evaluate<string>(expression, {
-        savedText: readObNoteText(item), trimText: (value: string) => value.trim(),
+        savedText: name === 'PDF' ? readInspectionReportNote(item, false) : readObNoteText(item),
+        trimText: (value: string) => value.trim(),
       }),
     }))
   })
@@ -46,8 +49,12 @@ function reportTexts(item: Item, field: 'risk_text' | 'ftu_text') {
 
 for (const field of ['risk_text', 'ftu_text'] as const) {
   test(`clearing ${field} survives round save and suppresses HTML/PDF template fallback`, () => {
-    const handlers = [...round.matchAll(new RegExp(`onSave=\\{(value => updateControlItem\\(item\\.id!, \\{ ${field}: [^\\n]+)\\}`, 'g'))]
-    assert.equal(handlers.length, 2, 'exercise both free-note and catalog-note dialogs')
+    assert.equal([...round.matchAll(/\{renderAdditionalNoteFields\(item(?:, true)?\)\}/g)].length, 2, 'both free-note and catalog-note dialogs use the shared field editor')
+    const editor = round.match(/function renderAdditionalNoteFields[\s\S]*?\n  \}/)![0]
+    assert.match(editor, /\[\['risk_text', 'Risk'\], \['ftu_text', 'FTU'\]\]/, 'OB retains risk and FTU fields')
+    assert.match(editor, /value=\{item\[field\] \?\? ''\}/, 'empty text stays empty in the editor')
+    const handlers = [...editor.matchAll(/onSave=\{(value => updateControlItem\(item\.id!, \{ \[field\]: [^\n]+)\}/g)]
+    assert.equal(handlers.length, 1, 'exercise the shared production save handler')
     for (const [, handler] of handlers) {
       // A selected catalog note starts with the copied template, retaining its outcome ID.
       let saved: Item = {
@@ -59,10 +66,11 @@ for (const field of ['risk_text', 'ftu_text'] as const) {
       for (const result of reportTexts(saved, field)) assert.equal(result.text, template)
       const onSave = evaluate<(value: string) => void>(handler, {
         item: saved,
+        field,
         updateControlItem: (id: string, patch: Partial<Item>) => {
           assert.equal(id, saved.id)
           const item = { ...saved, ...patch }
-          const persisted = evaluate<Partial<Item>>(payload![1], { item })
+          const persisted = evaluate<Partial<Item>>(payload![1], { item, isStatus: false })
           saved = JSON.parse(JSON.stringify({ ...item, ...persisted })) as Item
         },
       })
@@ -104,10 +112,17 @@ test('all three fields are independent copies, including empty and null template
 test('working reports never query catalogue outcomes; every report text comes from saved notes', () => {
   for (const [name, source] of reports) {
     assert.doesNotMatch(source, /settings_control_point_outcomes|risk_template|ftu_template|note_template/, name)
-    assert.equal([...source.matchAll(/const savedText = readObNoteText\(controlItem\)/g)].length, 2, name)
+    const reader = name === 'PDF' ? /const savedText = readInspectionReportNote\(controlItem, statusInspection\)/g : /const savedText = readObNoteText\(controlItem\)/g
+    assert.equal([...source.matchAll(reader)].length, 2, name)
   }
   for (const file of ['ObStepRunda.tsx', 'ObStepInsida.tsx', 'ObStepUtsida.tsx', 'ObImageNoteForm.tsx']) {
-    assert.match(read('src/components/ob/' + file), /copyObOutcomeText\(outcome\)/, `${file}: shared copy rule`)
+    const source = read('src/components/ob/' + file)
+    if (file === 'ObStepRunda.tsx') {
+      assert.match(source, /const copyOutcomeText = isStatus \? copyStatusOutcomeText : copyObOutcomeText/, `${file}: OB copy rule stays intact`)
+      assert.match(source, /copyOutcomeText\(outcome\)/, `${file}: selected profile uses the shared copy rule`)
+    } else {
+      assert.match(source, /copyObOutcomeText\(outcome\)/, `${file}: shared copy rule`)
+    }
   }
   for (const file of ['ObMobileRound.tsx', 'ObStepInsida.tsx', 'ObStepUtsida.tsx']) {
     assert.match(read('src/components/ob/' + file), /readObNoteText\(/, `${file}: saved text only`)

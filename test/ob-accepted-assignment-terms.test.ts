@@ -127,7 +127,7 @@ for (const [error, status] of [['UNAUTHORIZED', 401], ['ORG_MEMBERSHIP_REQUIRED'
   })
 }
 
-for (const type of [null, 'TU', 'EB', 'STATUS', 'UHP']) {
+for (const type of [null, 'TU', 'EB', 'UHP']) {
   test(`missing or non-OB (${type}) assignments return 404 without terms`, async () => {
     const response = await routeHarness({ assignment: type ? { ...assignment, assignment_type: type } : null }).get()
     assert.equal(response.status, 404)
@@ -135,6 +135,12 @@ for (const type of [null, 'TU', 'EB', 'STATUS', 'UHP']) {
     assert.equal('document' in await response.json(), false)
   })
 }
+
+test('STATUS without frozen history never falls back to a buyer or seller document', async () => {
+  const response = await routeHarness({ assignment: { ...assignment, assignment_type: 'STATUS' } }).get()
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { available: false, reason: 'unavailable_version', version: assignment.terms_version })
+})
 
 test('unavailable historical text is explicit and does not leak current text', async () => {
   const response = await routeHarness({ assignment: { ...assignment, terms_version: 'older-version' } }).get()

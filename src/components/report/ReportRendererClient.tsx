@@ -38,7 +38,7 @@ type ReportRendererClientProps = {
   spec: ResolvedReportSection[]
   mockData: Record<string, unknown>
   coverNotice: string
-  inspectionSide?: 'buyer' | 'seller' | 'apartment' | null
+  inspectionSide?: 'buyer' | 'seller' | 'apartment' | 'status' | null
   rootClassName?: string
 }
 
@@ -131,6 +131,8 @@ type InspectionBlockItem = {
   noteText?: string | null
   riskText?: string | null
   ftuText?: string | null
+  recommendationText?: string | null
+  commentText?: string | null
   photoUrls?: string[] | null
   photoRefs?: string | null
   hasDeviations?: boolean | null
@@ -161,7 +163,7 @@ type InspectionRoomGroupItemEntry = {
   marginBottomMm: number
 }
 
-type InspectionItemSegmentKind = 'note' | 'photos' | 'risk' | 'ftu'
+type InspectionItemSegmentKind = 'note' | 'photos' | 'risk' | 'ftu' | 'recommendation' | 'comment'
 
 type InspectionRoomGroupItemSegmentEntry = {
   type: 'inspectionRoomGroupItemSegment'
@@ -420,19 +422,25 @@ const chunkItems = <T,>(items: T[], size: number) => {
   return chunks
 }
 
-const buildPdfInspectionSegments = (item: InspectionBlockItem) => {
+const buildPdfInspectionSegments = (item: InspectionBlockItem, statusInspection = false) => {
   const allPhotoUrls = getInspectionPhotoUrls(item)
   const photoTotal = allPhotoUrls.length
-  const segments: PdfInspectionSegment[] = [
-    { segment: 'note', photoUrls: [], photoStartIndex: 0, photoTotal },
-  ]
+  const segments: PdfInspectionSegment[] = !statusInspection || String(item.noteText ?? '').trim()
+    ? [{ segment: 'note', photoUrls: [], photoStartIndex: 0, photoTotal }]
+    : []
 
-  if (String(item.riskText ?? '').trim().length > 0) {
+  if (!statusInspection && String(item.riskText ?? '').trim().length > 0) {
     segments.push({ segment: 'risk', photoUrls: [], photoStartIndex: 0, photoTotal })
   }
 
-  if (String(item.ftuText ?? '').trim().length > 0) {
+  if (!statusInspection && String(item.ftuText ?? '').trim().length > 0) {
     segments.push({ segment: 'ftu', photoUrls: [], photoStartIndex: 0, photoTotal })
+  }
+  if (statusInspection && String(item.recommendationText ?? '').trim().length > 0) {
+    segments.push({ segment: 'recommendation', photoUrls: [], photoStartIndex: 0, photoTotal })
+  }
+  if (statusInspection && String(item.commentText ?? '').trim().length > 0) {
+    segments.push({ segment: 'comment', photoUrls: [], photoStartIndex: 0, photoTotal })
   }
 
   chunkItems(allPhotoUrls, PDF_PHOTOS_PER_SEGMENT).forEach(
@@ -1232,7 +1240,7 @@ export default function ReportRendererClient({
                   }
 
                   group.items.forEach((item, itemIndex) => {
-                    const itemSegments = buildPdfInspectionSegments(item)
+                    const itemSegments = buildPdfInspectionSegments(item, inspectionSide === 'status')
                     itemSegments.forEach((segment, segmentIndex) => {
                       const isFirstSegment = segmentIndex === 0
                       const isLastSegment = segmentIndex === itemSegments.length - 1
@@ -1350,7 +1358,7 @@ export default function ReportRendererClient({
       }
     })
     return entries
-  }, [contentSections, isPdfMode, mockData, sectionSpacingPx, modernLayout])
+  }, [contentSections, isPdfMode, mockData, sectionSpacingPx, modernLayout, inspectionSide])
 
   const continuationEntries = useMemo(() => {
     const headings = new Map<string, Entry>()
@@ -1379,7 +1387,8 @@ export default function ReportRendererClient({
       const isAppendix1 =
         section.appendixId === 'APPENDIX_1_VILLKOR_SELLER_SBR' ||
         section.appendixId === 'APPENDIX_1_VILLKOR_BUYER_SBR' ||
-        section.appendixId === 'APPENDIX_1_VILLKOR_APARTMENT_SBR'
+        section.appendixId === 'APPENDIX_1_VILLKOR_APARTMENT_SBR' ||
+        section.appendixId === 'APPENDIX_1_VILLKOR_STATUS_SBR'
       const isGlossary = section.id === 'appendix-2'
       const isLifespan = section.id === 'appendix-3'
       if (section.appendixText && isAppendix1) {
@@ -1454,6 +1463,7 @@ export default function ReportRendererClient({
   }, [appendixSections])
 
   const isApartment = inspectionSide === 'apartment'
+  const isStatus = inspectionSide === 'status'
   const headerLeft = isApartment
     ? `BRF: ${getMockValue(mockData, 'mock.properties.brf_name') ?? 'saknas'} | LGH: ${getMockValue(mockData, 'mock.properties.apartment_number') ?? 'saknas'}`
     : (getMockValue(mockData, 'mock.properties.cadastral_id') ?? 'saknas')
@@ -1641,9 +1651,12 @@ export default function ReportRendererClient({
     companyOrgno === 'saknas' ? 'Org.nr: saknas' : `Org.nr: ${companyOrgno}`,
   ].filter(Boolean)
 
+  const statusSourceVersion = getMockValue(mockData, 'mock.status_report.source.version')
   const footerCenterLines = [
     'VÅR KUNSKAP ÄR DIN TRYGGHET',
-    '© 2025 SBR Byggingenjörerna. Version 2025.1',
+    isStatus
+      ? `SBR:s mall för statusbesiktning${statusSourceVersion === 'saknas' ? '' : `. Version ${statusSourceVersion}`}`
+      : '© 2025 SBR Byggingenjörerna. Version 2025.1',
   ]
 
   const renderPdfLabel = (
@@ -1698,12 +1711,14 @@ export default function ReportRendererClient({
     photoVariant: 'compact' | 'wide' = 'compact'
   ) => {
     const noteText = String(item.noteText ?? '').trim()
-    const riskText = String(item.riskText ?? '').trim()
-    const ftuText = String(item.ftuText ?? '').trim()
+    const riskText = isStatus ? '' : String(item.riskText ?? '').trim()
+    const ftuText = isStatus ? '' : String(item.ftuText ?? '').trim()
+    const recommendationText = isStatus ? String(item.recommendationText ?? '').trim() : ''
+    const commentText = isStatus ? String(item.commentText ?? '').trim() : ''
     const photoUrls = getInspectionPhotoUrls(item)
 
     if (isPdfMode) {
-      const labelWidth = mmToPx(30)
+      const labelWidth = mmToPx(isStatus ? 38 : 30)
       const renderPdfRow = (
         label: string,
         body: ReactNode,
@@ -1787,7 +1802,7 @@ export default function ReportRendererClient({
 
       return (
         <>
-          {renderPdfRow('Notering', noteText || '--')}
+          {!isStatus || noteText ? renderPdfRow('Notering', noteText || '--') : null}
 
           {riskText.length > 0
             ? renderPdfRow('Riskanalys', riskText, 'risk')
@@ -1796,6 +1811,8 @@ export default function ReportRendererClient({
           {ftuText.length > 0
             ? renderPdfRow('FTU', ftuText, 'ftu')
             : null}
+          {recommendationText ? renderPdfRow('Rekommendation', recommendationText) : null}
+          {commentText ? renderPdfRow('Övriga kommentarer', commentText) : null}
 
           {photoUrls.length > 0 ? renderPdfImageRow(photoUrls) : null}
         </>
@@ -1805,7 +1822,7 @@ export default function ReportRendererClient({
     return (
       <>
         <section className="ob-section ob-section--note">
-          <div className="ob-section__head grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2">
+          {!isStatus || noteText ? <div className="ob-section__head grid grid-cols-[auto_auto_1fr] items-baseline gap-x-2">
             <span className="ob-icon ob-icon--note self-start mt-[3px]" aria-hidden="true">
               <ReportIcon name="note" />
             </span>
@@ -1815,7 +1832,7 @@ export default function ReportRendererClient({
             <span className="ob-section__text text-sm leading-relaxed text-gray-900 whitespace-pre-line">
               {noteText || '--'}
             </span>
-          </div>
+          </div> : null}
           {photoUrls.length > 0 && (
             <div className="mt-2 space-y-2">
               <div className="flex items-center gap-1.5 text-xs text-gray-700">
@@ -1900,6 +1917,18 @@ export default function ReportRendererClient({
             </div>
           </div>
         )}
+        {recommendationText ? (
+          <div className="ml-5 mt-4 rounded-md border border-gray-200 bg-white p-3">
+            <div className="text-sm font-extrabold text-gray-950">Rekommendation</div>
+            <div className="whitespace-pre-line text-sm text-gray-800">{recommendationText}</div>
+          </div>
+        ) : null}
+        {commentText ? (
+          <div className="ml-5 mt-4 rounded-md border border-gray-200 bg-white p-3">
+            <div className="text-sm font-extrabold text-gray-950">Övriga kommentarer</div>
+            <div className="whitespace-pre-line text-sm text-gray-800">{commentText}</div>
+          </div>
+        ) : null}
       </>
     )
   }
@@ -1908,10 +1937,12 @@ export default function ReportRendererClient({
     block: InspectionRoomGroupItemSegmentEntry,
     keyPrefix: string
   ) => {
-    const labelWidth = mmToPx(30)
+    const labelWidth = mmToPx(isStatus ? 38 : 30)
     const noteText = String(block.item.noteText ?? '').trim()
-    const riskText = String(block.item.riskText ?? '').trim()
-    const ftuText = String(block.item.ftuText ?? '').trim()
+    const riskText = isStatus ? '' : String(block.item.riskText ?? '').trim()
+    const ftuText = isStatus ? '' : String(block.item.ftuText ?? '').trim()
+    const recommendationText = isStatus ? String(block.item.recommendationText ?? '').trim() : ''
+    const commentText = isStatus ? String(block.item.commentText ?? '').trim() : ''
 
     const renderPdfRow = (
       label: string,
@@ -2010,6 +2041,12 @@ export default function ReportRendererClient({
 
     if (block.segment === 'ftu') {
       return ftuText.length > 0 ? renderPdfRow('FTU', ftuText, 'ftu') : null
+    }
+    if (block.segment === 'recommendation') {
+      return recommendationText ? renderPdfRow('Rekommendation', recommendationText) : null
+    }
+    if (block.segment === 'comment') {
+      return commentText ? renderPdfRow('Övriga kommentarer', commentText) : null
     }
 
     return renderPdfRow('Notering', noteText || '--')

@@ -31,7 +31,7 @@ export default function ObInspectionHeader({ inspectionId, title, address, step,
       <ArrowLeft size={23} />
     </button>}
     <div className="ob-inspection-heading">
-      <p>{navigation?.address || address || 'Överlåtelsebesiktning'}{currentStep > 0 && <span> · {currentStep}/{stepCount}</span>}</p>
+      <p>{navigation?.address || address || 'Besiktning'}{currentStep > 0 && <span> · {currentStep}/{stepCount}</span>}</p>
       <h1>{title}</h1>
     </div>
     <ObLocalDraftStatus key={inspectionId} inspectionId={inspectionId}

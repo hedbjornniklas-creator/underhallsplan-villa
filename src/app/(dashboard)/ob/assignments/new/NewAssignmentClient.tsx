@@ -6,14 +6,16 @@ import { ArrowLeft, ChevronsLeft, Loader2, Save, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { obInspectionProfileLabel, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 
 type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
-type OrdererRole = 'buyer' | 'seller' | 'apartment' | ''
+type OrdererRole = ObInspectionProfileKey | ''
 
 type NewAssignmentClientProps = {
   sellerTemplate: string
   buyerTemplate: string
   apartmentTemplate: string
+  statusTemplate: string
 }
 
 type InspectorProfile = {
@@ -53,6 +55,8 @@ type FormState = {
   preferredDate: string
   preferredTime: string
   priceAmount: string
+  statusCancellationFee: string
+  scopeDescription: string
   notesInternal: string
 }
 
@@ -79,6 +83,8 @@ const INITIAL_FORM: FormState = {
   preferredDate: '',
   preferredTime: '',
   priceAmount: '',
+  statusCancellationFee: '',
+  scopeDescription: '',
   notesInternal: '',
 }
 
@@ -109,16 +115,14 @@ function resolvePublicMediaUrl(path: string | null | undefined) {
 }
 
 function roleToLabel(role: OrdererRole) {
-  if (role === 'buyer') return 'Köpare'
-  if (role === 'seller') return 'Säljare'
-  if (role === 'apartment') return 'Lägenhet'
-  return ''
+  return role ? obInspectionProfileLabel(role) : ''
 }
 
 export default function NewAssignmentClient({
   sellerTemplate,
   buyerTemplate,
   apartmentTemplate,
+  statusTemplate,
 }: NewAssignmentClientProps) {
   const router = useRouter()
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
@@ -129,7 +133,9 @@ export default function NewAssignmentClient({
   const [inspectorAvatarLoadError, setInspectorAvatarLoadError] = useState(false)
 
   const activeTemplate =
-    form.ordererRole === 'buyer'
+    form.ordererRole === 'status'
+      ? statusTemplate
+      : form.ordererRole === 'buyer'
       ? buyerTemplate
       : form.ordererRole === 'apartment'
         ? apartmentTemplate
@@ -231,7 +237,7 @@ export default function NewAssignmentClient({
   }
 
   const buildAssignmentPayload = () => ({
-    assignmentType: form.assignmentType,
+    assignmentType: form.ordererRole === 'status' ? 'STATUS' : form.assignmentType,
     customerName: form.customerName.trim(),
     customerPostalCode: form.customerPostalCode.trim(),
     customerCity: form.customerCity.trim(),
@@ -251,9 +257,19 @@ export default function NewAssignmentClient({
     preferredDate: form.preferredDate,
     preferredTime: form.preferredTime,
     priceAmount: parsePriceAmount(),
+    ...(form.ordererRole === 'status' ? { statusCancellationFee: parseStatusCancellationFee() } : {}),
+    ...(form.ordererRole === 'status' ? { scopeDescription: form.scopeDescription.trim() } : {}),
     preliminaryAddress: form.propertyAddress.trim(),
     notesInternal: form.notesInternal.trim(),
   })
+
+  const parseStatusCancellationFee = () => {
+    const raw = form.statusCancellationFee.trim()
+    if (!raw) return null
+    const amount = Number(raw.replace(',', '.'))
+    if (!Number.isFinite(amount) || amount < 0) throw new Error('Ange en giltig avbokningsavgift.')
+    return amount
+  }
 
   const createAssignmentDraft = async () => {
     const response = await fetch('/api/ob/assignments', {
@@ -298,7 +314,15 @@ export default function NewAssignmentClient({
       return
     }
     if (!form.ordererRole) {
-      setError('Välj uppdragsgivare (Säljare, Köpare eller Lägenhet) innan du skickar.')
+      setError('Välj Säljare, Köpare, Lägenhet eller Statusbesiktning innan du skickar.')
+      return
+    }
+    if (form.ordererRole === 'status' && !form.statusCancellationFee.trim()) {
+      setError('Ange avbokningsavgift för statusbesiktningen innan du skickar. Ange 0 om ingen avgift ska tas ut.')
+      return
+    }
+    if (form.ordererRole === 'status' && !form.scopeDescription.trim()) {
+      setError('Ange statusbesiktningens omfattning innan du skickar.')
       return
     }
 
@@ -402,7 +426,7 @@ export default function NewAssignmentClient({
           <section className="space-y-4 rounded-2xl border border-white/30 bg-white/90 p-4 shadow-sm backdrop-blur md:p-5">
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-sky-50 px-4 py-3 shadow-sm md:gap-3">
               <p className="pr-1 text-base font-bold uppercase tracking-wide text-indigo-900 md:text-lg">
-                ÖVERLÅTELSEBESIKTNING FÖR *
+                TYP AV UPPDRAG *
               </p>
               <RoleChip
                 label="Säljare"
@@ -419,10 +443,20 @@ export default function NewAssignmentClient({
                 active={form.ordererRole === 'apartment'}
                 onClick={() => updateField('ordererRole', 'apartment')}
               />
+              <RoleChip
+                label="Statusbesiktning"
+                active={form.ordererRole === 'status'}
+                onClick={() => updateField('ordererRole', 'status')}
+              />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <SectionCard title="Objekt">
+                {form.ordererRole === 'status' && <Field
+                  label="Besiktningens omfattning *"
+                  value={form.scopeDescription}
+                  onChange={(value) => updateField('scopeDescription', value)}
+                />}
                 {form.ordererRole === 'apartment' ? (
                   <>
                     <Field
@@ -594,6 +628,14 @@ export default function NewAssignmentClient({
                         value={form.priceAmount}
                         onChange={(value) => updateField('priceAmount', value)}
                       />
+                      {form.ordererRole === 'status' && <Field
+                        label="Avbokningsavgift (SEK) *"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={form.statusCancellationFee}
+                        onChange={(value) => updateField('statusCancellationFee', value)}
+                      />}
                     </div>
                   </div>
                   <Field

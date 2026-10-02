@@ -20,7 +20,7 @@ export async function GET() {
   try {
     const context = await requireOrgContext()
     const items = (await listAssignmentsByOrg(context.orgId)).filter(
-      (item) => item.assignment_type === 'OB'
+      (item) => item.assignment_type === 'OB' || item.assignment_type === 'STATUS'
     )
 
     return NextResponse.json({
@@ -65,6 +65,12 @@ export async function POST(request: Request) {
     const apartmentNumber = String(body.apartmentNumber ?? '').trim()
     const apartmentHolderName = String(body.apartmentHolderName ?? '').trim()
     const ordererRole = String(body.ordererRole ?? '').trim()
+    const cancellationFeeRaw = body.statusCancellationFee
+    const cancellationFee = cancellationFeeRaw === undefined || cancellationFeeRaw === null || cancellationFeeRaw === ''
+      ? null : Number(String(cancellationFeeRaw).replace(',', '.'))
+    if (assignmentType === 'STATUS' && cancellationFee !== null && (!Number.isFinite(cancellationFee) || cancellationFee < 0)) {
+      return jsonError('Ange ett giltigt avbokningsbelopp i kronor.', 400)
+    }
     const preferredDate = String(body.preferredDate ?? '').trim()
     const preferredTime = String(body.preferredTime ?? '').trim()
     const priceAmountRaw = String(body.priceAmount ?? '').trim()
@@ -108,6 +114,8 @@ export async function POST(request: Request) {
       priceAmount: parsedPrice,
       currency: 'SEK',
       notesInternal: notesInternal || null,
+      ...(assignmentType === 'STATUS' ? { scopeDescription: String(body.scopeDescription ?? '').trim() || null } : {}),
+      ...(assignmentType === 'STATUS' ? { assignmentDetails: { statusCancellationFee: cancellationFee } } : {}),
     })
 
     return NextResponse.json({ assignment }, { status: 201 })

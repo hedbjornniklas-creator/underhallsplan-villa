@@ -1006,3 +1006,53 @@ test('explicit image places retain owner, workflow and removal protections at bo
   assert.equal((await one('select count(*)::int as n from inspection_control_items where inspection_id=$1', [f.id])).n, 1)
   assert.equal((await one('select count(*)::int as n from ob_round_mutation_events where inspection_id=$1', [f.id])).n, 0)
 })
+
+test('status note migration preserves OB text and receipts while atomically saving manual recommendations', async () => {
+  const legacy = await fixture()
+  const legacyPreview = await rpc(legacy.id, 'image-note-preview', { imageId: legacy.loose.id })
+  const legacyRequest = imageNoteRequest(legacy.loose.id, legacyPreview.token)
+  const legacySaved = await rpc(legacy.id, 'image-note', legacyRequest)
+  const originalNote = await one('select note,risk_text,ftu_text from inspection_control_items where id=$1', [legacy.note.id])
+  const originalReceipt = await one('select * from ob_round_mutation_events where inspection_id=$1', [legacy.id])
+  const statusMigration = readFileSync(new URL('../docs/db/2026-10-02_02_ob_status_note_fields.sql', import.meta.url), 'utf8')
+  await db.exec(statusMigration)
+  await db.exec(statusMigration)
+  assert.deepEqual(await one('select note,risk_text,ftu_text from inspection_control_items where id=$1', [legacy.note.id]), originalNote)
+  assert.deepEqual(await one('select * from ob_round_mutation_events where inspection_id=$1', [legacy.id]), originalReceipt)
+  const retried = await rpc(legacy.id, 'image-note', legacyRequest)
+  assert.equal(retried.note.id, legacySaved.note.id)
+  assert.equal(retried.note.risk_text, 'Risk')
+  assert.equal(retried.note.ftu_text, 'Utredning')
+  const ordinary = await fixture()
+  // Legacy inspections may have no side; that must still follow the OB branch.
+  await db.query('update inspections set inspection_side=null where id=$1', [ordinary.id])
+  const ordinaryPreview = await rpc(ordinary.id, 'image-note-preview', { imageId: ordinary.loose.id })
+  const ordinarySaved = await rpc(ordinary.id, 'image-note', imageNoteRequest(ordinary.loose.id, ordinaryPreview.token))
+  assert.equal(ordinarySaved.note.risk_text, 'Risk')
+  assert.equal(ordinarySaved.note.ftu_text, 'Utredning')
+  assert.equal(ordinarySaved.note.recommendation_text, null)
+  const f = await fixture()
+  await db.query("update inspections set type='STATUS',inspection_side='status' where id=$1", [f.id])
+  const point = await one("insert into settings_control_points(applies_to) values(array['buyer','seller']) returning *")
+  const outcome = await one("insert into settings_control_point_outcomes(control_point_id,label) values($1,'Befintligt förslag') returning *", [point.id])
+  const target = { area: 'interior', roomId: f.target.id }
+  const preview = await rpc(f.id, 'image-note-place-preview', { imageId: f.loose.id, target })
+  const request = {
+    ...imageNoteRequest(f.loose.id, preview.token), target,
+    draft: { note: '', risk_text: 'OB-risk får inte kopieras', ftu_text: 'OB-FTU får inte kopieras',
+      recommendation_text: 'Kontrollera anslutningen.', comment_text: 'Endast badrummet omfattas.', outcomeId: outcome.id },
+  }
+  const saved = await rpc(f.id, 'image-note-place', request)
+  assert.equal(saved.note.recommendation_text, request.draft.recommendation_text)
+  assert.equal(saved.note.comment_text, request.draft.comment_text)
+  assert.equal(saved.note.risk_text, null)
+  assert.equal(saved.note.ftu_text, null)
+  assert.equal(saved.image.control_item_id, saved.note.id)
+  assert.deepEqual(await rpc(f.id, 'image-note-place', request), saved)
+  const moved = await rpc(f.id, 'move', { kind: 'note', id: saved.note.id,
+    from: { roomId: f.target.id, observationId: null }, target: { area: 'exterior', exteriorItemId: f.exterior.id },
+    requestId: randomUUID() })
+  assert.equal(moved.note.recommendation_text, saved.note.recommendation_text)
+  assert.equal(moved.note.comment_text, saved.note.comment_text)
+  await assert.rejects(rpc(f.id, 'image-note-place', { ...request, requestId: randomUUID() }, stranger), /OB_ROUND_FORBIDDEN/)
+})

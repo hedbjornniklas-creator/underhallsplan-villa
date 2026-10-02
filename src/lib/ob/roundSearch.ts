@@ -26,11 +26,13 @@ export const hasNote = (row: {
   ftu_text?: string | null
   status?: string | null
   selected_outcome_id?: string | null
-}) =>
+  recommendation_text?: string | null
+  comment_text?: string | null
+}, statusInspection = false) =>
   Boolean(
     row.note?.trim() ||
-      row.risk_text?.trim() ||
-      row.ftu_text?.trim() ||
+      (statusInspection ? row.recommendation_text?.trim() || row.comment_text?.trim()
+        : row.risk_text?.trim() || row.ftu_text?.trim()) ||
       row.selected_outcome_id ||
       row.status === 'ok',
   )
@@ -38,9 +40,11 @@ export const unfinishedFields = (row: {
   note?: string | null
   risk_text?: string | null
   ftu_text?: string | null
-}) => [
+  recommendation_text?: string | null
+  comment_text?: string | null
+}, statusInspection = false) => [
   ...new Set(
-    [row.note, row.risk_text, row.ftu_text]
+    (statusInspection ? [row.note, row.recommendation_text, row.comment_text] : [row.note, row.risk_text, row.ftu_text])
       .join(' ')
       .match(/\{(?:plats|detalj|iakttagelse)\}/gi) ?? [],
   ),

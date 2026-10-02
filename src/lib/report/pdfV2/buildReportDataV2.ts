@@ -2,7 +2,8 @@
 import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
 import { readReportWebsite } from '@/lib/report/profileWebsite'
-import { readObNoteText } from '@/lib/ob/noteText'
+import { readInspectionReportNote } from '@/lib/report/inspectionNoteText'
+import { isStatusInspection } from '@/lib/ob/inspectionProfile'
 import { readEnvironmentalAppendices } from '@/lib/report/environmentalAppendices'
 import { readBuildingReportState, assertBuildingReportRevision } from '@/lib/ob/buildingReport'
 import { buildingCoverPath, type ObBuildingPart } from '@/lib/ob/buildingStructure'
@@ -15,6 +16,9 @@ import {
 import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
 import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { STB_REPORT_SOURCE, STB_REPORT_TERMS, STB_REPORT_TEXTS } from '@/content/standardtexts/status/originals'
+import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
+import { getObConfirmationSnapshot, type ObConfirmationSnapshot } from '@/lib/assignments/obConfirmationSnapshot'
 
 type ExteriorItemRow = {
   id: string
@@ -29,6 +33,8 @@ type ExteriorObservationRow = {
   note: string | null
   risk_text: string | null
   ftu_text: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
   values: Record<string, any> | null
   is_free_note?: boolean | null
   created_at?: string | null
@@ -42,6 +48,9 @@ type ExteriorControlItemRow = {
   note: string | null
   risk_text: string | null
   ftu_text: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
+  status?: string | null
   sort_order: number | null
   selected_outcome_id: string | null
 }
@@ -53,6 +62,7 @@ type InteriorRoomRow = {
   room_type_key: string
   note: string | null
   order_index: number | null
+  values?: Record<string, unknown> | null
 }
 
 type InteriorControlItemRow = {
@@ -63,6 +73,9 @@ type InteriorControlItemRow = {
   note: string | null
   risk_text: string | null
   ftu_text: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
+  status?: string | null
   sort_order: number | null
   selected_outcome_id: string | null
 }
@@ -81,6 +94,8 @@ type InspectionBlock = {
   noteText: string
   riskText: string
   ftuText: string
+  recommendationText?: string
+  commentText?: string
   photoUrls: string[]
   hasDeviations: boolean
 }
@@ -315,11 +330,14 @@ const supabase: any = createSupabaseServerClient()
   const { data: inspectionData, error: inspectionError } = await supabase
     .from('inspections')
     .select(
-      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, customer_name, customer_email, customer_phone, customer_address, customer_postal_code, customer_city, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side, cover_path, locked_at'
+      'id, property_id, date, inspection_time, assignment_number, client_name, client_contact, customer_name, customer_email, customer_phone, customer_address, customer_postal_code, customer_city, defect_disclosures, scope, attendees, attendees_other, assignment_confirmation_delivered_date, inspection_side, inspection_variant, type, cover_path, locked_at'
     )
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
   const inspection = (inspectionData as any) ?? null
+  const statusInspection = isStatusInspection(inspection ?? {})
+  const statusNoteColumns = statusInspection ? ', recommendation_text, comment_text' : ''
+  const statusControlColumns = statusInspection ? ', status, recommendation_text, comment_text' : ''
   const floorModel = part ? part.floor_model : inspection ? await readObFloorModel(supabase, inspection.id) : null
 
   if (inspectionError) {
@@ -363,7 +381,7 @@ const supabase: any = createSupabaseServerClient()
 
   const { data: assignmentData, error: assignmentError } = await supabase
     .from('assignments')
-    .select('id, brf_name, apartment_number, apartment_holder_name, accepted_at, booked_at')
+    .select(`id, brf_name, apartment_number, apartment_holder_name, accepted_at, booked_at, scope_description${statusInspection ? ', org_id, assignment_type' : ''}`)
     .eq('inspection_id', resolvedParams.inspectionId)
     .limit(1)
     .maybeSingle()
@@ -373,6 +391,28 @@ const supabase: any = createSupabaseServerClient()
   }
 
   const assignment = (assignmentData as any) ?? null
+  let statusConfirmation: ObConfirmationSnapshot | null = null
+  if (statusInspection && assignment?.assignment_type === 'STATUS') {
+    const assignmentId = valueOrNull(assignment.id)
+    const orgId = valueOrNull(assignment.org_id)
+    if (!assignmentId || !orgId) {
+      throw Error('Uppdragsbekräftelsen för statusbesiktningen kunde inte verifieras. Inget utlåtande skapas.')
+    }
+    // These keys originate from the authenticated/RLS-protected assignment
+    // lookup above, not a report URL or a caller-supplied organization.
+    try {
+      statusConfirmation = await getObConfirmationSnapshot(orgId, assignmentId)
+    } catch {
+      throw Error('Den arkiverade uppdragsbekräftelsen för statusbesiktningen kunde inte verifieras. Inget utlåtande skapas.')
+    }
+    if (assignment.accepted_at && !statusConfirmation) {
+      throw Error('Den godkända uppdragsbekräftelsens frysta omfattning saknas för statusbesiktningen. Inget utlåtande skapas.')
+    }
+    if (statusConfirmation && (statusConfirmation.assignment.assignment_type !== 'STATUS' ||
+        !valueOrNull(statusConfirmation.assignment.scope_description))) {
+      throw Error('Den godkända uppdragsbekräftelsens frysta omfattning kunde inte verifieras för statusbesiktningen. Inget utlåtande skapas.')
+    }
+  }
 
   if (inspection && resolvedPropertyId && inspection.property_id !== resolvedPropertyId) {
     console.error('Besiktning tillhÃ¶r inte fastighet', {
@@ -577,15 +617,26 @@ const supabase: any = createSupabaseServerClient()
   const scopeCodes = parseScopeCodes(inspection?.scope ?? '')
   const scopeTextRaw = renderScopeText(scopeCodes)
   const scopeText =
-    inspection?.inspection_side === 'apartment' && (scopeTextRaw === '--' || !scopeTextRaw.trim())
+    statusInspection
+      ? valueOrNull(statusConfirmation?.assignment.scope_description) ?? scopeTextRaw
+      : inspection?.inspection_side === 'apartment' && (scopeTextRaw === '--' || !scopeTextRaw.trim())
       ? 'Invändig besiktning av lägenhet/bostadsrätt'
       : scopeTextRaw
   const assignmentDeliveredDateRaw =
-    formatDateOnly(inspection?.assignment_confirmation_delivered_date ?? null) ||
-    formatDateOnly((assignment as any)?.accepted_at ?? null) ||
-    formatDateOnly((assignment as any)?.booked_at ?? null)
-  const assignmentDeliveredDate = valueOrFallback(assignmentDeliveredDateRaw, '--')
-  const assignmentConfirmationText = `En uppdragsbekräftelse med bifogad villkorsbilaga överlämnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
+    statusInspection ? formatDateOnly(statusConfirmation?.assignment.accepted_at ?? null) :
+      formatDateOnly(inspection?.assignment_confirmation_delivered_date ?? null) ||
+      formatDateOnly((assignment as any)?.accepted_at ?? null) ||
+      formatDateOnly((assignment as any)?.booked_at ?? null)
+  const assignmentDeliveredDate = valueOrFallback(assignmentDeliveredDateRaw, statusInspection ? '' : '--')
+  const statusAssignmentParagraphs = STB_REPORT_TEXTS.assignmentNotice.split('\n\n')
+  const statusAssignmentNotice = statusConfirmation
+    ? STB_REPORT_TEXTS.assignmentNotice.replace('till uppdragsgivaren .', `till uppdragsgivaren ${assignmentDeliveredDate}.`)
+    : statusAssignmentParagraphs.filter(paragraph => !paragraph.startsWith('En uppdragsbekräftelse med') &&
+        !paragraph.startsWith('Innan besiktningen påbörjades')).join('\n\n')
+  const assignmentConfirmationText = statusInspection
+    ? statusConfirmation ? statusAssignmentParagraphs.find(paragraph => paragraph.startsWith('En uppdragsbekräftelse med'))!
+        .replace('till uppdragsgivaren .', `till uppdragsgivaren ${assignmentDeliveredDate}.`) : ''
+    : `En uppdragsbekräftelse med bifogad villkorsbilaga överlämnades till uppdragsgivaren den ${assignmentDeliveredDate}.`
 
   const parseSemicolonList = (raw: string | null | undefined) => {
     if (!raw) return []
@@ -917,7 +968,7 @@ const supabase: any = createSupabaseServerClient()
   }
 
   const { data: exteriorObservations, error: exteriorObservationsError } = await buildingFrom('inspection_exterior_observations')
-    .select('id, exterior_item_id, part_label, note, risk_text, ftu_text, values, created_at')
+    .select(`id, exterior_item_id, part_label, note, risk_text, ftu_text, values, created_at${statusNoteColumns}`)
     .eq('inspection_id', resolvedParams.inspectionId)
     .order('created_at', { ascending: true })
 
@@ -927,7 +978,7 @@ const supabase: any = createSupabaseServerClient()
 
   const { data: exteriorControlItems, error: exteriorControlItemsError } = await buildingFrom('inspection_control_items')
     .select(
-      'id, exterior_observation_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id'
+      `id, exterior_observation_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id${statusControlColumns}`
     )
     .eq('inspection_id', resolvedParams.inspectionId)
     .not('exterior_observation_id', 'is', null)
@@ -938,7 +989,7 @@ const supabase: any = createSupabaseServerClient()
   }
 
   const { data: interiorRooms, error: interiorRoomsError } = await buildingFrom('inspection_interior_rooms')
-    .select('id, floor_label, room_label, room_type_key, note, order_index')
+    .select(`id, floor_label, room_label, room_type_key, note, order_index${statusInspection ? ', values' : ''}`)
     .eq('inspection_id', resolvedParams.inspectionId)
 
   if (interiorRoomsError) {
@@ -967,7 +1018,7 @@ const supabase: any = createSupabaseServerClient()
     interiorRoomIds.length > 0
       ? await buildingFrom('inspection_control_items')
           .select(
-            'id, interior_room_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id'
+            `id, interior_room_id, control_point_id, title, note, risk_text, ftu_text, sort_order, selected_outcome_id${statusControlColumns}`
           )
           .eq('inspection_id', resolvedParams.inspectionId)
           .in('interior_room_id', interiorRoomIds)
@@ -1034,9 +1085,14 @@ const supabase: any = createSupabaseServerClient()
   const riskLines: string[] = []
   const ftuLines: string[] = []
   const exteriorBlocks: InspectionBlock[] = []
+  const hasSavedValues = (values: Record<string, unknown> | null | undefined) =>
+    Object.entries(values ?? {}).some(([key, value]) => !key.startsWith('_') && value != null && value !== '' && value !== false)
+  const hasStatusNote = (row: { note?: string | null; recommendation_text?: string | null; comment_text?: string | null; status?: string | null; selected_outcome_id?: string | null }) =>
+    Boolean(trimText(row.note) || trimText(row.recommendation_text) || trimText(row.comment_text) || row.status === 'ok' || row.selected_outcome_id)
 
   for (const item of exteriorItemsSorted) {
     const rows = observationsByItemId.get(item.id) ?? []
+    if (statusInspection && rows.length === 0) continue
     const isFreeNote = (row: ExteriorObservationRow) =>
       row.is_free_note === true || row.values?._free_note === true
 
@@ -1048,6 +1104,8 @@ const supabase: any = createSupabaseServerClient()
       const rowItems = controlItemsByObservationId.get(row.id) ?? []
       controlItemsForItem.push(...rowItems)
     }
+    if (statusInspection && !rows.some(row => hasStatusNote(row) || hasSavedValues(row.values) || imagesByExteriorObservationId.has(row.id)) &&
+        !controlItemsForItem.some(row => hasStatusNote(row) || imagesByControlItemId.has(row.id))) continue
 
     controlItemsForItem.sort(
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
@@ -1057,7 +1115,7 @@ const supabase: any = createSupabaseServerClient()
     const blocksForItem: InspectionBlock[] = []
 
     controlItemsForItem.forEach((controlItem) => {
-      const savedText = readObNoteText(controlItem)
+      const savedText = readInspectionReportNote(controlItem, statusInspection)
       const note = trimText(savedText.note)
       const hasOutcome = Boolean(controlItem.selected_outcome_id)
       const isFreeControlItem = controlItem.control_point_id === null
@@ -1070,9 +1128,14 @@ const supabase: any = createSupabaseServerClient()
 
       const riskText = trimText(savedText.risk_text)
       const ftuText = trimText(savedText.ftu_text)
+      const statusText = statusInspection ? {
+        recommendationText: trimText(savedText.recommendationText),
+        commentText: trimText(savedText.commentText),
+      } : {}
+      const hasStatusText = Boolean(statusText.recommendationText || statusText.commentText)
 
       if (isFreeControlItem) {
-        if (!note && riskText.length === 0 && ftuText.length === 0) return
+        if (!note && riskText.length === 0 && ftuText.length === 0 && !hasStatusText) return
         if (riskText.length > 0) {
           riskLines.push(item.label)
           riskLines.push(riskText)
@@ -1084,13 +1147,14 @@ const supabase: any = createSupabaseServerClient()
           ftuLines.push('')
         }
 
-        const line = note || '--'
+        const line = note || (statusInspection ? '' : '--')
         itemLines.push(line)
         blocksForItem.push({
           title: item.label,
           noteText: line,
           riskText,
           ftuText,
+          ...statusText,
           photoUrls,
           hasDeviations: true,
         })
@@ -1109,8 +1173,8 @@ const supabase: any = createSupabaseServerClient()
         ftuLines.push('')
       }
 
-      if (!hasOutcome && note.length === 0) return
-      if (note.length === 0) return
+      if (!hasOutcome && note.length === 0 && !hasStatusText) return
+      if (note.length === 0 && !hasStatusText) return
 
       const line = note
       itemLines.push(line)
@@ -1120,6 +1184,7 @@ const supabase: any = createSupabaseServerClient()
         noteText: line,
         riskText,
         ftuText,
+        ...statusText,
         photoUrls,
         hasDeviations: true,
       })
@@ -1128,13 +1193,18 @@ const supabase: any = createSupabaseServerClient()
     freeNoteRows.forEach((row) => {
       const note = trimText(row.note)
       const label = trimText(row.part_label) || 'Fri notering'
-      const freeRiskText = trimText(row.risk_text ?? '')
-      const freeFtuText = trimText(row.ftu_text ?? '')
+      const savedText = readInspectionReportNote(row, statusInspection)
+      const freeRiskText = trimText(savedText.risk_text)
+      const freeFtuText = trimText(savedText.ftu_text)
+      const statusText = statusInspection ? {
+        recommendationText: trimText(savedText.recommendationText),
+        commentText: trimText(savedText.commentText),
+      } : {}
       const photoUrls = (imagesByExteriorObservationId.get(row.id) ?? [])
         .map((image) => buildInspectionImageUrl(image.file_path))
         .filter((url): url is string => Boolean(url))
-      if (!note && freeRiskText.length === 0 && freeFtuText.length === 0 && photoUrls.length === 0) return
-      const line = note || '--'
+      if (!note && freeRiskText.length === 0 && freeFtuText.length === 0 && photoUrls.length === 0 && !statusText.recommendationText && !statusText.commentText) return
+      const line = note || (statusInspection ? '' : '--')
       if (freeRiskText.length > 0) {
         riskLines.push(label)
         riskLines.push(freeRiskText)
@@ -1151,6 +1221,7 @@ const supabase: any = createSupabaseServerClient()
         noteText: line,
         riskText: freeRiskText,
         ftuText: freeFtuText,
+        ...statusText,
         photoUrls,
         hasDeviations: true,
       })
@@ -1159,7 +1230,7 @@ const supabase: any = createSupabaseServerClient()
     if (blocksForItem.length === 0) {
       blocksForItem.push({
         title: item.label,
-        noteText: '--',
+        noteText: statusInspection ? '-----' : '--',
         riskText: '',
         ftuText: '',
         photoUrls: [],
@@ -1213,12 +1284,14 @@ const supabase: any = createSupabaseServerClient()
     }
 
     const roomControlItems = interiorControlItemsByRoomId.get(room.id) ?? []
+    if (statusInspection && !roomNote && !hasSavedValues(room.values) &&
+        !roomControlItems.some(row => hasStatusNote(row) || imagesByControlItemId.has(row.id))) continue
     roomControlItems.sort(
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
     )
 
     roomControlItems.forEach((controlItem) => {
-      const savedText = readObNoteText(controlItem)
+      const savedText = readInspectionReportNote(controlItem, statusInspection)
       const note = trimText(savedText.note)
       const hasOutcome = Boolean(controlItem.selected_outcome_id)
 
@@ -1242,8 +1315,13 @@ const supabase: any = createSupabaseServerClient()
         ftuLines.push('')
       }
 
-      if (!hasOutcome && note.length === 0) return
-      if (note.length === 0) return
+      const statusText = statusInspection ? {
+        recommendationText: trimText(savedText.recommendationText),
+        commentText: trimText(savedText.commentText),
+      } : {}
+      const hasStatusText = Boolean(statusText.recommendationText || statusText.commentText)
+      if (!hasOutcome && note.length === 0 && !hasStatusText) return
+      if (note.length === 0 && !hasStatusText) return
 
       const line = note
       roomLines.push(line)
@@ -1253,6 +1331,7 @@ const supabase: any = createSupabaseServerClient()
         noteText: line,
         riskText,
         ftuText,
+        ...statusText,
         photoUrls,
         hasDeviations: true,
       })
@@ -1261,7 +1340,7 @@ const supabase: any = createSupabaseServerClient()
     if (roomBlocks.length === 0) {
       roomBlocks.push({
         title: roomTitle,
-        noteText: '--',
+        noteText: statusInspection ? '-----' : '--',
         riskText: '',
         ftuText: '',
         photoUrls: [],
@@ -1373,14 +1452,14 @@ const supabase: any = createSupabaseServerClient()
         acquisition_text:
           disclosureRow?.note && disclosureRow.note.trim().length > 0
             ? disclosureRow.note
-            : 'Säljaren förvärvade fastigheten --.',
+            : statusInspection ? '' : 'Säljaren förvärvade fastigheten --.',
         renovations: [],
         property_faults: propertyFaultsText ? propertyFaultsText : '',
       },
       inspections: {
         date: inspectionDate,
         date_time: inspectionDateTime,
-        side: valueOrFallback(inspection?.inspection_side ?? null, ''),
+        side: statusInspection ? 'status' : valueOrFallback(inspection?.inspection_side ?? null, ''),
         inspector_name: valueOrFallback(customerContactText),
         assignment_number: valueOrFallback(inspection?.assignment_number ?? null),
         client_name: valueOrFallback(customerName),
@@ -1395,6 +1474,18 @@ const supabase: any = createSupabaseServerClient()
         assignment_confirmation_date: assignmentDeliveredDate,
         assignment_confirmation_text: assignmentConfirmationText,
       },
+      ...(statusInspection ? { status_report: {
+        source: {
+          id: STB_REPORT_SOURCE.sourceId,
+          version: STB_REPORT_SOURCE.sourceVersion,
+          fileName: STB_REPORT_SOURCE.sourceFileName,
+          fileSha256: STB_REPORT_SOURCE.sourceFileSha256,
+        },
+        terms: STB_REPORT_TERMS,
+        ...STB_REPORT_TEXTS,
+        assignmentNotice: statusAssignmentNotice,
+        furnishing: formatFurnishingLevel(String(inspectionConditions?.furnishing_level ?? '')),
+      } } : {}),
       inspection_conditions: {
         furnishing_level: valueOrFallback(
           inspectionConditions?.furnishing_level ?? null,
@@ -1496,6 +1587,12 @@ const supabase: any = createSupabaseServerClient()
     },
   }
 
+  if (statusInspection && [inspectionError, propertyError, snapshotError, assignmentError, profileError, documentError, disclosureError,
+    conditionsError, overviewSelectionsError, overviewItemsError, overviewGroupsError, overviewOptionsError,
+    exteriorItemsError, exteriorObservationsError, exteriorControlItemsError, interiorRoomsError, interiorControlItemsError,
+    exteriorImagesError].some(Boolean)) {
+    throw Error('Alla uppgifter för statusbesiktningen kunde inte hämtas. Inget ofullständigt utlåtande skapas.')
+  }
   if (buildingState) {
     const errors = [inspectionError, propertyError, conditionsError, overviewSelectionsError, overviewItemsError,
       overviewGroupsError, overviewOptionsError, exteriorObservationsError, exteriorControlItemsError, interiorRoomsError,
