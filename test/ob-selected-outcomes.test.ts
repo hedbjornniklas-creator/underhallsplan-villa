@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import ts from 'typescript'
 import { createClient } from '@supabase/supabase-js'
+// @ts-expect-error Native Node tests require the explicit TypeScript extension.
+import { readObNoteText, readStatusNoteText } from '../src/lib/ob/noteText.ts'
 
 const helperPath = '../src/lib/ob/selectedOutcomeLookup.ts'
 const { fetchSelectedOutcomes } = await import(helperPath) as typeof import('../src/lib/ob/selectedOutcomeLookup')
@@ -74,5 +76,20 @@ test('legacy editors resolve selected inactive and reparented outcomes without a
   }
   const mobile = read('ObMobileRound')
   assert.match(mobile, /\.from\(table\)[\s\S]*?\.eq\('is_active', true\)/)
-  assert.match(mobile, /const original = readObNoteText\(note\)/)
+  const original = mobile.match(/const original = ([^\r\n]+)/)?.[1]
+  assert.ok(original, 'exercise the production mobile editor saved-text selection')
+  const readOriginal = new Function('note', 'isStatus', 'readObNoteText', 'readStatusNoteText', `return (${original})`)
+  for (const row of [archived, moved]) {
+    const note = { selected_outcome_id: row.id, note: 'Sparad kundtext', risk_text: 'Egen risk', ftu_text: '',
+      recommendation_text: 'Egen rekommendation', comment_text: 'Egen kommentar' }
+    const before = structuredClone(note)
+    assert.deepEqual(readOriginal(note, false, readObNoteText, readStatusNoteText), {
+      note: note.note, risk_text: note.risk_text, ftu_text: '',
+    }, 'OB retains saved text, including explicitly cleared FTU')
+    assert.deepEqual(readOriginal(note, true, readObNoteText, readStatusNoteText), {
+      note: note.note, risk_text: '', ftu_text: '',
+      recommendation_text: note.recommendation_text, comment_text: note.comment_text,
+    }, 'STB displays its manual fields without importing hidden OB text')
+    assert.deepEqual(note, before, 'opening either profile never rewrites the saved note')
+  }
 })

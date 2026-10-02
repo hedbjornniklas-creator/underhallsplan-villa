@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 // @ts-expect-error Native Node tests require the explicit TypeScript extension.
 import { readObNoteText } from '../src/lib/ob/noteText.ts'
+// @ts-expect-error Native Node tests require the explicit TypeScript extension.
+import { readInspectionReportNote } from '../src/lib/report/inspectionNoteText.ts'
 type Item = {
   id: string
   control_point_id: string | null
@@ -11,8 +13,10 @@ type Item = {
   note: string
   risk_text: string | null
   ftu_text: string | null
+  recommendation_text?: string | null
+  comment_text?: string | null
 }
-type Block = { title: string; noteText: string; riskText: string; ftuText: string }
+type Block = { title: string; noteText: string; riskText: string; ftuText: string; recommendationText?: string; commentText?: string }
 
 const fixtures: Item[] = [
   { id: 'A', control_point_id: 'original', selected_outcome_id: 'archived-A', note: 'Saved observation A', risk_text: null, ftu_text: null },
@@ -47,13 +51,13 @@ function reportBoundary(path: string, interior: boolean) {
   visit(parsed)
   assert.equal(callbacks.length, 1, 'exercise the production report block builder')
 
-  function render(items: Item[]) {
+  function render(items: Item[], statusInspection = false) {
     const blocks: Block[] = []
     const riskLines: string[] = []
     const ftuLines: string[] = []
     const title = interior ? 'Saved floor - Saved room' : 'Saved exterior section'
     const callback = execute<(item: Item) => void>(`return (${callbacks[0]})`, {
-      readObNoteText,
+      readObNoteText, readInspectionReportNote, statusInspection,
       trimText: (value: string | null | undefined) => (value ?? '').trim(),
       imagesByControlItemId: new Map(),
       buildInspectionImageUrl: () => null,
@@ -96,6 +100,24 @@ for (const [format, path] of [
       assert.deepEqual(blocks.map(({ title, noteText, riskText, ftuText }) => ({ title, noteText, riskText, ftuText })), [
         { title, noteText: fixtures[3].note, riskText: 'Own risk', ftuText: 'Own FTU' },
       ])
+    })
+
+    if (format === 'PDF') test(`${name}: STB historical selections retain manual fields without exposing saved OB risk/FTU`, () => {
+      // The shared PDF data builder also serves the STB HTML/digital paths.
+      const items = fixtures.map((item, index) => ({ ...item,
+        recommendation_text: index === 0 ? null : index === 2 ? '' : 'Manual recommendation',
+        comment_text: index === 0 ? null : index === 2 ? '' : 'Manual comment',
+      }))
+      const before = structuredClone(items)
+      const { blocks, riskLines, ftuLines, title } = boundary.render(items, true)
+      assert.deepEqual(blocks.map(({ title, noteText, riskText, ftuText, recommendationText, commentText }) =>
+        ({ title, noteText, riskText, ftuText, recommendationText, commentText })), items.map(item => ({
+          title, noteText: item.note, riskText: '', ftuText: '',
+          recommendationText: item.recommendation_text ?? '', commentText: item.comment_text ?? '',
+        })))
+      assert.deepEqual(riskLines, [])
+      assert.deepEqual(ftuLines, [])
+      assert.deepEqual(items, before, 'STB output does not reparent, convert or clear historical saved data')
     })
   }
 }
