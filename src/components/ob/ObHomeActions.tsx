@@ -7,6 +7,7 @@ import { ClipboardPlus, FilePlus2, Send, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/AppToastProvider'
 import type { ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
+import type { ObObjectType } from '@/lib/ob/objectType'
 import './ob-home.css'
 
 type PropertySeedRow = {
@@ -190,6 +191,7 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
   const titleId = useId()
   const [email, setEmail] = useState('')
   const [ordererRole, setOrdererRole] = useState<QuickOrdererRole>('')
+  const [objectType, setObjectType] = useState<ObObjectType | ''>('')
   const [preferredDate, setPreferredDate] = useState('')
   const [preferredTime, setPreferredTime] = useState('')
   const [priceAmount, setPriceAmount] = useState('')
@@ -211,6 +213,10 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
 
     if (!ordererRole) {
       toast.error('Välj Säljare, Köpare, Lägenhet eller Statusbesiktning.')
+      return
+    }
+    if (ordererRole === 'status' && !objectType) {
+      toast.error('Välj om statusbesiktningen avser fastighet eller lägenhet.')
       return
     }
 
@@ -250,6 +256,7 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
           priceAmount: normalizedPrice,
           ...(ordererRole === 'status' ? { statusCancellationFee: parsedCancellationFee } : {}),
           ...(ordererRole === 'status' ? { scopeDescription: scopeDescription.trim() } : {}),
+          ...(ordererRole === 'status' ? { objectType } : {}),
         }),
       })
 
@@ -275,6 +282,7 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
       setPriceAmount('')
       setStatusCancellationFee('')
       setScopeDescription('')
+      setObjectType('')
       dialogRef.current?.close()
       toast.success('Uppdragsbekräftelse skickad.')
       onSent()
@@ -305,6 +313,16 @@ function QuickSend({ onSent, dialogRef }: { onSent: () => void; dialogRef: RefOb
           </label>)}
       </div>
     </fieldset>
+    {ordererRole === 'status' && <fieldset disabled={isSending}>
+      <legend>Objekttyp</legend>
+      <div className="obh-roles">
+        {([{ value: 'property', label: 'Fastighet' }, { value: 'apartment', label: 'Lägenhet' }] as const).map(option => <label key={option.value}>
+          <input type="radio" name="quick-status-object-type" value={option.value} checked={objectType === option.value}
+            onChange={() => setObjectType(option.value)} required />
+          <span>{option.label}</span>
+        </label>)}
+      </div>
+    </fieldset>}
     <label className="obh-email">Kundens e-post
       <input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}
         placeholder="kund@epost.se" required disabled={isSending} />

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { parseObObjectType } from '@/lib/ob/objectType'
 import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import {
   createAssignment,
@@ -65,6 +66,10 @@ export async function POST(request: Request) {
     const apartmentNumber = String(body.apartmentNumber ?? '').trim()
     const apartmentHolderName = String(body.apartmentHolderName ?? '').trim()
     const ordererRole = String(body.ordererRole ?? '').trim()
+    const objectType = parseObObjectType(body.objectType)
+    if (assignmentType === 'STATUS' && body.objectType != null && body.objectType !== '' && !objectType) {
+      return jsonError('Välj fastighet eller lägenhet som objekttyp.', 400)
+    }
     const cancellationFeeRaw = body.statusCancellationFee
     const cancellationFee = cancellationFeeRaw === undefined || cancellationFeeRaw === null || cancellationFeeRaw === ''
       ? null : Number(String(cancellationFeeRaw).replace(',', '.'))
@@ -115,7 +120,7 @@ export async function POST(request: Request) {
       currency: 'SEK',
       notesInternal: notesInternal || null,
       ...(assignmentType === 'STATUS' ? { scopeDescription: String(body.scopeDescription ?? '').trim() || null } : {}),
-      ...(assignmentType === 'STATUS' ? { assignmentDetails: { statusCancellationFee: cancellationFee } } : {}),
+      ...(assignmentType === 'STATUS' ? { assignmentDetails: { statusCancellationFee: cancellationFee, objectType } } : {}),
     })
 
     return NextResponse.json({ assignment }, { status: 201 })

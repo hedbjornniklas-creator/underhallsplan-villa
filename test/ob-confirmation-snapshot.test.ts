@@ -103,6 +103,43 @@ test('legacy acceptance without snapshot cannot generate or email a new historic
   assert.deepEqual(h.events, ['snapshot'])
 })
 
+test('STATUS issuance freezes independent object identity, rejects explicit empty choice and preflights migration', async () => {
+  const tables:string[]=[]
+  let missingColumn=false
+  const api=load<typeof Snapshot>('src/lib/assignments/obConfirmationSnapshot.ts',{
+    'server-only':{},'node:crypto':{createHash},
+    '@/lib/supabase/admin':{createSupabaseAdminClient:()=>({from:(table:string)=>{
+      tables.push(table)
+      const chain={
+        select:()=>chain,eq:()=>chain,
+        limit:async()=>({error:table==='ob_property_snapshot'&&missingColumn?{message:'missing object_type'}:null}),
+        maybeSingle:async()=>({data:table==='organizations'?{name:'Original company'}:{full_name:'Original inspector'},error:null}),
+      }
+      return chain
+    }})},
+    '@/lib/certifications/profileResolver':{resolveInspectorCertificationSummary:async()=>({summary:{all_selected_items:[]}})},
+  })
+  const statusTerms={...terms,role:'status'} as Parameters<typeof api.prepareObConfirmationSource>[1]
+  const draft={assignment_type:'STATUS',org_id:'org-1',responsible_profile_id:'inspector-1',
+    scope_description:'Badrum',price_amount:1500,assignment_details:{objectType:'apartment'}}
+  const issued=await api.prepareObConfirmationSource(draft,statusTerms)
+  assert.equal(issued.statusObjectType,'apartment')
+  assert.equal(issued.terms,statusTerms)
+  draft.assignment_details.objectType='property'
+  assert.equal(issued.statusObjectType,'apartment')
+  assert.ok(tables.includes('ob_property_snapshot'))
+  const legacy=await api.prepareObConfirmationSource({...draft,assignment_details:{}},statusTerms)
+  assert.equal(legacy.statusObjectType,'property')
+  for(const objectType of [null,'','villa',12]) {
+    await assert.rejects(api.prepareObConfirmationSource({...draft,assignment_details:{objectType}},statusTerms),/STATUS_OBJECT_TYPE_INVALID/)
+  }
+  missingColumn=true
+  await assert.rejects(api.prepareObConfirmationSource(draft,statusTerms),/STATUS_OBJECT_TYPE_NOT_CONFIGURED/)
+  const ordinary=await api.prepareObConfirmationSource({...draft,assignment_type:'OB',assignment_details:{objectType:null}},
+    terms as Parameters<typeof api.prepareObConfirmationSource>[1])
+  assert.equal(Object.hasOwn(ordinary,'statusObjectType'),false)
+})
+
 test('snapshot reads verify identity, schema, date and exact terms hash without current templates', async () => {
   let row: Record<string, unknown> | null = { schema_version: 'ob-confirmation-v1', snapshot_payload: frozen, accepted_at: frozen.assignment.accepted_at }
   const filters: unknown[] = []

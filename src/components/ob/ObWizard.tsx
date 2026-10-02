@@ -15,6 +15,7 @@ import type { Tables } from '@/types/supabase'
 import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
 import { obPublishedReportHref } from '@/lib/ob/publishedReportLink'
+import type { ObObjectType } from '@/lib/ob/objectType'
 
 type DbInspection = Tables<'inspections'>
 type DbProperty = Tables<'properties'>
@@ -34,6 +35,7 @@ export type ObWizardInspection = DbInspection & {
 }
 
 export type ObWizardPropertyInput = (Partial<DbProperty> & Pick<DbProperty, 'id' | 'name'>) & {
+  object_type?: ObObjectType | null
   assignment_id?: string | null
   customer_name?: string | null
   customer_address?: string | null
@@ -46,6 +48,7 @@ export type ObWizardPropertyInput = (Partial<DbProperty> & Pick<DbProperty, 'id'
   apartment_holder_name?: string | null
 }
 export type ObWizardProperty = DbProperty & {
+  object_type: ObObjectType | null
   assignment_id: string | null
   customer_name: string | null
   customer_address: string | null
@@ -202,6 +205,7 @@ function ObWizardContent({
     () => ({
       id: property.id,
       name: property.name ?? '',
+      object_type: property.object_type ?? null,
       address: property.address ?? null,
       area_m2: property.area_m2 ?? null,
       area_sqm: property.area_sqm ?? null,

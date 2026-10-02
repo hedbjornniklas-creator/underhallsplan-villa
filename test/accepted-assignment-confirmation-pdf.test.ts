@@ -120,6 +120,42 @@ test('the actual STATUS document tree uses status headings and no seller fallbac
   assert.ok(!texts.includes('status'), 'internal role must not appear as customer copy')
 
   texts.length = 0
+  await renderer.renderAcceptedAssignmentConfirmationPdf({...input,
+    assignment:{...input.assignment,assignment_details:{objectType:'property'},property_owner_name:'Stale owner'},
+    acceptancePayload:{assignment_details:{objectType:'apartment'},apartment_number:'1201',brf_name:'',apartment_holder_name:''},
+  })
+  assert.ok(texts.includes('Lägenhetsnummer'))
+  assert.ok(texts.includes('1201'))
+  assert.ok(texts.includes('Lägenhetsinnehavare'))
+  assert.ok(!texts.includes('Fastighetsägare'))
+  assert.ok(!texts.includes('Stale owner'))
+  assert.ok(texts.includes('Villkor för statusbesiktning'))
+
+  texts.length = 0
+  await renderer.renderAcceptedAssignmentConfirmationPdf({...input,
+    assignment:{...input.assignment,assignment_details:{objectType:'property'},apartment_number:'Old apartment',property_owner_name:'Current owner'},
+  })
+  assert.ok(texts.includes('Fastighetsägare'))
+  assert.ok(texts.includes('Current owner'))
+  assert.ok(!texts.includes('Old apartment'))
+
+  texts.length = 0
+  await renderer.renderAcceptedAssignmentConfirmationPdf({...input,
+    assignment:{...input.assignment,apartment_number:'Legacy apartment'},
+  })
+  assert.ok(texts.includes('Legacy apartment'), 'old frozen documents without a marker retain their prior rendering')
+  assert.ok(texts.includes('Bostadsrättsinnehavare'))
+
+  texts.length = 0
+  await renderer.renderAcceptedAssignmentConfirmationPdf({...input,
+    assignment:{...input.assignment,apartment_number:'Stale hidden apartment',brf_name:'Stale BRF',property_owner_name:'Accepted owner'},
+    acceptancePayload:{assignment_details:{},apartment_number:null,brf_name:null,apartment_holder_name:null},
+  })
+  assert.ok(texts.includes('Fastighetsägare'), 'legacy property acceptance explicitly clears hidden apartment fields')
+  assert.ok(!texts.includes('Stale hidden apartment'))
+  assert.ok(!texts.includes('Stale BRF'))
+
+  texts.length = 0
   await renderer.renderAcceptedAssignmentConfirmationPdf({ ...input,
     assignment: { ...input.assignment, assignment_type: 'OB', orderer_role: 'Säljare' },
     terms: { ...input.terms, role: 'seller', verbatim: false, text: 'Oförändrade säljarvillkor.' },

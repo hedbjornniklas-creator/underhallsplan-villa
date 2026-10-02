@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import ts from 'typescript'
+// @ts-expect-error Node strip-types requires the explicit extension.
+import * as objectType from '../src/lib/ob/objectType.ts'
 
 type AssignmentRoute = {
   GET: () => Promise<Response>
@@ -24,6 +26,7 @@ function loadRoute(items: Array<{ id: string; assignment_type: string }>) {
 
   new Function('require', 'module', 'exports', output)(
     (name: string) => {
+      if (name === '@/lib/ob/objectType') return objectType
       if (name === 'next/server') {
         return { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) } }
       }

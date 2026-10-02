@@ -50,3 +50,27 @@ test('status filenames identify the frozen status report and keep other module n
   assert.equal(buildReportPdfFileName({ inspectionFamily: 'OB', assignmentNumber: '2026-1002-01' }), 'Utlåtande ÖB 2026-1002-01.pdf')
   assert.equal(buildReportPdfFileName({ inspectionFamily: 'EB', inspectionDate: '2026-10-02', inspectionSequenceNo: 1 }), 'Utlåtande EB 2026-1002-01.pdf')
 })
+
+test('status apartment identity does not change the status assignment or original terms', () => {
+  const spec = buildReportSpec({ layoutVersion: 2, inspectionSide: 'status', objectType: 'apartment' })
+  const assignment = spec.find(section => section.id === 'assignment')!
+  const objectRows = assignment.blocks.find(block => block.type === 'twoColumn' &&
+    block.rows.some(row => row.label === 'Bostadsrättsförening:'))!
+  assert.equal(objectRows.type, 'twoColumn')
+  if (objectRows.type !== 'twoColumn') throw new Error('Missing apartment object rows')
+  assert.deepEqual(objectRows.rows.map(row => row.label), [
+    'Bostadsrättsförening:', 'Lägenhetsnummer:', 'Adress:', 'Kommun:', 'Lägenhetsinnehavare:',
+  ])
+  assert.equal(objectRows.rows[0].hideWhenEmpty, true, 'BRF is not compulsory for rental apartments')
+  assert.ok(assignment.blocks.some(block => block.type === 'text' && block.source.kind === 'mock' &&
+    block.source.path === 'mock.status_report.assignmentNotice'), 'the assignment still uses the frozen status text')
+  const appendix = spec.find(section => section.id === 'appendix-1')!
+  assert.equal(appendix.appendixId, 'APPENDIX_1_VILLKOR_STATUS_SBR')
+  assert.equal(appendix.appendixTextPath, 'mock.status_report.terms')
+  assert.doesNotMatch(JSON.stringify(spec), /STD_ASSIGNMENT_APARTMENT_NOTICE|APPENDIX_1_VILLKOR_APARTMENT_SBR|STD_FTU_GENERAL_NOTICE/)
+  assert.deepEqual(buildReportSpec({ inspectionSide: 'status' }), buildReportSpec({ inspectionSide: 'status', objectType: 'property' }), 'legacy status defaults to property')
+  for (const inspectionSide of ['buyer', 'seller', 'apartment'] as const) {
+    assert.deepEqual(buildReportSpec({ inspectionSide, objectType: inspectionSide === 'apartment' ? 'property' : 'apartment' }),
+      buildReportSpec({ inspectionSide }), `independent status field cannot reinterpret ${inspectionSide}`)
+  }
+})

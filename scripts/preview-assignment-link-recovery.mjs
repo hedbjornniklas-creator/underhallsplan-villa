@@ -56,11 +56,17 @@ const acceptedDocuments = Object.fromEntries(await Promise.all(['buyer', 'seller
   return [role, { role, templateId, text, version: '2026-02-21.v1', documentHash: createHash('sha256').update(text).digest('hex') }]
 })))
 let draft = { ...assignment, status: 'draft', last_sent_at: null }
+const statusDrafts = new Map(['property', 'apartment', 'legacy'].map(objectType => [objectType, {
+  ...draft, assignment_type: 'STATUS', orderer_role: 'Statusbesiktning', scope_description: 'Badrum',
+  assignment_details: { statusCancellationFee: 0, ...(objectType === 'legacy' ? {} : { objectType }) },
+  brf_name: null, apartment_number: null, apartment_holder_name: null,
+}]))
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
   const previewUrl = new URL(request.headers.referer ?? '/', 'http://127.0.0.1')
   const scenario = previewUrl.searchParams.get('terms')
   const formMode = previewUrl.searchParams.get('form')
+  const statusObject = previewUrl.searchParams.get('object')
   response.setHeader('Cache-Control', 'no-store')
   if (url.pathname.startsWith('/api/')) {
     response.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -70,13 +76,22 @@ const server = createServer(async (request, response) => {
         if (formMode !== 'draft') { response.writeHead(405); response.end('{}'); return }
         const chunks = []
         for await (const chunk of request) chunks.push(chunk)
-        draft = { ...draft, ...JSON.parse(Buffer.concat(chunks).toString()), id: assignment.id, status: 'draft' }
+        const patch = JSON.parse(Buffer.concat(chunks).toString())
+        const previous = statusDrafts.get(statusObject) ?? draft
+        const updated = { ...previous, ...patch, id: assignment.id, status: 'draft',
+          scope_description: patch.scopeDescription ?? previous.scope_description,
+          assignment_details: { ...previous.assignment_details,
+            ...('objectType' in patch ? { objectType: patch.objectType } : {}),
+            ...('statusCancellationFee' in patch ? { statusCancellationFee: patch.statusCancellationFee } : {}) },
+        }
+        if (statusDrafts.has(statusObject)) statusDrafts.set(statusObject, updated)
+        else draft = updated
         await new Promise(resolve => setTimeout(resolve, 250))
-        response.end(JSON.stringify({ assignment: draft })); return
+        response.end(JSON.stringify({ assignment: updated })); return
       }
       const approved = scenario ? { ...assignment, status: 'booked', accepted_at: '2026-09-24T09:00:00Z',
         terms_version: '2026-02-21.v1', orderer_role: scenario in acceptedDocuments ? scenario : 'buyer' } : assignment
-      const row = formMode === 'draft' ? draft : formMode === 'ordered' ? { ...approved, status: 'ordered' } : approved
+      const row = formMode === 'draft' ? statusDrafts.get(statusObject) ?? draft : formMode === 'ordered' ? { ...approved, status: 'ordered' } : approved
       response.end(JSON.stringify({ assignment: row, addonOrders: [], linkIssues: formMode ? { available: true, items: [] } : linkIssues })); return
     }
     if (url.pathname === `/api/ob/assignments/${assignment.id}/terms`) {
@@ -106,17 +121,30 @@ const server = createServer(async (request, response) => {
     }
     if (!url.pathname.startsWith('/api/assignments/accept/')) { response.writeHead(404); response.end('{}'); return }
     const mode = url.pathname.split('/').at(-1)
+    const isStatusObjectScenario = mode.startsWith('status-object-')
     const key = `${mode}:${request.method}`
     const count = (counters.get(key) ?? 0) + 1
     counters.set(key, count)
-    if ((mode.startsWith('open-failure') && request.method === 'GET' && count === 1) || (request.method === 'POST' && count === 1)) {
+    if ((mode.startsWith('open-failure') && request.method === 'GET' && count === 1) || (request.method === 'POST' && count === 1 && !isStatusObjectScenario)) {
       response.writeHead(500)
       response.end(JSON.stringify({ error: 'Uppdragsbekräftelsen kunde inte laddas just nu. Försök igen. Om felet kvarstår, kontakta besiktningsmannen och ange felreferensen.', reference, retryable: true })); return
     }
     if (request.method === 'POST') { response.end(JSON.stringify({ ok: true, confirmationEmailSent: false })); return }
-    response.end(JSON.stringify({ state: 'open', expiresAt: '2099-01-01', usedAt: null, assignment,
+    const publicAssignment = isStatusObjectScenario ? {
+      ...assignment, assignment_type: 'STATUS', orderer_role: 'Statusbesiktning', scope_description: 'Badrum',
+      // Simulate the API's frozen object choice, including conflicting stale apartment fields.
+      assignment_details: mode.endsWith('legacy') ? {} : { objectType: mode.endsWith('apartment') ? 'apartment' : 'property' },
+      brf_name: mode.endsWith('apartment') ? '' : 'Old BRF must not change the frozen type',
+      apartment_number: mode.endsWith('apartment') ? '' : '9999', apartment_holder_name: '',
+      property_owner_name: mode.endsWith('apartment') ? '' : assignment.property_owner_name,
+      cadastral_id: mode.endsWith('apartment') ? '' : assignment.cadastral_id,
+    } : assignment
+    response.end(JSON.stringify({ state: 'open', expiresAt: '2099-01-01', usedAt: null, assignment: publicAssignment,
       inspector: { full_name: 'Testbesiktningsman', email: 'inspector@example.test' }, addonOffers: [], selectedAddonServiceIds: [],
-      terms: { version: mode === 'terms-change' && count > 1 ? 'test-v2' : 'test-v1', documents: Object.fromEntries(['seller','buyer','apartment','technical','construction','constructionBusiness','constructionConsumer'].map(k => [k, doc])) } })); return
+      terms: { version: mode === 'terms-change' && count > 1 ? 'test-v2' : 'test-v1', documents: {
+        ...Object.fromEntries(['seller','buyer','apartment','technical','construction','constructionBusiness','constructionConsumer'].map(k => [k, doc])),
+        status: { ...doc, confirmationTexts: { acceptance: 'Jag godkänner de syntetiska STB-testvillkoren.' } },
+      } } })); return
   }
   if (url.pathname === '/view.js') { response.setHeader('Content-Type', 'application/javascript'); response.end(js); return }
   if (url.pathname === '/ob/brand/manrope.ttf') { response.setHeader('Content-Type', 'font/ttf'); response.end(font); return }
@@ -127,7 +155,7 @@ const server = createServer(async (request, response) => {
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(Number(process.env.PORT ?? 57121), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`Synthetic assignment preview: ${base}`)
-if (process.argv.includes('--test-accepted-terms') || process.argv.includes('--test-form-layout')) {
+if (process.argv.includes('--test-accepted-terms') || process.argv.includes('--test-form-layout') || process.argv.includes('--test-status-object-type')) {
   try {
     if (process.argv.includes('--test-accepted-terms')) {
       const { testAcceptedTerms } = await import('../test/helpers/ob-accepted-terms-browser.mjs')
@@ -136,6 +164,10 @@ if (process.argv.includes('--test-accepted-terms') || process.argv.includes('--t
     if (process.argv.includes('--test-form-layout')) {
       const { testAssignmentFormLayout } = await import('../test/helpers/ob-assignment-form-browser.mjs')
       await testAssignmentFormLayout(base, output)
+    }
+    if (process.argv.includes('--test-status-object-type')) {
+      const { testStatusAssignmentObjectType } = await import('../test/helpers/ob-status-assignment-object-browser.mjs')
+      await testStatusAssignmentObjectType(base, output)
     }
   } finally { server.close() }
 }

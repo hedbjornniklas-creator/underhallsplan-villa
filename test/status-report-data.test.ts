@@ -219,3 +219,55 @@ test('STB query failures prevent an incomplete report instead of silently losing
     }
   } finally { console.error = original }
 })
+
+test('STB apartment report takes identity from the inspection snapshot, not mutable assignment fields', async () => {
+  const f = fixture()
+  f.rows.ob_property_snapshot = [{ inspection_id: 'inspection', object_type: 'apartment',
+    brf_name: 'BRF Fryst objekt', apartment_number: '1203', apartment_holder_name: 'Inspektionsinnehavare' }]
+  Object.assign(f.rows.assignments[0], { brf_name: 'Ändrad levande BRF', apartment_number: '9999',
+    apartment_holder_name: 'Ändrad levande innehavare', assignment_details: { objectType: 'property' } })
+  const result = await loadBuilder(f.db)({ propertyId: 'property', inspectionId: 'inspection' })
+  assert.equal(result.mock.inspections.side, 'status')
+  assert.equal(result.mock.properties.object_type, 'apartment')
+  assert.equal(result.mock.properties.brf_name, 'BRF Fryst objekt')
+  assert.equal(result.mock.properties.apartment_number, '1203')
+  assert.equal(result.mock.properties.apartment_holder_name, 'Inspektionsinnehavare')
+  assert.doesNotMatch(JSON.stringify(result), /Ändrad levande|9999/)
+  assert.equal(result.mock.status_report.source.version, '2026.2')
+  assert.equal(result.mock.inspections.scope_text, 'Endast badrummet på plan 1.')
+  assert.ok(result.mock.interior.blocks.some((block: Row) => block.recommendationText === 'Kontrollera dokumentationen.'))
+  assert.match(f.calls.find(call => call.table === 'ob_property_snapshot')!.select,
+    /object_type, brf_name, apartment_number, apartment_holder_name/)
+})
+
+test('new STB archive supplies apartment identity when the inspection has no explicit object type', async () => {
+  const f = fixture()
+  Object.assign(f.rows.assignment_confirmation_snapshots[0].snapshot_payload.assignment, {
+    assignment_details: { objectType: 'apartment' }, brf_name: 'BRF Arkivet', apartment_number: '1102',
+    apartment_holder_name: 'Arkiverad innehavare',
+  })
+  Object.assign(f.rows.assignments[0], { assignment_details: { objectType: 'property' }, brf_name: 'Mutable BRF' })
+  const result = await loadBuilder(f.db)({ propertyId: 'property', inspectionId: 'inspection' })
+  assert.equal(result.mock.properties.object_type, 'apartment')
+  assert.equal(result.mock.properties.brf_name, 'BRF Arkivet')
+  assert.equal(result.mock.properties.apartment_number, '1102')
+  assert.equal(result.mock.properties.apartment_holder_name, 'Arkiverad innehavare')
+  assert.doesNotMatch(JSON.stringify(result), /Mutable BRF/)
+})
+
+test('legacy and direct STB object identity cannot be inferred from mutable assignment details', async () => {
+  const f = fixture()
+  Object.assign(f.rows.assignments[0], { assignment_details: { objectType: 'apartment' }, brf_name: 'Mutable BRF' })
+  const legacy = await loadBuilder(f.db)({ propertyId: 'property', inspectionId: 'inspection' })
+  assert.equal(legacy.mock.properties.object_type, 'property')
+  assert.equal(legacy.mock.properties.brf_name, '')
+  f.rows.assignments = []
+  f.rows.assignment_confirmation_snapshots = []
+  f.rows.ob_property_snapshot = [{ inspection_id: 'inspection', object_type: 'apartment',
+    brf_name: 'Direkt objekt', apartment_number: '1001', apartment_holder_name: '' }]
+  const direct = await loadBuilder(f.db)({ propertyId: 'property', inspectionId: 'inspection' })
+  assert.equal(direct.mock.inspections.side, 'status')
+  assert.equal(direct.mock.properties.object_type, 'apartment')
+  assert.equal(direct.mock.properties.apartment_number, '1001')
+  assert.doesNotMatch(direct.mock.status_report.assignmentNotice, /överlämnades|gjordes en genomgång/)
+})

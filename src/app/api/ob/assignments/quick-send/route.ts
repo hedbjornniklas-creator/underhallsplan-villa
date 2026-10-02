@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { parseObObjectType } from '@/lib/ob/objectType'
 import {
   AssignmentEmailSendError,
   type AssignmentType,
@@ -44,6 +45,10 @@ export async function POST(request: Request) {
     const apartmentNumber = String(body.apartmentNumber ?? '').trim()
     const apartmentHolderName = String(body.apartmentHolderName ?? '').trim()
     const ordererRole = String(body.ordererRole ?? '').trim()
+    const objectType = parseObObjectType(body.objectType)
+    if (assignmentType === 'STATUS' && !objectType) {
+      return jsonError('Välj om statusbesiktningen avser fastighet eller lägenhet.', 400)
+    }
     const cancellationFeeRaw = body.statusCancellationFee
     const cancellationFee = cancellationFeeRaw === undefined || cancellationFeeRaw === null || cancellationFeeRaw === ''
       ? null : Number(String(cancellationFeeRaw).replace(',', '.'))
@@ -100,7 +105,7 @@ export async function POST(request: Request) {
       currency: 'SEK',
       notesInternal: notesInternal || null,
       ...(assignmentType === 'STATUS' ? { scopeDescription: String(body.scopeDescription ?? '').trim() || null } : {}),
-      ...(assignmentType === 'STATUS' ? { assignmentDetails: { statusCancellationFee: cancellationFee } } : {}),
+      ...(assignmentType === 'STATUS' ? { assignmentDetails: { statusCancellationFee: cancellationFee, objectType } } : {}),
     })
 
     const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
@@ -140,6 +145,12 @@ export async function POST(request: Request) {
     }
     if (message === 'STATUS_CANCELLATION_FEE_REQUIRED') {
       return jsonError('Ange avbokningsbeloppet enligt uppdragsbekräftelsen (0 kr är tillåtet).', 400)
+    }
+    if (message === 'STATUS_OBJECT_TYPE_INVALID') {
+      return jsonError('Välj om statusbesiktningen avser fastighet eller lägenhet.', 400)
+    }
+    if (message === 'STATUS_OBJECT_TYPE_NOT_CONFIGURED') {
+      return jsonError('Objekttyp för statusbesiktning är inte aktiverad på servern. Kontakta administratören.', 503)
     }
 
     if (message.includes('SUPABASE_SERVICE_ROLE_KEY')) {

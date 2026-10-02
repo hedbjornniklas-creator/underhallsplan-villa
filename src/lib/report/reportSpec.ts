@@ -1,5 +1,6 @@
 ﻿import type { StandardTextId } from '@/content/standardtexts/registry'
 import type { AppendixTextId } from '@/lib/report/loadAppendixText'
+import type { ObObjectType } from '@/lib/ob/objectType'
 
 export type TextSource =
   | { kind: 'static'; text: string }
@@ -599,13 +600,15 @@ const resolveInspectionSide = (
 }
 
 const buildObjectRows = (
-  inspectionSide: ReportInspectionSide
-): Array<{ label: string; value: TextSource }> => {
-  if (inspectionSide === 'apartment') {
+  inspectionSide: ReportInspectionSide,
+  objectType?: ObObjectType | null,
+): TwoColumnRow[] => {
+  if (inspectionSide === 'apartment' || (inspectionSide === 'status' && objectType === 'apartment')) {
     return [
       {
         label: 'Bostadsr\u00e4ttsf\u00f6rening:',
         value: { kind: 'mock', path: 'mock.properties.brf_name' },
+        ...(inspectionSide === 'status' ? { hideWhenEmpty: true } : {}),
       },
       {
         label: 'L\u00e4genhetsnummer:',
@@ -620,8 +623,9 @@ const buildObjectRows = (
         value: { kind: 'mock', path: 'mock.properties.municipality' },
       },
       {
-        label: 'Bostadsr\u00e4ttsinnehavare:',
+        label: inspectionSide === 'status' ? 'Lägenhetsinnehavare:' : 'Bostadsr\u00e4ttsinnehavare:',
         value: { kind: 'mock', path: 'mock.properties.apartment_holder_name' },
+        ...(inspectionSide === 'status' ? { hideWhenEmpty: true } : {}),
       },
     ]
   }
@@ -686,6 +690,7 @@ function repairReportSpecText<T>(value: T): T {
 export function buildReportSpec(params?: {
   layoutVersion?: 2
   inspectionSide?: ReportInspectionSide | null
+  objectType?: ObObjectType | null
   dynamicAppendices?: DynamicAppendixConfig
 }): ReportSection[] {
   const inspectionSide = resolveInspectionSide(params?.inspectionSide)
@@ -760,7 +765,7 @@ export function buildReportSpec(params?: {
       ) {
         return {
           ...block,
-          rows: buildObjectRows(inspectionSide),
+          rows: buildObjectRows(inspectionSide, params?.objectType),
         }
       }
       if (
@@ -789,10 +794,10 @@ export function buildReportSpec(params?: {
     })
   }
 
-  if (inspectionSide === 'apartment') {
-    const notesExteriorIndex = spec.findIndex((section) => section.id === 'notes')
-    if (notesExteriorIndex >= 0) {
-      spec.splice(notesExteriorIndex, 1)
+  if (inspectionSide === 'apartment' || (inspectionSide === 'status' && params?.objectType === 'apartment')) {
+    if (inspectionSide === 'apartment') {
+      const notesExteriorIndex = spec.findIndex((section) => section.id === 'notes')
+      if (notesExteriorIndex >= 0) spec.splice(notesExteriorIndex, 1)
     }
 
     const notesInteriorSection = spec.find((section) => section.id === 'notes-interior')

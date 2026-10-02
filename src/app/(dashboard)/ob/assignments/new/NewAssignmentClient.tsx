@@ -7,6 +7,7 @@ import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { obInspectionProfileLabel, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
+import { resolveObObjectType, type ObObjectType } from '@/lib/ob/objectType'
 
 type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
 type OrdererRole = ObInspectionProfileKey | ''
@@ -36,6 +37,7 @@ type InspectorProfile = {
 
 type FormState = {
   assignmentType: AssignmentType
+  objectType: ObObjectType | ''
   cadastralId: string
   brfName: string
   apartmentNumber: string
@@ -64,6 +66,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const INITIAL_FORM: FormState = {
   assignmentType: 'OB',
+  objectType: '',
   cadastralId: '',
   brfName: '',
   apartmentNumber: '',
@@ -145,6 +148,7 @@ export default function NewAssignmentClient({
   const trimmedEmail = form.customerEmail.trim().toLowerCase()
   const canCreate = useMemo(() => EMAIL_REGEX.test(trimmedEmail), [trimmedEmail])
   const isBusy = savingDraft || sending
+  const usesApartmentObject = resolveObObjectType(form.ordererRole || null, form.objectType) === 'apartment'
 
   useEffect(() => {
     let cancelled = false
@@ -259,6 +263,7 @@ export default function NewAssignmentClient({
     priceAmount: parsePriceAmount(),
     ...(form.ordererRole === 'status' ? { statusCancellationFee: parseStatusCancellationFee() } : {}),
     ...(form.ordererRole === 'status' ? { scopeDescription: form.scopeDescription.trim() } : {}),
+    ...(form.ordererRole === 'status' ? { objectType: form.objectType || null } : {}),
     preliminaryAddress: form.propertyAddress.trim(),
     notesInternal: form.notesInternal.trim(),
   })
@@ -315,6 +320,10 @@ export default function NewAssignmentClient({
     }
     if (!form.ordererRole) {
       setError('Välj Säljare, Köpare, Lägenhet eller Statusbesiktning innan du skickar.')
+      return
+    }
+    if (form.ordererRole === 'status' && !form.objectType) {
+      setError('Välj om statusbesiktningen avser fastighet eller lägenhet innan du skickar.')
       return
     }
     if (form.ordererRole === 'status' && !form.statusCancellationFee.trim()) {
@@ -452,15 +461,25 @@ export default function NewAssignmentClient({
 
             <div className="grid gap-4 md:grid-cols-2">
               <SectionCard title="Objekt">
+                {form.ordererRole === 'status' && <fieldset className="space-y-2" disabled={isBusy}>
+                  <legend className="text-xs font-medium text-gray-600">Objekttyp *</legend>
+                  <div className="flex flex-wrap gap-4">
+                    {([{ value: 'property', label: 'Fastighet' }, { value: 'apartment', label: 'Lägenhet' }] as const).map(option => <label key={option.value} className="inline-flex min-h-11 items-center gap-2 text-sm">
+                      <input type="radio" name="status-object-type" value={option.value} checked={form.objectType === option.value}
+                        onChange={() => updateField('objectType', option.value)} />
+                      {option.label}
+                    </label>)}
+                  </div>
+                </fieldset>}
                 {form.ordererRole === 'status' && <Field
                   label="Besiktningens omfattning *"
                   value={form.scopeDescription}
                   onChange={(value) => updateField('scopeDescription', value)}
                 />}
-                {form.ordererRole === 'apartment' ? (
+                {usesApartmentObject ? (
                   <>
                     <Field
-                      label="Bostadsrättsförening"
+                      label={form.ordererRole === 'status' ? 'Bostadsrättsförening (om tillämpligt)' : 'Bostadsrättsförening'}
                       value={form.brfName}
                       onChange={(value) => updateField('brfName', value)}
                     />
@@ -470,7 +489,7 @@ export default function NewAssignmentClient({
                       onChange={(value) => updateField('apartmentNumber', value)}
                     />
                     <Field
-                      label="Bostadsrättsinnehavare"
+                      label={form.ordererRole === 'status' ? 'Lägenhetsinnehavare (frivilligt)' : 'Bostadsrättsinnehavare'}
                       value={form.apartmentHolderName}
                       onChange={(value) => updateField('apartmentHolderName', value)}
                     />

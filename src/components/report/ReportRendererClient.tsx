@@ -1,5 +1,6 @@
 'use client'
 import { protocolTextChunks } from '@/lib/report/protocolTextChunks'
+import { resolveObObjectType, type ObObjectType } from '@/lib/ob/objectType'
 
 import {
   useCallback,
@@ -39,6 +40,7 @@ type ReportRendererClientProps = {
   mockData: Record<string, unknown>
   coverNotice: string
   inspectionSide?: 'buyer' | 'seller' | 'apartment' | 'status' | null
+  objectType?: ObObjectType | null
   rootClassName?: string
 }
 
@@ -895,6 +897,7 @@ export default function ReportRendererClient({
   mockData,
   coverNotice,
   inspectionSide,
+  objectType,
   rootClassName,
 }: ReportRendererClientProps) {
   const rootClasses = ['report-root', rootClassName].filter(Boolean).join(' ')
@@ -1462,10 +1465,16 @@ export default function ReportRendererClient({
     return pages
   }, [appendixSections])
 
-  const isApartment = inspectionSide === 'apartment'
+  const resolvedObjectType = resolveObObjectType(inspectionSide, objectType ?? getMockValue(mockData, 'mock.properties.object_type'))
+  const isApartment = resolvedObjectType === 'apartment'
   const isStatus = inspectionSide === 'status'
+  const headerBrf = getMockValue(mockData, 'mock.properties.brf_name')
+  const statusApartmentHeader = [
+    ...(headerBrf?.trim() && headerBrf !== 'saknas' && headerBrf !== '--' ? [`BRF: ${headerBrf}`] : []),
+    `LGH: ${getMockValue(mockData, 'mock.properties.apartment_number') ?? 'saknas'}`,
+  ].join(' | ')
   const headerLeft = isApartment
-    ? `BRF: ${getMockValue(mockData, 'mock.properties.brf_name') ?? 'saknas'} | LGH: ${getMockValue(mockData, 'mock.properties.apartment_number') ?? 'saknas'}`
+    ? isStatus ? statusApartmentHeader : `BRF: ${getMockValue(mockData, 'mock.properties.brf_name') ?? 'saknas'} | LGH: ${getMockValue(mockData, 'mock.properties.apartment_number') ?? 'saknas'}`
     : (getMockValue(mockData, 'mock.properties.cadastral_id') ?? 'saknas')
 
   const headerContent = (
@@ -1612,6 +1621,7 @@ export default function ReportRendererClient({
   const cadastralId = getMockValue(mockData, 'mock.properties.cadastral_id')
   const brfName = getMockValue(mockData, 'mock.properties.brf_name')
   const apartmentNumber = getMockValue(mockData, 'mock.properties.apartment_number')
+  const apartmentHolderName = getMockValue(mockData, 'mock.properties.apartment_holder_name')
   const address = getMockValue(mockData, 'mock.properties.address')
   const coverPathValue = getMockValue(mockData, 'mock.properties.cover_path')
   const coverIllustrationUrl = coverPathValue === 'saknas' ? null : coverPathValue
@@ -2310,7 +2320,7 @@ export default function ReportRendererClient({
         sectionId === 'notes'
           ? 'Byggnad - utsida'
           : sectionId === 'notes-interior'
-            ? inspectionSide === 'apartment'
+            ? isApartment
               ? 'Lägenhet - insida'
               : 'Byggnad - insida'
             : null
@@ -3168,9 +3178,11 @@ export default function ReportRendererClient({
               <ReportCoverPage
                 companyLogoUrl={companyLogoUrl}
                 inspectionSide={inspectionSide}
+                objectType={resolvedObjectType}
                 cadastralId={cadastralId}
                 brfName={brfName}
                 apartmentNumber={apartmentNumber}
+                apartmentHolderName={apartmentHolderName === 'saknas' ? undefined : apartmentHolderName}
                 address={address}
                 inspectionDate={inspectionDate}
                 assignmentNumber={assignmentNumber}

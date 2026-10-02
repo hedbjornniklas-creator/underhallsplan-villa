@@ -19,6 +19,7 @@ import {
 import ReportShareButton from './ReportShareButton'
 import SnapshotPhotoGrid from './SnapshotPhotoGrid'
 import type { EnvironmentalAppendix } from '@/lib/ob/environmentalProtocol'
+import { resolveObObjectType } from '@/lib/ob/objectType'
 
 type SnapshotInspectionBlock = {
   title?: string | null
@@ -414,10 +415,13 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
     props.subtitle ?? `Låst och publicerat: ${formatSnapshotTimestamp(props.snapshot.createdAt)}`
   const showHeader = props.showHeader !== false
   const mock = (props.snapshot.reportData?.mock ?? {}) as Record<string, unknown>
+  const isApartmentObject = resolveObObjectType(inspectionSide,
+    props.snapshot.objectType ?? asRecord(mock.properties).object_type) === 'apartment'
+  const showApartmentBrf = !isStatus || Boolean(getTextByPath(mock, 'properties.brf_name', '').trim())
   const exteriorBlocks = getBlockArrayByPath(mock, 'exterior.blocks')
   const interiorBlocks = getBlockArrayByPath(mock, 'interior.blocks')
   const buildingDataTextRaw = getTextByPath(mock, 'buildingData.text', '')
-  const buildingDataText = isApartment
+  const buildingDataText = isApartmentObject
     ? filterApartmentBuildingData(buildingDataTextRaw)
     : buildingDataTextRaw
   const attendeesText = getTextByPath(mock, 'inspections.attendees_text', '--')
@@ -553,14 +557,14 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
               className="h-56 w-full bg-slate-100 object-contain transition hover:brightness-95 sm:h-64"
             />
           </a>
-          {isApartment ? (
+          {isApartmentObject ? (
             <div className="grid gap-2 border-t border-slate-200 px-4 py-3 text-sm text-slate-700 sm:grid-cols-2">
-              <div>
+              {showApartmentBrf ? <div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">
                   Bostadsrättsförening
                 </div>
                 <div>{getTextByPath(mock, 'properties.brf_name')}</div>
-              </div>
+              </div> : null}
               <div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">
                   Lägenhetsnummer
@@ -576,18 +580,18 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
             <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Objekt</h2>
               <dl className="mt-3 space-y-2 text-sm text-slate-700">
-                {isApartment ? (
+                {isApartmentObject ? (
                   <>
-                    <div>
+                    {showApartmentBrf ? <div>
                       <dt className="text-xs text-slate-500">Bostadsrättsförening</dt>
                       <dd>{getTextByPath(mock, 'properties.brf_name')}</dd>
-                    </div>
+                    </div> : null}
                     <div>
                       <dt className="text-xs text-slate-500">Lägenhetsnummer</dt>
                       <dd>{getTextByPath(mock, 'properties.apartment_number')}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-slate-500">Bostadsrättsinnehavare</dt>
+                      <dt className="text-xs text-slate-500">{isStatus ? 'Lägenhetsinnehavare' : 'Bostadsrättsinnehavare'}</dt>
                       <dd>{getTextByPath(mock, 'properties.apartment_holder_name')}</dd>
                     </div>
                   </>
@@ -605,7 +609,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                   <dt className="text-xs text-slate-500">Kommun</dt>
                   <dd>{getTextByPath(mock, 'properties.municipality')}</dd>
                 </div>
-                {!isApartment ? (
+                {!isApartmentObject ? (
                   <div>
                     <dt className="text-xs text-slate-500">Fastighetsägare</dt>
                     <dd>{getTextByPath(mock, 'properties.owner_name')}</dd>
@@ -800,7 +804,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-            {isApartment ? 'Noteringar - lägenhet insida' : 'Noteringar - byggnad insida'}
+            {isApartmentObject ? 'Noteringar - lägenhet insida' : 'Noteringar - byggnad insida'}
           </h2>
           <div className="mt-3">{renderBlocks(interiorBlocks, 3, isStatus)}</div>
         </section>

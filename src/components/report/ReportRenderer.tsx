@@ -3,12 +3,14 @@ import { loadAppendixText } from '@/lib/report/loadAppendixText'
 import type { ReportBlock, ReportSection, TextSource } from '@/lib/report/reportSpec'
 import ReportRendererClient from '@/components/report/ReportRendererClient'
 import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
+import type { ObObjectType } from '@/lib/ob/objectType'
 
 type ReportRendererProps = {
   spec: ReportSection[]
   mockData: Record<string, unknown>
   rootClassName?: string
   inspectionSide?: 'buyer' | 'seller' | 'apartment' | 'status' | null
+  objectType?: ObObjectType | null
 }
 
 type ResolvedReportSection = ReportSection & { appendixText?: string }
@@ -89,6 +91,7 @@ export default function ReportRenderer({
   mockData,
   rootClassName,
   inspectionSide,
+  objectType,
 }: ReportRendererProps) {
   const coverNoticeId =
     inspectionSide === 'seller' ? 'STD_COVER_SELLER_NOTICE' : 'STD_COVER_BUYER_DUTY_NOTICE'
@@ -114,6 +117,7 @@ export default function ReportRenderer({
       mockData={mockData}
       coverNotice={coverNotice}
       inspectionSide={inspectionSide}
+      objectType={objectType}
       rootClassName={rootClassName}
     />
   )

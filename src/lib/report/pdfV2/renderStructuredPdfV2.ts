@@ -76,6 +76,7 @@ export async function renderStructuredPdfFromSnapshot(
       ? snapshot.reportSpec
       : buildReportSpec({
           inspectionSide: specInspectionSide,
+          objectType: snapshot.objectType ?? compactData.mock.properties?.object_type,
           dynamicAppendices: {
             environmental: compactData.mock.appendices?.environmental,
             buildings: compactData.mock.appendices?.buildings,
@@ -113,6 +114,7 @@ export async function renderStructuredPdfV2(
   const spec = buildReportSpec({
     layoutVersion: 2,
     inspectionSide: specInspectionSide,
+    objectType: compactData.mock.properties?.object_type,
     dynamicAppendices: {
       environmental: compactData.mock.appendices?.environmental,
       includeAreaMeasurement: areaMeasurementAppendix.enabled === true,

@@ -960,6 +960,7 @@ export async function POST(
     const reportSpec = buildReportSpec({
       layoutVersion: 2,
       inspectionSide,
+      objectType: reportData.mock.properties?.object_type,
       dynamicAppendices: {
         environmental: reportData.mock.appendices?.environmental,
         includeAreaMeasurement: areaMeasurementAppendix.enabled === true,

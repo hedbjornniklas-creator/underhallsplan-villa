@@ -14,7 +14,9 @@ function load<T>(path: string, deps: Record<string, unknown> = {}): T {
   return compiled.exports as T
 }
 const helpers = load<typeof import('../src/lib/ob/publishedReport')>('src/lib/ob/publishedReport.ts', {
-  '@/lib/report/reportSnapshotPayload': load('src/lib/report/reportSnapshotPayload.ts'),
+  '@/lib/report/reportSnapshotPayload': load('src/lib/report/reportSnapshotPayload.ts', {
+    '@/lib/ob/objectType': load('src/lib/ob/objectType.ts'),
+  }),
   './publishedReportLink': load('src/lib/ob/publishedReportLink.ts'),
 })
 const inspectionId = '10000000-0000-4000-8000-000000000001'

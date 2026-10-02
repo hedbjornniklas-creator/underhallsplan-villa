@@ -213,6 +213,7 @@ function buildObjectSection(
   municipality: string
 ) {
   const isApartmentObject =
+    (assignment.assignment_type === 'STATUS' && assignment.assignment_details?.objectType === 'apartment') ||
     termsRole === 'apartment' ||
     (assignment.assignment_type === 'TU' &&
       (roleLooksLikeApartment(assignment.orderer_role) ||
@@ -223,20 +224,21 @@ function buildObjectSection(
     const brfName = toDisplayValue(assignment.brf_name)
     const apartmentNumber = toDisplayValue(assignment.apartment_number)
     const apartmentHolderName = toDisplayValue(assignment.apartment_holder_name)
+    const holderLabel = assignment.assignment_type === 'STATUS' ? 'Lägenhetsinnehavare' : 'Bostadsrättsinnehavare'
     return {
       html: [
         `<div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(propertyAddress)}</div>`,
         `<div style="font-size:13px;line-height:1.5;"><strong>Kommun:</strong> ${escapeHtml(municipality)}</div>`,
         `<div style="font-size:13px;line-height:1.5;"><strong>Bostadsrättsförening:</strong> ${escapeHtml(brfName)}</div>`,
         `<div style="font-size:13px;line-height:1.5;"><strong>Lägenhetsnummer:</strong> ${escapeHtml(apartmentNumber)}</div>`,
-        `<div style="font-size:13px;line-height:1.5;"><strong>Bostadsrättsinnehavare:</strong> ${escapeHtml(apartmentHolderName)}</div>`,
+        `<div style="font-size:13px;line-height:1.5;"><strong>${holderLabel}:</strong> ${escapeHtml(apartmentHolderName)}</div>`,
       ].join('\n'),
       text:
         `- Adress: ${propertyAddress}\n` +
         `- Kommun: ${municipality}\n` +
         `- Bostadsrättsförening: ${brfName}\n` +
         `- Lägenhetsnummer: ${apartmentNumber}\n` +
-        `- Bostadsrättsinnehavare: ${apartmentHolderName}\n`,
+        `- ${holderLabel}: ${apartmentHolderName}\n`,
     }
   }
 

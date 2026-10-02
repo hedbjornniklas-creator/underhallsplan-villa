@@ -71,6 +71,8 @@ export async function POST(
       return jsonError('Ange avbokningsbeloppet enligt uppdragsbekräftelsen (0 kr är tillåtet).', 400)
     }
     if (message === 'STATUS_SCOPE_REQUIRED') return jsonError('Ange vad statusbesiktningen omfattar.', 400)
+    if (message === 'STATUS_OBJECT_TYPE_INVALID') return jsonError('Välj om statusbesiktningen gäller fastighet eller lägenhet.', 400)
+    if (message === 'STATUS_OBJECT_TYPE_NOT_CONFIGURED') return jsonError('Statusbesiktningens objekttyp är inte konfigurerad i databasen ännu.', 503)
     if (message === 'ASSIGNMENT_NOT_ACCEPTED') {
       return jsonError('Uppdraget är inte godkänt och kan inte skickas som kopia ännu.', 409)
     }

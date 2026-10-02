@@ -19,13 +19,13 @@ await new Promise((ok, fail) => webpack({
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve(forms ? 'test/fixtures/ob-forms-client.ts' : 'test/fixtures/ob-brand-preview-client.ts'),
     'next/link': resolve('test/helpers/preview-link.tsx'),
-    './mobile-round.css': false, './ob-forms.css': false, '@': resolve('src'),
+    './mobile-round.css': false, './ob-forms.css': false, './ob-environmental.css': false, '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
 const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const css = [globalCss.css, ...await Promise.all([
-  'src/components/ob/mobile-round.css', 'src/components/ob/ob-forms.css', 'src/components/ob/inspection-layout.css', 'test/fixtures/ob-brand-preview.css',
+  'src/components/ob/mobile-round.css', 'src/components/ob/ob-forms.css', 'src/components/ob/ob-environmental.css', 'src/components/ob/inspection-layout.css', 'test/fixtures/ob-brand-preview.css',
 ].map(path => readFile(path, 'utf8')))].join('\n').replace("@import './mobile-round.css';", '').replace("@import './inspection-layout.css';", '')
 const assets = new Map()
 for (const [url, path, type] of [
@@ -82,9 +82,10 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB brand preview (synthetic only): ${base}`)
-if (process.argv.includes('--test') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors') || process.argv.includes('--test-layout') || process.argv.includes('--test-documents') || process.argv.includes('--test-unlock')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors') || process.argv.includes('--test-layout') || process.argv.includes('--test-documents') || process.argv.includes('--test-unlock') || process.argv.includes('--test-status-object')) {
   try {
-    if (process.argv.includes('--test-unlock')) { const { testUnlock } = await import('../test/helpers/ob-unlock-browser.mjs'); await testUnlock(base, output) }
+    if (process.argv.includes('--test-status-object')) { const { testStatusObject } = await import('../test/helpers/ob-status-object-browser.mjs'); await testStatusObject(base, output) }
+    else if (process.argv.includes('--test-unlock')) { const { testUnlock } = await import('../test/helpers/ob-unlock-browser.mjs'); await testUnlock(base, output) }
     else if (process.argv.includes('--test-documents')) { const { testDocumentLayout } = await import('../test/helpers/ob-document-layout-browser.mjs'); await testDocumentLayout(base, output) }
     else if (process.argv.includes('--test-layout')) { const { testInspectionLayout } = await import('../test/helpers/ob-inspection-layout-browser.mjs'); await testInspectionLayout(base, output) }
     else if (process.argv.includes('--test-floors')) { const { testConditionFloors } = await import('../test/helpers/ob-condition-floors-browser.mjs'); await testConditionFloors(base, output) }

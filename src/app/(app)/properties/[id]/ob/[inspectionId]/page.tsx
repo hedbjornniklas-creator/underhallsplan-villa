@@ -18,6 +18,7 @@ import { isObRoundBackManaged } from '@/lib/ob/roundBackHistory'
 import { getInitialObSection, isObRoundSection } from '@/lib/ob/mobileRound'
 import { inspectionNavigationKey, restoreInspectionNavigation } from '@/lib/ob/inspectionNavigation'
 import { parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
+import { parseObObjectType, type ObObjectType } from '@/lib/ob/objectType'
 import ObWizard, {
   ObSectionKey,
   ObWizardInspectionInput,
@@ -27,6 +28,7 @@ import ObWizard, {
 type Property = ObWizardPropertyInput
 type Inspection = ObWizardInspectionInput
 type ObPropertySnapshot = {
+  object_type: ObObjectType | null
   inspection_id: string
   source_property_id: string | null
   name: string | null
@@ -417,6 +419,7 @@ export default function InspectionDetailPage() {
             owner_name,
             tenure_type,
             dwelling_type,
+            object_type,
             brf_name,
             apartment_number,
             apartment_holder_name,
@@ -507,6 +510,7 @@ export default function InspectionDetailPage() {
       setProperty({
         id: resolvedPropertyId,
         name: snapshot?.name ?? prop?.name ?? 'Fastighet',
+        object_type: parseObObjectType(snapshot?.object_type),
         address: snapshot?.address ?? prop?.address ?? null,
         postal_code: snapshot?.postal_code ?? prop?.postal_code ?? null,
         city: snapshot?.city ?? prop?.city ?? null,

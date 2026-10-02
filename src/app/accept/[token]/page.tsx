@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'next/navigation'
 import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react'
 import { obInspectionProfileLabel, parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
+import { resolveObObjectType } from '@/lib/ob/objectType'
 import {
   CONSUMER_EARLY_START_CONSENT_TEXT,
   CONSUMER_WITHDRAWAL_FORM_URL,
@@ -351,8 +352,10 @@ export default function AssignmentAcceptPage() {
         (!consumerEarlyStartConsentRequired || form?.startDuringWithdrawalPeriod)
     )
   const usesApartmentObject =
-    lockedOrdererRole === 'apartment' ||
-    (isTechnicalAssignment && Boolean(form?.brfName.trim() || form?.apartmentNumber.trim()))
+    lockedOrdererRole === 'status'
+      ? resolveObObjectType('status', data?.assignment.assignment_details?.objectType) === 'apartment'
+      : lockedOrdererRole === 'apartment' ||
+        (isTechnicalAssignment && Boolean(form?.brfName.trim() || form?.apartmentNumber.trim()))
 
   const activeTerms = useMemo(() => {
     if (!data) return null
@@ -452,11 +455,10 @@ export default function AssignmentAcceptPage() {
       return
     }
 
-    const usesApartmentObjectForSubmit =
-      lockedOrdererRole === 'apartment' ||
-      (isTechnicalAssignment && Boolean(form.brfName.trim() || form.apartmentNumber.trim()))
-    const missingObjectFields = usesApartmentObjectForSubmit
-      ? !form.brfName.trim() ||
+    const missingObjectFields = usesApartmentObject
+      ? lockedOrdererRole === 'status'
+        ? !form.apartmentNumber.trim()
+        : !form.brfName.trim() ||
         !form.apartmentNumber.trim() ||
         (!isTechnicalAssignment && !isEbAssignment && !form.apartmentHolderName.trim())
       : isTechnicalAssignment || isEbAssignment
@@ -796,10 +798,13 @@ export default function AssignmentAcceptPage() {
                       disabled
                     />
                   ) : null}
+                  {lockedOrdererRole === 'status' && <p className="text-sm text-gray-700">
+                    Objekttyp: <strong>{usesApartmentObject ? 'Lägenhet' : 'Fastighet'}</strong>
+                  </p>}
                   {usesApartmentObject ? (
                     <>
                       <Field
-                        label="Bostadsrättsförening *"
+                        label={lockedOrdererRole === 'status' ? 'Bostadsrättsförening (om tillämpligt)' : 'Bostadsrättsförening *'}
                         value={form.brfName}
                         onChange={(value) => updateField('brfName', value)}
                         disabled={!canSubmit}
@@ -811,7 +816,7 @@ export default function AssignmentAcceptPage() {
                         disabled={!canSubmit}
                       />
                       <Field
-                        label={isTechnicalAssignment || isEbAssignment ? 'Bostadsrättsinnehavare' : 'Bostadsrättsinnehavare *'}
+                        label={lockedOrdererRole === 'status' ? 'Lägenhetsinnehavare (frivilligt)' : isTechnicalAssignment || isEbAssignment ? 'Bostadsrättsinnehavare' : 'Bostadsrättsinnehavare *'}
                         value={form.apartmentHolderName}
                         onChange={(value) => updateField('apartmentHolderName', value)}
                         disabled={!canSubmit}

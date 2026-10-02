@@ -15,7 +15,7 @@ export type ObConfirmationSnapshot = Omit<AcceptedAssignmentConfirmationPdfInput
 // Called before consuming the token. The database captures assignment/addons
 // after its own updates, atomically with the acceptance and this source text.
 export async function prepareObConfirmationSource(
-  assignment: { assignment_type: string; org_id: string; responsible_profile_id: string | null; scope_description?: string | null; price_amount?: number | null },
+  assignment: { assignment_type: string; org_id: string; responsible_profile_id: string | null; scope_description?: string | null; price_amount?: number | null; assignment_details?: Record<string, unknown> | null },
   terms: AssignmentTermsDocument
 ) {
   if (!((assignment.assignment_type === 'OB' && ['buyer', 'seller', 'apartment'].includes(terms.role)) ||
@@ -23,10 +23,17 @@ export async function prepareObConfirmationSource(
     throw new Error('OB_CONFIRMATION_MODULE_MISMATCH')
   }
   if (!assignment.responsible_profile_id) throw new Error('OB_CONFIRMATION_ISSUER_MISSING')
+  const objectType = Object.hasOwn(assignment.assignment_details ?? {}, 'objectType')
+    ? assignment.assignment_details?.objectType : 'property'
+  if (assignment.assignment_type === 'STATUS' && objectType !== 'property' && objectType !== 'apartment') {
+    throw new Error('STATUS_OBJECT_TYPE_INVALID')
+  }
   const admin = createSupabaseAdminClient()
   if (assignment.assignment_type === 'STATUS') {
     const { error } = await admin.from('assignment_links').select('status_document_source').limit(0)
     if (error) throw new Error('STATUS_ASSIGNMENT_SOURCE_NOT_CONFIGURED')
+    const { error: objectError } = await admin.from('ob_property_snapshot').select('object_type').limit(0)
+    if (objectError) throw new Error('STATUS_OBJECT_TYPE_NOT_CONFIGURED')
   }
   const { error: setupError } = await admin.from('assignment_confirmation_snapshots').select('assignment_id').limit(0)
   if (setupError) throw new Error('OB_CONFIRMATION_ARCHIVE_NOT_CONFIGURED')
@@ -44,6 +51,7 @@ export async function prepareObConfirmationSource(
     ...(assignment.assignment_type === 'STATUS' ? {
       statusScopeDescription: assignment.scope_description,
       statusPriceAmount: assignment.price_amount,
+      statusObjectType: objectType,
     } : {}),
     terms,
     issuerName: organization.name ?? profile.company_name,

@@ -127,7 +127,7 @@ export default async function Page({
       {isAutoPrint && <AutoPrintTrigger />}
       {!isEmbed && <ReportToolbar backHref={`/properties/${resolvedParams.propertyId}/ob/${resolvedParams.inspectionId}`} />}
       <ReportRenderer mockData={data} inspectionSide={side} rootClassName={isPdf ? 'report-root--pdf' : undefined}
-        spec={buildReportSpec({ layoutVersion: 2, inspectionSide: side, dynamicAppendices: {
+        spec={buildReportSpec({ layoutVersion: 2, inspectionSide: side, objectType: data.mock.properties?.object_type, dynamicAppendices: {
           includeAreaMeasurement: appendices.area_measurement?.enabled === true,
           includeMoistureControl: appendices.moisture_control?.enabled === true,
           buildings: appendices.buildings,

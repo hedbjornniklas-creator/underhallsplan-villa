@@ -13,6 +13,7 @@ import '@/components/ob/ob-forms.css'
 import '@/components/ob/ob-assignment-form.css'
 import { validateObEarlyStartReason, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 import { obInspectionProfileLabel, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
+import { parseObObjectType, resolveObObjectType, type ObObjectType } from '@/lib/ob/objectType'
 
 type AssignmentStatus =
   | 'draft'
@@ -84,6 +85,7 @@ type AssignmentAddonOrder = {
 
 type FormState = {
   assignmentType: AssignmentType
+  objectType: ObObjectType | ''
   status: AssignmentStatus
   cadastralId: string
   propertyAddress: string
@@ -149,6 +151,8 @@ function assignmentStatusToLabel(status: AssignmentStatus) {
 function toFormState(assignment: AssignmentDetails): FormState {
   return {
     assignmentType: assignment.assignment_type,
+    objectType: parseObObjectType(assignment.assignment_details?.objectType) ??
+      (assignment.assignment_type === 'STATUS' && !Object.hasOwn(assignment.assignment_details ?? {}, 'objectType') ? 'property' : ''),
     status: assignment.status,
     cadastralId: assignment.cadastral_id ?? '',
     propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
@@ -216,6 +220,9 @@ export default function AssignmentDetailsPage() {
   }, [form])
 
   const hasOrdererRole = Boolean(form?.ordererRole)
+  const usesApartmentObject = resolveObObjectType(form?.ordererRole || null, form?.objectType) === 'apartment'
+  const isObjectTypeLocked = Boolean(assignment?.accepted_at || assignment?.last_sent_at) ||
+    ['sent', 'ordered', 'booked', 'completed'].includes(assignment?.status ?? '')
   const hasValidPrice = useMemo(() => {
     if (!form) return false
     const raw = form.priceAmount.trim()
@@ -367,6 +374,7 @@ export default function AssignmentDetailsPage() {
             price_amount: parsedPrice,
             ...(nextForm.ordererRole === 'status' ? { statusCancellationFee: parsedCancellationFee } : {}),
             ...(nextForm.ordererRole === 'status' ? { scopeDescription: nextForm.scopeDescription.trim() } : {}),
+            ...(nextForm.ordererRole === 'status' ? { objectType: nextForm.objectType || null } : {}),
             currency: 'SEK',
             orderer_role: roleToLabel(nextForm.ordererRole),
             invoice_name: nextForm.invoiceName,
@@ -436,6 +444,9 @@ export default function AssignmentDetailsPage() {
 
       if (!form) {
         throw new Error('Uppdraget är inte färdigladdat.')
+      }
+      if (form.ordererRole === 'status' && !form.objectType) {
+        throw new Error('Välj om statusbesiktningen avser fastighet eller lägenhet innan du skickar.')
       }
       if (form.ordererRole === 'status' && !form.statusCancellationFee.trim()) {
         throw new Error('Ange avbokningsavgift för statusbesiktningen innan du skickar. Ange 0 om ingen avgift ska tas ut.')
@@ -725,10 +736,20 @@ export default function AssignmentDetailsPage() {
                       value={form.propertyMunicipality}
                       onChange={(value) => updateField('propertyMunicipality', value)}
                     />
-                    {form.ordererRole === 'apartment' ? (
+                    {form.ordererRole === 'status' && <fieldset className="min-w-0 space-y-1" disabled={isObjectTypeLocked}>
+                      <legend className="ob-form-label">Objekttyp *</legend>
+                      <div className="flex flex-wrap gap-x-5">
+                        {([{ value: 'property', label: 'Fastighet' }, { value: 'apartment', label: 'Lägenhet' }] as const).map(option => <label key={option.value} className="ob-form-choice">
+                          <input type="radio" name="status-object-type" value={option.value} checked={form.objectType === option.value}
+                            onChange={() => updateField('objectType', option.value)} />
+                          <span>{option.label}</span>
+                        </label>)}
+                      </div>
+                    </fieldset>}
+                    {usesApartmentObject ? (
                       <>
                         <Field
-                          label="Bostadsrättsförening"
+                          label={form.ordererRole === 'status' ? 'Bostadsrättsförening (om tillämpligt)' : 'Bostadsrättsförening'}
                           value={form.brfName}
                           onChange={(value) => updateField('brfName', value)}
                         />
@@ -738,7 +759,7 @@ export default function AssignmentDetailsPage() {
                           onChange={(value) => updateField('apartmentNumber', value)}
                         />
                         <Field
-                          label="Bostadsrättsinnehavare"
+                          label={form.ordererRole === 'status' ? 'Lägenhetsinnehavare (frivilligt)' : 'Bostadsrättsinnehavare'}
                           value={form.apartmentHolderName}
                           onChange={(value) => updateField('apartmentHolderName', value)}
                         />

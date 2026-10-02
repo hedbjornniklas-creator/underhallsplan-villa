@@ -6,13 +6,16 @@ import {
   SBR_LOGO_WIDTH_MM,
   mmToPx,
 } from '@/lib/report/reportTokens'
+import { resolveObObjectType, type ObObjectType } from '@/lib/ob/objectType'
 
 type ReportCoverPageProps = {
   companyLogoUrl?: string | null
   inspectionSide?: 'buyer' | 'seller' | 'apartment' | 'status' | null
+  objectType?: ObObjectType | null
   cadastralId?: string
   brfName?: string
   apartmentNumber?: string
+  apartmentHolderName?: string
   address?: string
   inspectionDate?: string
   assignmentNumber?: string
@@ -24,9 +27,11 @@ type ReportCoverPageProps = {
 export default function ReportCoverPage({
   companyLogoUrl,
   inspectionSide,
+  objectType,
   cadastralId,
   brfName,
   apartmentNumber,
+  apartmentHolderName,
   address,
   inspectionDate,
   assignmentNumber,
@@ -35,7 +40,7 @@ export default function ReportCoverPage({
   coverNotice = '',
 }: ReportCoverPageProps) {
   const coverSrc = coverIllustrationUrl || defaultCoverIllustrationSrc
-  const isApartment = inspectionSide === 'apartment'
+  const isApartment = resolveObObjectType(inspectionSide, objectType) === 'apartment'
   const assignmentHeading = inspectionSide === 'status'
     ? 'STATUSBESIKTNING'
     : isApartment ? 'LÄGENHETSBESIKTNING' : 'ÖVERLÅTELSEBESIKTNING'
@@ -145,12 +150,15 @@ export default function ReportCoverPage({
       <div style={{ marginTop: mmToPx(6), marginBottom: mmToPx(6), fontSize: '16pt' }}>
         {isApartment ? (
           <>
-            <div style={{ marginBottom: mmToPx(2) }}>
+            {inspectionSide !== 'status' || (brfName?.trim() && brfName !== 'saknas' && brfName !== '--') ? <div style={{ marginBottom: mmToPx(2) }}>
               <strong>Bostadsrättsförening:</strong> {brfName ?? 'saknas'}
-            </div>
+            </div> : null}
             <div style={{ marginBottom: mmToPx(2) }}>
               <strong>Lägenhetsnummer:</strong> {apartmentNumber ?? 'saknas'}
             </div>
+            {inspectionSide === 'status' && apartmentHolderName ? <div style={{ marginBottom: mmToPx(2) }}>
+              <strong>Lägenhetsinnehavare:</strong> {apartmentHolderName}
+            </div> : null}
           </>
         ) : (
           <div style={{ marginBottom: mmToPx(2) }}>

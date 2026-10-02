@@ -22,12 +22,15 @@ import ObCoverImageBank from './ObCoverImageBank'
 import { useObBuilding } from './ObBuildingContext'
 import { resolveInspectionCoverUrl } from '@/lib/ob/inspectionCoverUrl'
 import { getObInspectionClassification, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
+import { getObProfileChangeConfirmation } from '@/lib/ob/inspectionProfileChange'
+import { resolveObObjectType, type ObObjectType } from '@/lib/ob/objectType'
 import { hasObTextDraftsForInspection } from '@/lib/ob/localTextDrafts'
 
 export type ObInspection = Tables<'inspections'>
 
 type BaseProperty = Tables<'properties'>
 type Property = BaseProperty & {
+  object_type: ObObjectType | null
   assignment_id: string | null
   customer_name: string | null
   customer_address: string | null
@@ -231,6 +234,7 @@ export default function ObStepGrunddata({
 }: ObStepGrunddataProps) {
   // Lokalt formulär-state - vi utgår från inkommande props
   const [propForm, setPropForm, acknowledgeProperty] = useObFormDraft(inspection.id, {
+    object_type: property.object_type ?? '',
     cadastral_id: property.cadastral_id ?? '',
     address: property.address ?? '',
     postal_code: property.postal_code ?? '',
@@ -276,6 +280,8 @@ export default function ObStepGrunddata({
   latestInspection.current = inspection
   const [uploadingCover, setUploadingCover] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [changingInspectionSide, setChangingInspectionSide] = useState(false)
+  const [changingObjectType, setChangingObjectType] = useState(false)
   const coverCameraInputRef = useRef<HTMLInputElement | null>(null)
   const coverLibraryInputRef = useRef<HTMLInputElement | null>(null)
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
@@ -432,10 +438,10 @@ export default function ObStepGrunddata({
 
   // Hjälpare: spara property-fält
   const saveProperty = (patch: Partial<Property>) => {
-    if (isInspectionLocked) return Promise.resolve()
+    if (isInspectionLocked) return Promise.resolve(false)
     setPendingProp(count => count + 1)
     return enqueueObGrunddataWrite(inspection.id, async () => {
-    if (latestInspection.current.id !== inspection.id || latestInspection.current.locked_at) return
+    if (latestInspection.current.id !== inspection.id || latestInspection.current.locked_at) return false
     setError(null)
 
     const payload = {
@@ -454,13 +460,14 @@ export default function ObStepGrunddata({
     if (updErr) {
       console.error(updErr)
       setError('Kunde inte spara objektets uppgifter i ÖB.')
-      return
+      return false
     }
 
-    if (latestInspection.current.id !== inspection.id) return
+    if (latestInspection.current.id !== inspection.id) return false
     latestProperty.current = { ...latestProperty.current, ...patch }
     acknowledgeProperty(formValues(patch))
     onPropertyUpdated?.(latestProperty.current)
+    return true
     }).finally(() => setPendingProp(count => count - 1))
   }
 
@@ -756,43 +763,87 @@ export default function ObStepGrunddata({
 
   // Köpar-/säljarbesiktning - radioknappar
   const handleInspectionSideChange = async (side: EditableInspectionSide) => {
-    if (isInspectionLocked) return
-    const crossesStatusProfile = (inspForm.inspection_side === 'status') !== (side === 'status')
-    if (crossesStatusProfile) {
-      const draftError = profileChangeDraftError(inspection.id)
-      if (draftError) { setError(draftError); return }
-      const { data: linkedAssignments, error: assignmentError } = await supabase.from('assignments')
-        .select('status,accepted_at').eq('inspection_id', inspection.id)
-      if (assignmentError) {
-        setError('Kunde inte kontrollera uppdragsbekräftelsen. Typ av uppdrag har inte ändrats.')
-        return
+    if (isInspectionLocked || changingInspectionSide || changingObjectType || side === inspForm.inspection_side) return
+    setChangingInspectionSide(true)
+    try {
+      const crossesStatusProfile = (inspForm.inspection_side === 'status') !== (side === 'status')
+      if (crossesStatusProfile) {
+        const draftError = profileChangeDraftError(inspection.id)
+        if (draftError) { setError(draftError); return }
+        const { data: linkedAssignments, error: assignmentError } = await supabase.from('assignments')
+          .select('status,accepted_at').eq('inspection_id', inspection.id)
+        if (assignmentError) {
+          setError('Kunde inte kontrollera uppdragsbekräftelsen. Typ av uppdrag har inte ändrats.')
+          return
+        }
+        const assignments = linkedAssignments as Array<{ status: string; accepted_at: string | null }> | null
+        if (assignments?.some(assignment => assignment.accepted_at || ['sent', 'ordered', 'booked', 'completed'].includes(assignment.status))) {
+          setError('Byte till eller från statusbesiktning kräver en ny uppdragsbekräftelse. Den kopplade bekräftelsen är redan skickad eller godkänd.')
+          return
+        }
+        let confirmation: string | null
+        try {
+          confirmation = await getObProfileChangeConfirmation(supabase, inspection.id, side)
+        } catch {
+          setError('Kunde inte kontrollera besiktningens texter. Typ av uppdrag har inte ändrats. Försök igen.')
+          return
+        }
+        if (confirmation && !window.confirm(confirmation)) return
       }
-      const assignments = linkedAssignments as Array<{ status: string; accepted_at: string | null }> | null
-      if (assignments?.some(assignment => assignment.accepted_at || ['sent', 'ordered', 'booked', 'completed'].includes(assignment.status))) {
-        setError('Byte till eller från statusbesiktning kräver en ny uppdragsbekräftelse. Den kopplade bekräftelsen är redan skickad eller godkänd.')
-        return
+      if (side === 'status') {
+        // Preserve the current object's identity when entering STB. The marker
+        // has no effect on the old OB profile if the subsequent profile save fails.
+        const objectType = resolveObObjectType(inspForm.inspection_side as EditableInspectionSide, propForm.object_type)
+        if (!await saveProperty({ object_type: objectType })) return
       }
-      if (!window.confirm('Vill du byta typ av uppdrag? Befintliga noteringar och bilder behålls. Risk och fortsatt teknisk utredning visas inte i statusbesiktning; rekommendationer och övriga kommentarer visas inte i överlåtelsebesiktning. Ingen text omvandlas.')) return
-    }
-    const patch: Partial<Inspection> = crossesStatusProfile
-      ? getObInspectionClassification(side)
-      : { inspection_side: side }
+      const patch: Partial<Inspection> = crossesStatusProfile
+        ? getObInspectionClassification(side)
+        : { inspection_side: side }
 
-    // Om vi växlar till säljarbesiktning ska "Köpare" inte vara markerad
-    if (side === 'seller') {
-      const current = parseAttendeeLabels(inspForm.attendees)
-      if (current.includes('Köpare')) {
-        const next = current.filter(l => l !== 'Köpare')
-        const newAttendees = formatAttendeeLabels(next)
-        patch.attendees = newAttendees
-        const saved = await saveInspection(patch)
-        if (saved) setInspForm(prev => ({ ...prev, inspection_side: side, attendees: newAttendees }))
+      // Om vi växlar till säljarbesiktning ska "Köpare" inte vara markerad
+      if (side === 'seller') {
+        const current = parseAttendeeLabels(inspForm.attendees)
+        if (current.includes('Köpare')) {
+          const next = current.filter(l => l !== 'Köpare')
+          const newAttendees = formatAttendeeLabels(next)
+          patch.attendees = newAttendees
+          const saved = await saveInspection(patch)
+          if (saved) setInspForm(prev => ({ ...prev, inspection_side: side, attendees: newAttendees }))
+          return
+        }
+      }
+
+      const saved = await saveInspection(patch)
+      if (saved) setInspForm(prev => ({ ...prev, inspection_side: side }))
+    } finally {
+      setChangingInspectionSide(false)
+    }
+  }
+
+  const handleStatusObjectTypeChange = async (objectType: ObObjectType) => {
+    if (isInspectionLocked || changingObjectType || changingInspectionSide || inspForm.inspection_side !== 'status') return
+    if (resolveObObjectType('status', propForm.object_type) === objectType) return
+    setChangingObjectType(true)
+    setError(null)
+    try {
+      const { data, error: assignmentError } = await supabase.from('assignments')
+        .select('status,accepted_at,last_sent_at').eq('inspection_id', inspection.id)
+      if (assignmentError) throw assignmentError
+      const assignments = data as Array<{ status: string; accepted_at: string | null; last_sent_at: string | null }> | null
+      if (assignments?.some(assignment => assignment.accepted_at || assignment.last_sent_at || ['sent', 'ordered', 'booked', 'completed'].includes(assignment.status))) {
+        setError('Byte av objekttyp kräver en ny uppdragsbekräftelse. Den kopplade bekräftelsen är redan skickad eller godkänd.')
         return
       }
+      // Persist before changing the visible fields. The database rechecks linked confirmations.
+      if (await saveProperty({ object_type: objectType })) {
+        setPropForm(prev => ({ ...prev, object_type: objectType }))
+        acknowledgeProperty({ object_type: objectType })
+      }
+    } catch {
+      setError('Kunde inte kontrollera uppdragsbekräftelsen. Objekttypen har inte ändrats. Försök igen.')
+    } finally {
+      setChangingObjectType(false)
     }
-
-    const saved = await saveInspection(patch)
-    if (saved) setInspForm(prev => ({ ...prev, inspection_side: side }))
   }
 
   // Vilka närvarorutor vi ska visa: vid säljarbesiktning, ingen "Köpare"
@@ -891,9 +942,27 @@ export default function ObStepGrunddata({
   const inspectorAvatarSrc = resolvePublicMediaUrl(inspectorProfile?.avatar_path)
   const inspectionCoverSrc = resolveInspectionCoverUrl(inspForm.cover_path, value => supabase.storage.from(COVER_IMAGE_BUCKET).getPublicUrl(value).data.publicUrl)
   const buildingContext = useObBuilding()
+  const isApartmentObject = resolveObObjectType(inspForm.inspection_side as EditableInspectionSide, propForm.object_type) === 'apartment'
 
   const objectSection = (
         <ObFormSection title="Objekt" className="ob-property-object">
+
+          {inspForm.inspection_side === 'status' && (
+            <fieldset className="min-w-0 space-y-1" disabled={isInspectionLocked || changingObjectType || changingInspectionSide} aria-busy={changingObjectType}>
+              <legend className="ob-form-label">Objekttyp</legend>
+              <div className="flex flex-wrap gap-x-5">
+                {(['property', 'apartment'] as const).map(objectType => (
+                  <label key={objectType} className="ob-form-choice">
+                    <input type="radio" name={`status-object-${inspection.id}`} className="h-3 w-3"
+                      checked={isApartmentObject === (objectType === 'apartment')}
+                      onChange={() => void handleStatusObjectTypeChange(objectType)} />
+                    <span>{objectType === 'apartment' ? 'Lägenhet' : 'Fastighet'}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500">Ange vilken del som ska besiktigas under Omfattning, till exempel badrum.</p>
+            </fieldset>
+          )}
 
           <Field
             label="Adress"
@@ -928,7 +997,7 @@ export default function ObStepGrunddata({
             readOnly={isInspectionLocked}
           />
 
-          {inspForm.inspection_side !== 'apartment' ? (
+          {!isApartmentObject ? (
             <>
               <Field
                 label="Fastighetsbeteckning"
@@ -948,10 +1017,10 @@ export default function ObStepGrunddata({
             </>
           ) : null}
 
-          {inspForm.inspection_side === 'apartment' ? (
+          {isApartmentObject ? (
             <>
               <Field
-                label="Bostadsrättsförening"
+                label={inspForm.inspection_side === 'status' ? 'Bostadsrättsförening (om tillämpligt)' : 'Bostadsrättsförening'}
                 value={propForm.brf_name ?? ''}
                 onChange={v => handlePropChange('brf_name', v)}
                 onBlur={() => handlePropBlur('brf_name')}
@@ -965,7 +1034,7 @@ export default function ObStepGrunddata({
                 readOnly={isInspectionLocked}
               />
               <Field
-                label="Bostadsrättsinnehavare"
+                label={inspForm.inspection_side === 'status' ? 'Lägenhetsinnehavare (frivilligt)' : 'Bostadsrättsinnehavare'}
                 value={propForm.apartment_holder_name ?? ''}
                 onChange={v => handlePropChange('apartment_holder_name', v)}
                 onBlur={() => handlePropBlur('apartment_holder_name')}
@@ -1051,7 +1120,7 @@ export default function ObStepGrunddata({
         </ObFormSection>
   )
   const inspectionTypeField = (
-          <fieldset className="min-w-0 space-y-1">
+          <fieldset className="min-w-0 space-y-1" disabled={changingInspectionSide || changingObjectType} aria-busy={changingInspectionSide}>
             <legend className="ob-form-label">Typ av uppdrag</legend>
             <div className="ob-property-type-options flex flex-wrap gap-x-5">
               <label className="ob-form-choice">

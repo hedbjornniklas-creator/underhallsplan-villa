@@ -17,6 +17,7 @@ import { parseScopeCodes, renderScopeText } from '@/lib/report/scopeText'
 import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { STB_REPORT_SOURCE, STB_REPORT_TERMS, STB_REPORT_TEXTS } from '@/content/standardtexts/status/originals'
+import { parseObObjectType, resolveObObjectType } from '@/lib/ob/objectType'
 import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
 import { getObConfirmationSnapshot, type ObConfirmationSnapshot } from '@/lib/assignments/obConfirmationSnapshot'
 
@@ -364,7 +365,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: snapshotData, error: snapshotError } = await (supabase as any)
     .from('ob_property_snapshot')
     .select(
-      'inspection_id, source_property_id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path'
+      `inspection_id, source_property_id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path${statusInspection ? ', object_type, brf_name, apartment_number, apartment_holder_name' : ''}`
     )
     .eq('inspection_id', resolvedParams.inspectionId)
     .maybeSingle()
@@ -413,6 +414,23 @@ const supabase: any = createSupabaseServerClient()
       throw Error('Den godkända uppdragsbekräftelsens frysta omfattning kunde inte verifieras för statusbesiktningen. Inget utlåtande skapas.')
     }
   }
+
+  // Inspection-local identity wins when explicitly set. Older STB confirmations
+  // and reports remain property-shaped; never infer an apartment from free text
+  // or mutable assignment fields after acceptance.
+  const snapshotObjectType = parseObObjectType(snapshotData?.object_type)
+  const frozenAssignmentDetails = statusConfirmation?.assignment.assignment_details
+  const frozenObjectType = frozenAssignmentDetails && typeof frozenAssignmentDetails === 'object' && !Array.isArray(frozenAssignmentDetails)
+    ? parseObObjectType(frozenAssignmentDetails.objectType) : null
+  const objectType = resolveObObjectType(statusInspection ? 'status' : inspection?.inspection_side,
+    snapshotObjectType ?? frozenObjectType)
+  const apartmentIdentity = statusInspection
+    ? snapshotObjectType ? snapshotData : {
+      brf_name: snapshotData?.brf_name ?? statusConfirmation?.assignment.brf_name,
+      apartment_number: snapshotData?.apartment_number ?? statusConfirmation?.assignment.apartment_number,
+      apartment_holder_name: snapshotData?.apartment_holder_name ?? statusConfirmation?.assignment.apartment_holder_name,
+    }
+    : assignment
 
   if (inspection && resolvedPropertyId && inspection.property_id !== resolvedPropertyId) {
     console.error('Besiktning tillhÃ¶r inte fastighet', {
@@ -659,7 +677,7 @@ const supabase: any = createSupabaseServerClient()
 
   const buildingDataMap = buildBuildingDataMap({
     floorModel,
-    inspectionSide: inspection?.inspection_side,
+    inspectionSide: statusInspection && objectType === 'apartment' ? 'apartment' : inspection?.inspection_side,
     selections: overviewSelections ?? [],
     items: overviewItemsRows,
     groups: overviewGroupsRows,
@@ -1434,14 +1452,15 @@ const supabase: any = createSupabaseServerClient()
         ),
       },
       properties: {
+        ...(statusInspection ? { object_type: objectType } : {}),
         cadastral_id: valueOrFallback(property?.cadastral_id ?? null),
         address: valueOrFallback(fullAddress, fallback),
         city: valueOrFallback(property?.city ?? null),
         municipality: valueOrFallback(property?.municipality ?? null),
         owner_name: valueOrFallback(property?.owner_name ?? null),
-        brf_name: valueOrFallback(assignment?.brf_name ?? null, ''),
-        apartment_number: valueOrFallback(assignment?.apartment_number ?? null, ''),
-        apartment_holder_name: valueOrFallback(assignment?.apartment_holder_name ?? null, ''),
+        brf_name: valueOrFallback(apartmentIdentity?.brf_name ?? null, ''),
+        apartment_number: valueOrFallback(apartmentIdentity?.apartment_number ?? null, ''),
+        apartment_holder_name: valueOrFallback(apartmentIdentity?.apartment_holder_name ?? null, ''),
         cover_path: coverImageUrl,
       },
       documents: {

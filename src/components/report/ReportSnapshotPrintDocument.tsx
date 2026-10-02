@@ -64,6 +64,7 @@ export default function ReportSnapshotPrintDocument({
         mockData={snapshot.reportData}
         rootClassName="report-root--pdf"
         inspectionSide={snapshot.inspectionSide}
+        objectType={snapshot.objectType}
       />
     )
   }

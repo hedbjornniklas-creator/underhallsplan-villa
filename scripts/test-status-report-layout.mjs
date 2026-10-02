@@ -53,7 +53,7 @@ try {
   await page.setRequestInterception(true)
   page.on('request', request => new URL(request.url()).origin === base ? request.continue() : request.abort())
   await page.setViewport({ width: 1360, height: 1000 })
-  for (const scenario of ['', '?unknown-furnishing']) {
+  for (const scenario of ['', '?unknown-furnishing', '?apartment', '?apartment&rental']) {
     await page.goto(base + '/' + scenario, { waitUntil: 'networkidle0' })
     await page.waitForFunction(() => document.querySelector('[data-report-pagination-ready="1"]'))
     const result = await page.evaluate(() => [...document.querySelectorAll('.report-page')].map(p => ({
@@ -75,8 +75,14 @@ try {
     const beforeTerms = result.slice(0, result.findIndex((p, i) => i > 1 && p.text.includes('BILAGA 1:')))
       .map(p => p.text).join('\n')
     assert.doesNotMatch(beforeTerms, /Fortsatt teknisk utredning/)
-    assert.equal(allText.includes('delvis möblerad'), !scenario)
+    assert.equal(allText.includes('delvis möblerad'), !scenario.includes('unknown-furnishing'))
     assert.doesNotMatch(allText, /fullt möblerad/)
+    if (scenario.includes('apartment')) {
+      for (const value of ['Lägenhetsnummer:', '1203', 'Lägenhetsinnehavare:', 'Testinnehavaren', 'LGH: 1203']) assert.ok(allText.includes(value), value)
+      assert.doesNotMatch(allText, /LÄGENHETSBESIKTNING|Bostadsrättsinnehavare|Fastighetsbeteckning/)
+      if (scenario.includes('rental')) assert.doesNotMatch(allText, /Bostadsrättsförening|BRF:/)
+      else assert.ok(allText.includes('BRF Testföreningen'))
+    }
     const labelsFit = await page.$$eval('[data-report-inspection-segment="recommendation"], [data-report-inspection-segment="comment"]', nodes => nodes.every(node => {
       const row = node.firstElementChild?.children[1]?.firstElementChild
       const label = row?.firstElementChild
@@ -90,11 +96,12 @@ try {
       assert.ok(!last || !['heading', 'inspectionFloorHeader'].includes(last.type), `Orphan heading: ${last?.text}`)
       assert.ok(p.images, `Broken image: ${p.brokenImages.join(', ')}`)
     }
-    if (!scenario) {
-      await page.pdf({ path: resolve(output, 'Utlåtande STB TEST-01.pdf'), format: 'A4', printBackground: true, preferCSSPageSize: true })
-      await writeFile(resolve(output, 'qa-pages.json'), JSON.stringify(result, null, 2))
+    if (!scenario || scenario === '?apartment') {
+      const suffix = scenario ? '-apartment' : ''
+      await page.pdf({ path: resolve(output, `Utlåtande STB TEST-01${suffix}.pdf`), format: 'A4', printBackground: true, preferCSSPageSize: true })
+      await writeFile(resolve(output, `qa-pages${suffix}.json`), JSON.stringify(result, null, 2))
       const pages = await page.$$('.report-page')
-      for (let i = 0; i < pages.length; i++) await pages[i].screenshot({ path: resolve(output, `page-${i + 1}.png`) })
+      for (let i = 0; i < pages.length; i++) await pages[i].screenshot({ path: resolve(output, `page${suffix}-${i + 1}.png`) })
     }
     console.log(JSON.stringify({ scenario: scenario || 'STB bathroom', pages: result.length, frozenTerms: 'passed', recommendations: 'passed', noObRiskFtu: 'passed' }))
   }

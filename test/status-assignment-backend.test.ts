@@ -26,7 +26,7 @@ const termsModule = load<{getStatusAssignmentTermsDocument:(values?:{priceAmount
   'server-only': {}, 'node:crypto': {createHash}, '@/content/standardtexts/status/originals': originals,
 })
 const terms = termsModule.getStatusAssignmentTermsDocument({priceAmount:1500,cancellationFee:0,scopeDescription:'Badrum på övre plan'})
-const source = { schemaVersion:'ob-confirmation-v1', statusScopeDescription:'Badrum på övre plan',statusPriceAmount:1500,terms, issuerName:'Test company', inspector:{
+const source = { schemaVersion:'ob-confirmation-v1', statusScopeDescription:'Badrum på övre plan',statusPriceAmount:1500,statusObjectType:'property',terms, issuerName:'Test company', inspector:{
   fullName:'Inspector',email:'inspector@example.test',phone:null,companyName:'Test company',companyOrgNo:null,
   companyAddress:null,companyPostalCode:null,companyCity:null,sbrGroup:null,sbrStatus:null,
   membershipNumber:null,certificationNumber:null,certifications:[],
@@ -35,6 +35,12 @@ const db = new PGlite()
 const migration = read('docs/db/2026-09-10_02_ob_early_start.sql')
 const reconciliationMigration = read('docs/db/2026-09-12_12_ob_assignment_reconciliation.sql')
 const statusMigration = read('docs/db/2026-10-02_01_ob_status_assignment.sql')
+const objectMigration = read('docs/db/2026-10-02_04_ob_status_object_type.sql')
+const legacySource: Record<string,unknown> = {...source}
+delete legacySource.statusObjectType
+let legacyPending: Awaited<ReturnType<typeof draft>>
+let legacyAccepted: Awaited<ReturnType<typeof draft>>
+let legacySnapshot: unknown
 const org = '00000000-0000-4000-8000-000000000001'
 const actor = '00000000-0000-4000-8000-000000000002'
 const stranger = '00000000-0000-4000-8000-000000000003'
@@ -104,25 +110,32 @@ before(async () => {
   await db.exec(readFileSync(new URL('../docs/db/2026-09-25_01_ob_overview_pagination.sql', import.meta.url), 'utf8'))
   await db.exec(statusMigration)
   await db.exec(statusMigration)
+  legacyPending = await draft('STATUS', legacySource)
+  legacyAccepted = await draft('STATUS', legacySource)
+  await approve(legacyAccepted)
+  legacySnapshot = (await db.query('select snapshot_payload from assignment_confirmation_snapshots where assignment_id=$1', [legacyAccepted.id])).rows[0]
+  await db.exec(objectMigration)
+  await db.exec(objectMigration)
 })
 
 after(async () => { await db.close() })
 
-async function draft(type = 'STATUS') {
+async function draft(type = 'STATUS', issuedSource: Record<string,unknown> = source) {
   const result = await db.query<{id:string}>(`insert into assignments(org_id,responsible_profile_id,customer_email,customer_name,property_address,
-    assignment_type,orderer_role,status,last_sent_at,preferred_date,price_amount,scope_description)
-    values($1,$2,'customer@example.test','Customer','Test street',$3,$4,'sent',now(),'2026-10-02',1500,'Badrum på övre plan') returning id`,
-    [org,actor,type,type === 'STATUS' ? 'Statusbesiktning' : 'Säljare'])
+    assignment_type,orderer_role,status,last_sent_at,preferred_date,price_amount,scope_description,assignment_details)
+    values($1,$2,'customer@example.test','Customer','Test street',$3,$4,'sent',now(),'2026-10-02',1500,'Badrum på övre plan',$5::jsonb) returning id`,
+    [org,actor,type,type === 'STATUS' ? 'Statusbesiktning' : 'Säljare',JSON.stringify(issuedSource.statusObjectType ? {objectType:issuedSource.statusObjectType} : {})])
   const id=result.rows[0].id, token='status-assignment-test-token-'+id
   await db.query(`insert into assignment_links(assignment_id,org_id,token_hash,expires_at,terms_version,status_document_source)
     values($1,$2,encode(digest($3,'sha256'),'hex'),now()+interval '1 day',$4,$5::jsonb)`,
-    [id,org,token,terms.version,type==='STATUS'?JSON.stringify(source):null])
-  return {id,token}
+    [id,org,token,terms.version,type==='STATUS'?JSON.stringify(issuedSource):null])
+  return {id,token,source:issuedSource}
 }
-async function approve(a:{id:string;token:string}) {
+async function approve(a:{id:string;token:string;source:Record<string,unknown>}, extra:Record<string,unknown> = {}) {
   await db.query('select * from consume_assignment_token($1,$2,$3::jsonb,null,null)',[a.token,terms.version,JSON.stringify({
-    terms_document_hash:terms.documentHash,ob_document_source:source,customer_name:'Approved customer',
-    orderer_role:'Statusbesiktning',scope_description:'Badrum på övre plan',price_amount:1500,preferred_date:'2026-10-02',addon_service_ids:[],
+    terms_document_hash:terms.documentHash,ob_document_source:a.source,customer_name:'Approved customer',
+    assignment_details:a.source.statusObjectType ? {objectType:a.source.statusObjectType} : {},
+    orderer_role:'Statusbesiktning',scope_description:'Badrum på övre plan',price_amount:1500,preferred_date:'2026-10-02',addon_service_ids:[],...extra,
   })])
 }
 async function start(id:string,user=actor) {
@@ -151,6 +164,10 @@ test('issued source is validated independently of current source version', () =>
     'server-only':{},'node:crypto':{createHash},
   })
   assert.deepEqual(loader.requireStatusIssueSource(source,terms.version),source)
+  assert.deepEqual(loader.requireStatusIssueSource(legacySource,terms.version),legacySource)
+  for (const objectType of [null, '', 'villa', 1]) {
+    assert.throws(()=>loader.requireStatusIssueSource({...source,statusObjectType:objectType},terms.version),/STATUS_ISSUED_SOURCE_INVALID/)
+  }
   assert.throws(()=>loader.requireStatusIssueSource({...source,terms:{...terms,text:terms.text+'!'}},terms.version),/STATUS_ISSUED_SOURCE_INVALID/)
   assert.throws(()=>loader.requireStatusIssueSource(null,terms.version),/STATUS_ISSUED_SOURCE_INVALID/)
 })
@@ -213,15 +230,18 @@ test('ordinary OB keeps its existing early-start policy after the additive migra
 })
 
 test('public STATUS GET and acceptance use the issued exact source, never today\'s template or posted scope/price', async () => {
+  for (const frozenIssue of [source, {...source,statusObjectType:'apartment'}, legacySource]) {
   let consumed: Record<string, unknown> | null = null
+  const apartment = frozenIssue.statusObjectType === 'apartment'
+  const updates: Record<string,unknown>[] = []
   const issued = { id:'link',assignment_id:'assignment',org_id:org,expires_at:'2099-01-01T00:00:00Z',
-    used_at:null,revoked_at:null,terms_version:terms.version,status_document_source:source,issuer_identity_snapshot:null,
+    used_at:null,revoked_at:null,terms_version:terms.version,status_document_source:frozenIssue,issuer_identity_snapshot:null,
     assignments:{id:'assignment',assignment_type:'STATUS',status:'sent',responsible_profile_id:actor,
       customer_email:'customer@example.test',accepted_at:null,orderer_role:'Statusbesiktning',
-      price_amount:99999,scope_description:'Later live scope',assignment_details:{statusCancellationFee:0}},
+      price_amount:99999,scope_description:'Later live scope',assignment_details:{statusCancellationFee:0,objectType:apartment?'property':'apartment'}},
   }
   const sourceParser=load<Record<string, unknown>>('src/lib/assignments/statusIssueSource.ts',{'server-only':{},'node:crypto':{createHash}})
-  const chain = {select:()=>chain,eq:()=>chain,update:()=>chain,
+  const chain = {select:()=>chain,eq:()=>chain,update:(patch:Record<string,unknown>)=>{updates.push(patch);return chain},
     then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:[],error:null}).then(resolve)}
   const api=load<{GET:(r:Request,c:unknown)=>Promise<Response>;POST:(r:Request,c:unknown)=>Promise<Response>}>('src/app/api/assignments/accept/[token]/route.ts',{
     'next/server':{NextResponse:{json:(body:unknown,init?:ResponseInit)=>Response.json(body,init)},after:()=>{}},
@@ -248,15 +268,76 @@ test('public STATUS GET and acceptance use the issued exact source, never today\
   assert.equal(opened.terms.documents.status.text,terms.text)
   assert.equal(opened.assignment.scope_description,source.statusScopeDescription)
   assert.equal(opened.assignment.price_amount,1500)
+  assert.equal(opened.assignment.assignment_details.objectType,apartment?'apartment':'property')
+  if (apartment) {
+    const missingNumber=await api.POST(new Request('https://example.test/accept',{method:'POST',body:JSON.stringify({
+      termsAccepted:true,termsVersion:terms.version,termsDocumentHash:terms.documentHash,
+      customerEmail:'customer@example.test',preferredDate:'2026-10-02',preferredTime:'10:00',
+      cadastralId:'Cannot switch the issued apartment',propertyOwnerName:'Wrong owner',
+    })}),context)
+    assert.equal(missingNumber.status,400)
+    assert.equal(consumed,null)
+  }
   const accepted=await api.POST(new Request('https://example.test/accept',{method:'POST',body:JSON.stringify({
     termsAccepted:true,termsVersion:terms.version,termsDocumentHash:terms.documentHash,
     customerEmail:'customer@example.test',preferredDate:'2026-10-02',preferredTime:'10:00',
-    cadastralId:'Example 1:2',propertyOwnerName:'Owner',scopeDescription:'Forged extent',priceAmount:1,
+    ...(apartment ? {apartmentNumber:'1201'} : {cadastralId:'Example 1:2',propertyOwnerName:'Owner'}),
+    objectType:apartment?'property':'apartment',scopeDescription:'Forged extent',priceAmount:1,
   })}),context)
   assert.equal(accepted.status,200)
   assert.equal((consumed as Record<string,unknown> | null)?.scope_description,source.statusScopeDescription)
   assert.equal((consumed as Record<string,unknown> | null)?.price_amount,1500)
-  assert.deepEqual((consumed as Record<string,unknown> | null)?.ob_document_source,source)
+  const payload=consumed as Record<string,unknown>|null
+  assert.deepEqual(payload?.ob_document_source,frozenIssue)
+  assert.deepEqual(payload?.assignment_details,{statusCancellationFee:0,...(frozenIssue.statusObjectType?{objectType:frozenIssue.statusObjectType}:{})})
+  assert.equal(payload?.apartment_number,apartment?'1201':null)
+  assert.equal(payload?.property_owner_name,apartment?null:'Owner')
+  assert.equal(updates[0].apartment_number,apartment?'1201':null)
+  assert.deepEqual(updates[0].assignment_details,payload?.assignment_details)
+  }
+})
+
+test('STATUS object migration preserves old archives and accepts a previously issued untyped link', async () => {
+  assert.deepEqual((await db.query('select snapshot_payload from assignment_confirmation_snapshots where assignment_id=$1',[legacyAccepted.id])).rows[0],legacySnapshot)
+  await approve(legacyPending)
+  const frozen=(await db.query<{details:Record<string,unknown>}>("select snapshot_payload #> '{assignment,assignment_details}' details from assignment_confirmation_snapshots where assignment_id=$1",[legacyPending.id])).rows[0]
+  assert.equal(Object.hasOwn(frozen.details,'objectType'),false)
+  await db.query("update assignments set status='booked',booked_at=now() where id=$1",[legacyPending.id])
+  const created=await start(legacyPending.id)
+  assert.equal((await db.query<{object_type:string|null}>('select object_type from ob_property_snapshot where inspection_id=$1',[created.inspectionId])).rows[0].object_type,null)
+})
+
+test('STATUS apartment freezes accepted object fields and never creates customer-as-property-owner', async () => {
+  const a=await draft('STATUS',{...source,statusObjectType:'apartment'})
+  await assert.rejects(approve(a),/STATUS_ISSUED_OBJECT_INVALID/)
+  await assert.rejects(approve(a,{assignment_details:{objectType:'property'},apartment_number:'1201'}),/STATUS_ISSUED_OBJECT_INVALID/)
+  await approve(a,{apartment_number:'1201',brf_name:'',apartment_holder_name:'',property_owner_name:null,cadastral_id:null})
+  await assert.rejects(db.query("update assignments set assignment_details='{\"objectType\":\"property\"}' where id=$1",[a.id]),/OB_STATUS_OBJECT_AGREEMENT_LOCKED/)
+  await db.query("update assignments set status='booked',booked_at=now(),apartment_number='MUTATED',brf_name='Later BRF',property_owner_name='Wrong owner',cadastral_id='Wrong cadastral' where id=$1",[a.id])
+  const created=await start(a.id)
+  const snapshot=(await db.query<{object_type:string;apartment_number:string;owner_name:string|null;cadastral_id:string|null;brf_name:string}>('select * from ob_property_snapshot where inspection_id=$1',[created.inspectionId])).rows[0]
+  assert.equal(snapshot.object_type,'apartment')
+  assert.equal(snapshot.apartment_number,'1201')
+  assert.equal(snapshot.brf_name,'')
+  assert.equal(snapshot.owner_name,null)
+  assert.equal(snapshot.cadastral_id,null)
+  assert.equal((await db.query<{owner_name:string|null}>('select owner_name from properties where id=$1',[created.propertyId])).rows[0].owner_name,null)
+  await assert.rejects(db.query("update ob_property_snapshot set object_type='property' where inspection_id=$1",[created.inspectionId]),/OB_STATUS_OBJECT_AGREEMENT_LOCKED/)
+  await assert.rejects(db.query("delete from ob_property_snapshot where inspection_id=$1",[created.inspectionId]),/OB_STATUS_OBJECT_AGREEMENT_LOCKED/)
+  await assert.rejects(db.query("update ob_property_snapshot set inspection_id=gen_random_uuid() where inspection_id=$1",[created.inspectionId]),/OB_STATUS_OBJECT_AGREEMENT_LOCKED/)
+})
+
+test('STATUS issued type locks before mail completes; linked missing snapshot inserts cannot bypass it', async () => {
+  const a=await draft()
+  await db.query("update assignments set status='draft',last_sent_at=null where id=$1",[a.id])
+  await assert.rejects(db.query("update assignments set assignment_type='OB' where id=$1",[a.id]),/OB_STATUS_PROFILE_AGREEMENT_LOCKED/)
+  await assert.rejects(db.query("update assignments set assignment_details='{\"objectType\":\"apartment\"}' where id=$1",[a.id]),/OB_STATUS_OBJECT_AGREEMENT_LOCKED/)
+  await assert.rejects(db.query(`insert into assignment_links(assignment_id,org_id,token_hash,expires_at,terms_version,status_document_source)
+    values($1,$2,'other',now()+interval '1 day',$3,$4::jsonb)`,[a.id,org,terms.version,JSON.stringify({...source,statusObjectType:'apartment'})]),/STATUS_ISSUED_SOURCE_INVALID/)
+  const i=(await db.query<{id:string}>("insert into inspections(type,inspection_family,inspection_variant,inspection_side) values('STATUS','OB','SB','status') returning id")).rows[0]
+  await db.query("update assignments set inspection_id=$2,status='sent' where id=$1",[a.id,i.id])
+  await assert.rejects(db.query("insert into ob_property_snapshot(inspection_id,object_type) values($1,'apartment')",[i.id]),/OB_STATUS_OBJECT_AGREEMENT_LOCKED/)
+  await db.query("insert into ob_property_snapshot(inspection_id,object_type) values($1,'property')",[i.id])
 })
 
 test('STATUS booking receipt reads frozen text and recipient, not today\'s placeholders or mutable fields', async () => {
@@ -292,4 +373,25 @@ test('STATUS booking receipt reads frozen text and recipient, not today\'s place
     if(previous===undefined) delete process.env.ASSIGNMENTS_MAIL_FROM
     else process.env.ASSIGNMENTS_MAIL_FROM=previous
   }
+})
+
+test('STATUS apartment emails show apartment data without changing the status terms role', () => {
+  const emails=load<{buildAssignmentConfirmationEmail:(input:unknown)=>{text:string;html:string};
+    buildAssignmentOrderReceiptEmail:(input:unknown)=>{text:string;html:string}}>('src/lib/assignments/emailTemplates.ts',{'server-only':{}})
+  const assignment={assignment_type:'STATUS',customer_name:'Customer',customer_email:'customer@example.test',
+    property_address:'Test street',assignment_details:{objectType:'apartment'},apartment_number:'1201',
+    brf_name:'',apartment_holder_name:'',property_owner_name:'Must not appear'}
+  for(const render of [emails.buildAssignmentConfirmationEmail,emails.buildAssignmentOrderReceiptEmail]){
+    const result=render({assignment,orgName:'Test company',termsRole:'status',termsVersion:terms.version,termsText:terms.text,
+      acceptUrl:'https://example.test/accept',expiresAt:'2026-10-10',acceptedAt:'2026-10-02',addonOrders:[]})
+    assert.ok(result.text.includes('Lägenhetsnummer: 1201'))
+    assert.ok(result.html.includes('1201'))
+    assert.ok(!result.text.includes('Must not appear'))
+    assert.ok(!result.text.includes('Fastighetsägare:'))
+    assert.ok(result.text.includes('Statusbesiktning'))
+  }
+  const property=emails.buildAssignmentConfirmationEmail({assignment:{...assignment,assignment_details:{objectType:'property'}},
+    orgName:'Test company',termsRole:'status',termsVersion:terms.version,acceptUrl:'https://example.test/accept',expiresAt:'2026-10-10'})
+  assert.ok(property.text.includes('Fastighetsägare: Must not appear'))
+  assert.ok(!property.text.includes('Lägenhetsnummer:'))
 })

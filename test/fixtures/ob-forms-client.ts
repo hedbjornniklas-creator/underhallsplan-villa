@@ -17,7 +17,7 @@ export const overview = { available: true,
   categories: [{ key: 'main', label: 'Huvudbyggnad' }, { key: 'guesthouse', label: 'Gästhus' }],
 }
 export const inspection: Row = { id: inspectionId, property_id: 'synthetic-property', status: 'ongoing',
-  inspection_side: 'seller', locked_at: new URLSearchParams(location.search).has('locked') ? '2026-09-21T10:00:00Z' : null,
+  inspection_side: new URLSearchParams(location.search).has('status') ? 'status' : 'seller', locked_at: new URLSearchParams(location.search).has('locked') ? '2026-09-21T10:00:00Z' : null,
   assignment_number: '2026-0921-01', date: '2026-09-21', inspection_time: '09:00', scope: '',
   cover_path: new URLSearchParams(location.search).has('no-cover') ? null : `${location.origin}/photo.png`, client_name: 'Alex Testsson', attendees: 'Fastighetsägare', attendees_other: '',
   defect_disclosures: 'Inga kända fel enligt fastighetsägaren.',
@@ -26,6 +26,7 @@ export const property: Row = { id: 'synthetic-property', address: 'Testgatan 1',
   municipality: 'Testkommun', cadastral_id: 'Exemplet 1:2', owner_name: 'Alex Testsson', customer_name: 'Alex Testsson',
   customer_address: 'Testgatan 1', customer_postal_code: '123 45', customer_city: 'Teststad',
   customer_phone: '0701234567', customer_email: 'test@example.invalid',
+  object_type: new URLSearchParams(location.search).get('object'),
 }
 const items = [
   ['weather', 'Väder', 'single'], ['building_type', 'Byggnadstyp', 'single'],
@@ -57,6 +58,8 @@ const choices: Record<string, string[][]> = {
 }
 export const db: Record<string, Row[]> = {
   inspections: [inspection], ob_property_snapshot: [], org_members: [], inspection_images: [],
+  assignments: new URLSearchParams(location.search).has('linked') ? [{ inspection_id: inspectionId, status: 'sent', accepted_at: null, last_sent_at: '2026-10-02T08:00:00Z' }] : [],
+  inspection_control_items: [], inspection_exterior_observations: [],
   document_types: [{ id: 'document-type', label: 'Ritningar', scope: 'building', is_active: true, applicable_modules: ['ob'] }],
   inspection_documents: [{ id: 'document', inspection_id: inspectionId, document_type_id: 'document-type', title: 'Ritningar', status: 'present', note: 'Planritning', document_date: null }],
   inspection_disclosures: [{ id: 'disclosure', inspection_id: inspectionId, title: 'upplysningar', note: 'Säljaren förvärvade fastigheten 2010.', source_image_url: null }],

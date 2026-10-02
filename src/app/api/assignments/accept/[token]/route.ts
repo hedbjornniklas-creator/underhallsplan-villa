@@ -431,7 +431,12 @@ export async function GET(
       state: toState(link as PublicLink),
       expiresAt: link.expires_at ?? null,
       usedAt: link.used_at ?? null,
-      assignment: statusSource ? { ...assignment, scope_description: statusSource.statusScopeDescription, price_amount: statusSource.statusPriceAmount } : assignment,
+      assignment: statusSource ? {
+        ...assignment, scope_description: statusSource.statusScopeDescription, price_amount: statusSource.statusPriceAmount,
+        // A legacy issued link retains its original property form even when
+        // somebody later changes the live assignment's object metadata.
+        assignment_details: { ...assignment.assignment_details, objectType: statusSource.statusObjectType ?? 'property' },
+      } : assignment,
       inspector,
       addonOffers,
       selectedAddonServiceIds,
@@ -616,12 +621,15 @@ export async function POST(
       typeof body.apartmentHolderName === 'string' ? body.apartmentHolderName.trim() : ''
     const propertyOwnerName =
       typeof body.propertyOwnerName === 'string' ? body.propertyOwnerName.trim() : ''
-    const isApartmentObject = isTechnicalAssignment
+    const isApartmentObject = statusSource
+      ? statusSource.statusObjectType === 'apartment'
+      : isTechnicalAssignment
       ? roleLooksLikeApartment(assignment.orderer_role) || Boolean(brfName || apartmentNumber)
       : termsRole === 'apartment'
 
     if (isApartmentObject) {
-      if (!brfName || !apartmentNumber || (!isTechnicalAssignment && !apartmentHolderName)) {
+      if (statusSource ? !apartmentNumber : !brfName || !apartmentNumber || (!isTechnicalAssignment && !apartmentHolderName)) {
+        if (statusSource) return jsonError('Ange lägenhetsnummer.', 400)
         return jsonError('Ange BRF och lägenhetsnummer.', 400)
       }
     } else if (!cadastralId || (!isTechnicalAssignment && !isEbAssignment && !propertyOwnerName)) {
@@ -691,6 +699,12 @@ export async function POST(
       }
     }
 
+    const acceptanceDetails = assignment.assignment_details && typeof assignment.assignment_details === 'object'
+      ? { ...assignment.assignment_details } : {}
+    if (statusSource) {
+      if (statusSource.statusObjectType) acceptanceDetails.objectType = statusSource.statusObjectType
+      else delete acceptanceDetails.objectType
+    }
     const payload = {
       customer_name: typeof body.customerName === 'string' ? body.customerName.trim() : null,
       customer_email: customerEmail,
@@ -720,10 +734,7 @@ export async function POST(
       orderer_role: roleLabel,
       terms_document_hash: terms.documentHash,
       addon_service_ids: selectedAddonServiceIds,
-      assignment_details:
-        assignment.assignment_details && typeof assignment.assignment_details === 'object'
-          ? assignment.assignment_details
-          : {},
+      assignment_details: acceptanceDetails,
       consumer_withdrawal_acknowledged: isConsumerAssignment
         ? consumerWithdrawalAcknowledged
         : null,
@@ -767,6 +778,7 @@ export async function POST(
         apartment_holder_name: payload.apartment_holder_name,
         scope_description: payload.scope_description,
         orderer_role: payload.orderer_role,
+        ...(statusSource ? { assignment_details: payload.assignment_details } : {}),
       })
       .eq('org_id', link.org_id)
       .eq('id', assignment.id)

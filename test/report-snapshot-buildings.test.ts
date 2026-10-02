@@ -141,3 +141,71 @@ test('status digital view shows inspector recommendations and comments from the 
   assert.ok(html.includes(statusText.terms), 'the frozen original terms must not undergo character repair')
   assert.doesNotMatch(html, /OB risk should not leak|OB FTU should not leak|Hidden building risk|Hidden building FTU|Bilaga 2 - Begreppsförklaringar|Bilaga 3 - Tekniska medellivslängder/)
 })
+
+test('status apartment snapshots show frozen apartment facts while retaining status terms and notes', () => {
+  for (const explicitTopLevel of [true, false]) {
+    const snapshot = snapshotWithBuildings()
+    snapshot.inspectionSide = 'status'
+    if (explicitTopLevel) snapshot.objectType = 'apartment'
+    Object.assign(snapshot.reportData.mock.properties, { object_type: explicitTopLevel ? undefined : 'apartment',
+      brf_name: 'BRF Testföreningen', apartment_number: '1203', apartment_holder_name: 'Testinnehavaren' })
+    snapshot.reportData.mock.status_report = { terms: 'Frysta statusvillkor för lägenheten.',
+      assignmentNotice: 'Fryst statusuppdrag.', visualConditions: 'Fryst okulär förutsättning.',
+      oralInformation: 'Frysta muntliga uppgifter.', ownerInformation: 'Fryst ägarinformation.' }
+    snapshot.reportData.mock.interior.blocks = [{ title: 'Badrum', noteText: 'Avvikande genomföring.',
+      riskText: 'Hidden apartment OB risk', ftuText: 'Hidden apartment OB FTU',
+      recommendationText: 'Verifiera utförandet.', commentText: 'Endast badrummet omfattas.' }]
+    const before = JSON.stringify(snapshot)
+    const html = render(snapshot)
+    assert.equal(JSON.stringify(snapshot), before)
+    for (const text of ['Statusbesiktning', 'BRF Testföreningen', '1203', 'Testinnehavaren', 'Lägenhetsinnehavare',
+      'Frysta statusvillkor för lägenheten.', 'Verifiera utförandet.', 'Endast badrummet omfattas.']) assert.ok(html.includes(text), text)
+    assert.doesNotMatch(html, /Lägenhetsbesiktning|Fastighetsbeteckning|Bostadsrättsinnehavare|Hidden apartment OB/)
+    snapshot.reportData.mock.properties.brf_name = ''
+    assert.doesNotMatch(render(snapshot), /Bostadsrättsförening/)
+  }
+})
+
+test('older status snapshots remain property reports even if incidental apartment fields exist', () => {
+  const snapshot = snapshotWithBuildings()
+  snapshot.inspectionSide = 'status'
+  snapshot.reportData.mock.status_report = { terms: 'Frysta statusvillkor.', assignmentNotice: 'Fryst statusuppdrag.',
+    visualConditions: 'Fryst okulär förutsättning.', oralInformation: 'Frysta muntliga uppgifter.',
+    ownerInformation: 'Fryst ägarinformation.' }
+  Object.assign(snapshot.reportData.mock.properties, { brf_name: 'Incidental BRF', apartment_number: '9999',
+    apartment_holder_name: 'Incidental holder', assignment_details: { objectType: 'apartment' } })
+  const html = render(snapshot)
+  assert.ok(html.includes('Fastighetsbeteckning'))
+  assert.doesNotMatch(html, /Incidental BRF|9999|Incidental holder/)
+})
+
+test('status apartment cover keeps STATUS heading and includes apartment identity', () => {
+  const { default: Cover } = load(resolve(root, 'src/components/report/ReportCoverPage.tsx')) as {
+    default: ComponentType<Record<string, unknown>>
+  }
+  const html = renderToStaticMarkup(createElement(Cover, { inspectionSide: 'status', objectType: 'apartment',
+    brfName: 'BRF Omslag', apartmentNumber: '1104', apartmentHolderName: 'Omslagsinnehavare', address: 'Testgatan 1' }))
+  for (const text of ['STATUSBESIKTNING', 'BRF Omslag', '1104', 'Omslagsinnehavare', 'Lägenhetsinnehavare']) assert.ok(html.includes(text), text)
+  assert.doesNotMatch(html, /LÄGENHETSBESIKTNING|Fastighetsbeteckning/)
+  const rental = renderToStaticMarkup(createElement(Cover, { inspectionSide: 'status', objectType: 'apartment',
+    apartmentNumber: '1104', apartmentHolderName: 'Hyresgäst' }))
+  assert.doesNotMatch(rental, /Bostadsrättsförening|Bostadsrättsinnehavare/)
+  const legacy = renderToStaticMarkup(createElement(Cover, { inspectionSide: 'status', brfName: 'Ignored BRF' }))
+  assert.ok(legacy.includes('Fastighetsbeteckning'))
+  assert.doesNotMatch(legacy, /Ignored BRF/)
+})
+
+test('new report payload freezes a separate object type without changing the inspection profile', () => {
+  const { createReportSnapshotPayloadV1: createSnapshot } = load(resolve(root, 'src/lib/report/reportSnapshotPayload.ts')) as {
+    createReportSnapshotPayloadV1: (input: Record<string, unknown>) => ReportSnapshotPayloadV1
+  }
+  const fixture = snapshotWithBuildings()
+  fixture.reportData.mock.properties.object_type = 'apartment'
+  const snapshot = createSnapshot({ inspectionId: 'inspection', propertyId: 'property', inspectionSide: 'status',
+    reportData: fixture.reportData, reportSpec: [] })
+  assert.equal(snapshot.inspectionSide, 'status')
+  assert.equal(snapshot.objectType, 'apartment')
+  const buyer = createSnapshot({ inspectionId: 'inspection', propertyId: 'property', inspectionSide: 'buyer',
+    objectType: 'apartment', reportData: fixture.reportData, reportSpec: [] })
+  assert.equal(buyer.objectType, 'property')
+})

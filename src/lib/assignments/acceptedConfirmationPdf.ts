@@ -630,7 +630,10 @@ function AcceptedAssignmentConfirmationDocument({
     'apartment_holder_name',
     assignment.apartment_holder_name
   )
-  const isApartment = Boolean(normalizePdfText(brfName) || normalizePdfText(apartmentNumber))
+  const statusObjectType = assignment.assignment_type === 'STATUS' &&
+    (details.objectType === 'property' || details.objectType === 'apartment') ? details.objectType : null
+  const isApartment = statusObjectType ? statusObjectType === 'apartment'
+    : Boolean(normalizePdfText(brfName) || normalizePdfText(apartmentNumber))
   const isEb = assignment.assignment_type === 'EB'
   const isTu = assignment.assignment_type === 'TU'
   const isConsumerEb = terms.role === 'construction_consumer'
@@ -660,7 +663,7 @@ function AcceptedAssignmentConfirmationDocument({
       ? [
           { label: 'Bostadsrättsförening', value: displayText(brfName) },
           { label: 'Lägenhetsnummer', value: displayText(apartmentNumber) },
-          { label: 'Bostadsrättsinnehavare', value: displayText(apartmentHolderName) },
+          { label: statusObjectType === 'apartment' ? 'Lägenhetsinnehavare' : 'Bostadsrättsinnehavare', value: displayText(apartmentHolderName) },
         ]
       : [
           { label: 'Fastighetsbeteckning', value: displayText(cadastralId) },

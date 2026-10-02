@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { parseObObjectType, resolveObObjectType } from '@/lib/ob/objectType'
 import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import {
   getAssignmentById,
@@ -267,6 +268,18 @@ export async function PATCH(
       if (fee !== null && (!Number.isFinite(fee) || fee < 0)) return jsonError('Ogiltigt avbokningsbelopp.', 400)
       patch.assignment_details = { ...existing.assignment_details, statusCancellationFee: fee }
     }
+    if (effectiveType === 'STATUS' && Object.prototype.hasOwnProperty.call(body, 'objectType')) {
+      const objectType = parseObObjectType(body.objectType)
+      if (body.objectType != null && body.objectType !== '' && !objectType) {
+        return jsonError('Välj fastighet eller lägenhet som objekttyp.', 400)
+      }
+      const isObjectTypeLocked = Boolean(existing.accepted_at || existing.last_sent_at) ||
+        ['sent', 'ordered', 'booked', 'completed'].includes(existing.status)
+      if (isObjectTypeLocked && objectType !== resolveObObjectType('status', existing.assignment_details?.objectType)) {
+        return jsonError('Objekttypen i en skickad eller godkänd statusbesiktning är låst. Skapa en ny version.', 409)
+      }
+      patch.assignment_details = { ...existing.assignment_details, ...patch.assignment_details, objectType }
+    }
     if (patch.assignment_type && patch.assignment_type !== existing.assignment_type &&
       (patch.assignment_type === 'STATUS' || existing.assignment_type === 'STATUS') &&
       (existing.accepted_at || ['sent', 'ordered', 'booked', 'completed'].includes(existing.status))) {
@@ -353,6 +366,9 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+    if (message.includes('OB_STATUS_OBJECT_AGREEMENT_LOCKED') || message.includes('OB_STATUS_PROFILE_AGREEMENT_LOCKED')) {
+      return jsonError('Uppdragets typ och objekttyp är låsta i en redan utfärdad uppdragsbekräftelse. Skapa en ny uppdragsbekräftelse för att ändra dem.', 409)
+    }
     return jsonError('Kunde inte uppdatera uppdrag.', 500)
   }
 }
