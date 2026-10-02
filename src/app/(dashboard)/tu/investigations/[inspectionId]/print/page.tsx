@@ -444,7 +444,7 @@ export default async function TuInvestigationPrintPage({
     <main className="tu-print-root min-h-screen bg-neutral-100 text-gray-950 print:bg-white">
       {isPdfRender ? null : (
         <TuPrintPreviewToolbar
-          backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}?orgId=${encodeURIComponent(investigation.orgId)}`}
+          backHref={`/tu/investigations/${encodeURIComponent(inspectionId)}?orgId=${encodeURIComponent(investigation.orgId)}&view=report`}
           printTitle={printTitle}
         />
       )}

@@ -5,25 +5,24 @@ import GettingStarted from '@/components/besiktapp/GettingStarted'
 import AssignmentCustomerSelector, {
   type AssignmentCustomerBinding,
 } from '@/components/customers/AssignmentCustomerSelector'
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
-  ArrowRight,
   CalendarDays,
-  FileText,
   IdCard,
-  ListChecks,
+  FilePlus2,
   Loader2,
   Mail,
   Play,
   Plus,
-  Send,
-  Settings,
   X,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
 import PendingLink from '@/components/ui/PendingLink'
+import TuOverview from './TuOverview'
+import { canStartTuOverviewAssignment, type TuOverviewInvestigation } from '@/lib/tu/overview'
+import '../ob/ob-home.css'
 import type { OrganizationCustomer } from '@/lib/customers/domain'
 import { normalizeOrganizationCustomerIdentity } from '@/lib/customers/domain'
 import { tuReportAuthoringModeLabel } from '@/lib/tu/authoring'
@@ -142,35 +141,11 @@ const EMPTY_SCRATCH_FORM: ScratchFormState = {
   time: '',
 }
 
-function statusLabel(status: string | null) {
-  if (status === 'draft') return 'Utkast'
-  if (status === 'sent') return 'Skickad'
-  if (status === 'ordered') return 'Godkänd'
-  if (status === 'booked') return 'Bokad'
-  if (status === 'completed') return 'Startad'
-  if (status === 'cancelled') return 'Avbruten'
-  if (status === 'expired') return 'Utgången länk'
-  return status ?? 'Okänd'
-}
-
 function formatDate(value: string | null) {
   if (!value) return '-'
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleDateString('sv-SE')
-}
-
-function assignmentSortValue(item: TuAssignmentListItem) {
-  return new Date(item.updated_at ?? item.created_at).getTime()
-}
-
-function getInvestigationAddress(item: TuInspectionSummary) {
-  const address = [item.propertyAddress, item.propertyCity].filter(Boolean).join(', ')
-  const apartmentObject = [item.brfName, item.apartmentNumber ? `lgh ${item.apartmentNumber}` : null]
-    .filter(Boolean)
-    .join(', ')
-  const objectReference = item.objectType === 'apartment' ? apartmentObject : item.cadastralId
-  return [address, objectReference].filter(Boolean).join(' - ') || 'Adress saknas'
 }
 
 function getAssignmentAddress(item: TuAssignmentListItem) {
@@ -182,10 +157,6 @@ function getAssignmentAddress(item: TuAssignmentListItem) {
   const address = [line, postalCity].filter(Boolean).join(', ')
   const objectReference = apartmentObject || item.cadastral_id
   return [address, objectReference].filter(Boolean).join(' - ') || 'Adress saknas'
-}
-
-function canStartAssignmentInvestigation(item: TuAssignmentListItem) {
-  return item.status === 'ordered' && !item.inspection_id && !item.archived_at
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -233,13 +204,16 @@ export default function TuDashboardClient({
 }) {
   const router = useRouter()
   const [assignments, setAssignments] = useState(initialAssignments)
-  const [investigations] = useState(initialInvestigations)
+  const [investigations, setInvestigations] = useState<TuOverviewInvestigation[]>(initialInvestigations)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  const [overviewError, setOverviewError] = useState(initialError)
+  const overviewRequest = useRef<AbortController | null>(null)
   const [reportTemplates] = useState(initialReportTemplates)
   const [form, setForm] = useState<TuFormState>(EMPTY_TU_FORM)
   const [scratchForm, setScratchForm] = useState<ScratchFormState>(EMPTY_SCRATCH_FORM)
   const [dialog, setDialog] = useState<'quick' | 'scratch' | null>(null)
   const [selectedAssignment, setSelectedAssignment] = useState<TuAssignmentListItem | null>(null)
-  const [error, setError] = useState<string | null>(initialError)
+  const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [customerBinding, setCustomerBinding] = useState<AssignmentCustomerBinding | null>(null)
@@ -254,23 +228,49 @@ export default function TuDashboardClient({
     customerCity: '',
   })
 
-  const latestAssignments = useMemo(
-    () => [...assignments].sort((a, b) => assignmentSortValue(b) - assignmentSortValue(a)).slice(0, 4),
-    [assignments]
-  )
-  const startableAssignments = useMemo(
-    () =>
-      assignments
-        .filter(canStartAssignmentInvestigation)
-        .sort((a, b) => assignmentSortValue(b) - assignmentSortValue(a))
-        .slice(0, 4),
-    [assignments]
-  )
-  const acceptedAssignmentCount = useMemo(
-    () => assignments.filter(canStartAssignmentInvestigation).length,
-    [assignments]
-  )
-  const latestInvestigations = useMemo(() => investigations.slice(0, 4), [investigations])
+  const refreshOverview = useCallback(async () => {
+    overviewRequest.current?.abort()
+    const controller = new AbortController()
+    overviewRequest.current = controller
+    setOverviewLoading(true)
+    try {
+      const [assignmentResponse, investigationResponse] = await Promise.all([
+        fetch(organizationUrl('/api/tu/assignments', organizationId), { cache: 'no-store', signal: controller.signal }),
+        fetch(organizationUrl('/api/tu/investigations', organizationId), { cache: 'no-store', signal: controller.signal }),
+      ])
+      const [assignmentPayload, investigationPayload] = await Promise.all([
+        assignmentResponse.json(), investigationResponse.json(),
+      ])
+      if (!assignmentResponse.ok || !investigationResponse.ok
+        || assignmentPayload.org?.id !== organizationId || investigationPayload.org?.id !== organizationId
+        || !Array.isArray(assignmentPayload.items) || !Array.isArray(investigationPayload.items)) {
+        throw new Error('Overview unavailable')
+      }
+      if (controller.signal.aborted) return
+      // Update both halves together so a converted assignment cannot appear twice during refresh.
+      setAssignments(assignmentPayload.items)
+      setInvestigations(investigationPayload.items)
+      setOverviewError(null)
+    } catch {
+      if (!controller.signal.aborted) setOverviewError('Kunde inte uppdatera uppdragslistan. Försök igen.')
+    } finally {
+      if (overviewRequest.current === controller) {
+        overviewRequest.current = null
+        setOverviewLoading(false)
+      }
+    }
+  }, [organizationId])
+
+  useEffect(() => {
+    void refreshOverview()
+    return () => { overviewRequest.current?.abort(); overviewRequest.current = null }
+  }, [refreshOverview])
+
+  const cancelOverviewRefresh = () => {
+    overviewRequest.current?.abort()
+    overviewRequest.current = null
+    setOverviewLoading(false)
+  }
 
   const updateForm = <K extends keyof TuFormState>(key: K, value: TuFormState[K]) => {
     setError(null)
@@ -519,6 +519,7 @@ export default function TuDashboardClient({
       return
     }
 
+    cancelOverviewRefresh()
     setBusy(sendNow ? 'quick-send' : 'draft')
     setError(null)
     setNotice(null)
@@ -628,7 +629,7 @@ export default function TuDashboardClient({
   }
 
   const startInvestigationFromAssignment = async (reportTemplateKey: string) => {
-    if (!selectedAssignment || !canStartAssignmentInvestigation(selectedAssignment)) return
+    if (!selectedAssignment || !canStartTuOverviewAssignment(selectedAssignment)) return
     if (!reportTemplateKey.trim()) {
       setError('Välj en mall innan utredningen startas.')
       setNotice(null)
@@ -662,80 +663,59 @@ export default function TuDashboardClient({
 
   return (
     <Protected>
-      <main className="relative min-h-full overflow-hidden">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage: 'linear-gradient(135deg, #fbf7ff 0%, #ffffff 52%, #f6f0ff 100%)',
-          }}
-        />
-
-        <div className="relative mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
-          <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm backdrop-blur-sm md:p-5">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-3">
-                <Link
-                  href="/dashboard-v1"
-                  aria-label="Tillbaka"
-                  title="Tillbaka"
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
-                >
-                  <ArrowLeft size={16} strokeWidth={2} />
-                </Link>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">TU</p>
-                  <h1 className="text-2xl font-semibold text-slate-950">Tekniska utredningar</h1>
-                  <p className="mt-1 text-xs font-medium text-emerald-700">
-                    {organizationName || 'Vald arbetsorganisation'}
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:flex sm:items-center">
-                <StatPill label="Uppdrag" value={assignments.length} />
-                <StatPill label="Godkända" value={acceptedAssignmentCount} />
-                <StatPill label="Utredningar" value={investigations.length} />
-              </div>
+      <main className="obo-home min-h-screen">
+        <div className="obo-home-inner mx-auto w-full p-4 md:p-6">
+          <GettingStarted module="tu" onStart={() => openCreationDialog('scratch')} heading={<>
+            <Link href="/dashboard-v1" aria-label="Tillbaka" title="Tillbaka"
+              className="inline-flex items-center justify-center rounded border border-gray-300 bg-white text-gray-700">
+              <ArrowLeft size={20} aria-hidden />
+            </Link>
+            <div className="min-w-0 flex-1">
+              <h1>Tekniska utredningar</h1>
+              <p className="mt-1 text-sm text-gray-600">{organizationName || 'Vald arbetsorganisation'}</p>
             </div>
-          </header>
+          </>} />
 
-          <GettingStarted module="tu" onStart={() => openCreationDialog('scratch')} />
+          <section className="obh" aria-label="TU-åtgärder">
+            <div className="obh-actions">
+              <button type="button" className="obh-primary" disabled={Boolean(busy)} onClick={() => openCreationDialog('scratch')}>
+                <Plus size={20} aria-hidden /><span>Ny utredning</span>
+              </button>
+              <button type="button" disabled={Boolean(busy)} onClick={() => openCreationDialog('quick')}>
+                <FilePlus2 size={20} aria-hidden /><span>Skapa uppdragsbekräftelse</span>
+              </button>
+              <nav className="obh-list-links" aria-label="TU-listor och profil">
+                <PendingLink href={organizationUrl('/tu/assignments', organizationId)} autoPending pendingLabel="Öppnar bekräftelser...">Alla uppdragsbekräftelser</PendingLink>
+                <PendingLink href={organizationUrl('/tu/investigations', organizationId)} autoPending pendingLabel="Öppnar utredningar...">Alla utredningar</PendingLink>
+                <PendingLink href={organizationUrl('/settings/profil', organizationId)} autoPending pendingLabel="Öppnar visitkort..."
+                  icon={<IdCard size={18} aria-hidden />}>Visitkort</PendingLink>
+              </nav>
+            </div>
+          </section>
+
+          {inspectorProfile && !inspectorProfile.organizationConfigured && <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Spara ett eget visitkort för den här organisationen innan du skickar TU-dokument.
+          </p>}
           {error && !dialog && !selectedAssignment ? (
-            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {error}
-            </div>
+            <div role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</div>
           ) : null}
           {notice ? (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-              {notice}
-            </div>
+            <div role="status" className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>
           ) : null}
 
-          <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <AssignmentConfirmationsCard
-              organizationId={organizationId}
-              assignments={latestAssignments}
-              busy={busy}
-              onOpenDialog={() => openCreationDialog('quick')}
-              onStartAssignment={(assignment) => {
-                setError(null)
-                setSelectedAssignment(assignment)
-              }}
-            />
-            <StartInvestigationCard
-              acceptedAssignments={startableAssignments}
-              busy={busy}
-              onOpenDialog={() => openCreationDialog('scratch')}
-              onStartAssignment={(assignment) => {
-                setError(null)
-                setSelectedAssignment(assignment)
-              }}
-            />
-            <InvestigationsCard
-              organizationId={organizationId}
-              investigations={latestInvestigations}
-            />
-            <ProfileCard organizationId={organizationId} profile={inspectorProfile} />
-          </section>
+          <TuOverview
+            organizationId={organizationId}
+            assignments={assignments}
+            investigations={investigations}
+            loading={overviewLoading}
+            error={overviewError}
+            busy={Boolean(busy)}
+            onRefresh={() => { void refreshOverview() }}
+            onStartAssignment={(assignment) => {
+              setError(null)
+              setSelectedAssignment(assignment)
+            }}
+          />
         </div>
 
         {dialog === 'quick' ? (
@@ -792,415 +772,6 @@ export default function TuDashboardClient({
   )
 }
 
-function StatPill({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-violet-100 bg-violet-50 px-3 py-2">
-      <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-700">
-        {label}
-      </span>
-      <span className="text-base font-semibold text-slate-950">{value}</span>
-    </div>
-  )
-}
-
-function CardShell({ children }: { children: React.ReactNode }) {
-  return (
-    <article className="relative flex min-h-[260px] min-w-0 flex-col overflow-hidden rounded-2xl border border-white/40 bg-white/90 p-4 shadow-xl ring-1 ring-black/5 backdrop-blur-md md:min-h-[300px] md:p-5">
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-violet-600 to-fuchsia-400" />
-      {children}
-    </article>
-  )
-}
-
-function CardHeading({
-  title,
-  description,
-  icon,
-}: {
-  title: string
-  description: string
-  icon: React.ReactNode
-}) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <h2 className="text-lg font-semibold leading-snug text-slate-950">{title}</h2>
-        <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
-      </div>
-    </div>
-  )
-}
-
-function AssignmentConfirmationsCard({
-  organizationId,
-  assignments,
-  busy,
-  onOpenDialog,
-  onStartAssignment,
-}: {
-  organizationId: string
-  assignments: TuAssignmentListItem[]
-  busy: string | null
-  onOpenDialog: () => void
-  onStartAssignment: (assignment: TuAssignmentListItem) => void
-}) {
-  return (
-    <CardShell>
-      <CardHeading
-        title="Uppdragsbekräftelser"
-        description="Skapa en bekräftelse och följ dina senaste uppdrag."
-        icon={<ListChecks size={22} aria-hidden />}
-      />
-      <div className="mt-3">
-        <button
-          type="button"
-          onClick={onOpenDialog}
-          disabled={busy === 'quick-send'}
-          aria-busy={busy === 'quick-send'}
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
-        >
-          {busy === 'quick-send' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Send size={16} aria-hidden />}
-          {busy === 'quick-send' ? 'Öppnar...' : 'Skapa uppdragsbekräftelse'}
-        </button>
-      </div>
-      <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
-        {assignments.length > 0 ? (
-          <ul className="h-full min-w-0 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
-            {assignments.map((assignment) => (
-              <AssignmentMiniRow
-                key={assignment.id}
-                organizationId={organizationId}
-                assignment={assignment}
-                onStartAssignment={onStartAssignment}
-              />
-            ))}
-          </ul>
-        ) : (
-          <ListEmptyState>Inga uppdragsbekräftelser ännu.</ListEmptyState>
-        )}
-      </div>
-      <CardFooterLink
-        href={organizationUrl('/tu/assignments', organizationId)}
-        label="Visa alla uppdragsbekräftelser"
-      />
-    </CardShell>
-  )
-}
-
-function StartInvestigationCard({
-  acceptedAssignments,
-  busy,
-  onOpenDialog,
-  onStartAssignment,
-}: {
-  acceptedAssignments: TuAssignmentListItem[]
-  busy: string | null
-  onOpenDialog: () => void
-  onStartAssignment: (assignment: TuAssignmentListItem) => void
-}) {
-  return (
-    <CardShell>
-      <CardHeading
-        title="Starta utredning"
-        description="Skapa från scratch eller från godkänd bekräftelse."
-        icon={<Plus size={22} aria-hidden />}
-      />
-      <div className="mt-3">
-        <button
-          type="button"
-          onClick={onOpenDialog}
-          disabled={busy === 'scratch'}
-          aria-busy={busy === 'scratch'}
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-wait disabled:bg-violet-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
-        >
-          {busy === 'scratch' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Plus size={16} aria-hidden />}
-          {busy === 'scratch' ? 'Öppnar...' : 'Ny utredning'}
-        </button>
-      </div>
-      <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
-        <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-          Godkända uppdrag
-        </h3>
-        {acceptedAssignments.length > 0 ? (
-          <ul className="min-w-0 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
-            {acceptedAssignments.map((assignment) => (
-              <li key={assignment.id}>
-                <button
-                  type="button"
-                  onClick={() => onStartAssignment(assignment)}
-                  className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-                >
-                  <span className="block truncate text-xs font-medium text-slate-950">
-                    {assignment.customer_name || assignment.customer_email}
-                  </span>
-                  <span className="block truncate text-[11px] text-slate-600">
-                    {formatDate(assignment.preferred_date)} · {getAssignmentAddress(assignment)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <ListEmptyState>Inga godkända uppdrag att starta.</ListEmptyState>
-        )}
-      </div>
-    </CardShell>
-  )
-}
-
-function InvestigationsCard({
-  organizationId,
-  investigations,
-}: {
-  organizationId: string
-  investigations: TuInspectionSummary[]
-}) {
-  return (
-    <CardShell>
-      <CardHeading
-        title="Mina utredningar"
-        description="Öppna och fortsätt arbeta i utlåtanden."
-        icon={<FileText size={22} aria-hidden />}
-      />
-      <div className="mt-3 min-h-0 flex-1 rounded-lg border border-violet-100 bg-white/70 p-2">
-        {investigations.length > 0 ? (
-          <ul className="h-full min-w-0 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
-            {investigations.map((investigation) => (
-              <InvestigationMiniRow
-                key={investigation.inspectionId}
-                organizationId={organizationId}
-                investigation={investigation}
-              />
-            ))}
-          </ul>
-        ) : (
-          <ListEmptyState>Inga utredningar ännu.</ListEmptyState>
-        )}
-      </div>
-      <CardFooterLink
-        href={organizationUrl('/tu/investigations', organizationId)}
-        label="Öppna alla utredningar"
-      />
-    </CardShell>
-  )
-}
-
-function ProfileCard({
-  organizationId,
-  profile,
-}: {
-  organizationId: string
-  profile: TuInspectorProfileCard | null
-}) {
-  const [imageLoadError, setImageLoadError] = useState(false)
-  const imageSrc = imageLoadError ? null : profile?.avatarUrl ?? profile?.logoUrl ?? null
-  const name = profile?.fullName || 'Besiktningsman'
-  const company = profile?.companyName || 'Företagsprofil behöver fyllas i'
-  const address = [
-    profile?.companyAddress,
-    [profile?.companyPostalCode, profile?.companyCity].filter(Boolean).join(' '),
-  ]
-    .filter(Boolean)
-    .join(', ')
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('')
-
-  return (
-    <CardShell>
-      <CardHeading
-        title="Visitkort"
-        description="Profil, logga, underskrift och behörigheter för utlåtanden."
-        icon={<IdCard size={22} aria-hidden />}
-      />
-      <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
-        {profile && !profile.organizationConfigured ? (
-          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-            Spara ett eget visitkort för den här organisationen innan du skickar TU-dokument.
-          </div>
-        ) : null}
-        <div className="flex items-start gap-3">
-          {imageSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={imageSrc}
-              alt="Profilbild"
-              className="h-14 w-14 shrink-0 rounded-full border border-white bg-white object-cover shadow-sm"
-              onError={() => setImageLoadError(true)}
-            />
-          ) : (
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-violet-100 bg-white text-sm font-semibold text-violet-700 shadow-sm">
-              {initials || 'TU'}
-            </div>
-          )}
-          <div className="min-w-0 text-sm">
-            <p className="truncate font-semibold text-slate-950">{name}</p>
-            <p className="truncate text-slate-700">{company}</p>
-            {profile?.email ? <p className="truncate text-xs text-slate-600">{profile.email}</p> : null}
-            {profile?.phone ? <p className="truncate text-xs text-slate-600">{profile.phone}</p> : null}
-          </div>
-        </div>
-
-        <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
-          {profile?.credentialLines.length ? (
-            profile.credentialLines.slice(0, 3).map((line) => (
-              <p key={line} className="truncate">
-                {line}
-              </p>
-            ))
-          ) : (
-            <p>Inga behörigheter valda.</p>
-          )}
-          {profile?.companyOrgNo ? <p className="truncate">Org.nr: {profile.companyOrgNo}</p> : null}
-          {address ? <p className="truncate">{address}</p> : null}
-        </div>
-      </div>
-      <div className="mt-auto pt-5">
-        <PendingLink
-          href={organizationUrl('/settings/profil', organizationId)}
-          autoPending
-          pendingLabel="Öppnar profil..."
-          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
-        >
-          <Settings size={16} aria-hidden />
-          Öppna min profil
-        </PendingLink>
-      </div>
-    </CardShell>
-  )
-}
-
-function AssignmentMiniRow({
-  organizationId,
-  assignment,
-  onStartAssignment,
-}: {
-  organizationId: string
-  assignment: TuAssignmentListItem
-  onStartAssignment: (assignment: TuAssignmentListItem) => void
-}) {
-  const title = assignment.customer_name || assignment.customer_email
-  const meta = `${formatDate(assignment.preferred_date)} · ${statusLabel(assignment.status)}`
-  const address = getAssignmentAddress(assignment)
-
-  if (assignment.inspection_id) {
-    return (
-      <li>
-        <PendingLink
-          href={organizationUrl(
-            `/tu/investigations/${encodeURIComponent(assignment.inspection_id)}`,
-            organizationId
-          )}
-          autoPending
-          pendingLabel="Öppnar utredning..."
-          className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-        >
-          <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
-          <span className="block truncate text-[11px] text-slate-600">{meta}</span>
-          <span className="mt-0.5 block truncate text-[10px] font-medium text-violet-700">
-            Öppna utredning · {address}
-          </span>
-        </PendingLink>
-      </li>
-    )
-  }
-
-  if (canStartAssignmentInvestigation(assignment)) {
-    return (
-      <li>
-        <button
-          type="button"
-          onClick={() => onStartAssignment(assignment)}
-          className="block w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-left transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-        >
-          <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
-          <span className="block truncate text-[11px] text-slate-700">{meta}</span>
-          <span className="mt-0.5 block truncate text-[10px] font-semibold text-amber-800">
-            Starta utredning · {address}
-          </span>
-        </button>
-      </li>
-    )
-  }
-
-  return (
-    <li>
-      <PendingLink
-        href={organizationUrl(
-          `/tu/assignments/${encodeURIComponent(assignment.id)}`,
-          organizationId
-        )}
-        autoPending
-        pendingLabel="Öppnar uppdrag..."
-        className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-      >
-        <span className="block truncate text-xs font-medium text-slate-950">{title}</span>
-        <span className="block truncate text-[11px] text-slate-600">{meta}</span>
-        <span className="mt-0.5 block truncate text-[10px] text-slate-500">{address}</span>
-      </PendingLink>
-    </li>
-  )
-}
-
-function InvestigationMiniRow({
-  organizationId,
-  investigation,
-}: {
-  organizationId: string
-  investigation: TuInspectionSummary
-}) {
-  return (
-    <li>
-      <PendingLink
-        href={organizationUrl(
-          `/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`,
-          organizationId
-        )}
-        autoPending
-        pendingLabel="Öppnar utredning..."
-        className="block w-full min-w-0 overflow-hidden rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left transition hover:border-violet-200 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
-      >
-        <span className="block truncate text-xs font-medium text-slate-950">{investigation.title}</span>
-        <span className="block truncate text-[11px] text-slate-600">
-          {formatDate(investigation.date)} · {getInvestigationAddress(investigation)}
-        </span>
-        <span className="mt-0.5 block truncate text-[10px] font-medium text-violet-700">
-          Öppna utlåtande
-        </span>
-      </PendingLink>
-    </li>
-  )
-}
-
-function CardFooterLink({ href, label }: { href: string; label: string }) {
-  return (
-    <div className="mt-3">
-      <PendingLink
-        href={href}
-        autoPending
-        pendingLabel="Öppnar..."
-        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
-      >
-        {label}
-        <ArrowRight size={15} aria-hidden />
-      </PendingLink>
-    </div>
-  )
-}
-
-function ListEmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-full min-h-[92px] items-center justify-center rounded-md border border-dashed border-violet-200 bg-violet-50/40 px-3 text-center text-xs text-slate-500">
-      {children}
-    </div>
-  )
-}
 
 function StartFromAssignmentDialog({
   assignment,

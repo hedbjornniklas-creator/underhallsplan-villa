@@ -8,7 +8,7 @@ import { BESIKT_START, missingStartProfile, startStorageKey, type BesiktStartMod
 import { PUBLIC_BESIKTAPP_CONTACT_EMAIL } from '@/lib/publicCompanyInfo'
 
 const linkStyle = 'inline-flex min-h-11 items-center py-2 font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-700'
-type Props = { module: 'ob'; onStart?: never; heading?: ReactNode } | { module: Exclude<BesiktStartModule, 'ob'>; onStart: () => void; heading?: never }
+type Props = { module: 'ob'; onStart?: never; heading?: ReactNode } | { module: Exclude<BesiktStartModule, 'ob'>; onStart: () => void; heading?: ReactNode }
 export default function GettingStarted({ module, onStart, heading }: Props) {
   const content = BESIKT_START[module]
   const panelId = useId()

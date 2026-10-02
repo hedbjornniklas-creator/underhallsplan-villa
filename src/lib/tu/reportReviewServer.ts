@@ -1,4 +1,5 @@
 import 'server-only'
+import { TU_MEASUREMENT_REVIEW_INSTRUCTION } from '@/lib/tu/measurementVerification'
 
 import { createHash } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -15,7 +16,7 @@ import { buildTuReportSnapshot } from '@/lib/tu/reportDraftServer'
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const TU_REPORT_REVIEW_MODEL = process.env.OPENAI_TU_REPORT_MODEL?.trim() || 'gpt-5.6'
 const RULESET_KEY = 'tu_report_review_v2'
-const RULESET_VERSION = 2
+const RULESET_VERSION = 3
 
 type JsonRecord = Record<string, unknown>
 
@@ -187,6 +188,7 @@ async function generateReview(input: { apiKey: string; snapshot: JsonRecord }) {
       store: false,
       reasoning: { effort: 'high' },
       instructions: [
+        TU_MEASUREMENT_REVIEW_INSTRUCTION,
         'Du reviderar ett svenskt tekniskt utlåtande efter en uttrycklig instruktion från ansvarig besiktningsman.',
         'Instruktionen är ett auktoritativt granskningsbeslut men ändrar inte det ursprungliga fältunderlaget.',
         'Ställ inga frågor. Om underlaget inte räcker ska du använda en saklig reservation eller lämna en varning.',

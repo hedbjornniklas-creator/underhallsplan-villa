@@ -15,7 +15,7 @@ export default async function TuInvestigationPage({
   searchParams,
 }: {
   params: Promise<{ inspectionId: string }>
-  searchParams?: Promise<{ orgId?: string | string[] }>
+  searchParams?: Promise<{ orgId?: string | string[]; view?: string | string[] }>
 }) {
   const { inspectionId } = await params
   const resolvedSearchParams = searchParams ? await searchParams : {}
@@ -43,6 +43,7 @@ export default async function TuInvestigationPage({
     <TuInvestigationEditorClient
       initialInvestigation={investigation}
       sectionTypeOptions={sectionTypeOptions}
+      initialWorkspaceView={resolvedSearchParams.view === 'report' ? 'report' : undefined}
     />
   )
 }

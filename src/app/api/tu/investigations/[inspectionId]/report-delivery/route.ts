@@ -552,6 +552,32 @@ async function replacePublishedTuLink(
   if (!data) throw new Error('Den publicerade länken har ändrats. Kontrollera utskickshistoriken innan du försöker igen.')
 }
 
+function getPublishedCustomerLink(request: Request, link: PublishedTuLinkRow | null) {
+  if (!link) return { publicLink: null, publicLinkMessage: null }
+  if (link.revoked_at) {
+    return { publicLink: null, publicLinkMessage: 'Kundlänken är inte längre aktiv.' }
+  }
+  if (!link.tu_token_ciphertext) {
+    return {
+      publicLink: null,
+      publicLinkMessage: 'Den äldre kundlänken kan inte hämtas här. Använd länken i det tidigare utskicket.',
+    }
+  }
+  try {
+    const token = decryptTuReportLinkToken(link.tu_token_ciphertext)
+    if (hashAssignmentToken(token) !== link.token_hash) throw new Error('TOKEN_MISMATCH')
+    return {
+      publicLink: `${resolvePublicBaseUrl(request)}/rapport/${encodeURIComponent(token)}`,
+      publicLinkMessage: null,
+    }
+  } catch {
+    return {
+      publicLink: null,
+      publicLinkMessage: 'Kundlänken kunde inte hämtas. Kontakta administratören. Ingen ny länk har skapats.',
+    }
+  }
+}
+
 async function getReportSnapshotLink(admin: AdminClient, orgId: string, linkId: string) {
   const { data, error } = await admin
     .from('inspection_report_links')
@@ -943,7 +969,7 @@ export async function GET(
       pdfError: activeLink?.pdf_error ?? null,
       downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
       digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
-      publicLink: null,
+      ...getPublishedCustomerLink(request, publishedLink),
       deliveryDocuments,
       history,
       activityLog,
@@ -956,7 +982,7 @@ export async function GET(
       improvementReview,
       analysisStale: isTuAnalysisStaleForFinalization(analysisState),
       analysisStaleAt: analysisState?.analysisStaleAt ?? null,
-    })
+    }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
@@ -1045,12 +1071,16 @@ export async function POST(
         })
       })
 
-      const [history, unlockHistory, activeLink, deliveryDocuments] = await Promise.all([
+      const [history, unlockHistory, activeLink, deliveryDocuments, revision, publishedRevision] = await Promise.all([
         getDeliveryHistory(admin, org.orgId, inspectionId),
         getUnlockHistory(admin, org.orgId, inspectionId),
         getLatestReportLink(admin, org.orgId, inspectionId),
         listTuDeliveryDocuments(admin, { orgId: org.orgId, inspectionId }),
+        getCurrentTuRevision(admin, org.orgId, inspectionId),
+        getPublishedTuRevision(admin, org.orgId, inspectionId),
       ])
+      const publishedLink = await getPublishedTuLink(admin, org.orgId, inspectionId, publishedRevision)
+      const hasPublishedLink = Boolean(publishedLink && !publishedLink.revoked_at)
       const ordererEmail = resolveDefaultRecipient(investigation)
       const activityLog = buildDeliveryActivityLog({ history, unlockHistory })
 
@@ -1065,11 +1095,16 @@ export async function POST(
         pdfError: activeLink?.pdf_error ?? null,
         downloadUrl: getPdfDownloadUrl(inspectionId, activeLink),
         digitalUrl: getDashboardDigitalReportUrl(inspectionId, activeLink),
-        publicLink: null,
+        ...getPublishedCustomerLink(request, publishedLink),
+        hasPublishedLink,
+        resendUsesSameLink: hasPublishedLink && Boolean(publishedLink?.tu_token_ciphertext),
+        revisionNumber: revision?.revision_number ?? null,
+        revisionStatus: revision?.status ?? null,
+        publishedRevisionNumber: hasPublishedLink ? publishedRevision?.revision_number ?? null : null,
         deliveryDocuments,
         history,
         activityLog,
-      })
+      }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
     }
 
     if ((action === 'lock_only' || action === 'send_and_lock') && !investigation.reportLockedAt) {
@@ -1376,7 +1411,7 @@ export async function POST(
       reportLockedAt,
       inspectionStatus: action === 'send_and_lock' || action === 'lock_only' ? 'completed' : investigation.status,
       deliveryMode: 'link_only',
-      publicLink: action === 'lock_only' || sentRecipients.length > 0 ? publicLink : null,
+      ...getPublishedCustomerLink(request, currentPublishedLink),
       primaryRecipientEmail: primaryRecipient,
       defaultRecipientEmail: resolveDefaultRecipient(investigation),
       ordererEmail: resolveDefaultRecipient(investigation),
@@ -1396,7 +1431,7 @@ export async function POST(
       revisionNumber: latestRevision?.revision_number ?? null,
       revisionStatus: latestRevision?.status ?? null,
       publishedRevisionNumber: hasPublishedLink ? publishedRevision?.revision_number ?? null : null,
-    })
+    }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)

@@ -146,3 +146,46 @@ export function parseTuMeasurementImageVerifications(value: unknown) {
     }
   }).filter((item): item is TuMeasurementImageVerification => Boolean(item))
 }
+
+export const TU_MEASUREMENT_REVIEW_INSTRUCTION =
+  'measurementReview.confirmedReadings innehåller besiktningsmannens uttryckliga kontroll av registrerat värde mot instrumentbilden. För just dessa mätningar gäller recordedValue framför AI:ns imageReadings och äldre AI-varningar eller konfliktbedömningar om samma avläsning. Behandla inte den avgjorda bildavläsningen som en kvarstående motsägelse och begär inte ommätning enbart på den grunden. Använd sourceFieldKey som källstöd för beslutet. Bekräftelsen säger inget om normalnivå, skadeorsak, metodens lämplighet eller andra mätningar; behåll sådana sakligt grundade osäkerheter. Beskriv mätresultatet i rapporten, inte den interna AI-granskningen.'
+
+export function buildTuMeasurementReview(input: {
+  verifications: unknown
+  evidence: unknown
+}) {
+  const observations = record(input.evidence).observations
+  const byObservationId = new Map((Array.isArray(observations) ? observations : [])
+    .map(record).map((observation) => [text(observation.id), observation]))
+  const conflicts = parseTuMeasurementImageVerifications(input.verifications)
+    .filter((item) => item.status === 'conflict')
+  const confirmedReadings = conflicts.filter((item) => {
+    if (item.resolution !== 'recorded_confirmed') return false
+    const observation = byObservationId.get(item.observationId)
+    if (!observation) return false
+    const measurement = (Array.isArray(observation.measurements) ? observation.measurements : [])
+      .map(record).find((candidate) => text(candidate.id) === item.measurementId)
+    if (!measurement) return false
+    // A decision applies to the reviewed reading and photos, never to a later edit.
+    const imageIds = [...new Set(textArray(observation.imageIds))].sort()
+    const reviewedImageIds = [...new Set(item.sourceImageIds)].sort()
+    return text(measurement.value) === item.recordedValue
+      && (text(measurement.type) || 'Mätning') === item.measurementType
+      && text(measurement.unit) === (item.unit ?? '')
+      && text(measurement.method) === (item.method ?? '')
+      && text(measurement.instrument) === (item.instrument ?? '')
+      && (text(measurement.location) || text(observation.location)) === (item.location ?? '')
+      && imageIds.length > 0
+      && JSON.stringify(imageIds) === JSON.stringify(reviewedImageIds)
+  }).map((item) => ({
+    ...item,
+    status: 'resolved' as const,
+    sourceFieldKey: `measurement.${item.measurementId}.recordedConfirmed`,
+  }))
+  const confirmedIds = new Set(confirmedReadings.map((item) => item.measurementId))
+  return {
+    confirmedReadings,
+    unresolvedMeasurementIds: conflicts.filter((item) => !confirmedIds.has(item.measurementId))
+      .map((item) => item.measurementId),
+  }
+}

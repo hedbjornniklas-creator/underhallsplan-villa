@@ -35,7 +35,7 @@ test('TU dashboard and organization switcher preserve the selected organization 
     dashboard,
     /href=\{organizationUrl\('\/settings\/profil', organizationId\)\}/u
   )
-  assert.match(dashboard, /> Öppna min profil <\/PendingLink>/u)
+  assert.match(dashboard, />Visitkort<\/PendingLink>/u)
   assert.match(switcher, /router\.push\(organizationSwitchDestination\(\{ pathname, search, surface, orgId \}\)\)/u)
   assert.equal(organizationSwitchDestination({
     pathname: '/settings/profil', search: 'orgId=old', surface: 'settings', orgId: 'new',

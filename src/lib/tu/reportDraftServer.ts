@@ -17,6 +17,7 @@ import {
   type TuGroundingStatus,
 } from '@/lib/tu/grounding'
 import { formatTuMeasurementAssessment } from '@/lib/tu/measurementConfig'
+import { buildTuMeasurementReview, TU_MEASUREMENT_REVIEW_INSTRUCTION } from '@/lib/tu/measurementVerification'
 import {
   buildTuReportWriterSnapshot,
   parseTuReportEditorialPlan,
@@ -58,7 +59,7 @@ const TU_REPORT_MODEL =
   process.env.OPENAI_TU_REPORT_MODEL?.trim()
   || 'gpt-5.6'
 const RULESET_KEY = 'tu_ai_assisted_report_v2'
-const RULESET_VERSION = 4
+const RULESET_VERSION = 5
 const STALE_RUN_MINUTES = 12
 const PROVIDER_CREATE_TIMEOUT_MS = 30_000
 const PROVIDER_RETRIEVE_TIMEOUT_MS = 20_000
@@ -688,6 +689,18 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   }
 
   const analysisOutput = record((analysisRun as { output_payload?: unknown }).output_payload)
+  const measurementReview = buildTuMeasurementReview({
+    verifications: analysisOutput.measurementVerifications,
+    evidence,
+  })
+  for (const reading of measurementReview.confirmedReadings) {
+    addSourceField(
+      reading.sourceFieldKey,
+      'Kontrollerad instrumentavläsning',
+      `Besiktningsmannen har bekräftat registrerat värde ${reading.recordedValue} ${reading.unit ?? ''} vid ${reading.location ?? 'mätpunkten'} (mätning ${reading.measurementId}). AI:ns avvikande bildavläsning ska inte användas för denna mätning.`,
+      'current_evidence'
+    )
+  }
   return {
     sectionCount: sections.length,
     snapshot: {
@@ -719,6 +732,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
       },
       sections,
       scopeAddressReview,
+      measurementReview,
       sourceFields,
       sourcePolicy: isTuPostDamageReport(investigation.reportTemplateKey)
         ? TU_POST_DAMAGE_SOURCE_POLICY
@@ -856,6 +870,7 @@ function editorialRequestBody(snapshot: JsonRecord) {
       store: false,
       reasoning: { effort: 'high' },
       instructions: [
+        TU_MEASUREMENT_REVIEW_INSTRUCTION,
         'Du är redaktör för ett svenskt tekniskt utlåtande och planerar innehållet innan någon rapporttext skrivs.',
         'Identifiera uppdragets huvudsakliga tekniska fråga för bedömningen och slutsatsen. Använd den inte för att gallra bort besiktningsmannens dokumenterade observationer.',
         'Varje observation med reportInclusion include ska planeras in i rapporten, normalt i rapportdelen med key observed_execution. Detta gäller även en fristående iakttagelse utan visat samband med huvudfrågan.',
@@ -953,6 +968,7 @@ function reportRequestBody(snapshot: JsonRecord) {
       store: false,
       reasoning: { effort: 'high' },
       instructions: [
+        TU_MEASUREMENT_REVIEW_INSTRUCTION,
         'Du skriver ansvarig besiktningsmans svenska tekniska utlåtande utifrån ett komplett källregister och en redaktionell prioritering.',
         'Skriv i neutral och opersonlig rapportform som ett färdigt utlåtande från ansvarig besiktningsman, inte som ett system eller en extern granskare av källmaterial.',
         'Använd inte jag-form eller vi-form och skriv inte jag, vi, min, mitt, mina, vår, vårt eller våra om rapportförfattaren. Skriv exempelvis "Sammantaget bedöms" i stället för "Sammantaget bedömer jag".',
@@ -1058,6 +1074,7 @@ function coverageRequestBody(input: {
     store: false,
     reasoning: { effort: 'high' },
     instructions: [
+      TU_MEASUREMENT_REVIEW_INSTRUCTION,
       'Du är slutredaktör och täckningsgranskare för ett svenskt tekniskt utlåtande.',
       'Jämför initialDraft mot hela sourceRegistry. Granska varje analysis item, observation och source field innan slutversionen lämnas.',
       'Säkerställ att varje observation med reportInclusion include finns sakligt återgiven i rapporten och att varje observation med internal har utelämnats.',

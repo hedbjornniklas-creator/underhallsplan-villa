@@ -753,9 +753,11 @@ function parseStoredCollapsedSections(value: string | null, allowedKeys: Set<str
 export default function TuInvestigationEditorClient({
   initialInvestigation,
   sectionTypeOptions: initialSectionTypeOptions,
+  initialWorkspaceView,
 }: {
   initialInvestigation: TuInvestigationDetails
   sectionTypeOptions?: TuReportSectionTypeOption[]
+  initialWorkspaceView?: TuWorkspaceView
 }) {
   const [investigation, setInvestigation] = useState(initialInvestigation)
   const sectionTypeOptions = useMemo(
@@ -827,16 +829,25 @@ export default function TuInvestigationEditorClient({
   const postDamageWorkflowEnabled = initialInvestigation.reportWorkflowProfile === 'post_damage_review'
   const locked = Boolean(investigation.reportLockedAt)
   const [workspaceView, setWorkspaceView] = useState<TuWorkspaceView>(
-    postDamageWorkflowEnabled ? 'preparation' : aiWorkflowEnabled ? 'field' : 'report'
+    initialWorkspaceView ?? (postDamageWorkflowEnabled ? 'preparation' : aiWorkflowEnabled ? 'field' : 'report')
   )
   const [evidenceFocusRequest, setEvidenceFocusRequest] = useState<{
     observationId: string
-    measurementId: string
+    measurementId?: string
     nonce: number
+    returnToField?: boolean
   } | null>(null)
   const openMeasurementInEvidence = useCallback((observationId: string, measurementId: string) => {
     setEvidenceFocusRequest({ observationId, measurementId, nonce: Date.now() })
     setWorkspaceView('evidence')
+  }, [])
+  const openFieldObservation = useCallback((observationId: string, measurementId?: string) => {
+    setEvidenceFocusRequest({ observationId, measurementId, nonce: Date.now(), returnToField: true })
+    setWorkspaceView('evidence')
+  }, [])
+  const changeWorkspaceView = useCallback((view: TuWorkspaceView) => {
+    setEvidenceFocusRequest(null)
+    setWorkspaceView(view)
   }, [])
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
     setImages((current) => upsertImages(current, [image]))
@@ -853,6 +864,7 @@ export default function TuInvestigationEditorClient({
   const assignmentPartiesRef = useRef(assignmentParties)
   const coverFileInputRef = useRef<HTMLInputElement>(null)
   const bankFileInputRef = useRef<HTMLInputElement>(null)
+  const imageBankRef = useRef<HTMLElement>(null)
   const appendixFileInputRef = useRef<HTMLInputElement>(null)
   const documentFileInputRef = useRef<HTMLInputElement>(null)
   const imageErrorRef = useRef<HTMLDivElement>(null)
@@ -1424,8 +1436,8 @@ export default function TuInvestigationEditorClient({
   ])
   const customerName = investigation.assignment?.customer_name ?? investigation.inspection.customer_name
   const customerContact = joinDisplay([
-    investigation.assignment?.customer_phone ?? investigation.inspection.customer_phone,
-    investigation.assignment?.customer_email ?? investigation.inspection.customer_email,
+    assignmentParties.customerPhone,
+    assignmentParties.customerEmail,
   ])
   const autosaveSavedAt = autosave.lastSavedAt
     ? formatSavedAt(autosave.lastSavedAt.toISOString())
@@ -2376,7 +2388,7 @@ export default function TuInvestigationEditorClient({
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <button
+              {!aiWorkflowEnabled ? <button
                 type="button"
                 onClick={openAssignmentScopeEditor}
                 disabled={locked}
@@ -2384,7 +2396,7 @@ export default function TuInvestigationEditorClient({
               >
                 <Pencil size={15} aria-hidden />
                 Redigera uppdrag
-              </button>
+              </button> : null}
               <p className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-gray-600" aria-live="polite">
                 <span className={`size-2 rounded-full ${systemStatusTone}`} />
                 {systemStatusText}
@@ -2409,8 +2421,10 @@ export default function TuInvestigationEditorClient({
             <TuWorkflowRail
               steps={workflowState.steps}
               current={workspaceView}
-              onChange={setWorkspaceView}
+              onChange={changeWorkspaceView}
               loading={workflowState.loading}
+              onEditAssignment={openAssignmentScopeEditor}
+              assignmentLocked={locked}
             />
           ) : null}
           <div className="flex min-w-0 flex-col gap-5">
@@ -2448,7 +2462,8 @@ export default function TuInvestigationEditorClient({
               queue={fieldQueue}
               onPreviewImage={setPreviewImageId}
               onDeleteImage={deleteImage}
-              onOpenEvidence={() => setWorkspaceView('evidence')}
+              onOpenEvidence={() => changeWorkspaceView('evidence')}
+              onEditObservation={openFieldObservation}
               nextStep={postDamageWorkflowEnabled ? (
                 <TuPostDamageFieldChecklist
                   preparation={workflowState.preparation}
@@ -2471,8 +2486,12 @@ export default function TuInvestigationEditorClient({
             onPreviewImage={setPreviewImageId}
             onApplySuggestion={applyEvidenceSuggestion}
             onOpenReport={openReportWorkspace}
-            onOpenAnalysis={() => setWorkspaceView('assessment')}
+            onOpenAnalysis={() => changeWorkspaceView('assessment')}
             focusRequest={evidenceFocusRequest}
+            onCloseObservation={() => {
+              if (evidenceFocusRequest?.returnToField) setWorkspaceView('field')
+              setEvidenceFocusRequest(null)
+            }}
           />
         ) : aiWorkflowEnabled && workspaceView === 'assessment' ? (
           <TuAnalysisWorkspace
@@ -2484,8 +2503,8 @@ export default function TuInvestigationEditorClient({
             images={images}
             queueCounts={fieldQueue.counts}
             onPreviewImage={setPreviewImageId}
-            onOpenField={() => setWorkspaceView('field')}
-            onOpenEvidence={() => setWorkspaceView('evidence')}
+            onOpenField={() => changeWorkspaceView('field')}
+            onOpenEvidence={() => changeWorkspaceView('evidence')}
             onOpenMeasurement={openMeasurementInEvidence}
             onApplyReportDraft={applyWholeReportDraft}
             onOpenReport={() => openReportWorkspace()}
@@ -2510,7 +2529,7 @@ export default function TuInvestigationEditorClient({
                 ? `Steg ${workflowState.steps.find((step) => step.id === 'delivery')?.number ?? workflowState.steps.length}`
                 : 'Leverans'}
               onStatusChange={handleDeliveryStatusChange}
-              onOpenEvidence={aiWorkflowEnabled ? () => setWorkspaceView('evidence') : undefined}
+              onOpenEvidence={aiWorkflowEnabled ? () => changeWorkspaceView('evidence') : undefined}
               onOpenReport={() => setWorkspaceView('report')}
             />
           </div>
@@ -2837,7 +2856,7 @@ export default function TuInvestigationEditorClient({
           )}
         </section>
 
-        <section className="order-last rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm" aria-label="Omslagsbild">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-base font-semibold text-gray-950">Omslagsbild</h2>
@@ -2845,20 +2864,34 @@ export default function TuInvestigationEditorClient({
                 Bilden visas på rapportens framsida. Välj en befintlig bild i bildbanken eller en ny bild från datorn.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => coverFileInputRef.current?.click()}
-              disabled={locked || imageBusy}
-              aria-busy={imageDropBusySection === 'cover'}
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {imageDropBusySection === 'cover' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
-              {imageDropBusySection === 'cover'
-                ? 'Sparar omslagsbild...'
-                : coverImage
-                  ? 'Välj ny bild från datorn'
-                  : 'Välj bild från datorn'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setImageBankOpen(true)
+                  imageBankRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                disabled={locked || imageBusy || bankImages.length === 0}
+                className="inline-flex min-h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-800 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+              >
+                <Images size={16} className="shrink-0" aria-hidden />
+                Välj från bildbanken
+              </button>
+              <button
+                type="button"
+                onClick={() => coverFileInputRef.current?.click()}
+                disabled={locked || imageBusy}
+                aria-busy={imageDropBusySection === 'cover'}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              >
+                {imageDropBusySection === 'cover' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Upload size={16} aria-hidden />}
+                {imageDropBusySection === 'cover'
+                  ? 'Sparar omslagsbild...'
+                  : coverImage
+                    ? 'Välj ny bild från datorn'
+                    : 'Välj bild från datorn'}
+              </button>
+            </div>
             <input
               ref={coverFileInputRef}
               type="file"
@@ -2977,7 +3010,7 @@ export default function TuInvestigationEditorClient({
             </div>
           ) : null}
 
-          <article className="rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
+          <article ref={imageBankRef} className="scroll-mt-6 rounded-lg border border-violet-200 bg-white p-4 shadow-sm">
             <div className={`flex flex-wrap items-center justify-between gap-3 ${imageBankOpen ? 'mb-3' : ''}`}>
               <div className="flex min-w-0 items-start gap-3">
                 <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-50 text-violet-700">

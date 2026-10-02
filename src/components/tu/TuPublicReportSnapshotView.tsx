@@ -11,6 +11,7 @@ import type {
   TuPrintSignature,
 } from '@/components/tu/TuPrintPagedDocument'
 import type { TuReportSnapshotPayloadV1 } from '@/lib/tu/reportSnapshot'
+import { TuReportMeasurementTable } from '@/components/tu/TuPrintPagedDocument'
 
 function formatPublishedAt(value: string | null | undefined) {
   if (!value) return null
@@ -106,7 +107,7 @@ function ReportSection({ section, number }: { section: TuPrintSection; number: n
     (subsection) => normalizeText(subsection.title) || normalizeText(subsection.text)
   )
 
-  if (!text && subsections.length === 0) return null
+  if (!text && subsections.length === 0 && !section.measurements?.length) return null
 
   return (
     <section id={`section-${number}`} className="scroll-mt-6 border-t border-slate-200 pt-8">
@@ -116,6 +117,11 @@ function ReportSection({ section, number }: { section: TuPrintSection; number: n
       {text ? (
         <div className="mt-4">
           <SectionText text={text} />
+        </div>
+      ) : null}
+      {section.measurements?.length ? (
+        <div className="mt-4">
+          <TuReportMeasurementTable rows={section.measurements} />
         </div>
       ) : null}
       {subsections.length > 0 ? (
@@ -246,6 +252,7 @@ export default function TuPublicReportSnapshotView({
   const sections = report.sections.filter(
     (section) =>
       normalizeText(section.text) ||
+      section.measurements?.length ||
       (section.subsections ?? []).some((subsection) => normalizeText(subsection.title) || normalizeText(subsection.text))
   )
   const hasParties = Boolean(
@@ -278,11 +285,20 @@ export default function TuPublicReportSnapshotView({
 
       <div className="mx-auto w-full max-w-6xl px-4 pb-10">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className={report.coverImage ? 'grid gap-0 lg:grid-cols-[1.05fr_0.95fr]' : ''}>
             <div className="p-5 md:p-7">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">
-                Digitalt utlåtande
-              </p>
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-700">
+                  Digitalt utlåtande
+                </p>
+                {!report.coverImage && report.companyLogoUrl ? (
+                  <img
+                    src={report.companyLogoUrl}
+                    alt={report.companyLogoAlt}
+                    className="h-12 max-w-[140px] shrink-0 object-contain"
+                  />
+                ) : null}
+              </div>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 md:text-4xl">
                 {report.header.documentTitle}
               </h1>
@@ -316,25 +332,21 @@ export default function TuPublicReportSnapshotView({
               ) : null}
             </div>
 
-            <div className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0 md:p-7">
-              {report.companyLogoUrl ? (
-                <img
-                  src={report.companyLogoUrl}
-                  alt={report.companyLogoAlt}
-                  className="mb-4 h-12 w-auto rounded-md bg-white object-contain"
-                />
-              ) : null}
-              {report.coverImage ? (
+            {report.coverImage ? (
+              <div className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0 md:p-7">
+                {report.companyLogoUrl ? (
+                  <img
+                    src={report.companyLogoUrl}
+                    alt={report.companyLogoAlt}
+                    className="mb-4 h-12 w-auto rounded-md bg-white object-contain"
+                  />
+                ) : null}
                 <ClickableImage
                   image={report.coverImage}
                   className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.01]"
                 />
-              ) : (
-                <div className="flex aspect-[4/3] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-sm text-slate-500">
-                  Ingen omslagsbild
-                </div>
-              )}
-            </div>
+              </div>
+            ) : null}
           </div>
         </section>
 

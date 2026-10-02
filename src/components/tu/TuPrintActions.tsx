@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronDown, ChevronUp, Download, ExternalLink, LockKeyhole, LockOpen, RefreshCw, Send } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Download, ExternalLink, LockKeyhole, LockOpen, RefreshCw, Send } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 
 type DeliveryAction = 'send_and_lock' | 'send_open' | 'lock_only' | 'resend'
@@ -44,6 +44,7 @@ type DeliveryResponse = {
   pdfError: string | null
   downloadUrl: string | null
   publicLink: string | null
+  publicLinkMessage?: string | null
   digitalUrl: string | null
   sentRecipients?: string[]
   failedRecipients?: Array<{ email: string; error: string }>
@@ -160,13 +161,14 @@ export default function TuPrintActions({
   const [loading, setLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<DeliveryAction | null>(null)
   const [regeneratingPdf, setRegeneratingPdf] = useState(false)
+  const [copyingLink, setCopyingLink] = useState(false)
   const [unlockOpen, setUnlockOpen] = useState(false)
   const [unlockReason, setUnlockReason] = useState('')
   const [unlockBusy, setUnlockBusy] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const [improvementOpen, setImprovementOpen] = useState(false)
   const [staleAnalysisAcknowledged, setStaleAnalysisAcknowledged] = useState(false)
-  const { error: showErrorToast } = useToast()
+  const { error: showErrorToast, success: showSuccessToast } = useToast()
 
   const showDeliveryError = useCallback((value: unknown, fallback: string) => {
     showErrorToast(value, fallback, {
@@ -187,10 +189,7 @@ export default function TuPrintActions({
       )
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta leveransstatus.')
-      setMeta((current) => ({
-        ...payload,
-        publicLink: payload.publicLink ?? current?.publicLink ?? null,
-      }))
+      setMeta(payload)
       setRecipient((current) => current.trim() || payload.defaultRecipientEmail || '')
       onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? null })
     } catch (loadError) {
@@ -247,10 +246,7 @@ export default function TuPrintActions({
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hantera utlåtandet.')
 
-      setMeta((current) => ({
-        ...payload,
-        publicLink: payload.publicLink ?? current?.publicLink ?? null,
-      }))
+      setMeta(payload)
       const failedText =
         payload.failedRecipients && payload.failedRecipients.length > 0
           ? ` Misslyckade mottagare: ${payload.failedRecipients.map((item) => item.email).join(', ')}.`
@@ -336,10 +332,7 @@ export default function TuPrintActions({
       const payload = (await response.json().catch(() => ({}))) as DeliveryResponse
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte starta om PDF-genereringen.')
 
-      setMeta((current) => ({
-        ...payload,
-        publicLink: payload.publicLink ?? current?.publicLink ?? null,
-      }))
+      setMeta(payload)
       setResult('PDF-genereringen har startats om. Statusen uppdateras automatiskt.')
       onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? meta?.reportLockedAt ?? null })
     } catch (pdfError) {
@@ -356,9 +349,20 @@ export default function TuPrintActions({
   const downloadUrl = meta?.downloadUrl
     ? organizationUrl(meta.downloadUrl, organizationId)
     : null
-  const digitalReportUrl =
-    meta?.publicLink ??
-    (meta?.digitalUrl ? organizationUrl(meta.digitalUrl, organizationId) : null)
+  const customerReportUrl = hasPublishedVersion ? meta?.publicLink : null
+  const internalPreviewUrl = meta?.digitalUrl ? organizationUrl(meta.digitalUrl, organizationId) : null
+  const copyCustomerLink = async () => {
+    if (!customerReportUrl || copyingLink) return
+    setCopyingLink(true)
+    try {
+      await navigator.clipboard.writeText(customerReportUrl)
+      showSuccessToast('Kundlänken har kopierats.', { appearance: 'dark' })
+    } catch {
+      showDeliveryError('Kunde inte kopiera kundlänken. Försök igen.', 'Kunde inte kopiera kundlänken.')
+    } finally {
+      setCopyingLink(false)
+    }
+  }
   const canSend = (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
   const effectiveFinalizationBlockedReason = meta?.analysisStale ? null : finalizationBlockedReason
@@ -761,9 +765,50 @@ export default function TuPrintActions({
         <div className="mt-5 border-t border-slate-200 pt-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-slate-950">Publicerad version</h3>
+              <h3 className="text-sm font-semibold text-slate-950">
+                Kundens publicerade version{meta?.publishedRevisionNumber ? ` ${meta.publishedRevisionNumber}` : ''}
+              </h3>
               <p className="text-xs leading-5 text-slate-500">
-                Det här är den version mottagaren ser tills en ny publicering ersätter den.
+                {loading
+                  ? 'Hämtar kundlänk...'
+                  : customerReportUrl
+                    ? 'Alla med kundlänken kan läsa denna version utan inloggning.'
+                    : meta?.publicLinkMessage ?? (hasPublishedVersion
+                      ? 'Kundlänken kunde inte hämtas. Uppdatera leveransstatus och försök igen.'
+                      : 'Ingen version har publicerats ännu.')}
+              </p>
+            </div>
+            {customerReportUrl ? (
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={customerReportUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50"
+                >
+                  <ExternalLink size={16} className="shrink-0" aria-hidden />
+                  Öppna kundlänk
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void copyCustomerLink()}
+                  disabled={copyingLink}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <Copy size={16} className="shrink-0" aria-hidden />
+                  Kopiera kundlänk
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-4 border-t border-slate-200 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-950">Senast fastställda version</h3>
+              <p className="text-xs leading-5 text-slate-500">
+                Intern förhandsvisning kräver inloggning.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -791,15 +836,15 @@ export default function TuPrintActions({
               {regeneratingPdf ? 'Startar om PDF...' : 'Generera PDF igen'}
             </button>
           ) : null}
-          {digitalReportUrl ? (
+          {internalPreviewUrl ? (
             <a
-              href={digitalReportUrl}
+              href={internalPreviewUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-900 bg-white px-3 text-xs font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50"
+              className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
               <ExternalLink size={14} aria-hidden />
-              Öppna digitalt utlåtande
+              Intern förhandsvisning
             </a>
           ) : null}
             </div>

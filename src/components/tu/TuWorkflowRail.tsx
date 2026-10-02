@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { Fragment, useMemo } from 'react'
 import {
   AlertTriangle,
   BrainCircuit,
@@ -11,6 +11,7 @@ import {
   FileText,
   Files,
   Mic,
+  Pencil,
 } from 'lucide-react'
 import type { TuWorkflowStep, TuWorkspaceView } from '@/lib/tu/workflow'
 
@@ -42,11 +43,15 @@ export default function TuWorkflowRail({
   current,
   onChange,
   loading,
+  onEditAssignment,
+  assignmentLocked = false,
 }: {
   steps: TuWorkflowStep[]
   current: TuWorkspaceView
   onChange: (view: TuWorkspaceView) => void
   loading: boolean
+  onEditAssignment?: () => void
+  assignmentLocked?: boolean
 }) {
   const currentStep = useMemo(
     () => steps.find((step) => step.id === current) ?? steps[0],
@@ -54,6 +59,16 @@ export default function TuWorkflowRail({
   )
 
   if (!currentStep) return null
+
+  const editAssignment = onEditAssignment ? (
+    <button type="button" disabled={assignmentLocked} onClick={(event) => {
+      onEditAssignment()
+      event.currentTarget.closest('details')?.removeAttribute('open')
+    }} className="flex min-h-12 w-full items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-3 text-left text-sm font-semibold text-gray-700 transition hover:border-violet-200 hover:bg-violet-50 disabled:cursor-not-allowed disabled:text-gray-400">
+      <Pencil size={18} className="shrink-0" aria-hidden />
+      Redigera uppdrag
+    </button>
+  ) : null
 
   return (
     <>
@@ -71,6 +86,8 @@ export default function TuWorkflowRail({
             const Icon = ICONS[step.id]
             const active = step.id === current
             return (
+              <Fragment key={step.id}>
+              {step.id === 'field' ? editAssignment : null}
               <button
                 key={step.id}
                 type="button"
@@ -89,6 +106,7 @@ export default function TuWorkflowRail({
                   {statusIcon(step)}
                 </span>
               </button>
+              </Fragment>
             )
           })}
         </div>
@@ -103,6 +121,8 @@ export default function TuWorkflowRail({
             const Icon = ICONS[step.id]
             const active = step.id === current
             return (
+              <Fragment key={step.id}>
+              {step.id === 'field' && editAssignment ? <li>{editAssignment}</li> : null}
               <li key={step.id}>
                 <button
                   type="button"
@@ -124,6 +144,7 @@ export default function TuWorkflowRail({
                   </span>
                 </button>
               </li>
+              </Fragment>
             )
           })}
         </ol>

@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
+import ts from 'typescript'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import * as measurementVerification from '../src/lib/tu/measurementVerification.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { buildTuReportWriterSnapshot, parseTuReportEditorialPlan } from '../src/lib/tu/reportEditorial.ts'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
@@ -37,6 +41,113 @@ const snapshot = {
     resolvedConflicts: [],
   },
 }
+
+const measurementEvidence = {
+  observations: [{
+    id: 'observation-measurement', location: 'Vind', imageIds: ['image-1'],
+    measurements: [{ id: 'measurement-1', type: 'Fuktindikering', value: '45,1', unit: 'indikationsvärde', method: 'Indikering', instrument: 'Instrument A' }],
+  }],
+}
+
+function confirmedVerifications() {
+  return measurementVerification.deriveTuMeasurementImageVerifications(measurementEvidence,
+    [{ imageId: 'image-1', displayReadings: ['95,1'] }])
+    .map((reading) => ({ ...reading, resolution: 'recorded_confirmed' }))
+}
+
+test('confirmed instrument reading survives editorial selection and is a resolved decision', () => {
+  const measurementReview = measurementVerification.buildTuMeasurementReview({
+    evidence: measurementEvidence, verifications: confirmedVerifications(),
+  })
+  assert.equal(measurementReview.confirmedReadings[0].status, 'resolved')
+  assert.equal(measurementReview.confirmedReadings[0].recordedValue, '45,1')
+  assert.deepEqual(measurementReview.unresolvedMeasurementIds, [])
+  const input = { ...snapshot, evidence: measurementEvidence, measurementReview }
+  const writer = buildTuReportWriterSnapshot({ snapshot: input, plan: { focus: 'Test', scopeBoundary: '', internalWarnings: [], sections: [] } })
+  assert.deepEqual(writer.measurementReview, measurementReview)
+})
+
+test('confirmation cannot erase other conflicts or apply to edited values, metadata or photos', () => {
+  const verifications = confirmedVerifications()
+  const other = { ...verifications[0], measurementId: 'measurement-2', resolution: null }
+  assert.deepEqual(measurementVerification.buildTuMeasurementReview({
+    evidence: measurementEvidence, verifications: [...verifications, other],
+  }).unresolvedMeasurementIds, ['measurement-2'])
+  for (const change of [
+    { value: '45' }, { type: 'Fuktkvot' }, { instrument: 'Instrument B' }, { method: 'Annan metod' }, { unit: '%' }, { location: 'Kök' },
+  ]) {
+    const evidence = structuredClone(measurementEvidence)
+    Object.assign(evidence.observations[0].measurements[0], change)
+    assert.equal(measurementVerification.buildTuMeasurementReview({ evidence, verifications }).confirmedReadings.length, 0)
+  }
+  const evidence = structuredClone(measurementEvidence)
+  evidence.observations[0].imageIds.push('image-2')
+  assert.equal(measurementVerification.buildTuMeasurementReview({ evidence, verifications }).confirmedReadings.length, 0)
+  assert.equal(measurementVerification.buildTuMeasurementReview({ evidence: measurementEvidence,
+    verifications: [{ ...verifications[0], resolution: null }],
+  }).confirmedReadings.length, 0)
+  assert.equal(measurementVerification.buildTuMeasurementReview({ evidence: {}, verifications }).confirmedReadings.length, 0)
+})
+
+test('report snapshot carries confirmation and citable source through all generation stages', async () => {
+  const source = readFileSync(new URL('../src/lib/tu/reportDraftServer.ts', import.meta.url), 'utf8')
+  const code = ts.transpileModule(`${source}\nexport { editorialRequestBody, reportRequestBody, coverageRequestBody };`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const measurement = measurementEvidence.observations[0].measurements[0]
+  const rows: Record<string, unknown> = {
+    tu_analysis_workflows: { status: 'analysis_approved', current_analysis_run_id: 'run-1', analysis_approved_at: '2026-10-02', analysis_stale_at: null },
+    tu_ai_runs: { output_payload: { measurementVerifications: confirmedVerifications(), warnings: ['Unrelated limitation'] } },
+    tu_ai_analysis_items: [{ id: 'assessment-1', item_type: 'current_assessment' }],
+  }
+  const db = { from: (table: string) => {
+    const query = new Proxy({}, { get: (_, key) => key === 'then'
+      ? (resolve: (value: unknown) => void) => resolve({ data: rows[table], error: null })
+      : () => query })
+    return query
+  } }
+  const dependencies: Record<string, unknown> = {
+    '@/lib/tu/measurementVerification': measurementVerification,
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => db },
+    '@/lib/tu/authoring': { usesTuAiAssistedWorkflow: () => true },
+    '@/lib/tu/evidence': { isTuAnalysisSourceImage: () => true },
+    '@/lib/tu/evidenceServer': { listTuObservations: async () => [{
+      ...measurementEvidence.observations[0], noteText: 'Mätning', measurements: [{ ...measurement, measurementType: measurement.type, valueText: measurement.value }],
+    }] },
+    '@/lib/tu/server': {
+      getTuInvestigationById: async () => ({ reportDraft: { sections: [{ id: 'results', key: 'observed_execution', title: 'Resultat', text: 'Manuellt skriven text' }] } }),
+      listTuInvestigationImages: async () => [{ id: 'image-1' }],
+    },
+    '@/lib/tu/grounding': { sortTuEvidenceChronologically: (value: unknown) => value },
+    '@/lib/tu/measurementConfig': { formatTuMeasurementAssessment: () => 'Ej bedömt' },
+    '@/lib/tu/reportTemplates': { isTuPostDamageReport: () => false, resolveTuReportSectionPolicy: () => null },
+    '@/lib/tu/reportScope': { buildTuReportScopeAddressReview: () => ({}) },
+  }
+  type Request = { instructions: string; input: unknown }
+  const moduleRecord = { exports: {} as {
+    buildTuReportSnapshot: typeof import('../src/lib/tu/reportDraftServer').buildTuReportSnapshot
+    editorialRequestBody: (snapshot: unknown) => Request
+    reportRequestBody: (snapshot: unknown) => Request
+    coverageRequestBody: (input: unknown) => Request
+  } }
+  new Function('require', 'module', 'exports', code)((id: string) => dependencies[id] ?? {}, moduleRecord, moduleRecord.exports)
+  const built = await moduleRecord.exports.buildTuReportSnapshot({ orgId: 'org-1', inspectionId: 'inspection-1' })
+  assert.equal(built.snapshot.measurementReview.confirmedReadings.length, 1)
+  assert.equal(built.snapshot.sections[0].currentText, 'Manuellt skriven text')
+  const fieldKey = built.snapshot.measurementReview.confirmedReadings[0].sourceFieldKey
+  assert.ok(built.snapshot.sourceFields.some((field: { key: string; sourceRole: string }) => field.key === fieldKey && field.sourceRole === 'current_evidence'))
+  const writer = buildTuReportWriterSnapshot({ snapshot: built.snapshot, plan: { focus: 'Test', scopeBoundary: '', internalWarnings: [], sections: [] } })
+  for (const request of [
+    moduleRecord.exports.editorialRequestBody(built.snapshot), moduleRecord.exports.reportRequestBody(writer),
+    moduleRecord.exports.coverageRequestBody({ writerSnapshot: writer, generated: { sections: [] } }),
+  ]) {
+    assert.ok(request.instructions.includes(measurementVerification.TU_MEASUREMENT_REVIEW_INSTRUCTION))
+    assert.ok(JSON.stringify(request.input).includes('recorded_confirmed'))
+  }
+  const reviewSource = readFileSync(new URL('../src/lib/tu/reportReviewServer.ts', import.meta.url), 'utf8')
+  assert.match(reviewSource, /instructions: \[\s*TU_MEASUREMENT_REVIEW_INSTRUCTION/)
+  assert.match(reviewSource, /const reviewSnapshot = \{\s*\.\.\.snapshot/)
+})
 
 test('validates and restores the report template section order', () => {
   const plan = parseTuReportEditorialPlan({

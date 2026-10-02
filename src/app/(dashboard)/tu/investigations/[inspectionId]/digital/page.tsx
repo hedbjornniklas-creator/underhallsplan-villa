@@ -122,15 +122,22 @@ export default async function TuInvestigationDigitalReportPage({
     }
 
     return (
-      <TuPublicReportSnapshotView
-        snapshot={snapshot}
-        pdfDownloadUrl={pdfDownloadUrl}
-        pdfStatus={pdfStatus}
-        pdfStatusEndpoint={pdfStatusEndpoint}
-        shareEndpoint={null}
-        shareUrl={`/tu/investigations/${encodeURIComponent(inspectionId)}/digital?orgId=${encodeURIComponent(context.orgId)}`}
-        deliveryDocuments={deliveryDocuments}
-      />
+      <>
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 print:hidden">
+          <p className="mx-auto max-w-7xl">
+            <strong>Intern förhandsvisning.</strong> Denna länk kräver inloggning och är inte kundlänken.
+          </p>
+        </div>
+        <TuPublicReportSnapshotView
+          snapshot={snapshot}
+          pdfDownloadUrl={pdfDownloadUrl}
+          pdfStatus={pdfStatus}
+          pdfStatusEndpoint={pdfStatusEndpoint}
+          shareEndpoint={null}
+          shareUrl={null}
+          deliveryDocuments={deliveryDocuments}
+        />
+      </>
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'

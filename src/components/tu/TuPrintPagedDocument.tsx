@@ -67,7 +67,22 @@ export type TuPrintSection = {
   title: string
   text: string
   subsections?: TuPrintSubsection[]
+  measurements?: TuPrintMeasurementRow[]
 }
+
+export type TuPrintMeasurementRow = {
+  id: string
+  location: string
+  measurementType: string
+  result: string
+  assessment: string
+  method: string
+  instrument: string
+  note: string
+}
+
+type MeasurementCommonFields = Pick<TuPrintMeasurementRow, 'measurementType' | 'method' | 'instrument'>
+type MeasurementTableRow = TuPrintMeasurementRow & { detailsText?: string; continued?: boolean }
 
 export type TuPrintSubsection = {
   id: string
@@ -158,6 +173,16 @@ type PrintableBlock =
       text: string
       continuation: boolean
       gapAfterMm: number
+    }
+  | {
+      id: string
+      type: 'measurements'
+      sectionId: string
+      numberLabel: string
+      title: string
+      rows: MeasurementTableRow[]
+      commonFields: MeasurementCommonFields
+      continuation: boolean
     }
   | {
       id: string
@@ -386,6 +411,21 @@ function buildPrintableBlocks(props: TuPrintPagedDocumentProps): PrintableBlock[
   }
 
   for (const section of props.sections) {
+    if (section.measurements?.length) {
+      sectionNumber += 1
+      const commonFields = getMeasurementCommonFields(section.measurements)
+      blocks.push({
+        id: `measurements-${section.id}`,
+        type: 'measurements',
+        sectionId: section.id,
+        numberLabel: String(sectionNumber),
+        title: section.title,
+        rows: splitLongMeasurementRows(section.measurements, commonFields),
+        commonFields,
+        continuation: false,
+      })
+      continue
+    }
     const chunks = chunkSectionText(section.text)
     const printableSubsections =
       section.subsections?.filter((subsection) => subsection.title.trim() && subsection.text.trim()) ?? []
@@ -482,6 +522,37 @@ function createPagePlan(blocks: PrintableBlock[], heights: Map<string, number>):
 
   for (const block of blocks) {
     const height = heights.get(block.id) ?? 0
+    if (block.type === 'measurements') {
+      const rowHeights = block.rows.map((row) => heights.get(`${block.id}:${row.id}`) ?? 0)
+      // Each page fragment repeats the heading, shared metadata and table header.
+      const overhead = Math.max(0, height - rowHeights.reduce((sum, value) => sum + value, 0))
+      let start = 0
+      while (start < block.rows.length) {
+        if (current.length > 0 && currentHeight + overhead + rowHeights[start] > maxHeight) {
+          pages.push(current)
+          current = []
+          currentHeight = 0
+        }
+        let end = start
+        let fragmentHeight = overhead
+        do {
+          fragmentHeight += rowHeights[end]
+          end += 1
+        } while (
+          end < block.rows.length &&
+          currentHeight + fragmentHeight + rowHeights[end] <= maxHeight
+        )
+        current.push({
+          ...block,
+          id: `${block.id}-${start}`,
+          rows: block.rows.slice(start, end),
+          continuation: start > 0,
+        })
+        currentHeight += fragmentHeight
+        start = end
+      }
+      continue
+    }
     if (block.type === 'appendix-title' && current.length > 0) {
       pages.push(current)
       current = []
@@ -511,7 +582,7 @@ function buildTocEntries(props: TuPrintPagedDocumentProps, pages: PrintableBlock
       if (block.type === 'parties' && !pageById.has('parties')) {
         pageById.set('parties', pageNumber)
       }
-      if (block.type === 'section' && !pageById.has(`section:${block.sectionId}`)) {
+      if ((block.type === 'section' || block.type === 'measurements') && !pageById.has(`section:${block.sectionId}`)) {
         pageById.set(`section:${block.sectionId}`, pageNumber)
       }
       if (block.type === 'appendix-title' && !pageById.has('appendix')) {
@@ -603,7 +674,7 @@ function PartyRows({ rows }: { rows: TuPrintMetaRow[] }) {
   return (
     <dl className="grid grid-cols-[32mm_minmax(0,1fr)] gap-x-3 gap-y-[2px]">
       {rows.map((row) => {
-        const compactValue = row.value.includes('@') || row.value.length > 34
+        const compactValue = !row.value.includes('@') && row.value.length > 34
         return (
           <div key={row.label} className="contents">
             <dt className="text-[12px] font-semibold leading-4 text-gray-950">{row.label}</dt>
@@ -725,6 +796,138 @@ function SubsectionBlock({
           {text}
         </p>
       </div>
+    </section>
+  )
+}
+
+function getMeasurementCommonFields(rows: TuPrintMeasurementRow[]): MeasurementCommonFields {
+  const common = (key: keyof MeasurementCommonFields) => {
+    const value = rows[0]?.[key] ?? ''
+    return value && rows.every((row) => row[key] === value) ? value : ''
+  }
+  return { measurementType: common('measurementType'), method: common('method'), instrument: common('instrument') }
+}
+
+function splitLongMeasurementRows(rows: TuPrintMeasurementRow[], commonFields: MeasurementCommonFields): MeasurementTableRow[] {
+  return rows.flatMap((row) => {
+    const details = [
+      row.location || '-',
+      !commonFields.measurementType && row.measurementType,
+      !commonFields.method && row.method && `Metod: ${row.method}`,
+      !commonFields.instrument && row.instrument && `Instrument: ${row.instrument}`,
+      row.note && `Kommentar: ${row.note}`,
+    ].filter(Boolean).join('\n')
+    // Oversized cells need continuation rows because a single row cannot span our fixed pages.
+    if (details.length <= 600 && row.result.length <= 280 && row.assessment.length <= 280 &&
+      [details, row.result, row.assessment].every((text) => text.split('\n').length <= 15)) return [row]
+    const splitCell = (text: string) => text.split('\n').flatMap((line) =>
+      chunkLongTextAtWords(line).flatMap((chunk) => chunk.match(/[\s\S]{1,320}/g) ?? [''])
+    )
+    const detailChunks = splitCell(details)
+    const resultChunks = splitCell(row.result)
+    const assessmentChunks = splitCell(row.assessment)
+    return Array.from({ length: Math.max(detailChunks.length, resultChunks.length, assessmentChunks.length) }, (_, index) => ({
+      ...row,
+      id: index === 0 ? row.id : `${row.id}-continued-${index}`,
+      detailsText: detailChunks[index] ?? '',
+      result: resultChunks[index] ?? '',
+      assessment: assessmentChunks[index] ?? '',
+      continued: index > 0,
+    }))
+  })
+}
+
+export function TuReportMeasurementTable({
+  rows,
+  commonFields = getMeasurementCommonFields(rows),
+  print = false,
+}: {
+  rows: MeasurementTableRow[]
+  commonFields?: MeasurementCommonFields
+  print?: boolean
+}) {
+  const metadata = [
+    { label: 'Mättyp', value: commonFields.measurementType },
+    { label: 'Metod', value: commonFields.method },
+    { label: 'Instrument', value: commonFields.instrument },
+  ].filter((field) => field.value)
+  const cellClass = 'border border-gray-300 px-2 py-1.5 align-top'
+  return (
+    <div
+      className={print ? 'text-[13px] leading-[20px] text-gray-950' : 'text-sm leading-6 text-slate-950'}
+      style={PRINT_META_VALUE_STYLE}
+    >
+      {metadata.length > 0 ? (
+        <dl className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3">
+          {metadata.map((field) => (
+            <div key={field.label} className="contents">
+              <dt className="font-semibold">{field.label}</dt>
+              <dd className="min-w-0 whitespace-pre-wrap">{field.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      <table
+        className="w-full table-fixed border-collapse text-left"
+        style={{ fontSize: 'inherit', lineHeight: 'inherit' }}
+        aria-label="Mätningar"
+      >
+        <colgroup>
+          <col style={{ width: '46%' }} />
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '32%' }} />
+        </colgroup>
+        <thead className="bg-gray-50">
+          <tr>
+            {['Kontrollplats', 'Resultat', 'Bedömning'].map((label) => (
+              <th key={label} scope="col" className={`${cellClass} font-semibold`}>{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} data-tu-measurement-row-id={row.id}>
+              <td className={`${cellClass} whitespace-pre-wrap`}>
+                {row.detailsText !== undefined ? (
+                  <>
+                    {row.continued ? <div className="italic">Fortsättning</div> : null}
+                    {row.detailsText}
+                  </>
+                ) : (
+                  <>
+                    <div>{row.location || '-'}</div>
+                    {!commonFields.measurementType && row.measurementType ? <div>{row.measurementType}</div> : null}
+                    {!commonFields.method && row.method ? <div>Metod: {row.method}</div> : null}
+                    {!commonFields.instrument && row.instrument ? <div>Instrument: {row.instrument}</div> : null}
+                    {row.note ? <div className="mt-1">Kommentar: {row.note}</div> : null}
+                  </>
+                )}
+              </td>
+              <td className={`${cellClass} whitespace-pre-wrap`}>{row.result || (row.continued ? '' : '-')}</td>
+              <td className={`${cellClass} whitespace-pre-wrap`}>{row.assessment || (row.continued ? '' : '-')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function MeasurementBlock({ block, isFirstOnPage }: {
+  block: Extract<PrintableBlock, { type: 'measurements' }>
+  isFirstOnPage: boolean
+}) {
+  return (
+    <section
+      className={isFirstOnPage
+        ? 'tu-report-block tu-report-measurements-block'
+        : 'tu-report-block tu-report-measurements-block border-t border-violet-200 pt-4'}
+      style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+    >
+      <h2 className="mb-2 text-[15px] font-semibold leading-tight text-violet-950">
+        {block.numberLabel}. {block.title}{block.continuation ? ' (forts.)' : ''}
+      </h2>
+      <TuReportMeasurementTable rows={block.rows} commonFields={block.commonFields} print />
     </section>
   )
 }
@@ -861,6 +1064,9 @@ function PrintableBlockView({
         gapAfterMm={block.gapAfterMm}
       />
     )
+  }
+  if (block.type === 'measurements') {
+    return <MeasurementBlock block={block} isFirstOnPage={isFirstOnPage} />
   }
   if (block.type === 'appendix-title') {
     return (
@@ -1277,6 +1483,11 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
         )
         if (!element) continue
         heights.set(block.id, readBlockHeight(element))
+        if (block.type === 'measurements') {
+          for (const row of element.querySelectorAll<HTMLElement>('[data-tu-measurement-row-id]')) {
+            heights.set(`${block.id}:${row.dataset.tuMeasurementRowId}`, row.getBoundingClientRect().height)
+          }
+        }
       }
       setPagePlan(createPagePlan(blocks, heights))
     }

@@ -154,6 +154,7 @@ export function buildTuReportWriterSnapshot(input: {
     reportTemplate: input.snapshot.reportTemplate,
     sourcePolicy: input.snapshot.sourcePolicy,
     scopeAddressReview: input.snapshot.scopeAddressReview,
+    measurementReview: input.snapshot.measurementReview,
     editorialFocus: input.plan.focus,
     scopeBoundary: input.plan.scopeBoundary,
     sourceRegistry: {

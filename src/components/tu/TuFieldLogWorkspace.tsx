@@ -10,6 +10,7 @@ import {
   Loader2,
   MapPin,
   Mic,
+  Pencil,
   RefreshCw,
   Ruler,
   Trash2,
@@ -44,6 +45,7 @@ type Props = {
   onPreviewImage: (imageId: string) => void
   onDeleteImage: (imageId: string) => Promise<boolean>
   onOpenEvidence: () => void
+  onEditObservation: (observationId: string, measurementId?: string) => void
   nextStep?: ReactNode
 }
 
@@ -91,6 +93,7 @@ export default function TuFieldLogWorkspace({
   onPreviewImage,
   onDeleteImage,
   onOpenEvidence,
+  onEditObservation,
   nextStep,
 }: Props) {
   const [observations, setObservations] = useState<TuObservation[]>([])
@@ -296,6 +299,12 @@ export default function TuFieldLogWorkspace({
     const transcript = observation.transcriptText?.trim()
     const showTranscript = transcript && transcript !== observation.noteText.trim()
     const measurement = observation.measurements[0]
+    const editButton = <button type="button" disabled={locked}
+      onClick={() => onEditObservation(observation.id, measurement?.id)}
+      aria-label={`Redigera fältpost: ${observation.location || observation.noteText.slice(0, 60) || 'utan plats'}`}
+      className="ml-auto inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:text-gray-400">
+      <Pencil size={15} aria-hidden /> Redigera
+    </button>
     if (observation.sourceType === 'measurement' && measurement) {
       return (
         <article className="rounded-lg border border-violet-200 bg-white p-3 shadow-sm">
@@ -305,7 +314,8 @@ export default function TuFieldLogWorkspace({
               Mätning
             </span>
             <span className="text-xs text-gray-500">{formatTimestamp(observation.observedAt)}</span>
-            <span className="text-xs text-gray-500">Obearbetad</span>
+            <span className="text-xs text-gray-500">{observation.reviewStatus === 'reviewed' ? 'Kontrollerad' : 'Att kontrollera'}</span>
+            {editButton}
           </div>
           {observation.location ? (
             <div className="mt-2 flex items-center gap-1 text-xs font-medium text-gray-600">
@@ -353,7 +363,8 @@ export default function TuFieldLogWorkspace({
             Sparad
           </span>
           <span className="text-xs text-gray-500">{formatTimestamp(observation.observedAt)}</span>
-          <span className="text-xs text-gray-500">Obearbetad</span>
+          <span className="text-xs text-gray-500">{observation.reviewStatus === 'reviewed' ? 'Kontrollerad' : 'Att kontrollera'}</span>
+          {editButton}
         </div>
         {observation.location ? (
           <div className="mt-2 flex items-center gap-1 text-xs font-medium text-gray-600">

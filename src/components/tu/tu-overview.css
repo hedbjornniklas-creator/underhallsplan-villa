@@ -1,0 +1,6 @@
+.tu-overview .obo-actions .tu-start-investigation { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; padding: 0; border: 0; color: #245eb5; background: transparent; }
+.tu-overview .tu-start-investigation > span { display: none; }
+@container ob-overview (width < 56rem) {
+  .tu-overview .obo-actions .tu-start-investigation { flex: 1 1 9rem; width: auto; min-height: 48px; justify-content: flex-start; gap: .5rem; font-size: .875rem; }
+  .tu-overview .tu-start-investigation > span { display: block; overflow-wrap: anywhere; }
+}

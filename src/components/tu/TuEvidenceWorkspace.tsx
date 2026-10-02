@@ -25,6 +25,7 @@ import TuFieldEntryComposer from '@/components/tu/TuFieldEntryComposer'
 import TuMeasurementInstrumentSelect from '@/components/tu/TuMeasurementInstrumentSelect'
 import { useToast } from '@/components/ui/AppToastProvider'
 import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
+import { TU_ANALYSIS_UPDATED_EVENT } from '@/lib/tu/analysis'
 import type { TuFieldQueueController } from '@/hooks/useTuFieldQueue'
 import {
   isTuObservationReportInclusion,
@@ -128,9 +129,10 @@ type Props = {
   ) => Promise<void>
   onOpenReport: (sectionId?: string) => void
   onOpenAnalysis: () => void
+  onCloseObservation?: () => void
   focusRequest?: {
     observationId: string
-    measurementId: string
+    measurementId?: string
     nonce: number
   } | null
   enableSectionAi?: boolean
@@ -448,10 +450,11 @@ export default function TuEvidenceWorkspace({
   onApplySuggestion,
   onOpenReport,
   onOpenAnalysis,
+  onCloseObservation,
   focusRequest = null,
   enableSectionAi = false,
 }: Props) {
-  const { success: showSuccessToast } = useToast()
+  const { success: showSuccessToast, error: showErrorToast } = useToast()
   const editableSections = useMemo(
     () => sections.filter((section) => !['assignment_parties', 'signature'].includes(section.key)),
     [sections]
@@ -479,6 +482,8 @@ export default function TuEvidenceWorkspace({
   const [measurementEditorOpen, setMeasurementEditorOpen] = useState(false)
   const [fieldEntryDialogOpen, setFieldEntryDialogOpen] = useState(false)
   const [observationPanelOpen, setObservationPanelOpen] = useState(false)
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(() => new Set())
+  const deletedObservationIdsRef = useRef(new Set<string>())
   const [pendingObservationSaveIds, setPendingObservationSaveIds] = useState<Set<string>>(
     () => new Set()
   )
@@ -544,6 +549,7 @@ export default function TuEvidenceWorkspace({
         }
       }
 
+      window.dispatchEvent(new CustomEvent(TU_ANALYSIS_UPDATED_EVENT, { detail: { inspectionId } }))
       return result
     },
     [inspectionId, organizationId]
@@ -667,7 +673,7 @@ export default function TuEvidenceWorkspace({
       const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`)
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte hämta besiktningsunderlaget.')
-      const serverObservations = (payload.observations ?? []).map((observation) =>
+      const serverObservations = (payload.observations ?? []).filter((observation) => !deletedObservationIdsRef.current.has(observation.id)).map((observation) =>
         preferNewestObservation(observation, serverObservationsRef.current.get(observation.id))
       )
       serverObservationsRef.current = new Map(
@@ -695,7 +701,7 @@ export default function TuEvidenceWorkspace({
       const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`)
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte uppdatera besiktningsunderlaget.')
-      const serverObservations = (payload.observations ?? []).map((observation) =>
+      const serverObservations = (payload.observations ?? []).filter((observation) => !deletedObservationIdsRef.current.has(observation.id)).map((observation) =>
         preferNewestObservation(observation, serverObservationsRef.current.get(observation.id))
       )
       serverObservationsRef.current = new Map(
@@ -862,14 +868,14 @@ export default function TuEvidenceWorkspace({
   }, [measurementForm, selectedMeasurement])
 
   useEffect(() => {
-    if (!measurementFormDirty) return
+    if (!measurementFormDirty && pendingDeleteIds.size === 0) return
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
-  }, [measurementFormDirty])
+  }, [measurementFormDirty, pendingDeleteIds.size])
 
   const updateForm = <K extends keyof ObservationForm>(key: K, value: ObservationForm[K]) => {
     setSavedMessage(null)
@@ -884,6 +890,7 @@ export default function TuEvidenceWorkspace({
   }
 
   const selectObservation = (observation: TuObservation) => {
+    if (saving || measurementBusy || imageBusy) return false
     if (
       (formDirty || measurementFormDirty)
       && !window.confirm('Du har osparade ändringar. Vill du lämna fältposten utan att spara?')
@@ -909,7 +916,7 @@ export default function TuEvidenceWorkspace({
   }
 
   const closeObservationPanel = useCallback(() => {
-    if (saving) {
+    if (saving || measurementBusy || imageBusy) {
       setError('Vänta tills den pågående bearbetningen är klar.')
       return
     }
@@ -923,7 +930,8 @@ export default function TuEvidenceWorkspace({
     setMeasurementEditorOpen(false)
     setError(null)
     setSavedMessage(null)
-  }, [formDirty, measurementFormDirty, saving])
+    onCloseObservation?.()
+  }, [formDirty, measurementFormDirty, saving, measurementBusy, imageBusy, onCloseObservation])
 
   useEffect(() => {
     if (!observationPanelOpen) return
@@ -937,7 +945,7 @@ export default function TuEvidenceWorkspace({
   }, [closeObservationPanel, observationPanelOpen])
 
   const saveObservation = async () => {
-    if (locked || saving) return false
+    if (locked || saving || measurementBusy || imageBusy) return false
     if (!form.noteText.trim() && !form.transcriptText.trim() && form.imageIds.length === 0) {
       setError('Lägg in en anteckning, en röstinmatning eller minst en bild.')
       return false
@@ -947,6 +955,7 @@ export default function TuEvidenceWorkspace({
     setError(null)
     setSavedMessage(null)
     try {
+      if (measurementFormDirty && !(await saveMeasurement({ quiet: true }))) return false
       if (form.id) {
         await queueObservationSnapshot(form)
         setSavedMessage('Ändringarna är sparade.')
@@ -975,7 +984,7 @@ export default function TuEvidenceWorkspace({
   }
 
   const approveObservationAndOpenNext = async () => {
-    if (locked || saving || measurementBusy || !form.id) return
+    if (locked || saving || measurementBusy || imageBusy || !form.id) return
     if (!form.noteText.trim() && !form.transcriptText.trim() && form.imageIds.length === 0) {
       setError('Lägg in en anteckning, en röstinmatning eller minst en bild.')
       return
@@ -1058,7 +1067,7 @@ export default function TuEvidenceWorkspace({
   }
 
   const deleteObservation = async () => {
-    if (locked || saving || !form.id) return
+    if (locked || saving || measurementBusy || imageBusy || !form.id || deletedObservationIdsRef.current.has(form.id)) return
     if (
       pendingObservationSaveIds.has(form.id)
       || failedObservationSaveIds.has(form.id)
@@ -1067,23 +1076,43 @@ export default function TuEvidenceWorkspace({
       return
     }
     if (!window.confirm('Ta bort fältposten och dess mätvärden?')) return
-    setSaving(true)
+    const removed = observations.find((observation) => observation.id === form.id)
+    if (!removed) return
+    const removedIndex = observations.indexOf(removed)
+    deletedObservationIdsRef.current.add(removed.id)
+    setPendingDeleteIds((current) => new Set(current).add(removed.id))
+    setObservations((current) => current.filter((observation) => observation.id !== removed.id))
+    setObservationPanelOpen(false)
+    setForm(createEmptyObservation(sections))
+    setMeasurementForm(emptyMeasurementWithRememberedInstrument())
     setError(null)
+    setSavedMessage(null)
     try {
       const response = await fetch(`/api/tu/investigations/${inspectionId}/observations?orgId=${encodeURIComponent(organizationId)}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ observationId: form.id }),
+        body: JSON.stringify({ observationId: removed.id }),
       })
       const payload = await readJson<TuEvidenceResponse>(response)
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte ta bort fältposten.')
-      setObservationPanelOpen(false)
-      setForm(createEmptyObservation(sections))
-      await loadObservations(null)
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Kunde inte ta bort fältposten.')
+      serverObservationsRef.current.delete(removed.id)
+      window.dispatchEvent(new CustomEvent(TU_ANALYSIS_UPDATED_EVENT, { detail: { inspectionId } }))
+      showSuccessToast('Fältposten är borttagen.', { appearance: 'dark', durationMs: 3000 })
+    } catch {
+      deletedObservationIdsRef.current.delete(removed.id)
+      setObservations((current) => {
+        if (current.some((observation) => observation.id === removed.id)) return current
+        const restored = [...current]
+        restored.splice(Math.min(removedIndex, restored.length), 0, removed)
+        return restored
+      })
+      showErrorToast('Raderingen kunde inte bekräftas. Fältposten visas igen. Försök igen.', { appearance: 'dark' })
     } finally {
-      setSaving(false)
+      setPendingDeleteIds((current) => {
+        const next = new Set(current)
+        next.delete(removed.id)
+        return next
+      })
     }
   }
 
@@ -1098,8 +1127,13 @@ export default function TuEvidenceWorkspace({
   }
 
   const uploadAndLinkImages = async (files: File[]) => {
+    const observationId = formRef.current.id
     const uploadedImageIds = await onUploadImages(files)
     if (uploadedImageIds.length === 0) return
+    if (formRef.current.id !== observationId) {
+      showErrorToast('Bilderna finns i bildbanken. Öppna fältposten igen för att koppla dem.', { appearance: 'dark' })
+      return
+    }
     setForm((current) => ({
       ...current,
       reviewStatus: current.id && current.reviewStatus === 'reviewed' ? 'draft' : current.reviewStatus,
@@ -1213,7 +1247,8 @@ export default function TuEvidenceWorkspace({
               method: savedMethod,
             }
       )
-      await loadObservations(form.id)
+      await refreshObservationList()
+      window.dispatchEvent(new CustomEvent(TU_ANALYSIS_UPDATED_EVENT, { detail: { inspectionId } }))
       if (!options.quiet) {
         showSuccessToast(wasEditing ? 'Mätningen är sparad.' : 'Mätningen är tillagd.')
       }
@@ -1228,6 +1263,7 @@ export default function TuEvidenceWorkspace({
 
   const editMeasurement = (measurement: TuMeasurement) => {
     setMeasurementForm(measurementToForm(measurement))
+    setSupplementOpen(true)
     setMeasurementEditorOpen(true)
   }
 
@@ -1239,8 +1275,8 @@ export default function TuEvidenceWorkspace({
     ) return
     const observation = observations.find((item) => item.id === focusRequest.observationId)
     const measurement = observation?.measurements.find((item) => item.id === focusRequest.measurementId)
-    if (!observation || !measurement || !selectObservation(observation)) return
-    editMeasurement(measurement)
+    if (!observation || (focusRequest.measurementId && !measurement) || !selectObservation(observation)) return
+    if (measurement) editMeasurement(measurement)
     setObservationPanelOpen(true)
     consumedFocusRequestRef.current = focusRequest.nonce
     // Selection helpers intentionally use the latest local form state.
@@ -1343,6 +1379,9 @@ export default function TuEvidenceWorkspace({
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {pendingDeleteIds.size > 0 ? <span className="inline-flex min-h-9 items-center gap-2 text-xs text-gray-600" role="status">
+              <Loader2 size={14} className="animate-spin" aria-hidden /> Tar bort i bakgrunden ({pendingDeleteIds.size})
+            </span> : null}
             {pendingObservationSaveIds.size > 0 ? (
               <span
                 className="inline-flex h-9 items-center gap-2 rounded-md bg-violet-50 px-3 text-xs font-semibold text-violet-800"
@@ -1615,7 +1654,7 @@ export default function TuEvidenceWorkspace({
                   <button
                     type="button"
                     onClick={() => void deleteObservation()}
-                    disabled={locked || saving || selectedObservationSaveUnresolved}
+                    disabled={locked || saving || measurementBusy || imageBusy || selectedObservationSaveUnresolved}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-gray-300"
                     aria-label="Ta bort fältpost"
                     title="Ta bort fältpost"
@@ -2271,7 +2310,7 @@ export default function TuEvidenceWorkspace({
                   <button
                     type="button"
                     onClick={() => void saveObservation()}
-                    disabled={locked || saving}
+                    disabled={locked || saving || measurementBusy || imageBusy}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
                   >
                     Spara som utkast
@@ -2281,7 +2320,7 @@ export default function TuEvidenceWorkspace({
                   <button
                     type="button"
                     onClick={() => void saveObservation()}
-                    disabled={locked || saving}
+                    disabled={locked || saving || measurementBusy || imageBusy}
                     className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
                     {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
@@ -2291,18 +2330,18 @@ export default function TuEvidenceWorkspace({
                   <button
                     type="button"
                     onClick={() => void approveObservationAndOpenNext()}
-                    disabled={locked || saving || measurementBusy}
+                    disabled={locked || saving || measurementBusy || imageBusy}
                     title="Du bekräftar att du själv har kontrollerat källmaterialet."
                     className="inline-flex min-h-10 min-w-44 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
                     <Check size={16} aria-hidden />
                     Markera som kontrollerad och öppna nästa
                   </button>
-                ) : formDirty ? (
+                ) : formDirty || measurementFormDirty ? (
                   <button
                     type="button"
                     onClick={() => void saveObservation()}
-                    disabled={locked || saving}
+                    disabled={locked || saving || measurementBusy || imageBusy}
                     className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                   >
                     {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
@@ -2480,7 +2519,7 @@ export default function TuEvidenceWorkspace({
         <button
           type="button"
           onClick={onOpenAnalysis}
-          disabled={reviewedCount < observations.length || observations.length === 0}
+          disabled={pendingDeleteIds.size > 0 || pendingObservationSaveIds.size > 0 || failedObservationSaveIds.size > 0 || reviewedCount < observations.length || observations.length === 0}
           className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
         >
           Bedöm och komplettera

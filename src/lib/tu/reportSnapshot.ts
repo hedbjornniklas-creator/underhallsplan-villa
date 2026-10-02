@@ -163,31 +163,23 @@ function normalizeSectionText(key: string, text: string) {
 export function buildTuMeasurementPrintSection(observations: TuObservation[]): TuPrintSection | null {
   const measurementRows = observations
     .filter((observation) => observation.reviewStatus === 'reviewed' && observation.includeInReport)
-    .flatMap((observation) => observation.measurements.map((measurement, index) => {
-      const location = normalizePrintableText(measurement.location ?? observation.location)
-      const assessment = formatTuMeasurementAssessment(measurement)
-      const details = [
-        `Resultat: ${formatTuMeasurementResult(measurement)}`,
-        assessment ? `Bedömning: ${assessment}` : null,
-        measurement.method ? `Metod: ${normalizePrintableText(measurement.method)}` : null,
-        measurement.instrument ? `Instrument: ${normalizePrintableText(measurement.instrument)}` : null,
-        measurement.note ? `Kommentar: ${normalizePrintableText(measurement.note)}` : null,
-      ].filter((line): line is string => Boolean(line))
-      return {
-        id: `measurement-${measurement.id}`,
-        title: location
-          ? `${location} – ${normalizePrintableText(measurement.measurementType)}`
-          : `${normalizePrintableText(measurement.measurementType)} ${index + 1}`,
-        text: details.join('\n'),
-      }
-    }))
+    .flatMap((observation) => observation.measurements.map((measurement) => ({
+      id: `measurement-${measurement.id}`,
+      location: normalizePrintableText(measurement.location) || normalizePrintableText(observation.location),
+      measurementType: normalizePrintableText(measurement.measurementType),
+      result: formatTuMeasurementResult(measurement),
+      assessment: formatTuMeasurementAssessment(measurement),
+      method: normalizePrintableText(measurement.method),
+      instrument: normalizePrintableText(measurement.instrument),
+      note: normalizePrintableText(measurement.note),
+    })))
   if (measurementRows.length === 0) return null
   return {
     id: 'structured-measurements',
     key: 'measurements',
     title: 'Mätningar',
     text: '',
-    subsections: measurementRows,
+    measurements: measurementRows,
   }
 }
 
