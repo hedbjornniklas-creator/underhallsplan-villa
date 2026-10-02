@@ -3,14 +3,20 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Check, ChevronRight, Settings, UsersRound } from 'lucide-react'
+import { Building2, Check, ChevronRight, UserRound, UsersRound } from 'lucide-react'
 
 const ITEMS = [
   {
-    href: '/settings',
-    label: 'Profil och integrationer',
-    description: 'Person-, företags- och Fortnoxuppgifter',
-    icon: Settings,
+    href: '/settings/organisation',
+    label: 'Organisation',
+    description: 'Företag, medlemmar och Fortnox',
+    icon: Building2,
+  },
+  {
+    href: '/settings/profil',
+    label: 'Min profil',
+    description: 'Dina arbetskontaktuppgifter och underskrift',
+    icon: UserRound,
   },
   {
     href: '/settings/kunder',
@@ -37,10 +43,10 @@ function SettingsNavContent() {
         <p className="mt-1 text-sm text-gray-600">Välj vad du vill hantera.</p>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         {ITEMS.map((item) => {
           const active =
-            pathname === item.href || (item.href === '/settings' && pathname === '/ob/settings')
+            pathname === item.href || (item.href === '/settings/organisation' && pathname === '/settings')
           const Icon = item.icon
           return (
             <Link
@@ -51,6 +57,11 @@ function SettingsNavContent() {
                   : item.href
               }
               aria-current={active ? 'page' : undefined}
+              onClick={event => {
+                if (!window.dispatchEvent(new CustomEvent('hushub:before-organization-switch', {
+                  cancelable: true, detail: { orgId: organizationId },
+                }))) event.preventDefault()
+              }}
               className={`group flex min-h-20 items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 ${
                 active
                   ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
@@ -95,6 +106,7 @@ function SettingsNavContent() {
           )
         })}
       </div>
+      {pathname === '/ob/settings' ? <p className="px-1 pt-3 text-sm text-amber-900">Du visar den tidigare profilvyn för ÖB/EB. Organisationens gemensamma uppgifter och din TU-profil finns i menyn ovan.</p> : null}
     </nav>
   )
 }

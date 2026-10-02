@@ -22,6 +22,7 @@ const nextConfig: NextConfig = {
       { source: '/rapport/bestallare/:path*', headers: privateBearerHeaders },
       { source: '/atgardsarende/:path*', headers: privateBearerHeaders },
       { source: '/api/action-cases/public/:path*', headers: privateBearerHeaders },
+      { source: '/organisation/inbjudan', headers: privateBearerHeaders },
     ]
   },
   images: {

@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { readOrganizationBranding } from '@/lib/organizations/companyProfile'
 import type {
   OrganizationProfileWorkspace,
   OrganizationProfileCardValues,
@@ -276,6 +277,19 @@ export async function resolveOrganizationProfileCard(input: {
   const selectedMembership = memberships.find((membership) => membership.org_id === input.orgId)
   if (!selectedMembership) throw new Error('ORG_MEMBERSHIP_REQUIRED')
   const availableLegacyMedia = legacyMediaAvailability(profile)
+  const company = await readOrganizationBranding(input.orgId)
+  const sharedValues = company ? {
+    companyName: company.name,
+    companyOrgNo: company.organizationNumber,
+    companyAddress: company.address,
+    companyPostalCode: company.postalCode,
+    companyCity: company.city,
+    logoPath: company.logoPath,
+    reportFooterText: company.reportFooterText,
+  } : {}
+  // Corporate branding is resolved once per organization; personal card values
+  // cannot override it. Existing frozen document snapshots use their own values.
+  if (company) availableLegacyMedia.logoPath = false
 
   if (row) {
     return {
@@ -283,7 +297,9 @@ export async function resolveOrganizationProfileCard(input: {
       orgId: input.orgId,
       profileId: input.profileId,
       source: 'organization_card',
-      configured: true,
+      configured: company ? company.configured : true,
+      sharedCompany: Boolean(company),
+      companyConfigured: company?.configured ?? false,
       migrationRequired: false,
       isDefaultOrganization: selectedMembership.is_default,
       version: row.version,
@@ -291,6 +307,7 @@ export async function resolveOrganizationProfileCard(input: {
       updatedAt: row.updated_at,
       legacyMediaAvailable: availableLegacyMedia,
       ...rowValues(row),
+      ...sharedValues,
     }
   }
 
@@ -307,6 +324,8 @@ export async function resolveOrganizationProfileCard(input: {
     profileId: input.profileId,
     source: legacyFallbackAllowed ? 'legacy_profile' : 'unconfigured',
     configured: legacyFallbackAllowed,
+    sharedCompany: Boolean(company),
+    companyConfigured: company?.configured ?? false,
     migrationRequired,
     isDefaultOrganization: selectedMembership.is_default,
     version: null,
@@ -314,6 +333,7 @@ export async function resolveOrganizationProfileCard(input: {
     updatedAt: null,
     legacyMediaAvailable: availableLegacyMedia,
     ...values,
+    ...sharedValues,
   }
 }
 
@@ -362,6 +382,8 @@ export async function getOrganizationProfileWorkspace(input: {
   }
 
   return {
+    sharedCompany: resolved.sharedCompany,
+    companyConfigured: resolved.companyConfigured,
     profileId: input.profileId,
     organization: {
       id: input.orgId,
@@ -370,7 +392,7 @@ export async function getOrganizationProfileWorkspace(input: {
     },
     role: input.role,
     configured: resolved.configured,
-    migrationRequired: resolved.migrationRequired,
+    migrationRequired: resolved.migrationRequired || !resolved.sharedCompany,
     version: resolved.version,
     source: resolved.source,
     legacyMediaAvailable: resolved.legacyMediaAvailable,
@@ -419,7 +441,7 @@ export async function importLegacyOrganizationProfileMedia(input: {
     ),
   }
   const fields = ORGANIZATION_PROFILE_MEDIA_FIELDS.filter((field) => (
-    !current[field] && Boolean(legacyPaths[field])
+    field !== 'logoPath' && !current[field] && Boolean(legacyPaths[field])
   ))
   if (fields.length === 0) throw new Error('ORG_PROFILE_CARD_LEGACY_MEDIA_NOT_FOUND')
 
@@ -497,25 +519,13 @@ export async function saveOrganizationProfileCard(input: {
   if (current.migrationRequired) {
     throw new Error('ORG_PROFILE_CARD_MIGRATION_REQUIRED')
   }
+  if (!current.sharedCompany) throw new Error('ORG_PROFILE_CARD_MIGRATION_REQUIRED')
   if (current.version !== input.expectedVersion) {
     throw new Error('ORG_PROFILE_CARD_CONFLICT')
   }
-  if (input.actorProfileId !== input.profileId) {
-    const { data: actorMembership, error: actorMembershipError } = await admin
-      .from('org_members')
-      .select('role,is_active')
-      .eq('org_id', input.orgId)
-      .eq('profile_id', input.actorProfileId)
-      .maybeSingle()
-    if (
-      actorMembershipError ||
-      !actorMembership ||
-      actorMembership.is_active !== true ||
-      actorMembership.role !== 'admin'
-    ) {
-      throw new Error('ORG_PROFILE_CARD_ADMIN_REQUIRED')
-    }
-  }
+  if (input.actorProfileId !== input.profileId) throw new Error('ORG_PROFILE_CARD_ADMIN_REQUIRED')
+  const corporateFields = ['companyName', 'companyOrgNo', 'companyAddress', 'companyPostalCode', 'companyCity', 'logoPath', 'reportFooterText'] as const
+  if (corporateFields.some(field => input.values[field] !== current[field])) throw new Error('ORG_COMPANY_FIELDS_READ_ONLY')
   assertOrganizationProfileMediaPaths({
     orgId: input.orgId,
     profileId: input.profileId,
@@ -524,42 +534,21 @@ export async function saveOrganizationProfileCard(input: {
   })
 
   const values = {
-    display_name: input.values.displayName,
+    displayName: input.values.displayName,
     title: input.values.title,
     phone: input.values.phone,
     email: input.values.email,
-    company_name: input.values.companyName,
-    company_orgno: input.values.companyOrgNo,
-    company_address: input.values.companyAddress,
-    company_postal_code: input.values.companyPostalCode,
-    company_city: input.values.companyCity,
-    avatar_path: input.values.avatarPath,
-    logo_path: input.values.logoPath,
-    signature_path: input.values.signaturePath,
-    report_footer_text: input.values.reportFooterText,
-    updated_by_profile_id: input.actorProfileId,
+    avatarPath: input.values.avatarPath,
+    signaturePath: input.values.signaturePath,
   }
-  const result = input.expectedVersion === null
-    ? await admin
-        .from('profile_org_cards')
-        .insert({
-          org_id: input.orgId,
-          profile_id: input.profileId,
-          ...values,
-          created_by_profile_id: input.actorProfileId,
-        })
-        .select('id')
-        .single()
-    : await admin
-        .from('profile_org_cards')
-        .update(values)
-        .eq('org_id', input.orgId)
-        .eq('profile_id', input.profileId)
-        .eq('version', input.expectedVersion)
-        .select('id')
-        .maybeSingle()
+  const result = await admin.rpc('organization_member_profile_save', {
+    p_actor: input.actorProfileId, p_org: input.orgId,
+    p_expected_version: input.expectedVersion ?? 0, p_values: values,
+  })
 
   if (result.error) {
+    if (result.error.message === 'ORG_CONFLICT') throw new Error('ORG_PROFILE_CARD_CONFLICT')
+    if (result.error.message === 'ORG_MEMBERSHIP_REQUIRED') throw new Error('ORG_MEMBERSHIP_REQUIRED')
     if (isMissingProfileCardTable(result.error)) {
       throw new Error('ORG_PROFILE_CARD_MIGRATION_REQUIRED')
     }

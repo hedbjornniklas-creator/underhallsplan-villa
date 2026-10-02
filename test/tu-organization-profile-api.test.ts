@@ -315,19 +315,19 @@ test('media API statically enforces organization context, image limits and isola
     'utf8'
   ).replace(/\s+/gu, ' ')
 
-  assert.match(source, /const ALLOWED_FIELDS = new Set\(\['avatarPath', 'logoPath', 'signaturePath'\]\)/u)
+  assert.match(source, /const ALLOWED_FIELDS = new Set\(\['avatarPath', 'signaturePath'\]\)/u)
   assert.match(source, /searchParams\.getAll\('orgId'\)\.length !== 1/u)
   assert.match(source, /searchParams\.getAll\('field'\)\.length !== 1/u)
-  assert.match(source, /const context = await requireTuContext\(searchParams\.get\('orgId'\)\)/u)
+  assert.match(source, /const context = await requireOrganizationContext\(searchParams\.get\('orgId'\)\)/u)
   assert.ok(
-    source.indexOf('requireTuContext') < source.indexOf('await request.formData()'),
-    'Membership and TU access must be checked before multipart parsing'
+    source.indexOf('await requireOrganizationContext') < source.indexOf('await readOrganizationMultipart(request)'),
+    'Active organization membership must be checked before multipart parsing'
   )
   assert.match(source, /file\.size <= 0 \|\| file\.size > MAX_FILE_SIZE/u)
   assert.match(source, /const detected = detectImage\(buffer\)/u)
   assert.match(source, /sharp\(buffer, \{ failOn: 'error' \}\)\.metadata\(\)/u)
   assert.match(source, /width \* height > MAX_PIXEL_COUNT/u)
-  assert.match(source, /'profiles', context\.userId, 'organizations', context\.orgId/u)
+  assert.match(source, /'profiles', context\.profileId, 'organizations', context\.organization\.id/u)
   assert.match(source, /upsert: false/u)
   assert.doesNotMatch(source, /searchParams\.get\('profileId'\)/u)
 })
@@ -342,8 +342,8 @@ test('persistence and SQL contracts keep every card scoped to an active organiza
     'utf8'
   ).replace(/\s+/gu, ' ').toLowerCase()
 
-  assert.match(server, /\.eq\('org_id', input\.orgId\) \.eq\('profile_id', input\.profileId\) \.eq\('version', input\.expectedVersion\)/u)
-  assert.match(server, /org_id: input\.orgId, profile_id: input\.profileId/u)
+  assert.match(server, /p_actor: input\.actorProfileId, p_org: input\.orgId, p_expected_version: input\.expectedVersion \?\? 0/u)
+  assert.match(server, /rpc\('organization_member_profile_save'/u)
   assert.match(server, /selectedMembership = memberships\.find\(\(membership\) => membership\.org_id === input\.orgId\)/u)
   assert.match(server, /if \(!selectedMembership\) throw new Error\('ORG_MEMBERSHIP_REQUIRED'\)/u)
   assert.match(server, /bucket\.download\(sourcePath\)/u)

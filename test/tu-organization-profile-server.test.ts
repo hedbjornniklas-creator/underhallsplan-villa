@@ -29,6 +29,7 @@ type Fixture = {
   card?: Record<string, unknown> | null
   cardError?: { code?: string; message?: string } | null
   memberships: Array<{ org_id: string; is_default: boolean }>
+  company?: Record<string, unknown> | null
   profile?: Partial<{
     avatar_path: string | null
     logo_path: string | null
@@ -93,6 +94,9 @@ function loadResolver(fixture: Fixture): ResolverModule {
       if (name === 'server-only') return {}
       if (name === '@/lib/supabase/admin') {
         return { createSupabaseAdminClient: () => ({ from: query }) }
+      }
+      if (name === '@/lib/organizations/companyProfile') {
+        return { readOrganizationBranding: async () => fixture.company ?? null }
       }
       throw new Error(`Unexpected resolver dependency ${name}`)
     },
@@ -322,27 +326,46 @@ const SAVED_CARD = {
   updated_at: '2026-09-12T11:00:00.000Z',
 }
 
+const SHARED_COMPANY = {
+  id: ORG_A,
+  name: 'Organisationens gemensamma AB',
+  organizationNumber: '556999-9999',
+  address: 'Gemensamma gatan 2',
+  postalCode: '333 33',
+  city: 'Göteborg',
+  website: 'https://gemensamt.example',
+  logoPath: `organizations/${ORG_A}/logo-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.png`,
+  reportFooterText: 'Organisationens gemensamma sidfot',
+  configured: true,
+  version: 5,
+}
+
 function savedCardValues(overrides: Record<string, string | null> = {}) {
   return {
     displayName: SAVED_CARD.display_name,
     title: SAVED_CARD.title,
     phone: SAVED_CARD.phone,
     email: SAVED_CARD.email,
-    companyName: SAVED_CARD.company_name,
-    companyOrgNo: SAVED_CARD.company_orgno,
-    companyAddress: SAVED_CARD.company_address,
-    companyPostalCode: SAVED_CARD.company_postal_code,
-    companyCity: SAVED_CARD.company_city,
+    companyName: SHARED_COMPANY.name,
+    companyOrgNo: SHARED_COMPANY.organizationNumber,
+    companyAddress: SHARED_COMPANY.address,
+    companyPostalCode: SHARED_COMPANY.postalCode,
+    companyCity: SHARED_COMPANY.city,
     avatarPath: SAVED_CARD.avatar_path,
-    logoPath: SAVED_CARD.logo_path,
+    logoPath: SHARED_COMPANY.logoPath,
     signaturePath: SAVED_CARD.signature_path,
-    reportFooterText: SAVED_CARD.report_footer_text,
+    reportFooterText: SHARED_COMPANY.reportFooterText,
     ...overrides,
   }
 }
 
-function saveHarness() {
-  const writes: Array<{ operation: 'insert' | 'update'; values: unknown }> = []
+function saveHarness(options: {
+  company?: Record<string, unknown> | null
+  card?: Record<string, unknown> | null
+  rpcError?: { code?: string; message?: string } | null
+} = {}) {
+  const writes: Array<{ operation: string; values: Record<string, unknown> }> = []
+  let saved: Record<string, unknown> | null = options.card === undefined ? { ...SAVED_CARD } : options.card
   const profile = {
     id: PROFILE_ID,
     full_name: 'Niklas Global',
@@ -360,7 +383,7 @@ function saveHarness() {
 
   function selection(table: string) {
     if (table === 'profiles') return { data: profile, error: null }
-    if (table === 'profile_org_cards') return { data: SAVED_CARD, error: null }
+    if (table === 'profile_org_cards') return { data: saved, error: null }
     if (table === 'org_members') {
       return { data: [{ org_id: ORG_A, is_default: true }], error: null }
     }
@@ -368,34 +391,29 @@ function saveHarness() {
   }
 
   function query(table: string) {
-    let operation: 'select' | 'insert' | 'update' = 'select'
     const builder = {
       select: () => builder,
       eq: () => builder,
-      insert: (values: unknown) => {
-        operation = 'insert'
-        writes.push({ operation, values })
-        return builder
-      },
-      update: (values: unknown) => {
-        operation = 'update'
-        writes.push({ operation, values })
-        return builder
-      },
-      single: async () =>
-        operation === 'select'
-          ? selection(table)
-          : { data: { id: SAVED_CARD.id }, error: null },
-      maybeSingle: async () =>
-        operation === 'select'
-          ? selection(table)
-          : { data: { id: SAVED_CARD.id }, error: null },
+      maybeSingle: async () => selection(table),
       then: (
         resolve: (value: ReturnType<typeof selection>) => unknown,
         reject?: (reason: unknown) => unknown
       ) => Promise.resolve(selection(table)).then(resolve, reject),
     }
     return builder
+  }
+
+  async function rpc(operation: string, values: Record<string, unknown>) {
+    writes.push({ operation, values })
+    if (options.rpcError) return { data: null, error: options.rpcError }
+    const personal = values.p_values as Record<string, unknown>
+    saved = {
+      ...(saved ?? SAVED_CARD),
+      display_name: personal.displayName, title: personal.title, phone: personal.phone,
+      email: personal.email, avatar_path: personal.avatarPath, signature_path: personal.signaturePath,
+      version: Number(values.p_expected_version ?? 0) + 1,
+    }
+    return { data: { saved: true }, error: null }
   }
 
   const file = 'src/lib/organizations/profileCard.ts'
@@ -415,7 +433,10 @@ function saveHarness() {
     (name: string) => {
       if (name === 'server-only') return {}
       if (name === '@/lib/supabase/admin') {
-        return { createSupabaseAdminClient: () => ({ from: query }) }
+        return { createSupabaseAdminClient: () => ({ from: query, rpc }) }
+      }
+      if (name === '@/lib/organizations/companyProfile') {
+        return { readOrganizationBranding: async () => options.company === undefined ? SHARED_COMPANY : options.company }
       }
       throw new Error(`Unexpected save dependency ${name}`)
     },
@@ -438,15 +459,14 @@ async function saveWithMedia(values: Record<string, string | null>) {
   return harness
 }
 
-test('profile save accepts null, exactly unchanged legacy media and own generated upload paths', async () => {
+test('personal profile save accepts null, exactly unchanged legacy media and own generated upload paths through RPC', async () => {
   const ownPrefix = `profiles/${PROFILE_ID}/organizations/${ORG_A}/`
   const uploadId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   const cases = [
     savedCardValues(),
-    savedCardValues({ avatarPath: null, logoPath: null, signaturePath: null }),
+    savedCardValues({ avatarPath: null, signaturePath: null }),
     savedCardValues({
       avatarPath: `${ownPrefix}avatarPath-${uploadId}.png`,
-      logoPath: `${ownPrefix}logoPath-${uploadId}.jpg`,
       signaturePath: `${ownPrefix}signaturePath-${uploadId}.webp`,
     }),
   ]
@@ -454,7 +474,16 @@ test('profile save accepts null, exactly unchanged legacy media and own generate
   for (const values of cases) {
     const harness = await saveWithMedia(values)
     assert.equal(harness.writes.length, 1)
-    assert.equal(harness.writes[0].operation, 'update')
+    assert.deepEqual(harness.writes[0], {
+      operation: 'organization_member_profile_save',
+      values: {
+        p_actor: PROFILE_ID,
+        p_org: ORG_A,
+        p_expected_version: SAVED_CARD.version,
+        p_values: { displayName: values.displayName, title: values.title, phone: values.phone,
+          email: values.email, avatarPath: values.avatarPath, signaturePath: values.signaturePath },
+      },
+    })
   }
 })
 
@@ -465,10 +494,10 @@ test('profile save rejects external, foreign, mismatched and non-upload media pa
   const invalidCases: Array<Record<string, string | null>> = [
     { avatarPath: 'https://attacker.example/avatar.png' },
     { avatarPath: `profiles/${PROFILE_ID}/organizations/${ORG_B}/avatarPath-${uploadId}.png` },
-    { logoPath: `profiles/${otherProfile}/organizations/${ORG_A}/logoPath-${uploadId}.png` },
+    { signaturePath: `profiles/${otherProfile}/organizations/${ORG_A}/signaturePath-${uploadId}.png` },
     { signaturePath: `${ownPrefix}avatarPath-${uploadId}.png` },
     { avatarPath: `${ownPrefix}avatarPath-../foreign.png` },
-    { logoPath: `${ownPrefix}logoPath-${uploadId}.svg` },
+    { avatarPath: `${ownPrefix}avatarPath-${uploadId}.svg` },
     { signaturePath: `${ownPrefix}signaturePath-not-a-generated-id.webp` },
   ]
 
@@ -486,4 +515,120 @@ test('profile save rejects external, foreign, mismatched and non-upload media pa
     )
     assert.deepEqual(harness.writes, [], JSON.stringify(overrides))
   }
+})
+
+test('shared company identity overrides every corporate field on an old member card while personal identity stays local', async () => {
+  const resolver = loadResolver({ memberships: [{ org_id: ORG_A, is_default: true }], card: SAVED_CARD, company: SHARED_COMPANY })
+  const card = await resolver.resolveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID })
+  assert.equal(card.sharedCompany, true)
+  assert.equal(card.configured, true)
+  assert.equal(card.companyConfigured, true)
+  assert.equal(card.companyName, SHARED_COMPANY.name)
+  assert.equal(card.companyOrgNo, SHARED_COMPANY.organizationNumber)
+  assert.equal(card.companyAddress, SHARED_COMPANY.address)
+  assert.equal(card.companyPostalCode, SHARED_COMPANY.postalCode)
+  assert.equal(card.companyCity, SHARED_COMPANY.city)
+  assert.equal(card.logoPath, SHARED_COMPANY.logoPath)
+  assert.equal(card.reportFooterText, SHARED_COMPANY.reportFooterText)
+  assert.equal(card.displayName, SAVED_CARD.display_name)
+  assert.equal(card.email, SAVED_CARD.email)
+  assert.equal(card.phone, SAVED_CARD.phone)
+  assert.equal(card.avatarPath, SAVED_CARD.avatar_path)
+  assert.equal(card.signaturePath, SAVED_CARD.signature_path)
+  assert.equal((card.legacyMediaAvailable as Record<string, boolean>).logoPath, false)
+})
+
+test('issuing blocks unconfigured shared company identity even when an old member card exists', async () => {
+  const resolver = loadResolver({ memberships: [{ org_id: ORG_A, is_default: true }], card: SAVED_CARD,
+    company: { ...SHARED_COMPANY, configured: false } })
+  const card = await resolver.resolveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID })
+  assert.equal(card.companyName, SHARED_COMPANY.name)
+  assert.equal(card.configured, false)
+  await assert.rejects(resolver.requireConfiguredOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID }), { message: 'ORG_PROFILE_CARD_REQUIRED' })
+})
+
+test('shared company alone never substitutes for a missing personal member card', async () => {
+  const resolver = loadResolver({ memberships: [{ org_id: ORG_A, is_default: true }], company: SHARED_COMPANY })
+  const card = await resolver.resolveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID })
+  assert.equal(card.source, 'unconfigured')
+  assert.equal(card.configured, false)
+  assert.equal(card.companyConfigured, true)
+  assert.equal(card.companyName, SHARED_COMPANY.name)
+  assert.equal(card.signaturePath, null)
+  await assert.rejects(resolver.requireConfiguredOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID }), { message: 'ORG_PROFILE_CARD_REQUIRED' })
+})
+
+test('shared company cannot give a non-member access to another organization card', async () => {
+  const resolver = loadResolver({ memberships: [{ org_id: ORG_A, is_default: true }], card: { ...SAVED_CARD, org_id: ORG_B },
+    company: { ...SHARED_COMPANY, id: ORG_B } })
+  await assert.rejects(resolver.resolveOrganizationProfileCard({ orgId: ORG_B, profileId: PROFILE_ID }), { message: 'ORG_MEMBERSHIP_REQUIRED' })
+})
+
+test('inspector can update own person fields and own signature without submitting any company mutation to RPC', async () => {
+  const harness = saveHarness()
+  const values = savedCardValues({ displayName: 'Anna Medlem', title: 'Teknisk utredare', phone: '070-999 99 99', email: 'anna@company.example',
+    signaturePath: `profiles/${PROFILE_ID}/organizations/${ORG_A}/signaturePath-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.png` })
+  const saved = await harness.module.saveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID, actorProfileId: PROFILE_ID,
+    expectedVersion: SAVED_CARD.version, values })
+  assert.equal(saved.displayName, values.displayName)
+  assert.equal(saved.signaturePath, values.signaturePath)
+  assert.equal(saved.version, SAVED_CARD.version + 1)
+  assert.equal(saved.companyName, SHARED_COMPANY.name)
+  assert.deepEqual(Object.keys(harness.writes[0].values.p_values as object).sort(), ['avatarPath', 'displayName', 'email', 'phone', 'signaturePath', 'title'])
+})
+
+test('company fields and logo are read only through personal save, even for a valid generated logo path', async () => {
+  const corporateChanges: Array<Record<string, string | null>> = [
+    { companyName: 'Annat företag AB' }, { companyOrgNo: '556123-4567' }, { companyAddress: 'Annangatan 3' },
+    { companyPostalCode: '111 11' }, { companyCity: 'Stockholm' }, { reportFooterText: 'Egen företagssidfot' },
+    { logoPath: null }, { logoPath: `profiles/${PROFILE_ID}/organizations/${ORG_A}/logoPath-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.png` },
+    { logoPath: `profiles/55555555-5555-4555-8555-555555555555/organizations/${ORG_A}/logoPath-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.png` },
+  ]
+  for (const overrides of corporateChanges) {
+    const harness = saveHarness()
+    await assert.rejects(harness.module.saveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID, actorProfileId: PROFILE_ID,
+      expectedVersion: SAVED_CARD.version, values: savedCardValues(overrides) }), { message: 'ORG_COMPANY_FIELDS_READ_ONLY' })
+    assert.deepEqual(harness.writes, [])
+  }
+})
+
+test('a second actor cannot replace another member personal fields or signature', async () => {
+  const actor = '55555555-5555-4555-8555-555555555555'
+  const changes: Array<Record<string, string | null>> = [{ displayName: 'Ersatt namn' }, { signaturePath: null }, {
+    signaturePath: `profiles/${PROFILE_ID}/organizations/${ORG_A}/signaturePath-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.png`,
+  }]
+  for (const overrides of changes) {
+    const harness = saveHarness()
+    await assert.rejects(harness.module.saveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID, actorProfileId: actor,
+      expectedVersion: SAVED_CARD.version, values: savedCardValues(overrides) }), { message: 'ORG_PROFILE_CARD_ADMIN_REQUIRED' })
+    assert.deepEqual(harness.writes, [])
+  }
+})
+
+test('personal save requires the company migration and preserves optimistic concurrency at both boundaries', async () => {
+  const unmigrated = saveHarness({ company: null })
+  await assert.rejects(unmigrated.module.saveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID, actorProfileId: PROFILE_ID,
+    expectedVersion: SAVED_CARD.version, values: savedCardValues() }), { message: 'ORG_PROFILE_CARD_MIGRATION_REQUIRED' })
+  assert.deepEqual(unmigrated.writes, [])
+
+  const stale = saveHarness()
+  await assert.rejects(stale.module.saveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID, actorProfileId: PROFILE_ID,
+    expectedVersion: SAVED_CARD.version - 1, values: savedCardValues() }), { message: 'ORG_PROFILE_CARD_CONFLICT' })
+  assert.deepEqual(stale.writes, [])
+
+  const raced = saveHarness({ rpcError: { message: 'ORG_CONFLICT' } })
+  await assert.rejects(raced.module.saveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID, actorProfileId: PROFILE_ID,
+    expectedVersion: SAVED_CARD.version, values: savedCardValues() }), { message: 'ORG_PROFILE_CARD_CONFLICT' })
+  assert.equal(raced.writes.length, 1)
+})
+
+test('first personal card creation maps missing version to the SQL create sentinel and allows preparing a profile before company confirmation', async () => {
+  const harness = saveHarness({ card: null, company: { ...SHARED_COMPANY, configured: false } })
+  const values = savedCardValues({ avatarPath: null, signaturePath: null })
+  const result = await harness.module.saveOrganizationProfileCard({ orgId: ORG_A, profileId: PROFILE_ID, actorProfileId: PROFILE_ID,
+    expectedVersion: null, values })
+  assert.equal(harness.writes[0].values.p_expected_version, 0)
+  assert.equal(result.source, 'organization_card')
+  assert.equal(result.version, 1)
+  assert.equal(result.configured, false)
 })

@@ -30,6 +30,15 @@ test('generic login keeps the original destination allowlist and rejects externa
   }
 })
 
+test('organization invitation login returns only to the exact token-free invitation page', () => {
+  assert.equal(getPublicLoginDestination('/organisation/inbjudan'), '/organisation/inbjudan')
+  for (const rejected of ['/organisation/inbjudan/other', '/organisation/inbjudan?next=https://example.test',
+    '/organisation/inbjudan#invite=secret', '//hushub.se/organisation/inbjudan', 'https://hushub.se/organisation/inbjudan',
+    ['/organisation/inbjudan']]) {
+    assert.equal(getPublicLoginDestination(rejected), '/app')
+  }
+})
+
 test('public headers replace only public RenoApp entry headers, never private or personal-link pages', () => {
   for (const path of ['/renoapp', '/renoapp/apply', '/renoapp/login', '/renoapp/request-access']) {
     assert.equal(isPublicRenoPage(path), true)

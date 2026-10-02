@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     }
 
     const surface = searchParams.get('surface')
-    if (surface !== 'tu' && surface !== 'moisture' && surface !== 'customers') {
+    if (surface !== 'tu' && surface !== 'moisture' && surface !== 'customers' && surface !== 'settings') {
       return jsonError('Begäran är ogiltig.', 400)
     }
 

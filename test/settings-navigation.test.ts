@@ -71,27 +71,27 @@ function activeLinks(html: string) {
   return anchors(html).filter((anchor) => anchor.includes('aria-current="page"'))
 }
 
-test('settings navigation exposes the two destinations with clear descriptions', () => {
+test('settings navigation exposes company, personal and customer destinations with clear descriptions', () => {
   const html = renderNavigation('/settings')
 
   assert.match(html, /<nav\b[^>]*aria-label="Inställningsmeny"/)
   assert.match(html, />Inställningsmeny</)
-  assert.equal(anchors(html).length, 2)
+  assert.equal(anchors(html).length, 3)
 
-  const profile = anchorFor(html, '/settings')
-  assert.match(profile, />Profil och integrationer</)
-  assert.match(profile, />Person-, företags- och Fortnoxuppgifter</)
+  const profile = anchorFor(html, '/settings/organisation')
+  assert.match(profile, />Organisation</)
+  assert.match(profile, />Företag, medlemmar och Fortnox</)
 
   const customers = anchorFor(html, '/settings/kunder')
   assert.match(customers, />Kundregister</)
   assert.match(customers, />Kunder och faktureringsuppgifter</)
 })
 
-test('profile destination is current on both canonical and legacy settings routes', () => {
-  for (const pathname of ['/settings', '/ob/settings']) {
+test('organization destination is current on both canonical and landing settings routes', () => {
+  for (const pathname of ['/settings', '/settings/organisation']) {
     const html = renderNavigation(pathname)
 
-    assert.deepEqual(activeLinks(html), [anchorFor(html, '/settings')])
+    assert.deepEqual(activeLinks(html), [anchorFor(html, '/settings/organisation')])
     assert.doesNotMatch(anchorFor(html, '/settings/kunder'), /aria-current=/)
   }
 })
@@ -100,7 +100,7 @@ test('customer destination alone is current on the customer route', () => {
   const html = renderNavigation('/settings/kunder')
 
   assert.deepEqual(activeLinks(html), [anchorFor(html, '/settings/kunder')])
-  assert.doesNotMatch(anchorFor(html, '/settings'), /aria-current=/)
+  assert.doesNotMatch(anchorFor(html, '/settings/organisation'), /aria-current=/)
 })
 
 test('unrelated routes do not mark a settings destination as current', () => {
@@ -109,11 +109,12 @@ test('unrelated routes do not mark a settings destination as current', () => {
   assert.equal(activeLinks(html).length, 0)
 })
 
-test('settings navigation preserves the active organization in both destinations', () => {
+test('settings navigation preserves the active organization in all destinations', () => {
   const organizationId = '22222222-2222-4222-8222-222222222222'
   const html = renderNavigation('/settings/kunder', `orgId=${organizationId}`)
 
-  anchorFor(html, `/settings?orgId=${organizationId}`)
+  anchorFor(html, `/settings/organisation?orgId=${organizationId}`)
+  anchorFor(html, `/settings/profil?orgId=${organizationId}`)
   anchorFor(html, `/settings/kunder?orgId=${organizationId}`)
 })
 

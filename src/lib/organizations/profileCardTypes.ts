@@ -28,6 +28,8 @@ export type OrganizationProfileCardValues = {
 }
 
 export type ResolvedOrganizationProfileCard = OrganizationProfileCardValues & {
+  sharedCompany?: boolean
+  companyConfigured?: boolean
   id: string | null
   orgId: string
   profileId: string
@@ -42,6 +44,8 @@ export type ResolvedOrganizationProfileCard = OrganizationProfileCardValues & {
 }
 
 export type OrganizationProfileWorkspace = {
+  sharedCompany?: boolean
+  companyConfigured?: boolean
   profileId: string
   organization: {
     id: string

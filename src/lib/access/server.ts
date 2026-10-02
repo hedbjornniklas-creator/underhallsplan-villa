@@ -22,6 +22,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
   ) => PromiseLike<TResult1 | TResult2>
   select: (columns: string) => QueryBuilder<T>
   eq: (column: string, value: unknown) => QueryBuilder<T>
+  in: (column: string, values: unknown[]) => QueryBuilder<T>
   order: (
     column: string,
     options?: {
@@ -179,8 +180,10 @@ function parseRelation(value: RelationValue) {
 }
 
 function isPlatformSchemaMissing(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error ?? '')
-  return PLATFORM_SCHEMA_MARKERS.some((marker) => message.includes(marker))
+  const message = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase()
+  return PLATFORM_SCHEMA_MARKERS.some((marker) => message.includes(marker)) && (
+    message.includes('does not exist') || (message.includes('could not find') && message.includes('schema cache'))
+  )
 }
 
 async function requireAuthenticatedIdentity(): Promise<PlatformIdentity> {
@@ -300,6 +303,23 @@ async function loadLegacyBrfMembership(profileId: string) {
   }
 
   return (data ?? null) as LegacyBrfMemberRow | null
+}
+
+async function hasManagedDashboardAccessHistory(profileId: string) {
+  const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const { data, error } = await admin
+    .from('platform_access_assignments')
+    .select('id,platform_products!inner(key)')
+    .eq('profile_id', profileId)
+    .eq('platform_products.key', 'dashboard')
+    .eq('scope_type', 'organization')
+    .in('source_system', ['organization_administration', 'organization_admin_migration'])
+    .limit(1)
+    .maybeSingle()
+  // Revoked/expired rows intentionally count. Removing the last explicit grant
+  // must never revive modules through legacy membership or profiles.is_admin.
+  if (error) throw new Error('PLATFORM_ACCESS_READ_FAILED')
+  return Boolean(data)
 }
 
 async function loadLegacyOrgMembership(profileId: string, orgId?: string | null) {
@@ -422,6 +442,8 @@ export async function hasCurrentUserAccess<TProduct extends PlatformProductKey>(
     return hasMatchingNormalizedAccess(productAssignments, input)
   }
 
+  if (input.productKey === 'dashboard' && context.normalizedAccessAvailable &&
+      await hasManagedDashboardAccessHistory(context.identity.profileId)) return false
   if (input.productKey === 'renoapp' && context.normalizedAccessAvailable && !context.identity.isLegacyAdmin) return false
   return hasLegacyAccess(context.identity, input)
 }

@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- previews use versioned user-uploaded storage paths */
 
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import {
   Building2,
@@ -18,7 +19,7 @@ import type {
   OrganizationProfileWorkspace,
 } from '@/lib/organizations/profileCardTypes'
 
-type MediaField = 'avatarPath' | 'logoPath' | 'signaturePath'
+type MediaField = 'avatarPath' | 'signaturePath'
 type TextField = Exclude<keyof OrganizationProfileCardValues, MediaField>
 
 type ApiBody = {
@@ -68,7 +69,7 @@ export default function TuOrganizationProfileEditor({
     !uploadingField &&
     form.displayName.trim().length > 0 &&
     form.companyName.trim().length > 0
-  const legacyMediaFields = (['avatarPath', 'logoPath', 'signaturePath'] as const).filter(
+  const legacyMediaFields = (['avatarPath', 'signaturePath'] as const).filter(
     (field) => !form[field] && workspace.legacyMediaAvailable[field]
   )
   const canImportLegacyMedia =
@@ -88,6 +89,21 @@ export default function TuOrganizationProfileEditor({
     setError(null)
     setSuccess(null)
   }, [initialWorkspace])
+
+  useEffect(() => {
+    const beforeSwitch = (event: Event) => {
+      if ((saving || uploadingField || importingLegacyMedia) || (dirty && !window.confirm('Du har osparade profiländringar. Vill du lämna dem?'))) event.preventDefault()
+    }
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirty || saving || uploadingField) { event.preventDefault(); event.returnValue = '' }
+    }
+    window.addEventListener('hushub:before-organization-switch', beforeSwitch)
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => {
+      window.removeEventListener('hushub:before-organization-switch', beforeSwitch)
+      window.removeEventListener('beforeunload', beforeUnload)
+    }
+  }, [dirty, saving, uploadingField, importingLegacyMedia])
 
   const previewAddress = useMemo(
     () =>
@@ -128,7 +144,7 @@ export default function TuOrganizationProfileEditor({
         orgId: workspace.organization.id,
         field,
       })
-      const response = await fetch(`/api/tu/profile-card/media?${params.toString()}`, {
+      const response = await fetch(`/api/organizations/member-profile/media?${params.toString()}`, {
         method: 'POST',
         body,
         cache: 'no-store',
@@ -153,7 +169,7 @@ export default function TuOrganizationProfileEditor({
     setError(null)
     setSuccess(null)
     try {
-      const response = await fetch('/api/tu/profile-card', {
+      const response = await fetch('/api/organizations/member-profile', {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -178,7 +194,7 @@ export default function TuOrganizationProfileEditor({
       setWorkspace(payload.workspace)
       setForm(payload.workspace.card)
       setSavedSnapshot(serialize(payload.workspace.card))
-      setSuccess('Tidigare profilbild, logotyp och underskrift har hämtats där de saknades.')
+      setSuccess('Tidigare profilbild och underskrift har hämtats där de saknades.')
     } catch (importError) {
       setError(
         importError instanceof Error
@@ -198,7 +214,7 @@ export default function TuOrganizationProfileEditor({
     setError(null)
     setSuccess(null)
     try {
-      const response = await fetch('/api/tu/profile-card', {
+      const response = await fetch('/api/organizations/member-profile', {
         method: 'PUT',
         headers: {
           Accept: 'application/json',
@@ -207,7 +223,10 @@ export default function TuOrganizationProfileEditor({
         body: JSON.stringify({
           orgId: workspace.organization.id,
           expectedVersion: workspace.version,
-          card: form,
+          card: {
+            displayName: form.displayName, title: form.title, phone: form.phone,
+            email: form.email, avatarPath: form.avatarPath, signaturePath: form.signaturePath,
+          },
         }),
         cache: 'no-store',
         credentials: 'same-origin',
@@ -223,7 +242,7 @@ export default function TuOrganizationProfileEditor({
       setWorkspace(payload.workspace)
       setForm(payload.workspace.card)
       setSavedSnapshot(serialize(payload.workspace.card))
-      setSuccess(`Företagsprofilen är sparad för ${organizationName}.`)
+      setSuccess(`Din profil är sparad för ${organizationName}.`)
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : 'Företagsprofilen kunde inte sparas.'
@@ -242,12 +261,11 @@ export default function TuOrganizationProfileEditor({
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-600">
-              Organisationsspecifikt visitkort
+              Min profil
             </p>
             <h2 className="mt-1 text-xl font-semibold text-slate-950">{organizationName}</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Dessa uppgifter används bara när du arbetar och skickar TU-dokument för denna
-              organisation.
+              Här ändrar du dina egna uppgifter i {organizationName}. Företagsuppgifterna och logotypen är gemensamma för alla medlemmar.
             </p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
@@ -258,13 +276,11 @@ export default function TuOrganizationProfileEditor({
 
         {workspace.migrationRequired ? (
           <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-            SQL 07 behöver köras innan separata företagsprofiler kan sparas. Nu visas den äldre
-            standardprofilen endast som förhandsvisning.
+            Organisationsinställningarna är ännu inte aktiverade. Kontakta HusHub-administratören.
           </div>
         ) : !workspace.configured ? (
           <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-            Den här organisationen har ännu inget eget visitkort. Fyll i och spara innan du
-            skickar uppdragsbekräftelser eller fastställer TU-utlåtanden.
+            {!workspace.companyConfigured ? 'Organisationens gemensamma företagsuppgifter behöver först bekräftas av en organisationsadministratör. Du kan spara dina personuppgifter redan nu.' : 'Spara din personprofil innan du skickar uppdragsbekräftelser eller fastställer TU-utlåtanden.'}
           </div>
         ) : (
           <div className="mt-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
@@ -309,29 +325,18 @@ export default function TuOrganizationProfileEditor({
           <TextInput label="Namn" required value={form.displayName} onChange={(value) => setText('displayName', value)} />
           <TextInput label="Titel/roll" value={form.title ?? ''} onChange={(value) => setText('title', value)} placeholder="Exempelvis certifierad besiktningsman" />
           <TextInput label="Telefon" value={form.phone ?? ''} onChange={(value) => setText('phone', value)} autoComplete="tel" />
-          <TextInput label="E-post" type="email" value={form.email ?? ''} onChange={(value) => setText('email', value)} autoComplete="email" />
-          <TextInput label="Företag" required value={form.companyName} onChange={(value) => setText('companyName', value)} autoComplete="organization" />
-          <TextInput label="Organisationsnummer" value={form.companyOrgNo ?? ''} onChange={(value) => setText('companyOrgNo', value)} placeholder="XXXXXX-XXXX" inputMode="numeric" />
-          <TextInput label="Företagsadress" value={form.companyAddress ?? ''} onChange={(value) => setText('companyAddress', value)} autoComplete="street-address" />
-          <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3">
-            <TextInput label="Postnummer" value={form.companyPostalCode ?? ''} onChange={(value) => setText('companyPostalCode', value)} autoComplete="postal-code" />
-            <TextInput label="Ort" value={form.companyCity ?? ''} onChange={(value) => setText('companyCity', value)} autoComplete="address-level2" />
-          </div>
+          <TextInput label="Arbetsmejl i organisationen" type="email" value={form.email ?? ''} onChange={(value) => setText('email', value)} autoComplete="email" />
         </div>
 
-        <label className="mt-4 block space-y-1.5">
-          <span className="text-sm font-medium text-slate-800">Sidfot i TU-utlåtanden</span>
-          <textarea
-            value={form.reportFooterText ?? ''}
-            onChange={(event) => setText('reportFooterText', event.target.value)}
-            rows={3}
-            maxLength={2_000}
-            placeholder="Valfri organisationsspecifik text"
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
-          />
-        </label>
+        <div className="mt-5 rounded-xl border border-violet-100 bg-violet-50 p-4 text-sm text-violet-950">
+          <p className="font-semibold">Företagsuppgifter från {organizationName}</p>
+          <p className="mt-1">{form.companyName}{form.companyOrgNo ? ` · ${form.companyOrgNo}` : ''}</p>
+          {previewAddress ? <p>{previewAddress}</p> : null}
+          <p className="mt-2 text-xs">Din arbetsmejl ändrar inte mejladressen du använder för att logga in.</p>
+          <Link href={`/settings/organisation?orgId=${encodeURIComponent(workspace.organization.id)}`} className="mt-3 inline-block font-semibold underline">Öppna organisationens inställningar</Link>
+        </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <MediaInput
             label="Profilbild"
             field="avatarPath"
@@ -341,15 +346,6 @@ export default function TuOrganizationProfileEditor({
             disabled={workspace.migrationRequired || Boolean(uploadingField) || importingLegacyMedia}
             onUpload={handleUpload}
             onRemove={() => setMedia('avatarPath', null)}
-          />
-          <MediaInput
-            label="Företagslogotyp"
-            field="logoPath"
-            value={form.logoPath}
-            busy={uploadingField === 'logoPath'}
-            disabled={workspace.migrationRequired || Boolean(uploadingField) || importingLegacyMedia}
-            onUpload={handleUpload}
-            onRemove={() => setMedia('logoPath', null)}
           />
           <MediaInput
             label="Underskrift"
@@ -368,11 +364,11 @@ export default function TuOrganizationProfileEditor({
           </p>
           <button
             type="submit"
-            disabled={!canSave || !dirty}
+            disabled={!canSave || (!dirty && workspace.version !== null)}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
           >
             <Save size={17} aria-hidden />
-            {saving ? 'Sparar…' : 'Spara företagsprofil'}
+            {saving ? 'Sparar…' : 'Spara min profil'}
           </button>
         </div>
       </form>
@@ -494,7 +490,7 @@ function MediaInput({
         />
       </label>
       {value ? (
-        <button type="button" onClick={onRemove} className="mt-1 w-full text-center text-[11px] font-medium text-rose-700 hover:text-rose-900">
+        <button type="button" disabled={disabled} onClick={onRemove} className="mt-1 w-full text-center text-[11px] font-medium text-rose-700 hover:text-rose-900 disabled:opacity-40">
           Ta bort från visitkortet
         </button>
       ) : null}

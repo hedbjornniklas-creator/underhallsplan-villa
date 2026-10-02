@@ -2,14 +2,16 @@ import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { requireTuContext } from '@/lib/tu/server'
+import { requireOrganizationContext } from '@/lib/organizations/administration'
+import { readOrganizationMultipart } from '@/lib/organizations/multipart'
+import { assertOrganizationSameOrigin, organizationFailure } from '@/lib/organizations/administrationHttp'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const MAX_PIXEL_COUNT = 40_000_000
-const ALLOWED_FIELDS = new Set(['avatarPath', 'logoPath', 'signaturePath'])
+const ALLOWED_FIELDS = new Set(['avatarPath', 'signaturePath'])
 const RESPONSE_HEADERS = {
   'Cache-Control': 'private, no-store, max-age=0',
   Pragma: 'no-cache',
@@ -58,7 +60,7 @@ function mapError(error: unknown) {
     return jsonError('Den valda organisationen är ogiltig.', 400, message)
   }
   if (message === 'ORG_MEMBERSHIP_REQUIRED' || message === 'MODULE_ACCESS_REQUIRED') {
-    return jsonError('Du saknar TU-behörighet i den valda organisationen.', 403, message)
+    return jsonError('Du saknar medlemskap i den valda organisationen.', 403, message)
   }
   if (message === 'ORG_PROFILE_MEDIA_FORBIDDEN') {
     return jsonError('Begäran kommer från fel webbplats.', 403, message)
@@ -69,6 +71,7 @@ function mapError(error: unknown) {
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request)
+    assertOrganizationSameOrigin(request)
     const searchParams = new URL(request.url).searchParams
     if (
       [...searchParams.keys()].some((key) => key !== 'orgId' && key !== 'field') ||
@@ -82,9 +85,10 @@ export async function POST(request: Request) {
     if (!ALLOWED_FIELDS.has(field)) {
       return jsonError('Bildtypen är ogiltig.', 400, 'ORG_PROFILE_MEDIA_INVALID')
     }
-    const context = await requireTuContext(searchParams.get('orgId'))
-    const form = await request.formData()
-    if ([...form.keys()].some((key) => key !== 'file')) {
+    const context = await requireOrganizationContext(searchParams.get('orgId'))
+    if (context.migrationRequired) return jsonError('Organisationsinställningarna är ännu inte aktiverade.', 409, 'ORG_MIGRATION_REQUIRED')
+    const form = await readOrganizationMultipart(request)
+    if ([...form.keys()].length !== 1 || [...form.keys()].some((key) => key !== 'file')) {
       return jsonError('Begäran är ogiltig.', 400, 'ORG_PROFILE_MEDIA_INVALID')
     }
     const file = form.get('file')
@@ -107,9 +111,9 @@ export async function POST(request: Request) {
 
     const storagePath = [
       'profiles',
-      context.userId,
+      context.profileId,
       'organizations',
-      context.orgId,
+      context.organization.id,
       `${field}-${randomUUID()}.${detected.extension}`,
     ].join('/')
     const admin = createSupabaseAdminClient()
@@ -130,6 +134,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const mapped = mapError(error)
     if (mapped) return mapped
+    if (error instanceof Error && ['ORG_ORIGIN_FORBIDDEN', 'ORG_INPUT_INVALID', 'ORG_CONTENT_TYPE_INVALID', 'ORG_REQUEST_TOO_LARGE'].includes(error.message)) return organizationFailure(error)
     return jsonError('Bilden kunde inte laddas upp.', 500, 'ORG_PROFILE_MEDIA_UPLOAD_FAILED')
   }
 }

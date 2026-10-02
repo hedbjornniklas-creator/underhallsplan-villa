@@ -15,6 +15,7 @@ const labels: Record<Destination, string> = {
   '/dashboard-v1': 'BesiktApp',
   '/renoapp/app': 'RenoApp',
   '/mina-uppdrag': 'Mina uppdrag',
+  '/organisation/inbjudan': 'din organisationsinbjudan',
 }
 
 export default function PublicLogin({ destination, resetSuccess }: { destination: Destination; resetSuccess: boolean }) {

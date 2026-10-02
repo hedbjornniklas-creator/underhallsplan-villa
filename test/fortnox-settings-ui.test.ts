@@ -132,6 +132,7 @@ function componentHarness(input: {
   patchOrganizationNumber?: string
   verificationConnection?: NonNullable<Organization['connection']>
   externalNavigationBlocked?: boolean
+  preferredOrgId?: string
 }) {
   type StateSlot = { kind: 'state'; value: unknown }
   type RefSlot = { kind: 'ref'; value: { current: unknown } }
@@ -204,8 +205,12 @@ function componentHarness(input: {
   }) satisfies ElementNode
 
   const location = { href: input.href ?? 'https://hushub.se/settings' }
+  const events = new EventTarget()
   const windowMock = {
     location,
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+    confirm: () => true,
     history: {
       replaceState(_state: unknown, _title: string, path: string) {
         history.push(path)
@@ -249,7 +254,7 @@ function componentHarness(input: {
 
   function render() {
     cursor = 0
-    return Component({ externalNavigationBlocked: input.externalNavigationBlocked ?? false })
+    return Component({ externalNavigationBlocked: input.externalNavigationBlocked ?? false, preferredOrgId: input.preferredOrgId })
   }
 
   function flushEffects() {
@@ -276,6 +281,25 @@ function componentHarness(input: {
 
   return { calls, history, render, flushEffects, settle }
 }
+
+test('embedded card pins its organisation and never offers a second organisation selector', async () => {
+  const harness = componentHarness({
+    preferredOrgId: FIRST_ORG_ID,
+    statusPayload: payload([organization(), organization({ id: DEFAULT_ORG_ID, name: 'Default company', isDefault: true })]),
+  })
+  const tree = await harness.settle()
+  assert.equal(findElements(tree, node => node.type === 'select').length, 0)
+  assert.equal(findElement(tree, node => node.type === 'input' && node.props.name === 'orgId').props.value, FIRST_ORG_ID)
+  assert.equal(findElement(tree, node => node.type === 'input' && node.props.id === 'fortnox-organization-number').props.readOnly, true)
+  assert.equal(findElements(tree, node => node.type === 'button' && textContent(node).includes('Spara org.nr')).length, 0)
+})
+
+test('embedded card does not fall back to another organisation when the requested one is unavailable', async () => {
+  const harness = componentHarness({ preferredOrgId: FIRST_ORG_ID, statusPayload: payload([organization({ id: DEFAULT_ORG_ID, isDefault: true })]) })
+  const tree = await harness.settle()
+  assert.match(textContent(tree), /inte tillgängliga för den valda organisationen/)
+  assert.equal(findElements(tree, node => node.type === 'form').length, 0)
+})
 
 test('settings page mounts one self-contained Fortnox card outside profile company fields', () => {
   assert.match(

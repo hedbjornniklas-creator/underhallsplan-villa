@@ -7,7 +7,7 @@ import { organizationSwitchDestination } from '../src/lib/organizations/navigati
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const compact = (value: string) => value.replace(/\s+/gu, ' ')
 
-const pagePath = 'src/app/(dashboard)/tu/settings/profile/page.tsx'
+const pagePath = 'src/app/(app)/settings/profil/page.tsx'
 const editorPath = 'src/components/tu/TuOrganizationProfileEditor.tsx'
 const dashboardPath = 'src/components/tu/TuDashboardClient.tsx'
 const switcherPath = 'src/components/organizations/ActiveOrganizationSwitcher.tsx'
@@ -17,14 +17,14 @@ const editor = compact(read(editorPath))
 const dashboard = compact(read(dashboardPath))
 const switcher = compact(read(switcherPath))
 
-test('TU profile page resolves workspace exclusively from the authenticated TU organization context', () => {
-  assert.match(page, /context = await requireTuContext\(requestedOrgId\)/u)
-  assert.match(page, /orgId: context\.orgId/u)
-  assert.match(page, /profileId: context\.userId/u)
+test('TU profile page resolves workspace exclusively from the authenticated organization membership', () => {
+  assert.match(page, /context = await getOrganizationWorkspace\(params\.orgId\)/u)
+  assert.match(page, /orgId: context\.organization\.id/u)
+  assert.match(page, /profileId: context\.profileId/u)
   assert.match(page, /role: context\.role/u)
-  assert.match(page, /key=\{context\.orgId\}/u)
-  assert.match(page, /Aktiv arbetsorganisation: \{context\.orgName/u)
-  assert.match(page, /`\/tu\?orgId=\$\{encodeURIComponent\(context\.orgId\)\}`/u)
+  assert.match(page, /key=\{context\.organization\.id\}/u)
+  assert.match(page, /Min profil i \{context\.organization\.name/u)
+  assert.match(page, /Tidigare profilvy för ÖB\/EB/u)
 
   assert.doesNotMatch(page, /profileId:\s*resolvedSearchParams/u)
   assert.doesNotMatch(page, /profileId\?:\s*string/u)
@@ -33,13 +33,13 @@ test('TU profile page resolves workspace exclusively from the authenticated TU o
 test('TU dashboard and organization switcher preserve the selected organization on the profile route', () => {
   assert.match(
     dashboard,
-    /href=\{organizationUrl\('\/tu\/settings\/profile', organizationId\)\}/u
+    /href=\{organizationUrl\('\/settings\/profil', organizationId\)\}/u
   )
-  assert.match(dashboard, /> Öppna företagsprofil <\/PendingLink>/u)
+  assert.match(dashboard, /> Öppna min profil <\/PendingLink>/u)
   assert.match(switcher, /router\.push\(organizationSwitchDestination\(\{ pathname, search, surface, orgId \}\)\)/u)
   assert.equal(organizationSwitchDestination({
-    pathname: '/tu/settings/profile', search: 'orgId=old', surface: 'tu', orgId: 'new',
-  }), '/tu/settings/profile?orgId=new')
+    pathname: '/settings/profil', search: 'orgId=old', surface: 'settings', orgId: 'new',
+  }), '/settings/profil?orgId=new')
 })
 
 test('profile editor scopes save and upload requests to the currently rendered workspace', () => {
@@ -47,12 +47,12 @@ test('profile editor scopes save and upload requests to the currently rendered w
     editor,
     /new URLSearchParams\(\{ orgId: workspace\.organization\.id, field, \}\)/u
   )
-  assert.match(editor, /fetch\(`\/api\/tu\/profile-card\/media\?\$\{params\.toString\(\)\}`/u)
-  assert.match(editor, /fetch\('\/api\/tu\/profile-card'/u)
+  assert.match(editor, /fetch\(`\/api\/organizations\/member-profile\/media\?\$\{params\.toString\(\)\}`/u)
+  assert.match(editor, /fetch\('\/api\/organizations\/member-profile'/u)
   assert.match(editor, /action: 'import_legacy_media'/u)
   assert.match(
     editor,
-    /JSON\.stringify\(\{ orgId: workspace\.organization\.id, expectedVersion: workspace\.version, card: form, \}\)/u
+    /JSON\.stringify\(\{ orgId: workspace\.organization\.id, expectedVersion: workspace\.version, card: \{ displayName: form\.displayName, title: form\.title, phone: form\.phone, email: form\.email, avatarPath: form\.avatarPath, signaturePath: form\.signaturePath, \}, \}\)/u
   )
   assert.match(
     editor,
@@ -72,9 +72,9 @@ test('profile editor resets organization-bound state and makes organization and 
   assert.match(editor, /setSavedSnapshot\(serialize\(initialWorkspace\.card\)\)/u)
   assert.match(editor, /\}, \[initialWorkspace\]\)/u)
   assert.match(editor, /const organizationName = workspace\.organization\.name/u)
-  assert.match(editor, /Organisationsspecifikt visitkort/u)
+  assert.match(editor, /Min profil/u)
   assert.match(editor, /workspace\.role === 'admin' \? 'Organisationsadministratör' : 'Besiktningsman'/u)
-  assert.match(editor, /Dessa uppgifter används bara när du arbetar och skickar TU-dokument för denna organisation/u)
+  assert.match(editor, /Företagsuppgifterna och logotypen är gemensamma för alla medlemmar/u)
 })
 
 test('migration-required mode prevents profile writes and media uploads in the UI', () => {
@@ -82,9 +82,9 @@ test('migration-required mode prevents profile writes and media uploads in the U
   assert.match(editor, /if \(!file \|\| workspace\.migrationRequired \|\| importingLegacyMedia\) return/u)
   assert.equal(
     editor.match(/disabled=\{workspace\.migrationRequired \|\| Boolean\(uploadingField\) \|\| importingLegacyMedia\}/gu)?.length,
-    3
+    2
   )
   assert.match(editor, /workspace\.configured && !workspace\.migrationRequired/u)
-  assert.match(editor, /disabled=\{!canSave \|\| !dirty\}/u)
-  assert.match(editor, /SQL 07 behöver köras/u)
+  assert.match(editor, /disabled=\{!canSave \|\| \(!dirty && workspace\.version !== null\)\}/u)
+  assert.match(editor, /Organisationsinställningarna är ännu inte aktiverade/u)
 })

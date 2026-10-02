@@ -280,10 +280,12 @@ function NoticeBox({ notice }: { notice: Notice }) {
 
 export default function FortnoxConnectionCard({
   externalNavigationBlocked,
+  preferredOrgId: organizationId,
 }: {
   externalNavigationBlocked: boolean
+  preferredOrgId?: string
 }) {
-  const preferredOrgId = useRef<string | null>(null)
+  const callbackPreferredOrgId = useRef<string | null>(null)
   const pendingConnectedCallback = useRef<{ orgId: string | null } | null>(null)
   const callbackProcessed = useRef(false)
   const selectedOrgIdRef = useRef('')
@@ -318,7 +320,7 @@ export default function FortnoxConnectionCard({
     } else if (notice) {
       setCallbackNotice(notice)
     }
-    preferredOrgId.current = normalizedCallbackOrgId
+    callbackPreferredOrgId.current = normalizedCallbackOrgId
 
     if (url.searchParams.has('fortnox')) {
       url.searchParams.delete('fortnox')
@@ -349,6 +351,9 @@ export default function FortnoxConnectionCard({
         }
         const parsed = parseSettings((await response.json()) as unknown)
         if (!parsed) throw new Error('Fortnox-inställningarna hade ett oväntat format.')
+        if (organizationId && !parsed.organizations.some(organization => organization.id === organizationId)) {
+          throw new Error('Fortnox-inställningarna är inte tillgängliga för den valda organisationen.')
+        }
         if (controller.signal.aborted) return
 
         const pendingCallback = pendingConnectedCallback.current
@@ -369,9 +374,10 @@ export default function FortnoxConnectionCard({
 
         setSettings(parsed)
         setSelectedOrgId((current) => {
-          const preferred = preferredOrgId.current
+          if (organizationId) return organizationId
+          const preferred = callbackPreferredOrgId.current
           if (preferred && parsed.organizations.some((organization) => organization.id === preferred)) {
-            preferredOrgId.current = null
+            callbackPreferredOrgId.current = null
             return preferred
           }
           if (current && parsed.organizations.some((organization) => organization.id === current)) {
@@ -397,12 +403,12 @@ export default function FortnoxConnectionCard({
     })()
 
     return () => controller.abort()
-  }, [reloadKey])
+  }, [organizationId, reloadKey])
 
   const selectedOrganization = useMemo(
     () =>
-      settings?.organizations.find((organization) => organization.id === selectedOrgId) ?? null,
-    [selectedOrgId, settings]
+      settings?.organizations.find((organization) => organization.id === (organizationId ?? selectedOrgId)) ?? null,
+    [organizationId, selectedOrgId, settings]
   )
 
   useEffect(() => {
@@ -420,6 +426,22 @@ export default function FortnoxConnectionCard({
     organizationNumber !== (selectedOrganization?.organizationNumber ?? '')
   const organizationNumberHasError =
     organizationNumberIsDirty && !organizationNumberIsValid
+
+  useEffect(() => {
+    if (!organizationNumberIsDirty && !saving && !checking) return
+    const beforeSwitch = (event: Event) => {
+      if (saving || checking) { event.preventDefault(); return }
+      if (event.defaultPrevented) return
+      const detail = (event as CustomEvent<{ confirmed?: boolean }>).detail
+      if (detail?.confirmed) return
+      if (!window.confirm('Du har ett osparat organisationsnummer. Vill du lämna ändringen?')) event.preventDefault()
+      else if (detail) detail.confirmed = true
+    }
+    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('hushub:before-organization-switch', beforeSwitch)
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => { window.removeEventListener('hushub:before-organization-switch', beforeSwitch); window.removeEventListener('beforeunload', beforeUnload) }
+  }, [checking, organizationNumberIsDirty, saving])
 
   async function saveOrganizationNumber() {
     if (!selectedOrganization || !organizationNumberIsValid || !selectedOrganization.canManage) return
@@ -636,13 +658,14 @@ export default function FortnoxConnectionCard({
           <>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="block text-sm font-medium text-gray-800">
-                {settings.organizations.length > 1 ? (
+                {!organizationId && settings.organizations.length > 1 ? (
                   <label>
                     Organisation
                   <select
                     value={selectedOrgId}
                     disabled={saving || checking || leaving}
                     onChange={(event) => {
+                      if (organizationNumberIsDirty && !window.confirm('Du har ett osparat organisationsnummer. Vill du lämna ändringen?')) return
                       selectedOrgIdRef.current = event.target.value
                       setSelectedOrgId(event.target.value)
                       setActionNotice(null)
@@ -681,7 +704,7 @@ export default function FortnoxConnectionCard({
                     autoComplete="off"
                     maxLength={11}
                     placeholder="XXXXXX-XXXX"
-                    readOnly={!selectedOrganization.canManage || Boolean(connection)}
+                    readOnly={Boolean(organizationId) || !selectedOrganization.canManage || Boolean(connection)}
                     disabled={saving || checking || leaving}
                     aria-invalid={organizationNumberHasError}
                     aria-describedby={
@@ -691,7 +714,7 @@ export default function FortnoxConnectionCard({
                     }
                     className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 read-only:cursor-default read-only:bg-gray-100 read-only:text-gray-600 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600"
                   />
-                  {!connection && selectedOrganization.canManage ? (
+                  {!organizationId && !connection && selectedOrganization.canManage ? (
                     <button
                       type="button"
                       onClick={() => void saveOrganizationNumber()}
@@ -709,7 +732,7 @@ export default function FortnoxConnectionCard({
                   ) : null}
                 </div>
                 <p id="fortnox-organization-number-help" className="mt-1 text-xs leading-5 text-gray-500">
-                  Detta är organisationens juridiska identitet och är separat från profiluppgifterna ovan.
+                  {organizationId ? 'Organisationsnumret hanteras under Organisation.' : 'Detta är organisationens juridiska identitet och är separat från profiluppgifterna ovan.'}
                   {connection ? ' Numret är låst till det verifierade Fortnox-företaget.' : ''}
                 </p>
                 {organizationNumberHasError ? (

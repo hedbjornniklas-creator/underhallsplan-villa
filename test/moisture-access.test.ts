@@ -53,6 +53,7 @@ function harness(options: { grants?: Grant[]; missingSchema?: boolean; legacyAdm
   const admin = {
     from(table: string) {
       const filters: Array<[string, unknown]> = []
+      const setFilters: Array<[string, unknown[]]> = []
       const result = () => {
         if (table === 'profiles') return {
           data: { id: 'profile-1', full_name: 'Testperson', email: 'person@example.test', is_admin: options.legacyAdmin ?? false },
@@ -60,16 +61,22 @@ function harness(options: { grants?: Grant[]; missingSchema?: boolean; legacyAdm
         }
         if (table === 'platform_access_assignments') return options.missingSchema
           ? { data: null, error: { message: 'relation platform_access_assignments does not exist' } }
-          : { data: rows.filter(row => filters.every(([key, value]) => row[key as keyof typeof row] === value)), error: null }
+          : { data: rows.filter(row => filters.every(([key, value]) => key === 'platform_products.key'
+            ? row.platform_products.key === value : row[key as keyof typeof row] === value)
+            && setFilters.every(([key, values]) => values.includes((row as Record<string, unknown>)[key]))), error: null }
         if (table === 'org_members') return { data: organizations, error: null }
         throw new Error(`Unexpected table ${table}`)
       }
       const query = {
         select: () => query,
         eq: (key: string, value: unknown) => { filters.push([key, value]); return query },
+        in: (key: string, values: unknown[]) => { setFilters.push([key, values]); return query },
         order: () => query,
         limit: () => query,
-        maybeSingle: async () => result(),
+        maybeSingle: async () => {
+          const response = result()
+          return { ...response, data: Array.isArray(response.data) ? response.data[0] ?? null : response.data }
+        },
         then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),
       }
       return query
@@ -87,6 +94,7 @@ function harness(options: { grants?: Grant[]; missingSchema?: boolean; legacyAdm
   const selectedOrgIds: unknown[] = []
   const service = load<typeof OrganizationServer>('src/lib/organizations/server.ts', {
     'server-only': {},
+    './administration': { requireOrganizationContext: () => { throw new Error('Moisture must not use settings-only authorization') } },
     '@/lib/access/server': access,
     '@/lib/customers/server': { getOrganizationCustomerNavigationContext: () => { throw new Error('Unexpected customer context') } },
     '@/lib/tu/server': { requireTuContext: () => { throw new Error('Moisture must not reuse TU authorization') } },

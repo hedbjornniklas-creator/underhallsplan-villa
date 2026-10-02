@@ -6,6 +6,7 @@ import { requireTuContext } from '@/lib/tu/server'
 import { requireMoistureContext } from '@/lib/moisture/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type { OrganizationSwitcherSurface } from './navigation'
+import { requireOrganizationContext } from './administration'
 
 export type { OrganizationSwitcherSurface } from './navigation'
 
@@ -37,6 +38,20 @@ export async function getOrganizationSwitcherContext(
   surface: OrganizationSwitcherSurface,
   requestedOrgId?: unknown
 ): Promise<OrganizationSwitcherContext> {
+  if (surface === 'settings') {
+    const selected = await requireOrganizationContext(requestedOrgId)
+    const { data, error } = await createSupabaseAdminClient().from('org_members')
+      .select('org_id,is_default,created_at,organizations(name)')
+      .eq('profile_id', selected.profileId).eq('is_active', true)
+      .order('is_default', { ascending: false }).order('created_at').order('org_id')
+    if (error) throw new Error('ORG_PROFILE_READ_FAILED')
+    const organizations = ((data ?? []) as unknown as MembershipRow[]).map(row => ({
+      id: row.org_id, name: organizationName(row.organizations), isDefault: row.is_default,
+    }))
+    const organization = organizations.find(row => row.id === selected.organization.id)
+    if (!organization) throw new Error('ORG_MEMBERSHIP_REQUIRED')
+    return { organization, organizations }
+  }
   if (surface === 'customers') {
     const context = await getOrganizationCustomerNavigationContext(requestedOrgId)
     return {
