@@ -511,7 +511,7 @@ test('TU access accepts global access or access scoped to the exact organization
   )
   assert.match(
     requireTuContextSource,
-    /if \(hasOrganizationAccess \|\| hasGlobalAccess\) return context/
+    /if \(await hasOrganizationTuAccess\(context\.orgId, hasOrganizationAccess, hasGlobalAccess\)\) return context/
   )
   assert.match(
     requireTuContextSource,

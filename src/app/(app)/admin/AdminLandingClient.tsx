@@ -5,6 +5,11 @@ import Protected from '@/components/Protected'
 
 const ADMIN_APPS = [
   {
+    href: '/admin/access/organisations',
+    title: 'Organisationer',
+    description: 'Skapa organisationer, utse organisationsadministratörer och hantera medlemmar och organisationsmoduler.',
+  },
+  {
     href: '/admin/access/besiktapp-interest',
     title: 'Intresse för BesiktApp',
     description: 'Följ upp nya kontakter, ange ansvarig och planera nästa kontakt. Kräver behörighet till accesshanteringen.',

@@ -344,6 +344,9 @@ function tuContextHarness(
   options: {
     initialOrgId?: string
     membershipOrgIds?: string[]
+    disabledOrgIds?: string[]
+    managedOrgIds?: string[]
+    availabilityError?: boolean
   } = {}
 ) {
   const orgRequests: unknown[] = []
@@ -358,6 +361,12 @@ function tuContextHarness(
 
   const tu = load<typeof TuServer>('src/lib/tu/server.ts', {
     'server-only': {},
+    '@/lib/organizations/moduleAvailability': {
+      hasOrganizationTuAccess: async (id: string, scoped: boolean, global: boolean) => {
+        if (options.availabilityError) throw new Error('MODULE_ACCESS_REQUIRED')
+        return !options.disabledOrgIds?.includes(id) && (scoped || (!options.managedOrgIds?.includes(id) && global))
+      },
+    },
     '@/lib/assignments/server': {
       requireOrgContext: async (requestedOrgId?: unknown) => {
         orgRequests.push(requestedOrgId)
@@ -473,6 +482,36 @@ test('TU context without orgId selects the first TU-enabled membership', async (
 
   assert.equal(context.orgId, orgSelected)
   assert.deepEqual(harness.orgRequests, [undefined, orgSelected])
+})
+
+test('explicitly disabled organization TU cannot be bypassed by scoped or global access', async () => {
+  for (const scope of ['global', 'organization']) {
+    const harness = tuContextHarness(input => input.scopeType === scope, { disabledOrgIds: [orgSelected] })
+    await assert.rejects(harness.requireTuContext(orgSelected), /MODULE_ACCESS_REQUIRED/)
+    assert.deepEqual(harness.orgRequests, [orgSelected], 'Explicit organization never falls back')
+  }
+})
+
+test('legacy default TU selection skips disabled organizations even with a global TU grant', async () => {
+  const harness = tuContextHarness(input => input.scopeType === 'global', {
+    initialOrgId: orgDefault, membershipOrgIds: [orgDefault, orgSelected], disabledOrgIds: [orgDefault],
+  })
+  assert.equal((await harness.requireTuContext()).orgId, orgSelected)
+  const denied = tuContextHarness(() => true, { disabledOrgIds: [orgSelected] })
+  await assert.rejects(denied.requireTuContext(), /MODULE_ACCESS_REQUIRED/)
+})
+
+test('TU module availability read failures deny access', async () => {
+  const harness = tuContextHarness(() => true, { availabilityError: true })
+  await assert.rejects(harness.requireTuContext(orgSelected), /MODULE_ACCESS_REQUIRED/)
+})
+
+test('managed organization does not grant TU through old global access when enabled or re-enabled', async () => {
+  const globalOnly = tuContextHarness(input => input.scopeType === 'global', { managedOrgIds: [orgSelected] })
+  await assert.rejects(globalOnly.requireTuContext(orgSelected), /MODULE_ACCESS_REQUIRED/)
+  const scoped = tuContextHarness(input => input.scopeType === 'organization' && input.scopeId === orgSelected,
+    { managedOrgIds: [orgSelected] })
+  assert.equal((await scoped.requireTuContext(orgSelected)).orgId, orgSelected)
 })
 
 function sourceFiles(directory: string): string[] {

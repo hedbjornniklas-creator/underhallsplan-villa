@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import Protected from '@/components/Protected'
+import Link from 'next/link'
 
 type ScopeType = 'global' | 'brf' | 'organization' | 'property' | 'case'
 type ProductKey = 'renoapp' | 'dashboard' | 'hushub_admin'
@@ -552,6 +553,8 @@ export default function AccessManagementClient() {
       <main className="mx-auto w-full max-w-7xl px-4 py-8 md:px-6 md:py-10">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight text-stone-900">Användare och access</h1>
+          <p className="mt-3 text-sm text-stone-600">Medlemskap och administratörsroller för ett visst företag hanteras under Organisationer.</p>
+          <Link href="/admin/access/organisations" className="mt-4 inline-flex rounded-full border border-stone-300 bg-white px-5 py-2.5 text-sm font-semibold text-stone-900 hover:bg-stone-50">Hantera organisationer →</Link>
         </header>
 
         {error ? (
@@ -748,12 +751,13 @@ export default function AccessManagementClient() {
                       </span>
                     </label>
                     <label className="text-sm font-semibold text-stone-800">
-                      Organisation
+                      Organisationsnamn i profilen (äldre fält)
                       <input
                         className="mt-2 w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-normal text-stone-900"
                         value={orgName}
                         onChange={(event) => setOrgName(event.target.value)}
                       />
+                      <span className="mt-2 block text-xs font-normal leading-5 text-stone-500">Detta är en profiltext, inte medlemskap eller behörighet. Hantera medlemskap under Organisationer.</span>
                     </label>
                     <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-600">
                       <p className="font-semibold text-stone-800">Produktstatus</p>
@@ -945,6 +949,10 @@ export default function AccessManagementClient() {
             onClose={closeDialog}
           >
             <div className="p-6 sm:p-8">
+              <div className="mb-5 rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700">
+                <p>Vill du lägga till personen i ett företag eller utse en organisationsadministratör? Det hanteras per organisation.</p>
+                <Link href="/admin/access/organisations" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-semibold text-stone-900 underline underline-offset-4">Öppna organisationshantering i ny flik →</Link>
+              </div>
               {dialogError ? (
                 <div className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
                   {dialogError}

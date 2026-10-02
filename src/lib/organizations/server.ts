@@ -7,6 +7,7 @@ import { requireMoistureContext } from '@/lib/moisture/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type { OrganizationSwitcherSurface } from './navigation'
 import { requireOrganizationContext } from './administration'
+import { hasOrganizationTuAccess } from '@/lib/organizations/moduleAvailability'
 
 export type { OrganizationSwitcherSurface } from './navigation'
 
@@ -101,17 +102,24 @@ export async function getOrganizationSwitcherContext(
     scopeType: 'global',
   })
 
-  if (!hasGlobalAccess) {
+  if (surface === 'tu' || !hasGlobalAccess) {
     const allowed = await Promise.all(
-      organizations.map(async (organization) => ({
-        id: organization.id,
-        allowed: await hasCurrentUserAccess({
+      organizations.map(async (organization) => {
+        const hasOrganizationAccess = await hasCurrentUserAccess({
           productKey: 'dashboard',
           moduleKey,
           scopeType: 'organization',
           scopeId: organization.id,
-        }),
-      }))
+        })
+        return {
+          id: organization.id,
+          // The switcher must offer the same TU organizations as the request
+          // guard, including when an old global grant is still present.
+          allowed: surface === 'tu'
+            ? await hasOrganizationTuAccess(organization.id, hasOrganizationAccess, hasGlobalAccess)
+            : hasOrganizationAccess,
+        }
+      })
     )
     const allowedIds = new Set(
       allowed.filter((item) => item.allowed).map((item) => item.id)

@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { hasCurrentUserAccess } from '@/lib/access/server'
+import { hasOrganizationTuAccess } from '@/lib/organizations/moduleAvailability'
 import {
   buildBaseUrl,
   createAssignment,
@@ -990,7 +991,7 @@ export async function requireTuContext(requestedOrgId?: unknown) {
       scopeType: 'global',
     }),
   ])
-  if (hasOrganizationAccess || hasGlobalAccess) return context
+  if (await hasOrganizationTuAccess(context.orgId, hasOrganizationAccess, hasGlobalAccess)) return context
 
   // An explicit URL/body selection must never fall back to another organization.
   if (requestedOrgId !== undefined) throw new Error('MODULE_ACCESS_REQUIRED')
@@ -1013,12 +1014,12 @@ export async function requireTuContext(requestedOrgId?: unknown) {
   const access = await Promise.all(
     memberships.map(async (membership) => ({
       orgId: membership.org_id,
-      allowed: await hasCurrentUserAccess({
+      allowed: await hasOrganizationTuAccess(membership.org_id, await hasCurrentUserAccess({
         productKey: 'dashboard',
         moduleKey: 'technical_investigations',
         scopeType: 'organization',
         scopeId: membership.org_id,
-      }),
+      }), hasGlobalAccess),
     }))
   )
   const fallback = access.find((item) => item.allowed)

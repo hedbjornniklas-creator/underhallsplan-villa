@@ -98,6 +98,7 @@ function harness(options: { grants?: Grant[]; missingSchema?: boolean; legacyAdm
     '@/lib/access/server': access,
     '@/lib/customers/server': { getOrganizationCustomerNavigationContext: () => { throw new Error('Unexpected customer context') } },
     '@/lib/tu/server': { requireTuContext: () => { throw new Error('Moisture must not reuse TU authorization') } },
+    '@/lib/organizations/moduleAvailability': { hasOrganizationTuAccess: () => { throw new Error('Moisture must not use TU entitlements') } },
     '@/lib/moisture/server': { requireMoistureContext: async (orgId: unknown) => {
       selectedOrgIds.push(orgId)
       return { orgId: orgId ?? 'org-a', orgName: 'Selected', userId: 'profile-1' }
@@ -205,6 +206,7 @@ test('organization context endpoint accepts moisture, keeps responses private an
 
 const adminUi = load<typeof AccessManagementClient>('src/app/(app)/admin/access/AccessManagementClient.tsx', {
   react: {},
+  'next/link': {},
   'react/jsx-runtime': {},
   '@/components/Protected': {},
 })
