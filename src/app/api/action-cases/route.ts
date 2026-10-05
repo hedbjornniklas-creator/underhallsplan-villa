@@ -13,8 +13,10 @@ import {
   getActionCaseWorkspace,
   issueActionCaseParticipantLink,
   deleteActionCaseCostLine,
+  deleteActionCaseItem,
   updateActionCaseAttachmentGrants,
   updateActionCaseItem,
+  saveActionCaseScope,
   updateActionCaseCostLine,
   applyActionCaseCostSuggestions,
 } from '@/lib/action-cases/server'
@@ -25,6 +27,7 @@ import { handleRequestAction, sendGroupedRequest } from '@/lib/action-cases/quot
 import { handleWorkPartAction } from '@/lib/action-cases/workPartsServer'
 import { handleQuotePackageAction } from '@/lib/action-cases/quotePackagesServer'
 import { revokeRfqDelivery } from '@/lib/action-cases/rfqDeliveryServer'
+import { scopeSavePayload } from '@/lib/action-cases/scopeDraft'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -51,6 +54,11 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {
+    ACTION_CASE_ITEM_DELETE_LOCKED: [409, 'Åtgärden är offererad eller har gått vidare till utförande och kan inte tas bort.'],
+    ACTION_CASE_ITEM_DELETE_QUOTES: [409, 'Åtgärden används i en UE-offert eller offertförfrågan. Ta bort kopplingen i oskickade utkast först. Skickade underlag bevaras.'],
+    ACTION_CASE_ITEM_DELETE_OFFER: [409, 'Åtgärden finns i ett kundavtal eller offertutkast. Ta bort arbetsdelen ur oskickade utkast först. Skickade avtal bevaras.'],
+    ACTION_CASE_ITEM_DELETE_SCHEDULE: [409, 'Åtgärden finns i tidsplanen. Ta bort momentet där och uppdatera eventuell delad tidsplan först.'],
+    ACTION_CASE_ITEM_DELETE_FAILED: [500, 'Åtgärden kunde inte tas bort. Försök igen.'],
     ACTION_CASE_RFQ_COPY_FAILED: [502, 'Underlaget kunde inte förberedas. Dina val är kvar. Försök igen.'],
     ACTION_CASE_RFQ_CONFIG: [503, 'Utskicket kunde inte förberedas just nu. Kontakta administratören.'],
     ACTION_CASE_RFQ_ACCESS_CLOSED: [409, 'Länken har stängts. Skapa en ny förfrågan för ett nytt utskick.'],
@@ -115,6 +123,7 @@ function errorResponse(error: unknown) {
   }
   const aiErrors: Record<string, [number, string]> = {
     ACTION_CASE_SCOPE_ATTACHMENTS_INVALID: [400, 'Filvalet kunde inte sparas. Välj högst 50 tillgängliga filer från detta uppdrag.'],
+    ACTION_CASE_SCOPE_NOTES_INVALID: [400, 'Ingår inte och Avrådan får innehålla högst 6 000 tecken vardera.'],
     ACTION_CASE_ITEM_STALE: [409, 'Åtgärden har ändrats sedan den öppnades. Öppna den igen innan du sparar.'],
     ACTION_CASE_AI_FILES_TOO_LARGE: [400, 'Det valda underlaget är för stort för AI. Välj högst 20 filer och sammanlagt högst 25 MB under Omfattning.'],
     ACTION_CASE_AI_FILE_UNREADABLE: [400, 'En vald fil kunde inte läsas. Kontrollera bilder och dokument under Omfattning och försök igen.'],
@@ -138,12 +147,14 @@ export async function POST(request: Request) {
     const action = typeof body.action === 'string' ? body.action : ''
     const payload = body.payload && typeof body.payload === 'object' ? body.payload as Record<string, unknown> : {}
     const ctx = await context()
+    if (action === 'save_item_scope') return NextResponse.json(await saveActionCaseScope(ctx, scopeSavePayload(payload)))
     let accessUrl: string | undefined
     let itemId: string | undefined
     let upload: Awaited<ReturnType<typeof createActionCaseSignedUpload>> | undefined
     let caseId: string | undefined
     if (action === 'create_case') caseId = await createActionCase(ctx, payload)
     else if (action === 'update_item') await updateActionCaseItem(ctx, payload)
+    else if (action === 'delete_item') await deleteActionCaseItem(ctx, payload)
     else if (action === 'add_item') itemId = await addActionCaseItem(ctx, payload)
     else if (action === 'add_participant') await addActionCaseParticipant(ctx, payload)
     else if (action === 'create_signed_upload') upload = await createActionCaseSignedUpload(ctx, payload)

@@ -30,6 +30,8 @@ import { actionCaseItemCompletion, actionCaseCostCoverage } from '@/lib/action-c
 import type { TaskPerson } from '@/lib/tasks/contracts'
 import ActionCaseProjectList from './ActionCaseProjectList'
 import { projectUrl } from '@/lib/action-cases/projectNavigation'
+import { mergeScopeSave } from '@/lib/action-cases/scopeDraft'
+import { useActionScopeAutosave } from './useActionScopeAutosave'
 
 type Props = {
   initialWorkspace: Workspace | null
@@ -327,6 +329,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [itemDirty, setItemDirty] = useState(false)
   const [initialCostLineId, setInitialCostLineId] = useState<string>()
   const [requestEditor, setRequestEditor] = useState<{ requestId: string | null; preselectedLineIds?: string[]; supplementId?: string } | null>(null)
   const [creating, setCreating] = useState(false)
@@ -335,8 +338,18 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   const selectedItem = selectedCase?.items.find((item) => item.id === selectedItemId) ?? null
   const running = useRef(false)
   const openingCreatedProject = useRef(false)
-  const guarded = busy || uploading || Boolean(selectedItemId) || Boolean(requestEditor) || Boolean(newItemTitle.trim())
-  useEffect(() => { onBusyChange?.(busy || uploading) }, [busy, uploading, onBusyChange])
+  const workspaceRef = useRef(workspace)
+  const receive = (next: Workspace) => {
+    workspaceRef.current = next
+    setWorkspace(next)
+    onWorkspaceChange?.(next)
+  }
+  const scopeAutosave = useActionScopeAutosave({
+    onSaved: (result) => { if (workspaceRef.current) receive(mergeScopeSave(workspaceRef.current, result)) },
+    onError: (message) => toast.error(message),
+  })
+  const guarded = busy || uploading || scopeAutosave.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
+  useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving) }, [busy, uploading, scopeAutosave.isSaving, onBusyChange])
   useEffect(() => { onDirtyChange?.(guarded) }, [guarded, onDirtyChange])
   useEffect(() => {
     if (!guarded) return
@@ -347,12 +360,12 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     window.addEventListener('beforeunload', prevent)
     return () => window.removeEventListener('beforeunload', prevent)
   }, [guarded])
-  const receive = (next: Workspace) => {
-    setWorkspace(next)
-    onWorkspaceChange?.(next)
-  }
   const action = async (name: string, payload: Record<string, unknown>, successMessage?: string | null): Promise<ActionResult | null> => {
     if (running.current) return null
+    if (scopeAutosave.hasUnsaved) {
+      toast.error(scopeAutosave.isSaving ? 'Omfattningen sparas. Försök igen när sparningen är klar.' : 'Spara ändringarna i omfattningen innan du fortsätter.')
+      return null
+    }
     running.current = true
     setBusy(true)
     try {
@@ -360,6 +373,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Kunde inte spara.')
       receive(result.workspace)
+      scopeAutosave.forgetSaved()
       setError(null)
       if (successMessage !== null) toast.success(successMessage ?? (name === 'create_case' ? 'Projektet skapades.' : 'Åtgärden sparades.'))
       return result as ActionResult
@@ -392,6 +406,10 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   if (!selectedCase) return <p role="alert">Projektet är inte tillgängligt. <Link href="/uppdrag">Till projektlistan</Link></p>
 
   return <>
+      {Object.entries(scopeAutosave.states).filter(([, state]) => state.status !== 'saved').map(([id, state]) => <div key={id} role="status" className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+        {state.status === 'error' ? <><span>Kunde inte spara {state.draft.title || 'åtgärden'}.</span><button className="gizmo-text-button" onClick={() => scopeAutosave.retry(id)}>Försök igen</button></> : !state.draft.title.trim() ? <span>Rubrik saknas. Ändringarna är inte sparade.</span> : <><Loader2 size={15} className="animate-spin" /><span>Sparar {state.draft.title}…</span></>}
+        <button className="gizmo-text-button" onClick={() => setSelectedItemId(id)}>Öppna åtgärd</button>
+      </div>)}
     <section hidden={section !== 'work'} aria-label="Projektarbete">
       <div className="gizmo-section-heading"><div><h2>Projektarbete</h2><p>{selectedCase.items.length} åtgärder · {selectedCase.items.filter((item) => completion(item) === 100).length} kalkylklara</p></div></div>
       <div className="gizmo-work-columns" aria-hidden="true"><span>Åtgärd</span><span>Behöver hanteras</span><span>Status</span><span /></div>
@@ -423,8 +441,19 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       onRequest={(preselectedLineIds) => setRequestEditor({ requestId: null, preselectedLineIds })}
       onOpenRequest={(requestId) => setRequestEditor({ requestId })}
       busy={busy}
-      onClose={() => { setSelectedItemId(null); setInitialCostLineId(undefined) }}
+      scopeSave={scopeAutosave.states[selectedItem.id]}
+      scopeBlocked={scopeAutosave.hasUnsaved}
+      onDirtyChange={setItemDirty}
+      onScopeChange={(draft) => scopeAutosave.change(selectedItem.id, selectedItem.updatedAt, draft)}
+      onScopeFlush={() => scopeAutosave.flush(selectedItem.id)}
+      onScopeRetry={() => scopeAutosave.retry(selectedItem.id)}
+      onClose={() => { scopeAutosave.flush(selectedItem.id); setSelectedItemId(null); setInitialCostLineId(undefined) }}
       onSave={async (payload) => Boolean(await action('update_item', { itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt, ...payload }))}
+      onDelete={async () => {
+        const deleted = Boolean(await action('delete_item', { caseId: selectedCase.id, itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt }, 'Åtgärden togs bort.'))
+        if (deleted) { setSelectedItemId(null); setInitialCostLineId(undefined) }
+        return deleted
+      }}
       onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, costActionMessage(name, payload)))}
     />}
     {requestEditor && <ActionCaseRequestSheet key={`${selectedCase.id}:${requestEditor.requestId ?? requestEditor.supplementId ?? 'new'}:${requestEditor.preselectedLineIds?.join(',') ?? ''}`}

@@ -10,8 +10,15 @@ import {
   customerOfferTotal,
   money,
   selectCustomerOfferOption,
-  type CustomerOffer
+  type CustomerOffer,
+  type CustomerOfferItem
 } from '@/lib/action-cases/customerOffers'
+
+function ScopeNotes({ item }: { item: CustomerOfferItem }) {
+  return <>{([['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, title]) => item[key]?.trim() ? (
+    <span key={key} className="mt-3 block text-sm leading-6 text-slate-700"><strong className="block">{title}</strong><span className="block whitespace-pre-wrap">{item[key]}</span></span>
+  ) : null)}</>
+}
 
 export default function CustomerOfferDocument({
   offer,
@@ -90,6 +97,7 @@ export default function CustomerOfferDocument({
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                 {i.scope}
               </p>
+              <ScopeNotes item={i} />
             </div>
           ))}
       </section>
@@ -124,6 +132,7 @@ export default function CustomerOfferDocument({
                     <span className="mt-2 block whitespace-pre-wrap text-sm leading-6 text-slate-700">
                       {i.scope}
                     </span>
+                    <ScopeNotes item={i} />
                   </span>
                 </label>
               ))}
@@ -154,6 +163,7 @@ export default function CustomerOfferDocument({
                       <strong>+ {money(i.amountOre)}</strong>
                     </span>
                     <span className="mt-2 block whitespace-pre-wrap text-sm leading-6 text-slate-700">{i.scope}</span>
+                    <ScopeNotes item={i} />
                   </span>
                 </label>
               ))}
@@ -183,6 +193,7 @@ export default function CustomerOfferDocument({
                 <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                   {i.scope}
                 </p>
+                <ScopeNotes item={i} />
               </div>
             ))}
         </section>

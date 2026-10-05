@@ -23,6 +23,9 @@ export type ActionItemStatus =
   | 'cancelled'
 
 export type ActionCaseItemView = {
+  scopeNotesAvailable?: boolean
+  scopeExclusions?: string
+  scopeAdvice?: string
   lumpSumAvailable?: boolean
   lumpSum?: import('./lumpSum').ActionLumpSum | null
   workParts?: ActionCaseWorkPart[]

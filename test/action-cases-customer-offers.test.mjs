@@ -56,6 +56,9 @@ before(async () => {
   await db.exec(sql('2026-09-29_04_customer_offer_planning'))
   await db.exec(sql('2026-10-01_03_customer_payment_plan'))
   await db.exec(sql('2026-10-01_03_customer_payment_plan'))
+  for (const name of ['2026-10-01_04_action_case_schedule', '2026-10-05_01_action_case_scope_notes', '2026-10-05_02_action_case_item_deletion']) {
+    await db.exec(sql(name)); await db.exec(sql(name))
+  }
 })
 after(async () => {
   await db.close()
@@ -70,6 +73,82 @@ function completeContract() {
   }
   return result
 }
+
+test('optional action notes survive normalized, versioned offers without inventing communicated advice', async () => {
+  const f = await fixture()
+  const notes = { scopeExclusions: 'Sprängning ingår inte.', scopeAdvice: 'Vi avråder från vald lösning.' }
+  const body = normalizeCustomerOffer({ ...f.draft, contractDetails: completeContract(), items: f.draft.items.map((r, index) => index ? r : { ...r, ...notes }) })
+  assert.equal(body.items[0].scopeAdvice, notes.scopeAdvice)
+  assert.equal(body.contractDetails.advice.status, 'none')
+  assert.match(offerPublishIssues(body).join(), /arbetsdel innehåller avrådan/)
+  await assert.rejects(db.query('select assert_customer_offer_scope_notes($1,true)', [{ ...body, contractDetails: undefined }]), /INCOMPLETE/)
+  for (const field of ['scopeExclusions', 'scopeAdvice']) for (const value of [null, 1, {}, 'x'.repeat(6001)]) {
+    const invalid = { ...body, items: [{ ...body.items[0], [field]: value }] }
+    assert.throws(() => normalizeCustomerOffer(invalid), /INVALID/)
+    await assert.rejects(db.query('select assert_customer_offer_scope_notes($1,false)', [invalid]), /INVALID/)
+  }
+  await f.write('save', { revision: 1, body })
+  await assert.rejects(f.write('save', { revision: 2, body: f.draft }), /INVALID/)
+  await assert.rejects(f.write('publish', { ...f.publication, revision: 2, snapshot: { ...f.snapshot, ...body } }), /INCOMPLETE/)
+  const cleared = { ...body, items: body.items.map((r) => r.scopeAdvice ? { ...r, scopeAdvice: '' } : r) }
+  await f.write('save', { revision: 2, body: cleared })
+  await f.write('publish', { ...f.publication, revision: 3, snapshot: { ...f.snapshot, ...cleared } })
+  const frozen = await get('action_case_customer_offers', f.offerId)
+  assert.equal(frozen.snapshot.items[0].scopeExclusions, notes.scopeExclusions)
+  await f.write('save', { revision: 3, body })
+  assert.deepEqual(await get('action_case_customer_offers', f.offerId), frozen)
+  await f.respond('challenge', f.challenge)
+  await f.respond('accept', { challengeId: f.challengeId, codeHash: 'good-hash' })
+  const accepted = await get('action_case_customer_offers', f.offerId)
+  assert.deepEqual(accepted.snapshot, frozen.snapshot)
+  await assert.rejects(db.query("update action_case_customer_offers set snapshot=jsonb_set(snapshot,'{items,0,scopeExclusions}','\"changed\"') where id=$1", [f.offerId]), /IMMUTABLE/)
+})
+
+async function deletionFixture() {
+  const f = await fixture(), itemId = id(seq++)
+  await db.query('insert into action_case_items(id,org_id,action_case_id,title,status) values($1,$2,$3,$4,$5)', [itemId,id(1),f.caseId,'Raderbar åtgärd','pricing_needed'])
+  const item = await get('action_case_items',itemId)
+  return { ...f, itemId, item, remove: (org = id(1), expected = item.updated_at) => db.query('select delete_action_case_item($1,$2,$3,$4,$5)',[org,f.caseId,itemId,id(2),expected]) }
+}
+test('deletion is tenant/revision guarded, atomic, keeps files and preserves audit history', async () => {
+  const f = await deletionFixture(), lineId = id(seq++)
+  await db.query('insert into action_case_cost_lines(id,org_id,action_case_id,action_case_item_id,category,description,unit) values($1,$2,$3,$4,$5,$6,$7)',[lineId,id(1),f.caseId,f.itemId,'material','Testmaterial','st'])
+  await db.query('insert into action_case_events(org_id,action_case_id,action_case_item_id,event_type) values($1,$2,$3,$4)',[id(1),f.caseId,f.itemId,'test_before_delete'])
+  await db.query('update action_case_attachments set action_case_item_id=$1 where id=$2',[f.itemId,f.fileId])
+  const current = await get('action_case_items',f.itemId)
+  await assert.rejects(f.remove(id(9),current.updated_at), /NOT_FOUND/)
+  await assert.rejects(f.remove(id(1),'2000-01-01'), /STALE/)
+  await f.remove(id(1),current.updated_at)
+  assert.equal(await get('action_case_items',f.itemId),undefined)
+  assert.equal(await get('action_case_cost_lines',lineId),undefined)
+  assert.equal((await get('action_case_attachments',f.fileId)).action_case_item_id,null)
+  const events = (await db.query('select * from action_case_events where action_case_id=$1',[f.caseId])).rows
+  assert.ok(events.some(e => e.event_type==='test_before_delete' && e.action_case_item_id===null))
+  assert.ok(events.some(e => e.event_type==='item_deleted' && e.message.includes(f.itemId)))
+  assert.equal((await get('action_cases',f.caseId)).status,'preparing')
+  await assert.rejects(f.remove(), /NOT_FOUND/)
+  for (const role of ['authenticated','anon']) assert.equal((await db.query(`select has_function_privilege('${role}','delete_action_case_item(uuid,uuid,uuid,uuid,timestamptz)','execute') allowed`)).rows[0].allowed,false)
+})
+test('deletion protects committed status, UE requests, draft/issued customer offers and shared schedules', async () => {
+  const f = await deletionFixture()
+  const approvedId = id(seq++)
+  await db.query("insert into action_case_items(id,org_id,action_case_id,title,status,sort_order) values($1,$2,$3,'Approved','approved',200)",[approvedId,id(1),f.caseId])
+  await assert.rejects(db.query('delete from action_case_items where id=$1',[approvedId]), /DELETE_LOCKED/)
+  const requestId = id(seq++)
+  await db.query('insert into action_case_quote_requests(id,org_id,action_case_id,supplier_name,supplier_email,subject,body,lines) values($1,$2,$3,$4,$5,$6,$7,$8)',[requestId,id(1),f.caseId,'UE','test@example.test','Test','Test',[{itemId:f.itemId}]])
+  await assert.rejects(db.query('delete from action_case_items where id=$1',[f.itemId]), /DELETE_QUOTES/)
+  await db.query('delete from action_case_quote_requests where id=$1',[requestId])
+  const body = { ...f.draft, items: f.draft.items.map((r,index) => index ? r : {...r,id:f.itemId}) }
+  await f.write('save',{revision:1,body})
+  await assert.rejects(db.query('delete from action_case_items where id=$1',[f.itemId]), /DELETE_OFFER/)
+  await f.write('publish',{...f.publication,revision:2,snapshot:{...f.snapshot,...body}})
+  await f.write('save',{revision:2,body:f.draft})
+  await assert.rejects(db.query('delete from action_case_items where id=$1',[f.itemId]), /DELETE_OFFER/)
+  const g = await deletionFixture()
+  await db.query('insert into action_case_schedules(action_case_id,org_id,updated_by,shared_rows) values($1,$2,$3,$4)',[g.caseId,id(1),id(2),[{sourceItemId:g.itemId}]])
+  await assert.rejects(db.query('delete from action_case_items where id=$1',[g.itemId]), /DELETE_SCHEDULE/)
+  assert.ok(await get('action_case_items',g.itemId))
+})
 
 const paymentPlan = (total = 10000000) => ({ version: 1, installments: [
   { id: id(99001), title: 'Grund', condition: 'Efter färdig grund.', plannedDate: '2027-04-30', amountOre: 2500050 },

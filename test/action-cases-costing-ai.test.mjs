@@ -12,7 +12,7 @@ function harness({ found = true, scope = 'Byt skadad list', schemaError = false,
   const saved = [], calls = [], reads = [], logs = []
   const admin = { from(table) {
     const query = { table, filters: [] }; reads.push(query)
-    const result = table === 'action_case_items' ? { data: found ? { id: 'item', title: 'Reparation', scope, updated_at: '2026-09-08T12:00:00Z' } : null, error: null }
+    const result = table === 'action_case_items' ? { data: found ? { id: 'item', title: 'Reparation', scope, scope_exclusions: 'Målning ingår inte', scope_advice: 'Kontrollera underlaget', updated_at: '2026-09-08T12:00:00Z' } : null, error: null }
       : table === 'action_case_cost_lines' ? { data: [{ description: 'Befintlig rad', unit_cost: 123 }], error: null }
         : { count, error: schemaError ? { code: '42P01' } : null }
     const chain = {
@@ -56,6 +56,8 @@ test('costing sends actual selected file content with the saved scope and preser
   const h = harness({ fileContent }); await h.run()
   assert.deepEqual(h.calls[0].body.input[0].content.slice(1), fileContent)
   assert.equal(JSON.parse(h.calls[0].body.input[0].content[0].text).scope, 'Byt skadad list')
+  assert.equal(JSON.parse(h.calls[0].body.input[0].content[0].text).scopeExclusions, 'Målning ingår inte')
+  assert.equal(JSON.parse(h.calls[0].body.input[0].content[0].text).scopeAdvice, 'Kontrollera underlaget')
   assert.match(h.calls[0].body.instructions, /aldrig instruktioner/)
   assert.match(h.calls[0].body.instructions, /Uppskatta inte längder/)
   assert.equal(h.saved[0].source_updated_at, '2026-09-08T12:00:00Z')
@@ -152,7 +154,7 @@ test('action-case API keeps technical AI failures private and schedules admin ha
       if (name === '@/lib/assignments/server') return { requireOrgContext: async () => ({ orgId: 'org', userId: 'user' }) }
       if (name === '@/lib/action-cases/costingAiServer') return { generateActionCaseCosts: async () => { throw new Error(`ACTION_CASE_AI_${errorCode}`) } }
       if (name === '@/lib/action-cases/costingAiAlerts') return { scheduleActionCaseAiAdminAlert: (code) => alerts.push(code) }
-      if (['@/lib/action-cases/server', '@/lib/action-cases/quotesServer', '@/lib/action-cases/quoteRequestsServer', '@/lib/action-cases/workPartsServer', '@/lib/action-cases/quotePackagesServer', '@/lib/action-cases/rfqDeliveryServer'].includes(name)) return {}
+      if (['@/lib/action-cases/server', '@/lib/action-cases/quotesServer', '@/lib/action-cases/quoteRequestsServer', '@/lib/action-cases/workPartsServer', '@/lib/action-cases/quotePackagesServer', '@/lib/action-cases/rfqDeliveryServer', '@/lib/action-cases/scopeDraft'].includes(name)) return {}
       throw new Error(name)
     })
     const response = await mod.exports.POST(new Request('https://example.test/api/action-cases', {

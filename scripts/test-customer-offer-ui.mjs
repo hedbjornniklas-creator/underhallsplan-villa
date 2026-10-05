@@ -118,17 +118,20 @@ const server = createServer(async (req, res) => {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
-    if (slowSave && body.operation === 'save') { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 3000)) }
+    if (slowSave && (body.operation === 'save' || body.action === 'save_item_scope')) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     writes.push(body.operation ?? body.action)
     if (path === '/api/action-cases') {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
       const payload = body.payload ?? {}
       let itemId, caseId
-      if (body.action === 'update_item') {
+      if (body.action === 'update_item' || body.action === 'save_item_scope') {
         const item = projects.cases.flatMap((c) => c.items).find((i) => i.id === payload.itemId)
         if (!item) { json({ error: 'Åtgärden saknas.' }, 404); return }
+        if (payload.expectedUpdatedAt !== item.updatedAt) { json({ error: 'Åtgärden har ändrats i en annan session.' }, 409); return }
         if (payload.title !== undefined) item.title = payload.title
         if (payload.scope !== undefined) item.scope = payload.scope
+        if (payload.scopeExclusions !== undefined) item.scopeExclusions = payload.scopeExclusions
+        if (payload.scopeAdvice !== undefined) item.scopeAdvice = payload.scopeAdvice
         if (payload.scopeAttachmentIds !== undefined) item.scopeAttachmentIds = payload.scopeAttachmentIds
         if (payload.lumpSum !== undefined) {
           item.lumpSum = normalizeLumpSum(payload.lumpSum)
@@ -137,10 +140,22 @@ const server = createServer(async (req, res) => {
           item.status = !item.scope?.trim() ? 'scope_needed' : item.lumpSum?.verified ? 'ready_for_quote' : 'pricing_needed'
         }
         item.updatedAt = new Date().toISOString()
+        if (body.action === 'save_item_scope') {
+          if (item.lumpSum) item.lumpSum.verified = false
+          const { costLines, costSuggestion, workParts, ...saved } = item
+          json({ item: saved, caseStatus: 'pricing' }); return
+        }
+      } else if (body.action === 'delete_item') {
+        const c = projects.cases.find((c) => c.id === payload.caseId)
+        if (!c || !c.items.some((i) => i.id === payload.itemId)) { json({ error: 'Åtgärden saknas.' }, 404); return }
+        if (state.draft.items.some((i) => i.id === payload.itemId) || state.offers.some((o) => o.snapshot.items.some((i) => i.id === payload.itemId))) {
+          json({ error: 'Åtgärden finns i ett kundavtal eller offertutkast. Ta bort arbetsdelen ur oskickade utkast först. Skickade avtal bevaras.' }, 409); return
+        }
+        c.items = c.items.filter((i) => i.id !== payload.itemId)
       } else if (body.action === 'add_item') {
         const c = projects.cases.find((c) => c.id === payload.caseId)
         itemId = id(500 + writes.length)
-        c.items.push({ ...structuredClone(projects.cases[0].items[0]), id: itemId, title: payload.title, scope: '', costLines: [] })
+        c.items.push({ ...structuredClone(projects.cases[0].items[0]), id: itemId, title: payload.title, scope: '', scopeExclusions: '', scopeAdvice: '', costLines: [] })
       } else if (body.action === 'create_case') {
         caseId = id(600 + writes.length)
         projects.cases.unshift({ ...structuredClone(projects.cases[0]), id: caseId, ...payload, attachments: [], participants: [],

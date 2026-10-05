@@ -1,7 +1,30 @@
 # Gizmo: bestallarens projektoversikt och kundoffert
 
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
-Datum: 2026-10-01.
+Datum: 2026-10-05.
+
+## Beslut 2026-10-05: omfattning och borttagning
+
+- Varje atgard har tva valfria falt direkt under Arbetets omfattning:
+  Ingar inte och Avradan (hogst 6 000 tecken vardera). Samma sparning,
+  organisationskontroll och versionskontroll som omfattningen ateranvands.
+- Vid uttrycklig import till offertutkastet kopieras dessa texter. For en redan
+  importerad arbetsdel kan anvandaren uttryckligen ersatta de tva falten;
+  kundens redigerade rubrik, omfattning och pris behalls. Skickade/godkanda
+  versioner skrivs aldrig om. Tomma falt ger inga tomma rubriker i avtalet.
+- En skriven avradan innebar inte att den framforts eller accepterats.
+  Befintlig dokumentation av avradan i Avtalsuppgifter kravs fore utskick nar
+  en arbetsdel innehaller avradan. AI-kalkylen far bada falten som kallunderlag.
+- Papperskorgen i atgardens sidofonster kraver bekraftelse. Radering tar bort
+  atgard och intern kalkyl men bevarar projektfiler och handelsehistorik.
+  Aktuell version kravs. Offererade/paborjade atgarder och kopplingar till
+  UE-underlag, kundoffertutkast, skickade avtal eller tidsplan blockerar radering.
+  Oskickade kopplingar maste hanteras dar de skapades; skickade underlag bevaras.
+- Databaskrav: `2026-10-05_01_action_case_scope_notes.sql` och
+  `2026-10-05_02_action_case_item_deletion.sql`, efter befintliga offert- och
+  tidsplansmigrationer. Bada ar aterkorbara. De aktiveras separat vid release.
+  Aldre klienter far inte tyst tappa de nya offertfalten. Radering anvander en
+  transaktionell service-role-RPC efter befintlig org- och modulbehorighet.
 
 ## Beslut och omfattning
 
@@ -337,6 +360,20 @@ Inga befintliga kundavtal eller betalningsuppgifter skrevs om. Alla 165 tester
 och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 
 ## Beslutslogg
+
+- 2026-10-05: Omfattning i atgardens sidofonster sparas automatiskt efter
+  700 ms skrivpaus med befintliga `useAutosaveQueue`. Rubrik, omfattning,
+  avgransningar, avradan och filval ingar. Kon ags av projektarbetsytan sa
+  sidofonstret kan stangas eller byta atgard utan att avbryta sparningen.
+  Ga till kalkyl oppnar direkt; mutationer som behover den sparade omfattningen
+  invantar sparningen. Kalkylpriser sparas fortfarande uttryckligen.
+  Nyare text behalls under pagaende anrop, varje nasta skrivning anvander senast
+  bekraftade version. Sparfel visas med gemensam toast samt status och nytt forsok.
+  Utkast finns kvar i den oppna projektvyn, med varning vid sidlamning; detta ar
+  inte en beständig offlineko och utkast overlever inte att webblasaren avslutas.
+  Sparsvaret ar begransat till atgarden. Atgarder med offertpriser anvander
+  befintlig lasmodell for att kontrollera offerten mot andrad omfattning.
+  Inget kundavtal eller publicerat offertunderlag uppdateras automatiskt.
 
 - 2026-10-01: Gemensam projektnavigering är nu beställd. /uppdrag blir en
   projektlista med Aktuellt och Statistik som separata vyer. /uppdrag/[caseId]

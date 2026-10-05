@@ -45,7 +45,7 @@ import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
-import { importableCustomerPrice } from '@/lib/action-cases/offerImport'
+import { importableCustomerPrice, importOfferItems, scopeNotesDiffer } from '@/lib/action-cases/offerImport'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -504,15 +504,17 @@ export default function CustomerOfferEditor({
               </div>
               {showImport && <div className="border-y border-slate-200 py-4">
                 {actionCase.items.map((i) => {
-                  const exists = draft.items.some((d) => d.id === i.id), price = importableCustomerPrice(i)
-                  return <label key={i.id} className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={exists} checked={importIds.includes(i.id) && !exists} onChange={(e) => setImportIds(e.target.checked ? [...importIds, i.id] : importIds.filter((id) => id !== i.id))} /><span className="flex-1">{i.title}</span><span>{exists ? 'Redan i utkastet' : price === null ? 'Inget kontrollerat kundpris' : money(price)}</span></label>
+                  const existing = draft.items.find((d) => d.id === i.id), price = importableCustomerPrice(i)
+                  const notesChanged = existing && scopeNotesDiffer(i, existing)
+                  const disabled = Boolean(existing && !notesChanged)
+                  return <label key={i.id} className="flex min-h-11 flex-wrap items-center gap-3 py-2 text-sm"><input type="checkbox" disabled={disabled} checked={importIds.includes(i.id) && !disabled} onChange={(e) => setImportIds(e.target.checked ? [...importIds, i.id] : importIds.filter((id) => id !== i.id))} /><span className="min-w-0 flex-1">{i.title}</span><span className="text-slate-600">{notesChanged ? 'Ersätt Ingår inte och Avrådan' : existing ? 'Redan i utkastet' : price === null ? 'Inget kontrollerat kundpris' : money(price)}</span></label>
                 })}
                 {draft.pricingMode === 'itemized' && <label className="my-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={importPrices} onChange={(e) => setImportPrices(e.target.checked)} />Hämta kontrollerade kundpriser inklusive moms</label>}
-                <button className={button} disabled={!importIds.some((id) => !draft.items.some((d) => d.id === id))} onClick={() => {
-                  const incoming = actionCase.items.filter((i) => importIds.includes(i.id) && !draft.items.some((d) => d.id === i.id))
-                  update({ items: [...draft.items, ...incoming.map((i) => ({ id: i.id, title: i.title, scope: i.scope ?? '', kind: 'included' as const, amountOre: importPrices && draft.pricingMode === 'itemized' ? importableCustomerPrice(i) : null }))] })
+                <button className={button} disabled={!actionCase.items.some((i) => importIds.includes(i.id) && (!draft.items.some((d) => d.id === i.id) || draft.items.some((d) => d.id === i.id && scopeNotesDiffer(i, d))))} onClick={() => {
+                  const incoming = actionCase.items.filter((i) => importIds.includes(i.id))
+                  update({ items: importOfferItems(draft.items, incoming, importPrices && draft.pricingMode === 'itemized') })
                   setItemView('included'); setShowImport(false); setImportIds([])
-                }}><Plus size={17} /> Lägg till valda arbetsdelar</button>
+                }}><Plus size={17} /> Hämta valda arbetsdelar</button>
               </div>}
               <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
                 {([['included', 'Grundåtagande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
@@ -648,6 +650,12 @@ export default function CustomerOfferEditor({
                       }
                     />
                   </label>
+                  {(['scopeExclusions', 'scopeAdvice'] as const).map((key) => item[key] !== undefined && (
+                    <label key={key} className="mt-3 block text-sm">
+                      {key === 'scopeExclusions' ? 'Ingår inte (valfritt)' : 'Avrådan (valfritt)'}
+                      <textarea className={field} rows={3} maxLength={6000} value={item[key]} onChange={(e) => update({ items: draft.items.map((i) => i.id === item.id ? { ...i, [key]: e.target.value } : i) })} />
+                    </label>
+                  ))}
                 </ProjectEditorRow>
               ))}
               <button

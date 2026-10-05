@@ -13,6 +13,8 @@ import { scopeAttachmentIds } from '@/lib/action-cases/scopeAttachments'
 import ActionCaseDirectCostFields, { canEditDirectWork } from './ActionCaseDirectCostFields'
 import { ActionCaseWorkParts, ActionCaseWorkSelection, getWorkPartId, UNASSIGNED_WORK } from './ActionCaseWorkParts'
 import { coveringQuoteForLine, groupPriceForLine } from './actionCaseGroupPricing'
+import { actionScopeDraft, type ActionScopeDraft } from '@/lib/action-cases/scopeDraft'
+import type { ScopeSaveState } from './useActionScopeAutosave'
 
 type Props = {
   item: ActionCaseItemView
@@ -25,6 +27,13 @@ type Props = {
   busy: boolean
   onClose: () => void
   onSave: (payload: Record<string, unknown>) => Promise<boolean>
+  scopeSave?: ScopeSaveState
+  scopeBlocked: boolean
+  onScopeChange: (draft: ActionScopeDraft) => void
+  onScopeFlush: () => void
+  onScopeRetry: () => void
+  onDirtyChange?: (dirty: boolean) => void
+  onDelete?: () => Promise<boolean>
   onCostAction: (action: string, payload: Record<string, unknown>) => Promise<boolean>
 }
 const inputClass = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-100'
@@ -107,18 +116,22 @@ function Proposal({ proposal, stale, busy, onApply }: {
   </section>
 }
 
-export default function ActionCaseItemSheet({ item, caseId, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, onCostAction }: Props) {
+export default function ActionCaseItemSheet({ item, caseId, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
+  const deleteConfirmation = useRef<HTMLElement>(null)
   const inFlight = useRef(false)
   const [tab, setTab] = useState<'scope' | 'cost'>(initialCostLineId ? 'cost' : 'scope')
-  const [title, setTitle] = useState(item.title)
-  const [scope, setScope] = useState(item.scope ?? '')
-  const [selectedFiles, setSelectedFiles] = useState(() => scopeAttachmentIds(item, attachments))
-  const savedFiles = scopeAttachmentIds(item, attachments)
+  const draft = scopeSave?.draft ?? actionScopeDraft(item, scopeAttachmentIds(item, attachments))
+  const { title, scope, scopeExclusions = '', scopeAdvice = '', scopeAttachmentIds: selectedFiles } = draft
+  const changeScope = (patch: Partial<ActionScopeDraft>) => onScopeChange({ ...draft, ...patch })
   const [editing, setEditing] = useState<{ category: string; line?: ActionCaseCostLineView } | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [pending, setPending] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  useEffect(() => {
+    if (confirmDelete) { deleteConfirmation.current?.scrollIntoView({ block: 'nearest' }); deleteConfirmation.current?.focus({ preventScroll: true }) }
+  }, [confirmDelete])
   const [quoteLineId, setQuoteLineId] = useState<string | null>(initialCostLineId ?? null)
   const [quoteEditing, setQuoteEditing] = useState(false)
   const [directDraftLineId, setDirectDraftLineId] = useState<string | null>(null)
@@ -134,7 +147,8 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   const selectLines = (lineIds: string[], checked: boolean) => setSelectedLineIds((ids) => checked ? [...new Set([...ids, ...lineIds])] : ids.filter((id) => !lineIds.includes(id)))
   const working = busy || pending
   const costDirty = Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || partEditing || bulkEditing || lumpDirty
-  const dirty = title !== item.title || scope !== (item.scope ?? '') || selectedFiles.length !== savedFiles.length || selectedFiles.some((id) => !savedFiles.includes(id))
+  useEffect(() => { onDirtyChange?.(costDirty); return () => onDirtyChange?.(false) }, [costDirty, onDirtyChange])
+  const dirty = scopeBlocked
   const totals = item.lumpSum ?? calculateActionCaseCostTotals(item.costLines)
   const coverage = actionCaseCostCoverage(item.costLines)
   const stale = Boolean(item.costSuggestion && item.costSuggestion.sourceUpdatedAt !== item.updatedAt)
@@ -152,7 +166,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   }
   const close = () => {
     if (working) return
-    if ((dirty || costDirty) && !window.confirm('Stäng utan att spara ändringarna?')) return
+    if (costDirty && !window.confirm('Stäng utan att spara kalkyländringarna?')) return
     onClose()
   }
   const generate = () => void run(async () => {
@@ -172,25 +186,37 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
     <div className="flex h-full flex-col">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-6">
         <div className="min-w-0"><p className="text-xs font-semibold text-violet-700">Åtgärd</p><h2 id="action-item-title" className="mt-1 break-words text-xl font-semibold">{item.title}</h2></div>
-        <button type="button" className={`${secondary} h-11 w-11 px-0`} aria-label="Stäng åtgärd" title="Stäng" disabled={working} onClick={close}><X size={20} /></button>
+        <div className="flex shrink-0 gap-2">
+          {onDelete && <button type="button" className={`${secondary} h-11 w-11 px-0 text-rose-700`} aria-label="Ta bort åtgärd" title="Ta bort åtgärd" disabled={working || costDirty || dirty} onClick={() => setConfirmDelete(true)}><Trash2 size={18} /></button>}
+          <button type="button" className={`${secondary} h-11 w-11 px-0`} aria-label="Stäng åtgärd" title="Stäng" disabled={working} onClick={close}><X size={20} /></button>
+        </div>
       </header>
       <nav aria-label="Åtgärdens innehåll" className="grid shrink-0 grid-cols-2 gap-1 border-b border-slate-200 p-2">
-        {([['scope', 'Omfattning'], ['cost', 'Kalkyl']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} disabled={(costDirty || working) && tab !== key} onClick={() => setTab(key)} className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${tab === key ? 'bg-violet-50 text-violet-800' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}
+        {([['scope', 'Omfattning'], ['cost', 'Kalkyl']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} disabled={(costDirty || working) && tab !== key} onClick={() => { onScopeFlush(); setTab(key) }} className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${tab === key ? 'bg-violet-50 text-violet-800' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+        {confirmDelete && onDelete && <section ref={deleteConfirmation} tabIndex={-1} role="alert" aria-label="Bekräfta borttagning" className="mb-5 border-b border-rose-200 pb-5 outline-none">
+          <h3 className="font-semibold">Ta bort {item.title}?</h3>
+          <p className="mt-2 text-sm leading-6">Åtgärden och dess kalkyl tas bort. Projektets bilder och dokument behålls. Det går inte att ångra.</p>
+          {dirty && <p className="mt-2 text-sm">Osparade ändringar i åtgärden kastas.</p>}
+          <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondary} disabled={working} onClick={() => setConfirmDelete(false)}>Avbryt</button><button type="button" className={`${secondary} text-rose-700`} disabled={working} onClick={() => void run(onDelete)}>{working ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}Ta bort permanent</button></div>
+        </section>}
         {tab === 'scope' ? <fieldset disabled={working} className="space-y-5">
-          <label className="block text-sm font-semibold">Rubrik *<input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
-          <label className="block text-sm font-semibold">Arbetets omfattning<textarea className={`${inputClass} py-3 leading-6`} rows={8} value={scope} onChange={(e) => setScope(e.target.value)} /></label>
+          <label className="block text-sm font-semibold">Rubrik *<input className={inputClass} value={title} onChange={(e) => changeScope({ title: e.target.value })} /></label>
+          <label className="block text-sm font-semibold">Arbetets omfattning<textarea className={`${inputClass} py-3 leading-6`} rows={5} value={scope} onChange={(e) => changeScope({ scope: e.target.value })} /></label>
+          <label className="block text-sm font-semibold">Ingår inte (valfritt)<textarea className={`${inputClass} py-3 leading-6`} rows={3} maxLength={6000} disabled={!item.scopeNotesAvailable} value={scopeExclusions} onChange={(e) => changeScope({ scopeExclusions: e.target.value })} /></label>
+          <label className="block text-sm font-semibold">Avrådan (valfritt)<textarea className={`${inputClass} py-3 leading-6`} rows={3} maxLength={6000} disabled={!item.scopeNotesAvailable} value={scopeAdvice} onChange={(e) => changeScope({ scopeAdvice: e.target.value })} /></label>
+          {!item.scopeNotesAvailable && <p role="status" className="text-sm text-slate-600">Fälten Ingår inte och Avrådan behöver aktiveras av administratören.</p>}
           <section className="border-t border-slate-200 pt-4" aria-label="Åtgärdens underlag">
             <h3 className="font-semibold">Bilder och dokument <span className="ml-2 text-sm font-normal text-slate-500">{selectedFiles.length} valda</span></h3>
-            <ActionCaseAttachmentPicker caseId={caseId} files={attachments} selectedIds={selectedFiles} inputName="scopeAttachment" selectionLabel="Använd i åtgärden" disabled={working} onChange={(id, checked) => setSelectedFiles((current) => checked ? [...new Set([...current, id])] : current.filter((value) => value !== id))} />
-            {selectedFiles.some((id) => !attachments.some((file) => file.id === id)) ? <p role="status" className="mt-3 text-sm text-amber-800">En vald fil finns inte längre. <button type="button" className="underline" onClick={() => setSelectedFiles((ids) => ids.filter((id) => attachments.some((file) => file.id === id)))}>Ta bort otillgängliga val</button></p> : null}
+            <ActionCaseAttachmentPicker caseId={caseId} files={attachments} selectedIds={selectedFiles} inputName="scopeAttachment" selectionLabel="Använd i åtgärden" disabled={working} onChange={(id, checked) => changeScope({ scopeAttachmentIds: checked ? [...new Set([...selectedFiles, id])] : selectedFiles.filter((value) => value !== id) })} />
+            {selectedFiles.some((id) => !attachments.some((file) => file.id === id)) ? <p role="status" className="mt-3 text-sm text-amber-800">En vald fil finns inte längre. <button type="button" className="underline" onClick={() => changeScope({ scopeAttachmentIds: selectedFiles.filter((id) => attachments.some((file) => file.id === id)) })}>Ta bort otillgängliga val</button></p> : null}
           </section>
         </fieldset> : <>
           {item.lumpSumAvailable && <ActionCaseLumpSumEditor key={JSON.stringify(item.lumpSum)} value={item.lumpSum ?? null} busy={working || dirty || Boolean(editing) || quoteEditing || bulkEditing || partEditing || Boolean(directDraftLineId) || !['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(item.status)} onDirty={setLumpDirty} onSave={(lumpSum) => run(async () => { const saved = await onSave({ lumpSum }); if (saved) setSelectedLineIds([]); return saved })} />}
           {!item.lumpSum && <>
           <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Kalkylunderlag</h3><button type="button" className={primary} disabled={working || dirty || !scope.trim() || costDirty} onClick={generate}>{generating ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}{generating ? 'Skapar förslag…' : item.costSuggestion ? 'Nytt AI-förslag' : 'Föreslå kalkyl med AI'}</button></div>
-          {dirty ? <p className="mt-3 text-sm text-amber-800">Omfattningen har osparade ändringar.</p> : !scope.trim() ? <p className="mt-3 text-sm text-amber-800">Arbetets omfattning saknas.</p> : null}
+          {dirty ? <p className="mt-3 text-sm text-slate-600">Kalkylen kan ändras när omfattningen har sparats.</p> : !scope.trim() ? <p className="mt-3 text-sm text-amber-800">Arbetets omfattning saknas.</p> : null}
           {generating ? <p role="status" aria-live="polite" className="mt-3 flex items-center gap-2 text-sm text-violet-800"><Loader2 size={16} className="shrink-0 animate-spin" />AI bearbetar omfattningen. Befintliga kalkylrader är oförändrade.</p> : null}
           {item.costSuggestion && !generating ? <Proposal key={item.costSuggestion.id} proposal={item.costSuggestion} stale={stale || dirty} busy={working || costDirty} onApply={(lineIds) => run(() => onCostAction('apply_cost_suggestions', { suggestionId: item.costSuggestion!.id, lineIds }))} /> : null}
           <div className="mt-5 space-y-6">{groups.map((group) => {
@@ -237,10 +263,10 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
         </>}
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
-        {tab === 'scope' ? <button type="button" className={`${primary} w-full`} disabled={working || !title.trim()} onClick={() => void run(async () => {
-          if (dirty && !await onSave({ title, scope, scopeAttachmentIds: selectedFiles })) return false
-          setTab('cost'); return true
-        })}>{working ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />} {dirty ? 'Spara och gå till kalkyl' : 'Gå till kalkyl'}</button> : <>
+        <div role="status" aria-live="polite" className="mb-2 flex min-h-5 flex-wrap items-center gap-2 text-xs text-slate-600">
+          {scopeSave?.status === 'error' ? <><span title={scopeSave.error}>Kunde inte spara omfattningen</span><button type="button" className="underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span>Rubrik saknas. Ändringarna är inte sparade.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="animate-spin" />Sparar omfattning…</> : <><Check size={14} />Omfattning sparad</>}
+        </div>
+        {tab === 'scope' ? <button type="button" className={`${primary} w-full`} disabled={working || !title.trim()} onClick={() => { onScopeFlush(); setTab('cost') }}><ArrowRight size={16} /> Gå till kalkyl</button> : <>
           <div className="grid grid-cols-2 gap-3"><div><span className="text-xs text-slate-500">Intern kostnad, exkl. moms</span><strong className="block text-lg">{item.lumpSum && totals.internalCost === null ? 'Ej angiven' : amount(totals.internalCost)}</strong></div><div><span className="text-xs text-slate-500">Kundpris, exkl. moms</span><strong className="block text-lg">{amount(totals.customerPrice)}</strong></div></div>
           <p role="status" className="mt-1 text-xs text-slate-600">{item.lumpSum ? item.lumpSum.verified ? 'Samlat pris kontrollerat' : 'Samlat pris behöver kontrolleras' : coverage.complete ? 'Alla kalkylrader är kontrollerade' : !item.costLines.length ? 'Kalkyl saknas' : `${coverage.missingQuantity} saknar mängd · ${coverage.missingPrice} saknar pris · ${coverage.unchecked} att kontrollera`}</p>
           {!item.lumpSum && totals.internalCost === null && coverage.knownTotals.internalCost !== null ? <p className="mt-1 text-xs text-slate-500">Prissatt del: {money.format(coverage.knownTotals.internalCost)} intern kostnad</p> : null}

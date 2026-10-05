@@ -68,6 +68,9 @@ async function requireCase(context: Context, caseId: string) {
 
 function mapItem(row: Record<string, unknown>, costLines: ActionCaseCostLineView[] = []): ActionCaseItemView {
   return {
+    scopeNotesAvailable: 'scope_exclusions' in row && 'scope_advice' in row,
+    scopeExclusions: text(row.scope_exclusions),
+    scopeAdvice: text(row.scope_advice),
     lumpSumAvailable: 'lump_sum' in row,
     lumpSum: normalizeLumpSum(row.lump_sum ?? null),
     id: String(row.id),
@@ -699,6 +702,22 @@ export async function createActionCasePortalAttachmentUrl(token: string, attachm
   return signed.signedUrl
 }
 
+export async function deleteActionCaseItem(context: Context, payload: Record<string, unknown>) {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!uuid.test(text(payload.itemId)) || !uuid.test(text(payload.caseId))) throw new Error('ACTION_CASE_NOT_FOUND')
+  const expected = text(payload.expectedUpdatedAt)
+  if (!expected || !Number.isFinite(Date.parse(expected))) throw new Error('ACTION_CASE_ITEM_STALE')
+  const { error } = await createSupabaseAdminClient().rpc('delete_action_case_item', {
+    p_org_id: context.orgId, p_case_id: payload.caseId, p_item_id: payload.itemId,
+    p_user_id: context.userId, p_expected_updated_at: expected,
+  })
+  if (error) {
+    if (['PGRST202', '42883', '42P01', '42703'].includes(error.code)) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
+    const code = error.message.match(/ACTION_CASE_(?:NOT_FOUND|ITEM_STALE|ITEM_DELETE_[A-Z_]+|PACKAGE_REMOVE_FIRST)/)?.[0]
+    throw new Error(code ?? 'ACTION_CASE_ITEM_DELETE_FAILED')
+  }
+}
+
 export async function updateActionCaseItem(context: Context, payload: Record<string, unknown>) {
   const itemId = text(payload.itemId)
   if (!itemId) throw new Error('ACTION_CASE_ITEM_REQUIRED')
@@ -720,7 +739,14 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
   }
   if ('title' in payload) patch.title = text(payload.title)
   if ('scope' in payload) patch.scope = nullableText(payload.scope)
-  if (existing.lump_sum && patch.lump_sum !== null && ((patch.scope !== undefined && patch.scope !== existing.scope) || (patch.title !== undefined && patch.title !== existing.title))) {
+  for (const [input, column] of [['scopeExclusions', 'scope_exclusions'], ['scopeAdvice', 'scope_advice']] as const) {
+    if (!(input in payload)) continue
+    if (!(column in existing)) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
+    if (!payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
+    if (typeof payload[input] !== 'string' || payload[input].length > 6000) throw new Error('ACTION_CASE_SCOPE_NOTES_INVALID')
+    patch[column] = text(payload[input])
+  }
+  if (existing.lump_sum && patch.lump_sum !== null && ['scope', 'title', 'scope_exclusions', 'scope_advice'].some((column) => patch[column] !== undefined && patch[column] !== existing[column])) {
     patch.lump_sum = { ...normalizeLumpSum(patch.lump_sum ?? existing.lump_sum), verified: false }
   }
   if ('scopeAttachmentIds' in payload) {
@@ -760,7 +786,7 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
 
   let update = admin.from('action_case_items').update(patch).eq('id', itemId).eq('org_id', context.orgId)
   if (payload.expectedUpdatedAt) update = update.eq('updated_at', text(payload.expectedUpdatedAt))
-  const { data: updated, error } = await update.select('id').maybeSingle()
+  const { data: updated, error } = await update.select('*').maybeSingle()
   if (error?.message?.includes('ACTION_CASE_SCOPE_ATTACHMENTS_INVALID')) throw new Error('ACTION_CASE_SCOPE_ATTACHMENTS_INVALID')
   if (!error && !updated && payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
   if (error || !updated) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
@@ -781,4 +807,34 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
     message: `Åtgärden uppdaterades till ${String(patch.status)}.`,
     performed_by: context.userId,
   })
+  const saved = mapItem(updated)
+  return {
+    caseId: String(existing.action_case_id),
+    item: {
+      id: saved.id, title: saved.title, scope: saved.scope, scopeAttachmentIds: saved.scopeAttachmentIds,
+      scopeExclusions: saved.scopeExclusions, scopeAdvice: saved.scopeAdvice, updatedAt: saved.updatedAt,
+      status: saved.status, lumpSum: saved.lumpSum, ownLaborReady: saved.ownLaborReady,
+      materialPriceReady: saved.materialPriceReady, subcontractorPriceReady: saved.subcontractorPriceReady,
+      wasteSolutionReady: saved.wasteSolutionReady, requiresSubcontractor: saved.requiresSubcontractor,
+    },
+    caseStatus: allQuoteReady ? 'quote_ready' as const : 'pricing' as const,
+  }
+}
+
+export async function saveActionCaseScope(context: Context, payload: Record<string, unknown>) {
+  const saved = await updateActionCaseItem(context, payload)
+  const { data, error } = await createSupabaseAdminClient().from('action_case_cost_lines').select('id')
+    .eq('org_id', context.orgId).eq('action_case_item_id', saved.item.id).eq('pricing_method', 'quotes').limit(1)
+  if (error) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
+  // Quote validity depends on the scope snapshot. Keep the existing read-model
+  // validation for those items; ordinary text edits need no full workspace reload.
+  if (data?.length) {
+    const workspace = await getActionCaseWorkspace(context, saved.caseId)
+    const project = workspace.cases.find((entry) => entry.id === saved.caseId)
+    const item = project?.items.find((entry) => entry.id === saved.item.id)
+    if (!item) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
+    if (item.updatedAt !== saved.item.updatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
+    return { ...saved, item }
+  }
+  return saved
 }

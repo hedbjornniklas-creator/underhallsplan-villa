@@ -64,6 +64,7 @@ function App() {
     {openedRequestId ? <RequestApp initialCase={{ ...savedPackageFixture(params.has('expired')), items: [item] }} initialRequestId={openedRequestId} onClose={() => { setOpenedRequestId(null); setOpen(true) }} /> : null}
     {requestLineIds ? <RequestApp initialCase={{ ...requestFixture, items: [item], attachments }} preselectedLineIds={requestLineIds} onClose={() => { setRequestLineIds(null); setOpen(true) }} /> : null}
     {open ? <ActionCaseItemSheet item={item} busy={busy} caseId="test-case" attachments={attachments}
+    scopeBlocked={false} onScopeChange={(draft) => update(draft)} onScopeFlush={() => undefined} onScopeRetry={() => undefined}
     initialCostLineId={params.has('savedPackage') ? id(params.has('covered') ? 23 : 21) : undefined}
     onOpenRequest={params.has('savedPackage') ? (requestId) => { setOpenedRequestId(requestId); setOpen(false) } : undefined}
     onRequest={params.has('work') ? (lineIds: string[]) => { setRequestLineIds(lineIds); setOpen(false) } : undefined}

@@ -8,6 +8,8 @@ export type CustomerOfferItem = {
   id: string
   title: string
   scope: string
+  scopeExclusions?: string
+  scopeAdvice?: string
   kind: 'included' | 'option' | 'excluded'
   amountOre: number | null
   optionGroup?: string | null
@@ -115,6 +117,8 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
       id: offerId(i.id),
       title: text(i.title, 250),
       scope: text(i.scope, 12000),
+      ...(i.scopeExclusions === undefined ? {} : { scopeExclusions: text(i.scopeExclusions, 6000) }),
+      ...(i.scopeAdvice === undefined ? {} : { scopeAdvice: text(i.scopeAdvice, 6000) }),
       kind: i.kind as CustomerOfferItem['kind'],
       amountOre: i.kind === 'excluded' ? null : amount(i.amountOre),
       ...(i.optionGroup !== undefined
@@ -209,6 +213,8 @@ export function offerPublishIssues(
   })
 ): string[] {
   const issues: string[] = contractDetailsIssues(d.contractDetails)
+  if (d.items.some((i) => i.scopeAdvice?.trim()) && d.contractDetails?.advice.status !== 'given')
+    issues.push('En arbetsdel innehåller avrådan. Kontrollera och dokumentera avrådan under Avtalsuppgifter före utskick.')
   issues.push(...paymentPlanIssues(d.paymentPlan, customerOfferBaseAmount(d)))
   if (d.items.some((i) => i.kind === 'option'))
     issues.push('Flytta valen till Val och tillval innan grundavtalet skickas.')

@@ -3,12 +3,28 @@ import assert from 'node:assert/strict'
 import { normalizeScheduleRows, importScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
 import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
 import { retainNewerDraft } from '../src/lib/action-cases/draftSave.ts'
-import { importableCustomerPrice } from '../src/lib/action-cases/offerImport.ts'
+import { importableCustomerPrice, importOfferItems, scopeNotesDiffer } from '../src/lib/action-cases/offerImport.ts'
 import { actionCaseItemCompletion } from '../src/lib/action-cases/domain.ts'
 import { isImageAttachment } from '../src/lib/action-cases/attachmentImages.ts'
 
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const row = { id: id(1), title: 'Grund', phase: 'Mark', startDate: '2027-01-01', endDate: '2027-02-01', status: 'planned', sourceItemId: null }
+test('scope-note import copies explicit source notes without replacing edited customer scope or prices', () => {
+  const source = { id: id(1), title: 'Grund', scope: 'Arbete', scopeNotesAvailable: true, scopeExclusions: 'Sprängning', scopeAdvice: 'Avråder från utförandet', costLines: [] }
+  const imported = importOfferItems([], [source, source], false)
+  assert.equal(imported.length, 1)
+  assert.equal(imported[0].scopeExclusions, source.scopeExclusions)
+  assert.equal(imported[0].scopeAdvice, source.scopeAdvice)
+  const edited = { ...imported[0], scope: 'Kundens omfattning', amountOre: 12345 }
+  const changed = { ...source, scope: 'Intern ändring', scopeExclusions: '', scopeAdvice: 'Ny avrådan' }
+  assert.equal(scopeNotesDiffer(changed, edited), true)
+  const result = importOfferItems([edited], [changed], true)[0]
+  assert.equal(result.scope, edited.scope); assert.equal(result.amountOre, edited.amountOre)
+  assert.equal(result.scopeExclusions, ''); assert.equal(result.scopeAdvice, 'Ny avrådan')
+  assert.deepEqual(importOfferItems([edited], [{ ...changed, scopeNotesAvailable: false }], true), [edited])
+  assert.equal(edited.scopeAdvice, source.scopeAdvice)
+  assert.equal('scopeAdvice' in importOfferItems([], [{ ...source, scopeNotesAvailable: false }], false)[0], false)
+})
 test('schedule allows incomplete private dates and custom project phases', () => {
   assert.deepEqual(normalizeScheduleRows([row]), [row])
   assert.equal(normalizeScheduleRows([{ ...row, startDate: '', endDate: '', phase: 'Egen etapp' }])[0].phase, 'Egen etapp')
