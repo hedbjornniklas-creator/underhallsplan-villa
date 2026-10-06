@@ -139,7 +139,8 @@ export function normalizeContractDetails(
   return result
 }
 export function contractDetailsIssues(
-  value?: CustomerContractDetails
+  value?: CustomerContractDetails,
+  structuredParties = false
 ): string[] {
   // Legacy drafts and signed snapshots are not silently upgraded to a new contract.
   if (!value) return []
@@ -167,6 +168,7 @@ export function contractDetailsIssues(
       'Komplettera avrådans arbete, skäl, datum och beställarens besked.'
     )
   for (const { key, title } of contractFields) {
+    if (key === 'parties' && structuredParties) continue
     const entry = value.fields[key]
     if (entry.status === 'unreviewed' || !entry.text.trim())
       issues.push(`Kontrollera avtalsuppgiften: ${title}.`)

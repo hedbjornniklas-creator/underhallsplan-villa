@@ -8,6 +8,7 @@ import { getCustomerOfferWorkspace } from '@/lib/action-cases/customerOffersServ
 import { getTaskPeople } from '@/lib/tasks/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { parseProjectView } from '@/lib/action-cases/projectNavigation'
+import { readOrganizationBranding } from '@/lib/organizations/companyProfile'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,18 +27,24 @@ export default async function ProjectPage({ params, searchParams }: {
   const workspace = await getActionCaseWorkspace(ctx, caseId)
   if (!workspace.cases.some((item) => item.id === caseId)) notFound()
   const db = createSupabaseAdminClient()
-  const [offerResult, peopleResult, organization, profile] = await Promise.all([
+  const [offerResult, peopleResult, organization, profile, company] = await Promise.all([
     getCustomerOfferWorkspace(ctx, caseId).then((data) => ({ data, error: null })).catch(() => ({
       data: null, error: 'Offertuppgifterna kunde inte hämtas. Försök igen. Projektarbete och filer är fortfarande tillgängliga.',
     })),
     getTaskPeople({ ...ctx, isOrgAdmin: org.role === 'admin' }).then((people) => ({ people, unavailable: false }))
       .catch(() => ({ people: [], unavailable: true })),
     db.from('organizations').select('name').eq('id', org.orgId).maybeSingle(),
-    db.from('profiles').select('email').eq('id', org.userId).maybeSingle(),
+    db.from('profiles').select('full_name,email,phone').eq('id', org.userId).maybeSingle(),
+    readOrganizationBranding(org.orgId).then((data) => ({ data, unavailable: false })).catch(() => ({ data: null, unavailable: true })),
   ])
   return <UppdragScope><div className="gizmo-workspace">
     {peopleResult.unavailable && <p className="mx-auto max-w-7xl px-6 py-3 text-sm" role="alert">Kontaktlistan kunde inte hämtas. Mottagare kan fortfarande anges manuellt.</p>}
+    {company.unavailable && <p className="mx-auto max-w-7xl px-6 py-3 text-sm" role="alert">Entreprenörens företagsuppgifter kunde inte hämtas. De kan fyllas i under Avtal.</p>}
     <ActionCaseProject caseId={caseId} initialWorkspace={workspace} initialOffer={offerResult.data} initialOfferError={offerResult.error}
-      initialView={parseProjectView((await searchParams).view)} people={peopleResult.people} issuerName={organization.data?.name ?? ''} replyEmail={profile.data?.email ?? ''} />
+      initialView={parseProjectView((await searchParams).view)} people={peopleResult.people} issuerName={company.data?.name ?? organization.data?.name ?? ''} replyEmail={profile.data?.email ?? ''}
+      contractorSource={{ companyName: company.data?.name ?? organization.data?.name ?? '',
+        organizationNumber: company.data?.organizationNumber ?? '', street: company.data?.address ?? '',
+        postalCode: company.data?.postalCode ?? '', city: company.data?.city ?? '',
+        contactName: profile.data?.full_name ?? '', mobile: profile.data?.phone ?? '', email: profile.data?.email ?? '' }} />
   </div></UppdragScope>
 }

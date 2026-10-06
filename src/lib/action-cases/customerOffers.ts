@@ -3,6 +3,8 @@ import type { CustomerOfferCosting } from './customerOfferCosting'
 import { contractDetailsIssues, normalizeContractDetails, type CustomerContractDetails } from './customerContract.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizePaymentPlan, paymentPlanIssues, type CustomerPaymentPlan } from './customerPaymentPlan.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizeContractParties, contractPartiesIssues, publicContractParties, contractPartiesSummary, type ContractParties } from './customerContractParties.ts'
 
 export type CustomerOfferItem = {
   id: string
@@ -17,6 +19,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  contractParties?: ContractParties
   paymentPlan?: CustomerPaymentPlan | null
   contractDetails?: CustomerContractDetails
   title: string
@@ -157,6 +160,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.contractParties === undefined ? {} : { contractParties: normalizeContractParties(d.contractParties) }),
     ...(d.paymentPlan === undefined ? {} : { paymentPlan: normalizePaymentPlan(d.paymentPlan) }),
     ...(d.contractDetails === undefined ? {} : { contractDetails: normalizeContractDetails(d.contractDetails) }),
     title: text(d.title, 250),
@@ -174,6 +178,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     termsAttachmentId,
     items
   }
+  if (draft.contractParties && draft.contractDetails) draft.contractDetails.fields.parties = { status: 'specified', text: contractPartiesSummary(draft.contractParties) }
   draft.baseAmountOre = customerOfferBaseAmount(draft)
   return draft
 }
@@ -228,7 +233,8 @@ export function offerPublishIssues(
     timeZone: 'Europe/Stockholm'
   })
 ): string[] {
-  const issues: string[] = contractDetailsIssues(d.contractDetails)
+  const issues: string[] = contractDetailsIssues(d.contractDetails, Boolean(d.contractParties))
+  issues.push(...contractPartiesIssues(d.contractParties))
   if (d.items.some((i) => i.scopeAdvice?.trim()) && d.contractDetails?.advice.status !== 'given')
     issues.push('En arbetsdel innehåller avrådan. Kontrollera och dokumentera avrådan under Avtalsuppgifter före utskick.')
   issues.push(...paymentPlanIssues(d.paymentPlan, customerOfferBaseAmount(d)))
@@ -330,6 +336,7 @@ export function mapCustomerOffer(row: Record<string, unknown>): CustomerOffer {
     status: row.status as CustomerOffer['status'],
     snapshot: {
       ...d,
+      ...(d.contractParties ? { contractParties: publicContractParties(d.contractParties) } : {}),
       items: d.items.map((item) => {
         const publicItem = { ...item }
         delete publicItem.sourceReview

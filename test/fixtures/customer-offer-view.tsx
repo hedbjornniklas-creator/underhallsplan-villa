@@ -10,6 +10,9 @@ import { parseProjectView } from '@/lib/action-cases/projectNavigation'
 import { emptyCustomerOffer } from '@/lib/action-cases/customerOffers'
 import { actionCase, customer, token } from './customer-offer-data'
 
+const contractorSource = { companyName: 'Exempelbygg AB', organizationNumber: '556000-0000', contactName: 'Erik Exempel',
+  street: 'Bygggatan 1', postalCode: '11122', city: 'Stockholm', mobile: '0700000000', email: 'byggare@example.test' }
+
 async function start() {
   const workspace = await (await fetch('/fixture')).json()
   const params = new URLSearchParams(location.search)
@@ -61,7 +64,7 @@ async function start() {
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/fail-save', { method: 'POST' })}>Simulera nästa sparfel</button></div>
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/slow-save', { method: 'POST' })}>Simulera långsam sparning</button></div>
           {project ? <ActionCaseProject caseId={project.id} initialWorkspace={projectWorkspace} initialOffer={workspace}
-            initialView={parseProjectView(params.get('view'))} issuerName="Exempelbygg AB" replyEmail="byggare@example.test" />
+            initialView={parseProjectView(params.get('view'))} issuerName="Exempelbygg AB" replyEmail="byggare@example.test" contractorSource={contractorSource} />
             : <main className="gizmo-index-inner"><p className="gizmo-eyebrow">Gizmo</p><h1>Projekt</h1><ActionCaseWorkspace initialWorkspace={projectWorkspace} initialError={null} /></main>}
         </div> : external ? (
           <ActionCaseCustomerPortal portal={portal} token={token} />
@@ -71,6 +74,7 @@ async function start() {
             initial={workspace}
             issuerName="Exempelbygg AB"
             replyEmail="byggare@example.test"
+            contractorSource={contractorSource}
           />
         )}
       </UppdragScope>

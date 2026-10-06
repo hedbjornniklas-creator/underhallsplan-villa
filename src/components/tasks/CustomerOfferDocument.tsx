@@ -4,6 +4,7 @@ import { useId } from 'react'
 import { Check, Download, FileText } from 'lucide-react'
 import { CustomerContractDocument } from './CustomerContractFields'
 import { PaymentPlanDocument } from './CustomerPaymentPlan'
+import { ContractPartiesDocument } from './CustomerContractPartiesEditor'
 import {
   customerOfferBaseAmount,
   customerOfferOptionGroup,
@@ -25,13 +26,15 @@ export default function CustomerOfferDocument({
   selected,
   onSelect,
   fileUrl,
-  readOnly = false
+  readOnly = false,
+  purpose = 'contract'
 }: {
   offer: CustomerOffer
   selected: string[]
   onSelect?: (ids: string[]) => void
   fileUrl: (fileId: string) => string
   readOnly?: boolean
+  purpose?: 'offer' | 'contract'
 }) {
   const s = offer.snapshot,
     accepted = offer.status === 'accepted'
@@ -46,27 +49,28 @@ export default function CustomerOfferDocument({
       )
   const baseAmount = customerOfferBaseAmount(s)
   const total = baseAmount === null ? null : customerOfferTotal(s, selection)
+  const files = offer.files.filter((file) => purpose === 'contract' || file.id !== s.termsAttachmentId)
   return (
-    <article className="min-w-0 break-words bg-white" aria-label="Kundoffert">
+    <article className="min-w-0 break-words bg-white" aria-label={purpose === 'offer' ? 'Kundoffert' : 'Kundavtal'}>
       <header className="border-b border-slate-200 py-6">
         <p className="text-sm text-slate-500">
-          {accepted ? 'Godkänt avtal' : 'Offert'} · Version{' '}
+          {accepted ? 'Godkänt avtal' : purpose === 'offer' ? 'Offert' : 'Avtal'} · Version{' '}
           {offer.version || 'utkast'}
         </p>
         <h2 className="mt-2 text-2xl font-semibold">
           {s.title || 'Offertutkast'}
         </h2>
         <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
-          <div>
+          {(purpose === 'offer' || !s.contractParties) && <div>
             <dt className="text-slate-500">Beställare</dt>
-            <dd className="mt-1 font-semibold">{s.customerName}</dd>
-            <dd className="break-all text-slate-600">{s.customerEmail}</dd>
-          </div>
-          <div>
+            <dd className="mt-1 font-semibold">{s.contractParties?.customers.map((row) => row.name).filter(Boolean).join(', ') || s.customerName}</dd>
+            <dd className="break-all text-slate-600">{s.contractParties?.email || s.customerEmail}</dd>
+          </div>}
+          {(purpose === 'offer' || !s.contractParties) && <div>
             <dt className="text-slate-500">Entreprenör</dt>
-            <dd className="mt-1 font-semibold">{s.issuerName}</dd>
-            <dd className="break-all text-slate-600">{s.replyEmail}</dd>
-          </div>
+            <dd className="mt-1 font-semibold">{s.contractParties?.contractor.companyName || s.issuerName}</dd>
+            <dd className="break-all text-slate-600">{s.contractParties?.contractor.email || s.replyEmail}</dd>
+          </div>}
           <div>
             <dt className="text-slate-500">Objekt</dt>
             <dd className="mt-1">{s.propertyAddress}</dd>
@@ -80,6 +84,7 @@ export default function CustomerOfferDocument({
           <p className="mt-5 whitespace-pre-wrap leading-7">{s.introduction}</p>
         )}
       </header>
+      {purpose === 'contract' && s.contractParties && <ContractPartiesDocument value={s.contractParties} />}
       <section className="py-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h3 className="text-lg font-semibold">Grundåtagande</h3>
@@ -198,12 +203,12 @@ export default function CustomerOfferDocument({
             ))}
         </section>
       )}
-      <CustomerContractDocument value={s.contractDetails} />
-      {s.paymentPlan && <section className="border-t border-slate-200 py-6">
+      {purpose === 'contract' && <CustomerContractDocument value={s.contractDetails} omitParties={Boolean(s.contractParties)} />}
+      {purpose === 'contract' && s.paymentPlan && <section className="border-t border-slate-200 py-6">
         <h3 className="text-lg font-semibold">Betalningsplan för grundavtalet</h3>
         <PaymentPlanDocument plan={s.paymentPlan} paymentTerms={s.paymentTerms} showTerms={false} />
       </section>}
-      <section className="grid gap-6 border-y border-slate-200 py-6 sm:grid-cols-2">
+      {purpose === 'contract' && <section className="grid gap-6 border-y border-slate-200 py-6 sm:grid-cols-2">
         {[
           ['Tider', s.schedule],
           ['Betalningsvillkor', s.paymentTerms]
@@ -215,18 +220,19 @@ export default function CustomerOfferDocument({
             </p>
           </div>
         ))}
-      </section>
+      </section>}
       <section className="py-6">
-        <h3 className="font-semibold">
+        {purpose === 'contract' && <><h3 className="font-semibold">
           Villkor ·{' '}
           {s.contractForm === 'abs18' ? 'ABS 18' : 'Särskilda villkor'}
         </h3>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
           {s.terms || 'Ej angivet'}
         </p>
-        {offer.files.length > 0 && (
+        </>}
+        {files.length > 0 && (
           <ul className="mt-4 divide-y divide-slate-200">
-            {offer.files.map((f) => (
+            {files.map((f) => (
               <li key={f.id}>
                 <a
                   href={fileUrl(f.id)}
@@ -249,7 +255,7 @@ export default function CustomerOfferDocument({
       <footer className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-slate-50 p-5">
         <div>
           <p className="text-sm text-slate-600">
-            {accepted ? 'Avtalat belopp' : s.items.some((i) => i.kind === 'option') ? 'Grundpris och valda tillval' : 'Grundavtalets pris'}
+            {accepted ? 'Avtalat belopp' : s.items.some((i) => i.kind === 'option') ? 'Grundpris och valda tillval' : purpose === 'offer' ? 'Offertens grundpris' : 'Grundavtalets pris'}
           </p>
           <p className="mt-1 text-2xl font-bold" aria-live="polite">
             {money(accepted ? offer.acceptedTotalOre : total)}

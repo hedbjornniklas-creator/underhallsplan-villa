@@ -1,6 +1,6 @@
 import type { ActionCaseView } from './contracts'
 
-export const projectViews = ['overview', 'work', 'contract', 'choices', 'payments', 'schedule', 'files', 'customer', 'review'] as const
+export const projectViews = ['overview', 'work', 'offer', 'contract', 'choices', 'payments', 'schedule', 'files', 'customer', 'review', 'offerReview'] as const
 export type ProjectView = typeof projectViews[number]
 
 export function parseProjectView(value: string | null | undefined): ProjectView {

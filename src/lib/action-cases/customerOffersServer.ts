@@ -281,7 +281,7 @@ export async function publishCustomerOffer(
     replyEmail: sender.data.email
   }
   const url = `${config.origin}/atgardsarende/${token}`
-  const subject = `Offert: ${draft.title}`
+  const subject = `Avtal: ${draft.title}`
   const body = `${org.data.name} har skickat ett grundavtal för ${c.property_address}.\n\nGranska omfattning, pris och villkor under Avtal. Val och tillval hanteras separat och ingår inte i detta godkännande. Godkännande kräver en separat kod till denna e-postadress.\n\n${url}`
   const emailPayload: Email = {
     from: config.from,
@@ -570,8 +570,8 @@ export async function respondCustomerOffer(
   if (result.data?.error) throw new Error(result.data.error)
   if (operation === 'challenge') {
     const config = mailConfig(origin),
-      subject = 'Din kod för att godkänna offerten'
-    const body = `Kod: ${code}\n\nOffert: ${offer.snapshot.title}, version ${offer.version}.\nAnvänd koden bara om du själv vill godkänna denna offert med dina val. Koden gäller i 10 minuter. Dela den inte med någon annan.`
+      subject = 'Din kod för att godkänna avtalet'
+    const body = `Kod: ${code}\n\nAvtal: ${offer.snapshot.title}, version ${offer.version}.\nAnvänd koden bara om du själv vill godkänna detta avtal. Koden gäller i 10 minuter. Dela den inte med någon annan.`
     try {
       await sendAssignmentEmail({
         from: config.from,

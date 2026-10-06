@@ -3,6 +3,40 @@
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
 Datum: 2026-10-06.
 
+## Beslut 2026-10-06: separata arbetsvyer for Offert och Avtal
+
+- Offert samlar rubrik, giltighet, omfattning och kundpris. Avtal borjar med
+  Bestallare och Entreprenor, foljt av ovriga medverkande och ABS 18-uppgifter.
+  Samma omfattning och pris ateranvands; avtalet kraver ingen andra inmatning.
+- Arbetsvyerna delar befintlig utkastrevision. Vybyte varken skickar eller sparar
+  och bevarar pagaende redigering. Granska offert visar omfattning och pris;
+  Granska avtal visar aven avtalsuppgifter och betalningsplan.
+- Bestallaren har namn och valfritt personnummer for hogst tva personer samt
+  gata/box, postnummer, ort, telefon, mobil och e-post. Entreprenoren har firma,
+  organisationsnummer, kontaktperson, mobil, adress, telefon, fax och e-post.
+  F-skatt anges uttryckligen, aldrig genom ett antagande.
+- Entreprenorens namn, organisationsnummer och adress hamtas fran den aktiva
+  organisationens foretagsprofil. Kontaktpersonens namn, mobil och e-post hamtas
+  fran den inloggade profilen. Redan sparade avtalsuppgifter behalls. Knappen
+  Hamta foretagsuppgifter aterhamtar de profiluppgifter som sidan laddade.
+- Uppgifterna sparas under `contractParties` i befintlig utkast-JSON och fryses
+  med avtalsversionen. Inga nya tabeller eller SQL-migrationer behovs. Personnummer
+  bevaras internt men utelamnas fran den publika bearer-lankens JSON och dokument.
+- Utskick ligger enbart under Avtal och anvander befintligt versions- och
+  kodflode. Detta steg skapar inte ett separat utskick/godkannande av prisofferten.
+  Nuvarande godkannande verifierar en brevlada. Tva bestallare kan forberedas och
+  sparas, men utskick blockeras tills bada kan signera separat.
+- Anvandaren har bekraftat att inga dokument har skickats och att projektet ar
+  i utvecklingsstadiet. Aldre implementeringsavsnitt nedan beskriver tidigare steg;
+  denna uppdelning ersatter deras gemensamma interna sida Offert och avtal.
+
+Verifierat lokalt: 233 action-case-tester, TypeScript, riktad ESLint och
+produktionsbygge med webpack. Klicktester med fiktiva data verifierar separata
+granskningar, profilhamtning utan att skriva over F-skatt, tillagg/borttagning av
+bestallare, bevarade andringar vid vybyte, sparfel/nytt forsok och aterlasning.
+Mobilformular pa 390 px har ingen horisontell sid-overflow. Inga riktiga utskick
+eller godkannanden genomfordes.
+
 ## Beslut 2026-10-06: fran Projektarbete till avtalsutkast
 
 - Arbetsdelar visas direkt under Uppdraget. Anvandaren valjer vilka som ska

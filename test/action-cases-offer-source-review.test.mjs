@@ -97,8 +97,8 @@ test('editor follows ABS 18 contract sequence, keeps explicit imports and pendin
   const editor = readFileSync('src/components/tasks/CustomerOfferEditor.tsx', 'utf8')
   const start = editor.indexOf('<ProjectEditorRow title="Offertuppgifter"')
   const layout = editor.slice(start)
-  const order = ['title="Parter och övriga medverkande"', 'title="Fastigheten"', '>Uppdraget<', 'title="Avtalshandlingar och bilagor"',
-    "contractSection('work-environment'", "contractSection('advice'", '{priceSection}', "contractSection('changes'", 'title="Tid för betalning"',
+  const order = ['title="Beställare"', 'title="Entreprenör"', "contractSection('controls'", 'title="Fastigheten"', 'title="Uppdraget"', 'title="Avtalshandlingar och bilagor"',
+    "contractSection('work-environment'", "contractSection('advice'", 'title="Priset"', "contractSection('changes'", 'title="Tid för betalning"',
     'title="Tid för arbetenas påbörjande och avslutande"', "contractSection('delay'", "contractSection('inspection'", "contractSection('insurance'", 'title="Övrigt"']
   let previous = -1
   for (const part of order) { const position = layout.indexOf(part); assert.ok(position > previous, part); previous = position }

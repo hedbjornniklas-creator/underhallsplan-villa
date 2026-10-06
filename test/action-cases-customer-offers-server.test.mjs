@@ -8,6 +8,7 @@ import * as quotes from '../src/lib/action-cases/quotes.ts'
 import * as costingDomain from '../src/lib/action-cases/customerOfferCosting.ts'
 import * as planningDomain from '../src/lib/action-cases/customerPlanning.ts'
 import { emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
+import { emptyContractParties } from '../src/lib/action-cases/customerContractParties.ts'
 import {
   workspace,
   snapshot,
@@ -271,6 +272,28 @@ function harness(options = {}) {
       )
   }
 }
+
+test('structured parties are stored internally, checked before delivery and projected without buyer identifiers', async () => {
+  const h = harness(), ctx = { orgId: id(90), userId: id(91) }
+  h.draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test')
+  h.draft.contractParties.customers[0].personalNumber = '19000101-0000'
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft })
+  assert.equal(h.calls.find((call) => call.p_operation === 'save').p_data.body.contractParties.customers[0].personalNumber, '19000101-0000')
+  await assert.rejects(h.run(), /INCOMPLETE/)
+  assert.equal(h.sent.length, 0)
+  assert.equal(h.copies.length, 0)
+  Object.assign(h.draft.contractParties, { street: 'Testgatan 1', postalCode: '11122', city: 'Stockholm' })
+  Object.assign(h.draft.contractParties.contractor, { companyName: 'Exempelbygg AB', organizationNumber: '556000-0000', street: 'Bygggatan 1', postalCode: '11122', city: 'Stockholm', email: 'byggare@example.test', fTax: 'yes' })
+  h.draft.contractParties.customers.push({ name: 'Bo Exempel', personalNumber: '' })
+  await assert.rejects(h.run(), /INCOMPLETE/)
+  h.draft.contractParties.customers.pop()
+  await h.run()
+  assert.equal(h.saved().snapshot.contractParties.customers[0].personalNumber, '19000101-0000')
+  assert.equal(h.sent[0].subject, `Avtal: ${h.draft.title}`)
+  assert.equal(JSON.stringify(h.sent).includes('19000101'), false)
+  const shared = await h.api.getSharedCustomerOffers(h.link, h.participant)
+  assert.equal(shared.offers[0].snapshot.contractParties.customers[0].personalNumber, '')
+})
 
 test('payment plans require schema protection before save or publication and freeze into public versions', async () => {
   const ctx = { orgId: id(90), userId: id(91) }

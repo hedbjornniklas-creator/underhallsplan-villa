@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { emptyContractDetails, contractDetailsIssues, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import { normalizePaymentPlan, paymentPlanTotal, paymentPlanIssues } from '../src/lib/action-cases/customerPaymentPlan.ts'
+import { emptyContractParties } from '../src/lib/action-cases/customerContractParties.ts'
 import {
   normalizeCustomerOffer,
   emptyCustomerOffer,
@@ -73,6 +74,24 @@ function completeContract() {
   }
   return result
 }
+
+test('structured contract parties round-trip through existing draft storage and freeze with a contract version', async () => {
+  const f = await fixture()
+  const contractParties = { ...emptyContractParties('Anna Exempel', 'anna@example.test', '', { companyName: 'Exempelbygg AB' }),
+    street: 'Testgatan 1', postalCode: '11122', city: 'Stockholm' }
+  contractParties.customers[0].personalNumber = '19000101-0000'
+  const body = normalizeCustomerOffer({ ...f.draft, contractParties, contractDetails: completeContract() })
+  await f.write('save', { revision: 1, body })
+  const saved = (await db.query('select body from action_case_customer_offer_drafts where action_case_id=$1', [f.caseId])).rows[0].body
+  assert.deepEqual(saved.contractParties, contractParties)
+  await f.write('publish', { ...f.publication, revision: 2, snapshot: { ...f.snapshot, ...body } })
+  const frozen = await get('action_case_customer_offers', f.offerId)
+  assert.deepEqual(frozen.snapshot.contractParties, contractParties)
+  const changed = normalizeCustomerOffer({ ...body, contractParties: { ...contractParties, street: 'Ny adress' } })
+  await f.write('save', { revision: 2, body: changed })
+  assert.deepEqual((await get('action_case_customer_offers', f.offerId)).snapshot, frozen.snapshot)
+  assert.equal(JSON.stringify(mapCustomerOffer(frozen)).includes('19000101'), false)
+})
 
 test('optional action notes survive normalized, versioned offers without inventing communicated advice', async () => {
   const f = await fixture()

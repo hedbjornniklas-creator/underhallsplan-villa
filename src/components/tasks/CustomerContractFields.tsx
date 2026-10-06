@@ -207,9 +207,11 @@ export default function CustomerContractFields({
 }
 
 export function CustomerContractDocument({
-  value
+  value,
+  omitParties = false
 }: {
   value?: CustomerContractDetails
+  omitParties?: boolean
 }) {
   if (!value) return null
   const advice = value.advice
@@ -242,7 +244,7 @@ export function CustomerContractDocument({
           </dl>
         )}
       </div>
-      {contractFields.map(({ key, title }) => (
+      {contractFields.filter(({ key }) => !omitParties || key !== 'parties').map(({ key, title }) => (
         <div key={key} className="mt-5 border-t border-slate-100 pt-4">
           <h4 className="font-semibold">{title}</h4>
           <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">

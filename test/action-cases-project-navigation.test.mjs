@@ -33,7 +33,7 @@ function loadPage(path, deps) {
   return loaded.exports.default
 }
 const id = '00000000-0000-4000-8000-000000000001'
-function setup({ authorized = true, found = true, offerFails = false } = {}) {
+function setup({ authorized = true, found = true, offerFails = false, companyFails = false } = {}) {
   const calls = []
   const page = loadPage('../src/app/(dashboard)/uppdrag/[caseId]/page.tsx', {
     'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') }, redirect: (path) => { throw new Error('REDIRECT:' + path) } },
@@ -44,6 +44,10 @@ function setup({ authorized = true, found = true, offerFails = false } = {}) {
     '@/lib/action-cases/server': { getActionCaseWorkspace: async (ctx, caseId) => { calls.push(['workspace', ctx, caseId]); return { cases: found ? [{ id: caseId }] : [] } } },
     '@/lib/action-cases/customerOffersServer': { getCustomerOfferWorkspace: async (ctx, caseId) => { calls.push(['offer', ctx, caseId]); if (offerFails) throw new Error('unavailable'); return { revision: 1 } } },
     '@/lib/tasks/server': { getTaskPeople: async (ctx) => { calls.push(['people', ctx]); return [] } },
+    '@/lib/organizations/companyProfile': { readOrganizationBranding: async (orgId) => {
+      calls.push(['company', orgId]); if (companyFails) throw new Error('unavailable')
+      return { name: 'Scoped company', organizationNumber: '556000-0000', address: 'Testgatan 1', postalCode: '11122', city: 'Stockholm' }
+    } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }) }) },
     '@/lib/action-cases/projectNavigation': navigation,
   })
@@ -75,11 +79,23 @@ test('missing or other-organization project does not load its offers', async () 
 test('offer unavailability does not remove access to existing project tools', async () => {
   const { run } = setup({ offerFails: true })
   const result = await run()
-  const project = result.props.children.props.children[1]
+  const project = result.props.children.props.children[2]
   assert.equal(project.props.initialOffer, null)
   assert.match(project.props.initialOfferError, /fortfarande tillgängliga/)
   assert.equal(project.props.initialView, 'payments')
   assert.equal(project.props.initialWorkspace.cases[0].id, id)
+})
+
+test('contractor defaults use only the checked organization and optional profile failure leaves project tools available', async () => {
+  const h = setup(), result = await h.run()
+  const project = result.props.children.props.children[2]
+  assert.deepEqual(h.calls.find(([name]) => name === 'company'), ['company', 'org-a'])
+  assert.equal(project.props.contractorSource.organizationNumber, '556000-0000')
+  assert.equal(project.props.contractorSource.companyName, 'Scoped company')
+  assert.equal('fTax' in project.props.contractorSource, false)
+  const failed = await setup({ companyFails: true }).run()
+  assert.match(failed.props.children.props.children[1].props.children, /kunde inte hämtas/)
+  assert.equal(failed.props.children.props.children[2].props.initialWorkspace.cases[0].id, id)
 })
 
 test('legacy customer editor URL redirects to the same project contract', async () => {
