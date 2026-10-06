@@ -1,6 +1,7 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -77,7 +78,7 @@ async function assertInspectionEditable(
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: inspectionId } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const admin = createSupabaseAdminClient()
 
     await assertInspectionEditable(admin, inspectionId)
@@ -168,6 +169,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     return NextResponse.json({ ok: true, image: insertedImage })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okant fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
@@ -180,7 +184,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: inspectionId } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const admin = createSupabaseAdminClient()
 
     await assertInspectionEditable(admin, inspectionId)
@@ -227,6 +231,9 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
 
     return NextResponse.json({ ok: true, image_id: imageId })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okant fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)

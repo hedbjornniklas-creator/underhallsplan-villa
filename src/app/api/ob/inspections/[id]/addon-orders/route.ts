@@ -1,5 +1,6 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -10,7 +11,7 @@ function jsonError(message: string, status: number) {
 }
 
 async function listInspectionAddonOrders(orgId: string, inspectionId: string) {
-  const admin = createSupabaseAdminClient() as any
+  const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('inspection_addon_orders')
     .select(
@@ -29,15 +30,18 @@ async function listInspectionAddonOrders(orgId: string, inspectionId: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const addonOrders = await listInspectionAddonOrders(org.orgId, id)
     return NextResponse.json({ addonOrders })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
@@ -51,7 +55,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const body = (await request.json().catch(() => null)) as
       | {
           addon_key?: unknown
@@ -70,7 +74,7 @@ export async function PATCH(
       return jsonError('Ogiltigt värde för is_selected.', 400)
     }
 
-    const admin = createSupabaseAdminClient() as any
+    const admin = createSupabaseAdminClient()
     const { data: updatedRows, error: updateError } = await admin
       .from('inspection_addon_orders')
       .update({
@@ -93,6 +97,9 @@ export async function PATCH(
     const addonOrders = await listInspectionAddonOrders(org.orgId, id)
     return NextResponse.json({ addonOrders })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)

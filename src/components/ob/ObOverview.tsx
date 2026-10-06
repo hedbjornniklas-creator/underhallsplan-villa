@@ -6,6 +6,7 @@ import ActionButton from '@/components/ui/ActionButton'
 import PendingLink from '@/components/ui/PendingLink'
 import type { ObOverviewItem, ObOverviewPage, OverviewFilter, OverviewSort } from '@/lib/ob/overview'
 import './ob-overview.css'
+import { useObOrganization, withObOrganization } from './ObOrganizationBoundary'
 
 const filters: { value: OverviewFilter; label: string }[] = [
   { value: 'all', label: 'Alla' }, { value: 'active', label: 'Aktuella' }, { value: 'closed', label: 'Avslutade' },
@@ -22,6 +23,7 @@ function dateLabel(value: string | null) {
 }
 
 function OverviewRow({ item }: { item: ObOverviewItem }) {
+  const { id: orgId } = useObOrganization()
   const [expanded, setExpanded] = useState(false)
   const detailsId = useId()
   const detailsLabel = `${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.address}`
@@ -47,13 +49,13 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
         </button>
       </td>
       <td className="obo-actions"><div className="obo-action-links">
-        {item.inspectionHref && <PendingLink className="obo-inspection-link" href={item.inspectionHref} prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
+        {item.inspectionHref && <PendingLink className="obo-inspection-link" href={withObOrganization(item.inspectionHref, orgId)} prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
           aria-label={`Öppna besiktning: ${item.address}`} title="Öppna besiktning"
           icon={<ClipboardList size={18} aria-hidden="true" />}>Öppna besiktning</PendingLink>}
-        {item.confirmationHref && <PendingLink className="obo-confirmation-link" href={item.confirmationHref} prefetch={false} autoPending pendingLabel="Öppnar bekräftelse…"
+        {item.confirmationHref && <PendingLink className="obo-confirmation-link" href={withObOrganization(item.confirmationHref, orgId)} prefetch={false} autoPending pendingLabel="Öppnar bekräftelse…"
           aria-label={`${item.confirmationAction}: ${item.address}`} title={item.confirmationAction}
           icon={<FileCheck2 size={18} aria-hidden="true" />}>{item.confirmationAction}</PendingLink>}
-        {item.pdfHref && <a className="obo-pdf-link" href={item.pdfHref} target="_blank" rel="noopener noreferrer"
+        {item.pdfHref && <a className="obo-pdf-link" href={withObOrganization(item.pdfHref, orgId)} target="_blank" rel="noopener noreferrer"
           aria-label={`Ladda ner utlåtande som PDF: ${item.address}`} title="Ladda ner utlåtande (PDF)">
           <Download size={18} aria-hidden="true" /><span>Ladda ner PDF</span>
         </a>}
@@ -77,6 +79,7 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
 }
 
 export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) {
+  const { id: orgId } = useObOrganization()
   const [result, setResult] = useState<OverviewPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -97,7 +100,7 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
     return () => clearTimeout(timer)
   }, [search, debouncedSearch])
 
-  const query = new URLSearchParams({ search: debouncedSearch, filter, sort,
+  const query = new URLSearchParams({ orgId, search: debouncedSearch, filter, sort,
     attentionOnly: String(attentionOnly), showArchived: String(showArchived), page: String(page), pageSize: String(pageSize) }).toString()
   const filtered = Boolean(debouncedSearch.trim() || filter !== 'all' || attentionOnly)
   const load = useCallback(async (automatic = false) => {

@@ -4,6 +4,7 @@ import { AppToastProvider } from '@/components/ui/AppToastProvider'
 import { ObBuildingContext } from '@/components/ob/ObBuildingContext'
 import { ObFloorContext } from '@/components/ob/ObFloorProvider'
 import ObStepGrunddata from '@/components/ob/ObStepGrunddata'
+import ObOrganizationBoundary from '@/components/ob/ObOrganizationBoundary'
 import ObStepForutsattningar from '@/components/ob/ObStepForutsattningar'
 import ObStepHandlingar from '@/components/ob/ObStepHandlingar'
 import ObInspectionHeader, { ObInspectionNavigationContext } from '@/components/ob/ObInspectionHeader'
@@ -54,4 +55,4 @@ function App() {
     </ObFloorContext.Provider>
   </ObBuildingContext.Provider>
 }
-createRoot(document.getElementById('root')!).render(<AppToastProvider><App /></AppToastProvider>)
+createRoot(document.getElementById('root')!).render(<AppToastProvider><ObOrganizationBoundary><App /></ObOrganizationBoundary></AppToastProvider>)

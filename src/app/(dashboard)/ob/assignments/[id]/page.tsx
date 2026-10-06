@@ -6,6 +6,7 @@ import { AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLi
 import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import { ArrowLeft, BookOpen, ChevronsLeft } from 'lucide-react'
 import Protected from '@/components/Protected'
+import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
 import ObAcceptedAssignmentTerms from '@/components/ob/ObAcceptedAssignmentTerms'
 import { ObFormField, ObFormSection } from '@/components/ob/ObFormPrimitives'
@@ -187,6 +188,11 @@ function formFingerprint(form: FormState) {
 }
 
 export default function AssignmentDetailsPage() {
+  return <ObOrganizationBoundary><AssignmentDetailsContent /></ObOrganizationBoundary>
+}
+
+function AssignmentDetailsContent() {
+  const { id: orgId } = useObOrganization()
   const router = useRouter()
   const params = useParams<{ id: string }>()
   const id = params.id
@@ -219,6 +225,8 @@ export default function AssignmentDetailsPage() {
     formRef.current = form
   }, [form])
 
+  useObOrganizationSwitchGuard(Boolean(form && formFingerprint(form) !== lastSavedFingerprintRef.current), saving || sending || booking || converting || reissuing)
+
   const hasOrdererRole = Boolean(form?.ordererRole)
   const usesApartmentObject = resolveObObjectType(form?.ordererRole || null, form?.objectType) === 'apartment'
   const isObjectTypeLocked = Boolean(assignment?.accepted_at || assignment?.last_sent_at) ||
@@ -248,7 +256,7 @@ export default function AssignmentDetailsPage() {
       setSuccess(null)
       setAddonOrders([])
 
-      const response = await fetch(`/api/ob/assignments/${id}`, { cache: 'no-store' })
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${id}`, orgId), { cache: 'no-store' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte hämta uppdraget.'))
@@ -272,7 +280,7 @@ export default function AssignmentDetailsPage() {
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, orgId])
 
   useEffect(() => {
     void loadAssignment()
@@ -347,7 +355,7 @@ export default function AssignmentDetailsPage() {
         setSaveState('saving')
         setError(null)
 
-        const response = await fetch(`/api/ob/assignments/${id}`, {
+        const response = await fetch(withObOrganization(`/api/ob/assignments/${id}`, orgId), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -414,7 +422,7 @@ export default function AssignmentDetailsPage() {
         setSaving(false)
       }
     },
-    [id, isEditingLocked]
+    [id, isEditingLocked, orgId]
   )
 
   useEffect(() => {
@@ -461,7 +469,7 @@ export default function AssignmentDetailsPage() {
         if (!saved) return
       }
 
-      const response = await fetch(`/api/ob/assignments/${id}/send`, { method: 'POST' })
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${id}/send`, orgId), { method: 'POST' })
       const payload = await response.json().catch(() => null)
       if (!response.ok) {
         throw new Error(jsonToErrorMessage(payload, 'Kunde inte skicka uppdragsbekräftelsen.'))
@@ -483,7 +491,7 @@ export default function AssignmentDetailsPage() {
       setError(null)
       setSuccess(null)
 
-      const response = await fetch(`/api/ob/assignments/${id}`, {
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${id}`, orgId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'booked' }),
@@ -510,7 +518,7 @@ export default function AssignmentDetailsPage() {
 
   const handleConvert = async (early = false) => {
     if (assignment?.inspection_id && assignment.property_id) {
-      router.push(`/properties/${assignment.property_id}/ob/${assignment.inspection_id}`)
+      router.push(withObOrganization(`/properties/${assignment.property_id}/ob/${assignment.inspection_id}`, orgId))
       return
     }
     try {
@@ -518,7 +526,7 @@ export default function AssignmentDetailsPage() {
       setError(null)
       setSuccess(null)
 
-      const response = await fetch(`/api/ob/assignments/${id}/convert`, {
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${id}/convert`, orgId), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(early ? { earlyStartReason, confirmEarlyStart: earlyStartConfirmed } : {}),
       })
@@ -531,7 +539,7 @@ export default function AssignmentDetailsPage() {
       if (!body.propertyId || !body.inspectionId) {
         throw new Error('Konvertering saknar property/inspection-id.')
       }
-      router.push(`/properties/${body.propertyId}/ob/${body.inspectionId}`)
+      router.push(withObOrganization(`/properties/${body.propertyId}/ob/${body.inspectionId}`, orgId))
     } catch (convertError) {
       setError(convertError instanceof Error ? convertError.message : 'Kunde inte starta besiktning.')
     } finally {
@@ -545,7 +553,7 @@ export default function AssignmentDetailsPage() {
       setError(null)
       setSuccess(null)
 
-      const response = await fetch(`/api/ob/assignments/${id}/reissue`, {
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${id}/reissue`, orgId), {
         method: 'POST',
       })
       const payload = await response.json().catch(() => null)
@@ -557,7 +565,7 @@ export default function AssignmentDetailsPage() {
       if (!body.assignmentId) {
         throw new Error('Saknar id för ny uppdragsbekräftelse.')
       }
-      router.push(`/ob/assignments/${body.assignmentId}`)
+      router.push(withObOrganization(`/ob/assignments/${body.assignmentId}`, orgId))
     } catch (reissueError) {
       setError(reissueError instanceof Error ? reissueError.message : 'Kunde inte skapa ny version.')
     } finally {
@@ -572,7 +580,7 @@ export default function AssignmentDetailsPage() {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => router.push('/ob')}
+                onClick={() => router.push(withObOrganization('/ob', orgId))}
                 aria-label="Till huvudsidan"
                 title="Till huvudsidan"
                 className="ob-assignment-nav"
@@ -581,7 +589,7 @@ export default function AssignmentDetailsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => router.push('/ob/assignments')}
+                onClick={() => router.push(withObOrganization('/ob/assignments', orgId))}
                 aria-label="Tillbaka"
                 title="Tillbaka"
                 className="ob-assignment-nav"

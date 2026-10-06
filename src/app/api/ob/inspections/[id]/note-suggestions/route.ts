@@ -1,5 +1,6 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { parseObNoteSuggestion } from '@/lib/ob/noteSuggestion'
@@ -11,7 +12,7 @@ const permit = createNoteSuggestionLimit()
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const origin = request.headers.get('origin')
     if ((origin && origin !== new URL(request.url).origin) || request.headers.get('sec-fetch-site') === 'cross-site') {
       throw new NoteSuggestionError('Utskicket måste göras från HusHub.', 403)
@@ -33,6 +34,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     })
     return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     if (error instanceof NoteSuggestionError) return NextResponse.json({ error: error.message }, { status: error.status })
     if (error instanceof SyntaxError) return NextResponse.json({ error: 'Ogiltigt anrop.' }, { status: 400 })
     const code = error instanceof Error ? error.message : ''

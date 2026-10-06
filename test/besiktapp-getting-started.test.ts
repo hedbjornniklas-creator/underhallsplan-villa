@@ -70,7 +70,7 @@ test('OB can place the same guide trigger in its page heading without a separate
   assert.ok(!html.includes('rounded-xl'))
 })
 test('dashboard integration opens existing forms, and profile return waits for the saved snapshot', () => {
-  assert.ok(source('src/app/(dashboard)/ob/page.tsx').includes('<GettingStarted module="ob" heading='))
+  assert.ok(source('src/app/(dashboard)/ob/page.tsx').includes('<GettingStarted module="ob" orgId={organization.id} heading='))
   assert.ok(source('src/components/eb/EbDashboardClient.tsx').includes('onStart={() => setDialogOpen(true)}'))
   const tu = source('src/components/tu/TuDashboardClient.tsx')
   assert.ok(tu.includes("onStart={() => openCreationDialog('scratch')}"))

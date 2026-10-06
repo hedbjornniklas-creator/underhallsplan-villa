@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { getEbProjectById } from '@/lib/eb/server'
+import { requireInspectionReportFamily } from '@/lib/inspections/reportFamily'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -39,6 +40,7 @@ export async function POST(
     }
 
     const admin = createSupabaseAdminClient()
+    await requireInspectionReportFamily(admin, inspectionId, 'EB')
     const { error } = await admin.rpc('unlock_eb_inspection_report', {
       p_org_id: org.orgId,
       p_project_id: projectId,
@@ -72,6 +74,8 @@ export async function POST(
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
+    if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
+    if (message === 'INSPECTION_FAMILY_READ_FAILED') return jsonError('Besiktningen kunde inte kontrolleras. Försök igen senare.', 503)
     return jsonError('Kunde inte låsa upp EB-utlåtandet.', 500)
   }
 }

@@ -795,6 +795,12 @@ export default function ObSettingsPage() {
 
           <SettingsNav />
 
+          <aside className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            Detta är den äldre profilsidan för ÖB-inställningar, tillägg och certifieringar.
+            Företagets gemensamma uppgifter och logotyp ändrar du under <strong>Organisation</strong> i menyn ovan.
+            Dina kontaktuppgifter och din underskrift för vald organisation finns under <strong>Min profil</strong>.
+          </aside>
+
           <ProfileStartReturn
             pending={profileSavePending}
             error={error}

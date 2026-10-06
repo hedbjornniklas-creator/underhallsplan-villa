@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { requireOrgContext } from '@/lib/assignments/server'
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getObPublishedReport } from '@/lib/ob/publishedReport'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
@@ -13,16 +13,18 @@ export const metadata = {
 
 export default async function ObPublishedDigitalReport({ params, searchParams }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ report?: string }>
+  searchParams: Promise<{ report?: string | string[]; orgId?: string | string[] }>
 }) {
   const { id } = await params
-  const { report } = await searchParams
+  const { report, orgId } = await searchParams
   if (typeof report !== 'string') notFound()
   let access
-  try { access = await requireOrgContext() }
+  try { access = await requireObInspectionContext(id, orgId) }
   catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect('/login')
-    if (error instanceof Error && error.message === 'ORG_MEMBERSHIP_REQUIRED') notFound()
+    if (error instanceof Error && ['ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED',
+      'OB_ORGANIZATION_FORBIDDEN', 'OB_ORGANIZATION_MISMATCH', 'ORG_SELECTION_INVALID',
+      'OB_INSPECTION_INVALID', 'OB_ORGANIZATION_UNASSIGNED'].includes(error.message)) notFound()
     throw error
   }
   const snapshot = await getObPublishedReport(createSupabaseAdminClient(), id, report, access)

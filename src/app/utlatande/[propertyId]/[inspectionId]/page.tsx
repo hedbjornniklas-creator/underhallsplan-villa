@@ -11,7 +11,8 @@ import {
 } from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import { readEnvironmentalAppendices } from '@/lib/report/environmentalAppendices'
-import { readReportWebsite } from '@/lib/report/profileWebsite'
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { resolveObReportIdentity } from '@/lib/ob/reportIdentity'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { readBuildingReportState } from '@/lib/ob/buildingReport'
 import {
@@ -112,6 +113,7 @@ export default async function Page({
 }) {
   const resolvedParams = await Promise.resolve(params)
   const resolvedSearchParams: Record<string, string | string[] | undefined> = await Promise.resolve(searchParams ?? {})
+  const organization = await requireObInspectionContext(resolvedParams.inspectionId, resolvedSearchParams.orgId)
   const isEmbed = resolvedSearchParams?.embed === '1'
   const isAutoPrint = resolvedSearchParams?.autoprint === '1'
   const isPdf = resolvedSearchParams?.pdf === '1'
@@ -361,7 +363,7 @@ export default async function Page({
 
   const { data: assignmentRows, error: assignmentError } = await (supabase as any)
     .from('assignments')
-    .select('id, brf_name, apartment_number, apartment_holder_name')
+    .select('id, org_id, brf_name, apartment_number, apartment_holder_name')
     .eq('inspection_id', resolvedParams.inspectionId)
     .limit(1)
 
@@ -370,6 +372,9 @@ export default async function Page({
   }
 
   const assignmentForInspection = Array.isArray(assignmentRows) ? assignmentRows[0] : null
+  if (assignmentForInspection && assignmentForInspection.org_id !== organization.orgId) {
+    throw new Error('OB_ORGANIZATION_MISMATCH')
+  }
   const apartmentData = {
     brf_name:
       snapshotData?.brf_name ??
@@ -393,36 +398,12 @@ export default async function Page({
   }
 
 
-  if (inspection && inspection.property_id !== resolvedParams.propertyId) {
-    console.error('Besiktning tillhÃ¶r inte fastighet', {
-      inspectionPropertyId: inspection.property_id,
-      propertyId: resolvedParams.propertyId,
-    })
+  if (!inspection || inspection.property_id !== resolvedParams.propertyId) {
+    throw new Error('OB_ORGANIZATION_FORBIDDEN')
   }
 
-  const { data: authData } = await supabase.auth.getUser()
-  const userId = authData.user?.id ?? null
-
-  const { data: profile, error: profileError } = userId
-    ? await supabase
-        .from('profiles')
-        .select(
-          'full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, logo_path'
-        )
-        .eq('id', userId)
-        .maybeSingle()
-    : { data: null, error: null }
-
-  if (profileError) {
-    console.error('Kunde inte hÃ¤mta profil', profileError)
-  }
-
-  const { summary: profileCertificationSummary } = await resolveInspectorCertificationSummary(
-    supabase,
-    {
-      profileId: userId,
-    }
-  )
+  const userId = organization.userId
+  const profileError = null
 
   let frozenProfileFromSnapshot = null
   let frozenCompanyFromSnapshot = null
@@ -431,6 +412,7 @@ export default async function Page({
       .from('inspection_report_links')
       .select('snapshot_payload,created_at')
       .eq('inspection_id', resolvedParams.inspectionId)
+      .eq('org_id', organization.orgId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
       .limit(5)
@@ -462,6 +444,15 @@ export default async function Page({
       }
     }
   }
+
+  const profile = await resolveObReportIdentity({
+    orgId: organization.orgId, profileId: userId, locked: Boolean(inspection.locked_at),
+    frozenProfile: frozenProfileFromSnapshot, frozenCompany: frozenCompanyFromSnapshot,
+  })
+  const profileCertificationSummary = frozenProfileFromSnapshot ? {
+    sbr_group: null, sbr_status: null, membership_number: null, certification_number: null,
+    all_selected_items: [],
+  } : (await resolveInspectorCertificationSummary(supabase, { profileId: userId, orgId: organization.orgId })).summary
 
   const { data: documentRows, error: documentError } = await supabase
     .from('inspection_documents')
@@ -1388,7 +1379,7 @@ export default async function Page({
         company_name: valueOrFallback(
           frozenProfileFromSnapshot?.company_name ?? profile?.company_name ?? null
         ),
-        company_website: await readReportWebsite(supabase, userId, frozenProfileFromSnapshot),
+        company_website: profile.company_website,
         company_orgno: valueOrFallback(
           frozenProfileFromSnapshot?.company_orgno ?? profile?.company_orgno ?? null
         ),

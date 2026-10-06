@@ -1,7 +1,8 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
-import { readReportWebsite } from '@/lib/report/profileWebsite'
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { resolveObReportIdentity } from '@/lib/ob/reportIdentity'
 import { readInspectionReportNote } from '@/lib/report/inspectionNoteText'
 import { isStatusInspection } from '@/lib/ob/inspectionProfile'
 import { readEnvironmentalAppendices } from '@/lib/report/environmentalAppendices'
@@ -161,6 +162,7 @@ export async function buildReportDataV2(params: {
   propertyId?: string | null
   inspectionId: string
 }, scopedPart?: ObBuildingPart): Promise<ReportDataV2> {
+  const organization = await requireObInspectionContext(params.inspectionId)
   const resolvedParams = params
 const supabase: any = createSupabaseServerClient()
   const buildingState = await readBuildingReportState(supabase, params.inspectionId)
@@ -336,6 +338,9 @@ const supabase: any = createSupabaseServerClient()
     .eq('id', resolvedParams.inspectionId)
     .maybeSingle()
   const inspection = (inspectionData as any) ?? null
+  if (!inspection || (params.propertyId && params.propertyId !== inspection.property_id)) {
+    throw new Error('OB_ORGANIZATION_FORBIDDEN')
+  }
   const statusInspection = isStatusInspection(inspection ?? {})
   const statusNoteColumns = statusInspection ? ', recommendation_text, comment_text' : ''
   const statusControlColumns = statusInspection ? ', status, recommendation_text, comment_text' : ''
@@ -382,7 +387,7 @@ const supabase: any = createSupabaseServerClient()
 
   const { data: assignmentData, error: assignmentError } = await supabase
     .from('assignments')
-    .select(`id, brf_name, apartment_number, apartment_holder_name, accepted_at, booked_at, scope_description${statusInspection ? ', org_id, assignment_type' : ''}`)
+    .select('id, org_id, assignment_type, brf_name, apartment_number, apartment_holder_name, accepted_at, booked_at, scope_description')
     .eq('inspection_id', resolvedParams.inspectionId)
     .limit(1)
     .maybeSingle()
@@ -392,6 +397,13 @@ const supabase: any = createSupabaseServerClient()
   }
 
   const assignment = (assignmentData as any) ?? null
+  // Do not filter a conflicting link into apparent absence: an accepted
+  // confirmation must never silently become a directly created inspection.
+  if (assignment && assignment.org_id !== organization.orgId) {
+    throw Error(statusInspection
+      ? 'Uppdragsbekräftelsen för statusbesiktningen kunde inte verifieras. Inget utlåtande skapas.'
+      : 'OB_ORGANIZATION_MISMATCH')
+  }
   let statusConfirmation: ObConfirmationSnapshot | null = null
   if (statusInspection && assignment?.assignment_type === 'STATUS') {
     const assignmentId = valueOrNull(assignment.id)
@@ -439,29 +451,8 @@ const supabase: any = createSupabaseServerClient()
     })
   }
 
-  const { data: authData } = await supabase.auth.getUser()
-  const userId = authData.user?.id ?? null
-
-  const { data: profile, error: profileError } = userId
-    ? await supabase
-        .from('profiles')
-        .select(
-          'full_name, phone, email, company_name, company_orgno, company_address, company_postal_code, company_city, logo_path'
-        )
-        .eq('id', userId)
-        .maybeSingle()
-    : { data: null, error: null }
-
-  if (profileError) {
-    console.error('Kunde inte hÃ¤mta profil', profileError)
-  }
-
-  const { summary: profileCertificationSummary } = await resolveInspectorCertificationSummary(
-    supabase,
-    {
-      profileId: userId,
-    }
-  )
+  const userId = organization.userId
+  const profileError = null
 
   let frozenProfileFromSnapshot: Record<string, unknown> | null = null
   let frozenCompanyFromSnapshot: Record<string, unknown> | null = null
@@ -470,6 +461,7 @@ const supabase: any = createSupabaseServerClient()
       .from('inspection_report_links')
       .select('snapshot_payload,created_at')
       .eq('inspection_id', resolvedParams.inspectionId)
+      .eq('org_id', organization.orgId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
       .limit(5)
@@ -506,6 +498,15 @@ const supabase: any = createSupabaseServerClient()
       }
     }
   }
+
+  const profile = await resolveObReportIdentity({
+    orgId: organization.orgId, profileId: userId, locked: Boolean(inspection.locked_at),
+    frozenProfile: frozenProfileFromSnapshot, frozenCompany: frozenCompanyFromSnapshot,
+  })
+  const profileCertificationSummary = frozenProfileFromSnapshot ? {
+    sbr_group: null, sbr_status: null, membership_number: null, certification_number: null,
+    all_selected_items: [],
+  } : (await resolveInspectorCertificationSummary(supabase, { profileId: userId, orgId: organization.orgId })).summary
 
   const { data: documentRows, error: documentError } = await supabase
     .from('inspection_documents')
@@ -1433,7 +1434,7 @@ const supabase: any = createSupabaseServerClient()
         company_name: valueOrFallback(
           (frozenProfileFromSnapshot?.company_name as string | null | undefined) ?? profile?.company_name ?? null
         ),
-        company_website: await readReportWebsite(supabase, userId, frozenProfileFromSnapshot),
+        company_website: profile.company_website,
         company_orgno: valueOrFallback(
           (frozenProfileFromSnapshot?.company_orgno as string | null | undefined) ?? profile?.company_orgno ?? null
         ),

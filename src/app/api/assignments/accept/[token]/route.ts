@@ -12,7 +12,7 @@ import {
 } from '@/lib/assignments/server'
 import { parseAssignmentIssuerIdentitySnapshot } from '@/lib/assignments/issuerIdentity'
 import { requireStatusIssueSource } from '@/lib/assignments/statusIssueSource'
-import { resolveOrganizationProfileCard } from '@/lib/organizations/profileCard'
+import { resolveOrganizationProfileCard, requireConfiguredOrganizationProfileCard } from '@/lib/organizations/profileCard'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   getAllAssignmentTermsDocuments,
@@ -272,7 +272,7 @@ export async function GET(
           membership_number: snapshot.membershipNumber, certification_number: snapshot.certificationNumber,
           avatar_path: null,
         }
-      } else if (assignment.assignment_type === 'TU') {
+      } else if (assignment.assignment_type === 'TU' || assignment.assignment_type === 'OB') {
         const snapshot = parseAssignmentIssuerIdentitySnapshot(
           link.issuer_identity_snapshot,
           {
@@ -300,12 +300,12 @@ export async function GET(
             avatar_path: snapshot.inspector.avatarPath,
           }
         } else {
-          // Compatibility for links issued before SQL 07. The lookup is still
+          // Compatibility for legacy links without an issued identity. The lookup is still
           // scoped to the exact organization and never reads company branding
           // from a different organization.
           try {
             const [card, certification] = await Promise.all([
-              resolveOrganizationProfileCard({
+              (assignment.assignment_type === 'OB' ? requireConfiguredOrganizationProfileCard : resolveOrganizationProfileCard)({
                 orgId: link.org_id,
                 profileId: assignment.responsible_profile_id,
               }),
@@ -330,7 +330,7 @@ export async function GET(
               avatar_path: card.avatarPath,
             }
           } catch (profileError) {
-            console.error('[assignments.accept] failed to load legacy TU issuer', {
+            console.error('[assignments.accept] failed to load legacy organization issuer', {
               token_prefix: token.slice(0, 8),
               error: profileError instanceof Error ? profileError.message : String(profileError),
             })
@@ -513,7 +513,7 @@ export async function POST(
     if (assignment.status?.toLowerCase() === 'cancelled') {
       return jsonError('Den här länken är inte längre aktiv.', 410)
     }
-    if (assignment.assignment_type === 'TU' && link.issuer_identity_snapshot != null) {
+    if ((assignment.assignment_type === 'TU' || assignment.assignment_type === 'OB') && link.issuer_identity_snapshot != null) {
       // The issued snapshot is the historical source of truth. A later
       // reassignment must not invalidate an otherwise valid customer link.
       const issuerSnapshot = parseAssignmentIssuerIdentitySnapshot(
@@ -752,7 +752,7 @@ export async function POST(
     }
 
     const documentSource = statusSource ?? (assignment.assignment_type === 'OB' && process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED === 'true'
-      ? await (await import('@/lib/assignments/obConfirmationSnapshot')).prepareObConfirmationSource({ ...assignment, org_id: link.org_id }, terms)
+      ? await (await import('@/lib/assignments/obConfirmationSnapshot')).prepareObConfirmationSource({ ...assignment, org_id: link.org_id }, terms, link.issuer_identity_snapshot)
       : null)
 
     await consumeAssignmentToken({
@@ -797,7 +797,7 @@ export async function POST(
       const updatedAssignment = await getAssignmentById(link.org_id, assignment.id)
       if (updatedAssignment) {
         const responsibleProfile =
-          updatedAssignment.assignment_type === 'TU'
+          ['TU', 'OB', 'STATUS'].includes(updatedAssignment.assignment_type)
             ? null
             : await getProfileContact(updatedAssignment.responsible_profile_id)
         await sendAssignmentAcceptedNotice({

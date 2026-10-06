@@ -1,5 +1,7 @@
+import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { convertAssignmentToInspection, requireOrgContext } from '@/lib/assignments/server'
+import { convertAssignmentToInspection } from '@/lib/assignments/server'
 import { obWorkflowError } from '@/lib/ob/assignmentWorkflowServer'
 import { validateObEarlyStartReason } from '@/lib/ob/assignmentWorkflow'
 
@@ -16,7 +18,7 @@ export async function POST(
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
     const body = await request.json().catch(() => null)
     const earlyStartReason = validateObEarlyStartReason(body?.earlyStartReason)
     if (body?.earlyStartReason !== undefined && (!earlyStartReason || body?.confirmEarlyStart !== true)) {
@@ -31,6 +33,9 @@ export async function POST(
 
     return NextResponse.json(result)
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const known = obWorkflowError(error)
     if (known) return jsonError(known[1], known[0])
     const message = error instanceof Error ? error.message : 'Okänt fel.'

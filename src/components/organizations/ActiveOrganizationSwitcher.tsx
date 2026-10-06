@@ -8,6 +8,7 @@ import {
   organizationSwitchDestination,
   organizationSwitcherRoot,
   organizationSwitcherSurfaceForPath,
+  obOrganizationEntityForPath,
 } from '@/lib/organizations/navigation'
 
 type OrganizationOption = {
@@ -38,6 +39,9 @@ export default function ActiveOrganizationSwitcher({
   const searchParams = useSearchParams()
   const search = searchParams.toString()
   const surface = organizationSwitcherSurfaceForPath(pathname)
+  const obEntity = surface === 'ob' ? obOrganizationEntityForPath(pathname) : {}
+  const entityKind = obEntity.inspectionId ? 'inspectionId' : obEntity.assignmentId ? 'assignmentId' : ''
+  const entityId = obEntity.inspectionId ?? obEntity.assignmentId ?? ''
   const organizationSelections = searchParams.getAll('orgId')
   const invalidOrganizationSelection = organizationSelections.length > 1
   const requestedOrgId = searchParams.get('orgId')
@@ -47,7 +51,7 @@ export default function ActiveOrganizationSwitcher({
   const [resolvedSelectionKey, setResolvedSelectionKey] = useState<string | null>(null)
   const [openSelectionKey, setOpenSelectionKey] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const selectionKey = surface ? `${surface}:${requestedOrgId ?? ''}` : null
+  const selectionKey = surface ? `${surface}:${entityKind}:${entityId}:${requestedOrgId ?? ''}` : null
   const selectionIsResolved = selectionKey !== null && resolvedSelectionKey === selectionKey
   const visibleOrganization = selectionIsResolved ? organization : null
   const visibleOrganizations = selectionIsResolved ? organizations : []
@@ -60,6 +64,7 @@ export default function ActiveOrganizationSwitcher({
     const controller = new AbortController()
     let current = true
     const params = new URLSearchParams({ surface })
+    if (entityKind) params.set(entityKind, entityId)
     if (requestedOrgId !== null) params.set('orgId', requestedOrgId)
 
     void fetch(`/api/organizations/context?${params.toString()}`, {
@@ -70,7 +75,9 @@ export default function ActiveOrganizationSwitcher({
     })
       .then(async (response) => {
         const body = (await response.json().catch(() => ({}))) as OrganizationResponse
-        if (!response.ok || !body.organization || !Array.isArray(body.organizations)) {
+        if (!response.ok || !body.organization || !Array.isArray(body.organizations) ||
+          (requestedOrgId !== null && body.organization.id !== requestedOrgId.trim().toLowerCase()) ||
+          !body.organizations.some(item => item.id === body.organization?.id)) {
           throw new Error(body.error || 'Organisationen kunde inte hämtas.')
         }
         if (!current) return
@@ -100,6 +107,8 @@ export default function ActiveOrganizationSwitcher({
       controller.abort()
     }
   }, [
+    entityId,
+    entityKind,
     invalidOrganizationSelection,
     isLoggedIn,
     pathname,

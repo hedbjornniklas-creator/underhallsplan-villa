@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Protected from '@/components/Protected'
+import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 import { supabase } from '@/lib/supabaseClient'
 
 type Property = {
@@ -24,16 +25,16 @@ type Inspection = {
   created_at: string
 }
 
-type ObSnapshotUpsertClient = {
-  from: (table: 'ob_property_snapshot') => {
-    upsert: (
-      payload: Record<string, unknown>,
-      options: { onConflict: string }
-    ) => Promise<{ error: unknown | null }>
-  }
+export default function PropertyInspectionsPage() {
+  return <ObOrganizationBoundary><PropertyInspectionsContent /></ObOrganizationBoundary>
 }
 
-export default function PropertyInspectionsPage() {
+function PropertyInspectionsContent() {
+  const { id: orgId } = useObOrganization()
+  const [creating, setCreating] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const mutating = creating || deletingId !== null
+  useObOrganizationSwitchGuard(false, mutating)
   const params = useParams()
   const router = useRouter()
   const propertyId = params?.id as string
@@ -45,6 +46,7 @@ export default function PropertyInspectionsPage() {
 
   useEffect(() => {
     if (!propertyId) return
+    const controller = new AbortController()
 
     const fetchData = async () => {
       setLoading(true)
@@ -57,6 +59,8 @@ export default function PropertyInspectionsPage() {
         .eq('id', propertyId)
         .single()
 
+      if (controller.signal.aborted) return
+
       if (propertyError) {
         console.error(propertyError)
         setError('Kunde inte hÃ¤mta fastigheten.')
@@ -66,151 +70,62 @@ export default function PropertyInspectionsPage() {
 
       setProperty(propertyData as Property)
 
-      // HÃ¤mta besiktningar fÃ¶r fastigheten
-      const { data: inspectionsData, error: inspectionsError } = await supabase
-        .from('inspections')
-        .select('id, property_id, date, type, status, inspector_name, created_at')
-        .eq('property_id', propertyId)
-        .eq('inspection_family', 'OB')
-        .order('date', { ascending: false })
-
-      if (inspectionsError) {
-        // Vi stoppar inte sidan â€“ vi visar bara en tom lista
-        console.warn('Kunde inte hÃ¤mta besiktningar:', inspectionsError.message)
+      try {
+        const query = new URLSearchParams({ orgId, propertyId })
+        const response = await fetch(`/api/ob/inspections?${query}`, { cache: 'no-store', signal: controller.signal })
+        const body = await response.json()
+        if (!response.ok || !Array.isArray(body.inspections)) throw new Error(body.error || 'Kunde inte hämta besiktningar.')
+        if (controller.signal.aborted) return
+        setInspections(body.inspections)
+      } catch (error) {
+        if (controller.signal.aborted) return
         setInspections([])
-      } else {
-        setInspections((inspectionsData || []) as Inspection[])
+        setError(error instanceof Error ? error.message : 'Kunde inte hämta besiktningar.')
       }
 
       setLoading(false)
     }
 
     fetchData()
-  }, [propertyId])
+    return () => controller.abort()
+  }, [propertyId, orgId])
 
   const hasInspections = useMemo(() => inspections.length > 0, [inspections])
 
   const handleCreateNew = async () => {
-    if (!propertyId) return
-
-    // Skapa en ny besiktning i databasen
-    const { data, error } = await supabase
-      .from('inspections')
-      .insert({
-        property_id: propertyId,
-        type: 'OB',
-        inspection_family: 'OB',
-        inspection_variant: 'OB',
-        status: 'draft',
+    if (!propertyId || mutating) return
+    setCreating(true)
+    try {
+      const response = await fetch(withObOrganization('/api/ob/inspections', orgId), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ propertyId }),
       })
-      .select('id')
-      .single()
-
-    if (error || !data) {
-      console.error('Kunde inte skapa besiktning:', error?.message)
-      alert('Kunde inte skapa en ny överlåtelsebesiktning.')
-      return
-    }
-
-    const newId = data.id as string
-
-    const { error: conditionsError } = await supabase
-      .from('inspection_conditions')
-      .insert({
-        inspection_id: newId,
-        furnishing_level: 'fullt_moblerad',
-      })
-
-    if (conditionsError) {
-      console.error('Kunde inte skapa inspection_conditions för besiktning:', conditionsError)
-      await supabase.from('inspections').delete().eq('id', newId)
-      alert('Kunde inte skapa förutsättningar för besiktningen.')
-      return
-    }
-
-    const { data: sourceProperty, error: sourcePropertyError } = await supabase
-      .from('properties')
-      .select(
-        'id,owner,created_at,name,address,postal_code,city,municipality,cadastral_id,owner_name,client_name,contact_person,tenure_type,dwelling_type,property_type,plot_area_m2,area_m2,area_sqm,tax_value,planning_status,type_code,heating,ventilation,roof_type,year_built,cover_path,status,last_inspected,last_inspection_at'
-      )
-      .eq('id', propertyId)
-      .single()
-
-    if (sourcePropertyError || !sourceProperty) {
-      console.error('Kunde inte läsa fastighetsdata för snapshot:', sourcePropertyError)
-      await supabase.from('inspections').delete().eq('id', newId)
-      alert('Kunde inte skapa snapshot för besiktningen.')
-      return
-    }
-
-    const snapshotClient = supabase as unknown as ObSnapshotUpsertClient
-    const { error: snapshotError } = await snapshotClient
-      .from('ob_property_snapshot')
-      .upsert(
-        {
-          inspection_id: newId,
-          source_property_id: sourceProperty.id,
-          source_property_owner: sourceProperty.owner ?? null,
-          source_property_created_at: sourceProperty.created_at ?? null,
-          imported_at: new Date().toISOString(),
-          snapshot_version: 1,
-          name: sourceProperty.name ?? null,
-          address: sourceProperty.address ?? null,
-          postal_code: sourceProperty.postal_code ?? null,
-          city: sourceProperty.city ?? null,
-          municipality: sourceProperty.municipality ?? null,
-          cadastral_id: sourceProperty.cadastral_id ?? null,
-          owner_name: sourceProperty.owner_name ?? null,
-          client_name: sourceProperty.client_name ?? null,
-          contact_person: sourceProperty.contact_person ?? null,
-          tenure_type: sourceProperty.tenure_type ?? null,
-          dwelling_type: sourceProperty.dwelling_type ?? null,
-          property_type: sourceProperty.property_type ?? null,
-          plot_area_m2: sourceProperty.plot_area_m2 ?? null,
-          area_m2: sourceProperty.area_m2 ?? null,
-          area_sqm: sourceProperty.area_sqm ?? null,
-          tax_value: sourceProperty.tax_value ?? null,
-          planning_status: sourceProperty.planning_status ?? null,
-          type_code: sourceProperty.type_code ?? null,
-          heating: sourceProperty.heating ?? null,
-          ventilation: sourceProperty.ventilation ?? null,
-          roof_type: sourceProperty.roof_type ?? null,
-          year_built: sourceProperty.year_built ?? null,
-          cover_path: sourceProperty.cover_path ?? null,
-          status: sourceProperty.status ?? null,
-          last_inspected: sourceProperty.last_inspected ?? null,
-          last_inspection_at: sourceProperty.last_inspection_at ?? null,
-        },
-        { onConflict: 'inspection_id' }
-      )
-
-    if (snapshotError) {
-      console.error('Kunde inte skapa snapshot för besiktning:', snapshotError)
-      await supabase.from('inspections').delete().eq('id', newId)
-      alert('Kunde inte skapa snapshot för besiktningen.')
-      return
-    }
-
-    // Gå direkt till detaljsidan för besiktningen
-    router.push(`/properties/${propertyId}/ob/${newId}`)
+      const body = await response.json()
+      if (!response.ok || body.propertyId !== propertyId || !body.inspectionId || body.orgId !== orgId) throw new Error(body.error || 'Kunde inte skapa besiktningen i vald organisation.')
+      router.push(withObOrganization(`/properties/${propertyId}/ob/${body.inspectionId}`, orgId))
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Kunde inte skapa besiktningen.')
+    } finally { setCreating(false) }
   }
+
   const handleDelete = async (inspectionId: string) => {
+    if (mutating) return
     const ok = confirm('Vill du verkligen radera denna besiktning?')
     if (!ok) return
 
-    const { error } = await supabase
-      .from('inspections')
-      .delete()
-      .eq('id', inspectionId)
+    setDeletingId(inspectionId)
+    try {
+      const { error } = await supabase
+        .from('inspections')
+        .delete()
+        .eq('id', inspectionId)
+      if (error) throw error
 
-    if (error) {
+      // Ta bort endast den bekräftat raderade besiktningen ur listan.
+      setInspections(prev => prev.filter(i => i.id !== inspectionId))
+    } catch (error) {
       console.error('Kunde inte radera besiktning:', error)
       alert('Kunde inte radera besiktningen.')
-      return
-    }
-
-    // Ta bort den lokalt ur listan
-    setInspections(prev => prev.filter(i => i.id !== inspectionId))
+    } finally { setDeletingId(null) }
   }
 
   const formatDate = (value: string | null) => {
@@ -300,6 +215,7 @@ export default function PropertyInspectionsPage() {
           <div>
             <button
               onClick={handleCreateNew}
+              disabled={mutating}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
             >
               Ny Ã¶verlÃ¥telsebesiktning
@@ -318,6 +234,7 @@ export default function PropertyInspectionsPage() {
               {hasInspections && (
                 <button
                   onClick={handleCreateNew}
+                  disabled={mutating}
                   className="text-sm text-blue-600 hover:underline"
                 >
                   Skapa ny
@@ -333,6 +250,7 @@ export default function PropertyInspectionsPage() {
                 </p>
                 <button
                   onClick={handleCreateNew}
+                  disabled={mutating}
                   className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                 >
                   Skapa fÃ¶rsta Ã¶verlÃ¥telsebesiktningen
@@ -371,13 +289,14 @@ export default function PropertyInspectionsPage() {
                         <td className="px-3 py-2 align-middle">
                           <div className="flex justify-end gap-3">
                             <Link
-                              href={`/properties/${property.id}/ob/${inspection.id}`}
+                              href={withObOrganization(`/properties/${property.id}/ob/${inspection.id}`, orgId)}
                               className="text-sm text-blue-600 hover:underline"
                             >
                               Ã–ppna
                             </Link>
                             <button
                               onClick={() => void handleDelete(inspection.id)}
+                              disabled={mutating}
                               className="text-sm text-red-600 hover:underline"
                             >
                               Radera

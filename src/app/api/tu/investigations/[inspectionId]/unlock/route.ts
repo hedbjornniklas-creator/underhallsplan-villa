@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { requireTuContext } from '@/lib/tu/server'
+import { requireInspectionReportFamily } from '@/lib/inspections/reportFamily'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -49,6 +50,7 @@ export async function POST(
     }
 
     const admin = createSupabaseAdminClient()
+    await requireInspectionReportFamily(admin, inspectionId, 'TU')
     const { error } = await admin.rpc('unlock_tu_investigation_report', {
       p_org_id: org.orgId,
       p_inspection_id: inspectionId,
@@ -80,6 +82,8 @@ export async function POST(
     if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
+    if (message === 'TU_INSPECTION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
+    if (message === 'INSPECTION_FAMILY_READ_FAILED') return jsonError('TU-utredningen kunde inte kontrolleras. Försök igen senare.', 503)
     if (isMissingUnlockSchemaError(message)) {
       return jsonError('Databasstöd för TU-upplåsning saknas. Kör senaste migration först.', 409)
     }

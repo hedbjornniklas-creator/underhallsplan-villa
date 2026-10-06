@@ -50,6 +50,7 @@ function harness() {
     '@/components/ui/PendingLink': { default: 'PendingLink' },
     '@/lib/ob/overview': { selectObOverview: (items: unknown[]) => items },
     './ob-overview.css': {},
+    './ObOrganizationBoundary': { useObOrganization: () => ({ id: 'organization-a', name: 'A' }), withObOrganization: (path: string, orgId: string) => `${path}?orgId=${orgId}` },
   }
   const loaded = { exports: {} as { default: (props: { refreshKey: number }) => Element } }
   new Function('require', 'module', 'exports', 'window', 'document', 'fetch', 'Date', 'setTimeout', 'clearTimeout', compiled)(

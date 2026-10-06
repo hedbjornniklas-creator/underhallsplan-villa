@@ -8,6 +8,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type { OrganizationSwitcherSurface } from './navigation'
 import { requireOrganizationContext } from './administration'
 import { hasOrganizationTuAccess } from '@/lib/organizations/moduleAvailability'
+import { hasOrganizationObAccess, requireObContext } from '@/lib/ob/organizationBindings'
 
 export type { OrganizationSwitcherSurface } from './navigation'
 
@@ -67,6 +68,25 @@ export async function getOrganizationSwitcherContext(
         isDefault: organization.isDefault,
       })),
     }
+  }
+
+  if (surface === 'ob') {
+    const selected = await requireObContext(requestedOrgId)
+    const { data, error } = await createSupabaseAdminClient().from('org_members')
+      .select('org_id,is_default,created_at,organizations(name)')
+      .eq('profile_id', selected.userId).eq('is_active', true)
+      .order('is_default', { ascending: false }).order('created_at').order('org_id')
+    if (error) throw new Error('OB_ORGANIZATION_READ_FAILED')
+    const memberships = (data ?? []) as unknown as MembershipRow[]
+    const allowed = await Promise.all(memberships.map(async row => ({
+      row, allowed: await hasOrganizationObAccess(row.org_id, selected.userId),
+    })))
+    const organizations = allowed.filter(item => item.allowed).map(({ row }) => ({
+      id: row.org_id, name: organizationName(row.organizations), isDefault: row.is_default,
+    }))
+    const organization = organizations.find(row => row.id === selected.orgId)
+    if (!organization) throw new Error('MODULE_ACCESS_REQUIRED')
+    return { organization, organizations }
   }
 
   const selected = surface === 'moisture'

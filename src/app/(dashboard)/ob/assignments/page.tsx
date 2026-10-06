@@ -1,11 +1,12 @@
 ﻿'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AssignmentLinkIssueBadge, AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
 import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import { Archive, ArrowLeft, Ban, ChevronsLeft, Play, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
+import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 
 type AssignmentItem = {
   id: string
@@ -229,6 +230,11 @@ function getSortIndicator(active: boolean, direction: SortDirection) {
 }
 
 export default function ObAssignmentsPage() {
+  return <ObOrganizationBoundary><AssignmentsContent /></ObOrganizationBoundary>
+}
+
+function AssignmentsContent() {
+  const { id: orgId } = useObOrganization()
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
@@ -247,31 +253,40 @@ export default function ObAssignmentsPage() {
     null
   )
 
-  const loadAssignments = async () => {
+  useObOrganizationSwitchGuard(false, Boolean(actionState))
+
+  const listRequest = useRef<AbortController | null>(null)
+  const loadAssignments = useCallback(async () => {
+    listRequest.current?.abort()
+    const controller = new AbortController()
+    listRequest.current = controller
     try {
       setLoading(true)
       setError(null)
 
-      const response = await fetch('/api/ob/assignments', { cache: 'no-store' })
+      const response = await fetch(withObOrganization('/api/ob/assignments', orgId), { cache: 'no-store', signal: controller.signal })
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { error?: string }
         throw new Error(body.error ?? 'Kunde inte hämta uppdrag.')
       }
 
       const data = (await response.json()) as ListResponse
+      if (controller.signal.aborted) return
       setItems(data.items ?? [])
       setLinkIssues(data.linkIssues ?? { available: false, items: [] })
     } catch (loadError) {
+      if (controller.signal.aborted) return
       const message = loadError instanceof Error ? loadError.message : 'Kunde inte hämta uppdrag.'
       setError(message)
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
-  }
+  }, [orgId])
 
   useEffect(() => {
     void loadAssignments()
-  }, [])
+    return () => listRequest.current?.abort()
+  }, [loadAssignments])
 
   useEffect(() => {
     try {
@@ -458,7 +473,7 @@ export default function ObAssignmentsPage() {
   }
 
   const openAssignment = (assignmentId: string) => {
-    router.push(`/ob/assignments/${assignmentId}`)
+    router.push(withObOrganization(`/ob/assignments/${assignmentId}`, orgId))
   }
 
   const isArchived = (item: AssignmentItem) => Boolean(item.archived_at)
@@ -484,7 +499,7 @@ export default function ObAssignmentsPage() {
     try {
       setError(null)
       setActionState({ id: item.id, type: 'archive' })
-      const response = await fetch(`/api/ob/assignments/${item.id}`, {
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${item.id}`, orgId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -520,7 +535,7 @@ export default function ObAssignmentsPage() {
     try {
       setError(null)
       setActionState({ id: item.id, type: 'convert' })
-      const response = await fetch(`/api/ob/assignments/${item.id}/convert`, {
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${item.id}/convert`, orgId), {
         method: 'POST',
       })
       const payload = (await response.json().catch(() => null)) as
@@ -532,7 +547,7 @@ export default function ObAssignmentsPage() {
       if (!payload?.propertyId || !payload?.inspectionId) {
         throw new Error('Konvertering saknar property/inspection-id.')
       }
-      router.push(`/properties/${payload.propertyId}/ob/${payload.inspectionId}`)
+      router.push(withObOrganization(`/properties/${payload.propertyId}/ob/${payload.inspectionId}`, orgId))
     } catch (convertError) {
       setError(convertError instanceof Error ? convertError.message : 'Kunde inte starta besiktning.')
     } finally {
@@ -550,7 +565,7 @@ export default function ObAssignmentsPage() {
     try {
       setError(null)
       setActionState({ id: item.id, type: 'cancel' })
-      const response = await fetch(`/api/ob/assignments/${item.id}`, {
+      const response = await fetch(withObOrganization(`/api/ob/assignments/${item.id}`, orgId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -600,7 +615,7 @@ export default function ObAssignmentsPage() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => router.push('/ob')}
+                  onClick={() => router.push(withObOrganization('/ob', orgId))}
                   aria-label="Till huvudsidan"
                   title="Till huvudsidan"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
@@ -609,7 +624,7 @@ export default function ObAssignmentsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push('/ob')}
+                  onClick={() => router.push(withObOrganization('/ob', orgId))}
                   aria-label="Tillbaka"
                   title="Tillbaka"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
@@ -622,7 +637,7 @@ export default function ObAssignmentsPage() {
               <div className="flex w-full items-center justify-end gap-2 lg:w-auto">
                 <button
                   type="button"
-                  onClick={() => router.push('/ob/assignments/new')}
+                  onClick={() => router.push(withObOrganization('/ob/assignments/new', orgId))}
                   aria-label="Ny uppdragsbekräftelse"
                   title="Ny uppdragsbekräftelse"
                   className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"

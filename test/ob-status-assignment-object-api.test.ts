@@ -1,3 +1,5 @@
+// @ts-expect-error Node strip-types requires the explicit extension.
+import { obApiDomainBoundary } from './helpers/ob-api-domain-boundary.ts'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
@@ -8,6 +10,8 @@ function load(path: string, deps: Record<string, unknown>): Record<string, (...a
   const code = ts.transpileModule(read(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const module = { exports: {} }
   new Function('require', 'module', 'exports', code)((name: string) => {
+    const boundary = obApiDomainBoundary(name, deps)
+    if (boundary !== undefined && !(name in deps)) return boundary
     if (name in deps) return deps[name]
     throw Error('Unexpected dependency: ' + name)
   }, module, module.exports)

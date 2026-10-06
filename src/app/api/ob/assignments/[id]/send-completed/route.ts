@@ -1,13 +1,7 @@
+import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import {
-  InspectionCompletedEmailSendError,
-  buildBaseUrl,
-  getAssignmentById,
-  getProfileContact,
-  isMissingEnvError,
-  requireOrgContext,
-  sendInspectionCompletedEmail,
-} from '@/lib/assignments/server'
+import { InspectionCompletedEmailSendError, buildBaseUrl, getAssignmentById, isMissingEnvError, sendInspectionCompletedEmail } from '@/lib/assignments/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,12 +11,12 @@ function jsonError(message: string, status: number, extra?: Record<string, unkno
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
     const assignment = await getAssignmentById(org.orgId, id)
 
     if (!assignment) return jsonError('Uppdraget hittades inte.', 404)
@@ -34,13 +28,11 @@ export async function POST(
     if (!assignment.inspection_id || !assignment.property_id) {
       return jsonError('Uppdraget saknar koppling till besiktning.', 400)
     }
-
-    const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
     const result = await sendInspectionCompletedEmail({
       assignment,
       orgName: org.orgName,
       requestedByUserId: org.userId,
-      responsibleEmail: responsibleProfile?.email ?? null,
+      responsibleEmail: null,
       baseUrl: buildBaseUrl(),
     })
 
@@ -50,6 +42,9 @@ export async function POST(
       detailsUrl: result.detailsUrl,
     })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okant fel.'
 
     if (message === 'UNAUTHORIZED') {

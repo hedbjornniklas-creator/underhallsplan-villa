@@ -1,5 +1,7 @@
+import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { getAssignmentById, requireOrgContext } from '@/lib/assignments/server'
+import { getAssignmentById } from '@/lib/assignments/server'
 import { getArchivedAssignmentPdf, AssignmentPdfArchiveError } from '@/lib/assignments/acceptedPdfArchive'
 
 export const runtime = 'nodejs'
@@ -10,9 +12,9 @@ function failure(error: string, status: number) {
   return NextResponse.json({ error }, { status, headers: { 'Cache-Control': 'private, no-store' } })
 }
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const assignment = await getAssignmentById(org.orgId, id)
     if (!assignment || !['OB', 'STATUS'].includes(assignment.assignment_type)) return failure('Uppdraget hittades inte.', 404)
@@ -25,6 +27,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       'X-Content-Type-Options': 'nosniff',
     } })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     if (error instanceof AssignmentPdfArchiveError) return failure(error.message, 409)
     if (error instanceof Error && error.message === 'UNAUTHORIZED') return failure('Logga in igen för att hämta PDF-kopian.', 401)
     if (error instanceof Error && error.message === 'ORG_MEMBERSHIP_REQUIRED') return failure('Ingen organisationskoppling hittades.', 403)

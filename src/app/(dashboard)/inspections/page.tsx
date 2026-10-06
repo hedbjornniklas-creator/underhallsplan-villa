@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ChevronsLeft, Download, Loader2, LockOpen, Plus } from 'lucide-react'
 import Protected from '@/components/Protected'
-import { supabase } from '@/lib/supabaseClient'
+import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 
 type Inspection = {
   id: string
@@ -31,38 +31,6 @@ type Property = {
   city: string | null
 }
 
-type PropertySeedRow = {
-  id: string
-  owner: string | null
-  created_at: string | null
-  name: string
-  address: string | null
-  postal_code: string | null
-  city: string | null
-  municipality: string | null
-  cadastral_id: string | null
-  owner_name: string | null
-  client_name: string | null
-  contact_person: string | null
-  tenure_type: string | null
-  dwelling_type: string | null
-  property_type: string | null
-  plot_area_m2: number | null
-  area_m2: number | null
-  area_sqm: number | null
-  tax_value: number | null
-  planning_status: string | null
-  type_code: string | null
-  heating: string | null
-  ventilation: string | null
-  roof_type: string | null
-  year_built: number | null
-  cover_path: string | null
-  status: string | null
-  last_inspected: string | null
-  last_inspection_at: string | null
-}
-
 type InspectionWithProperty = Inspection & {
   property?: Property | null
   snapshot?: ObPropertySnapshotLite | null
@@ -75,30 +43,6 @@ type ObPropertySnapshotLite = {
   postal_code: string | null
   city: string | null
   client_name: string | null
-}
-
-type ObSnapshotClient = {
-  from: (table: 'ob_property_snapshot') => {
-    upsert: (
-      payload: Record<string, unknown>,
-      options: { onConflict: string }
-    ) => Promise<{ error: unknown | null }>
-    select: (columns: string) => {
-      in: (
-        column: 'inspection_id',
-        values: string[]
-      ) => Promise<{ data: ObPropertySnapshotLite[] | null; error: unknown | null }>
-    }
-  }
-}
-
-type ReportLinkPdfLite = {
-  inspection_id: string
-  pdf_base64: string | null
-  pdf_storage_bucket: string | null
-  pdf_storage_path: string | null
-  pdf_status: string | null
-  created_at: string
 }
 
 type StatusFilter = 'all' | 'draft' | 'ongoing' | 'completed' | 'archived'
@@ -127,9 +71,6 @@ const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'completed', label: 'Klar' },
   { key: 'archived', label: 'Arkiverad' },
 ]
-
-const PROPERTY_SNAPSHOT_COLUMNS =
-  'id,owner,created_at,name,address,postal_code,city,municipality,cadastral_id,owner_name,client_name,contact_person,tenure_type,dwelling_type,property_type,plot_area_m2,area_m2,area_sqm,tax_value,planning_status,type_code,heating,ventilation,roof_type,year_built,cover_path,status,last_inspected,last_inspection_at'
 
 function getStatusBucket(status: string | null): Exclude<StatusFilter, 'all'> {
   const value = status?.trim().toLowerCase() ?? ''
@@ -268,64 +209,6 @@ function getStatusSortRank(status: string | null) {
   }
 }
 
-function normalizePdfStatus(value: string | null | undefined): 'pending' | 'processing' | 'ready' | 'failed' {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  if (normalized === 'processing') return 'processing'
-  if (normalized === 'ready') return 'ready'
-  if (normalized === 'failed') return 'failed'
-  return 'pending'
-}
-
-function hasReadyPdfInLinks(rows: ReportLinkPdfLite[]) {
-  const hasStorageReady = rows.some((row) => {
-    const bucket = String(row.pdf_storage_bucket ?? '').trim()
-    const path = String(row.pdf_storage_path ?? '').trim()
-    return bucket.length > 0 && path.length > 0 && normalizePdfStatus(row.pdf_status) === 'ready'
-  })
-  if (hasStorageReady) return true
-
-  return rows.some((row) => String(row.pdf_base64 ?? '').trim().length > 0)
-}
-
-function buildSnapshotPayload(inspectionId: string, propertyData: PropertySeedRow) {
-  return {
-    inspection_id: inspectionId,
-    source_property_id: propertyData.id,
-    source_property_owner: propertyData.owner ?? null,
-    source_property_created_at: propertyData.created_at ?? null,
-    imported_at: new Date().toISOString(),
-    snapshot_version: 1,
-    name: propertyData.name ?? null,
-    address: propertyData.address ?? null,
-    postal_code: propertyData.postal_code ?? null,
-    city: propertyData.city ?? null,
-    municipality: propertyData.municipality ?? null,
-    cadastral_id: propertyData.cadastral_id ?? null,
-    owner_name: propertyData.owner_name ?? null,
-    client_name: propertyData.client_name ?? null,
-    contact_person: propertyData.contact_person ?? null,
-    tenure_type: propertyData.tenure_type ?? null,
-    dwelling_type: propertyData.dwelling_type ?? null,
-    property_type: propertyData.property_type ?? null,
-    plot_area_m2: propertyData.plot_area_m2 ?? null,
-    area_m2: propertyData.area_m2 ?? null,
-    area_sqm: propertyData.area_sqm ?? null,
-    tax_value: propertyData.tax_value ?? null,
-    planning_status: propertyData.planning_status ?? null,
-    type_code: propertyData.type_code ?? null,
-    heating: propertyData.heating ?? null,
-    ventilation: propertyData.ventilation ?? null,
-    roof_type: propertyData.roof_type ?? null,
-    year_built: propertyData.year_built ?? null,
-    cover_path: propertyData.cover_path ?? null,
-    status: propertyData.status ?? null,
-    last_inspected: propertyData.last_inspected ?? null,
-    last_inspection_at: propertyData.last_inspection_at ?? null,
-  }
-}
-
 function PdfDownloadActionButton({
   href,
   enabled,
@@ -377,6 +260,11 @@ function UnlockInspectionActionButton({
 }
 
 export default function InspectionsPage() {
+  return <ObOrganizationBoundary><InspectionsContent /></ObOrganizationBoundary>
+}
+
+function InspectionsContent() {
+  const { id: orgId } = useObOrganization()
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
@@ -396,6 +284,7 @@ export default function InspectionsPage() {
   const [unlockTarget, setUnlockTarget] = useState<InspectionWithProperty | null>(null)
   const [unlockReason, setUnlockReason] = useState('')
   const [unlockSubmitting, setUnlockSubmitting] = useState(false)
+  useObOrganizationSwitchGuard(Boolean(unlockReason), Boolean(creatingMode) || unlockSubmitting)
 
   useEffect(() => {
     try {
@@ -443,115 +332,18 @@ export default function InspectionsPage() {
   }, [search, statusFilter, sortField, sortDirection, pageSize, showDraft, showArchived])
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true)
-        setError(null)
-
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser()
-
-        if (userError) throw userError
-
-        if (!user) {
-          setInspections([])
-          return
-        }
-
-        const { data: propertyData, error: propertyError } = await supabase
-          .from('properties')
-          .select('id,name,address,postal_code,city')
-          .eq('owner', user.id)
-
-        if (propertyError) throw propertyError
-
-        const properties = (propertyData ?? []) as Property[]
-
-        if (!properties.length) {
-          setInspections([])
-          return
-        }
-
-        const propertyMap = new Map(properties.map((property) => [property.id, property]))
-        const propertyIds = properties.map((property) => property.id)
-
-        const { data: inspectionData, error: inspectionError } = await supabase
-          .from('inspections')
-          .select(
-            'id,property_id,date,type,status,inspector_name,created_at,customer_name,client_name,client_contact,assignment_number,locked_at,locked_by'
-          )
-          .in('property_id', propertyIds)
-          .eq('inspection_family', 'OB')
-          .order('date', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false })
-
-        if (inspectionError) throw inspectionError
-
-        const rows = (inspectionData ?? []) as Inspection[]
-        const inspectionIds = rows.map((row) => row.id)
-        const snapshotClient = supabase as unknown as ObSnapshotClient
-        const { data: snapshotData, error: snapshotError } =
-          inspectionIds.length > 0
-            ? await snapshotClient
-                .from('ob_property_snapshot')
-                .select('inspection_id,address,postal_code,city,client_name')
-                .in('inspection_id', inspectionIds)
-            : { data: [], error: null }
-
-        if (snapshotError) {
-          console.error('Could not load OB snapshots for inspections list:', snapshotError)
-        }
-
-        const { data: reportLinkData, error: reportLinkError } =
-          inspectionIds.length > 0
-            ? await supabase
-                .from('inspection_report_links')
-                .select(
-                  'inspection_id,pdf_base64,pdf_storage_bucket,pdf_storage_path,pdf_status,created_at'
-                )
-                .in('inspection_id', inspectionIds)
-                .is('revoked_at', null)
-                .order('created_at', { ascending: false })
-            : { data: [], error: null }
-
-        if (reportLinkError) {
-          console.error('Could not load report link PDF status for inspections list:', reportLinkError)
-        }
-
-        const snapshotMap = new Map(
-          ((snapshotData ?? []) as ObPropertySnapshotLite[]).map((snapshot) => [
-            snapshot.inspection_id,
-            snapshot,
-          ])
-        )
-        const reportRows = (Array.isArray(reportLinkData) ? reportLinkData : []) as ReportLinkPdfLite[]
-        const reportLinkMap = new Map<string, ReportLinkPdfLite[]>()
-        for (const linkRow of reportRows) {
-          const existingRows = reportLinkMap.get(linkRow.inspection_id) ?? []
-          existingRows.push(linkRow)
-          reportLinkMap.set(linkRow.inspection_id, existingRows)
-        }
-
-        setInspections(
-          rows.map((row) => ({
-            ...row,
-            property: propertyMap.get(row.property_id) ?? null,
-            snapshot: snapshotMap.get(row.id) ?? null,
-            hasReadyPdf: hasReadyPdfInLinks(reportLinkMap.get(row.id) ?? []),
-          }))
-        )
-      } catch (loadError: unknown) {
-        console.error('Could not load inspections:', loadError)
-        setError(loadError instanceof Error ? loadError.message : 'Kunde inte hämta besiktningar.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    load()
-  }, [])
+    const controller = new AbortController()
+    setLoading(true)
+    void fetch(withObOrganization('/api/ob/inspections', orgId), { cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        const body = await response.json()
+        if (!response.ok || !Array.isArray(body.inspections)) throw new Error(body.error || 'Kunde inte hämta besiktningar.')
+        if (!controller.signal.aborted) { setInspections(body.inspections); setError(null) }
+      })
+      .catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : 'Kunde inte hämta besiktningar.') })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
+  }, [orgId])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -695,104 +487,27 @@ export default function InspectionsPage() {
   }
 
   const openInspection = (row: InspectionWithProperty) => {
-    router.push(`/properties/${row.property_id}/ob/${row.id}`)
+    router.push(withObOrganization(`/properties/${row.property_id}/ob/${row.id}`, orgId))
   }
 
   const handleBack = () => {
-    router.push('/ob')
+    router.push(withObOrganization('/ob', orgId))
   }
 
   const handleCreateFromScratch = async () => {
     if (creatingMode) return
-
+    setMutationError(null)
+    setCreatingMode('scratch')
     try {
-      setMutationError(null)
-      setCreatingMode('scratch')
-
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError) throw userError
-      if (!user) {
-        router.replace('/login')
-        return
-      }
-
-      const today = new Date().toISOString().slice(0, 10)
-      const short = Math.random().toString(36).slice(2, 6).toUpperCase()
-      const tempName = `Fastighet ${today} ${short}`
-
-      const { data: propertyData, error: propertyError } = await supabase
-        .from('properties')
-        .insert({
-          owner: user.id,
-          name: tempName,
-          status: 'Utkast',
-        })
-        .select(PROPERTY_SNAPSHOT_COLUMNS)
-        .single()
-
-      if (propertyError || !propertyData) {
-        throw propertyError ?? new Error('Kunde inte skapa fastighet.')
-      }
-
-      const sourceProperty = propertyData as PropertySeedRow
-
-      const { data: inspectionData, error: inspectionError } = await supabase
-        .from('inspections')
-        .insert({
-          property_id: sourceProperty.id,
-          type: 'OB',
-          inspection_family: 'OB',
-          inspection_variant: 'OB',
-          status: 'draft',
-        })
-        .select('id')
-        .single()
-
-      if (inspectionError || !inspectionData) {
-        throw inspectionError ?? new Error('Kunde inte skapa besiktning.')
-      }
-
-      const { error: conditionsError } = await supabase
-        .from('inspection_conditions')
-        .insert({
-          inspection_id: inspectionData.id,
-          furnishing_level: 'fullt_moblerad',
-        })
-
-      if (conditionsError) {
-        await supabase.from('inspections').delete().eq('id', inspectionData.id)
-        await supabase.from('properties').delete().eq('id', sourceProperty.id)
-        throw conditionsError
-      }
-
-      const snapshotClient = supabase as unknown as ObSnapshotClient
-      const { error: snapshotError } = await snapshotClient
-        .from('ob_property_snapshot')
-        .upsert(buildSnapshotPayload(inspectionData.id, sourceProperty), {
-          onConflict: 'inspection_id',
-        })
-
-      if (snapshotError) {
-        await supabase.from('inspections').delete().eq('id', inspectionData.id)
-        await supabase.from('properties').delete().eq('id', sourceProperty.id)
-        throw snapshotError
-      }
-
-      router.push(`/properties/${sourceProperty.id}/ob/${inspectionData.id}`)
-    } catch (createError: unknown) {
-      console.error('Could not create inspection from scratch:', createError)
-      setMutationError(
-        createError instanceof Error
-          ? createError.message
-          : 'Kunde inte skapa besiktning fran scratch.'
-      )
-    } finally {
-      setCreatingMode(null)
-    }
+      const response = await fetch(withObOrganization('/api/ob/inspections', orgId), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      })
+      const body = await response.json()
+      if (!response.ok || !body.propertyId || !body.inspectionId || body.orgId !== orgId) throw new Error(body.error || 'Kunde inte skapa besiktningen i vald organisation.')
+      router.push(withObOrganization(`/properties/${body.propertyId}/ob/${body.inspectionId}`, orgId))
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : 'Kunde inte skapa besiktning.')
+    } finally { setCreatingMode(null) }
   }
 
   const openUnlockDialog = (row: InspectionWithProperty) => {
@@ -820,7 +535,7 @@ export default function InspectionsPage() {
       setMutationError(null)
       setUnlockSubmitting(true)
 
-      const response = await fetch(`/api/ob/inspections/${unlockTarget.id}/unlock`, {
+      const response = await fetch(withObOrganization(`/api/ob/inspections/${unlockTarget.id}/unlock`, orgId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason }),
@@ -876,7 +591,7 @@ export default function InspectionsPage() {
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => router.push('/ob')}
+                  onClick={() => router.push(withObOrganization('/ob', orgId))}
                   aria-label="Till huvudsidan"
                   title="Till huvudsidan"
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
@@ -1074,7 +789,7 @@ export default function InspectionsPage() {
                     {pagedRows.map((row) => {
                       const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
                       const customer = getCustomerText(row)
-                      const downloadHref = `/api/report-v2/${row.id}/pdf`
+                      const downloadHref = withObOrganization(`/api/report-v2/${row.id}/pdf`, orgId)
                       const canDownloadPdf = Boolean(row.hasReadyPdf)
                       const isLocked = Boolean(row.locked_at)
                       const isUnlockingThis = unlockSubmitting && unlockTarget?.id === row.id
@@ -1127,7 +842,7 @@ export default function InspectionsPage() {
               <div className="space-y-3 md:hidden">
                 {pagedRows.map((row) => {
                   const dateText = row.date ?? new Date(row.created_at).toLocaleDateString('sv-SE')
-                  const downloadHref = `/api/report-v2/${row.id}/pdf`
+                  const downloadHref = withObOrganization(`/api/report-v2/${row.id}/pdf`, orgId)
                   const canDownloadPdf = Boolean(row.hasReadyPdf)
                   const isLocked = Boolean(row.locked_at)
                   const isUnlockingThis = unlockSubmitting && unlockTarget?.id === row.id

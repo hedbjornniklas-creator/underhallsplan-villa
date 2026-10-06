@@ -1,12 +1,10 @@
+import { requireObContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { parseObObjectType } from '@/lib/ob/objectType'
 import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
-import {
-  createAssignment,
-  listAssignmentsByOrg,
-  requireOrgContext,
-  type AssignmentType,
-} from '@/lib/assignments/server'
+import { createAssignment, listAssignmentsByOrg, type AssignmentType } from '@/lib/assignments/server'
+import { readOrganizationJson } from '@/lib/organizations/administrationHttp'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,9 +15,9 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const context = await requireOrgContext()
+    const context = await requireObContext(obRequestOrgId(request, true), true)
     const items = (await listAssignmentsByOrg(context.orgId)).filter(
       (item) => item.assignment_type === 'OB' || item.assignment_type === 'STATUS'
     )
@@ -33,6 +31,9 @@ export async function GET() {
       },
     })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
@@ -42,13 +43,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const context = await requireOrgContext()
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const context = await requireObContext(obRequestOrgId(request, true), true)
+    const body = await readOrganizationJson(request, { maxBytes: 64000 })
 
     const assignmentTypeRaw = String(body.assignmentType ?? 'OB').toUpperCase()
-    const assignmentType = (['OB', 'STATUS', 'UHP', 'EB'].includes(assignmentTypeRaw)
-      ? assignmentTypeRaw
-      : 'OB') as AssignmentType
+    if (!['OB', 'STATUS'].includes(assignmentTypeRaw)) return jsonError('Välj ÖB eller statusbesiktning.', 400)
+    const assignmentType = assignmentTypeRaw as AssignmentType
+    if (body.orgId !== undefined && body.orgId !== context.orgId) throw new Error('OB_ORGANIZATION_MISMATCH')
     const customerEmail = String(body.customerEmail ?? '').trim().toLowerCase()
     const customerName = String(body.customerName ?? '').trim()
     const customerPhone = String(body.customerPhone ?? '').trim()
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
       priceAmountRaw === '' ? null : Number(priceAmountRaw.replace(',', '.'))
     const notesInternal = String(body.notesInternal ?? '').trim()
     const responsibleProfileId = String(body.responsibleProfileId ?? context.userId).trim()
+    if (responsibleProfileId !== context.userId) throw new Error('OB_ORGANIZATION_FORBIDDEN')
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
       return jsonError('Ange en giltig kundmejl.', 400)
@@ -125,6 +127,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ assignment }, { status: 201 })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)

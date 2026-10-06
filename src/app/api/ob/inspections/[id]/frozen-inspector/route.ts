@@ -1,5 +1,6 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export const runtime = 'nodejs'
@@ -104,12 +105,12 @@ function extractFrozenProfileFromSnapshot(snapshotPayload: unknown): FrozenInspe
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const admin = createSupabaseAdminClient()
 
     const { data: inspection, error: inspectionError } = await admin
@@ -150,6 +151,7 @@ export async function GET(
       .from('inspection_report_links')
       .select('snapshot_payload,created_at')
       .eq('inspection_id', id)
+      .eq('org_id', org.orgId)
       .is('revoked_at', null)
       .order('created_at', { ascending: false })
       .limit(10)
@@ -175,6 +177,9 @@ export async function GET(
       profile: frozenProfile,
     })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)

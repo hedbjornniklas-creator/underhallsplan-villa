@@ -145,7 +145,17 @@ export const supabase: any = {
   storage: { from: () => ({ getPublicUrl: () => ({ data: { publicUrl: '/photo.png' } }), upload: async () => ({ error: null }) }) },
 }
 window.fetch = async (input, init) => {
-  const url = String(input)
+  const url = String(input).split('?')[0]
+  const organization = { id: '11111111-1111-4111-8111-111111111111', name: 'Testorganisation', isDefault: true }
+  if (url === '/api/organizations/context') return Response.json({ organization, organizations: [organization] })
+  if (url === '/api/ob/profile-card') {
+    const profile = db.profiles[0]
+    return Response.json({ workspace: { profileId: profile.id, organization, card: {
+      displayName: profile.full_name, phone: profile.phone, email: profile.email, companyName: profile.company_name,
+      companyOrgNo: profile.company_orgno, companyAddress: profile.company_address, companyPostalCode: profile.company_postal_code,
+      companyCity: profile.company_city, avatarPath: profile.avatar_path,
+    } } })
+  }
   if (url === `/api/ob/inspections/${inspectionId}/unlock` && init?.method === 'POST') {
     const { reason } = JSON.parse(String(init.body))
     await new Promise(resolve => setTimeout(resolve, qa.saveDelay))

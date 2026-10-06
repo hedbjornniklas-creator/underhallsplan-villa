@@ -7,6 +7,7 @@ import type * as Snapshots from '../src/lib/eb/reportSnapshot'
 import type * as DeliveryRoute from '../src/app/api/eb/projects/[projectId]/inspections/[inspectionId]/report-delivery/route'
 import type * as Customer from '../src/lib/eb/followUpCustomer'
 import type * as EmailTemplates from '../src/lib/inspections/reportEmailTemplates'
+import type * as ReportFamily from '../src/lib/inspections/reportFamily'
 
 // Execute the production helper and POST flow with all I/O replaced. An
 // unexpected dependency fails closed; no database, PDF worker or mail is used.
@@ -26,6 +27,7 @@ function load<T>(path: string, dependencies: Record<string, unknown>): T {
 const snapshots = load<typeof Snapshots>('src/lib/eb/reportSnapshot.ts', {})
 const customer = load<typeof Customer>('src/lib/eb/followUpCustomer.ts', { 'server-only': {} })
 const emailTemplates = load<typeof EmailTemplates>('src/lib/inspections/reportEmailTemplates.ts', { 'server-only': {} })
+const reportFamily = load<typeof ReportFamily>('src/lib/inspections/reportFamily.ts', { 'server-only': {} })
 const lockedAt = '2026-09-08T09:12:34.567+00:00'
 const previousLockedAt = '2026-09-01T08:00:00.000+00:00'
 
@@ -93,6 +95,12 @@ test('recording subsequent delivery metadata retains the confirmed publication t
 type Row = Record<string, unknown>
 type QueryResult = { data: Row | Row[] | null; error: { message: string } | null }
 type FixtureOptions = {
+  parentFamily?: string | null
+  parentType?: string | null
+  parentMissing?: boolean
+  parentReadError?: boolean
+  obBinding?: boolean
+  bindingReadError?: boolean
   frozen?: boolean
   frozenLockedAt?: string | null
   lockError?: boolean
@@ -177,6 +185,24 @@ function routeFixture(options: FixtureOptions = {}) {
       let rowLimit = Infinity
       const filters: Array<(row: Row) => boolean> = []
       const execute = (): QueryResult => {
+        if (table === 'ob_organization_bindings') {
+          assert.equal(operation, 'select')
+          assert.equal(single, true)
+          assert.ok(filters.every(filter => filter({ inspection_id: 'inspection' })))
+          assert.ok(filters.some(filter => !filter({ inspection_id: 'other-inspection' })))
+          return { data: options.obBinding ? { inspection_id: 'inspection' } : null,
+            error: options.bindingReadError ? { message: 'DATABASE_UNAVAILABLE' } : null }
+        }
+        if (table === 'inspections') {
+          assert.equal(operation, 'select')
+          assert.equal(single, true)
+          const row = { id: 'inspection', inspection_family: 'parentFamily' in options ? options.parentFamily : 'EB',
+            type: 'parentType' in options ? options.parentType : 'SLB' }
+          assert.ok(filters.every(filter => filter(row)))
+          assert.ok(filters.some(filter => !filter({ ...row, id: 'other-inspection' })))
+          return { data: options.parentMissing ? null : row,
+            error: options.parentReadError ? { message: 'DATABASE_UNAVAILABLE' } : null }
+        }
         if (table === 'inspection_report_links') {
           if (operation === 'insert') {
             assert.ok(patch.revoked_at, 'The inserted link must be inactive until publication is confirmed')
@@ -311,6 +337,7 @@ function routeFixture(options: FixtureOptions = {}) {
         getEbInspectionReport: async () => { reportReads++; return structuredClone(live) },
       },
       '@/lib/inspections/reportEmailTemplates': emailTemplates,
+      '@/lib/inspections/reportFamily': reportFamily,
       '@/lib/assignments/mailer': { sendAssignmentEmail: async (input: Row) => {
         sentMessages.push(input)
         events.push('send')
@@ -332,7 +359,7 @@ function routeFixture(options: FixtureOptions = {}) {
       params: Promise.resolve({ projectId: 'project', inspectionId: 'inspection' }),
     }),
     created: () => { const link = links.find(row => row.id === 'new-link'); assert.ok(link); return link },
-    post: async (action: 'lock_only' | 'send_and_lock' | 'resend') => {
+    post: async (action: 'lock_only' | 'send_and_lock' | 'resend' | 'regenerate_pdf') => {
       const previousFrom = process.env.ASSIGNMENTS_MAIL_FROM
       process.env.ASSIGNMENTS_MAIL_FROM = 'test@example.test'
       try {
@@ -349,6 +376,50 @@ function routeFixture(options: FixtureOptions = {}) {
     },
   }
 }
+
+test('EB delivery rejects foreign or ambiguous parent families before links, locks, mail, or PDF work', async () => {
+  for (const options of [
+    { parentFamily: 'OB', parentType: 'EB' }, { parentFamily: 'OB', parentType: 'STATUS' },
+    { parentFamily: 'TU' }, { parentFamily: 'UHP' }, { parentFamily: 'UNKNOWN' },
+    { parentFamily: '', parentType: 'EB' }, { parentFamily: null, parentType: 'OB' },
+    { parentFamily: null, parentType: 'STATUS' }, { parentFamily: null, parentType: 'SB' },
+    { parentFamily: null, parentType: null }, { parentMissing: true }, { obBinding: true },
+  ]) {
+    const f = routeFixture(options)
+    assert.equal((await f.get()).status, 404)
+    for (const action of ['lock_only', 'send_and_lock', 'resend', 'regenerate_pdf'] as const) {
+      assert.equal((await f.post(action)).status, 404, `${JSON.stringify(options)} ${action}`)
+    }
+    assert.deepEqual(f.events, [])
+    assert.equal(f.links.length, 1)
+    assert.equal(f.previousLink.revoked_at, null)
+    assert.equal(f.sentMessages.length, 0)
+    assert.equal(f.scheduled.length, 0)
+    assert.equal(f.reportReads(), 0)
+  }
+})
+
+test('unavailable parent family fails closed without changing report publication', async () => {
+  for (const options of [{ parentReadError: true }, { bindingReadError: true }]) {
+    const f = routeFixture(options)
+    assert.equal((await f.get()).status, 503)
+    assert.equal((await f.post('send_and_lock')).status, 503)
+    assert.deepEqual(f.events, [])
+    assert.equal(f.links.length, 1)
+  }
+})
+
+test('canonical EB overrides old OB/SB types and known legacy EB types still publish normally', async () => {
+  for (const options of [
+    { parentFamily: 'EB', parentType: 'OB' }, { parentFamily: 'EB', parentType: 'SB' },
+    ...['EB', 'SLB', 'FB', 'GB', 'KSB', 'SAB'].map(parentType => ({ parentFamily: null, parentType })),
+  ]) {
+    const f = routeFixture(options)
+    assert.equal((await f.post('lock_only')).status, 200, JSON.stringify(options))
+    assert.deepEqual(f.events, ['stage', 'lock', 'publish', 'revoke-previous', 'schedule-pdf'])
+    assert.equal(snapshotReport(f.created().snapshot_payload).report.inspection.reportLockedAt, lockedAt)
+  }
+})
 
 test('lock-only publication stages privately, persists the RPC timestamp, then revokes the previous version and queues PDF', async () => {
   const f = routeFixture()

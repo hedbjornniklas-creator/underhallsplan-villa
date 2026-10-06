@@ -1,3 +1,5 @@
+// @ts-expect-error Node strip-types requires the explicit extension.
+import { obApiDomainBoundary } from './helpers/ob-api-domain-boundary.ts'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
@@ -118,7 +120,7 @@ test('the bounded rate limit is per authenticated actor and expires', () => {
 
 test('route authenticates first and UI saves the original before editing a separate copy', () => {
   const route = readFileSync('src/app/api/ob/inspections/[id]/note-suggestions/route.ts', 'utf8')
-  assert.ok(route.indexOf('await requireOrgContext()') < route.indexOf('await sendObNoteSuggestion('))
+  assert.ok(route.indexOf('await requireObInspectionContext(') < route.indexOf('await sendObNoteSuggestion('))
   assert.ok(route.includes('actorId: org.userId'))
   const editor = readFileSync('src/components/ob/ObMobileRound.tsx', 'utf8')
   assert.ok(editor.includes('finish(() => setSuggestionOpen(true))'))
@@ -141,6 +143,8 @@ test('HTTP route enforces authentication, same-origin JSON, validation and safe 
   }
   const env = { RESEND_API_KEY: 'synthetic-key', ASSIGNMENTS_MAIL_FROM: 'noreply@example.test', OB_NOTE_SUGGESTIONS_EMAIL: 'admin@example.test' }
   new Function('require', 'module', 'exports', 'process', 'console', output)((name: string) => {
+    const boundary = obApiDomainBoundary(name, deps)
+    if (boundary !== undefined && !(name in deps)) return boundary
     assert.ok(Object.hasOwn(deps, name), `Unexpected route dependency ${name}`)
     return deps[name]
   }, compiled, compiled.exports, { env }, { error: () => {} })

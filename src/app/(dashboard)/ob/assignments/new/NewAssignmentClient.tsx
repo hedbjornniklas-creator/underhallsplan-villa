@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronsLeft, Loader2, Save, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
-import { supabase } from '@/lib/supabaseClient'
-import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
+import { loadObOrganizationInspectorProfile } from '@/lib/ob/profileCardClient'
 import { obInspectionProfileLabel, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 import { resolveObObjectType, type ObObjectType } from '@/lib/ob/objectType'
 
@@ -121,12 +121,18 @@ function roleToLabel(role: OrdererRole) {
   return role ? obInspectionProfileLabel(role) : ''
 }
 
-export default function NewAssignmentClient({
+export default function NewAssignmentClient(props: NewAssignmentClientProps) {
+  return <ObOrganizationBoundary><NewAssignmentContent {...props} /></ObOrganizationBoundary>
+}
+
+function NewAssignmentContent({
   sellerTemplate,
   buyerTemplate,
   apartmentTemplate,
   statusTemplate,
 }: NewAssignmentClientProps) {
+  const organization = useObOrganization()
+  const orgId = organization.id
   const router = useRouter()
   const [form, setForm] = useState<FormState>(INITIAL_FORM)
   const [savingDraft, setSavingDraft] = useState(false)
@@ -148,58 +154,16 @@ export default function NewAssignmentClient({
   const trimmedEmail = form.customerEmail.trim().toLowerCase()
   const canCreate = useMemo(() => EMAIL_REGEX.test(trimmedEmail), [trimmedEmail])
   const isBusy = savingDraft || sending
+  useObOrganizationSwitchGuard(JSON.stringify(form) !== JSON.stringify(INITIAL_FORM), isBusy)
   const usesApartmentObject = resolveObObjectType(form.ordererRole || null, form.objectType) === 'apartment'
 
   useEffect(() => {
-    let cancelled = false
-
-    const loadInspectorProfile = async () => {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError || !user || cancelled) return
-
-      const { data, error: profileError } = await supabase
-        .from('profiles')
-        .select(
-          'full_name,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
-        )
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (profileError || !data || cancelled) return
-
-      const { summary } = await resolveInspectorCertificationSummary(supabase, {
-        profileId: user.id,
-      })
-
-      if (cancelled) return
-      setInspectorProfile({
-        full_name: data.full_name ?? null,
-        sbr_group: summary.sbr_group,
-        sbr_status: summary.sbr_status,
-        membership_number: summary.membership_number,
-        certification_number: summary.certification_number,
-        phone: data.phone ?? null,
-        email: data.email ?? null,
-        company_name: data.company_name ?? null,
-        company_orgno: data.company_orgno ?? null,
-        company_address: data.company_address ?? null,
-        company_postal_code: data.company_postal_code ?? null,
-        company_city: data.company_city ?? null,
-        avatar_path: data.avatar_path ?? null,
-      })
-      setInspectorAvatarLoadError(false)
-    }
-
-    void loadInspectorProfile()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    const controller = new AbortController()
+    void loadObOrganizationInspectorProfile(orgId, controller.signal)
+      .then(profile => { if (!controller.signal.aborted) { setInspectorProfile(profile); setInspectorAvatarLoadError(false) } })
+      .catch(error => { if (!controller.signal.aborted) { setInspectorProfile(null); setError(error instanceof Error ? error.message : 'Profilen kunde inte hämtas.') } })
+    return () => controller.abort()
+  }, [orgId])
 
   const inspectorName = inspectorProfile?.full_name || INSPECTOR_FALLBACK.name
   const inspectorSbrLine1 = inspectorProfile?.sbr_group || INSPECTOR_FALLBACK.sbrLine1
@@ -277,7 +241,7 @@ export default function NewAssignmentClient({
   }
 
   const createAssignmentDraft = async () => {
-    const response = await fetch('/api/ob/assignments', {
+    const response = await fetch(withObOrganization('/api/ob/assignments', orgId), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildAssignmentPayload()),
@@ -305,7 +269,7 @@ export default function NewAssignmentClient({
       setSavingDraft(true)
       setError(null)
       const assignmentId = await createAssignmentDraft()
-      router.push(`/ob/assignments/${assignmentId}`)
+      router.push(withObOrganization(`/ob/assignments/${assignmentId}`, orgId))
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Kunde inte spara utkast.')
     } finally {
@@ -339,7 +303,7 @@ export default function NewAssignmentClient({
       setSending(true)
       setError(null)
 
-      const response = await fetch('/api/ob/assignments/quick-send', {
+      const response = await fetch(withObOrganization('/api/ob/assignments/quick-send', orgId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildAssignmentPayload()),
@@ -354,7 +318,7 @@ export default function NewAssignmentClient({
         throw new Error(payload.error ?? 'Kunde inte skapa och skicka uppdrag.')
       }
 
-      router.push(`/ob/assignments/${payload.assignmentId}`)
+      router.push(withObOrganization(`/ob/assignments/${payload.assignmentId}`, orgId))
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'Kunde inte skapa och skicka uppdrag.')
     } finally {
@@ -379,7 +343,7 @@ export default function NewAssignmentClient({
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => router.push('/ob')}
+                onClick={() => router.push(withObOrganization('/ob', orgId))}
                 aria-label="Till huvudsidan"
                 title="Till huvudsidan"
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
@@ -388,13 +352,16 @@ export default function NewAssignmentClient({
               </button>
               <button
                 type="button"
-                onClick={() => router.push('/ob/assignments')}
+                onClick={() => router.push(withObOrganization('/ob/assignments', orgId))}
                 aria-label="Tillbaka"
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >
                 <ArrowLeft size={16} strokeWidth={2} />
               </button>
-              <h1 className="text-2xl font-semibold text-slate-950">UPPDRAGSBEKRÄFTELSE</h1>
+              <div>
+                <h1 className="text-2xl font-semibold text-slate-950">UPPDRAGSBEKRÄFTELSE</h1>
+                <p className="mt-1 text-sm text-slate-600">Skapas för {organization.name || 'vald organisation'}</p>
+              </div>
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"

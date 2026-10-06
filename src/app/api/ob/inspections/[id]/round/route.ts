@@ -1,5 +1,6 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { obWorkflowRpc } from '@/lib/ob/assignmentWorkflowServer'
 import { roundFloorKeys, roundMutationError, roundMutationRpcOperation, validateRoundMutation } from '@/lib/ob/roundMutationServer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const text = await request.text()
     if (text.length > 100000) return NextResponse.json({ error: 'För mycket text i anropet.' }, { status: 413 })
@@ -30,6 +31,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     })
     return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     if (error instanceof SyntaxError) return NextResponse.json({ error: 'Ogiltigt anrop.' }, { status: 400 })
     const [status, message] = roundMutationError(error)
     return NextResponse.json({ error: message }, { status })

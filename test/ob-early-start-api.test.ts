@@ -1,3 +1,5 @@
+// @ts-expect-error Node strip-types requires the explicit extension.
+import { obApiDomainBoundary } from './helpers/ob-api-domain-boundary.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
@@ -18,6 +20,8 @@ function load(path: string, dependencies: Record<string, unknown>): Route {
   new Function('require', 'module', 'exports', output)((name: string) => {
     if (name === 'next/server') return { NextResponse: Response, after: () => assert.fail('No background job while blocked') }
     if (name === 'node:crypto') return { randomUUID }
+    const boundary = obApiDomainBoundary(name, dependencies)
+    if (boundary !== undefined && !(name in dependencies)) return boundary
     if (name in dependencies) return dependencies[name]
     throw new Error(`Unexpected dependency: ${name}`)
   }, compiled, compiled.exports)
@@ -128,6 +132,8 @@ test('stored final PDF cannot be downloaded before approval and review', async (
   for (const [, name] of source.matchAll(/from '([^']+)'/g)) dependencies[name] = {}
   Object.assign(dependencies, {
     '@/lib/supabase/admin': { createSupabaseAdminClient: readOnlyAdmin },
+    '@/lib/supabase/server': { createSupabaseServerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: org.userId } }, error: null }) } }) },
+    '@/lib/ob/organizationBindings': { requireObInspectionContext: async () => org },
     '@/lib/assignments/server': { requireOrgContext: async () => org },
     '@/lib/ob/assignmentWorkflowServer': workflowDependency,
   })

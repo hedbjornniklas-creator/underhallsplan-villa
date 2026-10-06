@@ -1,3 +1,5 @@
+// @ts-expect-error Node strip-types requires the explicit extension.
+import { obApiDomainBoundary } from './helpers/ob-api-domain-boundary.ts'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -6,6 +8,8 @@ import ts from 'typescript'
 import type * as Delivery from '../src/lib/assignments/obConfirmationDelivery'
 import type * as Snapshot from '../src/lib/assignments/obConfirmationSnapshot'
 import type * as Retry from '../src/app/api/ob/assignments/[id]/confirmation/route'
+// @ts-expect-error Node strip-types requires the explicit extension.
+import * as issuerIdentity from '../src/lib/assignments/issuerIdentity.ts'
 
 function load<T>(file: string, deps: Record<string, unknown>): T {
   const compiled = ts.transpileModule(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), {
@@ -13,7 +17,11 @@ function load<T>(file: string, deps: Record<string, unknown>): T {
   }).outputText
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', compiled)((name: string) => {
+    const boundary = obApiDomainBoundary(name, deps)
+    if (boundary !== undefined && !(name in deps)) return boundary
     if (name in deps) return deps[name]
+    if (name === '@/lib/assignments/issuerIdentity') return issuerIdentity
+    if (name === '@/lib/ob/reportIdentity') return {}
     throw new Error(`Unexpected dependency ${name}`)
   }, mod, mod.exports)
   return mod.exports as T
@@ -108,6 +116,7 @@ test('STATUS issuance freezes independent object identity, rejects explicit empt
   let missingColumn=false
   const api=load<typeof Snapshot>('src/lib/assignments/obConfirmationSnapshot.ts',{
     'server-only':{},'node:crypto':{createHash},
+    '@/lib/ob/reportIdentity':{resolveObReportIdentity:async()=>({full_name:'Original inspector',company_name:'Original company'})},
     '@/lib/supabase/admin':{createSupabaseAdminClient:()=>({from:(table:string)=>{
       tables.push(table)
       const chain={

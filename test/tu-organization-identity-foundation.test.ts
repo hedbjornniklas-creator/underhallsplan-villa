@@ -116,11 +116,11 @@ test('TU acceptance validates its frozen issuer before consuming the public toke
   assert.doesNotMatch(postFunction.slice(0, consumeAt), /profileId: responsibleProfileId/u)
 })
 
-test('non-TU accepted notices retain the responsible profile reply-to address', () => {
+test('only modules without frozen organization identities retain the global responsible profile lookup', () => {
   const postStart = acceptRoute.indexOf('export async function POST')
   const postFunction = acceptRoute.slice(postStart)
 
-  assert.match(postFunction, /updatedAssignment\.assignment_type === 'TU' \? null : await getProfileContact/u)
+  assert.match(postFunction, /\['TU', 'OB', 'STATUS'\]\.includes\(updatedAssignment\.assignment_type\) \? null : await getProfileContact/u)
   assert.match(postFunction, /responsibleEmail: responsibleProfile\?\.email \?\? null/u)
 })
 

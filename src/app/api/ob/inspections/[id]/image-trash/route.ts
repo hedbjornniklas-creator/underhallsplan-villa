@@ -1,5 +1,6 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { obWorkflowRpc } from '@/lib/ob/assignmentWorkflowServer'
 import { roundMutationError } from '@/lib/ob/roundMutationServer'
 
@@ -8,7 +9,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 type Context = { params: Promise<{ id: string }> }
 async function handle(request: Request, context: Context, restore: boolean) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const query = new URL(request.url).searchParams
     const partId = query.get('partId')
@@ -31,6 +32,9 @@ async function handle(request: Request, context: Context, restore: boolean) {
     })
     return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     if (error instanceof SyntaxError) return NextResponse.json({ error: 'Ogiltigt anrop.' }, { status: 400 })
     const message = error instanceof Error ? error.message : ''
     const known: Record<string, [number, string]> = {

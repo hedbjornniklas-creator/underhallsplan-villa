@@ -1053,7 +1053,7 @@ async function createTuAssignmentIssuerIdentitySnapshot(
   admin: SupabaseAdminClient,
   assignment: Pick<AssignmentDetails, 'assignment_type' | 'org_id' | 'responsible_profile_id'>
 ): Promise<AssignmentIssuerIdentitySnapshotV1 | null> {
-  if (assignment.assignment_type !== 'TU') return null
+  if (assignment.assignment_type !== 'TU' && assignment.assignment_type !== 'OB') return null
 
   const card = await requireConfiguredOrganizationProfileCard({
     orgId: assignment.org_id,
@@ -1061,6 +1061,13 @@ async function createTuAssignmentIssuerIdentitySnapshot(
   })
   if (card.migrationRequired) throw new Error('ORG_PROFILE_CARD_MIGRATION_REQUIRED')
   if (card.source === 'unconfigured') throw new Error('ORG_PROFILE_CARD_REQUIRED')
+  // OB is being cut over to shared organization branding. Do not freeze the
+  // legacy personal profile's company when issuing a new customer link.
+  const obIdentity = assignment.assignment_type === 'OB'
+    ? await (await import('@/lib/ob/reportIdentity')).resolveObReportIdentity({
+      orgId: assignment.org_id, profileId: assignment.responsible_profile_id,
+      locked: false, frozenProfile: null, frozenCompany: null,
+    }) : null
 
   const { summary } = await resolveInspectorCertificationSummary(admin, {
     profileId: assignment.responsible_profile_id,
@@ -1086,12 +1093,12 @@ async function createTuAssignmentIssuerIdentitySnapshot(
       signaturePath: card.signaturePath,
     },
     company: {
-      name: card.companyName,
-      organizationNumber: card.companyOrgNo,
-      address: card.companyAddress,
-      postalCode: card.companyPostalCode,
-      city: card.companyCity,
-      logoPath: card.logoPath,
+      name: obIdentity ? obIdentity.company_name! : card.companyName,
+      organizationNumber: obIdentity ? obIdentity.company_orgno : card.companyOrgNo,
+      address: obIdentity ? obIdentity.company_address : card.companyAddress,
+      postalCode: obIdentity ? obIdentity.company_postal_code : card.companyPostalCode,
+      city: obIdentity ? obIdentity.company_city : card.companyCity,
+      logoPath: obIdentity ? obIdentity.logo_path : card.logoPath,
       reportFooterText: card.reportFooterText,
     },
     certifications: {
@@ -1150,7 +1157,7 @@ export async function sendAssignmentConfirmation(input: {
   const statusDocumentSource = input.assignment.assignment_type === 'STATUS'
     ? await (await import('@/lib/assignments/obConfirmationSnapshot')).prepareObConfirmationSource(input.assignment, terms)
     : null
-  // Resolve the sender before invalidating the previous link. TU links retain
+  // Resolve the sender before invalidating the previous link. TU and OB links retain
   // the exact organization card that was used when this issue was sent.
   const issuerIdentitySnapshot = await createTuAssignmentIssuerIdentitySnapshot(
     admin,
@@ -1291,13 +1298,16 @@ export async function sendAssignmentOrderReceipt(input: {
     throw new Error('ASSIGNMENT_NOT_ACCEPTED')
   }
 
-  const statusSnapshot = input.assignment.assignment_type === 'STATUS'
+  const statusSnapshot = ['STATUS', 'OB'].includes(input.assignment.assignment_type)
     ? await (await import('@/lib/assignments/obConfirmationSnapshot')).getObConfirmationSnapshot(input.assignment.org_id, input.assignment.id)
     : null
   if (input.assignment.assignment_type === 'STATUS' && !statusSnapshot) throw new Error('OB_CONFIRMATION_SNAPSHOT_MISSING')
+  const obIdentity = input.assignment.assignment_type === 'OB' && !statusSnapshot
+    ? await (await import('@/lib/assignments/obCorrespondenceIdentity')).resolveObCorrespondenceIdentity(input.assignment)
+    : null
   const receiptAssignment = statusSnapshot?.assignment ?? input.assignment
-  const receiptOrgName = statusSnapshot ? statusSnapshot.issuerName : input.orgName
-  const receiptReplyTo = statusSnapshot ? statusSnapshot.inspector?.email ?? null : input.responsibleEmail
+  const receiptOrgName = statusSnapshot ? statusSnapshot.issuerName : obIdentity ? obIdentity.orgName : input.orgName
+  const receiptReplyTo = statusSnapshot ? statusSnapshot.inspector?.email ?? null : obIdentity ? obIdentity.replyTo : input.responsibleEmail
   const terms = statusSnapshot?.terms ?? getAssignmentTermsDocument(termsRole)
   const addonOrders = statusSnapshot ? statusSnapshot.addonOrders.map(row => ({
     addon_name_snapshot: row.name, price_amount_snapshot: row.priceAmount, currency_snapshot: row.currency,
@@ -1432,7 +1442,7 @@ export async function sendAssignmentAcceptedNotice(input: {
     typeof renderAcceptedAssignmentConfirmationPdf
   >[0]['inspector'] = null
 
-  if (input.assignment.assignment_type === 'TU') {
+  if (input.assignment.assignment_type === 'TU' || input.assignment.assignment_type === 'OB') {
     const suppliedSnapshot =
       input.issuerIdentitySnapshot === undefined || input.issuerIdentitySnapshot === null
         ? null
@@ -1623,10 +1633,15 @@ export async function sendAssignmentCancelledNotice(input: {
   responsibleEmail: string | null
 }): Promise<void> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const obIdentity = ['OB', 'STATUS'].includes(input.assignment.assignment_type)
+    ? await (await import('@/lib/assignments/obCorrespondenceIdentity')).resolveObCorrespondenceIdentity(input.assignment)
+    : null
+  const resolvedOrgName = obIdentity ? obIdentity.orgName : input.orgName
+  const resolvedReplyTo = obIdentity ? obIdentity.replyTo : input.responsibleEmail
 
   const { subject, html, text } = buildAssignmentCancelledNoticeEmail({
     assignment: input.assignment,
-    orgName: input.orgName,
+    orgName: resolvedOrgName,
   })
 
   const fromAddress = getMailFromAddress()
@@ -1643,7 +1658,7 @@ export async function sendAssignmentCancelledNotice(input: {
       template_key: 'assignment_cancelled_notice',
       status: 'pending',
       created_by: createdBy,
-      reply_to_email: input.responsibleEmail ?? null,
+      reply_to_email: resolvedReplyTo ?? null,
     })
     .select('id')
     .single()
@@ -1656,7 +1671,7 @@ export async function sendAssignmentCancelledNotice(input: {
     const sendResult = await sendAssignmentEmail({
       to: input.assignment.customer_email,
       from: fromAddress,
-      replyTo: input.responsibleEmail ?? null,
+      replyTo: resolvedReplyTo ?? null,
       subject,
       html,
       text,
@@ -1702,6 +1717,11 @@ export async function sendInspectionCompletedEmail(input: {
   baseUrl: string
 }): Promise<InspectionCompletedEmailResult> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
+  const obIdentity = ['OB', 'STATUS'].includes(input.assignment.assignment_type)
+    ? await (await import('@/lib/assignments/obCorrespondenceIdentity')).resolveObCorrespondenceIdentity(input.assignment)
+    : null
+  const resolvedOrgName = obIdentity ? obIdentity.orgName : input.orgName
+  const resolvedReplyTo = obIdentity ? obIdentity.replyTo : input.responsibleEmail
 
   if (!input.assignment.inspection_id || !input.assignment.property_id) {
     throw new Error('INSPECTION_REFERENCE_MISSING')
@@ -1709,7 +1729,7 @@ export async function sendInspectionCompletedEmail(input: {
 
   const fromAddress = getMailFromAddress()
   const detailsUrl = `${input.baseUrl}/utlatande/${input.assignment.property_id}/${input.assignment.inspection_id}`
-  const subject = `Besiktningen ar klar - ${input.orgName ?? 'BesiktApp'}`
+  const subject = `Besiktningen ar klar - ${resolvedOrgName ?? 'BesiktApp'}`
   const preferredDate = toSwedishDateString(input.assignment.preferred_date)
   const address =
     input.assignment.property_address ?? input.assignment.preliminary_address ?? 'Ej satt'
@@ -1740,7 +1760,7 @@ export async function sendInspectionCompletedEmail(input: {
       template_key: 'inspection_completed',
       status: 'pending',
       created_by: input.requestedByUserId,
-      reply_to_email: input.responsibleEmail ?? null,
+      reply_to_email: resolvedReplyTo ?? null,
     })
     .select('id')
     .single()
@@ -1753,7 +1773,7 @@ export async function sendInspectionCompletedEmail(input: {
     const sendResult = await sendAssignmentEmail({
       to: input.assignment.customer_email,
       from: fromAddress,
-      replyTo: input.responsibleEmail ?? null,
+      replyTo: resolvedReplyTo ?? null,
       subject,
       html,
       text,

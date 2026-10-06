@@ -8,8 +8,8 @@ import { BESIKT_START, missingStartProfile, startStorageKey, type BesiktStartMod
 import { PUBLIC_BESIKTAPP_CONTACT_EMAIL } from '@/lib/publicCompanyInfo'
 
 const linkStyle = 'inline-flex min-h-11 items-center py-2 font-semibold underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-700'
-type Props = { module: 'ob'; onStart?: never; heading?: ReactNode } | { module: Exclude<BesiktStartModule, 'ob'>; onStart: () => void; heading?: ReactNode }
-export default function GettingStarted({ module, onStart, heading }: Props) {
+type Props = { module: 'ob'; orgId?: string; onStart?: never; heading?: ReactNode } | { module: Exclude<BesiktStartModule, 'ob'>; orgId?: never; onStart: () => void; heading?: ReactNode }
+export default function GettingStarted({ module, orgId, onStart, heading }: Props) {
   const content = BESIKT_START[module]
   const panelId = useId()
   const [open, setOpen] = useState(false)
@@ -23,10 +23,20 @@ export default function GettingStarted({ module, onStart, heading }: Props) {
       try {
         const { data, error: authError } = await supabase.auth.getUser()
         if (authError || !data.user) throw new Error('Profile unavailable')
-        const result = await supabase.from('profiles').select('full_name,email,company_name').eq('id', data.user.id).maybeSingle()
-        if (result.error) throw new Error('Profile unavailable')
-        const gaps = missingStartProfile(result.data)
-        const key = startStorageKey(data.user.id, module)
+        let profile
+        if (module === 'ob' && orgId) {
+          const response = await fetch(`/api/ob/profile-card?${new URLSearchParams({ orgId })}`, { cache: 'no-store' })
+          const body = await response.json()
+          if (!response.ok || body.workspace?.organization.id !== orgId || !body.workspace.card) throw new Error('Profile unavailable')
+          const card = body.workspace.card
+          profile = { full_name: card.displayName, email: card.email, company_name: card.companyName }
+        } else {
+          const result = await supabase.from('profiles').select('full_name,email,company_name').eq('id', data.user.id).maybeSingle()
+          if (result.error) throw new Error('Profile unavailable')
+          profile = result.data
+        }
+        const gaps = missingStartProfile(profile)
+        const key = startStorageKey(data.user.id, module) + (orgId ? `:${orgId}` : '')
         let preference: string | null = null
         try { preference = window.localStorage.getItem(key) } catch { /* Optional UI preference. */ }
         if (!cancelled) {
@@ -37,7 +47,7 @@ export default function GettingStarted({ module, onStart, heading }: Props) {
     }
     void load()
     return () => { cancelled = true }
-  }, [module, refresh])
+  }, [module, orgId, refresh])
   function toggle() {
     const next = !open; setOpen(next)
     try { if (storageKey) window.localStorage.setItem(storageKey, next ? 'open' : 'closed') } catch { /* Still usable without local storage. */ }
@@ -58,11 +68,11 @@ export default function GettingStarted({ module, onStart, heading }: Props) {
         <li><h2 className="font-semibold">1. Kontrollera din profil</h2>
           <p className="mt-2 leading-6">{error ? 'Profilen kunde inte läsas. Inga uppgifter har markerats som klara.' : missing === null ? 'Hämtar sparade profiluppgifter…' : missing.length ? `Lägg till ${missing.join(', ')} i din profil.` : 'Namn, e-post och företagsnamn finns sparade. Kontrollera att de stämmer.'}</p>
           <p className="mt-2 text-xs leading-5 text-slate-600">Kontrollera även kontaktuppgifter och eventuella certifieringar. Logga och porträtt kan läggas till senare. Guiden verifierar inte dina meriter.</p>
-          <Link className={linkStyle} href={`/settings?besiktStart=${module}`}>Öppna min profil</Link>
+          <Link className={linkStyle} href={orgId ? `/settings/profil?${new URLSearchParams({ orgId, besiktStart: module })}` : `/settings?besiktStart=${module}`}>Öppna min profil</Link>
           {error && <button type="button" className={`${linkStyle} ml-3`} onClick={() => setRefresh(value => value + 1)}>Försök igen</button>}
         </li>
         <li><h2 className="font-semibold">2. Förbered ditt första uppdrag</h2><p className="mt-2 leading-6">{content.instruction}</p>
-          {onStart ? <button type="button" className={linkStyle} onClick={onStart}>{content.action}</button> : <Link className={linkStyle} href="/ob/assignments/new">{content.action}</Link>}
+          {onStart ? <button type="button" className={linkStyle} onClick={onStart}>{content.action}</button> : <Link className={linkStyle} href={orgId ? `/ob/assignments/new?${new URLSearchParams({ orgId })}` : '/ob/assignments/new'}>{content.action}</Link>}
           <p className="text-xs leading-5 text-slate-600">Knappen öppnar formuläret. Den skickar inget till kunden.</p>
         </li>
         <li><h2 className="font-semibold">3. Granska innan du skickar</h2><p className="mt-2 leading-6">{content.next}</p>

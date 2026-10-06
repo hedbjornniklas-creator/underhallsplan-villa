@@ -1,5 +1,6 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { obWorkflowRpc } from '@/lib/ob/assignmentWorkflowServer'
 import { roundFloorKeys, roundMutationError, roundMutationRpcOperation } from '@/lib/ob/roundMutationServer'
@@ -19,7 +20,7 @@ const errors: Record<string, string> = {
 }
 async function handle(request: Request, context: Context) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     if (!isBuildingId(id)) throw new SyntaxError()
     const args = { p_inspection_id: id, p_org_id: org.orgId, p_actor: org.userId }
@@ -64,6 +65,9 @@ async function handle(request: Request, context: Context) {
     }
     return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     if (error instanceof SyntaxError) return NextResponse.json({ error: 'Kontrollera byggnadsuppgifterna.' }, { status: 400 })
     const key = error instanceof Error ? error.message : ''
     const [status, message] = errors[key] ? [409, errors[key]] : roundMutationError(error)

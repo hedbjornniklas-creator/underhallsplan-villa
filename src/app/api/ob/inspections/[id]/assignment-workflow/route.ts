@@ -1,5 +1,6 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { getObAssignmentWorkflow, obWorkflowRpc, obWorkflowError } from '@/lib/ob/assignmentWorkflowServer'
 import { isObAssignmentTransferFields, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 
@@ -13,17 +14,20 @@ function failure(error: unknown) {
   return NextResponse.json({ error: text }, { status })
 }
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     return NextResponse.json({ workflow: await getObAssignmentWorkflow(id, org.orgId) })
-  } catch (error) { return failure(error) }
+  } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+    return failure(error) }
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const body = await request.json().catch(() => null)
     if (body?.confirmed !== true || typeof body?.reviewToken !== 'string' || !body.reviewToken.trim() ||
@@ -36,5 +40,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       p_reconciliation_token: body.reconciliationToken, p_fields: body.fields,
     })
     return NextResponse.json({ workflow })
-  } catch (error) { return failure(error) }
+  } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+    return failure(error) }
 }

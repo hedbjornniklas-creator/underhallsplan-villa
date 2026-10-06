@@ -1,9 +1,10 @@
-﻿import { NextResponse, after } from 'next/server'
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
+import { NextResponse, after } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { randomUUID } from 'node:crypto'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
-import { requireOrgContext, getProfileContact } from '@/lib/assignments/server'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
 import {
@@ -717,12 +718,12 @@ async function updateOutboundMessage(
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const admin = createSupabaseAdminClient()
 
     const inspection = await getInspectionById(admin, id)
@@ -768,6 +769,9 @@ export async function GET(
       activityLog,
     })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
@@ -784,7 +788,7 @@ export async function POST(
   try {
     const { id } = await context.params
     timing.mark('start', { inspectionId: id })
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     timing.mark('org_context_ready', { orgId: org.orgId })
     const admin = createSupabaseAdminClient()
     timing.mark('admin_client_ready')
@@ -1010,10 +1014,8 @@ export async function POST(
 
     const linkUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
     const fromAddress = getMailFromAddress()
-    const responsibleProfile = await getProfileContact(
-      assignment?.responsible_profile_id ?? org.userId
-    )
-    const replyToEmail = responsibleProfile?.email?.trim() || null
+    // Use the issued/frozen report identity, never another organization's global profile.
+    const replyToEmail = normalizedText(reportData.mock?.profile?.email)
     const emailContent = buildInspectionReportDeliveryEmail({
       orgName: org.orgName,
       customerName:
@@ -1143,6 +1145,9 @@ export async function POST(
       linkId: linkData.id,
     })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'OkÃ¤nt fel.'
     timing.mark('failed', { error: message, totalMs: timing.totalMs() })
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)

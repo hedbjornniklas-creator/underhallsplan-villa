@@ -18,6 +18,7 @@ import {
 } from '@/lib/eb/reportSnapshot'
 import { getEbInspectionReport, getEbProjectById, type EbProjectListItem } from '@/lib/eb/server'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
+import { requireInspectionReportFamily } from '@/lib/inspections/reportFamily'
 import { runInspectionReportPdfBatch } from '@/lib/report/pdfJobs'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
@@ -737,7 +738,9 @@ export async function GET(
   try {
     const { projectId, inspectionId } = await context.params
     const org = await requireEbContext()
-    const status = await loadDeliveryStatus(createSupabaseAdminClient(), {
+    const admin = createSupabaseAdminClient()
+    await requireInspectionReportFamily(admin, inspectionId, 'EB')
+    const status = await loadDeliveryStatus(admin, {
       orgId: org.orgId,
       projectId,
       inspectionId,
@@ -762,6 +765,8 @@ export async function GET(
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
+    if (message === 'EB_INSPECTION_NOT_FOUND') return jsonError('Besiktningen hittades inte.', 404)
+    if (message === 'INSPECTION_FAMILY_READ_FAILED') return jsonError('Besiktningen kunde inte kontrolleras. Försök igen senare.', 503)
     if (message === 'EB_FOLLOW_UP_CONFIGURATION' || message === 'EB_FOLLOW_UP_UNAVAILABLE') {
       return jsonError('Beställaruppgifterna kan inte hämtas just nu. Försök igen senare.', 503)
     }
@@ -777,6 +782,7 @@ export async function POST(
     const { projectId, inspectionId } = await context.params
     const org = await requireEbContext()
     const admin = createSupabaseAdminClient()
+    await requireInspectionReportFamily(admin, inspectionId, 'EB')
     const body = (await request.json().catch(() => null)) as
       | {
           action?: unknown
@@ -1061,6 +1067,7 @@ export async function POST(
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
     if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('EB kräver egen modulbehörighet.', 403)
+    if (message === 'INSPECTION_FAMILY_READ_FAILED') return jsonError('Besiktningen kunde inte kontrolleras. Försök igen senare.', 503)
     if (message === 'EB_PROJECT_NOT_FOUND' || message === 'EB_INSPECTION_NOT_FOUND') {
       return jsonError('Besiktningen hittades inte.', 404)
     }

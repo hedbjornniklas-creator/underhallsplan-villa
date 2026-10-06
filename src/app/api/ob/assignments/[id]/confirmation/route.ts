@@ -1,5 +1,7 @@
+import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { getAssignmentById, requireOrgContext, sendAssignmentAcceptedNotice } from '@/lib/assignments/server'
+import { getAssignmentById, sendAssignmentAcceptedNotice } from '@/lib/assignments/server'
 import { getObConfirmationSnapshot } from '@/lib/assignments/obConfirmationSnapshot'
 
 export const runtime = 'nodejs'
@@ -14,7 +16,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const origin = request.headers.get('origin')
     if (origin && origin !== new URL(request.url).origin) return json({ error: 'Ogiltigt ursprung.' }, 403)
-    const org = await requireOrgContext()
+    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const assignment = await getAssignmentById(org.orgId, id)
     if (!assignment || !['OB', 'STATUS'].includes(assignment.assignment_type)) return json({ error: 'Uppdraget hittades inte.' }, 404)
@@ -29,6 +31,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     })
     return json({ ok: true })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : ''
     if (message === 'UNAUTHORIZED') return json({ error: 'Logga in igen.' }, 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return json({ error: 'Ingen organisationskoppling hittades.' }, 403)

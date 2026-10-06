@@ -9,7 +9,8 @@ import { enqueueObGrunddataWrite, recordObGrunddataWriteResult, trackObGrunddata
 import { useObFormDraft } from './useObFormDraft'
 import { supabase } from '@/lib/supabaseClient'
 import type { Tables } from '@/types/supabase'
-import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { loadObOrganizationInspectorProfile } from '@/lib/ob/profileCardClient'
+import { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from './ObOrganizationBoundary'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 import {
@@ -232,8 +233,9 @@ export default function ObStepGrunddata({
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
 }: ObStepGrunddataProps) {
+  const { id: orgId } = useObOrganization()
   // Lokalt formulär-state - vi utgår från inkommande props
-  const [propForm, setPropForm, acknowledgeProperty] = useObFormDraft(inspection.id, {
+  const [propForm, setPropForm, acknowledgeProperty, propertyDirty] = useObFormDraft(inspection.id, {
     object_type: property.object_type ?? '',
     cadastral_id: property.cadastral_id ?? '',
     address: property.address ?? '',
@@ -246,7 +248,7 @@ export default function ObStepGrunddata({
     apartment_holder_name: property.apartment_holder_name ?? '',
   })
 
-  const [inspForm, setInspForm, acknowledgeInspection] = useObFormDraft(inspection.id, {
+  const [inspForm, setInspForm, acknowledgeInspection, inspectionDirty] = useObFormDraft(inspection.id, {
     status: normalizeInspectionStatus(inspection.status),
     cover_path: inspection.cover_path ?? '',
     assignment_number: inspection.assignment_number ?? '',
@@ -259,7 +261,7 @@ export default function ObStepGrunddata({
     attendees_other: inspection.attendees_other ?? '',
     inspection_side: resolveObInspectionProfile(inspection) ?? 'buyer',
   })
-  const [ordererForm, setOrdererForm, acknowledgeOrderer] = useObFormDraft(inspection.id, {
+  const [ordererForm, setOrdererForm, acknowledgeOrderer, ordererDirty] = useObFormDraft(inspection.id, {
     customer_name: property.customer_name ?? inspection.client_name ?? '',
     customer_address: property.customer_address ?? '',
     customer_postal_code: property.customer_postal_code ?? '',
@@ -282,6 +284,10 @@ export default function ObStepGrunddata({
   const [error, setError] = useState<string | null>(null)
   const [changingInspectionSide, setChangingInspectionSide] = useState(false)
   const [changingObjectType, setChangingObjectType] = useState(false)
+  useObOrganizationSwitchGuard(
+    propertyDirty || inspectionDirty || ordererDirty,
+    savingProp || savingInsp || savingOrderer || uploadingCover || changingInspectionSide || changingObjectType
+  )
   const coverCameraInputRef = useRef<HTMLInputElement | null>(null)
   const coverLibraryInputRef = useRef<HTMLInputElement | null>(null)
   const [inspectorProfile, setInspectorProfile] = useState<InspectorProfile | null>(null)
@@ -306,55 +312,12 @@ export default function ObStepGrunddata({
 
   useEffect(() => {
     if (workspace) return
-    let cancelled = false
-
-    const loadInspectorProfile = async () => {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError || !user || cancelled) return
-
-      const { data, error: profileError } = await supabase
-        .from('profiles')
-        .select(
-          'full_name,phone,email,company_name,company_orgno,company_address,company_postal_code,company_city,avatar_path'
-        )
-        .eq('id', user.id)
-        .maybeSingle()
-
-      if (profileError || !data || cancelled) return
-
-      const { summary } = await resolveInspectorCertificationSummary(supabase, {
-        profileId: user.id,
-      })
-
-      if (cancelled) return
-      setInspectorProfile({
-        full_name: data.full_name ?? null,
-        sbr_group: summary.sbr_group,
-        sbr_status: summary.sbr_status,
-        membership_number: summary.membership_number,
-        certification_number: summary.certification_number,
-        certification_items: summary.all_selected_items,
-        phone: data.phone ?? null,
-        email: data.email ?? null,
-        company_name: data.company_name ?? null,
-        company_orgno: data.company_orgno ?? null,
-        company_address: data.company_address ?? null,
-        company_postal_code: data.company_postal_code ?? null,
-        company_city: data.company_city ?? null,
-        avatar_path: data.avatar_path ?? null,
-      })
-    }
-
-    void loadInspectorProfile()
-
-    return () => {
-      cancelled = true
-    }
-  }, [workspace])
+    const controller = new AbortController()
+    void loadObOrganizationInspectorProfile(orgId, controller.signal)
+      .then(profile => { if (!controller.signal.aborted) { setInspectorProfile(profile); setInspectorAvatarLoadError(false) } })
+      .catch(error => { if (!controller.signal.aborted) { setInspectorProfile(null); setError(error instanceof Error ? error.message : 'Profilen kunde inte hämtas.') } })
+    return () => controller.abort()
+  }, [orgId, workspace])
 
   useEffect(() => {
     if (workspace) return
@@ -367,7 +330,7 @@ export default function ObStepGrunddata({
       }
 
       try {
-        const response = await fetch(`/api/ob/inspections/${inspection.id}/frozen-inspector`, {
+        const response = await fetch(withObOrganization(`/api/ob/inspections/${inspection.id}/frozen-inspector`, orgId), {
           cache: 'no-store',
         })
         const payload = (await response.json().catch(() => null)) as FrozenInspectorApiResponse | null
@@ -383,7 +346,7 @@ export default function ObStepGrunddata({
     return () => {
       cancelled = true
     }
-  }, [inspection.id, isInspectionLocked, workspace])
+  }, [inspection.id, isInspectionLocked, workspace, orgId])
 
   useEffect(() => {
     let cancelled = false
@@ -391,7 +354,7 @@ export default function ObStepGrunddata({
     const loadInspectionAddons = async () => {
       setInspectionAddonLoading(true)
       try {
-        const response = await fetch(`/api/ob/inspections/${inspection.id}/addon-orders`, {
+        const response = await fetch(withObOrganization(`/api/ob/inspections/${inspection.id}/addon-orders`, orgId), {
           cache: 'no-store',
         })
         const payload = (await response.json().catch(() => null)) as
@@ -434,7 +397,7 @@ export default function ObStepGrunddata({
     return () => {
       cancelled = true
     }
-  }, [inspection.id, inspection.scope, notifyAddonSelection])
+  }, [inspection.id, inspection.scope, notifyAddonSelection, orgId])
 
   // Hjälpare: spara property-fält
   const saveProperty = (patch: Partial<Property>) => {
@@ -695,7 +658,7 @@ export default function ObStepGrunddata({
     notifyAddonSelection(optimisticRows)
 
     try {
-      const response = await fetch(`/api/ob/inspections/${inspection.id}/addon-orders`, {
+      const response = await fetch(withObOrganization(`/api/ob/inspections/${inspection.id}/addon-orders`, orgId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -913,7 +876,9 @@ export default function ObStepGrunddata({
   }
 
   const hasFrozenInspectorSnapshot = isInspectionLocked && !!frozenInspectorProfile
-  const inspectorCardProfile = hasFrozenInspectorSnapshot ? frozenInspectorProfile : inspectorProfile
+  // A locked inspection must never briefly display today's organization card
+  // while its historical snapshot is loading or unavailable.
+  const inspectorCardProfile = isInspectionLocked ? frozenInspectorProfile : inspectorProfile
 
   const inspectorName =
     inspectorCardProfile?.full_name || inspection.inspector_name || INSPECTOR_CARD.name
@@ -1418,7 +1383,7 @@ export default function ObStepGrunddata({
               ? hasFrozenInspectorSnapshot
                 ? 'Uppgifterna är låsta och hämtas från senaste sparade utlåtandeversion.'
                 : 'Besiktningen är låst. Fryst besiktningsmannasnapshot saknas för denna äldre version.'
-              : 'Uppgifterna hämtas från den inloggade besiktningsmannens profil.'}
+              : 'Uppgifterna hämtas från din personliga profil och företagsprofilen i besiktningens organisation.'}
           </p>
         </section>
   )

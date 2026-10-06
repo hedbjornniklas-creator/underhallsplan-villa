@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import ts from 'typescript'
+// @ts-expect-error Node strip-types requires the explicit extension.
+import { obApiDomainBoundary } from './ob-api-domain-boundary.ts'
 
 const require = createRequire(import.meta.url)
 const root = resolve(import.meta.dirname, '../..')
@@ -17,6 +19,8 @@ export function environmentalLoader(mocks: Record<string, unknown> = {}) {
     } }).outputText
     new Function('require', 'module', 'exports', source)((name: string) => {
       if (name in mocks) return mocks[name]
+      const boundary = obApiDomainBoundary(name, mocks)
+      if (boundary !== undefined) return boundary
       if (name.startsWith('@/')) return load(resolve(root, 'src', name.slice(2)))
       if (name.startsWith('.')) return load(resolve(dirname(file), name))
       return require(name)

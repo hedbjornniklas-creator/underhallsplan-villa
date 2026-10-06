@@ -3,6 +3,8 @@ import 'server-only'
 import { createHash } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { resolveObReportIdentity } from '@/lib/ob/reportIdentity'
+import { parseAssignmentIssuerIdentitySnapshot } from '@/lib/assignments/issuerIdentity'
 import type { AssignmentDetails } from '@/lib/assignments/server'
 import type { AssignmentTermsDocument } from '@/lib/assignments/terms'
 import type { AcceptedAssignmentConfirmationPdfInput } from '@/lib/assignments/acceptedConfirmationPdf'
@@ -16,13 +18,16 @@ export type ObConfirmationSnapshot = Omit<AcceptedAssignmentConfirmationPdfInput
 // after its own updates, atomically with the acceptance and this source text.
 export async function prepareObConfirmationSource(
   assignment: { assignment_type: string; org_id: string; responsible_profile_id: string | null; scope_description?: string | null; price_amount?: number | null; assignment_details?: Record<string, unknown> | null },
-  terms: AssignmentTermsDocument
+  terms: AssignmentTermsDocument,
+  issuedIdentity?: unknown
 ) {
   if (!((assignment.assignment_type === 'OB' && ['buyer', 'seller', 'apartment'].includes(terms.role)) ||
     (assignment.assignment_type === 'STATUS' && terms.role === 'status'))) {
     throw new Error('OB_CONFIRMATION_MODULE_MISMATCH')
   }
-  if (!assignment.responsible_profile_id) throw new Error('OB_CONFIRMATION_ISSUER_MISSING')
+  const issued = issuedIdentity == null ? null : parseAssignmentIssuerIdentitySnapshot(issuedIdentity, { orgId: assignment.org_id })
+  if (issuedIdentity != null && !issued) throw new Error('ASSIGNMENT_ISSUER_IDENTITY_INVALID')
+  if (!assignment.responsible_profile_id && !issued) throw new Error('OB_CONFIRMATION_ISSUER_MISSING')
   const objectType = Object.hasOwn(assignment.assignment_details ?? {}, 'objectType')
     ? assignment.assignment_details?.objectType : 'property'
   if (assignment.assignment_type === 'STATUS' && objectType !== 'property' && objectType !== 'apartment') {
@@ -37,15 +42,26 @@ export async function prepareObConfirmationSource(
   }
   const { error: setupError } = await admin.from('assignment_confirmation_snapshots').select('assignment_id').limit(0)
   if (setupError) throw new Error('OB_CONFIRMATION_ARCHIVE_NOT_CONFIGURED')
-  const { data: profile, error: profileError } = await admin.from('profiles')
-    .select('full_name,email,phone,company_name,company_orgno,company_address,company_postal_code,company_city')
-    .eq('id', assignment.responsible_profile_id).maybeSingle()
-  const { data: organization, error: orgError } = await admin.from('organizations')
-    .select('name').eq('id', assignment.org_id).maybeSingle()
-  if (profileError || orgError || !profile || !organization) throw new Error('OB_CONFIRMATION_ISSUER_MISSING')
-  const { summary } = await resolveInspectorCertificationSummary(admin, {
-    profileId: assignment.responsible_profile_id, orgId: assignment.org_id,
+  // New OB links carry the issued identity. Never replace it with today's card
+  // during acceptance, even if the responsible inspector has since changed.
+  const profile = issued ? {
+    full_name: issued.inspector.displayName, email: issued.inspector.email, phone: issued.inspector.phone,
+    company_name: issued.company.name, company_orgno: issued.company.organizationNumber,
+    company_address: issued.company.address, company_postal_code: issued.company.postalCode,
+    company_city: issued.company.city,
+  } : await resolveObReportIdentity({
+    orgId: assignment.org_id, profileId: assignment.responsible_profile_id!,
+    locked: false, frozenProfile: null, frozenCompany: null,
   })
+  const summary = issued ? {
+    sbr_group: issued.certifications.sbrGroup, sbr_status: issued.certifications.sbrStatus,
+    membership_number: issued.certifications.membershipNumber, certification_number: issued.certifications.certificationNumber,
+    all_selected_items: issued.certifications.items.map(item => ({
+      name: item.name, number_value: item.numberValue, valid_to: item.validTo,
+    })),
+  } : (await resolveInspectorCertificationSummary(admin, {
+    profileId: assignment.responsible_profile_id!, orgId: assignment.org_id,
+  })).summary
   return {
     schemaVersion: 'ob-confirmation-v1',
     ...(assignment.assignment_type === 'STATUS' ? {
@@ -54,7 +70,7 @@ export async function prepareObConfirmationSource(
       statusObjectType: objectType,
     } : {}),
     terms,
-    issuerName: organization.name ?? profile.company_name,
+    issuerName: profile.company_name,
     inspector: {
       fullName: profile.full_name, email: profile.email, phone: profile.phone,
       companyName: profile.company_name, companyOrgNo: profile.company_orgno,

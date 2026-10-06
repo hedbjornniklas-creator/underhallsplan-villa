@@ -5,6 +5,8 @@ import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -52,6 +54,7 @@ type InspectionForPdf = {
   assignment_number: string | null
   date: string | null
   inspection_family: string | null
+  type: string | null
   property_id: string | null
 }
 
@@ -163,11 +166,12 @@ export async function GET(
     const requestedOrgId = searchParams.has('orgId')
       ? searchParams.get('orgId')
       : undefined
-    let orgContext = await requireOrgContext(requestedOrgId)
+    const { data: { user }, error: authError } = await createSupabaseServerClient().auth.getUser()
+    if (authError || !user) throw new Error('UNAUTHORIZED')
 
     const { data: inspection, error: inspectionError } = await admin
       .from('inspections')
-      .select('id,status,assignment_number,date,inspection_family,property_id')
+      .select('id,status,assignment_number,date,inspection_family,type,property_id')
       .eq('id', inspectionId)
       .maybeSingle()
 
@@ -181,11 +185,12 @@ export async function GET(
 
     const inspectionRow = inspection as InspectionForPdf
     const inspectionFamily = String(inspectionRow.inspection_family ?? '').trim().toUpperCase()
-    if (inspectionFamily === 'TU') {
-      orgContext = await requireTuContext(requestedOrgId)
-    }
+    const isOb = inspectionFamily === 'OB' || (!inspectionFamily && ['OB', 'STATUS'].includes(inspectionRow.type ?? ''))
+    const orgContext = isOb
+      ? await requireObInspectionContext(inspectionId, requestedOrgId)
+      : inspectionFamily === 'TU' ? await requireTuContext(requestedOrgId) : await requireOrgContext(requestedOrgId)
 
-    const hasAccess = inspectionFamily === 'TU'
+    const hasAccess = isOb ? true : inspectionFamily === 'TU'
       ? await hasTechnicalInvestigationAccess(admin, orgContext.orgId, inspectionId)
       : (await hasAssignmentAccess(admin, orgContext.orgId, inspectionId)) ||
         (await hasEbInspectionAccess(admin, orgContext.orgId, inspectionId)) ||
@@ -197,7 +202,7 @@ export async function GET(
       })
     }
 
-    if (inspectionRow.inspection_family === 'OB') {
+    if (isOb) {
       const workflow = await getObAssignmentWorkflow(inspectionId, orgContext.orgId)
       if (workflow && !workflow.canDeliver) return new NextResponse(workflow.reason, { status: 409 })
     }
@@ -302,10 +307,17 @@ export async function GET(
       return new NextResponse('Ogiltigt organisationsval.', { status: 400 })
     }
     if (message === 'MODULE_ACCESS_REQUIRED') {
-      return new NextResponse('Du saknar TU-behörighet i den valda organisationen.', {
+      return new NextResponse('Du saknar modulbehörighet i den valda organisationen.', {
         status: 403,
       })
     }
+    if (message === 'OB_ORGANIZATION_FORBIDDEN') return new NextResponse('Du saknar behörighet till utlåtandet.', { status: 403 })
+    if (message === 'OB_ORGANIZATION_MISMATCH') return new NextResponse('Utlåtandet tillhör en annan organisation.', { status: 409 })
+    if (message === 'OB_ORGANIZATION_UNASSIGNED' || message === 'OB_ORGANIZATION_MIGRATION_REQUIRED') {
+      return new NextResponse('Besiktningens organisationskoppling behöver kontrolleras.', { status: 409 })
+    }
+    if (message === 'OB_INSPECTION_INVALID') return new NextResponse('Ogiltig besiktning.', { status: 400 })
+    if (message === 'OB_ORGANIZATION_READ_FAILED') return new NextResponse('Organisationens uppgifter kunde inte verifieras. Försök igen.', { status: 503 })
     return new NextResponse(message, { status: 500 })
   }
 }

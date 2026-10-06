@@ -6,12 +6,13 @@ import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'r
 // Only the matching save acknowledges an edit (including server normalization).
 export function useObFormDraft<T extends Record<string, string>>(identity: string, incoming: T) {
   const state = useRef({ identity, values: incoming, dirty: new Set<keyof T>() })
-  const [values, render] = useState(incoming)
+  const [draft, render] = useState({ values: incoming, dirty: false })
   useEffect(() => {
     const current = state.current
     if (current.identity !== identity) {
       state.current = { identity, values: incoming, dirty: new Set() }
-      render(incoming)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Preserve the existing server-refresh reconciliation; values and the navigation guard must reset together.
+      render({ values: incoming, dirty: false })
       return
     }
     const next = { ...current.values }
@@ -22,7 +23,7 @@ export function useObFormDraft<T extends Record<string, string>>(identity: strin
         changed = true
       }
     }
-    if (changed) { current.values = next; render(next) }
+    if (changed) { current.values = next; render({ values: next, dirty: current.dirty.size > 0 }) }
   }, [identity, incoming])
 
   const setValues = useCallback((update: SetStateAction<T>) => {
@@ -32,7 +33,7 @@ export function useObFormDraft<T extends Record<string, string>>(identity: strin
       if (next[key] !== current.values[key]) current.dirty.add(key)
     }
     current.values = next
-    render(next)
+    render({ values: next, dirty: current.dirty.size > 0 })
   }, [])
 
   const acknowledge = useCallback((sent: Partial<T>, saved: Partial<T> = sent) => {
@@ -47,7 +48,7 @@ export function useObFormDraft<T extends Record<string, string>>(identity: strin
       }
     }
     current.values = next
-    render(next)
+    render({ values: next, dirty: current.dirty.size > 0 })
   }, [identity])
-  return [values, setValues, acknowledge] as const
+  return [draft.values, setValues, acknowledge, draft.dirty] as const
 }

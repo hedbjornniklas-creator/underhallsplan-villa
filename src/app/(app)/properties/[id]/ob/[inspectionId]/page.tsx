@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Protected from '@/components/Protected'
+import ObOrganizationBoundary, { useObOrganization, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
 import ObStepMenu from '@/components/ob/ObStepMenu'
 import ObInspectionHeader, { ObInspectionNavigationContext } from '@/components/ob/ObInspectionHeader'
@@ -206,6 +207,11 @@ function getVisibleSections(
 }
 
 export default function InspectionDetailPage() {
+  return <ObOrganizationBoundary><InspectionDetailContent /></ObOrganizationBoundary>
+}
+
+function InspectionDetailContent() {
+  const { id: orgId } = useObOrganization()
   const params = useParams()
   const router = useRouter()
 
@@ -236,7 +242,7 @@ export default function InspectionDetailPage() {
   const buildingRequest = useRef(0)
   const reloadBuildings = useCallback(async () => {
     const request = ++buildingRequest.current
-    const response = await fetch(`/api/ob/inspections/${inspectionId}/buildings`, { cache: 'no-store' })
+    const response = await fetch(withObOrganization(`/api/ob/inspections/${inspectionId}/buildings`, orgId), { cache: 'no-store' })
     const result = await response.json()
     if (request !== buildingRequest.current) return
     if (!response.ok || !result.data) throw Error(result.error || 'Byggnaderna kunde inte hämtas.')
@@ -246,7 +252,7 @@ export default function InspectionDetailPage() {
       throw Error('Byggnadsindelningen kunde inte verifieras.')
     setBuildingOverview(result.data)
     setBuildingError(null)
-  }, [inspectionId])
+  }, [inspectionId, orgId])
   useEffect(() => {
     let active = true
     setBuildingOverview(null); setBuildingError(null); setSelectedBuildingId(null)
@@ -262,8 +268,8 @@ export default function InspectionDetailPage() {
   }, [inspectionId])
   const handleBackToInspections = useCallback(() => {
     if (!confirmLeaveIfTextDrafts()) return
-    router.push('/inspections')
-  }, [confirmLeaveIfTextDrafts, router])
+    router.push(withObOrganization('/inspections', orgId))
+  }, [confirmLeaveIfTextDrafts, router, orgId])
   const handleInspectionAddonSelectionChanged = useCallback((keys: string[]) => {
     setSelectedAddonKeys((prev) => (areAddonKeyListsEqual(prev, keys) ? prev : keys))
   }, [])
@@ -289,6 +295,10 @@ export default function InspectionDetailPage() {
       if (textDraftHistoryGuardPushedRef.current || isObRoundBackManaged(inspectionId) || !hasTextDrafts()) return
       window.history.pushState({ obTextDraftGuard: true }, '', window.location.href)
       textDraftHistoryGuardPushedRef.current = true
+    }
+
+    const beforeOrganizationSwitch = (event: Event) => {
+      if (hasTextDrafts() && !window.confirm(confirmMessage)) event.preventDefault()
     }
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -332,12 +342,14 @@ export default function InspectionDetailPage() {
 
     pushBackButtonGuard()
     const intervalId = window.setInterval(pushBackButtonGuard, 1000)
+    window.addEventListener('hushub:before-organization-switch', beforeOrganizationSwitch)
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('popstate', handlePopState)
     document.addEventListener('click', handleDocumentClick, true)
 
     return () => {
       window.clearInterval(intervalId)
+      window.removeEventListener('hushub:before-organization-switch', beforeOrganizationSwitch)
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('popstate', handlePopState)
       document.removeEventListener('click', handleDocumentClick, true)
@@ -565,7 +577,7 @@ export default function InspectionDetailPage() {
 
     const loadInspectionAddonSelections = async () => {
       try {
-        const response = await fetch(`/api/ob/inspections/${inspectionId}/addon-orders`, {
+        const response = await fetch(withObOrganization(`/api/ob/inspections/${inspectionId}/addon-orders`, orgId), {
           cache: 'no-store',
         })
         const payload = (await response.json().catch(() => null)) as
@@ -603,7 +615,7 @@ export default function InspectionDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [inspectionId])
+  }, [inspectionId, orgId])
 
   const isApartmentInspection =
     normalizeAssignmentRoleToInspectionSide(inspection?.inspection_side) === 'apartment'
@@ -708,7 +720,7 @@ export default function InspectionDetailPage() {
         <main className="p-6">
           <p className="mb-4 text-sm text-red-600">{error || 'Besiktningen kunde inte hittas.'}</p>
           <button
-            onClick={() => router.push(`/properties/${propertyId}/ob`)}
+            onClick={() => router.push(withObOrganization(`/properties/${propertyId}/ob`, orgId))}
             className="rounded-md border px-3 py-2 text-sm"
           >
             Tillbaka till besiktningar

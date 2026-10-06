@@ -1,7 +1,8 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
+import { loadObAppendixProfile } from '@/lib/ob/appendixProfile'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -34,47 +35,6 @@ function isMissingLockColumnError(message: string) {
     normalized.includes('42703') ||
     normalized.includes('column')
   )
-}
-
-async function loadProfileSnapshot(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
-  orgId: string,
-  userId: string
-) {
-  const profileResult = await admin
-    .from('profiles')
-    .select(
-      'full_name,company_name,company_orgno,company_address,company_postal_code,company_city,phone,email,avatar_path'
-    )
-    .eq('id', userId)
-    .maybeSingle()
-
-  if (profileResult.error) {
-    throw new Error(profileResult.error.message ?? 'Kunde inte läsa profil.')
-  }
-
-  const { summary } = await resolveInspectorCertificationSummary(admin, {
-    profileId: userId,
-    orgId,
-  })
-
-  return {
-    full_name: (profileResult.data?.full_name as string | null) ?? null,
-    company_name: (profileResult.data?.company_name as string | null) ?? null,
-    company_orgno: (profileResult.data?.company_orgno as string | null) ?? null,
-    company_address: (profileResult.data?.company_address as string | null) ?? null,
-    company_postal_code: (profileResult.data?.company_postal_code as string | null) ?? null,
-    company_city: (profileResult.data?.company_city as string | null) ?? null,
-    phone: (profileResult.data?.phone as string | null) ?? null,
-    email: (profileResult.data?.email as string | null) ?? null,
-    avatar_path: (profileResult.data?.avatar_path as string | null) ?? null,
-    sbr_group: summary.sbr_group,
-    membership_number: summary.membership_number,
-    sbr_status: summary.sbr_status,
-    certification_number: summary.certification_number,
-    is_sbr_diplomerad_areamatning: summary.is_sbr_diplomerad_areamatning,
-    certification_items: summary.all_selected_items,
-  }
 }
 
 function normalizeLookupKey(value: string) {
@@ -341,16 +301,16 @@ function normalizeRows(input: unknown): AreaMeasurementRowInput[] {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const admin = createSupabaseAdminClient()
 
     const [profile, buildingTypeDefault, buildingYearDefault] = await Promise.all([
-      loadProfileSnapshot(admin, org.orgId, org.userId),
+      loadObAppendixProfile(admin, id, org.orgId, org.userId),
       loadOverviewItemFirstLabel(admin, id, 'building_type'),
       loadBuildingYearSummaryFromForutsattningar(admin, id),
     ])
@@ -429,6 +389,9 @@ export async function GET(
       },
     })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED')
@@ -443,7 +406,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const admin = createSupabaseAdminClient()
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
     if (!body) return jsonError('Ogiltig payload.', 400)
@@ -537,6 +500,9 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED')

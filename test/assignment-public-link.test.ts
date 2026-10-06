@@ -5,6 +5,10 @@ import { isIP } from 'node:net'
 import test from 'node:test'
 import ts from 'typescript'
 import type * as PublicApi from '../src/app/api/assignments/accept/[token]/route'
+// @ts-expect-error Node strip-types requires the explicit extension.
+import * as issuerIdentity from '../src/lib/assignments/issuerIdentity.ts'
+// @ts-expect-error Node strip-types requires the explicit extension.
+import { obIssuedIdentity } from './helpers/ob-issued-identity.ts'
 
 function load<T>(file: string, dependencies: Record<string, unknown>): T {
   const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
@@ -29,6 +33,37 @@ const ORG = '11111111-1111-4111-8111-111111111111'
 const ID = '22222222-2222-4222-8222-222222222222'
 const terms = { version: 'test-v1', documentHash: 'a'.repeat(64), text: 'Synthetic terms', templateId: 'test' }
 const hash = (token: string) => createHash('sha256').update(token).digest('hex')
+
+test('OB public preview and acceptance retain issued identity after reassignment, and reject malformed/cross-org snapshots', async () => {
+  const previous = process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED
+  process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = 'true'
+  try {
+    const issued = obIssuedIdentity()
+    const row = link({ issuer_identity_snapshot: issued })
+    row.assignments.responsible_profile_id = '44444444-4444-4444-8444-444444444444' as never
+    const h = routeHarness(row)
+    const opened = await h.get()
+    assert.equal(opened.status, 200)
+    const preview = await opened.json()
+    assert.equal(preview.inspector.company_name, issued.company.name)
+    assert.equal(preview.inspector.email, issued.inspector.email)
+    assert.equal((await h.post()).status, 200)
+    assert.deepEqual(h.snapshot().preparedIssued, issued)
+    assert.deepEqual(h.snapshot().acceptedNotice?.issuerIdentitySnapshot, issued)
+    assert.equal(h.snapshot().acceptedNotice?.responsibleEmail, null)
+
+    for (const invalid of [{ ...issued, orgId: '55555555-5555-4555-8555-555555555555' }, { ...issued, company: null }]) {
+      const bad = routeHarness(link({ ...row, issuer_identity_snapshot: invalid }))
+      assert.equal((await bad.get()).status, 500)
+      assert.equal((await bad.post()).status, 409)
+      assert.equal(bad.counts().acceptedCount, 0)
+      assert.equal(bad.snapshot().prepared, 0)
+    }
+  } finally {
+    if (previous === undefined) delete process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED
+    else process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED = previous
+  }
+})
 
 function link(overrides: Record<string, unknown> = {}) {
   return {
@@ -99,10 +134,12 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
   const jobs: Array<() => Promise<void>> = []
   const incidents: unknown[] = []
   let consumedPayload: unknown = null
+  let preparedIssued: unknown = null
+  let acceptedNotice: Record<string, unknown> | null = null
   let prepared = 0
   const admin = { from(table: string) {
     const query = { update(value: unknown) { if (options.contactFails) throw new Error('Synthetic contact sync failure'); writes.push([table, value]); return query },
-      eq() { return query }, then(resolve: (value: unknown) => unknown) { return Promise.resolve({ error: null }).then(resolve) } }
+      select() { return query }, eq() { return query }, then(resolve: (value: unknown) => unknown) { return Promise.resolve({ error: null }).then(resolve) } }
     return query
   } }
   const api = load<typeof PublicApi>('src/app/api/assignments/accept/[token]/route.ts', {
@@ -115,8 +152,10 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
       resolvePublicLinkFailures: async () => {},
     },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
-    '@/lib/assignments/obConfirmationSnapshot': { prepareObConfirmationSource: async (assignment: { org_id: string }, actualTerms: unknown) => {
+    '@/lib/assignments/issuerIdentity': issuerIdentity,
+    '@/lib/assignments/obConfirmationSnapshot': { prepareObConfirmationSource: async (assignment: { org_id: string }, actualTerms: unknown, issued?: unknown) => {
       prepared++
+      preparedIssued = issued
       assert.equal(assignment.org_id, ORG)
       assert.deepEqual(actualTerms, terms)
       if (options.snapshotFails) throw new Error('OB_CONFIRMATION_ARCHIVE_NOT_CONFIGURED')
@@ -137,7 +176,8 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
       },
       getAssignmentById: async () => row?.assignments,
       getProfileContact: async () => ({ email: 'inspector@example.test' }),
-      sendAssignmentAcceptedNotice: async () => { mails++; if (mailFails) throw new Error('Synthetic mail failure') },
+      listAddonOffersForProfile: async () => [],
+      sendAssignmentAcceptedNotice: async (input: Record<string, unknown>) => { mails++; acceptedNotice = input; if (mailFails) throw new Error('Synthetic mail failure') },
     },
   })
   const context = { params: Promise.resolve({ token: TOKEN }) }
@@ -150,7 +190,7 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, ...overrides }),
     }), context),
     counts: () => ({ acceptedCount, mails, writes: writes.length }),
-    snapshot: () => ({ consumedPayload, prepared }),
+    snapshot: () => ({ consumedPayload, prepared, preparedIssued, acceptedNotice }),
     runJobs: async () => { for (const job of jobs) await job(); return incidents },
   }
 }

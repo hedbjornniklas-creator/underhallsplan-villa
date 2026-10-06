@@ -1,6 +1,7 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { randomUUID, createHash } from 'node:crypto'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { environmentalArgs, environmentalCommand, environmentalError, environmentalFileResponse, ENVIRONMENTAL_BUCKET, type EnvironmentalState } from '@/lib/ob/environmentalServer'
 
@@ -9,16 +10,19 @@ export const dynamic = 'force-dynamic'
 type Context = { params: Promise<{ id: string; kind: string }> }
 export async function GET(request: Request, context: Context) {
   try {
-    const org = await requireOrgContext(), { id, kind } = await context.params
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request)), { id, kind } = await context.params
     const state = await environmentalCommand<EnvironmentalState>(environmentalArgs(id, kind, org), 'read')
     const file = state.files.find(file => file.id === new URL(request.url).searchParams.get('file'))
     if (!file) return NextResponse.json({ error: 'Bilagan hittades inte.' }, { status: 404 })
     return environmentalFileResponse(file)
-  } catch (error) { return environmentalError(error) }
+  } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+    return environmentalError(error) }
 }
 export async function POST(request: Request, context: Context) {
   try {
-    const org = await requireOrgContext(), { id, kind } = await context.params
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request)), { id, kind } = await context.params
     const args = environmentalArgs(id, kind, org)
     await environmentalCommand(args, 'read')
     if (Number(request.headers.get('content-length')) > 4.25 * 1024 * 1024) return NextResponse.json({ error: 'Maximal filstorlek är 4 MB.' }, { status: 413 })
@@ -37,5 +41,8 @@ export async function POST(request: Request, context: Context) {
     await environmentalCommand(args, 'file', metadata)
     // Files are immutable. Detaching from a draft never deletes a published original.
     return NextResponse.json({ file: metadata }, { headers: { 'Cache-Control': 'no-store' } })
-  } catch (error) { return environmentalError(error) }
+  } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+    return environmentalError(error) }
 }

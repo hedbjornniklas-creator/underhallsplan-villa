@@ -1,5 +1,7 @@
+import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { getAssignmentById, requireOrgContext } from '@/lib/assignments/server'
+import { getAssignmentById } from '@/lib/assignments/server'
 import { getAcceptedObTerms } from '@/lib/assignments/acceptedObTerms'
 import { getObConfirmationSnapshot } from '@/lib/assignments/obConfirmationSnapshot'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -15,11 +17,11 @@ function json(body: unknown, status = 200) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const assignment = await getAssignmentById(org.orgId, id)
     if (!assignment || !['OB', 'STATUS'].includes(assignment.assignment_type)) {
@@ -43,6 +45,9 @@ export async function GET(
     }
     return json(getAcceptedObTerms(assignment))
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : ''
     if (message === 'UNAUTHORIZED') return json({ error: 'Logga in för att läsa villkoren.' }, 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') {

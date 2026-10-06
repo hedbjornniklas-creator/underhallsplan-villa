@@ -1,5 +1,8 @@
+import { requireObContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { createAssignment, requireOrgContext } from '@/lib/assignments/server'
+import { createAssignment } from '@/lib/assignments/server'
+import { assertOrganizationSameOrigin } from '@/lib/organizations/administrationHttp'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,9 +17,10 @@ function buildDraftEmail() {
   return `utkast-${stamp}-${rand}@pending.besiktapp.local`
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    const context = await requireOrgContext()
+    const context = await requireObContext(obRequestOrgId(request, true), true)
+    assertOrganizationSameOrigin(request)
 
     const assignment = await createAssignment({
       orgId: context.orgId,
@@ -34,6 +38,9 @@ export async function POST() {
 
     return NextResponse.json({ assignment }, { status: 201 })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)

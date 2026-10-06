@@ -65,6 +65,7 @@ test('settings switcher uses active membership without borrowing TU permission f
     '@/lib/access/server':{hasCurrentUserAccess:moduleGate},
     '@/lib/tu/server':{requireTuContext:moduleGate},
     '@/lib/moisture/server':{requireMoistureContext:moduleGate},
+    '@/lib/ob/organizationBindings': { requireObContext: moduleGate, requireObInspectionContext: moduleGate, requireObAssignmentContext: moduleGate, hasOrganizationObAccess: moduleGate },
     '@/lib/organizations/moduleAvailability':{hasOrganizationTuAccess:moduleGate},
     '@/lib/customers/server':{getOrganizationCustomerNavigationContext:moduleGate},
     './administration':{requireOrganizationContext:async (orgId:string)=>{

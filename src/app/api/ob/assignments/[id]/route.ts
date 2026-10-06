@@ -1,16 +1,9 @@
+import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { parseObObjectType, resolveObObjectType } from '@/lib/ob/objectType'
 import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
-import {
-  getAssignmentById,
-  getProfileContact,
-  listAssignmentAddonOrders,
-  requireOrgContext,
-  sendAssignmentOrderReceipt,
-  type AssignmentStatus,
-  type AssignmentType,
-  updateAssignmentById,
-} from '@/lib/assignments/server'
+import { getAssignmentById, listAssignmentAddonOrders, sendAssignmentOrderReceipt, type AssignmentStatus, type AssignmentType, updateAssignmentById } from '@/lib/assignments/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,12 +21,12 @@ function safeString(value: unknown) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
     const assignment = await getAssignmentById(org.orgId, id)
 
     if (!assignment) return jsonError('Uppdraget hittades inte.', 404)
@@ -52,6 +45,9 @@ export async function GET(
 
     return NextResponse.json({ assignment, addonOrders, linkIssues: await listAssignmentLinkIssues(org.orgId, [id]) })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
@@ -65,7 +61,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params
-    const org = await requireOrgContext()
+    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
     const existing = await getAssignmentById(org.orgId, id)
     if (!existing) return jsonError('Uppdraget hittades inte.', 404)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -253,7 +249,7 @@ export async function PATCH(
     const typeRaw = safeString(body.assignment_type ?? body.assignmentType)
     if (typeRaw) {
       const normalized = typeRaw.toUpperCase()
-      if (!['OB', 'STATUS', 'UHP', 'EB'].includes(normalized)) return jsonError('Ogiltig uppdragstyp.', 400)
+      if (!['OB', 'STATUS'].includes(normalized)) return jsonError('Välj ÖB eller statusbesiktning.', 400)
       patch.assignment_type = normalized as AssignmentType
     }
     const effectiveType = patch.assignment_type ?? existing.assignment_type
@@ -288,6 +284,9 @@ export async function PATCH(
 
     const responsibleProfileId = safeString(body.responsible_profile_id ?? body.responsibleProfileId)
     if (responsibleProfileId) {
+      // Changing responsibility also changes the property's owner on conversion.
+      // Keep this release's owner boundary; colleague assignment is separate.
+      if (responsibleProfileId !== existing.responsible_profile_id) throw new Error('OB_ORGANIZATION_FORBIDDEN')
       patch.responsible_profile_id = responsibleProfileId
     }
 
@@ -345,12 +344,11 @@ export async function PATCH(
     let bookingEmailSent = false
     if (shouldSendBookingReceipt) {
       try {
-        const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
         await sendAssignmentOrderReceipt({
           assignment,
           orgName: org.orgName,
           requestedByUserId: org.userId,
-          responsibleEmail: responsibleProfile?.email ?? null,
+          responsibleEmail: null,
         })
         bookingEmailSent = true
       } catch (mailError) {
@@ -363,6 +361,9 @@ export async function PATCH(
 
     return NextResponse.json({ assignment, bookingEmailSent })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)

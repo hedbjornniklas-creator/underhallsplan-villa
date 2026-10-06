@@ -1,12 +1,13 @@
+import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
-import { requireOrgContext } from '@/lib/assignments/server'
 import { obWorkflowRpc } from '@/lib/ob/assignmentWorkflowServer'
 import { roundMutationError } from '@/lib/ob/roundMutationServer'
 import { validFloorLevels } from '@/lib/ob/floorModel'
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireOrgContext()
+    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const text = await request.text()
     if (text.length > 15000) return NextResponse.json({ error: 'Anropet inneh\u00e5ller f\u00f6r mycket text.' }, { status: 413 })
@@ -20,6 +21,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     })
     return NextResponse.json({ data }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     if (error instanceof SyntaxError) return NextResponse.json({ error: 'Ogiltigt anrop.' }, { status: 400 })
     if (error instanceof Error && error.message === 'OB_ROUND_STALE') {
       return NextResponse.json({ error: 'Planindelningen har \u00e4ndrats. Ladda om sidan innan du f\u00f6rs\u00f6ker igen.' }, { status: 409 })

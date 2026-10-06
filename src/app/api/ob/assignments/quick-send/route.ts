@@ -1,15 +1,10 @@
+import { requireObContext } from '@/lib/ob/organizationBindings'
+import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
+import { readOrganizationJson } from '@/lib/organizations/administrationHttp'
+import { resolveObReportIdentity } from '@/lib/ob/reportIdentity'
 import { NextResponse } from 'next/server'
 import { parseObObjectType } from '@/lib/ob/objectType'
-import {
-  AssignmentEmailSendError,
-  type AssignmentType,
-  buildBaseUrl,
-  createAssignment,
-  getProfileContact,
-  isMissingEnvError,
-  requireOrgContext,
-  sendAssignmentConfirmation,
-} from '@/lib/assignments/server'
+import { AssignmentEmailSendError, type AssignmentType, buildBaseUrl, createAssignment, isMissingEnvError, sendAssignmentConfirmation } from '@/lib/assignments/server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,12 +17,12 @@ function jsonError(message: string, status: number, extra?: Record<string, unkno
 
 export async function POST(request: Request) {
   try {
-    const context = await requireOrgContext()
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    const context = await requireObContext(obRequestOrgId(request, true), true)
+    const body = await readOrganizationJson(request, { maxBytes: 64000 })
     const assignmentTypeRaw = String(body.assignmentType ?? 'OB').toUpperCase()
-    const assignmentType = (['OB', 'STATUS', 'UHP', 'EB'].includes(assignmentTypeRaw)
-      ? assignmentTypeRaw
-      : 'OB') as AssignmentType
+    if (!['OB', 'STATUS'].includes(assignmentTypeRaw)) return jsonError('Välj ÖB eller statusbesiktning.', 400)
+    const assignmentType = assignmentTypeRaw as AssignmentType
+    if (body.orgId !== undefined && body.orgId !== context.orgId) throw new Error('OB_ORGANIZATION_MISMATCH')
     const customerEmail = String(body.customerEmail ?? '').trim().toLowerCase()
     const customerName = String(body.customerName ?? '').trim()
     const customerPhone = String(body.customerPhone ?? '').trim()
@@ -61,6 +56,7 @@ export async function POST(request: Request) {
     const parsedPrice = priceAmountRaw === '' ? null : Number(priceAmountRaw.replace(',', '.'))
     const notesInternal = String(body.notesInternal ?? '').trim()
     const responsibleProfileId = String(body.responsibleProfileId ?? context.userId).trim()
+    if (responsibleProfileId !== context.userId) throw new Error('OB_ORGANIZATION_FORBIDDEN')
     if (assignmentType === 'STATUS' && !String(body.scopeDescription ?? '').trim()) {
       return jsonError('Ange vad statusbesiktningen omfattar.', 400)
     }
@@ -77,6 +73,12 @@ export async function POST(request: Request) {
       return jsonError('Ange ett giltigt pris.', 400)
     }
 
+    // Validate the exact issuer before creating a draft for this send action.
+    // A missing company/person profile must not leave a new orphan on each retry.
+    await resolveObReportIdentity({
+      orgId: context.orgId, profileId: context.userId,
+      locked: false, frozenProfile: null, frozenCompany: null,
+    })
     const assignment = await createAssignment({
       orgId: context.orgId,
       createdBy: context.userId,
@@ -107,13 +109,11 @@ export async function POST(request: Request) {
       ...(assignmentType === 'STATUS' ? { scopeDescription: String(body.scopeDescription ?? '').trim() || null } : {}),
       ...(assignmentType === 'STATUS' ? { assignmentDetails: { statusCancellationFee: cancellationFee, objectType } } : {}),
     })
-
-    const responsibleProfile = await getProfileContact(assignment.responsible_profile_id)
     const sendResult = await sendAssignmentConfirmation({
       assignment,
       orgName: context.orgName,
       requestedByUserId: context.userId,
-      responsibleEmail: responsibleProfile?.email ?? null,
+      responsibleEmail: null,
       baseUrl: buildBaseUrl(),
     })
 
@@ -124,6 +124,9 @@ export async function POST(request: Request) {
       expiresAt: sendResult.expiresAt,
     })
   } catch (error) {
+    const organizationFailure = obOrganizationFailure(error)
+    if (organizationFailure) return organizationFailure
+
     const message = error instanceof Error ? error.message : 'Okant fel.'
 
     if (message === 'UNAUTHORIZED') {

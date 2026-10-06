@@ -81,6 +81,14 @@ function loadBuilder(db: unknown) {
     'server-only': {},
     '@/lib/supabase/server': { createSupabaseServerClient: () => db },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => db },
+    '@/lib/ob/organizationBindings': { requireObInspectionContext: async (id: string) => {
+      assert.equal(id, 'inspection')
+      return { orgId: 'org', userId: 'inspector' }
+    } },
+    '@/lib/ob/reportIdentity': { resolveObReportIdentity: async (input: { orgId: string; profileId: string }) => {
+      assert.equal(input.orgId, 'org'); assert.equal(input.profileId, 'inspector')
+      return { full_name: 'Inspector', company_name: 'Organization', company_website: null }
+    } },
     '@/lib/report/buildingData': { BUILDING_DATA_OVERVIEW_ITEM_KEYS: [], buildBuildingDataMap: () => ({}),
       buildBuildingTypeParts: () => ({ TYPE: '' }), renderBuildingDataTextFromTemplate: () => '' },
     '@/lib/ob/floorModelStore': { readObFloorModel: async () => null },
@@ -201,6 +209,7 @@ test('accepted STATUS without valid frozen confirmation fails closed instead of 
     (f: ReturnType<typeof fixture>) => { f.rows.assignment_confirmation_snapshots[0].snapshot_payload.assignment.scope_description = '' },
     (f: ReturnType<typeof fixture>) => { f.rows.assignment_confirmation_snapshots[0].snapshot_payload.assignment.org_id = 'foreign-org' },
     (f: ReturnType<typeof fixture>) => { f.rows.assignments[0].org_id = null },
+    (f: ReturnType<typeof fixture>) => { f.rows.assignments[0].org_id = 'foreign-org' },
     (f: ReturnType<typeof fixture>) => { f.rows.assignment_confirmation_snapshots[0].snapshot_payload.terms.text = 'Tampered terms' },
   ]) {
     const f = fixture()

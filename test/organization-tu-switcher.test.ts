@@ -66,6 +66,7 @@ function harness(options: {
       return input.scopeType === 'global' ? Boolean(options.global) : (options.scoped ?? []).includes(input.scopeId ?? '')
     } },
     '@/lib/organizations/moduleAvailability': availability,
+    '@/lib/ob/organizationBindings': { requireObContext: invalidSurface, hasOrganizationObAccess: invalidSurface },
     '@/lib/tu/server': { requireTuContext: async (orgId: string | undefined) => ({ userId: 'person', orgId: orgId ?? 'org-a' }) },
     '@/lib/moisture/server': { requireMoistureContext: invalidSurface },
     '@/lib/customers/server': { getOrganizationCustomerNavigationContext: invalidSurface },

@@ -94,7 +94,9 @@ test('digital page authenticates before database access and renders the stored p
     const page = load<{ default: (props: unknown) => Promise<{ type: unknown; props: { snapshot: unknown; shareUrl?: string } }> }>(path, {
       'next/navigation': { redirect: (url: string) => { throw Error('REDIRECT:' + url) }, notFound: () => { throw Error('NOT_FOUND') } },
       'react/jsx-runtime': { jsx: (type: unknown, props: unknown) => ({ type, props }) },
-      '@/lib/assignments/server': { requireOrgContext: async () => {
+      '@/lib/ob/organizationBindings': { requireObInspectionContext: async (id: string, orgId: unknown) => {
+        assert.equal(id, inspectionId)
+        assert.equal(orgId, undefined, 'Old digital links must use their inspection binding, not a default organization')
         if (mode === 'unauthenticated') throw Error('UNAUTHORIZED')
         return access
       } },
