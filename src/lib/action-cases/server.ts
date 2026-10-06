@@ -135,47 +135,43 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
   }
 
   const caseIds = (cases ?? []).map((row) => row.id)
-  const { data: items, error: itemsError } = caseIds.length
-    ? await admin.from('action_case_items').select('*').in('action_case_id', caseIds).order('sort_order')
-    : { data: [], error: null }
-  if (itemsError) throw new Error('ACTION_CASES_READ_FAILED')
-
-  const { data: workParts, error: workPartsError } = caseIds.length
-    ? await admin.from('action_case_work_parts').select('*').eq('org_id', context.orgId).in('action_case_id', caseIds).order('sort_order')
-    : { data: [], error: null }
-  if (workPartsError && !['42P01', 'PGRST205'].includes(workPartsError.code)) throw new Error('ACTION_CASES_READ_FAILED')
-
-  const [{ data: participants, error: participantError }, { data: attachments, error: attachmentError }, { data: costLines, error: costLineError }] = caseIds.length
+  // These reads depend on the authorized case IDs, not on one another.
+  const [itemResult, partResult, participantResult, attachmentResult, costResult, suggestionResult, requestResult, packageResult, deliveryResult] = caseIds.length
     ? await Promise.all([
+        admin.from('action_case_items').select('*').in('action_case_id', caseIds).order('sort_order'),
+        admin.from('action_case_work_parts').select('*').eq('org_id', context.orgId).in('action_case_id', caseIds).order('sort_order'),
         admin.from('action_case_participants').select('*').in('action_case_id', caseIds).order('created_at'),
         admin.from('action_case_attachments').select('*').in('action_case_id', caseIds).order('created_at', { ascending: false }),
         admin.from('action_case_cost_lines').select('*').in('action_case_id', caseIds).order('sort_order'),
+        admin.from('action_case_cost_suggestions').select('id,action_case_item_id,source_updated_at,created_at,lines,warnings,applied_at')
+          .eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false }),
+        admin.from('action_case_quote_requests').select(REQUEST_VIEW_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false }),
+        admin.from('action_case_quote_packages').select(`${PACKAGE_VIEW_COLUMNS},action_case_id`).eq('org_id', context.orgId).in('action_case_id', caseIds),
+        admin.from('action_case_rfq_deliveries').select(RFQ_DELIVERY_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds),
       ])
-    : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }]
+    : Array.from({ length: 9 }, () => ({ data: [], error: null }))
+  const { data: items, error: itemsError } = itemResult
+  const { data: workParts, error: workPartsError } = partResult
+  const { data: participants, error: participantError } = participantResult
+  const { data: attachments, error: attachmentError } = attachmentResult
+  const { data: costLines, error: costLineError } = costResult
+  const { data: suggestions, error: suggestionError } = suggestionResult
+  const { data: packageRows, error: packageError } = packageResult
+  const { data: deliveryRows, error: deliveryError } = deliveryResult
+  let { data: requestRows, error: requestError } = requestResult
+  if (itemsError) throw new Error('ACTION_CASES_READ_FAILED')
+  if (workPartsError && !['42P01', 'PGRST205'].includes(workPartsError.code)) throw new Error('ACTION_CASES_READ_FAILED')
   if (participantError || attachmentError || costLineError) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
-  const { data: suggestions, error: suggestionError } = caseIds.length
-    ? await admin.from('action_case_cost_suggestions').select('id,action_case_item_id,source_updated_at,created_at,lines,warnings,applied_at')
-      .eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false })
-    : { data: [], error: null }
   // Keep pre-migration workspaces readable during a rolling deployment.
   if (suggestionError && !['42P01', 'PGRST205'].includes(suggestionError.code)) throw new Error('ACTION_CASES_READ_FAILED')
-  let { data: requestRows, error: requestError } = caseIds.length
-    ? await admin.from('action_case_quote_requests').select(REQUEST_VIEW_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false })
-    : { data: [], error: null }
   if (requestError && ['42703', 'PGRST204'].includes(requestError.code)) {
     const legacyColumns = 'id,action_case_id,supplier_name,supplier_email,subject,message,requirements,other_requirements,lines,attachment_ids,body,supplements_id,response_mode,package_amount,response_notes,response_document_id,delivery_status,sent_at,first_attempt_at,updated_at'
     const legacy = await admin.from('action_case_quote_requests').select(legacyColumns).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at', { ascending: false })
     requestRows = legacy.data?.map((row) => ({ ...row, price_presentation: 'itemized' })) ?? null; requestError = legacy.error
   }
   if (requestError && !['42P01', 'PGRST205'].includes(requestError.code)) throw new Error('ACTION_CASES_READ_FAILED')
-  const { data: packageRows, error: packageError } = caseIds.length
-    ? await admin.from('action_case_quote_packages').select(`${PACKAGE_VIEW_COLUMNS},action_case_id`).eq('org_id', context.orgId).in('action_case_id', caseIds)
-    : { data: [], error: null }
   if (packageError && !['42P01', 'PGRST205'].includes(packageError.code)) throw new Error('ACTION_CASES_READ_FAILED')
   const packages = (packageRows ?? []) as unknown as Record<string, unknown>[]
-  const { data: deliveryRows, error: deliveryError } = caseIds.length
-    ? await admin.from('action_case_rfq_deliveries').select(RFQ_DELIVERY_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds)
-    : { data: [], error: null }
   if (deliveryError && !['42P01', 'PGRST205'].includes(deliveryError.code)) throw new Error('ACTION_CASES_READ_FAILED')
   const deliveries = (deliveryRows ?? []) as unknown as Record<string, unknown>[]
   const { data: quotes, error: quoteError } = caseIds.length

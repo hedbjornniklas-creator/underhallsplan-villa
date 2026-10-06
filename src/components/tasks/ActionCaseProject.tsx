@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import PendingLink from '@/components/ui/PendingLink'
 import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FolderOpen, LayoutDashboard, ListChecks, MapPin, WalletCards, Wrench } from 'lucide-react'
 import type { ActionCaseWorkspace } from '@/lib/action-cases/contracts'
 import type { TaskPerson } from '@/lib/tasks/contracts'
@@ -74,9 +74,9 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const open = (next: ProjectView, label: string) => <button className="gizmo-text-button" onClick={() => navigate(next)}>{label}<ArrowRight size={17} /></button>
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
-      <Link className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
+      <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
         if ((offerDirty || workDirty || scheduleDirty) && !window.confirm(workBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
-      }}><ArrowLeft size={17} /> Alla projekt</Link>
+      }}>Alla projekt</PendingLink>
       <div className="gizmo-project-title"><div><p className="gizmo-eyebrow">Gizmo · Projekt</p><h1 ref={heading} tabIndex={-1}>{project.title}</h1><p className="gizmo-address"><MapPin size={16} />{project.propertyAddress}</p></div>
         <button className="gizmo-button" aria-pressed={view === 'customer'} onClick={() => navigate(view === 'customer' ? 'overview' : 'customer')}><Eye size={18} />{view === 'customer' ? 'Till intern vy' : 'Visa som beställare'}</button>
       </div>

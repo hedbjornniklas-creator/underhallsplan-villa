@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
+import PendingLink from '@/components/ui/PendingLink'
 import {
   ArrowRight,
   Check,
@@ -324,6 +324,7 @@ function costActionMessage(name: string, payload: Record<string, unknown>) {
 
 export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [], caseId, section = 'work', onWorkspaceChange, onBusyChange, onDirtyChange }: Props) {
   const toast = useToast()
+  const [createdProjectId, setCreatedProjectId] = useState<string>()
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
@@ -391,19 +392,20 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
 
   if (!workspace) return <section className="gizmo-empty" role="alert"><ClipboardList /><h2>Projekten kunde inte hämtas</h2><p>{error}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>
   if (!caseId) return <>
-    <ActionCaseProjectList cases={workspace.cases} onCreate={() => setCreating(true)} />
+    <ActionCaseProjectList cases={workspace.cases} pendingProjectId={createdProjectId} onCreate={() => setCreating(true)} />
     {creating && <CreateCaseSheet busy={busy} onClose={() => { if (!busy) setCreating(false) }} onCreate={async (payload) => {
       const result = await action('create_case', payload)
       if (result) {
         setCreating(false)
         if (result.caseId) {
           openingCreatedProject.current = true
+          setCreatedProjectId(result.caseId)
           window.location.assign(projectUrl(result.caseId, 'work'))
         }
       }
     }} />}
   </>
-  if (!selectedCase) return <p role="alert">Projektet är inte tillgängligt. <Link href="/uppdrag">Till projektlistan</Link></p>
+  if (!selectedCase) return <p role="alert">Projektet är inte tillgängligt. <PendingLink autoPending pendingLabel="Öppnar projektlistan…" href="/uppdrag">Till projektlistan</PendingLink></p>
 
   return <>
       {Object.entries(scopeAutosave.states).filter(([, state]) => state.status !== 'saved').map(([id, state]) => <div key={id} role="status" className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">

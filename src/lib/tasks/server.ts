@@ -459,10 +459,10 @@ function requirementTemplates(kind: TaskKind, evidence: readonly TaskCompletionE
   return requirements
 }
 
-async function loadRows(orgId: string) {
+async function loadRows(orgId: string, directoryOnly = false) {
   const admin = createSupabaseAdminClient()
   const [taskResult, contactResult, memberResult, settingsResult] = await Promise.all([
-    admin
+    directoryOnly ? Promise.resolve({ data: [], error: null }) : admin
       .from('operational_tasks')
       .select(
         'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
@@ -476,7 +476,7 @@ async function loadRows(orgId: string) {
       .eq('org_id', orgId)
       .order('name', { ascending: true }),
     admin.from('org_members').select('profile_id').eq('org_id', orgId).eq('is_active', true),
-    admin
+    directoryOnly ? Promise.resolve({ data: null, error: null }) : admin
       .from('task_organization_settings')
       .select('timezone')
       .eq('org_id', orgId)
@@ -619,6 +619,36 @@ async function loadRows(orgId: string) {
   }
 }
 
+function taskPeople(rows: Pick<Awaited<ReturnType<typeof loadRows>>, 'profiles' | 'contacts' | 'taskModuleProfileIds'>): TaskPerson[] {
+  return [
+    ...rows.profiles.filter((profile) => rows.taskModuleProfileIds.has(profile.id)).map((profile) => ({
+      id: profile.id,
+      kind: 'profile' as const,
+      name: profile.full_name?.trim() || profile.email?.trim() || 'Intern användare',
+      companyName: null,
+      email: profile.email ?? null,
+      phone: null,
+      whatsappNumber: null,
+      isActive: true,
+    })),
+    ...rows.contacts.map((contact) => ({
+      id: contact.id,
+      kind: 'contact' as const,
+      name: contact.name,
+      companyName: contact.company_name ?? null,
+      email: contact.email ?? null,
+      phone: contact.phone ?? null,
+      whatsappNumber: contact.whatsapp_number ?? null,
+      isActive: contact.is_active,
+    })),
+  ].sort((a, b) => a.name.localeCompare(b.name, 'sv'))
+}
+
+// Project recipients use the same directory and module-access rules, without loading task histories.
+export async function getTaskPeople(input: InternalTaskContext): Promise<TaskPerson[]> {
+  return taskPeople(await loadRows(input.orgId, true))
+}
+
 export async function getTaskWorkspace(input: InternalTaskContext): Promise<TaskWorkspace> {
   const rows = await loadRows(input.orgId)
   const analyticsAsOf = new Date().toISOString()
@@ -641,28 +671,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
     unreadTaskIds,
   })
 
-  const people: TaskPerson[] = [
-    ...rows.profiles.filter((profile) => rows.taskModuleProfileIds.has(profile.id)).map((profile) => ({
-      id: profile.id,
-      kind: 'profile' as const,
-      name: profile.full_name?.trim() || profile.email?.trim() || 'Intern användare',
-      companyName: null,
-      email: profile.email ?? null,
-      phone: null,
-      whatsappNumber: null,
-      isActive: true,
-    })),
-    ...rows.contacts.map((contact) => ({
-      id: contact.id,
-      kind: 'contact' as const,
-      name: contact.name,
-      companyName: contact.company_name ?? null,
-      email: contact.email ?? null,
-      phone: contact.phone ?? null,
-      whatsappNumber: contact.whatsapp_number ?? null,
-      isActive: contact.is_active,
-    })),
-  ]
+  const people = taskPeople(rows)
 
   const requirementsByTask = new Map<string, RequirementRow[]>()
   for (const requirement of rows.requirements) {
@@ -1094,7 +1103,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       isOrgAdmin: input.isOrgAdmin,
     },
     tasks: taskViews,
-    people: people.sort((a, b) => a.name.localeCompare(b.name, 'sv')),
+    people,
     summary: {
       totalActive: activeTasks.length,
       userHasBall,

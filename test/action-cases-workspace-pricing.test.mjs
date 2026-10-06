@@ -20,7 +20,7 @@ const packages = compile('quotePackages', { './quotes': quotes, './quoteRequests
 const stamp = '2026-09-09T10:00:00.123456Z'
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 
-async function workspace({ legacy = false, packageState = 'active', stalePart = false, regular = false, sourcePatch = {}, omitPart = false } = {}) {
+async function workspace({ legacy = false, packageState = 'active', stalePart = false, regular = false, sourcePatch = {}, omitPart = false, delayReads = false } = {}) {
   const tables = {
     action_cases: [{ id: id(1), org_id: id(9), title: 'Wall', customer_name: 'Customer', property_address: 'Address', status: 'quote_ready', created_at: stamp, updated_at: stamp }],
     action_case_items: [{ id: id(2), action_case_id: id(1), org_id: id(9), title: 'Wall', scope: 'Build wall', status: 'ready_for_quote', estimated_cost: 900, customer_price: 1080, sort_order: 100, updated_at: stamp }],
@@ -35,6 +35,7 @@ async function workspace({ legacy = false, packageState = 'active', stalePart = 
   Object.assign(tables.action_case_quote_requests[0].lines[0], sourcePatch)
   if (omitPart) for (const key of ['workPartId', 'workPartTitle', 'workPartScope']) delete tables.action_case_quote_requests[0].lines[0][key]
   const reads = []
+  let activeReads = 0, maxConcurrentReads = 0
   const admin = { from(table) {
     let columns = ''
     const record = { table, filters: [] }; reads.push(record)
@@ -47,15 +48,28 @@ async function workspace({ legacy = false, packageState = 'active', stalePart = 
       select(value) { columns = value; record.columns = value; return chain },
       eq(...args) { record.filters.push(args); return chain },
       in(...args) { record.filters.push(args); return chain },
-      order() { return chain }, then(resolve) { return Promise.resolve(result()).then(resolve) },
+      order() { return chain }, async then(resolve) {
+        activeReads++; maxConcurrentReads = Math.max(activeReads, maxConcurrentReads)
+        if (delayReads) await new Promise((done) => setTimeout(done, 10))
+        activeReads--
+        return resolve(result())
+      },
     }
     return chain
   } }
   const server = compile('server', { '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin }, './quotes': quotes,
     './quoteRequests': requests, './quotePackages': packages, './domain': domain, './rfqDelivery': rfq, './lumpSum': lumpSum })
   const data = await server.getActionCaseWorkspace({ orgId: id(9), userId: id(10) })
-  return { data, reads }
+  return { data, reads, maxConcurrentReads }
 }
+
+test('independent workspace reads overlap after the organization-scoped project lookup', async () => {
+  const { data, reads, maxConcurrentReads } = await workspace({ delayReads: true })
+  assert.equal(reads[0].table, 'action_cases')
+  assert.ok(reads[0].filters.some(([key, value]) => key === 'org_id' && value === id(9)))
+  assert.equal(maxConcurrentReads, 9)
+  assert.equal(data.cases[0].items[0].customerPrice, 1080)
+})
 
 test('active group anchors retain their price without masquerading as independent per-line quotes', async () => {
   const { data, reads } = await workspace()

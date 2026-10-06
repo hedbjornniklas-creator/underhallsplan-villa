@@ -64,6 +64,10 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 ## Sanning och säkerhet i gränssnittet
 
 - Visa sparat, osparat och pågående arbete utifrån verkligt tillstånd.
+- Navigation följer `docs/UI_FEEDBACK_STANDARD.md`: projektlänkar använder
+  gemensamma `PendingLink`, visar vänteläge direkt och spärrar upprepade klick.
+  En långsam sidladdning visar "Öppnar projekt…" utan uppskattad procentsats.
+  Läsfel visas på sidan med "Försök igen" som hämtar om serverunderlaget.
 - Byte mellan projektdelar behåller formulärutkast och pågående uppladdning.
   Byte av projekt eller omladdning är inte samma sak som ett internt vybyte.
 - Utkast, publicerad offert och godkänt grundavtal är olika tillstånd.
@@ -80,6 +84,10 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 
 ## Beslutslogg
 
+- 2026-10-06: Klickrespons och laddningsgränser införs i Uppdrag enligt den
+  befintliga standarden från ÖB/EB. Interna vybyten är fortsatt direkta och
+  behåller utkast. Projektöppning hämtar kontaktlistan utan uppdragshistorik
+  och utför oberoende, behörighetsavgränsade läsningar samtidigt.
 - 2026-10-01: Offert, val/tillval och delbetalningar får kompakta sammanfattningsrader.
   En rad öppnas åt gången; nya rader öppnas direkt. Att fälla ihop sparar inte och
   raderar inte något. Sammanfattningen visar rubrik, relevant status/datum och pris.
@@ -101,6 +109,21 @@ Kontrollera listval, sökning, filter, tomläge, direktlänk och webbläsarens t
 Prova osparat offertutkast och planering genom alla projektdelar, betalningsplan,
 åtgärdspanel, filvisning och skrivskyddad beställarförhandsgranskning. Kontrollera
 dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering.
+
+### Navigationskontroll 2026-10-06
+
+- 215 automatiserade action-case-tester, TypeScript, riktad ESLint och
+  produktionsbygget passerar.
+- En lokal Next-produktionsfixtur använder de riktiga komponenterna med fiktiva
+  uppgifter och sex sekunders serverfördröjning. Klick och Enter visar omedelbart
+  laddningsläget; tillbaka och återöppning fungerar.
+- Ett simulerat serverfel visar ett bestående fel med återförsök. Återförsöket
+  hämtar nya serverdata och öppnar projektet när felet försvunnit.
+- Interna vybyten och webbläsarens tillbaka bevarar osparat offertutkast.
+- Projektlistan kontrollerad på dator och vid 390 px mobilbredd utan sidöverflöde.
+  Mobilklick visar samma laddningsläge.
+- Ingen produktionsdata, SQL eller något utskick ändrades. Verklig svarstid på
+  hushub.se återstår att mäta efter publicering.
 
 ### Lokal kontroll 2026-10-01
 

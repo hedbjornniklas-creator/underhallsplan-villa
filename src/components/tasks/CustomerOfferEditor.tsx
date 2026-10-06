@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import Link from 'next/link'
+import PendingLink from '@/components/ui/PendingLink'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
@@ -283,7 +283,7 @@ export default function CustomerOfferEditor({
   return (
     <Container className={embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}>
       {(!embedded || view === 'edit' || view === 'document') && <header className="border-b border-slate-200 py-6">
-        {!embedded && <Link
+        {!embedded && <PendingLink autoPending pendingLabel="Öppnar projektlistan…" icon={<ArrowLeft size={17} />}
           href="/uppdrag"
           onClick={(e) => {
             if ((dirty || planningDirty) && !window.confirm('Lämna osparade ändringar?'))
@@ -291,8 +291,8 @@ export default function CustomerOfferEditor({
           }}
           className="inline-flex items-center gap-2 text-sm text-violet-700"
         >
-          <ArrowLeft size={17} /> Till uppdrag
-        </Link>}
+          Till uppdrag
+        </PendingLink>}
         {!embedded && <p className="mt-6 text-sm text-slate-500">
           {actionCase.propertyAddress}
         </p>}

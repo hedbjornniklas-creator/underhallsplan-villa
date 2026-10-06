@@ -43,7 +43,7 @@ function setup({ authorized = true, found = true, offerFails = false } = {}) {
     '@/lib/access/server': { requireModuleAccess: async (scope) => { calls.push(['access', scope]); if (!authorized) throw new Error('DENIED') } },
     '@/lib/action-cases/server': { getActionCaseWorkspace: async (ctx, caseId) => { calls.push(['workspace', ctx, caseId]); return { cases: found ? [{ id: caseId }] : [] } } },
     '@/lib/action-cases/customerOffersServer': { getCustomerOfferWorkspace: async (ctx, caseId) => { calls.push(['offer', ctx, caseId]); if (offerFails) throw new Error('unavailable'); return { revision: 1 } } },
-    '@/lib/tasks/server': { getTaskWorkspace: async (ctx) => { calls.push(['people', ctx]); return { people: [] } } },
+    '@/lib/tasks/server': { getTaskPeople: async (ctx) => { calls.push(['people', ctx]); return [] } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }) }) },
     '@/lib/action-cases/projectNavigation': navigation,
   })
