@@ -286,8 +286,8 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
         </>}
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
-        <div role="status" aria-live="polite" className={`${tab === 'cost' ? 'mb-2 ' : ''}flex min-h-5 flex-wrap items-center gap-2 text-xs text-slate-600`}>
-          {scopeSave?.status === 'error' ? <><span title={scopeSave.error}>Kunde inte spara omfattningen</span><button type="button" className="underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span>Rubrik saknas. Ändringarna är inte sparade.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="animate-spin" />Sparar omfattning…</> : <><Check size={14} />Omfattning sparad</>}
+        <div role="status" aria-live="polite" aria-atomic="true" data-testid="scope-save-status" className={`${tab === 'cost' ? 'mb-2 ' : ''}flex h-8 min-w-0 items-center gap-2 text-xs text-slate-600`}>
+          {scopeSave?.status === 'error' ? <><span className="min-w-0 truncate" title={scopeSave.error}>Kunde inte spara</span><button type="button" className="h-8 shrink-0 underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span className="truncate">Rubrik saknas. Inte sparat.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="shrink-0 animate-spin" />Sparar omfattning…</> : <><Check size={14} className="shrink-0" />Omfattning sparad</>}
         </div>
         {tab === 'cost' && <>
           <div className="grid grid-cols-2 gap-3"><div><span className="text-xs text-slate-500">Intern kostnad, exkl. moms</span><strong className="block text-lg">{item.lumpSum && totals.internalCost === null ? 'Ej angiven' : amount(totals.internalCost)}</strong></div><div><span className="text-xs text-slate-500">Kundpris, exkl. moms</span><strong className="block text-lg">{amount(totals.customerPrice)}</strong></div></div>

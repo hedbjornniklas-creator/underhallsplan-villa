@@ -55,6 +55,23 @@ test('the drawer reuses the parent-owned autosave queue and never waits before o
   assert.match(api, /if \(action === 'save_item_scope'\) return NextResponse.json\(await saveActionCaseScope\(ctx, scopeSavePayload\(payload\)\)\)/)
 })
 
+test('autosave feedback stays in a fixed drawer slot, with recoverable errors on the existing action row', () => {
+  const workspace = readFileSync(new URL('../src/components/tasks/ActionCaseWorkspace.tsx', import.meta.url), 'utf8')
+  const sheet = readFileSync(new URL('../src/components/tasks/ActionCaseItemSheet.tsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(workspace, /Object\.entries\(scopeAutosave.states\)/, 'No transient save banners above the project list')
+  assert.match(workspace, /const save = scopeAutosave.states\[item.id\]/)
+  assert.match(workspace, /save\?\.status === 'error' \? 'Kunde inte spara'/)
+  assert.match(workspace, /save && !save.draft.title.trim\(\) \? 'Rubrik saknas'/)
+  assert.match(workspace, /saveIssue \? 'Öppna för att spara'/)
+  assert.match(workspace, /onError: \(message\) => toast.error\(message\)/)
+  const status = sheet.match(/<div role="status"[^>]*data-testid="scope-save-status"[\s\S]*?<\/div>/)?.[0]
+  assert.ok(status)
+  assert.match(status, /flex h-8 min-w-0 items-center/)
+  assert.doesNotMatch(status, /flex-wrap|min-h-/)
+  assert.match(status, /onClick=\{onScopeRetry\}/)
+  for (const label of ['Sparar omfattning', 'Omfattning sparad', 'Kunde inte spara', 'Rubrik saknas']) assert.ok(status.includes(label))
+})
+
 // Exercise both real hooks. Only React's storage/effect boundary, timers and
 // HTTP are replaced; requests are manually resolved to test out-of-order edits.
 function autosaveHarness() {

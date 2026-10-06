@@ -408,17 +408,16 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   if (!selectedCase) return <p role="alert">Projektet är inte tillgängligt. <PendingLink autoPending pendingLabel="Öppnar projektlistan…" href="/uppdrag">Till projektlistan</PendingLink></p>
 
   return <>
-      {Object.entries(scopeAutosave.states).filter(([, state]) => state.status !== 'saved').map(([id, state]) => <div key={id} role="status" className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-        {state.status === 'error' ? <><span>Kunde inte spara {state.draft.title || 'åtgärden'}.</span><button className="gizmo-text-button" onClick={() => scopeAutosave.retry(id)}>Försök igen</button></> : !state.draft.title.trim() ? <span>Rubrik saknas. Ändringarna är inte sparade.</span> : <><Loader2 size={15} className="animate-spin" /><span>Sparar {state.draft.title}…</span></>}
-        <button className="gizmo-text-button" onClick={() => setSelectedItemId(id)}>Öppna åtgärd</button>
-      </div>)}
     <section hidden={section !== 'work'} aria-label="Projektarbete">
       <div className="gizmo-section-heading"><div><h2>Projektarbete</h2><p>{selectedCase.items.length} åtgärder · {selectedCase.items.filter((item) => completion(item) === 100).length} kalkylklara</p></div></div>
       <div className="gizmo-work-columns" aria-hidden="true"><span>Åtgärd</span><span>Behöver hanteras</span><span>Status</span><span /></div>
-      <div className="gizmo-work-rows">{selectedCase.items.map((item) =>
-        <button key={item.id} type="button" onClick={() => setSelectedItemId(item.id)} className="gizmo-work-row">
-          <strong>{item.title}</strong><span>{completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{ITEM_STATUS[item.status]}</span><ChevronRight size={18} aria-hidden="true" />
-        </button>)}</div>
+      <ul className="gizmo-work-rows" aria-label="Projektets åtgärder">{selectedCase.items.map((item) => {
+        const save = scopeAutosave.states[item.id]
+        const saveIssue = save?.status === 'error' ? 'Kunde inte spara' : save && !save.draft.title.trim() ? 'Rubrik saknas' : null
+        return <li key={item.id}><button type="button" onClick={() => setSelectedItemId(item.id)} className="gizmo-work-row" aria-haspopup="dialog" aria-expanded={selectedItemId === item.id}>
+          <strong>{item.title}</strong><span>{saveIssue ? 'Öppna för att spara' : completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{saveIssue ?? ITEM_STATUS[item.status]}</span><ChevronRight size={18} aria-hidden="true" />
+        </button></li>
+      })}</ul>
       {!selectedCase.items.length && <p className="gizmo-empty">Inga åtgärder ännu.</p>}
       <form className="gizmo-add-work" onSubmit={(event) => {
         event.preventDefault()

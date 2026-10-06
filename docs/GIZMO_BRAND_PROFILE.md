@@ -42,6 +42,14 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 - Högst 1856 px för listan och 1600 px för projektets meny plus arbetsyta.
 - En rad per projekt, med namn/adress, beställare, status och konkret åtgärdsbehov.
 - Vita rader, tunna horisontella avdelare, inga kort eller statuspiller per projekt.
+- Projektarbete använder varianten **Tydlig tabell**: tonad rubrikrad #EDF1F1,
+  grafitfärgade kolumnnamn i 12 px/vikt 600 och vita åtgärdsrader med raka
+  avdelare, utan rundade hörn. Åtgärdsnamn har vikt 600; stödtext är dämpad.
+  Rader har minst 60 px höjd och får växa när text behöver radbrytas.
+- Hela åtgärdsraden öppnar den befintliga sidopanelen. Pekning och
+  tangentbordsfokus ger grönblå ton #F1F6F5 och en tunn vänstermarkering.
+  Öppen åtgärd markeras med befintlig dämpad gul färg. Markeringar och
+  fokusram får inte ändra radens storlek eller flytta andra rader.
 - Sökning, aktivt/avslutat/alla-filter och Nytt projekt i samma verktygsrad.
 - Sortering och sidbläddring är sekundära; högst 25 projekt per sida.
 - Projektrader är normalt 72 px inklusive två rader för projekt/objekt.
@@ -60,10 +68,16 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
   768 px. Bara menyn får rulla i sidled, inte formulär eller hela sidan.
 - Ingen fast nederkantsrad som täcker formulär eller tangentbord.
 - Samma funktioner och uppgifter som på dator, inte en andra datamodell.
+- I smalt Projektarbete staplas radens uppgifter. Rubrikbandet behålls med
+  "Åtgärd" medan övriga kolumnrubriker döljs. Långa namn bryts utan sidrullning.
 
 ## Sanning och säkerhet i gränssnittet
 
 - Visa sparat, osparat och pågående arbete utifrån verkligt tillstånd.
+- Autosparstatus har reserverad höjd i åtgärdspanelens sidfot. Ingen tillfällig
+  sparrad ovanför projektlistan som flyttar innehållet vid varje ändring.
+  Sparfel visas med befintlig toast och finns kvar i åtgärdsraden tills de är
+  lösta. Sidopanelen behåller utkastet och erbjuder ett nytt sparförsök.
 - Navigation följer `docs/UI_FEEDBACK_STANDARD.md`: projektlänkar använder
   gemensamma `PendingLink`, visar vänteläge direkt och spärrar upprepade klick.
   En långsam sidladdning visar "Öppnar projekt…" utan uppskattad procentsats.
@@ -84,6 +98,9 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 
 ## Beslutslogg
 
+- 2026-10-06: Användaren väljer **Tydlig tabell** för Projektarbete: tonad
+  rubrikrad, tydligare åtgärdsnamn, raka avdelare samt peknings-/valmarkering.
+  Gizmos färger, innehåll, sidopanel och befintligt autosparande behålls.
 - 2026-10-06: Klickrespons och laddningsgränser införs i Uppdrag enligt den
   befintliga standarden från ÖB/EB. Interna vybyten är fortsatt direkta och
   behåller utkast. Projektöppning hämtar kontaktlistan utan uppdragshistorik
@@ -124,6 +141,20 @@ dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering
   Mobilklick visar samma laddningsläge.
 - Ingen produktionsdata, SQL eller något utskick ändrades. Verklig svarstid på
   hushub.se återstår att mäta efter publicering.
+
+### Åtgärdslista och sparstatus 2026-10-06
+
+- Tydlig tabell kontrollerad i lokal testversion med produktionskomponenterna:
+  tonad rubrikrad, raka 60 px-rader, markerad öppen åtgärd och tangentbordsfokus.
+- Enter öppnar sidopanelen; Escape återför fokus till samma rad. Ny åtgärd och
+  byte till Kalkyl efter en omfattningsändring fungerar fortsatt.
+- Vid 390 px bredd staplas uppgifterna och långa namn bryts utan sidöverflöde.
+- Autosparande visar inte längre en tillfällig rad ovanför listan. Sidfotens
+  höjd är stabil vid väntan, sparat, sparfel och saknad rubrik. Sparfel behåller
+  utkastet och kan återförsökas efter att sidopanelen har stängts och öppnats.
+- 220 automatiserade action-case-tester, TypeScript och riktad ESLint passerar.
+  Produktionsbygget passerar. Ingen produktionsdata eller något kundutskick
+  ändrades i testerna. Driftsättning verifieras separat mot publicerad commit.
 
 ### Lokal kontroll 2026-10-01
 
