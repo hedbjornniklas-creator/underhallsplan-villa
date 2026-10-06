@@ -20,10 +20,11 @@ export function ProjectScheduleDocument({ rows }: { rows: ProjectScheduleRow[] }
   </section>
 }
 
-export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared }: {
+export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared, customerRefresh = 0 }: {
   caseId: string; items: { id: string; title: string }[]
   onDirty: (dirty: boolean) => void
   onShared: (rows: ProjectScheduleRow[]) => void
+  customerRefresh?: number
 }) {
   const [saved, setSaved] = useState<ProjectSchedule | null>(null)
   const [rows, setRows] = useState<ProjectScheduleRow[]>([])
@@ -44,7 +45,7 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
       if (!signal?.aborted) { setError(true); toast.error(e, 'Tidsplanen kunde inte hämtas.') }
     } finally { if (!signal?.aborted) setBusy('') }
   }, [caseId, onShared, toast])
-  useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort() }, [refresh])
+  useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort() }, [refresh, customerRefresh])
   useEffect(() => { onDirty(dirty || Boolean(busy && busy !== 'load')) }, [dirty, busy, onDirty])
   useEffect(() => {
     if (!dirty && busy !== 'save') return

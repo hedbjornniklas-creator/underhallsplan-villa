@@ -63,6 +63,8 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  customerLink?: import('./customerRegistry').ContractCustomerLink
+  recipient?: import('./contracts').ActionCaseParticipantView | null
   planning?: import('./customerPlanning').CustomerPlanning
   costing?: CustomerOfferCosting
   costingAvailable?: boolean

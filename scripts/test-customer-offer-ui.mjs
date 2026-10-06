@@ -24,6 +24,7 @@ import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.
 import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
 import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
 import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
+import { copyRegistryCustomer } from '../src/lib/action-cases/customerRegistry.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -100,6 +101,35 @@ if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')
 }
 const writes = []
 const projects = projectFixture(actionCase)
+const customerRegistryTest = process.argv.includes('--customer-registry')
+const registry = { organization: { id: id(90), name: 'Fiktiv testorganisation', canManage: true }, customers: [
+  { id: id(91), orgId: id(90), customerNumber: '1001', customerType: 'private', name: 'Anna Test', email: 'anna@example.test', phone: '0700000000', address: 'Testgatan 1', postalCode: '12345', city: 'Teststad', identityNumber: null, isActive: true, version: 1 },
+  { id: id(92), orgId: id(90), customerNumber: '1002', customerType: 'business', name: 'Fiktivt företag', isActive: true, version: 1 },
+  { id: id(93), orgId: id(90), customerNumber: '1003', customerType: 'private', name: 'Inaktiv kund', isActive: false, version: 1 }
+] }
+let customerRequestId = ''
+if (customerRegistryTest) {
+  state.offers = []
+  state.customerLink = { organizationId: id(90), available: true, customerId: null, customerNumber: null }
+  state.recipient = structuredClone(actionCase.participants.find((p) => p.role === 'customer'))
+}
+function syncTestRecipient(binding = false) {
+  if (!customerRegistryTest || !state.draft.contractParties) return
+  const parties = state.draft.contractParties
+  if (binding || state.recipient.name !== parties.customers[0].name || state.recipient.email !== parties.email) {
+    projects.cases[0].attachments = projects.cases[0].attachments.map((a) => ({ ...a,
+      grantedParticipantIds: a.grantedParticipantIds.filter((id) => id !== state.recipient.id) }))
+    state.planning.sharedItems = []
+    state.planning.revision++
+    schedule.sharedRows = []
+    schedule.revision++
+  }
+  state.recipient = { ...state.recipient, name: parties.customers[0].name, email: parties.email, phone: parties.mobile || parties.phone }
+  projects.cases[0].customerName = state.recipient.name
+  projects.cases[0].customerEmail = state.recipient.email
+  projects.cases[0].customerPhone = state.recipient.phone
+  projects.cases[0].participants = projects.cases[0].participants.map((p) => p.role === 'customer' ? state.recipient : p)
+}
 let schedule = { available: true, revision: 0, rows: [], sharedRows: [] }, slowSave = false
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
@@ -109,6 +139,7 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify(body))
   }
   if (path === '/project-fixture') { json(projects); return }
+  if (customerRegistryTest && path === '/api/settings/customers') { json({ workspace: registry }); return }
   if (path === '/__test__/writes') { json(writes); return }
   if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
   if (path === '/__test__/slow-save' && req.method === 'POST') { slowSave = true; json({ ok: true }); return }
@@ -235,6 +266,29 @@ const server = createServer(async (req, res) => {
         state.draft = normalizeCustomerOffer(body.draft)
         state.costing = normalizeCustomerOfferCosting(body.costing, state.draft.items)
         state.revision++
+        syncTestRecipient()
+      } else if (customerRegistryTest && body.operation === 'bind_customer') {
+        if (body.requestId === customerRequestId) { json(state); return }
+        if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
+        if (body.revision !== state.revision) { json({ error: 'Utkastet har ändrats.' }, 409); return }
+        const draft = normalizeCustomerOffer(body.draft)
+        const costing = normalizeCustomerOfferCosting(body.costing, draft.items)
+        let customer = registry.customers.find((row) => row.id === body.binding.customerId && row.isActive && row.customerType === 'private')
+        if (body.binding.mode === 'create') {
+          const parties = draft.contractParties
+          customer = { id: id(100 + registry.customers.length), orgId: id(90), customerNumber: String(1001 + registry.customers.length), customerType: 'private',
+            name: parties.customers[0].name, identityNumber: parties.customers[0].personalNumber, email: parties.email, phone: parties.mobile || parties.phone,
+            address: parties.street, postalCode: parties.postalCode, city: parties.city, isActive: true, version: 1 }
+          registry.customers.push(customer)
+        } else if (!customer || customer.version !== body.binding.customerVersion) { json({ error: 'Kunden har ändrats. Uppdatera kundlistan.' }, 409); return }
+        draft.contractParties = copyRegistryCustomer(draft.contractParties, customer)
+        state.draft = draft
+        state.costing = costing
+        state.revision++
+        state.customerLink.customerId = customer.id
+        state.customerLink.customerNumber = customer.customerNumber
+        customerRequestId = body.requestId
+        syncTestRecipient(true)
       } else if (body.operation === 'separate_choices') {
         if (state.offers.some((o) => o.status === 'published' || o.status === 'accepted')) { json({ error: 'Återkalla den öppna versionen först.' }, 409); return }
         if (body.revision !== state.revision || body.planningRevision !== state.planning.revision) { json({ error: 'Uppgifterna har ändrats.' }, 409); return }

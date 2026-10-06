@@ -9,6 +9,7 @@ import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
 import { normalizePlannedItems, type CustomerPlanning, type CustomerPlannedItem } from './customerPlanning'
+import { writeContractCustomer } from './customerRegistryServer'
 import {
   CUSTOMER_OFFER_BUCKET,
   CUSTOMER_OFFER_COLUMNS,
@@ -55,7 +56,7 @@ async function write(
 async function requireCase(ctx: Context, caseId: string) {
   const { data, error } = await createSupabaseAdminClient()
     .from('action_cases')
-    .select('id,title,property_address')
+    .select('*')
     .eq('id', offerId(caseId))
     .eq('org_id', ctx.orgId)
     .maybeSingle()
@@ -97,7 +98,20 @@ export async function getCustomerOfferWorkspace(
   const body = savedDraft
       ? normalizeCustomerOffer(savedDraft.body)
       : emptyCustomerOffer(c.title)
+  const recipient = await db.from('action_case_participants').select('id,role,name,company_name,email,phone')
+    .eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('role', 'customer').maybeSingle()
+  checked(recipient.error)
+  let customerNumber: string | null = null
+  if (c.organization_customer_id) {
+    const linked = await db.from('organization_customers').select('customer_number')
+      .eq('org_id', ctx.orgId).eq('id', c.organization_customer_id).maybeSingle()
+    checked(linked.error)
+    customerNumber = linked.data ? String(linked.data.customer_number) : null
+  }
   return {
+    customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
+    recipient: recipient.data ? { id: recipient.data.id, role: 'customer', name: recipient.data.name,
+      companyName: recipient.data.company_name, email: recipient.data.email, phone: recipient.data.phone } : null,
     draft: body,
     planning: await getCustomerPlanning(ctx, caseId),
     costingAvailable,
@@ -118,6 +132,10 @@ export async function saveCustomerOffer(
     ? undefined
     : normalizeCustomerOfferCosting(payload.costing, draft.items)
   await checkPricingSchema(draft)
+  if (draft.contractParties && 'organization_customer_id' in await requireCase(ctx, caseId)) {
+    await writeContractCustomer(ctx, caseId, payload)
+    return
+  }
   if (costing !== undefined) {
     const result = await createSupabaseAdminClient().rpc('save_customer_offer_costing', {
       p_org_id: ctx.orgId,
@@ -132,6 +150,11 @@ export async function saveCustomerOffer(
     revision: payload.revision,
     body: draft
   })
+}
+export async function bindContractCustomer(ctx: Context, caseId: string, payload: Payload) {
+  await requireCase(ctx, caseId)
+  await checkPricingSchema(normalizeCustomerOffer(payload.draft))
+  await writeContractCustomer(ctx, caseId, payload, true)
 }
 export async function separateCustomerChoices(ctx: Context, caseId: string, payload: Payload) {
   await requireCase(ctx, caseId)
@@ -260,6 +283,8 @@ export async function publishCustomerOffer(
   checked(org.error)
   checked(sender.error)
   const email = recipient.data?.email?.trim().toLowerCase()
+  if (draft.contractParties && (draft.contractParties.email.trim().toLowerCase() !== email ||
+    draft.contractParties.customers[0].name.trim() !== recipient.data?.name.trim())) throw new Error('CUSTOMER_OFFER_RECIPIENT')
   if (
     !recipient.data ||
     !email ||

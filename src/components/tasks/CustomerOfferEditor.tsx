@@ -49,6 +49,7 @@ import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import CustomerOfferSourcePicker from './CustomerOfferSourcePicker'
 import { ContractCustomerEditor, ContractContractorEditor } from './CustomerContractPartiesEditor'
 import { emptyContractParties, type ContractContractor } from '@/lib/action-cases/customerContractParties'
+import ContractCustomerRegistry from './ContractCustomerRegistry'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -65,6 +66,7 @@ export default function CustomerOfferEditor({
   view: controlledView,
   onViewChange,
   onWorkspaceChange,
+  onCustomerChanged,
   onDirtyChange,
   sharedSchedule,
   sourcePending = false,
@@ -79,19 +81,21 @@ export default function CustomerOfferEditor({
   view?: CustomerEditorView
   onViewChange?: (view: CustomerEditorView) => void
   onWorkspaceChange?: (workspace: CustomerOfferWorkspace) => void
+  onCustomerChanged?: () => void
   onDirtyChange?: (dirty: boolean) => void
   sharedSchedule?: ProjectScheduleRow[]
   sourcePending?: boolean
   contractorSource?: Partial<ContractContractor>
 }) {
-  const customer = actionCase.participants.find((p) => p.role === 'customer')
+  const initialCustomer = initial.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [workspace, setWorkspace] = useState(initial),
     [draft, setDraft] = useState(() => ({ ...initial.draft,
       contractDetails: initial.draft.contractDetails ?? emptyContractDetails(),
-      contractParties: initial.draft.contractParties ?? emptyContractParties(customer?.name ?? actionCase.customerName,
-        customer?.email ?? '', customer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
+      contractParties: initial.draft.contractParties ?? emptyContractParties(initialCustomer?.name ?? actionCase.customerName,
+        initialCustomer?.email ?? '', initialCustomer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
     }))
   const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
+  const customer = workspace.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [internalView, setInternalView] = useState<CustomerEditorView>('edit')
   const view = controlledView ?? internalView
   const setView = (next: CustomerEditorView) => { setInternalView(next); onViewChange?.(next) }
@@ -160,7 +164,14 @@ export default function CustomerOfferEditor({
     operation: string,
     extra: Record<string, unknown> = {}
   ) {
-    if (running.current) return
+    if (running.current) return false
+    if (operation === 'save' && draft.contractParties &&
+      (draft.contractParties.customers[0].name.trim() !== customer?.name ||
+        draft.contractParties.email.trim().toLowerCase() !== customer?.email?.trim().toLowerCase()) &&
+      (sourcePending || planningDirty)) {
+      toast.error('Spara pågående projektarbete och planering innan du ändrar beställarens kontaktuppgifter.')
+      return false
+    }
     running.current = true
     setBusy(operation)
     try {
@@ -185,10 +196,13 @@ export default function CustomerOfferEditor({
       const data = await response.json()
       if (!response.ok)
         throw new Error(data.error || 'Offerten kunde inte hanteras.')
+      if (operation === 'bind_customer' || data.recipient?.name !== workspace.recipient?.name ||
+        data.recipient?.email !== workspace.recipient?.email) onCustomerChanged?.()
       setWorkspace(data)
       setDraft((current) => operation === 'save' ? retainNewerDraft(current, draft, data.draft) : data.draft)
       setCosting((current) => operation === 'save' ? retainNewerDraft(current, costing, data.costing ?? {}) : data.costing ?? {})
-      if (operation === 'separate_choices' || (operation === 'refresh' && !planningDirtyRef.current)) {
+      if (operation === 'separate_choices' || operation === 'bind_customer' ||
+        ((operation === 'save' || operation === 'refresh') && !planningDirtyRef.current)) {
         setPlanning(data.planning)
         setPlanningReset((value) => value + 1)
       }
@@ -203,8 +217,11 @@ export default function CustomerOfferEditor({
               ? 'Statusen uppdaterades.'
               : operation === 'separate_choices'
                 ? 'Valen har flyttats. Grundpriset är oförändrat. Inget har delats eller beställts.'
+                : operation === 'bind_customer'
+                  ? 'Kunden är kopplad. Avtalsutkastet och mottagaren har sparats.'
                 : 'Ändringarna sparades.'
       )
+      return true
     } catch (error) {
       toast.error(error, 'Offerten kunde inte hanteras.')
       // A publication may have committed even when the mail response was lost.
@@ -221,6 +238,7 @@ export default function CustomerOfferEditor({
           /* Keep local draft and retry the same version. */
         }
       }
+      return false
     } finally {
       running.current = false
       setBusy('')
@@ -491,6 +509,10 @@ export default function CustomerOfferEditor({
             <div hidden={!contractView} className="space-y-5">
             <ProjectEditorRow title="Beställare" summary={parties.customers.map((row) => row.name || 'Namn saknas').join(' · ')}
               open={expanded === 'customer'} onToggle={() => setExpanded(expanded === 'customer' ? null : 'customer')}>
+              <ContractCustomerRegistry orgId={workspace.customerLink?.organizationId ?? ''} link={workspace.customerLink} parties={parties}
+                historical={workspace.offers.length > 0}
+                busy={busy === 'bind_customer'} disabled={Boolean(busy) || sourcePending || planningDirty || locked || workspace.offers.length > 0}
+                onBind={(binding, requestId) => action('bind_customer', { binding, requestId })} />
               <ContractCustomerEditor value={parties} onChange={(contractParties) => update({ contractParties })} />
             </ProjectEditorRow>
             <ProjectEditorRow title="Entreprenör" summary={parties.contractor.companyName || 'Företagsuppgifter saknas'}

@@ -42,6 +42,7 @@ type Props = {
   onWorkspaceChange?: (workspace: Workspace) => void
   onBusyChange?: (busy: boolean) => void
   onDirtyChange?: (dirty: boolean) => void
+  customerRefresh?: number
 }
 
 const ITEM_STATUS: Record<ActionCaseItemView['status'], string> = {
@@ -322,7 +323,7 @@ function costActionMessage(name: string, payload: Record<string, unknown>) {
   return ({ send_quote_request: 'Offertförfrågan har skickats.', generate_cost_suggestions: 'Kalkylförslaget är klart för granskning.', apply_cost_suggestions: 'Valda rader lades till i kalkylen.', delete_cost_line: 'Kalkylraden togs bort.' } as Record<string, string>)[name] ?? 'Kalkylraden sparades.'
 }
 
-export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [], caseId, section = 'work', onWorkspaceChange, onBusyChange, onDirtyChange }: Props) {
+export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [], caseId, section = 'work', onWorkspaceChange, onBusyChange, onDirtyChange, customerRefresh = 0 }: Props) {
   const toast = useToast()
   const [createdProjectId, setCreatedProjectId] = useState<string>()
   const [workspace, setWorkspace] = useState(initialWorkspace)
@@ -349,6 +350,27 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     onSaved: (result) => { if (workspaceRef.current) receive(mergeScopeSave(workspaceRef.current, result)) },
     onError: (message) => toast.error(message),
   })
+  useEffect(() => {
+    if (!customerRefresh) return
+    const controller = new AbortController()
+    running.current = true
+    setBusy(true)
+    void (async () => {
+      try {
+        const response = await fetch('/api/action-cases', { signal: controller.signal, cache: 'no-store' })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Projektet kunde inte uppdateras efter kundbytet.')
+        if (!controller.signal.aborted) {
+          workspaceRef.current = result.workspace
+          setWorkspace(result.workspace)
+          onWorkspaceChange?.(result.workspace)
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) toast.error(error, 'Projektet kunde inte uppdateras efter kundbytet. Ladda om sidan.')
+      } finally { if (!controller.signal.aborted) { running.current = false; setBusy(false) } }
+    })()
+    return () => { controller.abort(); running.current = false }
+  }, [customerRefresh, onWorkspaceChange, toast])
   const guarded = busy || uploading || scopeAutosave.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
   useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving) }, [busy, uploading, scopeAutosave.isSaving, onBusyChange])
   useEffect(() => { onDirtyChange?.(guarded) }, [guarded, onDirtyChange])

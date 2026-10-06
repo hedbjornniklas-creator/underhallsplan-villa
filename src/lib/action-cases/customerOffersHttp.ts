@@ -32,6 +32,23 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    CUSTOMER_REGISTRY_SCHEMA: [503, 'Kundkopplingen behöver aktiveras av administratören. Dina ändringar är kvar.'],
+    CUSTOMER_REGISTRY_FORBIDDEN: [403, 'Du saknar behörighet att skapa eller koppla denna kund.'],
+    CUSTOMER_REGISTRY_NOT_FOUND: [404, 'Välj en aktiv privatkund i organisationens kundregister.'],
+    CUSTOMER_REGISTRY_STALE: [409, 'Kunduppgifterna har ändrats. Hämta kundregistret igen innan du kopplar kunden.'],
+    CUSTOMER_REGISTRY_WITHDRAW_FIRST: [409, 'Återkalla det öppna avtalet innan du byter beställare eller mottagare.'],
+    CUSTOMER_REGISTRY_HISTORY_LOCKED: [409, 'Projektet har tidigare avtalsversioner. Ett byte av beställare eller mottagare behöver hanteras som ett nytt uppdrag.'],
+    CUSTOMER_REGISTRY_CONTACT_INVALID: [400, 'Kontrollera beställarens namn, e-post och telefonnummer.'],
+    CUSTOMER_REGISTRY_ADDRESS_INVALID: [400, 'Kundens postadress är för lång för avtalet. Kontrollera adressen i kundregistret.'],
+    CUSTOMER_REGISTRY_FAILED: [500, 'Kunden kunde inte kopplas. Dina ändringar är kvar. Försök igen.'],
+    CUSTOMER_IDENTITY_EXISTS: [409, 'En kund med detta personnummer finns redan. Välj kunden i kundregistret.'],
+    CUSTOMER_IDENTITY_INVALID: [400, 'Kontrollera personnumret eller lämna det tomt.'],
+    CUSTOMER_NAME_REQUIRED: [400, 'Ange beställarens namn, högst 200 tecken.'],
+    CUSTOMER_EMAIL_INVALID: [400, 'Ange en giltig e-postadress.'],
+    CUSTOMER_PHONE_INVALID: [400, 'Kontrollera telefonnumret, högst 50 tecken.'],
+    CUSTOMER_ADDRESS_INVALID: [400, 'Kontrollera postadressen.'],
+    CUSTOMER_POSTAL_CODE_INVALID: [400, 'Kontrollera postnumret.'],
+    CUSTOMER_CITY_INVALID: [400, 'Kontrollera orten.'],
     PROJECT_SCHEDULE_SCHEMA: [503, 'Tidsplaneringen behöver aktiveras av administratören.'],
     PROJECT_SCHEDULE_INVALID: [400, 'Kontrollera momentens rubriker och datum. Slutdatum får inte ligga före startdatum.'],
     PROJECT_SCHEDULE_NOT_FOUND: [404, 'Projektet kunde inte hittas.'],

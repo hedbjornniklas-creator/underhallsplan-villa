@@ -81,7 +81,8 @@ function harness(options = {}) {
             action_cases: {
               id: id(1),
               title: 'Project',
-              property_address: 'Address'
+              property_address: 'Address',
+              ...(options.customerRegistry ? { organization_customer_id: null } : {})
             },
             action_case_customer_offer_drafts: { body: draft, revision: 1, internal_costing: options.costing ?? {} },
             action_case_customer_planning: options.planning ?? null,
@@ -217,6 +218,7 @@ function harness(options = {}) {
     './customerOffers': domain,
     './customerOfferCosting': costingDomain,
     './customerPlanning': planningDomain,
+    './customerRegistryServer': { async writeContractCustomer(ctx, caseId, payload, bind) { calls.push({ name: 'writeContractCustomer', ctx, caseId, payload, bind }) } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/tokens': {
       generateAssignmentToken: () => token,
@@ -293,6 +295,27 @@ test('structured parties are stored internally, checked before delivery and proj
   assert.equal(JSON.stringify(h.sent).includes('19000101'), false)
   const shared = await h.api.getSharedCustomerOffers(h.link, h.participant)
   assert.equal(shared.offers[0].snapshot.contractParties.customers[0].personalNumber, '')
+})
+
+test('migrated contract saves use the atomic customer writer and recipient mismatch never emails or copies files', async () => {
+  const h = harness({ customerRegistry: true }), ctx = { orgId: id(90), userId: id(91) }
+  h.draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test')
+  Object.assign(h.draft.contractParties, { street: 'Gatan 1', postalCode: '12345', city: 'Ort' })
+  Object.assign(h.draft.contractParties.contractor, { companyName: 'Bygg AB', organizationNumber: '556000-0000',
+    street: 'Bygggatan 2', postalCode: '12345', city: 'Ort', email: 'bygg@example.test', fTax: 'yes' })
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, costing: {} })
+  assert.ok(h.calls.some(call => call.name === 'writeContractCustomer'))
+  const read = await h.api.getCustomerOfferWorkspace(ctx, id(1))
+  assert.equal(read.customerLink.available, true)
+  assert.equal(read.recipient.email, h.participant.email)
+  assert.equal(read.customerLink.organizationId, ctx.orgId)
+  h.draft.contractParties.email = 'different@example.test'
+  await assert.rejects(h.run(), /CUSTOMER_OFFER_RECIPIENT/)
+  h.draft.contractParties.email = h.participant.email
+  h.draft.contractParties.customers[0].name = 'Other Person'
+  await assert.rejects(h.run(), /CUSTOMER_OFFER_RECIPIENT/)
+  assert.equal(h.sent.length, 0)
+  assert.equal(h.copies.length, 0)
 })
 
 test('payment plans require schema protection before save or publication and freeze into public versions', async () => {

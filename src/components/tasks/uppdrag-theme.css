@@ -146,6 +146,7 @@
 .uppdrag-scope :is(button, a):disabled { cursor: not-allowed; }
 .uppdrag-scope button[aria-busy='true'] { cursor: wait; }
 .uppdrag-scope button > svg { flex-shrink: 0; }
+.uppdrag-scope .gizmo-customer-mode[aria-pressed='true'] { background: var(--uppdrag-selected); border-color: var(--uppdrag-accent); color: var(--uppdrag-ink); }
 .uppdrag-scope :is(.shadow-sm, .shadow-lg, .shadow-xl) { box-shadow: none; }
 .uppdrag-scope :is(a, button).text-white:is(.bg-amber-700, .bg-violet-700, .bg-indigo-700, .bg-blue-700) { background: var(--uppdrag-ink); color: white; }
 .uppdrag-scope :is(a, button).text-white:is(.bg-amber-700, .bg-violet-700, .bg-indigo-700, .bg-blue-700):hover:not(:disabled) { background: var(--uppdrag-hover); }

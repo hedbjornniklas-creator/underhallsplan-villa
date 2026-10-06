@@ -446,6 +446,39 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 
 ## Beslutslogg
 
+- Verifiering 2026-10-06 av kundkoppling: 246 action-case-tester, 15 gemensamma
+  kundregistertester och 47 tester for uppdragskund/TU passerar. Riktad ESLint
+  och typkontroll passerar. PGlite provar migrationen tva ganger, atomiska
+  skrivningar, dublettskydd, tenant-/roll-/revisionsskydd och aterkallade
+  delningar. CUA-klicktest med fiktiv lokal backend provar befintlig/ny kund,
+  medbestallare, mottagarbyte, sparfel/aterforsok, omladdning, filvy och
+  bevarad intern men aterkallad delad tidsplan. Mobil 390 px utan
+  sidledsoverflow. Inga riktiga kunddata, mejl eller avtal andrades.
+  Migrationen ar inte kord i produktion i detta utvecklingssteg.
+
+- 2026-10-06: Bestallare i Avtal ska anvanda HusHubs gemensamma kundregister,
+  inte ett separat Gizmo-register. TU:s uttryckliga val/skapa och idempotenta
+  kundkoppling ar forlagan. Befintlig privatkund hamtas genom samma API som
+  Installningar; kundnummer, organisation och validering ateranvands. OB/EB
+  har inte denna registerkoppling i den granskade koden. Forsta leveransen
+  kopplar bestallare 1; en medbestallare bevaras som avtalsuppgift, inte som
+  ytterligare registrerad kund eller sjalvstandig signatar.
+  Att skriva ett namn skapar ingen kund. Anvandaren valjer uttryckligen Hamta
+  och koppla kund eller Skapa och koppla kund. Skapande kraver samma
+  kundregisterbehorighet som Installningar; lasare kan valja men far inte
+  hamta kundregistrets personnummer. TU:s bredare skaparbehorighet andras inte.
+  Ny kund, projektmottagare och avtalsutkast sparas i en transaktion med
+  revisionskontroll och aterforsoksskydd. Vanliga avtalsandringar uppdaterar
+  mottagaren efter sparning, aldrig kundregistret eller andra uppdrag.
+  Byte av bestallare aterkallar gamla kundlankar/fildelningar och rensar
+  delad planering/tidsplan, men behaller internt underlag. Projekt med
+  publicerade avtalsversioner tillater inte kundbyte: gamla dokument ska inte
+  kunna arvas av en annan person. Accepterade avtal forblir lasta.
+  Registerkoppling finns inte automatiskt for gamla projekt; ingen namn- eller
+  e-postmatchning kor som backfill. Ny migration:
+  `docs/db/2026-10-06_01_action_case_organization_customer.sql`.
+  Lokal kunddemo: `scripts/test-customer-offer-ui.mjs --serve --customer-registry`.
+
 - 2026-10-06: Valfria Forutsattningar laggs mellan Arbetets omfattning och
   Ingar inte. Eget textfalt med samma bakgrundssparning, versionskontroll och
   6000-teckengrans som ovriga omfattningsnoteringar. Foljer med vid uttrycklig
