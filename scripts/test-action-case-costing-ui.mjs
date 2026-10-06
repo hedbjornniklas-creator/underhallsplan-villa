@@ -190,7 +190,7 @@ try {
     await click('Öppna åtgärd')
     await page.waitForSelector('input[name=scopeAttachment]')
     assert.equal(await page.$$eval('input[name=scopeAttachment]:checked', (nodes) => nodes.length), 2)
-    await click('Gå till kalkyl'); await click('Föreslå kalkyl med AI')
+    await click('Kalkyl'); await click('Föreslå kalkyl med AI')
     await page.waitForFunction(() => document.body.textContent.includes('AI-förslag att granska'))
     await click('Omfattning')
     await page.click('input[name=scopeAttachment][value$="000000000008"]')
@@ -201,7 +201,7 @@ try {
   await page.click('input[name=scopeAttachment]'); await click('Spara och gå till kalkyl')
   await page.waitForFunction(() => document.body.textContent.includes('Filvalet kunde inte sparas.'))
   assert.equal(await page.$eval('input[name=scopeAttachment]', (node) => node.checked), true, 'Failed saves preserve selection')
-  assert.equal(await page.$$eval('[role=dialog] button[aria-pressed=true]', (nodes) => nodes[0].textContent), 'Omfattning')
+  assert.equal(await page.$$eval('[role=dialog] [role=tab][aria-selected=true]', (nodes) => nodes[0].textContent), 'Omfattning')
 
   for (const width of [1440, 390]) {
     start('scope-request', width)
@@ -297,7 +297,7 @@ try {
     start('direct-work-parts-bulk', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(`${url}/?work=1&bulkFail=1`, { waitUntil: 'networkidle0' })
-    await click('Gå till kalkyl')
+    await click('Kalkyl')
     const workCheckbox = (description) => `input[type=checkbox][aria-label="Välj ${description}"]`
     const hours = '[aria-label="Timmar för Montering"]'
     const rate = '[aria-label="Timkostnad för Montering"]'
@@ -401,7 +401,7 @@ try {
     start('mixed-cost-selection', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(`${url}/?work=1&allCosts=1`, { waitUntil: 'networkidle0' })
-    await click('Gå till kalkyl')
+    await click('Kalkyl')
     const selection = 'input[name=costLineSelection]'
     const selected = () => page.$$eval(`${selection}:checked`, (nodes) => nodes.map((node) => Number(node.value.slice(-3))).sort((a, b) => a - b))
     const offer = () => page.$eval('[role=dialog] footer', (node) => [...node.querySelectorAll('button')].filter((button) => button.textContent.startsWith('Begär offert för valda')).map((button) => ({ text: button.textContent, disabled: button.disabled })))
@@ -453,7 +453,7 @@ try {
 
     start('material-only-selection', width)
     await page.goto(`${url}/?work=1&allCosts=1`, { waitUntil: 'networkidle0' })
-    await click('Gå till kalkyl')
+    await click('Kalkyl')
     await checkLabel('Välj allt material')
     await click('Begär offert för valda (2)')
     await page.waitForSelector('#group-request-form')
@@ -466,7 +466,7 @@ try {
 
     start('selection-limit-and-delete', width)
     await page.goto(`${url}/?work=1&manyLines=1`, { waitUntil: 'networkidle0' })
-    await click('Gå till kalkyl')
+    await click('Kalkyl')
     await checkLabel('Välj allt material')
     assert.equal((await offer())[0].disabled, true)
     assert.match(await page.$eval('[role=dialog] footer', (node) => node.textContent), /32 valda. Välj högst 30 kalkylrader/)
@@ -482,7 +482,7 @@ try {
     start('costing', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(url, { waitUntil: 'networkidle0' })
-    await click('Gå till kalkyl')
+    await click('Kalkyl')
     await click('Föreslå kalkyl med AI')
     await page.waitForFunction(() => document.body.textContent.includes('AI bearbetar omfattningen'))
     await page.waitForFunction(() => document.body.textContent.includes('AI-förslag att granska'))
@@ -510,7 +510,7 @@ try {
     start('quotes', width)
     await page.setViewport({ width, height: 900 })
     await page.goto(`${url}/?quotes=1`, { waitUntil: 'networkidle0' })
-    await click('Gå till kalkyl'); await click('Prisunderlag för raden'); await click('Offerter (0)')
+    await click('Kalkyl'); await click('Prisunderlag för raden'); await click('Offerter (0)')
     await page.waitForFunction(() => document.body.textContent.includes('Registrera offert'))
     await click('Registrera offert')
     await page.locator('input[name=supplierName]').fill('Byggföretaget med ett långt företagsnamn AB')
@@ -841,7 +841,7 @@ try {
   assert.equal(await page.$eval('[role=alert]', (node) => { const box = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(box.x + 10, box.y + 10)) }), true, 'Shared error toast is above grouped request')
   assert.equal(await page.$eval('input[name=supplierEmail]', (n) => n.value), 'ue@example.test', 'Failed save retains form')
   await page.goto(`${url}/?fail=1`, { waitUntil: 'networkidle0' })
-  await click('Gå till kalkyl'); await click('Föreslå kalkyl med AI')
+  await click('Kalkyl'); await click('Föreslå kalkyl med AI')
   await page.waitForSelector('[role=alert]')
   assert.equal(await page.$eval('[role=alert]', (node) => { const box = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(box.x + 10, box.y + 10)) }), true, 'Shared error toast is above the sheet')
   assert.equal(await page.$('[role=dialog] form'), null)

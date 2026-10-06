@@ -31,6 +31,22 @@ test('schedule allows incomplete private dates and custom project phases', () =>
   assert.equal(normalizeScheduleRows([{ ...row, title: '' }]).length, 1)
   assert.throws(() => normalizeScheduleRows([{ ...row, title: '' }], true))
 })
+
+test('conditions import independently, can be explicitly cleared, and preserve other customer edits', () => {
+  const source = { id: id(1), title: 'Grund', scope: 'Arbete', scopeConditionsAvailable: true, scopeConditions: 'Fri tillgång till arbetsområdet', costLines: [] }
+  const imported = importOfferItems([], [source], false)[0]
+  assert.equal(imported.scopeConditions, source.scopeConditions)
+  const edited = { ...imported, scope: 'Kundens text', amountOre: 12345, scopeAdvice: 'Behåll denna' }
+  const changed = { ...source, scopeConditions: '' }
+  assert.equal(scopeNotesDiffer(changed, edited), true)
+  const result = importOfferItems([edited], [changed], true)[0]
+  assert.equal(result.scopeConditions, '')
+  assert.equal(result.scope, edited.scope)
+  assert.equal(result.amountOre, edited.amountOre)
+  assert.equal(result.scopeAdvice, edited.scopeAdvice)
+  assert.deepEqual(importOfferItems([edited], [{ ...changed, scopeConditionsAvailable: false }], true), [edited])
+  assert.equal('scopeConditions' in importOfferItems([], [{ ...source, scopeConditionsAvailable: false }], false)[0], false)
+})
 test('schedule rejects duplicate IDs, foreign shapes, invalid dates and excessive payloads', () => {
   for (const input of [[row, row], [{}], [null], Array(201).fill(row), [{ ...row, status: 'constructor' }], [{ ...row, endDate: '2026-12-01' }], [{ ...row, startDate: '2027-02-29' }], [{ ...row, startDate: '2027-13-01' }], [{ ...row, sourceItemId: 'other-project' }]]) assert.throws(() => normalizeScheduleRows(input))
   assert.throws(() => normalizeScheduleRows([{ ...row, sourceItemId: id(3) }, { ...row, id: id(2), sourceItemId: id(3) }]))

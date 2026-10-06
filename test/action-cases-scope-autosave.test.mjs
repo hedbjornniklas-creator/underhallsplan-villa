@@ -4,17 +4,20 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { actionScopeDraft, scopeDraftFingerprint, scopeSavePayload, mergeScopeSave } from '../src/lib/action-cases/scopeDraft.ts'
 
-const item = { id: 'a', title: 'Grund', scope: 'Arbete', scopeNotesAvailable: true, scopeExclusions: '', scopeAdvice: '', scopeAttachmentIds: ['photo'], updatedAt: 'v1', costLines: [{ id: 'cost' }], workParts: [{ id: 'part' }], costSuggestion: { id: 'suggestion' } }
+const item = { id: 'a', title: 'Grund', scope: 'Arbete', scopeConditionsAvailable: true, scopeConditions: '', scopeNotesAvailable: true, scopeExclusions: '', scopeAdvice: '', scopeAttachmentIds: ['photo'], updatedAt: 'v1', costLines: [{ id: 'cost' }], workParts: [{ id: 'part' }], costSuggestion: { id: 'suggestion' } }
 test('scope snapshots include the notes and selected files, without pricing or approval fields', () => {
   const draft = actionScopeDraft(item)
-  assert.deepEqual(draft, { title: 'Grund', scope: 'Arbete', scopeExclusions: '', scopeAdvice: '', scopeAttachmentIds: ['photo'] })
+  assert.deepEqual(draft, { title: 'Grund', scope: 'Arbete', scopeConditions: '', scopeExclusions: '', scopeAdvice: '', scopeAttachmentIds: ['photo'] })
+  const legacy = actionScopeDraft({ ...item, scopeConditionsAvailable: false })
+  assert.equal('scopeConditions' in legacy, false)
+  assert.equal('scopeAdvice' in legacy, true)
   assert.equal('scopeAdvice' in actionScopeDraft({ ...item, scopeNotesAvailable: false }), false)
   assert.deepEqual(actionScopeDraft(item, ['legacy']).scopeAttachmentIds, ['legacy'])
 })
 test('fingerprints ignore normalized whitespace and selection order but not content changes', () => {
   const draft = actionScopeDraft(item, ['a', 'b'])
   assert.equal(scopeDraftFingerprint(draft), scopeDraftFingerprint({ ...draft, title: ' Grund ', scopeAttachmentIds: ['b', 'a', 'a'] }))
-  for (const patch of [{ scope: 'Nyare text' }, { scopeAdvice: 'Avrådan' }, { scopeExclusions: 'Undantag' }, { scopeAttachmentIds: [] }]) {
+  for (const patch of [{ scope: 'Nyare text' }, { scopeConditions: 'Fri tillgång' }, { scopeAdvice: 'Avrådan' }, { scopeExclusions: 'Undantag' }, { scopeAttachmentIds: [] }]) {
     assert.notEqual(scopeDraftFingerprint(draft), scopeDraftFingerprint({ ...draft, ...patch }))
   }
 })
@@ -47,8 +50,8 @@ test('the drawer reuses the parent-owned autosave queue and never waits before o
   assert.match(hook, /useAutosaveQueue/)
   assert.match(hook, /scopeDraftFingerprint\(current.draft\) === scopeDraftFingerprint\(submitted.draft\)/)
   assert.match(hook, /expectedUpdatedAt: result.item.updatedAt/)
-  assert.match(sheet, /onScopeFlush\(\); setTab\('cost'\)/)
-  assert.doesNotMatch(sheet, /Spara och gå till kalkyl/)
+  assert.match(sheet, /onScopeFlush\(\); setTab\(next\)/)
+  assert.doesNotMatch(sheet, /Gå till kalkyl|Spara och gå till kalkyl/)
   assert.match(api, /if \(action === 'save_item_scope'\) return NextResponse.json\(await saveActionCaseScope\(ctx, scopeSavePayload\(payload\)\)\)/)
 })
 
@@ -118,13 +121,14 @@ test('real queue coalesces typing and serializes different actions with the late
 test('failed saves retain newer text, stop automatic replay and retry using the original version', async () => {
   const h = autosaveHarness(), draft = actionScopeDraft(item)
   h.api.change('a', 'v1', draft); h.api.flush('a')
-  h.api.change('a', 'v1', { ...draft, scopeAdvice: 'Ny avrådan' }); h.api.flush('a')
+  h.api.change('a', 'v1', { ...draft, scopeAdvice: 'Ny avrådan', scopeConditions: 'Fri tillgång till arbetsområdet' }); h.api.flush('a')
   await h.reply(0, null, 'Tillfälligt fel')
   assert.equal(h.states().a.status, 'error'); assert.equal(h.states().a.draft.scopeAdvice, 'Ny avrådan')
   assert.equal(h.requests.length, 1); assert.equal(h.saved.length, 0)
   h.api.retry('a')
   assert.equal(h.requests[1].body.payload.expectedUpdatedAt, 'v1')
   assert.equal(h.requests[1].body.payload.scopeAdvice, 'Ny avrådan')
+  assert.equal(h.requests[1].body.payload.scopeConditions, 'Fri tillgång till arbetsområdet')
   await h.reply(1, 'v2')
   assert.equal(h.states().a.status, 'saved'); h.dispose()
 })

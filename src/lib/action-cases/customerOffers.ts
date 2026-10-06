@@ -8,6 +8,7 @@ export type CustomerOfferItem = {
   id: string
   title: string
   scope: string
+  scopeConditions?: string
   scopeExclusions?: string
   scopeAdvice?: string
   kind: 'included' | 'option' | 'excluded'
@@ -117,6 +118,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
       id: offerId(i.id),
       title: text(i.title, 250),
       scope: text(i.scope, 12000),
+      ...(i.scopeConditions === undefined ? {} : { scopeConditions: text(i.scopeConditions, 6000) }),
       ...(i.scopeExclusions === undefined ? {} : { scopeExclusions: text(i.scopeExclusions, 6000) }),
       ...(i.scopeAdvice === undefined ? {} : { scopeAdvice: text(i.scopeAdvice, 6000) }),
       kind: i.kind as CustomerOfferItem['kind'],

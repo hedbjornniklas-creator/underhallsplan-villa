@@ -361,6 +361,21 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 
 ## Beslutslogg
 
+- 2026-10-06: Valfria Forutsattningar laggs mellan Arbetets omfattning och
+  Ingar inte. Eget textfalt med samma bakgrundssparning, versionskontroll och
+  6000-teckengrans som ovriga omfattningsnoteringar. Foljer med vid uttrycklig
+  hamtning till offertutkast och som kallunderlag i AI-kalkylen, aldrig som
+  systeminstruktion. Andring kraver ny kontroll av samlat pris. Publicerade och
+  accepterade avtal skrivs inte om. Migration:
+  `docs/db/2026-10-06_01_action_case_scope_conditions.sql`.
+
+- 2026-10-06: Omfattning och Kalkyl visas som registerflikar i atgardens
+  sidofonster. Den dubblerade knappen Ga till kalkyl tas bort. Klick pa bakgrunden,
+  kryss och Escape anvander samma stangningskontroll. Sparning av omfattning
+  fortsatter i projektarbetsytan efter stangning; osparade kalkylpriser kraver
+  fortfarande bekraftelse och pagaende kalkylmutationer blockerar stangning.
+  Musdrag som borjar inne i fonstret stanger det inte vid slapp utanfor.
+
 - 2026-10-05: Omfattning i atgardens sidofonster sparas automatiskt efter
   700 ms skrivpaus med befintliga `useAutosaveQueue`. Rubrik, omfattning,
   avgransningar, avradan och filval ingar. Kon ags av projektarbetsytan sa

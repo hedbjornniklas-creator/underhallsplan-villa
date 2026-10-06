@@ -507,7 +507,7 @@ export default function CustomerOfferEditor({
                   const existing = draft.items.find((d) => d.id === i.id), price = importableCustomerPrice(i)
                   const notesChanged = existing && scopeNotesDiffer(i, existing)
                   const disabled = Boolean(existing && !notesChanged)
-                  return <label key={i.id} className="flex min-h-11 flex-wrap items-center gap-3 py-2 text-sm"><input type="checkbox" disabled={disabled} checked={importIds.includes(i.id) && !disabled} onChange={(e) => setImportIds(e.target.checked ? [...importIds, i.id] : importIds.filter((id) => id !== i.id))} /><span className="min-w-0 flex-1">{i.title}</span><span className="text-slate-600">{notesChanged ? 'Ersätt Ingår inte och Avrådan' : existing ? 'Redan i utkastet' : price === null ? 'Inget kontrollerat kundpris' : money(price)}</span></label>
+                  return <label key={i.id} className="flex min-h-11 flex-wrap items-center gap-3 py-2 text-sm"><input type="checkbox" disabled={disabled} checked={importIds.includes(i.id) && !disabled} onChange={(e) => setImportIds(e.target.checked ? [...importIds, i.id] : importIds.filter((id) => id !== i.id))} /><span className="min-w-0 flex-1">{i.title}</span><span className="text-slate-600">{notesChanged ? 'Ersätt Förutsättningar, Ingår inte och Avrådan' : existing ? 'Redan i utkastet' : price === null ? 'Inget kontrollerat kundpris' : money(price)}</span></label>
                 })}
                 {draft.pricingMode === 'itemized' && <label className="my-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={importPrices} onChange={(e) => setImportPrices(e.target.checked)} />Hämta kontrollerade kundpriser inklusive moms</label>}
                 <button className={button} disabled={!actionCase.items.some((i) => importIds.includes(i.id) && (!draft.items.some((d) => d.id === i.id) || draft.items.some((d) => d.id === i.id && scopeNotesDiffer(i, d))))} onClick={() => {
@@ -650,9 +650,9 @@ export default function CustomerOfferEditor({
                       }
                     />
                   </label>
-                  {(['scopeExclusions', 'scopeAdvice'] as const).map((key) => item[key] !== undefined && (
+                  {([['scopeConditions', 'Förutsättningar'], ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, label]) => item[key] !== undefined && (
                     <label key={key} className="mt-3 block text-sm">
-                      {key === 'scopeExclusions' ? 'Ingår inte (valfritt)' : 'Avrådan (valfritt)'}
+                      {label} (valfritt)
                       <textarea className={field} rows={3} maxLength={6000} value={item[key]} onChange={(e) => update({ items: draft.items.map((i) => i.id === item.id ? { ...i, [key]: e.target.value } : i) })} />
                     </label>
                   ))}

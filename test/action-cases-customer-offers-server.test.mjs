@@ -154,6 +154,8 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (name === 'assert_customer_offer_scope_conditions' && options.conditionsMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_payment_plan' && options.paymentPlanMissing)
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_contract' && options.contractMissing)
@@ -527,6 +529,27 @@ test('new contract details require their database guard while old drafts still s
   assert.equal(h.calls.length, 1)
   await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft })
   assert.equal(h.calls.at(-1).p_operation, 'save')
+})
+
+test('conditions survive public projection and require schema protection before writes or delivery', async () => {
+  const ctx = { orgId: id(90), userId: id(91) }, h = harness()
+  h.draft.items[0].scopeConditions = 'Fri tillgång till arbetsområdet'
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft })
+  assert.ok(h.calls.some((c) => c.name === 'assert_customer_offer_scope_conditions'))
+  assert.equal(h.calls.find((c) => c.p_operation === 'save').p_data.body.items[0].scopeConditions, h.draft.items[0].scopeConditions)
+  await h.run()
+  const shared = await h.api.getSharedCustomerOffers(h.link, h.participant)
+  assert.equal(shared.offers[0].snapshot.items[0].scopeConditions, h.draft.items[0].scopeConditions)
+  const missing = harness({ conditionsMissing: true })
+  missing.draft.items[0].scopeConditions = ''
+  await assert.rejects(missing.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: missing.draft }), /SCHEMA/)
+  await assert.rejects(missing.run(), /SCHEMA/)
+  assert.equal(missing.sent.length, 0)
+  assert.equal(missing.copies.length, 0)
+  assert.equal(missing.calls.some((c) => c.p_operation === 'save'), false)
+  delete missing.draft.items[0].scopeConditions
+  await missing.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: missing.draft })
+  assert.equal(missing.calls.at(-1).p_operation, 'save')
 })
 
 test('main publication stops before files or email if draft still contains choices', async () => {

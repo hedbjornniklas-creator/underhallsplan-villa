@@ -145,6 +145,10 @@ export async function separateCustomerChoices(ctx: Context, caseId: string, payl
   checked(result.error)
 }
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+  if (draft.items.some((i) => i.scopeConditions !== undefined)) {
+    const guard = await createSupabaseAdminClient().rpc('assert_customer_offer_scope_conditions', { p_body: draft })
+    checked(guard.error)
+  }
   if (draft.items.some((i) => i.scopeExclusions !== undefined || i.scopeAdvice !== undefined)) {
     const guard = await createSupabaseAdminClient().rpc('assert_customer_offer_scope_notes', { p_body: draft, p_complete: complete })
     checked(guard.error)

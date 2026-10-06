@@ -68,6 +68,8 @@ async function requireCase(context: Context, caseId: string) {
 
 function mapItem(row: Record<string, unknown>, costLines: ActionCaseCostLineView[] = []): ActionCaseItemView {
   return {
+    scopeConditionsAvailable: 'scope_conditions' in row,
+    scopeConditions: text(row.scope_conditions),
     scopeNotesAvailable: 'scope_exclusions' in row && 'scope_advice' in row,
     scopeExclusions: text(row.scope_exclusions),
     scopeAdvice: text(row.scope_advice),
@@ -739,14 +741,14 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
   }
   if ('title' in payload) patch.title = text(payload.title)
   if ('scope' in payload) patch.scope = nullableText(payload.scope)
-  for (const [input, column] of [['scopeExclusions', 'scope_exclusions'], ['scopeAdvice', 'scope_advice']] as const) {
+  for (const [input, column] of [['scopeConditions', 'scope_conditions'], ['scopeExclusions', 'scope_exclusions'], ['scopeAdvice', 'scope_advice']] as const) {
     if (!(input in payload)) continue
     if (!(column in existing)) throw new Error('ACTION_CASES_SCHEMA_REQUIRED')
     if (!payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
     if (typeof payload[input] !== 'string' || payload[input].length > 6000) throw new Error('ACTION_CASE_SCOPE_NOTES_INVALID')
     patch[column] = text(payload[input])
   }
-  if (existing.lump_sum && patch.lump_sum !== null && ['scope', 'title', 'scope_exclusions', 'scope_advice'].some((column) => patch[column] !== undefined && patch[column] !== existing[column])) {
+  if (existing.lump_sum && patch.lump_sum !== null && ['scope', 'title', 'scope_conditions', 'scope_exclusions', 'scope_advice'].some((column) => patch[column] !== undefined && patch[column] !== existing[column])) {
     patch.lump_sum = { ...normalizeLumpSum(patch.lump_sum ?? existing.lump_sum), verified: false }
   }
   if ('scopeAttachmentIds' in payload) {
@@ -812,6 +814,7 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
     caseId: String(existing.action_case_id),
     item: {
       id: saved.id, title: saved.title, scope: saved.scope, scopeAttachmentIds: saved.scopeAttachmentIds,
+      scopeConditions: saved.scopeConditions,
       scopeExclusions: saved.scopeExclusions, scopeAdvice: saved.scopeAdvice, updatedAt: saved.updatedAt,
       status: saved.status, lumpSum: saved.lumpSum, ownLaborReady: saved.ownLaborReady,
       materialPriceReady: saved.materialPriceReady, subcontractorPriceReady: saved.subcontractorPriceReady,

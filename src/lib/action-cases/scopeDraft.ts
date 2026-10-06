@@ -4,18 +4,20 @@ export type ActionScopeDraft = {
   title: string
   scope: string
   scopeAttachmentIds: string[]
+  scopeConditions?: string
   scopeExclusions?: string
   scopeAdvice?: string
 }
 
 export type ActionScopeSaveResult = {
-  item: Pick<ActionCaseItemView, 'id' | 'title' | 'scope' | 'scopeAttachmentIds' | 'scopeExclusions' | 'scopeAdvice' | 'updatedAt' | 'status' | 'lumpSum' | 'ownLaborReady' | 'materialPriceReady' | 'subcontractorPriceReady' | 'wasteSolutionReady' | 'requiresSubcontractor'>
+  item: Pick<ActionCaseItemView, 'id' | 'title' | 'scope' | 'scopeAttachmentIds' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'updatedAt' | 'status' | 'lumpSum' | 'ownLaborReady' | 'materialPriceReady' | 'subcontractorPriceReady' | 'wasteSolutionReady' | 'requiresSubcontractor'>
   caseStatus: 'quote_ready' | 'pricing'
 }
 
 export function actionScopeDraft(item: ActionCaseItemView, attachmentIds: string[] = item.scopeAttachmentIds ?? []): ActionScopeDraft {
   return {
     title: item.title, scope: item.scope ?? '', scopeAttachmentIds: attachmentIds,
+    ...(item.scopeConditionsAvailable ? { scopeConditions: item.scopeConditions ?? '' } : {}),
     ...(item.scopeNotesAvailable ? { scopeExclusions: item.scopeExclusions ?? '', scopeAdvice: item.scopeAdvice ?? '' } : {}),
   }
 }
@@ -24,6 +26,7 @@ export function scopeDraftFingerprint(draft: ActionScopeDraft) {
   return JSON.stringify({
     title: draft.title.trim(), scope: draft.scope.trim(),
     scopeAttachmentIds: [...new Set(draft.scopeAttachmentIds)].sort(),
+    scopeConditions: draft.scopeConditions?.trim(),
     scopeExclusions: draft.scopeExclusions?.trim(), scopeAdvice: draft.scopeAdvice?.trim(),
   })
 }
@@ -34,6 +37,7 @@ export function scopeSavePayload(input: Record<string, unknown>) {
   return {
     itemId: input.itemId, expectedUpdatedAt: input.expectedUpdatedAt,
     title: input.title, scope: input.scope, scopeAttachmentIds: input.scopeAttachmentIds,
+    ...('scopeConditions' in input ? { scopeConditions: input.scopeConditions } : {}),
     ...('scopeExclusions' in input ? { scopeExclusions: input.scopeExclusions } : {}),
     ...('scopeAdvice' in input ? { scopeAdvice: input.scopeAdvice } : {}),
   }

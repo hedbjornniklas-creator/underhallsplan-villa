@@ -97,7 +97,7 @@ test('item API persists text and files atomically, with case/org scoping and opt
   const code = ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/server.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   function harness({ missingFile = false, stale = false, migrated = true, existingLump = null, status = 'pricing_needed' } = {}) {
     const reads = [], writes = []
-    const existing = { id: id(20), org_id: id(1), action_case_id: id(10), title: 'Before', scope: 'Before', status, ...(migrated ? { scope_attachment_ids: null, lump_sum: existingLump, scope_exclusions: '', scope_advice: '' } : {}) }
+    const existing = { id: id(20), org_id: id(1), action_case_id: id(10), title: 'Before', scope: 'Before', status, ...(migrated ? { scope_attachment_ids: null, lump_sum: existingLump, scope_conditions: '', scope_exclusions: '', scope_advice: '' } : {}) }
     const admin = { from(table) {
       const read = { table, filters: [] }; reads.push(read)
       let operation = 'read'
@@ -123,12 +123,16 @@ test('item API persists text and files atomically, with case/org scoping and opt
   const update = h.writes.find((write) => write.table === 'action_case_items')
   assert.equal(update.patch.title, 'Updated'); assert.equal(update.patch.scope, 'Changed')
   assert.equal('scope_advice' in update.patch, false)
-  const notes = harness(); await notes.save({ scopeExclusions: '  Sprängning  ', scopeAdvice: 'Avrådan' })
+  const notes = harness(); await notes.save({ scopeConditions: '  Fri tillgång  ', scopeExclusions: '  Sprängning  ', scopeAdvice: 'Avrådan' })
+  assert.equal(notes.writes[0].patch.scope_conditions, 'Fri tillgång')
+  assert.equal('scope_conditions' in update.patch, false)
   assert.equal(notes.writes[0].patch.scope_exclusions, 'Sprängning'); assert.equal(notes.writes[0].patch.scope_advice, 'Avrådan')
-  for (const patch of [{ scopeAdvice: null }, { scopeExclusions: 3 }, { scopeAdvice: 'x'.repeat(6001) }]) {
+  for (const patch of [{ scopeConditions: null }, { scopeConditions: 3 }, { scopeConditions: 'x'.repeat(6001) }, { scopeAdvice: null }, { scopeExclusions: 3 }, { scopeAdvice: 'x'.repeat(6001) }]) {
     const invalid = harness(); await assert.rejects(invalid.save(patch), /SCOPE_NOTES_INVALID/); assert.equal(invalid.writes.length, 0)
   }
   await assert.rejects(harness({ migrated: false }).save({ scopeAdvice: '' }), /SCHEMA_REQUIRED/)
+  await assert.rejects(harness({ migrated: false }).save({ scopeConditions: '' }), /SCHEMA_REQUIRED/)
+  await assert.rejects(harness().save({ scopeConditions: '', expectedUpdatedAt: undefined }), /ITEM_STALE/)
   await assert.rejects(harness().save({ scopeAdvice: '', expectedUpdatedAt: undefined }), /ITEM_STALE/)
   assert.deepEqual(update.patch.scope_attachment_ids, [id(30)])
   assert.ok(update.filters.some(([key, value]) => key === 'updated_at' && value === 'v1'))
@@ -145,6 +149,8 @@ test('item API persists text and files atomically, with case/org scoping and opt
   assert.equal(changedScope.writes[0].patch.lump_sum.verified, false)
   const changedAdvice = harness({ existingLump: price }); await changedAdvice.save({ title: 'Before', scope: 'Before', scopeAdvice: 'Ny avrådan' })
   assert.equal(changedAdvice.writes[0].patch.lump_sum.verified, false)
+  const changedConditions = harness({ existingLump: price }); await changedConditions.save({ title: 'Before', scope: 'Before', scopeConditions: 'Ny förutsättning' })
+  assert.equal(changedConditions.writes[0].patch.lump_sum.verified, false)
   const restoredDetails = harness({ existingLump: price }); await restoredDetails.save({ lumpSum: null })
   assert.equal(restoredDetails.writes[0].patch.lump_sum, null)
   await assert.rejects(harness({ status: 'completed' }).save({ lumpSum: price }), /ITEM_UPDATE_FAILED/)

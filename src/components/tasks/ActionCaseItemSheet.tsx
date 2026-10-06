@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowRight, Check, Hammer, Loader2, Mail, Package, Pencil, Plus, Save, Sparkles, Trash2, Truck, X } from 'lucide-react'
+import { Calculator, Check, ClipboardList, Hammer, Loader2, Mail, Package, Pencil, Plus, Save, Sparkles, Trash2, Truck, X } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseCostSuggestion, ActionCaseItemView, ActionCaseView } from '@/lib/action-cases/contracts'
 import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '@/lib/action-cases/domain'
 import { normalizeCostLine } from '@/lib/action-cases/costing'
@@ -118,11 +118,13 @@ function Proposal({ proposal, stale, busy, onApply }: {
 
 export default function ActionCaseItemSheet({ item, caseId, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
+  const backdropPress = useRef(false)
+  const tabId = useId()
   const deleteConfirmation = useRef<HTMLElement>(null)
   const inFlight = useRef(false)
   const [tab, setTab] = useState<'scope' | 'cost'>(initialCostLineId ? 'cost' : 'scope')
   const draft = scopeSave?.draft ?? actionScopeDraft(item, scopeAttachmentIds(item, attachments))
-  const { title, scope, scopeExclusions = '', scopeAdvice = '', scopeAttachmentIds: selectedFiles } = draft
+  const { title, scope, scopeConditions = '', scopeExclusions = '', scopeAdvice = '', scopeAttachmentIds: selectedFiles } = draft
   const changeScope = (patch: Partial<ActionScopeDraft>) => onScopeChange({ ...draft, ...patch })
   const [editing, setEditing] = useState<{ category: string; line?: ActionCaseCostLineView } | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -169,16 +171,28 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
     if (costDirty && !window.confirm('Stäng utan att spara kalkyländringarna?')) return
     onClose()
   }
+  const selectTab = (next: 'scope' | 'cost') => {
+    if (next === tab || costDirty || working) return
+    onScopeFlush(); setTab(next)
+  }
   const generate = () => void run(async () => {
     setGenerating(true)
     try { return await onCostAction('generate_cost_suggestions', {}) } finally { setGenerating(false) }
   })
   if (typeof document === 'undefined') return null
-  return createPortal(<div className="uppdrag-scope gizmo-dialog-scope fixed inset-0 z-50 flex justify-end bg-black/40">
+  return createPortal(<div className="uppdrag-scope gizmo-dialog-scope fixed inset-0 z-50 flex justify-end bg-black/40" data-testid="action-item-backdrop"
+    onPointerDown={(event) => { backdropPress.current = event.target === event.currentTarget && event.button === 0 }}
+    onPointerCancel={() => { backdropPress.current = false }}
+    onClick={(event) => {
+      // Releasing a text selection outside the sheet must not close it.
+      const outside = backdropPress.current && event.target === event.currentTarget
+      backdropPress.current = false
+      if (outside) close()
+    }}>
     <div ref={dialog} role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby="action-item-title" className="h-dvh w-full max-w-3xl bg-white text-slate-950 shadow-2xl outline-none" onKeyDown={(event) => {
       if (event.key === 'Escape') { event.preventDefault(); close() }
       if (event.key !== 'Tab') return
-      const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') ?? []).filter((node) => node.getClientRects().length)
+      const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') ?? []).filter((node) => node.tabIndex >= 0 && node.getClientRects().length)
       const first = controls[0], last = controls.at(-1)
       if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
@@ -191,10 +205,17 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
           <button type="button" className={`${secondary} h-11 w-11 px-0`} aria-label="Stäng åtgärd" title="Stäng" disabled={working} onClick={close}><X size={20} /></button>
         </div>
       </header>
-      <nav aria-label="Åtgärdens innehåll" className="grid shrink-0 grid-cols-2 gap-1 border-b border-slate-200 p-2">
-        {([['scope', 'Omfattning'], ['cost', 'Kalkyl']] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} disabled={(costDirty || working) && tab !== key} onClick={() => { onScopeFlush(); setTab(key) }} className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${tab === key ? 'bg-violet-50 text-violet-800' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}
-      </nav>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+      <div role="tablist" aria-label="Åtgärdens innehåll" className="gizmo-register-tabs" onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'))
+        const index = tabs.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length
+        tabs[next]?.focus(); tabs[next]?.click()
+      }}>
+        {([['scope', 'Omfattning', ClipboardList], ['cost', 'Kalkyl', Calculator]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`${tabId}-${key}`} aria-controls={`${tabId}-panel`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} disabled={(costDirty || working) && tab !== key} onClick={() => selectTab(key)} className="gizmo-register-tab"><Icon size={17} aria-hidden="true" />{label}</button>)}
+      </div>
+      <div role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {confirmDelete && onDelete && <section ref={deleteConfirmation} tabIndex={-1} role="alert" aria-label="Bekräfta borttagning" className="mb-5 border-b border-rose-200 pb-5 outline-none">
           <h3 className="font-semibold">Ta bort {item.title}?</h3>
           <p className="mt-2 text-sm leading-6">Åtgärden och dess kalkyl tas bort. Projektets bilder och dokument behålls. Det går inte att ångra.</p>
@@ -204,6 +225,8 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
         {tab === 'scope' ? <fieldset disabled={working} className="space-y-5">
           <label className="block text-sm font-semibold">Rubrik *<input className={inputClass} value={title} onChange={(e) => changeScope({ title: e.target.value })} /></label>
           <label className="block text-sm font-semibold">Arbetets omfattning<textarea className={`${inputClass} py-3 leading-6`} rows={5} value={scope} onChange={(e) => changeScope({ scope: e.target.value })} /></label>
+          <label className="block text-sm font-semibold">Förutsättningar (valfritt)<textarea className={`${inputClass} py-3 leading-6`} rows={3} maxLength={6000} disabled={!item.scopeConditionsAvailable} value={scopeConditions} onChange={(e) => changeScope({ scopeConditions: e.target.value })} /></label>
+          {!item.scopeConditionsAvailable && <p role="status" className="text-sm text-slate-600">Fältet Förutsättningar behöver aktiveras av administratören.</p>}
           <label className="block text-sm font-semibold">Ingår inte (valfritt)<textarea className={`${inputClass} py-3 leading-6`} rows={3} maxLength={6000} disabled={!item.scopeNotesAvailable} value={scopeExclusions} onChange={(e) => changeScope({ scopeExclusions: e.target.value })} /></label>
           <label className="block text-sm font-semibold">Avrådan (valfritt)<textarea className={`${inputClass} py-3 leading-6`} rows={3} maxLength={6000} disabled={!item.scopeNotesAvailable} value={scopeAdvice} onChange={(e) => changeScope({ scopeAdvice: e.target.value })} /></label>
           {!item.scopeNotesAvailable && <p role="status" className="text-sm text-slate-600">Fälten Ingår inte och Avrådan behöver aktiveras av administratören.</p>}
@@ -263,10 +286,10 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
         </>}
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
-        <div role="status" aria-live="polite" className="mb-2 flex min-h-5 flex-wrap items-center gap-2 text-xs text-slate-600">
+        <div role="status" aria-live="polite" className={`${tab === 'cost' ? 'mb-2 ' : ''}flex min-h-5 flex-wrap items-center gap-2 text-xs text-slate-600`}>
           {scopeSave?.status === 'error' ? <><span title={scopeSave.error}>Kunde inte spara omfattningen</span><button type="button" className="underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span>Rubrik saknas. Ändringarna är inte sparade.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="animate-spin" />Sparar omfattning…</> : <><Check size={14} />Omfattning sparad</>}
         </div>
-        {tab === 'scope' ? <button type="button" className={`${primary} w-full`} disabled={working || !title.trim()} onClick={() => { onScopeFlush(); setTab('cost') }}><ArrowRight size={16} /> Gå till kalkyl</button> : <>
+        {tab === 'cost' && <>
           <div className="grid grid-cols-2 gap-3"><div><span className="text-xs text-slate-500">Intern kostnad, exkl. moms</span><strong className="block text-lg">{item.lumpSum && totals.internalCost === null ? 'Ej angiven' : amount(totals.internalCost)}</strong></div><div><span className="text-xs text-slate-500">Kundpris, exkl. moms</span><strong className="block text-lg">{amount(totals.customerPrice)}</strong></div></div>
           <p role="status" className="mt-1 text-xs text-slate-600">{item.lumpSum ? item.lumpSum.verified ? 'Samlat pris kontrollerat' : 'Samlat pris behöver kontrolleras' : coverage.complete ? 'Alla kalkylrader är kontrollerade' : !item.costLines.length ? 'Kalkyl saknas' : `${coverage.missingQuantity} saknar mängd · ${coverage.missingPrice} saknar pris · ${coverage.unchecked} att kontrollera`}</p>
           {!item.lumpSum && totals.internalCost === null && coverage.knownTotals.internalCost !== null ? <p className="mt-1 text-xs text-slate-500">Prissatt del: {money.format(coverage.knownTotals.internalCost)} intern kostnad</p> : null}

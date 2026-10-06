@@ -2,16 +2,18 @@ import type { ActionCaseItemView } from './contracts'
 import type { CustomerOfferItem } from './customerOffers'
 
 export function scopeNotesDiffer(source: ActionCaseItemView, target: CustomerOfferItem): boolean {
-  return source.scopeNotesAvailable === true && (
+  return (source.scopeConditionsAvailable === true && (source.scopeConditions ?? '') !== (target.scopeConditions ?? '')) || (source.scopeNotesAvailable === true && (
     (source.scopeExclusions ?? '') !== (target.scopeExclusions ?? '') ||
     (source.scopeAdvice ?? '') !== (target.scopeAdvice ?? '')
-  )
+  ))
 }
 
 // Re-import only the explicitly selected notes; preserve the customer's edited scope and price.
 export function importOfferItems(existing: CustomerOfferItem[], selected: ActionCaseItemView[], withPrices: boolean): CustomerOfferItem[] {
-  const notes = (source: ActionCaseItemView) => source.scopeNotesAvailable
-    ? { scopeExclusions: source.scopeExclusions ?? '', scopeAdvice: source.scopeAdvice ?? '' } : {}
+  const notes = (source: ActionCaseItemView) => ({
+    ...(source.scopeConditionsAvailable ? { scopeConditions: source.scopeConditions ?? '' } : {}),
+    ...(source.scopeNotesAvailable ? { scopeExclusions: source.scopeExclusions ?? '', scopeAdvice: source.scopeAdvice ?? '' } : {}),
+  })
   return [
     ...existing.map((item) => {
       const source = selected.find((s) => s.id === item.id)

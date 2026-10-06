@@ -15,7 +15,7 @@ import {
 } from '@/lib/action-cases/customerOffers'
 
 function ScopeNotes({ item }: { item: CustomerOfferItem }) {
-  return <>{([['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, title]) => item[key]?.trim() ? (
+  return <>{([['scopeConditions', 'Förutsättningar'], ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, title]) => item[key]?.trim() ? (
     <span key={key} className="mt-3 block text-sm leading-6 text-slate-700"><strong className="block">{title}</strong><span className="block whitespace-pre-wrap">{item[key]}</span></span>
   ) : null)}</>
 }

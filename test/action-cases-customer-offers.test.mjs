@@ -56,7 +56,7 @@ before(async () => {
   await db.exec(sql('2026-09-29_04_customer_offer_planning'))
   await db.exec(sql('2026-10-01_03_customer_payment_plan'))
   await db.exec(sql('2026-10-01_03_customer_payment_plan'))
-  for (const name of ['2026-10-01_04_action_case_schedule', '2026-10-05_01_action_case_scope_notes', '2026-10-05_02_action_case_item_deletion']) {
+  for (const name of ['2026-10-01_04_action_case_schedule', '2026-10-05_01_action_case_scope_notes', '2026-10-05_02_action_case_item_deletion', '2026-10-06_01_action_case_scope_conditions']) {
     await db.exec(sql(name)); await db.exec(sql(name))
   }
 })
@@ -102,6 +102,37 @@ test('optional action notes survive normalized, versioned offers without inventi
   const accepted = await get('action_case_customer_offers', f.offerId)
   assert.deepEqual(accepted.snapshot, frozen.snapshot)
   await assert.rejects(db.query("update action_case_customer_offers set snapshot=jsonb_set(snapshot,'{items,0,scopeExclusions}','\"changed\"') where id=$1", [f.offerId]), /IMMUTABLE/)
+})
+
+test('conditions are optional, validated, protected from old clients and frozen with the offer', async () => {
+  const f = await fixture()
+  assert.equal('scopeConditions' in normalizeCustomerOffer(f.draft).items[0], false)
+  const body = normalizeCustomerOffer({ ...f.draft, items: f.draft.items.map((r, index) => index ? r : { ...r, scopeConditions: 'Fri tillgång till arbetsområdet.' }) })
+  assert.equal(body.items[0].scopeConditions, 'Fri tillgång till arbetsområdet.')
+  for (const value of [null, 3, {}, 'x'.repeat(6001)]) {
+    const invalid = { ...body, items: [{ ...body.items[0], scopeConditions: value }] }
+    assert.throws(() => normalizeCustomerOffer(invalid), /INVALID/)
+    await assert.rejects(db.query('select assert_customer_offer_scope_conditions($1)', [invalid]), /INVALID/)
+    await assert.rejects(f.write('save', { revision: 1, body: invalid }), /INVALID/)
+  }
+  await f.write('save', { revision: 1, body })
+  await assert.rejects(f.write('save', { revision: 2, body: f.draft }), /INVALID/)
+  await f.write('publish', { ...f.publication, revision: 2, snapshot: { ...f.snapshot, ...body } })
+  const frozen = await get('action_case_customer_offers', f.offerId)
+  assert.equal(frozen.snapshot.items[0].scopeConditions, body.items[0].scopeConditions)
+  const cleared = { ...body, items: body.items.map((r, index) => index ? r : { ...r, scopeConditions: '' }) }
+  await f.write('save', { revision: 2, body: cleared })
+  await db.exec(sql('2026-10-06_01_action_case_scope_conditions'))
+  assert.deepEqual(await get('action_case_customer_offers', f.offerId), frozen)
+  await f.respond('challenge', f.challenge)
+  await f.respond('accept', { challengeId: f.challengeId, codeHash: 'good-hash' })
+  assert.deepEqual((await get('action_case_customer_offers', f.offerId)).snapshot, frozen.snapshot)
+  await assert.rejects(db.query("update action_case_customer_offers set snapshot=jsonb_set(snapshot,'{items,0,scopeConditions}','\"changed\"') where id=$1", [f.offerId]), /IMMUTABLE/)
+  const itemId = id(seq++)
+  await db.query('insert into action_case_items(id,org_id,action_case_id,title) values($1,$2,$3,$4)', [itemId, id(1), f.caseId, 'Grund'])
+  assert.equal((await get('action_case_items', itemId)).scope_conditions, '')
+  await assert.rejects(db.query('update action_case_items set scope_conditions=$1 where id=$2', ['x'.repeat(6001), itemId]), /scope_conditions_length/)
+  assert.equal((await db.query("select has_function_privilege('authenticated','assert_customer_offer_scope_conditions(jsonb)','execute') as allowed")).rows[0].allowed, false)
 })
 
 async function deletionFixture() {

@@ -130,6 +130,7 @@ const server = createServer(async (req, res) => {
         if (payload.expectedUpdatedAt !== item.updatedAt) { json({ error: 'Åtgärden har ändrats i en annan session.' }, 409); return }
         if (payload.title !== undefined) item.title = payload.title
         if (payload.scope !== undefined) item.scope = payload.scope
+        if (payload.scopeConditions !== undefined) item.scopeConditions = payload.scopeConditions
         if (payload.scopeExclusions !== undefined) item.scopeExclusions = payload.scopeExclusions
         if (payload.scopeAdvice !== undefined) item.scopeAdvice = payload.scopeAdvice
         if (payload.scopeAttachmentIds !== undefined) item.scopeAttachmentIds = payload.scopeAttachmentIds
@@ -155,7 +156,7 @@ const server = createServer(async (req, res) => {
       } else if (body.action === 'add_item') {
         const c = projects.cases.find((c) => c.id === payload.caseId)
         itemId = id(500 + writes.length)
-        c.items.push({ ...structuredClone(projects.cases[0].items[0]), id: itemId, title: payload.title, scope: '', scopeExclusions: '', scopeAdvice: '', costLines: [] })
+        c.items.push({ ...structuredClone(projects.cases[0].items[0]), id: itemId, title: payload.title, scope: '', scopeConditions: '', scopeExclusions: '', scopeAdvice: '', costLines: [] })
       } else if (body.action === 'create_case') {
         caseId = id(600 + writes.length)
         projects.cases.unshift({ ...structuredClone(projects.cases[0]), id: caseId, ...payload, attachments: [], participants: [],

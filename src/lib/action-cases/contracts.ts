@@ -23,6 +23,8 @@ export type ActionItemStatus =
   | 'cancelled'
 
 export type ActionCaseItemView = {
+  scopeConditionsAvailable?: boolean
+  scopeConditions?: string
   scopeNotesAvailable?: boolean
   scopeExclusions?: string
   scopeAdvice?: string
