@@ -14,6 +14,7 @@ export type CustomerOfferItem = {
   kind: 'included' | 'option' | 'excluded'
   amountOre: number | null
   optionGroup?: string | null
+  sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
   paymentPlan?: CustomerPaymentPlan | null
@@ -121,6 +122,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
       ...(i.scopeConditions === undefined ? {} : { scopeConditions: text(i.scopeConditions, 6000) }),
       ...(i.scopeExclusions === undefined ? {} : { scopeExclusions: text(i.scopeExclusions, 6000) }),
       ...(i.scopeAdvice === undefined ? {} : { scopeAdvice: text(i.scopeAdvice, 6000) }),
+      ...(i.sourceReview === undefined ? {} : { sourceReview: normalizeSourceReview(i.sourceReview) }),
       kind: i.kind as CustomerOfferItem['kind'],
       amountOre: i.kind === 'excluded' ? null : amount(i.amountOre),
       ...(i.optionGroup !== undefined
@@ -174,6 +176,18 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   }
   draft.baseAmountOre = customerOfferBaseAmount(draft)
   return draft
+}
+
+function normalizeSourceReview(value: unknown): NonNullable<CustomerOfferItem['sourceReview']> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('CUSTOMER_OFFER_INVALID')
+  const result: NonNullable<CustomerOfferItem['sourceReview']> = {}
+  for (const key of ['title', 'scope', 'scopeConditions', 'scopeExclusions', 'scopeAdvice', 'amountOre'] as const) {
+    const hash = (value as Record<string, unknown>)[key]
+    if (hash === undefined) continue
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('CUSTOMER_OFFER_INVALID')
+    result[key] = hash
+  }
+  return result
 }
 
 export function customerOfferBaseAmount(d: CustomerOfferDraft): number | null {
@@ -316,6 +330,11 @@ export function mapCustomerOffer(row: Record<string, unknown>): CustomerOffer {
     status: row.status as CustomerOffer['status'],
     snapshot: {
       ...d,
+      items: d.items.map((item) => {
+        const publicItem = { ...item }
+        delete publicItem.sourceReview
+        return publicItem
+      }),
       projectTitle: String(s.projectTitle),
       propertyAddress: String(s.propertyAddress),
       customerName: String(s.customerName),

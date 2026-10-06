@@ -392,7 +392,7 @@ else {
     await click('Spara planering')
     await page.waitForFunction(() => document.querySelector('main [role="status"]')?.textContent === 'Sparat')
     await click('Grundavtal')
-    await page.locator('::-p-xpath(//button[contains(.,"Offertuppgifter")])').click()
+    await page.locator('::-p-xpath(//button[starts-with(normalize-space(.),"Priset")])').click()
     // Decimal input, save failure preserves draft, then retry.
     const price = await page.$('[aria-label="Grundpris inkl. moms (kr) *"]')
     await price.click({ clickCount: 3 })
@@ -415,6 +415,7 @@ else {
       fullPage: true
     })
     const previewWrites = writes.length
+    await page.locator('::-p-xpath(//button[contains(.,"Offertuppgifter")])').click()
     await fill('Rubrik *', 'Tillbyggnad - osparad komplettering')
     await page
       .locator(
@@ -450,13 +451,14 @@ else {
       'Return from the document restores focus at the editor heading'
     )
     assert.equal(
-      await page.$eval('[aria-label="Grundpris inkl. moms (kr) *"]', (el) => el.value),
-      '1250000,50'
-    )
-    assert.equal(
       await page.$eval('fieldset input', (el) => el.value),
       'Tillbyggnad - osparad komplettering',
       'Preview navigation preserves unsaved text'
+    )
+    await page.locator('::-p-xpath(//button[starts-with(normalize-space(.),"Priset")])').click()
+    assert.equal(
+      await page.$eval('[aria-label="Grundpris inkl. moms (kr) *"]', (el) => el.value),
+      '1250000,50'
     )
     assert.equal(writes.length, previewWrites, 'Preview does not save or publish')
     await click('Spara utkast')

@@ -5,19 +5,27 @@ import {
   contractFields,
   emptyContractDetails,
   type CustomerContractDetails,
+  type ContractFieldKey,
   type ContractEntry
 } from '@/lib/action-cases/customerContract'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
 export default function CustomerContractFields({
-  value,
-  onChange
+  value: inputValue,
+  onChange,
+  fieldKeys,
+  showAdvice = true,
+  inline = false
 }: {
   value?: CustomerContractDetails
   onChange: (value: CustomerContractDetails) => void
+  fieldKeys?: ContractFieldKey[]
+  showAdvice?: boolean
+  inline?: boolean
 }) {
-  if (!value)
+  const value = inputValue ?? emptyContractDetails()
+  if (!inputValue && !inline)
     return (
       <section className="border-t border-slate-200 pt-6">
         <h2 className="text-lg">Avtalsuppgifter</h2>
@@ -36,12 +44,15 @@ export default function CustomerContractFields({
       advice.communicatedAt &&
       advice.customerResponse.trim()
   )
-  const groups = [...new Set(contractFields.map((f) => f.group))]
+  const selectedFields = contractFields.filter((f) => !fieldKeys || fieldKeys.includes(f.key))
+  const groups = [...new Set(selectedFields.map((f) => f.group))]
+  const Group = inline ? 'div' : 'details'
+  const Summary = inline ? 'h3' : 'summary'
   return (
-    <section className="space-y-4 border-t border-slate-200 pt-6">
-      <h2 className="text-lg">Avtalsuppgifter</h2>
-      <details className="border-b border-slate-200 pb-4">
-        <summary className="cursor-pointer py-2 font-semibold">
+    <section className={inline ? 'space-y-4' : 'space-y-4 border-t border-slate-200 pt-6'}>
+      {!inline && <h2 className="text-lg">Avtalsuppgifter</h2>}
+      {showAdvice && <Group className="border-b border-slate-200 pb-4">
+        <Summary className="py-2 font-semibold">
           Avrådan{' '}
           <span className="ml-2 text-sm font-normal text-slate-500">
             {advice.status === 'unreviewed'
@@ -57,7 +68,7 @@ export default function CustomerContractFields({
                   ? 'Avrådan dokumenterad'
                   : 'Behöver kompletteras'}
           </span>
-        </summary>
+        </Summary>
         <label className="mt-3 block text-sm">
           Avrådan *
           <select
@@ -122,22 +133,22 @@ export default function CustomerContractFields({
             </label>
           </div>
         )}
-      </details>
+      </Group>}
       {groups.map((group) => {
-        const fields = contractFields.filter((f) => f.group === group)
+        const fields = selectedFields.filter((f) => f.group === group)
         const done = fields.filter(
           (f) =>
             value.fields[f.key].status !== 'unreviewed' &&
             value.fields[f.key].text.trim()
         ).length
         return (
-          <details key={group} className="border-b border-slate-200 pb-4">
-            <summary className="cursor-pointer py-2 font-semibold">
+          <Group key={group} className={inline ? '' : 'border-b border-slate-200 pb-4'}>
+            {!inline && <Summary className="cursor-pointer py-2 font-semibold">
               {group}{' '}
               <span className="ml-2 text-sm font-normal text-slate-500">
                 {done}/{fields.length} ifyllda
               </span>
-            </summary>
+            </Summary>}
             <div className="space-y-5 pt-3">
               {fields.map(({ key, title }) => {
                 const entry = value.fields[key]
@@ -188,7 +199,7 @@ export default function CustomerContractFields({
                 )
               })}
             </div>
-          </details>
+          </Group>
         )
       })}
     </section>

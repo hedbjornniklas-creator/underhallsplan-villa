@@ -40,12 +40,12 @@ import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
 import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
 import CustomerContractFields from './CustomerContractFields'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
-import { emptyContractDetails } from '@/lib/action-cases/customerContract'
+import { emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
 import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
-import { importableCustomerPrice, importOfferItems, scopeNotesDiffer } from '@/lib/action-cases/offerImport'
+import CustomerOfferSourcePicker from './CustomerOfferSourcePicker'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -63,7 +63,8 @@ export default function CustomerOfferEditor({
   onViewChange,
   onWorkspaceChange,
   onDirtyChange,
-  sharedSchedule
+  sharedSchedule,
+  sourcePending = false
 }: {
   actionCase: ActionCaseView
   initial: CustomerOfferWorkspace
@@ -76,6 +77,7 @@ export default function CustomerOfferEditor({
   onWorkspaceChange?: (workspace: CustomerOfferWorkspace) => void
   onDirtyChange?: (dirty: boolean) => void
   sharedSchedule?: ProjectScheduleRow[]
+  sourcePending?: boolean
 }) {
   const [workspace, setWorkspace] = useState(initial),
     [draft, setDraft] = useState(() => initial.revision === 0
@@ -88,9 +90,6 @@ export default function CustomerOfferEditor({
   const [itemView, setItemView] = useState<'included' | 'excluded'>('included')
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [showImport, setShowImport] = useState(false)
-  const [importIds, setImportIds] = useState<string[]>([])
-  const [importPrices, setImportPrices] = useState(false)
   const [planningDirty, setPlanningDirty] = useState(false)
   const planningDirtyRef = useRef(planningDirty)
   planningDirtyRef.current = planningDirty
@@ -103,6 +102,7 @@ export default function CustomerOfferEditor({
     toast = useToast()
   const [confirmed, setConfirmed] = useState(false)
   const [confirmItemized, setConfirmItemized] = useState(false)
+  const [sourceReviewCount, setSourceReviewCount] = useState(-1)
   const customer = actionCase.participants.find((p) => p.role === 'customer')
   const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft) ||
     JSON.stringify(costing) !== JSON.stringify(workspace.costing ?? {})
@@ -111,6 +111,9 @@ export default function CustomerOfferEditor({
   const locked = workspace.offers.some((o) => o.status === 'accepted')
   const issues = [
     ...offerPublishIssues(draft),
+    ...(sourcePending ? ['Projektarbete har ändringar som inte har sparats klart.'] : []),
+    ...(sourceReviewCount > 0 ? [`Granska ändrat underlag för ${sourceReviewCount} arbetsdelar under Uppdraget.`] : []),
+    ...(sourceReviewCount === -2 ? ['Jämförelsen med Projektarbete misslyckades. Försök igen under Uppdraget.'] : []),
     ...(!customer?.email?.trim()
       ? ['Ange beställarens e-postadress i uppdraget.']
       : [])
@@ -280,6 +283,34 @@ export default function CustomerOfferEditor({
   }
   const Container = embedded ? 'div' : 'main'
   const Heading = embedded ? 'h2' : 'h1'
+  const contractSection = (id: string, title: string, keys: ContractFieldKey[], advice = false) => {
+    const complete = keys.filter((key) => draft.contractDetails?.fields[key].status !== 'unreviewed' && draft.contractDetails?.fields[key].text.trim()).length
+    return <ProjectEditorRow title={title} summary={advice ? draft.contractDetails?.advice.status === 'none' ? 'Ingen avrådan lämnad' : draft.contractDetails?.advice.status === 'given' ? 'Avrådan lämnad' : 'Behöver kontrolleras' : `${complete}/${keys.length} uppgifter ifyllda`}
+      open={expanded === id} onToggle={() => setExpanded(expanded === id ? null : id)}>
+      <CustomerContractFields value={draft.contractDetails} fieldKeys={keys} showAdvice={advice} inline onChange={(contractDetails) => update({ contractDetails })} />
+    </ProjectEditorRow>
+  }
+  const priceSection = <ProjectEditorRow title="Priset" summary={`${draft.pricingMode === 'itemized' ? 'Fast pris per arbetsdel' : 'Fast klumpsumma'} · ${money(baseAmount)}`}
+    open={expanded === 'price'} onToggle={() => setExpanded(expanded === 'price' ? null : 'price')}>
+    <label className="block text-sm">Prissättning av grundåtagandet
+      <select className={field} value={draft.pricingMode ?? 'total'} onChange={(e) => {
+        const pricingMode = e.target.value as CustomerOfferDraft['pricingMode']
+        if (pricingMode === 'itemized' && draft.baseAmountOre !== null) { setConfirmItemized(true); return }
+        setConfirmItemized(false); update({ pricingMode, baseAmountOre: baseAmount })
+      }}><option value="total">Fast klumpsumma</option><option value="itemized">Fast pris per arbetsdel</option></select>
+    </label>
+    {confirmItemized && <div role="alert" className="mt-3 border-l-4 border-amber-500 bg-amber-50 p-4 text-sm">
+      <p>Klumpsumman {money(draft.baseAmountOre)} ersätts av summan av arbetsdelarnas priser. Beloppet fördelas inte automatiskt.</p>
+      <div className="mt-3 flex flex-wrap gap-2"><button className={`${button} bg-white`} onClick={() => { update({ pricingMode: 'itemized' }); setConfirmItemized(false) }}><Check size={17} /> Byt till delpriser</button>
+        <button className={button} onClick={() => setConfirmItemized(false)}><ArrowLeft size={17} /> Avbryt</button></div>
+    </div>}
+    {draft.pricingMode !== 'itemized' ? <PriceInput label="Grundpris inkl. moms (kr) *" value={draft.baseAmountOre} onChange={(baseAmountOre) => update({ baseAmountOre })} /> : draft.items.filter((i) => i.kind === 'included').map((item) => <div key={item.id} className="mt-4 border-t border-slate-200 pt-3">
+      <PriceInput label={`${item.title || 'Arbetsdel'} - delpris inkl. moms (kr) *`} value={item.amountOre} onChange={(amountOre) => update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) })} />
+      {workspace.costingAvailable && <CustomerOfferCostCalculator value={costing[item.id]} customerPrice={item.amountOre}
+        onChange={(calculation) => { setCosting((current) => ({ ...current, [item.id]: calculation })); setConfirmed(false) }}
+        onApply={(amountOre) => { update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) }); toast.success('Kundpriset har uppdaterats i utkastet.') }} />}
+    </div>)}
+  </ProjectEditorRow>
   return (
     <Container className={embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}>
       {(!embedded || view === 'edit' || view === 'document') && <header className="border-b border-slate-200 py-6">
@@ -432,27 +463,10 @@ export default function CustomerOfferEditor({
                 />
               </label>
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block text-sm font-medium">
-                  Prissättning av grundåtagandet
-                  <select
-                    className={field}
-                    value={draft.pricingMode ?? 'total'}
-                    onChange={(e) => {
-                      const pricingMode = e.target
-                        .value as CustomerOfferDraft['pricingMode']
-                      if (
-                        pricingMode === 'itemized' &&
-                        draft.baseAmountOre !== null
-                      ) {
-                        setConfirmItemized(true)
-                        return
-                      }
-                      setConfirmItemized(false)
-                      update({ pricingMode, baseAmountOre: baseAmount })
-                    }}
-                  >
-                    <option value="total">Fast klumpsumma</option>
-                    <option value="itemized">Fast pris per arbetsdel</option>
+                <label className="block text-sm">Avtalsgrund
+                  <select className={field} value={draft.contractForm} onChange={(e) => update({ contractForm: e.target.value as CustomerOfferDraft['contractForm'] })}>
+                    <option value="abs18">ABS 18 · Privatperson, småhus/tillbyggnad</option>
+                    <option value="custom">Särskilda villkor</option>
                   </select>
                 </label>
                 <label className="block text-sm font-medium">
@@ -465,57 +479,22 @@ export default function CustomerOfferEditor({
                   />
                 </label>
               </div>
-              {confirmItemized && (
-                <div role="alert" className="border-l-4 border-amber-500 bg-amber-50 p-4 text-sm">
-                  <p>
-                    Klumpsumman {money(draft.baseAmountOre)} ersätts av summan av
-                    arbetsdelarnas priser. Beloppet fördelas inte automatiskt.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button className={`${button} bg-white`} onClick={() => {
-                      update({ pricingMode: 'itemized' })
-                      setConfirmItemized(false)
-                    }}><Check size={17} /> Byt till delpriser</button>
-                    <button className={button} onClick={() => setConfirmItemized(false)}>
-                      <ArrowLeft size={17} /> Avbryt
-                    </button>
-                  </div>
-                </div>
-              )}
-              {draft.pricingMode !== 'itemized' && (
-                <PriceInput
-                  label="Grundpris inkl. moms (kr) *"
-                  value={draft.baseAmountOre}
-                  onChange={(baseAmountOre) => update({ baseAmountOre })}
-                />
-              )}
             </section>
             </ProjectEditorRow>
+            <ProjectEditorRow title="Parter och övriga medverkande" summary={`${customer?.name ?? actionCase.customerName} · ${issuerName}`}
+              open={expanded === 'parties'} onToggle={() => setExpanded(expanded === 'parties' ? null : 'parties')}>
+              <dl className="mb-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt className="font-semibold">Beställare</dt><dd>{customer?.name ?? actionCase.customerName}</dd><dd className="break-all">{customer?.email}</dd></div>
+                <div><dt className="font-semibold">Entreprenör</dt><dd>{issuerName}</dd><dd className="break-all">{replyEmail}</dd></div></dl>
+              <CustomerContractFields value={draft.contractDetails} fieldKeys={['parties', 'controls']} showAdvice={false} inline onChange={(contractDetails) => update({ contractDetails })} />
+            </ProjectEditorRow>
+            <ProjectEditorRow title="Fastigheten" summary={actionCase.propertyAddress || 'Adress saknas'} open={expanded === 'property'} onToggle={() => setExpanded(expanded === 'property' ? null : 'property')}>
+              <p className="mb-4 text-sm">{actionCase.propertyAddress}</p>
+              <CustomerContractFields value={draft.contractDetails} fieldKeys={['property']} showAdvice={false} inline onChange={(contractDetails) => update({ contractDetails })} />
+            </ProjectEditorRow>
             <section>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg">Avtalets omfattning</h2>
-                <button
-                  className={button}
-                  aria-expanded={showImport}
-                  onClick={() => setShowImport(!showImport)}
-                >
-                  <Plus size={17} /> Hämta från arbeten
-                </button>
-              </div>
-              {showImport && <div className="border-y border-slate-200 py-4">
-                {actionCase.items.map((i) => {
-                  const existing = draft.items.find((d) => d.id === i.id), price = importableCustomerPrice(i)
-                  const notesChanged = existing && scopeNotesDiffer(i, existing)
-                  const disabled = Boolean(existing && !notesChanged)
-                  return <label key={i.id} className="flex min-h-11 flex-wrap items-center gap-3 py-2 text-sm"><input type="checkbox" disabled={disabled} checked={importIds.includes(i.id) && !disabled} onChange={(e) => setImportIds(e.target.checked ? [...importIds, i.id] : importIds.filter((id) => id !== i.id))} /><span className="min-w-0 flex-1">{i.title}</span><span className="text-slate-600">{notesChanged ? 'Ersätt Förutsättningar, Ingår inte och Avrådan' : existing ? 'Redan i utkastet' : price === null ? 'Inget kontrollerat kundpris' : money(price)}</span></label>
-                })}
-                {draft.pricingMode === 'itemized' && <label className="my-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={importPrices} onChange={(e) => setImportPrices(e.target.checked)} />Hämta kontrollerade kundpriser inklusive moms</label>}
-                <button className={button} disabled={!actionCase.items.some((i) => importIds.includes(i.id) && (!draft.items.some((d) => d.id === i.id) || draft.items.some((d) => d.id === i.id && scopeNotesDiffer(i, d))))} onClick={() => {
-                  const incoming = actionCase.items.filter((i) => importIds.includes(i.id))
-                  update({ items: importOfferItems(draft.items, incoming, importPrices && draft.pricingMode === 'itemized') })
-                  setItemView('included'); setShowImport(false); setImportIds([])
-                }}><Plus size={17} /> Hämta valda arbetsdelar</button>
-              </div>}
+              <h2 className="text-lg">Uppdraget</h2>
+              <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)}
+                onChange={(items) => { update({ items }); setItemView('included') }} onReviewCountChange={setSourceReviewCount} />
               <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
                 {([['included', 'Grundåtagande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
               </div>
@@ -605,34 +584,7 @@ export default function CustomerOfferEditor({
                         <option value="excluded">Relevant avgränsning</option>
                       </select>
                     </label>
-                    {(item.kind === 'included' && draft.pricingMode === 'itemized') && (
-                      <PriceInput
-                        label="Delpris inkl. moms (kr) *"
-                        value={item.amountOre}
-                        onChange={(amountOre) =>
-                          update({
-                            items: draft.items.map((i) =>
-                              i.id === item.id ? { ...i, amountOre } : i
-                            )
-                          })
-                        }
-                      />
-                    )}
                   </div>
-                  {workspace.costingAvailable && item.kind === 'included' && draft.pricingMode === 'itemized' && (
-                    <CustomerOfferCostCalculator
-                      value={costing[item.id]}
-                      customerPrice={item.amountOre}
-                      onChange={(calculation) => {
-                        setCosting((current) => ({ ...current, [item.id]: calculation }))
-                        setConfirmed(false)
-                      }}
-                      onApply={(amountOre) => {
-                        update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) })
-                        toast.success('Kundpriset har uppdaterats i utkastet.')
-                      }}
-                    />
-                  )}
                   <label className="mt-3 block text-sm">
                     Omfattning och avgränsningar *
                     <textarea
@@ -680,56 +632,10 @@ export default function CustomerOfferEditor({
                 <Plus size={17} /> {itemView === 'included' ? 'Lägg till arbete' : 'Lägg till avgränsning'}
               </button>
             </section>
-            <CustomerContractFields value={draft.contractDetails} onChange={(contractDetails) => update({ contractDetails })} />
-            <ProjectEditorRow title="Tider och villkor" summary={`${draft.contractForm === 'abs18' ? 'ABS 18' : 'Särskilda villkor'} · ${draft.schedule.trim() && draft.terms.trim() ? 'Ifyllda' : 'Behöver kompletteras'}`}
-              open={expanded === 'terms'} onToggle={() => setExpanded(expanded === 'terms' ? null : 'terms')}>
-            <section className="space-y-4">
-              <label className="block text-sm">
-                Avtalsgrund
-                <select
-                  className={field}
-                  value={draft.contractForm}
-                  onChange={(e) =>
-                    update({
-                      contractForm: e.target
-                        .value as CustomerOfferDraft['contractForm']
-                    })
-                  }
-                >
-                  <option value="abs18">
-                    ABS 18 · Privatperson, småhus/tillbyggnad
-                  </option>
-                  <option value="custom">Särskilda villkor</option>
-                </select>
-              </label>
-              <label className="block text-sm">
-                Tider och förutsättningar *
-                <textarea
-                  className={field}
-                  rows={3}
-                  value={draft.schedule}
-                  onChange={(e) => update({ schedule: e.target.value })}
-                />
-              </label>
-              <div className="border-y border-slate-200 py-4 text-sm">
-                <h3 className="font-semibold">Betalning</h3>
-                <p className="mt-2 whitespace-pre-wrap">{draft.paymentTerms || 'Betalningsvillkor saknas.'}</p>
-                <button className={`${button} mt-3`} onClick={() => setView('payments')}><WalletCards size={17} /> Öppna betalningsplan</button>
-              </div>
-              <label className="block text-sm">
-                Villkor och hänvisning till avtalshandling *
-                <textarea
-                  className={field}
-                  rows={5}
-                  value={draft.terms}
-                  onChange={(e) => update({ terms: e.target.value })}
-                />
-              </label>
-            </section>
-            </ProjectEditorRow>
-            <ProjectEditorRow title="Offertbilagor" summary={`${draft.attachmentIds.length} valda · ${draft.termsAttachmentId ? 'Avtalshandling vald' : 'Avtalshandling saknas'}`}
+            <ProjectEditorRow title="Avtalshandlingar och bilagor" summary={`${draft.attachmentIds.length} valda · ${draft.termsAttachmentId ? 'Avtalshandling vald' : 'Avtalshandling saknas'}`}
               open={expanded === 'files'} onToggle={() => setExpanded(expanded === 'files' ? null : 'files')}>
             <section>
+              <CustomerContractFields value={draft.contractDetails} fieldKeys={['documents']} showAdvice={false} inline onChange={(contractDetails) => update({ contractDetails })} />
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {files.map((f) => (
                   <label
@@ -809,6 +715,26 @@ export default function CustomerOfferEditor({
               </label>
             </section>
             </ProjectEditorRow>
+            {contractSection('customer-work', 'Beställarens arbeten och samordning', ['customerWork'])}
+            {contractSection('work-environment', 'Arbetsmiljö', ['workEnvironment'])}
+            {contractSection('advice', 'Avrådande', [], true)}
+            {priceSection}
+            {contractSection('changes', 'Ändringar och tilläggsarbeten', ['changes'])}
+            <ProjectEditorRow title="Tid för betalning" summary={`${draft.paymentPlan?.installments.length ?? 0} delbetalningar · ${draft.paymentTerms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'}`}
+              open={expanded === 'payment'} onToggle={() => setExpanded(expanded === 'payment' ? null : 'payment')}>
+              <p className="whitespace-pre-wrap text-sm">{draft.paymentTerms || 'Betalningsvillkor saknas.'}</p>
+              <button className={`${button} mt-3`} onClick={() => setView('payments')}><WalletCards size={17} /> Öppna betalningsplan</button>
+            </ProjectEditorRow>
+            <ProjectEditorRow title="Tid för arbetenas påbörjande och avslutande" summary={draft.schedule.trim() ? 'Tider ifyllda' : 'Tider saknas'}
+              open={expanded === 'schedule'} onToggle={() => setExpanded(expanded === 'schedule' ? null : 'schedule')}>
+              <label className="block text-sm">Tider och förutsättningar *<textarea className={field} rows={3} value={draft.schedule} onChange={(e) => update({ schedule: e.target.value })} /></label>
+            </ProjectEditorRow>
+            {contractSection('delay', 'Vite vid försening', ['delay'])}
+            {contractSection('inspection', 'Besiktning', ['inspection'])}
+            {contractSection('insurance', 'Försäkringar och säkerhet', ['insurance', 'completionProtection', 'security'])}
+            <ProjectEditorRow title="Övrigt" summary={draft.terms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'} open={expanded === 'terms'} onToggle={() => setExpanded(expanded === 'terms' ? null : 'terms')}>
+              <label className="block text-sm">Villkor och hänvisning till avtalshandling *<textarea className={field} rows={5} value={draft.terms} onChange={(e) => update({ terms: e.target.value })} /></label>
+            </ProjectEditorRow>
           </fieldset>
           <aside className="min-w-0">
             <div className="lg:sticky lg:top-6">
@@ -887,6 +813,7 @@ export default function CustomerOfferEditor({
                       dirty ||
                       !workspace.revision ||
                       issues.length > 0 ||
+                      sourceReviewCount < 0 ||
                       !confirmed ||
                       !customer?.email
                     }

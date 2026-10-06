@@ -100,7 +100,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           section={view === 'work' || view === 'files' ? view : 'hidden'} onWorkspaceChange={setWorkspace} onBusyChange={setWorkBusy} onDirtyChange={setWorkDirty} />
         <div hidden={!offerViews[view]}>
           {initialOffer ? <CustomerOfferEditor actionCase={project} initial={initialOffer} issuerName={issuerName} replyEmail={replyEmail}
-            embedded active={Boolean(offerViews[view])} view={offerViews[view] ?? 'edit'} onViewChange={navigateOffer} onWorkspaceChange={setOffer} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} />
+            embedded active={Boolean(offerViews[view])} view={offerViews[view] ?? 'edit'} onViewChange={navigateOffer} onWorkspaceChange={setOffer} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} sourcePending={workDirty || workBusy} />
             : <section className="gizmo-empty" role="alert"><h2>{sectionLabel}</h2><p>{initialOfferError || 'Offertuppgifterna kunde inte hämtas. Projektarbete och filer är fortfarande tillgängliga.'}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>}
         </div>
         <section hidden={view !== 'schedule'}>

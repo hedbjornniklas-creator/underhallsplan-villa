@@ -1,7 +1,58 @@
 # Gizmo: bestallarens projektoversikt och kundoffert
 
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
-Datum: 2026-10-05.
+Datum: 2026-10-06.
+
+## Beslut 2026-10-06: fran Projektarbete till avtalsutkast
+
+- Arbetsdelar visas direkt under Uppdraget. Anvandaren valjer vilka som ska
+  inga i grundavtalet; inget laggs till vid enbart navigation till sidan.
+  Val och tillval forblir separata. Interna kalkyler och UE-underlag importeras inte.
+- Rubrik, omfattning, forutsattningar, undantag och avradan kopieras tillsammans.
+  Kontrollerade kundpriser inklusive moms kan valjas i delprislage. Bilagor valjs
+  fortfarande uttryckligen under Avtalshandlingar och bilagor.
+- En redan inford arbetsdel kan jamforas falt for falt mot Projektarbete.
+  Inget ersatts som standard. Anvandaren valjer nya falt eller behaller avtalstexten.
+  Aven tom text visas som en uttrycklig andring; otillgangliga falt far inte radera text.
+- SHA-256-fingeravtryck av de overforbara falten sparas i befintlig utkast-JSON
+  som `items[].sourceReview`. Inga privata kalltexter, inkopspriser eller marginaler
+  lagras dar. Fingeravtrycken utelamnas i den publika projektionen.
+  Inga nya tabeller eller migrationer behovs for denna komplettering.
+- Fingeravtrycken skiljer egna avtalsjusteringar fran senare underlagsandringar.
+  Aldre utkast utan denna historik visas forsiktigt som Skiljer fran Projektarbete;
+  historiken antas inte i efterhand. Behall-valet sparas med samma utkastrevision.
+- Utkast kan sparas medan granskning aterstar. Redigerarens utskicksknapp ar
+  sparrad under jamforelsen, vid ej granskade skillnader eller nar Projektarbete
+  har osparade andringar. Befintliga server- och databasskydd for versionering,
+  organisation och accepterade avtal ar oforandrade. Detta ar inte en ny
+  servergaranti om att allt samtidigt arbete i andra sessioner ar avstamt.
+- Skickade och godkanda versioner skrivs inte om. Befintlig forhandsgranskning
+  och dokumentrendering behaller sitt format; andringen galler redigeringsflodet.
+
+## Beslut 2026-10-06: redigeringsordning enligt ABS 18
+
+Redigeringssidan ordnas efter entreprenadkontraktet som hor till ABS 18, inte
+efter paragrafordningen i de allmanna bestammelserna. Originalet har kontrollerats
+2026-10-06: [Entreprenadkontrakt ABS 18, 2018.06](https://byggtjanstcms.byggtjanst.se/globalassets/pdf/entreprenadkontrakt-abs-18.pdf).
+
+- Offertuppgifter (Gizmos rubrik, avtalsgrund och giltighet), parter och ovriga
+  medverkande, fastigheten, uppdraget, handlingar och bestallarens arbeten.
+- Arbetsmiljo, avradande, pris, andringar/tillaggsarbeten, betalning och tider.
+- Forsening/vite, besiktning, forsakringar/sakerhet och ovriga villkor.
+
+Befintliga avtalsfalt och betalningsplan ateranvands. Inga standardvillkor,
+ansvarsfordelningar eller godkannanden fylls i automatiskt. Detta ar en
+ordning for avtalsberedning, inte en andrad ABS-blankett eller en garanti om
+ett juridiskt fullstandigt kontrakt. Kravet pa separat granskad PDF-avtalshandling
+vid ABS 18 kvarstar. Endast fasta kundpriser stods fortsatt av prismodellen.
+
+Lokal kontroll: 227 action-case-tester, TypeScript, riktad ESLint och
+produktionsbygge passerar. Klicktest med fiktiva data pa dator och mobil
+verifierar selektiv import, bevarad egen avtalstext, andrat projektunderlag,
+val per falt samt sparning och aterlasning av granskningsbeslut. Simulerat
+sparfel bevarar andringarna och tillater nytt forsok. Avbrutet byte av
+prismodell bevarar klumpsumman. Avtalsfalt och betalningsnavigation fungerar;
+kundens publicerade version forblir oforandrad.
 
 ## Beslut 2026-10-05: omfattning och borttagning
 
