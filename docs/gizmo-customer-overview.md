@@ -671,7 +671,7 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 - Verifierat lokalt med 279 action-case-tester, TypeScript och riktad ESLint.
   Klicktest med ett aldre fiktivt utkast omfattar direkt inmatning, autosparning,
   omladdning och avtalsforhandsgranskning utan den tidigare texten. Desktop och
-  mobil 390 px ar kontrollerade. Denna justering ar annu inte publicerad.
+  mobil 390 px ar kontrollerade. Denna justering ingar i publiceringspaketet 2026-10-07.
 
 ## Gemensam fastighet och ABS 18-falt 2026-10-07
 
@@ -709,7 +709,7 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   objektkoppling, inte ett globalt fritt register eller verifiering mot Lantmateriet.
 - Migration: `docs/db/2026-10-07_02_action_case_property.sql`. Den ska koras
   fore publicering. Ingen riktig databas, kund eller avtalsversion har andrats
-  under de lokala testerna. Andringen ar annu inte publicerad.
+  under de lokala testerna. Andringen ingar i publiceringspaketet 2026-10-07.
 - Verifiering: 291 action-case-tester, TypeScript, riktad ESLint och webpack-
   produktionsbygge passerar. Bygget anvander lokala testvarden for Supabase,
   inte driftens anslutning. Klicktester med fiktivt backend omfattar befintlig/
@@ -745,7 +745,7 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   publicering. Databasskyddet kontrollerar dokumentmetadata, projekt/organisation,
   privata dokument, bilagereferenser och frysta filkopior. Aldre klienter kan inte
   kasta bort den nya strukturen. Ingen retroaktiv migrering av utkast goras.
-  Denna andring ar annu inte publicerad.
+  Denna andring ingar i publiceringspaketet 2026-10-07.
 - Verifierat: 300 action-case-tester, TypeScript, riktad ESLint och produktionsbygge.
   SQL-migrationen testas med PostgreSQL/PGlite, inklusive upprepad korning,
   privata filer, organisationsgranser och frysta publicerade referenser.
@@ -754,6 +754,19 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   Desktop och mobil 390 px ar visuellt kontrollerade, inklusive avtalsutkastet.
   Oppna-lankarnas separata flik verifieras; verkliga PDF-filer och produktionsdata
   ingar inte i det syntetiska klicktestet.
+
+## Databaskontroll infor publicering 2026-10-07
+
+- Fastighetsmigration 02 fanns redan i produktion. Lasande SQL-kontroll visade
+  att `assert_contract_assignment(jsonb,boolean)` saknades, inte bara i API-cachen.
+- Migration 03 kordes med framgang i projektet `rfresrbuekidumbwzpcm`, inklusive
+  `NOTIFY pgrst, 'reload schema'`. Inga befintliga avtal eller kunduppgifter
+  skrevs om. API-funktionen ar tillganglig med service-roll.
+- Lasande produktionskontroller accepterar korrekt dokumentmetadata och avvisar
+  ogiltigt datum respektive ofullstandig publicering. Anonym funktionsatkomst nekas.
+- Produktionsbygge, riktad ESLint och den uppdaterade migrationens atta
+  regressionstester passerar. Hela action-case-testsviten har 300 godkanda tester.
+- Driftstatus for appen verifieras separat efter push till `main`.
 
 ## Senare steg, inte implementerade
 
