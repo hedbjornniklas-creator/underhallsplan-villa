@@ -63,6 +63,7 @@ async function start() {
         {projects ? <div className="gizmo-workspace">
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/fail-save', { method: 'POST' })}>Simulera nästa sparfel</button></div>
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/slow-save', { method: 'POST' })}>Simulera långsam sparning</button></div>
+          <div className="px-4 py-2 text-xs"><button onClick={async () => { await fetch('/__test__/accept-contract', { method: 'POST' }); location.reload() }}>Simulera godkänt avtal</button></div>
           {project ? <ActionCaseProject caseId={project.id} initialWorkspace={projectWorkspace} initialOffer={workspace}
             initialView={parseProjectView(params.get('view'))} issuerName="Exempelbygg AB" replyEmail="byggare@example.test" contractorSource={contractorSource} />
             : <main className="gizmo-index-inner"><p className="gizmo-eyebrow">Gizmo</p><h1>Projekt</h1><ActionCaseWorkspace initialWorkspace={projectWorkspace} initialError={null} /></main>}

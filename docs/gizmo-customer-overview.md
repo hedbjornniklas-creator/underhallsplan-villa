@@ -1,7 +1,60 @@
 # Gizmo: bestallarens projektoversikt och kundoffert
 
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
-Datum: 2026-10-06.
+Datum: 2026-10-07.
+
+## Beslut 2026-10-07: avtalsparter och fakturakund ar olika roller
+
+- Avtal samlar bestallare, entreprenor och ovriga avtalsuppgifter. Att fylla i
+  namn eller autospara skapar ingen registerkund. Kundregistervalet tas bort
+  fran Avtal; detta ersatter UI-beslutet om bestallare-1-koppling 2026-10-06.
+- Internt byter Betalningsplan namn till Betalning och fakturering, med
+  registerflikarna Betalningsplan och Fakturakund. Bestallarens publika
+  betalningssida behaller namnet Betalningsplan och far inte interna kunddata.
+- Betalningsvillkor och delbetalningar redigeras pa ett stalle och ingar i
+  samma frysta avtalsversion som pris och omfattning. Godkand plan ar last;
+  senare andring kraver separat overenskommelse, inte redigering av historiken.
+- Fakturakund valjs ur HusHubs gemensamma organisationskundregister, eller
+  skapas uttryckligen av en registeradministrator. Kontaktadress, separat
+  fakturaadress/-mejl och referens ateranvander registrets befintliga falt.
+  Kopiera bestallare 1 ar ett uttryckligt formularval, inte automatisk synkning;
+  personnummer och medbestallare kopieras inte. Registerandringar sparas
+  uttryckligen eftersom de ar gemensamma for organisationen.
+- Projektets privata `action_case_billing` har en egen revision och kundlank.
+  Skapa kund och koppla sker atomiskt med idempotenta aterforsok. Kundens version
+  kontrolleras ocksa vid koppling/redigering. Fel behaller lokal inmatning och
+  visas genom gemensamma toasts; statusytan har stabil hojd. Formularutkast
+  bevaras vid interna vybyten, med skydd mot att lamna osparad inmatning.
+- Byte eller redigering av fakturakund andrar aldrig avtalsparter, mottagare,
+  publicerade/godkanda versioner, betalningsvillkor eller delningar. Fakturakund
+  ar inte automatiskt avtalspart eller ansvarig for bestallarens skyldigheter.
+  Befintlig legacy-lank `action_cases.organization_customer_id` behalls for aldre
+  klienter, men anvands inte som fakturakoppling och backfillas inte automatiskt.
+- Befintlig Fortnox-kundexport ateranvands som uttrycklig handling med samma
+  behorighets- och versionskontroll. Kopplad betyder kundnummer registrerat,
+  inte att uppgifterna alltid ar synkroniserade. Uppdatering av redan kopplad
+  kund, dubbelriktad synkning, fakturor och betalstatus ar inte byggda i detta steg.
+- Ny migration: `docs/db/2026-10-07_01_action_case_billing.sql`. Fore aktivering
+  av produktion behovs denna migration. Ovriga projektvyer fungerar utan den;
+  fakturakoppling visas som ej aktiverad. Inga riktiga registerkunder, fakturor,
+  mejl eller godkannanden skapas av den lokala testdemonstrationen.
+
+Lokal demo: `scripts/test-customer-offer-ui.mjs --serve --project-billing --payment-plan`.
+
+Verifierat lokalt: 262 action-case-tester samt 14 tester for gemensam
+kundvalidering och Fortnox-export. Typkontroll, riktad ESLint och webpack-
+produktionsbygge passerar. PGlite provar migrationen tva ganger, roller/tenant,
+kund- och projektrevisioner, atomiska aterforsok utan dubletter och oforandrat
+godkant avtal, mottagare, betalningsplan och delningar. CUA-klicktest med
+fiktiv backend provar separat fakturakund, kopiering, tomt namn, separat
+fakturamejl, sparfel/nytt forsok, langsamt sparande, interna vybyten,
+aterlasning och fakturaredigering efter avtalsgodkannande. Mobil 390 px har
+ingen horisontell sidooverflow och bada betalningsflikarna ryms.
+Ingen riktig Fortnox-export, faktura, mejl eller signering genomfordes.
+Publiceringskontroll 2026-10-07: anvandaren har kort migrationen i produktion.
+Serverkontroll verifierar tabellen och RPC-funktionen med ett ogiltigt anrop
+som avvisas fore nagon skrivning. Anonym tabell- och funktionsatkomst nekas.
+Inga riktiga kunder, fakturor, mejl eller avtalsversioner andrades av kontrollen.
 
 ## Beslut 2026-10-06: separata arbetsvyer for Offert och Avtal
 
@@ -445,6 +498,22 @@ Inga befintliga kundavtal eller betalningsuppgifter skrevs om. Alla 165 tester
 och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 
 ## Beslutslogg
+
+- 2026-10-06: Redigering i Avtal autosparas efter 700 ms skrivpaus med samma
+  `useAutosaveQueue` som Projektarbete. En skrivning at gangen, senast kvitterad
+  utkastrevision och nyare lokal text behalls. Kon lever vidare vid interna
+  flikbyten. Ingen automatisk skrivning vid oppning av ett gammalt utkast.
+  Sparstatus har fast hojd och bredd; lyckad autosparning ger ingen toast.
+  Fel ger gemensam feltoast och uttryckligt nytt forsok, utan automatisk
+  overskrivning av en annan sessions revision. Osparad text behalls i den oppna
+  vyn och sidlamning varnas; detta ar inte en bestandig offlineko.
+  Autospar uppdaterar endast internt utkast och dess interna priskalkyl via
+  befintliga RPC:er. Kundregister, mottagare, delningar, skickade avtalsversioner
+  och mejl berors inte. Andrat mottagarnamn, e-post eller telefon bekraftas med
+  Bekrafta mottagare; utskick ar blockerat tills uppgifterna ar bekraftade.
+  Kundkoppling, granskning och utskick ar fortfarande uttryckliga handlingar.
+  Offert, separat tillvalsplanering och betalningsplan behaller sina manuella
+  sparhandlingar. Ingen ny databasmigrering behovs.
 
 - Verifiering 2026-10-06 av kundkoppling: 246 action-case-tester, 15 gemensamma
   kundregistertester och 47 tester for uppdragskund/TU passerar. Riktad ESLint

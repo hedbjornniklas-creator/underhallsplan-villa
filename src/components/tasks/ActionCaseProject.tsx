@@ -19,7 +19,7 @@ const sections = [
   { key: 'offer', label: 'Offert', icon: FileText },
   { key: 'contract', label: 'Avtal', icon: FilePenLine },
   { key: 'choices', label: 'Val och tillval', icon: ListChecks },
-  { key: 'payments', label: 'Betalningsplan', icon: WalletCards },
+  { key: 'payments', label: 'Betalning och fakturering', icon: WalletCards },
   { key: 'schedule', label: 'Tidsplan', icon: CalendarClock },
   { key: 'files', label: 'Bilder och filer', icon: FolderOpen },
 ] as const
@@ -102,7 +102,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           <div className="gizmo-overview-row"><div><h3>Offert</h3><p>{offer ? `${offer.draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(customerOfferBaseAmount(offer.draft))}` : 'Kunde inte hämtas'}</p></div>{open('offer', 'Öppna offert')}</div>
           <div className="gizmo-overview-row"><div><h3>Avtal</h3><p>{offerLabel}{accepted ? ` · Version ${accepted.version}` : ''}</p></div>{open('contract', 'Öppna avtal')}</div>
           <div className="gizmo-overview-row"><div><h3>Val och tillval</h3><p>{offer?.planning?.available ? `${offer.planning.items.length} planerade · ${offer.planning.sharedItems.length} delade med beställaren` : 'Ingen tillgänglig planering'}</p></div>{open('choices', 'Öppna val och tillval')}</div>
-          <div className="gizmo-overview-row"><div><h3>Betalningsplan</h3><p>{(contract ? contract.snapshot.paymentPlan : offer?.draft.paymentPlan)?.installments.length ?? 0} delbetalningar{contract ? ' · i avtalsversionen' : ' · internt utkast'}</p></div>{open('payments', 'Öppna betalningsplan')}</div>
+          <div className="gizmo-overview-row"><div><h3>Betalning och fakturering</h3><p>{(contract ? contract.snapshot.paymentPlan : offer?.draft.paymentPlan)?.installments.length ?? 0} delbetalningar{contract ? ' · i avtalsversionen' : ' · internt utkast'}</p></div>{open('payments', 'Öppna betalning och fakturering')}</div>
         </section>
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}

@@ -123,7 +123,8 @@ export async function getCustomerOfferWorkspace(
 export async function saveCustomerOffer(
   ctx: Context,
   caseId: string,
-  payload: Payload
+  payload: Payload,
+  mode: 'manual' | 'autosave' = 'manual'
 ) {
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
@@ -132,7 +133,7 @@ export async function saveCustomerOffer(
     ? undefined
     : normalizeCustomerOfferCosting(payload.costing, draft.items)
   await checkPricingSchema(draft)
-  if (draft.contractParties && 'organization_customer_id' in await requireCase(ctx, caseId)) {
+  if (mode === 'manual' && draft.contractParties && 'organization_customer_id' in await requireCase(ctx, caseId)) {
     await writeContractCustomer(ctx, caseId, payload)
     return
   }

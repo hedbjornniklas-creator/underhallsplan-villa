@@ -318,6 +318,23 @@ test('migrated contract saves use the atomic customer writer and recipient misma
   assert.equal(h.copies.length, 0)
 })
 
+test('contract autosave writes only the internal draft, including incomplete contact details, without recipient or registry side effects', async () => {
+  for (const withCosting of [false, true]) {
+    const h = harness({ customerRegistry: true }), ctx = { orgId: id(90), userId: id(91) }
+    h.draft.contractParties = emptyContractParties('', 'unfinished@')
+    h.draft.contractParties.customers.push({ name: '', personalNumber: '' })
+    await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, ...(withCosting ? { costing: {} } : {}) }, 'autosave')
+    const saved = h.calls.find(call => withCosting ? call.name === 'save_customer_offer_costing' : call.p_operation === 'save')
+    assert.equal(saved.p_data.body.contractParties.email, 'unfinished@')
+    assert.equal(saved.p_data.body.contractParties.customers.length, 2)
+    assert.equal(saved.p_data.revision, 1)
+    assert.equal(h.calls.some(call => call.name === 'writeContractCustomer' || ['publish', 'claim_send'].includes(call.p_operation)), false)
+    assert.equal(h.participant.email, 'anna@example.test')
+    assert.equal(h.sent.length, 0)
+    assert.equal(h.copies.length, 0)
+  }
+})
+
 test('payment plans require schema protection before save or publication and freeze into public versions', async () => {
   const ctx = { orgId: id(90), userId: id(91) }
   const h = harness()

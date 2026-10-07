@@ -35,6 +35,7 @@ export async function POST(request: Request, { params }: Params) {
       { caseId } = await params,
       body = await offerRequestBody(request)
     if (body.operation === 'save') await saveCustomerOffer(ctx, caseId, body)
+    else if (body.operation === 'autosave') await saveCustomerOffer(ctx, caseId, body, 'autosave')
     else if (body.operation === 'bind_customer') await bindContractCustomer(ctx, caseId, body)
     else if (body.operation === 'separate_choices') await separateCustomerChoices(ctx, caseId, body)
     else if (body.operation === 'publish')

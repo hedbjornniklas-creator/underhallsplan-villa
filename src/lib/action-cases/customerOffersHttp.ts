@@ -32,6 +32,10 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROJECT_BILLING_SCHEMA: [503, 'Fakturakopplingen behöver aktiveras av administratören.'],
+    PROJECT_BILLING_FAILED: [500, 'Faktureringsuppgifterna kunde inte sparas. Dina ändringar är kvar. Försök igen.'],
+    PROJECT_BILLING_STALE: [409, 'Fakturakopplingen har ändrats. Dina ändringar är kvar. Hämta den sparade versionen innan du fortsätter.'],
+    PROJECT_BILLING_CUSTOMER: [409, 'Välj en aktiv kund i organisationens kundregister och kontrollera kundversionen.'],
     CUSTOMER_REGISTRY_SCHEMA: [503, 'Kundkopplingen behöver aktiveras av administratören. Dina ändringar är kvar.'],
     CUSTOMER_REGISTRY_FORBIDDEN: [403, 'Du saknar behörighet att skapa eller koppla denna kund.'],
     CUSTOMER_REGISTRY_NOT_FOUND: [404, 'Välj en aktiv privatkund i organisationens kundregister.'],

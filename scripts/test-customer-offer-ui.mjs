@@ -25,6 +25,7 @@ import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
 import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
 import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
 import { copyRegistryCustomer } from '../src/lib/action-cases/customerRegistry.ts'
+import { emptyBillingCustomer } from '../src/lib/action-cases/projectBilling.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -101,12 +102,14 @@ if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')
 }
 const writes = []
 const projects = projectFixture(actionCase)
-const customerRegistryTest = process.argv.includes('--customer-registry')
+const customerRegistryTest = process.argv.includes('--customer-registry') || process.argv.includes('--project-billing')
 const registry = { organization: { id: id(90), name: 'Fiktiv testorganisation', canManage: true }, customers: [
   { id: id(91), orgId: id(90), customerNumber: '1001', customerType: 'private', name: 'Anna Test', email: 'anna@example.test', phone: '0700000000', address: 'Testgatan 1', postalCode: '12345', city: 'Teststad', identityNumber: null, isActive: true, version: 1 },
-  { id: id(92), orgId: id(90), customerNumber: '1002', customerType: 'business', name: 'Fiktivt företag', isActive: true, version: 1 },
+  { id: id(92), orgId: id(90), customerNumber: '1002', customerType: 'business', name: 'Fiktivt företag', email: 'ekonomi@example.test', fortnoxCustomerNumber: '2002', isActive: true, version: 1 },
   { id: id(93), orgId: id(90), customerNumber: '1003', customerType: 'private', name: 'Inaktiv kund', isActive: false, version: 1 }
 ] }
+registry.customers = registry.customers.map((customer) => ({ ...emptyBillingCustomer(), ...customer }))
+let billing = { available: true, revision: 0, customerId: null, registry }, billingRequest = null
 let customerRequestId = ''
 if (customerRegistryTest) {
   state.offers = []
@@ -143,14 +146,33 @@ const server = createServer(async (req, res) => {
   if (path === '/__test__/writes') { json(writes); return }
   if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
   if (path === '/__test__/slow-save' && req.method === 'POST') { slowSave = true; json({ ok: true }); return }
+  if (path === '/__test__/accept-contract' && req.method === 'POST') {
+    state.offers = [{ ...published(state.draft), status: 'accepted', acceptedAt: new Date().toISOString(), acceptedBy: 'Anna Test', acceptedTotalOre: state.draft.baseAmountOre }]
+    json({ ok: true }); return
+  }
+  if (path.endsWith('/billing') && req.method === 'GET') { json(billing); return }
   if (path.endsWith('/schedule') && req.method === 'GET') { json(schedule); return }
   if (path === '/api/action-cases' && req.method === 'GET') { json({ workspace: projects }); return }
   if (req.method === 'POST') {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
-    if (slowSave && (body.operation === 'save' || body.action === 'save_item_scope')) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
-    writes.push(body.operation ?? body.action)
+    if (slowSave && (['save', 'autosave'].includes(body.operation) || body.action === 'save_item_scope' || path.endsWith('/billing'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
+    writes.push(body.operation ?? body.action ?? `billing_${body.mode}`)
+    if (path.endsWith('/billing')) {
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Dina ändringar är kvar.' }, 503); return }
+      if (billingRequest?.id === body.requestId && billingRequest.key === JSON.stringify(body)) { json(billing); return }
+      if (body.revision !== billing.revision) { json({ error: 'Fakturakopplingen har ändrats. Dina ändringar är kvar.' }, 409); return }
+      let customer = registry.customers.find((row) => row.id === body.customerId)
+      if (body.mode !== 'create' && (!customer || customer.version !== body.customerVersion)) { json({ error: 'Kundversionen har ändrats.' }, 409); return }
+      if (body.mode === 'create') {
+        customer = { ...body.customer, id: id(94 + registry.customers.length), customerNumber: String(1001 + registry.customers.length), isActive: true, version: 1, fortnoxCustomerNumber: null }
+        registry.customers.push(customer)
+      } else if (body.mode === 'update') Object.assign(customer, body.customer, { version: customer.version + 1 })
+      billing = { ...billing, customerId: customer.id, revision: billing.revision + 1 }
+      billingRequest = { id: body.requestId, key: JSON.stringify(body) }
+      json(billing); return
+    }
     if (path === '/api/action-cases') {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
       const payload = body.payload ?? {}
@@ -253,7 +275,7 @@ const server = createServer(async (req, res) => {
       } catch (error) { json({ error: error.message }, 400) }
       return
     } else if (path.endsWith('/customer-offers')) {
-      if (body.operation === 'save') {
+      if (body.operation === 'save' || body.operation === 'autosave') {
         if (failSave) {
           failSave = false
           json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503)
@@ -266,7 +288,7 @@ const server = createServer(async (req, res) => {
         state.draft = normalizeCustomerOffer(body.draft)
         state.costing = normalizeCustomerOfferCosting(body.costing, state.draft.items)
         state.revision++
-        syncTestRecipient()
+        if (body.operation === 'save') syncTestRecipient()
       } else if (customerRegistryTest && body.operation === 'bind_customer') {
         if (body.requestId === customerRequestId) { json(state); return }
         if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
