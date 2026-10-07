@@ -768,6 +768,24 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   regressionstester passerar. Hela action-case-testsviten har 300 godkanda tester.
 - Driftstatus for appen verifieras separat efter push till `main`.
 
+## En gemensam handlingslista 2026-10-07
+
+- Beslut: Den separata valjaren Avtalshandling (PDF) tas bort fran Uppdraget.
+  Alla handlingar laggs till en gang med Lagg till handling fran projektet.
+  En PDF-rad kan markeras Innehaller avtalsvillkoren; bara en rad kan ha rollen.
+- Befintligt `termsAttachmentId` ateranvands. Tidigare markeringar bevaras och
+  byte av villkorshandling andrar inte datum, namn, typ, ordning eller bilagor.
+  Borttagning fran listan tar bort rollen, inte den uppladdade projektfilen.
+  Egen avtalshandling kan valja Ingen separat villkorsbilaga.
+- ABS 18 kraver fortsatt vald PDF fore utskick. Saknad markering visas med en
+  text som hanvisar till handlingsforteckningen, inte den borttagna valjaren.
+  Befintlig autosparning och serverkontroll anvands utan ny SQL-migration.
+- Status: ingar i publiceringspaketet 2026-10-07. 302 regressionstester,
+  TypeScript, riktad ESLint och produktionsbygge passerar. Lokala klicktester verifierar
+  markering, borttagning av roll, autosparning och omladdning. Byte mellan tva
+  PDF-filer och bildfilers uteslutning fran rollen omfattas av regressionstester.
+  Desktop och mobil 390 px ar visuellt kontrollerade utan horisontell overflow.
+
 ## Senare steg, inte implementerade
 
 - Fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.

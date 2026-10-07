@@ -59,6 +59,10 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
               <input aria-label={`Handlingens datum ${index + 1}`} type="date" className={field} value={doc.date} onChange={(e) => edit({ date: e.target.value })} />
             </label>
           </div>
+          {file?.contentType === 'application/pdf' && <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm">
+            <input type="radio" name={`contract-terms-${caseId}`} aria-label={`Använd handling ${index + 1} som avtalsvillkor`} className="h-4 w-4 accent-teal-800" checked={draft.termsAttachmentId === doc.fileId} onChange={() => onChange({ ...assignmentPatch(draft, value, value), termsAttachmentId: doc.fileId })} />
+            Innehåller avtalsvillkoren
+          </label>}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
             {file ? <a className="inline-flex min-h-10 min-w-0 flex-1 items-center gap-2 text-teal-800 underline" href={`/api/action-cases/${caseId}/attachments/${doc.fileId}`} target="_blank" rel="noopener noreferrer" aria-label={`Öppna ${file.fileName} i ny flik`}>
               <ExternalLink size={16} className="shrink-0" /><span className="break-all">Öppna {file.fileName}</span>
@@ -76,17 +80,10 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
         </select>
       </label>
       {!files.length && <p className="mt-2 text-sm text-slate-500">Inga handlingar uppladdade. <a className="underline" href={`/uppdrag/${caseId}?view=files`}>Bilder och filer</a></p>}
-      <label className="mt-4 block text-sm font-medium">Avtalshandling (PDF){draft.contractForm === 'abs18' ? ' *' : ''}
-        <select className={field} value={draft.termsAttachmentId ?? ''} onChange={(e) => {
-          const fileId = e.target.value || null
-          const file = files.find((f) => f.id === fileId)
-          const assignment = file && !selected.has(file.id) ? { ...value, documents: [...value.documents, { fileId: file.id, type: 'Avtalshandling', name: file.fileName, date: '' }] } : value
-          onChange({ ...assignmentPatch(draft, assignment, value), termsAttachmentId: fileId })
-        }}>
-          <option value="">Välj avtalshandling</option>
-          {files.filter((f) => f.contentType === 'application/pdf' && (draft.attachmentIds.length < 30 || draft.attachmentIds.includes(f.id))).map((f) => <option key={f.id} value={f.id}>{f.fileName}</option>)}
-        </select>
-      </label>
+      {draft.contractForm === 'custom' && <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm">
+        <input type="radio" name={`contract-terms-${caseId}`} aria-label="Ingen separat villkorsbilaga" className="h-4 w-4 accent-teal-800" checked={!draft.termsAttachmentId} onChange={() => onChange({ ...assignmentPatch(draft, value, value), termsAttachmentId: null })} />
+        Ingen separat villkorsbilaga
+      </label>}
       <label className="mt-4 block text-sm">Kompletterande uppgifter om handlingarna
         <textarea aria-label="Kompletterande uppgifter om handlingarna" className={field} rows={2} maxLength={6000} value={value.documentNotes} onChange={(e) => change({ documentNotes: e.target.value })} />
       </label>

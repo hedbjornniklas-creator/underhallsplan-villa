@@ -86,6 +86,51 @@ test('the real editor supports free types, dates, ordered files and secure separ
   assert.deepEqual(patch.attachmentIds, []); assert.equal(patch.termsAttachmentId, null)
 })
 
+test('one file picker and PDF row radios replace the duplicate agreement picker, retaining metadata and file inclusion', () => {
+  let d = structured()
+  const a = d.contractDetails.assignment
+  d = { ...d, ...assignment.assignmentPatch(d, { ...a, documents: [...a.documents,
+    { fileId: id(6), type: 'Allmänna bestämmelser', name: 'Villkor', date: '2026-10-06' },
+    { fileId: id(7), type: 'Foto', name: 'Foto.jpg', date: '2026-10-07' }] }) }
+  const library = [...files, { id: id(7), fileName: 'Foto.jpg', contentType: 'image/jpeg', fileSizeBytes: 10 }]
+  const render = () => flatten(editor()({ draft: d, files: library, caseId: id(1), onChange: (p) => { d = { ...d, ...p } } }))
+  let nodes = render()
+  assert.equal(nodes.filter((n) => n?.type === 'select').length, 2)
+  assert.equal(nodes.includes('Avtalshandling (PDF)'), false)
+  const radios = nodes.filter((n) => n?.type === 'input' && n.props.type === 'radio')
+  assert.equal(radios.length, 2)
+  assert.equal(radios[0].props.checked, true)
+  assert.equal(radios[1].props.checked, false)
+  assert.equal(radios[0].props.name, radios[1].props.name)
+  const original = structuredClone(d)
+  radios[1].props.onChange()
+  assert.equal(d.termsAttachmentId, id(6))
+  assert.deepEqual(d.attachmentIds, original.attachmentIds)
+  assert.deepEqual(d.contractDetails, original.contractDetails)
+  nodes = render()
+  assert.equal(nodes.find((n) => n?.props?.['aria-label'] === 'Använd handling 1 som avtalsvillkor').props.checked, false)
+  assert.equal(nodes.find((n) => n?.props?.['aria-label'] === 'Använd handling 2 som avtalsvillkor').props.checked, true)
+  nodes.find((n) => n?.props?.['aria-label'] === 'Ta bort handling 2 från avtalet').props.onClick()
+  assert.equal(d.termsAttachmentId, null)
+  assert.deepEqual(d.attachmentIds, [id(4), id(7)])
+  assert(offerPublishIssues(d).includes('Markera en PDF-handling som avtalsvillkor i handlingsförteckningen för ABS 18.'))
+})
+
+test('legacy terms selection materializes references atomically; custom contracts can clear the role without removing documents', () => {
+  let d = { ...draft(), contractForm: 'custom' }
+  const render = () => flatten(editor()({ draft: d, files, caseId: id(1), onChange: (p) => { d = { ...d, ...p } } }))
+  let nodes = render()
+  nodes.find((n) => n?.props?.['aria-label'] === 'Ingen separat villkorsbilaga').props.onChange()
+  assert.equal(d.termsAttachmentId, null)
+  assert.deepEqual(d.attachmentIds, [id(4)])
+  assert.equal(d.contractDetails.assignment.documents[0].fileId, id(4))
+  nodes = render()
+  assert.equal(nodes.find((n) => n?.props?.['aria-label'] === 'Ingen separat villkorsbilaga').props.checked, true)
+  nodes.find((n) => n?.props?.['aria-label'] === 'Använd handling 1 som avtalsvillkor').props.onChange()
+  assert.equal(d.termsAttachmentId, id(4))
+  assert.deepEqual(normalizeCustomerOffer(d), d)
+})
+
 test('the real contract document prints ordered metadata, extra scope and exclusions outside the price header; old snapshots keep their layout', () => {
   const code = ts.transpileModule(readFileSync(new URL('../src/components/tasks/CustomerOfferDocument.tsx', import.meta.url),'utf8'), {
     compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}

@@ -275,7 +275,7 @@ export function offerPublishIssues(
   if (!d.paymentTerms.trim()) issues.push('Ange betalningsvillkor.')
   if (!d.schedule.trim()) issues.push('Ange tider och förutsättningar.')
   if (d.contractForm === 'abs18' && !d.termsAttachmentId)
-    issues.push('Välj avtalshandlingen för ABS 18 bland bilagorna.')
+    issues.push('Markera en PDF-handling som avtalsvillkor i handlingsförteckningen för ABS 18.')
   return issues
 }
 export function customerOfferTotal(
