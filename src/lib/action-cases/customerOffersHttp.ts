@@ -32,6 +32,14 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROPERTY_SCHEMA: [503, 'Fastighetskopplingen behöver aktiveras av administratören. Dina ändringar är kvar.'],
+    PROPERTY_INVALID: [400, 'Kontrollera fastighetsuppgifterna. Ange kommun och fastighetsbeteckning.'],
+    PROPERTY_FORBIDDEN: [403, 'Du saknar behörighet till fastigheten eller projektet.'],
+    PROPERTY_NOT_FOUND: [404, 'Fastigheten kunde inte hittas. Hämta fastighetslistan igen.'],
+    PROPERTY_AMBIGUOUS: [409, 'Flera fastigheter har samma beteckning och kommun. Välj rätt fastighet från HusHub.'],
+    PROPERTY_EXISTS: [409, 'Fastigheten finns redan i HusHub. Välj den från fastighetslistan.'],
+    PROPERTY_STALE: [409, 'Fastighetsuppgifterna har ändrats. Hämta listan igen innan du kopplar fastigheten.'],
+    PROPERTY_FAILED: [500, 'Fastigheten kunde inte kopplas. Dina ändringar är kvar. Försök igen.'],
     PROJECT_BILLING_SCHEMA: [503, 'Fakturakopplingen behöver aktiveras av administratören.'],
     PROJECT_BILLING_FAILED: [500, 'Faktureringsuppgifterna kunde inte sparas. Dina ändringar är kvar. Försök igen.'],
     PROJECT_BILLING_STALE: [409, 'Fakturakopplingen har ändrats. Dina ändringar är kvar. Hämta den sparade versionen innan du fortsätter.'],

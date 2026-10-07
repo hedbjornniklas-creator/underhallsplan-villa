@@ -10,6 +10,7 @@ import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
 import { normalizePlannedItems, type CustomerPlanning, type CustomerPlannedItem } from './customerPlanning'
 import { writeContractCustomer } from './customerRegistryServer'
+import { getProjectPropertyLink } from './propertyRegistryServer'
 import {
   CUSTOMER_OFFER_BUCKET,
   CUSTOMER_OFFER_COLUMNS,
@@ -109,6 +110,7 @@ export async function getCustomerOfferWorkspace(
     customerNumber = linked.data ? String(linked.data.customer_number) : null
   }
   return {
+    propertyLink: await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
     customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
     recipient: recipient.data ? { id: recipient.data.id, role: 'customer', name: recipient.data.name,
       companyName: recipient.data.company_name, email: recipient.data.email, phone: recipient.data.phone } : null,
@@ -169,6 +171,14 @@ export async function separateCustomerChoices(ctx: Context, caseId: string, payl
   checked(result.error)
 }
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+  if (draft.contractDetails?.assignment) {
+    const guard = await createSupabaseAdminClient().rpc('assert_contract_assignment', { p_body: draft, p_complete: complete })
+    checked(guard.error)
+  }
+  if (draft.contractDetails?.property) {
+    const guard = await createSupabaseAdminClient().rpc('assert_contract_property', { p_body: draft, p_complete: complete })
+    checked(guard.error)
+  }
   if (draft.items.some((i) => i.scopeConditions !== undefined)) {
     const guard = await createSupabaseAdminClient().rpc('assert_customer_offer_scope_conditions', { p_body: draft })
     checked(guard.error)

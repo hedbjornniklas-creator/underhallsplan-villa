@@ -1,3 +1,8 @@
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { emptyPropertyDetails, normalizePropertyDetails, propertyDetailsText, propertyDetailsComplete, propertyFields, propertyIdentityKey, type PropertyDetails } from '../properties/identity.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizeAssignment, assignmentIssues, assignmentDocumentsText, type ContractAssignment } from './contractAssignment.ts'
+
 export const contractFields = [
   {
     key: 'parties',
@@ -69,6 +74,9 @@ export type ContractParticipants = {
 }
 export type CustomerContractDetails = {
   version: 1
+  assignment?: ContractAssignment
+  property?: PropertyDetails & { sourcePropertyId?: string }
+  propertyReference?: string
   controlParticipants?: ContractParticipants
   advice: {
     status: 'unreviewed' | 'none' | 'given'
@@ -91,10 +99,23 @@ export function contractEntryText(entry: ContractEntry): string {
 }
 
 export function contractParticipantsForEditing(value: CustomerContractDetails): ContractParticipants {
-  return value.controlParticipants ?? {
-    controlOfficer: '', customerInspector: '',
-    ...(value.fields.controls.text.trim() ? { previousDetails: value.fields.controls } : {})
+  return {
+    controlOfficer: value.controlParticipants?.controlOfficer ?? '',
+    customerInspector: value.controlParticipants?.customerInspector ?? ''
   }
+}
+
+export function contractDetailsForEditing(value: CustomerContractDetails): CustomerContractDetails {
+  return editContractParticipants(value, {})
+}
+
+export function editContractProperty(value: CustomerContractDetails, patch: Partial<PropertyDetails>, street = ''): CustomerContractDetails {
+  const previous = value.property ?? emptyPropertyDetails(street)
+  const property: NonNullable<CustomerContractDetails['property']> = { ...previous, ...patch }
+  if (propertyIdentityKey(property) !== propertyIdentityKey(previous)) delete property.sourcePropertyId
+  return { ...value, ...(!value.property && value.fields.property.text ? { propertyReference: value.fields.property.text } : {}), property, fields: { ...value.fields, property: {
+    status: propertyDetailsComplete(property) ? 'specified' : 'unreviewed', text: propertyDetailsText(property)
+  } } }
 }
 
 function participantsEntry(participants: ContractParticipants): ContractEntry {
@@ -109,29 +130,23 @@ function participantsEntry(participants: ContractParticipants): ContractEntry {
   }
 }
 
-export function editContractParticipants(value: CustomerContractDetails, patch: Partial<ContractParticipants>): CustomerContractDetails {
-  const controlParticipants = { ...contractParticipantsForEditing(value), ...patch }
+export function editContractParticipants(value: CustomerContractDetails, patch: Partial<Pick<ContractParticipants, 'controlOfficer' | 'customerInspector'>>): CustomerContractDetails {
+  const participants = contractParticipantsForEditing(value)
+  const controlParticipants = {
+    controlOfficer: patch.controlOfficer ?? participants.controlOfficer,
+    customerInspector: patch.customerInspector ?? participants.customerInspector
+  }
   return { ...value, controlParticipants, fields: { ...value.fields, controls: participantsEntry(controlParticipants) } }
 }
 
-export function contractParticipantTextLimit(value: CustomerContractDetails, key: (typeof contractParticipantFields)[number]['key'] | 'previousDetails'): number {
-  const participants = contractParticipantsForEditing(value)
-  if (key === 'previousDetails') {
-    const without = participantsEntry({ ...participants, previousDetails: undefined }).text
-    return Math.max(0, 6000 - without.length - (without ? 2 : 0))
-  }
-  const otherLines = contractParticipantFields.flatMap((field) => field.key !== key && participants[field.key].trim() ? [`${field.title}: ${participants[field.key]}`] : [])
-  if (participants.previousDetails?.text.trim()) otherLines.push(contractEntryText(participants.previousDetails))
-  const without = otherLines.join('\n\n')
-  const title = contractParticipantFields.find((field) => field.key === key)!.title
-  return Math.max(0, Math.min(2000, 6000 - without.length - (without ? 2 : 0) - title.length - 2))
-}
-
 export function contractFieldSummary(value: CustomerContractDetails | undefined, keys: ContractFieldKey[]): string {
+  if (keys.length === 1 && keys[0] === 'property' && value?.property) {
+    return [value.property.cadastralDesignation, value.property.municipality].filter(Boolean).join(' · ') || 'Fastighetsuppgifter saknas'
+  }
   if (keys.length === 1 && keys[0] === 'controls' && value) {
     const participants = contractParticipantsForEditing(value)
     const count = contractParticipantFields.filter(({ key }) => participants[key].trim()).length
-    return participants.previousDetails?.text.trim() ? `${count}/2 roller angivna · Gemensamma uppgifter finns` : `${count}/2 roller angivna`
+    return `${count}/2 roller angivna`
   }
   const complete = keys.filter((key) => value?.fields[key].status !== 'unreviewed' && value?.fields[key].text.trim()).length
   return `${complete}/${keys.length} uppgifter ifyllda`
@@ -198,6 +213,20 @@ export function normalizeContractDetails(
   for (const { key } of contractFields) {
     result.fields[key] = normalizeEntry(fields[key])
   }
+  if (input.assignment !== undefined) {
+    result.assignment = normalizeAssignment(input.assignment)
+    result.fields.documents = { status: assignmentIssues(result.assignment).length ? 'unreviewed' : 'specified', text: assignmentDocumentsText }
+  }
+  if (input.propertyReference !== undefined) result.propertyReference = str(input.propertyReference)
+  if (input.property !== undefined) {
+    try { result.property = normalizePropertyDetails(input.property) } catch { invalid() }
+    const source = record(input.property).sourcePropertyId
+    if (source !== undefined) {
+      if (typeof source !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(source)) invalid()
+      result.property!.sourcePropertyId = source
+    }
+    result.fields.property = { status: propertyDetailsComplete(result.property!) ? 'specified' : 'unreviewed', text: propertyDetailsText(result.property!) }
+  }
   if (input.controlParticipants !== undefined) {
     const participants = record(input.controlParticipants)
     result.controlParticipants = {
@@ -242,9 +271,18 @@ export function contractDetailsIssues(
     )
   for (const { key, title } of contractFields) {
     if (key === 'parties' && structuredParties) continue
-    if (key === 'controls' && value.controlParticipants) {
-      const participants = value.controlParticipants
-      if (participants.previousDetails?.status !== 'unreviewed' && participants.previousDetails?.text.trim()) continue
+    if (key === 'documents' && value.assignment) {
+      issues.push(...assignmentIssues(value.assignment))
+      continue
+    }
+    if (key === 'property' && value.property) {
+      for (const { key: propertyKey, title: propertyTitle, required } of propertyFields) {
+        if (required && !value.property[propertyKey].trim()) issues.push(`Komplettera fastighetens ${propertyTitle.toLowerCase()}.`)
+      }
+      continue
+    }
+    if (key === 'controls') {
+      const participants = contractParticipantsForEditing(value)
       for (const { key: participantKey, title: participantTitle } of contractParticipantFields) {
         if (!participants[participantKey].trim()) issues.push(`Kontrollera avtalsuppgiften: ${participantTitle}. Ange person eller beskriv om ingen är utsedd.`)
       }

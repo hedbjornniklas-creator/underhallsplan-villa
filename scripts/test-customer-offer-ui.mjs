@@ -26,6 +26,8 @@ import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.t
 import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
 import { copyRegistryCustomer } from '../src/lib/action-cases/customerRegistry.ts'
 import { emptyBillingCustomer } from '../src/lib/action-cases/projectBilling.ts'
+import { editContractProperty, emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
+import { normalizePropertyDetails, propertyIdentityKey } from '../src/lib/properties/identity.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -75,6 +77,11 @@ const theme = await readFile('src/components/tasks/uppdrag-theme.css', 'utf8'),
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
   challenge = null,
   failSave = false
+if (process.argv.includes('--legacy-controls')) {
+  state.draft.contractDetails = emptyContractDetails()
+  state.draft.contractDetails.fields.controls = { status: 'specified', text: 'TEST: Tidigare gemensamma rolluppgifter.' }
+  state.draft.contractDetails.controlParticipants = { controlOfficer: '', customerInspector: '', previousDetails: state.draft.contractDetails.fields.controls }
+}
 state.planning = { available: true, revision: 0, items: [], sharedItems: [], costingAvailable: true, costing: {} }
 function separateChoices() {
   const choices = state.draft.items.filter((i) => i.kind === 'option')
@@ -102,7 +109,18 @@ if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')
 }
 const writes = []
 const projects = projectFixture(actionCase)
-const customerRegistryTest = process.argv.includes('--customer-registry') || process.argv.includes('--project-billing')
+const propertyRegistryTest = process.argv.includes('--property-registry')
+const customerRegistryTest = process.argv.includes('--customer-registry') || process.argv.includes('--project-billing') || propertyRegistryTest
+const properties = [
+  { id: id(110), name: 'Lokevägen 6', municipality: 'Danderyd', cadastralDesignation: 'BYLGIA 24', street: 'Lokevägen 6', postalCode: '182 75', city: 'Djursholm' },
+  { id: id(111), name: 'Annan kommun', municipality: 'Täby', cadastralDesignation: 'BYLGIA 24', street: 'Testgatan 2', postalCode: '', city: 'Täby' }
+]
+let propertyRequestId = ''
+if (propertyRegistryTest) {
+  state.propertyLink = { available: true, property: null }
+  state.draft.contractDetails = emptyContractDetails()
+  state.draft.contractDetails.fields.property = { status: 'specified', text: 'BYLGIA 24, Lokevägen 6, Djursholm, Danderyds kommun. Tillbyggnad med cirka 39,06 m² byggnadsarea.' }
+}
 const registry = { organization: { id: id(90), name: 'Fiktiv testorganisation', canManage: true }, customers: [
   { id: id(91), orgId: id(90), customerNumber: '1001', customerType: 'private', name: 'Anna Test', email: 'anna@example.test', phone: '0700000000', address: 'Testgatan 1', postalCode: '12345', city: 'Teststad', identityNumber: null, isActive: true, version: 1 },
   { id: id(92), orgId: id(90), customerNumber: '1002', customerType: 'business', name: 'Fiktivt företag', email: 'ekonomi@example.test', fortnoxCustomerNumber: '2002', isActive: true, version: 1 },
@@ -143,6 +161,7 @@ const server = createServer(async (req, res) => {
   }
   if (path === '/project-fixture') { json(projects); return }
   if (customerRegistryTest && path === '/api/settings/customers') { json({ workspace: registry }); return }
+  if (propertyRegistryTest && path.endsWith('/properties') && req.method === 'GET') { json({ properties }); return }
   if (path === '/__test__/writes') { json(writes); return }
   if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
   if (path === '/__test__/slow-save' && req.method === 'POST') { slowSave = true; json({ ok: true }); return }
@@ -286,9 +305,30 @@ const server = createServer(async (req, res) => {
           return
         }
         state.draft = normalizeCustomerOffer(body.draft)
+        if (propertyRegistryTest && state.draft.contractDetails?.property && !state.draft.contractDetails.property.sourcePropertyId) state.propertyLink.property = null
         state.costing = normalizeCustomerOfferCosting(body.costing, state.draft.items)
         state.revision++
         if (body.operation === 'save') syncTestRecipient()
+      } else if (propertyRegistryTest && body.operation === 'bind_property') {
+        if (body.binding.requestId === propertyRequestId) { json(state); return }
+        if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Dina ändringar är kvar.' }, 503); return }
+        if (body.revision !== state.revision) { json({ error: 'Utkastet har ändrats.' }, 409); return }
+        const input = normalizePropertyDetails(body.binding.property)
+        let property = properties.find((row) => row.id === body.binding.propertyId)
+        if (body.binding.mode === 'create') {
+          if (properties.some((row) => propertyIdentityKey(row) === propertyIdentityKey(input))) { json({ error: 'Fastigheten finns redan i HusHub. Välj den från fastighetslistan.' }, 409); return }
+          property = { ...input, id: id(110 + properties.length), name: input.cadastralDesignation }
+          properties.push(property)
+        }
+        if (!property) { json({ error: 'Fastigheten saknas.' }, 404); return }
+        state.draft = normalizeCustomerOffer(body.draft)
+        state.draft.contractDetails = editContractProperty(state.draft.contractDetails, property)
+        state.draft.contractDetails.property = { ...normalizePropertyDetails(property), sourcePropertyId: property.id }
+        state.propertyLink.property = property
+        state.revision++
+        propertyRequestId = body.binding.requestId
+        projects.cases[0].propertyId = property.id
+        projects.cases[0].propertyAddress = property.street
       } else if (customerRegistryTest && body.operation === 'bind_customer') {
         if (body.requestId === customerRequestId) { json(state); return }
         if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }

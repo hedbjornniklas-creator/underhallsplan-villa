@@ -656,6 +656,105 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   bakgrundssparning, omladdning, sparfel/aterforsok och avtalsforhandsgranskning.
   Desktop och mobil 390 px ar kontrollerade; inga riktiga avtal eller mejl andras.
 
+## Borttaget gemensamt rollfalt 2026-10-07
+
+- Anvandaren har beslutat att ta bort Tidigare gemensamma uppgifter. Detta
+  ersatter den tidigare utfalldelen och undantaget for gemensamma rolluppgifter.
+  Avtalsredigeringen visar bara kontrollansvarig och bestallarens kontrollant.
+- Redigerbara utkast tar inte med den gamla gemensamma texten. Rollerna arvs
+  bara fran redan strukturerade rollfalt; inga namn eller roller gissas fran
+  tidigare fritext. De tva rollerna kontrolleras var for sig fore utskick.
+- Ursprungliga sparade uppgifter och publicerade avtalsversioner skrivs inte om
+  vid lasning. Andringen av utkastet sparas genom det befintliga sparflodet med
+  revisionskontroll. Historiska dokument visas fortsatt med sitt ursprungliga
+  innehall. Ingen SQL-migration kravs.
+- Verifierat lokalt med 279 action-case-tester, TypeScript och riktad ESLint.
+  Klicktest med ett aldre fiktivt utkast omfattar direkt inmatning, autosparning,
+  omladdning och avtalsforhandsgranskning utan den tidigare texten. Desktop och
+  mobil 390 px ar kontrollerade. Denna justering ar annu inte publicerad.
+
+## Gemensam fastighet och ABS 18-falt 2026-10-07
+
+- Beslut: Fastigheten delas i kommun, fastighetsbeteckning, gata, postnummer och
+  ort, enligt fastighetsdelen i [ABS 18-formularet](https://byggtjanstcms.byggtjanst.se/globalassets/pdf/entreprenadkontrakt-abs-18.pdf).
+  Gammal sammanslagen text visas som referens vid komplettering, aldrig som
+  gissade strukturerade uppgifter. Referensen lagras i `propertyReference` sa
+  att den finns kvar efter delvis ifyllnad, autosparning och omladdning, men den
+  skrivs inte ut i det nya avtalet. Byggnadsarea och uppdragsbeskrivning ar inte
+  del av fastighetsidentiteten. Programmets utskickskrav galler kommun,
+  beteckning, gata och ort; postnummer ar valfritt.
+- Uppdrag ateranvander `public.properties`, samma register och UUID som OB,
+  TU och Fuktsakerhet. `action_cases.property_id` kopplar projektet dit.
+  Kommun + normaliserad beteckning identifierar kandidater. Beteckningen ensam,
+  adressen eller projektnamnet anvands aldrig som unik identitet eller behorighet.
+- Val fran HusHub kopierar befintliga uppgifter till utkastet. Registrera
+  fastigheten skapar en post med den befintliga agarmodellen; koppling och
+  avtalsutkast sparas atomiskt med revisionskontroll och identiskt aterforsok.
+  En matchande tillganglig fastighet maste valjas i stallet for att skapas igen.
+  Flera aldre dubletter kraver ett uttryckligt val, aldrig automatisk sammanslagning.
+- Tillgangliga kandidater ar anvandarens befintliga fastigheter eller fastigheter
+  redan uttryckligt kopplade till organisationens Uppdrag. Registrets befintliga
+  RLS andras inte. Kopplingen ger inte atkomst till andra modulers rapporter eller
+  projekt. Fastigheter utan kommun/beteckning behover kompletteras i registret.
+- Avtalsutkastet har en egen strukturerad kopia i `contractDetails.property` och
+  en kompatibel sammanstallning i `fields.property`. Befintlig autosparning
+  ateranvands, men redigering uppdaterar inte registret automatiskt. Andrad
+  kommun/beteckning tar bort projektkopplingen vid sparning och kraver nytt val
+  eller registrering. Aldre klienter kan inte kasta bort strukturen.
+- Skickade avtal maste aterkallas fore omkoppling; godkanda avtal kan inte
+  kopplas om. Historiska avtal och besiktningssnapshots skrivs aldrig om.
+  Ingen retroaktiv matchning eller omskrivning gors i OB, TU eller RenoApp.
+  RenoApps sjalvstandiga arenden och atkomstprinciper ar oforandrade.
+- Fastighetslistan kan nu sokas pa beteckning och kommun. Detta ar gemensam
+  objektkoppling, inte ett globalt fritt register eller verifiering mot Lantmateriet.
+- Migration: `docs/db/2026-10-07_02_action_case_property.sql`. Den ska koras
+  fore publicering. Ingen riktig databas, kund eller avtalsversion har andrats
+  under de lokala testerna. Andringen ar annu inte publicerad.
+- Verifiering: 291 action-case-tester, TypeScript, riktad ESLint och webpack-
+  produktionsbygge passerar. Bygget anvander lokala testvarden for Supabase,
+  inte driftens anslutning. Klicktester med fiktivt backend omfattar befintlig/
+  ny fastighet, kommunskillnad, dublett, autosparning, sparfel/aterforsok,
+  omladdning efter delvis komplettering och avtalsforhandsgranskning.
+  Desktop och mobil 390 px ar visuellt kontrollerade utan horisontell overflow.
+
+## Uppdraget och uppladdade avtalshandlingar 2026-10-07
+
+- Beslut: Uppdraget samlar handlingsforteckning, kompletterande omfattning och
+  undantag enligt faltstrukturen i ABS 18. Arbetsdelar fran Offert/Projektarbete
+  finns kvar och behover inte skrivas pa nytt. Avtalsgrund och val av PDF flyttas
+  hit; ovriga bilagor har en separat utfalldel, utan dubbla val av samma handling.
+- Valj en uppladdad projektfil. Typ ar fritext med forslag, namn hamtas fran
+  filnamnet och kan redigeras, datum anges uttryckligen. Uppladdningsdatum eller
+  filnamn tolkas aldrig som handlingsdatum. Det finns flytt- och borttagningsverktyg.
+  Borttagning galler bara avtalskopplingen, inte filen i projektbiblioteket.
+- Oppna-lanken anvander befintlig skyddad filroute och separat flik, sa att
+  dokument och avtalsredigering kan granskas samtidigt. Interna UE-offertdokument
+  erbjuds inte i urvalet och skyddas aven i databasens nya referenskontroll.
+- Valfria fritextfalt: Samt enligt foljande, Entreprenorens atagande omfattar inte
+  och kompletterande uppgifter om handlingarna. Tidigare fritext om handlingar
+  bevaras i det sista faltet vid forsta strukturerade redigeringen.
+- `contractDetails.assignment` lagrar fil-ID, typ, namn, datum, ordning och
+  kompletterande texter. Referenser och `attachmentIds` sparas i samma befintliga
+  revisionsstyrda autosparning. Ofullstandiga rader far sparas men blockerar
+  utskick. Handlingsforteckningen och texterna fryses i den publicerade versionen,
+  tillsammans med befintliga separata filkopior. Aldre versioner skrivs inte om.
+- Ingen juridisk rangordning gissas fran listordningen. Standardvillkoren ligger
+  fortsatt i den valda originalhandlingen; programmet skriver inte om ABS 18.
+  Referens: [Konsumentverkets entreprenadkontrakt ABS 18](https://publikationer.konsumentverket.se/produkter-och-tjanster/boende-och-hantverkstjanster/entreprenadkontrakt-abs-18).
+- Migration: `docs/db/2026-10-07_03_contract_assignment_documents.sql`, kor fore
+  publicering. Databasskyddet kontrollerar dokumentmetadata, projekt/organisation,
+  privata dokument, bilagereferenser och frysta filkopior. Aldre klienter kan inte
+  kasta bort den nya strukturen. Ingen retroaktiv migrering av utkast goras.
+  Denna andring ar annu inte publicerad.
+- Verifierat: 300 action-case-tester, TypeScript, riktad ESLint och produktionsbygge.
+  SQL-migrationen testas med PostgreSQL/PGlite, inklusive upprepad korning,
+  privata filer, organisationsgranser och frysta publicerade referenser.
+  Lokala klicktester med fiktiva uppgifter omfattar val, redigering, flytt,
+  borttagning utan filradering, autosparning, omladdning och aterforsok efter sparfel.
+  Desktop och mobil 390 px ar visuellt kontrollerade, inklusive avtalsutkastet.
+  Oppna-lankarnas separata flik verifieras; verkliga PDF-filer och produktionsdata
+  ingar inte i det syntetiska klicktestet.
+
 ## Senare steg, inte implementerade
 
 - Fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.

@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import * as contract from '../src/lib/action-cases/customerContract.ts'
+import * as propertyDomain from '../src/lib/properties/identity.ts'
 import { emptyCustomerOffer, normalizeCustomerOffer } from '../src/lib/action-cases/customerOffers.ts'
 
 const complete = () => {
@@ -48,20 +49,35 @@ test('clearing a role cannot reuse an earlier complete combined field to bypass 
   assert.equal(empty.fields.controls.text, '')
 })
 
-test('old common text is retained without assigning a person to either role or modifying the original snapshot', () => {
+test('old common text is removed from editable drafts without assigning roles or modifying the original snapshot', () => {
   const original = complete()
   original.fields.controls = { status: 'document', text: 'Se projektavtal, bilaga 3' }
   assert.deepEqual(contract.normalizeContractDetails(original), original)
   const before = structuredClone(original)
+  const draft = contract.contractDetailsForEditing(original)
+  assert.deepEqual(draft.controlParticipants, { controlOfficer: '', customerInspector: '' })
+  assert.deepEqual(draft.fields.controls, { status: 'unreviewed', text: '' })
+  assert.equal(contract.contractDetailsIssues(draft).length, 2)
   const edited = contract.editContractParticipants(original, { controlOfficer: 'Anna' })
   assert.deepEqual(original, before)
-  assert.deepEqual(edited.controlParticipants.previousDetails, original.fields.controls)
+  assert.equal(edited.controlParticipants.previousDetails, undefined)
   assert.equal(edited.controlParticipants.customerInspector, '')
-  assert.match(edited.fields.controls.text, /Avtalshandling: Se projektavtal, bilaga 3/)
+  assert.equal(edited.fields.controls.text.includes('bilaga 3'), false)
   assert.deepEqual(contract.normalizeContractDetails(edited), edited)
-  assert.deepEqual(contract.contractDetailsIssues(edited), [])
-  const cleared = contract.editContractParticipants(edited, { previousDetails: { status: 'unreviewed', text: '' } })
-  assert.match(contract.contractDetailsIssues(cleared).join(), /Beställarens kontrollant/)
+  assert.match(contract.contractDetailsIssues(edited).join(), /Beställarens kontrollant/)
+})
+
+test('previous structured common text cannot bypass role checks or reappear in the draft summary or saved body', () => {
+  const original = complete()
+  original.controlParticipants = { controlOfficer: 'Anna', customerInspector: '', previousDetails: { status: 'specified', text: 'Gammal testtext' } }
+  assert.match(contract.contractDetailsIssues(original).join(), /Beställarens kontrollant/)
+  const before = structuredClone(original)
+  const details = contract.contractDetailsForEditing(original)
+  assert.equal(contract.contractFieldSummary(details, ['controls']), '1/2 roller angivna')
+  assert.equal(JSON.stringify(details).includes('Gammal testtext'), false)
+  const saved = normalizeCustomerOffer({ ...emptyCustomerOffer(), contractDetails: details })
+  assert.deepEqual(saved.contractDetails, details)
+  assert.deepEqual(original, before)
 })
 
 test('role data rejects invalid shapes, excessive text and malformed legacy data without silent truncation', () => {
@@ -87,6 +103,7 @@ function components() {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx }
     if (name === 'lucide-react') return { FileCheck2: 'svg' }
     if (name === '@/lib/action-cases/customerContract') return contract
+    if (name === '@/lib/properties/identity') return propertyDomain
     throw new Error('Unexpected dependency: ' + name)
   }, loaded, loaded.exports)
   return loaded.exports
@@ -109,16 +126,22 @@ test('the actual editor exposes both roles immediately, no status menus, and edi
   assert.equal(advice.filter((node) => node?.type === 'select').length, 1, 'the real advice choice remains')
 })
 
-test('editor input limits reserve space for both role labels and retained common text in the existing database field', () => {
+test('editor input limits allow both full role fields without exceeding the compatible database field', () => {
   const details = complete()
   details.fields.controls = { status: 'document', text: 'z'.repeat(5500) }
-  let edited = contract.editContractParticipants(details, { controlOfficer: '' })
+  const view = components()
+  const nodes = flatten(view.default({ value: details, fieldKeys: ['controls'], showAdvice: false, inline: true, onChange: () => {} }))
+  const inputs = nodes.filter((node) => node?.type === 'textarea')
+  assert.equal(inputs.length, 2)
+  assert(inputs.every((input) => input.props.maxLength === 2000))
+  let edited = contract.contractDetailsForEditing(details)
   for (const { key } of contract.contractParticipantFields) {
-    edited = contract.editContractParticipants(edited, { [key]: 'x'.repeat(contract.contractParticipantTextLimit(edited, key)) })
+    edited = contract.editContractParticipants(edited, { [key]: 'x'.repeat(2000) })
   }
   assert(edited.fields.controls.text.length <= 6000)
   assert.deepEqual(contract.normalizeContractDetails(edited), edited)
-  assert.equal(contract.contractParticipantTextLimit(edited, 'previousDetails'), contract.contractEntryText(edited.controlParticipants.previousDetails).length)
+  assert.equal(edited.controlParticipants.previousDetails, undefined)
+  assert.equal(nodes.some((node) => node === 'Tidigare gemensamma uppgifter'), false)
 })
 
 test('new contract documents display separate roles while old documents preserve their common text', () => {
@@ -129,8 +152,10 @@ test('new contract documents display separate roles while old documents preserve
   assert.equal(legacyNodes.includes('Kontrollansvarig enligt plan- och bygglagen'), false)
   const value = contract.editContractParticipants(legacy, { controlOfficer: 'Anna', customerInspector: 'Bo' })
   const nodes = flatten(view.CustomerContractDocument({ value }))
-  for (const text of ['Kontrollansvarig enligt plan- och bygglagen', 'Beställarens kontrollant', 'Anna', 'Bo', 'Avtalshandling: Original role information']) assert(nodes.includes(text))
-  assert.equal(nodes.filter((node) => node === 'Avtalshandling: Original role information').length, 1)
+  for (const text of ['Kontrollansvarig enligt plan- och bygglagen', 'Beställarens kontrollant', 'Anna', 'Bo']) assert(nodes.includes(text))
+  assert.equal(nodes.includes('Avtalshandling: Original role information'), false)
+  const historical = { ...value, controlParticipants: { ...value.controlParticipants, previousDetails: legacy.fields.controls } }
+  assert(flatten(view.CustomerContractDocument({ value: historical })).includes('Avtalshandling: Original role information'))
 })
 
 test('legacy exclusion and document prefixes are visible and can be removed without affecting the old snapshot', () => {

@@ -13,6 +13,8 @@ type PropertyRow = {
   owner?: string | null
   name: string
   address: string | null
+  cadastral_id?: string | null
+  municipality?: string | null
   client_name: string | null
   status: PropertyStatus | null
   created_at?: string
@@ -43,7 +45,7 @@ export default function PropertiesPage() {
 
     const { data, error } = await supabase
       .from('properties')
-      .select('id,owner,name,address,client_name,status,created_at')
+      .select('id,owner,name,address,cadastral_id,municipality,client_name,status,created_at')
       .eq('owner', auth.user.id) // rekommenderat: visa bara användarens fastigheter
       .order('created_at', { ascending: false })
 
@@ -74,6 +76,8 @@ export default function PropertiesPage() {
       r = r.filter(x =>
         (x.name ?? '').toLowerCase().includes(s) ||
         (x.address ?? '').toLowerCase().includes(s) ||
+        (x.cadastral_id ?? '').toLowerCase().includes(s) ||
+        (x.municipality ?? '').toLowerCase().includes(s) ||
         (x.client_name ?? '').toLowerCase().includes(s)
       )
     }
@@ -136,12 +140,12 @@ export default function PropertiesPage() {
             <input
               value={q}
               onChange={e => setQ(e.target.value)}
-              placeholder="Sök namn, adress eller kund…"
+              placeholder="Sök beteckning, kommun, adress…"
               className="border rounded-lg px-3 py-2 text-sm w-64"
             />
             <select
               value={filter}
-              onChange={e => setFilter(e.target.value as any)}
+              onChange={e => setFilter(e.target.value as 'Alla' | PropertyStatus)}
               className="border rounded-lg px-3 py-2 text-sm"
             >
               <option value="Alla">Alla</option>
@@ -192,6 +196,7 @@ export default function PropertiesPage() {
               <div key={r.id} className="p-4 flex items-center justify-between">
                 <div className="min-w-0">
                   <div className="font-medium truncate">{r.name}</div>
+                  {(r.cadastral_id || r.municipality) && <div className="text-sm text-gray-700">{[r.cadastral_id, r.municipality].filter(Boolean).join(' · ')}</div>}
                   <div className="text-xs text-gray-600 truncate">
                     {r.address ?? '—'} {r.client_name ? `• Kund: ${r.client_name}` : ''}
                   </div>

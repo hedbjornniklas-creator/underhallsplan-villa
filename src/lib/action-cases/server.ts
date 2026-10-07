@@ -287,6 +287,7 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
     customerEmail: row.customer_email,
     customerPhone: row.customer_phone,
     propertyAddress: row.property_address,
+    propertyId: row.property_id ?? null,
     sourceKind: row.source_kind,
     sourceReference: row.source_reference,
     description: row.description,

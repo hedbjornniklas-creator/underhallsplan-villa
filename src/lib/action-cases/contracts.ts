@@ -190,6 +190,7 @@ export type ActionCaseView = {
   customerEmail: string | null
   customerPhone: string | null
   propertyAddress: string
+  propertyId?: string | null
   sourceKind: 'manual' | 'inspection' | 'email' | 'customer_request'
   sourceReference: string | null
   description: string | null

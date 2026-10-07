@@ -72,7 +72,7 @@ function completeContract() {
     entry.status = 'document'
     entry.text = 'Referens till granskat projektavtal, punkt 1 (test).'
   }
-  return result
+  return editContractParticipants(result, { controlOfficer: 'Anna Test', customerInspector: 'Ingen utsedd' })
 }
 
 test('separate contract roles persist and freeze using the existing SQL contract schema', async () => {
@@ -314,7 +314,7 @@ test('contract details never manufacture advice and preserve legacy snapshots', 
   assert.equal(emptyContractDetails().advice.status, 'unreviewed')
   assert.equal(normalizeCustomerOffer(emptyCustomerOffer()).contractDetails, undefined)
   assert.deepEqual(contractDetailsIssues(undefined), [])
-  assert.equal(contractDetailsIssues(emptyContractDetails()).length, 13)
+  assert.equal(contractDetailsIssues(emptyContractDetails()).length, 14)
   const details = completeContract()
   assert.deepEqual(contractDetailsIssues(details), [])
   details.advice.work = 'Olämpligt arbete'

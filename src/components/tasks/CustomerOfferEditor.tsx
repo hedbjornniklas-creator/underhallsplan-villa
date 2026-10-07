@@ -41,8 +41,11 @@ import PriceInput from './CustomerOfferPriceInput'
 import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
 import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
 import CustomerContractFields from './CustomerContractFields'
+import CustomerContractPropertyEditor from './CustomerContractPropertyEditor'
+import CustomerContractAssignmentEditor from './CustomerContractAssignmentEditor'
+import { assignmentForEditing } from '@/lib/action-cases/contractAssignment'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
-import { contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
+import { contractDetailsForEditing, contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
 import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
@@ -58,6 +61,11 @@ const field =
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
 export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocument' | 'customer' | 'planning' | 'payments'
+function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
+  const details = workspace.draft.contractDetails ?? emptyContractDetails()
+  return { ...workspace.draft, contractDetails: workspace.offers.some((offer) => offer.status === 'accepted')
+    ? details : contractDetailsForEditing(details) }
+}
 export default function CustomerOfferEditor({
   actionCase,
   initial,
@@ -91,8 +99,7 @@ export default function CustomerOfferEditor({
 }) {
   const initialCustomer = initial.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [workspace, setWorkspace] = useState(initial),
-    [draft, setDraft] = useState<CustomerOfferDraft>(() => ({ ...initial.draft,
-      contractDetails: initial.draft.contractDetails ?? emptyContractDetails(),
+    [draft, setDraft] = useState<CustomerOfferDraft>(() => ({ ...draftForEditing(initial),
       contractParties: initial.draft.contractParties ?? emptyContractParties(initialCustomer?.name ?? actionCase.customerName,
         initialCustomer?.email ?? '', initialCustomer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
     }))
@@ -145,7 +152,7 @@ export default function CustomerOfferEditor({
     onSaved: (result, submitted) => {
       setWorkspace(result)
       const current = currentSnapshot.current
-      const next = { draft: retainNewerDraft(current.draft, submitted.draft, result.draft),
+      const next = { draft: retainNewerDraft(current.draft, submitted.draft, draftForEditing(result)),
         costing: retainNewerDraft(current.costing, submitted.costing, result.costing ?? {}) }
       currentSnapshot.current = next
       setDraft(next.draft)
@@ -167,6 +174,8 @@ export default function CustomerOfferEditor({
     ...(recipientChanged ? ['Bekräfta mottagaren under Beställare före utskick.'] : [])
   ]
   const files = actionCase.attachments.filter((f) => !f.isQuoteDocument)
+  const contractDocuments = assignmentForEditing(draft, files).documents
+  const otherFiles = files.filter((f) => !contractDocuments.some((d) => d.fileId === f.id))
   const baseAmount = customerOfferBaseAmount(draft)
   const legacyChoices = draft.items.filter((i) => i.kind === 'option')
   const missingPriceCount = draft.items.filter(
@@ -246,11 +255,11 @@ export default function CustomerOfferEditor({
       const data = await response.json()
       if (!response.ok)
         throw new Error(data.error || 'Offerten kunde inte hanteras.')
-      if (operation === 'bind_customer' || data.recipient?.name !== workspace.recipient?.name ||
+      if (operation === 'bind_customer' || operation === 'bind_property' || data.recipient?.name !== workspace.recipient?.name ||
         data.recipient?.email !== workspace.recipient?.email || data.recipient?.phone !== workspace.recipient?.phone) onCustomerChanged?.()
       autosave.reset(data.revision)
       setWorkspace(data)
-      setDraft((current) => operation === 'save' ? retainNewerDraft(current, draft, data.draft) : data.draft)
+      setDraft((current) => operation === 'save' ? retainNewerDraft(current, draft, draftForEditing(data)) : draftForEditing(data))
       setCosting((current) => operation === 'save' ? retainNewerDraft(current, costing, data.costing ?? {}) : data.costing ?? {})
       if (operation === 'separate_choices' || operation === 'bind_customer' ||
         ((operation === 'save' || operation === 'refresh') && !planningDirtyRef.current)) {
@@ -270,6 +279,8 @@ export default function CustomerOfferEditor({
                 ? 'Valen har flyttats. Grundpriset är oförändrat. Inget har delats eller beställts.'
                 : operation === 'bind_customer'
                   ? 'Kunden är kopplad. Avtalsutkastet och mottagaren har sparats.'
+                : operation === 'bind_property'
+                  ? 'Fastigheten är kopplad i HusHub. Avtalsutkastet har sparats.'
                 : 'Ändringarna sparades.'
       )
       return true
@@ -590,18 +601,22 @@ export default function CustomerOfferEditor({
                 onChange={(contractor) => update({ contractParties: { ...parties, contractor } })} />
             </ProjectEditorRow>
             {contractSection('controls', 'Övriga medverkande', ['controls'])}
-            <ProjectEditorRow title="Fastigheten" summary={actionCase.propertyAddress || 'Adress saknas'} open={expanded === 'property'} onToggle={() => setExpanded(expanded === 'property' ? null : 'property')}>
-              <p className="mb-4 text-sm">{actionCase.propertyAddress}</p>
-              <CustomerContractFields value={draft.contractDetails} fieldKeys={['property']} showAdvice={false} inline onChange={(contractDetails) => update({ contractDetails })} />
+            <ProjectEditorRow title="Fastigheten" summary={draft.contractDetails?.property ? contractFieldSummary(draft.contractDetails, ['property']) : actionCase.propertyAddress || 'Adress saknas'} open={expanded === 'property'} onToggle={() => setExpanded(expanded === 'property' ? null : 'property')}>
+              <CustomerContractPropertyEditor caseId={actionCase.id} value={draft.contractDetails} street={actionCase.propertyAddress}
+                link={workspace.propertyLink} busy={Boolean(busy) || autosave.isPending()}
+                onChange={(contractDetails) => update({ contractDetails })} onBind={(binding) => action('bind_property', { binding })} />
             </ProjectEditorRow>
             <ProjectEditorRow title="Uppdraget" summary={`${draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(baseAmount)}`}
               open={expanded === 'scope-summary'} onToggle={() => setExpanded(expanded === 'scope-summary' ? null : 'scope-summary')}>
+              <CustomerContractAssignmentEditor draft={draft} files={files} caseId={actionCase.id} onChange={update}>
+              <h3 className="mt-6 font-semibold">Arbetsdelar och avgränsningar</h3>
               {draft.items.filter((item) => item.kind === 'included' || item.kind === 'excluded').map((item) => <div key={item.id} className="border-b border-slate-200 py-3 text-sm">
                 <h3 className="font-semibold">{item.title}{item.kind === 'excluded' ? ' · Ingår inte' : ''}</h3>
                 <p className="mt-1 whitespace-pre-wrap">{item.scope}</p>
                 {([['scopeConditions', 'Förutsättningar'], ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, label]) => item[key]?.trim() ? <p key={key} className="mt-2 whitespace-pre-wrap"><strong>{label}: </strong>{item[key]}</p> : null)}
               </div>)}
               <button className={`${button} mt-4`} onClick={() => setView('edit')}><ArrowLeft size={17} /> Redigera omfattning i Offert</button>
+              </CustomerContractAssignmentEditor>
             </ProjectEditorRow>
             </div>
             <section hidden={contractView}>
@@ -747,17 +762,11 @@ export default function CustomerOfferEditor({
             </section>
             <div hidden={contractView}>{priceSection}</div>
             <div hidden={!contractView} className="space-y-5">
-            <ProjectEditorRow title="Avtalshandlingar och bilagor" summary={`${draft.attachmentIds.length} valda · ${draft.termsAttachmentId ? 'Avtalshandling vald' : 'Avtalshandling saknas'}`}
+            <ProjectEditorRow title="Övriga bilagor" summary={`${otherFiles.filter((f) => draft.attachmentIds.includes(f.id)).length} valda`}
               open={expanded === 'files'} onToggle={() => setExpanded(expanded === 'files' ? null : 'files')}>
             <section>
-              <label className="mb-4 block text-sm">Avtalsgrund
-                <select className={field} value={draft.contractForm} onChange={(e) => update({ contractForm: e.target.value as CustomerOfferDraft['contractForm'] })}>
-                  <option value="abs18">ABS 18 · Privatperson, småhus/tillbyggnad</option><option value="custom">Särskilda villkor</option>
-                </select>
-              </label>
-              <CustomerContractFields value={draft.contractDetails} fieldKeys={['documents']} showAdvice={false} inline onChange={(contractDetails) => update({ contractDetails })} />
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {files.map((f) => (
+                {otherFiles.map((f) => (
                   <label
                     key={f.id}
                     className="flex items-start gap-3 border-b border-slate-200 py-3"
@@ -766,6 +775,7 @@ export default function CustomerOfferEditor({
                       type="checkbox"
                       className="mt-1 h-5 w-5 shrink-0"
                       checked={draft.attachmentIds.includes(f.id)}
+                      disabled={!draft.attachmentIds.includes(f.id) && draft.attachmentIds.length >= 30}
                       onChange={(e) =>
                         update({
                           attachmentIds: e.target.checked
@@ -805,34 +815,11 @@ export default function CustomerOfferEditor({
                   </label>
                 ))}
               </div>
-              {!files.length && (
+              {!otherFiles.length && (
                 <p className="mt-3 text-sm text-slate-500">
-                  Inga filer i projektets bibliotek.
+                  Inga övriga filer i projektets bibliotek.
                 </p>
               )}
-              <label className="mt-4 block text-sm">
-                Avtalshandling (PDF){draft.contractForm === 'abs18' ? ' *' : ''}
-                <select
-                  className={field}
-                  value={draft.termsAttachmentId ?? ''}
-                  onChange={(e) =>
-                    update({ termsAttachmentId: e.target.value || null })
-                  }
-                >
-                  <option value="">Välj bland markerade bilagor</option>
-                  {files
-                    .filter(
-                      (f) =>
-                        draft.attachmentIds.includes(f.id) &&
-                        f.contentType === 'application/pdf'
-                    )
-                    .map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.fileName}
-                      </option>
-                    ))}
-                </select>
-              </label>
             </section>
             </ProjectEditorRow>
             {contractSection('customer-work', 'Beställarens arbeten och samordning', ['customerWork'])}

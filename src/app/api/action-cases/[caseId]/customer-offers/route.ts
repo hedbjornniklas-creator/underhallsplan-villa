@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { bindProjectProperty } from '@/lib/action-cases/propertyRegistryServer'
 import {
   customerOfferContext,
   customerOfferError,
@@ -37,6 +38,7 @@ export async function POST(request: Request, { params }: Params) {
     if (body.operation === 'save') await saveCustomerOffer(ctx, caseId, body)
     else if (body.operation === 'autosave') await saveCustomerOffer(ctx, caseId, body, 'autosave')
     else if (body.operation === 'bind_customer') await bindContractCustomer(ctx, caseId, body)
+    else if (body.operation === 'bind_property') await bindProjectProperty(ctx, caseId, body)
     else if (body.operation === 'separate_choices') await separateCustomerChoices(ctx, caseId, body)
     else if (body.operation === 'publish')
       await publishCustomerOffer(ctx, caseId, body, new URL(request.url).origin)

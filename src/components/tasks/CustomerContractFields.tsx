@@ -1,11 +1,11 @@
 'use client'
 
 import { FileCheck2 } from 'lucide-react'
+import { propertyFields } from '@/lib/properties/identity'
 import {
   contractFields,
   contractParticipantFields,
   contractParticipantsForEditing,
-  contractParticipantTextLimit,
   contractFieldSummary,
   contractEntryText,
   editContractParticipants,
@@ -154,24 +154,14 @@ export default function CustomerContractFields({
               {fields.map(({ key, title }) => {
                 if (key === 'controls') {
                   const participants = contractParticipantsForEditing(value)
-                  const previous = participants.previousDetails
-                  const required = !previous?.text.trim() || previous.status === 'unreviewed'
                   return <div key={key} className="space-y-5">
                     {contractParticipantFields.map(({ key: participantKey, title: participantTitle }) =>
                       <label key={participantKey} className="block text-sm font-medium">
-                        {participantTitle}{required ? ' *' : ''}
-                        <textarea aria-label={participantTitle} className={field} rows={2} maxLength={contractParticipantTextLimit(value, participantKey)} placeholder="Namn och kontaktuppgifter"
+                        {participantTitle} *
+                        <textarea aria-label={participantTitle} className={field} rows={2} maxLength={2000} placeholder="Namn och kontaktuppgifter"
                           value={participants[participantKey]}
                           onChange={(e) => onChange(editContractParticipants(value, { [participantKey]: e.target.value }))} />
                       </label>)}
-                    {previous && <details className="border-t border-slate-200 pt-3">
-                      <summary className="cursor-pointer text-sm font-medium">Tidigare gemensamma uppgifter</summary>
-                      <label className="mt-3 block text-sm">
-                        {previous.status === 'document' ? 'Hänvisning till avtalshandling' : previous.status === 'not_applicable' ? 'Tidigare angivet skäl' : 'Gemensamma uppgifter'}
-                        <textarea aria-label="Tidigare gemensamma uppgifter" className={field} rows={3} maxLength={contractParticipantTextLimit(value, 'previousDetails')} value={contractEntryText(previous)}
-                          onChange={(e) => onChange(editContractParticipants(value, { previousDetails: editedContractEntry(e.target.value) }))} />
-                      </label>
-                    </details>}
                   </div>
                 }
                 const entry = value.fields[key]
@@ -242,10 +232,15 @@ export function CustomerContractDocument({
           </dl>
         )}
       </div>
-      {contractFields.filter(({ key }) => !omitParties || key !== 'parties').map(({ key, title }) => (
+      {contractFields.filter(({ key }) => (!omitParties || key !== 'parties') && (key !== 'documents' || !value.assignment)).map(({ key, title }) => (
         <div key={key} className="mt-5 border-t border-slate-100 pt-4">
           <h4 className="font-semibold">{title}</h4>
-          {key === 'controls' && value.controlParticipants ? <dl className="mt-3 space-y-3 text-sm">
+          {key === 'property' && value.property ? <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+            {propertyFields.map(({ key: propertyKey, title: propertyTitle }) => value.property![propertyKey] ? <div key={propertyKey}>
+              <dt className="font-medium">{propertyTitle}</dt>
+              <dd className="mt-1 break-words text-slate-700">{value.property![propertyKey]}</dd>
+            </div> : null)}
+          </dl> : key === 'controls' && value.controlParticipants ? <dl className="mt-3 space-y-3 text-sm">
             {contractParticipantFields.map(({ key: participantKey, title: participantTitle }) => <div key={participantKey}>
               <dt className="font-medium">{participantTitle}</dt>
               <dd className="mt-1 whitespace-pre-wrap leading-6 text-slate-700">{value.controlParticipants![participantKey] || 'Ej angivet'}</dd>

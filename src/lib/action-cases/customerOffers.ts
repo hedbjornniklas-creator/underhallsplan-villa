@@ -63,6 +63,7 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  propertyLink?: import('../properties/identity').ProjectPropertyLink
   customerLink?: import('./customerRegistry').ContractCustomerLink
   recipient?: import('./contracts').ActionCaseParticipantView | null
   planning?: import('./customerPlanning').CustomerPlanning
@@ -181,6 +182,8 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     items
   }
   if (draft.contractParties && draft.contractDetails) draft.contractDetails.fields.parties = { status: 'specified', text: contractPartiesSummary(draft.contractParties) }
+  if (draft.contractDetails?.assignment?.documents.some((doc) => !attachmentIds.includes(doc.fileId)))
+    throw new Error('CUSTOMER_OFFER_INVALID')
   draft.baseAmountOre = customerOfferBaseAmount(draft)
   return draft
 }
@@ -236,6 +239,8 @@ export function offerPublishIssues(
   })
 ): string[] {
   const issues: string[] = contractDetailsIssues(d.contractDetails, Boolean(d.contractParties))
+  if (d.contractDetails?.assignment && d.termsAttachmentId && !d.contractDetails.assignment.documents.some((doc) => doc.fileId === d.termsAttachmentId))
+    issues.push('Lägg avtalshandlingen i uppdragets handlingsförteckning.')
   issues.push(...contractPartiesIssues(d.contractParties))
   if (d.items.some((i) => i.scopeAdvice?.trim()) && d.contractDetails?.advice.status !== 'given')
     issues.push('En arbetsdel innehåller avrådan. Kontrollera och dokumentera avrådan under Avtalsuppgifter före utskick.')

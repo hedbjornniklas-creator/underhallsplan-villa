@@ -156,6 +156,8 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (name === 'assert_contract_assignment' && options.assignmentMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_scope_conditions' && options.conditionsMissing)
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_payment_plan' && options.paymentPlanMissing)
@@ -219,6 +221,7 @@ function harness(options = {}) {
     './customerOfferCosting': costingDomain,
     './customerPlanning': planningDomain,
     './customerRegistryServer': { async writeContractCustomer(ctx, caseId, payload, bind) { calls.push({ name: 'writeContractCustomer', ctx, caseId, payload, bind }) } },
+    './propertyRegistryServer': { async getProjectPropertyLink(propertyId, available) { return { available, property: propertyId ? { id: propertyId } : null } } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/tokens': {
       generateAssignmentToken: () => token,
@@ -643,4 +646,21 @@ test('choice price calculations save privately and public projection strips unex
   await h.api.writeCustomerPlanning(ctx, id(1), { operation: 'save', revision: 2, items: [item], costing })
   assert.equal(h.calls.at(-1).name, 'save_customer_planning_costing')
   assert.deepEqual(h.calls.at(-1).p_data.costing, costing)
+})
+
+test('assignment metadata requires schema protection before autosave and survives the frozen contract projection', async () => {
+  const ctx = { orgId: id(90), userId: id(91) }, h = harness({ assignmentMissing: true })
+  h.draft.contractDetails = emptyContractDetails()
+  h.draft.contractDetails.assignment = { documents: [{ fileId: id(4), type: 'Beskrivning', name: 'Omfattning.pdf', date: '2026-10-07' }],
+    additionalScope: 'Kompletterande omfattning', exclusions: 'Ingen målning', documentNotes: 'Revision B' }
+  await assert.rejects(h.api.saveCustomerOffer(ctx,id(1),{ revision:1,draft:h.draft },'autosave'), /SCHEMA/)
+  assert.equal(h.calls.some((c) => c.p_operation === 'save'), false)
+  assert.equal(h.sent.length, 0); assert.equal(h.copies.length, 0)
+  const good = harness()
+  await good.api.saveCustomerOffer(ctx,id(1),{ revision:1,draft:h.draft },'autosave')
+  assert.equal(good.calls.find((c) => c.name === 'assert_contract_assignment').p_complete, false)
+  assert.deepEqual(good.calls.at(-1).p_data.body.contractDetails.assignment,h.draft.contractDetails.assignment)
+  const publicOffer = domain.mapCustomerOffer({ id:id(60),version:1,status:'published',snapshot:snapshot(domain.normalizeCustomerOffer(h.draft)),
+    files:[{ id:id(4),fileName:'Terms.pdf',contentType:'application/pdf',fileSizeBytes:1000 }], published_at:'2026-10-07T10:00:00Z',accepted_option_ids:[] })
+  assert.deepEqual(publicOffer.snapshot.contractDetails.assignment,h.draft.contractDetails.assignment)
 })

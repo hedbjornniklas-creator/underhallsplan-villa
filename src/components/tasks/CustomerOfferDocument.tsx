@@ -87,10 +87,27 @@ export default function CustomerOfferDocument({
       {purpose === 'contract' && s.contractParties && <ContractPartiesDocument value={s.contractParties} />}
       <section className="py-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h3 className="text-lg font-semibold">Grundåtagande</h3>
+          <h3 className="text-lg font-semibold">{purpose === 'contract' && s.contractDetails?.assignment ? 'Uppdraget' : 'Grundåtagande'}</h3>
           <strong className="text-xl">{money(baseAmount)}</strong>
         </div>
         <p className="mt-1 text-sm text-slate-500">Fast pris inklusive moms</p>
+          {purpose === 'contract' && s.contractDetails?.assignment && <div className="mt-4">
+            <h4 className="font-semibold">Handlingar som ingår i uppdraget</h4>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50"><tr><th className="px-3 py-2">Typ av handling</th><th className="px-3 py-2">Handlingens namn</th><th className="px-3 py-2">Datum</th></tr></thead>
+                <tbody><tr className="border-b border-slate-200"><td className="px-3 py-2">Detta kontrakt</td><td className="break-words px-3 py-2">{s.title}</td><td className="whitespace-nowrap px-3 py-2">{offer.publishedAt ? new Date(offer.publishedAt).toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' }) : 'Datum vid publicering'}</td></tr>
+                  {s.contractDetails.assignment.documents.map((doc) => <tr key={doc.fileId} className="border-b border-slate-200">
+                    <td className="px-3 py-2">{doc.type || 'Ej angivet'}</td>
+                    <td className="break-all px-3 py-2">{fileUrl ? <a className="underline" href={fileUrl(doc.fileId)} target="_blank" rel="noopener noreferrer">{doc.name}</a> : doc.name}</td>
+                    <td className="whitespace-nowrap px-3 py-2">{doc.date || 'Ej angivet'}</td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+            {s.contractDetails.assignment.documentNotes && <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{s.contractDetails.assignment.documentNotes}</p>}
+            {s.contractDetails.assignment.additionalScope && <div className="mt-4"><h4 className="font-semibold">Samt enligt följande</h4><p className="mt-2 whitespace-pre-wrap text-sm leading-6">{s.contractDetails.assignment.additionalScope}</p></div>}
+          </div>}
         {s.items
           .filter((i) => i.kind === 'included')
           .map((i) => (
@@ -187,9 +204,10 @@ export default function CustomerOfferDocument({
           </fieldset>
         )
       })}
-      {s.items.some((i) => i.kind === 'excluded') && (
+      {(s.items.some((i) => i.kind === 'excluded') || (purpose === 'contract' && s.contractDetails?.assignment?.exclusions)) && (
         <section className="border-t border-slate-200 py-6">
-          <h3 className="text-lg font-semibold">Avgränsningar i åtagandet</h3>
+          <h3 className="text-lg font-semibold">{purpose === 'contract' && s.contractDetails?.assignment ? 'Entreprenörens åtagande omfattar inte' : 'Avgränsningar i åtagandet'}</h3>
+          {purpose === 'contract' && s.contractDetails?.assignment?.exclusions && <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{s.contractDetails.assignment.exclusions}</p>}
           {s.items
             .filter((i) => i.kind === 'excluded')
             .map((i) => (
