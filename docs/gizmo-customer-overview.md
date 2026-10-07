@@ -786,6 +786,27 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   PDF-filer och bildfilers uteslutning fran rollen omfattas av regressionstester.
   Desktop och mobil 390 px ar visuellt kontrollerade utan horisontell overflow.
 
+## Kompakt handlingsforteckning 2026-10-07
+
+- Handlingslistan i Avtal foljer Gizmos beslutade variant Tydlig tabell:
+  tonad rubrikrad, 60 px normalrader, tunna raka avdelare, gronbla pekning/
+  fokus och dampad gul markering for oppen rad. Samma fargtokens anvands.
+- Typ, namn och datum ar synliga utan att oppna redigeraren. Filikonen oppnar
+  den skyddade filrouten i separat flik. En rad oppnas at gangen med klick
+  eller tangentbord; ny handling oppnas direkt. Lang typ kan forkortas i
+  listan men finns i tooltip och i redigeringsfaltet. Smal yta staplar metadata.
+- Namn, datum, typ, villkorsroll, flytt och borttagning behaller samma datamodell
+  och revisionsstyrda autosparning. Sammanfallning gor ingen separat sparning.
+  Ingen SQL, kunddata eller publicerad avtalsversion andras av layouten.
+- Status: ingar i publiceringspaketet. 305 action-case-tester,
+  TypeScript, riktad ESLint och produktionsbygge passerar. Lokala klicktester
+  med fiktivt backend omfattar tangentbordsoppning, tillagg, redigering,
+  omordning, radbyte under langsamt autosparande, sparfel/aterforsok och
+  omladdning. Villkorsrollen behalls. Ingen produktionsdata eller utskick andras.
+- Datorns rubrikrad och normala 60 px-rader ar matta. Vald rad anvander
+  profilens gula token; hover/fokus ar gronbla. Mobil 390 och 344 px kontrollerad
+  utan horisontell overflow. Faltrutor anvander 16 px text och verktyg 48 px.
+
 ## Senare steg, inte implementerade
 
 - Fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.

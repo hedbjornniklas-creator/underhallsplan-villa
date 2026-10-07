@@ -293,6 +293,45 @@
 .uppdrag-scope .gizmo-work-row:hover, .uppdrag-scope .gizmo-work-row:focus-visible { background: var(--uppdrag-row-hover); box-shadow: inset 3px 0 var(--uppdrag-link); }
 .uppdrag-scope .gizmo-work-row:focus-visible { outline-offset: -2px; }
 .uppdrag-scope .gizmo-work-row:active, .uppdrag-scope .gizmo-work-row[aria-expanded='true'] { background: var(--uppdrag-selected); box-shadow: inset 3px 0 var(--uppdrag-accent); }
+/* Contract references use the same clear-table tokens and density as project work. */
+.gizmo-contract-documents { container-type: inline-size; }
+.gizmo-document-table { --gizmo-document-tools-width: 108px; color: var(--uppdrag-ink); font-size: 14px; line-height: 21px; }
+.gizmo-document-table thead { background: var(--uppdrag-table-head); border-bottom: 2px solid var(--uppdrag-line); }
+.gizmo-document-table thead th { height: 44px; color: var(--uppdrag-ink); font-size: 12px; font-weight: 600; }
+.gizmo-document-table td, .gizmo-document-table th { overflow-wrap: anywhere; }
+.gizmo-document-tools { width: 108px; }
+.gizmo-document-row { height: 60px; background: white; cursor: pointer; }
+.gizmo-document-row > td:first-child { box-shadow: inset 3px 0 transparent; }
+.gizmo-document-row:hover, .gizmo-document-row:focus-within { background: var(--uppdrag-row-hover); }
+.gizmo-document-row:hover > td:first-child, .gizmo-document-row:focus-within > td:first-child { box-shadow: inset 3px 0 var(--uppdrag-link); }
+.gizmo-document-row[data-expanded='true'] { background: var(--uppdrag-selected); }
+.gizmo-document-row[data-expanded='true'] > td:first-child { box-shadow: inset 3px 0 var(--uppdrag-accent); }
+.uppdrag-scope .gizmo-document-toggle { min-height: 52px; padding-block: 4px; border-radius: 0; }
+.uppdrag-scope .gizmo-document-toggle:focus-visible { outline-offset: -2px; }
+.uppdrag-scope .gizmo-document-tool { display: inline-flex; height: 44px; min-height: 44px; width: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 6px; }
+.gizmo-document-tool:hover { background: white; }
+.gizmo-document-mobile { display: none; }
+.gizmo-document-editor[hidden] { display: none; }
+@container (max-width: 36rem) {
+  .gizmo-document-table, .gizmo-document-table thead, .gizmo-document-table tbody { display: block; }
+  .gizmo-document-table tr { display: grid; grid-template-columns: minmax(0, 1fr) var(--gizmo-document-tools-width); align-items: center; }
+  .gizmo-document-table tr > td, .gizmo-document-table tr > th { min-width: 0; }
+  .gizmo-document-table .gizmo-document-row { height: auto; min-height: 60px; }
+  .gizmo-document-table .gizmo-document-editor { grid-template-columns: minmax(0, 1fr); }
+  .gizmo-document-table .gizmo-document-editor[hidden] { display: none; }
+  .gizmo-document-table .gizmo-document-type, .gizmo-document-table .gizmo-document-date { display: none; }
+  .gizmo-document-mobile { display: block; }
+  .gizmo-document-fields { grid-template-columns: minmax(0, 1fr); }
+  .gizmo-document-row > td:nth-child(2) { box-shadow: inset 3px 0 transparent; }
+  .gizmo-document-row:hover > td:nth-child(2), .gizmo-document-row:focus-within > td:nth-child(2) { box-shadow: inset 3px 0 var(--uppdrag-link); }
+  .gizmo-document-row[data-expanded='true'] > td:nth-child(2) { box-shadow: inset 3px 0 var(--uppdrag-accent); }
+}
+@media (max-width: 767px) {
+  .gizmo-document-table { --gizmo-document-tools-width: 116px; font-size: 16px; line-height: 24px; }
+  .gizmo-document-tools { width: 116px; }
+  .uppdrag-scope .gizmo-document-tool { width: 48px; height: 48px; min-height: 48px; }
+  .gizmo-document-terms { min-height: 48px; }
+}
 .gizmo-add-work { display: flex; align-items: flex-end; gap: 12px; padding: 24px 0; border-bottom: 1px solid var(--uppdrag-line); }
 .gizmo-add-work label { flex: 1; min-width: 0; }
 .gizmo-add-work input { display: block; width: 100%; border: 1px solid var(--uppdrag-line); padding: 10px 12px; margin-top: 6px; }

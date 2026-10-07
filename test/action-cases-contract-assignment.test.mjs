@@ -62,13 +62,19 @@ function editor() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 }
   }).outputText
   const loaded = { exports: {} }, jsx = (type, props) => ({ type, props })
+  const hooks = []; let slot = 0
   new Function('require','module','exports',code)((name) => {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx }
-    if (name === 'lucide-react') return { ArrowDown:'svg', ArrowUp:'svg', ExternalLink:'svg', Trash2:'svg' }
+    if (name === 'react') return {
+      Fragment: 'fragment', useId: () => 'documents', useLayoutEffect: () => {},
+      useRef: (initial) => { const i = slot++; return hooks[i] ??= { current: initial } },
+      useState: (initial) => { const i = slot++; if (!(i in hooks)) hooks[i] = initial; return [hooks[i], (value) => { hooks[i] = value }] }
+    }
+    if (name === 'lucide-react') return { ArrowDown:'svg', ArrowUp:'svg', ChevronDown:'svg', ExternalLink:'svg', Trash2:'svg' }
     if (name === '@/lib/action-cases/contractAssignment') return assignment
     throw Error(name)
   }, loaded, loaded.exports)
-  return loaded.exports.default
+  return (props) => { slot = 0; return loaded.exports.default(props) }
 }
 const flatten = (node) => Array.isArray(node) ? node.flatMap(flatten) : !node || typeof node !== 'object' ? [node] : [node,...flatten(node.props?.children)]
 test('the real editor supports free types, dates, ordered files and secure separate-window opening', () => {
@@ -129,6 +135,72 @@ test('legacy terms selection materializes references atomically; custom contract
   nodes.find((n) => n?.props?.['aria-label'] === 'Använd handling 1 som avtalsvillkor').props.onChange()
   assert.equal(d.termsAttachmentId, id(4))
   assert.deepEqual(normalizeCustomerOffer(d), d)
+})
+
+test('compact document rows start closed, expand one at a time and retain unsaved metadata while switching rows', () => {
+  let d = structured(), writes = 0
+  d = { ...d, ...assignment.assignmentPatch(d, { ...d.contractDetails.assignment, documents: [...d.contractDetails.assignment.documents,
+    { fileId: id(6), type: 'Beskrivning', name: 'Beskrivning.pdf', date: '2026-10-06' }] }) }
+  const Editor = editor()
+  const render = () => flatten(Editor({ draft: d, files, caseId: id(1), onChange: (p) => { d = { ...d, ...p }; writes++ } }))
+  const panels = (nodes) => nodes.filter((n) => n?.type === 'tr' && n.props.className === 'gizmo-document-editor')
+  const event = { currentTarget: { getBoundingClientRect: () => ({ top: 200 }) } }
+  let nodes = render()
+  assert.deepEqual(panels(nodes).map((n) => n.props.hidden), [true, true])
+  assert(nodes.some((n) => n?.type === 'table' && n.props['aria-label'] === 'Handlingsförteckning'))
+  nodes.find((n) => n?.props?.['aria-label'] === 'Öppna redigering för handling 1').props.onClick(event)
+  nodes = render()
+  assert.deepEqual(panels(nodes).map((n) => n.props.hidden), [false, true])
+  assert.equal(writes, 0)
+  const before = structuredClone(d)
+  nodes.find((n) => n?.props?.['aria-label'] === 'Handlingens namn 1').props.onChange({ target: { value: 'Ritning reviderad' } })
+  nodes = render()
+  assert.equal(panels(nodes)[0].props.hidden, false)
+  nodes.find((n) => n?.props?.['aria-label'] === 'Öppna redigering för handling 2').props.onClick(event)
+  nodes = render()
+  assert.deepEqual(panels(nodes).map((n) => n.props.hidden), [true, false])
+  assert.equal(writes, 1)
+  assert.equal(d.contractDetails.assignment.documents[0].name, 'Ritning reviderad')
+  assert.deepEqual(d.attachmentIds, before.attachmentIds)
+  assert.equal(d.termsAttachmentId, before.termsAttachmentId)
+  const toggle = nodes.find((n) => n?.props?.['aria-label'] === 'Stäng redigering för handling 2')
+  assert.equal(toggle.props.type, 'button')
+  assert.equal(toggle.props['aria-expanded'], true)
+  assert.equal(toggle.props['aria-controls'], `documents-${id(6)}`)
+  toggle.props.onClick(event)
+  assert.deepEqual(panels(render()).map((n) => n.props.hidden), [true, true])
+})
+
+test('new references open for completion and retain the active file identity when reordered', () => {
+  let d = structured()
+  const Editor = editor()
+  const render = () => flatten(Editor({ draft: d, files, caseId: id(1), onChange: (p) => { d = { ...d, ...p } } }))
+  let nodes = render()
+  nodes.find((n) => n?.props?.['aria-label'] === 'Lägg till handling från projektet').props.onChange({ target: { value: id(6) } })
+  nodes = render()
+  assert.equal(nodes.find((n) => n?.props?.['aria-label'] === 'Stäng redigering för handling 2').props['aria-expanded'], true)
+  assert.equal(d.contractDetails.assignment.documents[1].date, '')
+  nodes.find((n) => n?.props?.['aria-label'] === 'Flytta handling 2 upp').props.onClick()
+  nodes = render()
+  assert.equal(nodes.find((n) => n?.props?.['aria-label'] === 'Stäng redigering för handling 1').props['aria-expanded'], true)
+  assert.equal(d.contractDetails.assignment.documents[0].fileId, id(6))
+  nodes.find((n) => n?.props?.['aria-label'] === 'Ta bort handling 1 från avtalet').props.onClick()
+  nodes = render()
+  assert.equal(nodes.filter((n) => n?.props?.className === 'gizmo-document-editor' && !n.props.hidden).length, 0)
+  assert.equal(d.termsAttachmentId, id(4))
+  assert.equal(files.length, 2)
+})
+
+test('document lists reuse Gizmo clear-table tokens, stable row markers and mobile-sized controls', () => {
+  const css = readFileSync(new URL('../src/components/tasks/uppdrag-theme.css', import.meta.url), 'utf8')
+  assert.match(css, /\.gizmo-document-table thead \{[^}]*var\(--uppdrag-table-head\)/)
+  assert.match(css, /\.gizmo-document-row \{[^}]*height: 60px/)
+  assert.match(css, /\.gizmo-document-row\[data-expanded='true'\] \{[^}]*var\(--uppdrag-selected\)/)
+  assert.match(css, /\.gizmo-document-row:hover[^}]*var\(--uppdrag-row-hover\)/)
+  assert.match(css, /\.gizmo-document-tool \{[^}]*width: 48px; height: 48px/)
+  assert.match(css, /\.gizmo-document-editor\[hidden\] \{ display: none; \}/)
+  assert.match(css, /\.gizmo-document-table tr \{[^}]*grid-template-columns: minmax\(0, 1fr\) var\(--gizmo-document-tools-width\)/)
+  assert.match(css, /\.gizmo-document-table \.gizmo-document-row \{ height: auto; min-height: 60px; \}/)
 })
 
 test('the real contract document prints ordered metadata, extra scope and exclusions outside the price header; old snapshots keep their layout', () => {

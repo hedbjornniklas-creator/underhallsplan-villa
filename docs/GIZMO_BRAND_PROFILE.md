@@ -46,6 +46,11 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
   grafitfärgade kolumnnamn i 12 px/vikt 600 och vita åtgärdsrader med raka
   avdelare, utan rundade hörn. Åtgärdsnamn har vikt 600; stödtext är dämpad.
   Rader har minst 60 px höjd och får växa när text behöver radbrytas.
+- Handlingsförteckningen i Avtal använder samma tabellvariant och tokens.
+  Typ, namn och datum sammanfattas i en rad. En handling öppnas åt gången
+  för redigering; nya handlingar öppnas direkt. Filöppning finns i raden med
+  ikon, tooltip och separat flik. Långa typer har tooltip och visas i sin
+  helhet vid redigering. På smal yta staplas typ och datum under namnet.
 - Hela åtgärdsraden öppnar den befintliga sidopanelen. Pekning och
   tangentbordsfokus ger grönblå ton #F1F6F5 och en tunn vänstermarkering.
   Öppen åtgärd markeras med befintlig dämpad gul färg. Markeringar och
@@ -98,6 +103,10 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 
 ## Beslutslogg
 
+- 2026-10-07: Handlingsförteckningen komprimeras enligt den befintliga
+  varianten Tydlig tabell efter användarens återkoppling. Det är samma
+  Gizmo-profil, inte ett nytt formspråk. Autosparning, dokumentåtkomst,
+  avtalsvillkorsroll och publicerade avtalsversioner är oförändrade.
 - 2026-10-06: Användaren väljer **Tydlig tabell** för Projektarbete: tonad
   rubrikrad, tydligare åtgärdsnamn, raka avdelare samt peknings-/valmarkering.
   Gizmos färger, innehåll, sidopanel och befintligt autosparande behålls.
@@ -126,6 +135,17 @@ Kontrollera listval, sökning, filter, tomläge, direktlänk och webbläsarens t
 Prova osparat offertutkast och planering genom alla projektdelar, betalningsplan,
 åtgärdspanel, filvisning och skrivskyddad beställarförhandsgranskning. Kontrollera
 dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering.
+
+### Handlingsförteckning 2026-10-07
+
+- Ingår i publiceringspaketet enligt Tydlig tabell. Datorns
+  standardrader är 60 px; rubrikradens färg är #EDF1F1 med 12 px/vikt 600.
+  Den öppna raden använder #FFF7D6. Markeringar ändrar inte radens dimensioner.
+- Tangentbord, radbyte, omordning, autosparning under fortsatt inmatning,
+  sparfel/återförsök och omladdning är klicktestade med fiktiva data.
+  Mobil 390 och 344 px är kontrollerad utan sidöverflöde eller klippta fält.
+- 305 action-case-regressionstester, TypeScript, riktad ESLint och
+  produktionsbygge passerar. Ingen databas eller publicerad avtalsversion ändras.
 
 ### Navigationskontroll 2026-10-06
 
