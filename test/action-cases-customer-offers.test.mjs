@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
-import { emptyContractDetails, contractDetailsIssues, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
+import { editContractParticipants, emptyContractDetails, contractDetailsIssues, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import { normalizePaymentPlan, paymentPlanTotal, paymentPlanIssues } from '../src/lib/action-cases/customerPaymentPlan.ts'
 import { emptyContractParties } from '../src/lib/action-cases/customerContractParties.ts'
@@ -74,6 +74,25 @@ function completeContract() {
   }
   return result
 }
+
+test('separate contract roles persist and freeze using the existing SQL contract schema', async () => {
+  const f = await fixture()
+  const details = completeContract()
+  details.fields.controls = { status: 'unreviewed', text: '' }
+  const completed = editContractParticipants(details, { controlOfficer: 'Anna Test', customerInspector: 'Bo Test' })
+  const body = normalizeCustomerOffer({ ...f.draft, contractDetails: completed })
+  await f.write('save', { revision: 1, body })
+  const saved = (await db.query('select body from action_case_customer_offer_drafts where action_case_id=$1', [f.caseId])).rows[0].body
+  assert.deepEqual(saved.contractDetails, completed)
+  await f.write('publish', { ...f.publication, revision: 2, snapshot: { ...f.snapshot, ...body } })
+  const frozen = await get('action_case_customer_offers', f.offerId)
+  assert.deepEqual(frozen.snapshot.contractDetails.controlParticipants, completed.controlParticipants)
+  const changed = editContractParticipants(completed, { customerInspector: 'En annan person' })
+  await f.write('save', { revision: 2, body: normalizeCustomerOffer({ ...body, contractDetails: changed }) })
+  assert.deepEqual((await get('action_case_customer_offers', f.offerId)).snapshot, frozen.snapshot)
+  const incomplete = normalizeCustomerOffer({ ...body, contractDetails: editContractParticipants(completed, { customerInspector: '' }) })
+  await assert.rejects(db.query('select assert_customer_contract($1,true)', [incomplete]), /INCOMPLETE/)
+})
 
 test('structured contract parties round-trip through existing draft storage and freeze with a contract version', async () => {
   const f = await fixture()

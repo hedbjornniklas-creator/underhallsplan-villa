@@ -42,7 +42,7 @@ import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
 import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
 import CustomerContractFields from './CustomerContractFields'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
-import { emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
+import { contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
 import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
@@ -362,8 +362,7 @@ export default function CustomerOfferEditor({
   const Container = embedded ? 'div' : 'main'
   const Heading = embedded ? 'h2' : 'h1'
   const contractSection = (id: string, title: string, keys: ContractFieldKey[], advice = false) => {
-    const complete = keys.filter((key) => draft.contractDetails?.fields[key].status !== 'unreviewed' && draft.contractDetails?.fields[key].text.trim()).length
-    return <ProjectEditorRow title={title} summary={advice ? draft.contractDetails?.advice.status === 'none' ? 'Ingen avrådan lämnad' : draft.contractDetails?.advice.status === 'given' ? 'Avrådan lämnad' : 'Behöver kontrolleras' : `${complete}/${keys.length} uppgifter ifyllda`}
+    return <ProjectEditorRow title={title} summary={advice ? draft.contractDetails?.advice.status === 'none' ? 'Ingen avrådan lämnad' : draft.contractDetails?.advice.status === 'given' ? 'Avrådan lämnad' : 'Behöver kontrolleras' : contractFieldSummary(draft.contractDetails, keys)}
       open={expanded === id} onToggle={() => setExpanded(expanded === id ? null : id)}>
       <CustomerContractFields value={draft.contractDetails} fieldKeys={keys} showAdvice={advice} inline onChange={(contractDetails) => update({ contractDetails })} />
     </ProjectEditorRow>
@@ -390,7 +389,7 @@ export default function CustomerOfferEditor({
     </div>)}
   </ProjectEditorRow>
   return (
-    <Container className={embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}>
+    <Container className={`gizmo-editor-scroll-scope ${embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}`}>
       {(!embedded || ['edit', 'contract', 'document', 'offerDocument'].includes(view)) && <header className="border-b border-slate-200 py-6">
         {!embedded && <PendingLink autoPending pendingLabel="Öppnar projektlistan…" icon={<ArrowLeft size={17} />}
           href="/uppdrag"

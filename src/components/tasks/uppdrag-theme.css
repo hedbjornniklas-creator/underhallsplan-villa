@@ -344,6 +344,7 @@
   .gizmo-project-content { padding: 0; }
 }
 /* Compact project editors share a stable summary row on desktop and mobile. */
+.gizmo-editor-scroll-scope { overflow-anchor: none; }
 .gizmo-editor-row { border-bottom: 1px solid #D5DCDD; min-width: 0; }
 .gizmo-editor-row-toggle { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 72px; padding: 12px 8px; text-align: left; }
 .gizmo-editor-row-toggle:hover { background: #F5F7F6; }

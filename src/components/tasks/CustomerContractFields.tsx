@@ -3,10 +3,16 @@
 import { FileCheck2 } from 'lucide-react'
 import {
   contractFields,
+  contractParticipantFields,
+  contractParticipantsForEditing,
+  contractParticipantTextLimit,
+  contractFieldSummary,
+  contractEntryText,
+  editContractParticipants,
+  editedContractEntry,
   emptyContractDetails,
   type CustomerContractDetails,
-  type ContractFieldKey,
-  type ContractEntry
+  type ContractFieldKey
 } from '@/lib/action-cases/customerContract'
 
 const field =
@@ -136,65 +142,57 @@ export default function CustomerContractFields({
       </Group>}
       {groups.map((group) => {
         const fields = selectedFields.filter((f) => f.group === group)
-        const done = fields.filter(
-          (f) =>
-            value.fields[f.key].status !== 'unreviewed' &&
-            value.fields[f.key].text.trim()
-        ).length
         return (
           <Group key={group} className={inline ? '' : 'border-b border-slate-200 pb-4'}>
             {!inline && <Summary className="cursor-pointer py-2 font-semibold">
               {group}{' '}
               <span className="ml-2 text-sm font-normal text-slate-500">
-                {done}/{fields.length} ifyllda
+                {contractFieldSummary(value, fields.map(({ key }) => key))}
               </span>
             </Summary>}
             <div className="space-y-5 pt-3">
               {fields.map(({ key, title }) => {
+                if (key === 'controls') {
+                  const participants = contractParticipantsForEditing(value)
+                  const previous = participants.previousDetails
+                  const required = !previous?.text.trim() || previous.status === 'unreviewed'
+                  return <div key={key} className="space-y-5">
+                    {contractParticipantFields.map(({ key: participantKey, title: participantTitle }) =>
+                      <label key={participantKey} className="block text-sm font-medium">
+                        {participantTitle}{required ? ' *' : ''}
+                        <textarea aria-label={participantTitle} className={field} rows={2} maxLength={contractParticipantTextLimit(value, participantKey)} placeholder="Namn och kontaktuppgifter"
+                          value={participants[participantKey]}
+                          onChange={(e) => onChange(editContractParticipants(value, { [participantKey]: e.target.value }))} />
+                      </label>)}
+                    {previous && <details className="border-t border-slate-200 pt-3">
+                      <summary className="cursor-pointer text-sm font-medium">Tidigare gemensamma uppgifter</summary>
+                      <label className="mt-3 block text-sm">
+                        {previous.status === 'document' ? 'Hänvisning till avtalshandling' : previous.status === 'not_applicable' ? 'Tidigare angivet skäl' : 'Gemensamma uppgifter'}
+                        <textarea aria-label="Tidigare gemensamma uppgifter" className={field} rows={3} maxLength={contractParticipantTextLimit(value, 'previousDetails')} value={contractEntryText(previous)}
+                          onChange={(e) => onChange(editContractParticipants(value, { previousDetails: editedContractEntry(e.target.value) }))} />
+                      </label>
+                    </details>}
+                  </div>
+                }
                 const entry = value.fields[key]
-                const change = (patch: Partial<ContractEntry>) =>
+                const change = (text: string) =>
                   onChange({
                     ...value,
-                    fields: { ...value.fields, [key]: { ...entry, ...patch } }
+                    fields: { ...value.fields, [key]: editedContractEntry(text) }
                   })
                 return (
                   <div key={key}>
                     <label className="block text-sm font-medium">
                       {title} *
-                      <select
+                      <textarea
+                        aria-label={title}
                         className={field}
-                        value={entry.status}
-                        onChange={(e) =>
-                          change({
-                            status: e.target.value as ContractEntry['status']
-                          })
-                        }
-                      >
-                        <option value="unreviewed">Ej kontrollerat</option>
-                        <option value="specified">Ange uppgifter</option>
-                        <option value="document">
-                          Regleras i avtalshandling
-                        </option>
-                        <option value="not_applicable">
-                          Ej aktuellt, ange skäl
-                        </option>
-                      </select>
+                        rows={3}
+                        maxLength={6000}
+                        value={contractEntryText(entry)}
+                        onChange={(e) => change(e.target.value)}
+                      />
                     </label>
-                    {(entry.status !== 'unreviewed' || entry.text) && (
-                      <label className="mt-2 block text-sm">
-                        {entry.status === 'document'
-                          ? 'Handling, version och avsnitt *'
-                          : entry.status === 'not_applicable'
-                            ? 'Skäl *'
-                            : 'Uppgifter *'}
-                        <textarea
-                          className={field}
-                          rows={3}
-                          value={entry.text}
-                          onChange={(e) => change({ text: e.target.value })}
-                        />
-                      </label>
-                    )}
                   </div>
                 )
               })}
@@ -247,11 +245,21 @@ export function CustomerContractDocument({
       {contractFields.filter(({ key }) => !omitParties || key !== 'parties').map(({ key, title }) => (
         <div key={key} className="mt-5 border-t border-slate-100 pt-4">
           <h4 className="font-semibold">{title}</h4>
+          {key === 'controls' && value.controlParticipants ? <dl className="mt-3 space-y-3 text-sm">
+            {contractParticipantFields.map(({ key: participantKey, title: participantTitle }) => <div key={participantKey}>
+              <dt className="font-medium">{participantTitle}</dt>
+              <dd className="mt-1 whitespace-pre-wrap leading-6 text-slate-700">{value.controlParticipants![participantKey] || 'Ej angivet'}</dd>
+            </div>)}
+            {value.controlParticipants.previousDetails?.text && <div>
+              <dt className="font-medium">Gemensamma uppgifter</dt>
+              <dd className="mt-1 whitespace-pre-wrap leading-6 text-slate-700">{contractEntryText(value.controlParticipants.previousDetails)}</dd>
+            </div>}
+          </dl> :
           <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">
             {value.fields[key].status === 'unreviewed'
               ? 'Ej kontrollerat'
-              : `${value.fields[key].status === 'not_applicable' ? 'Ej aktuellt: ' : value.fields[key].status === 'document' ? 'Avtalshandling: ' : ''}${value.fields[key].text || 'Ej angivet'}`}
-          </p>
+              : contractEntryText(value.fields[key]) || 'Ej angivet'}
+          </p>}
         </div>
       ))}
     </section>

@@ -3,6 +3,27 @@
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
 Datum: 2026-10-07.
 
+## Sektionsbyte utan scrollhopp 2026-10-07
+
+- Offert-, avtals-, tillvals- och betalningsplansrader anvander samma
+  `ProjectEditorRow`. Nar en ny rad oppnas kan en tidigare rad stangas ovanfor
+  den; den klickade rubrikens skarmposition bevaras fore nasta rendering.
+- Om rubriken ligger nara nederkanten flyttas den bara sa mycket som behovs for
+  att borjan av formularet ska synas. Samma beteende galler tangentbordsklick.
+- Webblasaren far inte samtidigt flytta scrollankaret inom denna editor.
+  Regeln ar lokal; inga globala scrollregler, autofokus pa inmatningsfalt,
+  sparningsandringar eller avtals-/kunddataandringar laggs till.
+- Montering, autospar och programmatisk aterstallning av en rad scrollar inte;
+  korrigeringen gors enbart efter att anvandaren har aktiverat just rubriken.
+
+Verifierat lokalt med sex fokuserade regressionstester och hela action-case-
+testsviten. CUA provar vanliga musklick, tangentbord, oppning/stangning,
+Bestallare till Entreprenor, Offert, tillval och byte mellan delbetalningar.
+Pa dator stannade rubriken vid cirka 398 px efter klick vid 401 px; pa mobil
+390 x 844 px stannade den vid 519 px med forsta faltet inom skarmen.
+Testbackenden registrerade inga skrivningar. Korrigeringen ingar i detta
+publiceringspaket; driftstatus verifieras efter leverans.
+
 ## Beslut 2026-10-07: avtalsparter och fakturakund ar olika roller
 
 - Avtal samlar bestallare, entreprenor och ovriga avtalsuppgifter. Att fylla i
@@ -603,6 +624,37 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   klumpsummor och godkannanden behalls oforandrade. El som inte projekterats och
   senare malning bestalls inte genom att anges som undantag; en senare ATA
   kraver ett separat flode. Verkliga delpriser maste anges av anvandaren.
+
+## Direkta avtalsfalt 2026-10-07
+
+- Beslut: avtalsuppgifter skrivs direkt i synliga falt utan menyn Ej kontrollerat /
+  Ange uppgifter / Regleras i avtalshandling / Ej aktuellt. Verkliga val, som
+  avradan och F-skatt, behalls. Kontrollansvarig enligt plan- och bygglagen och
+  bestallarens kontrollant har tva separata falt under Ovriga medverkande.
+- Befintlig avtals-autosparning ateranvands. Text registreras som angiven nar
+  anvandaren skriver; ett tomt falt blir aldrig automatiskt ej aktuellt.
+  Asterisker avser programmets utskickskrav, inte ett juridiskt krav pa att en
+  person maste vara utsedd. Dar ingen ar utsedd kan detta anges uttryckligen.
+- Tidigare status, hanvisning och gemensam rolltext behalls. Gemensamma uppgifter
+  visas i en separat utfalldel, utan automatisk gissning om vem som har vilken
+  roll. Gamla fullstandiga uppgifter tillats fortsatt enligt samma utskickskrav.
+  Nya separata rolluppgifter kontrolleras var for sig fore utskick.
+- Historiska prefix som Avtalshandling och Ej aktuellt visas i sjalva textfaltet.
+  Vid redigering sparas den synliga texten som angiven uppgift, utan dolt prefix.
+  Anvandaren kan darfor ersatta ett tidigare undantag med nya uppgifter.
+- Valfritt `contractDetails.controlParticipants` lagrar rollfordelningen i
+  befintlig JSON. `fields.controls` innehaller fortsatt en kompatibel samlad
+  text, inklusive tidigare uppgifter. Befintlig SQL-validering och storleksgrans
+  ateranvands; ingen SQL-migration eller omskrivning av sparade dokument behovs.
+  Publicerade versioner utan den nya strukturen visas oforandrade.
+- Regressionstester omfattar direkt inmatning, tomma falt, kompatibilitet,
+  textgranser, SQL-lagring och frysta avtalsversioner. Andringen ingar i detta
+  publiceringspaket; driftstatus verifieras efter leverans.
+- Verifiering: 278 action-case-tester passerar, inklusive tio nya tester for
+  avtalsfalten/SQL. TypeScript, riktad ESLint och produktionsbygge med webpack
+  passerar. Lokala klicktester med fiktivt backend omfattar direkt inmatning,
+  bakgrundssparning, omladdning, sparfel/aterforsok och avtalsforhandsgranskning.
+  Desktop och mobil 390 px ar kontrollerade; inga riktiga avtal eller mejl andras.
 
 ## Senare steg, inte implementerade
 
