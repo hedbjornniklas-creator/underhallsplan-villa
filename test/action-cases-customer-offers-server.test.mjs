@@ -7,6 +7,7 @@ import * as domain from '../src/lib/action-cases/customerOffers.ts'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
 import * as costingDomain from '../src/lib/action-cases/customerOfferCosting.ts'
 import * as planningDomain from '../src/lib/action-cases/customerPlanning.ts'
+import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { emptyContractParties } from '../src/lib/action-cases/customerContractParties.ts'
 import {
@@ -34,7 +35,8 @@ function harness(options = {}) {
     sent = [],
     copies = [],
     removed = [],
-    signed = []
+    signed = [],
+    prepared = []
   const draft = structuredClone(workspace.draft)
   if (!options.legacyDraft) draft.items = draft.items.filter((i) => i.kind !== 'option')
   let saved = options.saved ?? null
@@ -66,6 +68,8 @@ function harness(options = {}) {
           return { error: { code: '42703' } }
         if (table === 'action_case_customer_offers') {
           if (options.schemaMissing) return { error: { code: '42P01' } }
+          if (read.filters.some(([key, value]) => key === 'status' && value === 'accepted'))
+            return { data: options.accepted ? { id: id(60) } : null }
           if (
             options.uncertain &&
             calls.some((c) => c.p_operation === 'publish')
@@ -92,7 +96,7 @@ function harness(options = {}) {
             action_case_access_links: link,
             action_case_attachments: options.missingFile
               ? []
-              : [
+              : options.files ?? [
                   {
                     id: id(4),
                     file_name: 'Terms.pdf',
@@ -141,7 +145,7 @@ function harness(options = {}) {
             return options.copyFailed ? { error: { message: 'failed' } } : {}
           },
           async info() {
-            return { data: { size: 1000 } }
+            return { data: { size: options.fileSize ?? 1000 } }
           },
           async remove(paths) {
             removed.push(...paths)
@@ -220,6 +224,13 @@ function harness(options = {}) {
     './customerOffers': domain,
     './customerOfferCosting': costingDomain,
     './customerPlanning': planningDomain,
+    './standardContractTerms': { ...standardTerms, withStandardContractTerms: options.standardTerms ? standardTerms.withStandardContractTerms : (draft) => draft },
+    './standardContractTermsServer': {
+      standardTermsFileId: () => id(4),
+      async findStandardTermsFile() { return options.standardTerms && !options.standardAttachmentMissing ? { id: id(4), fileName: standardTerms.ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: standardTerms.ABS18_TERMS.size } : null },
+      async ensureStandardTermsFile() { prepared.push(id(4)); return { id: id(4), fileName: standardTerms.ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: standardTerms.ABS18_TERMS.size } },
+      async verifyStandardTermsFile() { if (options.corruptTerms) throw Error('CUSTOMER_OFFER_STANDARD_TERMS') },
+    },
     './customerRegistryServer': { async writeContractCustomer(ctx, caseId, payload, bind) { calls.push({ name: 'writeContractCustomer', ctx, caseId, payload, bind }) } },
     './propertyRegistryServer': { async getProjectPropertyLink(propertyId, available) { return { available, property: propertyId ? { id: propertyId } : null } } },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
@@ -261,6 +272,7 @@ function harness(options = {}) {
     copies,
     removed,
     signed,
+    prepared,
     draft,
     link,
     participant,
@@ -298,6 +310,77 @@ test('structured parties are stored internally, checked before delivery and proj
   assert.equal(JSON.stringify(h.sent).includes('19000101'), false)
   const shared = await h.api.getSharedCustomerOffers(h.link, h.participant)
   assert.equal(shared.offers[0].snapshot.contractParties.customers[0].personalNumber, '')
+})
+
+test('ABS18 autosave canonicalizes the standard attachment and reference without editing customer prose or sending anything', async () => {
+  const h = harness({ standardTerms: true }), ctx = { orgId: id(90), userId: id(91) }
+  h.draft.terms = 'Projektvillkor som ska bevaras'
+  h.draft.termsAttachmentId = null
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft }, 'autosave')
+  const written = h.calls.find(c => c.p_operation === 'save').p_data.body
+  assert.equal(written.terms, h.draft.terms)
+  assert.equal(written.termsAttachmentId, id(4))
+  assert.equal(written.contractDetails.assignment.documents[0].name, standardTerms.ABS18_TERMS.name)
+  assert.equal(h.sent.length, 0)
+  assert.equal(h.copies.length, 0)
+})
+test('a damaged or incorrectly selected standard edition blocks publication before any copy or email', async () => {
+  const corrupt = harness({ corruptTerms: true })
+  await assert.rejects(corrupt.run(), /STANDARD_TERMS/)
+  assert.equal(corrupt.sent.length, 0); assert.equal(corrupt.copies.length, 0)
+  const wrong = harness(); wrong.draft.termsAttachmentId = id(5); wrong.draft.attachmentIds.push(id(5))
+  await assert.rejects(wrong.run(), /STANDARD_TERMS/)
+  assert.equal(wrong.sent.length, 0); assert.equal(wrong.copies.length, 0)
+})
+
+test('accepted contracts cannot acquire a new standard attachment through prepare or autosave', async () => {
+  const h = harness({ standardTerms: true, standardAttachmentMissing: true, accepted: true })
+  const ctx = { orgId: id(90), userId: id(91) }
+  await assert.rejects(h.api.prepareStandardContractTerms(ctx, id(1)), /ACCEPTED/)
+  await assert.rejects(h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft }, 'autosave'), /ACCEPTED/)
+  assert.equal(h.prepared.length, 0)
+  assert.equal(h.calls.length, 0)
+  assert.equal(h.sent.length, 0)
+})
+
+test('adding standard terms to a legacy draft preserves selected document names and tenant scope', async () => {
+  const h = harness({ standardTerms: true, files: [{ id: id(7), file_name: 'Ritning A.pdf', content_type: 'application/pdf', file_size_bytes: 2345 }] })
+  h.draft.attachmentIds = [id(7)]
+  h.draft.termsAttachmentId = id(7)
+  const ctx = { orgId: id(90), userId: id(91) }
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft }, 'autosave')
+  const written = h.calls.find(c => c.p_operation === 'save').p_data.body
+  assert.deepEqual(written.attachmentIds, [id(7), id(4)])
+  assert.equal(written.contractDetails.assignment.documents[1].name, 'Ritning A.pdf')
+  assert.equal(written.contractDetails.assignment.documents[1].date, '')
+  const read = h.reads.find(r => r.table === 'action_case_attachments')
+  assert.deepEqual(read.filters, [['org_id', ctx.orgId], ['action_case_id', id(1)], ['id', [id(7)]]])
+})
+
+test('publication freezes the standard edition as a customer-readable version copy, not an external link', async () => {
+  const terms = standardTerms.ABS18_TERMS
+  const source = { id: id(4), file_name: terms.fileName, content_type: 'application/pdf', file_size_bytes: terms.size,
+    storage_bucket: 'action-case-files', file_path: `${id(90)}/${id(1)}/standard-terms/${terms.version}.pdf` }
+  const h = harness({ standardTerms: true, files: [source], fileSize: terms.size })
+  h.draft.contractDetails = emptyContractDetails()
+  h.draft.contractDetails.advice.status = 'none'
+  h.draft.contractDetails.controlParticipants = { controlOfficer: 'Testroll KA', customerInspector: 'Testroll kontrollant' }
+  for (const field of Object.values(h.draft.contractDetails.fields)) Object.assign(field, { status: 'specified', text: 'Fiktiv överenskommen uppgift' })
+  Object.assign(h.draft, domain.normalizeCustomerOffer(standardTerms.withStandardContractTerms(h.draft,
+    { id: id(4), fileName: terms.fileName, contentType: 'application/pdf', fileSizeBytes: terms.size })))
+  await h.run()
+  assert.equal(h.copies[0].path, source.file_path)
+  assert.equal(h.copies[0].opts.destinationBucket, domain.CUSTOMER_OFFER_BUCKET)
+  const frozen = h.saved()
+  assert.equal(frozen.files[0].fileName, terms.fileName)
+  assert.equal(frozen.files[0].fileSizeBytes, terms.size)
+  assert.notEqual(frozen.files[0].path, source.file_path)
+  const shared = await h.api.getSharedCustomerOffers(h.link, h.participant)
+  assert.equal(shared.offers[0].files[0].fileName, terms.fileName)
+  assert.equal(shared.offers[0].files[0].path, undefined)
+  await h.api.customerOfferFileUrl({ token, offerId: frozen.id, fileId: id(4) })
+  assert.equal(h.signed.at(-1).bucket, domain.CUSTOMER_OFFER_BUCKET)
+  assert.equal(h.signed.at(-1).args[0], frozen.files[0].path)
 })
 
 test('migrated contract saves use the atomic customer writer and recipient mismatch never emails or copies files', async () => {

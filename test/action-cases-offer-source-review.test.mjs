@@ -22,6 +22,35 @@ test('new contract work copies all four scope fields, explicit customer price on
   assert.deepEqual(addOfferSources(withoutPrice, [prepared], true), withoutPrice)
 })
 
+test('contract imports use the shared draft directly and preserve contract metadata, pricing and existing work', async () => {
+  const draft = normalizeCustomerOffer({ ...emptyCustomerOffer('Testavtal'), baseAmountOre: 450000,
+    contractForm: 'abs18', introduction: 'Avtalad inledning', paymentTerms: 'Efter utfört arbete',
+    items: [{ id: '00000000-0000-4000-8000-000000000002', title: 'Befintlig arbetsdel', scope: 'Anpassad text', kind: 'included', amountOre: 300000 }] })
+  const before = structuredClone(draft)
+  const items = addOfferSources(draft.items, [await prepareOfferSource(source)], false)
+  const saved = normalizeCustomerOffer({ ...draft, items })
+  assert.deepEqual({ ...saved, items: before.items }, before)
+  assert.deepEqual(saved.items[0], before.items[0])
+  assert.equal(saved.items[1].scope, source.scope)
+  assert.equal(saved.items[1].scopeConditions, source.scopeConditions)
+  assert.equal(saved.items[1].scopeExclusions, source.scopeExclusions)
+  assert.equal(saved.items[1].scopeAdvice, source.scopeAdvice)
+  assert.equal(saved.items[1].amountOre, null)
+})
+
+test('contract exposes a collapsed direct import without mounting competing review controls', () => {
+  const editor = readFileSync('src/components/tasks/CustomerOfferEditor.tsx', 'utf8')
+  const contract = editor.slice(editor.indexOf('<h3 className="mt-6 font-semibold">Arbetsdelar och avgränsningar'))
+  assert.match(contract, /\{contractView && <CustomerOfferSourcePicker[^>]*collapsible/)
+  assert.match(editor, /\{!contractView && <CustomerOfferSourcePicker/)
+  assert.equal((editor.match(/onReviewCountChange=\{setSourceReviewCount\}/g) ?? []).length, 2)
+  const picker = readFileSync('src/components/tasks/CustomerOfferSourcePicker.tsx', 'utf8')
+  assert.match(picker, /useState\(!collapsible\)/)
+  assert.match(picker, /hidden=\{!expanded\}/)
+  assert.match(picker, /Hämta från Projektarbete/)
+  assert.match(picker, /onReviewCountChange\(reviewCount\)/)
+})
+
 test('intentional contract edits do not masquerade as project changes; a later project change is detected', async () => {
   const initial = await prepareOfferSource(source)
   const item = { ...addOfferSources([], [initial], true)[0], scope: 'Kundens anpassade omfattning', amountOre: 200000 }

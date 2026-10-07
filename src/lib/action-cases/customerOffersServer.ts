@@ -11,6 +11,8 @@ import { normalizeCustomerOfferCosting } from './customerOfferCosting'
 import { normalizePlannedItems, type CustomerPlanning, type CustomerPlannedItem } from './customerPlanning'
 import { writeContractCustomer } from './customerRegistryServer'
 import { getProjectPropertyLink } from './propertyRegistryServer'
+import { withStandardContractTerms } from './standardContractTerms'
+import { ensureStandardTermsFile, findStandardTermsFile, standardTermsFileId, verifyStandardTermsFile } from './standardContractTermsServer'
 import {
   CUSTOMER_OFFER_BUCKET,
   CUSTOMER_OFFER_COLUMNS,
@@ -22,6 +24,7 @@ import {
   offerPublishIssues,
   type CustomerOffer,
   type CustomerOfferDraft,
+  type CustomerOfferFile,
   type CustomerOfferWorkspace
 } from './customerOffers'
 
@@ -110,6 +113,7 @@ export async function getCustomerOfferWorkspace(
     customerNumber = linked.data ? String(linked.data.customer_number) : null
   }
   return {
+    standardTermsFile: await findStandardTermsFile(ctx.orgId, caseId),
     propertyLink: await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
     customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
     recipient: recipient.data ? { id: recipient.data.id, role: 'customer', name: recipient.data.name,
@@ -130,13 +134,30 @@ export async function saveCustomerOffer(
 ) {
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
-  const draft = normalizeCustomerOffer(payload.draft)
+  let draft = normalizeCustomerOffer(payload.draft)
+  await requireCase(ctx, caseId)
+  if (draft.contractForm === 'abs18') {
+    const file = await findStandardTermsFile(ctx.orgId, caseId) ?? await prepareStandardContractTerms(ctx, caseId)
+    let files: CustomerOfferFile[] = []
+    if (!draft.contractDetails?.assignment && draft.attachmentIds.length) {
+      const selected = await createSupabaseAdminClient().from('action_case_attachments')
+        .select('id,file_name,content_type,file_size_bytes').eq('org_id', ctx.orgId)
+        .eq('action_case_id', caseId).in('id', draft.attachmentIds)
+      checked(selected.error)
+      files = (selected.data ?? []).map((row) => ({ id: row.id, fileName: row.file_name,
+        contentType: row.content_type, fileSizeBytes: row.file_size_bytes }))
+    }
+    draft = normalizeCustomerOffer(withStandardContractTerms(draft, file, files))
+  } else {
+    const file = await findStandardTermsFile(ctx.orgId, caseId)
+    if (file) draft = normalizeCustomerOffer(withStandardContractTerms(draft, file))
+  }
   const costing = payload.costing === undefined
     ? undefined
     : normalizeCustomerOfferCosting(payload.costing, draft.items)
   await checkPricingSchema(draft)
   if (mode === 'manual' && draft.contractParties && 'organization_customer_id' in await requireCase(ctx, caseId)) {
-    await writeContractCustomer(ctx, caseId, payload)
+    await writeContractCustomer(ctx, caseId, { ...payload, draft })
     return
   }
   if (costing !== undefined) {
@@ -153,6 +174,14 @@ export async function saveCustomerOffer(
     revision: payload.revision,
     body: draft
   })
+}
+export async function prepareStandardContractTerms(ctx: Context, caseId: string) {
+  await requireCase(ctx, caseId)
+  const result = await createSupabaseAdminClient().from('action_case_customer_offers').select('id')
+    .eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('status', 'accepted').maybeSingle()
+  checked(result.error)
+  if (result.data) throw new Error('CUSTOMER_OFFER_ACCEPTED')
+  return ensureStandardTermsFile(ctx, caseId)
 }
 export async function bindContractCustomer(ctx: Context, caseId: string, payload: Payload) {
   await requireCase(ctx, caseId)
@@ -273,6 +302,10 @@ export async function publishCustomerOffer(
   if (offerPublishIssues(draft).length)
     throw new Error('CUSTOMER_OFFER_INCOMPLETE')
   await checkPricingSchema(draft, true)
+  if (draft.contractForm === 'abs18') {
+    if (draft.termsAttachmentId !== standardTermsFileId(ctx.orgId, caseId)) throw new Error('CUSTOMER_OFFER_STANDARD_TERMS')
+    await verifyStandardTermsFile(ctx.orgId, caseId)
+  }
   const recipient = await db
     .from('action_case_participants')
     .select('id,name,email')

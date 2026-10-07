@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { ArrowDownToLine, ChevronDown, ChevronUp, Loader2, RefreshCw } from 'lucide-react'
 import type { ActionCaseItemView } from '@/lib/action-cases/contracts'
 import { money, type CustomerOfferItem } from '@/lib/action-cases/customerOffers'
@@ -9,14 +9,17 @@ import { addOfferSources, offerSourceDifferences, offerSourceNeedsReview, prepar
 
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50'
 
-export default function CustomerOfferSourcePicker({ sources, items, itemized, blocked, onChange, onReviewCountChange }: {
+export default function CustomerOfferSourcePicker({ sources, items, itemized, blocked, collapsible = false, onChange, onReviewCountChange }: {
   sources: ActionCaseItemView[]
   items: CustomerOfferItem[]
   itemized: boolean
   blocked: boolean
+  collapsible?: boolean
   onChange: (items: CustomerOfferItem[]) => void
   onReviewCountChange: (count: number) => void
 }) {
+  const contentId = useId()
+  const [expanded, setExpanded] = useState(!collapsible)
   const [prepared, setPrepared] = useState<{ sources: ActionCaseItemView[]; rows: PreparedOfferSource[] } | null>(null)
   const [failed, setFailed] = useState(false)
   const [retry, setRetry] = useState(0)
@@ -41,12 +44,18 @@ export default function CustomerOfferSourcePicker({ sources, items, itemized, bl
   const visible = rows.filter((row) => showAll || !existing.has(row.id) || changed.includes(row) || open === row.id)
   const selectedRows = available.filter((row) => selected.includes(row.id))
   const disabled = blocked || loading || failed
+  const showAllButton = rows.length > available.length + changed.length && <button className={button} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}{showAll ? 'Visa bara nya och ändrade' : 'Visa alla arbetsdelar'}</button>
   return <section aria-label="Underlag från Projektarbete" className="my-4 border-y border-slate-200">
     <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 py-3">
       <div><h3 className="text-sm font-semibold">Från Projektarbete</h3>
         <p className="mt-1 text-sm text-slate-600" role="status">{blocked ? 'Spara klart Projektarbete innan du hämtar uppgifter.' : loading ? 'Kontrollerar underlag…' : failed ? 'Underlaget kunde inte jämföras.' : `${available.length} att lägga till · ${changed.length} att granska`}</p></div>
-      {loading ? <Loader2 size={18} className="animate-spin" /> : failed ? <button className={button} onClick={() => { setFailed(false); setRetry(retry + 1) }}><RefreshCw size={16} /> Försök igen</button> : rows.length > available.length + changed.length && <button className={button} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}{showAll ? 'Visa bara nya och ändrade' : 'Visa alla arbetsdelar'}</button>}
+      {loading ? <Loader2 size={18} className="animate-spin" /> : failed ? <button className={button} onClick={() => { setFailed(false); setRetry(retry + 1) }}><RefreshCw size={16} /> Försök igen</button> : !collapsible && showAllButton}
+      {collapsible && <button type="button" className={button} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(!expanded)}>
+        {expanded ? <ChevronUp size={16} /> : <ArrowDownToLine size={16} />}{expanded ? 'Stäng jämförelsen' : 'Hämta från Projektarbete'}
+      </button>}
     </div>
+    <div id={contentId} hidden={!expanded}>
+    {collapsible && !loading && !failed && showAllButton && <div className="flex justify-end border-t border-slate-200 py-2">{showAllButton}</div>}
     {available.length > 1 && <label className="flex min-h-11 items-center gap-3 border-t border-slate-200 text-sm">
       <input type="checkbox" disabled={disabled} checked={selectedRows.length === available.length}
         onChange={(event) => setSelected(event.target.checked ? available.map((row) => row.id) : [])} />Välj alla nya arbetsdelar
@@ -77,6 +86,7 @@ export default function CustomerOfferSourcePicker({ sources, items, itemized, bl
         onChange(addOfferSources(items, selectedRows, itemized && prices)); setSelected([]); setOpen(null)
       }}><ArrowDownToLine size={17} /> Lägg till i grundavtalet ({selectedRows.length})</button>
     </div>}
+    </div>
   </section>
 }
 

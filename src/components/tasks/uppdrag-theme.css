@@ -301,6 +301,7 @@
 .gizmo-document-table td, .gizmo-document-table th { overflow-wrap: anywhere; }
 .gizmo-document-tools { width: 108px; }
 .gizmo-document-row { height: 60px; background: white; cursor: pointer; }
+.gizmo-document-standard { height: 60px; background: white; }
 .gizmo-document-row > td:first-child { box-shadow: inset 3px 0 transparent; }
 .gizmo-document-row:hover, .gizmo-document-row:focus-within { background: var(--uppdrag-row-hover); }
 .gizmo-document-row:hover > td:first-child, .gizmo-document-row:focus-within > td:first-child { box-shadow: inset 3px 0 var(--uppdrag-link); }
@@ -316,7 +317,7 @@
   .gizmo-document-table, .gizmo-document-table thead, .gizmo-document-table tbody { display: block; }
   .gizmo-document-table tr { display: grid; grid-template-columns: minmax(0, 1fr) var(--gizmo-document-tools-width); align-items: center; }
   .gizmo-document-table tr > td, .gizmo-document-table tr > th { min-width: 0; }
-  .gizmo-document-table .gizmo-document-row { height: auto; min-height: 60px; }
+  .gizmo-document-table .gizmo-document-row, .gizmo-document-table .gizmo-document-standard { height: auto; min-height: 60px; }
   .gizmo-document-table .gizmo-document-editor { grid-template-columns: minmax(0, 1fr); }
   .gizmo-document-table .gizmo-document-editor[hidden] { display: none; }
   .gizmo-document-table .gizmo-document-type, .gizmo-document-table .gizmo-document-date { display: none; }

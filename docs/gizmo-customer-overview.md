@@ -113,6 +113,17 @@ eller godkannanden genomfordes.
 
 ## Beslut 2026-10-06: fran Projektarbete till avtalsutkast
 
+- Komplettering 2026-10-07: Avtal har Hamta fran Projektarbete direkt under
+  Uppdraget / Arbetsdelar och avgransningar. Samma jamforelse och befintliga
+  utkast anvands, utan krav pa att forst besoka Offert. Valjaren ar minimerad
+  fran borjan men kontrollerar fortfarande andrat underlag fore utskick.
+  Import i Avtal autosparas genom befintlig ko. Nya arbetsdelar valjs uttryckligen;
+  befintliga texter och kontrollerade kundpriser ersatts bara for valda falt.
+  Inga nya tabeller eller migrationer. Lokalt genomfort, inte publicerat.
+  Verifierat med 327 action-case-tester, TypeScript och riktad ESLint.
+  Klicktest i fiktivt projekt: direkt tillagg i Avtal, uppdatering av bara valda
+  falt, bevarad klumpsumma och ovrig text, aterlasning efter omladdning samt
+  sparfel/nytt forsok. Samma arbetsdelar visas i Offert; ingen kunddata andrades.
 - Arbetsdelar visas direkt under Uppdraget. Anvandaren valjer vilka som ska
   inga i grundavtalet; inget laggs till vid enbart navigation till sidan.
   Val och tillval forblir separata. Interna kalkyler och UE-underlag importeras inte.
@@ -806,6 +817,72 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 - Datorns rubrikrad och normala 60 px-rader ar matta. Vald rad anvander
   profilens gula token; hover/fokus ar gronbla. Mobil 390 och 344 px kontrollerad
   utan horisontell overflow. Faltrutor anvander 16 px text och verktyg 48 px.
+
+## Automatiska ABS 18-standardvillkor 2026-10-07
+
+- Beslut: valet ABS 18 ska automatiskt bifoga dess allmanna bestammelser.
+  Egen avtalshandling behaller det manuella PDF-valet. Den tidigare manuella
+  villkorsrollen for ABS 18 ersatts av denna fasta standardbilaga.
+- Originalet fran Byggforetagens officiella nedladdning lagras oforandrat som
+  public/abs18-2018-06.pdf, 54 872 byte, version 2018.06. SHA-256 ar
+  7959e2511754ad839b32c0a7548783804218a54271bac1a29d16ff8094b309c3.
+  Kalla: https://byggforetagen.se/app/uploads/2020/01/180613-_Allmanna_bestammelser_ABS_18-1.pdf.
+  Referensens tekniska datum 2018-06-13 motsvarar originalfilens datum i namnet;
+  kunden ser dokumentets versionsbeteckning 2018.06, inte uppladdningsdatum.
+- En behorig POST forbereder en organisations- och projektavgransad fil i
+  befintlig privat filbank. GET andrar inte utkastet. Stabil filidentitet och
+  uppladdning utan overskrivning gor aterforsok och samtidiga flikar idempotenta.
+  Godkant avtal stoppar ny bilageforberedelse fore uppladdning. Aldre utkast
+  behaller namn och referenser for redan valda projekthandlingar.
+- Avtalsvyn lagger bilagan i utkastets handlingslista genom befintligt autospar.
+  Standardraden kan oppnas men inte redigeras/raderas/omordnas som projektfil.
+  Byte till egen avtalshandling tar bort bara standardreferensen ur utkastet,
+  inte projektfilen eller redan publicerade kopior. Projekttext bevaras.
+- Servern normaliserar ABS 18-bilagan aven vid sparning och verifierar dess
+  faktiska bytes fore utskick. Befintligt publiceringsflode kopierar PDF:en till
+  varje fryst avtalsversion och ger bestallaren atkomst via den versionens filrout.
+  Ingen ny SQL eller gransknings-/signeringsrutin infors. Gamla versioner andras inte.
+- Status: lokal implementation, inte publicerad. Ingen verklig kundinformation,
+  utskick, avtalsversion eller Supabase-lagring andrades under utvecklingstesterna.
+- Verifiering: 319 action-case-tester inklusive standardfilens SHA-256,
+  samtidiga aterforsok, accepterat avtal, autosparning, bevarade dokument,
+  fryst versionskopia och kundens filatkomst. TypeScript och riktad ESLint
+  kontrollerade. Fiktiva klicktester omfattar byte av avtalsform under langsamt
+  autosparande, omladdning, fel/aterforsok med bevarad text och PDF i ny flik.
+  Desktop 1280 och mobil 390 px har ingen horisontell overflow.
+  Lokalt produktionsbygge kor Webpack och isolerade byggvarden for Supabase;
+  Turbopack stoder inte denna worktrees externa node_modules-lank.
+
+## Skydd for osparade handlingar 2026-10-07
+
+- Dokumentmetadata kunde tidigare finnas bara i editor-minnet efter ett sparfel
+  eller fore debouncen. En omladdning kunde darfor tappa osparade namn, datum,
+  typ, referenser och ordning. Exakt orsak till det rapporterade produktionsfelet
+  kan inte faststallas fran den nuvarande databasen; utkast saknar revisionshistorik.
+- Samma lokala utkastprincip som OB:s textfalt anvands, utan ny sparko eller
+  bakgrundsuppladdning. Bara handlingsmetadata sparas i flikens sessionStorage,
+  avgransat per projekt och med 24 timmars aterstallningsfrist. Personnummer,
+  avtalsparter, priser, avtalstexter och filinnehall lagras inte dar.
+- Kopian uppdateras direkt vid andring, fore autosparningsfordrojningen. Ett
+  bekraftat serversvar rensar bara fardigsparade metadata; nyare redigeringar
+  bevaras med den bekraftade versionen som jamforelsegrund.
+- Ett ateroppnat olast avtal aterstaller automatiskt endast nar serverns
+  handlingslista fortfarande motsvarar kopians bas och samtliga filer finns kvar.
+  Vid konflikt visas lokal-kopia-status med val att aterstalla eller behalla
+  serverversionen, bada med bekraftelse. Handlingseditorn och utskick vantas tills
+  valet ar gjort; andra avtalsfalt kan fortsatt redigeras. Nyare serverhandlingar
+  skrivs inte over automatiskt. Redigering i andra vyer fore avtalsvyn far inte
+  rensa ett lokalt handlingsutkast som annu inte har granskats.
+- Autosparning och manuell sparning verifierar handlingsmetadata i serversvaret
+  fore bekraftelse. Inmatning som anlander under en manuell sparning bevaras och
+  koas vidare i avtalsvyn. Handlingens datum begransas till fyra arssiffror;
+  ogiltig datum-inmatning skickas inte som en ogiltig avtalsreferens.
+- Status: lokal implementation, annu inte publicerad. Ingen ny SQL. Dokumenten
+  och datumen som anvandaren uttryckligen bekraftade har separat aterstallts i
+  testprojektet pa hushub.se och verifierats efter omladdning. Inget avtal skickat.
+- Verifierat: 325 action-case-tester, TypeScript och riktad ESLint. Lokala
+  klicktester omfattar sparfel, avbruten/remonterad editor, aterstallning genom
+  samma autospar, riktig omladdning samt tva flikar med nyare servermetadata.
 
 ## Senare steg, inte implementerade
 

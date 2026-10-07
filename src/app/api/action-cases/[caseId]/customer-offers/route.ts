@@ -9,6 +9,7 @@ import {
   getCustomerOfferWorkspace,
   bindContractCustomer,
   publishCustomerOffer,
+  prepareStandardContractTerms,
   saveCustomerOffer,
   separateCustomerChoices,
   sendCustomerOffer,
@@ -35,6 +36,9 @@ export async function POST(request: Request, { params }: Params) {
     const ctx = await customerOfferContext(),
       { caseId } = await params,
       body = await offerRequestBody(request)
+    if (body.operation === 'prepare_standard_terms') return NextResponse.json(
+      { file: await prepareStandardContractTerms(ctx, caseId) }, { headers: { 'Cache-Control': 'no-store' } }
+    )
     if (body.operation === 'save') await saveCustomerOffer(ctx, caseId, body)
     else if (body.operation === 'autosave') await saveCustomerOffer(ctx, caseId, body, 'autosave')
     else if (body.operation === 'bind_customer') await bindContractCustomer(ctx, caseId, body)

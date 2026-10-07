@@ -1,6 +1,7 @@
 // Real components, synthetic HTTP backend. No live database, email or acceptance.
 import assert from 'node:assert/strict'
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
+import { ABS18_TERMS, withStandardContractTerms } from '../src/lib/action-cases/standardContractTerms.ts'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 import { createRequire } from 'node:module'
@@ -76,7 +77,7 @@ const theme = await readFile('src/components/tasks/uppdrag-theme.css', 'utf8'),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
   challenge = null,
-  failSave = false
+  failSave = process.argv.includes('--fail-standard-terms')
 if (process.argv.includes('--legacy-controls')) {
   state.draft.contractDetails = emptyContractDetails()
   state.draft.contractDetails.fields.controls = { status: 'specified', text: 'TEST: Tidigare gemensamma rolluppgifter.' }
@@ -294,7 +295,11 @@ const server = createServer(async (req, res) => {
       } catch (error) { json({ error: error.message }, 400) }
       return
     } else if (path.endsWith('/customer-offers')) {
-      if (body.operation === 'save' || body.operation === 'autosave') {
+      if (body.operation === 'prepare_standard_terms') {
+        if (failSave) { failSave = false; json({ error: 'Standardvillkoren kunde inte förberedas. Försök igen.' }, 503); return }
+        state.standardTermsFile = { id: id(140), fileName: ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: ABS18_TERMS.size }
+        json({ file: state.standardTermsFile }); return
+      } else if (body.operation === 'save' || body.operation === 'autosave') {
         if (failSave) {
           failSave = false
           json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503)
@@ -304,7 +309,11 @@ const server = createServer(async (req, res) => {
           json({ error: 'Offerten har ändrats. Uppdatera vyn.' }, 409)
           return
         }
-        state.draft = normalizeCustomerOffer(body.draft)
+        let normalized
+        try { normalized = normalizeCustomerOffer(body.draft) }
+        catch { json({ error: 'Utkastet innehåller en ogiltig uppgift. Dina ändringar är kvar.' }, 400); return }
+        state.draft = normalized
+        if (state.standardTermsFile) state.draft = normalizeCustomerOffer(withStandardContractTerms(state.draft, state.standardTermsFile))
         if (propertyRegistryTest && state.draft.contractDetails?.property && !state.draft.contractDetails.property.sourcePropertyId) state.propertyLink.property = null
         state.costing = normalizeCustomerOfferCosting(body.costing, state.draft.items)
         state.revision++
@@ -379,6 +388,10 @@ const server = createServer(async (req, res) => {
     return
   }
   if (path.endsWith('/customer-planning')) { json(state.planning); return }
+  if (path === '/abs18-2018-06.pdf' || path.endsWith(`/attachments/${id(140)}`)) {
+    res.setHeader('Content-Type', 'application/pdf')
+    res.end(await readFile(ABS18_TERMS.assetPath)); return
+  }
   if (path.startsWith('/api/')) {
     res.setHeader('Content-Type', 'image/png')
     res.end(img)

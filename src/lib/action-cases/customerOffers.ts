@@ -63,6 +63,7 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  standardTermsFile?: CustomerOfferFile | null
   propertyLink?: import('../properties/identity').ProjectPropertyLink
   customerLink?: import('./customerRegistry').ContractCustomerLink
   recipient?: import('./contracts').ActionCaseParticipantView | null
@@ -275,7 +276,7 @@ export function offerPublishIssues(
   if (!d.paymentTerms.trim()) issues.push('Ange betalningsvillkor.')
   if (!d.schedule.trim()) issues.push('Ange tider och förutsättningar.')
   if (d.contractForm === 'abs18' && !d.termsAttachmentId)
-    issues.push('Markera en PDF-handling som avtalsvillkor i handlingsförteckningen för ABS 18.')
+    issues.push('ABS 18:s standardvillkor behöver läggas till innan avtalet skickas.')
   return issues
 }
 export function customerOfferTotal(

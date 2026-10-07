@@ -18,6 +18,7 @@ import {
   Save,
   Send,
   Trash2,
+  Undo2,
   UserRoundCheck,
   WalletCards
 } from 'lucide-react'
@@ -34,6 +35,7 @@ import {
   type CustomerOfferSnapshot,
   type CustomerOfferWorkspace
 } from '@/lib/action-cases/customerOffers'
+import { ABS18_TERMS, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
 import { useToast } from '@/components/ui/AppToastProvider'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import ActionCaseCustomerPortal from './ActionCaseCustomerPortal'
@@ -43,7 +45,8 @@ import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosti
 import CustomerContractFields from './CustomerContractFields'
 import CustomerContractPropertyEditor from './CustomerContractPropertyEditor'
 import CustomerContractAssignmentEditor from './CustomerContractAssignmentEditor'
-import { assignmentForEditing } from '@/lib/action-cases/contractAssignment'
+import { assignmentForEditing, assignmentPatch } from '@/lib/action-cases/contractAssignment'
+import { contractDocumentDraftState, contractDocumentsAcknowledged, readContractDocumentDraft, writeContractDocumentDraft, type ContractDocumentDraft } from '@/lib/action-cases/contractDocumentDraft'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
 import { contractDetailsForEditing, contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
 import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
@@ -104,8 +107,17 @@ export default function CustomerOfferEditor({
         initialCustomer?.email ?? '', initialCustomer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
     }))
   const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
+  const [standardTermsFile, setStandardTermsFile] = useState(initial.standardTermsFile ?? null)
+  const [termsState, setTermsState] = useState<'' | 'loading' | 'error'>('')
+  const [termsRetry, setTermsRetry] = useState(0)
+  const applyStandardTerms = useRef<(file: NonNullable<CustomerOfferWorkspace['standardTermsFile']>) => void>(() => {})
   const currentSnapshot = useRef({ draft, costing })
   currentSnapshot.current = { draft, costing }
+  const acknowledgedDraft = useRef(initial.draft)
+  const recoveryChecked = useRef(false)
+  const recoverDocuments = useRef<() => void>(() => {})
+  const documentConflict = useRef<ContractDocumentDraft | null>(null)
+  const [documentRecovery, setDocumentRecovery] = useState<ContractDocumentDraft | null>(null)
   const customer = workspace.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [internalView, setInternalView] = useState<CustomerEditorView>('edit')
   const view = controlledView ?? internalView
@@ -147,14 +159,22 @@ export default function CustomerOfferEditor({
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Utkastet kunde inte sparas. Dina ändringar är kvar.')
+      if (!contractDocumentsAcknowledged(submitted.draft, result.draft, result.standardTermsFile?.id ?? standardTermsFile?.id))
+        throw new Error('Sparningen av handlingarna kunde inte bekräftas. Dina ändringar är kvar.')
       return result as CustomerOfferWorkspace
     },
     onSaved: (result, submitted) => {
+      acknowledgedDraft.current = result.draft
       setWorkspace(result)
+      if (result.standardTermsFile) {
+        setStandardTermsFile(result.standardTermsFile)
+        if (result.draft.termsAttachmentId === result.standardTermsFile.id) setTermsState('')
+      }
       const current = currentSnapshot.current
       const next = { draft: retainNewerDraft(current.draft, submitted.draft, draftForEditing(result)),
         costing: retainNewerDraft(current.costing, submitted.costing, result.costing ?? {}) }
       currentSnapshot.current = next
+      persistDocuments(next.draft)
       setDraft(next.draft)
       setCosting(next.costing)
     },
@@ -165,6 +185,7 @@ export default function CustomerOfferEditor({
   const locked = workspace.offers.some((o) => o.status === 'accepted')
   const issues = [
     ...offerPublishIssues(draft),
+    ...(documentRecovery ? ['Välj vilka handlingar som ska behållas från det lokala utkastet före utskick.'] : []),
     ...(sourcePending ? ['Projektarbete har ändringar som inte har sparats klart.'] : []),
     ...(sourceReviewCount > 0 ? [`Granska ändrat underlag för ${sourceReviewCount} arbetsdelar under Uppdraget.`] : []),
     ...(sourceReviewCount === -2 ? ['Jämförelsen med Projektarbete misslyckades. Försök igen under Uppdraget.'] : []),
@@ -173,7 +194,9 @@ export default function CustomerOfferEditor({
       : []),
     ...(recipientChanged ? ['Bekräfta mottagaren under Beställare före utskick.'] : [])
   ]
-  const files = actionCase.attachments.filter((f) => !f.isQuoteDocument)
+  const files = [...actionCase.attachments.filter((f) => !f.isQuoteDocument),
+    ...(standardTermsFile && !actionCase.attachments.some((f) => f.id === standardTermsFile.id)
+      ? [{ ...standardTermsFile, type: 'document' as const, title: ABS18_TERMS.name }] : [])]
   const contractDocuments = assignmentForEditing(draft, files).documents
   const otherFiles = files.filter((f) => !contractDocuments.some((d) => d.fileId === f.id))
   const baseAmount = customerOfferBaseAmount(draft)
@@ -181,6 +204,14 @@ export default function CustomerOfferEditor({
   const missingPriceCount = draft.items.filter(
     (i) => i.kind === 'included' && i.amountOre === null
   ).length
+  function persistDocuments(current: CustomerOfferDraft) {
+    if (!recoveryChecked.current || documentConflict.current) return
+    try {
+      writeContractDocumentDraft(window.sessionStorage, actionCase.id,
+        assignmentForEditing(acknowledgedDraft.current, files).documents,
+        assignmentForEditing(current, files).documents)
+    } catch { /* Browser storage may be unavailable; keep the normal server save path. */ }
+  }
   const update = (patch: Partial<CustomerOfferDraft>) => {
     const current = currentSnapshot.current
     const nextDraft = { ...current.draft, ...patch }
@@ -190,6 +221,7 @@ export default function CustomerOfferEditor({
       nextCosting = Object.fromEntries(Object.entries(current.costing).filter(([id]) => ids.has(id)))
     }
     currentSnapshot.current = { draft: nextDraft, costing: nextCosting }
+    persistDocuments(nextDraft)
     setDraft(nextDraft)
     setCosting(nextCosting)
     if (contractView && !locked && !running.current) autosave.change({ draft: nextDraft, costing: nextCosting })
@@ -203,6 +235,67 @@ export default function CustomerOfferEditor({
     if (contractView && !locked && !running.current) autosave.change({ draft: current.draft, costing: nextCosting })
     setConfirmed(false)
   }
+  const restoreDocuments = (backup: ContractDocumentDraft) => {
+    if (locked || backup.documents.some((doc) => !files.some((file) => file.id === doc.fileId))) {
+      toast.error('En handling saknas i projektet. Det lokala utkastet har inte ersatt de sparade uppgifterna.')
+      return
+    }
+    documentConflict.current = null
+    setDocumentRecovery(null)
+    const current = currentSnapshot.current.draft
+    const assignment = assignmentForEditing(current, files)
+    setExpanded('scope-summary')
+    update(assignmentPatch(current, { ...assignment, documents: backup.documents }, assignment))
+    toast.info('Osparade handlingar har återställts och sparas på nytt.')
+  }
+  recoverDocuments.current = () => {
+    let backup: ContractDocumentDraft | null = null
+    try { backup = readContractDocumentDraft(window.sessionStorage, actionCase.id) } catch { return }
+    if (!backup) return
+    const state = contractDocumentDraftState(backup,
+      assignmentForEditing(acknowledgedDraft.current, files).documents, files.map((file) => file.id))
+    if (state === 'saved') persistDocuments(currentSnapshot.current.draft)
+    else if (state === 'restore') restoreDocuments(backup)
+    else {
+      documentConflict.current = backup
+      setDocumentRecovery(backup)
+      toast.warning('Ett lokalt handlingsutkast finns. De sparade handlingarna har ändrats och har inte skrivits över.')
+    }
+  }
+  useEffect(() => {
+    if (!active || !contractView || locked || recoveryChecked.current) return
+    recoveryChecked.current = true
+    recoverDocuments.current()
+  }, [active, contractView, locked])
+  applyStandardTerms.current = (file) => {
+    try {
+      const current = currentSnapshot.current.draft
+      const next = withStandardContractTerms(current, file, files)
+      if (JSON.stringify(next) !== JSON.stringify(current)) update(next)
+    } catch (error) {
+      setTermsState('error')
+      toast.error(error, 'Standardvillkoren kunde inte läggas till. Kontrollera antalet bilagor.')
+    }
+  }
+  useEffect(() => {
+    if (!active || !contractView || locked || draft.contractForm !== 'abs18' || standardTermsFile) return
+    let cancelled = false
+    setTermsState('loading')
+    fetch(`/api/action-cases/${actionCase.id}/customer-offers`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(45000),
+      body: JSON.stringify({ operation: 'prepare_standard_terms' }),
+    }).then(async (response) => {
+      const result = await response.json()
+      if (!response.ok || !result.file) throw new Error(result.error || 'Standardvillkoren kunde inte förberedas.')
+      if (!cancelled) { setStandardTermsFile(result.file); setTermsState('') }
+    }).catch((error) => {
+      if (!cancelled) { setTermsState('error'); toast.error(error, 'Standardvillkoren kunde inte förberedas.') }
+    })
+    return () => { cancelled = true }
+  }, [active, contractView, locked, draft.contractForm, standardTermsFile, actionCase.id, termsRetry, toast])
+  useEffect(() => {
+    if (active && contractView && !locked && standardTermsFile) applyStandardTerms.current(standardTermsFile)
+  }, [active, contractView, locked, draft.contractForm, standardTermsFile, termsRetry])
   useEffect(() => {
     if (embedded || !active || previousView.current === view) return
     previousView.current = view
@@ -255,12 +348,26 @@ export default function CustomerOfferEditor({
       const data = await response.json()
       if (!response.ok)
         throw new Error(data.error || 'Offerten kunde inte hanteras.')
+      if (operation === 'save' && !contractDocumentsAcknowledged(draft, data.draft, data.standardTermsFile?.id ?? standardTermsFile?.id))
+        throw new Error('Sparningen av handlingarna kunde inte bekräftas. Dina ändringar är kvar.')
       if (operation === 'bind_customer' || operation === 'bind_property' || data.recipient?.name !== workspace.recipient?.name ||
         data.recipient?.email !== workspace.recipient?.email || data.recipient?.phone !== workspace.recipient?.phone) onCustomerChanged?.()
       autosave.reset(data.revision)
+      acknowledgedDraft.current = data.draft
       setWorkspace(data)
-      setDraft((current) => operation === 'save' ? retainNewerDraft(current, draft, draftForEditing(data)) : draftForEditing(data))
-      setCosting((current) => operation === 'save' ? retainNewerDraft(current, costing, data.costing ?? {}) : data.costing ?? {})
+      if (data.standardTermsFile) setStandardTermsFile(data.standardTermsFile)
+      const next = {
+        draft: operation === 'save' ? retainNewerDraft(currentSnapshot.current.draft, draft, draftForEditing(data)) : draftForEditing(data),
+        costing: operation === 'save' ? retainNewerDraft(currentSnapshot.current.costing, costing, data.costing ?? {}) : data.costing ?? {},
+      }
+      currentSnapshot.current = next
+      setDraft(next.draft)
+      setCosting(next.costing)
+      persistDocuments(next.draft)
+      // Edits made while the manual request was running still need a queued save.
+      if (operation === 'save' && contractView && !locked &&
+        (JSON.stringify(next.draft) !== JSON.stringify(draftForEditing(data)) || JSON.stringify(next.costing) !== JSON.stringify(data.costing ?? {})))
+        autosave.change(next)
       if (operation === 'separate_choices' || operation === 'bind_customer' ||
         ((operation === 'save' || operation === 'refresh') && !planningDirtyRef.current)) {
         setPlanning(data.planning)
@@ -430,11 +537,22 @@ export default function CustomerOfferEditor({
                 ? 'Sparar utkast…'
               : dirty || planningDirty || billingDirty
                 ? 'Osparade ändringar'
+              : documentRecovery
+                ? 'Lokalt utkast finns'
                 : workspace.revision
                   ? 'Sparat'
                   : 'Nytt utkast'}
             </span>
             {autosave.state?.status === 'error' && <button className="gizmo-button h-8 min-h-0 shrink-0 px-2" title="Försök spara utkastet igen" aria-label="Försök spara utkastet igen" disabled={Boolean(busy)} onClick={() => void autosave.retry()}><RefreshCw size={16} /></button>}
+            {documentRecovery && !locked && <button className="gizmo-button h-8 min-h-0 shrink-0 px-2" title="Återställ lokalt handlingsutkast" aria-label="Återställ lokalt handlingsutkast" disabled={Boolean(busy) || autosave.isSaving} onClick={() => {
+              if (window.confirm('Återställa de lokala handlingarna? Den nuvarande handlingsförteckningen ersätts. Övriga avtalsuppgifter behålls.')) restoreDocuments(documentRecovery)
+            }}><Undo2 size={16} /></button>}
+            {documentRecovery && !locked && <button className="gizmo-button h-8 min-h-0 shrink-0 px-2" title="Behåll de sparade handlingarna" aria-label="Behåll de sparade handlingarna" disabled={Boolean(busy) || autosave.isSaving} onClick={() => {
+              if (!window.confirm('Behålla de sparade handlingarna? Det lokala handlingsutkastet tas bort.')) return
+              documentConflict.current = null
+              setDocumentRecovery(null)
+              persistDocuments(currentSnapshot.current.draft)
+            }}><Check size={16} /></button>}
           </div>
         </div>
       </header>}
@@ -608,8 +726,12 @@ export default function CustomerOfferEditor({
             </ProjectEditorRow>
             <ProjectEditorRow title="Uppdraget" summary={`${draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(baseAmount)}`}
               open={expanded === 'scope-summary'} onToggle={() => setExpanded(expanded === 'scope-summary' ? null : 'scope-summary')}>
-              <CustomerContractAssignmentEditor draft={draft} files={files} caseId={actionCase.id} onChange={update}>
+              <fieldset className="min-w-0" disabled={Boolean(documentRecovery)}>
+              <CustomerContractAssignmentEditor draft={draft} files={files} caseId={actionCase.id} onChange={update}
+                standardTermsId={standardTermsFile?.id} termsState={termsState} onRetryTerms={() => setTermsRetry((value) => value + 1)}>
               <h3 className="mt-6 font-semibold">Arbetsdelar och avgränsningar</h3>
+              {contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)} collapsible
+                onChange={(items) => { update({ items }); setItemView('included') }} onReviewCountChange={setSourceReviewCount} />}
               {draft.items.filter((item) => item.kind === 'included' || item.kind === 'excluded').map((item) => <div key={item.id} className="border-b border-slate-200 py-3 text-sm">
                 <h3 className="font-semibold">{item.title}{item.kind === 'excluded' ? ' · Ingår inte' : ''}</h3>
                 <p className="mt-1 whitespace-pre-wrap">{item.scope}</p>
@@ -617,12 +739,13 @@ export default function CustomerOfferEditor({
               </div>)}
               <button className={`${button} mt-4`} onClick={() => setView('edit')}><ArrowLeft size={17} /> Redigera omfattning i Offert</button>
               </CustomerContractAssignmentEditor>
+              </fieldset>
             </ProjectEditorRow>
             </div>
             <section hidden={contractView}>
               <h2 className="text-lg">Uppdraget</h2>
-              <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)}
-                onChange={(items) => { update({ items }); setItemView('included') }} onReviewCountChange={setSourceReviewCount} />
+              {!contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)}
+                onChange={(items) => { update({ items }); setItemView('included') }} onReviewCountChange={setSourceReviewCount} />}
               <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
                 {([['included', 'Grundåtagande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
               </div>

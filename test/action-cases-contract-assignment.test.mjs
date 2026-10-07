@@ -7,6 +7,7 @@ import * as assignment from '../src/lib/action-cases/contractAssignment.ts'
 import { emptyContractDetails, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { emptyCustomerOffer, normalizeCustomerOffer, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import * as offers from '../src/lib/action-cases/customerOffers.ts'
+import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { id } from './fixtures/customer-offer-data.ts'
 
 const files = [{ id: id(4), fileName: 'Ritning A.pdf', contentType: 'application/pdf', fileSizeBytes: 10 },
@@ -72,11 +73,25 @@ function editor() {
     }
     if (name === 'lucide-react') return { ArrowDown:'svg', ArrowUp:'svg', ChevronDown:'svg', ExternalLink:'svg', Trash2:'svg' }
     if (name === '@/lib/action-cases/contractAssignment') return assignment
+    if (name === '@/lib/action-cases/standardContractTerms') return standardTerms
     throw Error(name)
   }, loaded, loaded.exports)
   return (props) => { slot = 0; return loaded.exports.default(props) }
 }
 const flatten = (node) => Array.isArray(node) ? node.flatMap(flatten) : !node || typeof node !== 'object' ? [node] : [node,...flatten(node.props?.children)]
+
+test('automatic ABS18 is a fixed linked row, not an editable or removable project reference', () => {
+  const std = { id:id(140), fileName:standardTerms.ABS18_TERMS.fileName, contentType:'application/pdf', fileSizeBytes:standardTerms.ABS18_TERMS.size }
+  const d = standardTerms.withStandardContractTerms(structured(), std, files)
+  let writes = 0
+  const nodes = flatten(editor()({ draft:d, files:[...files,std], caseId:id(1), standardTermsId:std.id, onChange:()=>writes++ }))
+  assert.equal(nodes.some(n=>n?.props?.['aria-label']==='Ta bort handling 1 från avtalet'),false)
+  assert.equal(nodes.some(n=>n?.props?.['aria-label']==='Handlingens datum 1'),false)
+  assert.equal(nodes.some(n=>n?.type==='input'&&n.props.type==='radio'),false)
+  assert.equal(nodes.find(n=>n?.props?.['aria-label']==='Öppna ABS 18-villkoren i ny flik').props.target,'_blank')
+  const up=nodes.find(n=>n?.props?.['aria-label']==='Flytta handling 2 upp')
+  assert.equal(up.props.disabled,true);up.props.onClick();assert.equal(writes,0)
+})
 test('the real editor supports free types, dates, ordered files and secure separate-window opening', () => {
   let patch; const d = structured(), nodes = flatten(editor()({ draft:d, files, caseId:id(1), onChange:(p) => { patch=p } }))
   const find = (label) => nodes.find((n) => n?.props?.['aria-label'] === label)
@@ -93,7 +108,7 @@ test('the real editor supports free types, dates, ordered files and secure separ
 })
 
 test('one file picker and PDF row radios replace the duplicate agreement picker, retaining metadata and file inclusion', () => {
-  let d = structured()
+  let d = { ...structured(), contractForm: 'custom' }
   const a = d.contractDetails.assignment
   d = { ...d, ...assignment.assignmentPatch(d, { ...a, documents: [...a.documents,
     { fileId: id(6), type: 'Allmänna bestämmelser', name: 'Villkor', date: '2026-10-06' },
@@ -103,7 +118,7 @@ test('one file picker and PDF row radios replace the duplicate agreement picker,
   let nodes = render()
   assert.equal(nodes.filter((n) => n?.type === 'select').length, 2)
   assert.equal(nodes.includes('Avtalshandling (PDF)'), false)
-  const radios = nodes.filter((n) => n?.type === 'input' && n.props.type === 'radio')
+  const radios = nodes.filter((n) => n?.type === 'input' && n.props.type === 'radio' && n.props['aria-label'].startsWith('Använd handling'))
   assert.equal(radios.length, 2)
   assert.equal(radios[0].props.checked, true)
   assert.equal(radios[1].props.checked, false)
@@ -119,7 +134,7 @@ test('one file picker and PDF row radios replace the duplicate agreement picker,
   nodes.find((n) => n?.props?.['aria-label'] === 'Ta bort handling 2 från avtalet').props.onClick()
   assert.equal(d.termsAttachmentId, null)
   assert.deepEqual(d.attachmentIds, [id(4), id(7)])
-  assert(offerPublishIssues(d).includes('Markera en PDF-handling som avtalsvillkor i handlingsförteckningen för ABS 18.'))
+  assert(offerPublishIssues({ ...d, contractForm: 'abs18' }).includes('ABS 18:s standardvillkor behöver läggas till innan avtalet skickas.'))
 })
 
 test('legacy terms selection materializes references atomically; custom contracts can clear the role without removing documents', () => {
@@ -200,7 +215,7 @@ test('document lists reuse Gizmo clear-table tokens, stable row markers and mobi
   assert.match(css, /\.gizmo-document-tool \{[^}]*width: 48px; height: 48px/)
   assert.match(css, /\.gizmo-document-editor\[hidden\] \{ display: none; \}/)
   assert.match(css, /\.gizmo-document-table tr \{[^}]*grid-template-columns: minmax\(0, 1fr\) var\(--gizmo-document-tools-width\)/)
-  assert.match(css, /\.gizmo-document-table \.gizmo-document-row \{ height: auto; min-height: 60px; \}/)
+  assert.match(css, /\.gizmo-document-table \.gizmo-document-row, \.gizmo-document-table \.gizmo-document-standard \{ height: auto; min-height: 60px; \}/)
 })
 
 test('the real contract document prints ordered metadata, extra scope and exclusions outside the price header; old snapshots keep their layout', () => {

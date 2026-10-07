@@ -51,6 +51,9 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
   för redigering; nya handlingar öppnas direkt. Filöppning finns i raden med
   ikon, tooltip och separat flik. Långa typer har tooltip och visas i sin
   helhet vid redigering. På smal yta staplas typ och datum under namnet.
+- När ABS 18 väljs är dess standardvillkor en fast rad i samma handlingslista,
+  med versionsbeteckning och filöppningsikon. Den kan inte misstas för ett
+  redigerbart formulär eller tas bort medan den avtalsgrunden är vald.
 - Hela åtgärdsraden öppnar den befintliga sidopanelen. Pekning och
   tangentbordsfokus ger grönblå ton #F1F6F5 och en tunn vänstermarkering.
   Öppen åtgärd markeras med befintlig dämpad gul färg. Markeringar och
@@ -103,6 +106,13 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 
 ## Beslutslogg
 
+- 2026-10-07: Avtal får en minimerad Hämta från Projektarbete-rad under
+  Arbetsdelar och avgränsningar. Den öppnar den befintliga jämförelsen i samma
+  arbetsyta utan navigation till Offert. Samma kompakta rader och explicit
+  val av fält behålls; kundtexter skrivs inte över av enbart navigation.
+- 2026-10-07: Användaren beslutar att ABS 18:s allmänna bestämmelser ska
+  följa med automatiskt när ABS 18 väljs. Original-PDF och frysta versionskopior
+  används; projektspecifika texter och egen avtalshandling behålls separat.
 - 2026-10-07: Handlingsförteckningen komprimeras enligt den befintliga
   varianten Tydlig tabell efter användarens återkoppling. Det är samma
   Gizmo-profil, inte ett nytt formspråk. Autosparning, dokumentåtkomst,
@@ -130,6 +140,12 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
   Listnivån heter Projekt för att skilja val av projekt från arbete i projektet.
 
 ## Verifiering före publicering
+
+Handlingsredigering ska ha ett lokalt utkastsskydd enligt ÖB:s princip, med
+projekt- och flikavgränsning. Normal sparstatus behåller sin fasta yta. Ett lokalt
+utkast efter en konflikt visas där med en återställningsikon och förklarande
+tooltip; tillfälliga besked går genom HusHubs toastsystem. Nyare serveruppgifter
+får inte ersättas utan ett uttryckligt val. Godkända avtal återställs inte.
 
 Kontrollera listval, sökning, filter, tomläge, direktlänk och webbläsarens tillbaka.
 Prova osparat offertutkast och planering genom alla projektdelar, betalningsplan,

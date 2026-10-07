@@ -1,19 +1,23 @@
 'use client'
 
-import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { Fragment, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { CustomerOfferDraft, CustomerOfferFile } from '@/lib/action-cases/customerOffers'
 import { assignmentForEditing, assignmentPatch, type ContractAssignment } from '@/lib/action-cases/contractAssignment'
+import { ABS18_TERMS } from '@/lib/action-cases/standardContractTerms'
 
 const field = 'mt-1 block w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
 const tool = 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-300 disabled:opacity-30'
 
-export default function CustomerContractAssignmentEditor({ draft, files, caseId, onChange, children }: {
+export default function CustomerContractAssignmentEditor({ draft, files, caseId, onChange, children, standardTermsId, termsState, onRetryTerms }: {
   draft: CustomerOfferDraft
   files: CustomerOfferFile[]
   caseId: string
   onChange: (patch: Partial<CustomerOfferDraft>) => void
   children?: ReactNode
+  standardTermsId?: string
+  termsState?: '' | 'loading' | 'error'
+  onRetryTerms?: () => void
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const listId = useId()
@@ -34,7 +38,7 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
   }
   const value = assignmentForEditing(draft, files)
   const selected = new Set(value.documents.map((d) => d.fileId))
-  const available = files.filter((f) => !selected.has(f.id) && (draft.attachmentIds.length < 30 || draft.attachmentIds.includes(f.id)))
+  const available = files.filter((f) => f.id !== standardTermsId && !selected.has(f.id) && (draft.attachmentIds.length < 30 || draft.attachmentIds.includes(f.id)))
   const change = (patch: Partial<ContractAssignment>) => onChange(assignmentPatch(draft, { ...value, ...patch }, value))
   const add = (fileId: string) => {
     const file = files.find((f) => f.id === fileId)
@@ -44,6 +48,9 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
   }
   const move = (index: number, delta: number) => {
     const documents = [...value.documents]
+    const other = index + delta
+    if (other < 0 || other >= documents.length ||
+      (draft.contractForm === 'abs18' && documents[other].fileId === standardTermsId)) return
     ;[documents[index], documents[index + delta]] = [documents[index + delta], documents[index]]
     change({ documents })
   }
@@ -55,6 +62,11 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
       </select>
     </label>
     <section className="gizmo-contract-documents" aria-label="Handlingar som ingår i uppdraget">
+      {draft.contractForm === 'abs18' && <div className="flex min-h-11 items-center gap-2 text-sm text-slate-600" role="status">
+        {termsState === 'loading' ? <><Loader2 size={16} className="animate-spin" /> Förbereder ABS 18-villkor…</>
+          : termsState === 'error' ? <button type="button" className={tool} onClick={onRetryTerms} title="Försök lägga till standardvillkoren igen" aria-label="Försök lägga till ABS 18-villkoren igen"><RefreshCw size={17} /></button>
+            : <a href="/abs18-2018-06.pdf" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 text-teal-800 underline"><ExternalLink size={16} /> ABS 18 · Standardvillkor 2018.06</a>}
+      </div>}
       <h3 className="font-semibold">Handlingar som ingår i uppdraget</h3>
       <datalist id="contract-document-types">
         {['Beskrivning', 'Ritning', 'Anbud', 'Administrativa föreskrifter', 'Allmänna bestämmelser, ABS 18', 'Avtalshandling'].map((type) => <option key={type} value={type} />)}
@@ -81,6 +93,12 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
           </tr>
           {value.documents.map((doc, index) => {
             const file = files.find((f) => f.id === doc.fileId)
+            if (draft.contractForm === 'abs18' && doc.fileId === standardTermsId) return <tr key={doc.fileId} className="gizmo-document-standard border-t border-slate-200">
+              <td className="gizmo-document-type px-3 py-2">ABS 18<span className="mt-1 block text-xs font-medium text-teal-800">Avtalsvillkor</span></td>
+              <td className="px-3 py-2"><strong className="block font-semibold">{ABS18_TERMS.name}</strong><span className="gizmo-document-mobile mt-1 text-xs text-slate-600">Avtalsvillkor · 2018.06</span></td>
+              <td className="gizmo-document-date px-3 py-2 text-slate-600">2018.06</td>
+              <td className="px-2 py-1"><div className="flex justify-end"><a className="gizmo-document-tool text-teal-800" href={`/api/action-cases/${caseId}/attachments/${doc.fileId}`} target="_blank" rel="noopener noreferrer" aria-label="Öppna ABS 18-villkoren i ny flik" title="Öppna ABS 18-villkoren i ny flik"><ExternalLink size={17} /></a></div></td>
+            </tr>
             const open = expanded === doc.fileId
             const panelId = `${listId}-${doc.fileId}`
             const terms = draft.termsAttachmentId === doc.fileId
@@ -122,16 +140,18 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
                         <input aria-label={`Handlingens namn ${index + 1}`} className={field} maxLength={250} value={doc.name} onChange={(e) => edit({ name: e.target.value })} />
                       </label>
                       <label className="min-w-0 text-sm">Handlingens datum
-                        <input aria-label={`Handlingens datum ${index + 1}`} type="date" className={field} value={doc.date} onChange={(e) => edit({ date: e.target.value })} />
+                        <input aria-label={`Handlingens datum ${index + 1}`} type="date" min="0001-01-01" max="9999-12-31" className={field} value={doc.date} onChange={(e) => {
+                          if (!e.target.value || e.target.validity.valid) edit({ date: e.target.value })
+                        }} onBlur={(e) => e.target.reportValidity()} />
                       </label>
                     </div>
-                    {file?.contentType === 'application/pdf' && <label className="gizmo-document-terms mt-3 inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+                    {draft.contractForm === 'custom' && file?.contentType === 'application/pdf' && <label className="gizmo-document-terms mt-3 inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm">
                       <input type="radio" name={`contract-terms-${caseId}`} aria-label={`Använd handling ${index + 1} som avtalsvillkor`} className="h-4 w-4 accent-teal-800" checked={draft.termsAttachmentId === doc.fileId} onChange={() => onChange({ ...assignmentPatch(draft, value, value), termsAttachmentId: doc.fileId })} />
                       Innehåller avtalsvillkoren
                     </label>}
                     <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-sm">
                       {!file && <span role="alert" className="flex-1 text-red-700">Filen saknas i projektet. Välj en ny handling.</span>}
-                      <button type="button" className={tool} title="Flytta handling upp" aria-label={`Flytta handling ${index + 1} upp`} disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp size={17} /></button>
+                      <button type="button" className={tool} title="Flytta handling upp" aria-label={`Flytta handling ${index + 1} upp`} disabled={index === 0 || (draft.contractForm === 'abs18' && value.documents[index - 1].fileId === standardTermsId)} onClick={() => move(index, -1)}><ArrowUp size={17} /></button>
                       <button type="button" className={tool} title="Flytta handling ned" aria-label={`Flytta handling ${index + 1} ned`} disabled={index === value.documents.length - 1} onClick={() => move(index, 1)}><ArrowDown size={17} /></button>
                       <button type="button" className={`${tool} text-red-700`} title="Ta bort från avtalet" aria-label={`Ta bort handling ${index + 1} från avtalet`} onClick={() => change({ documents: value.documents.filter((d) => d.fileId !== doc.fileId) })}><Trash2 size={17} /></button>
                     </div>

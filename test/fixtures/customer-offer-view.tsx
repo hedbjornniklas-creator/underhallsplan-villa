@@ -12,6 +12,8 @@ import { actionCase, customer, token } from './customer-offer-data'
 
 const contractorSource = { companyName: 'Exempelbygg AB', organizationNumber: '556000-0000', contactName: 'Erik Exempel',
   street: 'Bygggatan 1', postalCode: '11122', city: 'Stockholm', mobile: '0700000000', email: 'byggare@example.test' }
+const root = createRoot(document.getElementById('root')!)
+let editorGeneration = 0
 
 async function start() {
   const workspace = await (await fetch('/fixture')).json()
@@ -47,7 +49,7 @@ async function start() {
   const projects = location.pathname.startsWith('/uppdrag')
   const projectWorkspace = projects ? await (await fetch('/project-fixture')).json() : null
   const project = projectWorkspace?.cases.find((item: { id: string }) => location.pathname === `/uppdrag/${item.id}`)
-  createRoot(document.getElementById('root')!).render(
+  root.render(
     <AppToastProvider>
       <UppdragScope external>
         <div className="mx-auto max-w-6xl border-b border-slate-200 px-4 py-2 text-xs text-slate-500 print:hidden">
@@ -63,8 +65,13 @@ async function start() {
         {projects ? <div className="gizmo-workspace">
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/fail-save', { method: 'POST' })}>Simulera nästa sparfel</button></div>
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/slow-save', { method: 'POST' })}>Simulera långsam sparning</button></div>
+          <div className="px-4 py-2 text-xs"><button onClick={async () => {
+            root.render(null)
+            editorGeneration++
+            await start()
+          }}>Simulera avbruten redigerare</button></div>
           <div className="px-4 py-2 text-xs"><button onClick={async () => { await fetch('/__test__/accept-contract', { method: 'POST' }); location.reload() }}>Simulera godkänt avtal</button></div>
-          {project ? <ActionCaseProject caseId={project.id} initialWorkspace={projectWorkspace} initialOffer={workspace}
+          {project ? <ActionCaseProject key={editorGeneration} caseId={project.id} initialWorkspace={projectWorkspace} initialOffer={workspace}
             initialView={parseProjectView(params.get('view'))} issuerName="Exempelbygg AB" replyEmail="byggare@example.test" contractorSource={contractorSource} />
             : <main className="gizmo-index-inner"><p className="gizmo-eyebrow">Gizmo</p><h1>Projekt</h1><ActionCaseWorkspace initialWorkspace={projectWorkspace} initialError={null} /></main>}
         </div> : external ? (

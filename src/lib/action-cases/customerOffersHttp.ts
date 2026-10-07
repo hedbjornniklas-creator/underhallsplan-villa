@@ -32,6 +32,8 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    CUSTOMER_OFFER_STANDARD_TERMS: [503, 'Standardvillkoren kunde inte förberedas. Dina ändringar är kvar. Försök igen innan avtalet skickas.'],
+    CUSTOMER_OFFER_TERMS_LIMIT: [400, 'Lämna plats för ABS 18:s standardvillkor. Avtalet kan innehålla högst 30 bilagor.'],
     PROPERTY_SCHEMA: [503, 'Fastighetskopplingen behöver aktiveras av administratören. Dina ändringar är kvar.'],
     PROPERTY_INVALID: [400, 'Kontrollera fastighetsuppgifterna. Ange kommun och fastighetsbeteckning.'],
     PROPERTY_FORBIDDEN: [403, 'Du saknar behörighet till fastigheten eller projektet.'],
