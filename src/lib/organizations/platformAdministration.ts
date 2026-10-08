@@ -2,11 +2,11 @@ import 'server-only'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { requireModuleAccess } from '@/lib/access/server'
 import {
-  PLATFORM_ORGANIZATION_MODULE,
   parsePlatformOrganizationCreate, parsePlatformOrganizationId,
   parsePlatformOrganizationMember, parsePlatformOrganizationModules,
   type PlatformOrganizationDirectory, type PlatformOrganizationDetail,
 } from '@/lib/organizations/platformAdministrationTypes'
+import { ORGANIZATION_MODULE_OPTIONS, SUPPORTED_ORGANIZATION_MODULES } from '@/lib/organizations/supportedModules'
 
 type DbError = { code?: string; message?: string } | null
 const ACCESS = { productKey: 'hushub_admin', moduleKey: 'access_management', scopeType: 'global' } as const
@@ -44,7 +44,7 @@ export async function listPlatformOrganizations(): Promise<PlatformOrganizationD
     readAll((from, to) => db.from('profiles').select('id,full_name,email').order('full_name').order('id').range(from, to)),
     readAll((from, to) => db.from('org_members').select('org_id,profile_id,role').eq('is_active', true).order('org_id').order('profile_id').range(from, to)),
     readAll((from, to) => db.from('organization_enabled_modules').select('org_id,module_key,is_active')
-      .eq('module_key', PLATFORM_ORGANIZATION_MODULE).order('org_id').range(from, to)),
+      .in('module_key', [...SUPPORTED_ORGANIZATION_MODULES]).order('org_id').order('module_key').range(from, to)),
   ])
   const counts = new Map<string, { activeMemberCount: number; activeAdminCount: number }>()
   for (const member of members) {
@@ -53,12 +53,23 @@ export async function listPlatformOrganizations(): Promise<PlatformOrganizationD
     if (member.role === 'admin') count.activeAdminCount++
     counts.set(member.org_id, count)
   }
-  const managedIds = new Set(enabled.map(row => row.org_id))
-  const enabledIds = new Set(enabled.filter(row => row.is_active).map(row => row.org_id))
+  const managedByOrg = new Map<string, Set<string>>()
+  const enabledByOrg = new Map<string, Set<string>>()
+  for (const row of enabled) {
+    const managed = managedByOrg.get(row.org_id) ?? new Set<string>()
+    managed.add(row.module_key)
+    managedByOrg.set(row.org_id, managed)
+    if (row.is_active) {
+      const active = enabledByOrg.get(row.org_id) ?? new Set<string>()
+      active.add(row.module_key)
+      enabledByOrg.set(row.org_id, active)
+    }
+  }
   return {
     organizations: organizations.map(row => ({ id: row.id, name: row.name, organizationNumber: row.organization_number,
-      modules: enabledIds.has(row.id) ? [PLATFORM_ORGANIZATION_MODULE] : [],
-      tuManaged: managedIds.has(row.id),
+      modules: ORGANIZATION_MODULE_OPTIONS.filter(module => enabledByOrg.get(row.id)?.has(module.key)).map(module => module.key),
+      managedModules: ORGANIZATION_MODULE_OPTIONS.filter(module => managedByOrg.get(row.id)?.has(module.key)).map(module => module.key),
+      tuManaged: managedByOrg.get(row.id)?.has('technical_investigations') ?? false,
       ...(counts.get(row.id) ?? { activeMemberCount: 0, activeAdminCount: 0 }),
     })),
     users: users.map(row => ({ id: row.id, fullName: row.full_name, email: row.email })),
@@ -72,7 +83,7 @@ export async function getPlatformOrganization(orgId: unknown): Promise<PlatformO
   const [organization, enabled, members, grants] = await Promise.all([
     db.from('organizations').select('id,name,organization_number').eq('id', id).maybeSingle(),
     db.from('organization_enabled_modules').select('module_key,is_active').eq('org_id', id)
-      .eq('module_key', PLATFORM_ORGANIZATION_MODULE),
+      .in('module_key', [...SUPPORTED_ORGANIZATION_MODULES]),
     readAll((from, to) => db.from('org_members').select('profile_id,role,is_active,profile:profiles(full_name,email)')
       .eq('org_id', id).order('created_at').order('profile_id').range(from, to)),
     readAll((from, to) => db.from('platform_access_assignments')
@@ -84,17 +95,30 @@ export async function getPlatformOrganization(orgId: unknown): Promise<PlatformO
   if (!organization.data) throw new Error('ORG_NOT_FOUND')
   const row = organization.data
   const now = Date.now()
-  const tuMembers = new Set(grants.filter(grant => relation(grant.product).key === 'dashboard' &&
-    relation(grant.module).key === PLATFORM_ORGANIZATION_MODULE && relation(grant.role).key === 'inspector' &&
-    (!grant.expires_at || Date.parse(grant.expires_at) > now)).map(grant => grant.profile_id))
+  const managedModules = ORGANIZATION_MODULE_OPTIONS.filter(module =>
+    (enabled.data ?? []).some(item => item.module_key === module.key)).map(module => module.key)
+  const memberModules = new Map<string, Set<string>>()
+  for (const grant of grants) {
+    const moduleKey = relation(grant.module).key
+    if (relation(grant.product).key !== 'dashboard' || relation(grant.role).key !== 'inspector' ||
+        !SUPPORTED_ORGANIZATION_MODULES.some(key => key === moduleKey) ||
+        (moduleKey === 'inspections' && !managedModules.includes('inspections')) ||
+        (grant.expires_at && !(Date.parse(grant.expires_at) > now))) continue
+    const current = memberModules.get(grant.profile_id) ?? new Set<string>()
+    current.add(moduleKey as string)
+    memberModules.set(grant.profile_id, current)
+  }
   return {
     organization: { id: row.id, name: row.name, organizationNumber: row.organization_number,
-      modules: (enabled.data ?? []).filter(item => item.is_active).map(item => item.module_key),
-      tuManaged: (enabled.data?.length ?? 0) > 0 },
+      modules: ORGANIZATION_MODULE_OPTIONS.filter(module =>
+        (enabled.data ?? []).some(item => item.module_key === module.key && item.is_active)).map(module => module.key),
+      managedModules,
+      tuManaged: managedModules.includes('technical_investigations') },
     members: members.map(member => ({ profileId: member.profile_id, role: member.role, isActive: member.is_active,
       displayName: typeof relation(member.profile).full_name === 'string' ? relation(member.profile).full_name as string : null,
       email: typeof relation(member.profile).email === 'string' ? relation(member.profile).email as string : null,
-      modules: member.is_active && tuMembers.has(member.profile_id) ? [PLATFORM_ORGANIZATION_MODULE] : [],
+      modules: member.is_active ? ORGANIZATION_MODULE_OPTIONS.filter(module =>
+        memberModules.get(member.profile_id)?.has(module.key)).map(module => module.key) : [],
     })),
   }
 }

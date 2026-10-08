@@ -4,9 +4,13 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 const TU = 'technical_investigations'
+const MODULE_OPTIONS = [
+  { key: 'inspections', short: 'ÖB', label: 'Överlåtelsebesiktning (ÖB)' },
+  { key: TU, short: 'TU', label: 'Tekniska utredningar (TU)' },
+] as const
 type Role = 'admin' | 'inspector'
 type User = { id: string; fullName: string | null; email: string | null }
-type Organization = { id: string; name: string; organizationNumber: string | null; modules: string[]; tuManaged: boolean }
+type Organization = { id: string; name: string; organizationNumber: string | null; modules: string[]; managedModules: string[]; tuManaged: boolean }
 type Summary = Organization & { activeMemberCount: number; activeAdminCount: number }
 type MemberDraft = { role: Role; isActive: boolean; modules: string[] }
 type Member = MemberDraft & { profileId: string; displayName: string; email: string | null }
@@ -24,8 +28,27 @@ export function sameMember(a: MemberDraft, b: MemberDraft) { return a.role === b
 function memberDraft(member: Member): MemberDraft { return { role: member.role, isActive: member.isActive, modules: [...member.modules] } }
 function roleLabel(role: Role) { return role === 'admin' ? 'Organisationsadministratör' : 'Medlem / besiktningsman' }
 function userLabel(user: User) { return `${user.fullName || user.email || user.id}${user.fullName && user.email ? ` · ${user.email}` : ''}` }
-function moduleLabel(modules: string[]) { return modules.includes(TU) ? 'Tekniska utredningar (TU)' : 'Ingen TU-behörighet' }
-function toggleTu(modules: string[], enabled: boolean) { return enabled ? [...new Set([...modules, TU])] : modules.filter((key) => key !== TU) }
+export function moduleLabel(modules: string[]) { return MODULE_OPTIONS.filter(module => modules.includes(module.key)).map(module => module.label).join(', ') || 'Inga ÖB- eller TU-behörigheter' }
+export function toggleModule(modules: string[], key: string, enabled: boolean) { return enabled ? [...new Set([...modules, key])] : modules.filter((value) => value !== key) }
+function managedModules(organization: Organization) { return organization.managedModules ?? (organization.tuManaged ? [TU] : []) }
+export function moduleTransitions(organization: Organization, modules: string[]) {
+  const managed = managedModules(organization)
+  // TU is established on every save for backwards compatibility. An absent OB
+  // management row stays absent until OB is explicitly selected and enabled.
+  return {
+    initialized: MODULE_OPTIONS.filter(module => !managed.includes(module.key) && (module.key === TU || modules.includes(module.key))),
+    disabled: MODULE_OPTIONS.filter(module => !modules.includes(module.key) && (organization.modules.includes(module.key) || (module.key === TU && !managed.includes(TU)))),
+  }
+}
+export function shouldSaveModules(organization: Organization, modules: string[]) {
+  return !sameModules(modules, organization.modules) || moduleTransitions(organization, modules).initialized.length > 0
+}
+export function moduleChangeWarning(organization: Organization, modules: string[]) {
+  const transitions = moduleTransitions(organization, modules)
+  const initialized = transitions.initialized.map(module => module.short)
+  const disabled = transitions.disabled.map(module => module.short)
+  return `${initialized.length ? `\n\nFastställ organisationsstyrning för ${initialized.join(' och ')}. Därefter krävs separat modultilldelning för varje medlem; äldre globala behörigheter ger inte åtkomst här.` : ''}${disabled.length ? `\n\n${disabled.join(' och ')}-behörigheter i denna organisation tas bort. Väntande inbjudningar som omfattar dessa arbetsområden återkallas i sin helhet, även om de också innehåller ett annat arbetsområde. Skicka en ny inbjudan vid behov. Vid återaktivering behöver medlemmarna tilldelas arbetsområdet igen.` : ''}\n\nIngen medlem får nya arbetsområden automatiskt. Tilldela dem separat under Medlemmar. Övriga organisationsmoduler, andra organisationer och globala tilldelningar ändras inte.`
+}
 function message(error: unknown) { return error instanceof Error ? error.message : 'Åtgärden kunde inte genomföras. Försök igen.' }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -122,7 +145,7 @@ export default function OrganizationAdministrationClient() {
   useEffect(() => { void loadIndex(); return invalidateRequests }, [loadIndex, invalidateRequests])
 
   const moduleDirty = Boolean(detail && !sameModules(modules, detail.organization.modules))
-  const needsModuleSave = Boolean(detail && (moduleDirty || !detail.organization.tuManaged))
+  const needsModuleSave = Boolean(detail && shouldSaveModules(detail.organization, modules))
   const memberDirty = Boolean(detail?.members.some((member) => drafts[member.profileId] && !sameMember(drafts[member.profileId], memberBaselines[member.profileId] ?? member)))
   const addDirty = Boolean(addProfileId || addDraft.role !== 'inspector' || addDraft.modules.length)
   const createDirty = Boolean(create && (create.name || create.organizationNumber || create.adminProfileId || create.modules.length))
@@ -184,11 +207,11 @@ export default function OrganizationAdministrationClient() {
     if (!create || busy) return
     const admin = index?.users.find((user) => user.id === create.adminProfileId)
     if (!admin || !create.name.trim()) return
-    if (!window.confirm(`Skapa organisationen ${create.name.trim()} (${create.organizationNumber.trim() || 'organisationsnummer saknas'})?\n\nFörsta organisationsadministratör: ${userLabel(admin)}.\nOrganisationens modul: ${moduleLabel(create.modules)}.\nAdministratören får ingen TU-behörighet automatiskt; den tilldelas separat.\n\nAdministratören kan hantera företagets uppgifter, medlemmar och Fortnox. Ingen global HusHub-adminbehörighet tilldelas.`)) return
+    if (!window.confirm(`Skapa organisationen ${create.name.trim()} (${create.organizationNumber.trim() || 'organisationsnummer saknas'})?\n\nFörsta organisationsadministratör: ${userLabel(admin)}.\nOrganisationens moduler: ${moduleLabel(create.modules)}.\nAdministratören får ingen ÖB- eller TU-behörighet automatiskt; de tilldelas separat.\n\nAdministratören kan hantera företagets uppgifter, medlemmar och Fortnox. Ingen global HusHub-adminbehörighet tilldelas.`)) return
     setBusy(true); setError(''); setNotice('')
     setCreateAttempted(true)
     try {
-      const result = await api<{ saved: true; organizationId: string }>('/api/admin/organizations', { method: 'POST', body: JSON.stringify({ ...create, name: create.name.trim(), organizationNumber: create.organizationNumber.trim() || null }) })
+      const result = await api<{ saved: true; organizationId: string }>('/api/admin/organizations', { method: 'POST', body: JSON.stringify({ ...create, moduleSetVersion: 2, name: create.name.trim(), organizationNumber: create.organizationNumber.trim() || null }) })
       setCreate(null)
       selectedRef.current = result.organizationId
       setSelectedId(result.organizationId)
@@ -200,16 +223,11 @@ export default function OrganizationAdministrationClient() {
 
   async function saveModules() {
     if (!detail || busy || memberDirty || addDirty || !needsModuleSave) return
-    const disabling = !modules.includes(TU) && (detail.organization.modules.includes(TU) || !detail.organization.tuManaged)
-    const suffix = disabling
-      ? '\n\nTU-behörigheter tas bort och väntande TU-inbjudningar återkallas. Vid återaktivering behöver medlemmarna tilldelas TU igen.'
-      : '\n\nIngen medlem får TU automatiskt. Tilldela behörighet separat under Medlemmar.'
-    const initialize = detail.organization.tuManaged ? '' : '\n\nÖvergå till organisationsstyrd TU. Därefter krävs separat TU-tilldelning för varje medlem; äldre globala TU-behörigheter gäller inte här.'
-    if (!window.confirm(`Ändra moduler för ${detail.organization.name}?\n${detail.organization.tuManaged ? moduleLabel(detail.organization.modules) : 'Äldre modulhantering'} → ${moduleLabel(modules)}${initialize}${suffix}\nÖB och EB ändras inte.`)) return
+    if (!window.confirm(`Ändra moduler för ${detail.organization.name}?\n${moduleLabel(detail.organization.modules)} → ${moduleLabel(modules)}${moduleChangeWarning(detail.organization, modules)}`)) return
     setBusy(true); setError(''); setNotice('')
     const id = detail.organization.id
     try {
-      await api(`/api/admin/organizations/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ expectedModules: detail.organization.modules, modules }) })
+      await api(`/api/admin/organizations/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ moduleSetVersion: 2, expectedModules: detail.organization.modules, modules }) })
       setNotice('Organisationens moduler har sparats.')
       await Promise.all([loadIndex(), loadDetail(id)])
     } catch (error) { setError(message(error)) }
@@ -232,7 +250,7 @@ export default function OrganizationAdministrationClient() {
     setBusy(true); setError(''); setNotice('')
     const id = detail.organization.id
     try {
-      await api(`/api/admin/organizations/${encodeURIComponent(id)}/members`, { method: 'POST', body: JSON.stringify({ profileId, expected, ...draft }) })
+      await api(`/api/admin/organizations/${encodeURIComponent(id)}/members`, { method: 'POST', body: JSON.stringify({ profileId, expected, ...draft, moduleSetVersion: 2 }) })
       setNotice(`Medlemskapet för ${name} har sparats i ${detail.organization.name}.`)
       // Other unsaved member drafts are not silently discarded by the refresh.
       const retained = Object.fromEntries(Object.entries(drafts).filter(([key, value]) => key !== profileId && detail.members.some((member) => member.profileId === key && !sameMember(memberBaselines[key] ?? member, value))))
@@ -248,7 +266,9 @@ export default function OrganizationAdministrationClient() {
 
   const filtered = index?.organizations.filter((org) => `${org.name} ${org.organizationNumber ?? ''}`.toLocaleLowerCase('sv-SE').includes(query.toLocaleLowerCase('sv-SE'))) ?? []
   const availableUsers = index?.users.filter((user) => !detail?.members.some((member) => member.profileId === user.id)) ?? []
-  const enabledTu = Boolean(detail?.organization.tuManaged && detail.organization.modules.includes(TU))
+  const enabledModules = MODULE_OPTIONS.filter(module => detail && managedModules(detail.organization).includes(module.key) && detail.organization.modules.includes(module.key)).map(module => module.key as string)
+  const unmanagedModules = detail ? MODULE_OPTIONS.filter(module => !managedModules(detail.organization).includes(module.key)) : []
+  const moduleTransition = detail ? moduleTransitions(detail.organization, modules) : { initialized: [], disabled: [] }
 
   return <main className="mx-auto w-full max-w-7xl px-4 py-8 text-stone-900 md:px-6 md:py-10">
     <header className="rounded-[28px] border border-stone-200 bg-stone-50 p-6 sm:p-8">
@@ -304,8 +324,8 @@ export default function OrganizationAdministrationClient() {
             <label className="block text-sm font-medium">Organisationsnamn<input className={input} required maxLength={240} value={create.name} onChange={(event) => changeCreate({ name: event.target.value })} /></label>
             <label className="block text-sm font-medium">Organisationsnummer <span className="font-normal text-stone-500">(valfritt)</span><input className={input} maxLength={20} placeholder="XXXXXX-XXXX" value={create.organizationNumber} onChange={(event) => changeCreate({ organizationNumber: event.target.value })} /></label>
             <UserSelect users={index?.users ?? []} value={create.adminProfileId} onChange={(value) => changeCreate({ adminProfileId: value })} label="Första organisationsadministratör" />
-            <label className="flex items-start gap-3 rounded-2xl bg-stone-50 p-4 text-sm"><input className="mt-1 size-4" type="checkbox" checked={create.modules.includes(TU)} onChange={(event) => changeCreate({ modules: toggleTu(create.modules, event.target.checked) })} /><span><strong className="block">Aktivera Tekniska utredningar (TU) för organisationen</strong><span className="mt-1 block text-stone-600">Ger inte administratören TU-behörighet automatiskt. Tilldela den separat under Medlemmar efter att organisationen har skapats.</span></span></label>
-            <p className="text-sm text-stone-500">I detta steg hanteras TU. ÖB och EB lämnas oförändrade.</p>
+            {MODULE_OPTIONS.map(module => <label key={module.key} className="flex items-start gap-3 rounded-2xl bg-stone-50 p-4 text-sm"><input className="mt-1 size-4" type="checkbox" checked={create.modules.includes(module.key)} onChange={(event) => changeCreate({ modules: toggleModule(create.modules, module.key, event.target.checked) })} /><span><strong className="block">Aktivera {module.label} för organisationen</strong><span className="mt-1 block text-stone-600">Ger inte administratören {module.short}-behörighet automatiskt. Tilldela den separat under Medlemmar efter att organisationen har skapats.</span></span></label>)}
+            <p className="text-sm text-stone-500">Här hanteras ÖB och TU. EB och övriga moduler lämnas oförändrade.</p>
             </fieldset>
             <button type="submit" className={primary}>{busy ? 'Skapar…' : createAttempted ? 'Försök skapa igen med samma uppgifter' : 'Granska och skapa organisation'}</button>
           </fieldset></form>
@@ -322,13 +342,13 @@ export default function OrganizationAdministrationClient() {
 
           <section className={card}>
             <h3 className="text-lg font-semibold">Organisationens moduler</h3>
-            <p className="mt-2 text-sm text-stone-600">Modulen måste vara aktiverad här innan den kan tilldelas en medlem. ÖB och EB ändras inte i denna vy.</p>
-            {!detail.organization.tuManaged && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Äldre modulhantering: organisationsstyrt TU-val är ännu inte fastställt. Äldre globala behörigheter kan finnas. Välj om TU ska vara aktivt och fastställ valet innan du tilldelar TU till medlemmar.</p>}
+            <p className="mt-2 text-sm text-stone-600">Varje modul måste vara aktiverad här innan den kan tilldelas en medlem eller väljas i en inbjudan. EB och övriga moduler ändras inte i denna vy.</p>
+            {unmanagedModules.length > 0 && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Äldre modulhantering: organisationsstyrt val för {unmanagedModules.map(module => module.short).join(' och ')} är ännu inte fastställt. Äldre behörigheter kan finnas. Arbetsområden behöver aktiveras här innan du tilldelar dem till medlemmar.{unmanagedModules.some(module => module.key === 'inspections') && ' ÖB lämnas i äldre hantering om du inte väljer att aktivera ÖB. En ändring av TU påverkar inte detta.'}</p>}
             <fieldset disabled={busy}>
-              <label className="mt-4 flex items-center gap-3 text-sm font-medium"><input className="size-4" type="checkbox" checked={modules.includes(TU)} onChange={(event) => setModules(toggleTu(modules, event.target.checked))} />Tekniska utredningar (TU)</label>
-              {moduleDirty && !modules.includes(TU) && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">TU-behörigheter tas bort och väntande TU-inbjudningar återkallas. Vid återaktivering behöver medlemmarna tilldelas TU igen.</p>}
+              {MODULE_OPTIONS.map(module => <label key={module.key} className="mt-4 flex items-center gap-3 text-sm font-medium"><input className="size-4" type="checkbox" checked={modules.includes(module.key)} onChange={(event) => setModules(toggleModule(modules, module.key, event.target.checked))} />{module.label}</label>)}
+              {needsModuleSave && moduleTransition.disabled.length > 0 && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">När du sparar tas {moduleTransition.disabled.map(module => module.short).join(' och ')}-behörigheter bort i denna organisation. Väntande inbjudningar som innehåller något av dessa arbetsområden återkallas i sin helhet. Skicka en ny inbjudan vid behov. Vid återaktivering behöver medlemmarna tilldelas arbetsområdet igen.</p>}
               {(memberDirty || addDirty) && needsModuleSave && <p className="mt-3 text-sm text-amber-800">Spara eller återställ dina medlemsändringar innan du sparar organisationsmodulen.</p>}
-              <div className="mt-4 flex flex-wrap gap-3"><button className={primary} onClick={() => void saveModules()} disabled={!needsModuleSave || memberDirty || addDirty}>{detail.organization.tuManaged ? 'Granska och spara moduler' : 'Granska och fastställ TU-val'}</button>{moduleDirty && <button className={button} onClick={() => setModules([...detail.organization.modules])}>Återställ modulval</button>}</div>
+              <div className="mt-4 flex flex-wrap gap-3"><button className={primary} onClick={() => void saveModules()} disabled={!needsModuleSave || memberDirty || addDirty}>{moduleTransition.initialized.length ? 'Granska och fastställ modulval' : 'Granska och spara moduler'}</button>{moduleDirty && <button className={button} onClick={() => setModules([...detail.organization.modules])}>Återställ modulval</button>}</div>
             </fieldset>
           </section>
 
@@ -348,11 +368,11 @@ export default function OrganizationAdministrationClient() {
                     <label className="block text-sm font-medium">Roll för {member.displayName || member.email || member.profileId}<select className={input} value={draft.role} onChange={(event) => update({ role: event.target.value as Role })}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label>
                     <div className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
                       <label className="flex items-center gap-2"><input className="size-4" type="checkbox" checked={draft.isActive} onChange={(event) => update({ isActive: event.target.checked, modules: event.target.checked ? draft.modules : [] })} />Aktivt medlemskap</label>
-                      <label className="flex items-center gap-2"><input className="size-4" type="checkbox" disabled={!draft.isActive || (!enabledTu && !draft.modules.includes(TU))} checked={draft.modules.includes(TU)} onChange={(event) => update({ modules: toggleTu(draft.modules, event.target.checked) })} />TU-behörighet</label>
+                      {MODULE_OPTIONS.map(module => <label key={module.key} className="flex items-center gap-2"><input className="size-4" type="checkbox" disabled={!draft.isActive || (!enabledModules.includes(module.key) && !draft.modules.includes(module.key))} checked={draft.modules.includes(module.key)} onChange={(event) => update({ modules: toggleModule(draft.modules, module.key, event.target.checked) })} />{module.short}-behörighet</label>)}
                     </div>
-                    {!enabledTu && <p className="text-xs text-stone-500">TU måste först aktiveras och sparas för organisationen.</p>}
+                    {MODULE_OPTIONS.filter(module => !enabledModules.includes(module.key)).map(module => <p key={module.key} className="text-xs text-stone-500">{module.short} måste först aktiveras och sparas för organisationen.</p>)}
                     {draft.role === 'admin' && <p className="text-xs text-stone-600">Organisationsadministratören kan hantera företagets uppgifter, Fortnox och medlemmar.</p>}
-                    {!draft.isActive && <p className="text-xs text-stone-600">Ett inaktivt medlemskap saknar arbetsbehörigheter. TU tilldelas inte automatiskt när medlemskapet aktiveras igen.</p>}
+                    {!draft.isActive && <p className="text-xs text-stone-600">Ett inaktivt medlemskap saknar arbetsbehörigheter. ÖB och TU tilldelas inte automatiskt när medlemskapet aktiveras igen.</p>}
                     <div className="flex flex-wrap gap-3"><button className={primary} disabled={!changed || moduleDirty} onClick={() => void saveMember(member.profileId, draft, member)}>Granska och spara medlem</button>{changed && <button className={button} onClick={() => { update(memberDraft(member)); setMemberBaselines((current) => ({ ...current, [member.profileId]: memberDraft(member) })) }}>Återställ medlem</button>}</div>
                   </fieldset>
                 </article>
@@ -368,8 +388,8 @@ export default function OrganizationAdministrationClient() {
               <fieldset disabled={busy || !index || Boolean(indexError)} className="space-y-4">
                 <UserSelect key={detail.organization.id} users={availableUsers} value={addProfileId} onChange={setAddProfileId} label="Användare att lägga till" />
                 <label className="block text-sm font-medium">Roll i organisationen<select className={input} value={addDraft.role} onChange={(event) => setAddDraft((current) => ({ ...current, role: event.target.value as Role }))}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label>
-                <label className="flex items-center gap-2 text-sm"><input className="size-4" type="checkbox" disabled={!enabledTu} checked={addDraft.modules.includes(TU)} onChange={(event) => setAddDraft((current) => ({ ...current, modules: toggleTu(current.modules, event.target.checked) }))} />Tilldela TU-behörighet</label>
-                {!enabledTu && <p className="text-xs text-stone-500">TU är inte aktiverat för organisationen.</p>}
+                {MODULE_OPTIONS.map(module => <label key={module.key} className="flex items-center gap-2 text-sm"><input className="size-4" type="checkbox" disabled={!enabledModules.includes(module.key)} checked={addDraft.modules.includes(module.key)} onChange={(event) => setAddDraft((current) => ({ ...current, modules: toggleModule(current.modules, module.key, event.target.checked) }))} />Tilldela {module.short}-behörighet</label>)}
+                {MODULE_OPTIONS.filter(module => !enabledModules.includes(module.key)).map(module => <p key={module.key} className="text-xs text-stone-500">{module.short} är inte aktiverat för organisationen.</p>)}
                 <div className="flex flex-wrap gap-3"><button type="submit" className={primary} disabled={!addProfileId || moduleDirty}>Granska och lägg till medlem</button>{addDirty && <button type="button" className={button} onClick={() => { setAddProfileId(''); setAddDraft({ role: 'inspector', isActive: true, modules: [] }) }}>Återställ ny medlem</button>}</div>
               </fieldset>
             </form>

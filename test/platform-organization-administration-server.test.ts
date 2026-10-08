@@ -8,11 +8,12 @@ const OTHER_ORG = '22222222-2222-4222-8222-222222222222'
 const ACTOR = '33333333-3333-4333-8333-333333333333'
 const MEMBER = '44444444-4444-4444-8444-444444444444'
 const REQUEST = '55555555-5555-4555-8555-555555555555'
+const OB = 'inspections'
 const TU = 'technical_investigations'
 const permission = { productKey: 'hushub_admin', moduleKey: 'access_management', scopeType: 'global' }
-const createDraft = () => ({ requestId: REQUEST, name: ' Exempel AB ', organizationNumber: '559281-0823', adminProfileId: MEMBER, modules: [TU] })
-const modulesDraft = () => ({ expectedModules: [TU], modules: [] })
-const memberDraft = () => ({ profileId: MEMBER, expected: null, role: 'inspector', isActive: true, modules: [TU] })
+const createDraft = () => ({ moduleSetVersion: 2, requestId: REQUEST, name: ' Exempel AB ', organizationNumber: '559281-0823', adminProfileId: MEMBER, modules: [TU] })
+const modulesDraft = () => ({ moduleSetVersion: 2, expectedModules: [TU], modules: [] })
+const memberDraft = () => ({ moduleSetVersion: 2, profileId: MEMBER, expected: null, role: 'inspector', isActive: true, modules: [TU] })
 
 function load<T>(file: string, dependencies: Record<string, unknown>): T {
   const output = ts.transpileModule(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), {
@@ -39,9 +40,11 @@ type Row = Record<string, unknown>
 
 const http = load<Record<string, unknown>>('src/lib/organizations/administrationHttp.ts', {})
 const fortnox = load<Record<string, unknown>>('src/lib/fortnox/domain.ts', {})
+const supportedModules = load<Record<string, unknown>>('src/lib/organizations/supportedModules.ts', {})
 const parsers = load<Record<string, unknown>>('src/lib/organizations/platformAdministrationTypes.ts', {
   '@/lib/organizations/administrationHttp': http, './administrationHttp': http,
   '@/lib/fortnox/domain': fortnox,
+  '@/lib/organizations/supportedModules': supportedModules,
 })
 
 function harness(options: {
@@ -99,6 +102,7 @@ function harness(options: {
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => { calls.events.push('admin-client'); return db } },
     '@/lib/organizations/administrationHttp': http, './administrationHttp': http,
     '@/lib/organizations/platformAdministrationTypes': parsers, './platformAdministrationTypes': parsers,
+    '@/lib/organizations/supportedModules': supportedModules,
   })
   return { domain, calls, organization, member }
 }
@@ -157,18 +161,51 @@ test('member saves distinguish new membership from an optimistic edit without ac
   ])
 })
 
-test('creation validates exact shape, IDs, company identity and the TU-only module rollout', async () => {
+test('creation validates exact shape, IDs, company identity and the OB/TU-only module rollout', async () => {
   const invalid = [
-    null, [], {}, { ...createDraft(), requestId: 'not-a-uuid' }, { ...createDraft(), adminProfileId: OTHER_ORG + 'junk' },
+    null, [], { moduleSetVersion: 2 }, { ...createDraft(), requestId: 'not-a-uuid' }, { ...createDraft(), adminProfileId: OTHER_ORG + 'junk' },
     { ...createDraft(), actorProfileId: ACTOR }, { ...createDraft(), p_actor: ACTOR },
     { ...createDraft(), name: ' ' }, { ...createDraft(), name: 'Company\u0000Name' },
     { ...createDraft(), organizationNumber: 5592810823 }, { ...createDraft(), organizationNumber: '559281082' },
-    { ...createDraft(), modules: ['inspections'] }, { ...createDraft(), modules: [TU, TU] }, { ...createDraft(), modules: TU },
+    { ...createDraft(), modules: ['construction_inspections'] }, { ...createDraft(), modules: [TU, TU] }, { ...createDraft(), modules: [OB, OB] },
+    { ...createDraft(), modules: [OB, TU, OB] }, { ...createDraft(), modules: [OB, null] }, { ...createDraft(), modules: TU },
   ]
   for (const values of invalid) {
     const { domain, calls } = harness()
     await assert.rejects(domain.createPlatformOrganization(values), { message: 'ORG_INPUT_INVALID' })
     assert.deepEqual(calls.rpcs, [])
+  }
+})
+
+test('creation, entitlement and member mutations normalize OB and TU sets while preserving exact organization scope', async () => {
+  const { domain, calls } = harness()
+  await domain.createPlatformOrganization({ ...createDraft(), modules: [TU, OB] })
+  await domain.savePlatformOrganizationModules(OTHER_ORG, { ...modulesDraft(), expectedModules: [TU, OB], modules: [OB] })
+  await domain.savePlatformOrganizationMember(OTHER_ORG, { ...memberDraft(), modules: [TU, OB],
+    expected: { role: 'inspector', isActive: true, modules: [TU, OB] } })
+  assert.deepEqual((calls.rpcs[0].values.p_values as Row).modules, [OB, TU])
+  assert.deepEqual(calls.rpcs[1], { name: 'platform_organization_modules_save', values: {
+    p_actor: ACTOR, p_org: OTHER_ORG, p_expected: [OB, TU], p_modules: [OB],
+  } })
+  assert.deepEqual(calls.rpcs[2], { name: 'platform_organization_member_save', values: {
+    p_actor: ACTOR, p_org: OTHER_ORG, p_profile: MEMBER,
+    p_expected: { role: 'inspector', isActive: true, modules: [OB, TU] },
+    p_values: { role: 'inspector', isActive: true, modules: [OB, TU] },
+  } })
+  assert.ok(calls.rpcs.every(call => !JSON.stringify(call.values).includes('moduleSetVersion')))
+})
+
+test('cached TU-only central forms fail closed before RPC until they reload the module selection', async () => {
+  for (const version of [undefined, 1, '2', null]) {
+    for (const [kind, input] of [['create', createDraft()], ['modules', modulesDraft()], ['member', memberDraft()]] as const) {
+      const values: Row = { ...input, moduleSetVersion: version }
+      if (version === undefined) delete values.moduleSetVersion
+      const { domain, calls } = harness()
+      await assert.rejects(kind === 'create' ? domain.createPlatformOrganization(values)
+        : kind === 'modules' ? domain.savePlatformOrganizationModules(ORG, values)
+        : domain.savePlatformOrganizationMember(ORG, values), { message: 'ORG_MODULE_SELECTION_REFRESH_REQUIRED' })
+      assert.deepEqual(calls.rpcs, [])
+    }
   }
 })
 
@@ -207,8 +244,9 @@ test('all scoped service entry points reject malformed organization IDs instead 
 })
 
 test('module saves require an exact optimistic request and cannot enable unimplemented modules', async () => {
-  for (const values of [{ modules: [TU] }, { expectedModules: [TU] }, { ...modulesDraft(), actorProfileId: ACTOR },
-    { ...modulesDraft(), expectedModules: [TU, TU] }, { ...modulesDraft(), modules: ['inspections'] }]) {
+  for (const values of [{ moduleSetVersion: 2, modules: [TU] }, { moduleSetVersion: 2, expectedModules: [TU] }, { ...modulesDraft(), actorProfileId: ACTOR },
+    { ...modulesDraft(), expectedModules: [TU, TU] }, { ...modulesDraft(), modules: ['construction_inspections'] },
+    { ...modulesDraft(), modules: [OB, OB] }, { ...modulesDraft(), expectedModules: [OB, 'admin'] }]) {
     const { domain, calls } = harness()
     await assert.rejects(domain.savePlatformOrganizationModules(ORG, values), { message: 'ORG_INPUT_INVALID' })
     assert.deepEqual(calls.rpcs, [])
@@ -235,18 +273,19 @@ test('central service uses atomic RPCs, not direct writes to memberships, grants
 
 function filteredRows(rows: Row[], query: Query) {
   let result = rows.filter(row => query.ops.filter(op => op.name === 'eq')
-    .every(op => row[String(op.args[0])] === op.args[1]))
+    .every(op => row[String(op.args[0])] === op.args[1]) && query.ops.filter(op => op.name === 'in')
+    .every(op => (op.args[1] as unknown[]).includes(row[String(op.args[0])])))
   const range = query.ops.find(op => op.name === 'range')
   if (range) result = result.slice(Number(range.args[0]), Number(range.args[1]) + 1)
   return result
 }
 
-test('organization detail projects only active, nonexpired, exact-organization dashboard/TU inspector grants', async () => {
+test('organization detail projects only active, nonexpired, exact-organization dashboard OB/TU inspector grants', async () => {
   const ids = Array.from({ length: 14 }, (_, index) => `66666666-6666-4666-8666-${String(index).padStart(12, '0')}`)
   const rows: Record<string, Row[]> = {
     org_members: ids.map((id, index) => ({ org_id: ORG, profile_id: id, role: 'inspector', is_active: index !== 13,
       profile: index === 1 ? [{ full_name: 'Array relation', email: 'array@example.test' }] : { full_name: `Member ${index}`, email: null } })),
-    organization_enabled_modules: [{ org_id: ORG, module_key: TU, is_active: true }],
+    organization_enabled_modules: [{ org_id: ORG, module_key: OB, is_active: true }, { org_id: ORG, module_key: TU, is_active: true }],
     platform_access_assignments: ids.map((id, index) => ({ id: `grant-${index}`, profile_id: id,
       scope_type: 'organization', scope_id: ORG, is_active: true, expires_at: null,
       product: { key: 'dashboard' }, module: { key: TU }, role: { key: 'inspector' } })),
@@ -256,7 +295,7 @@ test('organization detail projects only active, nonexpired, exact-organization d
   grants[2].expires_at = '2000-01-01T00:00:00Z'
   grants[3].expires_at = 'invalid'
   grants[4].product = { key: 'renoapp' }
-  grants[5].module = { key: 'inspections' }
+  grants[5].module = { key: 'construction_inspections' }
   grants[6].role = { key: 'dashboard_admin' }
   grants[7].role = null
   grants[8].is_active = false
@@ -264,6 +303,7 @@ test('organization detail projects only active, nonexpired, exact-organization d
   grants[10].scope_id = OTHER_ORG
   grants[11].scope_id = null
   grants[12].profile_id = ACTOR
+  grants.push({ ...grants[0], id: 'valid-ob', module: { key: OB } }, { ...grants[0], id: 'duplicate-ob', module: { key: OB } })
   const { domain, calls } = harness({ query: query => query.table === 'organizations'
     ? { data: { id: ORG, name: 'Organization A', organization_number: null }, error: null }
     : { data: filteredRows(rows[query.table] ?? [], query), error: null } })
@@ -271,6 +311,8 @@ test('organization detail projects only active, nonexpired, exact-organization d
   const members = detail.members as { profileId: string; modules: string[]; displayName: string }[]
   assert.equal(members.length, ids.length)
   assert.deepEqual(members.filter(row => row.modules.length).map(row => row.profileId), ids.slice(0, 2))
+  assert.deepEqual(members[0].modules, [OB, TU])
+  assert.deepEqual(members[1].modules, [TU])
   assert.equal(members[1].displayName, 'Array relation')
   const query = calls.queries.find(call => call.table === 'platform_access_assignments')!
   assert.deepEqual(query.ops.filter(op => op.name === 'eq').map(op => op.args), [
@@ -300,14 +342,38 @@ test('organization directory paginates past the first 500 rows and exposes only 
   const result = await domain.listPlatformOrganizations() as { organizations: Row[]; users: Row[] }
   assert.equal(result.organizations.length, 501)
   assert.deepEqual(result.organizations[500], { id: 'organization-500', name: 'Organization 500', organizationNumber: null,
-    modules: [TU], tuManaged: true, activeMemberCount: 2, activeAdminCount: 1 })
+    modules: [TU], managedModules: [TU], tuManaged: true, activeMemberCount: 2, activeAdminCount: 1 })
   assert.deepEqual(result.organizations[1].modules, [])
   assert.equal(result.organizations[1].tuManaged, true)
-  assert.deepEqual(result.organizations[2].modules, [])
+  assert.deepEqual(result.organizations[2].modules, [OB])
+  assert.deepEqual(result.organizations[2].managedModules, [OB])
   assert.equal(result.organizations[2].tuManaged, false)
   assert.deepEqual(result.users, [{ id: MEMBER, fullName: 'Anna', email: 'anna@example.test' }])
   assert.deepEqual(calls.queries.filter(query => query.table === 'organizations').map(query => query.ops.find(op => op.name === 'range')?.args), [[0, 499], [500, 999]])
   assert.equal(calls.queries.find(query => query.table === 'profiles')?.ops.find(op => op.name === 'select')?.args[0], 'id,full_name,email')
+})
+
+test('two-module entitlement pagination uses a stable compound order and retains both module rows per organization', async () => {
+  const organizations = Array.from({ length: 501 }, (_, index) => ({ id: `organization-${String(index).padStart(4, '0')}`,
+    name: `Organization ${index}`, organization_number: null }))
+  const rows: Record<string, Row[]> = { organizations,
+    organization_enabled_modules: organizations.flatMap(org => [OB, TU].map(module_key => ({ org_id: org.id, module_key,
+      is_active: module_key === OB || org.id !== 'organization-0250' }))),
+  }
+  const { domain, calls } = harness({ query: query => ({ data: filteredRows(rows[query.table] ?? [], query), error: null }) })
+  const result = await domain.listPlatformOrganizations() as { organizations: Row[] }
+  const middle = result.organizations.find(org => org.id === 'organization-0250')!
+  assert.deepEqual(middle.modules, [OB])
+  assert.deepEqual(middle.managedModules, [OB, TU])
+  assert.equal(middle.tuManaged, true)
+  assert.deepEqual(result.organizations[500].modules, [OB, TU])
+  const pages = calls.queries.filter(call => call.table === 'organization_enabled_modules')
+  assert.deepEqual(pages.map(page => page.ops.find(op => op.name === 'range')?.args), [[0, 499], [500, 999], [1000, 1499]])
+  for (const page of pages) {
+    assert.deepEqual(page.ops.filter(op => op.name === 'order').map(op => op.args[0]), ['org_id', 'module_key'])
+    assert.ok(page.ops.some(op => op.name === 'in' && op.args[0] === 'module_key'
+      && JSON.stringify(op.args[1]) === JSON.stringify([OB, TU])))
+  }
 })
 
 test('failed organization-directory reads are not returned as an empty successful directory', async () => {
@@ -331,7 +397,29 @@ test('organization detail distinguishes unmanaged legacy TU from an explicitly d
       ? { data: { id: ORG, name: 'Company', organization_number: null }, error: null }
       : { data: query.table === 'organization_enabled_modules' ? filteredRows(entitlements, query) : [], error: null } })
     const result = await domain.getPlatformOrganization(ORG)
-    assert.deepEqual(result.organization, { id: ORG, name: 'Company', organizationNumber: null, tuManaged: managed, modules })
+    assert.deepEqual(result.organization, { id: ORG, name: 'Company', organizationNumber: null,
+      managedModules: managed ? [TU] : [], tuManaged: managed, modules })
+  }
+})
+
+test('organization detail keeps OB grant out of editable snapshots until its entitlement is explicitly managed', async () => {
+  for (const [obEntitlements, expected] of [
+    [[], [TU]],
+    [[{ org_id: ORG, module_key: OB, is_active: false }], [OB, TU]],
+    [[{ org_id: ORG, module_key: OB, is_active: true }], [OB, TU]],
+  ] as [Row[], string[]][]) {
+    const rows: Record<string, Row[]> = {
+      organization_enabled_modules: [...obEntitlements, { org_id: ORG, module_key: TU, is_active: true }],
+      org_members: [{ org_id: ORG, profile_id: MEMBER, role: 'inspector', is_active: true, profile: { full_name: 'Anna', email: null } }],
+      platform_access_assignments: [OB, TU].map(key => ({ profile_id: MEMBER, scope_type: 'organization', scope_id: ORG,
+        is_active: true, expires_at: null, product: { key: 'dashboard' }, module: { key }, role: { key: 'inspector' } })),
+    }
+    const { domain } = harness({ query: query => query.table === 'organizations'
+      ? { data: { id: ORG, name: 'Company', organization_number: null }, error: null }
+      : { data: filteredRows(rows[query.table] ?? [], query), error: null } })
+    const result = await domain.getPlatformOrganization(ORG)
+    assert.deepEqual((result.members as Row[])[0].modules, expected)
+    assert.deepEqual((result.organization as Row).managedModules, obEntitlements.length ? [OB, TU] : [TU])
   }
 })
 

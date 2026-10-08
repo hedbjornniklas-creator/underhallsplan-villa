@@ -19,6 +19,14 @@ const validToken = (value: unknown): value is string => typeof value === 'string
 const moduleLabel = (key: string) => ({ technical_investigations: 'TU – teknisk utredning', inspections: 'ÖB – överlåtelsebesiktning', construction_inspections: 'EB – entreprenadbesiktning' })[key] ?? key
 const loginHref = '/login?next=%2Forganisation%2Finbjudan'
 
+export function invitationWorkspaceLinks(modules: string[], organizationId: string) {
+  const query = `?orgId=${encodeURIComponent(organizationId)}`
+  return [
+    ...(modules.includes('inspections') ? [{ href: `/ob${query}`, label: 'Gå till ÖB' }] : []),
+    ...(modules.includes('technical_investigations') ? [{ href: `/tu${query}`, label: 'Gå till TU' }] : []),
+  ]
+}
+
 export default function OrganizationInvitationAccept() {
   const [token, setToken] = useState('')
   const [preview, setPreview] = useState<InvitationPreview | null>(null)
@@ -113,6 +121,7 @@ export default function OrganizationInvitationAccept() {
   }
 
   const mismatch = email && preview && email.toLowerCase() !== preview.email.toLowerCase()
+  const workspaceLinks = organizationId ? invitationWorkspaceLinks(preview?.modules ?? [], organizationId) : []
   return <section className="public-auth public-invitation">
     <span className="public-eyebrow">Inbjudan till en organisation</span>
     <h1>{organizationId ? 'Välkommen till organisationen' : 'Arbeta tillsammans i HusHub'}</h1>
@@ -125,7 +134,7 @@ export default function OrganizationInvitationAccept() {
       <ul className="mt-2 text-sm text-slate-600">{preview.modules.map(module => <li key={module}>{moduleLabel(module)}</li>)}</ul>
     </div>}
     {preview && !organizationId && <>
-      <p className="public-auth-intro">Ditt HusHub-konto kan användas i flera organisationer. Dina befintliga medlemskap finns kvar.</p>
+      <p className="public-auth-intro">Ditt HusHub-konto kan användas i flera organisationer. Använd ditt befintliga konto om det har samma inloggningsmejl som inbjudan. Dina andra medlemskap och roller finns kvar.</p>
       {preview.role === 'admin' && <p className="public-field-hint">Som organisationsadministratör kan du ändra företagets uppgifter, hantera integrationer och administrera medlemmar här.</p>}
       {mismatch ? <div className="public-notice"><p>Du är inloggad som {email}. Inbjudan gäller {preview.email}.</p><button type="button" disabled={busy} onClick={() => void signOut()} className="public-text-link">Logga ut och byt konto</button></div> : <form onSubmit={accept} className="public-form">
         {!email && <>
@@ -139,6 +148,6 @@ export default function OrganizationInvitationAccept() {
         <button type="submit" disabled={busy} className="public-button">{busy ? 'Aktiverar medlemskapet…' : preview.accepted ? 'Öppna mitt medlemskap' : 'Acceptera inbjudan'}</button>
       </form>}
     </>}
-    {organizationId && <><p role="status" className="public-notice"><CheckCircle2 className="mb-2 text-emerald-700" size={24} aria-hidden />Ditt medlemskap i {preview?.organizationName} är aktivt. Fyll i dina kontaktuppgifter, profilbild och underskrift under Min profil.</p><Link href={`/settings/profil?orgId=${encodeURIComponent(organizationId)}`} className="public-button">Öppna min profil</Link>{preview?.modules.includes('technical_investigations') ? <Link href={`/tu?orgId=${encodeURIComponent(organizationId)}`} className="public-text-link">Gå till TU</Link> : <Link href={`/settings/organisation?orgId=${encodeURIComponent(organizationId)}`} className="public-text-link">Öppna organisationen</Link>}</>}
+    {organizationId && <><p role="status" className="public-notice"><CheckCircle2 className="mb-2 text-emerald-700" size={24} aria-hidden />Ditt medlemskap i {preview?.organizationName} är aktivt. Fyll i dina kontaktuppgifter, profilbild och underskrift under Min profil.</p><Link href={`/settings/profil?orgId=${encodeURIComponent(organizationId)}`} className="public-button">Öppna min profil</Link>{workspaceLinks.map(link => <Link key={link.href} href={link.href} className="public-text-link">{link.label}</Link>)}{workspaceLinks.length === 0 && <Link href={`/settings/organisation?orgId=${encodeURIComponent(organizationId)}`} className="public-text-link">Öppna organisationen</Link>}</>}
   </section>
 }

@@ -5,17 +5,19 @@ import OrganizationAdministrationClient from '@/app/(app)/admin/access/organisat
 
 const params = new URLSearchParams(location.search)
 const TU = 'technical_investigations'
+const OB = 'inspections'
+const enabledModules = params.has('ob-only') ? [OB] : params.has('both') ? [OB, TU] : [TU]
 const calls: { url: string; method: string; body: Record<string, unknown> }[] = []
 Object.assign(window, { platformOrganizationUiCalls: calls })
 type Member = { profileId: string; displayName: string; email: string; role: 'admin' | 'inspector'; isActive: boolean; modules: string[] }
 const members: Member[] = [
-  { profileId: 'user-a', displayName: 'Anna Admin', email: 'anna@example.test', role: 'admin', isActive: true, modules: [TU] },
+  { profileId: 'user-a', displayName: 'Anna Admin', email: 'anna@example.test', role: 'admin', isActive: true, modules: [...enabledModules] },
   { profileId: 'user-b', displayName: 'Bertil Besiktningsman', email: 'bertil@example.test', role: 'inspector', isActive: true, modules: [] },
 ]
 const users = members.map((member) => ({ id: member.profileId, fullName: member.displayName, email: member.email })).concat([{ id: 'user-c', fullName: 'Cecilia Kollega', email: 'cecilia@example.test' }])
 const organizations: PlatformOrganizationDirectory['organizations'] = [
-  { id: 'org-a', name: 'BBSAB Test', organizationNumber: '559281-0823', modules: params.has('legacy') ? [] : [TU], tuManaged: !params.has('legacy'), activeMemberCount: 2, activeAdminCount: 1 },
-  { id: 'org-b', name: 'SVEA Test', organizationNumber: null, modules: [], tuManaged: true, activeMemberCount: 0, activeAdminCount: 0 },
+  { id: 'org-a', name: 'BBSAB Test', organizationNumber: '559281-0823', modules: params.has('legacy') ? [] : [...enabledModules], managedModules: params.has('legacy') ? [] : [OB, TU], tuManaged: !params.has('legacy'), activeMemberCount: 2, activeAdminCount: 1 },
+  { id: 'org-b', name: 'SVEA Test', organizationNumber: null, modules: [], managedModules: [OB, TU], tuManaged: true, activeMemberCount: 0, activeAdminCount: 0 },
 ]
 let changed = false
 let refreshFailure = false
@@ -30,7 +32,7 @@ window.fetch = async (url, options) => {
   if (path === '/api/admin/organizations' && method === 'POST') {
     ++createTries
     if (params.has('retry-create') && createTries === 1) throw new Error('Simulerat avbrott efter skapandeförfrågan')
-    if (!organizations.some((org) => org.id === 'org-created')) organizations.push({ id: 'org-created', name: String(body.name), organizationNumber: null, modules: body.modules as string[], tuManaged: true, activeMemberCount: 1, activeAdminCount: 1 })
+    if (!organizations.some((org) => org.id === 'org-created')) organizations.push({ id: 'org-created', name: String(body.name), organizationNumber: null, modules: body.modules as string[], managedModules: [OB, TU], tuManaged: true, activeMemberCount: 1, activeAdminCount: 1 })
     return json({ saved: true, organizationId: 'org-created' })
   }
   const match = path.match(/^\/api\/admin\/organizations\/([^/]+)(\/members)?$/)
@@ -50,8 +52,9 @@ window.fetch = async (url, options) => {
     if (params.has('concurrent') && body.profileId === 'user-a') members[1].role = 'admin'
   } else {
     org.modules = body.modules as string[]
+    org.managedModules = [...new Set([...org.managedModules, TU, ...(org.modules.includes(OB) ? [OB] : [])])]
     org.tuManaged = true
-    if (!org.modules.includes(TU)) members.forEach((member) => { member.modules = [] })
+    members.forEach((member) => { member.modules = member.modules.filter(module => org.modules.includes(module)) })
   }
   return json({ saved: true })
 }

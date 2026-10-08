@@ -34,6 +34,7 @@ const failures: Record<string, [number, string]> = {
   ORG_DIRECTORY_TOO_LARGE: [503, 'Listan är för stor för att läsas säkert. Kontakta systemadministratören.'],
   ORG_LEGACY_ACCESS_REVIEW_REQUIRED: [409, 'Användaren har äldre behörigheter som först behöver granskas och flyttas till organisationsstyrd åtkomst. Inget har ändrats.'],
   ORG_MODULE_NOT_ENABLED: [400, 'Arbetsområdet är inte aktiverat för organisationen.'],
+  ORG_MODULE_SELECTION_REFRESH_REQUIRED: [409, 'Arbetsområdena har uppdaterats. Ladda om sidan innan du ändrar medlemmar eller inbjudningar. Inget har sparats.'],
   ORG_PROFILE_CONFLICT: [409, 'Uppgifterna har ändrats. Ladda om sidan och försök igen.'],
   ORG_PROFILE_SCHEMA_REQUIRED: [503, 'Databasstödet för organisationsadministration behöver installeras.'],
   ORG_PROFILE_VERSION_CONFLICT: [409, 'Uppgifterna har ändrats. Ladda om sidan och försök igen.'],

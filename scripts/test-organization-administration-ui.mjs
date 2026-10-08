@@ -21,11 +21,21 @@ await new Promise((ok, fail) => webpack({
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? new Error(stats.toString('errors-only'))) : ok()))
 const script = await readFile(join(output, 'view.js'))
 const { css } = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
+// The real invitation route inherits these component styles from PublicFrame.
+const publicCss = await readFile('src/components/public/public.css', 'utf8')
 const server = createServer((request, response) => {
+  response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'")
   response.setHeader('Content-Type', request.url === '/view.js' ? 'application/javascript' : 'text/html; charset=utf-8')
-  response.end(request.url === '/view.js' ? script : `<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root" style="max-width:1152px;margin:24px auto;padding:16px"></div><script src="/view.js"></script></body></html>`)
+  const query = new URL(request.url, 'http://127.0.0.1').searchParams
+  const invitationCss = query.has('invite') || query.has('invitation') ? publicCss : ''
+  response.end(request.url === '/view.js' ? script : `<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${invitationCss}</style></head><body><div id="root" style="max-width:1152px;margin:24px auto;padding:16px"></div><script src="/view.js"></script></body></html>`)
 })
 await new Promise(ok => server.listen(0, '127.0.0.1', ok))
+if (process.argv.includes('--serve-only')) {
+  console.log(`Synthetic organization UI: http://127.0.0.1:${server.address().port}/?both`)
+  console.log('Modes: ?ob-only, ?both, ?no-modules, ?invitation&ob-only#invite=<64 lowercase a characters>. No external API traffic or real writes.')
+  await new Promise(() => {})
+}
 let browser
 try {
   browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
@@ -45,6 +55,11 @@ try {
     const handle = await page.evaluateHandle(text => [...document.querySelectorAll('label')].find(node => node.firstChild?.textContent.trim() === text)?.querySelector('input'), label)
     assert.ok(await handle.evaluate(node => Boolean(node)), `Input: ${label}`)
     await handle.asElement().click({ clickCount: 3 }); await handle.asElement().type(value); await handle.dispose()
+  }
+  async function checkbox(label, selector = 'form') {
+    const handle = await page.evaluateHandle((text, scope) => [...document.querySelectorAll(`${scope} label`)].find(node => node.textContent.trim() === text)?.querySelector('input[type="checkbox"]'), label, selector)
+    assert.ok(await handle.evaluate(node => Boolean(node)), `Checkbox: ${label}`)
+    await handle.asElement().click(); await handle.dispose()
   }
   const calls = () => page.evaluate(() => window.organizationUiCalls)
 
@@ -99,18 +114,42 @@ try {
   assert.equal(sent.body.role, 'inspector')
   assert.deepEqual(sent.body.modules, ['technical_investigations'])
   assert.equal(sent.body.orgId, '00000000-0000-4000-8000-000000000001')
+  assert.equal(sent.body.moduleSetVersion, 2)
   console.log('PASS invitation defaults to organisation-scoped member with TU only')
 
   await field('Namn', 'Administrativ kollega')
   await field('E-post', 'admin@example.test')
   await page.select('form select', 'admin')
-  await page.click('form input[type="checkbox"]')
+  await checkbox('TU – teknisk utredning')
   await button('Skicka inbjudan')
   await page.waitForFunction(() => window.organizationUiCalls.filter(call => call.url === '/api/organizations/invitations').length === 2)
   const adminSent = (await calls()).filter(call => call.url === '/api/organizations/invitations').at(-1)
   assert.equal(adminSent.body.role, 'admin')
   assert.deepEqual(adminSent.body.modules, [])
   console.log('PASS administrator can be invited without an operational module')
+
+  await open('?ob-only')
+  await button('Medlemmar')
+  await page.waitForFunction(() => document.body.textContent.includes('Niklas Test'))
+  await field('Namn', 'ÖB Kollega')
+  await field('E-post', 'ob@example.test')
+  assert.ok(await page.$$eval('button', nodes => nodes.find(node => node.textContent.trim() === 'Skicka inbjudan').disabled), 'OB must be explicitly selected')
+  await checkbox('ÖB – överlåtelsebesiktning')
+  await button('Skicka inbjudan')
+  await page.waitForFunction(() => document.body.textContent.includes('Inbjudan skickad.'))
+  assert.deepEqual((await calls()).find(call => call.url === '/api/organizations/invitations').body.modules, ['inspections'])
+  console.log('PASS OB-only invitation requires explicit enabled OB selection')
+
+  await open('?both')
+  await button('Medlemmar')
+  await page.waitForFunction(() => document.body.textContent.includes('Niklas Test'))
+  await field('Namn', 'Två områden')
+  await field('E-post', 'both@example.test')
+  await checkbox('ÖB – överlåtelsebesiktning')
+  await button('Skicka inbjudan')
+  await page.waitForFunction(() => document.body.textContent.includes('Inbjudan skickad.'))
+  assert.deepEqual((await calls()).find(call => call.url === '/api/organizations/invitations').body.modules, ['inspections', 'technical_investigations'])
+  console.log('PASS OB and TU can be invited together without administrator role')
 
   await open()
   await button('Integrationer')
@@ -132,6 +171,17 @@ try {
   assert.equal(await page.evaluate(() => sessionStorage.getItem('hushub:organization-invitation')), null)
   assert.ok(await page.$$eval('a', nodes => nodes.some(node => node.getAttribute('href') === '/settings/profil?orgId=00000000-0000-4000-8000-000000000001')))
   console.log('PASS invitation survives login navigation and clears token on acceptance')
+
+  for (const [query, expectedPaths] of [['ob-only', ['/ob?']], ['both', ['/ob?', '/tu?']]]) {
+    await open(`?invite&${query}#invite=${token}`)
+    await page.waitForSelector('input[type="password"]')
+    await page.type('input[type="password"]', 'test-password-123')
+    await button('Acceptera inbjudan')
+    await page.waitForFunction(() => document.body.textContent.includes('Ditt medlemskap i BBSAB är aktivt.'))
+    const paths = await page.$$eval('a', nodes => nodes.map(node => node.getAttribute('href')).filter(href => /^\/(?:ob|tu)\?/.test(href)).map(href => href.split('orgId=')[0]))
+    assert.deepEqual(paths, expectedPaths)
+  }
+  console.log('PASS accepted OB-only and mixed invitations link to the invited modules')
 
   await open(`?invite&wrong-user#invite=${token}`)
   await page.waitForFunction(() => document.body.textContent.includes('Du är inloggad som other@example.test'))
@@ -159,7 +209,7 @@ try {
   await page.screenshot({ path: join(output, 'members-mobile.png'), fullPage: true })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Member UI fits narrow screen')
   assert.deepEqual(errors, [])
-  console.log(`11 UI scenarios passed; no external API traffic or customer writes. Screenshots: ${output}`)
+  console.log(`15 UI scenarios passed; no external API traffic or customer writes. Screenshots: ${output}`)
 } finally {
   if (browser) await browser.close()
   await new Promise(ok => server.close(ok))

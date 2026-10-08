@@ -7,11 +7,12 @@ const ORG = '11111111-1111-4111-8111-111111111111'
 const ACTOR = '22222222-2222-4222-8222-222222222222'
 const MEMBER = '33333333-3333-4333-8333-333333333333'
 const REQUEST = '44444444-4444-4444-8444-444444444444'
+const OB = 'inspections'
 const TU = 'technical_investigations'
 const permission = { productKey: 'hushub_admin', moduleKey: 'access_management', scopeType: 'global' }
-const createDraft = { requestId: REQUEST, name: 'Exempel AB', organizationNumber: null, adminProfileId: MEMBER, modules: [TU] }
-const modulesDraft = { expectedModules: [TU], modules: [] }
-const memberDraft = { profileId: MEMBER, expected: null, role: 'inspector', isActive: true, modules: [TU] }
+const createDraft = { moduleSetVersion: 2, requestId: REQUEST, name: 'Exempel AB', organizationNumber: null, adminProfileId: MEMBER, modules: [TU] }
+const modulesDraft = { moduleSetVersion: 2, expectedModules: [TU], modules: [] }
+const memberDraft = { moduleSetVersion: 2, profileId: MEMBER, expected: null, role: 'inspector', isActive: true, modules: [TU] }
 
 function load<T>(file: string, dependencies: Record<string, unknown>): T {
   const output = ts.transpileModule(readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'), {
@@ -33,9 +34,11 @@ type Parsers = {
 }
 const http = load<Record<string, unknown>>('src/lib/organizations/administrationHttp.ts', {})
 const fortnox = load<Record<string, unknown>>('src/lib/fortnox/domain.ts', {})
+const supportedModules = load<Record<string, unknown>>('src/lib/organizations/supportedModules.ts', {})
 const parsers = load<Parsers>('src/lib/organizations/platformAdministrationTypes.ts', {
   '@/lib/organizations/administrationHttp': http,
   '@/lib/fortnox/domain': fortnox,
+  '@/lib/organizations/supportedModules': supportedModules,
 })
 
 type RouteContext = { params: Promise<{ orgId: string }> }
@@ -129,6 +132,55 @@ test('central organization routes forward the exact organization and validated o
     { name: 'modules', args: [ORG, modulesDraft] }, { name: 'member', args: [ORG, memberDraft] },
   ])
   assert.deepEqual(h.gates, Array(8).fill(permission))
+})
+
+test('central mutation routes accept OB alone and combined OB/TU but reject EB or duplicate module selection', async () => {
+  for (const modules of [[OB], [TU, OB]]) {
+    const h = harness()
+    const responses = [
+      await h.index.POST(request('POST', { ...createDraft, modules }), context()),
+      await h.detail.PATCH(request('PATCH', { ...modulesDraft, modules }), context()),
+      await h.members.POST(request('POST', { ...memberDraft, modules }), context()),
+    ]
+    for (const response of responses) { assert.equal(response.status, 200); privateResponse(response) }
+    assert.equal(h.calls.length, 3)
+  }
+  for (const modules of [['construction_inspections'], [OB, 'construction_inspections'], [OB, OB], [TU, TU]]) {
+    const h = harness()
+    const responses = [
+      await h.index.POST(request('POST', { ...createDraft, modules }), context()),
+      await h.detail.PATCH(request('PATCH', { ...modulesDraft, modules }), context()),
+      await h.members.POST(request('POST', { ...memberDraft, modules }), context()),
+    ]
+    for (const response of responses) {
+      assert.equal(response.status, 400)
+      assert.equal((await response.json()).code, 'ORG_INPUT_INVALID')
+      privateResponse(response)
+    }
+    assert.deepEqual(h.calls, [])
+  }
+})
+
+test('cached TU-only central forms receive a private reload-required conflict before service mutation', async () => {
+  for (const version of [undefined, 1, '2']) {
+    const h = harness()
+    const inputs = [createDraft, modulesDraft, memberDraft].map(input => {
+      const value: Record<string, unknown> = { ...input, moduleSetVersion: version }
+      if (version === undefined) delete value.moduleSetVersion
+      return value
+    })
+    const responses = [
+      await h.index.POST(request('POST', inputs[0]), context()),
+      await h.detail.PATCH(request('PATCH', inputs[1]), context()),
+      await h.members.POST(request('POST', inputs[2]), context()),
+    ]
+    for (const response of responses) {
+      assert.equal(response.status, 409)
+      assert.equal((await response.json()).code, 'ORG_MODULE_SELECTION_REFRESH_REQUIRED')
+      privateResponse(response)
+    }
+    assert.deepEqual(h.calls, [])
+  }
 })
 
 test('unauthenticated callers and organization-only administrators cannot read or mutate central organization administration', async () => {

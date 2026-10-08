@@ -16,7 +16,10 @@ type Member = { profileId: string; displayName: string | null; email: string | n
 type Invitation = { id: string; email: string; fullName: string; role: Role; modules: string[]; status: 'pending' | 'accepted' | 'revoked'; expiresAt: string; revision: number; notificationState: string }
 type MembersPayload = { members: Member[]; invitations: Invitation[]; enabledModules: string[] }
 type Tab = 'organization' | 'members' | 'integrations'
-const TU_MODULE = 'technical_investigations'
+const WORK_MODULES = [
+  { key: 'inspections', label: 'ÖB – överlåtelsebesiktning' },
+  { key: 'technical_investigations', label: 'TU – teknisk utredning' },
+] as const
 const inputClass = 'mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-600'
 const primaryClass = 'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
 const secondaryClass = 'inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
@@ -164,7 +167,7 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('inspector')
-  const [includeTu, setIncludeTu] = useState(true)
+  const [selectedModules, setSelectedModules] = useState<string[]>(['technical_investigations'])
   const requestId = useRef<string | null>(null)
   const inFlight = useRef(false)
   useUnsavedChanges(Boolean(fullName || email), busy)
@@ -185,17 +188,18 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
     try {
       const result = await requestJson<{ message: string }>('/api/organizations/invitations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, ...body }) })
       setNotice(result.message)
-      if (body.action === 'create') { setFullName(''); setEmail(''); setRole('inspector'); setIncludeTu(true); requestId.current = null }
+      if (body.action === 'create') { setFullName(''); setEmail(''); setRole('inspector'); setSelectedModules(['technical_investigations']); requestId.current = null }
       await refresh()
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Inbjudan kunde inte sparas.') }
     finally { inFlight.current = false; setBusy(false) }
   }
   function invite(event: FormEvent) {
     event.preventDefault()
+    if (role === 'inspector' && invitationModules.length === 0) return
     requestId.current ??= crypto.randomUUID()
-    void action({ action: 'create', requestId: requestId.current, fullName: fullName.trim(), email: email.trim(), role, modules: includeTu && tuEnabled ? [TU_MODULE] : [] })
+    void action({ action: 'create', moduleSetVersion: 2, requestId: requestId.current, fullName: fullName.trim(), email: email.trim(), role, modules: invitationModules })
   }
-  const tuEnabled = Boolean(data?.enabledModules.includes(TU_MODULE))
+  const invitationModules = WORK_MODULES.filter(module => selectedModules.includes(module.key) && data?.enabledModules.includes(module.key)).map(module => module.key)
   const pending = data?.invitations.filter(invitation => invitation.status === 'pending') ?? []
   return <div className="space-y-5">
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -203,9 +207,13 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
       <p className="mt-2 text-sm leading-6 text-slate-600">Kollegan använder sitt befintliga HusHub-konto eller skapar ett konto via inbjudan. Du väljer rollen och arbetsområdet i den här organisationen.</p>
       <form onSubmit={invite} className="mt-5 space-y-4">
         <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Namn<input required maxLength={160} autoComplete="off" value={fullName} onChange={event => { setFullName(event.target.value); requestId.current = null }} disabled={disabled || busy || loading} className={inputClass} /></label><label className="text-sm font-medium text-slate-700">E-post<input required type="email" maxLength={254} autoComplete="off" value={email} onChange={event => { setEmail(event.target.value); requestId.current = null }} disabled={disabled || busy || loading} className={inputClass} /></label></div>
-        <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Roll<select value={role} onChange={event => { setRole(event.target.value as Role); requestId.current = null }} disabled={disabled || busy || loading} className={inputClass}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label><fieldset><legend className="text-sm font-medium text-slate-700">Arbetsområde</legend><label className="mt-1.5 flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"><input type="checkbox" checked={includeTu && tuEnabled} disabled={disabled || busy || !tuEnabled} onChange={event => { setIncludeTu(event.target.checked); requestId.current = null }} className="h-4 w-4 accent-indigo-600" />TU – teknisk utredning</label><p className="mt-1 text-xs leading-5 text-slate-500">{tuEnabled ? 'ÖB och EB ansluts i ett senare steg.' : 'TU är inte aktiverat för nya medlemmar i organisationen.'}</p></fieldset></div>
+        <p className="text-sm leading-6 text-slate-600">Använd personens befintliga inloggningsmejl om personen redan har ett HusHub-konto. Inbjudan lägger till den här organisationen; andra medlemskap och roller finns kvar.</p>
+        <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Roll<select value={role} onChange={event => { setRole(event.target.value as Role); requestId.current = null }} disabled={disabled || busy || loading} className={inputClass}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label><fieldset><legend className="text-sm font-medium text-slate-700">Arbetsområden i den här organisationen</legend>{WORK_MODULES.map(module => {
+          const enabled = Boolean(data?.enabledModules.includes(module.key))
+          return <label key={module.key} className="mt-1.5 flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700"><input type="checkbox" checked={selectedModules.includes(module.key) && enabled} disabled={disabled || busy || loading || !enabled} onChange={event => { setSelectedModules(current => event.target.checked ? [...current.filter(key => key !== module.key), module.key] : current.filter(key => key !== module.key)); requestId.current = null }} className="h-4 w-4 accent-indigo-600" /><span>{module.label}{!loading && !enabled && <span className="block text-xs text-slate-500">Inte aktiverat för organisationen</span>}</span></label>
+        })}<p className="mt-1 text-xs leading-5 text-slate-500">Välj minst ett arbetsområde för en besiktningsman. HusHub-administratören aktiverar organisationens moduler. EB ansluts senare.</p></fieldset></div>
         {role === 'admin' && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">En organisationsadministratör kan ändra företagsuppgifter, hantera Fortnox och administrera medlemmar.</p>}
-        <button type="submit" className={primaryClass} disabled={disabled || busy || loading || (role === 'inspector' && (!tuEnabled || !includeTu)) || !fullName.trim() || !email.trim()}><UserRoundPlus size={17} aria-hidden />{busy ? 'Arbetar…' : 'Skicka inbjudan'}</button>
+        <button type="submit" className={primaryClass} disabled={disabled || busy || loading || (role === 'inspector' && invitationModules.length === 0) || !fullName.trim() || !email.trim()}><UserRoundPlus size={17} aria-hidden />{busy ? 'Arbetar…' : 'Skicka inbjudan'}</button>
       </form>
     </section>
     {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p>{error}</p><button type="button" className="mt-2 underline" disabled={busy || disabled} onClick={() => { setError(''); void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte läsa listan.')) }}>Hämta aktuell medlemslista</button></div>}
@@ -215,11 +223,11 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
   </div>
 }
 
-function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, onSaved }: { member: Member; orgId: string; isSelf: boolean; enabledModules: string[]; disabled: boolean; onSaved: () => Promise<void> }) {
+export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, onSaved }: { member: Member; orgId: string; isSelf: boolean; enabledModules: string[]; disabled: boolean; onSaved: () => Promise<void> }) {
   const router = useRouter()
   const [role, setRole] = useState(member.role)
   const [isActive, setActive] = useState(member.isActive)
-  const [modules, setModules] = useState(member.modules)
+  const [modules, setModules] = useState(member.isActive ? member.modules : [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const inFlight = useRef(false)
@@ -230,11 +238,19 @@ function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, onSaved
     if (disabled || inFlight.current) return
     inFlight.current = true; setBusy(true); setError('')
     try {
-      await requestJson('/api/organizations/members', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, profileId: member.profileId, role, isActive, modules }) })
+      await requestJson('/api/organizations/members', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, moduleSetVersion: 2, profileId: member.profileId, role, isActive, modules: isActive ? modules.filter(key => WORK_MODULES.some(module => module.key === key)) : [] }) })
       if (isSelf && (role !== member.role || isActive !== member.isActive)) { router.refresh(); return }
       await onSaved()
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Medlemmen kunde inte uppdateras.') }
     finally { inFlight.current = false; setBusy(false) }
   }
-  return <form onSubmit={save} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-semibold text-slate-900">{member.displayName || member.email || 'Medlem'}</h3><p className="break-all text-sm text-slate-500">{member.email}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${member.isActive ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{member.isActive ? 'Aktiv' : 'Avaktiverad'}</span></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium text-slate-600">Roll för {member.displayName || member.email}<select value={role} onChange={event => setRole(event.target.value as Role)} disabled={disabled || busy} className={inputClass}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label><label className="text-xs font-medium text-slate-600">Medlemskap<select value={isActive ? 'active' : 'inactive'} onChange={event => setActive(event.target.value === 'active')} disabled={disabled || busy} className={inputClass}><option value="active">Aktivt</option><option value="inactive">Avaktiverat</option></select></label></div><div className="mt-3 flex flex-wrap items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={modules.includes(TU_MODULE)} disabled={disabled || busy || !enabledModules.includes(TU_MODULE)} onChange={event => setModules(current => event.target.checked ? [...current.filter(module => module !== TU_MODULE), TU_MODULE] : current.filter(module => module !== TU_MODULE))} />TU</label><button type="submit" className={secondaryClass} disabled={!dirty || disabled || busy}>{busy ? 'Sparar…' : 'Spara medlem'}</button></div>{member.modules.some(module => module !== TU_MODULE) && <p className="mt-2 text-xs text-slate-500">Övriga befintliga arbetsområden: {member.modules.filter(module => module !== TU_MODULE).map(moduleLabel).join(', ')}</p>}{error && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}</form>
+  const otherModules = member.modules.filter(key => !WORK_MODULES.some(module => module.key === key))
+  return <form onSubmit={save} className="rounded-xl border border-slate-200 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-semibold text-slate-900">{member.displayName || member.email || 'Medlem'}</h3><p className="break-all text-sm text-slate-500">{member.email}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${member.isActive ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{member.isActive ? 'Aktiv' : 'Avaktiverad'}</span></div>
+    <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium text-slate-600">Roll för {member.displayName || member.email}<select value={role} onChange={event => setRole(event.target.value as Role)} disabled={disabled || busy} className={inputClass}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label><label className="text-xs font-medium text-slate-600">Medlemskap<select value={isActive ? 'active' : 'inactive'} onChange={event => { const active = event.target.value === 'active'; setActive(active); if (!active) setModules([]) }} disabled={disabled || busy} className={inputClass}><option value="active">Aktivt</option><option value="inactive">Avaktiverat</option></select></label></div>
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><fieldset className="flex flex-wrap gap-4"><legend className="mb-2 text-xs font-medium text-slate-600">Arbetsområden i den här organisationen</legend>{WORK_MODULES.map(module => <label key={module.key} className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={modules.includes(module.key)} disabled={disabled || busy || !isActive || (!enabledModules.includes(module.key) && !modules.includes(module.key))} onChange={event => setModules(current => event.target.checked ? [...current.filter(key => key !== module.key), module.key] : current.filter(key => key !== module.key))} />{moduleLabel(module.key)}</label>)}</fieldset><button type="submit" className={secondaryClass} disabled={!dirty || disabled || busy}>{busy ? 'Sparar…' : 'Spara medlem'}</button></div>
+    {!isActive && <p className="mt-2 text-xs text-slate-500">Arbetsområden tas bort när medlemskapet avaktiveras. Välj dem på nytt om medlemmen aktiveras igen.</p>}
+    {otherModules.length > 0 && <p className="mt-2 text-xs text-slate-500">Övriga befintliga arbetsområden: {otherModules.map(moduleLabel).join(', ')}</p>}
+    {error && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+  </form>
 }

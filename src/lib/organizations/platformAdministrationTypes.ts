@@ -1,5 +1,6 @@
 import { normalizeFortnoxOrganizationNumber } from '@/lib/fortnox/domain'
 import { isOrganizationUuid } from '@/lib/organizations/administrationHttp'
+import { parseOrganizationModules, requireOrganizationModuleSetVersion } from '@/lib/organizations/supportedModules'
 
 export const PLATFORM_ORGANIZATION_MODULE = 'technical_investigations'
 export type PlatformOrganizationRole = 'admin' | 'inspector'
@@ -14,6 +15,7 @@ export type PlatformOrganizationSummary = {
   organizationNumber: string | null
   modules: string[]
   tuManaged: boolean
+  managedModules: string[]
 }
 export type PlatformOrganizationMember = PlatformOrganizationMemberState & {
   profileId: string
@@ -44,10 +46,13 @@ export function parsePlatformOrganizationId(value: unknown) {
 }
 
 function modules(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length > 1 || value.some(key => key !== PLATFORM_ORGANIZATION_MODULE)) {
-    throw new Error('ORG_INPUT_INVALID')
-  }
-  return [...value]
+  return parseOrganizationModules(value, 'ORG_INPUT_INVALID')
+}
+
+function moduleSelectionObject(value: unknown, keys: string[]) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('ORG_INPUT_INVALID')
+  requireOrganizationModuleSetVersion((value as Record<string, unknown>).moduleSetVersion)
+  return exactObject(value, [...keys, 'moduleSetVersion'])
 }
 
 function memberState(value: unknown): PlatformOrganizationMemberState {
@@ -61,7 +66,7 @@ function memberState(value: unknown): PlatformOrganizationMemberState {
 }
 
 export function parsePlatformOrganizationCreate(value: unknown) {
-  const input = exactObject(value, ['requestId', 'name', 'organizationNumber', 'adminProfileId', 'modules'])
+  const input = moduleSelectionObject(value, ['requestId', 'name', 'organizationNumber', 'adminProfileId', 'modules'])
   if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 240 ||
     /[\u0000-\u001f\u007f]/u.test(input.name)) throw new Error('ORG_INPUT_INVALID')
   if (input.organizationNumber !== null && typeof input.organizationNumber !== 'string') throw new Error('ORG_INPUT_INVALID')
@@ -75,12 +80,12 @@ export function parsePlatformOrganizationCreate(value: unknown) {
 }
 
 export function parsePlatformOrganizationModules(value: unknown) {
-  const input = exactObject(value, ['expectedModules', 'modules'])
+  const input = moduleSelectionObject(value, ['expectedModules', 'modules'])
   return { expectedModules: modules(input.expectedModules), modules: modules(input.modules) }
 }
 
 export function parsePlatformOrganizationMember(value: unknown) {
-  const input = exactObject(value, ['profileId', 'expected', 'role', 'isActive', 'modules'])
+  const input = moduleSelectionObject(value, ['profileId', 'expected', 'role', 'isActive', 'modules'])
   return {
     profileId: parsePlatformOrganizationId(input.profileId),
     expected: input.expected === null ? null : memberState(input.expected),

@@ -5,10 +5,10 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireOrganizationAdmin } from '@/lib/organizations/administration'
 import { isOrganizationUuid } from '@/lib/organizations/administrationHttp'
+import { ORGANIZATION_MODULE_OPTIONS, parseOrganizationModules, requireOrganizationModuleSetVersion, organizationModuleNames } from '@/lib/organizations/supportedModules'
 
 const TABLE = 'organization_invitations'
 const SAFE_COLUMNS = 'id,email,full_name,org_id,role,modules,status,expires_at,revision,notification_state,created_at'
-const TU = 'technical_investigations'
 const DAY = 86400000
 type Role = 'admin' | 'inspector'
 type InvitationRow = {
@@ -39,8 +39,7 @@ function relation(value: unknown): Record<string, unknown> {
 }
 
 function validateModules(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length > 1 || !value.every(key => key === TU)) throw new Error('ORG_REQUEST_INVALID')
-  return [...value]
+  return parseOrganizationModules(value)
 }
 
 function validateRole(value: unknown): Role {
@@ -54,6 +53,7 @@ function validateUuid(value: unknown) {
 }
 
 export function parseOrganizationInvitationDraft(value: Record<string, unknown>) {
+  requireOrganizationModuleSetVersion(value.moduleSetVersion)
   const requestId = validateUuid(value.requestId)
   const role = validateRole(value.role)
   const modules = validateModules(value.modules)
@@ -78,23 +78,31 @@ function safeInvitation(row: InvitationRow) {
 export async function listOrganizationMembers(orgId: string) {
   const context = await requireOrganizationAdmin(validateUuid(orgId))
   const db = createSupabaseAdminClient()
-  const [members, grants] = await Promise.all([
+  const [members, grants, managed] = await Promise.all([
     db.from('org_members').select('profile_id,role,is_active,profile:profiles(full_name,email)')
       .eq('org_id', context.organization.id).order('created_at').limit(1000),
-    db.from('platform_access_assignments').select('profile_id,expires_at,product:platform_products(key),module:platform_modules(key)')
+    db.from('platform_access_assignments').select('profile_id,expires_at,product:platform_products(key),module:platform_modules(key),role:platform_roles(key)')
       .eq('scope_type', 'organization').eq('scope_id', context.organization.id).eq('is_active', true).limit(5000),
+    db.from('organization_enabled_modules').select('module_key').eq('org_id', context.organization.id),
   ])
   check(members.error)
   check(grants.error)
+  check(managed.error)
+  const managedOb = (managed.data ?? []).some(row => row.module_key === 'inspections')
+  const now = Date.now()
   return (members.data ?? []).map(row => ({
     profileId: row.profile_id as string,
     displayName: relation(row.profile).full_name as string | null,
     email: relation(row.profile).email as string | null,
     role: row.role as Role,
     isActive: row.is_active as boolean,
-    modules: row.is_active && (grants.data ?? []).some(grant => grant.profile_id === row.profile_id &&
-      relation(grant.product).key === 'dashboard' && relation(grant.module).key === TU &&
-      (!grant.expires_at || Date.parse(grant.expires_at) > Date.now())) ? [TU] : [],
+    // Unmanaged OB grants are not an editable selection yet. The SQL writer
+    // preserves them while TU is edited, until OB activation has been reviewed.
+    modules: row.is_active ? ORGANIZATION_MODULE_OPTIONS.filter(module =>
+      (module.key !== 'inspections' || managedOb) && (grants.data ?? []).some(grant =>
+        grant.profile_id === row.profile_id && relation(grant.product).key === 'dashboard' &&
+        relation(grant.module).key === module.key && relation(grant.role).key === 'inspector' &&
+        (!grant.expires_at || Date.parse(grant.expires_at) > now))).map(module => module.key) : [],
   }))
 }
 
@@ -133,7 +141,7 @@ async function deliverInvitation(row: InvitationRow, token: string, organization
   const link = `${origin}/organisation/inbjudan#invite=${token}`
   const organization = organizationName || 'din organisation'
   const role = row.role === 'admin' ? 'organisationsadministratör' : 'medlem'
-  const modules = row.modules.includes(TU) ? 'Tekniska utredningar (TU)' : 'Organisationsadministration'
+  const modules = organizationModuleNames(row.modules) || 'Organisationsadministration'
   let state: 'accepted' | 'failed' = 'failed'
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15000)
@@ -193,6 +201,7 @@ export async function changeOrganizationInvitation(orgId: string, values: Record
 
 export async function updateOrganizationMember(orgId: string, values: Record<string, unknown>) {
   const context = await requireOrganizationAdmin(validateUuid(orgId))
+  requireOrganizationModuleSetVersion(values.moduleSetVersion)
   const profileId = validateUuid(values.profileId)
   const role = validateRole(values.role)
   const modules = validateModules(values.modules)
