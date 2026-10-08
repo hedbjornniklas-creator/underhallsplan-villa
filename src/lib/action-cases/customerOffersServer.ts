@@ -47,7 +47,7 @@ async function write(
   operation: string,
   data: Payload
 ) {
-  const result = await createSupabaseAdminClient().rpc('write_customer_offer', {
+  const result = await createSupabaseAdminClient().rpc('write_customer_contract', {
     p_org_id: ctx.orgId,
     p_case_id: offerId(caseId),
     p_user_id: ctx.userId,
@@ -70,12 +70,13 @@ async function requireCase(ctx: Context, caseId: string) {
 }
 export async function getCustomerOfferWorkspace(
   ctx: Context,
-  caseId: string
+  caseId: string,
+  target: 'contract' | 'offer' = 'contract'
 ): Promise<CustomerOfferWorkspace> {
   const c = await requireCase(ctx, caseId),
     db = createSupabaseAdminClient()
   const draft = await db
-    .from('action_case_customer_offer_drafts')
+    .from(target === 'contract' ? 'action_case_customer_contract_drafts' : 'action_case_customer_offer_drafts')
     .select('body,revision,internal_costing')
     .eq('action_case_id', caseId)
     .eq('org_id', ctx.orgId)
@@ -86,12 +87,15 @@ export async function getCustomerOfferWorkspace(
   if (draft.error && ['42703', 'PGRST204'].includes(draft.error.code)) {
     // Older deployments retain manual pricing until migration 03 is applied.
     costingAvailable = false
-    const legacy = await db.from('action_case_customer_offer_drafts')
+    const legacy = await db.from(target === 'contract' ? 'action_case_customer_contract_drafts' : 'action_case_customer_offer_drafts')
       .select('body,revision').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle()
     savedDraft = legacy.data ? { ...legacy.data, internal_costing: {} } : null
     draftError = legacy.error
   }
   checked(draftError)
+  const estimate = target === 'contract' ? await db.from('action_case_customer_offer_drafts')
+    .select('body,revision,internal_costing').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : null
+  if (estimate) checked(estimate.error)
   const offers = await db
     .from('action_case_customer_offers')
     .select(CUSTOMER_OFFER_COLUMNS)
@@ -113,6 +117,8 @@ export async function getCustomerOfferWorkspace(
     customerNumber = linked.data ? String(linked.data.customer_number) : null
   }
   return {
+    ...(estimate ? { offerDraft: { draft: estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title),
+      revision: estimate.data?.revision ?? 0, costing: estimate.data?.internal_costing ?? {} } } : {}),
     standardTermsFile: await findStandardTermsFile(ctx.orgId, caseId),
     propertyLink: await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
     customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
@@ -130,7 +136,8 @@ export async function saveCustomerOffer(
   ctx: Context,
   caseId: string,
   payload: Payload,
-  mode: 'manual' | 'autosave' = 'manual'
+  mode: 'manual' | 'autosave' = 'manual',
+  target: 'contract' | 'offer' = 'contract'
 ) {
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
@@ -156,12 +163,12 @@ export async function saveCustomerOffer(
     ? undefined
     : normalizeCustomerOfferCosting(payload.costing, draft.items)
   await checkPricingSchema(draft)
-  if (mode === 'manual' && draft.contractParties && 'organization_customer_id' in await requireCase(ctx, caseId)) {
+  if (target === 'contract' && mode === 'manual' && draft.contractParties && 'organization_customer_id' in await requireCase(ctx, caseId)) {
     await writeContractCustomer(ctx, caseId, { ...payload, draft })
     return
   }
   if (costing !== undefined) {
-    const result = await createSupabaseAdminClient().rpc('save_customer_offer_costing', {
+    const result = await createSupabaseAdminClient().rpc(target === 'contract' ? 'save_customer_contract_costing' : 'save_customer_offer_costing', {
       p_org_id: ctx.orgId,
       p_case_id: offerId(caseId),
       p_user_id: ctx.userId,
@@ -170,10 +177,11 @@ export async function saveCustomerOffer(
     checked(result.error)
     return
   }
-  await write(ctx, caseId, 'save', {
-    revision: payload.revision,
-    body: draft
+  const result = await createSupabaseAdminClient().rpc(target === 'contract' ? 'write_customer_contract' : 'write_customer_offer', {
+    p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
+    p_operation: 'save', p_data: { revision: payload.revision, body: draft }
   })
+  checked(result.error)
 }
 export async function prepareStandardContractTerms(ctx: Context, caseId: string) {
   await requireCase(ctx, caseId)
@@ -193,7 +201,7 @@ export async function separateCustomerChoices(ctx: Context, caseId: string, payl
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 1 ||
     !Number.isSafeInteger(payload.planningRevision) || Number(payload.planningRevision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
-  const result = await createSupabaseAdminClient().rpc('separate_customer_choices', {
+  const result = await createSupabaseAdminClient().rpc('separate_independent_contract_choices', {
     p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
     p_revision: payload.revision, p_planning_revision: payload.planningRevision
   })
@@ -286,7 +294,7 @@ export async function publishCustomerOffer(
     .select('id')
     .eq('org_id', ctx.orgId)
     .eq('action_case_id', caseId)
-    .eq('draft_revision', payload.revision)
+    .eq('contract_revision', payload.revision)
     .maybeSingle()
   checked(existing.error)
   if (existing.data) {

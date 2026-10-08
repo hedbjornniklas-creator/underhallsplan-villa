@@ -10,6 +10,7 @@ import {
   ArrowUp,
   CalendarClock,
   Check,
+  ChevronDown,
   Eye,
   FilePlus2,
   Loader2,
@@ -58,6 +59,8 @@ import { ContractCustomerEditor, ContractContractorEditor } from './CustomerCont
 import { emptyContractParties, type ContractContractor } from '@/lib/action-cases/customerContractParties'
 import ProjectBillingEditor from './ProjectBillingEditor'
 import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
+import CustomerContractWorkParts from './CustomerContractWorkParts'
+import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -83,7 +86,9 @@ export default function CustomerOfferEditor({
   onDirtyChange,
   sharedSchedule,
   sourcePending = false,
-  contractorSource
+  contractorSource,
+  draftTarget = 'contract',
+  offerItems = []
 }: {
   actionCase: ActionCaseView
   initial: CustomerOfferWorkspace
@@ -99,10 +104,12 @@ export default function CustomerOfferEditor({
   sharedSchedule?: ProjectScheduleRow[]
   sourcePending?: boolean
   contractorSource?: Partial<ContractContractor>
+  draftTarget?: 'contract' | 'offer'
+  offerItems?: CustomerOfferItem[]
 }) {
   const initialCustomer = initial.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [workspace, setWorkspace] = useState(initial),
-    [draft, setDraft] = useState<CustomerOfferDraft>(() => ({ ...draftForEditing(initial),
+    [draft, setDraft] = useState<CustomerOfferDraft>(() => draftTarget === 'offer' ? initial.draft : ({ ...draftForEditing(initial),
       contractParties: initial.draft.contractParties ?? emptyContractParties(initialCustomer?.name ?? actionCase.customerName,
         initialCustomer?.email ?? '', initialCustomer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
     }))
@@ -141,6 +148,8 @@ export default function CustomerOfferEditor({
   const [confirmItemized, setConfirmItemized] = useState(false)
   const parties = draft.contractParties ?? emptyContractParties(customer?.name ?? actionCase.customerName, customer?.email ?? '', customer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
   const contractView = view === 'contract'
+  const apiUrl = `/api/action-cases/${actionCase.id}/customer-offers${draftTarget === 'offer' ? '?draftTarget=offer' : ''}`
+  const editableDraft = (result: CustomerOfferWorkspace) => draftTarget === 'offer' ? result.draft : draftForEditing(result)
   const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft) ||
     JSON.stringify(costing) !== JSON.stringify(workspace.costing ?? {})
   const recipientChanged = Boolean(draft.contractParties && (
@@ -151,9 +160,9 @@ export default function CustomerOfferEditor({
   const autosave = useCustomerOfferAutosave({
     initialRevision: initial.revision,
     save: async (submitted, revision) => {
-      const response = await fetch(`/api/action-cases/${actionCase.id}/customer-offers`, {
+      const response = await fetch(apiUrl, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(45000),
-        body: JSON.stringify({ operation: 'autosave', draft: submitted.draft,
+        body: JSON.stringify({ operation: 'autosave', draftTarget, draft: submitted.draft,
           ...(workspace.costingAvailable ? { costing: submitted.costing } : {}), revision }),
       })
       const result = await response.json()
@@ -170,7 +179,7 @@ export default function CustomerOfferEditor({
         if (result.draft.termsAttachmentId === result.standardTermsFile.id) setTermsState('')
       }
       const current = currentSnapshot.current
-      const next = { draft: retainNewerDraft(current.draft, submitted.draft, draftForEditing(result)),
+      const next = { draft: retainNewerDraft(current.draft, submitted.draft, editableDraft(result)),
         costing: retainNewerDraft(current.costing, submitted.costing, result.costing ?? {}) }
       currentSnapshot.current = next
       persistDocuments(next.draft)
@@ -221,7 +230,7 @@ export default function CustomerOfferEditor({
     persistDocuments(nextDraft)
     setDraft(nextDraft)
     setCosting(nextCosting)
-    if (contractView && !locked && !running.current) autosave.change({ draft: nextDraft, costing: nextCosting })
+    if (draftTarget === 'contract' && !locked && !running.current) autosave.change({ draft: nextDraft, costing: nextCosting })
     setConfirmed(false)
   }
   const updateCosting = (id: string, calculation: CustomerOfferCosting[string]) => {
@@ -229,7 +238,7 @@ export default function CustomerOfferEditor({
     const nextCosting = { ...current.costing, [id]: calculation }
     currentSnapshot.current = { draft: current.draft, costing: nextCosting }
     setCosting(nextCosting)
-    if (contractView && !locked && !running.current) autosave.change({ draft: current.draft, costing: nextCosting })
+    if (draftTarget === 'contract' && !locked && !running.current) autosave.change({ draft: current.draft, costing: nextCosting })
     setConfirmed(false)
   }
   const restoreDocuments = (backup: ContractDocumentDraft) => {
@@ -325,7 +334,7 @@ export default function CustomerOfferEditor({
     setBusy(operation)
     try {
       const response = await fetch(
-        `/api/action-cases/${actionCase.id}/customer-offers`,
+        apiUrl,
         {
           method: operation === 'refresh' ? 'GET' : 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -334,6 +343,7 @@ export default function CustomerOfferEditor({
               ? undefined
               : JSON.stringify({
                   operation,
+                  draftTarget,
                   draft,
                   ...(workspace.costingAvailable ? { costing } : {}),
                   revision: workspace.revision,
@@ -354,7 +364,7 @@ export default function CustomerOfferEditor({
       setWorkspace(data)
       if (data.standardTermsFile) setStandardTermsFile(data.standardTermsFile)
       const next = {
-        draft: operation === 'save' ? retainNewerDraft(currentSnapshot.current.draft, draft, draftForEditing(data)) : draftForEditing(data),
+        draft: operation === 'save' ? retainNewerDraft(currentSnapshot.current.draft, draft, editableDraft(data)) : editableDraft(data),
         costing: operation === 'save' ? retainNewerDraft(currentSnapshot.current.costing, costing, data.costing ?? {}) : data.costing ?? {},
       }
       currentSnapshot.current = next
@@ -362,8 +372,8 @@ export default function CustomerOfferEditor({
       setCosting(next.costing)
       persistDocuments(next.draft)
       // Edits made while the manual request was running still need a queued save.
-      if (operation === 'save' && contractView && !locked &&
-        (JSON.stringify(next.draft) !== JSON.stringify(draftForEditing(data)) || JSON.stringify(next.costing) !== JSON.stringify(data.costing ?? {})))
+      if (operation === 'save' && draftTarget === 'contract' && !locked &&
+        (JSON.stringify(next.draft) !== JSON.stringify(editableDraft(data)) || JSON.stringify(next.costing) !== JSON.stringify(data.costing ?? {})))
         autosave.change(next)
       if (operation === 'separate_choices' || operation === 'bind_customer' ||
         ((operation === 'save' || operation === 'refresh') && !planningDirtyRef.current)) {
@@ -659,7 +669,7 @@ export default function CustomerOfferEditor({
           </div>
         </>
       ) : (
-        <div className="grid gap-8 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className={contractView ? 'gizmo-contract-layout py-6' : 'grid gap-8 py-6 lg:grid-cols-[minmax(0,1fr)_280px]'}>
           <fieldset
             disabled={(Boolean(busy) && (contractView || busy !== 'save')) || locked}
             className="min-w-0 space-y-5"
@@ -706,6 +716,11 @@ export default function CustomerOfferEditor({
             </ProjectEditorRow>
             </div>
             <div hidden={!contractView} className="space-y-5">
+            <ProjectEditorRow title="Avtalsuppgifter" summary={draft.title || 'Rubrik saknas'} open={expanded === 'contract-info'} onToggle={() => setExpanded(expanded === 'contract-info' ? null : 'contract-info')}>
+              <label className="block text-sm">Rubrik<input className={field} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label>
+              <label className="mt-4 block text-sm">Inledning<textarea className={field} rows={3} value={draft.introduction} onChange={(event) => update({ introduction: event.target.value })} /></label>
+              <label className="mt-4 block text-sm">Giltig till och med<input className={field} type="date" value={draft.validUntil} onChange={(event) => update({ validUntil: event.target.value })} /></label>
+            </ProjectEditorRow>
             <ProjectEditorRow title="Beställare" summary={parties.customers.map((row) => row.name || 'Namn saknas').join(' · ')}
               open={expanded === 'customer'} onToggle={() => setExpanded(expanded === 'customer' ? null : 'customer')}>
               <ContractCustomerEditor value={parties} onChange={(contractParties) => update({ contractParties })} />
@@ -726,15 +741,8 @@ export default function CustomerOfferEditor({
               <fieldset className="min-w-0" disabled={Boolean(documentRecovery)}>
               <CustomerContractAssignmentEditor draft={draft} files={files} caseId={actionCase.id} onChange={update}
                 standardTermsId={standardTermsFile?.id} termsState={termsState} onRetryTerms={() => setTermsRetry((value) => value + 1)}>
-              <h3 className="mt-6 font-semibold">Arbetsdelar och avgränsningar</h3>
-              {contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)} collapsible
-                onChange={(items) => { update({ items }); setItemView('included') }} />}
-              {draft.items.filter((item) => item.kind === 'included' || item.kind === 'excluded').map((item) => <div key={item.id} className="border-b border-slate-200 py-3 text-sm">
-                <h3 className="font-semibold">{item.title}{item.kind === 'excluded' ? ' · Ingår inte' : ''}</h3>
-                <p className="mt-1 whitespace-pre-wrap">{item.scope}</p>
-                {([['scopeConditions', 'Förutsättningar'], ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, label]) => item[key]?.trim() ? <p key={key} className="mt-2 whitespace-pre-wrap"><strong>{label}: </strong>{item[key]}</p> : null)}
-              </div>)}
-              <button className={`${button} mt-4`} onClick={() => setView('edit')}><ArrowLeft size={17} /> Redigera omfattning i Offert</button>
+              <CustomerContractWorkParts items={draft.items} projectItems={actionCase.items} offerItems={offerItems}
+                itemized={draft.pricingMode === 'itemized'} blocked={locked || Boolean(busy)} importBlocked={sourcePending} onChange={(items) => update({ items })} />
               </CustomerContractAssignmentEditor>
               </fieldset>
             </ProjectEditorRow>
@@ -945,11 +953,7 @@ export default function CustomerOfferEditor({
             {contractSection('customer-work', 'Beställarens arbeten och samordning', ['customerWork'])}
             {contractSection('work-environment', 'Arbetsmiljö', ['workEnvironment'])}
             {contractSection('advice', 'Avrådande', [], true)}
-            <ProjectEditorRow title="Priset" summary={`${draft.pricingMode === 'itemized' ? 'Fast pris per arbetsdel' : 'Fast klumpsumma'} · ${money(baseAmount)}`}
-              open={expanded === 'contract-price'} onToggle={() => setExpanded(expanded === 'contract-price' ? null : 'contract-price')}>
-              <p className="text-lg font-semibold">{money(baseAmount)} inklusive moms</p>
-              <button className={`${button} mt-3`} onClick={() => setView('edit')}><ArrowLeft size={17} /> Redigera pris i Offert</button>
-            </ProjectEditorRow>
+            {priceSection}
             {contractSection('changes', 'Ändringar och tilläggsarbeten', ['changes'])}
             <ProjectEditorRow title="Tid för betalning" summary={`${draft.paymentPlan?.installments.length ?? 0} delbetalningar · ${draft.paymentTerms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'}`}
               open={expanded === 'payment'} onToggle={() => setExpanded(expanded === 'payment' ? null : 'payment')}>
@@ -969,7 +973,9 @@ export default function CustomerOfferEditor({
             </ProjectEditorRow>
           </fieldset>
           <aside className="min-w-0">
-            <div className="lg:sticky lg:top-6">
+            <details className={contractView ? 'gizmo-contract-status' : ''} open={contractView ? undefined : true}>
+              <summary className={contractView ? 'gizmo-contract-status-heading' : 'hidden'}>Avtalsstatus <strong>{money(baseAmount)}</strong><span>{locked ? 'Godkänt och låst' : issues.length ? `${issues.length} saker kvar inför utskick` : 'Klart att granska'}</span><ChevronDown size={18} className="gizmo-contract-status-chevron shrink-0" aria-hidden="true" /></summary>
+            <div className={contractView ? 'gizmo-contract-status-body' : 'lg:sticky lg:top-6'}>
               <h2 className="text-lg">{contractView ? 'Avtalsstatus' : 'Offertsammanställning'}</h2>
               <p className="mt-3 text-2xl font-semibold">
                 {money(baseAmount)}
@@ -1146,6 +1152,7 @@ export default function CustomerOfferEditor({
                 ))}
               </section>}
             </div>
+            </details>
           </aside>
         </div>
       )}

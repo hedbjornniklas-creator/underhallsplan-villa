@@ -64,7 +64,7 @@ function harness(options = {}) {
       const result = () => {
         if (table === 'action_case_customer_planning' && options.planningMissing)
           return { error: { code: '42P01' } }
-        if (table === 'action_case_customer_offer_drafts' && read.columns.includes('internal_costing') && options.costingMissing)
+        if (table === 'action_case_customer_contract_drafts' && read.columns.includes('internal_costing') && options.costingMissing)
           return { error: { code: '42703' } }
         if (table === 'action_case_customer_offers') {
           if (options.schemaMissing) return { error: { code: '42P01' } }
@@ -75,7 +75,7 @@ function harness(options = {}) {
             calls.some((c) => c.p_operation === 'publish')
           )
             return { error: { code: 'connection_failed' } }
-          if (read.filters.some(([key]) => key === 'draft_revision'))
+          if (read.filters.some(([key]) => key === 'contract_revision'))
             return { data: saved ? { id: saved.id } : null }
           if (read.filters.some(([key]) => key === 'id')) return { data: saved }
           return { data: saved ? [saved] : [] }
@@ -88,7 +88,8 @@ function harness(options = {}) {
               property_address: 'Address',
               ...(options.customerRegistry ? { organization_customer_id: null } : {})
             },
-            action_case_customer_offer_drafts: { body: draft, revision: 1, internal_costing: options.costing ?? {} },
+            action_case_customer_contract_drafts: { body: draft, revision: 1, internal_costing: options.costing ?? {} },
+            action_case_customer_offer_drafts: { body: options.offerDraft ?? draft, revision: 1, internal_costing: {} },
             action_case_customer_planning: options.planning ?? null,
             action_case_participants: participant,
             organizations: { name: 'Exempelbygg AB' },
@@ -168,7 +169,7 @@ function harness(options = {}) {
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_contract' && options.contractMissing)
         return { error: { code: 'PGRST202' } }
-      if (name === 'save_customer_offer_costing' && options.costingMissing)
+      if (name === 'save_customer_contract_costing' && options.costingMissing)
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_pricing' && options.pricingMissing)
         return { error: { code: '42883' } }
@@ -290,6 +291,30 @@ function harness(options = {}) {
   }
 }
 
+test('workspace exposes an independent saved offer alongside the contract, without source aliasing', async () => {
+  const offerDraft = { ...workspace.draft, title: 'Bara offert' }
+  const h = harness({ offerDraft }), ctx = { orgId: id(90), userId: id(91) }
+  const contract = await h.api.getCustomerOfferWorkspace(ctx, id(1))
+  assert.equal(contract.draft.title, h.draft.title)
+  assert.equal(contract.offerDraft.draft.title, 'Bara offert')
+  const estimate = await h.api.getCustomerOfferWorkspace(ctx, id(1), 'offer')
+  assert.equal(estimate.draft.title, 'Bara offert')
+  assert.equal(estimate.offerDraft, undefined)
+  assert.equal(h.sent.length, 0)
+})
+
+test('saving offer content uses the offer RPC, never the contract parties or contract costing writer', async () => {
+  const ctx = { orgId: id(90), userId: id(91) }, h = harness({ customerRegistry: true })
+  h.draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test')
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, costing: {} }, 'manual', 'offer')
+  assert.equal(h.calls.at(-1).name, 'save_customer_offer_costing')
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft }, 'manual', 'offer')
+  assert.equal(h.calls.at(-1).name, 'write_customer_offer')
+  assert.equal(h.calls.at(-1).p_operation, 'save')
+  assert.equal(h.calls.some((call) => call.name === 'write_action_case_contract_parties'), false)
+  assert.equal(h.sent.length, 0)
+})
+
 test('structured parties are stored internally, checked before delivery and projected without buyer identifiers', async () => {
   const h = harness(), ctx = { orgId: id(90), userId: id(91) }
   h.draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test')
@@ -410,7 +435,7 @@ test('contract autosave writes only the internal draft, including incomplete con
     h.draft.contractParties = emptyContractParties('', 'unfinished@')
     h.draft.contractParties.customers.push({ name: '', personalNumber: '' })
     await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, ...(withCosting ? { costing: {} } : {}) }, 'autosave')
-    const saved = h.calls.find(call => withCosting ? call.name === 'save_customer_offer_costing' : call.p_operation === 'save')
+    const saved = h.calls.find(call => withCosting ? call.name === 'save_customer_contract_costing' : call.p_operation === 'save')
     assert.equal(saved.p_data.body.contractParties.email, 'unfinished@')
     assert.equal(saved.p_data.body.contractParties.customers.length, 2)
     assert.equal(saved.p_data.revision, 1)
@@ -475,7 +500,7 @@ test('costing saves atomically with public draft; missing schema cannot silently
   const costing = { [id(10)]: { ...costingDomain.emptyCustomerOfferCalculation(), purchaseOre: 10000 } }
   await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft, costing })
   assert.equal(h.calls.length, 1)
-  assert.equal(h.calls[0].name, 'save_customer_offer_costing')
+  assert.equal(h.calls[0].name, 'save_customer_contract_costing')
   assert.equal(h.calls[0].p_org_id, id(90))
   assert.deepEqual(h.calls[0].p_data.costing, costing)
   assert.equal(h.calls[0].p_data.body.costing, undefined)
@@ -711,7 +736,7 @@ test('main publication stops before files or email if draft still contains choic
 test('choice split carries tenant identity and both revisions, never email or client snapshots', async () => {
   const h = harness(), ctx = { orgId: id(90), userId: id(91) }
   await h.api.separateCustomerChoices(ctx, id(1), { revision: 3, planningRevision: 6 })
-  assert.deepEqual(h.calls.at(-1), { name: 'separate_customer_choices', p_org_id: ctx.orgId, p_case_id: id(1), p_user_id: ctx.userId, p_revision: 3, p_planning_revision: 6 })
+  assert.deepEqual(h.calls.at(-1), { name: 'separate_independent_contract_choices', p_org_id: ctx.orgId, p_case_id: id(1), p_user_id: ctx.userId, p_revision: 3, p_planning_revision: 6 })
   assert.equal(h.sent.length, 0)
   await assert.rejects(h.api.separateCustomerChoices(ctx, id(1), { revision: 3 }), /INVALID/)
 })

@@ -38,7 +38,7 @@ test('shared-property writes are atomic, actor and organization scoped, revision
   await h.bindProjectProperty(ctx, caseId, input)
   assert.equal(h.calls.length, 1)
   const { name, args } = h.calls[0]
-  assert.equal(name, 'write_action_case_property')
+  assert.equal(name, 'write_action_case_contract_property')
   assert.deepEqual([args.p_org_id, args.p_user_id, args.p_case_id, args.p_mode], [ctx.orgId, ctx.userId, caseId, 'create'])
   assert.equal(args.p_data.revision, 0)
   assert.equal(args.p_data.requestId, id(4))

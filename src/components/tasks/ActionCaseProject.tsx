@@ -39,6 +39,10 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [offer, setOffer] = useState(initialOffer)
+  const [estimate, setEstimate] = useState<CustomerOfferWorkspace | null>(() => initialOffer ? {
+    ...initialOffer, ...initialOffer.offerDraft, offerDraft: undefined,
+  } : null)
+  const [estimateDirty, setEstimateDirty] = useState(false)
   const [offerDirty, setOfferDirty] = useState(false)
   const [workBusy, setWorkBusy] = useState(false)
   const [workDirty, setWorkDirty] = useState(false)
@@ -52,6 +56,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const [view, setView] = useState(initialView)
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
+  const keyboardTabChange = useRef(false)
   const project = workspace.cases.find((item) => item.id === caseId)!
   const navigate = useCallback((next: ProjectView) => {
     setView(next)
@@ -68,6 +73,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   useEffect(() => {
     if (previousView.current === view) return
     previousView.current = view
+    if (keyboardTabChange.current) { keyboardTabChange.current = false; return }
     heading.current?.focus({ preventScroll: true })
     heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }, [view])
@@ -83,23 +89,33 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
-        if ((offerDirty || workDirty || scheduleDirty) && !window.confirm(workBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
+        if ((offerDirty || estimateDirty || workDirty || scheduleDirty) && !window.confirm(workBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
       }}>Alla projekt</PendingLink>
       <div className="gizmo-project-title"><div><p className="gizmo-eyebrow">Gizmo · Projekt</p><h1 ref={heading} tabIndex={-1}>{project.title}</h1><p className="gizmo-address"><MapPin size={16} />{project.propertyAddress}</p></div>
         <button className="gizmo-button" aria-pressed={view === 'customer'} onClick={() => navigate(view === 'customer' ? 'overview' : 'customer')}><Eye size={18} />{view === 'customer' ? 'Till intern vy' : 'Visa som beställare'}</button>
       </div>
     </header>
     <div className="gizmo-project-layout">
-      <nav className="gizmo-project-nav" aria-label="Projektnavigering">
-        {sections.map(({ key, label, icon: Icon }) => <a key={key} href={projectUrl(caseId, key)} aria-current={currentSection === key ? 'page' : undefined}
+      <nav className="gizmo-register-tabs gizmo-project-tabs" role="tablist" aria-label="Projektnavigering" onKeyDown={(event) => {
+        if (event.altKey || event.ctrlKey || event.metaKey) return
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const index = sections.findIndex((section) => section.key === currentSection)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? sections.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + sections.length) % sections.length
+        keyboardTabChange.current = sections[next].key !== currentSection
+        navigate(sections[next].key)
+        event.currentTarget.querySelector<HTMLElement>(`[data-project-tab="${sections[next].key}"]`)?.focus()
+      }}>
+        {sections.map(({ key, label, icon: Icon }) => <a className="gizmo-register-tab" role="tab" data-project-tab={key} key={key} href={projectUrl(caseId, key)} aria-selected={currentSection === key} tabIndex={currentSection === key ? 0 : -1}
+          id={`project-tab-${key}`} aria-controls={`project-content-${caseId}`} aria-current={currentSection === key ? 'page' : undefined}
           onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); navigate(key) } }}><Icon size={18} /><span>{label}</span></a>)}
       </nav>
-      <div className="gizmo-project-content" aria-label={sectionLabel}>
+      <div className="gizmo-project-content" id={`project-content-${caseId}`} role="tabpanel" aria-label={sectionLabel}>
         <section hidden={view !== 'overview'}>
           <div className="gizmo-section-heading"><h2>Översikt</h2><span className="gizmo-secondary">{projectStatus[project.status]}</span></div>
           <dl className="gizmo-overview-facts"><div><dt>Beställare</dt><dd>{customer?.name ?? project.customerName}</dd><dd>{customer?.email ?? project.customerEmail ?? 'E-post saknas'}</dd></div><div><dt>{offerLabel}</dt><dd>{base === null ? 'Belopp saknas' : money(base)}</dd><dd>Grundåtagande inkl. moms</dd></div><div><dt>Underlag</dt><dd>{project.items.length} åtgärder</dd><dd>{project.attachments.length} bilder och filer</dd></div></dl>
           <div className="gizmo-overview-row"><div><h3>Projektarbete</h3><p>{projectNeeds(project)}</p></div>{open('work', 'Öppna projektarbete')}</div>
-          <div className="gizmo-overview-row"><div><h3>Offert</h3><p>{offer ? `${offer.draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(customerOfferBaseAmount(offer.draft))}` : 'Kunde inte hämtas'}</p></div>{open('offer', 'Öppna offert')}</div>
+          <div className="gizmo-overview-row"><div><h3>Offert</h3><p>{estimate ? `${estimate.draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(customerOfferBaseAmount(estimate.draft))}` : 'Kunde inte hämtas'}</p></div>{open('offer', 'Öppna offert')}</div>
           <div className="gizmo-overview-row"><div><h3>Avtal</h3><p>{offerLabel}{accepted ? ` · Version ${accepted.version}` : ''}</p></div>{open('contract', 'Öppna avtal')}</div>
           <div className="gizmo-overview-row"><div><h3>Val och tillval</h3><p>{offer?.planning?.available ? `${offer.planning.items.length} planerade · ${offer.planning.sharedItems.length} delade med beställaren` : 'Ingen tillgänglig planering'}</p></div>{open('choices', 'Öppna val och tillval')}</div>
           <div className="gizmo-overview-row"><div><h3>Betalning och fakturering</h3><p>{(contract ? contract.snapshot.paymentPlan : offer?.draft.paymentPlan)?.installments.length ?? 0} delbetalningar{contract ? ' · i avtalsversionen' : ' · internt utkast'}</p></div>{open('payments', 'Öppna betalning och fakturering')}</div>
@@ -108,10 +124,15 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}
           customerRefresh={customerRefresh}
           section={view === 'work' || view === 'files' ? view : 'hidden'} onWorkspaceChange={setWorkspace} onBusyChange={setWorkBusy} onDirtyChange={setWorkDirty} />
-        <div hidden={!offerViews[view]}>
+        <div hidden={!offerViews[view] || view === 'offer' || view === 'offerReview'}>
           {initialOffer ? <CustomerOfferEditor actionCase={project} initial={initialOffer} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource}
-            embedded active={Boolean(offerViews[view])} view={offerViews[view] ?? 'edit'} onViewChange={navigateOffer} onWorkspaceChange={setOffer} onCustomerChanged={customerChanged} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} sourcePending={workDirty || workBusy || scheduleDirty} />
+            embedded draftTarget="contract" offerItems={estimate?.draft.items ?? []} active={Boolean(offerViews[view]) && view !== 'offer' && view !== 'offerReview'} view={view !== 'offer' && view !== 'offerReview' ? offerViews[view] ?? 'contract' : 'contract'} onViewChange={navigateOffer} onWorkspaceChange={setOffer} onCustomerChanged={customerChanged} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} sourcePending={workDirty || workBusy || scheduleDirty} />
             : <section className="gizmo-empty" role="alert"><h2>{sectionLabel}</h2><p>{initialOfferError || 'Offertuppgifterna kunde inte hämtas. Projektarbete och filer är fortfarande tillgängliga.'}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>}
+        </div>
+        <div hidden={view !== 'offer' && view !== 'offerReview'}>
+          {estimate && <CustomerOfferEditor actionCase={project} initial={estimate} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource}
+            embedded draftTarget="offer" active={view === 'offer' || view === 'offerReview'} view={view === 'offerReview' ? 'offerDocument' : 'edit'}
+            onViewChange={navigateOffer} onWorkspaceChange={setEstimate} onDirtyChange={setEstimateDirty} sourcePending={workDirty || workBusy || scheduleDirty} />}
         </div>
         <section hidden={view !== 'schedule'}>
           <div className="gizmo-section-heading"><h2>Tidsplan</h2></div>

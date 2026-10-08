@@ -64,6 +64,7 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  offerDraft?: { draft: CustomerOfferDraft; revision: number; costing?: CustomerOfferCosting }
   standardTermsFile?: CustomerOfferFile | null
   propertyLink?: import('../properties/identity').ProjectPropertyLink
   customerLink?: import('./customerRegistry').ContractCustomerLink

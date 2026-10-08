@@ -18,12 +18,13 @@ import {
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
 type Params = { params: Promise<{ caseId: string }> }
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   try {
     return NextResponse.json(
       await getCustomerOfferWorkspace(
         await customerOfferContext(),
-        (await params).caseId
+        (await params).caseId,
+        new URL(request.url).searchParams.get('draftTarget') === 'offer' ? 'offer' : 'contract'
       ),
       { headers: { 'Cache-Control': 'no-store' } }
     )
@@ -39,8 +40,10 @@ export async function POST(request: Request, { params }: Params) {
     if (body.operation === 'prepare_standard_terms') return NextResponse.json(
       { file: await prepareStandardContractTerms(ctx, caseId) }, { headers: { 'Cache-Control': 'no-store' } }
     )
-    if (body.operation === 'save') await saveCustomerOffer(ctx, caseId, body)
-    else if (body.operation === 'autosave') await saveCustomerOffer(ctx, caseId, body, 'autosave')
+    const target = body.draftTarget === 'offer' ? 'offer' : 'contract'
+    if (target === 'offer' && !['save', 'autosave'].includes(String(body.operation))) throw new Error('CUSTOMER_OFFER_INVALID')
+    if (body.operation === 'save') await saveCustomerOffer(ctx, caseId, body, 'manual', target)
+    else if (body.operation === 'autosave') await saveCustomerOffer(ctx, caseId, body, 'autosave', target)
     else if (body.operation === 'bind_customer') await bindContractCustomer(ctx, caseId, body)
     else if (body.operation === 'bind_property') await bindProjectProperty(ctx, caseId, body)
     else if (body.operation === 'separate_choices') await separateCustomerChoices(ctx, caseId, body)
@@ -51,7 +54,7 @@ export async function POST(request: Request, { params }: Params) {
     else if (body.operation === 'withdraw')
       await withdrawCustomerOffer(ctx, caseId, String(body.id))
     else throw new Error('CUSTOMER_OFFER_INVALID')
-    return NextResponse.json(await getCustomerOfferWorkspace(ctx, caseId), {
+    return NextResponse.json(await getCustomerOfferWorkspace(ctx, caseId, target), {
       headers: { 'Cache-Control': 'no-store' }
     })
   } catch (error) {

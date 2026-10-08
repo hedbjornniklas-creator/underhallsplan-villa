@@ -38,17 +38,16 @@ test('contract imports use the shared draft directly and preserve contract metad
   assert.equal(saved.items[1].amountOre, null)
 })
 
-test('contract exposes a collapsed direct import without mounting competing import controls', () => {
+test('contract has its own row editor and two explicit imports; offer retains its separate import', () => {
   const editor = readFileSync('src/components/tasks/CustomerOfferEditor.tsx', 'utf8')
-  const contract = editor.slice(editor.indexOf('<h3 className="mt-6 font-semibold">Arbetsdelar och avgränsningar'))
-  assert.match(contract, /\{contractView && <CustomerOfferSourcePicker[^>]*collapsible/)
+  assert.match(editor, /<CustomerContractWorkParts items=\{draft.items\}/)
   assert.match(editor, /\{!contractView && <CustomerOfferSourcePicker/)
   assert.doesNotMatch(editor, /onReviewCountChange|sourceReviewCount/)
-  const picker = readFileSync('src/components/tasks/CustomerOfferSourcePicker.tsx', 'utf8')
-  assert.match(picker, /useState\(!collapsible\)/)
-  assert.match(picker, /hidden=\{!expanded\}/)
-  assert.match(picker, /Hämta från projektdata/)
-  assert.match(picker, /Välj alla arbetsdelar/)
+  const picker = readFileSync('src/components/tasks/CustomerContractWorkParts.tsx', 'utf8')
+  assert.match(picker, /Hämta från Projektarbete/)
+  assert.match(picker, /Hämta från Offert/)
+  assert.match(picker, /Hämta valda/)
+  assert.match(picker, /Välj alla/)
 })
 
 test('intentional contract edits do not masquerade as project changes; a later project change is detected', async () => {
@@ -127,10 +126,10 @@ test('editor follows ABS 18 contract sequence, keeps explicit imports and pendin
   const start = editor.indexOf('<ProjectEditorRow title="Offertuppgifter"')
   const layout = editor.slice(start)
   const order = ['title="Beställare"', 'title="Entreprenör"', "contractSection('controls'", 'title="Fastigheten"', 'title="Uppdraget"', 'title="Övriga bilagor"',
-    "contractSection('work-environment'", "contractSection('advice'", 'title="Priset"', "contractSection('changes'", 'title="Tid för betalning"',
+    "contractSection('work-environment'", "contractSection('advice'", '{priceSection}', "contractSection('changes'", 'title="Tid för betalning"',
     'title="Tid för arbetenas påbörjande och avslutande"', "contractSection('delay'", "contractSection('inspection'", "contractSection('insurance'", 'title="Övrigt"']
   let previous = -1
-  for (const part of order) { const position = layout.indexOf(part); assert.ok(position > previous, part); previous = position }
+  for (const part of order) { const position = layout.indexOf(part, previous + 1); assert.ok(position > previous, part); previous = position }
   assert.match(editor, /blocked=\{sourcePending \|\| locked \|\| Boolean\(busy\)\}/)
   assert.doesNotMatch(editor, /sourceReviewCount/)
   const picker = readFileSync('src/components/tasks/CustomerOfferSourcePicker.tsx', 'utf8')

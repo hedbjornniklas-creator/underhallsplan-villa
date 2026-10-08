@@ -1,4 +1,4 @@
-# Gizmo / Uppdrag - varumärkesprofil 2.1
+# Gizmo / Uppdrag - varumärkesprofil 2.2
 
 Beslutad riktning: 2026-10-01. Implementation och verifiering dokumenteras nedan.
 Gäller Uppdrags interna projektlista, projektytor och tillhörande arbetsdialoger.
@@ -32,10 +32,11 @@ Projekt är standardvyn på /uppdrag. Aktuellt och Statistik behålls som
 separata tvärgående vyer. Länkar till en specifik befintlig uppgift öppnar fortsatt
 uppgiften i Aktuellt; uppgifter och projekt slås inte ihop i databasen.
 
-Projektnavigering: Översikt, Projektarbete, Offert och avtal, Val och tillval,
-Betalningsplan, Tidsplan, Bilder och filer. Visa som beställare är en avskild
+Projektnavigering: Översikt, Projektarbete, Offert, Avtal, Val och tillval,
+Betalning och fakturering, Tidsplan, Bilder och filer. Registerflikarna ligger
+över arbetsytan på både dator och mobil. Visa som beställare är en avskild
 förhandsgranskningshandling i projekthuvudet. Kundens sida har inte intern meny.
-Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektnivå.
+Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Listor och dator
 
@@ -51,6 +52,14 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
   för redigering; nya handlingar öppnas direkt. Filöppning finns i raden med
   ikon, tooltip och separat flik. Långa typer har tooltip och visas i sin
   helhet vid redigering. På smal yta staplas typ och datum under namnet.
+- Arbetsdelar och avgränsningar i Avtal använder samma kompakta radprincip:
+  tonad rubrikrad, normalt 60 px, rubrik, kort sammanfattning och kundpris.
+  En rad öppnas åt gången för alla textfält, pris, flytt och borttagning.
+  Den öppna raden är dämpat gul; pekning/fokus är grönblå. Redigering ligger
+  i arbetsytan, inte i en andra offertvy.
+- Avtalsstatus är en hopfällbar fullbreddsrad över formuläret. Grundstatus och
+  belopp syns direkt; utskick, granskning och versionshistorik öppnas vid behov.
+  Ingen fast högerspalt tränger ihop avtalsfälten.
 - När ABS 18 väljs är dess standardvillkor en fast rad i samma handlingslista,
   med versionsbeteckning och filöppningsikon. Den kan inte misstas för ett
   redigerbart formulär eller tas bort medan den avtalsgrunden är vald.
@@ -65,7 +74,7 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 - Sidrubrik 26/34 px vikt 600; sektionsrubrik 20/28; underrubrik 16/24.
   Listtext 14/21 px, vikt 400, projektnamn vikt 600. Ingen viewportskalad text.
 - Kontroller minst 44 px. Lucide-ikoner med namn och tooltip för verktyg.
-- Sidomenyn ligger kvar inom projektet. Åtgärdsdialoger behåller stängningsskydd,
+- Registerflikarna ligger kvar inom projektet. Åtgärdsdialoger behåller stängningsskydd,
   tangentbordsfokus och samma visuella identitet även när de renderas via portal.
 
 ## Mobil
@@ -93,6 +102,11 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 - Byte mellan projektdelar behåller formulärutkast och pågående uppladdning.
   Byte av projekt eller omladdning är inte samma sak som ett internt vybyte.
 - Utkast, publicerad offert och godkänt grundavtal är olika tillstånd.
+- Avtal har eget utkast och egen revision. Offert och Projektarbete är endast
+  källor vid uttrycklig import. Hämta från Projektarbete eller Hämta från Offert
+  öppnar en krysslista; valda texter ersätts, kundpriser hämtas bara efter ett
+  separat val. Alla avtalsrader kan redigeras/raderas före godkännande.
+  Ett godkänt avtal och dess versionskopia är låsta även i databasen.
 - Betalningsplanens belopp är inte fakturerat eller betalt. Ingen faktureringsgraf
   visas innan en verklig fakturakälla finns.
 - Val/tillval ligger separat från grundavtalet. Planering är ingen beställning.
@@ -101,11 +115,17 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
   Intern sparning och delning med beställaren är separata handlingar. Avtalstider
   och beslutsdatum visas separat. Beroenden och automatisk planering är senare steg.
 - Dokumentåtkomst och delning använder befintliga behörighetsregler.
-- Äldre /kund-länkar leder till samma projekts Offert och avtal.
+- Äldre /kund-länkar leder till samma projekts interna arbetsyta.
 - Den interna projektmenyn och projekthuvudet ska inte följa med vid utskrift.
 
 ## Beslutslogg
 
+- 2026-10-08: Användaren beslutar att Avtal ska ha helt egna texter och egen
+  databaslagring, låsta vid godkännande. Arbetsdelar blir kompakta öppningsbara
+  rader med fri redigering och borttagning. Import kan ske från Projektarbete
+  eller sparad Offert och skriver bara över uttryckligen valda rader.
+  Projektnavigeringen flyttas till registerflikar överst. Avtalsstatus flyttas
+  till en hopfällbar fullbreddsrad för att frigöra formulärets bredd.
 - 2026-10-07: Användaren förenklar importen till Hämta från projektdata under
   Arbetsdelar och avgränsningar. En minimerad öppnare visar en kompakt krysslista
   enligt Tydlig tabell: Välj alla eller enskilda arbetsdelar, sedan Hämta och ersätt.

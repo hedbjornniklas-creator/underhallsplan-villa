@@ -225,7 +225,7 @@
 .gizmo-workspace .gizmo-primary { background: var(--uppdrag-ink); border-color: var(--uppdrag-ink); color: white; }
 .gizmo-workspace .gizmo-primary:hover:not(:disabled) { background: var(--uppdrag-hover); }
 .gizmo-text-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; color: var(--uppdrag-link); text-align: left; }
-.gizmo-project-layout { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: 32px; }
+.gizmo-project-layout { display: block; }
 .gizmo-project-nav { align-self: start; padding: 24px 0; position: sticky; top: 12px; }
 .gizmo-project-nav a { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 12px; border-left: 3px solid transparent; margin-bottom: 4px; color: var(--uppdrag-muted); }
 .gizmo-project-nav a svg { flex-shrink: 0; }
@@ -345,7 +345,7 @@
   .gizmo-mobile-label::after { content: ':'; }
 }
 @media (max-width: 1100px) {
-  .gizmo-project-layout { grid-template-columns: 180px minmax(0, 1fr); gap: 20px; }
+  .gizmo-project-layout { display: block; }
   .gizmo-work-columns { grid-template-columns: 1fr; }
   .gizmo-work-columns > span:not(:first-child) { display: none; }
   .gizmo-work-row { grid-template-columns: minmax(0, 1fr) 20px; gap: 4px 12px; }
@@ -378,7 +378,7 @@
 }
 
 @media print {
-  .gizmo-project-header, .gizmo-project-nav { display: none !important; }
+  .gizmo-project-header, .gizmo-project-nav, .gizmo-project-tabs { display: none !important; }
   .gizmo-project-page { max-width: none; padding: 0; }
   .gizmo-project-layout { display: block; }
   .gizmo-project-content { padding: 0; }
@@ -403,6 +403,7 @@
   border-bottom: 1px solid var(--uppdrag-line);
 }
 .uppdrag-scope.gizmo-dialog-scope .gizmo-register-tab[role='tab'],
+.uppdrag-scope .gizmo-project-tabs .gizmo-register-tab[role='tab'],
 .uppdrag-scope .gizmo-payment-tabs .gizmo-register-tab[role='tab'] {
   position: relative; isolation: isolate; display: inline-flex; align-items: center;
   justify-content: center; flex-shrink: 0; gap: 9px; margin-bottom: -1px;
@@ -417,6 +418,7 @@
 }
 .uppdrag-scope .gizmo-register-tab[aria-selected='false']:not(:disabled):hover::before { background: #e8ece9; }
 .uppdrag-scope.gizmo-dialog-scope .gizmo-register-tab[aria-selected='true'],
+.uppdrag-scope .gizmo-project-tabs .gizmo-register-tab[aria-selected='true'],
 .uppdrag-scope .gizmo-payment-tabs .gizmo-register-tab[aria-selected='true'] {
   z-index: 2; height: 52px; color: var(--uppdrag-ink); background: transparent;
 }
@@ -426,6 +428,22 @@
 .uppdrag-scope .gizmo-register-tab:disabled { opacity: .45; cursor: not-allowed; }
 .uppdrag-scope .gizmo-register-tab svg { flex-shrink: 0; }
 .uppdrag-scope .gizmo-payment-tabs[role='tablist'] { overflow-x: auto; overflow-y: hidden; }
+.uppdrag-scope .gizmo-project-tabs[role='tablist'] { overflow-x: auto; overflow-y: hidden; padding-inline: 8px; }
+.uppdrag-scope .gizmo-project-tabs .gizmo-register-tab[role='tab'] { padding-inline: 17px; text-decoration: none; }
+.gizmo-project-content { padding-top: 20px; }
+.gizmo-contract-layout { display: flex; flex-direction: column; gap: 24px; }
+.gizmo-contract-layout > aside { order: -1; }
+.gizmo-contract-status { border-block: 1px solid var(--uppdrag-line); }
+.gizmo-contract-status-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; min-height: 60px; padding: 12px 16px; background: #edf1f1; cursor: pointer; font-size: 14px; }
+.gizmo-contract-status-heading strong { margin-left: auto; font-size: 18px; }
+.gizmo-contract-status[open] .gizmo-contract-status-chevron { transform: rotate(180deg); }
+.gizmo-contract-status-body { max-width: 780px; padding: 16px; }
+.gizmo-contract-parts-heading { display: flex; justify-content: space-between; gap: 16px; min-height: 44px; align-items: center; padding: 10px 12px; background: #edf1f1; border-block: 1px solid var(--uppdrag-line); font-size: 13px; font-weight: 600; }
+.gizmo-contract-parts .gizmo-editor-row-toggle { min-height: 60px; padding: 10px 12px; }
+.gizmo-contract-parts .gizmo-editor-row-toggle[aria-expanded='true'] { background: #fff7d6; }
+.gizmo-contract-parts .gizmo-editor-row-toggle:hover { background: #f1f6f5; }
+.gizmo-contract-parts .gizmo-editor-row-label { display: flex; flex-direction: column; }
+.gizmo-contract-parts .gizmo-editor-row-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: min(65vw, 700px); font-size: 12px; }
 @media (max-width: 639px) {
   .uppdrag-scope .gizmo-register-tabs[role='tablist'] { padding-inline: 14px; gap: 7px; }
   .uppdrag-scope.gizmo-dialog-scope .gizmo-register-tab[role='tab'],

@@ -163,6 +163,9 @@ function syncTestRecipient(binding = false) {
   projects.cases[0].participants = projects.cases[0].participants.map((p) => p.role === 'customer' ? state.recipient : p)
 }
 let schedule = { available: true, revision: 0, rows: [], sharedRows: [] }, slowSave = false
+const independentContract = process.argv.includes('--independent-contract')
+const estimateState = { draft: structuredClone(state.draft), revision: state.revision, costing: structuredClone(state.costing ?? {}) }
+if (independentContract) { state.offers = []; state.offerDraft = estimateState }
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
   const json = (body, status = 200) => {
@@ -305,6 +308,17 @@ const server = createServer(async (req, res) => {
       } catch (error) { json({ error: error.message }, 400) }
       return
     } else if (path.endsWith('/customer-offers')) {
+      if (independentContract && body.draftTarget === 'offer') {
+        if (!['save', 'autosave'].includes(body.operation)) { json({ error: 'Invalid operation' }, 400); return }
+        if (body.revision !== estimateState.revision) { json({ error: 'Offerten har ändrats.' }, 409); return }
+        try {
+          estimateState.draft = normalizeCustomerOffer(body.draft)
+          estimateState.costing = normalizeCustomerOfferCosting(body.costing, estimateState.draft.items)
+          estimateState.revision++
+          json({ ...state, ...estimateState, offerDraft: undefined })
+        } catch (error) { json({ error: error.message }, 400) }
+        return
+      }
       if (body.operation === 'prepare_standard_terms') {
         if (failSave) { failSave = false; json({ error: 'Standardvillkoren kunde inte förberedas. Försök igen.' }, 503); return }
         state.standardTermsFile = { id: id(140), fileName: ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: ABS18_TERMS.size }
@@ -394,7 +408,8 @@ const server = createServer(async (req, res) => {
     return
   }
   if (path === '/fixture' || path.endsWith('/customer-offers')) {
-    json(state)
+    json(independentContract && new URL(req.url, 'http://localhost').searchParams.get('draftTarget') === 'offer'
+      ? { ...state, ...estimateState, offerDraft: undefined } : state)
     return
   }
   if (path.endsWith('/customer-planning')) { json(state.planning); return }

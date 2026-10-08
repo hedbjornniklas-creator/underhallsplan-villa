@@ -41,7 +41,7 @@ export async function bindProjectProperty(ctx: Context, caseId: string, payload:
     draft.contractDetails.propertyReference = draft.contractDetails.fields.property.text
   }
   const property = normalizePropertyDetails(binding.property)
-  const { error } = await createSupabaseAdminClient().rpc('write_action_case_property', {
+  const { error } = await createSupabaseAdminClient().rpc('write_action_case_contract_property', {
     p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId, p_mode: binding.mode,
     p_data: { revision: payload.revision, body: draft, requestId: offerId(binding.requestId), property,
       ...(binding.mode === 'existing' ? { propertyId: offerId(binding.propertyId) } : {}),

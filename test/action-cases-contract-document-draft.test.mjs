@@ -77,7 +77,7 @@ test('the editor recovers only an unlocked contract and uses the existing queue 
   assert.match(editor, /disabled=\{Boolean\(documentRecovery\)\}/)
   assert.match(editor, /aria-label="Behåll de sparade handlingarna"/)
   assert.match(editor, /autosave\.reset\(data.revision\)/)
-  assert.match(editor, /if \(operation === 'save' && contractView && !locked &&[\s\S]*?autosave.change\(next\)/)
+  assert.match(editor, /if \(operation === 'save' && draftTarget === 'contract' && !locked &&[\s\S]*?autosave.change\(next\)/)
   assert.match(editor, /!contractDocumentsAcknowledged\(submitted.draft, result.draft/)
   assert.match(editor, /operation === 'save' && !contractDocumentsAcknowledged\(draft, data.draft/)
   assert.match(assignment, /type="date" min="0001-01-01" max="9999-12-31"/)

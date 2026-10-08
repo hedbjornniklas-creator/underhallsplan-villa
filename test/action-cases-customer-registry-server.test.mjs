@@ -47,7 +47,7 @@ test('uses common customer parser and atomic RPC with organization, actor, revis
   p.draft.contractParties.customers[0].personalNumber = '199001011234'
   await h.writeContractCustomer(ctx, id(1), p, true)
   const { name, args } = h.calls[1]
-  assert.equal(name, 'write_action_case_contract_customer')
+  assert.equal(name, 'write_action_case_contract_parties')
   assert.equal(args.p_org_id, ctx.orgId)
   assert.equal(args.p_user_id, ctx.userId)
   assert.equal(args.p_mode, 'create')

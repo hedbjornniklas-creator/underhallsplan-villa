@@ -32,7 +32,7 @@ export async function writeContractCustomer(ctx: Context, caseId: string, payloa
     }
   }
   const costing = payload.costing === undefined ? undefined : normalizeCustomerOfferCosting(payload.costing, draft.items)
-  const result = await createSupabaseAdminClient().rpc('write_action_case_contract_customer', {
+  const result = await createSupabaseAdminClient().rpc('write_action_case_contract_parties', {
     p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
     p_mode: binding?.mode ?? 'save',
     p_data: { revision: payload.revision, body: draft, ...(costing === undefined ? {} : { costing }),

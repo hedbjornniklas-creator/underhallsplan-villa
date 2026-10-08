@@ -884,6 +884,47 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   klicktester omfattar sparfel, avbruten/remonterad editor, aterstallning genom
   samma autospar, riktig omladdning samt tva flikar med nyare servermetadata.
 
+## Oberoende avtal och registerflikar 2026-10-08
+
+- Beslut: Avtal har egna redigerbara texter, inte samma utkast som Offert.
+  Arbetsdelar och avgransningar visas i kompakta oppningsbara rader. Rubrik,
+  omfattning, forutsattningar, ingar inte, avradan och pris kan andras direkt.
+  Varje arbetsdel kan flyttas/raderas och en tom arbetsdel kan laggas till.
+- Hamtning fran Projektarbete eller sparad Offert ar uttrycklig. Valj alla
+  eller enskilda rader, sedan Hamta valda och ersatt texter. Belopp behalls
+  som standard; Hamta aven kundpriser ar ett separat val. Ej valda rader
+  behalls. Tillval importeras inte som en del av det signerade grundatagandet.
+- Ny tabell `action_case_customer_contract_drafts` har egna revisioner,
+  autosparning, organisationsgranser och service-rollsatkomst. Befintliga
+  utkast kopieras en gang utan att radera, sammanfoga eller gissa bland aldre
+  dubbla arbetsdelar. Omkord migration skriver aldrig over avtalstexten.
+  Offert sparas fortsatt i sin tidigare tabell med egen revision.
+- Avtalsparter, strukturerad fastighet, intern kostnadsgrund och betalningsplan
+  sparas via avtalsutkastets egna RPC-funktioner. Fakturamottagaren och
+  gemensam projektplanering behaller sina befintliga register och behorigheter.
+- Publicering fryser avtalets snapshot och bilagor som tidigare. Egen
+  `contract_revision` ger idempotent publicering utan kollision med aldre
+  offertrevisioner. Godkannande laser nya avtalsutkastet aven mot direkt
+  UPDATE/DELETE med service-roll; kopierade publicerade versioner ar oforandrade.
+- Projektnavigeringen ar registerflikar overst. Avtalsstatus ligger som en
+  hopfallbar fullbreddsrad ovanfor formularet i stallet for en smal hogerspalt.
+  Arbetsdelar foljer profilens Tydlig tabell med 60 px normalrader.
+- Drift: `docs/db/2026-10-08_01_independent_customer_contract.sql` ar
+  installerad i Supabase. Fore apppublicering verifierades alla atta funktioners
+  innehall mot releasefilen, tabellens RLS, nekad klientatkomst och triggers.
+  Testprojektets kopia och offertutkast hade samma revision 54 och samma body.
+  Pausa avtalsredigering mellan migrering och driftsattning: den gamla
+  appversionen skriver fortfarande bara till offerttabellen.
+  Ingen avtalsversion eller kundutskick andrad under testerna. Aldre dubbla
+  rader i ett utkast maste valjas bort uttryckligen.
+- Verifiering: 346 action-case-tester inklusive faktisk SQL-korning i PGlite,
+  oberoende sparning, revisionskonflikter, nekad klientatkomst, oforandrade
+  snapshots och lasning efter godkannande. Lokala klicktester visar import
+  fran bada kallorna, egna texter, bibehallna priser, tillagg, borttagning och
+  omladdning, sparfel/aterforsok och omordning. TypeScript, riktad ESLint och
+  produktionsbygget med Webpack passerar. Tangentbordsbyte mellan registerflikar
+  behaller fokus pa vald flik. Datorvyn ar visuellt kontrollerad vid 1280 px.
+
 ## Senare steg, inte implementerade
 
 - Fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.
