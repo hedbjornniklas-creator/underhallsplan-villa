@@ -1594,8 +1594,8 @@ export default async function Page({
   const diagnostics = {
     propertyId: resolvedParams.propertyId ?? null,
     inspectionId: resolvedParams.inspectionId ?? null,
-    hasUser: Boolean(authData.user),
-    userId: authData.user?.id ?? null,
+    hasUser: Boolean(userId),
+    userId,
     cookieNames: cookieEntries.map((cookie) => cookie.name),
     supabaseCookieNames: cookieEntries
       .map((cookie) => cookie.name)
@@ -1627,7 +1627,7 @@ export default async function Page({
   const showDiagnostics =
     !property ||
     !inspection ||
-    !authData.user ||
+    !userId ||
     Boolean(propertyError) ||
     Boolean(inspectionError) ||
     Boolean(profileError) ||
@@ -1635,7 +1635,7 @@ export default async function Page({
     Boolean(disclosureError)
   return (
     <div className="min-h-screen bg-neutral-100 print:bg-white">
-      {!authData.user && <SessionBridge />}
+      {!userId && <SessionBridge />}
       {isAutoPrint && <AutoPrintTrigger />}
       {!isEmbed && (
         <ReportToolbar
