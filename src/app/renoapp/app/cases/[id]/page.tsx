@@ -259,7 +259,7 @@ export default function RenoAppCaseDetailPage() {
       if (requirementDecisionAutosave.status === 'error') throw new Error('Underlagsvalen kunde inte sparas. Ladda om och kontrollera dem.')
       const selectedRequirementIds = item?.underlag.filter(row => row.requirementDecision === 'requested').map(row => row.id) ?? []
       const selectedClarifications = (item?.clarifications ?? []).filter(row => row.requested && isOpenClarification(row)).map(row => ({ questionId: row.question_id, revision: row.revision }))
-      const fingerprint = JSON.stringify([selectedStatus, reason, selectedRequirementIds, selectedClarifications, item?.completion?.id])
+      const fingerprint = JSON.stringify([selectedStatus, reason, conditions, selectedRequirementIds, selectedClarifications, item?.completion?.id])
       if (completionAttemptRef.current?.fingerprint !== fingerprint) completionAttemptRef.current = { fingerprint, id: crypto.randomUUID() }
       const response = await fetch(`/api/renoapp/app/cases/${caseId}`, {
         method: 'POST',
@@ -268,6 +268,7 @@ export default function RenoAppCaseDetailPage() {
         },
         body: JSON.stringify({
           status: selectedStatus,
+          decisionId: selectedStatus !== 'need_info' ? completionAttemptRef.current.id : undefined,
           reason,
           completionRequestId: completionAttemptRef.current.id,
           selectedRequirementIds,
@@ -283,8 +284,12 @@ export default function RenoAppCaseDetailPage() {
       }
 
       setItem(payload.item ?? null)
-      setActionSuccess(payload.item?.completion?.delivery_status === 'failed'
-        ? 'Begäran sparades, men mejlet kunde inte skickas.' : 'Ärendet uppdaterades.')
+      setActionSuccess(selectedStatus !== 'need_info'
+        ? payload.item?.decisions[0]?.deliveryStatus === 'sent'
+          ? 'Beslutet är sparat och låst. Beslutsmejlet har skickats till mejlleverantören.'
+          : 'Beslutet är sparat och låst. Kontrollera beslutsmejlets leveransstatus.'
+        : payload.item?.completion?.delivery_status === 'failed'
+          ? 'Begäran sparades, men mejlet kunde inte skickas.' : 'Begäran har skickats.')
       completionAttemptRef.current = null
       setReason('')
       setConditions('')
@@ -292,6 +297,8 @@ export default function RenoAppCaseDetailPage() {
       setReloadKey((current) => current + 1)
     } catch (submitError) {
       setActionError(submitError instanceof Error ? submitError.message : 'Kunde inte uppdatera RenoApp-ärendet.')
+      // The transaction may have committed even if the response/email failed.
+      setReloadKey((current) => current + 1)
     } finally {
       setSubmitting(false)
     }
@@ -390,13 +397,17 @@ export default function RenoAppCaseDetailPage() {
         onDecisionConfirmedChange={setDecisionConfirmed}
         onRequirementDecisionChange={handleRequirementDecisionChange}
         onRetryDelivery={async () => {
-          if (!item?.completion) return
+          const decision = item?.decisions[0]
+          if (!decision && !item?.completion) return
           setSubmitting(true)
           setActionError(null)
+          setActionSuccess(null)
           try {
             const response = await fetch(`/api/renoapp/app/cases/${caseId}`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'need_info', retryCompletion: true, completionRequestId: item.completion.id }),
+              body: JSON.stringify(decision
+                ? { retryDecision: true, decisionId: decision.id }
+                : { status: 'need_info', retryCompletion: true, completionRequestId: item.completion!.id }),
             })
             const payload = await response.json()
             if (!response.ok) throw new Error(payload.error)

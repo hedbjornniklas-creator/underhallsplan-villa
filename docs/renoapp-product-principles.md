@@ -1,6 +1,6 @@
 # RenoApp - produktprinciper och beslut
 
-Senast uppdaterad: 2026-09-29.
+Senast uppdaterad: 2026-10-08.
 Beslutsansvarig: HusHubs produktansvarige.
 Grund: produktbeslut och förtydliganden i RenoApp-arbetets chatthistorik.
 
@@ -42,7 +42,10 @@ som en teknisk granskning eller garanti för att åtgärden är tillåten.
 Systemet ska inte rangordna kvarstående uppgifter efter viktighet eller göra
 dem till beslutsspärrar. Behörig styrelse kan godkänna en inskickad ansökan,
 med eller utan villkor, även om frågor eller underlag återstår. Endast utkast
-är låsta för beslut. Behörighetskontroller och skydd mot sparfel behålls.
+är låsta för ett första beslut. Fattade beslut är slutgiltiga och får inte ändras,
+ersättas med ett nytt beslut eller återöppnas för komplettering. Beslutets
+motivering och villkor bevaras. Återförsök av ett beslutsmejl ändrar inte beslutet.
+Behörighetskontroller och skydd mot sparfel behålls.
 Alla beslut kräver en motivering, även godkännande. Villkorat godkännande
 kräver dessutom villkorstext. Systemet bedömer inte motiveringens innehåll.
 
@@ -226,6 +229,7 @@ tester. Läs relevant dokument tillsammans med aktuell kod inför en ändring.
 | Frivillig beställning av sakkunnig hjälp och dess begränsningar | [Konsultgranskning](renoapp-consultant-reviews.md) |
 | BRF-registrering, aktivering, synlighet och behörighet | [BRF-livscykel](renoapp-brf-lifecycle-rollout.md) |
 | Mejlstruktur och leverans | [Mejlleverans](renoapp-email-delivery.md) |
+| Slutgiltiga beslut, atomart sparande och beslutsmejl | [Beslut](renoapp-final-decisions.md) |
 | Beslutat ärendepris, kommunikation och återstående debiteringsflöde | [Pris och betalning](renoapp-pricing.md) |
 
 ## Öppna frågor, inte beställd utveckling
@@ -272,6 +276,7 @@ tillstånd att ändra produktionskonfiguration.
 
 | Datum | Beslut eller dokumentändring | Grund |
 | --- | --- | --- |
+| 2026-10-08 | Fattade beslut får inte ändras. Godkännande, godkännande med villkor och avslag är slutgiltiga; ingen omprövningsfunktion införs. Beslutsmejl ska kunna skickas igen vid misslyckat/obekräftat utskick utan att ett nytt beslut skapas. | Användarens uttryckliga beslut: "fattade beslut skall inte ändras", efter rapport om uteblivet beslutsmejl och fortsatt redigerbart beslut. |
 | 2026-09-29 | Ansökningar äger sina egna lägenhets- och sökandeuppgifter. Ingen automatisk matchning mot lägenheter eller kontakter från andra ärenden. Inget krav på lägenhetsregister vid anslutning och ingen historisk migrering av testärenden. | Användaren förtydligade att tjänsten fortfarande testas och beställde rättningen med separata uppgifter per ansökan. Pavlinas test kan göras om. |
 | 2026-09-21 | Styrelsen får fatta beslut trots kvarstående frågor, saknade handlingar och uppgifter. RenoApp föreslår utan att prioritera brister eller spärra beslut; endast utkast är låsta för beslut. Motivering är obligatorisk även vid godkännande, och villkor krävs dessutom vid villkorat godkännande. Öppna frågor bevaras utan automatisk slutbedömning. | Uttryckligt förtydligande av styrelsens beslutsansvar och svaret "obligatorisk". Ersätter pilotens tidigare godkännandespärr. |
 | 2026-09-17 | Ärendepriset sätts till 1 500 kr exkl. moms, utan abonnemangsavgift, när styrelsen väljer att starta handläggningen. Kompletteringar i samma ärende ingår. Sakkunnig hjälp beställs separat. | Slutligt förtydligande: "1500 kr skall vi köra på", efter begäran att uppdatera alla platser. |

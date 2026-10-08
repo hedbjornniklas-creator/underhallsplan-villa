@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getRenoAppCaseDetail, updateRenoAppCaseStatus } from '@/lib/renoapp/server'
+import { getRenoAppCaseDetail, updateRenoAppCaseStatus, sendRenoAppDecisionEmail } from '@/lib/renoapp/server'
 import { COMPLETION_ERRORS } from '@/lib/renoapp/completion'
 import { CLARIFICATION_ERRORS } from '@/lib/renoapp/clarifications'
 
@@ -50,6 +50,14 @@ export async function POST(request: Request, context: RouteContext) {
       selectedRequirementIds?: string[]
       selectedClarifications?: Array<{ questionId: string; revision: number }>
       retryCompletion?: boolean
+      decisionId?: string
+      retryDecision?: boolean
+    }
+
+    if (body.retryDecision === true) {
+      if (typeof body.decisionId !== 'string') return jsonError('Beslut saknas.', 400)
+      const item = await sendRenoAppDecisionEmail(id, body.decisionId, origin)
+      return NextResponse.json({ item })
     }
 
     if (!body.status) {
@@ -58,6 +66,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const item = await updateRenoAppCaseStatus(id, {
       status: body.status,
+      decisionId: typeof body.decisionId === 'string' ? body.decisionId : undefined,
       reason: body.reason ?? null,
       conditions: body.conditions ?? null,
       requestOrigin: origin,
@@ -78,6 +87,9 @@ export async function POST(request: Request, context: RouteContext) {
     if (message === 'PROFILE_NOT_FOUND') return jsonError('Ingen profil hittades för användaren.', 403)
     if (message === 'CASE_NOT_FOUND') return jsonError('RenoApp-ärendet hittades inte.', 404)
     if (message === 'INVALID_CASE_STATUS') return jsonError('Ogiltig status för RenoApp-ärendet.', 400)
+    if (message === 'CASE_DECISION_LOCKED') return jsonError('Beslut är redan fattat och kan inte ändras. Ladda om ärendet.', 409)
+    if (message === 'DECISION_NOT_FOUND') return jsonError('Det aktuella beslutet hittades inte. Ladda om ärendet.', 409)
+    if (message === 'DECISION_ID_REQUIRED') return jsonError('Ladda om ärendet innan du fattar beslut.', 400)
     if (COMPLETION_ERRORS[message]) return jsonError(COMPLETION_ERRORS[message], 409)
     if (CLARIFICATION_ERRORS[message]) return jsonError(CLARIFICATION_ERRORS[message], 409)
     if (message === 'DRAFT_CASE_LOCKED') {

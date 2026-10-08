@@ -1,5 +1,11 @@
 # RenoApp invitation email delivery
 
+Beslutsmejl och låsning av fattade beslut beskrivs i
+[Slutgiltiga beslut](renoapp-final-decisions.md). Den rättningen kräver
+`docs/db/2026-10-08_01_renoapp_final_decisions.sql` före publicering. Äldre
+beslut skickade inte mejl via statusfunktionen trots det tidigare dokumentets
+generella beskrivning av avsändare. De skickas inte automatiskt retroaktivt.
+
 Apply `docs/db/2026-09-07_01_renoapp_invite_message_id.sql` to retain the
 Resend message id on invitations. Mail sending still succeeds if this optional
 logging column has not been deployed; the server logs the id instead.

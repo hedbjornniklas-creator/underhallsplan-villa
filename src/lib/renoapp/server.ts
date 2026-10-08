@@ -15,6 +15,8 @@ import { requireConsultantReviewAccess } from '@/lib/renoapp/consultantReviewAcc
 import { issueBrfInviteForAuthorizedUser } from '@/lib/renoapp/onboarding'
 import { getPublishedRules, getCaseRulesAcceptance } from '@/lib/renoapp/renovationRulesServer'
 import { rulesAcceptanceFields, type RenovationRulesVersion, type RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
+import { isFinalCaseStatus, decisionLabel, type CaseDecision } from '@/lib/renoapp/decisions'
+import { deliverDecisionEmail } from '@/lib/renoapp/decisionDelivery'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ORG_NUMBER_REGEX = /^\d{6}-\d{4}$/
@@ -1430,13 +1432,7 @@ export type RenoAppCaseDetail = {
     } | null
   }>
   requirements: PublicRequirement[]
-  decisions: Array<{
-    id: string
-    decision: string
-    conditions: string | null
-    reason: string | null
-    decidedAt: string
-  }>
+  decisions: CaseDecision[]
   accessLinks: Array<{
     id: string
     email: string
@@ -1459,6 +1455,7 @@ export type RenoAppCaseDetail = {
 }
 
 export type UpdateRenoAppCaseStatusInput = {
+  decisionId?: string
   selectedClarifications?: Array<{ questionId: string; revision: number }>
   completionRequestId?: string
   previousCompletionId?: string | null
@@ -7228,7 +7225,7 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
         .order('uploaded_at', { ascending: false }),
       admin
         .from('renovation_case_decisions')
-        .select('id,decision,conditions,reason,decided_at')
+        .select('id,decision,conditions,reason,decided_at,delivery_status,delivery_error')
         .eq('case_id', caseId)
         .order('decided_at', { ascending: false }),
       admin
@@ -7431,6 +7428,8 @@ async function loadRenoAppCaseDetail(caseId: string, authorizedBrfIds: string[])
       conditions: (row.conditions as string | null | undefined) ?? null,
       reason: (row.reason as string | null | undefined) ?? null,
       decidedAt: String(row.decided_at ?? ''),
+      deliveryStatus: (row.delivery_status ?? 'unknown') as CaseDecision['deliveryStatus'],
+      deliveryError: (row.delivery_error as string | null) ?? null,
     })),
     accessLinks: ((linksResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       id: String(row.id ?? ''),
@@ -7669,6 +7668,20 @@ export async function updateRenoAppCaseStatus(
     throw new Error('DRAFT_CASE_LOCKED')
   }
 
+  if (decisionStatuses.has(input.status)) {
+    if (!input.decisionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.decisionId)) {
+      throw new Error('DECISION_ID_REQUIRED')
+    }
+    const { error } = await createSupabaseAdminClient().rpc('renoapp_record_final_decision', {
+      p_case_id: caseId, p_id: input.decisionId, p_status: input.status,
+      p_reason: reason, p_conditions: conditions, p_actor: context.profile.id,
+    })
+    if (error) throw new Error(error.message)
+    return sendRenoAppDecisionEmail(caseId, input.decisionId, input.requestOrigin ?? '')
+  }
+
+  if (isFinalCaseStatus(currentStatus)) throw new Error('CASE_DECISION_LOCKED')
+
   if (input.status === 'need_info') {
     return publishRenoAppCompletion(caseId, input, context.profile.id, currentStatus)
   }
@@ -7680,38 +7693,7 @@ export async function updateRenoAppCaseStatus(
   }
 
 
-  if (decisionStatuses.has(input.status)) {
-    const { error: insertError } = await admin.from('renovation_case_decisions').insert({
-      case_id: caseId,
-      decision: input.status,
-      conditions,
-      reason,
-      decided_by: context.profile.id,
-    })
-
-    if (insertError) {
-      throw new Error(insertError.message ?? 'Kunde inte spara beslut.')
-    }
-
-    const decisionMessage =
-      input.status === 'conditional'
-        ? `${reason}\n\nVillkor:\n${conditions}`
-        : reason ?? `Status uppdaterad till ${input.status}.`
-
-    await insertCaseMessage({
-      admin,
-      caseId,
-      type: 'decision',
-      authorRole: 'board',
-      authorProfileId: context.profile.id,
-      message: decisionMessage,
-      metadata: {
-        decision: input.status,
-        previousStatus: currentStatus,
-        nextStatus: input.status,
-      },
-    })
-  } else if (input.status === 'review') {
+  if (input.status === 'review') {
     await insertCaseMessage({
       admin,
       caseId,
@@ -7732,4 +7714,41 @@ export async function updateRenoAppCaseStatus(
   }
 
   return updatedCase
+}
+
+export async function sendRenoAppDecisionEmail(caseId: string, decisionId: string, origin: string): Promise<RenoAppCaseDetail> {
+  // getRenoAppCaseDetail enforces the signed-in viewer's BRF membership.
+  const detail = await getRenoAppCaseDetail(caseId)
+  if (!detail) throw new Error('CASE_NOT_FOUND')
+  if (!isFinalCaseStatus(detail.status) || detail.decisions[0]?.id !== decisionId) {
+    throw new Error('DECISION_NOT_FOUND')
+  }
+  await deliverDecisionEmail(caseId, decisionId, async decision => {
+    if (!detail.applicant.email) throw new Error('APPLICANT_EMAIL_REQUIRED')
+    if (!origin || !detail.brf.slug) throw new Error('EMAIL_NOT_CONFIGURED')
+    const admin = createSupabaseAdminClient()
+    const token = await ensureReusableCaseAccessToken({
+      admin: admin as unknown as SupabaseAdminClient, caseId, email: detail.applicant.email,
+    })
+    const url = buildAbsoluteUrl(origin, `/renoapp/brf/${detail.brf.slug}/apply?draft=${token}`)
+    const { data: brf, error } = await admin.from('brf_associations').select('email').eq('id', detail.brf.id).maybeSingle()
+    if (error) throw error
+    const label = decisionLabel(decision.decision)
+    const reason = decision.reason ?? ''
+    const conditions = decision.conditions ?? ''
+    return {
+      to: detail.applicant.email, from: getMailFromAddress(), replyTo: brf?.email ?? null,
+      subject: `RenoApp: beslut i ärende ${detail.caseNumber} - ${label}`,
+      html: buildRenoAppEmailHtml({ origin, preheader: `Styrelsens beslut: ${label}.`, bodyHtml:
+        `<p>Hej ${escapeHtml(detail.applicant.name ?? '')},</p>
+         <p>Styrelsen för ${escapeHtml(detail.brf.name ?? '')} har fattat beslut i ärende ${escapeHtml(detail.caseNumber)}.</p>
+         <p><strong>Beslut: ${escapeHtml(label)}</strong></p>
+         <p><strong>Motivering</strong></p><p style="white-space:pre-wrap;">${escapeHtml(reason)}</p>
+         ${decision.decision === 'conditional' ? `<p><strong>Villkor</strong></p><p style="white-space:pre-wrap;">${escapeHtml(conditions)}</p>` : ''}
+         ${buildRenoAppEmailButton(url, 'Öppna ansökan')}`,
+      }),
+      text: `Styrelsen för ${detail.brf.name} har fattat beslut i ärende ${detail.caseNumber}.\n\nBeslut: ${label}\n\nMotivering:\n${reason}${decision.decision === 'conditional' ? `\n\nVillkor:\n${conditions}` : ''}\n\nÖppna ansökan: ${url}\n\nRenoApp-teamet`,
+    }
+  })
+  return (await getRenoAppCaseDetail(caseId))!
 }

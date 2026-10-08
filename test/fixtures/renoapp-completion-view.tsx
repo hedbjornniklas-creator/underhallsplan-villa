@@ -20,7 +20,11 @@ function Fixture() {
         if (selectedStatus === 'need_info') setCurrent(value => ({ ...value, status: 'need_info', completion: {
           ...value.completion!, id: 'round-2', items: selectCompletionItems(value.underlag), submitted_at: null,
         } }))
-      }} onRetryDelivery={() => {}} />
+      }} onRetryDelivery={() => {
+        sessionStorage.setItem('decision-mail-retries', String(Number(sessionStorage.getItem('decision-mail-retries') ?? 0) + 1))
+        setCurrent(value => ({ ...value, decisions: value.decisions.map((decision, index) => index === 0
+          ? { ...decision, deliveryStatus: 'sent', deliveryError: null } : decision) }))
+      }} />
   </main></div>
 }
 createRoot(document.getElementById('root')!).render(<Fixture />)

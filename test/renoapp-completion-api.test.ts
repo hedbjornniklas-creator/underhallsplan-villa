@@ -35,6 +35,44 @@ function serviceFunction<T>(names: string[], dependencies: Record<string, unknow
 const common = load<typeof import('../src/lib/renoapp/completion')>('src/lib/renoapp/completion.ts', {})
 const clarifications = load<typeof import('../src/lib/renoapp/clarifications')>('src/lib/renoapp/clarifications.ts', {})
 const templates = load<Record<string, unknown>>('src/lib/renoapp/emailTemplate.ts', {})
+const decisionHelpers = load<typeof import('../src/lib/renoapp/decisions')>('src/lib/renoapp/decisions.ts', {})
+
+test('decision email authorizes the case and includes the frozen decision, reason and conditions', async () => {
+  for (const status of ['approved','conditional','rejected']) {
+    let allowed = true
+    let prepared: Record<string, unknown> | undefined
+    const detail = { id:'case', status, caseNumber:'RA-TEST', applicant:{name:'<Applicant>',email:'applicant@example.test'},
+      brf:{id:'brf',slug:'test-brf',name:'Test BRF'}, decisions:[{id:'decision'}] }
+    const admin = {from:()=>({select:()=>({eq:()=>({maybeSingle:async()=>({data:{email:'board@example.test'},error:null})})})})}
+    const send = serviceFunction<typeof import('../src/lib/renoapp/server').sendRenoAppDecisionEmail>(['sendRenoAppDecisionEmail'], {
+      exports:{}, ...templates, ...decisionHelpers,
+      getRenoAppCaseDetail:async()=>{if(!allowed) throw new Error('CASE_NOT_FOUND'); return detail},
+      createSupabaseAdminClient:()=>admin,
+      deliverDecisionEmail:async (_caseId:string,_decisionId:string,prepare:(row:object)=>Promise<Record<string,unknown>>)=>{
+        prepared=await prepare({decision:status,reason:'Reason <must be escaped>',conditions:'Condition & details'})
+      },
+      ensureReusableCaseAccessToken:async()=>'personal-token',
+      buildAbsoluteUrl:(origin:string,path:string)=>origin+path,
+      getMailFromAddress:()=> 'RenoApp <meddelanden@renoapp.se>',
+      escapeHtml:(text:string)=>text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'),
+    })
+    await send('case','decision','https://example.test')
+    assert.equal(prepared?.to,'applicant@example.test')
+    assert.equal(prepared?.replyTo,'board@example.test')
+    assert.match(String(prepared?.text), /Reason <must be escaped>/)
+    assert.match(String(prepared?.html), /Reason &lt;must be escaped&gt;/)
+    assert.match(String(prepared?.html), /RenoApp-teamet/)
+    assert.match(String(prepared?.text), /apply\?draft=personal-token/)
+    if(status==='conditional') assert.match(String(prepared?.text), /Villkor:\nCondition & details/)
+    else assert.doesNotMatch(String(prepared?.text), /Condition & details/)
+    prepared=undefined
+    await assert.rejects(send('case','another-decision','https://example.test'), /DECISION_NOT_FOUND/)
+    assert.equal(prepared,undefined)
+    allowed=false
+    await assert.rejects(send('case','decision','https://example.test'), /CASE_NOT_FOUND/)
+    assert.equal(prepared,undefined)
+  }
+})
 
 function boardDecisionFixture(currentStatus = 'review', authorized = true) {
   const writes: Array<{ table: string; value: Record<string, unknown> }> = []
@@ -50,6 +88,10 @@ function boardDecisionFixture(currentStatus = 'review', authorized = true) {
       } } },
       async insert(value: Record<string, unknown>) { writes.push({ table, value }); return { error: null } },
     }
+  }, async rpc(name: string, value: Record<string, unknown>) {
+    assert.equal(name, 'renoapp_record_final_decision')
+    writes.push({ table: 'atomic_decision_rpc', value })
+    return { error: null }
   } }
   const service = serviceFunction<typeof import('../src/lib/renoapp/server').updateRenoAppCaseStatus>(
     ['updateRenoAppCaseStatus', 'normalizeText'], {
@@ -58,6 +100,8 @@ function boardDecisionFixture(currentStatus = 'review', authorized = true) {
       getRenoAppCaseDetail: async () => detail,
       insertCaseMessage: async (message: Record<string, unknown>) => { messages.push(message) },
       publishRenoAppCompletion: async () => detail,
+      isFinalCaseStatus: (status: string) => ['approved', 'conditional', 'rejected'].includes(status),
+      sendRenoAppDecisionEmail: async () => detail,
     })
   return { writes, messages, detail, submit: (input: UpdateRenoAppCaseStatusInput) => service('case', input) }
 }
@@ -78,15 +122,24 @@ test('every board decision requires a nonblank reason before any write; conditio
 test('approval preserves open questions and saves the reason separately from conditions', async () => {
   for (const status of ['approved', 'conditional', 'rejected'] as const) {
     const f = boardDecisionFixture('need_info')
-    await f.submit({ status, reason: ' Board assessment ', conditions: status === 'conditional' ? 'Before starting' : null })
-    assert.deepEqual(f.writes[0], { table: 'renovation_cases', value: { status } })
-    assert.equal(f.writes[1].table, 'renovation_case_decisions')
-    assert.equal(f.writes[1].value.reason, 'Board assessment')
-    assert.equal(f.writes[1].value.conditions, status === 'conditional' ? 'Before starting' : null)
-    assert.equal(f.writes.length, 2)
+    await f.submit({ status, decisionId: randomUUID(), reason: ' Board assessment ', conditions: status === 'conditional' ? 'Before starting' : null })
+    assert.equal(f.writes[0].table, 'atomic_decision_rpc')
+    assert.equal(f.writes[0].value.p_status, status)
+    assert.equal(f.writes[0].value.p_reason, 'Board assessment')
+    assert.equal(f.writes[0].value.p_conditions, status === 'conditional' ? 'Before starting' : null)
+    assert.equal(f.writes.length, 1)
     assert.deepEqual(f.detail.clarifications, [{ state: 'pending' }])
-    assert.match(String(f.messages[0].message), /Board assessment/)
-    if (status === 'conditional') assert.match(String(f.messages[0].message), /Before starting/)
+    assert.deepEqual(f.messages, [], 'The RPC, not a separate server write, saves history')
+  }
+})
+
+test('final cases cannot be reopened or sent another completion request', async () => {
+  for (const current of ['approved', 'conditional', 'rejected']) {
+    for (const status of ['review', 'new_application', 'need_info'] as const) {
+      const f = boardDecisionFixture(current)
+      await assert.rejects(f.submit({ status }), /CASE_DECISION_LOCKED/)
+      assert.deepEqual(f.writes, [])
+    }
   }
 })
 

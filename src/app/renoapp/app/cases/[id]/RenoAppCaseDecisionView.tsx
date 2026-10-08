@@ -8,6 +8,7 @@ import { clarificationItems, isOpenClarification, type Clarification } from '@/l
 import type { RenovationRulesAcceptance } from '@/lib/renoapp/renovationRules'
 import { FileText, Building2, Check, Minus, Info, TriangleAlert, ChevronDown, ChevronUp, Download, Send, X } from 'lucide-react'
 import { getUnsentCompletionItems, selectCompletionItems, type CompletionSummary } from '@/lib/renoapp/completion'
+import { isFinalCaseStatus, decisionLabel, type CaseDecision } from '@/lib/renoapp/decisions'
 
 export type RenoAppCaseStatusAction = 'need_info' | 'approved' | 'conditional' | 'rejected'
 type RequirementDecision = 'requested' | 'not_requested'
@@ -107,13 +108,7 @@ export type RenoAppCaseDetail = {
     note: string | null
     sortOrder: number
   }>
-  decisions: Array<{
-    id: string
-    decision: string
-    conditions: string | null
-    reason: string | null
-    decidedAt: string
-  }>
+  decisions: CaseDecision[]
   accessLinks: Array<{
     id: string
     email: string
@@ -937,7 +932,7 @@ function BoardDecisionPanel({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <SectionTitle
           title="Dokumentera styrelsens beslut"
-          description="Välj om ärendet ska kompletteras, godkännas, godkännas med villkor eller avslås. Texten du skriver sparas i ärendehistoriken och används som meddelande till sökanden vid komplettering."
+          description="Beslutet skickas till sökanden med motivering och eventuella villkor. Ett fattat beslut är slutgiltigt och kan inte ändras."
         />
         <button
           type="button"
@@ -1097,7 +1092,7 @@ function BoardDecisionPanel({
                 onChange={(event) => onDecisionConfirmedChange(event.target.checked)}
                 className="mt-1 h-4 w-4 rounded border-stone-300 accent-[var(--reno-blue)]"
               />
-              <span>Jag bekräftar att beslut fattas av styrelsen baserat på inkommet underlag.</span>
+              <span>Jag bekräftar att styrelsen fattar detta beslut och att det inte kan ändras efteråt.</span>
             </label>
           ) : null}
 
@@ -1325,12 +1320,38 @@ export default function RenoAppCaseDecisionView({
       </fieldset>
       <ConsultantReviewOrder key={item.id} caseId={item.id} brfName={item.brf.name} isDraft={item.status === 'draft'} />
       <div id="board-decision" className="scroll-mt-24">
-      {item.status !== 'draft' && item.clarifications?.some(isOpenClarification) && (
+      {!isFinalCaseStatus(item.status) && !item.decisions.length && item.status !== 'draft' && item.clarifications?.some(isOpenClarification) && (
         <p role="status" className="mb-4 text-sm leading-6 text-[var(--reno-muted)]">
           Det finns kvarstående frågor i ärendet. Styrelsen kan ändå fatta beslut. Frågorna och deras svar finns kvar oförändrade vid ett godkännande.
         </p>
       )}
-      <BoardDecisionPanel
+      {isFinalCaseStatus(item.status) || item.decisions.length > 0 ? (
+        <CaseSection>
+          <SectionTitle title="Styrelsens beslut" description="Beslutet är fattat och kan inte ändras." />
+          <p className="mt-4 font-semibold">{decisionLabel(item.decisions[0]?.decision ?? item.status)}</p>
+          {item.decisions[0] && <>
+            <p className="mt-2 text-sm text-[var(--reno-muted)]">{formatDateTime(item.decisions[0].decidedAt)}</p>
+            <h3 className="mt-4 font-semibold">Motivering</h3>
+            <p className="mt-2 whitespace-pre-wrap break-words">{item.decisions[0].reason || 'Motivering saknas för detta äldre beslut.'}</p>
+            {item.decisions[0].conditions && <>
+              <h3 className="mt-4 font-semibold">Villkor</h3>
+              <p className="mt-2 whitespace-pre-wrap break-words">{item.decisions[0].conditions}</p>
+            </>}
+            <div role="status" className="mt-5 border-t border-[var(--reno-line)] pt-4 text-sm">
+              {item.decisions[0].deliveryStatus === 'sent'
+                ? <p>Beslutsmejlet har skickats till mejlleverantören. Det bekräftar inte att det hamnat i mottagarens inkorg.</p>
+                : <>
+                  <p>{item.decisions[0].deliveryError || 'Det finns ingen bekräftelse på att beslutsmejlet har skickats. Beslutet är sparat och låst.'}</p>
+                  <button type="button" disabled={submitting} onClick={onRetryDelivery} className="reno-button-secondary mt-3">
+                    <Send size={16} aria-hidden="true" /> {submitting ? 'Skickar...' : 'Skicka beslutsmejlet'}
+                  </button>
+                </>}
+            </div>
+          </>}
+          {actionError && <p role="alert" className="mt-3 text-sm text-rose-700">{actionError}</p>}
+          {actionSuccess && <p role="status" className="mt-3 text-sm text-[var(--reno-muted)]">{actionSuccess}</p>}
+        </CaseSection>
+      ) : <BoardDecisionPanel
         blockedReason={clarificationBusy ? 'Klarläggandevalen måste sparas innan beslutet skickas.' : null}
         isDraftCase={item.status === 'draft'}
         selectedStatus={selectedStatus}
@@ -1346,7 +1367,7 @@ export default function RenoAppCaseDecisionView({
         onConditionsChange={onConditionsChange}
         onDecisionConfirmedChange={onDecisionConfirmedChange}
         onSubmit={onSubmit}
-      />
+      />}
       </div>
       <CaseHistoryTimeline messages={item.messages} expanded={historyExpanded} onToggle={() => setHistoryExpanded((current) => !current)} />
       <InfoDisclaimerCard />
