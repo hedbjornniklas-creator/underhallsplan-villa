@@ -38,17 +38,17 @@ test('contract imports use the shared draft directly and preserve contract metad
   assert.equal(saved.items[1].amountOre, null)
 })
 
-test('contract exposes a collapsed direct import without mounting competing review controls', () => {
+test('contract exposes a collapsed direct import without mounting competing import controls', () => {
   const editor = readFileSync('src/components/tasks/CustomerOfferEditor.tsx', 'utf8')
   const contract = editor.slice(editor.indexOf('<h3 className="mt-6 font-semibold">Arbetsdelar och avgränsningar'))
   assert.match(contract, /\{contractView && <CustomerOfferSourcePicker[^>]*collapsible/)
   assert.match(editor, /\{!contractView && <CustomerOfferSourcePicker/)
-  assert.equal((editor.match(/onReviewCountChange=\{setSourceReviewCount\}/g) ?? []).length, 2)
+  assert.doesNotMatch(editor, /onReviewCountChange|sourceReviewCount/)
   const picker = readFileSync('src/components/tasks/CustomerOfferSourcePicker.tsx', 'utf8')
   assert.match(picker, /useState\(!collapsible\)/)
   assert.match(picker, /hidden=\{!expanded\}/)
-  assert.match(picker, /Hämta från Projektarbete/)
-  assert.match(picker, /onReviewCountChange\(reviewCount\)/)
+  assert.match(picker, /Hämta från projektdata/)
+  assert.match(picker, /Välj alla arbetsdelar/)
 })
 
 test('intentional contract edits do not masquerade as project changes; a later project change is detected', async () => {
@@ -132,9 +132,9 @@ test('editor follows ABS 18 contract sequence, keeps explicit imports and pendin
   let previous = -1
   for (const part of order) { const position = layout.indexOf(part); assert.ok(position > previous, part); previous = position }
   assert.match(editor, /blocked=\{sourcePending \|\| locked \|\| Boolean\(busy\)\}/)
-  assert.match(editor, /sourceReviewCount > 0/)
+  assert.doesNotMatch(editor, /sourceReviewCount/)
   const picker = readFileSync('src/components/tasks/CustomerOfferSourcePicker.tsx', 'utf8')
-  assert.match(picker, /useState<OfferSourceField\[\]>\(\[\]\)/)
-  assert.match(picker, /Underlaget har ändrats/)
-  assert.match(picker, /Behåll avtalstexten/)
+  assert.match(picker, /importOfferSources\(items, rows, selections/)
+  assert.match(picker, /Hämta och ersätt/)
+  assert.doesNotMatch(picker, /SourceComparison|Behåll avtalstexten|Visa bara nya och ändrade|Jämför/)
 })

@@ -110,6 +110,16 @@ if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')
 }
 const writes = []
 const projects = projectFixture(actionCase)
+if (process.argv.includes('--simple-scope-import')) {
+  state.draft.items = [
+    { id: id(10), title: projects.cases[0].items[0].title, scope: 'Egen avtalstext grund', kind: 'included', amountOre: 30000000 },
+    { id: id(14), title: 'Fönster och ytterdörrar', scope: 'Egen avtalstext fönster', kind: 'included', amountOre: 70000000 },
+    ...state.draft.items.filter((item) => item.kind === 'excluded')
+  ]
+  state.draft.pricingMode = 'itemized'
+  state.draft.baseAmountOre = 100000000
+  state.offers = []
+}
 const propertyRegistryTest = process.argv.includes('--property-registry')
 const customerRegistryTest = process.argv.includes('--customer-registry') || process.argv.includes('--project-billing') || propertyRegistryTest
 const properties = [

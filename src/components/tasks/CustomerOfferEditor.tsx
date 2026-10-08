@@ -139,7 +139,6 @@ export default function CustomerOfferEditor({
     toast = useToast()
   const [confirmed, setConfirmed] = useState(false)
   const [confirmItemized, setConfirmItemized] = useState(false)
-  const [sourceReviewCount, setSourceReviewCount] = useState(-1)
   const parties = draft.contractParties ?? emptyContractParties(customer?.name ?? actionCase.customerName, customer?.email ?? '', customer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
   const contractView = view === 'contract'
   const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft) ||
@@ -187,8 +186,6 @@ export default function CustomerOfferEditor({
     ...offerPublishIssues(draft),
     ...(documentRecovery ? ['Välj vilka handlingar som ska behållas från det lokala utkastet före utskick.'] : []),
     ...(sourcePending ? ['Projektarbete har ändringar som inte har sparats klart.'] : []),
-    ...(sourceReviewCount > 0 ? [`Granska ändrat underlag för ${sourceReviewCount} arbetsdelar under Uppdraget.`] : []),
-    ...(sourceReviewCount === -2 ? ['Jämförelsen med Projektarbete misslyckades. Försök igen under Uppdraget.'] : []),
     ...(!customer?.email?.trim()
       ? ['Ange beställarens e-postadress i uppdraget.']
       : []),
@@ -731,7 +728,7 @@ export default function CustomerOfferEditor({
                 standardTermsId={standardTermsFile?.id} termsState={termsState} onRetryTerms={() => setTermsRetry((value) => value + 1)}>
               <h3 className="mt-6 font-semibold">Arbetsdelar och avgränsningar</h3>
               {contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)} collapsible
-                onChange={(items) => { update({ items }); setItemView('included') }} onReviewCountChange={setSourceReviewCount} />}
+                onChange={(items) => { update({ items }); setItemView('included') }} />}
               {draft.items.filter((item) => item.kind === 'included' || item.kind === 'excluded').map((item) => <div key={item.id} className="border-b border-slate-200 py-3 text-sm">
                 <h3 className="font-semibold">{item.title}{item.kind === 'excluded' ? ' · Ingår inte' : ''}</h3>
                 <p className="mt-1 whitespace-pre-wrap">{item.scope}</p>
@@ -745,7 +742,7 @@ export default function CustomerOfferEditor({
             <section hidden={contractView}>
               <h2 className="text-lg">Uppdraget</h2>
               {!contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)}
-                onChange={(items) => { update({ items }); setItemView('included') }} onReviewCountChange={setSourceReviewCount} />}
+                onChange={(items) => { update({ items }); setItemView('included') }} />}
               <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
                 {([['included', 'Grundåtagande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
               </div>
@@ -1051,7 +1048,6 @@ export default function CustomerOfferEditor({
                       dirty ||
                       !workspace.revision ||
                       issues.length > 0 ||
-                      sourceReviewCount < 0 ||
                       !confirmed ||
                       !customer?.email
                     }

@@ -113,40 +113,40 @@ eller godkannanden genomfordes.
 
 ## Beslut 2026-10-06: fran Projektarbete till avtalsutkast
 
-- Komplettering 2026-10-07: Avtal har Hamta fran Projektarbete direkt under
-  Uppdraget / Arbetsdelar och avgransningar. Samma jamforelse och befintliga
-  utkast anvands, utan krav pa att forst besoka Offert. Valjaren ar minimerad
-  fran borjan men kontrollerar fortfarande andrat underlag fore utskick.
-  Import i Avtal autosparas genom befintlig ko. Nya arbetsdelar valjs uttryckligen;
-  befintliga texter och kontrollerade kundpriser ersatts bara for valda falt.
-  Inga nya tabeller eller migrationer. Lokalt genomfort, inte publicerat.
-  Verifierat med 327 action-case-tester, TypeScript och riktad ESLint.
-  Klicktest i fiktivt projekt: direkt tillagg i Avtal, uppdatering av bara valda
-  falt, bevarad klumpsumma och ovrig text, aterlasning efter omladdning samt
-  sparfel/nytt forsok. Samma arbetsdelar visas i Offert; ingen kunddata andrades.
-- Arbetsdelar visas direkt under Uppdraget. Anvandaren valjer vilka som ska
-  inga i grundavtalet; inget laggs till vid enbart navigation till sidan.
-  Val och tillval forblir separata. Interna kalkyler och UE-underlag importeras inte.
-- Rubrik, omfattning, forutsattningar, undantag och avradan kopieras tillsammans.
-  Kontrollerade kundpriser inklusive moms kan valjas i delprislage. Bilagor valjs
-  fortfarande uttryckligen under Avtalshandlingar och bilagor.
-- En redan inford arbetsdel kan jamforas falt for falt mot Projektarbete.
-  Inget ersatts som standard. Anvandaren valjer nya falt eller behaller avtalstexten.
-  Aven tom text visas som en uttrycklig andring; otillgangliga falt far inte radera text.
-- SHA-256-fingeravtryck av de overforbara falten sparas i befintlig utkast-JSON
-  som `items[].sourceReview`. Inga privata kalltexter, inkopspriser eller marginaler
-  lagras dar. Fingeravtrycken utelamnas i den publika projektionen.
-  Inga nya tabeller eller migrationer behovs for denna komplettering.
-- Fingeravtrycken skiljer egna avtalsjusteringar fran senare underlagsandringar.
-  Aldre utkast utan denna historik visas forsiktigt som Skiljer fran Projektarbete;
-  historiken antas inte i efterhand. Behall-valet sparas med samma utkastrevision.
-- Utkast kan sparas medan granskning aterstar. Redigerarens utskicksknapp ar
-  sparrad under jamforelsen, vid ej granskade skillnader eller nar Projektarbete
-  har osparade andringar. Befintliga server- och databasskydd for versionering,
-  organisation och accepterade avtal ar oforandrade. Detta ar inte en ny
-  servergaranti om att allt samtidigt arbete i andra sessioner ar avstamt.
-- Skickade och godkanda versioner skrivs inte om. Befintlig forhandsgranskning
-  och dokumentrendering behaller sitt format; andringen galler redigeringsflodet.
+Det tidigare beslutet om jamforelse per falt och obligatorisk granskning av
+andrat underlag ersatts av foljande uttryckliga anvandarbeslut 2026-10-07:
+
+- Hamta fran projektdata oppnar en kompakt krysslista under Arbetsdelar och
+  avgransningar. Valj alla eller enskilda arbetsdelar och Hamta och ersatt.
+- Valda raders rubrik, omfattning, forutsattningar, undantag och avradan ersatts
+  i samma utkast. Ovriga rader bevaras. Tomma tillgangliga kallfalt tommer text;
+  otillgangliga kallfalt far inte radera befintliga uppgifter.
+- Kundpriser bevaras som standard. I delprislage kan kontrollerade kundpriser
+  hamtas uttryckligen. Saknat kontrollerat pris raderar inte befintligt pris.
+  Klumpsumma, intern kalkyl, UE-underlag, valklassning och bilagor andras inte.
+- Aldre inkluderade rader kopplas automatiskt endast vid ett unikt likadant namn.
+  Vid olika eller tvetydiga namn valjer anvandaren vilken aldre rad som ersatts
+  eller om en ny ska skapas. Ingen osaker namn- eller ordningsmatchning gors.
+- Radens ID och prisreferenser bevaras; kallkoppling `items[].sourceItemId`
+  sparas i befintlig utkast-JSON sa senare namnandringar inte skapar dubbletter.
+  Kallkoppling och aldre `sourceReview`-historik utelamnas i publik projektion.
+- Import i Avtal autosparas i befintlig ko. Besok eller andringar i Projektarbete
+  skriver inte automatiskt over avtalet. Jamforelse, faltval och Behall tas bort;
+  andrat underlag ar inte langre en separat utskickssparr.
+- Osparat Projektarbete, last avtal och pagaende skrivningar skyddas fortsatt.
+  Publicerade versioner, revisionskontroll och organisationsskydd andras inte.
+  Inga nya tabeller eller SQL-migrationer. Versionspaket for publicering 2026-10-08;
+  driftsattning kontrolleras separat. Befintliga projekts avtalsrader andras inte
+  av publiceringen, inklusive eventuella redan skapade dubbletter.
+
+Verifiering av den forenklade importen: 338 action-case-tester, TypeScript,
+riktad ESLint och produktionsbygge passerar. Lokal klickkontroll med riktiga
+komponenter och fiktiva data verifierar val av en respektive alla arbetsdelar,
+bevarad ovald text och kundpris, exakt aldre namnkoppling, uttrycklig koppling
+vid annat namn, autosparning, omladdning utan dubbletter samt sparfel/aterforsok.
+Krysslistan ar visuellt kontrollerad pa dator. Inga riktiga projekt, avtalsversioner
+eller kundutskick andrades. Smal viewport kunde inte verifieras eftersom
+webblasaren beholl sin datorbredd trots begard viewportinstallning.
 
 ## Beslut 2026-10-06: redigeringsordning enligt ABS 18
 

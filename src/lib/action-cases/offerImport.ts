@@ -16,6 +16,64 @@ export type PreparedOfferSource = {
   fingerprints: NonNullable<CustomerOfferItem['sourceReview']>
 }
 
+export type OfferSourceSelection = { sourceId: string; targetId?: string | null }
+
+export function offerSourceTargets(existing: CustomerOfferItem[], sources: PreparedOfferSource[]) {
+  const targets = new Map<string, string | null | undefined>()
+  const used = new Set<string>()
+  const sourceIds = new Set(sources.map((source) => source.id))
+  const title = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sv-SE')
+  for (const source of sources) {
+    const matches = existing.filter((item) => item.sourceItemId === source.id || (!item.sourceItemId && item.id === source.id))
+    if (matches.length > 1 || (matches[0] && used.has(matches[0].id))) throw new Error('CUSTOMER_OFFER_INVALID')
+    if (matches[0]) { targets.set(source.id, matches[0].id); used.add(matches[0].id) }
+  }
+  const legacy = existing.filter((item) => item.kind === 'included' && !item.sourceItemId && !sourceIds.has(item.id))
+  // Only unique exact titles are safe to link automatically in older drafts.
+  for (const source of sources.filter((row) => !targets.has(row.id))) {
+    const name = title(source.values.title ?? '')
+    const matches = legacy.filter((item) => !used.has(item.id) && title(item.title) === name)
+    const sameName = sources.filter((row) => !targets.has(row.id) && title(row.values.title ?? '') === name)
+    if (name && matches.length === 1 && sameName.length === 1) { targets.set(source.id, matches[0].id); used.add(matches[0].id) }
+  }
+  const unlinked = legacy.some((item) => !used.has(item.id))
+  for (const source of sources) if (!targets.has(source.id)) targets.set(source.id, unlinked ? undefined : null)
+  return targets
+}
+
+export function importOfferSources(existing: CustomerOfferItem[], sources: PreparedOfferSource[], selected: OfferSourceSelection[], withPrice: boolean): CustomerOfferItem[] {
+  const targets = offerSourceTargets(existing, sources)
+  const reserved = new Set([...targets.values()].filter((id): id is string => typeof id === 'string'))
+  const used = new Set<string>()
+  const selectedIds = new Set<string>()
+  const replacements = new Map<string, CustomerOfferItem>()
+  const added: CustomerOfferItem[] = []
+  for (const selection of selected) {
+    const source = sources.find((row) => row.id === selection.sourceId)
+    if (!source || selectedIds.has(source.id)) throw new Error('CUSTOMER_OFFER_INVALID')
+    selectedIds.add(source.id)
+    const automatic = targets.get(source.id)
+    const targetId = automatic === undefined ? selection.targetId : automatic
+    if (targetId === undefined || (automatic !== undefined && selection.targetId !== undefined && selection.targetId !== automatic)) throw new Error('CUSTOMER_OFFER_INVALID')
+    const target = targetId === null ? null : existing.find((item) => item.id === targetId)
+    if (targetId !== null && (!target || used.has(targetId) || (automatic === undefined && (reserved.has(targetId) || target.sourceItemId || target.kind !== 'included')))) throw new Error('CUSTOMER_OFFER_INVALID')
+    if (targetId === null && existing.some((item) => item.id === source.id)) throw new Error('CUSTOMER_OFFER_INVALID')
+    if (targetId) used.add(targetId)
+    const result: CustomerOfferItem = target ? { ...target } : { id: source.id, title: '', scope: '', kind: 'included', amountOre: null }
+    for (const { key } of offerSourceFields) {
+      if (key === 'amountOre' || source.values[key] === undefined) continue
+      result[key] = source.values[key] ?? ''
+    }
+    if (withPrice && result.kind === 'included' && source.values.amountOre != null) result.amountOre = source.values.amountOre
+    result.sourceItemId = source.id
+    result.sourceReview = { ...target?.sourceReview, ...source.fingerprints }
+    if (target) replacements.set(target.id, result)
+    else added.push(result)
+  }
+  if (existing.length + added.length > 200) throw new Error('CUSTOMER_OFFER_INVALID')
+  return [...existing.map((item) => replacements.get(item.id) ?? item), ...added]
+}
+
 // Fingerprint only the transferable customer fields, never internal costs or UE data.
 export async function prepareOfferSource(source: ActionCaseItemView): Promise<PreparedOfferSource> {
   const values: PreparedOfferSource['values'] = {

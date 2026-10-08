@@ -106,10 +106,12 @@ Granska grundavtal hör till Offert och avtal, inte till ytterligare en projektn
 
 ## Beslutslogg
 
-- 2026-10-07: Avtal får en minimerad Hämta från Projektarbete-rad under
-  Arbetsdelar och avgränsningar. Den öppnar den befintliga jämförelsen i samma
-  arbetsyta utan navigation till Offert. Samma kompakta rader och explicit
-  val av fält behålls; kundtexter skrivs inte över av enbart navigation.
+- 2026-10-07: Användaren förenklar importen till Hämta från projektdata under
+  Arbetsdelar och avgränsningar. En minimerad öppnare visar en kompakt krysslista
+  enligt Tydlig tabell: Välj alla eller enskilda arbetsdelar, sedan Hämta och ersätt.
+  Jämförelse, filter och val per textfält tas bort. Endast valda raders texter
+  ersätts. Vid oklar äldre koppling väljs ersättningsrad, inte en osäker gissning.
+  Kundpriser behålls som standard och navigation skriver aldrig över kundtexter.
 - 2026-10-07: Användaren beslutar att ABS 18:s allmänna bestämmelser ska
   följa med automatiskt när ABS 18 väljs. Original-PDF och frysta versionskopior
   används; projektspecifika texter och egen avtalshandling behålls separat.

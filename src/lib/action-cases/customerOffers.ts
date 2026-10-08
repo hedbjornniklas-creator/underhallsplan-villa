@@ -16,6 +16,7 @@ export type CustomerOfferItem = {
   kind: 'included' | 'option' | 'excluded'
   amountOre: number | null
   optionGroup?: string | null
+  sourceItemId?: string
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
@@ -130,6 +131,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
       ...(i.scopeExclusions === undefined ? {} : { scopeExclusions: text(i.scopeExclusions, 6000) }),
       ...(i.scopeAdvice === undefined ? {} : { scopeAdvice: text(i.scopeAdvice, 6000) }),
       ...(i.sourceReview === undefined ? {} : { sourceReview: normalizeSourceReview(i.sourceReview) }),
+      ...(i.sourceItemId === undefined ? {} : { sourceItemId: offerId(i.sourceItemId) }),
       kind: i.kind as CustomerOfferItem['kind'],
       amountOre: i.kind === 'excluded' ? null : amount(i.amountOre),
       ...(i.optionGroup !== undefined
@@ -145,6 +147,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   const attachmentIds = d.attachmentIds.map(offerId)
   if (
     new Set(items.map((i) => i.id)).size !== items.length ||
+    new Set(items.flatMap((i) => i.sourceItemId ? [i.sourceItemId] : [])).size !== items.filter((i) => i.sourceItemId).length ||
     new Set(attachmentIds).size !== attachmentIds.length
   )
     throw new Error('CUSTOMER_OFFER_INVALID')
@@ -348,6 +351,7 @@ export function mapCustomerOffer(row: Record<string, unknown>): CustomerOffer {
       items: d.items.map((item) => {
         const publicItem = { ...item }
         delete publicItem.sourceReview
+        delete publicItem.sourceItemId
         return publicItem
       }),
       projectTitle: String(s.projectTitle),
