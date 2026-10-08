@@ -19,6 +19,7 @@ type ImageProps = {
   onLoad: () => void
   onError: () => void
   'data-report-ready': string
+  'data-report-failed': string
 }
 
 function harness() {
@@ -72,6 +73,7 @@ test('cached images settle once even when the ref callback and load event both f
   h.flush()
   assert.equal(h.notifications(), 1)
   assert.equal(rerendered['data-report-ready'], '1')
+  assert.equal(rerendered['data-report-failed'], '0')
 })
 
 test('loading images remain pending until load and notify outside the child state updater', () => {
@@ -92,6 +94,7 @@ test('a failed image settles once and its fallback does not cause a pagination l
   const fallback = h.render()
   assert.equal(fallback.src, 'fallback-pixel')
   assert.equal(fallback['data-report-ready'], '1')
+  assert.equal(fallback['data-report-failed'], '1')
   fallback.onLoad()
   h.flush()
   assert.equal(h.notifications(), 1)
@@ -102,9 +105,23 @@ test('changing image source requires a new settled notification, including retur
   for (const src of ['photo-a', 'photo-b', 'photo-a']) {
     const image = h.render(src)
     assert.equal(image['data-report-ready'], '0')
+    assert.equal(image['data-report-failed'], '0')
     image.onLoad()
     h.flush()
     assert.equal(h.render(src)['data-report-ready'], '1')
   }
   assert.equal(h.notifications(), 3)
+})
+
+test('a replacement source clears a previous failure without treating it as already loaded', () => {
+  const h = harness()
+  h.render('failed-photo').onError()
+  h.flush()
+  assert.equal(h.render('failed-photo')['data-report-failed'], '1')
+  const replacement = h.render('replacement-photo')
+  assert.equal(replacement['data-report-failed'], '0')
+  assert.equal(replacement['data-report-ready'], '0')
+  replacement.onLoad()
+  h.flush()
+  assert.equal(h.render('replacement-photo')['data-report-ready'], '1')
 })

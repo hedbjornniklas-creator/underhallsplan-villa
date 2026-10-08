@@ -250,19 +250,31 @@ function createRenderTimingLogger(traceId: string) {
   }
 }
 
-const isReportReady = () => {
+const isReportReady = async () => {
   const root = document.querySelector('.report-root')
   if (!root) return false
   if (root.getAttribute('data-report-pagination-ready') !== '1') return false
 
-  const images = Array.from(document.querySelectorAll('img[data-report-track="1"]'))
-  if (images.length === 0) return true
-  return images.every((img) => {
-    const ready = img.getAttribute('data-report-ready') === '1'
-    if (!(img instanceof HTMLImageElement)) return ready
-    const browserLoaded = img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
-    return ready || browserLoaded
-  })
+  // Cover, logo and footer images do not use ReportPhoto's pagination markers.
+  // A settled marker (including an error fallback) is not proof of a complete image.
+  const images = Array.from(root.querySelectorAll('img'))
+  const loaded = (img: HTMLImageElement) =>
+    img.getAttribute('data-report-failed') !== '1' &&
+    img.complete && img.naturalWidth > 0 && img.naturalHeight > 0
+  if (!images.every(loaded)) return false
+  const sources = images.map(img => img.currentSrc || img.src)
+  try {
+    await Promise.all(images.map(img => img.decode()))
+  } catch {
+    return false
+  }
+
+  const currentImages = Array.from(root.querySelectorAll('img'))
+  return document.querySelector('.report-root') === root &&
+    root.getAttribute('data-report-pagination-ready') === '1' &&
+    currentImages.length === images.length &&
+    currentImages.every((img, index) => img === images[index] && loaded(img) &&
+      (img.currentSrc || img.src) === sources[index])
 }
 
 function errorMessage(error: unknown) {
@@ -293,7 +305,7 @@ function compactUrlForLog(value: string) {
 
 async function collectReportReadinessDiagnostics(page: Page): Promise<Record<string, unknown>> {
   try {
-    return await page.evaluate(() => {
+    return await page.evaluate(async () => {
       const describeUrl = (value: string) => {
         try {
           const parsed = new URL(value, window.location.href)
@@ -331,31 +343,34 @@ async function collectReportReadinessDiagnostics(page: Page): Promise<Record<str
       }
 
       const root = document.querySelector('.report-root')
-      const images = Array.from(
-        document.querySelectorAll('img[data-report-track="1"]')
-      )
-      const imageStates = images.map((img, index) => {
-        const htmlImage = img instanceof HTMLImageElement ? img : null
+      const images = Array.from(root?.querySelectorAll('img') ?? [])
+      const imageStates = await Promise.all(images.map(async (img, index) => {
+        let decoded = false
+        let decodeError: string | null = null
+        if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+          try {
+            await img.decode()
+            decoded = true
+          } catch (error) {
+            decodeError = error instanceof Error ? error.message : String(error)
+          }
+        }
         return {
           index,
           alt: img.getAttribute('alt'),
+          tracked: img.getAttribute('data-report-track') === '1',
           ready: img.getAttribute('data-report-ready'),
-          complete: htmlImage ? htmlImage.complete : null,
-          naturalWidth: htmlImage ? htmlImage.naturalWidth : null,
-          naturalHeight: htmlImage ? htmlImage.naturalHeight : null,
-          src: htmlImage ? describeUrl(htmlImage.currentSrc || htmlImage.src) : null,
+          failed: img.getAttribute('data-report-failed') === '1',
+          complete: img.complete,
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight,
+          decoded,
+          decodeError,
+          src: img.src.startsWith('data:') ? { raw: '<inline image>' } : describeUrl(img.currentSrc || img.src),
         }
-      })
+      }))
       const notReadyImages = imageStates.filter(
-        (img) =>
-          img.ready !== '1' &&
-          !(
-            img.complete === true &&
-            typeof img.naturalWidth === 'number' &&
-            img.naturalWidth > 0 &&
-            typeof img.naturalHeight === 'number' &&
-            img.naturalHeight > 0
-          )
+        (img) => img.failed || !img.decoded
       )
 
       return {
@@ -365,7 +380,9 @@ async function collectReportReadinessDiagnostics(page: Page): Promise<Record<str
         imageVersion: root?.getAttribute('data-report-image-version') ?? null,
         paginationImageVersion:
           root?.getAttribute('data-report-pagination-image-version') ?? null,
-        trackedImageCount: images.length,
+        imageCount: images.length,
+        trackedImageCount: imageStates.filter(img => img.tracked).length,
+        failedImageCount: imageStates.filter(img => img.failed).length,
         notReadyImageCount: notReadyImages.length,
         incompleteImageCount: imageStates.filter((img) => img.complete === false).length,
         zeroNaturalSizeCount: imageStates.filter(
@@ -704,7 +721,10 @@ export async function renderPreviewPdf(params: {
           ...diagnostics,
         }
         mark('report_ready_timeout_diagnostics', timeoutDiagnostics)
-        throw new PdfRenderReadinessTimeoutError(errorMessage(error), timeoutDiagnostics, error)
+        const message = Number(diagnostics.notReadyImageCount) > 0
+          ? 'PDF kunde inte skapas eftersom en eller flera bilder inte kunde laddas fullständigt. Försök igen.'
+          : errorMessage(error)
+        throw new PdfRenderReadinessTimeoutError(message, timeoutDiagnostics, error)
       }
       mark('report_ready', { timeoutMs: reportReadyTimeoutMs })
 

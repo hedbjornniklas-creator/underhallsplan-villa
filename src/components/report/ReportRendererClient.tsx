@@ -122,6 +122,7 @@ const ReportPhoto = ({
       }}
       data-report-track="1"
       data-report-ready={ready ? '1' : '0'}
+      data-report-failed={failed ? '1' : '0'}
     />
   )
 }
