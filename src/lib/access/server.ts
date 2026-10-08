@@ -1,5 +1,6 @@
 import 'server-only'
 
+import type { User } from '@supabase/supabase-js'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { PlatformModuleKeyMap, PlatformProductKey, PlatformScopeType } from './model'
@@ -197,6 +198,10 @@ async function requireAuthenticatedIdentity(): Promise<PlatformIdentity> {
     throw new Error('UNAUTHORIZED')
   }
 
+  return loadAuthenticatedIdentity(user)
+}
+
+async function loadAuthenticatedIdentity(user: User): Promise<PlatformIdentity> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const { data: profileData, error: profileError } = await admin
     .from('profiles')
@@ -446,6 +451,47 @@ export async function hasCurrentUserAccess<TProduct extends PlatformProductKey>(
       await hasManagedDashboardAccessHistory(context.identity.profileId)) return false
   if (input.productKey === 'renoapp' && context.normalizedAccessAvailable && !context.identity.isLegacyAdmin) return false
   return hasLegacyAccess(context.identity, input)
+}
+
+/**
+ * One server request only: authenticate once and lazily reuse its dashboard
+ * access snapshot. Never retain the returned closure in a module/global cache.
+ * Existing product guards keep their current behavior; this is used by the OB
+ * navigation request, which evaluates several organizations for the same actor.
+ */
+export async function createDashboardAccessRequest() {
+  const { data: { user }, error } = await createSupabaseServerClient().auth.getUser()
+  if (error || !user) throw new Error('UNAUTHORIZED')
+
+  let contextPromise: Promise<PlatformAccessContext> | undefined
+  let historyPromise: Promise<boolean> | undefined
+  const decisions = new Map<string, Promise<boolean>>()
+  const context = () => contextPromise ??= (async () => {
+    const identity = await loadAuthenticatedIdentity(user)
+    const assignments = await loadNormalizedAssignments(identity.profileId)
+    return { identity, assignments: assignments ?? [], normalizedAccessAvailable: assignments !== null }
+  })()
+
+  return {
+    userId: user.id,
+    hasAccess(input: Omit<AccessCheckInput<'dashboard'>, 'productKey'>): Promise<boolean> {
+      const key = JSON.stringify([input.moduleKey, input.scopeType, input.scopeId])
+      let result = decisions.get(key)
+      if (!result) {
+        result = (async () => {
+          const snapshot = await context()
+          const productAssignments = snapshot.assignments.filter(item => item.productKey === 'dashboard')
+          const check = { ...input, productKey: 'dashboard' as const }
+          if (productAssignments.length) return hasMatchingNormalizedAccess(productAssignments, check)
+          if (snapshot.normalizedAccessAvailable &&
+              await (historyPromise ??= hasManagedDashboardAccessHistory(snapshot.identity.profileId))) return false
+          return hasLegacyAccess(snapshot.identity, check)
+        })()
+        decisions.set(key, result)
+      }
+      return result
+    },
+  }
 }
 
 export async function getCurrentUserAccessibleProducts(): Promise<PlatformEntryProduct[]> {

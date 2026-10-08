@@ -1,9 +1,10 @@
 import 'server-only'
-import { hasCurrentUserAccess } from '@/lib/access/server'
+import { createDashboardAccessRequest, hasCurrentUserAccess } from '@/lib/access/server'
 import { requireOrgContext, type OrgContext } from '@/lib/assignments/server'
 import { isOrganizationUuid } from '@/lib/organizations/administrationHttp'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import type { OrganizationSwitcherContext } from '@/lib/organizations/server'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type InspectionAccessRow = {
@@ -32,7 +33,18 @@ function relation(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
-async function hasObAccessWithClient(admin: AdminClient, orgId: string, userId: string): Promise<boolean> {
+async function legacyObAccess(orgId: string): Promise<boolean> {
+  const [scoped, global] = await Promise.all([
+    hasCurrentUserAccess({ productKey: 'dashboard', moduleKey: 'inspections', scopeType: 'organization', scopeId: orgId }),
+    hasCurrentUserAccess({ productKey: 'dashboard', moduleKey: 'inspections', scopeType: 'global' }),
+  ])
+  return scoped || global
+}
+
+async function hasObAccessWithClient(
+  admin: AdminClient, orgId: string, userId: string,
+  legacyAccess: (orgId: string) => Promise<boolean> = legacyObAccess
+): Promise<boolean> {
   const { data, error } = await admin.from('organization_enabled_modules')
     .select('is_active').eq('org_id', orgId).eq('module_key', 'inspections').maybeSingle()
   if (error) throw new Error('OB_ORGANIZATION_READ_FAILED')
@@ -40,11 +52,7 @@ async function hasObAccessWithClient(admin: AdminClient, orgId: string, userId: 
   if (data === null) {
     // Preserve untouched legacy access only while this organization has no
     // explicit OB management row. No other organization is ever considered.
-    const [scoped, global] = await Promise.all([
-      hasCurrentUserAccess({ productKey: 'dashboard', moduleKey: 'inspections', scopeType: 'organization', scopeId: orgId }),
-      hasCurrentUserAccess({ productKey: 'dashboard', moduleKey: 'inspections', scopeType: 'global' }),
-    ])
-    return scoped || global
+    return legacyAccess(orgId)
   }
   if (data.is_active !== true) return false
 
@@ -134,16 +142,26 @@ export async function requireObContext(requestedOrgId?: unknown, requireExplicit
 
 export async function requireObAssignmentContext(assignmentIdValue: unknown, requestedOrgIdValue?: unknown): Promise<OrgContext> {
   const actor = await authenticatedObActor()
+  return assignmentContext(actor, () => createSupabaseAdminClient(), assignmentIdValue, requestedOrgIdValue,
+    orgId => explicitObContext(orgId, actor), requireObInspectionContext)
+}
+
+async function assignmentContext(
+  actor: string, getAdmin: () => AdminClient, assignmentIdValue: unknown, requestedOrgIdValue: unknown,
+  resolveOrganization: (orgId: string) => Promise<OrgContext>,
+  resolveInspection: (id: unknown, requestedOrgId?: unknown) => Promise<OrgContext>
+): Promise<OrgContext> {
   const assignmentId = parseId(assignmentIdValue, 'OB_ASSIGNMENT_INVALID')
   const requestedOrgId = requestedOrgIdValue === undefined ? undefined : parseId(requestedOrgIdValue, 'ORG_SELECTION_INVALID')
-  const { data, error } = await createSupabaseAdminClient().from('assignments')
+  const admin = getAdmin()
+  const { data, error } = await admin.from('assignments')
     .select('id,org_id,inspection_id,assignment_type').eq('id', assignmentId).maybeSingle()
   if (error) throw new Error('OB_ORGANIZATION_READ_FAILED')
   if (!data || !['OB', 'STATUS'].includes(data.assignment_type)) throw new Error('OB_ASSIGNMENT_NOT_FOUND')
   if (!isOrganizationUuid(data.org_id)) throw new Error('OB_ORGANIZATION_READ_FAILED')
   const context = data.inspection_id
-    ? await requireObInspectionContext(data.inspection_id, data.org_id)
-    : await explicitObContext(data.org_id.toLowerCase(), actor)
+    ? await resolveInspection(data.inspection_id, data.org_id)
+    : await resolveOrganization(data.org_id.toLowerCase())
   if (context.userId !== actor) throw new Error('OB_ORGANIZATION_FORBIDDEN')
   if (requestedOrgId !== undefined && requestedOrgId !== context.orgId) throw new Error('OB_ORGANIZATION_MISMATCH')
   return context
@@ -151,21 +169,26 @@ export async function requireObAssignmentContext(assignmentIdValue: unknown, req
 
 /** Binding determines identity without expanding the existing owner boundary. */
 export async function requireObInspectionContext(inspectionIdValue: unknown, requestedOrgIdValue?: unknown): Promise<OrgContext> {
-  const userClient = createSupabaseServerClient()
-  const { data: { user }, error: authError } = await userClient.auth.getUser()
-  if (authError || !user) throw new Error('UNAUTHORIZED')
+  const actor = await authenticatedObActor()
+  return inspectionContext(actor, () => createSupabaseAdminClient(), inspectionIdValue, requestedOrgIdValue,
+    orgId => explicitObContext(orgId, actor))
+}
 
+async function inspectionContext(
+  actor: string, getAdmin: () => AdminClient, inspectionIdValue: unknown, requestedOrgIdValue: unknown,
+  resolveOrganization: (orgId: string) => Promise<OrgContext>
+): Promise<OrgContext> {
   const inspectionId = parseId(inspectionIdValue, 'OB_INSPECTION_INVALID')
   const requestedOrgId = requestedOrgIdValue === undefined
     ? undefined : parseId(requestedOrgIdValue, 'ORG_SELECTION_INVALID')
-  const admin = createSupabaseAdminClient()
+  const admin = getAdmin()
   const { data: inspectionData, error: inspectionError } = await admin.from('inspections')
     .select('id,inspection_family,type,properties!inner(owner)')
-    .eq('id', inspectionId).eq('properties.owner', user.id).maybeSingle()
+    .eq('id', inspectionId).eq('properties.owner', actor).maybeSingle()
   if (inspectionError) throw new Error('OB_ORGANIZATION_READ_FAILED')
   const inspection = inspectionData as InspectionAccessRow | null
   const property = Array.isArray(inspection?.properties) ? inspection.properties[0] : inspection?.properties
-  if (!inspection || inspection.id !== inspectionId || property?.owner !== user.id || !isObInspection(inspection)) {
+  if (!inspection || inspection.id !== inspectionId || property?.owner !== actor || !isObInspection(inspection)) {
     throw new Error('OB_ORGANIZATION_FORBIDDEN')
   }
 
@@ -184,24 +207,107 @@ export async function requireObInspectionContext(inspectionIdValue: unknown, req
   }
   const orgId = binding.org_id.toLowerCase()
 
-  let context: OrgContext
-  try {
-    // Always explicit: requireOrgContext's membership bootstrap/default branch
-    // must remain unreachable, including for old links without an orgId query.
-    context = await requireOrgContext(orgId)
-  } catch (error) {
-    if (error instanceof Error && ['UNAUTHORIZED', 'ORG_MEMBERSHIP_REQUIRED'].includes(error.message)) throw error
-    throw new Error('OB_ORGANIZATION_READ_FAILED')
-  }
-  if (context.userId !== user.id || context.orgId !== orgId) throw new Error('OB_ORGANIZATION_FORBIDDEN')
-
-  try {
-    if (!await hasObAccessWithClient(admin, orgId, user.id)) throw new Error('MODULE_ACCESS_REQUIRED')
-  } catch (error) {
-    if (error instanceof Error && ['UNAUTHORIZED', 'MODULE_ACCESS_REQUIRED', 'OB_ORGANIZATION_READ_FAILED'].includes(error.message)) throw error
-    throw new Error('OB_ORGANIZATION_READ_FAILED')
-  }
+  // Always explicit; the default/bootstrap membership branch is unreachable.
+  const context = await resolveOrganization(orgId)
   // Only an authorized owner learns that their requested organization mismatches.
   if (requestedOrgId !== undefined && requestedOrgId !== orgId) throw new Error('OB_ORGANIZATION_MISMATCH')
   return context
+}
+
+type ObNavigationMembership = {
+  org_id: string
+  profile_id: string
+  role: OrgContext['role']
+  is_active: boolean
+  is_default: boolean
+  organizations: { name: string | null; email_from: string | null } | Array<{ name: string | null; email_from: string | null }> | null
+}
+
+export type ObOrganizationEntity = { inspectionId?: string; assignmentId?: string }
+
+/**
+ * Resolve the whole navigation response inside one authenticated request. All
+ * promises below belong to this invocation only, never to another HTTP request.
+ * Entity authorization shares the same owner/binding checks as the API guards.
+ */
+export async function getObOrganizationSwitcherContext(
+  requestedOrgIdValue?: unknown, entity: ObOrganizationEntity = {}
+): Promise<OrganizationSwitcherContext> {
+  const access = await createDashboardAccessRequest()
+  const requestedOrgId = requestedOrgIdValue === undefined
+    ? undefined : parseId(requestedOrgIdValue, 'ORG_SELECTION_INVALID')
+  const admin = createSupabaseAdminClient()
+  let membershipsPromise: Promise<ObNavigationMembership[]> | undefined
+  const memberships = () => membershipsPromise ??= (async () => {
+    const { data, error } = await admin.from('org_members')
+      .select('org_id,profile_id,role,is_active,is_default,created_at,organizations(name,email_from)')
+      .eq('profile_id', access.userId).eq('is_active', true)
+      .order('is_default', { ascending: false }).order('created_at').order('org_id')
+    if (error || !Array.isArray(data)) throw new Error('OB_ORGANIZATION_READ_FAILED')
+    const rows = data as unknown as ObNavigationMembership[]
+    if (rows.some(row => !isOrganizationUuid(row.org_id) || row.profile_id !== access.userId ||
+        row.is_active !== true || !['admin', 'inspector'].includes(row.role))) {
+      throw new Error('OB_ORGANIZATION_READ_FAILED')
+    }
+    return rows
+  })()
+  const contexts = new Map<string, Promise<OrgContext>>()
+  const resolveOrganization = (orgId: string): Promise<OrgContext> => {
+    let result = contexts.get(orgId)
+    if (!result) {
+      result = (async () => {
+        const member = (await memberships()).find(row => row.org_id.toLowerCase() === orgId)
+        if (!member) throw new Error('ORG_MEMBERSHIP_REQUIRED')
+        let allowed: boolean
+        try {
+          allowed = await hasObAccessWithClient(admin, orgId, access.userId, async id => {
+            const [scoped, global] = await Promise.all([
+              access.hasAccess({ moduleKey: 'inspections', scopeType: 'organization', scopeId: id }),
+              access.hasAccess({ moduleKey: 'inspections', scopeType: 'global' }),
+            ])
+            return scoped || global
+          })
+        } catch {
+          throw new Error('OB_ORGANIZATION_READ_FAILED')
+        }
+        if (!allowed) throw new Error('MODULE_ACCESS_REQUIRED')
+        const organization = relation(member.organizations)
+        return {
+          userId: access.userId, orgId, role: member.role,
+          orgName: typeof organization.name === 'string' ? organization.name : null,
+          orgEmailFrom: typeof organization.email_from === 'string' ? organization.email_from : null,
+        }
+      })()
+      contexts.set(orgId, result)
+    }
+    return result
+  }
+  const allowedContext = async (orgId: string) => {
+    try { return await resolveOrganization(orgId) } catch (error) {
+      if (error instanceof Error && ['ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED'].includes(error.message)) return null
+      throw error
+    }
+  }
+  const resolveInspection = (id: unknown, orgId?: unknown) =>
+    inspectionContext(access.userId, () => admin, id, orgId, resolveOrganization)
+  // Ownership is verified before reading bindings, memberships or module access.
+  let selected = entity.inspectionId !== undefined
+    ? await resolveInspection(entity.inspectionId, requestedOrgId)
+    : entity.assignmentId !== undefined
+      ? await assignmentContext(access.userId, () => admin, entity.assignmentId, requestedOrgId, resolveOrganization, resolveInspection)
+      : requestedOrgId !== undefined ? await resolveOrganization(requestedOrgId) : null
+  const members = await memberships()
+  if (!members.length) throw new Error('ORG_MEMBERSHIP_REQUIRED')
+  const allowed = await Promise.all(members.map(async member => ({
+    member, context: await allowedContext(member.org_id.toLowerCase()),
+  })))
+  if (!selected) selected = allowed.find(item => item.context)?.context ?? null
+  if (!selected) throw new Error('MODULE_ACCESS_REQUIRED')
+  const organizations = allowed.filter(item => item.context).map(({ member }) => {
+    const name = relation(member.organizations).name
+    return { id: member.org_id.toLowerCase(), name: typeof name === 'string' ? name.trim() || null : null, isDefault: member.is_default }
+  })
+  const organization = organizations.find(item => item.id === selected.orgId)
+  if (!organization) throw new Error('MODULE_ACCESS_REQUIRED')
+  return { organization, organizations }
 }

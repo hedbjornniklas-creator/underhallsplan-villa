@@ -155,7 +155,7 @@ function TopbarContent() {
       code: 'ÖB',
       label: 'Överlåtelsebesiktning',
       description: 'ÖB / insida och utsida',
-      href: '/ob',
+      href: organizationHref('/ob'),
       active: isObContext || normalizedPath.startsWith('/inspections'),
     },
     {
@@ -203,8 +203,8 @@ function TopbarContent() {
               ? organizationHref('/fuktsakerhet')
               : isTasksContext
                 ? '/uppdrag'
-                : isObContext
-                  ? '/ob'
+                : isObContext || normalizedPath.startsWith('/inspections')
+                  ? organizationHref('/ob')
                   : '/'
   const logoSrc = isAdminContext || isDashboardLanding ? '/landing/Hushub-check2.png' : '/report-assets/BesiktApp.png'
   const logoAlt = isAdminContext || isDashboardLanding ? 'HusHub' : 'BesiktApp'

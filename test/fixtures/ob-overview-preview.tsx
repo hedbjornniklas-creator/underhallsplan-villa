@@ -1,19 +1,20 @@
 import { createRoot } from 'react-dom/client'
-import { useEffect, useState } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { AppToastProvider } from '../../src/components/ui/AppToastProvider'
 import { homeTest } from './ob-overview-client'
 import Page from '../../src/app/(dashboard)/ob/page'
 import ActiveOrganizationSwitcher from '../../src/components/organizations/ActiveOrganizationSwitcher'
+import OrganizationContextProvider from '../../src/components/organizations/OrganizationContextProvider'
 import { overviewDemoItems } from './ob-overview-data'
 import { selectObOverview, type OverviewFilter, type OverviewSort } from '../../src/lib/ob/overview'
 
 declare global {
   interface Window {
-    __obOverviewTest: { fail: boolean; empty: boolean; delay: number; reads: number; writes: number; urls: string[]; pageLengths: number[]; clockOffset: number }
+    __obOverviewTest: { fail: boolean; empty: boolean; delay: number; reads: number; writes: number; urls: string[]; pageLengths: number[]; clockOffset: number; contextReads: number }
   }
 }
 const state = new URL(location.href).searchParams.get('state')
-window.__obOverviewTest = { fail: state === 'error', empty: state === 'empty', delay: 0, reads: 0, writes: 0, urls: [], pageLengths: [], clockOffset: 0 }
+window.__obOverviewTest = { fail: state === 'error', empty: state === 'empty', delay: 0, reads: 0, writes: 0, urls: [], pageLengths: [], clockOffset: 0, contextReads: 0 }
 const realNow = Date.now
 Date.now = () => realNow() + window.__obOverviewTest.clockOffset
 const organizations = [
@@ -24,6 +25,8 @@ window.fetch = async (input, init) => {
   const requestUrl = new URL(String(input), location.href)
   const selectedOrganization = organizations.find(row => row.id === requestUrl.searchParams.get('orgId')) ?? organizations[0]
   if (requestUrl.pathname === '/api/organizations/context') {
+    window.__obOverviewTest.contextReads++
+    window.dispatchEvent(new Event('ob-preview-context-read'))
     await new Promise(resolve => setTimeout(resolve, 350))
     if (requestUrl.searchParams.has('orgId') && !organizations.some(row => row.id === requestUrl.searchParams.get('orgId'))) return Response.json({ error: 'Du saknar tillgång till organisationen.' }, { status: 403 })
     return Response.json({ organization: selectedOrganization, organizations })
@@ -102,8 +105,19 @@ function SyntheticMutationReceipt() {
   </aside> : null
 }
 
-createRoot(document.getElementById('root')!).render(<AppToastProvider>
-  <div className="preview-notice">Förhandsvisning med testdata · Inte publicerad</div>
+function SyntheticContextCounter() {
+  const [reads, setReads] = useState(0)
+  useEffect(() => {
+    const update = () => setReads(window.__obOverviewTest.contextReads)
+    window.addEventListener('ob-preview-context-read', update)
+    update()
+    return () => window.removeEventListener('ob-preview-context-read', update)
+  }, [])
+  return <span>Organisationskontroller: {reads}</span>
+}
+
+createRoot(document.getElementById('root')!).render(<StrictMode><AppToastProvider><OrganizationContextProvider>
+  <div className="preview-notice">Förhandsvisning med testdata · Inte publicerad · <SyntheticContextCounter /></div>
   <header className="preview-header">
     {/* Standalone fixture: no Next image optimizer is running. */}
     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -111,4 +125,4 @@ createRoot(document.getElementById('root')!).render(<AppToastProvider>
   </header>
   <SyntheticMutationReceipt />
   <Page />
-</AppToastProvider>)
+</OrganizationContextProvider></AppToastProvider></StrictMode>)

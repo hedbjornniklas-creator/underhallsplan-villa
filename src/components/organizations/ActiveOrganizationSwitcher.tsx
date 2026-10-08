@@ -8,20 +8,8 @@ import {
   organizationSwitchDestination,
   organizationSwitcherRoot,
   organizationSwitcherSurfaceForPath,
-  obOrganizationEntityForPath,
 } from '@/lib/organizations/navigation'
-
-type OrganizationOption = {
-  id: string
-  name: string | null
-  isDefault: boolean
-}
-
-type OrganizationResponse = {
-  organization?: OrganizationOption
-  organizations?: OrganizationOption[]
-  error?: string
-}
+import { useOrganizationContext } from '@/components/organizations/OrganizationContextProvider'
 
 export default function ActiveOrganizationSwitcher({
   isLoggedIn,
@@ -39,85 +27,13 @@ export default function ActiveOrganizationSwitcher({
   const searchParams = useSearchParams()
   const search = searchParams.toString()
   const surface = organizationSwitcherSurfaceForPath(pathname)
-  const obEntity = surface === 'ob' ? obOrganizationEntityForPath(pathname) : {}
-  const entityKind = obEntity.inspectionId ? 'inspectionId' : obEntity.assignmentId ? 'assignmentId' : ''
-  const entityId = obEntity.inspectionId ?? obEntity.assignmentId ?? ''
-  const organizationSelections = searchParams.getAll('orgId')
-  const invalidOrganizationSelection = organizationSelections.length > 1
-  const requestedOrgId = searchParams.get('orgId')
-  const [organization, setOrganization] = useState<OrganizationOption | null>(null)
-  const [organizations, setOrganizations] = useState<OrganizationOption[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [resolvedSelectionKey, setResolvedSelectionKey] = useState<string | null>(null)
+  const {
+    selectionKey, organization: visibleOrganization, organizations: visibleOrganizations,
+    error: visibleError, loading, invalidSelection: invalidOrganizationSelection,
+  } = useOrganizationContext()
   const [openSelectionKey, setOpenSelectionKey] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const selectionKey = surface ? `${surface}:${entityKind}:${entityId}:${requestedOrgId ?? ''}` : null
-  const selectionIsResolved = selectionKey !== null && resolvedSelectionKey === selectionKey
-  const visibleOrganization = selectionIsResolved ? organization : null
-  const visibleOrganizations = selectionIsResolved ? organizations : []
-  const visibleError = selectionIsResolved ? error : null
   const open = selectionKey !== null && openSelectionKey === selectionKey
-
-  useEffect(() => {
-    if (!surface || !isLoggedIn || !selectionKey || invalidOrganizationSelection) return
-
-    const controller = new AbortController()
-    let current = true
-    const params = new URLSearchParams({ surface })
-    if (entityKind) params.set(entityKind, entityId)
-    if (requestedOrgId !== null) params.set('orgId', requestedOrgId)
-
-    void fetch(`/api/organizations/context?${params.toString()}`, {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const body = (await response.json().catch(() => ({}))) as OrganizationResponse
-        if (!response.ok || !body.organization || !Array.isArray(body.organizations) ||
-          (requestedOrgId !== null && body.organization.id !== requestedOrgId.trim().toLowerCase()) ||
-          !body.organizations.some(item => item.id === body.organization?.id)) {
-          throw new Error(body.error || 'Organisationen kunde inte hämtas.')
-        }
-        if (!current) return
-        setOrganization(body.organization)
-        setOrganizations(body.organizations)
-        setError(null)
-        setResolvedSelectionKey(selectionKey)
-
-        if (requestedOrgId === null) {
-          const next = new URLSearchParams(search)
-          next.set('orgId', body.organization.id)
-          router.replace(`${pathname}?${next.toString()}`, { scroll: false })
-        }
-      })
-      .catch((loadError) => {
-        if (!current || controller.signal.aborted) return
-        setOrganization(null)
-        setOrganizations([])
-        setError(
-          loadError instanceof Error ? loadError.message : 'Organisationen kunde inte hämtas.'
-        )
-        setResolvedSelectionKey(selectionKey)
-      })
-
-    return () => {
-      current = false
-      controller.abort()
-    }
-  }, [
-    entityId,
-    entityKind,
-    invalidOrganizationSelection,
-    isLoggedIn,
-    pathname,
-    requestedOrgId,
-    router,
-    search,
-    selectionKey,
-    surface,
-  ])
 
   useEffect(() => {
     if (!open) return
@@ -181,7 +97,7 @@ export default function ActiveOrganizationSwitcher({
     )
   }
 
-  if (!selectionIsResolved) {
+  if (loading) {
     return <div className="truncate text-xs font-medium text-gray-500">Laddar organisation…</div>
   }
 

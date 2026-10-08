@@ -4,6 +4,8 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { setImmediate } from 'node:timers/promises'
 import ts from 'typescript'
+// @ts-expect-error Node's strip-types runner requires explicit TypeScript extensions.
+import { organizationContextHarness } from './helpers/organization-context-harness.ts'
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 function load(path: string, dependencies: Record<string, unknown>, globals: Record<string, unknown> = {}) {
@@ -19,61 +21,7 @@ const navigation = load('src/lib/organizations/navigation.ts', {})
 const organizationA = { id: '11111111-1111-4111-8111-111111111111', name: 'A', isDefault: true }
 const organizationB = { id: '22222222-2222-4222-8222-222222222222', name: 'B', isDefault: false }
 
-type Element = { type: string; key?: string; props: Record<string, any> }
-function harness() {
-  type Hook = { value?: any; deps?: unknown[]; cleanup?: () => void }
-  const hooks: Hook[] = []
-  const requests: { url: URL; signal: AbortSignal; finish: (body: unknown, ok?: boolean) => void }[] = []
-  const replacements: string[] = []
-  const browser = new EventTarget()
-  let cursor = 0, pathname = '/ob', search = '', confirmation = false, confirmCount = 0
-  let effects: (() => void)[] = []
-  const router = { replace: (url: string) => replacements.push(url) }
-  const react = {
-    createContext: () => ({ Provider: 'Provider' }), useContext: () => organizationA,
-    useState(initial: unknown) {
-      const hook = hooks[cursor++] ??= { value: initial }
-      return [hook.value, (value: unknown) => { hook.value = value }]
-    },
-    useEffect(effect: () => (() => void) | undefined, deps: unknown[]) {
-      const hook = hooks[cursor++] ??= {}
-      if (!hook.deps || deps.length !== hook.deps.length || deps.some((value, i) => !Object.is(value, hook.deps![i]))) {
-        hook.deps = deps
-        effects.push(() => { hook.cleanup?.(); hook.cleanup = effect() })
-      }
-    },
-  }
-  const jsx = (type: string, props: Record<string, unknown>, key?: string) => ({ type, props, key })
-  const component = load('src/components/ob/ObOrganizationBoundary.tsx', {
-    react, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'next/link': { default: 'Link' },
-    'next/navigation': { useRouter: () => router, usePathname: () => pathname, useSearchParams: () => new URLSearchParams(search) },
-    '@/lib/organizations/navigation': navigation,
-  }, {
-    window: Object.assign(browser, { confirm: () => { confirmCount++; return confirmation } }),
-    fetch: (url: string, options: { signal: AbortSignal }) => new Promise(resolve => requests.push({
-      url: new URL(url, 'https://test.invalid'), signal: options.signal,
-      finish: (body: unknown, ok = true) => resolve({ ok, json: async () => body }),
-    })),
-  })
-  function render(path = pathname, query = search): Element {
-    pathname = path; search = query; cursor = 0; effects = []
-    const result = component.default({ children: 'WORK' }) as Element
-    for (const effect of effects) effect()
-    return result
-  }
-  return {
-    requests, replacements, render, component,
-    async finish(index: number, org = organizationA) {
-      requests[index].finish({ organization: org, organizations: [organizationA, organizationB] })
-      await setImmediate()
-    },
-    guard(dirty: boolean, busy: boolean) { cursor = 0; effects = []; component.useObOrganizationSwitchGuard(dirty, busy); for (const effect of effects) effect() },
-    setConfirmation(value: boolean) { confirmation = value },
-    switchAllowed() { return browser.dispatchEvent(new Event('hushub:before-organization-switch', { cancelable: true })) },
-    confirmCount: () => confirmCount,
-    dispose() { for (const hook of hooks) hook?.cleanup?.() },
-  }
-}
+const harness = organizationContextHarness
 
 test('OB switcher includes all work surfaces, excludes the legacy settings editor and leaves detail IDs behind', () => {
   for (const path of ['/ob', '/ob/assignments', '/ob/assignments/new', '/ob/assignments/id', '/inspections', '/properties/property/ob', '/properties/property/ob/inspection']) {
@@ -88,7 +36,7 @@ test('OB switcher includes all work surfaces, excludes the legacy settings edito
 
 test('children do not mount before validation, and missing selector becomes explicit in the current tab only', async () => {
   const view = harness()
-  assert.equal(view.render().props.role, 'status')
+  assert.equal((await view.ready()).props.role, 'status')
   assert.equal(view.requests[0].url.searchParams.get('surface'), 'ob')
   assert.equal(view.requests[0].url.searchParams.has('orgId'), false)
   await view.finish(0)
@@ -102,7 +50,7 @@ test('children do not mount before validation, and missing selector becomes expl
 
 test('old detail links resolve authoritative entity organization without default selection', async () => {
   const view = harness()
-  view.render('/properties/p/ob/i', 'section=report')
+  await view.ready('/properties/p/ob/i', 'section=report')
   assert.equal(view.requests[0].url.searchParams.get('inspectionId'), 'i')
   assert.equal(view.requests[0].url.searchParams.has('orgId'), false)
   await view.finish(0, organizationB)
@@ -113,7 +61,7 @@ test('old detail links resolve authoritative entity organization without default
 
 test('organization switch immediately hides old work, aborts old load and cannot accept its late response', async () => {
   const view = harness()
-  view.render('/ob', `orgId=${organizationA.id}`)
+  await view.ready('/ob', `orgId=${organizationA.id}`)
   assert.equal(view.render('/ob', `orgId=${organizationB.id}`).props.role, 'status')
   assert.equal(view.requests[0].signal.aborted, true)
   await view.finish(1, organizationB)
@@ -130,7 +78,7 @@ test('duplicate selectors make no request; mismatched or unauthorized selection 
   assert.equal(duplicate.requests.length, 0)
   duplicate.dispose()
   const denied = harness()
-  denied.render('/ob/assignments/a', `orgId=${organizationB.id}`)
+  await denied.ready('/ob/assignments/a', `orgId=${organizationB.id}`)
   assert.equal(denied.requests[0].url.searchParams.get('assignmentId'), 'a')
   denied.requests[0].finish({ error: 'Uppdraget tillhör en annan organisation.' }, false)
   await setImmediate()
@@ -156,7 +104,7 @@ test('unsaved work can cancel switching and pending mutations always block switc
 
 test('an inconsistent successful context reply cannot render the wrong organization', async () => {
   const view = harness()
-  view.render('/ob', `orgId=${organizationA.id}`)
+  await view.ready('/ob', `orgId=${organizationA.id}`)
   await view.finish(0, organizationB)
   assert.equal(view.render().type, 'main')
   assert.deepEqual(view.replacements, [])

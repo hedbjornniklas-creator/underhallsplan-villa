@@ -11,7 +11,11 @@ export const supabase = {
   auth: {
     getUser: async () => ({ data: { user: session.user }, error: null }),
     getSession: async () => ({ data: { session }, error: null }),
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+    onAuthStateChange: (callback: (event: string, value: typeof session) => void) => {
+      let active = true
+      void Promise.resolve().then(() => { if (active) callback('INITIAL_SESSION', session) })
+      return { data: { subscription: { unsubscribe() { active = false } } } }
+    },
   },
   from(table: string) {
     if (!['properties', 'profiles', 'assignments', 'inspections', 'inspection_conditions', 'ob_property_snapshot'].includes(table)) throw Error(`Blocked preview read: ${table}`)

@@ -141,7 +141,14 @@ class Query implements PromiseLike<any> {
 export const supabase: any = {
   from: (table: string) => ['settings_control_points', 'settings_control_point_outcomes'].includes(table)
     ? roundCatalog.from(table) : new Query(table),
-  auth: { getUser: async () => ({ data: { user: { id: 'synthetic-inspector' } }, error: null }) },
+  auth: {
+    getUser: async () => ({ data: { user: { id: 'synthetic-inspector' } }, error: null }),
+    onAuthStateChange: (callback: (event: string, session: { user: { id: string } }) => void) => {
+      let active = true
+      void Promise.resolve().then(() => { if (active) callback('INITIAL_SESSION', { user: { id: 'synthetic-inspector' } }) })
+      return { data: { subscription: { unsubscribe() { active = false } } } }
+    },
+  },
   storage: { from: () => ({ getPublicUrl: () => ({ data: { publicUrl: '/photo.png' } }), upload: async () => ({ error: null }) }) },
 }
 window.fetch = async (input, init) => {

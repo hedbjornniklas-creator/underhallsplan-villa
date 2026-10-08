@@ -65,6 +65,48 @@ Verifierat i en isolerad produktionskopia baserad på `f076e54`: 37 funktionstes
 klicktester på nio bredder (320 till 1920 px), 200 % textförstoring och riktad
 ESLint godkända. Testerna använder fiktiva uppdrag utan skrivning eller utskick.
 
+## Organisationshämtning 2026-10-08
+
+Användaren har godkänt publicering. Driftsättningsstatus verifieras separat
+från den dokumenterade implementationen nedan.
+
+Toppmenyn och ÖB:s organisationsgräns använder en gemensam
+`OrganizationContextProvider` i respektive app-layout. Den håller bara den
+aktuella flikens UI-kontext i minnet. Navigering mellan ÖB:s arbetsytor med
+samma organisation och utan objekt-ID, samt ändrade filter, hämtar inte om
+samma organisationsuppgifter. När ett saknat `orgId` skrivs in i adressen
+återanvänds det redan verifierade svaret utan ett extra anrop.
+
+- Ny organisation, modul, besiktning, uppdragsbekräftelse eller inloggad person
+  kräver ett nytt kontextanrop. Den tidigare kontexten döljs direkt, och sena
+  svar från avbrutna anrop får inte återställa den.
+- Befintliga objektslänkar verifieras mot sin lagrade organisationsbindning.
+  Medlemskap eller organisationsadministration ger inte automatiskt tillgång
+  till en annan besiktningsmans objekt.
+- Fokus/synlighet återkontrollerar kontexten i bakgrunden, tidigast 30 sekunder
+  efter senaste avslutade kontroll. Ett tillfälligt nätverksfel eller 5xx under
+  den kontrollen kastar inte ett öppet formulär. Nekad åtkomst eller ett
+  inkonsekvent svar stänger däremot arbetsytan.
+- Detta är inte en behörighetscache för API-anrop. Skyddade läsningar och
+  ändringar gör fortsatt sina serverkontroller/RLS. Ingen kontext sparas i
+  localStorage/sessionStorage eller återanvänds mellan serveranrop.
+- Servern delar autentisering, medlemskapslista och åtkomstbeslut enbart inom
+  ett enskilt ÖB-kontextanrop. Övriga modulernas befintliga serverbehörigheter
+  ändras inte. Svar förblir `private, no-store`.
+- ÖB-länkar i toppmenyn behåller det uttryckliga organisationsvalet. Osparade
+  formulär och pågående skrivningar behåller sitt skydd vid organisationsbyte.
+
+Deterministiskt test med två organisationer och äldre global ÖB-behörighet:
+12 autentiseringsanrop/19 databasläsningar blir 1/5 per kontextsvar.
+Webbläsarprovet med syntetiska data och React StrictMode visar en gemensam
+organisationshämtning, oförändrad räknare vid filtrering och en ny hämtning
+vid organisationsbyte. Inga riktiga uppdrag eller kunder har skapats.
+
+Första inläsningen väntar fortfarande på verifierad kontext innan ÖB-formulär
+monteras. Ingen uppmätt produktionstid eller fullständigt borttagen laddtid
+påstås. Ingen SQL behövs för denna ändring. Inloggat slutprov och mätning
+av laddtid på hushub.se återstår efter driftsättning.
+
 ## Datakoppling och åtkomst
 
 - `GET /api/ob/overview` använder samma organisationskontext som den befintliga

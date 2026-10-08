@@ -65,6 +65,7 @@ function harness(options: {
   assignment?: Row | null
   binding?: Row | null
   entitlement?: Row | null
+  entitlements?: Row[]
   memberships?: Row[]
   grants?: Row[]
   legacyAdmin?: boolean
@@ -83,7 +84,7 @@ function harness(options: {
       id: INSPECTION, inspection_family: 'OB', type: 'OB', properties: { owner: ACTOR },
     }],
     ob_organization_bindings: options.binding === null ? [] : [options.binding ?? { inspection_id: INSPECTION, org_id: ORG }],
-    organization_enabled_modules: options.entitlement ? [{ org_id: ORG, module_key: 'inspections', ...options.entitlement }] : [],
+    organization_enabled_modules: options.entitlements ?? (options.entitlement ? [{ org_id: ORG, module_key: 'inspections', ...options.entitlement }] : []),
     org_members: options.memberships ?? [membership(OTHER_ORG), membership()],
     profiles: [{ id: ACTOR, full_name: 'Person', email: 'person@example.test', is_admin: options.legacyAdmin ?? false }],
     platform_access_assignments: options.grants ?? [grant()],
@@ -152,7 +153,7 @@ function harness(options: {
       return { ...await assignments.requireOrgContext(orgId), ...options.overrideContext }
     } },
   })
-  return { server, calls }
+  return { server, calls, rows, db }
 }
 
 test('authentication precedes privileged clients and all data reads', async () => {
@@ -474,5 +475,119 @@ test('all new context entry points authenticate before privileged reads', async 
     const h = harness({ user: null })
     await assert.rejects(run(h.server), { message: 'UNAUTHORIZED' })
     assert.deepEqual(h.calls.events, ['auth'])
+  }
+})
+
+test('one OB context response reuses auth/memberships/legacy grants instead of the former repeated guard chain', async () => {
+  const options = { grants: [grant({ scope_type: 'global', scope_id: null })] }
+  const before = harness(options)
+  // The former context resolver: selected guard, membership list, one complete
+  // independently authenticated guard per option. These are the real guards.
+  const selected = await before.server.requireObContext(ORG)
+  const { data: members } = await before.db.from('org_members').select('org_id')
+    .eq('profile_id', selected.userId).eq('is_active', true) as { data: Row[] }
+  await Promise.all((members as Row[]).map(row => before.server.hasOrganizationObAccess(String(row.org_id), selected.userId)))
+  const after = harness(options)
+  const result = await after.server.getObOrganizationSwitcherContext(ORG)
+  assert.deepEqual(result.organizations.map(row => row.id), [OTHER_ORG, ORG])
+  assert.equal(result.organization.id, ORG)
+  assert.equal(before.calls.events.filter(event => event === 'auth').length, 12)
+  assert.equal(before.calls.queries.length, 19)
+  assert.equal(after.calls.events.filter(event => event === 'auth').length, 1)
+  assert.equal(after.calls.queries.length, 5)
+  assert.equal(after.calls.queries.filter(query => query.table === 'org_members').length, 1)
+  assert.equal(after.calls.queries.filter(query => query.table === 'profiles').length, 1)
+  assert.equal(after.calls.queries.filter(query => query.table === 'platform_access_assignments').length, 1)
+  assert.deepEqual(after.calls.mutations, [])
+})
+
+test('managed navigation never loads legacy identity and checks each exact entitlement/grant once', async () => {
+  const h = harness({
+    grants: [grant(), grant({ scope_id: OTHER_ORG })],
+    entitlements: [ORG, OTHER_ORG].map(org_id => ({ org_id, module_key: 'inspections', is_active: true })),
+  })
+  const result = await h.server.getObOrganizationSwitcherContext(ORG, { inspectionId: INSPECTION })
+  assert.equal(result.organization.id, ORG)
+  assert.equal(result.organizations.length, 2)
+  assert.equal(h.calls.events.filter(event => event === 'auth').length, 1)
+  assert.equal(h.calls.queries.length, 7) // inspection + binding + members + two entitlement/grant pairs
+  assert.equal(h.calls.queries.filter(query => query.table === 'profiles').length, 0)
+  assert.equal(h.calls.queries.filter(query => query.table === 'org_members').length, 1)
+  assert.deepEqual(h.calls.queries.slice(0, 2).map(query => query.table), ['inspections', 'ob_organization_bindings'])
+})
+
+test('request-local navigation context is discarded: revoked membership/grant/entitlement denies the next request', async () => {
+  for (const revoke of [
+    (rows: Record<string, Row[]>) => { rows.org_members.find(row => row.org_id === ORG)!.is_active = false },
+    (rows: Record<string, Row[]>) => { rows.platform_access_assignments[0].is_active = false },
+    (rows: Record<string, Row[]>) => { rows.organization_enabled_modules[0].is_active = false },
+  ]) {
+    const h = harness({ entitlement: { is_active: true } })
+    assert.equal((await h.server.getObOrganizationSwitcherContext(ORG)).organization.id, ORG)
+    revoke(h.rows)
+    await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG), /ORG_MEMBERSHIP_REQUIRED|MODULE_ACCESS_REQUIRED/)
+    assert.equal(h.calls.events.filter(event => event === 'auth').length, 2)
+  }
+})
+
+test('navigation uses exactly the same managed and legacy decisions as the protected entity guard', async () => {
+  const cases = [
+    {}, { grants: [] }, { grants: [], legacyAdmin: true },
+    { grants: [grant({ scope_type: 'global', scope_id: null })] },
+    { grants: [grant({ scope_id: OTHER_ORG })] },
+    { grants: [grant({ is_active: false })] },
+    { grants: [grant({ expires_at: '2000-01-01T00:00:00Z' })] },
+    { grants: [grant({ platform_modules: { key: 'technical_investigations' } })] },
+    { memberships: [] }, { memberships: [membership(ORG, { is_active: false })] },
+    { entitlement: { is_active: false }, legacyAdmin: true },
+    { entitlement: { is_active: true } },
+    { entitlement: { is_active: true }, grants: [] },
+    { entitlement: { is_active: true }, grants: [grant({ scope_type: 'global', scope_id: null })] },
+    { entitlement: { is_active: true }, grants: [grant({ profile_id: OTHER_ACTOR })] },
+    { entitlement: { is_active: true }, grants: [grant({ expires_at: 'invalid' })] },
+    { entitlement: { is_active: true }, grants: [grant({ platform_roles: { key: 'dashboard_admin' } })] },
+    ...['platform_products', 'platform_modules', 'platform_roles'].flatMap(key => [
+      { entitlement: { is_active: true }, grants: [grant({ [key]: { ...(grant()[key] as Row), is_active: false } })] },
+      { entitlement: { is_active: true }, grants: [grant({ [key]: { ...(grant()[key] as Row), product_id: 'other', id: 'other' } })] },
+    ]),
+  ]
+  const outcome = async (run: () => Promise<unknown>) => {
+    try { await run(); return 'allowed' } catch (error) { return (error as Error).message }
+  }
+  for (const options of cases) {
+    const original = harness(options)
+    const navigation = harness(options)
+    assert.equal(await outcome(() => navigation.server.getObOrganizationSwitcherContext(ORG, { inspectionId: INSPECTION })),
+      await outcome(() => original.server.requireObInspectionContext(INSPECTION, ORG)), JSON.stringify(options))
+  }
+})
+
+test('navigation authenticates before reads and rejects non-owner before bindings or memberships', async () => {
+  for (const options of [{ user: null }, { authError: true }]) {
+    const h = harness(options)
+    await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG), { message: 'UNAUTHORIZED' })
+    assert.deepEqual(h.calls.events, ['auth'])
+  }
+  const h = harness({ inspection: { id: INSPECTION, inspection_family: 'OB', type: 'OB', properties: { owner: OTHER_ACTOR } } })
+  await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG, { inspectionId: INSPECTION }), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+  assert.deepEqual(h.calls.queries.map(query => query.table), ['inspections'])
+})
+
+test('navigation preserves bound organization, assignment linkage and authorized-only mismatch errors', async () => {
+  const linked = { id: OTHER_INSPECTION, org_id: ORG, inspection_id: INSPECTION, assignment_type: 'STATUS' }
+  const h = harness({ assignment: linked })
+  assert.equal((await h.server.getObOrganizationSwitcherContext(undefined, { assignmentId: OTHER_INSPECTION })).organization.id, ORG)
+  assert.equal(h.calls.events.filter(event => event === 'auth').length, 1)
+  await assert.rejects(h.server.getObOrganizationSwitcherContext(OTHER_ORG, { inspectionId: INSPECTION }), { message: 'OB_ORGANIZATION_MISMATCH' })
+  const mismatch = harness({ assignment: { ...linked, org_id: OTHER_ORG } })
+  await assert.rejects(mismatch.server.getObOrganizationSwitcherContext(undefined, { assignmentId: OTHER_INSPECTION }), { message: 'OB_ORGANIZATION_MISMATCH' })
+  const disabled = harness({ entitlement: { is_active: false } })
+  await assert.rejects(disabled.server.getObOrganizationSwitcherContext(OTHER_ORG, { inspectionId: INSPECTION }), { message: 'MODULE_ACCESS_REQUIRED' })
+})
+
+test('navigation fails closed on member/access reads, never silently hiding an unreadable organization', async () => {
+  for (const table of ['org_members', 'organization_enabled_modules', 'platform_access_assignments', 'profiles']) {
+    const h = harness({ tableErrors: { [table]: { message: 'private database details' } } })
+    await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG), { message: 'OB_ORGANIZATION_READ_FAILED' })
   }
 })

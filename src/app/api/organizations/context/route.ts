@@ -3,7 +3,6 @@ import {
   getOrganizationSwitcherContext,
   type OrganizationSwitcherSurface,
 } from '@/lib/organizations/server'
-import { requireObAssignmentContext, requireObInspectionContext } from '@/lib/ob/organizationBindings'
 import { isOrganizationUuid } from '@/lib/organizations/administrationHttp'
 
 export const runtime = 'nodejs'
@@ -77,15 +76,12 @@ export async function GET(request: Request) {
       return jsonError('Begäran är ogiltig.', 400)
     }
     const requestedOrgId = searchParams.has('orgId') ? searchParams.get('orgId') : undefined
-    // Existing links resolve their persisted entity organization before the
-    // switcher runs. Never label an old inspection with today's default org.
-    const entity = inspectionId !== null
-      ? await requireObInspectionContext(inspectionId, requestedOrgId)
-      : assignmentId !== null ? await requireObAssignmentContext(assignmentId, requestedOrgId) : null
-
+    // The OB resolver verifies the persisted entity binding and builds options
+    // with one request-local authorization snapshot, not a second auth chain.
     const context = await getOrganizationSwitcherContext(
       surface as OrganizationSwitcherSurface,
-      entity?.orgId ?? requestedOrgId
+      requestedOrgId,
+      inspectionId !== null ? { inspectionId } : assignmentId !== null ? { assignmentId } : undefined
     )
     return NextResponse.json(context, { headers: RESPONSE_HEADERS })
   } catch (error) {

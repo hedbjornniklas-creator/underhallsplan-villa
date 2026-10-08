@@ -19,32 +19,26 @@ function load<T>(path: string, deps: Record<string, unknown>): T {
 }
 function routeHarness(error?: string) {
   const calls: unknown[] = []
-  const entity = async (kind: string, id: unknown, requested: unknown) => {
-    calls.push([kind, id, requested])
-    if (error) throw new Error(error)
-    return { orgId: ORG }
-  }
   const route = load<{ GET: (r: Request) => Promise<Response> }>('src/app/api/organizations/context/route.ts', {
     'next/server': { NextResponse: { json: (body: unknown, options: ResponseInit) => Response.json(body, options) } },
-    '@/lib/organizations/server': { getOrganizationSwitcherContext: async (surface: string, orgId: unknown) => {
-      calls.push(['switcher', surface, orgId]); return { organization: { id: orgId }, organizations: [{ id: orgId }] }
+    '@/lib/organizations/server': { getOrganizationSwitcherContext: async (surface: string, orgId: unknown, entity: unknown) => {
+      calls.push(['switcher', surface, orgId, entity])
+      if (error) throw new Error(error)
+      return { organization: { id: orgId ?? ORG }, organizations: [{ id: orgId ?? ORG }] }
     } },
     '@/lib/organizations/administrationHttp': { isOrganizationUuid: (value: unknown) =>
       typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value) },
-    '@/lib/ob/organizationBindings': {
-      requireObInspectionContext: (id: unknown, org: unknown) => entity('inspection', id, org),
-      requireObAssignmentContext: (id: unknown, org: unknown) => entity('assignment', id, org),
-    },
   })
   return { calls, get: (query: string) => route.GET(new Request(`https://hushub.test/api/organizations/context?${query}`)) }
 }
 
-test('OB old deep links resolve persisted entity organization before loading switcher options', async () => {
+test('OB old deep links pass the authoritative entity selector to one combined context resolver', async () => {
   for (const kind of ['inspection', 'assignment']) {
     const h = routeHarness()
     const response = await h.get(`surface=ob&${kind}Id=${ID}`)
     assert.equal(response.status, 200)
-    assert.deepEqual(h.calls, [[kind, ID, undefined], ['switcher', 'ob', ORG]])
+    assert.deepEqual(h.calls, [['switcher', 'ob', undefined, { [`${kind}Id`]: ID }]])
+    assert.equal((await response.json()).organization.id, ORG)
     assert.match(response.headers.get('cache-control') ?? '', /private, no-store/)
   }
 })
@@ -56,7 +50,7 @@ test('OB entity errors never fall back to selected or default organization', asy
     const h = routeHarness(String(error))
     const response = await h.get(`surface=ob&inspectionId=${ID}&orgId=${OTHER}`)
     assert.equal(response.status, status)
-    assert.deepEqual(h.calls, [['inspection', ID, OTHER]])
+    assert.deepEqual(h.calls, [['switcher', 'ob', OTHER, { inspectionId: ID }]])
   }
 })
 
@@ -73,5 +67,5 @@ test('context rejects ambiguous, malformed or non-OB entity selectors before any
 test('workspace context accepts explicit organization without manufacturing an entity selector', async () => {
   const h = routeHarness()
   assert.equal((await h.get(`surface=ob&orgId=${ORG}`)).status, 200)
-  assert.deepEqual(h.calls, [['switcher', 'ob', ORG]])
+  assert.deepEqual(h.calls, [['switcher', 'ob', ORG, undefined]])
 })

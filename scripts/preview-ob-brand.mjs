@@ -19,7 +19,7 @@ await new Promise((ok, fail) => webpack({
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve(forms ? 'test/fixtures/ob-forms-client.ts' : 'test/fixtures/ob-brand-preview-client.ts'),
     'next/link': resolve('test/helpers/preview-link.tsx'),
-    'next/navigation': resolve('test/fixtures/ob-overview-navigation.tsx'),
+    'next/navigation': resolve(forms ? 'test/fixtures/ob-forms-navigation.tsx' : 'test/fixtures/ob-overview-navigation.tsx'),
     './mobile-round.css': false, './ob-forms.css': false, './ob-environmental.css': false, '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },

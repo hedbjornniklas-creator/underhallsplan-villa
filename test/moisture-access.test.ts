@@ -99,6 +99,7 @@ function harness(options: { grants?: Grant[]; missingSchema?: boolean; legacyAdm
     '@/lib/customers/server': { getOrganizationCustomerNavigationContext: () => { throw new Error('Unexpected customer context') } },
     '@/lib/tu/server': { requireTuContext: () => { throw new Error('Moisture must not reuse TU authorization') } },
     '@/lib/organizations/moduleAvailability': { hasOrganizationTuAccess: () => { throw new Error('Moisture must not use TU entitlements') } },
+    '@/lib/ob/organizationBindings': { getObOrganizationSwitcherContext: () => { throw new Error('Moisture must not use OB authorization') } },
     '@/lib/moisture/server': { requireMoistureContext: async (orgId: unknown) => {
       selectedOrgIds.push(orgId)
       return { orgId: orgId ?? 'org-a', orgName: 'Selected', userId: 'profile-1' }
@@ -191,6 +192,7 @@ test('organization context endpoint accepts moisture, keeps responses private an
   const route = load<{ GET: (request: Request) => Promise<Response> }>('src/app/api/organizations/context/route.ts', {
     'next/server': { NextResponse: { json: (body: unknown, init: ResponseInit) => Response.json(body, init) } },
     '@/lib/organizations/server': service,
+    '@/lib/organizations/administrationHttp': { isOrganizationUuid: () => { throw new Error('Moisture must not resolve an OB entity') } },
   })
   const allowed = await route.GET(new Request('https://hushub.test/api/organizations/context?surface=moisture&orgId=org-a'))
   assert.equal(allowed.status, 200)

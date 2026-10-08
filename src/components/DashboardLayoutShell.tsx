@@ -3,6 +3,7 @@
 import React from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import Topbar from '@/components/Topbar'
+import OrganizationContextProvider from '@/components/organizations/OrganizationContextProvider'
 
 export default function DashboardLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -13,11 +14,11 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
   const isLandingPage = pathname === '/'
 
   if (isEmbed || isLandingPage) {
-    return <main className="min-h-screen bg-white">{children}</main>
+    return <OrganizationContextProvider><main className="min-h-screen bg-white">{children}</main></OrganizationContextProvider>
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-50 print:block print:min-h-0 print:bg-white">
+    <OrganizationContextProvider><div className="flex min-h-screen bg-gray-50 print:block print:min-h-0 print:bg-white">
       <div className="flex min-h-0 flex-1 flex-col print:block print:min-h-0">
         <div className="print:hidden">
           <Topbar />
@@ -26,6 +27,6 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
           {children}
         </main>
       </div>
-    </div>
+    </div></OrganizationContextProvider>
   )
 }

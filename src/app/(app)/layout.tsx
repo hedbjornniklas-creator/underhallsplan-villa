@@ -1,18 +1,19 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import React, { Suspense } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 import Topbar from '@/components/Topbar'
+import OrganizationContextProvider from '@/components/organizations/OrganizationContextProvider'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
-  const [isEmbed, setIsEmbed] = useState(false)
+  return <Suspense><OrganizationContextProvider><AppLayoutContent>{children}</AppLayoutContent></OrganizationContextProvider></Suspense>
+}
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const v = params.get('embed')
-    setIsEmbed(v === '1' || v === 'true')
-  }, [pathname])
+function AppLayoutContent({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const embed = searchParams.get('embed')
+  const isEmbed = embed === '1' || embed === 'true'
 
   const isLandingPage = pathname === '/'
 
