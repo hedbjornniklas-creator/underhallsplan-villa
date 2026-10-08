@@ -74,6 +74,8 @@ export type ContractParticipants = {
 }
 export type CustomerContractDetails = {
   version: 1
+  otherAgreements?: string
+  workEnvironmentDefaultVersion?: 'abs18-2018-06'
   assignment?: ContractAssignment
   property?: PropertyDetails & { sourcePropertyId?: string }
   propertyReference?: string
@@ -106,7 +108,11 @@ export function contractParticipantsForEditing(value: CustomerContractDetails): 
 }
 
 export function contractDetailsForEditing(value: CustomerContractDetails): CustomerContractDetails {
-  return editContractParticipants(value, {})
+  const details = editContractParticipants(value, {})
+  if (details.otherAgreements !== undefined) return details
+  // Preserve the old free text under Other; do not classify it as a scope exclusion.
+  return { ...details, otherAgreements: contractEntryText(details.fields.customerWork),
+    fields: { ...details.fields, customerWork: { status: 'unreviewed', text: '' } } }
 }
 
 export function editContractProperty(value: CustomerContractDetails, patch: Partial<PropertyDetails>, street = ''): CustomerContractDetails {
@@ -213,6 +219,14 @@ export function normalizeContractDetails(
   for (const { key } of contractFields) {
     result.fields[key] = normalizeEntry(fields[key])
   }
+  if (input.workEnvironmentDefaultVersion !== undefined) {
+    if (input.workEnvironmentDefaultVersion !== 'abs18-2018-06') invalid()
+    result.workEnvironmentDefaultVersion = input.workEnvironmentDefaultVersion
+  }
+  if (input.otherAgreements !== undefined) {
+    result.otherAgreements = str(input.otherAgreements, 6200)
+    if (result.fields.customerWork.text || result.fields.customerWork.status !== 'unreviewed') invalid()
+  }
   if (input.assignment !== undefined) {
     result.assignment = normalizeAssignment(input.assignment)
     result.fields.documents = { status: assignmentIssues(result.assignment).length ? 'unreviewed' : 'specified', text: assignmentDocumentsText }
@@ -270,6 +284,7 @@ export function contractDetailsIssues(
       'Komplettera avrådans arbete, skäl, datum och beställarens besked.'
     )
   for (const { key, title } of contractFields) {
+    if (key === 'customerWork' && value.otherAgreements !== undefined) continue
     if (key === 'parties' && structuredParties) continue
     if (key === 'documents' && value.assignment) {
       issues.push(...assignmentIssues(value.assignment))

@@ -125,13 +125,14 @@ test('editor follows ABS 18 contract sequence, keeps explicit imports and pendin
   const editor = readFileSync('src/components/tasks/CustomerOfferEditor.tsx', 'utf8')
   const start = editor.indexOf('<ProjectEditorRow title="Offertuppgifter"')
   const layout = editor.slice(start)
-  const order = ['title="Beställare"', 'title="Entreprenör"', "contractSection('controls'", 'title="Fastigheten"', 'title="Uppdraget"', 'title="Övriga bilagor"',
+  const order = ['title="Beställare"', 'title="Entreprenör"', "contractSection('controls'", 'title="Fastigheten"', 'title="Uppdraget"',
     "contractSection('work-environment'", "contractSection('advice'", '{priceSection}', "contractSection('changes'", 'title="Tid för betalning"',
     'title="Tid för arbetenas påbörjande och avslutande"', "contractSection('delay'", "contractSection('inspection'", "contractSection('insurance'", 'title="Övrigt"']
   let previous = -1
   for (const part of order) { const position = layout.indexOf(part, previous + 1); assert.ok(position > previous, part); previous = position }
   assert.match(editor, /blocked=\{sourcePending \|\| locked \|\| Boolean\(busy\)\}/)
   assert.doesNotMatch(editor, /sourceReviewCount/)
+  assert.doesNotMatch(editor, /Övriga bilagor|otherFiles/)
   const picker = readFileSync('src/components/tasks/CustomerOfferSourcePicker.tsx', 'utf8')
   assert.match(picker, /importOfferSources\(items, rows, selections/)
   assert.match(picker, /Hämta och ersätt/)

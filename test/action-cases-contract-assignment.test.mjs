@@ -47,6 +47,48 @@ test('add/remove saves file inclusion, reference and agreement selection atomica
   assert.equal(files.length, 2)
   assert.deepEqual(normalizeCustomerOffer(removed), removed)
 })
+test('previous extra documents and images become references without changing existing metadata or selecting library files', () => {
+  const d = structured()
+  d.attachmentIds.push(id(7), id(6))
+  const original = structuredClone(d)
+  const image = { id: id(7), fileName: 'Foto.jpg', contentType: 'image/jpeg', fileSizeBytes: 10 }
+  const a = assignment.assignmentForEditing(d, [...files, image])
+  assert.deepEqual(a.documents[0], original.contractDetails.assignment.documents[0])
+  assert.deepEqual(a.documents.slice(1), [
+    { fileId: id(7), type: '', name: 'Foto.jpg', date: '' },
+    { fileId: id(6), type: '', name: 'Beskrivning.pdf', date: '' }
+  ])
+  assert.equal(a.documentNotes, original.contractDetails.assignment.documentNotes)
+  assert.deepEqual(d, original)
+  assert(offerPublishIssues(d).includes('Komplettera handlingsförteckningen för alla valda bilagor.'))
+  const saved = { ...d, ...assignment.assignmentPatch(d, a, a) }
+  assert.deepEqual(normalizeCustomerOffer(saved), saved)
+  assert.deepEqual(saved.attachmentIds, original.attachmentIds)
+  assert.deepEqual(assignment.assignmentForEditing(saved, [...files, image]), a)
+  assert(offerPublishIssues(saved).includes('Komplettera handling 2: typ, datum.'))
+})
+test('a legacy selected image is visible and removable, but unselected project files stay outside the agreement', () => {
+  const d = draft()
+  d.attachmentIds.push(id(7))
+  const image = { id: id(7), fileName: 'Foto.jpg', contentType: 'image/jpeg', fileSizeBytes: 10 }
+  const a = assignment.assignmentForEditing(d, [...files, image])
+  assert.deepEqual(a.documents.map((doc) => doc.fileId), [id(4), id(7)])
+  const saved = { ...d, ...assignment.assignmentPatch(d, a, a) }
+  const removed = { ...saved, ...assignment.assignmentPatch(saved, { ...a, documents: [a.documents[0]] }, a) }
+  assert.deepEqual(removed.attachmentIds, [id(4)])
+  assert.deepEqual(assignment.assignmentForEditing(removed, [...files, image]).documents.map((doc) => doc.fileId), [id(4)])
+})
+test('a missing previously selected attachment stays visible without a guessed name or a data write', () => {
+  const d = structured()
+  d.attachmentIds.push(id(99))
+  const original = structuredClone(d)
+  const a = assignment.assignmentForEditing(d, files)
+  assert.deepEqual(a.documents[1], { fileId: id(99), type: '', name: '', date: '' })
+  assert.deepEqual(d, original)
+  const nodes = flatten(editor()({ draft:d, files, caseId:id(1), onChange:()=>assert.fail('Reading must not save') }))
+  assert(nodes.includes('Filen saknas i projektet.'))
+  assert(nodes.some((node) => node?.props?.['aria-label'] === 'Ta bort handling 2 från avtalet'))
+})
 test('invalid references, duplicate ids, bad dates and excess text fail closed; incomplete legacy documents remain readable', () => {
   const a = structured().contractDetails.assignment
   for (const documents of [null, [{ ...a.documents[0], fileId: 'bad' }], [...a.documents, ...a.documents],

@@ -39,6 +39,7 @@ before(async () => {
   await db.query("insert into action_case_participants(id,org_id,action_case_id,role,name,email) values($1,$2,$3,'customer','Test','test@example.test')", [participant, org, caseId])
   await db.query("select write_customer_offer($1,$2,$3,'save',$4::jsonb)", [org, caseId, actor, JSON.stringify({ revision: 0, body: draft() })])
   await db.exec(ownMigration())
+  await db.exec(migration('2026-10-08_02_contract_other_agreements'))
 })
 after(() => db.close())
 

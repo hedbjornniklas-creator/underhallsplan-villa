@@ -438,7 +438,19 @@
 .gizmo-contract-status-heading strong { margin-left: auto; font-size: 18px; }
 .gizmo-contract-status[open] .gizmo-contract-status-chevron { transform: rotate(180deg); }
 .gizmo-contract-status-body { max-width: 780px; padding: 16px; }
-.gizmo-contract-parts-heading { display: flex; justify-content: space-between; gap: 16px; min-height: 44px; align-items: center; padding: 10px 12px; background: #edf1f1; border-block: 1px solid var(--uppdrag-line); font-size: 13px; font-weight: 600; }
+.gizmo-contract-parts-heading { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 0 12px; min-height: 44px; align-items: center; padding-right: 12px; background: #edf1f1; border-block: 1px solid var(--uppdrag-line); font-size: 13px; font-weight: 600; }
+.gizmo-contract-parts-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 60px; padding-block: 8px; }
+.gizmo-contract-parts-count { min-width: 70px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.gizmo-contract-parts-kind { max-width: 100%; min-height: 44px; padding: 8px 30px 8px 12px; border: 1px solid var(--uppdrag-line); border-radius: 6px; background: #fff; font-size: 14px; }
+.gizmo-contract-parts-confirm { padding: 16px; margin-bottom: 12px; border-left: 3px solid #aaa35c; background: #fff7d6; overflow-wrap: anywhere; }
+.gizmo-contract-part-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); border-bottom: 1px solid var(--uppdrag-line); }
+.gizmo-contract-part-row > .gizmo-editor-row { border-bottom: 0; }
+.gizmo-contract-part-select { display: flex; justify-content: center; align-items: center; align-self: start; min-height: 60px; cursor: pointer; }
+.gizmo-contract-parts-heading .gizmo-contract-part-select { min-height: 44px; }
+.gizmo-contract-part-select input { accent-color: #206961; }
+.gizmo-contract-part-row[data-selected='true'] > .gizmo-contract-part-select,
+.gizmo-contract-part-row[data-selected='true'] .gizmo-editor-row-toggle { background: #edf4f2; }
+.gizmo-contract-part-row[data-selected='true'] { box-shadow: inset 3px 0 0 #206961; }
 .gizmo-contract-parts .gizmo-editor-row-toggle { min-height: 60px; padding: 10px 12px; }
 .gizmo-contract-parts .gizmo-editor-row-toggle[aria-expanded='true'] { background: #fff7d6; }
 .gizmo-contract-parts .gizmo-editor-row-toggle:hover { background: #f1f6f5; }

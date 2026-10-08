@@ -52,17 +52,30 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   för redigering; nya handlingar öppnas direkt. Filöppning finns i raden med
   ikon, tooltip och separat flik. Långa typer har tooltip och visas i sin
   helhet vid redigering. På smal yta staplas typ och datum under namnet.
+  Alla bilagor till avtalet väljs här, även bilder. Ingen separat sektion för
+  Övriga bilagor används. Underlag som inte valts ligger kvar i projektbiblioteket.
 - Arbetsdelar och avgränsningar i Avtal använder samma kompakta radprincip:
   tonad rubrikrad, normalt 60 px, rubrik, kort sammanfattning och kundpris.
   En rad öppnas åt gången för alla textfält, pris, flytt och borttagning.
   Den öppna raden är dämpat gul; pekning/fokus är grönblå. Redigering ligger
   i arbetsytan, inte i en andra offertvy.
+  Masshantering använder en egen krysskolumn och Välj alla med delmarkerat
+  tillstånd. Markerade rader är grönblå, oberoende av vilken rad som är öppen.
+  Verktygsraden har fast minhöjd även utan markering. Borttagning och byte
+  mellan grundåtagande/avgränsning bekräftas med berörda rader och konsekvens.
 - Avtalsstatus är en hopfällbar fullbreddsrad över formuläret. Grundstatus och
   belopp syns direkt; utskick, granskning och versionshistorik öppnas vid behov.
   Ingen fast högerspalt tränger ihop avtalsfälten.
 - När ABS 18 väljs är dess standardvillkor en fast rad i samma handlingslista,
   med versionsbeteckning och filöppningsikon. Den kan inte misstas för ett
   redigerbart formulär eller tas bort medan den avtalsgrunden är vald.
+- Arbetsmiljö har ett redigerbart grundvärde baserat på ABS 18-formulärets
+  arbetsmiljöavsnitt. Befintliga egna texter behålls. Standardvärdet fylls in
+  en gång i ett tomt avtalsutkast; raderad text får inte återskapas automatiskt.
+- Uppdragets två standardtexter från ABS 18-formuläret visas separat från
+  PDF-bilagan, efter projektspecifika undantag. De kan redigeras i avtalet och
+  fryses med versionen. Övriga överenskommelser ligger under Övrigt, inte som
+  en extra sektion för beställarens arbeten.
 - Hela åtgärdsraden öppnar den befintliga sidopanelen. Pekning och
   tangentbordsfokus ger grönblå ton #F1F6F5 och en tunn vänstermarkering.
   Öppen åtgärd markeras med befintlig dämpad gul färg. Markeringar och
@@ -120,6 +133,14 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-08: Användaren tar bort Övriga bilagor. Handlingsförteckningen är
+  enda platsen för bilageval i Avtal. Tidigare valda bilagor behålls som rader,
+  utan gissad typ eller datum; befintliga handlingsuppgifter skrivs inte över.
+- 2026-10-08: Masshantering av avtalsrader införs: välj enskilda eller alla,
+  rensa markering, radera valda eller ändra Ingår som. Ingen massredigering
+  av fritext eller priser. Åtgärder använder avtalsutkastets befintliga
+  autosparning och låsning, inte projekt-/offerttabellerna. Avgränsningar
+  saknar kundpris enligt befintlig prisregel; detta framgår före bekräftelse.
 - 2026-10-08: Användaren beslutar att Avtal ska ha helt egna texter och egen
   databaslagring, låsta vid godkännande. Arbetsdelar blir kompakta öppningsbara
   rader med fri redigering och borttagning. Import kan ske från Projektarbete

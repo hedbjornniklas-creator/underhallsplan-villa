@@ -50,7 +50,8 @@ export default function CustomerContractFields({
       advice.communicatedAt &&
       advice.customerResponse.trim()
   )
-  const selectedFields = contractFields.filter((f) => !fieldKeys || fieldKeys.includes(f.key))
+  const selectedFields = contractFields.filter((f) => (!fieldKeys || fieldKeys.includes(f.key)) &&
+    (f.key !== 'customerWork' || value.otherAgreements === undefined))
   const groups = [...new Set(selectedFields.map((f) => f.group))]
   const Group = inline ? 'div' : 'details'
   const Summary = inline ? 'h3' : 'summary'
@@ -177,7 +178,7 @@ export default function CustomerContractFields({
                       <textarea
                         aria-label={title}
                         className={field}
-                        rows={3}
+                        rows={key === 'workEnvironment' ? 7 : 3}
                         maxLength={6000}
                         value={contractEntryText(entry)}
                         onChange={(e) => change(e.target.value)}
@@ -232,7 +233,8 @@ export function CustomerContractDocument({
           </dl>
         )}
       </div>
-      {contractFields.filter(({ key }) => (!omitParties || key !== 'parties') && (key !== 'documents' || !value.assignment)).map(({ key, title }) => (
+      {contractFields.filter(({ key }) => (!omitParties || key !== 'parties') && (key !== 'documents' || !value.assignment) &&
+        (key !== 'customerWork' || value.otherAgreements === undefined)).map(({ key, title }) => (
         <div key={key} className="mt-5 border-t border-slate-100 pt-4">
           <h4 className="font-semibold">{title}</h4>
           {key === 'property' && value.property ? <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">

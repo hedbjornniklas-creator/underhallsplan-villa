@@ -11,6 +11,7 @@ export type ContractAssignment = {
   additionalScope: string
   exclusions: string
   documentNotes: string
+  standardConditions?: { version: 'abs18-2018-06'; text: string }
 }
 export const assignmentDocumentsText = 'Avtalshandlingar anges i uppdragets handlingsförteckning.'
 
@@ -41,16 +42,25 @@ export function normalizeAssignment(input: unknown): ContractAssignment {
     if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date)) invalid()
     return { fileId, type: text(doc.type, 100), name: text(doc.name, 250), date }
   })
-  return { documents, additionalScope: text(value.additionalScope, 12000), exclusions: text(value.exclusions, 6000), documentNotes: text(value.documentNotes, 6000) }
+  const result: ContractAssignment = { documents, additionalScope: text(value.additionalScope, 12000), exclusions: text(value.exclusions, 6000), documentNotes: text(value.documentNotes, 6000) }
+  if (value.standardConditions !== undefined) {
+    const conditions = record(value.standardConditions)
+    if (conditions.version !== 'abs18-2018-06') invalid()
+    result.standardConditions = { version: 'abs18-2018-06', text: text(conditions.text, 6000) }
+  }
+  return result
 }
 
 export function assignmentForEditing(draft: CustomerOfferDraft, files: CustomerOfferFile[]): ContractAssignment {
-  if (draft.contractDetails?.assignment) return draft.contractDetails.assignment
-  return {
-    documents: files.filter((f) => draft.attachmentIds.includes(f.id) && !f.contentType.startsWith('image/'))
-      .map((f) => ({ fileId: f.id, type: '', name: f.fileName, date: '' })),
+  const value = draft.contractDetails?.assignment ?? {
+    documents: [],
     additionalScope: '', exclusions: '', documentNotes: draft.contractDetails?.fields.documents.text ?? ''
   }
+  const referenced = new Set(value.documents.map((doc) => doc.fileId))
+  const additional = draft.attachmentIds.filter((id) => !referenced.has(id)).map((fileId) => ({
+    fileId, type: '', name: files.find((file) => file.id === fileId)?.fileName ?? '', date: ''
+  }))
+  return additional.length ? { ...value, documents: [...value.documents, ...additional] } : value
 }
 
 // Keep file selection and document references in one autosave operation.

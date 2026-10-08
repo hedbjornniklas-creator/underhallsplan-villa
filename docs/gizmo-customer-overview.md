@@ -925,6 +925,117 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   produktionsbygget med Webpack passerar. Tangentbordsbyte mellan registerflikar
   behaller fokus pa vald flik. Datorvyn ar visuellt kontrollerad vid 1280 px.
 
+## Masshantering av avtalsrader 2026-10-08
+
+- Egen krysskolumn markerar enskilda arbetsdelar eller alla, med delmarkerat
+  tillstand och rensa markering. Urvalet ar bara lokal UI-status och autosparas
+  inte. Verktygsradens hojd andras inte nar antalet valda rader andras.
+- Ta bort valda och byte av Ingar som (grundatagande/avgransning) bekraftas
+  med berorda namn. Urvalet fryses vid bekraftelsen; bara dessa avtalsrader
+  andras. Projektarbete, sparad Offert och ovriga avtalsfalt behalls.
+- Avgransning tar bort radens kundpris enligt befintlig normalisering; detta
+  visas fore bekraftelsen. Byte tillbaka till grundatagande gissar inga priser.
+- Massandringen anvander samma autospar, revisionskontroll, sparfel/aterforsok
+  och databaslasning som enskild redigering. Ingen ny SQL eller API.
+- Status: ingar i publiceringspaketet 2026-10-08. Verifierad med 353
+  action-case-tester, TypeScript, riktad ESLint och produktionsbygge med Webpack.
+  Klicktester omfattar delmarkering, valj alla, avbryt, radering, byte av radtyp,
+  omladdning, sparfel/aterforsok och lasning efter godkannande. Upp till 200 rader
+  och dubbla rubriker testas utan sammanblandning. Layouten ar kontrollerad pa
+  dator (1280 px) och mobil (390 px), utan sidledes overflode eller hopp vid
+  markering. Riktiga projektrader och kundutskick har inte berorts.
+
+## En gemensam handlingslista 2026-10-08
+
+- Beslut: sektionen Ovriga bilagor tas bort fran Avtal. Dokument och bilder
+  valjs i Handlingar som ingar i uppdraget, med typ, namn och datum.
+- Redan valda extra bilagor visas som egna rader efter befintliga handlingar.
+  Tidigare typ, namn, datum och ordning behalls; nya referenser far filnamnet
+  men ingen gissad typ eller datum. Saknade filer visas och kan valjas bort.
+- Vid nasta redigering sparas referenser och bilageval i samma autosparning.
+  Handlingsuppgifter som saknas maste kompletteras fore utskick. Ej valda filer
+  laggs inte till. Borttagning ur listan raderar inte projektets originalfil.
+- Lasningen och publicerade snapshots behalls. Offertutkastets egna texter
+  och filval andras inte. Ingen ny SQL eller automatisk skrivning i produktion.
+- Status: ingar i publiceringspaketet 2026-10-08; drift verifieras efter push.
+- Verifierat: 356 action-case-tester, TypeScript, riktad ESLint och Webpack-
+  produktionsbygge passerar. Lokal klickkontroll visar att sektionen ar borta,
+  att tidigare bilagor visas i handlingslistan och att metadata behalls efter
+  redigering, autosparning och omladdning. Ingen riktig kunddata har andrats.
+
+## Uppdragets standardtexter och Ovrigt 2026-10-08
+
+- Beslut: den egna sektionen Bestallarens arbeten och samordning tas bort.
+  Befintlig text flyttas till det redigerbara faltet Ovriga overenskommelser
+  under Ovrigt, utan att gissa att den avser undantag eller andrad ansvarighet.
+  Befintliga villkor i `terms` behalls. Flytten sker bara i olasta avtalsutkast,
+  en gang, och sparas med ordinarie revisionsstyrda autosparning.
+- `contractDetails.otherAgreements` lagrar texten. Den gamla datanyckeln
+  `fields.customerWork` behalls tom for kompatibilitet, men ar inte ett
+  obligatoriskt falt i den nya modellen. Dubbla eller dolda gamla texter nekas.
+  Publicerade/godkanda versioner aterges oforandrade med sin gamla struktur.
+- ABS 18 forbereder de tva tidigare efterfragade styckena fran Uppdraget pa
+  sida 2 i [Entreprenadkontrakt ABS 18, 2018.06](https://byggtjanstcms.byggtjanst.se/globalassets/pdf/entreprenadkontrakt-abs-18.pdf):
+  byggherreuppgifter/kostnader som inte ingar om inte handlingarna anger annat,
+  samt statliga och kommunala avgifter inklusive anslutningsavgifter.
+- Texterna ligger i `contractDetails.assignment.standardConditions`, med
+  versionsbeteckning och egen redigerbar text. De visas under Uppdraget och
+  ingar i avtalsgranskningen och den frysta publicerade versionen. De fylls
+  inte pa igen efter egen redigering eller tomning. Byte till egen
+  avtalshandling tar bort standardtexten, inte projektets egna undantag.
+  Original-PDF:en med allmanna bestammelser forblir oforandrad. Ingen annan
+  standardtext, ansvarsfordelning eller juridisk fullstandighet utlovas.
+- Migration: `docs/db/2026-10-08_02_contract_other_agreements.sql` maste koras
+  fore apppublicering. Den uppdaterar valideringen utan att skriva om utkast,
+  godkannanden eller avtalsversioner. Avradan och andra krav kvarstar.
+- Status: ingar i publiceringspaketet 2026-10-08. 366 action-case-tester,
+  TypeScript, riktad ESLint och Webpack-produktionsbygge passerar.
+  SQL testas bade separat och tillsammans med de oberoende avtalsutkasten.
+  Klickkontroll med fiktiva uppgifter verifierar flytt utan textforlust,
+  autosparning/omladdning, egen redigering av standardtexter, byte av
+  avtalsgrund, sparfel/aterforsok, avtalsgranskning och lasning. Mobil 390 px
+  har 16 px falttext och inget horisontellt overflode. Ingen produktionsdata
+  eller verkligt utskick har berorts.
+
+## Arbetsmiljo som redigerbart grundvarde 2026-10-08
+
+- Beslut: Arbetsmiljo ska vara forifyllt nar ABS 18 valjs, och texten ska kunna
+  redigeras i samma falt som tidigare. Ett redigerbart sammandrag av avsnittet
+  pa sida 3 i entreprenadkontraktet beskriver entreprenorens normala ansvar,
+  arbetsmiljoplan, BAS-U/BAS-P, undantaget nar bestallaren anlitar flera
+  entreprenorer, och kontaktuppgifter under Ovrigt. Originalvillkoren ligger
+  kvar som oforandrad bilaga; inga personer eller projektspecifika roller gissas.
+- Det egna textvardet sparas i `fields.workEnvironment`. Den optionala markoren
+  `workEnvironmentDefaultVersion` visar att standardvardet har behandlats,
+  sa att egen redigering eller tomning inte ersatts vid autospar eller omladdning.
+  Befintlig text och tidigare stallingstaganden behalls. Egna avtalsgrunder
+  fylls inte pa automatiskt. Byte av avtalsgrund behaller egen arbetsmiljotext.
+- Endast olast avtalsredigering far grundvardet. Offert, kundens granskning
+  och publicerade/godkanda snapshots aterger endast den sparade texten.
+  Samma autospar, revisionskontroll och lasning som ovriga avtalsuppgifter.
+- Versionsmarkoren valideras i samma SQL-migration
+  `docs/db/2026-10-08_02_contract_other_agreements.sql`. Ingen datamigrering
+  eller andring av tidigare signerade versioner.
+- Status: ingar i publiceringspaketet 2026-10-08. 371 action-case-tester,
+  TypeScript, riktad ESLint och Webpack-produktionsbygge passerar. Klickkontroll
+  med fiktiva uppgifter visar forifyllnad, egen redigering/autospar/omladdning
+  och tomning utan aterstalld standardtext. Datorvyn visar bada styckena i
+  arbetsmiljofaltet; mobil 390 px har 16 px falttext utan sidledes overflode.
+  Befintliga beslut, egen avtalsgrund, dokumentatergivning och SQL-validering
+  testas, inklusive bibehallen fullstandighetskontroll efter tomning.
+
+## Publiceringskontroll 2026-10-08
+
+- Anvandaren har kort `2026-10-08_02_contract_other_agreements.sql`.
+  En lasande kontroll i Supabase visar att `assert_customer_contract` matchar
+  releasefilens funktion (MD5 `87a15634cea76a4b1eb704931a7da05b`), har
+  service-rollsatkomst och saknar direkt authenticated-klientatkomst.
+- Paketet omfattar masshantering av avtalsrader, en gemensam handlingslista,
+  flytt av tidigare bestallararbeten till Ovrigt och redigerbara ABS 18-
+  grundtexter. Inga kundutskick eller godkannanden ingar i apppubliceringen.
+- Senaste `main` med separat publicerat RenoApp-arbete togs in med fast-forward.
+  Dessa filer andras inte i Gizmo-committen. Driftstatus verifieras efter push.
+
 ## Senare steg, inte implementerade
 
 - Fakturor med tydlig skillnad mellan avtalat, fakturerat och betalt.

@@ -36,7 +36,7 @@ test('default reference is filled only when empty; custom form removes only the 
     attachmentIds: [...initial.attachmentIds, id(4)], termsAttachmentId: id(4), terms: 'Egen text' }, file)
   assert.deepEqual(next.attachmentIds, [id(4)])
   assert.equal(next.termsAttachmentId, id(4)); assert.equal(next.terms, 'Egen text')
-  assert.deepEqual(next.contractDetails.assignment.documents, [])
+  assert.deepEqual(next.contractDetails.assignment.documents, [{ fileId: id(4), type: '', name: '', date: '' }])
   const cleared = terms.withStandardContractTerms({ ...initial, contractForm: 'custom' }, file)
   assert.equal(cleared.termsAttachmentId, null); assert.equal(cleared.terms, '')
   assert.deepEqual(terms.withStandardContractTerms(cleared, file), cleared)
@@ -47,7 +47,8 @@ test('legacy file references are materialized and the 30-file limit fails withou
   const next = terms.withStandardContractTerms(d, file, [
     { id: id(4), fileName: 'Ritning.pdf', contentType: 'application/pdf' },
     { id: id(5), fileName: 'Foto.jpg', contentType: 'image/jpeg' }])
-  assert.deepEqual(next.contractDetails.assignment.documents.map(d=>d.fileId), [file.id, id(4)])
+  assert.deepEqual(next.contractDetails.assignment.documents.map(d=>d.fileId), [file.id, id(4), id(5)])
+  assert.deepEqual(next.contractDetails.assignment.documents[2], { fileId: id(5), type: '', name: 'Foto.jpg', date: '' })
   assert.deepEqual(next.attachmentIds, [id(4), id(5), file.id])
   const full = { ...base(), attachmentIds: Array.from({length:30},(_,n)=>id(200+n)) }
   assert.throws(()=>terms.withStandardContractTerms(full,file), /TERMS_LIMIT/)

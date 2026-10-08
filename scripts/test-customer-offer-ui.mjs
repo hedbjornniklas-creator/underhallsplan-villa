@@ -120,6 +120,22 @@ if (process.argv.includes('--simple-scope-import')) {
   state.draft.baseAmountOre = 100000000
   state.offers = []
 }
+if (process.argv.includes('--legacy-attachments')) {
+  state.draft.contractDetails = emptyContractDetails()
+  state.draft.contractDetails.assignment = { documents: [
+    { fileId: id(4), type: 'Beskrivning', name: 'Tidigare granskad handling', date: '2026-05-11' }
+  ], additionalScope: '', exclusions: '', documentNotes: 'Fiktivt test av tidigare valda bilagor.' }
+  state.draft.attachmentIds = [id(4), id(3)]
+}
+if (process.argv.includes('--legacy-customer-work')) {
+  state.draft.contractDetails ??= emptyContractDetails()
+  state.draft.contractDetails.fields.customerWork = { status: 'specified', text: 'FIKTIVT TEST: Beställaren ordnar elarbetet med egen entreprenör.' }
+  state.draft.terms = 'FIKTIVT TEST: Befintliga egna avtalsvillkor ska behållas.'
+}
+if (process.argv.includes('--empty-work-environment')) {
+  state.draft.contractDetails ??= emptyContractDetails()
+  state.draft.contractDetails.fields.workEnvironment = { status: 'unreviewed', text: '' }
+}
 const propertyRegistryTest = process.argv.includes('--property-registry')
 const customerRegistryTest = process.argv.includes('--customer-registry') || process.argv.includes('--project-billing') || propertyRegistryTest
 const properties = [
@@ -320,6 +336,7 @@ const server = createServer(async (req, res) => {
         return
       }
       if (body.operation === 'prepare_standard_terms') {
+        if (process.argv.includes('--slow-standard-terms')) await new Promise((resolve) => setTimeout(resolve, 2500))
         if (failSave) { failSave = false; json({ error: 'Standardvillkoren kunde inte förberedas. Försök igen.' }, 503); return }
         state.standardTermsFile = { id: id(140), fileName: ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: ABS18_TERMS.size }
         json({ file: state.standardTermsFile }); return

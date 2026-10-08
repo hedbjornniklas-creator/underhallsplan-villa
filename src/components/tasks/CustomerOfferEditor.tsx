@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import PendingLink from '@/components/ui/PendingLink'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -36,7 +35,7 @@ import {
   type CustomerOfferSnapshot,
   type CustomerOfferWorkspace
 } from '@/lib/action-cases/customerOffers'
-import { ABS18_TERMS, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
+import { ABS18_TERMS, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
 import { useToast } from '@/components/ui/AppToastProvider'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import ActionCaseCustomerPortal from './ActionCaseCustomerPortal'
@@ -69,8 +68,8 @@ const button =
 export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocument' | 'customer' | 'planning' | 'payments'
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
   const details = workspace.draft.contractDetails ?? emptyContractDetails()
-  return { ...workspace.draft, contractDetails: workspace.offers.some((offer) => offer.status === 'accepted')
-    ? details : contractDetailsForEditing(details) }
+  if (workspace.offers.some((offer) => offer.status === 'accepted')) return { ...workspace.draft, contractDetails: details }
+  return withAbs18ContractDefaults({ ...workspace.draft, contractDetails: contractDetailsForEditing(details) })
 }
 export default function CustomerOfferEditor({
   actionCase,
@@ -122,6 +121,8 @@ export default function CustomerOfferEditor({
   currentSnapshot.current = { draft, costing }
   const acknowledgedDraft = useRef(initial.draft)
   const recoveryChecked = useRef(false)
+  const initialUpgradeQueued = useRef(false)
+  const applyDraftUpgrade = useRef<() => void>(() => {})
   const recoverDocuments = useRef<() => void>(() => {})
   const documentConflict = useRef<ContractDocumentDraft | null>(null)
   const [documentRecovery, setDocumentRecovery] = useState<ContractDocumentDraft | null>(null)
@@ -203,8 +204,6 @@ export default function CustomerOfferEditor({
   const files = [...actionCase.attachments.filter((f) => !f.isQuoteDocument),
     ...(standardTermsFile && !actionCase.attachments.some((f) => f.id === standardTermsFile.id)
       ? [{ ...standardTermsFile, type: 'document' as const, title: ABS18_TERMS.name }] : [])]
-  const contractDocuments = assignmentForEditing(draft, files).documents
-  const otherFiles = files.filter((f) => !contractDocuments.some((d) => d.fileId === f.id))
   const baseAmount = customerOfferBaseAmount(draft)
   const legacyChoices = draft.items.filter((i) => i.kind === 'option')
   const missingPriceCount = draft.items.filter(
@@ -220,7 +219,12 @@ export default function CustomerOfferEditor({
   }
   const update = (patch: Partial<CustomerOfferDraft>) => {
     const current = currentSnapshot.current
-    const nextDraft = { ...current.draft, ...patch }
+    let nextDraft = { ...current.draft, ...patch }
+    if (draftTarget === 'contract' && !locked) {
+      nextDraft = withAbs18ContractDefaults(nextDraft)
+      const assignment = assignmentForEditing(nextDraft, files)
+      nextDraft = { ...nextDraft, ...assignmentPatch(nextDraft, assignment, assignment) }
+    }
     let nextCosting = current.costing
     if (patch.items) {
       const ids = new Set(patch.items.map((item) => item.id))
@@ -233,6 +237,7 @@ export default function CustomerOfferEditor({
     if (draftTarget === 'contract' && !locked && !running.current) autosave.change({ draft: nextDraft, costing: nextCosting })
     setConfirmed(false)
   }
+  applyDraftUpgrade.current = () => update(currentSnapshot.current.draft)
   const updateCosting = (id: string, calculation: CustomerOfferCosting[string]) => {
     const current = currentSnapshot.current
     const nextCosting = { ...current.costing, [id]: calculation }
@@ -273,6 +278,12 @@ export default function CustomerOfferEditor({
     recoveryChecked.current = true
     recoverDocuments.current()
   }, [active, contractView, locked])
+  useEffect(() => {
+    if (!active || !contractView || draftTarget !== 'contract' || locked || !recoveryChecked.current || documentConflict.current || documentRecovery || initialUpgradeQueued.current) return
+    initialUpgradeQueued.current = true
+    if (JSON.stringify(currentSnapshot.current.draft) !== JSON.stringify(acknowledgedDraft.current))
+      applyDraftUpgrade.current()
+  }, [active, contractView, draftTarget, locked, documentRecovery])
   applyStandardTerms.current = (file) => {
     try {
       const current = currentSnapshot.current.draft
@@ -890,67 +901,6 @@ export default function CustomerOfferEditor({
             </section>
             <div hidden={contractView}>{priceSection}</div>
             <div hidden={!contractView} className="space-y-5">
-            <ProjectEditorRow title="Övriga bilagor" summary={`${otherFiles.filter((f) => draft.attachmentIds.includes(f.id)).length} valda`}
-              open={expanded === 'files'} onToggle={() => setExpanded(expanded === 'files' ? null : 'files')}>
-            <section>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {otherFiles.map((f) => (
-                  <label
-                    key={f.id}
-                    className="flex items-start gap-3 border-b border-slate-200 py-3"
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-5 w-5 shrink-0"
-                      checked={draft.attachmentIds.includes(f.id)}
-                      disabled={!draft.attachmentIds.includes(f.id) && draft.attachmentIds.length >= 30}
-                      onChange={(e) =>
-                        update({
-                          attachmentIds: e.target.checked
-                            ? [...draft.attachmentIds, f.id]
-                            : draft.attachmentIds.filter((id) => id !== f.id),
-                          termsAttachmentId:
-                            !e.target.checked &&
-                            draft.termsAttachmentId === f.id
-                              ? null
-                              : draft.termsAttachmentId
-                        })
-                      }
-                    />
-                    <span className="min-w-0 flex-1">
-                      {f.type === 'image' && (
-                        <Image
-                          unoptimized
-                          width={480}
-                          height={360}
-                          src={`/api/action-cases/${actionCase.id}/attachments/${f.id}`}
-                          alt=""
-                          className="mb-2 aspect-[4/3] w-full rounded-md object-cover"
-                        />
-                      )}
-                      <span className="block break-words text-sm">
-                        {f.title || f.fileName}
-                      </span>
-                      <a
-                        className="mt-1 inline-block text-sm text-violet-700"
-                        href={`/api/action-cases/${actionCase.id}/attachments/${f.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Öppna
-                      </a>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              {!otherFiles.length && (
-                <p className="mt-3 text-sm text-slate-500">
-                  Inga övriga filer i projektets bibliotek.
-                </p>
-              )}
-            </section>
-            </ProjectEditorRow>
-            {contractSection('customer-work', 'Beställarens arbeten och samordning', ['customerWork'])}
             {contractSection('work-environment', 'Arbetsmiljö', ['workEnvironment'])}
             {contractSection('advice', 'Avrådande', [], true)}
             {priceSection}
@@ -970,6 +920,9 @@ export default function CustomerOfferEditor({
             {contractSection('insurance', 'Försäkringar och säkerhet', ['insurance', 'completionProtection', 'security'])}
             <ProjectEditorRow title="Övrigt" summary={draft.terms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'} open={expanded === 'terms'} onToggle={() => setExpanded(expanded === 'terms' ? null : 'terms')}>
               <label className="block text-sm">Villkor och hänvisning till avtalshandling *<textarea className={field} rows={5} value={draft.terms} onChange={(e) => update({ terms: e.target.value })} /></label>
+              {contractView && draft.contractDetails?.otherAgreements !== undefined && <label className="mt-4 block text-sm">Övriga överenskommelser
+                <textarea className={field} rows={3} maxLength={6200} value={draft.contractDetails.otherAgreements} onChange={(e) => update({ contractDetails: { ...draft.contractDetails!, otherAgreements: e.target.value } })} />
+              </label>}
             </ProjectEditorRow>
           </fieldset>
           <aside className="min-w-0">

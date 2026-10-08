@@ -221,6 +221,10 @@ export default function CustomerOfferDocument({
             ))}
         </section>
       )}
+      {purpose === 'contract' && s.contractForm === 'abs18' && s.contractDetails?.assignment?.standardConditions?.text && <section className="border-t border-slate-200 py-6">
+        <h3 className="text-lg font-semibold">Standardtexter för uppdraget · ABS 18</h3>
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.assignment.standardConditions.text}</p>
+      </section>}
       {purpose === 'contract' && <CustomerContractDocument value={s.contractDetails} omitParties={Boolean(s.contractParties)} />}
       {purpose === 'contract' && s.paymentPlan && <section className="border-t border-slate-200 py-6">
         <h3 className="text-lg font-semibold">Betalningsplan för grundavtalet</h3>
@@ -247,6 +251,10 @@ export default function CustomerOfferDocument({
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
           {s.terms || 'Ej angivet'}
         </p>
+        {s.contractDetails?.otherAgreements && <div className="mt-5">
+          <h3 className="font-semibold">Övriga överenskommelser</h3>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.otherAgreements}</p>
+        </div>}
         </>}
         {files.length > 0 && (
           <ul className="mt-4 divide-y divide-slate-200">
