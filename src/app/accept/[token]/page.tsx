@@ -355,7 +355,10 @@ export default function AssignmentAcceptPage() {
     lockedOrdererRole === 'status'
       ? resolveObObjectType('status', data?.assignment.assignment_details?.objectType) === 'apartment'
       : lockedOrdererRole === 'apartment' ||
-        (isTechnicalAssignment && Boolean(form?.brfName.trim() || form?.apartmentNumber.trim()))
+        (isTechnicalAssignment && (
+          data?.assignment.assignment_details?.objectType === 'apartment' ||
+          Boolean(form?.brfName.trim() || form?.apartmentNumber.trim())
+        ))
 
   const activeTerms = useMemo(() => {
     if (!data) return null

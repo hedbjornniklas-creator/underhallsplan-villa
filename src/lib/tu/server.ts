@@ -395,6 +395,8 @@ function inferTuObjectType(input: {
 }): TuObjectType {
   if (input.objectType === 'apartment') return 'apartment'
   if (input.objectType === 'villa') return 'villa'
+  const assignmentObjectType = input.assignment?.assignment_details?.objectType
+  if (assignmentObjectType === 'apartment' || assignmentObjectType === 'villa') return assignmentObjectType
   if (cleanText(input.brfName) || cleanText(input.apartmentNumber)) return 'apartment'
   const role = input.assignment?.orderer_role?.toLowerCase() ?? ''
   if (role.includes('lägenhet') || role.includes('lagenhet') || role.includes('apartment')) {

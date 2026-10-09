@@ -165,6 +165,7 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
       resolveAssignmentTermsRole: () => 'buyer', getAssignmentTermsDocument: () => terms,
       getAllAssignmentTermsDocuments: () => Object.fromEntries(['seller', 'buyer', 'apartment', 'technical', 'construction', 'constructionBusiness', 'constructionConsumer'].map(k => [k, terms])),
     },
+    '@/lib/assignments/consumer': { resolveAssignmentCustomerType: () => 'business' },
     '@/lib/assignments/server': {
       resolvePublicAssignmentByToken: async () => { if (options.resolveFails) throw new Error(`private database error ${TOKEN}`); return row },
       consumeAssignmentToken: async (input: { payload: unknown }) => {
@@ -194,6 +195,22 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
     runJobs: async () => { for (const job of jobs) await job(); return incidents },
   }
 }
+
+test('TU customer acceptance still requires object details for the selected object type', async () => {
+  for (const objectType of ['apartment', 'villa']) {
+    const row = link()
+    row.assignments.assignment_type = 'TU'
+    row.assignments.orderer_role = ''
+    row.assignments.assignment_details = { objectType }
+    const h = routeHarness(row)
+    const response = await h.post({ cadastralId: '', brfName: '', apartmentNumber: '' })
+    assert.equal(response.status, 400)
+    const result = await response.json() as { error: string }
+    assert.equal(result.error, objectType === 'apartment'
+      ? 'Ange BRF och lägenhetsnummer.' : 'Ange fastighetsbeteckning.')
+    assert.equal(h.counts().acceptedCount, 0)
+  }
+})
 
 test('snapshot rollout captures server terms atomically with acceptance, and setup failures leave the token unused', async () => {
   const previous = process.env.OB_ASSIGNMENT_PDF_ARCHIVE_ENABLED

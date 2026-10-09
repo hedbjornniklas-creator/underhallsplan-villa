@@ -93,12 +93,6 @@ export async function POST(request: Request) {
     if (!scopeDescription) {
       return jsonError('Beskriv vad den tekniska utredningen ska omfatta.', 400)
     }
-    if (objectType === 'apartment' && (!brfName || !apartmentNumber)) {
-      return jsonError('Ange BRF och lägenhetsnummer.', 400)
-    }
-    if (objectType === 'villa' && !cadastralId) {
-      return jsonError('Ange fastighetsbeteckning.', 400)
-    }
     if (price === null || Number.isNaN(price)) {
       return jsonError('Pris är obligatoriskt innan utskick.', 400)
     }

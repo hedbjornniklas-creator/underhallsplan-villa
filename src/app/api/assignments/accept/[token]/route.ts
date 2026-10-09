@@ -624,7 +624,8 @@ export async function POST(
     const isApartmentObject = statusSource
       ? statusSource.statusObjectType === 'apartment'
       : isTechnicalAssignment
-      ? roleLooksLikeApartment(assignment.orderer_role) || Boolean(brfName || apartmentNumber)
+      ? assignment.assignment_details?.objectType === 'apartment' ||
+        roleLooksLikeApartment(assignment.orderer_role) || Boolean(brfName || apartmentNumber)
       : termsRole === 'apartment'
 
     if (isApartmentObject) {

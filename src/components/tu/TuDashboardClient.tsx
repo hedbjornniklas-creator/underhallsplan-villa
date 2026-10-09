@@ -460,9 +460,6 @@ export default function TuDashboardClient({
   }
 
   const submitAssignment = async (sendNow: boolean) => {
-    const missingVillaObject = form.objectType === 'villa' && !form.cadastralId.trim()
-    const missingApartmentObject =
-      form.objectType === 'apartment' && (!form.brfName.trim() || !form.apartmentNumber.trim())
 
     if (!form.customerEmail.trim() || !EMAIL_REGEX.test(form.customerEmail.trim())) {
       setError('Ange en giltig beställarmejl.')
@@ -496,15 +493,6 @@ export default function TuDashboardClient({
     }
     if (customerBinding.mode === 'create' && !form.customerName.trim()) {
       setError('Ange kundens namn innan en ny kund skapas.')
-      setNotice(null)
-      return
-    }
-    if (sendNow && (missingVillaObject || missingApartmentObject)) {
-      setError(
-        form.objectType === 'apartment'
-          ? 'Ange BRF och lägenhetsnummer innan utskick.'
-          : 'Ange fastighetsbeteckning innan utskick.'
-      )
       setNotice(null)
       return
     }
@@ -964,13 +952,13 @@ function QuickAssignmentDialog({
           <Field label="Kommun" value={form.propertyMunicipality} onChange={(value) => onChange('propertyMunicipality', value)} />
           {form.objectType === 'apartment' ? (
             <>
-              <Field label="Bostadsrättsförening" required value={form.brfName} onChange={(value) => onChange('brfName', value)} />
-              <Field label="Lägenhetsnummer" required value={form.apartmentNumber} onChange={(value) => onChange('apartmentNumber', value)} />
+              <Field label="Bostadsrättsförening" value={form.brfName} onChange={(value) => onChange('brfName', value)} />
+              <Field label="Lägenhetsnummer" value={form.apartmentNumber} onChange={(value) => onChange('apartmentNumber', value)} />
               <Field label="Bostadsrättsinnehavare" value={form.apartmentHolderName} onChange={(value) => onChange('apartmentHolderName', value)} />
             </>
           ) : (
             <>
-              <Field label="Fastighetsbeteckning" required value={form.cadastralId} onChange={(value) => onChange('cadastralId', value)} />
+              <Field label="Fastighetsbeteckning" value={form.cadastralId} onChange={(value) => onChange('cadastralId', value)} />
               <Field label="Fastighetsägare" value={form.propertyOwnerName} onChange={(value) => onChange('propertyOwnerName', value)} />
             </>
           )}

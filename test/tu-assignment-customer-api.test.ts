@@ -6,10 +6,11 @@ import type * as AssignmentCustomerDomain from '../src/lib/assignment-customers/
 import type * as AssignmentCustomerHttp from '../src/lib/assignment-customers/http'
 
 type TuRoute = {
-  POST: (request: Request) => Promise<Response>
+  POST: (request: Request, context?: { params: Promise<{ id: string }> }) => Promise<Response>
 }
 
 type HarnessOptions = {
+  assignmentFields?: Record<string, unknown>
   bindingError?: Error
   contextError?: Error
   linked?: boolean
@@ -101,6 +102,7 @@ function harness(routePath: string, options: HarnessOptions = {}) {
     id: ASSIGNMENT_ID,
     updated_at: DRAFT_UPDATED_AT,
     organization_customer_id: null,
+    ...options.assignmentFields,
   }
   const linkedAssignment = {
     ...assignment,
@@ -170,7 +172,7 @@ function harness(routePath: string, options: HarnessOptions = {}) {
     '@/lib/assignment-customers/server': assignmentCustomerServer,
     '@/lib/assignment-customers/http': http,
   }
-  if (routePath.includes('quick-send')) {
+  if (routePath.includes('quick-send') || routePath.includes('/send/')) {
     dependencies['@/lib/assignments/server'] = {
       AssignmentEmailSendError,
       isMissingEnvError: () => false,
@@ -232,6 +234,52 @@ async function json(response: Response) {
 function callNames(calls: Array<{ name: string }>) {
   return calls.map((call) => call.name)
 }
+
+test('TU quick-send allows apartment confirmations without BRF or apartment number', async () => {
+  for (const fields of [{}, { brfName: 'Test BRF' }, { apartmentNumber: '12' }]) {
+    const setup = harness('src/app/api/tu/assignments/quick-send/route.ts')
+    const response = await setup.route.POST(request('/api/tu/assignments/quick-send', {
+      ...validBody(), objectType: 'apartment', cadastralId: '', ...fields,
+    }))
+    assert.equal(response.status, 200)
+    assert.ok(callNames(setup.calls).includes('send'))
+  }
+})
+
+test('TU saved apartment confirmation can be sent without optional object details', async () => {
+  const setup = harness('src/app/api/tu/assignments/[id]/send/route.ts', {
+    assignmentFields: {
+      customer_email: 'kund@example.test', scope_description: 'Kontroll av vinden.', price_amount: 1000,
+      assignment_details: { objectType: 'apartment' }, cadastral_id: null,
+      brf_name: null, apartment_number: null,
+    },
+  })
+  const response = await setup.route.POST(request(`/api/tu/assignments/${ASSIGNMENT_ID}/send?orgId=${ORG_ID}`, {}), {
+    params: Promise.resolve({ id: ASSIGNMENT_ID }),
+  })
+  assert.equal(response.status, 200)
+  assert.ok(callNames(setup.calls).includes('send'))
+})
+
+test('TU villa confirmations can be sent without a cadastral id', async () => {
+  const quick = harness('src/app/api/tu/assignments/quick-send/route.ts')
+  assert.equal((await quick.route.POST(request('/api/tu/assignments/quick-send', {
+    ...validBody(), cadastralId: '',
+  }))).status, 200)
+  assert.ok(callNames(quick.calls).includes('send'))
+
+  const saved = harness('src/app/api/tu/assignments/[id]/send/route.ts', {
+    assignmentFields: {
+      customer_email: 'kund@example.test', scope_description: 'Kontroll.', price_amount: 1000,
+      assignment_details: { objectType: 'villa' }, cadastral_id: null,
+    },
+  })
+  const response = await saved.route.POST(request(`/api/tu/assignments/${ASSIGNMENT_ID}/send?orgId=${ORG_ID}`, {}), {
+    params: Promise.resolve({ id: ASSIGNMENT_ID }),
+  })
+  assert.equal(response.status, 200)
+  assert.ok(callNames(saved.calls).includes('send'))
+})
 
 test('TU draft POST creates, binds with the persisted id/version and refetches the linked row', async () => {
   const setup = harness('src/app/api/tu/assignments/route.ts')
