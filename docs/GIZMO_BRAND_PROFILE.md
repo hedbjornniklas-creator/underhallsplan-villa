@@ -1,4 +1,4 @@
-# Gizmo / Uppdrag - varumärkesprofil 2.2
+# Gizmo / Uppdrag - varumärkesprofil 2.3
 
 Beslutad riktning: 2026-10-01. Implementation och verifiering dokumenteras nedan.
 Gäller Uppdrags interna projektlista, projektytor och tillhörande arbetsdialoger.
@@ -41,6 +41,17 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 ## Listor och dator
 
 - Högst 1856 px för listan och 1600 px för projektets meny plus arbetsyta.
+- Den interna avtalssidan har högst 1080 px arbetsbredd, centrerad inom
+  projektet. Enkla inmatningsfält är högst 576 px, datum 220 px och längre
+  textfält 832 px. Korta relaterade fält kan ligga bredvid varandra på dator.
+  Projektets registerflikar och kundens dokumentvy ändras inte av detta.
+- Avtalets sammanfattningsrader är normalt 52 px, utan tomma mellanrum mellan
+  sektionerna. Prisrader är normalt 44 px och handlingar 48 px på dator;
+  längre namn får fortfarande radbrytas. Rubrikband är 32 px. Formulärets
+  lokala mellanrumsenhet är 3 px, utan att minska textstorleken.
+  Datorns avtalsfält och kommandon har minst 36 px höjd, prisverktyg 32 px.
+  Detta är ett avgränsat undantag från övriga projektytors 44 px kontroller.
+  Mobilen behåller minst 48 px pekmål och 16 px inmatningstext.
 - En rad per projekt, med namn/adress, beställare, status och konkret åtgärdsbehov.
 - Vita rader, tunna horisontella avdelare, inga kort eller statuspiller per projekt.
 - Projektarbete använder varianten **Tydlig tabell**: tonad rubrikrad #EDF1F1,
@@ -55,7 +66,7 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   Alla bilagor till avtalet väljs här, även bilder. Ingen separat sektion för
   Övriga bilagor används. Underlag som inte valts ligger kvar i projektbiblioteket.
 - Arbetsdelar och avgränsningar i Avtal använder samma kompakta radprincip:
-  tonad rubrikrad, normalt 60 px, rubrik, kort sammanfattning och kundpris.
+  tonad rubrikrad, normalt 52 px på dator, rubrik, kort sammanfattning och kundpris.
   En rad öppnas åt gången för alla textfält, pris, flytt och borttagning.
   Den öppna raden är dämpat gul; pekning/fokus är grönblå. Redigering ligger
   i arbetsytan, inte i en andra offertvy.
@@ -92,6 +103,15 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   Arbete/material kan redovisas tillsammans eller separat utan gissad fördelning.
   Löpande del visar timpris, arbetsledning och arvode på självkostnad, aldrig
   en påhittad kontraktssumma. Blandat pris skiljer tydligt ut den fasta delen.
+- ÄTA har egna prisgrunder i Avtal, oberoende av grundpriset: Fyll i här eller
+  Enligt prisbilaga. Timpriser och påslag visas som två kompakta tabeller bredvid
+  varandra på dator, staplade på smal yta. En timprisrad redigeras åt gången.
+  Arbetsledning använder ordinarie timpris om ingen egen rad anges. Timpriser
+  inkluderar arvode och moms; påslag anges per kostnadsslag på självkostnad
+  exklusive moms. Prisbilagan väljs en gång, får namn/datum/version och ingår i
+  samma handlingsförteckning. Bara valt prissättningssätt visas för beställaren.
+  Befintlig ÄTA-text behålls som egna villkor. Standardvillkor är ett redigerbart
+  projektspecifikt sammandrag, inte en ändring av den ursprungliga ABS 18-filen.
 - Hela åtgärdsraden öppnar den befintliga sidopanelen. Pekning och
   tangentbordsfokus ger grönblå ton #F1F6F5 och en tunn vänstermarkering.
   Öppen åtgärd markeras med befintlig dämpad gul färg. Markeringar och
@@ -140,6 +160,20 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   Ett godkänt avtal och dess versionskopia är låsta även i databasen.
 - Betalningsplanens belopp är inte fakturerat eller betalt. Ingen faktureringsgraf
   visas innan en verklig fakturakälla finns.
+- Betalningsvillkor har ett eget dagfält (30 som startvärde) och redigerbar
+  ABS 18-text. Tidigare egna villkor bevaras separat. Villkor och betalplan
+  sparas i samma avtalsversion; signerade och äldre versioner skrivs inte om.
+- En ny betalplan för fast pris reserverar 10 procent som sista delbetalning.
+  En valbar första procentbetalning ligger först, efter utfört arbetsmoment.
+  Krav på förskott vid beställning införs inte för ABS 18/konsument: 52 §
+  konsumenttjänstlagen ger rätt att inte betala för ej utfört arbete.
+- Procentrader räknas från Avtalets eget pris i ören. En prisändring räknar om
+  procentraderna, inte manuella momentbelopp. Avvikelsen visas och utskick
+  kräver en komplett plan vars summa stämmer med avtalet.
+- Anpassa till avtalets belopp fördelar återstoden med befintliga proportioner;
+  Fördela jämnt ger lika delar. Text, datum och ordning bevaras. Ångra finns
+  för fördelningar inom samma format. Äldre planer uppgraderas endast genom
+  ett uttryckligt val, inte i bakgrunden. Automatik kräver ett känt fast pris.
 - Val/tillval ligger separat från grundavtalet. Planering är ingen beställning.
 - Tidsplan visar en manuellt redigerad lista med moment, projektdel, start, slut
   och status. Moment kan hämtas från Projektarbete utan att befintliga datum ändras.
@@ -151,6 +185,19 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-10: Användaren begär betalningsdagar, valbar första procentbetalning,
+  automatisk slutbetalning 10 procent och avstämning mot avtalspriset.
+  Genomförs med kompakta öppningsbara rader och bevarade egna villkor.
+  Förskott vid beställning är en öppen fråga: juridisk konflikt har lyfts;
+  implementationen använder första delbetalning efter utfört arbete.
+- 2026-10-10: Användaren godkänner strukturerade ÄTA-prisgrunder med flera
+  timpriser, påslag per kostnadsslag eller en versionerad prisbilaga. Valet
+  är oberoende av grundpriset och innebär ingen beställning av en faktisk ÄTA.
+  Befintliga egna texter och signerade avtalsversioner ändras inte automatiskt.
+- 2026-10-10: Användaren vill ha mindre luft genom hela avtalssidan och
+  inte full bredd på varje fält. Intern Avtal får en begränsad arbetsbredd,
+  tätare rader, formulär och verktyg. Innehåll, autosparning, låsning,
+  importregler, kundens dokument och andra moduler är oförändrade.
 - 2026-10-08: Användaren godkänner prisvisualiseringen enligt ABS 18. Avtalets
   prisrader blir oberoende av omfattningstexterna och av offertens interna
   kalkyl. Vald prisredovisning styr även vilka belopp som delas till beställaren.
@@ -216,6 +263,64 @@ Kontrollera listval, sökning, filter, tomläge, direktlänk och webbläsarens t
 Prova osparat offertutkast och planering genom alla projektdelar, betalningsplan,
 åtgärdspanel, filvisning och skrivskyddad beställarförhandsgranskning. Kontrollera
 dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering.
+
+### Betalningsplan 2026-10-10
+
+- Klicktest med fiktiva data: äldre plans avvikelse mot nytt avtalspris,
+  uttrycklig reservation av slutbetalning 10 procent, första betalning
+  10/20 procent, betalningsdagar, omfördelning, lika fördelning och ångra.
+- Prisändring uppdaterar procentrader, behåller manuella momentbelopp och
+  visar skillnaden. Anpassning ger exakt avtalssumma; text, datum och ordning
+  bevaras. Slutbetalningen ligger alltid sist och procentradernas belopp är
+  skrivskyddade. Ta bort/ångra vanlig delbetalning är kontrollerat.
+- Villkor och belopp överlever omladdning. Simulerat sparfel behåller
+  inmatningen och återförsök fungerar. Avtalsgranskningen innehåller både
+  valda betalningsdagar, standardtext och tidigare egna villkor.
+- Datorns arbetsyta är högst 1080 px med cirka 54 px sammanfattningsrader;
+  mobilbredder 390/344 px saknar sidöverflöde. Mobilfält har 16 px text och
+  minst 48 px tryckyta. Viewporten återställs efter testen.
+- 417 action-case-regressionstester passerar, därefter 12 riktade modell-
+  och layouttester. TypeScript, riktad ESLint och produktionsbygge med
+  webpack passerar. SQL provas två gånger: validering, gamla klienters
+  skrivskydd, publiceringskrav, frysta avtalsversioner och signeringslås.
+- Migration `2026-10-10_02_payment_plan_automation.sql` behövs före
+  driftsättning. Ingen produktionsdatabas eller riktig kundkommunikation
+  används i testerna. Förskottsfrågan är ännu inte en godkänd produktregel.
+
+### ÄTA-prisgrunder 2026-10-10
+
+- Klicktest med fiktiva data: flera timpriser, separat arbetsledning,
+  radering med bekräftelse, fyra kostnadspåslag och redigerbara avtalsvillkor.
+- Prisbilagan förekommer en gång i handlingsförteckningen. Namn, datum och
+  version överlever omladdning. Byte av prisgrund behåller egna timpriser i
+  utkastet men visar bara den valda prisgrunden i kundens avtalsutkast.
+- Simulerat sparfel behåller uppgifterna. Återförsök och omladdning fungerar;
+  sektionens position och höjd ändras inte när sparstatusen ändras.
+- Normal datorvy och mobilbredder 390/344 px kontrollerade utan sidöverflöde.
+- 407 action-case-regressionstester passerar. Därefter passerar även de 19
+  riktade modell- och databastesterna med svensk decimalvisning. TypeScript
+  och riktad ESLint passerar. Produktionsbygget med webpack och projektets
+  befintliga lokala miljöinställningar passerar också.
+- SQL-migrationen provas lokalt två gånger utan att skriva om tidigare
+  avtalsversioner. Validering, filägarskap, publiceringskrav och signeringslås
+  kontrolleras. Migrationen måste köras före publicering av gränssnittet.
+- Ingen produktionsdatabas, kundkommunikation eller riktig signering används.
+
+### Kompakt Avtal 2026-10-10
+
+- Intern arbetsyta kontrollerad vid 1440 px: högst 1080 px bredd, 44 px
+  prisrader, 32 px prisverktyg och 36 px inmatning/kommandon. Datumfält är
+  högst 220 px; handlingsdatum ryms på en rad. Längre texter är redigerbara
+  och textfälten kan göras högre, utan att någon avtalsinformation tas bort.
+- Klickkontroll med fiktiva uppgifter av sektioner, prisredigering,
+  handlingsredigering och byte till blandad prisform. En prisändring överlevde
+  omladdning. Sparfel/återförsök behöll inmatningen och sparstatusens fasta höjd.
+- Mobil 390 och 344 px kontrollerad utan sidöverflöde eller klippta fält;
+  inmatning och verktyg är minst 48 px höga med 16 px inmatningstext.
+- 396 action-case-tester, TypeScript och riktad ESLint passerar. Nya
+  layouttester skyddar avgränsningen till intern Avtal och responsiva mått.
+- Ingen SQL-migrering, produktionsdata eller kundutskick ändrades.
+  Denna layout är lokalt verifierad; driftsättning verifieras separat.
 
 ### Handlingsförteckning 2026-10-07
 

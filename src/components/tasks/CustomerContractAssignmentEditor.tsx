@@ -185,7 +185,7 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
       <textarea aria-label="Entreprenörens åtagande omfattar inte" className={field} rows={3} maxLength={6000} value={value.exclusions} onChange={(e) => change({ exclusions: e.target.value })} />
     </label>
     {draft.contractForm === 'abs18' && value.standardConditions && <label className="block text-sm font-medium">Standardtexter för uppdraget · ABS 18
-      <textarea aria-label="Standardtexter för uppdraget, ABS 18" className={field} rows={7} maxLength={6000} value={value.standardConditions.text}
+      <textarea aria-label="Standardtexter för uppdraget, ABS 18" className={field} rows={4} maxLength={6000} value={value.standardConditions.text}
         onChange={(e) => change({ standardConditions: { ...value.standardConditions!, text: e.target.value } })} />
     </label>}
   </div>

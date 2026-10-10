@@ -104,6 +104,7 @@ function components() {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx }
     if (name === 'react') return { useState: (value) => [value, () => {}] }
     if (name === 'lucide-react') return { FileCheck2: 'svg', RotateCcw: 'svg' }
+    if (name === './CustomerContractChanges') return { ContractChangesDocument: 'change-pricing' }
     if (name === '@/lib/action-cases/customerContract') return contract
     if (name === '@/lib/action-cases/standardContractTerms') return standardTerms
     if (name === '@/lib/properties/identity') return propertyDomain

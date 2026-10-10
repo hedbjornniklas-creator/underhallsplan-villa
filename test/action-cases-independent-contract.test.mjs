@@ -7,6 +7,8 @@ import { emptyCustomerOffer, normalizeCustomerOffer } from '../src/lib/action-ca
 import { importContractParts } from '../src/lib/action-cases/contractImport.ts'
 import { editContractProperty, emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { contractPricingForEditing } from '../src/lib/action-cases/contractPricing.ts'
+import { changesForEditing, changesDetails, changePricingPatch } from '../src/lib/action-cases/contractChanges.ts'
+import { abs18PaymentText, configurePaymentPlan, syncPaymentPlan, distributePaymentPlan } from '../src/lib/action-cases/customerPaymentPlan.ts'
 
 const db = new PGlite(), org = randomUUID(), actor = randomUUID(), caseId = randomUUID(), participant = randomUUID()
 const migration = (name) => readFileSync(new URL(`../docs/db/${name}.sql`, import.meta.url), 'utf8').replace('create extension if not exists pgcrypto;', '')
@@ -43,6 +45,45 @@ before(async () => {
   await db.exec(migration('2026-10-08_02_contract_other_agreements'))
 })
 after(() => db.close())
+
+test('payment automation migration protects percentages, payment days, revisions and signed snapshots', async () => {
+  await db.exec(migration('2026-10-08_04_contract_pricing'))
+  const before = await state('action_case_customer_contract_drafts')
+  await db.exec(migration('2026-10-10_02_payment_plan_automation'))
+  await db.exec(migration('2026-10-10_02_payment_plan_automation'))
+  assert.deepEqual(await state('action_case_customer_contract_drafts'), before)
+  const project = randomUUID(), recipient = randomUUID(), offer = randomUUID()
+  await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Betalplantest','Testgatan','Test')", [project,org])
+  await db.query("insert into action_case_participants(id,org_id,action_case_id,role,name,email) values($1,$2,$3,'customer','Test','test@example.test')", [recipient,org,project])
+  const body = normalizeCustomerOffer({ ...draft(), paymentConditions: { version: 1, days: 15, standardText: abs18PaymentText },
+    paymentPlan: configurePaymentPlan({ version: 1, installments: [{ id:randomUUID(),title:'Mark',condition:'Efter utfört arbete.',plannedDate:'',amountOre:10000 }] },10000,true,20) })
+  const call = (operation,data) => db.query('select write_customer_contract($1,$2,$3,$4,$5::jsonb)', [org,project,actor,operation,JSON.stringify(data)])
+  await call('save',{ revision:0,body })
+  for (const days of [0,366,1.5,'30']) await assert.rejects(db.query('select assert_payment_automation($1::jsonb,false)',[JSON.stringify({ ...body,paymentConditions:{ ...body.paymentConditions,days } })]),/INVALID/)
+  for (const patch of [{initialPercent:1.001},{initialPercent:91},{initialEnabled:'true'},{allocationBaseOre:1.5}])
+    await assert.rejects(db.query('select assert_payment_automation($1::jsonb,false)',[JSON.stringify({ ...body,paymentPlan:{ ...body.paymentPlan,automation:{ ...body.paymentPlan.automation,...patch } } })]),/INVALID/)
+  const bad = structuredClone(body); bad.paymentPlan.installments.at(-1).amountOre=999
+  await assert.rejects(call('save',{ revision:1,body:bad }),/INVALID/)
+  const wrongOrder = structuredClone(body); wrongOrder.paymentPlan.installments.reverse()
+  await assert.rejects(call('save',{ revision:1,body:wrongOrder }),/INVALID/)
+  const stale = structuredClone(body); delete stale.paymentConditions
+  await assert.rejects(call('save',{ revision:1,body:stale }),/STALE/)
+  const missing = structuredClone(body); delete missing.paymentPlan
+  await assert.rejects(call('save',{ revision:1,body:missing }),/STALE/)
+  const changed = { ...body,baseAmountOre:15000,paymentPlan:syncPaymentPlan(body.paymentPlan,15000) }
+  await call('save',{ revision:1,body:changed })
+  await assert.rejects(db.query('select assert_customer_payment_plan($1::jsonb,true)',[JSON.stringify(changed)]),/INCOMPLETE/)
+  const reconciled = { ...changed,paymentPlan:distributePaymentPlan(changed.paymentPlan,15000) }
+  await call('save',{ revision:2,body:reconciled })
+  const snapshot={ ...reconciled,projectTitle:'Betalplantest',propertyAddress:'Testgatan',customerName:'Test',customerEmail:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test' }
+  await call('publish',{ id:offer,revision:3,confirmed:true,participantId:recipient,email:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test',snapshot,files:[],emailPayload:{to:'test@example.test'},tokenHash:randomUUID() })
+  await call('save',{ revision:3,body:{ ...reconciled,paymentConditions:{ ...reconciled.paymentConditions,days:30 } } })
+  assert.equal((await db.query('select snapshot from action_case_customer_offers where id=$1',[offer])).rows[0].snapshot.paymentConditions.days,15)
+  await db.query("update action_case_customer_offers set status='accepted',accepted_total_ore=15000 where id=$1",[offer])
+  await assert.rejects(call('save',{ revision:4,body:reconciled }),/ACCEPTED/)
+  const privileges=(await db.query("select has_function_privilege('authenticated','assert_payment_automation(jsonb,boolean)','execute') allowed")).rows[0]
+  assert.equal(privileges.allowed,false)
+})
 
 test('explicit imports replace selected texts only, preserve price and copy all editable notes', () => {
   const existing = draft().items
@@ -192,4 +233,63 @@ test('SQL computes the same fixed part for each presentation, split and basis an
       const incomplete=structuredClone(body); incomplete.contractPricing.rows[0].title=''
       await assert.rejects(db.query('select assert_customer_offer_pricing($1::jsonb,null,true)',[JSON.stringify(incomplete)]),/INCOMPLETE/)
     }
+})
+
+test('change pricing migration validates drafts and annexes, is repeatable, and freezes agreed rates at signing', async () => {
+  const legacy = await state('action_case_customer_contract_drafts')
+  await db.exec(migration('2026-10-10_01_contract_change_pricing'))
+  await db.exec(migration('2026-10-10_01_contract_change_pricing'))
+  assert.deepEqual(await state('action_case_customer_contract_drafts'), legacy)
+  const project = randomUUID(), recipient = randomUUID(), publishedId = randomUUID()
+  await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Testprojekt','Testgatan','Test')", [project,org])
+  await db.query("insert into action_case_participants(id,org_id,action_case_id,role,name,email) values($1,$2,$3,'customer','Test','test@example.test')", [recipient,org,project])
+  const details = emptyContractDetails()
+  for (const key of Object.keys(details.fields)) details.fields[key] = { status: 'specified', text: 'Testuppgift' }
+  details.advice = { ...details.advice, status: 'none', format: 'contract-fields' }
+  const p = changesForEditing(details)
+  p.rates[0].hourlyOre = 65000
+  p.rates.push({ id:randomUUID(),kind:'other',title:'Elektriker',hourlyOre:80000 })
+  p.markups = { materials:10,subcontractors:5,equipment:0,other:12.5 }
+  const body = normalizeCustomerOffer({ ...draft(), terms:'Villkor',paymentTerms:'Efter utfört arbete',schedule:'Avtalade tider',contractDetails:changesDetails(details,p) })
+  const call = (operation,data) => db.query('select write_customer_contract($1,$2,$3,$4,$5::jsonb)',[org,project,actor,operation,JSON.stringify(data)])
+  await call('save',{ revision:0,body })
+  const before = (await db.query('select body from action_case_customer_contract_drafts where action_case_id=$1',[project])).rows[0].body
+  const without = structuredClone(body); delete without.contractDetails.changesPricing
+  await assert.rejects(call('save',{ revision:1,body:without }),/STALE/)
+  for (const patch of [{ hourlyOre:-1 },{ hourlyOre:1.5 },{ hourlyOre:'65000' }]) {
+    const bad = structuredClone(body); Object.assign(bad.contractDetails.changesPricing.rates[0],patch)
+    await assert.rejects(call('save',{ revision:1,body:bad }),/INVALID/)
+  }
+  for (const markups of [{ materials:1.001 },{ other:1001 },{ subcontractors:'10' }]) {
+    const bad=structuredClone(body); Object.assign(bad.contractDetails.changesPricing.markups,markups)
+    await assert.rejects(call('save',{ revision:1,body:bad }),/INVALID/)
+  }
+  const incomplete=normalizeCustomerOffer({ ...body,contractDetails:changesDetails(body.contractDetails,{ ...p,markups:{ ...p.markups,materials:null } }) })
+  await db.query('select assert_customer_contract($1::jsonb,false)',[JSON.stringify(incomplete)])
+  await assert.rejects(db.query('select assert_customer_contract($1::jsonb,true)',[JSON.stringify(incomplete)]),/INCOMPLETE/)
+  const f={ id:randomUUID(),fileName:'ÄTA-prislista.pdf',contentType:'application/pdf',fileSizeBytes:100 }
+  await db.query("insert into action_case_attachments(id,org_id,action_case_id,attachment_type,file_name,file_path,content_type,file_size_bytes) values($1,$2,$3,'document',$4,$5,'application/pdf',100)",[f.id,org,project,f.fileName,`${org}/${project}/${f.id}`])
+  const attached=normalizeCustomerOffer({ ...body,...changePricingPatch(body,{ ...p,mode:'attachment',annex:{fileId:f.id,type:'ÄTA-prislista',name:f.fileName,date:'2026-10-10'},annexRevision:'Rev 1' },[f]) })
+  await db.query('select assert_customer_contract($1::jsonb,true)',[JSON.stringify(attached)])
+  const mismatch=structuredClone(attached); mismatch.contractDetails.changesPricing.annex.date='2026-10-11'
+  await assert.rejects(db.query('select assert_customer_contract($1::jsonb,false)',[JSON.stringify(mismatch)]),/INVALID/)
+  const forgery=structuredClone(attached); forgery.attachmentIds=[]
+  await assert.rejects(db.query('select assert_customer_contract($1::jsonb,false)',[JSON.stringify(forgery)]),/INVALID/)
+  await call('save',{revision:1,body:attached})
+  await db.query("update action_case_attachments set content_type='image/png' where id=$1",[f.id])
+  await assert.rejects(call('save',{revision:2,body:attached}),/FILES/)
+  await db.query("update action_case_attachments set content_type='application/pdf' where id=$1",[f.id])
+  await call('save',{revision:2,body})
+  const snapshot={ ...body,projectTitle:'Testprojekt',propertyAddress:'Testgatan',customerName:'Test',customerEmail:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test' }
+  await call('publish',{ id:publishedId,revision:3,confirmed:true,participantId:recipient,email:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test',
+    snapshot,files:[],emailPayload:{ to:'test@example.test' },tokenHash:randomUUID() })
+  const changed=normalizeCustomerOffer({ ...body,contractDetails:changesDetails(body.contractDetails,{...p,rates:p.rates.map((r)=>({...r,hourlyOre:99900}))}) })
+  await call('save',{revision:3,body:changed})
+  assert.deepEqual((await db.query('select snapshot from action_case_customer_offers where id=$1',[publishedId])).rows[0].snapshot.contractDetails.changesPricing,p)
+  await db.query("update action_case_customer_offers set status='accepted',accepted_total_ore=10000 where id=$1",[publishedId])
+  await assert.rejects(call('save',{revision:4,body}),/ACCEPTED/)
+  await assert.rejects(db.query("update action_case_customer_offers set snapshot=jsonb_set(snapshot,'{contractDetails,changesPricing,rates}','[]'::jsonb) where id=$1",[publishedId]),/IMMUTABLE/)
+  assert.deepEqual(before.contractDetails.changesPricing,p)
+  const rights=(await db.query("select has_function_privilege('authenticated','assert_contract_changes(jsonb,boolean)','execute') rpc")).rows[0]
+  assert.equal(rights.rpc,false)
 })

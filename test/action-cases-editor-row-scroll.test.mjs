@@ -98,5 +98,5 @@ test('browser scroll anchoring cannot compete with the editor toggle correction'
   assert.match(css, /\.gizmo-editor-scroll-scope\s*\{\s*overflow-anchor:\s*none;/)
   assert.doesNotMatch(css, /(?:html|body)\s*\{[^}]*overflow-anchor:/)
   const editor = readFileSync(new URL('../src/components/tasks/CustomerOfferEditor.tsx', import.meta.url), 'utf8')
-  assert.match(editor, /className=\{`gizmo-editor-scroll-scope \$\{embedded \?/)
+  assert.match(editor, /className=\{`gizmo-editor-scroll-scope \$\{contractView \? 'gizmo-contract-editor' : ''\} \$\{embedded \?/)
 })

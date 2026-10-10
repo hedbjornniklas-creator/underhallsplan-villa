@@ -197,6 +197,10 @@ function syncTestRecipient(binding = false) {
 }
 let schedule = { available: true, revision: 0, rows: [], sharedRows: [] }, slowSave = false
 const independentContract = process.argv.includes('--independent-contract')
+if (process.argv.includes('--contract-changes')) {
+  projects.cases[0].attachments.push({ ...structuredClone(projects.cases[0].attachments.find((f) => f.contentType === 'application/pdf')),
+    id: id(750), fileName: 'FIKTIV_ATA_prislista_2026.pdf', contentType: 'application/pdf', attachmentType: 'document', isQuoteDocument: false, grantedParticipantIds: [] })
+}
 const estimateState = { draft: structuredClone(state.draft), revision: state.revision, costing: structuredClone(state.costing ?? {}) }
 if (independentContract) { state.offers = []; state.offerDraft = estimateState }
 const server = createServer(async (req, res) => {

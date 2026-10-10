@@ -4,6 +4,7 @@ import { useId } from 'react'
 import { Check, Download, FileText } from 'lucide-react'
 import { CustomerContractDocument } from './CustomerContractFields'
 import { PaymentPlanDocument } from './CustomerPaymentPlan'
+import { paymentConditionsText } from '@/lib/action-cases/customerPaymentPlan'
 import { ContractPartiesDocument } from './CustomerContractPartiesEditor'
 import { ContractPriceDocument } from './CustomerContractPricing'
 import {
@@ -227,7 +228,7 @@ export default function CustomerOfferDocument({
         <h3 className="text-lg font-semibold">Standardtexter för uppdraget · ABS 18</h3>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.assignment.standardConditions.text}</p>
       </section>}
-      {purpose === 'contract' && <CustomerContractDocument value={s.contractDetails} omitParties={Boolean(s.contractParties)} />}
+      {purpose === 'contract' && <CustomerContractDocument value={s.contractDetails} omitParties={Boolean(s.contractParties)} fileUrl={fileUrl} />}
       {purpose === 'contract' && s.contractPricing && <div className="border-t border-slate-200 py-6"><ContractPriceDocument value={s.contractPricing} /></div>}
       {purpose === 'contract' && s.paymentPlan && <section className="border-t border-slate-200 py-6">
         <h3 className="text-lg font-semibold">Betalningsplan för grundavtalet</h3>
@@ -236,7 +237,7 @@ export default function CustomerOfferDocument({
       {purpose === 'contract' && <section className="grid gap-6 border-y border-slate-200 py-6 sm:grid-cols-2">
         {[
           ['Tider', s.schedule],
-          ['Betalningsvillkor', s.paymentTerms]
+          ['Betalningsvillkor', paymentConditionsText(s.paymentConditions, s.paymentTerms)]
         ].map(([title, body]) => (
           <div key={title}>
             <h3 className="font-semibold">{title}</h3>

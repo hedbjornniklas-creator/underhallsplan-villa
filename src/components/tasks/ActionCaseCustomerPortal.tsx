@@ -340,7 +340,7 @@ export default function ActionCaseCustomerPortal({
         {contract ? <>
           <p className="mt-3 text-sm font-medium">{accepted ? 'Avtalad betalningsplan' : 'Föreslagen betalningsplan · Avtalet är inte godkänt'} · Version {contract.version}</p>
           <p className="mt-2 text-sm text-slate-600">Grundavtalet · Inklusive moms. Detta är en betalningsplan, inte fakturor eller betalningskvitton.</p>
-          <PaymentPlanDocument plan={contract.snapshot.paymentPlan} paymentTerms={contract.snapshot.paymentTerms} />
+          <PaymentPlanDocument plan={contract.snapshot.paymentPlan} paymentTerms={contract.snapshot.paymentTerms} conditions={contract.snapshot.paymentConditions} />
         </> : <p className="mt-3 text-sm text-slate-600">Ingen betalningsplan har delats ännu.</p>}
       </section>}
       {view === 'schedule' && <section className="py-6">

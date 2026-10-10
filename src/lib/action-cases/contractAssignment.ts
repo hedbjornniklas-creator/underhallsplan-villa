@@ -69,6 +69,9 @@ export function assignmentPatch(draft: CustomerOfferDraft, assignment: ContractA
   const nextIds = new Set(assignment.documents.map((d) => d.fileId))
   return {
     contractDetails: draft.contractDetails ? { ...draft.contractDetails, assignment,
+      ...(draft.contractDetails.changesPricing?.mode === 'attachment' && draft.contractDetails.changesPricing.annex ? {
+        changesPricing: { ...draft.contractDetails.changesPricing, annex: assignment.documents.find((doc) => doc.fileId === draft.contractDetails!.changesPricing!.annex!.fileId) ?? null }
+      } : {}),
       fields: { ...draft.contractDetails.fields, documents: { status: assignmentIssues(assignment).length ? 'unreviewed' : 'specified', text: assignmentDocumentsText } }
     } : undefined,
     attachmentIds: [...new Set([...draft.attachmentIds.filter((id) => !previousIds.has(id) || nextIds.has(id)), ...nextIds])],

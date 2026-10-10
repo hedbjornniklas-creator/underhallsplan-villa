@@ -7,6 +7,7 @@ import * as assignment from '../src/lib/action-cases/contractAssignment.ts'
 import { emptyContractDetails, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { emptyCustomerOffer, normalizeCustomerOffer, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import * as offers from '../src/lib/action-cases/customerOffers.ts'
+import * as payments from '../src/lib/action-cases/customerPaymentPlan.ts'
 import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { id } from './fixtures/customer-offer-data.ts'
 
@@ -274,6 +275,7 @@ test('the real contract document prints ordered metadata, extra scope and exclus
     if(name==='./CustomerContractPartiesEditor') return {ContractPartiesDocument:'parties'}
     if(name==='./CustomerContractPricing') return {ContractPriceDocument:'contract-pricing'}
     if(name==='@/lib/action-cases/customerOffers') return offers
+    if(name==='@/lib/action-cases/customerPaymentPlan') return payments
     throw Error(name)
   },loaded,loaded.exports)
   const d=structured(), view=(body)=>loaded.exports.default({offer:{id:'draft',version:0,status:'published',snapshot:body,files:[],publishedAt:''}, selected:[], purpose:'contract', fileUrl:(id)=>`/file/${id}`})

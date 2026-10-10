@@ -6,6 +6,7 @@ import ts from 'typescript'
 import * as contracts from '../src/lib/action-cases/customerContract.ts'
 import * as assignment from '../src/lib/action-cases/contractAssignment.ts'
 import * as offers from '../src/lib/action-cases/customerOffers.ts'
+import * as payments from '../src/lib/action-cases/customerPaymentPlan.ts'
 import * as standard from '../src/lib/action-cases/standardContractTerms.ts'
 import * as properties from '../src/lib/properties/identity.ts'
 
@@ -163,9 +164,11 @@ function component(file, extra = {}) {
     '@/lib/action-cases/customerContract': contracts,
     '@/lib/properties/identity': properties,
     '@/lib/action-cases/customerOffers': offers,
+    '@/lib/action-cases/customerPaymentPlan': payments,
     './CustomerPaymentPlan': { PaymentPlanDocument: 'payment-plan' },
     './CustomerContractPartiesEditor': { ContractPartiesDocument: 'parties' },
     './CustomerContractPricing': { ContractPriceDocument: 'contract-pricing' },
+    './CustomerContractChanges': { ContractChangesDocument: 'change-pricing' },
     ...extra
   }
   new Function('require', 'module', 'exports', code)((name) => {
@@ -191,7 +194,7 @@ test('the normal work-environment field edits the stored default and renders the
     showAdvice: false, inline: true, onChange: (value) => { changed = value } }))
   const field = nodes.find((n) => n?.props?.['aria-label'] === 'Arbetsmiljö, BAS-P och BAS-U')
   assert.equal(field.props.value, standard.ABS18_WORK_ENVIRONMENT.text)
-  assert.equal(field.props.rows, 7)
+  assert.equal(field.props.rows, 4)
   field.props.onChange({ target: { value: 'Projektspecifik arbetsmiljötext.' } })
   assert.equal(changed.fields.workEnvironment.text, 'Projektspecifik arbetsmiljötext.')
   assert.equal(changed.workEnvironmentDefaultVersion, 'abs18-2018-06')
@@ -275,6 +278,21 @@ test('contract review includes stored defaults and Other once; old signed render
   assert.equal(view(old, 'contract', 'accepted').includes(standard.ABS18_ASSIGNMENT_CONDITIONS.text), false)
   assert.equal(view(next, 'offer').includes(standard.ABS18_ASSIGNMENT_CONDITIONS.text), false)
   assert.equal(view(next, 'offer').includes(next.contractDetails.otherAgreements), false)
+  assert.deepEqual(old, original)
+})
+
+test('contract payment conditions render the stored days and standard text once without upgrading historical snapshots', () => {
+  const Document = component('CustomerOfferDocument', { './CustomerContractFields': component('CustomerContractFields') }).default
+  const view = (snapshot) => flatten(Document({ offer: { id: 'test', version: 1, status: 'accepted', snapshot, files: [], publishedAt: '' },
+    selected: [], purpose: 'contract', fileUrl: () => '' }))
+  const old = legacy(), original = structuredClone(old)
+  old.paymentTerms = 'Befintliga egna betalningsvillkor.'
+  original.paymentTerms = old.paymentTerms
+  const next = { ...old, paymentConditions: { version: 1, days: 15, standardText: payments.abs18PaymentText } }
+  const text = payments.paymentConditionsText(next.paymentConditions, next.paymentTerms)
+  assert.equal(view(next).filter((n) => n === text).length, 1)
+  assert.equal(view(old).includes(payments.abs18PaymentText), false)
+  assert.equal(view(old).includes(old.paymentTerms), true)
   assert.deepEqual(old, original)
 })
 

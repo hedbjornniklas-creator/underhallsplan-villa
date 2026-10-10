@@ -2,6 +2,8 @@
 import { emptyPropertyDetails, normalizePropertyDetails, propertyDetailsText, propertyDetailsComplete, propertyFields, propertyIdentityKey, type PropertyDetails } from '../properties/identity.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeAssignment, assignmentIssues, assignmentDocumentsText, type ContractAssignment } from './contractAssignment.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { changesEntry, changesIssues, normalizeContractChanges, type ContractChanges } from './contractChanges.ts'
 
 export const contractFields = [
   {
@@ -74,6 +76,7 @@ export type ContractParticipants = {
 }
 export type CustomerContractDetails = {
   version: 1
+  changesPricing?: ContractChanges
   otherAgreements?: string
   workEnvironmentDefaultVersion?: 'abs18-2018-06'
   assignment?: ContractAssignment
@@ -280,6 +283,12 @@ export function normalizeContractDetails(
     result.fields.controls = participantsEntry(result.controlParticipants)
     if (result.fields.controls.text.length > 6000) invalid()
   }
+  if (input.changesPricing !== undefined) {
+    result.changesPricing = normalizeContractChanges(input.changesPricing)
+    result.fields.changes = changesEntry(result.changesPricing)
+    const annex = result.changesPricing.mode === 'attachment' ? result.changesPricing.annex : null
+    if (annex && !result.assignment?.documents.some((doc) => doc.fileId === annex.fileId && doc.name === annex.name && doc.type === annex.type && doc.date === annex.date)) invalid()
+  }
   return result
 }
 export function contractDetailsIssues(
@@ -317,6 +326,10 @@ export function contractDetailsIssues(
       )
   }
   for (const { key, title } of contractFields) {
+    if (key === 'changes' && value.changesPricing) {
+      issues.push(...changesIssues(value.changesPricing))
+      continue
+    }
     if (key === 'customerWork' && value.otherAgreements !== undefined) continue
     if (key === 'parties' && structuredParties) continue
     if (key === 'documents' && value.assignment) {

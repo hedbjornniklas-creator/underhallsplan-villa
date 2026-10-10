@@ -4,7 +4,9 @@ import { contractFixedAmount, contractFixedRows, contractPricingIssues, normaliz
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractDetailsIssues, normalizeContractDetails, type CustomerContractDetails } from './customerContract.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
-import { normalizePaymentPlan, paymentPlanIssues, type CustomerPaymentPlan } from './customerPaymentPlan.ts'
+import { publicChanges } from './contractChanges.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizePaymentPlan, normalizePaymentConditions, paymentPlanIssues, type CustomerPaymentPlan, type PaymentConditions } from './customerPaymentPlan.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeContractParties, contractPartiesIssues, publicContractParties, contractPartiesSummary, type ContractParties } from './customerContractParties.ts'
 
@@ -25,6 +27,7 @@ export type CustomerOfferDraft = {
   contractPricing?: ContractPricing
   contractParties?: ContractParties
   paymentPlan?: CustomerPaymentPlan | null
+  paymentConditions?: PaymentConditions
   contractDetails?: CustomerContractDetails
   title: string
   introduction: string
@@ -174,6 +177,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     ...(d.contractPricing === undefined ? {} : { contractPricing: normalizeContractPricing(d.contractPricing) }),
     ...(d.contractParties === undefined ? {} : { contractParties: normalizeContractParties(d.contractParties) }),
     ...(d.paymentPlan === undefined ? {} : { paymentPlan: normalizePaymentPlan(d.paymentPlan) }),
+    ...(d.paymentConditions === undefined ? {} : { paymentConditions: normalizePaymentConditions(d.paymentConditions) }),
     ...(d.contractDetails === undefined ? {} : { contractDetails: normalizeContractDetails(d.contractDetails) }),
     title: text(d.title, 250),
     introduction: text(d.introduction, 12000),
@@ -260,7 +264,8 @@ export function offerPublishIssues(
   issues.push(...contractPartiesIssues(d.contractParties))
   if (d.items.some((i) => i.scopeAdvice?.trim()) && d.contractDetails?.advice.status !== 'given')
     issues.push('En arbetsdel innehåller avrådan. Kontrollera och dokumentera avrådan under Avtalsuppgifter före utskick.')
-  issues.push(...paymentPlanIssues(d.paymentPlan, customerOfferBaseAmount(d)))
+  issues.push(...paymentPlanIssues(d.paymentPlan, customerOfferBaseAmount(d), d.contractPricing?.mode))
+  if (d.paymentConditions && !d.paymentConditions.standardText.trim() && d.contractForm === 'abs18') issues.push('Ange avtalets betalningsvillkor.')
   if (d.items.some((i) => i.kind === 'option'))
     issues.push('Flytta valen till Val och tillval innan grundavtalet skickas.')
   if (!d.title.trim()) issues.push('Ange en offertrubrik.')
@@ -289,7 +294,7 @@ export function offerPublishIssues(
     issues.push('Ange en giltighetstid som inte har passerat.')
   if (!d.terms.trim())
     issues.push('Komplettera villkor och hänvisning till avtalshandling.')
-  if (!d.paymentTerms.trim()) issues.push('Ange betalningsvillkor.')
+  if (!d.paymentTerms.trim() && !d.paymentConditions) issues.push('Ange betalningsvillkor.')
   if (!d.schedule.trim()) issues.push('Ange tider och förutsättningar.')
   if (d.contractForm === 'abs18' && !d.termsAttachmentId)
     issues.push('ABS 18:s standardvillkor behöver läggas till innan avtalet skickas.')
@@ -388,6 +393,7 @@ export function mapCustomerOffer(row: Record<string, unknown>): CustomerOffer {
     status: row.status as CustomerOffer['status'],
     snapshot: {
       ...d,
+      ...(d.contractDetails?.changesPricing ? { contractDetails: { ...d.contractDetails, changesPricing: publicChanges(d.contractDetails.changesPricing) } } : {}),
       ...(d.contractParties ? { contractParties: publicContractParties(d.contractParties) } : {}),
       items: d.items.map((item) => {
         const publicItem = { ...item }

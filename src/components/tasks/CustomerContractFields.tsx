@@ -1,5 +1,7 @@
 'use client'
 
+import { ContractChangesDocument } from './CustomerContractChanges'
+
 import { useState } from 'react'
 import { FileCheck2, RotateCcw } from 'lucide-react'
 import { propertyFields } from '@/lib/properties/identity'
@@ -129,7 +131,7 @@ export default function CustomerContractFields({
                       <textarea
                         aria-label={title}
                         className={field}
-                        rows={key === 'workEnvironment' ? 7 : 3}
+                        rows={key === 'workEnvironment' ? 4 : 3}
                         maxLength={6000}
                         value={contractEntryText(entry)}
                         onChange={(e) => change(e.target.value)}
@@ -167,10 +169,12 @@ export default function CustomerContractFields({
 
 export function CustomerContractDocument({
   value,
-  omitParties = false
+  omitParties = false,
+  fileUrl
 }: {
   value?: CustomerContractDetails
   omitParties?: boolean
+  fileUrl?: (id: string) => string
 }) {
   if (!value) return null
   const advice = value.advice
@@ -214,7 +218,7 @@ export function CustomerContractDocument({
         (key !== 'customerWork' || value.otherAgreements === undefined)).map(({ key, title }) => (
         <div key={key} className="mt-5 border-t border-slate-100 pt-4">
           <h4 className="font-semibold">{title}</h4>
-          {key === 'property' && value.property ? <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+          {key === 'changes' && value.changesPricing ? <ContractChangesDocument value={value.changesPricing} fileUrl={fileUrl} /> : key === 'property' && value.property ? <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
             {propertyFields.map(({ key: propertyKey, title: propertyTitle }) => value.property![propertyKey] ? <div key={propertyKey}>
               <dt className="font-medium">{propertyTitle}</dt>
               <dd className="mt-1 break-words text-slate-700">{value.property![propertyKey]}</dd>

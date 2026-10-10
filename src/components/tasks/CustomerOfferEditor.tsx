@@ -51,6 +51,7 @@ import { contractDocumentDraftState, contractDocumentsAcknowledged, readContract
 import CustomerPlanningEditor from './CustomerPlanningEditor'
 import { contractAdviceForEditing, contractAdviceSummary, contractDetailsForEditing, contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
 import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
+import { abs18PaymentText, paymentConditionsText, syncPaymentPlan } from '@/lib/action-cases/customerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
@@ -63,6 +64,8 @@ import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 import { contractPricingForEditing } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
+import CustomerContractChanges from './CustomerContractChanges'
+import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -72,8 +75,10 @@ export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocume
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
   const details = workspace.draft.contractDetails ?? emptyContractDetails()
   if (workspace.offers.some((offer) => offer.status === 'accepted')) return { ...workspace.draft, contractDetails: details }
+  const editable = contractAdviceForEditing(contractDetailsForEditing(details))
   return withAbs18ContractDefaults({ ...workspace.draft, contractPricing: contractPricingForEditing(workspace.draft), pricingMode: 'total',
-    contractDetails: contractAdviceForEditing(contractDetailsForEditing(details)) })
+    paymentConditions: workspace.draft.paymentConditions ?? { version: 1, days: 30, standardText: workspace.draft.contractForm === 'abs18' ? abs18PaymentText : '' },
+    contractDetails: changesDetails(editable, changesForEditing(editable)) })
 }
 export default function CustomerOfferEditor({
   actionCase,
@@ -227,6 +232,7 @@ export default function CustomerOfferEditor({
     if (draftTarget === 'contract' && !locked) {
       nextDraft = withAbs18ContractDefaults(nextDraft)
       if (nextDraft.contractPricing) nextDraft = { ...nextDraft, pricingMode: 'total', baseAmountOre: customerOfferBaseAmount(nextDraft) }
+      nextDraft = { ...nextDraft, paymentPlan: syncPaymentPlan(nextDraft.paymentPlan, customerOfferBaseAmount(nextDraft)) }
       const assignment = assignmentForEditing(nextDraft, files)
       nextDraft = { ...nextDraft, ...assignmentPatch(nextDraft, assignment, assignment) }
     }
@@ -534,7 +540,7 @@ export default function CustomerOfferEditor({
     </>}
   </ProjectEditorRow>
   return (
-    <Container className={`gizmo-editor-scroll-scope ${embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}`}>
+    <Container className={`gizmo-editor-scroll-scope ${contractView ? 'gizmo-contract-editor' : ''} ${embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}`}>
       {(!embedded || ['edit', 'contract', 'document', 'offerDocument'].includes(view)) && <header className="border-b border-slate-200 py-6">
         {!embedded && <PendingLink autoPending pendingLabel="Öppnar projektlistan…" icon={<ArrowLeft size={17} />}
           href="/uppdrag"
@@ -646,12 +652,13 @@ export default function CustomerOfferEditor({
           </div>}
         </div>
         {locked ? <>
-          <PaymentPlanDocument plan={previewOffer.snapshot.paymentPlan} paymentTerms={previewOffer.snapshot.paymentTerms} />
+          <PaymentPlanDocument plan={previewOffer.snapshot.paymentPlan} paymentTerms={previewOffer.snapshot.paymentTerms} conditions={previewOffer.snapshot.paymentConditions} />
           <p className="mt-4 text-sm text-slate-600">Version {previewOffer.version}. Ändringar av den avtalade planen kräver en separat överenskommelse och kan inte göras här.</p>
         </> : <>
           <fieldset disabled={Boolean(busy) && busy !== 'save'} className="min-w-0">
-            <PaymentPlanEditor plan={draft.paymentPlan} baseAmount={baseAmount} paymentTerms={draft.paymentTerms}
-              onChange={(paymentPlan) => update({ paymentPlan })} onTermsChange={(paymentTerms) => update({ paymentTerms })} />
+            <PaymentPlanEditor plan={draft.paymentPlan} baseAmount={baseAmount} paymentTerms={draft.paymentTerms} conditions={draft.paymentConditions}
+              priceMode={draft.contractPricing?.mode} contractForm={draft.contractForm}
+              onChange={(paymentPlan) => update({ paymentPlan })} onTermsChange={(paymentTerms) => update({ paymentTerms })} onConditionsChange={(paymentConditions) => update({ paymentConditions })} />
           </fieldset>
           <div className="mt-6 flex flex-wrap gap-3 border-t border-slate-200 pt-5">
             <button className={`${button} bg-white`} onClick={() => setView('document')}><Eye size={17} /> Granska grundavtal</button>
@@ -692,7 +699,7 @@ export default function CustomerOfferEditor({
         <div className={contractView ? 'gizmo-contract-layout py-6' : 'grid gap-8 py-6 lg:grid-cols-[minmax(0,1fr)_280px]'}>
           <fieldset
             disabled={(Boolean(busy) && (contractView || busy !== 'save')) || locked}
-            className="min-w-0 space-y-5"
+            className={`min-w-0 space-y-5 ${contractView ? 'gizmo-contract-form' : ''}`}
           >
             <div hidden={contractView} className="space-y-5">
             <ProjectEditorRow title="Offertuppgifter" summary={`${parties.customers.map((row) => row.name).filter(Boolean).join(', ') || actionCase.customerName} · ${draft.validUntil ? `Giltig till ${draft.validUntil}` : 'Giltighetsdatum saknas'}`}
@@ -913,10 +920,12 @@ export default function CustomerOfferEditor({
             {contractSection('work-environment', 'Arbetsmiljö', ['workEnvironment'])}
             {contractSection('advice', 'Avrådande', [], true)}
             {priceSection}
-            {contractSection('changes', 'Ändringar och tilläggsarbeten', ['changes'])}
-            <ProjectEditorRow title="Tid för betalning" summary={`${draft.paymentPlan?.installments.length ?? 0} delbetalningar · ${draft.paymentTerms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'}`}
+            <ProjectEditorRow title="Ändringar och tilläggsarbeten" summary={changesSummary(draft.contractDetails?.changesPricing)} open={expanded === 'changes'} onToggle={() => setExpanded(expanded === 'changes' ? null : 'changes')}>
+              <CustomerContractChanges draft={draft} files={files} caseId={actionCase.id} blocked={locked || Boolean(busy)} onChange={update} />
+            </ProjectEditorRow>
+            <ProjectEditorRow title="Tid för betalning" summary={`${draft.paymentPlan?.installments.length ?? 0} delbetalningar · ${paymentConditionsText(draft.paymentConditions, draft.paymentTerms).trim() ? 'Villkor ifyllda' : 'Villkor saknas'}`}
               open={expanded === 'payment'} onToggle={() => setExpanded(expanded === 'payment' ? null : 'payment')}>
-              <p className="whitespace-pre-wrap text-sm">{draft.paymentTerms || 'Betalningsvillkor saknas.'}</p>
+              <p className="whitespace-pre-wrap text-sm">{paymentConditionsText(draft.paymentConditions, draft.paymentTerms) || 'Betalningsvillkor saknas.'}</p>
               <button className={`${button} mt-3`} onClick={() => setView('payments')}><WalletCards size={17} /> Öppna betalningsplan</button>
             </ProjectEditorRow>
             </div>
