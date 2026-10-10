@@ -67,3 +67,13 @@ test('desktop fields use readable bounded widths without shrinking mobile inputs
   assert.equal(declarations('.gizmo-contract-editor textarea', media).resize, 'vertical')
   assert.equal(declarations('.gizmo-contract-editor textarea', 'screen and (max-width: 767px)')['max-width'], undefined)
 })
+
+test('Uppdrag can shrink inside the dashboard without changing other modules', () => {
+  const shell = readFileSync(new URL('../src/components/DashboardLayoutShell.tsx', import.meta.url), 'utf8')
+  assert.match(shell, /const isUppdrag = pathname === '\/uppdrag' \|\| pathname\.startsWith\('\/uppdrag\/'\)/)
+  assert.match(shell, /flex min-h-0 flex-1 flex-col print:block print:min-h-0\$\{isUppdrag \? ' min-w-0' : ''\}/)
+  const fixture = readFileSync(new URL('./fixtures/customer-offer-view.tsx', import.meta.url), 'utf8')
+  assert.match(fixture, /flex min-h-screen/)
+  assert.match(fixture, /min-h-0 flex-1 overflow-auto/)
+  assert.match(fixture, /flex min-h-0 flex-1 flex-col\$\{projects \? ' min-w-0' : ''\}/)
+})

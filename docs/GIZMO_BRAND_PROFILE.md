@@ -266,6 +266,16 @@ dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering
 
 ### Betalningsplan 2026-10-10
 
+- Publiceringskontroll: version `831e53d3` driftsatt på hushub.se. Båda nya
+  databasfunktionerna finns och avvisar ogiltig inmatning genom de ordinarie
+  avtals- och betalplanskontrollerna. Befintligt avtalsutkast kan läsas med
+  den nya modellen; inga utskick eller signeringar görs i kontrollen.
+- Produktionskontrollen upptäckte sidöverflöde i smalt datorfönster från
+  dashboardens flexbehållare. Den får `min-width: 0` endast på Uppdrag-rutter.
+  Testvyn inkluderar nu motsvarande yttre behållare. Avtal, ÄTA och betalplan
+  provas med 900/390/1280 px fönster utan sidöverflöde. Viewporten återställs.
+  418 action-case-tester, 34 riktade tester inklusive organisationskontext,
+  TypeScript, ESLint och produktionsbygge passerar efter rättningen.
 - Klicktest med fiktiva data: äldre plans avvikelse mot nytt avtalspris,
   uttrycklig reservation av slutbetalning 10 procent, första betalning
   10/20 procent, betalningsdagar, omfördelning, lika fördelning och ångra.

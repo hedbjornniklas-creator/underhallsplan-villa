@@ -51,6 +51,9 @@ async function start() {
   const project = projectWorkspace?.cases.find((item: { id: string }) => location.pathname === `/uppdrag/${item.id}`)
   root.render(
     <AppToastProvider>
+      <div className="flex min-h-screen">
+      <div className={`flex min-h-0 flex-1 flex-col${projects ? ' min-w-0' : ''}`}>
+      <main className="min-h-0 flex-1 overflow-auto">
       <UppdragScope external>
         <div className="mx-auto max-w-6xl border-b border-slate-200 px-4 py-2 text-xs text-slate-500 print:hidden">
           Fiktivt testprojekt · Inga mejl eller riktiga godkännanden skickas ·{' '}
@@ -86,6 +89,9 @@ async function start() {
           />
         )}
       </UppdragScope>
+      </main>
+      </div>
+      </div>
     </AppToastProvider>
   )
 }

@@ -12,6 +12,7 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
   const isEmbed = embed === '1' || embed === 'true'
 
   const isLandingPage = pathname === '/'
+  const isUppdrag = pathname === '/uppdrag' || pathname.startsWith('/uppdrag/')
 
   if (isEmbed || isLandingPage) {
     return <OrganizationContextProvider><main className="min-h-screen bg-white">{children}</main></OrganizationContextProvider>
@@ -19,7 +20,7 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
 
   return (
     <OrganizationContextProvider><div className="flex min-h-screen bg-gray-50 print:block print:min-h-0 print:bg-white">
-      <div className="flex min-h-0 flex-1 flex-col print:block print:min-h-0">
+      <div className={`flex min-h-0 flex-1 flex-col print:block print:min-h-0${isUppdrag ? ' min-w-0' : ''}`}>
         <div className="print:hidden">
           <Topbar />
         </div>
