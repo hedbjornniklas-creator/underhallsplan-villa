@@ -179,6 +179,13 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
           </ProjectEditorRow>
         </li>)}
       </ol>
+      <div aria-label="Betalningsplanens summa" className="gizmo-payment-sum" role="status">
+        <dl className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-semibold">
+          <dt>{plan.installments.some((row) => row.amountOre === null) ? 'Summa angivna belopp inkl. moms' : 'Summa inkl. moms'}</dt>
+          <dd className="whitespace-nowrap tabular-nums">{money(total)}</dd>
+        </dl>
+        <p className="mt-1 text-sm text-slate-600">{remaining === null ? 'Avtalets pris saknas' : remaining === 0 ? 'Stämmer med avtalets belopp' : `${remaining < 0 ? 'Överfördelat' : 'Kvar att fördela'}: ${money(Math.abs(remaining))}`}</p>
+      </div>
       {removed && <div className="flex flex-wrap items-center gap-3 py-3 text-sm" role="status">Delbetalningen togs bort.
         <button className={button} disabled={plan.installments.length >= 60} onClick={() => {
           const rows = [...plan.installments]; rows.splice(Math.max(plan.automation?.initialEnabled ? 1 : 0, Math.min(removed.index, rows.length - (finalEnabled ? 1 : 0))), 0, removed.row)

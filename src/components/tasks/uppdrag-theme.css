@@ -536,6 +536,7 @@
   width: 100%; max-width: 1080px; margin-inline: auto;
 }
 .gizmo-payment-editor { width: 100%; max-width: 1080px; margin-inline: auto; }
+.gizmo-payment-sum { padding: 10px; border-block: 1px solid #D5DCDD; background: #EDF1F1; font-size: 14px; }
 .gizmo-payment-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; padding-block: 12px; border-bottom: 1px solid #D7DEDC; }
 .gizmo-payment-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 12px; }
 .gizmo-payment-percent { max-width: 100px; }
