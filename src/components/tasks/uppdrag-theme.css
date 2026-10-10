@@ -468,3 +468,35 @@
   .gizmo-editor-row-toggle > svg { order: 1; }
   .gizmo-editor-row-amount { order: 2; width: 100%; }
 }
+/* Contract pricing follows the compact Gizmo table, without internal costing. */
+.gizmo-price-modes { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid #D5DCDD; border-radius: 4px; width: fit-content; max-width: 100%; }
+.gizmo-price-modes label { display: flex; align-items: center; gap: 8px; padding: 10px 14px; min-height: 44px; font-size: 14px; color: #596368; cursor: pointer; border-right: 1px solid #D5DCDD; }
+.gizmo-price-modes label:last-child { border-right: 0; }
+.gizmo-price-modes label.selected { background: #EDF1F1; color: #252A2D; box-shadow: inset 0 -2px #206961; }
+.gizmo-price-modes label:focus-within { outline: 2px solid #206961; outline-offset: -2px; }
+.gizmo-price-modes input { accent-color: #206961; width: 16px; height: 16px; flex-shrink: 0; }
+.gizmo-price-header, .gizmo-price-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, auto) 96px; align-items: center; gap: 16px; padding: 8px 14px; border-bottom: 1px solid #D5DCDD; }
+.gizmo-price-header { min-height: 40px; background: #EDF1F1; color: #596368; font-size: 12px; font-weight: 600; }
+.gizmo-price-header span:nth-child(2) { text-align: right; }
+.gizmo-price-row { min-height: 60px; font-size: 14px; }
+.gizmo-price-row:hover, .gizmo-price-row.open { background: #F5F7F7; }
+.gizmo-contract-pricing .gizmo-icon-button { width: 44px; min-width: 44px; height: 44px; padding: 0; }
+.gizmo-price-document { max-width: 100%; overflow-x: auto; }
+.gizmo-price-document th, .gizmo-price-document td { padding: 10px 12px; border-bottom: 1px solid #D5DCDD; }
+.gizmo-price-document th { color: #596368; font-size: 12px; font-weight: 600; }
+.gizmo-price-document th:not(:first-child), .gizmo-price-document td:not(:first-child) { text-align: right; white-space: nowrap; }
+.gizmo-price-document td:first-child { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .gizmo-price-modes { width: 100%; flex-direction: column; }
+  .gizmo-price-modes label { border-right: 0; border-bottom: 1px solid #D5DCDD; min-height: 48px; font-size: 16px; }
+  .gizmo-price-modes label:last-child { border-bottom: 0; }
+  .gizmo-price-header, .gizmo-price-row { grid-template-columns: minmax(0, 1fr) 104px; gap: 8px; padding: 8px; }
+  .gizmo-price-row { font-size: 16px; }
+  .gizmo-contract-pricing .gizmo-icon-button { width: 48px; min-width: 48px; height: 48px; }
+  .gizmo-price-header span:nth-child(2) { display: none; }
+  .gizmo-price-row > span:nth-child(2) { text-align: left; grid-row: 2; }
+  .gizmo-price-row > div:last-child { grid-column: 2; grid-row: 1 / span 2; }
+  .gizmo-price-row > span:last-child { display: none; }
+  .gizmo-price-document-split table { min-width: 600px; }
+  .gizmo-price-document th, .gizmo-price-document td { padding: 8px 10px; }
+}

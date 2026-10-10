@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/AppToastProvider'
 import type { ActionCasePortal } from '@/lib/action-cases/contracts'
 import {
   customerOfferTotal,
+  customerPriceLabel,
   money,
   type CustomerOffer
 } from '@/lib/action-cases/customerOffers'
@@ -248,16 +249,14 @@ export default function ActionCaseCustomerPortal({
                     <span>
                       Jag är beställaren eller behörig företrädare och godkänner
                       version {offer.version}{offer.snapshot.items.some((i) => i.kind === 'option') ? ', valda tillval' : ''}, villkor och
-                      bilagor. Totalt{' '}
-                      {money(customerOfferTotal(offer.snapshot, selection))}{' '}
-                      inklusive moms.
+                      bilagor. {offer.snapshot.contractPricing ? <>Prisgrunder: {customerPriceLabel(offer.snapshot)}. {offer.snapshot.contractPricing.mode !== 'fixed' ? 'Den löpande delen debiteras enligt avtalets timpriser och arvoden.' : 'Inklusive moms.'}</> : <>Totalt {money(customerOfferTotal(offer.snapshot, selection))} inklusive moms.</>}
                     </span>
                   </label>
                   {challengeId ? (
                     <div className="mt-5">
                       <p className="text-sm text-slate-600">
                         Ange den sexsiffriga koden från mejlet. Koden gäller
-                        denna avtalsversion och beloppet ovan.
+                        denna avtalsversion och {offer.snapshot.contractPricing?.mode !== 'fixed' && offer.snapshot.contractPricing ? 'prisgrunderna ovan' : 'beloppet ovan'}.
                       </p>
                       <label className="mt-3 block text-sm">
                         E-postkod

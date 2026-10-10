@@ -5,7 +5,7 @@ import PendingLink from '@/components/ui/PendingLink'
 import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FilePenLine, FolderOpen, LayoutDashboard, ListChecks, MapPin, WalletCards, Wrench } from 'lucide-react'
 import type { ActionCaseWorkspace } from '@/lib/action-cases/contracts'
 import type { TaskPerson } from '@/lib/tasks/contracts'
-import { customerOfferBaseAmount, money, type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
+import { customerOfferBaseAmount, customerPriceLabel, money, type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
 import { parseProjectView, projectNeeds, projectStatus, projectUrl, type ProjectView } from '@/lib/action-cases/projectNavigation'
 import ActionCaseWorkspaceTools from './ActionCaseWorkspace'
 import CustomerOfferEditor, { type CustomerEditorView } from './CustomerOfferEditor'
@@ -81,7 +81,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const published = offer?.offers.find((item) => item.status === 'published')
   const contract = accepted ?? published
   const offerLabel = !offer ? 'Kunde inte hämtas' : accepted ? 'Godkänt grundavtal' : published ? published.sentAt ? 'Skickat avtal' : 'Publicerat avtal' : 'Internt avtalsutkast'
-  const base = contract ? customerOfferBaseAmount(contract.snapshot) : offer ? customerOfferBaseAmount(offer.draft) : null
+  const priceDraft = contract?.snapshot ?? offer?.draft
   const customer = offer?.recipient ?? project.participants.find((item) => item.role === 'customer')
   const currentSection = view === 'review' ? 'contract' : view === 'offerReview' ? 'offer' : view
   const sectionLabel = view === 'customer' ? 'Visa som beställare' : view === 'review' ? 'Granska avtal' : view === 'offerReview' ? 'Granska offert' : sections.find((item) => item.key === view)?.label
@@ -113,7 +113,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
       <div className="gizmo-project-content" id={`project-content-${caseId}`} role="tabpanel" aria-label={sectionLabel}>
         <section hidden={view !== 'overview'}>
           <div className="gizmo-section-heading"><h2>Översikt</h2><span className="gizmo-secondary">{projectStatus[project.status]}</span></div>
-          <dl className="gizmo-overview-facts"><div><dt>Beställare</dt><dd>{customer?.name ?? project.customerName}</dd><dd>{customer?.email ?? project.customerEmail ?? 'E-post saknas'}</dd></div><div><dt>{offerLabel}</dt><dd>{base === null ? 'Belopp saknas' : money(base)}</dd><dd>Grundåtagande inkl. moms</dd></div><div><dt>Underlag</dt><dd>{project.items.length} åtgärder</dd><dd>{project.attachments.length} bilder och filer</dd></div></dl>
+          <dl className="gizmo-overview-facts"><div><dt>Beställare</dt><dd>{customer?.name ?? project.customerName}</dd><dd>{customer?.email ?? project.customerEmail ?? 'E-post saknas'}</dd></div><div><dt>{offerLabel}</dt><dd>{priceDraft ? customerPriceLabel(priceDraft) : 'Belopp saknas'}</dd><dd>{priceDraft?.contractPricing?.mode === 'running' ? 'Enligt avtalets prisgrunder' : priceDraft?.contractPricing?.mode === 'mixed' ? 'Fast del inkl. moms + löpande del' : 'Grundåtagande inkl. moms'}</dd></div><div><dt>Underlag</dt><dd>{project.items.length} åtgärder</dd><dd>{project.attachments.length} bilder och filer</dd></div></dl>
           <div className="gizmo-overview-row"><div><h3>Projektarbete</h3><p>{projectNeeds(project)}</p></div>{open('work', 'Öppna projektarbete')}</div>
           <div className="gizmo-overview-row"><div><h3>Offert</h3><p>{estimate ? `${estimate.draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(customerOfferBaseAmount(estimate.draft))}` : 'Kunde inte hämtas'}</p></div>{open('offer', 'Öppna offert')}</div>
           <div className="gizmo-overview-row"><div><h3>Avtal</h3><p>{offerLabel}{accepted ? ` · Version ${accepted.version}` : ''}</p></div>{open('contract', 'Öppna avtal')}</div>

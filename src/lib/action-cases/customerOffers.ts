@@ -1,5 +1,7 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { contractFixedAmount, contractFixedRows, contractPricingIssues, normalizeContractPricing, type ContractPricing } from './contractPricing.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractDetailsIssues, normalizeContractDetails, type CustomerContractDetails } from './customerContract.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizePaymentPlan, paymentPlanIssues, type CustomerPaymentPlan } from './customerPaymentPlan.ts'
@@ -20,6 +22,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  contractPricing?: ContractPricing
   contractParties?: ContractParties
   paymentPlan?: CustomerPaymentPlan | null
   contractDetails?: CustomerContractDetails
@@ -168,6 +171,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.contractPricing === undefined ? {} : { contractPricing: normalizeContractPricing(d.contractPricing) }),
     ...(d.contractParties === undefined ? {} : { contractParties: normalizeContractParties(d.contractParties) }),
     ...(d.paymentPlan === undefined ? {} : { paymentPlan: normalizePaymentPlan(d.paymentPlan) }),
     ...(d.contractDetails === undefined ? {} : { contractDetails: normalizeContractDetails(d.contractDetails) }),
@@ -192,6 +196,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (draft.contractDetails?.assignment?.standardConditions && draft.contractForm !== 'abs18')
     throw new Error('CUSTOMER_OFFER_INVALID')
   draft.baseAmountOre = customerOfferBaseAmount(draft)
+  if (draft.contractPricing) draft.pricingMode = 'total'
   return draft
 }
 
@@ -208,6 +213,7 @@ function normalizeSourceReview(value: unknown): NonNullable<CustomerOfferItem['s
 }
 
 export function customerOfferBaseAmount(d: CustomerOfferDraft): number | null {
+  if (d.contractPricing) return contractFixedAmount(d.contractPricing)
   if (d.pricingMode !== 'itemized') return d.baseAmountOre
   const included = d.items.filter((i) => i.kind === 'included')
   if (!included.length || included.some((i) => i.amountOre === null)) return null
@@ -258,7 +264,8 @@ export function offerPublishIssues(
   if (d.items.some((i) => i.kind === 'option'))
     issues.push('Flytta valen till Val och tillval innan grundavtalet skickas.')
   if (!d.title.trim()) issues.push('Ange en offertrubrik.')
-  if (d.pricingMode === 'itemized') {
+  if (d.contractPricing) issues.push(...contractPricingIssues(d.contractPricing))
+  else if (d.pricingMode === 'itemized') {
     const missing = d.items.filter(
       (i) => i.kind === 'included' && i.amountOre === null
     )
@@ -293,6 +300,8 @@ export function customerOfferTotal(
   selectedIds: string[]
 ) {
   const baseAmount = customerOfferBaseAmount(d)
+  if (d.contractPricing && selectedIds.length) throw new Error('CUSTOMER_OFFER_INVALID')
+  if (d.contractPricing?.mode === 'running' && !selectedIds.length) return null
   if (
     baseAmount === null ||
     new Set(selectedIds).size !== selectedIds.length
@@ -321,6 +330,11 @@ export function money(ore: number | null) {
         maximumFractionDigits: 2
       }).format(ore / 100)
 }
+export function customerPriceLabel(d: CustomerOfferDraft): string {
+  if (d.contractPricing?.mode === 'running') return 'Löpande räkning'
+  const amount = money(customerOfferBaseAmount(d))
+  return d.contractPricing?.mode === 'mixed' ? `Fast del ${amount} + löpande räkning` : amount
+}
 export function parseKronor(value: string): number | null {
   if (!value.trim()) return null
   const normalized = value.replace(/[\s\u00a0]/g, '').replace(',', '.')
@@ -347,6 +361,27 @@ export function emptyCustomerOffer(title = ''): CustomerOfferDraft {
 export function mapCustomerOffer(row: Record<string, unknown>): CustomerOffer {
   const s = row.snapshot as Record<string, unknown>
   const d = normalizeCustomerOffer(s)
+  const pricing = d.contractPricing
+  if (pricing) {
+    d.items = d.items.map((item) => ({ ...item, amountOre: null }))
+    const fixed = contractFixedRows(pricing)
+    const sum = (key: 'labourOre' | 'materialOre') => fixed.every((row) => row[key] !== null) ? fixed.reduce((n, row) => n + row[key]!, 0) : null
+    const linePrices = pricing.mode !== 'running' && pricing.display === 'priced' && pricing.basis === 'rows'
+    d.contractPricing = { ...pricing, basis: linePrices ? 'rows' : 'total',
+      totalOre: !linePrices && pricing.split === 'combined' ? d.baseAmountOre : null,
+      labourOre: pricing.mode !== 'running' && !linePrices && pricing.split === 'separate' ? pricing.basis === 'rows' ? sum('labourOre') : pricing.labourOre : null,
+      materialOre: pricing.mode !== 'running' && !linePrices && pricing.split === 'separate' ? pricing.basis === 'rows' ? sum('materialOre') : pricing.materialOre : null,
+      running: pricing.mode === 'fixed' ? { hourlyOre: null, managementOre: null, markupPercent: null, approximateOre: null } : pricing.running,
+      rows: pricing.rows.map((row) => {
+        const next = { ...row }
+        delete next.sourceItemId
+        const visible = linePrices && (pricing.mode !== 'mixed' || row.kind === 'fixed')
+        next.amountOre = visible && pricing.split === 'combined' ? row.amountOre : null
+        next.labourOre = visible && pricing.split === 'separate' ? row.labourOre : null
+        next.materialOre = visible && pricing.split === 'separate' ? row.materialOre : null
+        return next
+      }) }
+  }
   return {
     id: String(row.id),
     version: Number(row.version),

@@ -72,10 +72,26 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 - Arbetsmiljö har ett redigerbart grundvärde baserat på ABS 18-formulärets
   arbetsmiljöavsnitt. Befintliga egna texter behålls. Standardvärdet fylls in
   en gång i ett tomt avtalsutkast; raderad text får inte återskapas automatiskt.
+  I Avtal finns Infoga standardtext när ABS 18 är valt. Befintlig text ersätts
+  bara efter bekräftelse; ett tomt fält fylls direkt. Knappen använder samma
+  autospar och avtalslåsning som fältet och infogar det redigerbara sammandraget.
 - Uppdragets två standardtexter från ABS 18-formuläret visas separat från
   PDF-bilagan, efter projektspecifika undantag. De kan redigeras i avtalet och
   fryses med versionen. Övriga överenskommelser ligger under Övrigt, inte som
   en extra sektion för beställarens arbeten.
+- Avrådande består av två direkt redigerbara textfält enligt ABS 18:s
+  formulär: arbetena som avrådandet gäller och På grund av. Ingen statusmeny
+  eller separat avrådansdag. Tomma fält sammanfattas som Inte angivet;
+  när ett av fälten fylls behöver även det andra fyllas före utskick.
+  Tidigare beställarbesked visas under Övrigt, inte som ett tredje fält här.
+- Priset i Avtal utgår från ABS 18: Fast pris, Löpande räkning eller Fast +
+  löpande. Moment visas som kompakta prisrader med tonat rubrikband, eget
+  redigeringsläge och borttagning. Kundpriser hämtas genom val av projektrader;
+  ingen intern priskalkyl visas i Avtal. Prisredovisning väljs separat från
+  beräkningen: delmoment med eller utan delpriser, eller endast totalsumma.
+  Arbete/material kan redovisas tillsammans eller separat utan gissad fördelning.
+  Löpande del visar timpris, arbetsledning och arvode på självkostnad, aldrig
+  en påhittad kontraktssumma. Blandat pris skiljer tydligt ut den fasta delen.
 - Hela åtgärdsraden öppnar den befintliga sidopanelen. Pekning och
   tangentbordsfokus ger grönblå ton #F1F6F5 och en tunn vänstermarkering.
   Öppen åtgärd markeras med befintlig dämpad gul färg. Markeringar och
@@ -95,7 +111,9 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 - Sidrubrik 22/30 px, listtext och inmatning minst 16 px, kontroller minst 48 px.
 - Projektlistan byter till staplade rader under 56 rem innehållsbredd.
 - Projektnavigeringen blir en horisontellt rullningsbar navigeringsrad under
-  768 px. Bara menyn får rulla i sidled, inte formulär eller hela sidan.
+  768 px. Menyn får rulla i sidled, inte formulär eller hela sidan.
+- Dokumentets pristabell får rulla i en egen behållare vid separat redovisning
+  av arbete/material. Belopp hålls på en rad; siffror får inte brytas mitt i talet.
 - Ingen fast nederkantsrad som täcker formulär eller tangentbord.
 - Samma funktioner och uppgifter som på dator, inte en andra datamodell.
 - I smalt Projektarbete staplas radens uppgifter. Rubrikbandet behålls med
@@ -133,6 +151,10 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-08: Användaren godkänner prisvisualiseringen enligt ABS 18. Avtalets
+  prisrader blir oberoende av omfattningstexterna och av offertens interna
+  kalkyl. Vald prisredovisning styr även vilka belopp som delas till beställaren.
+  Klumpsummor bevaras vid uppgradering och fördelas inte automatiskt på moment.
 - 2026-10-08: Användaren tar bort Övriga bilagor. Handlingsförteckningen är
   enda platsen för bilageval i Avtal. Tidigare valda bilagor behålls som rader,
   utan gissad typ eller datum; befintliga handlingsuppgifter skrivs inte över.

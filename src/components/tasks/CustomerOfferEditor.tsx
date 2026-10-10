@@ -28,6 +28,7 @@ import type {
 } from '@/lib/action-cases/contracts'
 import {
   customerOfferBaseAmount,
+  customerPriceLabel,
   money,
   offerPublishIssues,
   type CustomerOffer,
@@ -48,7 +49,7 @@ import CustomerContractAssignmentEditor from './CustomerContractAssignmentEditor
 import { assignmentForEditing, assignmentPatch } from '@/lib/action-cases/contractAssignment'
 import { contractDocumentDraftState, contractDocumentsAcknowledged, readContractDocumentDraft, writeContractDocumentDraft, type ContractDocumentDraft } from '@/lib/action-cases/contractDocumentDraft'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
-import { contractDetailsForEditing, contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
+import { contractAdviceForEditing, contractAdviceSummary, contractDetailsForEditing, contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
 import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
@@ -60,6 +61,8 @@ import ProjectBillingEditor from './ProjectBillingEditor'
 import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
+import { contractPricingForEditing } from '@/lib/action-cases/contractPricing'
+import CustomerContractPricing from './CustomerContractPricing'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -69,7 +72,8 @@ export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocume
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
   const details = workspace.draft.contractDetails ?? emptyContractDetails()
   if (workspace.offers.some((offer) => offer.status === 'accepted')) return { ...workspace.draft, contractDetails: details }
-  return withAbs18ContractDefaults({ ...workspace.draft, contractDetails: contractDetailsForEditing(details) })
+  return withAbs18ContractDefaults({ ...workspace.draft, contractPricing: contractPricingForEditing(workspace.draft), pricingMode: 'total',
+    contractDetails: contractAdviceForEditing(contractDetailsForEditing(details)) })
 }
 export default function CustomerOfferEditor({
   actionCase,
@@ -222,6 +226,7 @@ export default function CustomerOfferEditor({
     let nextDraft = { ...current.draft, ...patch }
     if (draftTarget === 'contract' && !locked) {
       nextDraft = withAbs18ContractDefaults(nextDraft)
+      if (nextDraft.contractPricing) nextDraft = { ...nextDraft, pricingMode: 'total', baseAmountOre: customerOfferBaseAmount(nextDraft) }
       const assignment = assignmentForEditing(nextDraft, files)
       nextDraft = { ...nextDraft, ...assignmentPatch(nextDraft, assignment, assignment) }
     }
@@ -498,13 +503,16 @@ export default function CustomerOfferEditor({
   const Container = embedded ? 'div' : 'main'
   const Heading = embedded ? 'h2' : 'h1'
   const contractSection = (id: string, title: string, keys: ContractFieldKey[], advice = false) => {
-    return <ProjectEditorRow title={title} summary={advice ? draft.contractDetails?.advice.status === 'none' ? 'Ingen avrådan lämnad' : draft.contractDetails?.advice.status === 'given' ? 'Avrådan lämnad' : 'Behöver kontrolleras' : contractFieldSummary(draft.contractDetails, keys)}
+    return <ProjectEditorRow title={title} summary={advice ? contractAdviceSummary(draft.contractDetails) : contractFieldSummary(draft.contractDetails, keys)}
       open={expanded === id} onToggle={() => setExpanded(expanded === id ? null : id)}>
-      <CustomerContractFields value={draft.contractDetails} fieldKeys={keys} showAdvice={advice} inline onChange={(contractDetails) => update({ contractDetails })} />
+      <CustomerContractFields value={draft.contractDetails} fieldKeys={keys} showAdvice={advice} inline
+        contractForm={contractView ? draft.contractForm : undefined} disabled={locked || Boolean(busy)} onChange={(contractDetails) => update({ contractDetails })} />
     </ProjectEditorRow>
   }
-  const priceSection = <ProjectEditorRow title="Priset" summary={`${draft.pricingMode === 'itemized' ? 'Fast pris per arbetsdel' : 'Fast klumpsumma'} · ${money(baseAmount)}`}
+  const priceSection = <ProjectEditorRow title="Priset" summary={draft.contractPricing ? customerPriceLabel(draft) : `${draft.pricingMode === 'itemized' ? 'Fast pris per arbetsdel' : 'Fast klumpsumma'} · ${money(baseAmount)}`}
     open={expanded === 'price'} onToggle={() => setExpanded(expanded === 'price' ? null : 'price')}>
+    {draftTarget === 'contract' && draft.contractPricing ? <CustomerContractPricing value={draft.contractPricing} sources={actionCase.items}
+      blocked={locked || Boolean(busy)} importBlocked={sourcePending} onChange={(contractPricing) => update({ contractPricing })} /> : <>
     <label className="block text-sm">Prissättning av grundåtagandet
       <select className={field} value={draft.pricingMode ?? 'total'} onChange={(e) => {
         const pricingMode = e.target.value as CustomerOfferDraft['pricingMode']
@@ -523,6 +531,7 @@ export default function CustomerOfferEditor({
         onChange={(calculation) => updateCosting(item.id, calculation)}
         onApply={(amountOre) => { update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) }); toast.success('Kundpriset har uppdaterats i utkastet.') }} />}
     </div>)}
+    </>}
   </ProjectEditorRow>
   return (
     <Container className={`gizmo-editor-scroll-scope ${embedded ? 'gizmo-offer-editor break-words' : 'mx-auto max-w-6xl break-words px-4 pb-16 sm:px-6'}`}>
@@ -747,13 +756,13 @@ export default function CustomerOfferEditor({
                 link={workspace.propertyLink} busy={Boolean(busy) || autosave.isPending()}
                 onChange={(contractDetails) => update({ contractDetails })} onBind={(binding) => action('bind_property', { binding })} />
             </ProjectEditorRow>
-            <ProjectEditorRow title="Uppdraget" summary={`${draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(baseAmount)}`}
+            <ProjectEditorRow title="Uppdraget" summary={`${draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${customerPriceLabel(draft)}`}
               open={expanded === 'scope-summary'} onToggle={() => setExpanded(expanded === 'scope-summary' ? null : 'scope-summary')}>
               <fieldset className="min-w-0" disabled={Boolean(documentRecovery)}>
               <CustomerContractAssignmentEditor draft={draft} files={files} caseId={actionCase.id} onChange={update}
                 standardTermsId={standardTermsFile?.id} termsState={termsState} onRetryTerms={() => setTermsRetry((value) => value + 1)}>
               <CustomerContractWorkParts items={draft.items} projectItems={actionCase.items} offerItems={offerItems}
-                itemized={draft.pricingMode === 'itemized'} blocked={locked || Boolean(busy)} importBlocked={sourcePending} onChange={(items) => update({ items })} />
+                itemized={!draft.contractPricing && draft.pricingMode === 'itemized'} blocked={locked || Boolean(busy)} importBlocked={sourcePending} onChange={(items) => update({ items })} />
               </CustomerContractAssignmentEditor>
               </fieldset>
             </ProjectEditorRow>
@@ -923,18 +932,24 @@ export default function CustomerOfferEditor({
               {contractView && draft.contractDetails?.otherAgreements !== undefined && <label className="mt-4 block text-sm">Övriga överenskommelser
                 <textarea className={field} rows={3} maxLength={6200} value={draft.contractDetails.otherAgreements} onChange={(e) => update({ contractDetails: { ...draft.contractDetails!, otherAgreements: e.target.value } })} />
               </label>}
+              {contractView && draft.contractDetails?.advice.format === 'contract-fields' && draft.contractDetails.advice.customerResponse && <label className="mt-4 block text-sm">Beställarens tidigare besked om avrådan
+                <textarea aria-label="Beställarens tidigare besked om avrådan" className={field} rows={3} maxLength={6000} value={draft.contractDetails.advice.customerResponse}
+                  onChange={(e) => update({ contractDetails: { ...draft.contractDetails!, advice: { ...draft.contractDetails!.advice, customerResponse: e.target.value } } })} />
+              </label>}
             </ProjectEditorRow>
           </fieldset>
           <aside className="min-w-0">
             <details className={contractView ? 'gizmo-contract-status' : ''} open={contractView ? undefined : true}>
-              <summary className={contractView ? 'gizmo-contract-status-heading' : 'hidden'}>Avtalsstatus <strong>{money(baseAmount)}</strong><span>{locked ? 'Godkänt och låst' : issues.length ? `${issues.length} saker kvar inför utskick` : 'Klart att granska'}</span><ChevronDown size={18} className="gizmo-contract-status-chevron shrink-0" aria-hidden="true" /></summary>
+              <summary className={contractView ? 'gizmo-contract-status-heading' : 'hidden'}>Avtalsstatus <strong>{customerPriceLabel(draft)}</strong><span>{locked ? 'Godkänt och låst' : issues.length ? `${issues.length} saker kvar inför utskick` : 'Klart att granska'}</span><ChevronDown size={18} className="gizmo-contract-status-chevron shrink-0" aria-hidden="true" /></summary>
             <div className={contractView ? 'gizmo-contract-status-body' : 'lg:sticky lg:top-6'}>
               <h2 className="text-lg">{contractView ? 'Avtalsstatus' : 'Offertsammanställning'}</h2>
               <p className="mt-3 text-2xl font-semibold">
-                {money(baseAmount)}
+                {customerPriceLabel(draft)}
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                {draft.pricingMode === 'itemized'
+                {draft.contractPricing?.mode === 'running' ? 'Prisgrunder enligt avtalet'
+                  : draft.contractPricing?.mode === 'mixed' ? 'Fast del inklusive moms och löpande prisgrunder'
+                  : draft.pricingMode === 'itemized'
                   ? 'Summa grundåtagande inklusive moms'
                   : 'Grundpris inklusive moms'}
               </p>
@@ -1098,7 +1113,7 @@ export default function CustomerOfferEditor({
                     {o.status === 'accepted' && (
                       <p className="mt-2 flex gap-2 text-sm text-emerald-700">
                         <Check size={16} />
-                        {money(o.acceptedTotalOre)}
+                        {o.snapshot.contractPricing ? customerPriceLabel(o.snapshot) : money(o.acceptedTotalOre)}
                       </p>
                     )}
                   </div>

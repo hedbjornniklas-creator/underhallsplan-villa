@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { emptyCustomerOffer, normalizeCustomerOffer } from '../src/lib/action-cases/customerOffers.ts'
 import { importContractParts } from '../src/lib/action-cases/contractImport.ts'
 import { editContractProperty, emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
+import { contractPricingForEditing } from '../src/lib/action-cases/contractPricing.ts'
 
 const db = new PGlite(), org = randomUUID(), actor = randomUUID(), caseId = randomUUID(), participant = randomUUID()
 const migration = (name) => readFileSync(new URL(`../docs/db/${name}.sql`, import.meta.url), 'utf8').replace('create extension if not exists pgcrypto;', '')
@@ -134,4 +135,61 @@ test('published snapshot and own revision are immutable; signing locks every con
   await assert.rejects(db.query('delete from action_case_customer_contract_drafts where action_case_id=$1', [caseId]), /ACCEPTED/)
   await db.exec(ownMigration())
   assert.equal((await state('action_case_customer_contract_drafts')).body.title, 'Nytt utkast')
+})
+
+test('fixed, running and mixed price migration validates drafts, publish and signing without changing legacy contracts', async () => {
+  const legacy = await state('action_case_customer_contract_drafts')
+  await db.exec(migration('2026-10-08_03_contract_advice_fields'))
+  await db.exec(migration('2026-10-08_04_contract_pricing'))
+  await db.exec(migration('2026-10-08_04_contract_pricing'))
+  assert.deepEqual(await state('action_case_customer_contract_drafts'), legacy)
+  for (const mode of ['fixed','running','mixed']) {
+    const project = randomUUID(), recipient = randomUUID(), id = randomUUID()
+    await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Testprojekt','Testgatan','Test')", [project,org])
+    await db.query("insert into action_case_participants(id,org_id,action_case_id,role,name,email) values($1,$2,$3,'customer','Test','test@example.test')", [recipient,org,project])
+    const raw = draft(), pricing = contractPricingForEditing(raw)
+    pricing.mode = mode; pricing.basis = 'rows'; pricing.display = 'priced'
+    pricing.running = { hourlyOre:65000,managementOre:null,markupPercent:10,approximateOre:500000 }
+    if (mode === 'mixed') pricing.rows.push({ ...pricing.rows[0],id:randomUUID(),title:'El',kind:'running',amountOre:null })
+    const body = normalizeCustomerOffer({ ...raw,contractPricing:pricing })
+    const call = (operation,data) => db.query('select write_customer_contract($1,$2,$3,$4,$5::jsonb)',[org,project,actor,operation,JSON.stringify(data)])
+    await call('save',{ revision:0,body })
+    await assert.rejects(call('save',{ revision:1,body:raw }),/STALE/)
+    const invalid = structuredClone(body); invalid.baseAmountOre=999
+    await assert.rejects(call('save',{ revision:1,body:invalid }),/INVALID/)
+    for (const patch of [{ hourlyOre:-1 },{ hourlyOre:1.5 },{ markupPercent:1001 },{ markupPercent:1.001 }]) {
+      const bad=structuredClone(body); Object.assign(bad.contractPricing.running,patch)
+      await assert.rejects(call('save',{ revision:1,body:bad }),/INVALID/)
+    }
+    if (mode !== 'fixed') {
+      const incomplete=structuredClone(body); incomplete.contractPricing.running.hourlyOre=null
+      await assert.rejects(db.query('select assert_customer_offer_pricing($1::jsonb,null,true)',[JSON.stringify(incomplete)]),/INCOMPLETE/)
+    }
+    const snapshot={ ...body,projectTitle:'Testprojekt',propertyAddress:'Testgatan',customerName:'Test',customerEmail:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test' }
+    await call('publish',{ id,revision:1,confirmed:true,participantId:recipient,email:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test',
+      snapshot,files:[],emailPayload:{ to:'test@example.test' },tokenHash:randomUUID() })
+    await assert.rejects(db.query('select assert_customer_offer_pricing($1::jsonb,$2::jsonb,true)',[JSON.stringify(snapshot),JSON.stringify([randomUUID()])]),/INVALID/)
+    await db.query("update action_case_customer_offers set status='accepted',accepted_total_ore=$2 where id=$1",[id,body.baseAmountOre])
+    assert.equal((await db.query('select accepted_total_ore from action_case_customer_offers where id=$1',[id])).rows[0].accepted_total_ore,mode==='running'?null:10000)
+    await assert.rejects(call('save',{ revision:1,body }),/ACCEPTED/)
+    await assert.rejects(db.query("update action_case_customer_offers set snapshot=jsonb_set(snapshot,'{contractPricing,mode}',$2::jsonb) where id=$1",[id,JSON.stringify(mode==='fixed'?'running':'fixed')]),/IMMUTABLE/)
+  }
+})
+
+test('SQL computes the same fixed part for each presentation, split and basis and rejects incomplete price disclosures', async () => {
+  for (const mode of ['fixed','running','mixed']) for (const split of ['combined','separate'])
+    for (const basis of ['rows','total']) for (const display of ['priced','unpriced','total']) {
+      const raw=draft(), pricing=contractPricingForEditing(raw)
+      Object.assign(pricing,{mode,split,basis,display,labourOre:9000,materialOre:1000})
+      pricing.rows[0].labourOre=0; pricing.rows[0].materialOre=10000
+      pricing.running={hourlyOre:65000,managementOre:null,markupPercent:0,approximateOre:null}
+      if (mode==='mixed') pricing.rows.push({...pricing.rows[0],id:randomUUID(),title:'El',kind:'running'})
+      const body=normalizeCustomerOffer({...raw,contractPricing:pricing}), encoded=JSON.stringify(body)
+      assert.equal((await db.query('select assert_customer_offer_pricing($1::jsonb,null,false) amount',[encoded])).rows[0].amount,body.baseAmountOre)
+      if (mode!=='running' && basis==='total' && display==='priced')
+        await assert.rejects(db.query('select assert_customer_offer_pricing($1::jsonb,null,true)',[encoded]),/INCOMPLETE/)
+      else await db.query('select assert_customer_offer_pricing($1::jsonb,null,true)',[encoded])
+      const incomplete=structuredClone(body); incomplete.contractPricing.rows[0].title=''
+      await assert.rejects(db.query('select assert_customer_offer_pricing($1::jsonb,null,true)',[JSON.stringify(incomplete)]),/INCOMPLETE/)
+    }
 })

@@ -304,7 +304,7 @@ kundens publicerade version forblir oforandrad.
   Dessa valregler bevaras for historiska dokument. Nya publiceringar far inte
   innehalla optionala poster alls.
 
-## Intern priskalkyl (2026-09-29)
+## Intern priskalkyl i Offert (2026-09-29)
 
 - Varje prissatt arbetsdel/tillval kan ha en privat kalkyl. Inkopspris anges
   exklusive moms; valfritt procentpaslag beraknas enbart pa inkopspriset.
@@ -1024,6 +1024,52 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   Befintliga beslut, egen avtalsgrund, dokumentatergivning och SQL-validering
   testas, inklusive bibehallen fullstandighetskontroll efter tomning.
 
+## Manuell infogning av arbetsmiljotext 2026-10-08
+
+- Beslut: knappen `Infoga standardtext` visas vid arbetsmiljofaltet i Avtal
+  nar ABS 18 ar valt. Tomma falt fylls direkt. Befintlig text ersatts forst
+  efter en uttrycklig bekraftelse; avbryt behaller texten utan sparning.
+- Knappen infogar samma redigerbara sammandrag som automatisk forifyllnad,
+  inte en ordagrann atergivning av ABS 18-formularet. Ingen annan avtalstext
+  andras. Autospar, revisionskontroll och lasning behalls. Ingen ny SQL behovs.
+- Egen avtalsgrund, Offert och dokument-/kundvyn har inte denna knapp.
+  Nar texten redan motsvarar standardvardet ar knappen inaktiv.
+- Verifierat lokalt: 372 action-case-tester, TypeScript och riktad ESLint.
+  Klicktest i fiktivt projekt visar avbryt utan textandring, bekraftad
+  ersattning, direkt infogning i tomt falt, autospar och bibehallen text efter
+  omladdning. Dator och mobil 390 px kontrollerade; inget sidledes overflode.
+  Inga verkliga avtalsuppgifter andrades. Ingick i releasepaketet 2026-10-10.
+
+## Avradande med tva avtalsfalt 2026-10-08
+
+- Beslut: Avradande ska motsvara de tva textfalten pa sida 3 i ABS 18:s
+  entreprenadkontrakt: vilka kontraktsarbeten entreprenoren avradit fran och
+  orsaken. Statusmeny, separat datum och bestallarbesked tas bort fran sektionen.
+  Original: https://byggtjanstcms.byggtjanst.se/globalassets/pdf/entreprenadkontrakt-abs-18.pdf
+- Olast avtalsredigering markerar `advice.format = contract-fields` och har
+  samma autospar/revisionskontroll som tidigare. Befintliga work/reason-texter
+  behalls. Ett gammalt bestallarbesked visas redigerbart under Ovrigt och finns
+  med dar i nya avtalsversioner. Tidigare datum bevaras som intern bakatkompatibel
+  metadata, inte som falt eller datumtext i det nya avtalet.
+- Bada tomma falt ar tillatna och sammanfattas neutralt som Inte angivet.
+  Bara ett ifyllt falt blockerar utskick men far autosparas. Arbetsdelarnas
+  befintliga kontroll for avradan galler fortfarande och kan inte kringgas
+  genom att lamna de tva avtalsfalten tomma.
+- Gamla publicerade/godkanda snapshots behaller ursprunglig struktur och
+  validering. Databasen skriver inte om befintliga avtal. Aldre klienter far
+  inte ta bort formatmarkoren fran ett redan uppdaterat avtalsutkast.
+- Ny SQL fore publicering: `docs/db/2026-10-08_03_contract_advice_fields.sql`.
+- Verifierat lokalt: 378 action-case-tester inklusive den upprepningsbara
+  SQL-migreringen, TypeScript och riktad ESLint passerar. Klicktest i fiktivt
+  projekt visar exakt tva falt, autospar, bibehallna texter efter omladdning,
+  neutral tomning, kompletteringskrav for ett ensamt falt och korrekt
+  avtalsgranskning utan separat datum. Tidigare bestallarbesked finns kvar
+  under Ovrigt. Dator och mobil 390 px kontrollerade utan sidledes overflode
+  eller webblasarfel. Inga riktiga avtal andrades. Ingick i releasepaketet 2026-10-10.
+- Produktionsbygget med webpack passerar med projektets befintliga publika
+  Supabase-konfiguration. Ett forsta bygge utan dessa miljoindata stoppades
+  vid prerendering av den orelaterade sidan admin/access.
+
 ## Publiceringskontroll 2026-10-08
 
 - Anvandaren har kort `2026-10-08_02_contract_other_agreements.sql`.
@@ -1047,3 +1093,63 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   starkare signering. Nu finns kvittensen i kundvyn och webblasaren kan skriva ut.
 - AI-stod for offerter och fullstandighetskontroll. Inga AI-priser eller avtalsvillkor
   publiceras automatiskt i denna version.
+
+## Avtalets prisdel 2026-10-08
+
+- Avtalets nya prisdel: fast, lopande eller kombinerat pris i
+  `contractPricing` i det oberoende avtalsutkastets body. Prisradernas UUID,
+  titel, prisform och kundbelopp ar egna avtalsdata; offert- och projekttexter
+  paverkar dem inte efter explicit import. Avtalets omfattning visas alltid,
+  aven nar prisredovisningen ar Enbart totalsumma.
+- Prisimport valjer kontrollerade kundpriser inkl. moms fran Projektarbete.
+  Endast markerade rader ersatts; ingen automatisk material-/arbetsfordelning.
+  Ursprunglig klumpsumma bevaras. Byte till delpriser kraver bekraftelse om en
+  klumpsumma finns. Vid redovisning med delpriser beraknas summan fran raderna.
+- Lopande rakning sparar timpris inkl. arvode/moms, valfritt eget timpris for
+  arbetsledning, entreprenorarvode pa sjalvkostnader och ett separat ungefar-
+  ligt pris inkl. moms. Ren lopande rakning har `baseAmountOre = null` och
+  inget accepterat fast totalbelopp. Blandat pris summerar bara fasta moment
+  och kraver explicit uppdelning i fasta/lopande moment fore publicering.
+- Public projection tar bort dold radprissattning, kall-ID och inaktiva
+  prisgrunder. Kundens godkannande avser hela den frysta prisformen och dess
+  grunder, inte ett falskt totalbelopp. Historiska avtal utan `contractPricing`
+  normaliseras, renderas och valideras enligt sin ursprungliga prismodell.
+- SQL: kor `2026-10-08_03_contract_advice_fields.sql` och sedan
+  `2026-10-08_04_contract_pricing.sql` fore publicering. _04 validerar belopp,
+  summering och kompletta prisgrunder vid sparning/publicering/godkannande,
+  behaller revisions-/organisationslasen och stoppar aldre klienter fran att
+  kasta det nya prisformatet. Inga historiska texter eller belopp skrivs om.
+- Betalningsplanens fasta delbetalningar maste fortfarande motsvara den fasta
+  summan. Prisbyte skriver aldrig om planen. En tidigare fast betalningsplan
+  maste tas bort/anpassas innan ett helt lopande avtal kan publiceras; faktura-
+  villkor anges separat. Fordelning av faktiska lopande fakturor ar inte byggd.
+- Verifiering av prisdelen lokalt: 392 action-case-tester godkanda, inklusive 36
+  kombinationer av prisform, uppdelning, berakningsgrund och presentation.
+  TypeScript, fokuserad ESLint och produktionsbygge med webpack godkanda.
+  Klicktestat med riktiga komponenter och fiktiv lokal HTTP-backend: vald och
+  full prisimport utan dubbletter, decimalbelopp, autosparning och omladdning,
+  tre presentationslagen, separat arbete/material, manuellt fast pris och
+  bekraftat/avbrutet byte till radsumma. Blandat pris skiljer ut lopande moment
+  fran fast summa; ren lopande rakning visar prisgrunder utan fast totalsumma.
+  Timpris, arbetsledning, arvode och ungefarligt pris bevaras efter omladdning.
+  Sparfel/aterforsok, prisradering med bevarad omfattning och lasning efter
+  simulerat godkannande verifierade. Kundens lasvy visar de frysta priserna.
+  Dator och mobil 390 px visuellt kontrollerade; hela sidan saknar sidledes
+  overflode. Den separata arbets-/materialtabellen rullar internt i mobilvy
+  sa att belopp inte bryts mitt i siffrorna. Ingen skarp kunddata har andrats,
+  inget avtal skickats. Produktionskontrollen for SQL _03 och _04 finns nedan.
+
+## Publiceringskontroll 2026-10-10
+
+- Anvandaren bekraftade att SQL _03 och _04 har korts. En lasande kontroll i
+  produktion verifierade det nya avradandeformatet, prisvalideringen och dess
+  anrop vid avtalspublicering. Bada formatvakterna ar aktiva pa avtalsutkast.
+  Valideringsfunktionerna tillater service-roll, inte direkt authenticated-
+  klientatkomst. Inga projekttexter, belopp eller avtalsversioner andrades.
+- Releasepaketet omfattar arbetsmiljons standardtextknapp, avradandets tva
+  avtalsfalt och den oberoende prisdelen. Senaste publicerade main togs in med
+  fast-forward utan overlapp i paketets filer; parallella arbetskopior lamnades
+  ororda. 392 action-case-tester och TypeScript passerade pa denna bas.
+  Riktad ESLint har inga fel och tre befintliga varningar i testservern.
+- Driftstatus och kundvyn kontrolleras efter push. Apppubliceringen skickar
+  inte offerter eller avtal och godkanner inga kundhandlingar.

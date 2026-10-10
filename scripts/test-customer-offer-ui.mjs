@@ -110,6 +110,16 @@ if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')
 }
 const writes = []
 const projects = projectFixture(actionCase)
+if (process.argv.includes('--contract-pricing')) {
+  state.costing = {}
+  const moments = [['Mark, grund och dränering',333899],['Stomme och fasad',352645],['Tak',412395],['Invändigt',217913],['VVS och värme',181594],['Ventilation',31633],['Etablering och produktion',500263]]
+  state.draft.pricingMode = 'itemized'
+  state.draft.baseAmountOre = moments.reduce((sum,[,amount]) => sum + amount * 100,0)
+  state.draft.items = moments.map(([title,amount],index) => ({ id:id(610+index),title,scope:`FIKTIV TESTTEXT: ${title}.`,kind:'included',amountOre:amount*100,sourceItemId:id(710+index) }))
+  projects.cases[0].items = moments.map(([title,amount],index) => ({ ...structuredClone(projects.cases[0].items[0]),id:id(710+index),title,scope:`FIKTIV PROJEKTTEXT: ${title}.`,status:'ready_for_quote',
+    lumpSum:{ internalCost:null,customerPrice:amount/1.25,vatRate:25,verified:true },customerPrice:amount/1.25 }))
+  projects.cases[0].items.push({ ...structuredClone(projects.cases[0].items[0]),id:id(720),title:'Ej kontrollerat moment',lumpSum:null,customerPrice:null })
+}
 if (process.argv.includes('--simple-scope-import')) {
   state.draft.items = [
     { id: id(10), title: projects.cases[0].items[0].title, scope: 'Egen avtalstext grund', kind: 'included', amountOre: 30000000 },
@@ -135,6 +145,13 @@ if (process.argv.includes('--legacy-customer-work')) {
 if (process.argv.includes('--empty-work-environment')) {
   state.draft.contractDetails ??= emptyContractDetails()
   state.draft.contractDetails.fields.workEnvironment = { status: 'unreviewed', text: '' }
+}
+if (process.argv.includes('--legacy-advice')) {
+  state.draft.contractDetails ??= emptyContractDetails()
+  state.draft.contractDetails.advice = { status: 'given',
+    work: 'FIKTIVT TEST: Arbete utan kontrollerat underlag.',
+    reason: 'FIKTIVT TEST: Risk for skador pa konstruktionen.',
+    communicatedAt: '2026-10-01', customerResponse: 'FIKTIVT TEST: Bestallaren avstar fran arbetet.' }
 }
 const propertyRegistryTest = process.argv.includes('--property-registry')
 const customerRegistryTest = process.argv.includes('--customer-registry') || process.argv.includes('--project-billing') || propertyRegistryTest

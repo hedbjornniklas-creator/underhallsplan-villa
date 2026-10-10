@@ -1,13 +1,18 @@
 'use client'
 
-import { FileCheck2 } from 'lucide-react'
+import { useState } from 'react'
+import { FileCheck2, RotateCcw } from 'lucide-react'
 import { propertyFields } from '@/lib/properties/identity'
+import { ABS18_WORK_ENVIRONMENT } from '@/lib/action-cases/standardContractTerms'
 import {
   contractFields,
   contractParticipantFields,
   contractParticipantsForEditing,
   contractFieldSummary,
   contractEntryText,
+  contractAdviceFields,
+  contractAdviceSummary,
+  editContractAdvice,
   editContractParticipants,
   editedContractEntry,
   emptyContractDetails,
@@ -22,14 +27,19 @@ export default function CustomerContractFields({
   onChange,
   fieldKeys,
   showAdvice = true,
-  inline = false
+  inline = false,
+  contractForm,
+  disabled = false
 }: {
   value?: CustomerContractDetails
   onChange: (value: CustomerContractDetails) => void
   fieldKeys?: ContractFieldKey[]
   showAdvice?: boolean
   inline?: boolean
+  contractForm?: 'abs18' | 'custom'
+  disabled?: boolean
 }) {
+  const [confirmStandardText, setConfirmStandardText] = useState(false)
   const value = inputValue ?? emptyContractDetails()
   if (!inputValue && !inline)
     return (
@@ -44,12 +54,6 @@ export default function CustomerContractFields({
       </section>
     )
   const advice = value.advice
-  const adviceComplete = Boolean(
-    advice.work.trim() &&
-      advice.reason.trim() &&
-      advice.communicatedAt &&
-      advice.customerResponse.trim()
-  )
   const selectedFields = contractFields.filter((f) => (!fieldKeys || fieldKeys.includes(f.key)) &&
     (f.key !== 'customerWork' || value.otherAgreements === undefined))
   const groups = [...new Set(selectedFields.map((f) => f.group))]
@@ -59,87 +63,28 @@ export default function CustomerContractFields({
     <section className={inline ? 'space-y-4' : 'space-y-4 border-t border-slate-200 pt-6'}>
       {!inline && <h2 className="text-lg">Avtalsuppgifter</h2>}
       {showAdvice && <Group className="border-b border-slate-200 pb-4">
-        <Summary className="py-2 font-semibold">
-          Avrådan{' '}
+        {!inline && <Summary className="py-2 font-semibold">
+          Avrådande{' '}
           <span className="ml-2 text-sm font-normal text-slate-500">
-            {advice.status === 'unreviewed'
-              ? 'Ej kontrollerad'
-              : advice.status === 'none'
-                ? advice.work ||
-                  advice.reason ||
-                  advice.communicatedAt ||
-                  advice.customerResponse
-                  ? 'Kontrollera kvarvarande uppgifter'
-                  : 'Ingen avrådan'
-                : adviceComplete
-                  ? 'Avrådan dokumenterad'
-                  : 'Behöver kompletteras'}
+            {contractAdviceSummary(value)}
           </span>
-        </Summary>
-        <label className="mt-3 block text-sm">
-          Avrådan *
-          <select
-            className={field}
-            value={advice.status}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                advice: {
-                  ...advice,
-                  status: e.target.value as typeof advice.status
-                }
-              })
-            }
-          >
-            <option value="unreviewed">Ej kontrollerad</option>
-            <option value="none">Ingen avrådan har lämnats</option>
-            <option value="given">Avrådan har lämnats</option>
-          </select>
-        </label>
-        {(advice.status === 'given' ||
-          advice.work ||
-          advice.reason ||
-          advice.communicatedAt ||
-          advice.customerResponse) && (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            {(
-              [
-                ['work', 'Arbete som avrådan gäller *'],
-                ['reason', 'Skäl och konsekvenser *'],
-                ['customerResponse', 'Beställarens besked *']
-              ] as const
-            ).map(([key, title]) => (
-              <label key={key} className="text-sm sm:col-span-2">
-                {title}
-                <textarea
-                  className={field}
-                  rows={3}
-                  value={advice[key]}
-                  onChange={(e) =>
-                    onChange({
-                      ...value,
-                      advice: { ...advice, [key]: e.target.value }
-                    })
-                  }
-                />
-              </label>
-            ))}
-            <label className="text-sm">
-              Datum för avrådan *
-              <input
-                type="date"
+        </Summary>}
+        <div className="mt-3 space-y-4">
+          {contractAdviceFields.map(({ key, title }) => (
+            <label key={key} className="block text-sm font-medium">
+              {title}
+              <textarea
+                aria-label={title}
                 className={field}
-                value={advice.communicatedAt}
-                onChange={(e) =>
-                  onChange({
-                    ...value,
-                    advice: { ...advice, communicatedAt: e.target.value }
-                  })
-                }
+                rows={3}
+                maxLength={6000}
+                disabled={disabled}
+                value={advice[key]}
+                onChange={(e) => onChange(editContractAdvice(value, { [key]: e.target.value }))}
               />
             </label>
-          </div>
-        )}
+          ))}
+        </div>
       </Group>}
       {groups.map((group) => {
         const fields = selectedFields.filter((f) => f.group === group)
@@ -171,6 +116,12 @@ export default function CustomerContractFields({
                     ...value,
                     fields: { ...value.fields, [key]: editedContractEntry(text) }
                   })
+                const insertStandardText = () => {
+                  if (disabled) return
+                  onChange({ ...value, workEnvironmentDefaultVersion: ABS18_WORK_ENVIRONMENT.version,
+                    fields: { ...value.fields, workEnvironment: editedContractEntry(ABS18_WORK_ENVIRONMENT.text) } })
+                  setConfirmStandardText(false)
+                }
                 return (
                   <div key={key}>
                     <label className="block text-sm font-medium">
@@ -184,6 +135,25 @@ export default function CustomerContractFields({
                         onChange={(e) => change(e.target.value)}
                       />
                     </label>
+                    {key === 'workEnvironment' && contractForm === 'abs18' && <><button
+                      type="button"
+                      className="gizmo-button mt-2"
+                      title="Infoga det redigerbara sammandraget av ABS 18:s arbetsmiljöavsnitt"
+                      disabled={disabled || confirmStandardText || contractEntryText(entry) === ABS18_WORK_ENVIRONMENT.text}
+                      onClick={() => {
+                        if (disabled || contractEntryText(entry) === ABS18_WORK_ENVIRONMENT.text) return
+                        if (contractEntryText(entry).trim()) setConfirmStandardText(true)
+                        else insertStandardText()
+                      }}
+                    ><RotateCcw size={17} />Infoga standardtext</button>
+                      {confirmStandardText && <div role="alert" className="mt-3 border-l-2 border-slate-300 pl-3 text-sm">
+                        <p>Ersätta den befintliga arbetsmiljötexten med standardtexten? Dina egna uppgifter i detta fält ersätts.</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button type="button" className="gizmo-button gizmo-button-primary" disabled={disabled} onClick={insertStandardText}><RotateCcw size={17} />Ersätt text</button>
+                          <button type="button" className="gizmo-button" disabled={disabled} onClick={() => setConfirmStandardText(false)}>Avbryt</button>
+                        </div>
+                      </div>}
+                    </>}
                   </div>
                 )
               })}
@@ -208,7 +178,13 @@ export function CustomerContractDocument({
     <section className="border-t border-slate-200 py-6">
       <h3 className="text-lg font-semibold">Avtalsuppgifter</h3>
       <div className="mt-5">
-        <h4 className="font-semibold">Avrådan</h4>
+        <h4 className="font-semibold">{advice.format === 'contract-fields' ? 'Avrådande' : 'Avrådan'}</h4>
+        {advice.format === 'contract-fields' ? advice.work || advice.reason ? <dl className="mt-3 space-y-3 text-sm">
+          {contractAdviceFields.map(({ key, title }) => <div key={key}>
+            <dt className="font-medium">{title}</dt>
+            <dd className="mt-1 whitespace-pre-wrap leading-6">{advice[key] || 'Ej angivet'}</dd>
+          </div>)}
+        </dl> : <p className="mt-2 text-sm">Inget avrådande angivet.</p> : <>
         <p className="mt-2 text-sm">
           {advice.status === 'none'
             ? 'Ingen avrådan har lämnats.'
@@ -232,6 +208,7 @@ export function CustomerContractDocument({
             ))}
           </dl>
         )}
+        </>}
       </div>
       {contractFields.filter(({ key }) => (!omitParties || key !== 'parties') && (key !== 'documents' || !value.assignment) &&
         (key !== 'customerWork' || value.otherAgreements === undefined)).map(({ key, title }) => (

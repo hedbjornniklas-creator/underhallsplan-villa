@@ -81,6 +81,7 @@ export type CustomerContractDetails = {
   propertyReference?: string
   controlParticipants?: ContractParticipants
   advice: {
+    format?: 'contract-fields'
     status: 'unreviewed' | 'none' | 'given'
     work: string
     reason: string
@@ -113,6 +114,27 @@ export function contractDetailsForEditing(value: CustomerContractDetails): Custo
   // Preserve the old free text under Other; do not classify it as a scope exclusion.
   return { ...details, otherAgreements: contractEntryText(details.fields.customerWork),
     fields: { ...details.fields, customerWork: { status: 'unreviewed', text: '' } } }
+}
+
+export const contractAdviceFields = [
+  { key: 'work', title: 'Entreprenören har avrått beställaren från följande i kontraktsarbetena ingående arbeten' },
+  { key: 'reason', title: 'På grund av' }
+] as const
+
+export function contractAdviceForEditing(value: CustomerContractDetails): CustomerContractDetails {
+  if (value.advice.format === 'contract-fields') return value
+  return editContractAdvice(value, {})
+}
+
+export function editContractAdvice(value: CustomerContractDetails, patch: Partial<Pick<CustomerContractDetails['advice'], 'work' | 'reason'>>): CustomerContractDetails {
+  const advice = { ...value.advice, ...patch, format: 'contract-fields' as const }
+  advice.status = advice.work.trim() || advice.reason.trim() ? 'given' : 'none'
+  return { ...value, advice }
+}
+
+export function contractAdviceSummary(value?: CustomerContractDetails): string {
+  const count = contractAdviceFields.filter(({ key }) => value?.advice[key].trim()).length
+  return count === 2 ? 'Avrådande angivet' : count === 1 ? 'Behöver kompletteras' : 'Inte angivet'
 }
 
 export function editContractProperty(value: CustomerContractDetails, patch: Partial<PropertyDetails>, street = ''): CustomerContractDetails {
@@ -208,6 +230,12 @@ export function normalizeContractDetails(
     communicatedAt: str(advice.communicatedAt, 10),
     customerResponse: str(advice.customerResponse)
   }
+  if (advice.format !== undefined) {
+    if (advice.format !== 'contract-fields') invalid()
+    result.advice.format = advice.format
+    const expectedStatus = result.advice.work || result.advice.reason ? 'given' : 'none'
+    if (result.advice.status !== expectedStatus) invalid()
+  }
   const date = result.advice.communicatedAt
   if (
     date &&
@@ -261,28 +289,33 @@ export function contractDetailsIssues(
   // Legacy drafts and signed snapshots are not silently upgraded to a new contract.
   if (!value) return []
   const issues: string[] = []
-  if (value.advice.status === 'unreviewed')
-    issues.push('Ta ställning till avrådan.')
-  if (
-    value.advice.status === 'none' &&
-    (value.advice.work.trim() ||
-      value.advice.reason.trim() ||
-      value.advice.customerResponse.trim() ||
-      value.advice.communicatedAt)
-  )
-    issues.push(
-      'Avrådan innehåller uppgifter men är markerad som ingen avrådan.'
+  if (value.advice.format === 'contract-fields') {
+    if (Boolean(value.advice.work.trim()) !== Boolean(value.advice.reason.trim()))
+      issues.push('Komplettera avrådandets arbeten och på grund av vad entreprenören avråder.')
+  } else {
+    if (value.advice.status === 'unreviewed')
+      issues.push('Ta ställning till avrådan.')
+    if (
+      value.advice.status === 'none' &&
+      (value.advice.work.trim() ||
+        value.advice.reason.trim() ||
+        value.advice.customerResponse.trim() ||
+        value.advice.communicatedAt)
     )
-  if (
-    value.advice.status === 'given' &&
-    (!value.advice.work.trim() ||
-      !value.advice.reason.trim() ||
-      !value.advice.communicatedAt ||
-      !value.advice.customerResponse.trim())
-  )
-    issues.push(
-      'Komplettera avrådans arbete, skäl, datum och beställarens besked.'
+      issues.push(
+        'Avrådan innehåller uppgifter men är markerad som ingen avrådan.'
+      )
+    if (
+      value.advice.status === 'given' &&
+      (!value.advice.work.trim() ||
+        !value.advice.reason.trim() ||
+        !value.advice.communicatedAt ||
+        !value.advice.customerResponse.trim())
     )
+      issues.push(
+        'Komplettera avrådans arbete, skäl, datum och beställarens besked.'
+      )
+  }
   for (const { key, title } of contractFields) {
     if (key === 'customerWork' && value.otherAgreements !== undefined) continue
     if (key === 'parties' && structuredParties) continue

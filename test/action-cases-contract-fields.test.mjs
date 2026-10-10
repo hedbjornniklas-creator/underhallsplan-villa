@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import * as contract from '../src/lib/action-cases/customerContract.ts'
 import * as propertyDomain from '../src/lib/properties/identity.ts'
+import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { emptyCustomerOffer, normalizeCustomerOffer } from '../src/lib/action-cases/customerOffers.ts'
 
 const complete = () => {
@@ -101,8 +102,10 @@ function components() {
   const jsx = (type, props) => ({ type, props })
   new Function('require', 'module', 'exports', compiled)((name) => {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx }
-    if (name === 'lucide-react') return { FileCheck2: 'svg' }
+    if (name === 'react') return { useState: (value) => [value, () => {}] }
+    if (name === 'lucide-react') return { FileCheck2: 'svg', RotateCcw: 'svg' }
     if (name === '@/lib/action-cases/customerContract') return contract
+    if (name === '@/lib/action-cases/standardContractTerms') return standardTerms
     if (name === '@/lib/properties/identity') return propertyDomain
     throw new Error('Unexpected dependency: ' + name)
   }, loaded, loaded.exports)
@@ -123,7 +126,9 @@ test('the actual editor exposes both roles immediately, no status menus, and edi
   textareas.find((node) => !node.props.placeholder).props.onChange({ target: { value: 'Ritning A, 2026-10-07' } })
   assert.deepEqual(changed.fields.documents, { status: 'specified', text: 'Ritning A, 2026-10-07' })
   const advice = flatten(view.default({ value, fieldKeys: [], inline: true, onChange: () => {} }))
-  assert.equal(advice.filter((node) => node?.type === 'select').length, 1, 'the real advice choice remains')
+  assert.equal(advice.filter((node) => node?.type === 'select').length, 0)
+  assert.equal(advice.filter((node) => node?.type === 'textarea').length, 2)
+  assert.equal(advice.filter((node) => node?.type === 'input').length, 0)
 })
 
 test('editor input limits allow both full role fields without exceeding the compatible database field', () => {

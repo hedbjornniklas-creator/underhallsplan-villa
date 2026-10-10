@@ -5,10 +5,12 @@ import { Check, Download, FileText } from 'lucide-react'
 import { CustomerContractDocument } from './CustomerContractFields'
 import { PaymentPlanDocument } from './CustomerPaymentPlan'
 import { ContractPartiesDocument } from './CustomerContractPartiesEditor'
+import { ContractPriceDocument } from './CustomerContractPricing'
 import {
   customerOfferBaseAmount,
   customerOfferOptionGroup,
   customerOfferTotal,
+  customerPriceLabel,
   money,
   selectCustomerOfferOption,
   type CustomerOffer,
@@ -88,9 +90,9 @@ export default function CustomerOfferDocument({
       <section className="py-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h3 className="text-lg font-semibold">{purpose === 'contract' && s.contractDetails?.assignment ? 'Uppdraget' : 'Grundåtagande'}</h3>
-          <strong className="text-xl">{money(baseAmount)}</strong>
+          {!s.contractPricing && <strong className="text-xl">{money(baseAmount)}</strong>}
         </div>
-        <p className="mt-1 text-sm text-slate-500">Fast pris inklusive moms</p>
+        {!s.contractPricing && <p className="mt-1 text-sm text-slate-500">Fast pris inklusive moms</p>}
           {purpose === 'contract' && s.contractDetails?.assignment && <div className="mt-4">
             <h4 className="font-semibold">Handlingar som ingår i uppdraget</h4>
             <div className="mt-2 overflow-x-auto">
@@ -114,7 +116,7 @@ export default function CustomerOfferDocument({
             <div className="mt-5 border-t border-slate-100 pt-4" key={i.id}>
               <div className="flex flex-wrap justify-between gap-2">
                 <h4 className="font-semibold">{i.title}</h4>
-                {s.pricingMode === 'itemized' && <strong>{money(i.amountOre)}</strong>}
+                {!s.contractPricing && s.pricingMode === 'itemized' && <strong>{money(i.amountOre)}</strong>}
               </div>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                 {i.scope}
@@ -226,6 +228,7 @@ export default function CustomerOfferDocument({
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.assignment.standardConditions.text}</p>
       </section>}
       {purpose === 'contract' && <CustomerContractDocument value={s.contractDetails} omitParties={Boolean(s.contractParties)} />}
+      {purpose === 'contract' && s.contractPricing && <div className="border-t border-slate-200 py-6"><ContractPriceDocument value={s.contractPricing} /></div>}
       {purpose === 'contract' && s.paymentPlan && <section className="border-t border-slate-200 py-6">
         <h3 className="text-lg font-semibold">Betalningsplan för grundavtalet</h3>
         <PaymentPlanDocument plan={s.paymentPlan} paymentTerms={s.paymentTerms} showTerms={false} />
@@ -255,6 +258,10 @@ export default function CustomerOfferDocument({
           <h3 className="font-semibold">Övriga överenskommelser</h3>
           <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.otherAgreements}</p>
         </div>}
+        {s.contractDetails?.advice.format === 'contract-fields' && s.contractDetails.advice.customerResponse && <div className="mt-5">
+          <h4 className="font-semibold">Beställarens tidigare besked om avrådan</h4>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.advice.customerResponse}</p>
+        </div>}
         </>}
         {files.length > 0 && (
           <ul className="mt-4 divide-y divide-slate-200">
@@ -281,12 +288,12 @@ export default function CustomerOfferDocument({
       <footer className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-slate-50 p-5">
         <div>
           <p className="text-sm text-slate-600">
-            {accepted ? 'Avtalat belopp' : s.items.some((i) => i.kind === 'option') ? 'Grundpris och valda tillval' : purpose === 'offer' ? 'Offertens grundpris' : 'Grundavtalets pris'}
+            {s.contractPricing && s.contractPricing.mode !== 'fixed' ? 'Avtalets prisgrunder' : accepted ? 'Avtalat belopp' : s.items.some((i) => i.kind === 'option') ? 'Grundpris och valda tillval' : purpose === 'offer' ? 'Offertens grundpris' : 'Grundavtalets pris'}
           </p>
           <p className="mt-1 text-2xl font-bold" aria-live="polite">
-            {money(accepted ? offer.acceptedTotalOre : total)}
+            {s.contractPricing ? customerPriceLabel(s) : money(accepted ? offer.acceptedTotalOre : total)}
           </p>
-          <p className="mt-1 text-sm text-slate-500">Inklusive moms</p>
+          {s.contractPricing?.mode !== 'running' && <p className="mt-1 text-sm text-slate-500">{s.contractPricing?.mode === 'mixed' ? 'Den fasta delen inklusive moms. Den löpande delen tillkommer enligt prisgrunderna ovan.' : 'Inklusive moms'}</p>}
         </div>
         {accepted && (
           <p className="flex items-start gap-2 text-sm text-emerald-700">
