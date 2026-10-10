@@ -619,3 +619,24 @@
   .gizmo-contract-editor .gizmo-document-row,
   .gizmo-contract-editor .gizmo-document-standard { height: auto; min-height: 60px; }
 }
+.gizmo-price-settings { display: grid; gap: 12px; padding-block: 12px; border-block: 1px solid #D5DCDD; }
+.gizmo-price-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 24px; }
+.gizmo-price-value { text-align: right; font-variant-numeric: tabular-nums; }
+.gizmo-price-total { display: grid; gap: 4px; padding: 10px; border-bottom: 1px solid #D5DCDD; background: #EDF1F1; }
+.gizmo-price-total-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; }
+.gizmo-price-total-line dd { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gizmo-price-table[data-columns='unpriced'] :is(.gizmo-price-header,.gizmo-price-row) { grid-template-columns: minmax(0, 1fr) 68px; }
+.gizmo-price-table[data-columns='split'] { max-width: 100%; overflow-x: auto; }
+.gizmo-price-table[data-columns='split'] :is(.gizmo-price-header,.gizmo-price-row) { min-width: 680px; grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(110px, auto)) 68px; }
+.gizmo-price-table[data-columns='split'] .gizmo-price-header [role='columnheader']:not(:first-child) { text-align: right; }
+@media (max-width: 900px) {
+  .gizmo-price-settings-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 767px) {
+  .gizmo-price-table[data-columns='unpriced'] :is(.gizmo-price-header,.gizmo-price-row) { grid-template-columns: minmax(0, 1fr) 104px; }
+  .gizmo-price-table[data-columns='split'] :is(.gizmo-price-header,.gizmo-price-row) { min-width: 740px; grid-template-columns: minmax(170px, 1fr) repeat(3, minmax(120px, auto)) 104px; }
+  .gizmo-price-table[data-columns='split'] .gizmo-price-row > :is(span,div) { display: block; grid-column: auto; grid-row: auto; }
+  .gizmo-price-table[data-columns='split'] .gizmo-price-row > div:last-child { display: flex; }
+  .gizmo-price-table[data-columns='split'] .gizmo-price-row > span { text-align: right; }
+  .gizmo-price-table[data-columns='split'] .gizmo-price-header span:nth-child(2) { display: block; }
+}

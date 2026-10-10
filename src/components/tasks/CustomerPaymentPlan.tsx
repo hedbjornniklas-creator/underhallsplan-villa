@@ -54,6 +54,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
   const [importOpen, setImportOpen] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [importError, setImportError] = useState('')
+  const [paymentDaysInput, setPaymentDaysInput] = useState<string | null>(null)
   const available = sources.map((source) => ({ id: source.id, title: source.title, amountOre: importableCustomerPrice(source) }))
   const priced = available.filter((source) => source.amountOre !== null && source.amountOre > 0)
   const terms = conditions ?? { version: 1 as const, days: 30, standardText: contractForm === 'abs18' ? abs18PaymentText : '' }
@@ -96,7 +97,8 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
   return <div className="gizmo-payment-editor gizmo-editor-scroll-scope">
     <details className="border-b border-slate-200 py-3"><summary className="cursor-pointer text-sm font-semibold">Betalningsvillkor · {terms.days} dagar</summary>
       <div className="gizmo-payment-terms">
-        <label className="block text-sm font-medium">Betalning inom (dagar)<input aria-label="Betalning inom (dagar)" type="number" min={1} max={365} step={1} className={field} value={terms.days} onChange={(e) => {
+        <label className="block text-sm font-medium">Betalning inom (dagar)<input aria-label="Betalning inom (dagar)" type="number" min={1} max={365} step={1} className={field} value={paymentDaysInput ?? terms.days} onBlur={() => setPaymentDaysInput(null)} onChange={(e) => {
+          setPaymentDaysInput(e.target.value)
           const days = e.target.valueAsNumber
           if (Number.isInteger(days) && days >= 1 && days <= 365) onConditionsChange({ ...terms, days })
         }} /></label>

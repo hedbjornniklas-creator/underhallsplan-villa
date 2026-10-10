@@ -103,6 +103,12 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   Arbete/material kan redovisas tillsammans eller separat utan gissad fördelning.
   Löpande del visar timpris, arbetsledning och arvode på självkostnad, aldrig
   en påhittad kontraktssumma. Blandat pris skiljer tydligt ut den fasta delen.
+  Prisform och redovisningsval ligger före prislistan. Avtalets priser är en
+  enda redigerbar vy som följer vald redovisning, utan en andra prislista under
+  I avtalet. Vid endast totalsumma öppnas dolda delmoment genom ett särskilt
+  redigeringsval; detta ändrar inte hur priserna redovisas till beställaren.
+  Separat arbete/material visas som egna kolumner när delpriser redovisas.
+  Val av beräkningsgrund visas endast när redovisningen tillåter klumpsumma.
 - ÄTA har egna prisgrunder i Avtal, oberoende av grundpriset: Fyll i här eller
   Enligt prisbilaga. Timpriser och påslag visas som två kompakta tabeller bredvid
   varandra på dator, staplade på smal yta. En timprisrad redigeras åt gången.
@@ -198,6 +204,9 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-10: Användaren vill ha en gemensam prisvy i Avtal som följer
+  Redovisning i avtalet. Den dubbla förhandsvisningen tas bort och inställningar
+  ordnas före tabellen. Dolda delmoment kan fortfarande redigeras uttryckligen.
 - 2026-10-10: Användaren begär hämtning från Projektarbete i betalningsplanen.
   Genomfört med enkelt momenturval, fristående kopior och uttrycklig ersättning
   av vanliga delbetalningar. Kontrollerade kundpriser används, inte interna kostnader.
