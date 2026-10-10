@@ -152,3 +152,16 @@ test('contract autosave has a fixed status slot, no success toast, explicit reci
   assert.match(editor, /if \(running.current \|\| autosave.isPending\(\)\) return false/)
   assert.match(route, /body.operation === 'autosave'\) await saveCustomerOffer\(ctx, caseId, body, 'autosave', target\)/)
 })
+
+test('payment edits autosave without a manual save button and show pending/error state in a fixed slot', () => {
+  const editor = readFileSync(new URL('../src/components/tasks/CustomerOfferEditor.tsx', import.meta.url), 'utf8')
+  const payments = editor.slice(editor.indexOf("view === 'payments' ? <section"), editor.indexOf("view === 'customer' ? ("))
+  assert.doesNotMatch(payments, /Spara utkast|action\('save'\)/)
+  assert.match(payments, /role="status" data-testid="payment-save-status" className="flex h-8 w-60 max-w-full/)
+  assert.match(payments, /autosave\.state\?\.status === 'error' \? 'Kunde inte spara' : autosave\.isSaving \? 'Sparar…'/)
+  assert.match(payments, /aria-label="Försök spara betalningsplanen igen"[\s\S]*?autosave\.retry\(\)/)
+  assert.match(payments, /onChange=\{\(paymentPlan\) => update\(\{ paymentPlan \}\)\}/)
+  assert.match(payments, /onTermsChange=\{\(paymentTerms\) => update\(\{ paymentTerms \}\)\}/)
+  assert.match(payments, /onConditionsChange=\{\(paymentConditions\) => update\(\{ paymentConditions \}\)\}/)
+  assert.match(payments, /locked \? <>[\s\S]*?<PaymentPlanDocument/)
+})

@@ -8,7 +8,7 @@ export type CustomerPayment = {
 }
 export type PaymentConditions = { version: 1; days: number; standardText: string }
 export type CustomerPaymentPlan = { version: 1; installments: CustomerPayment[]; automation?: {
-  version: 1; initialEnabled: boolean; initialPercent: number | null; allocationBaseOre: number | null
+  version: 1; initialEnabled: boolean; initialPercent: number | null; allocationBaseOre: number | null; finalEnabled?: boolean
 } }
 
 export const abs18PaymentText = 'Betalning erläggs mot faktura. I faktura angivna arbeten ska vara utförda när fakturering sker. Om inte betalning erläggs i rätt tid utgår dröjsmålsränta enligt räntelagen.\n\nBeställaren har rätt att hålla inne tio procent av det avtalade priset till dess entreprenaden har godkänts vid slutbesiktning.\n\nBesiktningsmannen ska i samband med slutbesiktningen värdera hur stort belopp som beställaren har rätt att hålla inne tills eventuella fel avhjälpts.'
@@ -50,11 +50,13 @@ export function normalizePaymentPlan(value: unknown): CustomerPaymentPlan | null
   if (p.automation !== undefined) {
     if (!p.automation || typeof p.automation !== 'object' || Array.isArray(p.automation)) invalid()
     const a = p.automation as Record<string, unknown>, percent = a.initialPercent
-    if (a.version !== 1 || typeof a.initialEnabled !== 'boolean' || !validAmount(a.allocationBaseOre) ||
+    if (a.version !== 1 || typeof a.initialEnabled !== 'boolean' || (a.finalEnabled !== undefined && typeof a.finalEnabled !== 'boolean') || !validAmount(a.allocationBaseOre) ||
       (percent !== null && (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0 || percent > 90 || Math.abs(percent * 100 - Math.round(percent * 100)) > 0.00001))) invalid()
-    if (installments.filter((r) => r.kind === 'final').length !== 1 || installments.at(-1)?.kind !== 'final' ||
+    const finalEnabled = a.finalEnabled !== false
+    if (installments.filter((r) => r.kind === 'final').length !== (finalEnabled ? 1 : 0) || (finalEnabled && installments.at(-1)?.kind !== 'final') ||
       installments.filter((r) => r.kind === 'initial').length !== (a.initialEnabled ? 1 : 0) || (a.initialEnabled && installments[0]?.kind !== 'initial')) invalid()
-    result.automation = { version: 1, initialEnabled: a.initialEnabled as boolean, initialPercent: percent as number | null, allocationBaseOre: a.allocationBaseOre as number | null }
+    result.automation = { version: 1, initialEnabled: a.initialEnabled as boolean, initialPercent: percent as number | null, allocationBaseOre: a.allocationBaseOre as number | null,
+      ...(a.finalEnabled === undefined ? {} : { finalEnabled: a.finalEnabled as boolean }) }
   } else if (installments.some((r) => r.kind)) invalid()
   return result
 }
@@ -87,12 +89,12 @@ export function distributePaymentPlan(plan: CustomerPaymentPlan, base: number, e
     installments: synced.installments.map((r) => r.kind ? r : { ...r, amountOre: amounts.get(r.id)! }) }
 }
 export function configurePaymentPlan(plan: CustomerPaymentPlan | null | undefined, base: number | null, enabled = false, percent: number | null = 10,
-  newId = () => crypto.randomUUID()): CustomerPaymentPlan {
+  finalEnabled = plan?.automation?.finalEnabled !== false, newId = () => crypto.randomUUID()): CustomerPaymentPlan {
   const regular = plan?.installments.filter((r) => !r.kind) ?? [{ id: newId(), title: 'Delbetalning', condition: '', plannedDate: '', amountOre: null }]
   const initial = plan?.installments.find((r) => r.kind === 'initial') ?? { id: newId(), kind: 'initial' as const, title: 'Första delbetalning', condition: 'Efter att det avtalade första arbetsmomentet är utfört.', plannedDate: '', amountOre: null }
   const final = plan?.installments.find((r) => r.kind === 'final') ?? { id: newId(), kind: 'final' as const, title: 'Slutbetalning', condition: 'Efter godkänd slutbesiktning. Beställarens rätt att hålla inne belopp för kvarstående fel påverkas inte.', plannedDate: '', amountOre: null }
-  const value: CustomerPaymentPlan = { version: 1, automation: { version: 1, initialEnabled: enabled, initialPercent: percent, allocationBaseOre: base },
-    installments: [...(enabled ? [initial] : []), ...regular, final] }
+  const value: CustomerPaymentPlan = { version: 1, automation: { version: 1, initialEnabled: enabled, initialPercent: percent, allocationBaseOre: base, finalEnabled },
+    installments: [...(enabled ? [initial] : []), ...regular, ...(finalEnabled ? [final] : [])] }
   const synced = syncPaymentPlan(value, base)!
   return base !== null && (!enabled || percent !== null) && regular.length && base - paymentPlanTotal({ version: 1, installments: synced.installments.filter((r) => r.kind) }) >= regular.length
     ? distributePaymentPlan(synced, base) : synced
@@ -102,11 +104,28 @@ export function paymentPlanTotal(plan: CustomerPaymentPlan): number {
   return plan.installments.reduce((sum, r) => sum + (r.amountOre ?? 0), 0)
 }
 
+export function importPaymentPlanRows(plan: CustomerPaymentPlan | null | undefined,
+  sources: { id: string; title: string; amountOre: number | null }[], selected: string[],
+  newId: () => string = () => crypto.randomUUID()): CustomerPaymentPlan {
+  if (!selected.length || new Set(selected).size !== selected.length ||
+    selected.some((id) => sources.filter((source) => source.id === id).length !== 1)) invalid()
+  const rows = sources.filter((source) => selected.includes(source.id)).map((source): CustomerPayment => {
+    if (source.amountOre === null || source.amountOre <= 0 || !validAmount(source.amountOre)) invalid()
+    return { id: newId(), title: source.title, amountOre: source.amountOre, condition: '', plannedDate: '' }
+  })
+  // Import is a detached copy. Percentage rows and their edited terms remain intact.
+  return normalizePaymentPlan({ ...(plan ?? { version: 1 }), installments: [
+    ...(plan?.installments.filter((row) => row.kind === 'initial') ?? []),
+    ...rows,
+    ...(plan?.installments.filter((row) => row.kind === 'final') ?? []),
+  ] })!
+}
+
 export function paymentPlanIssues(plan: CustomerPaymentPlan | null | undefined, baseAmount: number | null, priceMode?: string): string[] {
   if (!plan) return []
   const issues: string[] = []
   if (plan.automation) {
-    if (priceMode && priceMode !== 'fixed') issues.push('Automatiska procentbetalningar kräver ett fast pris för hela grundavtalet.')
+    if ((plan.automation.initialEnabled || plan.automation.finalEnabled !== false) && priceMode && priceMode !== 'fixed') issues.push('Automatiska procentbetalningar kräver ett fast pris för hela grundavtalet.')
     if (plan.automation.initialEnabled && (plan.automation.initialPercent === null || plan.automation.initialPercent <= 0)) issues.push('Ange procent för den första delbetalningen.')
     for (const row of plan.installments.filter((r) => r.kind)) {
       const expected = paymentPercentAmount(baseAmount, row.kind === 'final' ? 10 : plan.automation.initialPercent)

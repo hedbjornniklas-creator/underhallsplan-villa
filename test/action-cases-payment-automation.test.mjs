@@ -4,10 +4,47 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { emptyCustomerOffer, normalizeCustomerOffer, customerOfferBaseAmount, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import { abs18PaymentText, normalizePaymentPlan, normalizePaymentConditions, paymentConditionsText, configurePaymentPlan,
-  distributePaymentPlan, syncPaymentPlan, paymentPercentAmount, paymentPlanTotal, paymentPlanIssues } from '../src/lib/action-cases/customerPaymentPlan.ts'
+  distributePaymentPlan, importPaymentPlanRows, syncPaymentPlan, paymentPercentAmount, paymentPlanTotal, paymentPlanIssues } from '../src/lib/action-cases/customerPaymentPlan.ts'
 
 const row = (amountOre, title = 'Grund') => ({ id: randomUUID(), title, condition: 'Efter utfört arbete.', plannedDate: '2026-11-30', amountOre })
 const old = () => ({ version: 1, installments: [row(33389900), row(35264500, 'Stomme')] })
+
+test('payment import copies selected customer amounts, preserves percentage terms and requires new invoicing conditions', () => {
+  const original = configurePaymentPlan(old(), 200000000, true, 10)
+  const before = structuredClone(original)
+  const sources = [{ id: 'ground', title: 'Mark', amountOre: 28500000 }, { id: 'roof', title: 'Tak', amountOre: 35200000 }, { id: 'unknown', title: 'El', amountOre: null }]
+  const imported = importPaymentPlanRows(original, sources, ['roof', 'ground'])
+  assert.deepEqual(original, before)
+  assert.deepEqual(imported.installments[0], original.installments[0])
+  assert.deepEqual(imported.installments.at(-1), original.installments.at(-1))
+  assert.deepEqual(imported.installments.slice(1, -1).map(({ title, amountOre, condition, plannedDate }) => ({ title, amountOre, condition, plannedDate })), [
+    { title: 'Mark', amountOre: 28500000, condition: '', plannedDate: '' },
+    { title: 'Tak', amountOre: 35200000, condition: '', plannedDate: '' },
+  ])
+  assert(paymentPlanIssues(imported, 200000000).some((message) => message.includes('summa')))
+  assert(paymentPlanIssues(imported, 200000000).some((message) => message.includes('faktureringsvillkor')))
+  assert.equal(paymentPlanTotal(distributePaymentPlan(imported, 200000000)), 200000000)
+  assert.deepEqual(normalizePaymentPlan(JSON.parse(JSON.stringify(imported))), imported)
+  sources[0].amountOre = 1
+  assert.equal(imported.installments[1].amountOre, 28500000)
+  const reimported = importPaymentPlanRows(imported, sources, ['roof'])
+  assert.equal(reimported.installments.length, 3)
+})
+
+test('payment import works without a plan and does not recreate a disabled final payment', () => {
+  const sources = [{ id: 'ground', title: 'Mark', amountOre: 10001 }]
+  const imported = importPaymentPlanRows(null, sources, ['ground'])
+  assert.equal(imported.installments.length, 1)
+  assert.equal(imported.automation, undefined)
+  const disabled = configurePaymentPlan(old(), 100000000, false, 10, false)
+  const next = importPaymentPlanRows(disabled, sources, ['ground'])
+  assert.equal(next.automation.finalEnabled, false)
+  assert.equal(next.installments.length, 1)
+  for (const selection of [[], ['missing'], ['ground', 'ground']]) assert.throws(() => importPaymentPlanRows(null, sources, selection), /INVALID/)
+  for (const amountOre of [null, 0, -1, 1.5, 100000000001]) assert.throws(() => importPaymentPlanRows(null, [{ ...sources[0], amountOre }], ['ground']), /INVALID/)
+  const tooMany = Array.from({ length: 61 }, (_, i) => ({ ...sources[0], id: String(i) }))
+  assert.throws(() => importPaymentPlanRows(null, tooMany, tooMany.map((r) => r.id)), /INVALID/)
+})
 test('legacy plans and signed snapshots remain unmodified until an explicit setup', () => {
   const p = old(), before = structuredClone(p)
   assert.deepEqual(normalizePaymentPlan(p), p)
@@ -45,6 +82,54 @@ test('changed contract price recalculates percentages, never silently rewrites m
   assert.equal(paymentPlanTotal(reconciled), 110000000)
   assert.deepEqual(paymentPlanIssues(reconciled, 110000000), [])
   assert.equal(syncPaymentPlan(reconciled, 110000000), reconciled)
+})
+
+test('removing the final payment preserves the first percentage and all other row details, with exact reallocation', () => {
+  const original = configurePaymentPlan(old(), 203034201, true, 20)
+  const before = structuredClone(original)
+  const removed = configurePaymentPlan(original, 203034201, true, 20, false)
+  assert.deepEqual(original, before)
+  assert.equal(removed.automation.finalEnabled, false)
+  assert.equal(removed.installments.some((r) => r.kind === 'final'), false)
+  assert.deepEqual(removed.installments[0], original.installments[0])
+  assert.deepEqual(removed.installments.slice(1).map(({ amountOre, ...r }) => r), original.installments.slice(1, -1).map(({ amountOre, ...r }) => r))
+  assert.equal(paymentPlanTotal(removed), 203034201)
+  assert.deepEqual(paymentPlanIssues(removed, 203034201, 'fixed'), [])
+  const reloaded = normalizePaymentPlan(JSON.parse(JSON.stringify(removed)))
+  assert.deepEqual(reloaded, removed)
+  const changed = configurePaymentPlan(reloaded, 210000001, true, 15)
+  assert.equal(changed.installments.some((r) => r.kind === 'final'), false)
+  assert.equal(paymentPlanTotal(changed), 210000001)
+  const restored = configurePaymentPlan(changed, 210000001, true, 15, true)
+  assert.equal(restored.installments.at(-1).kind, 'final')
+  assert.equal(restored.installments.at(-1).amountOre, 21000000)
+  assert.equal(paymentPlanTotal(restored), 210000001)
+})
+
+test('both percentage rows can be removed, including when the contract price becomes unknown', () => {
+  const original = configurePaymentPlan(old(), 100000000, true, 10)
+  const manual = configurePaymentPlan(original, 100000000, false, 10, false)
+  assert(manual.installments.every((r) => !r.kind))
+  assert.equal(paymentPlanTotal(manual), 100000000)
+  assert.deepEqual(paymentPlanIssues(manual, 100000000, 'mixed'), [])
+  const unknown = configurePaymentPlan(original, null, false, 10, false)
+  assert(unknown.installments.every((r) => !r.kind))
+  assert.deepEqual(unknown.installments, original.installments.filter((r) => !r.kind))
+  assert.equal(syncPaymentPlan(manual, 110000000).installments.some((r) => r.kind), false)
+  const empty = configurePaymentPlan({ ...original, installments: original.installments.filter((r) => r.kind) }, 100000000, false, 10, false)
+  assert.equal(normalizePaymentPlan(empty).installments.length, 0)
+  assert(paymentPlanIssues(empty, 100000000).some((issue) => issue.includes('minst en')))
+})
+
+test('old automatic plans still require a final row; an explicit final setting must match the row', () => {
+  const legacy = configurePaymentPlan(old(), 100000000)
+  delete legacy.automation.finalEnabled
+  assert.deepEqual(normalizePaymentPlan(legacy), legacy)
+  assert.throws(() => normalizePaymentPlan({ ...legacy, installments: legacy.installments.slice(0, -1) }), /INVALID/)
+  for (const finalEnabled of [false, null, 'false', 0])
+    assert.throws(() => normalizePaymentPlan({ ...legacy, automation: { ...legacy.automation, finalEnabled } }), /INVALID/)
+  const off = configurePaymentPlan(legacy, 100000000, false, 10, false)
+  assert.throws(() => normalizePaymentPlan({ ...off, automation: { ...off.automation, finalEnabled: true } }), /INVALID/)
 })
 test('large and fractional allocations are exact, deterministic, positive and use ore rather than floats', () => {
   for (const total of [17, 101, 203034201, 99999999999, 100000000000]) {
@@ -99,7 +184,6 @@ test('UI exposes payment days, compact rows, explicit reconciliation, editable t
   assert.match(ui, /Anpassa till avtalets belopp/)
   assert.match(ui, /Övriga betalningsvillkor/)
   assert.match(ui, /output aria-label="Automatiskt belopp inkl. moms"/)
-  assert.match(ui, /disabled=\{Boolean\(row.kind\)\}/)
   assert.match(ui, /Boolean\(plan\?\.automation\) === Boolean\(value\.automation\)/)
   const server = readFileSync(new URL('../src/lib/action-cases/customerOffersServer.ts', import.meta.url), 'utf8')
   assert.match(server, /rpc\('assert_payment_automation'/)

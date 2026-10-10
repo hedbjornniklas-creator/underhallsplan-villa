@@ -160,10 +160,23 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   Ett godkänt avtal och dess versionskopia är låsta även i databasen.
 - Betalningsplanens belopp är inte fakturerat eller betalt. Ingen faktureringsgraf
   visas innan en verklig fakturakälla finns.
+- Hämta från Projektarbete i betalningsplanen öppnar ett urval av moment med
+  kontrollerade positiva kundpriser inklusive moms. Importen ersätter vanliga
+  delbetalningar efter ett tydligt besked, men behåller eventuella procentrader.
+  Rubrik och belopp kopieras fristående; faktureringsvillkor och datum lämnas
+  tomma. Ingen automatisk prisfördelning sker vid import. Avvikelse mot avtalet
+  visas och kan hanteras med Anpassa till avtalets belopp. Import kan ångras
+  före nästa redigering när en tidigare plan finns.
+- Betalningsplanens ändringar autosparas utan en separat Spara utkast-knapp.
+  Sparstatus har fast höjd och bredd, visar pågående sparning och erbjuder
+  endast en återförsöksikon vid sparfel. Statusbyten får inte flytta formuläret.
 - Betalningsvillkor har ett eget dagfält (30 som startvärde) och redigerbar
   ABS 18-text. Tidigare egna villkor bevaras separat. Villkor och betalplan
   sparas i samma avtalsversion; signerade och äldre versioner skrivs inte om.
 - En ny betalplan för fast pris reserverar 10 procent som sista delbetalning.
+  Slutbetalningen kan väljas bort via kryssrutan eller radens papperskorg och
+  läggas tillbaka. Övriga moment delar då på återstoden proportionellt; första
+  procentbetalningen behålls. Ångra återställer den tidigare fördelningen.
   En valbar första procentbetalning ligger först, efter utfört arbetsmoment.
   Krav på förskott vid beställning införs inte för ABS 18/konsument: 52 §
   konsumenttjänstlagen ger rätt att inte betala för ej utfört arbete.
@@ -185,6 +198,15 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-10: Användaren begär hämtning från Projektarbete i betalningsplanen.
+  Genomfört med enkelt momenturval, fristående kopior och uttrycklig ersättning
+  av vanliga delbetalningar. Kontrollerade kundpriser används, inte interna kostnader.
+- 2026-10-10: Användaren påpekar att tillagd slutbetalning inte går att ta bort.
+  Slutbetalning 10 procent blir ett reversibelt val. Äldre planer behåller sin
+  slutbetalning tills användaren väljer bort den; sparade avtalsversioner bevaras.
+- 2026-10-10: Användaren tar bort betalningsplanens överflödiga sparaknapp.
+  Befintligt autosparande behålls; sparstatus visar köad/pågående sparning,
+  sparat eller fel utan layoutförskjutning. Återförsök finns vid sparfel.
 - 2026-10-10: Användaren begär betalningsdagar, valbar första procentbetalning,
   automatisk slutbetalning 10 procent och avstämning mot avtalspriset.
   Genomförs med kompakta öppningsbara rader och bevarade egna villkor.
@@ -266,6 +288,18 @@ dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering
 
 ### Betalningsplan 2026-10-10
 
+- Valbar slutbetalning är lokalt klicktestad: slå av/på, papperskorg, ångra,
+  första procentbetalning, exakt totalsumma, ny rad sist och omladdning.
+  Ångra fördelning nollställs vid senare radredigering så att ny text behålls.
+  89 riktade modell-, server- och databastester samt TypeScript och ESLint
+  passerar. Migration `2026-10-10_03_optional_final_payment.sql` är testad
+  två gånger utan omskrivning av äldre data och måste köras före publicering.
+  Ändringen är ännu inte publicerad.
+- Sparaknappen borttagen i lokal testversion. Klicktest med fiktiva uppgifter
+  verifierar betalningsdagar, egna villkor och en delbetalningsrad efter omladdning.
+  Långsam sparning, sparfel och återförsök bevarar inmatningen; statusytan
+  behåller 32 px höjd och 240 px bredd och fältets position är oförändrad.
+  21 riktade tester, TypeScript och riktad ESLint passerar. Ej publicerat ännu.
 - Publiceringskontroll: version `831e53d3` driftsatt på hushub.se. Båda nya
   databasfunktionerna finns och avvisar ogiltig inmatning genom de ordinarie
   avtals- och betalplanskontrollerna. Befintligt avtalsutkast kan läsas med

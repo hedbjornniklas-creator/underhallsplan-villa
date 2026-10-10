@@ -644,11 +644,10 @@ export default function CustomerOfferEditor({
       {view === 'planning' ? null : view === 'payments' ? <section id={`payment-panel-${actionCase.id}-plan`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-plan`} hidden={paymentView !== 'plan'}>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-600">{locked ? 'Avtalad betalningsplan · Låst med grundavtalet' : 'Internt utkast · Betalningsvillkor och plan ingår i den avtalsversion som skickas'}</p>
-          {!locked && <div className="flex flex-wrap items-center gap-3">
-            <span role="status" className="text-sm text-slate-600">{busy ? 'Sparar…' : dirty ? 'Osparade ändringar' : workspace.revision > 0 ? 'Sparat internt' : 'Inte sparat ännu'}</span>
-            <button className={`${button} bg-slate-950 text-white`} disabled={Boolean(busy) || autosave.isSaving || (!dirty && workspace.revision > 0) || confirmItemized} onClick={() => void action('save')}>
-              {busy === 'save' ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} {busy === 'save' ? 'Sparar…' : 'Spara utkast'}
-            </button>
+          {!locked && <div role="status" data-testid="payment-save-status" className="flex h-8 w-60 max-w-full shrink-0 items-center gap-2 text-sm text-slate-600">
+            <span className="h-4 w-4 shrink-0">{autosave.isSaving && <Loader2 size={16} className="animate-spin" />}</span>
+            <span className="min-w-0 flex-1 truncate">{autosave.state?.status === 'error' ? 'Kunde inte spara' : autosave.isSaving ? 'Sparar…' : busy ? 'Arbetar…' : dirty ? 'Osparade ändringar' : workspace.revision > 0 ? 'Sparat internt' : 'Nytt utkast'}</span>
+            {autosave.state?.status === 'error' && <button type="button" className="gizmo-button h-8 min-h-0 shrink-0 px-2" title="Försök spara betalningsplanen igen" aria-label="Försök spara betalningsplanen igen" disabled={Boolean(busy)} onClick={() => void autosave.retry()}><RefreshCw size={16} /></button>}
           </div>}
         </div>
         {locked ? <>
@@ -657,6 +656,7 @@ export default function CustomerOfferEditor({
         </> : <>
           <fieldset disabled={Boolean(busy) && busy !== 'save'} className="min-w-0">
             <PaymentPlanEditor plan={draft.paymentPlan} baseAmount={baseAmount} paymentTerms={draft.paymentTerms} conditions={draft.paymentConditions}
+              sources={actionCase.items} importBlocked={sourcePending}
               priceMode={draft.contractPricing?.mode} contractForm={draft.contractForm}
               onChange={(paymentPlan) => update({ paymentPlan })} onTermsChange={(paymentTerms) => update({ paymentTerms })} onConditionsChange={(paymentConditions) => update({ paymentConditions })} />
           </fieldset>

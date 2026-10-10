@@ -85,6 +85,43 @@ test('payment automation migration protects percentages, payment days, revisions
   assert.equal(privileges.allowed,false)
 })
 
+test('optional final payment survives save/publication, cannot be resurrected by old clients and stays locked after acceptance', async () => {
+  const before = await state('action_case_customer_contract_drafts')
+  await db.exec(migration('2026-10-10_03_optional_final_payment'))
+  await db.exec(migration('2026-10-10_03_optional_final_payment'))
+  assert.deepEqual(await state('action_case_customer_contract_drafts'), before)
+  const project = randomUUID(), recipient = randomUUID(), offer = randomUUID()
+  await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Slutbetalningstest','Testgatan','Test')", [project,org])
+  await db.query("insert into action_case_participants(id,org_id,action_case_id,role,name,email) values($1,$2,$3,'customer','Test','test@example.test')", [recipient,org,project])
+  const legacy = normalizeCustomerOffer({ ...draft(), paymentConditions: { version:1,days:30,standardText:abs18PaymentText },
+    paymentPlan: configurePaymentPlan({ version:1,installments:[{ id:randomUUID(),title:'Mark',condition:'Efter utfört arbete.',plannedDate:'',amountOre:10000 }] },10000,true,20) })
+  delete legacy.paymentPlan.automation.finalEnabled
+  const call = (operation,data) => db.query('select write_customer_contract($1,$2,$3,$4,$5::jsonb)', [org,project,actor,operation,JSON.stringify(data)])
+  await call('save',{ revision:0,body:legacy })
+  const removed = { ...legacy,paymentPlan:configurePaymentPlan(legacy.paymentPlan,10000,true,20,false) }
+  await call('save',{ revision:1,body:removed })
+  const saved = (await db.query('select body from action_case_customer_contract_drafts where action_case_id=$1',[project])).rows[0].body
+  assert.deepEqual(saved.paymentPlan,removed.paymentPlan)
+  assert.equal(saved.paymentPlan.installments.some((r) => r.kind==='final'),false)
+  await db.query('select assert_customer_payment_plan($1::jsonb,true)',[JSON.stringify(removed)])
+  await assert.rejects(call('save',{ revision:2,body:legacy }),/STALE/)
+  for (const finalEnabled of [true,null,'false',0])
+    await assert.rejects(db.query('select assert_payment_automation($1::jsonb,false)',[JSON.stringify({ ...removed,paymentPlan:{ ...removed.paymentPlan,automation:{ ...removed.paymentPlan.automation,finalEnabled } } })]),/INVALID/)
+  const extraFinal = { ...removed,paymentPlan:{ ...removed.paymentPlan,installments:[...removed.paymentPlan.installments,legacy.paymentPlan.installments.at(-1)] } }
+  await assert.rejects(call('save',{ revision:2,body:extraFinal }),/INVALID/)
+  const restored = { ...removed,paymentPlan:configurePaymentPlan(removed.paymentPlan,10000,true,20,true) }
+  await call('save',{ revision:2,body:restored })
+  await call('save',{ revision:3,body:removed })
+  const manual = { ...removed,paymentPlan:configurePaymentPlan(removed.paymentPlan,10000,false,20,false) }
+  await db.query('select assert_customer_payment_plan($1::jsonb,true)',[JSON.stringify(manual)])
+  const snapshot = { ...removed,projectTitle:'Slutbetalningstest',propertyAddress:'Testgatan',customerName:'Test',customerEmail:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test' }
+  await call('publish',{ id:offer,revision:4,confirmed:true,participantId:recipient,email:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test',snapshot,files:[],emailPayload:{to:'test@example.test'},tokenHash:randomUUID() })
+  await call('save',{ revision:4,body:restored })
+  assert.deepEqual((await db.query('select snapshot from action_case_customer_offers where id=$1',[offer])).rows[0].snapshot.paymentPlan,removed.paymentPlan)
+  await db.query("update action_case_customer_offers set status='accepted',accepted_total_ore=10000 where id=$1",[offer])
+  await assert.rejects(call('save',{ revision:5,body:removed }),/ACCEPTED/)
+})
+
 test('explicit imports replace selected texts only, preserve price and copy all editable notes', () => {
   const existing = draft().items
   const other = { ...existing[0], id: randomUUID(), title: 'Tak', scope: 'Behåll' }
