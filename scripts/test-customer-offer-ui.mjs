@@ -28,6 +28,7 @@ import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
 import { copyRegistryCustomer } from '../src/lib/action-cases/customerRegistry.ts'
 import { emptyBillingCustomer } from '../src/lib/action-cases/projectBilling.ts'
 import { editContractProperty, emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
+import { editSiteFacility } from '../src/lib/action-cases/contractSiteFacilities.ts'
 import { normalizePropertyDetails, propertyIdentityKey } from '../src/lib/properties/identity.ts'
 
 const require = createRequire(import.meta.url),
@@ -203,8 +204,22 @@ if (process.argv.includes('--contract-changes')) {
 }
 const estimateState = { draft: structuredClone(state.draft), revision: state.revision, costing: structuredClone(state.costing ?? {}) }
 if (independentContract) { state.offers = []; state.offerDraft = estimateState }
+if (process.argv.includes('--site-facilities')) {
+  state.draft.contractDetails ??= emptyContractDetails()
+  for (const [key,providedBy,details] of [
+    ['electricity','customer','TEST: Byggcentral vid garaget. Förbrukning bekostas av entreprenören enligt överenskommelse.'],
+    ['changing','contractor','TEST: Omklädning och klädförvaring i personalbod. Duschlösning anges i överenskommelsen.'],
+    ['meals','contractor','TEST: Matplats i personalbod med möjlighet att förvara och värma mat.']
+  ]) state.draft.contractDetails.siteFacilities = editSiteFacility(state.draft.contractDetails.siteFacilities,key,{providedBy,paidBy:'contractor',details})
+}
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
+  if (['/__test__/viewport/390','/__test__/viewport/344'].includes(path)) {
+    const width = path.split('/').at(-1)
+    res.setHeader('Content-Type','text/html; charset=utf-8')
+    res.end(`<!doctype html><html lang="sv"><head><title>Gizmo mobiltest ${width}</title><style>body{margin:0}iframe{display:block;border:0;width:${width}px;height:844px}</style></head><body><iframe title="Fiktivt mobilprojekt" src="/uppdrag/${id(1)}?view=contract"></iframe></body></html>`)
+    return
+  }
   const json = (body, status = 200) => {
     res.statusCode = status
     res.setHeader('Content-Type', 'application/json')

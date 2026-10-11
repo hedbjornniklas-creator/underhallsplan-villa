@@ -9,6 +9,7 @@ import { editContractProperty, emptyContractDetails } from '../src/lib/action-ca
 import { contractPricingForEditing } from '../src/lib/action-cases/contractPricing.ts'
 import { changesForEditing, changesDetails, changePricingPatch } from '../src/lib/action-cases/contractChanges.ts'
 import { abs18PaymentText, configurePaymentPlan, syncPaymentPlan, distributePaymentPlan } from '../src/lib/action-cases/customerPaymentPlan.ts'
+import { editSiteFacility, emptySiteFacilityEntry } from '../src/lib/action-cases/contractSiteFacilities.ts'
 
 const db = new PGlite(), org = randomUUID(), actor = randomUUID(), caseId = randomUUID(), participant = randomUUID()
 const migration = (name) => readFileSync(new URL(`../docs/db/${name}.sql`, import.meta.url), 'utf8').replace('create extension if not exists pgcrypto;', '')
@@ -45,6 +46,60 @@ before(async () => {
   await db.exec(migration('2026-10-08_02_contract_other_agreements'))
 })
 after(() => db.close())
+
+test('site-facility agreements survive reload, reject stale clients, freeze at publication and lock after acceptance', async () => {
+  for (const name of ['2026-10-08_04_contract_pricing','2026-10-10_01_contract_change_pricing',
+    '2026-10-10_02_payment_plan_automation','2026-10-10_03_optional_final_payment']) await db.exec(migration(name))
+  const oldDrafts = (await db.query('select body,revision from action_case_customer_contract_drafts order by action_case_id')).rows
+  const oldSnapshots = (await db.query('select snapshot from action_case_customer_offers order by id')).rows
+  await db.exec(migration('2026-10-11_01_contract_site_facilities'))
+  await db.exec(migration('2026-10-11_01_contract_site_facilities'))
+  assert.deepEqual((await db.query('select body,revision from action_case_customer_contract_drafts order by action_case_id')).rows, oldDrafts)
+  assert.deepEqual((await db.query('select snapshot from action_case_customer_offers order by id')).rows, oldSnapshots)
+  const project = randomUUID(), recipient = randomUUID(), publishedId = randomUUID()
+  await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Arbetsplatstest','Testgatan','Test')", [project,org])
+  await db.query("insert into action_case_participants(id,org_id,action_case_id,role,name,email) values($1,$2,$3,'customer','Test','test@example.test')", [recipient,org,project])
+  const details = emptyContractDetails()
+  for (const key of Object.keys(details.fields)) details.fields[key] = { status: 'specified', text: 'Testuppgift' }
+  details.advice.status = 'none'
+  details.siteFacilities = editSiteFacility(undefined, 'electricity', { providedBy: 'customer', paidBy: 'contractor', details: 'TEST: Byggcentral vid garaget.' })
+  details.siteFacilities = editSiteFacility(details.siteFacilities, 'meals', { providedBy: 'contractor', paidBy: 'contractor', details: 'TEST: Matplats i bod.' })
+  const body = normalizeCustomerOffer({ ...draft(), terms: 'Testvillkor', paymentTerms: 'Efter utfört arbete', schedule: 'Avtalade tider', contractDetails: details })
+  const call = (operation,data,user=actor,organization=org) => db.query('select write_customer_contract($1,$2,$3,$4,$5::jsonb)',[organization,project,user,operation,JSON.stringify(data)])
+  const saved = async () => (await db.query('select body,revision from action_case_customer_contract_drafts where action_case_id=$1',[project])).rows[0]
+  await call('save',{revision:0,body})
+  assert.deepEqual((await saved()).body.contractDetails.siteFacilities, details.siteFacilities)
+  const missing = structuredClone(body); delete missing.contractDetails.siteFacilities
+  await assert.rejects(call('save',{revision:1,body:missing}),/STALE/)
+  await assert.rejects(call('save',{revision:0,body}),/STALE/)
+  await assert.rejects(call('save',{revision:1,body},randomUUID()),/CUSTOMER_OFFER_NOT_FOUND/)
+  await assert.rejects(call('save',{revision:1,body},actor,randomUUID()),/FORBIDDEN|NOT_FOUND/)
+  for (const value of [null, {version:2,entries:{}}, {version:1,entries:[]}, {version:1,entries:{other:{}}},
+    {version:1,entries:{electricity:{providedBy:'landlord',paidBy:'',details:''}}},
+    {version:1,entries:{electricity:{providedBy:'',paidBy:null,details:''}}},
+    {version:1,entries:{electricity:{providedBy:'',paidBy:'',details:'a'.repeat(2001)}}}]) {
+    const bad = structuredClone(body); bad.contractDetails.siteFacilities = value
+    await assert.rejects(call('save',{revision:1,body:bad}),/INVALID/)
+  }
+  assert.equal((await saved()).revision,1)
+  const partial = structuredClone(body); partial.contractDetails.siteFacilities.entries.meals.paidBy = ''
+  await call('save',{revision:1,body:partial})
+  await assert.rejects(db.query('select assert_customer_contract($1::jsonb,true)',[JSON.stringify(partial)]),/INCOMPLETE/)
+  const publish = (snapshot,revision) => call('publish',{id:publishedId,revision,confirmed:true,participantId:recipient,email:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test',snapshot,files:[],emailPayload:{to:'test@example.test'},tokenHash:randomUUID()})
+  const metadata = {projectTitle:'Arbetsplatstest',propertyAddress:'Testgatan',customerName:'Test',customerEmail:'test@example.test',issuerName:'Bygg AB',replyEmail:'bygg@example.test'}
+  await assert.rejects(publish({...partial,...metadata},2),/INCOMPLETE/)
+  await call('save',{revision:2,body})
+  await publish({...body,...metadata},3)
+  const changed = structuredClone(body)
+  changed.contractDetails.siteFacilities = editSiteFacility(details.siteFacilities,'meals',emptySiteFacilityEntry())
+  await call('save',{revision:3,body:changed})
+  assert.deepEqual((await saved()).body.contractDetails.siteFacilities.entries.meals,emptySiteFacilityEntry())
+  assert.deepEqual((await db.query('select snapshot from action_case_customer_offers where id=$1',[publishedId])).rows[0].snapshot.contractDetails.siteFacilities,details.siteFacilities)
+  await db.query("update action_case_customer_offers set status='accepted',accepted_total_ore=10000 where id=$1",[publishedId])
+  await assert.rejects(call('save',{revision:4,body}),/ACCEPTED/)
+  await assert.rejects(db.query("update action_case_customer_offers set snapshot=jsonb_set(snapshot,'{contractDetails,siteFacilities,entries}','{}'::jsonb) where id=$1",[publishedId]),/IMMUTABLE/)
+  assert.equal((await db.query("select has_function_privilege('authenticated','assert_contract_site_facilities(jsonb,boolean)','execute') allowed")).rows[0].allowed,false)
+})
 
 test('payment automation migration protects percentages, payment days, revisions and signed snapshots', async () => {
   await db.exec(migration('2026-10-08_04_contract_pricing'))

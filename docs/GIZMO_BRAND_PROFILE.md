@@ -97,6 +97,14 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   PDF-bilagan, efter projektspecifika undantag. De kan redigeras i avtalet och
   fryses med versionen. Övriga överenskommelser ligger under Övrigt, inte som
   en extra sektion för beställarens arbeten.
+- Övrigt har Arbetsplatsens förutsättningar som en kompakt, öppningsbar lista:
+  byggström, vatten, toalett/handtvätt, omklädning/dusch, matplats/paus,
+  förråd/upplag, tillträde/parkering och städning/avfall. Varje punkt anger
+  vem som ordnar, vem som bekostar samt plats och villkor. Inga skyldigheter
+  eller kostnader väljs automatiskt. Tomma punkter utelämnas ur avtalet;
+  påbörjade punkter måste kompletteras före utskick. Avtalsutkastets autospar
+  och versionslåsning används. Praktiska överenskommelser ersätter inte
+  arbetsmiljöansvaret och kopieras inte automatiskt till andra projekt.
 - Avrådande består av två direkt redigerbara textfält enligt ABS 18:s
   formulär: arbetena som avrådandet gäller och På grund av. Ingen statusmeny
   eller separat avrådansdag. Tomma fält sammanfattas som Inte angivet;
@@ -217,6 +225,9 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-11: Användaren begär praktiska avtalsförutsättningar för el,
+  ombyte och matplats med mera. Införs under Övrigt, med uttryckligt ansvar,
+  kostnadsansvar och plats/villkor per punkt. Signerade versioner behålls.
 - 2026-10-10: Användaren godkänner att Tid för betalning visar en skrivskyddad,
   kompakt sammanställning av betalningsplan och villkor, med summakontroll.
   Redigering sker endast i betalplansfliken och använder samma avtalsutkast.
@@ -313,6 +324,27 @@ Kontrollera listval, sökning, filter, tomläge, direktlänk och webbläsarens t
 Prova osparat offertutkast och planering genom alla projektdelar, betalningsplan,
 åtgärdspanel, filvisning och skrivskyddad beställarförhandsgranskning. Kontrollera
 dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering.
+
+### Arbetsplatsens förutsättningar 2026-10-11
+
+- Åtta valfria rader under Övrigt, utan förvalt ordnande eller kostnadsansvar.
+  Aktiva uppgifter följer med avtalsgranskningen; tomma punkter utelämnas.
+- 441 action-case-regressionstester passerade efter de sista ändringarna i
+  rensning och låsskydd, inklusive åtta riktade tester. TypeScript,
+  riktad ESLint och den lokala komponentfixturens webpack-bygge passerar.
+- Databasprovet kör migrationen två gånger, behåller äldre utkast/versioner,
+  kontrollerar revisions- och organisationsgränser, avvisar äldre klienters
+  borttappade uppgifter, tillåter uttrycklig rensning och låser efter godkännande.
+- Lokala klicktester med fiktiva uppgifter: skilda ansvarsval, flera rader,
+  autospar, sparfel/återförsök, omladdning och skrivskyddad avtalsgranskning.
+  Tangentbord och 390/344 px mobilbredder kontrollerade utan sidöverflöde.
+  Mobilkontrollen använder en fastbreddsiframe i testfixturen eftersom
+  webbläsarverktygets viewport-inställning inte slog igenom på den dolda fliken.
+- Migration `2026-10-11_01_contract_site_facilities.sql` är körd av användaren.
+  Skrivfria produktionskontroller verifierar giltiga uppgifter, avvisning av
+  felaktiga/ofullständiga uppgifter, integration i ordinarie avtalskontroll och
+  nekad anonym körning. Driftsättning kontrolleras separat efter publicering.
+  Inga produktionsuppgifter eller utskick ändrades vid verifieringen.
 
 ### Betalningsplan 2026-10-10
 

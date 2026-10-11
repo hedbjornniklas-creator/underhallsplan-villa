@@ -166,6 +166,7 @@ function component(file, extra = {}) {
     '@/lib/action-cases/customerOffers': offers,
     '@/lib/action-cases/customerPaymentPlan': payments,
     './CustomerPaymentPlan': { PaymentPlanDocument: 'payment-plan' },
+    './CustomerContractSiteFacilities': { SiteFacilitiesDocument: 'site-facilities' },
     './CustomerContractPartiesEditor': { ContractPartiesDocument: 'parties' },
     './CustomerContractPricing': { ContractPriceDocument: 'contract-pricing' },
     './CustomerContractChanges': { ContractChangesDocument: 'change-pricing' },

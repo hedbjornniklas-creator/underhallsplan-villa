@@ -4,6 +4,7 @@ import { useId } from 'react'
 import { Check, Download, FileText } from 'lucide-react'
 import { CustomerContractDocument } from './CustomerContractFields'
 import { PaymentPlanDocument } from './CustomerPaymentPlan'
+import { SiteFacilitiesDocument } from './CustomerContractSiteFacilities'
 import { paymentConditionsText } from '@/lib/action-cases/customerPaymentPlan'
 import { ContractPartiesDocument } from './CustomerContractPartiesEditor'
 import { ContractPriceDocument } from './CustomerContractPricing'
@@ -255,6 +256,7 @@ export default function CustomerOfferDocument({
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
           {s.terms || 'Ej angivet'}
         </p>
+        <SiteFacilitiesDocument value={s.contractDetails?.siteFacilities} />
         {s.contractDetails?.otherAgreements && <div className="mt-5">
           <h3 className="font-semibold">Övriga överenskommelser</h3>
           <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.otherAgreements}</p>

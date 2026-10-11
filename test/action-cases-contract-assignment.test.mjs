@@ -272,6 +272,7 @@ test('the real contract document prints ordered metadata, extra scope and exclus
     if(name==='lucide-react') return {Check:'svg',Download:'svg',FileText:'svg'}
     if(name==='./CustomerContractFields') return {CustomerContractDocument:'contract-details'}
     if(name==='./CustomerPaymentPlan') return {PaymentPlanDocument:'payment-plan'}
+    if(name==='./CustomerContractSiteFacilities') return {SiteFacilitiesDocument:'site-facilities'}
     if(name==='./CustomerContractPartiesEditor') return {ContractPartiesDocument:'parties'}
     if(name==='./CustomerContractPricing') return {ContractPriceDocument:'contract-pricing'}
     if(name==='@/lib/action-cases/customerOffers') return offers

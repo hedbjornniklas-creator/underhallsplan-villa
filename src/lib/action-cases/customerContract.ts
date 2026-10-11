@@ -4,6 +4,8 @@ import { emptyPropertyDetails, normalizePropertyDetails, propertyDetailsText, pr
 import { normalizeAssignment, assignmentIssues, assignmentDocumentsText, type ContractAssignment } from './contractAssignment.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { changesEntry, changesIssues, normalizeContractChanges, type ContractChanges } from './contractChanges.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizeSiteFacilities, siteFacilitiesIssues, type ContractSiteFacilities } from './contractSiteFacilities.ts'
 
 export const contractFields = [
   {
@@ -78,6 +80,7 @@ export type CustomerContractDetails = {
   version: 1
   changesPricing?: ContractChanges
   otherAgreements?: string
+  siteFacilities?: ContractSiteFacilities
   workEnvironmentDefaultVersion?: 'abs18-2018-06'
   assignment?: ContractAssignment
   property?: PropertyDetails & { sourcePropertyId?: string }
@@ -258,6 +261,7 @@ export function normalizeContractDetails(
     result.otherAgreements = str(input.otherAgreements, 6200)
     if (result.fields.customerWork.text || result.fields.customerWork.status !== 'unreviewed') invalid()
   }
+  if (input.siteFacilities !== undefined) result.siteFacilities = normalizeSiteFacilities(input.siteFacilities)
   if (input.assignment !== undefined) {
     result.assignment = normalizeAssignment(input.assignment)
     result.fields.documents = { status: assignmentIssues(result.assignment).length ? 'unreviewed' : 'specified', text: assignmentDocumentsText }
@@ -298,6 +302,7 @@ export function contractDetailsIssues(
   // Legacy drafts and signed snapshots are not silently upgraded to a new contract.
   if (!value) return []
   const issues: string[] = []
+  issues.push(...siteFacilitiesIssues(value.siteFacilities))
   if (value.advice.format === 'contract-fields') {
     if (Boolean(value.advice.work.trim()) !== Boolean(value.advice.reason.trim()))
       issues.push('Komplettera avrådandets arbeten och på grund av vad entreprenören avråder.')

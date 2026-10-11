@@ -53,6 +53,7 @@ import { contractAdviceForEditing, contractAdviceSummary, contractDetailsForEdit
 import { PaymentPlanDocument, PaymentPlanEditor, PaymentPlanSummary } from './CustomerPaymentPlan'
 import { abs18PaymentText, paymentConditionsText, syncPaymentPlan } from '@/lib/action-cases/customerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
+import CustomerContractSiteFacilities from './CustomerContractSiteFacilities'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import CustomerOfferSourcePicker from './CustomerOfferSourcePicker'
@@ -943,6 +944,8 @@ export default function CustomerOfferEditor({
             {contractSection('insurance', 'Försäkringar och säkerhet', ['insurance', 'completionProtection', 'security'])}
             <ProjectEditorRow title="Övrigt" summary={draft.terms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'} open={expanded === 'terms'} onToggle={() => setExpanded(expanded === 'terms' ? null : 'terms')}>
               <label className="block text-sm">Villkor och hänvisning till avtalshandling *<textarea className={field} rows={5} value={draft.terms} onChange={(e) => update({ terms: e.target.value })} /></label>
+              {contractView && <CustomerContractSiteFacilities value={draft.contractDetails?.siteFacilities} disabled={locked || Boolean(busy)}
+                onChange={(siteFacilities) => update({ contractDetails: { ...(draft.contractDetails ?? emptyContractDetails()), siteFacilities } })} />}
               {contractView && draft.contractDetails?.otherAgreements !== undefined && <label className="mt-4 block text-sm">Övriga överenskommelser
                 <textarea className={field} rows={3} maxLength={6200} value={draft.contractDetails.otherAgreements} onChange={(e) => update({ contractDetails: { ...draft.contractDetails!, otherAgreements: e.target.value } })} />
               </label>}

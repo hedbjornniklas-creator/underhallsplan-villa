@@ -208,6 +208,10 @@ export async function separateCustomerChoices(ctx: Context, caseId: string, payl
   checked(result.error)
 }
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+  if (draft.contractDetails?.siteFacilities) {
+    const guard = await createSupabaseAdminClient().rpc('assert_contract_site_facilities', { p_body: draft, p_complete: complete })
+    checked(guard.error)
+  }
   if (draft.paymentConditions || draft.paymentPlan?.automation) {
     const guard = await createSupabaseAdminClient().rpc('assert_payment_automation', { p_body: draft, p_complete: complete })
     checked(guard.error)

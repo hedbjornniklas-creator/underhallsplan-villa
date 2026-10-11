@@ -592,6 +592,10 @@
 .gizmo-contract-form > div > .gizmo-editor-row { margin-block: 0; }
 .gizmo-contract-editor .gizmo-editor-row-toggle { min-height: 52px; padding: 6px 10px; }
 .gizmo-contract-editor .gizmo-editor-row-body { padding: 8px 10px 14px; }
+.gizmo-site-facilities { min-width: 0; margin-block: 12px; }
+.gizmo-site-facilities legend { padding: 0; }
+.gizmo-site-facilities-header { background: #EDF1F1; min-height: 32px; padding: 5px 10px; font-size: 12px; font-weight: 600; }
+.gizmo-site-facilities > .gizmo-editor-row { margin-block: 0; }
 .gizmo-contract-form > .gizmo-editor-row[data-open='true'],
 .gizmo-contract-form > div > .gizmo-editor-row[data-open='true'] {
   position: relative; border-bottom: 2px solid #D5DCDD; margin-bottom: 12px;
