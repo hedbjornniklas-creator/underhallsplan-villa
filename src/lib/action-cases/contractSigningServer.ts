@@ -71,7 +71,7 @@ export async function freezeContractForSigning(ctx: Context, caseId: string, pay
   const selected = draft.attachmentIds.length ? await db.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes,storage_bucket,file_path')
     .eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('id', draft.attachmentIds) : { data: [], error: null }
   checked(selected.error)
-  if (selected.data?.length !== draft.attachmentIds.length) throw new Error('CUSTOMER_OFFER_FILES')
+  if (selected.data?.length !== draft.attachmentIds.length) throw new Error('CUSTOMER_OFFER_SIGNING_FILES_MISSING')
   const sources = draft.attachmentIds.map((id) => selected.data!.find((f) => f.id === id)!)
   if (sources.reduce((sum, f) => sum + Number(f.file_size_bytes), 0) > 100_000_000) throw new Error('CUSTOMER_OFFER_PDF_LIMIT')
   const prefix = `${ctx.orgId}/${caseId}/signing/${id}`, files: FrozenFile[] = [], paths: string[] = []
@@ -130,13 +130,18 @@ export async function downloadCurrentContractPdf(ctx: Context, caseId: string, r
   const selected = draft.attachmentIds.length ? await db.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes')
     .eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('id', draft.attachmentIds) : { data: [], error: null }
   checked(selected.error)
-  if (selected.data?.length !== draft.attachmentIds.length) throw new Error('CUSTOMER_OFFER_FILES')
-  const files = draft.attachmentIds.map((id) => {
-    const f = selected.data!.find((f) => f.id === id)!
-    return { id: f.id, fileName: f.file_name, contentType: f.content_type, fileSizeBytes: Number(f.file_size_bytes) }
+  const unavailableAttachments: string[] = []
+  const files = draft.attachmentIds.flatMap((id, index) => {
+    const f = selected.data?.find((f) => f.id === id)
+    if (!f) {
+      const reference = draft.contractDetails?.assignment?.documents.find((doc) => doc.fileId === id)
+      unavailableAttachments.push(reference?.name || `Handling ${index + 1} (namn saknas)`)
+      return []
+    }
+    return [{ id: f.id, fileName: f.file_name, contentType: f.content_type, fileSizeBytes: Number(f.file_size_bytes) }]
   })
   const { renderContractSigningPdf } = await import('./contractSigningPdf')
-  const bytes = await renderContractSigningPdf({ id: caseId, version: 0, draftRevision: revision, createdAt: new Date().toISOString(), snapshot: contractSnapshot(draft, project), files })
+  const bytes = await renderContractSigningPdf({ id: caseId, version: 0, draftRevision: revision, createdAt: new Date().toISOString(), snapshot: contractSnapshot(draft, project), files, unavailableAttachments })
   if (bytes.length > 50_000_000 || bytes.length < 100) throw new Error('CUSTOMER_OFFER_PDF_LIMIT')
   return { bytes, fileName: `Avtal-utkast-r${revision}.pdf`, contentType: 'application/pdf' }
 }

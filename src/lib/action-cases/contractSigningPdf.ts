@@ -17,13 +17,16 @@ import { siteFacilityFields, siteFacilityPartyLabel, siteFacilityUsed } from './
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { propertyFields } from '../properties/identity.ts'
 
-export type SigningPdfInput = { id: string; version: number; draftRevision?: number; createdAt: string; snapshot: CustomerOfferSnapshot; files: CustomerOfferFile[] }
+export type SigningPdfInput = { id: string; version: number; draftRevision?: number; createdAt: string; snapshot: CustomerOfferSnapshot; files: CustomerOfferFile[]; unavailableAttachments?: string[] }
 export type SigningPdfSection = { title: string; paragraphs: string[]; columns?: string[]; rows?: string[][] }
 const section = (title: string, ...paragraphs: string[]): SigningPdfSection => ({ title, paragraphs: paragraphs.filter((v) => v.trim()) })
 
 // Only saved customer-facing fields are projected, never costing or current defaults.
-export function contractSigningSections({ snapshot: s, files, draftRevision }: SigningPdfInput): SigningPdfSection[] {
+export function contractSigningSections({ snapshot: s, files, draftRevision, unavailableAttachments }: SigningPdfInput): SigningPdfSection[] {
   const result: SigningPdfSection[] = [], d = s.contractDetails, p = s.contractParties
+  if (draftRevision !== undefined && unavailableAttachments?.length) result.push(section('Bilagor saknas i projektet',
+    'Detta är ett olåst utkast. Följande valda bilagor kunde inte hittas i projektet och har inte hämtats. Kontrollera handlingsförteckningen innan avtalet låses eller skrivs under.',
+    ...unavailableAttachments))
   if (p) {
     result.push(section('Beställare', ...p.customers.map((c, i) => `Beställare ${i + 1}: ${c.name}${c.personalNumber ? `\nPersonnummer: ${c.personalNumber}` : ''}`),
       `${p.street}\n${p.postalCode} ${p.city}`, `Telefon: ${p.phone || '-'}\nMobiltelefon: ${p.mobile || '-'}\nE-post: ${p.email}`))

@@ -116,10 +116,33 @@ test('draft PDF uses only saved contract data and does not archive, lock, send o
   for (const revision of [0,-1,NaN,1.5]) await assert.rejects(h.downloadCurrentContractPdf(ctx,caseId,revision),/INVALID/)
   await assert.rejects(harness({otherTenant:true}).downloadCurrentContractPdf(ctx,caseId,1),/NOT_FOUND/)
   await assert.rejects(harness({online:'accepted'}).downloadCurrentContractPdf(ctx,caseId,1),/ACCEPTED/)
-  await assert.rejects(harness({missingAttachment:true}).downloadCurrentContractPdf(ctx,caseId,1),/FILES/)
   const selected=harness();await selected.downloadCurrentContractPdf(ctx,caseId,1)
   assert.equal(selected.rendered[0].files[0].fileName,'Ritning.pdf')
   assert.equal(selected.blobs.size,1);assert.equal(selected.calls.length,0)
+})
+
+test('missing attachment references remain in draft PDF with a warning, but cannot be frozen',async()=>{
+  const h=harness(), missingId=id(999)
+  h.draft.attachmentIds.push(missingId)
+  h.draft.contractDetails.assignment={documents:[{fileId:missingId,type:'',name:'',date:''}],additionalScope:'',exclusions:'',documentNotes:''}
+  const before=JSON.stringify(h.draft)
+  await h.downloadCurrentContractPdf(ctx,caseId,1)
+  assert.deepEqual(h.rendered[0].unavailableAttachments,['Handling 2 (namn saknas)'])
+  assert.deepEqual(h.rendered[0].snapshot.attachmentIds,[fileId,missingId])
+  assert.equal(h.rendered[0].snapshot.contractDetails.assignment.documents[0].fileId,missingId)
+  assert.equal(h.rendered[0].files.length,1)
+  assert.equal(h.rendered[0].files[0].id,fileId)
+  assert.equal(JSON.stringify(h.draft),before)
+  assert.equal(h.calls.length,0);assert.equal(h.stored.length,0);assert.equal(h.blobs.size,1)
+  assert.ok(h.reads.filter(r=>r.table==='action_case_attachments').every(r=>r.filters.some(([k,v])=>k==='org_id'&&v===ctx.orgId)&&r.filters.some(([k,v])=>k==='action_case_id'&&v===caseId)))
+  await assert.rejects(freeze(h),/CUSTOMER_OFFER_SIGNING_FILES_MISSING/)
+  assert.equal(h.calls.length,0);assert.equal(h.stored.length,0)
+  h.draft.contractDetails.assignment.documents[0].name='Äldre ritning'
+  await h.downloadCurrentContractPdf(ctx,caseId,1)
+  assert.deepEqual(h.rendered.at(-1).unavailableAttachments,['Äldre ritning'])
+  const allMissing=harness({missingAttachment:true});await allMissing.downloadCurrentContractPdf(ctx,caseId,1)
+  assert.deepEqual(allMissing.rendered[0].files,[])
+  assert.deepEqual(allMissing.rendered[0].unavailableAttachments,['Handling 1 (namn saknas)'])
 })
 
 test('current PDF endpoint returns the immutable archive once locked, not a new rendering',async()=>{

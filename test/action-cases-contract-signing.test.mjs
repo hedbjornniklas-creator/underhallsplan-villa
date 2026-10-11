@@ -38,6 +38,16 @@ test('shared PDF renderer produces printable PDF without mutating frozen evidenc
   assert.equal(JSON.stringify(value), before)
 })
 
+test('draft PDF clearly marks unavailable attachments without changing references or frozen sections', async () => {
+  const value={...input(),draftRevision:5,unavailableAttachments:['Handling 7 (namn saknas)']},before=JSON.stringify(value)
+  const sections=contractSigningSections(value)
+  assert.equal(sections[0].title,'Bilagor saknas i projektet')
+  assert.match(sections[0].paragraphs.join('\n'),/olåst utkast|Handling 7/)
+  assert.equal((await renderContractSigningPdf(value)).subarray(0,5).toString(),'%PDF-')
+  assert.equal(JSON.stringify(value),before)
+  assert.equal(contractSigningSections({...value,draftRevision:undefined}).some(s=>s.title==='Bilagor saknas i projektet'),false)
+})
+
 test('draft PDF renders empty and partially filled contracts without completeness checks or invented markups', async () => {
   const value = input()
   value.draftRevision = 12

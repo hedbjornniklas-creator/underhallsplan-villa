@@ -35,6 +35,7 @@ export function customerOfferError(error: unknown) {
     CUSTOMER_OFFER_DELIVERY_SCHEMA: [503, 'Delning och registrering av underskriven kopia behöver aktiveras av administratören.'],
     CUSTOMER_OFFER_SIGNING_METHOD: [409, 'Kontrollera valt signeringssätt. Digitalt godkännande och papperssignering är separata flöden.'],
     CUSTOMER_OFFER_SIGNED_COPY: [400, 'Välj en PDF, högst 20 MB, och bekräfta att samtliga parter har skrivit under rätt avtalsversion.'],
+    CUSTOMER_OFFER_SIGNING_FILES_MISSING: [409, 'En vald bilaga saknas i projektet. Kontrollera handlingsförteckningen och ta bort eller ersätt hänvisningen före låsning.'],
     CUSTOMER_OFFER_LOCKED: [409, 'Avtalsversionen är låst för signering. Skapa ett nytt utkast om du behöver ändra den.'],
     CUSTOMER_OFFER_SIGNING_SCHEMA: [503, 'Låsning och PDF behöver aktiveras av administratören. Avtalsutkastet är kvar.'],
     CUSTOMER_OFFER_PDF_FAILED: [503, 'Avtals-PDF:en kunde inte skapas. Kontrollera avtalsstatus innan du försöker igen.'],

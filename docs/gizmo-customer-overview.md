@@ -1106,6 +1106,11 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 - Last PDF och bilagekopior ar oforanderliga. Nytt utkast behaller gamla versioner.
   Behorighet, revisionskontroll och filintegritet ar fortfarande tekniska krav;
   innehallsgranskning ar anvandarens ansvar, inte ett villkor i lasningsfunktionen.
+- En saknad filreferens far inte stoppa ett olast PDF-utkast. PDF:n redovisar
+  tydligt vilka bilagor som saknas; sparade handlingsrader och texter bevaras.
+  Lasning och frysta arkiv behaller filkontrollerna och far inte tyst utelamna
+  en vald bilaga. Saknad fil ger ett konkret fel om handlingsforteckningen,
+  inte ett generellt meddelande om UE-offerter.
 - Kor `docs/db/2026-10-11_03_optional_contract_locking.sql` efter `_02` innan
   publicering av den korrigerade lasningen. Ingen befintlig avtalsdata skrivs om.
 
@@ -1160,6 +1165,10 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   for bada bestallare och entreprenoren finns. Dator samt 390/344 px
   mobilbredd kontrollerade utan sidledes overflode. Inga verkliga avtal
   delades, signerades eller registrerades i dessa tester.
+- Publiceringsuppfoljning: 465 action-case-tester passerade efter PDF-korrigering
+  for saknade bilagereferenser. Befintligt projekt inneholl en tom handlingsrad
+  med en saknad fil; inga sparade uppgifter eller bilageval andrades. Utkastet
+  kan hamtas med en tydlig varning, medan lasningen fortsatt skyddar filarkivet.
 
 ## Avtalets prisdel 2026-10-08
 
