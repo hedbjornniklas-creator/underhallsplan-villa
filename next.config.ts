@@ -37,6 +37,7 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     '/api/action-cases/*/customer-offers': ['./public/abs18-2018-06.pdf'],
+    '/api/action-cases/*/contract-signing{,/**}': ['./public/uppdrag/brand/pdf/*.ttf'],
     '/api/**/*': [
       'node_modules/@sparticuz/chromium/bin/**/*',
       'node_modules/@sparticuz/chromium/build/**/*',

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { activeSigningVersion, signingPdfFilename } from '../src/lib/action-cases/contractSigning.ts'
-import { contractSigningSections, renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
+import { contractSigningHeading, contractSigningSections, renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 import { emptyCustomerOffer, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import { signingSnapshot, signingId } from './fixtures/contract-signing.ts'
 
@@ -36,6 +36,60 @@ test('shared PDF renderer produces printable PDF without mutating frozen evidenc
   assert.equal(bytes.subarray(0, 5).toString(), '%PDF-')
   assert.ok(bytes.length > 8000)
   assert.equal(JSON.stringify(value), before)
+})
+
+test('PDF heading identifies the contract type, independently of the internal project name', () => {
+  const value = input().snapshot
+  value.projectTitle = 'INTERNAL PROJECT NAME - NEVER PRINT'
+  value.contractForm = 'abs18'
+  assert.deepEqual(contractSigningHeading(value), { title: 'ENTREPRENADKONTRAKT', form: 'ABS 18' })
+  assert.doesNotMatch(JSON.stringify(contractSigningSections({ ...input(), snapshot: value })), /INTERNAL PROJECT NAME/)
+  value.contractForm = 'custom'
+  assert.deepEqual(contractSigningHeading(value), { title: 'ENTREPRENADAVTAL', form: 'Särskilda villkor' })
+  const source = readFileSync(new URL('../src/lib/action-cases/contractSigningPdf.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /s\.projectTitle/)
+})
+
+test('one document table preserves saved order, text, dates and selected file names without MIME metadata', () => {
+  const value = input()
+  value.snapshot.contractDetails.assignment = {
+    documents: [
+      { id: signingId(10), fileId: signingId(20), type: 'Situationsplan', name: 'Situationsplan A-01', date: '2026-05-11' },
+      { id: signingId(11), fileId: signingId(21), type: 'Beskrivning', name: 'Egen sparad text', date: '2026-06-22' },
+    ], documentNotes: 'Sparad bilageordning gäller.', additionalScope: 'Kompletterande uppdrag', exclusions: 'Sparad avgränsning',
+  }
+  value.files = [
+    { id: signingId(20), fileName: 'Situationsplan_original.pdf', contentType: 'application/pdf', fileSizeBytes: 100 },
+    { id: signingId(22), fileName: 'Extra bilaga.pdf', contentType: 'application/pdf', fileSizeBytes: 200 },
+  ]
+  const before = JSON.stringify(value), sections = contractSigningSections(value)
+  const tables = sections.filter((s) => s.title === 'Handlingar som ingår i uppdraget')
+  assert.equal(tables.length, 1)
+  assert.deepEqual(tables[0].rows, [
+    ['Situationsplan', 'Situationsplan A-01\nFil: Situationsplan_original.pdf', '2026-05-11'],
+    ['Beskrivning', 'Egen sparad text', '2026-06-22'],
+    ['Bilaga', 'Extra bilaga.pdf', ''],
+  ])
+  assert.match(tables[0].paragraphs.join('\n'), /Sparad bilageordning|låsta tillsammans/)
+  assert.doesNotMatch(JSON.stringify(sections), /application\/pdf|Bilagor - låsta separata dokument/)
+  assert.equal(JSON.stringify(value), before)
+})
+
+test('PDF work-part fields have separate labels and price tables use matching numeric columns', () => {
+  const value = input()
+  const part = contractSigningSections(value).find((s) => s.title === 'Mark och grund')
+  assert.equal(part.blocks[0].label, 'Arbetets omfattning')
+  assert.ok(part.blocks.some((b) => b.label === 'Ingår inte' && b.text === 'Bergschakt ingår inte.'))
+  for (const display of ['priced', 'unpriced', 'total']) for (const split of ['combined', 'separate']) {
+    value.snapshot.contractPricing.display = display
+    value.snapshot.contractPricing.split = split
+    const price = contractSigningSections(value).find((s) => s.group === 'price')
+    assert.equal(price.columnWidths.length, price.columns.length)
+    assert.equal(price.columnWidths.reduce((a, b) => a + b, 0), 1)
+    assert.ok(price.numericColumns.every((i) => i < price.columns.length))
+    assert.equal(price.rows.at(-1).length, price.columns.length)
+    assert.equal(price.totalRow, true)
+  }
 })
 
 test('draft PDF clearly marks unavailable attachments without changing references or frozen sections', async () => {
@@ -75,7 +129,7 @@ test('released versions do not lock a new draft; filenames never expose names', 
 
 test('all signature lines stay in one nonbreaking group on printable PDFs', () => {
   const source=readFileSync(new URL('../src/lib/action-cases/contractSigningPdf.ts',import.meta.url),'utf8')
-  assert.match(source,/h\(View, \{ wrap: false \},\s*text\('Underskrifter'/)
+  assert.match(source,/h\(View, \{ wrap: false \},\s*band\(groups\.length \+ 1, 'Underskrifter'/)
 })
 test('signing routes never send, accept or expose anonymous downloads', () => {
   const route = readFileSync(new URL('../src/app/api/action-cases/[caseId]/contract-signing/route.ts',import.meta.url),'utf8')

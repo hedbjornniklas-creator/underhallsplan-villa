@@ -1173,6 +1173,43 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   underskriftsrader grupperas pa samma sida; en namnlos saknad handling far
   inget radnummer som kan forvaxlas med en annan post i handlingsforteckningen.
 
+## Beslut 2026-10-11: Avtals-PDF enligt varumarkesprofilen
+
+- PDF:en inleds med tydlig avtalstyp: Entreprenadkontrakt / ABS 18, eller
+  Entreprenadavtal / Sarskilda villkor for egen avtalsgrund. Under detta visas
+  avtalets redigerbara rubrik. Projektets interna namn visas inte, inte heller
+  i sidhuvud eller PDF-metadata. Projektet byter inte namn genom denna andring.
+- A4-layouten ateranvander HusHubs gemensamma PDF-renderare med lokalt inbaddad
+  Manrope 400/600/700. Vit yta, grafittext, tonade neutrala rubrikband och en
+  liten gul accent foljer Gizmos varumarkesprofil v2.1. Entreprenoren ar avsandare.
+- Forstasidan samlar bestallare, entreprenor, ovriga medverkande, fastighet och
+  pris. Numrerade avsnitt foljer daremot avtalets logiska ordning; arbetsdelarnas
+  falt har tydliga etiketter. Fortsattningssidor har sidhuvud och sidnummer.
+- Sparade handlingar redovisas i en gemensam lista med typ, eget namn, filnamn
+  om det avviker och datum. Extra utvalda filer utan handlingsrad laggs sist.
+  Den dubblerade tekniska MIME-listan tas bort. Filerna ar fortfarande separata
+  bilagor, inte inbaddade PDF-sidor. Sparade rader och saknade filreferenser
+  tas inte bort; ett olast utkast visar fortsatt varning for saknade bilagor.
+- Prisredovisning, uppdelning mellan arbete/material, lopande prisgrunder,
+  betalplan, villkor och egna texter behalls. Belopp hogerjusteras och summor
+  framhavs. Rubriker foljer med tabeller/forsta textstycket och samtliga
+  underskrifter halls samman med plats for manuell signering.
+- Detta ar en egen avtalslayout, inte en andrad version av ABS 18-blanketten.
+  Bilagda originalvillkor andras inte. Inga juridiska standardtexter eller
+  uppgifter fylls i av PDF-motorn. Utkast marks uttryckligen som olasta.
+- Redan lasta/arkiverade versioner hamtas fortfarande som sina exakta sparade
+  PDF-bytes. Ny layout galler endast nya renderingar; ingen databasandring,
+  automatisk delning eller signering sker.
+- Verifiering: 469 action-case-tester passerade, samt 24 fokuserade tester
+  efter sista sidbrytningsjusteringen. Projektets sparade revision 199 lastes
+  utan dataskrivning och de tio A4-sidorna granskades visuellt. Textkontroll
+  bekraftar att egna texter, filnamn, datum och belopp finns kvar. Ytterligare
+  prov omfattar tomt/egenformat, langa texter och filnamn, tva bestallare,
+  lopande/blandat pris samt alla sex prisvisningar. Sidhuvud, sidfot, marginaler,
+  underskrifter och inbaddade typsnitt kontrollerades i tolv prov-PDF:er.
+  De tre Manrope-filerna finns i bade lasnings- och utkastsruttens byggmanifest.
+  Riktad ESLint, TypeScript och produktionsbygget med webpack passerade.
+
 ## Avtalets prisdel 2026-10-08
 
 - Avtalets nya prisdel: fast, lopande eller kombinerat pris i
