@@ -1,5 +1,7 @@
 import React from 'react'
-import { Document, Page, StyleSheet, Text, View, renderToBuffer, type DocumentProps, type TextProps } from '@react-pdf/renderer'
+import { Document, Page, StyleSheet, Text, View, type DocumentProps, type TextProps } from '@react-pdf/renderer'
+// @ts-expect-error Explicit extensions support the shared Node PDF test runner.
+import { renderPdfDocument } from '../pdf/renderDocument.ts'
 import type { EbFollowUpConfirmation } from './followUpConfirmation'
 
 // Same local A4 / Helvetica / react-pdf approach as acceptedConfirmationPdf.
@@ -126,6 +128,5 @@ export async function renderEbFollowUpConfirmationPdf(data: EbFollowUpConfirmati
     subject: 'Kopia av beställning och godkända köpvillkor', creator: 'HusHub', language: 'sv-SE',
     creationDate: new Date(acceptance.acceptedAt), modificationDate: new Date(acceptance.acceptedAt),
   }, intro, accepted, terms, form) as React.ReactElement<DocumentProps>
-  const pdf = await renderToBuffer(document)
-  return Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf)
+  return renderPdfDocument(document)
 }

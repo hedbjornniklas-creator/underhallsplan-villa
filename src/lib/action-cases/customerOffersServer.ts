@@ -10,6 +10,7 @@ import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
 import { normalizePlannedItems, type CustomerPlanning, type CustomerPlannedItem } from './customerPlanning'
 import { writeContractCustomer } from './customerRegistryServer'
+import { getContractSigningVersions } from './contractSigningServer'
 import { getProjectPropertyLink } from './propertyRegistryServer'
 import { withStandardContractTerms } from './standardContractTerms'
 import { ensureStandardTermsFile, findStandardTermsFile, standardTermsFileId, verifyStandardTermsFile } from './standardContractTermsServer'
@@ -117,6 +118,7 @@ export async function getCustomerOfferWorkspace(
     customerNumber = linked.data ? String(linked.data.customer_number) : null
   }
   return {
+    ...(target === 'contract' ? await getContractSigningVersions(ctx, caseId) : {}),
     ...(estimate ? { offerDraft: { draft: estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title),
       revision: estimate.data?.revision ?? 0, costing: estimate.data?.internal_costing ?? {} } } : {}),
     standardTermsFile: await findStandardTermsFile(ctx.orgId, caseId),

@@ -52,7 +52,7 @@ export function normalizeContractParties(value: unknown): ContractParties {
   return result
 }
 
-export function contractPartiesIssues(parties?: ContractParties): string[] {
+export function contractPartiesIssues(parties?: ContractParties, signing: 'online' | 'paper' = 'online'): string[] {
   if (!parties) return []
   const issues: string[] = []
   parties.customers.forEach((customer, index) => { if (!customer.name.trim()) issues.push(`Ange namn för beställare ${index + 1}.`) })
@@ -64,7 +64,7 @@ export function contractPartiesIssues(parties?: ContractParties): string[] {
   for (const [email, label] of [[parties.email, 'beställaren'], [parties.contractor.email, 'entreprenören']]) if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) issues.push(`Ange en giltig e-postadress för ${label}.`)
   if (parties.contractor.fTax === 'unreviewed') issues.push('Kontrollera entreprenörens F-skatt.')
   // The existing approval verifies one mailbox; it cannot represent two signatures.
-  if (parties.customers.length > 1) issues.push('Avtalet har två beställare. Utskick kräver stöd för bådas underskrifter.')
+  if (signing === 'online' && parties.customers.length > 1) issues.push('Avtalet har två beställare. Utskick kräver stöd för bådas underskrifter.')
   return issues
 }
 

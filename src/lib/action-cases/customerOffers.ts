@@ -70,6 +70,8 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  signingAvailable?: boolean
+  signingVersions?: ContractSigningVersion[]
   offerDraft?: { draft: CustomerOfferDraft; revision: number; costing?: CustomerOfferCosting }
   standardTermsFile?: CustomerOfferFile | null
   propertyLink?: import('../properties/identity').ProjectPropertyLink
@@ -81,6 +83,11 @@ export type CustomerOfferWorkspace = {
   draft: CustomerOfferDraft
   revision: number
   offers: CustomerOffer[]
+}
+
+export type ContractSigningVersion = {
+  id: string; version: number; revision: number; createdAt: string; releasedAt: string | null
+  pdfSha256: string; fileSizeBytes: number; snapshot: CustomerOfferSnapshot; files: CustomerOfferFile[]
 }
 
 export const CUSTOMER_OFFER_COLUMNS =
@@ -253,7 +260,8 @@ export function offerPublishIssues(
   d: CustomerOfferDraft,
   today = new Date().toLocaleDateString('sv-SE', {
     timeZone: 'Europe/Stockholm'
-  })
+  }),
+  signing: 'online' | 'paper' = 'online'
 ): string[] {
   const issues: string[] = contractDetailsIssues(d.contractDetails, Boolean(d.contractParties))
   const assignment = d.contractDetails?.assignment
@@ -261,7 +269,7 @@ export function offerPublishIssues(
     issues.push('Lägg avtalshandlingen i uppdragets handlingsförteckning.')
   if (assignment && d.attachmentIds.some((id) => !assignment.documents.some((doc) => doc.fileId === id)))
     issues.push('Komplettera handlingsförteckningen för alla valda bilagor.')
-  issues.push(...contractPartiesIssues(d.contractParties))
+  issues.push(...contractPartiesIssues(d.contractParties, signing))
   if (d.items.some((i) => i.scopeAdvice?.trim()) && d.contractDetails?.advice.status !== 'given')
     issues.push('En arbetsdel innehåller avrådan. Kontrollera och dokumentera avrådan under Avtalsuppgifter före utskick.')
   issues.push(...paymentPlanIssues(d.paymentPlan, customerOfferBaseAmount(d), d.contractPricing?.mode))

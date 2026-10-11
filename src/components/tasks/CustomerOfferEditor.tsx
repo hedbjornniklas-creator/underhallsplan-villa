@@ -67,6 +67,8 @@ import { contractPricingForEditing } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
 import CustomerContractChanges from './CustomerContractChanges'
 import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
+import { activeSigningVersion, contractSigningIssues } from '@/lib/action-cases/contractSigning'
+import CustomerContractSigning from './CustomerContractSigning'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -74,6 +76,7 @@ const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
 export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocument' | 'customer' | 'planning' | 'payments'
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
+  if (activeSigningVersion(workspace.signingVersions)) return workspace.draft
   const details = workspace.draft.contractDetails ?? emptyContractDetails()
   if (workspace.offers.some((offer) => offer.status === 'accepted')) return { ...workspace.draft, contractDetails: details }
   const editable = contractAdviceForEditing(contractDetailsForEditing(details))
@@ -201,7 +204,13 @@ export default function CustomerOfferEditor({
   })
   useEffect(() => { onDirtyChange?.(dirty || planningDirty || billingDirty || Boolean(busy) || autosave.isSaving) }, [dirty, planningDirty, billingDirty, busy, autosave.isSaving, onDirtyChange])
   useEffect(() => { onWorkspaceChange?.({ ...workspace, planning }) }, [workspace, planning, onWorkspaceChange])
-  const locked = workspace.offers.some((o) => o.status === 'accepted')
+  const accepted = workspace.offers.some((o) => o.status === 'accepted')
+  const signingVersion = draftTarget === 'contract' ? activeSigningVersion(workspace.signingVersions) : undefined
+  const locked = accepted || Boolean(signingVersion)
+  const signingIssues = [...contractSigningIssues(draft),
+    ...(documentRecovery ? ['Hantera det lokala handlingsutkastet före låsning.'] : []),
+    ...(sourcePending ? ['Projektarbete har osparade ändringar.'] : []),
+    ...(workspace.offers.some((o) => o.status === 'published') ? ['Återkalla det utskickade avtalet före låsning för underskrift.'] : [])]
   const issues = [
     ...offerPublishIssues(draft),
     ...(documentRecovery ? ['Välj vilka handlingar som ska behållas från det lokala utkastet före utskick.'] : []),
@@ -345,6 +354,8 @@ export default function CustomerOfferEditor({
     extra: Record<string, unknown> = {}
   ) {
     if (running.current || autosave.isPending()) return false
+    const signingAction = operation === 'freeze' || operation === 'new_draft'
+    if (signingAction && (dirty || autosave.state?.status === 'error')) return false
     if (operation === 'save' && autosave.state?.status === 'error') return autosave.retry()
     if (operation === 'save' && draft.contractParties &&
       (draft.contractParties.customers[0].name.trim() !== customer?.name ||
@@ -357,14 +368,15 @@ export default function CustomerOfferEditor({
     setBusy(operation)
     try {
       const response = await fetch(
-        apiUrl,
+        signingAction ? `/api/action-cases/${actionCase.id}/contract-signing` : apiUrl,
         {
           method: operation === 'refresh' ? 'GET' : 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(signingAction ? 150000 : 45000),
           body:
             operation === 'refresh'
               ? undefined
-              : JSON.stringify({
+              : signingAction ? JSON.stringify({ operation, revision: workspace.revision, ...extra }) : JSON.stringify({
                   operation,
                   draftTarget,
                   draft,
@@ -408,6 +420,8 @@ export default function CustomerOfferEditor({
       toast.success(
         operation === 'publish' || operation === 'send'
           ? 'Avtalet har skickats.'
+          : operation === 'freeze' ? 'Avtalsversionen är låst. PDF och bilagor kan hämtas för signering.'
+          : operation === 'new_draft' ? 'Ett nytt utkast är öppet. Den tidigare PDF-versionen är kvar.'
           : operation === 'withdraw'
             ? 'Avtalet återkallades.'
             : operation === 'refresh'
@@ -424,7 +438,7 @@ export default function CustomerOfferEditor({
     } catch (error) {
       toast.error(error, 'Offerten kunde inte hanteras.')
       // A publication may have committed even when the mail response was lost.
-      if (operation === 'publish' || operation === 'send') {
+      if (operation === 'publish' || operation === 'send' || signingAction) {
         try {
           const response = await fetch(
             `/api/action-cases/${actionCase.id}/customer-offers`
@@ -432,6 +446,14 @@ export default function CustomerOfferEditor({
           if (response.ok) {
             const data = await response.json()
             setWorkspace(data)
+            if (signingAction) {
+              autosave.reset(data.revision)
+              acknowledgedDraft.current = data.draft
+              const next = { draft: editableDraft(data), costing: data.costing ?? {} }
+              currentSnapshot.current = next
+              setDraft(next.draft)
+              setCosting(next.costing)
+            }
           }
         } catch {
           /* Keep local draft and retry the same version. */
@@ -480,7 +502,8 @@ export default function CustomerOfferEditor({
     acceptedOptionIds: [],
     acceptedTotalOre: null
   }
-  const previewOffer = workspace.offers.find((o) => o.status === 'accepted') ?? draftOffer
+  const previewOffer = workspace.offers.find((o) => o.status === 'accepted') ?? (signingVersion
+    ? { ...draftOffer, id: signingVersion.id, version: signingVersion.version, snapshot: signingVersion.snapshot, files: signingVersion.files, publishedAt: signingVersion.createdAt } : draftOffer)
   const paymentSource = locked ? previewOffer.snapshot : draft
   const portal: ActionCasePortal = {
     accessState: 'open',
@@ -645,7 +668,7 @@ export default function CustomerOfferEditor({
       </div>
       {view === 'planning' ? null : view === 'payments' ? <section id={`payment-panel-${actionCase.id}-plan`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-plan`} hidden={paymentView !== 'plan'}>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-600">{locked ? 'Avtalad betalningsplan · Låst med grundavtalet' : 'Internt utkast · Betalningsvillkor och plan ingår i den avtalsversion som skickas'}</p>
+          <p className="text-sm text-slate-600">{signingVersion ? 'Betalningsplan · Låst för signering med grundavtalet' : locked ? 'Avtalad betalningsplan · Låst med grundavtalet' : 'Internt utkast · Betalningsvillkor och plan ingår i den avtalsversion som skickas'}</p>
           {!locked && <div role="status" data-testid="payment-save-status" className="flex h-8 w-60 max-w-full shrink-0 items-center gap-2 text-sm text-slate-600">
             <span className="h-4 w-4 shrink-0">{autosave.isSaving && <Loader2 size={16} className="animate-spin" />}</span>
             <span className="min-w-0 flex-1 truncate">{autosave.state?.status === 'error' ? 'Kunde inte spara' : autosave.isSaving ? 'Sparar…' : busy ? 'Arbetar…' : dirty ? 'Osparade ändringar' : workspace.revision > 0 ? 'Sparat internt' : 'Nytt utkast'}</span>
@@ -683,7 +706,7 @@ export default function CustomerOfferEditor({
               selected={[]}
               readOnly
               fileUrl={(id) =>
-                locked ? `/api/action-cases/${actionCase.id}/customer-offers/${previewOffer.id}/files/${id}`
+                signingVersion ? `/api/action-cases/${actionCase.id}/contract-signing/${signingVersion.id}/${id}` : locked ? `/api/action-cases/${actionCase.id}/customer-offers/${previewOffer.id}/files/${id}`
                   : `/api/action-cases/${actionCase.id}/attachments/${id}`
               }
             />
@@ -923,7 +946,7 @@ export default function CustomerOfferEditor({
             {contractSection('advice', 'Avrådande', [], true)}
             {priceSection}
             <ProjectEditorRow title="Ändringar och tilläggsarbeten" summary={changesSummary(draft.contractDetails?.changesPricing)} open={expanded === 'changes'} onToggle={() => setExpanded(expanded === 'changes' ? null : 'changes')}>
-              <CustomerContractChanges draft={draft} files={files} caseId={actionCase.id} blocked={locked || Boolean(busy)} onChange={update} />
+              {contractView && <CustomerContractChanges draft={draft} files={files} caseId={actionCase.id} blocked={locked || Boolean(busy)} onChange={update} />}
             </ProjectEditorRow>
             <ProjectEditorRow title="Tid för betalning" summary={`${paymentSource.paymentPlan?.installments.length ?? 0} delbetalningar · ${paymentConditionsText(paymentSource.paymentConditions, paymentSource.paymentTerms).trim() ? 'Villkor ifyllda' : 'Villkor saknas'}`}
               open={expanded === 'payment'} onToggle={() => setExpanded(expanded === 'payment' ? null : 'payment')}>
@@ -957,7 +980,7 @@ export default function CustomerOfferEditor({
           </fieldset>
           <aside className="min-w-0">
             <details className={contractView ? 'gizmo-contract-status' : ''} open={contractView ? undefined : true}>
-              <summary className={contractView ? 'gizmo-contract-status-heading' : 'hidden'}>Avtalsstatus <strong>{customerPriceLabel(draft)}</strong><span>{locked ? 'Godkänt och låst' : issues.length ? `${issues.length} saker kvar inför utskick` : 'Klart att granska'}</span><ChevronDown size={18} className="gizmo-contract-status-chevron shrink-0" aria-hidden="true" /></summary>
+              <summary className={contractView ? 'gizmo-contract-status-heading' : 'hidden'}>Avtalsstatus <strong>{customerPriceLabel(draft)}</strong><span>{signingVersion ? 'Låst för signering' : locked ? 'Godkänt och låst' : issues.length ? `${issues.length} saker kvar inför utskick` : 'Klart att granska'}</span><ChevronDown size={18} className="gizmo-contract-status-chevron shrink-0" aria-hidden="true" /></summary>
             <div className={contractView ? 'gizmo-contract-status-body' : 'lg:sticky lg:top-6'}>
               <h2 className="text-lg">{contractView ? 'Avtalsstatus' : 'Offertsammanställning'}</h2>
               <p className="mt-3 text-2xl font-semibold">
@@ -975,9 +998,12 @@ export default function CustomerOfferEditor({
                   {missingPriceCount} {missingPriceCount === 1 ? 'arbetsdel saknar' : 'arbetsdelar saknar'} pris
                 </p>
               )}
+              {contractView && <CustomerContractSigning caseId={actionCase.id} available={workspace.signingAvailable === true} versions={workspace.signingVersions}
+                accepted={accepted} busy={busy} disabled={Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || dirty || !workspace.revision}
+                issues={signingIssues} onFreeze={() => action('freeze', { confirmed: true })} onNewDraft={(id) => action('new_draft', { id, confirmed: true })} />}
               {locked ? (
                 <p className="mt-5 border-l-4 border-emerald-600 bg-emerald-50 p-3 text-sm">
-                  Avtalet är godkänt. Denna version är låst.
+                  {signingVersion ? 'Versionen är låst för signering. Hämta PDF och bilagor ovan. Den är inte registrerad som signerad.' : 'Avtalet är godkänt. Denna version är låst.'}
                 </p>
               ) : (
                 <>

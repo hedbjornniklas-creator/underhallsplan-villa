@@ -219,6 +219,7 @@ function harness(options = {}) {
     }
   }
   const deps = {
+    './contractSigningServer': { async getContractSigningVersions() { return { signingAvailable: true, signingVersions: [] } } },
     'server-only': {},
     'node:crypto': crypto,
     './quotes': quotes,

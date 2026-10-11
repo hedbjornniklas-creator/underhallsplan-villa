@@ -30,6 +30,9 @@ import { emptyBillingCustomer } from '../src/lib/action-cases/projectBilling.ts'
 import { editContractProperty, emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { editSiteFacility } from '../src/lib/action-cases/contractSiteFacilities.ts'
 import { normalizePropertyDetails, propertyIdentityKey } from '../src/lib/properties/identity.ts'
+import { signingDraft } from '../test/fixtures/contract-signing.ts'
+import { contractSigningIssues } from '../src/lib/action-cases/contractSigning.ts'
+import { renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -212,6 +215,11 @@ if (process.argv.includes('--site-facilities')) {
     ['meals','contractor','TEST: Matplats i personalbod med möjlighet att förvara och värma mat.']
   ]) state.draft.contractDetails.siteFacilities = editSiteFacility(state.draft.contractDetails.siteFacilities,key,{providedBy,paidBy:'contractor',details})
 }
+const signingPdfs = new Map()
+if (process.argv.includes('--contract-signing')) {
+  state.draft = signingDraft()
+  state.costing = {}; state.offers = []; state.signingAvailable = true; state.signingVersions = []
+}
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
   if (['/__test__/viewport/390','/__test__/viewport/344'].includes(path)) {
@@ -229,6 +237,13 @@ const server = createServer(async (req, res) => {
   if (customerRegistryTest && path === '/api/settings/customers') { json({ workspace: registry }); return }
   if (propertyRegistryTest && path.endsWith('/properties') && req.method === 'GET') { json({ properties }); return }
   if (path === '/__test__/writes') { json(writes); return }
+  const signingDownload = path.match(/\/contract-signing\/([^/]+)\/(pdf)$/)
+  if (signingDownload && req.method === 'GET') {
+    const pdf = signingPdfs.get(signingDownload[1])
+    if (!pdf) { json({error:'Version saknas'},404); return }
+    res.setHeader('Content-Type','application/pdf'); res.setHeader('Content-Disposition','attachment; filename="TEST-avtal.pdf"')
+    res.end(pdf); return
+  }
   if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
   if (path === '/__test__/slow-save' && req.method === 'POST') { slowSave = true; json({ ok: true }); return }
   if (path === '/__test__/accept-contract' && req.method === 'POST') {
@@ -244,6 +259,21 @@ const server = createServer(async (req, res) => {
     const body = JSON.parse(raw)
     if (slowSave && (['save', 'autosave'].includes(body.operation) || body.action === 'save_item_scope' || path.endsWith('/billing'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     writes.push(body.operation ?? body.action ?? `billing_${body.mode}`)
+    if (path.endsWith('/contract-signing')) {
+      const active = state.signingVersions.find((v) => !v.releasedAt)
+      if (body.revision !== state.revision || body.confirmed !== true) { json({error:'Utkastet har ändrats.'},409); return }
+      if (body.operation === 'freeze') {
+        if (active || contractSigningIssues(state.draft).length) { json({error:'Komplettera avtalet.'},409); return }
+        const p=state.draft.contractParties
+        const version={id:id(900 + state.signingVersions.length),version:state.signingVersions.length + 1,revision:state.revision,createdAt:new Date().toISOString(),releasedAt:null,
+          snapshot:structuredClone({...state.draft,projectTitle:projects.cases[0].title,propertyAddress:projects.cases[0].propertyAddress,customerName:p.customers[0].name,customerEmail:p.email,issuerName:p.contractor.companyName,replyEmail:p.contractor.email}),files:[]}
+        const pdf = await renderContractSigningPdf(version)
+        version.fileSizeBytes=pdf.length; version.pdfSha256='TEST'
+        signingPdfs.set(version.id,pdf); state.signingVersions.unshift(version)
+      } else if (body.operation==='new_draft' && active?.id===body.id) { active.releasedAt=new Date().toISOString(); state.revision++ }
+      else { json({error:'Ogiltig åtgärd'},400); return }
+      json(state); return
+    }
     if (path.endsWith('/billing')) {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Dina ändringar är kvar.' }, 503); return }
       if (billingRequest?.id === body.requestId && billingRequest.key === JSON.stringify(body)) { json(billing); return }
@@ -377,6 +407,7 @@ const server = createServer(async (req, res) => {
         state.standardTermsFile = { id: id(140), fileName: ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: ABS18_TERMS.size }
         json({ file: state.standardTermsFile }); return
       } else if (body.operation === 'save' || body.operation === 'autosave') {
+        if (state.signingVersions?.some((v) => !v.releasedAt)) { json({error:'Versionen är låst för signering.'},409); return }
         if (failSave) {
           failSave = false
           json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503)

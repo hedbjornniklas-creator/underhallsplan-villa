@@ -32,6 +32,10 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    CUSTOMER_OFFER_LOCKED: [409, 'Avtalsversionen är låst för signering. Skapa ett nytt utkast om du behöver ändra den.'],
+    CUSTOMER_OFFER_SIGNING_SCHEMA: [503, 'Låsning och PDF behöver aktiveras av administratören. Avtalsutkastet är kvar.'],
+    CUSTOMER_OFFER_PDF_FAILED: [503, 'Avtals-PDF:en kunde inte skapas. Kontrollera avtalsstatus innan du försöker igen.'],
+    CUSTOMER_OFFER_PDF_LIMIT: [400, 'Avtalet eller bilagorna är för stora för PDF-hanteringen. Kontakta administratören.'],
     CUSTOMER_OFFER_STANDARD_TERMS: [503, 'Standardvillkoren kunde inte förberedas. Dina ändringar är kvar. Försök igen innan avtalet skickas.'],
     CUSTOMER_OFFER_TERMS_LIMIT: [400, 'Lämna plats för ABS 18:s standardvillkor. Avtalet kan innehålla högst 30 bilagor.'],
     PROPERTY_SCHEMA: [503, 'Fastighetskopplingen behöver aktiveras av administratören. Dina ändringar är kvar.'],

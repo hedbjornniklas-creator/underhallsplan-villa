@@ -10,6 +10,7 @@ import { contractPricingForEditing } from '../src/lib/action-cases/contractPrici
 import { changesForEditing, changesDetails, changePricingPatch } from '../src/lib/action-cases/contractChanges.ts'
 import { abs18PaymentText, configurePaymentPlan, syncPaymentPlan, distributePaymentPlan } from '../src/lib/action-cases/customerPaymentPlan.ts'
 import { editSiteFacility, emptySiteFacilityEntry } from '../src/lib/action-cases/contractSiteFacilities.ts'
+import { signingDraft } from './fixtures/contract-signing.ts'
 
 const db = new PGlite(), org = randomUUID(), actor = randomUUID(), caseId = randomUUID(), participant = randomUUID()
 const migration = (name) => readFileSync(new URL(`../docs/db/${name}.sql`, import.meta.url), 'utf8').replace('create extension if not exists pgcrypto;', '')
@@ -46,6 +47,60 @@ before(async () => {
   await db.exec(migration('2026-10-08_02_contract_other_agreements'))
 })
 after(() => db.close())
+
+test('paper PDF migration is repeatable; versions are immutable, tenant-scoped, idempotent and draft-locking without acceptance', async () => {
+  for (const name of ['2026-10-08_03_contract_advice_fields','2026-10-08_04_contract_pricing','2026-10-10_01_contract_change_pricing',
+    '2026-10-10_02_payment_plan_automation','2026-10-10_03_optional_final_payment','2026-10-11_01_contract_site_facilities']) await db.exec(migration(name))
+  const oldDrafts = (await db.query('select body,revision from action_case_customer_contract_drafts order by action_case_id')).rows
+  const oldOffers = (await db.query('select snapshot,status from action_case_customer_offers order by id')).rows
+  await db.exec(migration('2026-10-11_02_contract_signing_documents'))
+  await db.exec(migration('2026-10-11_02_contract_signing_documents'))
+  assert.deepEqual((await db.query('select body,revision from action_case_customer_contract_drafts order by action_case_id')).rows,oldDrafts)
+  assert.deepEqual((await db.query('select snapshot,status from action_case_customer_offers order by id')).rows,oldOffers)
+  const project = randomUUID(), document = randomUUID(), file = randomUUID()
+  await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Fiktivt testprojekt','Testgatan 1','Anna Test')",[project,org])
+  await db.query("insert into action_case_attachments(id,org_id,action_case_id,attachment_type,file_name,content_type,file_size_bytes,storage_bucket,file_path) values($1,$2,$3,'document','Test.pdf','application/pdf',1000,'action-case-files',$4)",[file,org,project,`${org}/${project}/${file}.pdf`])
+  const body = signingDraft(); body.attachmentIds = [file]
+  const call = (operation,data,user=actor,organization=org) => db.query('select write_contract_signing_document($1,$2,$3,$4,$5::jsonb) result',[organization,project,user,operation,JSON.stringify(data)])
+  const save = (revision,content=body) => db.query("select write_customer_contract($1,$2,$3,'save',$4::jsonb)",[org,project,actor,JSON.stringify({revision,body:content})])
+  await save(0)
+  const p=body.contractParties, metadata={projectTitle:'Fiktivt testprojekt',propertyAddress:'Testgatan 1',customerName:p.customers[0].name,customerEmail:p.email,issuerName:p.contractor.companyName,replyEmail:p.contractor.email}
+  const payload = {id:document,version:1,revision:1,confirmed:true,createdAt:'2026-10-11T10:00:00Z',snapshot:{...body,...metadata},
+    files:[{id:file,fileName:'Test.pdf',contentType:'application/pdf',fileSizeBytes:1000,sourcePath:`${org}/${project}/${file}.pdf`,path:`${org}/${project}/signing/${document}/${file}`,sha256:'a'.repeat(64)}],
+    pdfPath:`${org}/${project}/signing/${document}/contract.pdf`,pdfSize:1000,pdfSha256:'b'.repeat(64)}
+  await assert.rejects(call('freeze',payload,randomUUID()),/NOT_FOUND/)
+  await assert.rejects(call('freeze',payload,actor,randomUUID()),/NOT_FOUND/)
+  await assert.rejects(call('freeze',{...payload,confirmed:false}),/CONFIRM/)
+  await assert.rejects(call('freeze',{...payload,revision:2}),/STALE/)
+  await assert.rejects(call('freeze',{...payload,snapshot:{...payload.snapshot,title:'Annat'}}),/STALE/)
+  await assert.rejects(call('freeze',{...payload,files:[{...payload.files[0],path:'annan/fil'}]}),/FILES/)
+  await assert.rejects(call('freeze',{...payload,files:[{...payload.files[0],sha256:'invalid'}]}),/FILES/)
+  assert.equal((await call('freeze',payload)).rows[0].result.id,document)
+  const frozen = (await db.query('select * from action_case_contract_signing_documents where id=$1',[document])).rows[0]
+  assert.equal(frozen.snapshot.contractParties.customers.length,2)
+  assert.equal((await db.query('select count(*) n from action_case_customer_offers where action_case_id=$1',[project])).rows[0].n,0)
+  assert.equal((await call('freeze',{...payload,id:randomUUID()})).rows[0].result.id,document)
+  await assert.rejects(call('freeze',{...payload,confirmed:false}),/CONFIRM/)
+  await assert.rejects(save(1,{...body,title:'Annat'}),/LOCKED/)
+  await assert.rejects(db.query('update action_case_customer_contract_drafts set internal_costing=$2::jsonb where action_case_id=$1',[project,'{}']),/LOCKED/)
+  await assert.rejects(db.query('delete from action_case_customer_contract_drafts where action_case_id=$1',[project]),/LOCKED/)
+  await assert.rejects(db.query("insert into action_case_customer_offers(id,org_id,action_case_id,status) values($1,$2,$3,'published')",[randomUUID(),org,project]),/LOCKED/)
+  for (const column of ['snapshot','files']) await assert.rejects(db.query(`update action_case_contract_signing_documents set ${column}=$2::jsonb where id=$1`,[document,column==='files'?'[]':'{}']),/IMMUTABLE/)
+  await assert.rejects(db.query('delete from action_case_contract_signing_documents where id=$1',[document]),/IMMUTABLE/)
+  await assert.rejects(call('new_draft',{id:document,revision:2,confirmed:true}),/STALE/)
+  await call('new_draft',{id:document,revision:1,confirmed:true})
+  const released=(await db.query('select * from action_case_contract_signing_documents where id=$1',[document])).rows[0]
+  assert.ok(released.released_at)
+  assert.deepEqual({...released,released_at:null},frozen)
+  await assert.rejects(call('freeze',payload),/STALE/)
+  await save(2,{...body,title:'Nytt utkast'})
+  const next=randomUUID()
+  const nextData={...payload,id:next,version:2,revision:3,snapshot:{...payload.snapshot,title:'Nytt utkast'},pdfPath:`${org}/${project}/signing/${next}/contract.pdf`,files:[{...payload.files[0],path:`${org}/${project}/signing/${next}/${file}`} ]}
+  await call('freeze',nextData)
+  assert.deepEqual((await db.query('select snapshot from action_case_contract_signing_documents where id=$1',[document])).rows[0].snapshot,frozen.snapshot)
+  assert.equal((await db.query("select has_function_privilege('authenticated','write_contract_signing_document(uuid,uuid,uuid,text,jsonb)','execute') allowed")).rows[0].allowed,false)
+  await call('new_draft',{id:next,revision:3,confirmed:true})
+})
 
 test('site-facility agreements survive reload, reject stale clients, freeze at publication and lock after acceptance', async () => {
   for (const name of ['2026-10-08_04_contract_pricing','2026-10-10_01_contract_change_pricing',

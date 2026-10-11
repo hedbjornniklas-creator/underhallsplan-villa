@@ -225,6 +225,14 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-11: Användaren begär låsning och PDF för extern/papperssignering.
+  Avtal återanvänder HusHubs befintliga React PDF-renderare via en gemensam
+  hjälpfunktion, med en egen avtalsmall. Låsning är inte signering eller
+  kundgodkännande och skickar inget mejl. Den låsta versionens texter, priser,
+  betalningsplan och bilagekopior är oföränderliga. Ett uttryckligt nytt utkast
+  bevarar tidigare PDF-versioner. Två beställare får egna underskriftsrader.
+
+
 - 2026-10-11: Användaren begär praktiska avtalsförutsättningar för el,
   ombyte och matplats med mera. Införs under Övrigt, med uttryckligt ansvar,
   kostnadsansvar och plats/villkor per punkt. Signerade versioner behålls.
@@ -434,6 +442,30 @@ dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering
   layouttester skyddar avgränsningen till intern Avtal och responsiva mått.
 - Ingen SQL-migrering, produktionsdata eller kundutskick ändrades.
   Denna layout är lokalt verifierad; driftsättning verifieras separat.
+
+### Låsning och avtals-PDF 2026-10-11
+
+- Under Avtalsstatus finns PDF och signering: Lås för signering, uttrycklig
+  bekräftelse, Hämta PDF och Skapa nytt utkast. Låsta bilagor hämtas separat;
+  PDF:n redovisar bilageförteckningen, men bäddar inte in originalhandlingarna.
+- En separat versionstabell och privata lagrade PDF-filer används. Nedladdning
+  kontrollerar organisation, uppdrag, filstorlek och SHA-256; ingen aktuell
+  projekttext eller ändrad standardtext används för att återskapa gamla versioner.
+- Låsta utkast och betalningsplaner är skrivskyddade även i databasen. Samtidiga
+  ändringar nekas med revisionskontroll. Ett publicerat digitalt avtal måste
+  återkallas innan pappersversionen kan låsas. Befintliga godkännanden ändras inte.
+- Ny migration: `docs/db/2026-10-11_02_contract_signing_documents.sql`, efter
+  arbetsplatsförutsättningarna. Saknad migration visar en aktiveringsnotis;
+  sparade utkast kan fortfarande användas. Migrationen ändrar ingen äldre data.
+- Lokalt verifierat med syntetiska uppgifter: låsning, omladdning, PDF-hämtning,
+  skrivskyddad betalningsplan och nytt utkast med byte-identisk tidigare PDF.
+  A4-utskrift med fyra respektive tio sidor kontrollerad för text, sidbrytningar,
+  sidnummer och underskrifter. Ingen riktig kund eller signering har berörts.
+- Produktionsbygge, TypeScript, riktad ESLint och 451 action-case-tester passerar.
+  Databasbehörigheter och fel/retry-flöden testas lokalt. Migrationen finns i
+  produktion: tabellen svarar, RPC:n nekar fel organisationskontext och anonym
+  tabellåtkomst är nekad. Kontroll gjord utan att låsa eller ändra något avtal.
+  Driftsättningen verifieras separat mot publicerad commit.
 
 ### Handlingsförteckning 2026-10-07
 
