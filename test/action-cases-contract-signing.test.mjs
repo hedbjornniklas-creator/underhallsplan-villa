@@ -72,6 +72,11 @@ test('released versions do not lock a new draft; filenames never expose names', 
   assert.equal(activeSigningVersion([{ releasedAt:'2026-10-11' }]),undefined)
   assert.equal(signingPdfFilename(input()),'Avtal-v1-00000000.pdf')
 })
+
+test('all signature lines stay in one nonbreaking group on printable PDFs', () => {
+  const source=readFileSync(new URL('../src/lib/action-cases/contractSigningPdf.ts',import.meta.url),'utf8')
+  assert.match(source,/h\(View, \{ wrap: false \},\s*text\('Underskrifter'/)
+})
 test('signing routes never send, accept or expose anonymous downloads', () => {
   const route = readFileSync(new URL('../src/app/api/action-cases/[caseId]/contract-signing/route.ts',import.meta.url),'utf8')
   const download = readFileSync(new URL('../src/app/api/action-cases/[caseId]/contract-signing/[documentId]/[fileId]/route.ts',import.meta.url),'utf8')

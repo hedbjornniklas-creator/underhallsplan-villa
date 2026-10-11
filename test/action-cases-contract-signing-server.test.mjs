@@ -127,7 +127,7 @@ test('missing attachment references remain in draft PDF with a warning, but cann
   h.draft.contractDetails.assignment={documents:[{fileId:missingId,type:'',name:'',date:''}],additionalScope:'',exclusions:'',documentNotes:''}
   const before=JSON.stringify(h.draft)
   await h.downloadCurrentContractPdf(ctx,caseId,1)
-  assert.deepEqual(h.rendered[0].unavailableAttachments,['Handling 2 (namn saknas)'])
+  assert.deepEqual(h.rendered[0].unavailableAttachments,['Handling utan namn'])
   assert.deepEqual(h.rendered[0].snapshot.attachmentIds,[fileId,missingId])
   assert.equal(h.rendered[0].snapshot.contractDetails.assignment.documents[0].fileId,missingId)
   assert.equal(h.rendered[0].files.length,1)
@@ -142,7 +142,7 @@ test('missing attachment references remain in draft PDF with a warning, but cann
   assert.deepEqual(h.rendered.at(-1).unavailableAttachments,['Äldre ritning'])
   const allMissing=harness({missingAttachment:true});await allMissing.downloadCurrentContractPdf(ctx,caseId,1)
   assert.deepEqual(allMissing.rendered[0].files,[])
-  assert.deepEqual(allMissing.rendered[0].unavailableAttachments,['Handling 1 (namn saknas)'])
+  assert.deepEqual(allMissing.rendered[0].unavailableAttachments,['Handling utan namn'])
 })
 
 test('current PDF endpoint returns the immutable archive once locked, not a new rendering',async()=>{

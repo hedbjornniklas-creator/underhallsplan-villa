@@ -131,11 +131,11 @@ export async function downloadCurrentContractPdf(ctx: Context, caseId: string, r
     .eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('id', draft.attachmentIds) : { data: [], error: null }
   checked(selected.error)
   const unavailableAttachments: string[] = []
-  const files = draft.attachmentIds.flatMap((id, index) => {
+  const files = draft.attachmentIds.flatMap((id) => {
     const f = selected.data?.find((f) => f.id === id)
     if (!f) {
       const reference = draft.contractDetails?.assignment?.documents.find((doc) => doc.fileId === id)
-      unavailableAttachments.push(reference?.name || `Handling ${index + 1} (namn saknas)`)
+      unavailableAttachments.push(reference?.name || 'Handling utan namn')
       return []
     }
     return [{ id: f.id, fileName: f.file_name, contentType: f.content_type, fileSizeBytes: Number(f.file_size_bytes) }]

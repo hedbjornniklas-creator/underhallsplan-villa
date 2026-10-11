@@ -1169,6 +1169,9 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   for saknade bilagereferenser. Befintligt projekt inneholl en tom handlingsrad
   med en saknad fil; inga sparade uppgifter eller bilageval andrades. Utkastet
   kan hamtas med en tydlig varning, medan lasningen fortsatt skyddar filarkivet.
+  Sidgranskning av produktionsprojektets tio A4-sidor ledde ocksa till att alla
+  underskriftsrader grupperas pa samma sida; en namnlos saknad handling far
+  inget radnummer som kan forvaxlas med en annan post i handlingsforteckningen.
 
 ## Avtalets prisdel 2026-10-08
 

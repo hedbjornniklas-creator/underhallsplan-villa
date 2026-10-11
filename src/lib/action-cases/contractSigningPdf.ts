@@ -123,10 +123,11 @@ export async function renderContractSigningPdf(input: SigningPdfInput): Promise<
         ...(part.rows?.length ? [
           h(View, { key: `header-${index}`, style: [styles.row, styles.band], wrap: false, minPresenceAhead: 35 }, ...(part.columns || []).map((c, i) => text(c, { key: i, style: styles.cell }))),
           ...part.rows.map((r, i) => h(View, { key: `row-${index}-${i}`, style: styles.row, wrap: r.join('').length > 800 }, ...r.map((c, j) => text(c, { key: j, style: styles.cell }))))] : [])]),
-      text('Underskrifter', { style: styles.heading, minPresenceAhead: 120 }),
-      text('Ort och datum: ____________________________________________________'),
-      ...customers.map((c, i) => h(View, { key: `customer-${i}`, style: styles.signature, wrap: false }, text(`Beställare ${i + 1}: ${c.name || '________________________'}`), text('Underskrift'))),
-      h(View, { style: styles.signature, wrap: false }, text(`Entreprenör: ${s.contractParties?.contractor.companyName || s.issuerName}`), text(`Namnförtydligande: ${s.contractParties?.contractor.contactName || '________________________'}`), text('Underskrift')),
+      h(View, { wrap: false },
+        text('Underskrifter', { style: styles.heading }),
+        text('Ort och datum: ____________________________________________________'),
+        ...customers.map((c, i) => h(View, { key: `customer-${i}`, style: styles.signature, wrap: false }, text(`Beställare ${i + 1}: ${c.name || '________________________'}`), text('Underskrift'))),
+        h(View, { style: styles.signature, wrap: false }, text(`Entreprenör: ${s.contractParties?.contractor.companyName || s.issuerName}`), text(`Namnförtydligande: ${s.contractParties?.contractor.contactName || '________________________'}`), text('Underskrift'))),
       h(View, { fixed: true, style: styles.footer }, h(Text, { style: { fontSize: 8, lineHeight: 1.2 }, render: ({ pageNumber, totalPages }) => `${label} / Sida ${pageNumber} av ${totalPages}` })))) as React.ReactElement<DocumentProps>
   return renderPdfDocument(document)
 }
