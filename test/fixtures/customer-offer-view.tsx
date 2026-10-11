@@ -35,7 +35,7 @@ async function start() {
   const portal = {
     accessState: 'open' as const,
     participant: customer,
-    customerOffers: { enabled: true, offers: workspace.offers, plannedItems: workspace.planning?.sharedItems },
+    customerOffers: { enabled: true, offers: workspace.offers, externalContracts: workspace.externalContracts, plannedItems: workspace.planning?.sharedItems },
     actionCase: {
       ...actionCase,
       items: [],
@@ -45,7 +45,7 @@ async function start() {
       )
     }
   }
-  const external = location.pathname === '/kund'
+  const external = location.pathname === '/kund' || location.pathname.startsWith('/atgardsarende/')
   const projects = location.pathname.startsWith('/uppdrag')
   const projectWorkspace = projects ? await (await fetch('/project-fixture')).json() : null
   const project = projectWorkspace?.cases.find((item: { id: string }) => location.pathname === `/uppdrag/${item.id}`)

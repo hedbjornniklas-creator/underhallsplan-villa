@@ -225,6 +225,25 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-11: Användaren godkänner ett separat val av signeringssätt och
+  uttrycklig delning till beställaren. På papper/annan tjänst använder låst
+  PDF; Digitalt godkännande med e-postkod använder befintligt kodflöde, inte
+  BankID. Autospar och PDF-låsning gör aldrig avtalet synligt för beställaren.
+  Dela med beställaren visar endast den låsta versionen och dess bilagor.
+  Delbar länk får en fryst PDF-kopia utan strukturerade personnummer.
+  Underskriven kopia registreras internt efter manuell kontroll av samtliga
+  parters underskrifter. Registrering låser versionen permanent men är inte
+  en digital identitetskontroll. Digitalt stöd för två beställare återstår.
+  SQL `_03_optional_contract_locking` och `_04_contract_signing_delivery`
+  behövs före publicering. Befintliga avtal och kundutskick skrivs inte om.
+
+- 2026-10-11: Användaren ändrar låsningsregeln: inga avtalsfält behöver vara
+  ifyllda för extern/papperssignering. Krav på innehållskomplettering tas bort
+  i gränssnitt, server och databas för denna låsning, inte för digitala utskick.
+  Hämta PDF för signering ska vara synlig före låsning. Ett olåst dokument märks
+  Ej låst; efter låsning hämtas alltid den oföränderliga arkiverade PDF:n.
+  Autospar måste vara klart, och behörighet, revisions- och filskydd kvarstår.
+
 - 2026-10-11: Användaren begär låsning och PDF för extern/papperssignering.
   Avtal återanvänder HusHubs befintliga React PDF-renderare via en gemensam
   hjälpfunktion, med en egen avtalsmall. Låsning är inte signering eller
@@ -445,6 +464,24 @@ dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering
 
 ### Låsning och avtals-PDF 2026-10-11
 
+- Senare korrigering enligt användarbeslut: låsning kräver inga ifyllda texter,
+  namn, priser, handlingsdatum eller balanserad betalningsplan. Granskning av
+  innehållet är användarens ansvar; låsningen är inte ett intyg om fullständighet.
+- Hämta PDF för signering finns direkt under Avtalsstatus, oberoende av låsning.
+  Det olåsta dokumentet använder sparade avtalstexter och har underskriftsrader,
+  men arkiverar inget, låser inget och skickar inget. Ingen live-projekttext eller
+  ny standardtext läggs in vid hämtningen. Gamla låsta PDF:er återskapas aldrig.
+- Uppföljningsmigration: `docs/db/2026-10-11_03_optional_contract_locking.sql`.
+  Den ersätter endast låsningsfunktionen och ändrar inga utkast eller arkiv.
+  Tidigare migration och digitala publiceringskrav behålls.
+- Korrigeringen är lokalt verifierad med 456 action-case-tester, separat
+  PDF-regression för EB, TypeScript, riktad ESLint och produktionsbygge.
+  Tomt ABS 18-utkast och ofullständiga fält/handlingsdatum kan låsas i databastest.
+  PDF före låsning, låsning, omladdning, nytt utkast och oförändrad gammal PDF
+  är klicktestade med fiktiva uppgifter. Fyra A4-sidor och mobil 390/344 px
+  är kontrollerade. Publiceringskontroll 2026-10-11 verifierar `_03` och `_04`
+  i produktionsdatabasen: exakta funktionsdefinitioner, RLS, privata rättigheter
+  och aktiva triggers. Kontrollen ändrar inga avtals- eller kunduppgifter.
 - Under Avtalsstatus finns PDF och signering: Lås för signering, uttrycklig
   bekräftelse, Hämta PDF och Skapa nytt utkast. Låsta bilagor hämtas separat;
   PDF:n redovisar bilageförteckningen, men bäddar inte in originalhandlingarna.

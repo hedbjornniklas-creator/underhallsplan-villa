@@ -1,17 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { contractSigningIssues, activeSigningVersion, signingPdfFilename } from '../src/lib/action-cases/contractSigning.ts'
+import { activeSigningVersion, signingPdfFilename } from '../src/lib/action-cases/contractSigning.ts'
 import { contractSigningSections, renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
-import { offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
+import { emptyCustomerOffer, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import { signingSnapshot, signingId } from './fixtures/contract-signing.ts'
 
 const input = () => ({ id: signingId(500), version: 1, createdAt: '2026-10-11T10:00:00Z', snapshot: signingSnapshot(), files: [] })
-test('paper signing supports two buyers; existing mailbox approval still rejects them', () => {
-  assert.deepEqual(contractSigningIssues(input().snapshot), [])
+test('existing mailbox approval still rejects two buyers and incomplete contracts', () => {
   assert.ok(offerPublishIssues(input().snapshot).some((issue) => issue.includes('två beställare')))
-  const draft = input().snapshot; delete draft.contractParties
-  assert.ok(contractSigningIssues(draft).length > 0)
+  assert.ok(offerPublishIssues(emptyCustomerOffer()).length > 0)
 })
 test('PDF projection preserves frozen customer text, price display, payment terms and workplace arrangements only', () => {
   const value = input(), before = JSON.stringify(value)
@@ -39,6 +37,26 @@ test('shared PDF renderer produces printable PDF without mutating frozen evidenc
   assert.ok(bytes.length > 8000)
   assert.equal(JSON.stringify(value), before)
 })
+
+test('draft PDF renders empty and partially filled contracts without completeness checks or invented markups', async () => {
+  const value = input()
+  value.draftRevision = 12
+  value.snapshot = { ...value.snapshot, ...emptyCustomerOffer() }
+  delete value.snapshot.contractParties
+  delete value.snapshot.contractDetails
+  delete value.snapshot.contractPricing
+  delete value.snapshot.paymentPlan
+  delete value.snapshot.paymentConditions
+  const before = JSON.stringify(value)
+  assert.equal((await renderContractSigningPdf(value)).subarray(0, 5).toString(), '%PDF-')
+  assert.equal(JSON.stringify(value), before)
+  const partial = input()
+  partial.snapshot.contractPricing.mode = 'running'
+  partial.snapshot.contractPricing.running.markupPercent = null
+  assert.doesNotMatch(JSON.stringify(contractSigningSections(partial)), /null %|undefined/)
+  partial.snapshot.paymentPlan.installments[0].amountOre = null
+  assert.equal(contractSigningSections(partial).find((s) => s.title === 'Betalningsplan').rows.at(-1)[2], 'Pris saknas')
+})
 test('released versions do not lock a new draft; filenames never expose names', () => {
   assert.equal(activeSigningVersion([{ id:'old', releasedAt:'2026-10-11' }, { id:'current', releasedAt:null }]).id,'current')
   assert.equal(activeSigningVersion([{ releasedAt:'2026-10-11' }]),undefined)
@@ -47,7 +65,10 @@ test('released versions do not lock a new draft; filenames never expose names', 
 test('signing routes never send, accept or expose anonymous downloads', () => {
   const route = readFileSync(new URL('../src/app/api/action-cases/[caseId]/contract-signing/route.ts',import.meta.url),'utf8')
   const download = readFileSync(new URL('../src/app/api/action-cases/[caseId]/contract-signing/[documentId]/[fileId]/route.ts',import.meta.url),'utf8')
+  const draftPdf = readFileSync(new URL('../src/app/api/action-cases/[caseId]/contract-signing/pdf/route.ts',import.meta.url),'utf8')
   assert.match(route,/customerOfferContext/); assert.match(route,/offerRequestBody/)
   assert.match(download,/customerOfferContext/); assert.match(download,/attachment; filename/)
-  assert.doesNotMatch(route + download,/sendAssignmentEmail|acceptCustomerOffer|createSignedUrl/)
+  assert.match(draftPdf,/customerOfferContext/); assert.match(draftPdf,/private, no-store/)
+  assert.match(draftPdf,/attachment; filename/)
+  assert.doesNotMatch(route + download + draftPdf,/sendAssignmentEmail|acceptCustomerOffer|createSignedUrl/)
 })

@@ -11,6 +11,7 @@ import { changesForEditing, changesDetails, changePricingPatch } from '../src/li
 import { abs18PaymentText, configurePaymentPlan, syncPaymentPlan, distributePaymentPlan } from '../src/lib/action-cases/customerPaymentPlan.ts'
 import { editSiteFacility, emptySiteFacilityEntry } from '../src/lib/action-cases/contractSiteFacilities.ts'
 import { signingDraft } from './fixtures/contract-signing.ts'
+import { assignmentPatch } from '../src/lib/action-cases/contractAssignment.ts'
 
 const db = new PGlite(), org = randomUUID(), actor = randomUUID(), caseId = randomUUID(), participant = randomUUID()
 const migration = (name) => readFileSync(new URL(`../docs/db/${name}.sql`, import.meta.url), 'utf8').replace('create extension if not exists pgcrypto;', '')
@@ -47,6 +48,21 @@ before(async () => {
   await db.exec(migration('2026-10-08_02_contract_other_agreements'))
 })
 after(() => db.close())
+
+async function deliveryFixture() {
+  const project = randomUUID(), document = randomUUID(), recipient = randomUUID()
+  await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Delningstest','Testgatan','Anna Test')",[project,org])
+  await db.query("insert into action_case_participants(id,org_id,action_case_id,role,name,email) values($1,$2,$3,'customer','Anna Test','anna@example.test')",[recipient,org,project])
+  const body=normalizeCustomerOffer({...emptyCustomerOffer('Fiktivt delningsavtal'),signingMethod:'external'})
+  await db.query("select write_customer_contract($1,$2,$3,'save',$4::jsonb)",[org,project,actor,JSON.stringify({revision:0,body})])
+  const snapshot={...body,projectTitle:'Delningstest',propertyAddress:'Testgatan',customerName:'',customerEmail:'',issuerName:'',replyEmail:''}
+  await db.query("select write_contract_signing_document($1,$2,$3,'freeze',$4::jsonb)",[org,project,actor,JSON.stringify({id:document,version:1,revision:1,confirmed:true,createdAt:'2026-10-11T10:00:00Z',snapshot,files:[],pdfPath:`${org}/${project}/signing/${document}/contract.pdf`,pdfSize:1000,pdfSha256:'a'.repeat(64)})])
+  const data={id:document,revision:1,confirmed:true,participantId:recipient,recipientName:'Anna Test',recipientEmail:'anna@example.test',tokenHash:randomUUID().replaceAll('-','').repeat(2),
+    customerPdf:{path:`${org}/${project}/signing/${document}/customer/${randomUUID()}.pdf`,fileSizeBytes:1000,sha256:'c'.repeat(64)}}
+  const call=(operation,p=data,user=actor,organization=org)=>db.query('select write_contract_signing_delivery($1,$2,$3,$4,$5::jsonb) result',[organization,project,user,operation,JSON.stringify(p)])
+  const receipt=()=>db.query('select * from action_case_contract_signing_delivery where document_id=$1',[document])
+  return {project,document,recipient,body,snapshot,data,call,receipt}
+}
 
 test('paper PDF migration is repeatable; versions are immutable, tenant-scoped, idempotent and draft-locking without acceptance', async () => {
   for (const name of ['2026-10-08_03_contract_advice_fields','2026-10-08_04_contract_pricing','2026-10-10_01_contract_change_pricing',
@@ -100,6 +116,47 @@ test('paper PDF migration is repeatable; versions are immutable, tenant-scoped, 
   assert.deepEqual((await db.query('select snapshot from action_case_contract_signing_documents where id=$1',[document])).rows[0].snapshot,frozen.snapshot)
   assert.equal((await db.query("select has_function_privilege('authenticated','write_contract_signing_document(uuid,uuid,uuid,text,jsonb)','execute') allowed")).rows[0].allowed,false)
   await call('new_draft',{id:next,revision:3,confirmed:true})
+})
+
+test('optional paper locking migration preserves existing archives and locks empty or incomplete saved contracts', async () => {
+  const before = (await db.query('select * from action_case_contract_signing_documents order by id')).rows
+  const drafts = (await db.query('select body,revision from action_case_customer_contract_drafts order by action_case_id')).rows
+  await db.exec(migration('2026-10-11_03_optional_contract_locking'))
+  await db.exec(migration('2026-10-11_03_optional_contract_locking'))
+  assert.deepEqual((await db.query('select * from action_case_contract_signing_documents order by id')).rows,before)
+  assert.deepEqual((await db.query('select body,revision from action_case_customer_contract_drafts order by action_case_id')).rows,drafts)
+  const partial = signingDraft()
+  partial.contractParties.customers.forEach((c)=>c.name='')
+  partial.contractParties.contractor.companyName='';partial.contractParties.contractor.organizationNumber=''
+  partial.contractDetails.controlParticipants={controlOfficer:'',customerInspector:''}
+  partial.contractDetails.advice.reason=''
+  partial.contractDetails.siteFacilities.entries.electricity.paidBy=''
+  partial.contractDetails.changesPricing.markups.materials=null
+  partial.contractPricing.rows[0].amountOre=null
+  partial.paymentConditions.standardText=''
+  partial.paymentPlan.installments[0].condition='';partial.paymentPlan.installments[0].amountOre=null
+  for (const initial of [normalizeCustomerOffer(emptyCustomerOffer()),normalizeCustomerOffer(partial)]) {
+    const project=randomUUID(), document=randomUUID()
+    await db.query("insert into action_cases(id,org_id,title,property_address,customer_name) values($1,$2,'Tomt testavtal','Testgatan','Fiktiv projektkund')",[project,org])
+    let body=initial, files=[]
+    if (body.contractDetails) {
+      const file=randomUUID(), sourcePath=`${org}/${project}/${file}.pdf`
+      await db.query("insert into action_case_attachments(id,org_id,action_case_id,attachment_type,file_name,content_type,file_size_bytes,storage_bucket,file_path) values($1,$2,$3,'document','Test.pdf','application/pdf',1000,'action-case-files',$4)",[file,org,project,sourcePath])
+      body=normalizeCustomerOffer({...body,...assignmentPatch(body,{documents:[{fileId:file,type:'',name:'',date:''}],additionalScope:'',exclusions:'',documentNotes:''})})
+      files=[{id:file,fileName:'Test.pdf',contentType:'application/pdf',fileSizeBytes:1000,sourcePath,path:`${org}/${project}/signing/${document}/${file}`,sha256:'d'.repeat(64)}]
+    }
+    await db.query("select write_customer_contract($1,$2,$3,'save',$4::jsonb)",[org,project,actor,JSON.stringify({revision:0,body})])
+    const p=body.contractParties
+    const snapshot={...body,projectTitle:'Tomt testavtal',propertyAddress:'Testgatan',customerName:p?.customers[0]?.name??'',customerEmail:p?.email??'',issuerName:p?.contractor.companyName??'',replyEmail:p?.contractor.email??''}
+    const payload={id:document,version:1,revision:1,confirmed:true,createdAt:'2026-10-11T10:00:00Z',snapshot,files,pdfPath:`${org}/${project}/signing/${document}/contract.pdf`,pdfSize:1000,pdfSha256:'c'.repeat(64)}
+    await assert.rejects(db.query('select assert_customer_offer_pricing($1::jsonb,null,true)',[JSON.stringify(body)]),/INCOMPLETE/)
+    const call=(operation,data)=>db.query('select write_contract_signing_document($1,$2,$3,$4,$5::jsonb) result',[org,project,actor,operation,JSON.stringify(data)])
+    assert.equal((await call('freeze',payload)).rows[0].result.id,document)
+    assert.deepEqual((await db.query('select snapshot from action_case_contract_signing_documents where id=$1',[document])).rows[0].snapshot,snapshot)
+    await assert.rejects(db.query('delete from action_case_customer_contract_drafts where action_case_id=$1',[project]),/LOCKED/)
+    assert.equal((await db.query('select count(*) n from action_case_customer_offers where action_case_id=$1',[project])).rows[0].n,0)
+    await call('new_draft',{id:document,revision:1,confirmed:true})
+  }
 })
 
 test('site-facility agreements survive reload, reject stale clients, freeze at publication and lock after acceptance', async () => {
@@ -439,4 +496,64 @@ test('change pricing migration validates drafts and annexes, is repeatable, and 
   assert.deepEqual(before.contractDetails.changesPricing,p)
   const rights=(await db.query("select has_function_privilege('authenticated','assert_contract_changes(jsonb,boolean)','execute') rpc")).rows[0]
   assert.equal(rights.rpc,false)
+})
+
+test('explicit paper delivery migration is repeatable, scoped, revocable and never publishes or accepts an online contract', async()=>{
+  const before=(await db.query('select * from action_case_contract_signing_documents order by id')).rows
+  await db.exec(migration('2026-10-11_04_contract_signing_delivery'))
+  await db.exec(migration('2026-10-11_04_contract_signing_delivery'))
+  assert.deepEqual((await db.query('select * from action_case_contract_signing_documents order by id')).rows,before)
+  const f=await deliveryFixture()
+  assert.equal((await f.receipt()).rows.length,0)
+  for (const p of [{...f.data,confirmed:false},{...f.data,revision:2},{...f.data,recipientEmail:'other@example.test'},
+    {...f.data,participantId:randomUUID()},{...f.data,customerPdf:{...f.data.customerPdf,path:'other-org/private.pdf'}}]) await assert.rejects(f.call('share',p))
+  await assert.rejects(f.call('share',f.data,randomUUID()),/NOT_FOUND/)
+  await assert.rejects(f.call('share',f.data,actor,randomUUID()),/NOT_FOUND/)
+  await f.call('share')
+  const entry=(await f.receipt()).rows[0]
+  assert.ok(entry.shared_at);assert.equal(entry.signed_copy,null)
+  assert.equal((await db.query('select count(*) n from action_case_customer_offers where action_case_id=$1',[f.project])).rows[0].n,0)
+  await f.call('share')
+  assert.deepEqual((await f.receipt()).rows[0],entry)
+  const other=await deliveryFixture()
+  await assert.rejects(other.call('share',{...other.data,tokenHash:f.data.tokenHash}),/RECIPIENT/)
+  assert.equal((await other.receipt()).rows.length,0)
+  assert.equal((await db.query('select count(*) n from action_case_access_links where action_case_id=$1',[f.project])).rows[0].n,1)
+  await assert.rejects(db.query('update action_case_contract_signing_delivery set customer_pdf=$2::jsonb where document_id=$1',[f.document,'{}']),/IMMUTABLE/)
+  await assert.rejects(db.query("update action_case_participants set email='other@example.test' where id=$1",[f.recipient]),/HISTORY_LOCKED/)
+  await f.call('withdraw');assert.ok((await f.receipt()).rows[0].withdrawn_at)
+  await f.call('share');assert.equal((await f.receipt()).rows[0].withdrawn_at,null)
+  const signedCopy={path:`${org}/${f.project}/signing/${f.document}/signed/${randomUUID()}.pdf`,fileName:'Testsignerat.pdf',fileSizeBytes:1000,sha256:'d'.repeat(64)}
+  await assert.rejects(f.call('register_signed',{...f.data,signedCopy:{...signedCopy,path:'wrong/path'}}),/SIGNED_COPY/)
+  await f.call('register_signed',{...f.data,signedCopy})
+  const signed=(await f.receipt()).rows[0];assert.ok(signed.signed_at);assert.equal(signed.signed_by,actor)
+  await f.call('register_signed',{...f.data,signedCopy});assert.deepEqual((await f.receipt()).rows[0],signed)
+  await assert.rejects(f.call('register_signed',{...f.data,signedCopy:{...signedCopy,sha256:'e'.repeat(64)}}),/IMMUTABLE/)
+  await assert.rejects(db.query('update action_case_contract_signing_delivery set signed_copy=null,signed_at=null,signed_by=null where document_id=$1',[f.document]),/IMMUTABLE/)
+  await assert.rejects(db.query("select write_contract_signing_document($1,$2,$3,'new_draft',$4::jsonb)",[org,f.project,actor,JSON.stringify({id:f.document,revision:1,confirmed:true})]),/ACCEPTED/)
+  await assert.rejects(db.query('update action_case_contract_signing_documents set released_at=now() where id=$1',[f.document]),/ACCEPTED/)
+  await assert.rejects(db.query('delete from action_case_contract_signing_delivery where document_id=$1',[f.document]),/IMMUTABLE/)
+  await db.exec(migration('2026-10-11_04_contract_signing_delivery'))
+  assert.deepEqual((await f.receipt()).rows[0],signed)
+  for (const role of ['anon','authenticated']) {
+    assert.equal((await db.query("select has_table_privilege($1,'action_case_contract_signing_delivery','select') allowed",[role])).rows[0].allowed,false)
+    assert.equal((await db.query("select has_function_privilege($1,'write_contract_signing_delivery(uuid,uuid,uuid,text,jsonb)','execute') allowed",[role])).rows[0].allowed,false)
+  }
+})
+
+test('signing choices cannot be silently dropped or used in the wrong flow; unsigned old shared copies survive a new draft',async()=>{
+  const f=await deliveryFixture();await f.call('share')
+  await db.query("select write_contract_signing_document($1,$2,$3,'new_draft',$4::jsonb)",[org,f.project,actor,JSON.stringify({id:f.document,revision:1,confirmed:true})])
+  assert.ok((await db.query('select released_at from action_case_contract_signing_documents where id=$1',[f.document])).rows[0].released_at)
+  assert.ok((await f.receipt()).rows[0].shared_at)
+  await assert.rejects(f.call('share'),/STALE/)
+  await f.call('withdraw')
+  const save=(body)=>db.query("select write_customer_contract($1,$2,$3,'save',$4::jsonb)",[org,f.project,actor,JSON.stringify({revision:2,body})])
+  const missing={...f.body};delete missing.signingMethod
+  await assert.rejects(save(missing),/SIGNING_METHOD/)
+  await assert.rejects(save({...f.body,signingMethod:'bankid'}),/SIGNING_METHOD/)
+  await save({...f.body,signingMethod:'email_code'})
+  const next=randomUUID(), snapshot={...f.snapshot,signingMethod:'email_code'}
+  await assert.rejects(db.query("select write_contract_signing_document($1,$2,$3,'freeze',$4::jsonb)",[org,f.project,actor,JSON.stringify({id:next,version:2,revision:3,confirmed:true,createdAt:'2026-10-11T10:00:00Z',snapshot,files:[],pdfPath:`${org}/${f.project}/signing/${next}/contract.pdf`,pdfSize:1000,pdfSha256:'a'.repeat(64)})]),/SIGNING_METHOD/)
+  await assert.rejects(db.query("insert into action_case_customer_offers(id,org_id,action_case_id,snapshot,status) values($1,$2,$3,$4::jsonb,'published')",[randomUUID(),org,f.project,JSON.stringify({...snapshot,signingMethod:'external'})]),/SIGNING_METHOD/)
 })

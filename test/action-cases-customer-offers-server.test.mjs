@@ -220,6 +220,7 @@ function harness(options = {}) {
   }
   const deps = {
     './contractSigningServer': { async getContractSigningVersions() { return { signingAvailable: true, signingVersions: [] } } },
+    './contractSigningDeliveryServer': { async getSharedSigningContracts() { return [] } },
     'server-only': {},
     'node:crypto': crypto,
     './quotes': quotes,

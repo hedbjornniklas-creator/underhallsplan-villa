@@ -11,8 +11,8 @@ const code = ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/co
   compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
 const ctx={orgId:id(90),userId:id(91)}, caseId=id(1), fileId=id(4)
 function harness(options={}) {
-  const draft=signingDraft(), sourcePath=`${ctx.orgId}/${caseId}/source.pdf`, stored=[], calls=[], reads=[], removed=[], rendered=[]
-  draft.attachmentIds=[fileId]
+  const draft=options.empty?domain.normalizeCustomerOffer(domain.emptyCustomerOffer()):signingDraft(), sourcePath=`${ctx.orgId}/${caseId}/source.pdf`, stored=[], calls=[], reads=[], removed=[], rendered=[]
+  if (!options.empty) draft.attachmentIds=[fileId]
   if (options.abs18) { draft.contractForm='abs18'; draft.termsAttachmentId=fileId }
   const file={id:fileId,file_name:'Ritning.pdf',content_type:'application/pdf',file_size_bytes:1000,storage_bucket:'action-case-files',file_path:sourcePath}
   const blobs=new Map([[sourcePath,Buffer.alloc(1000,1)]])
@@ -24,6 +24,7 @@ function harness(options={}) {
         if (table==='action_case_customer_contract_drafts') return {data:{body:draft,revision:1}}
         if (table==='action_case_attachments') return {data:options.missingAttachment?[]:[file]}
         if (table==='action_case_customer_offers') return {data:options.online?[{status:options.online}]:[]}
+        if (table==='action_case_contract_signing_delivery') return {data:[]}
         if (table==='action_case_contract_signing_documents') {
           if (options.schemaMissing) return {error:{code:'42P01'}}
           if (read.filters.some(([k])=>k==='id')) return {data:stored.find((r)=>read.filters.every(([k,v])=>r[k]===v))??null}
@@ -81,12 +82,53 @@ test('downloads reject other versions, file IDs, tenants, altered bytes and path
   await assert.rejects(h.downloadContractSigningFile(ctx,caseId,row.id,'pdf'),/FILES/)
   await assert.rejects(freeze(harness({otherTenant:true})),/NOT_FOUND/)
 })
-test('schema, incomplete input, stale revision, online versions and corrupt ABS terms fail before PDF creation',async()=>{
+test('schema, stale revision, online versions and corrupt selected ABS terms fail before PDF creation',async()=>{
   for(const [options,pattern] of [[{schemaMissing:true},/SIGNING_SCHEMA/],[{online:'accepted'},/ACCEPTED/],[{online:'published'},/WITHDRAW_FIRST/],[{abs18:true,corruptTerms:true},/STANDARD_TERMS/]]){
     const h=harness(options);await assert.rejects(freeze(h),pattern);assert.equal(h.rendered.length,0);assert.equal(h.calls.length,0)
   }
   const h=harness();await assert.rejects(freeze(h,{revision:2}),/STALE/);await assert.rejects(freeze(h,{confirmed:false}),/CONFIRM/)
-  h.draft.contractParties.customers[0].name='';await assert.rejects(freeze(h),/INCOMPLETE/)
+})
+
+test('paper locking accepts empty ABS18 contracts and blank names, dates, prices and conditions',async()=>{
+  const empty=harness({empty:true});await freeze(empty)
+  assert.equal(empty.stored.length,1);assert.equal(empty.stored[0].snapshot.customerName,'')
+  assert.equal(empty.stored[0].snapshot.issuerName,'');assert.deepEqual(empty.stored[0].files,[])
+  const partial=harness()
+  partial.draft.contractParties.customers.forEach((c)=>c.name='')
+  partial.draft.contractParties.contractor.companyName='';partial.draft.contractParties.contractor.organizationNumber=''
+  partial.draft.paymentPlan.installments[0].condition=''
+  partial.draft.paymentPlan.installments[0].amountOre=null
+  partial.draft.contractPricing.rows[0].labourOre=null
+  partial.draft.contractDetails.advice.reason=''
+  partial.draft.contractDetails.assignment={documents:[{fileId,type:'',name:'',date:''}],additionalScope:'',exclusions:'',documentNotes:''}
+  await freeze(partial);assert.equal(partial.stored.length,1)
+})
+
+test('draft PDF uses only saved contract data and does not archive, lock, send or mutate anything',async()=>{
+  const h=harness({empty:true}), before=JSON.stringify(h.draft)
+  const pdf=await h.downloadCurrentContractPdf(ctx,caseId,1)
+  assert.equal(pdf.fileName,'Avtal-utkast-r1.pdf');assert.equal(pdf.contentType,'application/pdf')
+  assert.equal(h.rendered[0].draftRevision,1);assert.equal(h.rendered[0].snapshot.customerName,'')
+  assert.equal(JSON.stringify(h.draft),before);assert.equal(h.calls.length,0);assert.equal(h.stored.length,0)
+  assert.equal(h.blobs.size,1);assert.equal(h.removed.length,0)
+  const noSchema=harness({schemaMissing:true});await noSchema.downloadCurrentContractPdf(ctx,caseId,1)
+  await assert.rejects(h.downloadCurrentContractPdf(ctx,caseId,2),/STALE/)
+  for (const revision of [0,-1,NaN,1.5]) await assert.rejects(h.downloadCurrentContractPdf(ctx,caseId,revision),/INVALID/)
+  await assert.rejects(harness({otherTenant:true}).downloadCurrentContractPdf(ctx,caseId,1),/NOT_FOUND/)
+  await assert.rejects(harness({online:'accepted'}).downloadCurrentContractPdf(ctx,caseId,1),/ACCEPTED/)
+  await assert.rejects(harness({missingAttachment:true}).downloadCurrentContractPdf(ctx,caseId,1),/FILES/)
+  const selected=harness();await selected.downloadCurrentContractPdf(ctx,caseId,1)
+  assert.equal(selected.rendered[0].files[0].fileName,'Ritning.pdf')
+  assert.equal(selected.blobs.size,1);assert.equal(selected.calls.length,0)
+})
+
+test('current PDF endpoint returns the immutable archive once locked, not a new rendering',async()=>{
+  const h=harness();await freeze(h)
+  const old=await h.downloadContractSigningFile(ctx,caseId,h.stored[0].id,'pdf')
+  h.draft.title='Changed draft';h.draft.contractParties.customers[0].name='Changed person'
+  const pdf=await h.downloadCurrentContractPdf(ctx,caseId,1)
+  assert.deepEqual(pdf,old);assert.equal(h.rendered.length,1)
+  await assert.rejects(h.downloadCurrentContractPdf(ctx,caseId,2),/STALE/)
 })
 test('failed render, upload or rolled-back write cleans only its own temporary copies; uncertain committed PDF is retained',async()=>{
   for(const options of [{pdfFailed:true},{uploadFailed:true},{rpcFailed:true}]){

@@ -12,6 +12,7 @@ import CustomerOfferEditor, { type CustomerEditorView } from './CustomerOfferEdi
 import ProjectScheduleEditor from './ProjectScheduleEditor'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import type { ContractContractor } from '@/lib/action-cases/customerContractParties'
+import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
@@ -79,8 +80,10 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   }, [view])
   const accepted = offer?.offers.find((item) => item.status === 'accepted')
   const published = offer?.offers.find((item) => item.status === 'published')
-  const contract = accepted ?? published
-  const offerLabel = !offer ? 'Kunde inte hämtas' : accepted ? 'Godkänt grundavtal' : published ? published.sentAt ? 'Skickat avtal' : 'Publicerat avtal' : 'Internt avtalsutkast'
+  const paper = activeSigningVersion(offer?.signingVersions)
+  const contract = accepted ?? published ?? paper
+  const offerLabel = !offer ? 'Kunde inte hämtas' : accepted ? 'Godkänt grundavtal' : published ? published.sentAt ? 'Skickat avtal' : 'Publicerat avtal'
+    : paper?.delivery?.signedCopy ? 'Underskriven kopia registrerad' : paper?.delivery?.sharedAt && !paper.delivery.withdrawnAt ? 'Låst och delat avtal' : paper ? 'Låst avtal · Inte delat' : 'Internt avtalsutkast'
   const priceDraft = contract?.snapshot ?? offer?.draft
   const customer = offer?.recipient ?? project.participants.find((item) => item.role === 'customer')
   const currentSection = view === 'review' ? 'contract' : view === 'offerReview' ? 'offer' : view
@@ -137,7 +140,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
         <section hidden={view !== 'schedule'}>
           <div className="gizmo-section-heading"><h2>Tidsplan</h2></div>
           <ProjectScheduleEditor caseId={caseId} items={project.items} onDirty={setScheduleDirty} onShared={setSharedSchedule} customerRefresh={customerRefresh} />
-          <section className="gizmo-schedule-section"><h3>{accepted ? 'Avtalade tider' : published ? 'Tider i publicerat avtal' : 'Planerade tider i avtalsutkast'}</h3>
+          <section className="gizmo-schedule-section"><h3>{accepted || paper?.delivery?.signedCopy ? 'Avtalade tider' : published ? 'Tider i publicerat avtal' : paper ? 'Tider i låst avtalsversion' : 'Planerade tider i avtalsutkast'}</h3>
             <p className="whitespace-pre-wrap">{(contract?.snapshot.schedule ?? offer?.draft.schedule)?.trim() || 'Inga tider angivna.'}</p>
             {contract ? <p className="gizmo-secondary">Grundavtal version {contract.version}{accepted ? ' · Godkänt' : ' · Inte godkänt'}</p> : open('contract', 'Ange tider i grundavtalet')}
           </section>

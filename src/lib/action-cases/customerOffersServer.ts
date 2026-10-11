@@ -8,6 +8,7 @@ import {
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
+import { getSharedSigningContracts } from './contractSigningDeliveryServer'
 import { normalizePlannedItems, type CustomerPlanning, type CustomerPlannedItem } from './customerPlanning'
 import { writeContractCustomer } from './customerRegistryServer'
 import { getContractSigningVersions } from './contractSigningServer'
@@ -319,6 +320,7 @@ export async function publishCustomerOffer(
   if (workspace.revision !== payload.revision || !workspace.revision)
     throw new Error('CUSTOMER_OFFER_STALE')
   const draft = workspace.draft
+  if (draft.signingMethod === 'external') throw new Error('CUSTOMER_OFFER_SIGNING_METHOD')
   if (draft.items.some((i) => i.kind === 'option'))
     throw new Error('CUSTOMER_OFFER_SEPARATE_CHOICES')
   if (offerPublishIssues(draft).length)
@@ -508,7 +510,7 @@ export async function getSharedCustomerOffers(
   orgId: string,
   caseId: string,
   participantId: string
-): Promise<{ enabled: boolean; offers: CustomerOffer[]; plannedItems?: CustomerPlannedItem[] }> {
+): Promise<{ enabled: boolean; offers: CustomerOffer[]; externalContracts?: import('./customerOffers').SharedSigningContract[]; plannedItems?: CustomerPlannedItem[] }> {
   const db = createSupabaseAdminClient()
   const rows = await db
     .from('action_case_customer_offers')
@@ -523,8 +525,10 @@ export async function getSharedCustomerOffers(
     .eq('org_id', orgId).eq('action_case_id', caseId).eq('participant_id', participantId).maybeSingle()
   if (!schemaMissing(planning.error?.code)) checked(planning.error)
   const plannedItems = normalizePlannedItems(planning.data?.shared_items ?? [])
+  const externalContracts = await getSharedSigningContracts(orgId, caseId, participantId)
   return {
-    enabled: Boolean(rows.data?.length || plannedItems.length),
+    enabled: Boolean(rows.data?.length || plannedItems.length || externalContracts.length),
+    ...(externalContracts.length ? { externalContracts } : {}),
     ...(plannedItems.length ? { plannedItems } : {}),
     offers: (rows.data ?? []).map(mapCustomerOffer)
   }

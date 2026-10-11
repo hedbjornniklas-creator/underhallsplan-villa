@@ -1,8 +1,8 @@
 import 'server-only'
 import { createHash, randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { CUSTOMER_OFFER_BUCKET, normalizeCustomerOffer, offerId, type ContractSigningVersion, type CustomerOfferSnapshot } from './customerOffers'
-import { contractSigningIssues, signingPdfFilename } from './contractSigning'
+import { CUSTOMER_OFFER_BUCKET, normalizeCustomerOffer, offerId, type ContractSigningVersion, type CustomerOfferDraft, type CustomerOfferSnapshot } from './customerOffers'
+import { activeSigningVersion, signingPdfFilename } from './contractSigning'
 import { standardTermsFileId, verifyStandardTermsFile } from './standardContractTermsServer'
 
 type Context = { orgId: string; userId: string }
@@ -22,14 +22,28 @@ async function requireProject(ctx: Context, caseId: string) {
   if (!result.data) throw new Error('CUSTOMER_OFFER_NOT_FOUND')
   return result.data
 }
-export async function getContractSigningVersions(ctx: Context, caseId: string): Promise<{ signingAvailable: boolean; signingVersions: ContractSigningVersion[] }> {
+function contractSnapshot(draft: CustomerOfferDraft, project: { title: string; property_address: string }): CustomerOfferSnapshot {
+  const parties = draft.contractParties
+  return { ...draft, projectTitle: project.title, propertyAddress: project.property_address,
+    customerName: parties?.customers[0]?.name ?? '', customerEmail: parties?.email ?? '',
+    issuerName: parties?.contractor.companyName ?? '', replyEmail: parties?.contractor.email ?? '' }
+}
+export async function getContractSigningVersions(ctx: Context, caseId: string): Promise<{ signingAvailable: boolean; deliveryAvailable?: boolean; signingVersions: ContractSigningVersion[] }> {
   const result = await createSupabaseAdminClient().from(table).select('*').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('version', { ascending: false }).limit(100)
   if (result.error && ['42P01', 'PGRST205'].includes(result.error.code)) return { signingAvailable: false, signingVersions: [] }
   checked(result.error)
-  return { signingAvailable: true, signingVersions: ((result.data || []) as StoredVersion[]).map((row) => ({
+  const deliveries = await createSupabaseAdminClient().from('action_case_contract_signing_delivery').select('document_id,participant_id,shared_at,withdrawn_at,signed_copy,signed_at').eq('org_id', ctx.orgId).eq('action_case_id', caseId)
+  const deliveryAvailable = !deliveries.error
+  if (deliveries.error && !['42P01', 'PGRST205'].includes(deliveries.error.code)) checked(deliveries.error)
+  return { signingAvailable: true, deliveryAvailable, signingVersions: ((result.data || []) as StoredVersion[]).map((row) => ({
     id: row.id, version: row.version, revision: row.draft_revision, createdAt: row.created_at, releasedAt: row.released_at,
     snapshot: row.snapshot, pdfSha256: row.pdf_sha256, fileSizeBytes: Number(row.pdf_size),
-    files: row.files.map(({ id, fileName, contentType, fileSizeBytes }) => ({ id, fileName, contentType, fileSizeBytes })) })) }
+    files: row.files.map(({ id, fileName, contentType, fileSizeBytes }) => ({ id, fileName, contentType, fileSizeBytes })),
+    ...((deliveries.data || []).some((d) => d.document_id === row.id) ? { delivery: (() => {
+      const d = deliveries.data!.find((d) => d.document_id === row.id)!
+      return { participantId: d.participant_id, sharedAt: d.shared_at, withdrawnAt: d.withdrawn_at,
+        signedCopy: d.signed_copy ? { fileName: d.signed_copy.fileName, fileSizeBytes: Number(d.signed_copy.fileSizeBytes), registeredAt: d.signed_at } : null }
+    })() } : {}) })) }
 }
 export async function freezeContractForSigning(ctx: Context, caseId: string, payload: Record<string, unknown>) {
   if (payload.confirmed !== true) throw new Error('CUSTOMER_OFFER_CONFIRM')
@@ -43,9 +57,8 @@ export async function freezeContractForSigning(ctx: Context, caseId: string, pay
   checked(result.error)
   if (!result.data || result.data.revision !== payload.revision) throw new Error('CUSTOMER_OFFER_STALE')
   const draft = normalizeCustomerOffer(result.data.body)
-  if (contractSigningIssues(draft).length) throw new Error('CUSTOMER_OFFER_INCOMPLETE')
-  if (draft.contractForm === 'abs18') {
-    if (draft.termsAttachmentId !== standardTermsFileId(ctx.orgId, caseId)) throw new Error('CUSTOMER_OFFER_STANDARD_TERMS')
+  if (draft.signingMethod === 'email_code') throw new Error('CUSTOMER_OFFER_SIGNING_METHOD')
+  if (draft.attachmentIds.includes(standardTermsFileId(ctx.orgId, caseId))) {
     await verifyStandardTermsFile(ctx.orgId, caseId)
   }
   const state = await db.from('action_case_customer_offers').select('status').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('status', ['accepted', 'published'])
@@ -54,9 +67,7 @@ export async function freezeContractForSigning(ctx: Context, caseId: string, pay
   if (state.data?.length) throw new Error('CUSTOMER_OFFER_WITHDRAW_FIRST')
   if (versions.signingVersions.some((s) => !s.releasedAt)) throw new Error('CUSTOMER_OFFER_LOCKED')
   const id = randomUUID(), version = (versions.signingVersions[0]?.version || 0) + 1, createdAt = new Date().toISOString()
-  const parties = draft.contractParties!
-  const snapshot: CustomerOfferSnapshot = { ...draft, projectTitle: project.title, propertyAddress: project.property_address,
-    customerName: parties.customers[0].name, customerEmail: parties.email, issuerName: parties.contractor.companyName, replyEmail: parties.contractor.email }
+  const snapshot = contractSnapshot(draft, project)
   const selected = draft.attachmentIds.length ? await db.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes,storage_bucket,file_path')
     .eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('id', draft.attachmentIds) : { data: [], error: null }
   checked(selected.error)
@@ -100,6 +111,34 @@ export async function createNewContractDraft(ctx: Context, caseId: string, paylo
   const result = await createSupabaseAdminClient().rpc('write_contract_signing_document', { p_org_id: ctx.orgId, p_case_id: caseId, p_user_id: ctx.userId,
     p_operation: 'new_draft', p_data: { id: offerId(payload.id), revision: payload.revision, confirmed: true } })
   checked(result.error)
+}
+export async function downloadCurrentContractPdf(ctx: Context, caseId: string, revision: number) {
+  if (!Number.isSafeInteger(revision) || revision < 1) throw new Error('CUSTOMER_OFFER_INVALID')
+  const project = await requireProject(ctx, caseId), db = createSupabaseAdminClient()
+  const active = activeSigningVersion((await getContractSigningVersions(ctx, caseId)).signingVersions)
+  if (active) {
+    if (active.revision !== revision) throw new Error('CUSTOMER_OFFER_STALE')
+    return downloadContractSigningFile(ctx, caseId, active.id, 'pdf')
+  }
+  const accepted = await db.from('action_case_customer_offers').select('status').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('status', ['accepted'])
+  checked(accepted.error)
+  if (accepted.data?.some((s) => s.status === 'accepted')) throw new Error('CUSTOMER_OFFER_ACCEPTED')
+  const result = await db.from('action_case_customer_contract_drafts').select('body,revision').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+  checked(result.error)
+  if (!result.data || result.data.revision !== revision) throw new Error('CUSTOMER_OFFER_STALE')
+  const draft = normalizeCustomerOffer(result.data.body)
+  const selected = draft.attachmentIds.length ? await db.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes')
+    .eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('id', draft.attachmentIds) : { data: [], error: null }
+  checked(selected.error)
+  if (selected.data?.length !== draft.attachmentIds.length) throw new Error('CUSTOMER_OFFER_FILES')
+  const files = draft.attachmentIds.map((id) => {
+    const f = selected.data!.find((f) => f.id === id)!
+    return { id: f.id, fileName: f.file_name, contentType: f.content_type, fileSizeBytes: Number(f.file_size_bytes) }
+  })
+  const { renderContractSigningPdf } = await import('./contractSigningPdf')
+  const bytes = await renderContractSigningPdf({ id: caseId, version: 0, draftRevision: revision, createdAt: new Date().toISOString(), snapshot: contractSnapshot(draft, project), files })
+  if (bytes.length > 50_000_000 || bytes.length < 100) throw new Error('CUSTOMER_OFFER_PDF_LIMIT')
+  return { bytes, fileName: `Avtal-utkast-r${revision}.pdf`, contentType: 'application/pdf' }
 }
 export async function downloadContractSigningFile(ctx: Context, caseId: string, documentId: string, fileId: string) {
   await requireProject(ctx, caseId)

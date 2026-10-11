@@ -1094,6 +1094,73 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
 - AI-stod for offerter och fullstandighetskontroll. Inga AI-priser eller avtalsvillkor
   publiceras automatiskt i denna version.
 
+## Beslut 2026-10-11: PDF och valfri komplettering vid papperslasning
+
+- Inga avtalsfalt ar obligatoriska for lasning for extern/papperssignering.
+  Tidigare krav pa fullstandiga parter, priser, avtalsuppgifter och betalningsplan
+  tas bort enbart for detta flode. Digitala utskicks- och godkannanderegler kvarstar.
+- Hamta PDF for signering finns fore lasning, med sparade egna avtalstexter,
+  A4-layout och underskriftsrader. Olast PDF marks Ej last och arkiveras inte.
+  Detta ar nu implementerat via HusHubs gemensamma React PDF-renderare, inte
+  den framtida PDF-funktion som beskrivits bland tidigare oppna fragor.
+- Last PDF och bilagekopior ar oforanderliga. Nytt utkast behaller gamla versioner.
+  Behorighet, revisionskontroll och filintegritet ar fortfarande tekniska krav;
+  innehallsgranskning ar anvandarens ansvar, inte ett villkor i lasningsfunktionen.
+- Kor `docs/db/2026-10-11_03_optional_contract_locking.sql` efter `_02` innan
+  publicering av den korrigerade lasningen. Ingen befintlig avtalsdata skrivs om.
+
+## Beslut 2026-10-11: signeringssatt och uttrycklig kunddelning
+
+- Anvandaren godkanner separationen mellan lasning, delning och signering.
+  Signeringssatt sparas i det egna avtalsutkastet: Pa papper/annan tjanst eller
+  Digitalt godkannande med e-postkod. Olast nytt avtal utan publiceringshistorik
+  visar pappersalternativet; aldre digitala versioner behaller sitt kodflode.
+  Ett explicit valt satt kan inte tappas av en aldre sparklient.
+- Papperslasning saknar innehallskrav och skickar/delar/godkanner inget.
+  Dela med bestallaren kravs separat, med bekraftad befintlig projektmottagare.
+  En ny 90-dagars portal-lank ges utan mejlutskick; tidigare giltiga lankar
+  fungerar for samma mottagare. Ingen ny kund eller avtalspart skapas.
+- Den delbara bestallarportalen visar en fryst PDF-kopia utan strukturerade
+  personnummer, avtalets sparade kundtexter, bilagor och betalningsplan.
+  Ingen kod- eller godkannandeknapp visas for ett pappersavtal. Original-PDF:n
+  behalls oforandrad internt. Valda bilagor granskas av anvandaren fore delning.
+- Sluta dela avvisar nya filhamtningar och tar bort versionen fran portalen.
+  Redan nedladdade dokument kan inte aterkallas. Nytt utkast andrar inte den
+  tidigare delade kopian; den marks som aldre och kan doljas uttryckligen.
+- Underskriven PDF, hogst 20 MB, kopplas till exakt last version efter att
+  anvandaren bekraftat samtliga bestallares och entreprenorens underskrifter.
+  Den privata filen och registrerande anvandare/tid sparas oforanderligt.
+  Inget kundgodkannande, digitalt certifikat eller BankID-resultat konstrueras.
+  Portalen visar att entreprenoren registrerat kopian efter manuell kontroll;
+  den underskrivna filen delas inte automatiskt via bearer-lanken.
+- Registrerad underskriven version kan inte oppnas som nytt utkast. Ovriga
+  kontrakts-, betalplans- och arkivlas ligger kvar aven i databasen.
+- Digitalt godkannande ateranvander befintlig fryst publicering, mejl och kod,
+  med oforandrade kompletteringsregler. Las och dela for digitalt godkannande
+  ar en uttrycklig handling, aldrig autospar. Koden verifierar en brevlada;
+  detta ar inte BankID och stod for tva separata digitala signatarer aterstar.
+- Migration: kor `2026-10-11_03_optional_contract_locking.sql` och darefter
+  `2026-10-11_04_contract_signing_delivery.sql`. Ny privat leveranstabell
+  anvander organisations-, mottagar-, revisions-, status- och filkontroller.
+  Migrering skriver inte om historiska utkast, PDF:er eller onlineversioner.
+  Publiceringskontroll 2026-10-11: bada migrationerna finns i produktion.
+  Skrivskyddad katalogkontroll matchar samtliga fem funktionsdefinitioner exakt,
+  inklusive tokenkollisionsskyddet; RLS, privata rattigheter och fem aktiva
+  triggers ar verifierade. Inga riktiga avtal delas eller signeras vid publicering.
+- Lokal verifiering: 463 action-case-tester passerade, sedan 21 fokuserade
+  tester efter slutlig kontroll av tokenkollision och bestallarens PDF-preview.
+  TypeScript, riktad ESLint och produktionsbygget med webpack passerade.
+  CUA-klicktest med riktiga komponenter och fiktiv backend: signeringsval
+  bevaras efter omladdning, tva bestallare sparrar onlinegodkannande, lasning
+  delar inte avtalet, explicit delning/aterkallelse fungerar, tidigare delad
+  kopia behalls nar nytt utkast oppnas, manuell PDF-registrering blockerar
+  nytt utkast aven efter omladdning. Kundvyn saknar onlinegodkannande for
+  pappersavtal och skiljer manuell registrering fran digital signering.
+  Kund-PDF:s fyra sidor renderade och visuellt granskade; underskriftsrader
+  for bada bestallare och entreprenoren finns. Dator samt 390/344 px
+  mobilbredd kontrollerade utan sidledes overflode. Inga verkliga avtal
+  delades, signerades eller registrerades i dessa tester.
+
 ## Avtalets prisdel 2026-10-08
 
 - Avtalets nya prisdel: fast, lopande eller kombinerat pris i

@@ -18,7 +18,8 @@ import {
 import {
   customerOfferTotal,
   offerPublishIssues,
-  normalizeCustomerOffer
+  normalizeCustomerOffer,
+  mapCustomerOffer
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
 import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
@@ -31,8 +32,8 @@ import { editContractProperty, emptyContractDetails } from '../src/lib/action-ca
 import { editSiteFacility } from '../src/lib/action-cases/contractSiteFacilities.ts'
 import { normalizePropertyDetails, propertyIdentityKey } from '../src/lib/properties/identity.ts'
 import { signingDraft } from '../test/fixtures/contract-signing.ts'
-import { contractSigningIssues } from '../src/lib/action-cases/contractSigning.ts'
 import { renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
+import { publicContractParties } from '../src/lib/action-cases/customerContractParties.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -216,9 +217,28 @@ if (process.argv.includes('--site-facilities')) {
   ]) state.draft.contractDetails.siteFacilities = editSiteFacility(state.draft.contractDetails.siteFacilities,key,{providedBy,paidBy:'contractor',details})
 }
 const signingPdfs = new Map()
+const customerSigningPdfs = new Map(), signedCopies = new Map()
 if (process.argv.includes('--contract-signing')) {
   state.draft = signingDraft()
+  if (process.argv.includes('--incomplete-contract-signing')) {
+    state.draft.contractParties.customers.forEach((c) => c.name = '')
+    state.draft.contractParties.contractor.companyName = ''; state.draft.contractParties.contractor.organizationNumber = ''
+    state.draft.contractDetails.controlParticipants = { controlOfficer: '', customerInspector: '' }
+    state.draft.contractDetails.advice.reason = ''
+    state.draft.contractDetails.changesPricing.markups.materials = null
+    state.draft.contractPricing.rows[0].amountOre = null
+    state.draft.paymentPlan.installments[0].condition = ''
+    state.draft.paymentPlan.installments[0].amountOre = null
+    state.draft = normalizeCustomerOffer(state.draft)
+  }
   state.costing = {}; state.offers = []; state.signingAvailable = true; state.signingVersions = []
+  state.deliveryAvailable = true
+  if (process.argv.includes('--contract-delivery')) state.draft.signingMethod = 'external'
+}
+const contractSnapshot = () => {
+  const p = state.draft.contractParties
+  return structuredClone({ ...state.draft, projectTitle: projects.cases[0].title, propertyAddress: projects.cases[0].propertyAddress,
+    customerName: p?.customers[0]?.name ?? '', customerEmail: p?.email ?? '', issuerName: p?.contractor.companyName ?? '', replyEmail: p?.contractor.email ?? '' })
 }
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
@@ -237,12 +257,37 @@ const server = createServer(async (req, res) => {
   if (customerRegistryTest && path === '/api/settings/customers') { json({ workspace: registry }); return }
   if (propertyRegistryTest && path.endsWith('/properties') && req.method === 'GET') { json({ properties }); return }
   if (path === '/__test__/writes') { json(writes); return }
-  const signingDownload = path.match(/\/contract-signing\/([^/]+)\/(pdf)$/)
+  if (path.endsWith('/contract-signing/pdf') && req.method === 'GET') {
+    const revision=Number(new URL(req.url,'http://localhost').searchParams.get('revision'))
+    if (revision!==state.revision) { json({error:'Utkastet har ändrats.'},409); return }
+    const active=state.signingVersions.find((v)=>!v.releasedAt)
+    const pdf=active?signingPdfs.get(active.id):await renderContractSigningPdf({id:id(1),version:0,draftRevision:revision,createdAt:new Date().toISOString(),snapshot:contractSnapshot(),files:[]})
+    res.setHeader('Content-Type','application/pdf'); res.setHeader('Content-Disposition','attachment; filename="TEST-avtalsutkast.pdf"')
+    res.end(pdf); return
+  }
+  const signingDownload = path.match(/\/contract-signing\/([^/]+)\/(pdf|customer-pdf)$/)
   if (signingDownload && req.method === 'GET') {
-    const pdf = signingPdfs.get(signingDownload[1])
+    const version=state.signingVersions.find((v)=>v.id===signingDownload[1])
+    const isPublic=path.includes('/public/')
+    const pdf = isPublic && (!version?.delivery?.sharedAt || version.delivery.withdrawnAt) ? null : (isPublic || signingDownload[2] === 'customer-pdf' ? customerSigningPdfs : signingPdfs).get(signingDownload[1])
     if (!pdf) { json({error:'Version saknas'},404); return }
     res.setHeader('Content-Type','application/pdf'); res.setHeader('Content-Disposition','attachment; filename="TEST-avtal.pdf"')
     res.end(pdf); return
+  }
+  const signedRoute=path.match(/\/contract-signing\/([^/]+)\/signed$/)
+  if (signedRoute && req.method==='GET') {
+    const bytes=signedCopies.get(signedRoute[1]);if(!bytes){json({error:'Kopia saknas'},404);return}
+    res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','attachment; filename="TEST-underskrivet.pdf"');res.end(bytes);return
+  }
+  if(signedRoute && req.method==='POST') {
+    const chunks=[];for await(const chunk of req)chunks.push(chunk)
+    const form=await new Request('http://localhost'+req.url,{method:'POST',headers:req.headers,body:Buffer.concat(chunks)}).formData()
+    const version=state.signingVersions.find((v)=>v.id===signedRoute[1]&&!v.releasedAt),file=form.get('file')
+    if(!version || form.get('confirmed')!=='true' || Number(form.get('revision'))!==state.revision || !(file instanceof File)){json({error:'Kontrollera version och PDF'},409);return}
+    signedCopies.set(version.id,Buffer.from(await file.arrayBuffer()))
+    version.delivery??={sharedAt:null,withdrawnAt:null,participantId:null,signedCopy:null}
+    version.delivery.signedCopy={fileName:file.name,fileSizeBytes:file.size,registeredAt:new Date().toISOString()}
+    writes.push('upload_signed');json(state);return
   }
   if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
   if (path === '/__test__/slow-save' && req.method === 'POST') { slowSave = true; json({ ok: true }); return }
@@ -263,14 +308,19 @@ const server = createServer(async (req, res) => {
       const active = state.signingVersions.find((v) => !v.releasedAt)
       if (body.revision !== state.revision || body.confirmed !== true) { json({error:'Utkastet har ändrats.'},409); return }
       if (body.operation === 'freeze') {
-        if (active || contractSigningIssues(state.draft).length) { json({error:'Komplettera avtalet.'},409); return }
-        const p=state.draft.contractParties
+        if (active) { json({error:'Avtalet är redan låst.'},409); return }
         const version={id:id(900 + state.signingVersions.length),version:state.signingVersions.length + 1,revision:state.revision,createdAt:new Date().toISOString(),releasedAt:null,
-          snapshot:structuredClone({...state.draft,projectTitle:projects.cases[0].title,propertyAddress:projects.cases[0].propertyAddress,customerName:p.customers[0].name,customerEmail:p.email,issuerName:p.contractor.companyName,replyEmail:p.contractor.email}),files:[]}
+          snapshot:contractSnapshot(),files:[]}
         const pdf = await renderContractSigningPdf(version)
         version.fileSizeBytes=pdf.length; version.pdfSha256='TEST'
         signingPdfs.set(version.id,pdf); state.signingVersions.unshift(version)
-      } else if (body.operation==='new_draft' && active?.id===body.id) { active.releasedAt=new Date().toISOString(); state.revision++ }
+      } else if (body.operation==='new_draft' && active?.id===body.id && !active.delivery?.signedCopy) { active.releasedAt=new Date().toISOString(); state.revision++ }
+      else if(body.operation==='share' && active?.id===body.id) {
+        active.delivery??={sharedAt:null,withdrawnAt:null,participantId:null,signedCopy:null}
+        active.delivery.sharedAt??=new Date().toISOString();active.delivery.withdrawnAt=null;active.delivery.participantId=body.participantId
+        if(!customerSigningPdfs.has(active.id))customerSigningPdfs.set(active.id,await renderContractSigningPdf({...active,snapshot:{...active.snapshot,contractParties:publicContractParties(active.snapshot.contractParties)}}))
+        json({...state,customerUrl:`http://127.0.0.1:${server.address().port}/atgardsarende/TEST-LANK`});return
+      } else if(body.operation==='withdraw_share' && active?.id===body.id) { active.delivery.withdrawnAt=new Date().toISOString() }
       else { json({error:'Ogiltig åtgärd'},400); return }
       json(state); return
     }
@@ -492,8 +542,11 @@ const server = createServer(async (req, res) => {
     return
   }
   if (path === '/fixture' || path.endsWith('/customer-offers')) {
+    const externalContracts=state.signingVersions?.filter((v)=>v.delivery?.sharedAt&&!v.delivery.withdrawnAt).map((v)=>({
+      document:mapCustomerOffer({id:v.id,version:v.version,status:'published',snapshot:v.snapshot,files:v.files,published_at:v.delivery.sharedAt}),
+      createdAt:v.createdAt,releasedAt:v.releasedAt,sharedAt:v.delivery.sharedAt,signedCopyRegisteredAt:v.delivery.signedCopy?.registeredAt??null}))
     json(independentContract && new URL(req.url, 'http://localhost').searchParams.get('draftTarget') === 'offer'
-      ? { ...state, ...estimateState, offerDraft: undefined } : state)
+      ? { ...state, ...estimateState, offerDraft: undefined } : {...state,externalContracts})
     return
   }
   if (path.endsWith('/customer-planning')) { json(state.planning); return }

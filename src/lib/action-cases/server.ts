@@ -670,14 +670,18 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
     items ?? [],
     mappedAttachments.map((attachment) => attachment.actionCaseItemId)
   )
+  const customerSnapshot = [
+    ...(customerOffers?.offers ?? []).map((offer) => ({ date: offer.publishedAt, snapshot: offer.snapshot })),
+    ...(customerOffers?.externalContracts ?? []).map((entry) => ({ date: entry.sharedAt, snapshot: entry.document.snapshot })),
+  ].sort((a, b) => b.date.localeCompare(a.date))[0]?.snapshot
   return {
     accessState,
     customerOffers,
     participant: { id: participant.id, role: participant.role, name: participant.name, companyName: participant.company_name, email: participant.email, phone: participant.phone },
     actionCase: {
       id: actionCase.id,
-      title: customerOffers?.offers[0]?.snapshot.projectTitle ?? actionCase.title,
-      propertyAddress: customerOffers?.offers[0]?.snapshot.propertyAddress ?? actionCase.property_address,
+      title: customerSnapshot?.projectTitle ?? actionCase.title,
+      propertyAddress: customerSnapshot?.propertyAddress ?? actionCase.property_address,
       description: customerOffers?.enabled ? null : actionCase.description,
       status: actionCase.status,
       items: customerOffers?.enabled ? [] : visibleItems.map((item) => ({ id: item.id, title: item.title, scope: item.scope, status: item.status, sortOrder: item.sort_order })),

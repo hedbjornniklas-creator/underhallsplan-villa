@@ -15,7 +15,8 @@ import {
   MapPin,
   Printer,
   WalletCards,
-  ShieldCheck
+  ShieldCheck,
+  Download
 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import type { ActionCasePortal } from '@/lib/action-cases/contracts'
@@ -43,7 +44,11 @@ export default function ActionCaseCustomerPortal({
   previewCaseId?: string
 }) {
   const [view, setView] = useState<'offer' | 'planning' | 'payments' | 'schedule' | 'files'>('offer')
-  const [offers, setOffers] = useState(portal.customerOffers?.offers ?? [])
+  const externalContracts = portal.customerOffers?.externalContracts ?? []
+  const [offers, setOffers] = useState(() => [
+    ...(portal.customerOffers?.offers ?? []),
+    ...externalContracts.map((entry) => ({ ...entry.document, status: entry.releasedAt ? 'superseded' as const : 'published' as const })),
+  ].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt)))
   const [offerId, setOfferId] = useState(offers[0]?.id ?? '')
   const [selection, setSelection] = useState<string[]>([])
   const [signerName, setSignerName] = useState(portal.participant.name)
@@ -58,13 +63,16 @@ export default function ActionCaseCustomerPortal({
     latest = offers[0],
     offer = offers.find((o) => o.id === offerId) ?? latest
   const accepted = offers.find((o) => o.status === 'accepted')
+  const external = externalContracts.find((entry) => entry.document.id === offer?.id)
+  const latestExternal = externalContracts.find((entry) => entry.document.id === latest?.id)
   const plannedItems = portal.customerOffers?.plannedItems ?? []
   const offeredOptions = latest?.snapshot.items.filter((i) => i.kind === 'option') ?? []
-  const contract = accepted ?? offers.find((o) => o.status === 'published')
+  const contract = latestExternal && !latestExternal.releasedAt ? latest : accepted ?? offers.find((o) => o.status === 'published')
   const sharedFiles = c.attachments.filter(
     (f) => !latest?.files.some((copy) => copy.id === f.id)
   )
   const actionable =
+    !latestExternal &&
     latest?.status === 'published' &&
     latest.snapshot.validUntil >=
       new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
@@ -82,7 +90,7 @@ export default function ActionCaseCustomerPortal({
     setConfirmed(false)
   }
   async function respond(operation: 'challenge' | 'accept') {
-    if (!offer || !token || preview || running.current) return
+    if (!offer || external || !token || preview || running.current) return
     running.current = true
     setBusy(true)
     try {
@@ -124,7 +132,9 @@ export default function ActionCaseCustomerPortal({
     }
   }
   const fileUrl = (o: CustomerOffer, id: string) =>
-    preview
+    externalContracts.some((entry) => entry.document.id === o.id)
+      ? preview ? `/api/action-cases/${previewCaseId}/contract-signing/${o.id}/${id === 'pdf' ? 'customer-pdf' : id}` : `/api/action-cases/public/${token}/contract-signing/${o.id}/${id}`
+      : preview
       ? `/api/action-cases/${previewCaseId}/customer-offers/${o.id}/files/${id}`
       : `/api/action-cases/public/${token}/offers/${o.id}/files/${id}`
   const sharedUrl = (id: string) =>
@@ -172,16 +182,16 @@ export default function ActionCaseCustomerPortal({
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 py-5">
             <div>
-              <h2 className="text-xl">{offer.status === 'accepted' ? 'Godkänt avtal' : 'Grundavtal'}</h2>
+              <h2 className="text-xl">{external ? external.signedCopyRegisteredAt ? 'Avtal · Underskriven kopia registrerad' : 'Avtal för underskrift' : offer.status === 'accepted' ? 'Godkänt avtal' : 'Grundavtal'}</h2>
               <p className="mt-1 text-sm text-slate-600">{offer.snapshot.items.some((i) => i.kind === 'option')
                 ? 'Tidigare publicerad version. Ursprunglig omfattning och val visas oförändrade.'
                 : 'Omfattning, pris och villkor. Val och tillval beställs separat.'}</p>
             </div>
-            <button className={`${button} print:hidden`} onClick={() => window.print()}><Printer size={17} /> Skriv ut avtal</button>
+            {external ? <a className={`${button} print:hidden`} href={fileUrl(offer, 'pdf')} target="_blank" rel="noopener noreferrer"><Download size={17} /> Hämta PDF för underskrift</a> : <button className={`${button} print:hidden`} onClick={() => window.print()}><Printer size={17} /> Skriv ut avtal</button>}
           </div>
           {offers.length > 1 && (
             <label className="mb-5 block text-sm print:hidden">
-              Offertversion
+              Avtalsversion
               <select
                 value={offer.id}
                 onChange={(e) => {
@@ -192,7 +202,7 @@ export default function ActionCaseCustomerPortal({
               >
                 {offers.map((o) => (
                   <option key={o.id} value={o.id}>
-                    Version {o.version} ·{' '}
+                    {externalContracts.some((entry) => entry.document.id === o.id) ? 'PDF' : 'Digitalt'} · Version {o.version} ·{' '}
                     {
                       {
                         published: 'Publicerad',
@@ -206,7 +216,12 @@ export default function ActionCaseCustomerPortal({
               </select>
             </label>
           )}
-          {offer.status !== 'accepted' &&
+          {external && <p className="mb-4 border-l-4 border-teal-700 bg-slate-50 p-3 text-sm">
+            {external.releasedAt ? 'Äldre avtalsversion. Ett nytt internt utkast har öppnats; det ändrar inte denna kopia.' : external.signedCopyRegisteredAt
+              ? 'Entreprenören har registrerat en underskriven kopia för denna version efter manuell kontroll. Ingen digital signering har gjorts här.'
+              : 'Avtalet signeras på papper eller i en annan tjänst. Denna version är låst, men ännu inte registrerad som underskriven.'}
+          </p>}
+          {!external && offer.status !== 'accepted' &&
             (!actionable || offer.id !== latest?.id) && (
               <p className="mb-4 border-l-4 border-amber-500 bg-amber-50 p-4 text-sm">
                 Denna version kan inte längre godkännas.
@@ -218,7 +233,7 @@ export default function ActionCaseCustomerPortal({
               selected={selection}
               onSelect={select}
               readOnly={
-                busy || preview || offer.id !== latest?.id || !actionable
+                Boolean(external) || busy || preview || offer.id !== latest?.id || !actionable
               }
               fileUrl={(id) => fileUrl(offer, id)}
             />
@@ -227,7 +242,7 @@ export default function ActionCaseCustomerPortal({
               offer.id === latest?.id &&
               offer.status === 'published' && (
                 <section className="py-6 print:hidden">
-                  <h3 className="text-lg font-semibold">Godkänn offerten</h3>
+                  <h3 className="text-lg font-semibold">Godkänn avtalet med e-postkod</h3>
                   <label className="mt-4 block text-sm">
                     Ditt fullständiga namn *
                     <input
@@ -338,7 +353,7 @@ export default function ActionCaseCustomerPortal({
       {view === 'payments' && <section className="py-6">
         <h2 className="text-xl">Betalningsplan</h2>
         {contract ? <>
-          <p className="mt-3 text-sm font-medium">{accepted ? 'Avtalad betalningsplan' : 'Föreslagen betalningsplan · Avtalet är inte godkänt'} · Version {contract.version}</p>
+          <p className="mt-3 text-sm font-medium">{latestExternal && contract.id === latestExternal.document.id ? latestExternal.signedCopyRegisteredAt ? 'Betalningsplan · Underskriven kopia registrerad' : 'Delad betalningsplan · Väntar på underskrift' : accepted ? 'Avtalad betalningsplan' : 'Föreslagen betalningsplan · Avtalet är inte godkänt'} · Version {contract.version}</p>
           <p className="mt-2 text-sm text-slate-600">Grundavtalet · Inklusive moms. Detta är en betalningsplan, inte fakturor eller betalningskvitton.</p>
           <PaymentPlanDocument plan={contract.snapshot.paymentPlan} paymentTerms={contract.snapshot.paymentTerms} conditions={contract.snapshot.paymentConditions} />
         </> : <p className="mt-3 text-sm text-slate-600">Ingen betalningsplan har delats ännu.</p>}

@@ -24,6 +24,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  signingMethod?: 'email_code' | 'external'
   contractPricing?: ContractPricing
   contractParties?: ContractParties
   paymentPlan?: CustomerPaymentPlan | null
@@ -70,6 +71,7 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  deliveryAvailable?: boolean
   signingAvailable?: boolean
   signingVersions?: ContractSigningVersion[]
   offerDraft?: { draft: CustomerOfferDraft; revision: number; costing?: CustomerOfferCosting }
@@ -88,6 +90,15 @@ export type CustomerOfferWorkspace = {
 export type ContractSigningVersion = {
   id: string; version: number; revision: number; createdAt: string; releasedAt: string | null
   pdfSha256: string; fileSizeBytes: number; snapshot: CustomerOfferSnapshot; files: CustomerOfferFile[]
+  delivery?: ContractSigningDelivery
+}
+export type ContractSigningDelivery = {
+  sharedAt: string | null; withdrawnAt: string | null; participantId: string | null
+  signedCopy: { fileName: string; fileSizeBytes: number; registeredAt: string } | null
+}
+export type SharedSigningContract = {
+  document: CustomerOffer; createdAt: string; sharedAt: string; releasedAt: string | null
+  signedCopyRegisteredAt: string | null
 }
 
 export const CUSTOMER_OFFER_COLUMNS =
@@ -167,6 +178,8 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (!['abs18', 'custom'].includes(String(d.contractForm)))
     throw new Error('CUSTOMER_OFFER_INVALID')
+  if (d.signingMethod !== undefined && !['email_code', 'external'].includes(String(d.signingMethod)))
+    throw new Error('CUSTOMER_OFFER_INVALID')
   const validUntil = text(d.validUntil, 10)
   if (
     validUntil &&
@@ -181,6 +194,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.signingMethod === undefined ? {} : { signingMethod: d.signingMethod as CustomerOfferDraft['signingMethod'] }),
     ...(d.contractPricing === undefined ? {} : { contractPricing: normalizeContractPricing(d.contractPricing) }),
     ...(d.contractParties === undefined ? {} : { contractParties: normalizeContractParties(d.contractParties) }),
     ...(d.paymentPlan === undefined ? {} : { paymentPlan: normalizePaymentPlan(d.paymentPlan) }),
