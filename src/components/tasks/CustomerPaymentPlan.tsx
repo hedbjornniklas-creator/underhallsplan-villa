@@ -13,6 +13,39 @@ const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-m
 const iconButton = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300 disabled:opacity-40'
 const field = 'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
 
+export function PaymentPlanSummary({ plan, baseAmount, paymentTerms, conditions, priceMode }: {
+  plan?: CustomerPaymentPlan | null; baseAmount: number | null; paymentTerms: string; conditions?: PaymentConditions; priceMode?: string
+}) {
+  const terms = paymentConditionsText(conditions, paymentTerms)
+  const total = plan ? paymentPlanTotal(plan) : 0
+  const remaining = baseAmount === null ? null : baseAmount - total
+  const issues = paymentPlanIssues(plan, baseAmount, priceMode)
+  return <div className="gizmo-payment-summary">
+    <h4 className="text-sm font-semibold">Betalningsvillkor</h4>
+    <p className="gizmo-payment-summary-terms whitespace-pre-wrap text-sm">{terms || 'Betalningsvillkor saknas.'}</p>
+    {plan?.installments.length ? <>
+      <table className="gizmo-payment-summary-table" aria-label="Avtalets betalningsplan">
+        <thead><tr><th scope="col">Delbetalning</th><th scope="col">Villkor för fakturering</th><th scope="col">Planerat datum</th><th scope="col">Belopp inkl. moms</th></tr></thead>
+        <tbody>{plan.installments.map((row, index) => <tr key={row.id}>
+          <th scope="row">{index + 1}. {row.title || 'Delbetalning'}{row.kind && <span className="block text-sm font-normal text-slate-600">{row.kind === 'final' ? '10 %' : plan.automation?.initialPercent === null || plan.automation?.initialPercent === undefined ? 'Procent saknas' : `${plan.automation.initialPercent} %`}</span>}</th>
+          <td className="whitespace-pre-wrap">{row.condition || 'Faktureringsvillkor saknas'}</td>
+          <td><span className="gizmo-payment-summary-date-label">Planerad fakturering: </span>{row.plannedDate ? <time dateTime={row.plannedDate}>{row.plannedDate}</time> : 'Ej planerat'}</td>
+          <td>{row.amountOre === null ? 'Belopp saknas' : money(row.amountOre)}</td>
+        </tr>)}</tbody>
+      </table>
+      <div className="gizmo-payment-sum" aria-label="Avtalets betalningsplans summa">
+        <dl className="gizmo-payment-summary-total">
+          <dt className="font-semibold">{plan.installments.some((row) => row.amountOre === null) ? 'Summa angivna belopp inkl. moms' : 'Summa inkl. moms'}</dt><dd className="font-semibold">{money(total)}</dd>
+          <dt>Avtalsbelopp inkl. moms</dt><dd>{baseAmount === null ? priceMode === 'running' ? 'Löpande räkning' : 'Pris saknas' : money(baseAmount)}</dd>
+          {remaining !== null && remaining !== 0 && <><dt>{remaining < 0 ? 'Överfördelat' : 'Kvar att fördela'}</dt><dd>{money(Math.abs(remaining))}</dd></>}
+        </dl>
+        {issues.length ? <ul className="mt-2 space-y-1 text-sm text-amber-800" aria-label="Kontroll av betalningsplan">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+          : remaining === 0 && <p className="mt-1 text-sm text-slate-600">Stämmer med avtalets belopp</p>}
+      </div>
+    </> : <p className="py-3 text-sm text-slate-600">Ingen uppdelad betalningsplan finns.</p>}
+  </div>
+}
+
 export function PaymentPlanDocument({ plan, paymentTerms, conditions, showTerms = true }: {
   plan?: CustomerPaymentPlan | null; paymentTerms: string; conditions?: PaymentConditions; showTerms?: boolean
 }) {

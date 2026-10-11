@@ -25,7 +25,7 @@ export default function ProjectEditorRow({ title, summary, amount, open, onToggl
     const shift = bounds.top - targetTop
     if (Math.abs(shift) >= 1) window.scrollBy({ top: shift, behavior: 'instant' })
   }, [open])
-  return <section className="gizmo-editor-row">
+  return <section className="gizmo-editor-row" data-open={open}>
     <h3>
       <button ref={toggle} type="button" className="gizmo-editor-row-toggle" aria-expanded={open} aria-controls={id} onClick={() => {
         clickedTop.current = toggle.current?.getBoundingClientRect().top ?? null

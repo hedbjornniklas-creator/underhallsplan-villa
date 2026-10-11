@@ -50,7 +50,7 @@ import { assignmentForEditing, assignmentPatch } from '@/lib/action-cases/contra
 import { contractDocumentDraftState, contractDocumentsAcknowledged, readContractDocumentDraft, writeContractDocumentDraft, type ContractDocumentDraft } from '@/lib/action-cases/contractDocumentDraft'
 import CustomerPlanningEditor from './CustomerPlanningEditor'
 import { contractAdviceForEditing, contractAdviceSummary, contractDetailsForEditing, contractFieldSummary, emptyContractDetails, type ContractFieldKey } from '@/lib/action-cases/customerContract'
-import { PaymentPlanDocument, PaymentPlanEditor } from './CustomerPaymentPlan'
+import { PaymentPlanDocument, PaymentPlanEditor, PaymentPlanSummary } from './CustomerPaymentPlan'
 import { abs18PaymentText, paymentConditionsText, syncPaymentPlan } from '@/lib/action-cases/customerPaymentPlan'
 import ProjectEditorRow from './ProjectEditorRow'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
@@ -480,6 +480,7 @@ export default function CustomerOfferEditor({
     acceptedTotalOre: null
   }
   const previewOffer = workspace.offers.find((o) => o.status === 'accepted') ?? draftOffer
+  const paymentSource = locked ? previewOffer.snapshot : draft
   const portal: ActionCasePortal = {
     accessState: 'open',
     participant: customer ?? {
@@ -923,10 +924,14 @@ export default function CustomerOfferEditor({
             <ProjectEditorRow title="Ändringar och tilläggsarbeten" summary={changesSummary(draft.contractDetails?.changesPricing)} open={expanded === 'changes'} onToggle={() => setExpanded(expanded === 'changes' ? null : 'changes')}>
               <CustomerContractChanges draft={draft} files={files} caseId={actionCase.id} blocked={locked || Boolean(busy)} onChange={update} />
             </ProjectEditorRow>
-            <ProjectEditorRow title="Tid för betalning" summary={`${draft.paymentPlan?.installments.length ?? 0} delbetalningar · ${paymentConditionsText(draft.paymentConditions, draft.paymentTerms).trim() ? 'Villkor ifyllda' : 'Villkor saknas'}`}
+            <ProjectEditorRow title="Tid för betalning" summary={`${paymentSource.paymentPlan?.installments.length ?? 0} delbetalningar · ${paymentConditionsText(paymentSource.paymentConditions, paymentSource.paymentTerms).trim() ? 'Villkor ifyllda' : 'Villkor saknas'}`}
               open={expanded === 'payment'} onToggle={() => setExpanded(expanded === 'payment' ? null : 'payment')}>
-              <p className="whitespace-pre-wrap text-sm">{paymentConditionsText(draft.paymentConditions, draft.paymentTerms) || 'Betalningsvillkor saknas.'}</p>
-              <button className={`${button} mt-3`} onClick={() => setView('payments')}><WalletCards size={17} /> Öppna betalningsplan</button>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-base font-semibold">Betalningsplan för grundavtalet</h4>
+                <button type="button" className={button} onClick={() => { setPaymentView('plan'); setView('payments') }}><WalletCards size={17} /> {locked ? 'Visa betalningsplan' : 'Redigera betalningsplan'}</button>
+              </div>
+              <PaymentPlanSummary plan={paymentSource.paymentPlan} baseAmount={customerOfferBaseAmount(paymentSource)} paymentTerms={paymentSource.paymentTerms}
+                conditions={paymentSource.paymentConditions} priceMode={paymentSource.contractPricing?.mode} />
             </ProjectEditorRow>
             </div>
             <ProjectEditorRow title="Tid för arbetenas påbörjande och avslutande" summary={draft.schedule.trim() ? 'Tider ifyllda' : 'Tider saknas'}

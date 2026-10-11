@@ -52,6 +52,13 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   Datorns avtalsfält och kommandon har minst 36 px höjd, prisverktyg 32 px.
   Detta är ett avgränsat undantag från övriga projektytors 44 px kontroller.
   Mobilen behåller minst 48 px pekmål och 16 px inmatningstext.
+- Öppen huvudsektion i avtalsformuläret har tonad rubrikrad #EDF1F1,
+  en 3 px grönblå vänstermarkering #206961 genom rubrik och innehåll,
+  20 px indrag för båda samt en rak 2 px nederkant #D5DCDD. Efter den
+  öppna sektionen är avståndet till nästa rubrik 12 px. Innehållet är vitt,
+  utan skugga eller kortform. Stängda sektioner behåller sina kompakta rader.
+  Markeringen gäller endast huvudsektioner, inte arbetsdelar eller betalrader
+  inne i dem. Kundens dokumentvy och övriga moduler ändras inte.
 - En rad per projekt, med namn/adress, beställare, status och konkret åtgärdsbehov.
 - Vita rader, tunna horisontella avdelare, inga kort eller statuspiller per projekt.
 - Projektarbete använder varianten **Tydlig tabell**: tonad rubrikrad #EDF1F1,
@@ -179,6 +186,12 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 - Betalningsvillkor har ett eget dagfält (30 som startvärde) och redigerbar
   ABS 18-text. Tidigare egna villkor bevaras separat. Villkor och betalplan
   sparas i samma avtalsversion; signerade och äldre versioner skrivs inte om.
+- Tid för betalning i Avtal visar samma villkor och betalningsplan som
+  betalplansfliken, utan extra redigerbara fält. En kompakt tabell visar moment,
+  faktureringsvillkor, eventuellt datum och belopp, med summa och kontroll mot
+  avtalsbeloppet. Redigera betalningsplan öppnar betalplansfliken. Fakturakund,
+  Fortnox och fakturastatus ingår inte i denna sammanställning. Godkända avtal
+  visar sin låsta versionskopia. Kundens dokumentlayout ändras inte.
 - En ny betalplan för fast pris reserverar 10 procent som sista delbetalning.
   Slutbetalningen kan väljas bort via kryssrutan eller radens papperskorg och
   läggas tillbaka. Övriga moment delar då på återstoden proportionellt; första
@@ -204,6 +217,12 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 ## Beslutslogg
 
+- 2026-10-10: Användaren godkänner att Tid för betalning visar en skrivskyddad,
+  kompakt sammanställning av betalningsplan och villkor, med summakontroll.
+  Redigering sker endast i betalplansfliken och använder samma avtalsutkast.
+- 2026-10-10: Användaren godkänner tydliga gränser för öppna avtalssektioner:
+  tonad rubrikrad, sammanhängande grönblå vänsterlinje och markerat avslut.
+  Interna huvudsektioner får denna markering; befintliga underlistor behålls.
 - 2026-10-10: Användaren vill ha en gemensam prisvy i Avtal som följer
   Redovisning i avtalet. Den dubbla förhandsvisningen tas bort och inställningar
   ordnas före tabellen. Dolda delmoment kan fortfarande redigeras uttryckligen.
@@ -297,6 +316,15 @@ dator, mobil och tangentbord, samt att inga utskick sker enbart genom navigering
 
 ### Betalningsplan 2026-10-10
 
+- Tid för betalning är lokalt klicktestad med fiktiva uppgifter: samma villkor,
+  dagar, moment och datum visas direkt efter ändring i betalplansfliken och
+  finns kvar efter omladdning. Avvikelse mot avtalsbeloppet visas; uttrycklig
+  omfördelning ger samma summa i båda vyerna. Redigeringsknappen öppnar alltid
+  Betalningsplan, även efter att Fakturakund använts. Tangentbord samt 390/344 px
+  mobilbredder är kontrollerade utan sidöverflöde eller klippta belopp.
+  Sju nya sammanställningstester och totalt 31 riktade tester passerar, liksom
+  TypeScript och riktad ESLint. Ingen ny lagring, SQL eller kundutskick behövs.
+  Driftsättningen kontrolleras separat vid publicering.
 - Valbar slutbetalning är lokalt klicktestad: slå av/på, papperskorg, ångra,
   första procentbetalning, exakt totalsumma, ny rad sist och omladdning.
   Ångra fördelning nollställs vid senare radredigering så att ny text behålls.
