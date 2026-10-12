@@ -121,7 +121,7 @@ test('draft PDF uses only saved contract data and does not archive, lock, send o
   assert.equal(selected.blobs.size,1);assert.equal(selected.calls.length,0)
 })
 
-test('missing attachment references remain in draft PDF with a warning, but cannot be frozen',async()=>{
+test('missing attachment references retain availability metadata and saved data, but cannot be frozen',async()=>{
   const h=harness(), missingId=id(999)
   h.draft.attachmentIds.push(missingId)
   h.draft.contractDetails.assignment={documents:[{fileId:missingId,type:'',name:'',date:''}],additionalScope:'',exclusions:'',documentNotes:''}

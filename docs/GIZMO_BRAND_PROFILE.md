@@ -223,7 +223,61 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 - Äldre /kund-länkar leder till samma projekts interna arbetsyta.
 - Den interna projektmenyn och projekthuvudet ska inte följa med vid utskrift.
 
+## Avtals-PDF
+
+Detta är ett uttryckligt dokumentbeslut 2026-10-11, inte en automatisk följd
+av arbetsytans visuella profil. Offert, kundgodkännande och sparade avtalsdata
+ändras inte. Den befintliga gemensamma PDF-motorn används.
+
+- Vit A4, lokalt inbäddad Manrope, grafittext och varmgula huvudrubrikband,
+  tydligt skilda från grå tabellhuvuden. Avtalstyp och avtalsgrund är tydliga
+  på första sidan. Varje huvudavsnitt har en tunn sammanhängande ram.
+- Vänsterställd brödtext 11 pt, radavstånd 1,4 och högst 420 pt textbredd.
+  Detta är användarens uttryckliga justering av det tidigare 12 pt-provet,
+  inte en generell regel för tillgängliga dokument. Tabeller använder
+  ramens hela inneryta, 10,5 pt, tydliga radlinjer och högerjusterade belopp.
+- Huvudavsnitt har numrerat rubrikband och PDF-bokmärke. Nummer och rubrik
+  är lika stora, 13 pt. Underrubriker har eget ljust band med gul vänsterlinje och
+  beskriver innehållet; arbetsdelarnas namn hålls ihop med början av texten.
+  Omfattning, förutsättningar och undantag har egna samlade avsnitt.
+- Ingen tryckt utkaststatus, intern revision, framställningsrad eller
+  varningsruta. Status och filproblem hör till appen, inte avtalstexten.
+  Sidfoten visar endast sidnummer. Tomma uppgifter får skrivlinjer,
+  men okontrollerad F-skatt visas med omarkerade Ja/Nej-rutor,
+  oplanerade datum tomma celler. Egna formuleringar ändras inte.
+- Pris visas under Priset, inte i en andra ruta på första sidan.
+  Betalningsvillkor per rad ligger efter betalplanens summa. Slutbetalningens
+  sparade villkor trycks utan tillagt radnummer eller titel. Texten redigeras
+  i betalningsplanens befintliga fält Villkor för fakturering. Underskrifter
+  hålls samman och Ort och datum får tydlig luft under rubrikbandet.
+- Separata bilagor identifieras i en gemensam handlingstabell. Sparat
+  handlingsnamn trycks utan dubblerat tekniskt filnamn; filnamn används bara
+  när handlingsnamnet saknas eller bilagan inte har en egen handlingsrad. Sparade
+  referenser och filskydd behålls även när en helt tom rad inte trycks.
+  Ingen intern instruktion om filhämtning används som avtalstext.
+- Ny layout gäller bara nya PDF-renderingar. Tidigare arkiverade versioner
+  skrivs inte om. Bokmärken innebär inte att PDF/UA eller skärmläsarstöd
+  är verifierat; teknisk dokumenttillgänglighet är ett separat arbete.
+
+Läsbarhetsunderlag: [Isofs vägledning](https://www.isof.se/svenska-spraket/klarsprak/klarsprakshjalpen/skriv-klarsprak/ge-texten-ett-lasvanligt-utseende)
+och [GOV.UK:s dokumentvägledning](https://www.gov.uk/guidance/publishing-accessible-documents).
+
 ## Beslutslogg
+
+- 2026-10-11: Efter nästa PDF-prov begär användaren varmgula huvudrubriker,
+  lika stora avsnittsnummer, tydliga ramar och underrubriker, starkare
+  tabellinjer och något mindre brödtext. Det nya 11 pt-provet ersätter
+  föregående 12 pt-layoutbeslut; rubrikerna minskas inte. Dubblerade filnamn
+  och slutbetalningsvillkorets automatiska etikett tas bort endast i utskrift.
+  F-skatt får tydliga, omarkerade val när status inte är kontrollerad.
+  Avtalstexter, belopp, behörigheter och arkiverade PDF:er ändras inte.
+
+- 2026-10-11: Efter granskning av avtals-PDF begär användaren en läsbar
+  dokumentlayout utan interna statusrader och systemets tomfältstexter.
+  Detta ersätter tidigare beslut att märka olåsta PDF:er med Ej låst och
+  skriva ut bilagevarningar. Appens varningar, låsning och filskydd kvarstår.
+  Omfattning och undantag grupperas, första sidans prisruta tas bort och
+  betalvillkor flyttas under tabellens summa. Alla sparade egna texter bevaras.
 
 - 2026-10-11: Användaren godkänner ett separat val av signeringssätt och
   uttrycklig delning till beställaren. På papper/annan tjänst använder låst

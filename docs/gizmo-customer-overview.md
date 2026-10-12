@@ -1210,6 +1210,94 @@ och typkontroll passerar efter uppdatering mot senaste huvudgrenen.
   De tre Manrope-filerna finns i bade lasnings- och utkastsruttens byggmanifest.
   Riktad ESLint, TypeScript och produktionsbygget med webpack passerade.
 
+## Beslut 2026-10-11: Lasbar avtals-PDF utan intern status
+
+Detta uttryckliga anvandarbeslut ersatter tidigare krav pa tryckt Ej last,
+utkastsrevision, varningar och prisruta pa forstasidan. Det andrar inte appens
+statusvisning, sparning, behorighet, filkontroll, lasning eller kunddelning.
+
+- Forstasidan visar avtalstyp, avtalsgrund, egen avtalsrubrik, parter,
+  medverkande och fastighet. Inga interna status-/framstallningsrader,
+  revisionsnummer eller automatiska varningsrutor trycks. Sidfoten visar bara
+  Sida X av Y. Revision ar fortfarande en intern sparraknare, inte en
+  juridisk avtalsversion. Sparade formuleringar som namner ett belopp bevaras.
+- Systemets Ej angivet och Ej planerat ersatts av tomma skrivlinjer respektive
+  tomma datumceller. Inga egna texter eller belopp skapas. Namngivna arbetsdelar
+  utan omfattning behalls med skrivlinje; helt tomma, saknade handlingsrader
+  utelamnas bara ur utskriften. Databasens filreferenser tas aldrig bort.
+- Uppdraget far en innehallsbaserad hierarki: Handlingar, Arbetets omfattning,
+  Forutsattningar och Entreprenorens atagande omfattar inte. Varje text behaller
+  arbetsdelens namn. Generella och momentvisa undantag samlas under samma
+  rubrik; ABS-texterna behalls under Bestallarens ansvar och avgifter.
+  Ingen dubblerad rubrik Standardtexter for uppdraget anvands.
+- Manrope 12 pt, vansterstalld brodtext, cirka 400 pt textbredd och tydliga
+  stycken prioriteras framfor farre sidor. Tabeller anvander 10,5 pt och hela
+  skrivytan. Rubrikband och bokmarken markerar huvudavsnitt. Uppdrag och
+  avtalsvillkor foljer pa varandra utan en tvingad sidbrytning.
+- Prisredovisningen visas under Priset, inte ocksa pa forstasidan. I betalplanen
+  ligger villkor per delbetalning efter summaraden; datum utan planering ar
+  tomma. Underskrifter halls samman, med extra avstand fore Ort och datum.
+- Bilagor forblir separata, identifierade handlingar med typ, namn och datum.
+  Samma frysta bilagekopior ska folja med avtalet. PDF:n innehaller inte
+  tekniska instruktioner om hamtning. En saknad bilaga kan fortfarande stoppa
+  lasning och visas som ett problem i appen; varningen skrivs inte i avtalet.
+- Endast nya renderingar anvander layouten. Arkiverade PDF-bytes, egna
+  avtalstexter, belopp, datum och originalet med ABS 18-villkor andras inte.
+  Ingen SQL, automatisk publicering eller skrivning till projektdata behovs.
+- Underlag: [Isof om lasvanligt utseende](https://www.isof.se/svenska-spraket/klarsprak/klarsprakshjalpen/skriv-klarsprak/ge-texten-ett-lasvanligt-utseende),
+  [Isof om tydliga rubriker](https://www.isof.se/svenska-spraket/klarsprak/klarsprakshjalpen/skriv-klarsprak/skriv-tydliga-rubriker),
+  [GOV.UK om tillgangliga dokument](https://www.gov.uk/guidance/publishing-accessible-documents)
+  och [ABS 18:s allmanna bestammelser, punkt 6](https://www.garbo.se/media/prnoeosp/allmanna-bestammelser-abs18.pdf).
+  Slutsatsen att bilagorna kan vara separata ar en tolkning av bestammelsernas
+  kontraktshandlingar, inte ett pastaende om juridisk fullstandighet.
+- Avgransning: visuell lasbarhet och innehallsbevarande ar verifierade.
+  Bokmarken ar inte samma sak som taggad PDF; PDF/UA och skarmlasarordning
+  ar inte verifierade. [Diggs dokumentkrav](https://www.digg.se/kunskap-och-stod/regler-och-rekommendationer/regler-och-rekommendationer/dokument-ska-vara-tillgangliga)
+  kraver en separat teknisk tillganglighetskontroll.
+- Verifiering: 474 action-case-tester, riktad ESLint, TypeScript och ett
+  produktionsbygge passerade efter sista layoutjusteringen. Revision 199
+  lastes utan dataskrivning; dess 14 sidor renderades och granskades visuellt.
+  Textbevarande, marginaler, sidhuvud/-fot och underskrifter kontrollerades
+  i tolv prov-PDF:er, inklusive lang text/filnamn, tomt avtal, lopande/blandat
+  pris och samtliga sex fasta prisredovisningar. Ingen publicering gjordes.
+
+## Beslut 2026-10-11: Inramade avtalsavsnitt och tydligare tabeller
+
+Anvandaren granskar PDF-provet och begar tydligare avsnittsgranser, varmgula
+rubriker och nagot mindre brodtext. Detta kompletterar beslutet ovan och
+ersatter just dess 12 pt/400 pt-layout med 11 pt/420 pt. Det ar ett uttryckligt
+utskriftsbeslut, inte en generell tillganglighetsregel eller PDF/UA-verifiering.
+
+- Huvudavsnitten far tunna ramar och varmgula rubrikband. Avsnittsnummer och
+  rubrik anvander samma 13 pt-storlek. Tabellhuvuden behaller neutral gra
+  farg, med tydligare radlinjer. Underrubriker far ljusa band och gul
+  vansterlinje; rubrikstorlekar och vansterstalld brodtext behalls.
+- Parter, medverkande och fastighet ramas in separat. Forsta sidan kan
+  fortsatta vid langa uppgifter, med sidhuvud pa fortsatta sidor. Okontrollerad
+  F-skatt visas med omarkerade Ja/Nej-rutor i stallet for en oklar skrivlinje.
+- Handlingstabellen skriver sparat handlingsnamn utan ett dubblerat filnamn.
+  Filnamn ar reserv nar eget namn saknas. Typ, datum, referens och originalfil
+  bevaras. Inga sparade handlingsnamn kortas eller skrivs om automatiskt.
+- Slutbetalningens sparade villkor ligger efter summan utan tillagd etikett
+  som 7. Slutbetalning. Andra radvillkor behaller identifierande radnummer och
+  titel. Inga standardvillkor skapas eller skrivs over vid PDF-rendering.
+- Texten ar redan redigerbar via Avtal -> Tid for betalning -> Redigera
+  betalningsplan -> Slutbetalning -> Villkor for fakturering. Samma oberoende
+  avtalsutkast anvands; ingen andra kopia eller ny inline-editor infors.
+- Layouten galler endast nya renderingar. Befintliga PDF-arkiv, databasdata,
+  kunddelning, signering och lasning andras inte. Ingen SQL behovs.
+- Verifiering: 477 action-case-tester, riktad ESLint och produktionsbygget
+  inklusive TypeScript passerade. Revision 199 lastes utan dataskrivning;
+  provets 13 sidor renderades och granskades visuellt. Text, belopp,
+  marginaler, sidhuvud/-fot och underskrifter kontrollerades i fjorton
+  prov-PDF:er, inklusive lang inledning och langa medverkandeuppgifter.
+  Ingen publicering gjordes.
+- Publiceringspaket 2026-10-12: anvandaren godkanner publicering av den
+  granskade layouten. 27 riktade PDF-/lasningstester passerade pa nytt fore
+  leverans. Paketet omfattar bara avtals-PDF, tester och dokumentation;
+  ingen SQL, avtalslasning eller kunddelning ingar. Tidigare arkiverade PDF:er
+  bevaras. Driftstatus verifieras separat mot den publicerade versionen.
+
 ## Avtalets prisdel 2026-10-08
 
 - Avtalets nya prisdel: fast, lopande eller kombinerat pris i
