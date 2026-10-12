@@ -16,6 +16,7 @@ const page = compact(read(pagePath))
 const editor = compact(read(editorPath))
 const dashboard = compact(read(dashboardPath))
 const switcher = compact(read(switcherPath))
+const autosave = compact(read('src/lib/organizations/profileCardAutosave.ts'))
 
 test('TU profile page resolves workspace exclusively from the authenticated organization membership', () => {
   assert.match(page, /context = await getOrganizationWorkspace\(params\.orgId\)/u)
@@ -24,10 +25,21 @@ test('TU profile page resolves workspace exclusively from the authenticated orga
   assert.match(page, /role: context\.role/u)
   assert.match(page, /key=\{context\.organization\.id\}/u)
   assert.match(page, /Min profil i \{context\.organization\.name/u)
-  assert.match(page, /Tidigare profilvy för ÖB\/EB/u)
 
   assert.doesNotMatch(page, /profileId:\s*resolvedSearchParams/u)
   assert.doesNotMatch(page, /profileId\?:\s*string/u)
+})
+
+test('personal profile omits the legacy profile link but keeps organization settings recovery', () => {
+  assert.doesNotMatch(page, /Tidigare profilvy för ÖB\/EB/u)
+  assert.doesNotMatch(page, /href="\/ob\/settings"/u)
+  assert.match(page, /href="\/settings\/organisation">Till organisationsinställningar<\/Link>/u)
+})
+
+test('personal profile mounts certifications and addons for the authenticated member and selected organization', () => {
+  assert.match(page, /import OrganizationProfileExtras from '@\/components\/organizations\/OrganizationProfileExtras'/u)
+  assert.match(page, /<OrganizationProfileExtras orgId=\{context\.organization\.id\} profileId=\{context\.profileId\} \/>/u)
+  assert.equal(page.match(/<OrganizationProfileExtras /gu)?.length, 1)
 })
 
 test('TU dashboard and organization switcher preserve the selected organization on the profile route', () => {
@@ -52,12 +64,10 @@ test('profile editor scopes save and upload requests to the currently rendered w
   assert.match(editor, /action: 'import_legacy_media'/u)
   assert.match(
     editor,
-    /JSON\.stringify\(\{ orgId: workspace\.organization\.id, expectedVersion: workspace\.version, card: \{ displayName: form\.displayName, title: form\.title, phone: form\.phone, email: form\.email, avatarPath: form\.avatarPath, signaturePath: form\.signaturePath, \}, \}\)/u
+    /JSON\.stringify\(\{ orgId: workspace\.organization\.id, expectedVersion: workspace\.version, card: personalProfileValues\(submitted\), \}\)/u
   )
-  assert.match(
-    editor,
-    /payload\.workspace\.organization\.id !== workspace\.organization\.id/u
-  )
+  assert.match(editor, /checkedProfileWorkspace\(payload\.workspace, workspace\)/u)
+  assert.match(autosave, /value\.organization\.id !== previous\.organization\.id \|\| value\.profileId !== previous\.profileId/u)
   assert.equal(editor.match(/credentials: 'same-origin'/gu)?.length, 3)
   assert.equal(editor.match(/cache: 'no-store'/gu)?.length, 3)
 
@@ -66,11 +76,11 @@ test('profile editor scopes save and upload requests to the currently rendered w
   assert.doesNotMatch(editor, /createSupabase/u)
 })
 
-test('profile editor resets organization-bound state and makes organization and role explicit', () => {
-  assert.match(editor, /setWorkspace\(initialWorkspace\)/u)
-  assert.match(editor, /setForm\(initialWorkspace\.card\)/u)
-  assert.match(editor, /setSavedSnapshot\(serialize\(initialWorkspace\.card\)\)/u)
-  assert.match(editor, /\}, \[initialWorkspace\]\)/u)
+test('profile editor isolates organization-bound state without resetting same-organization drafts', () => {
+  assert.match(editor, /key=\{`\$\{initialWorkspace\.organization\.id\}:\$\{initialWorkspace\.profileId\}`\}/u)
+  assert.match(editor, /useState\(initialWorkspace\.card\)/u)
+  assert.doesNotMatch(editor, /setForm\(initialWorkspace\.card\)/u)
+  assert.match(editor, /generation !== lifetime\.current/u)
   assert.match(editor, /const organizationName = workspace\.organization\.name/u)
   assert.match(editor, /Min profil/u)
   assert.match(editor, /workspace\.role === 'admin' \? 'Organisationsadministratör' : 'Besiktningsman'/u)
@@ -79,12 +89,12 @@ test('profile editor resets organization-bound state and makes organization and 
 
 test('migration-required mode prevents profile writes and media uploads in the UI', () => {
   assert.match(editor, /const canSave = !workspace\.migrationRequired/u)
-  assert.match(editor, /if \(!file \|\| workspace\.migrationRequired \|\| importingLegacyMedia\) return/u)
+  assert.match(editor, /if \(!file \|\| workspace\.migrationRequired \|\| saveConflict \|\| retryImport \|\| operation\.current\) return/u)
   assert.equal(
-    editor.match(/disabled=\{workspace\.migrationRequired \|\| Boolean\(uploadingField\) \|\| importingLegacyMedia\}/gu)?.length,
+    editor.match(/disabled=\{workspace\.migrationRequired \|\| saving \|\| saveConflict \|\| retryImport \|\| Boolean\(uploadingField\) \|\| importingLegacyMedia\}/gu)?.length,
     2
   )
   assert.match(editor, /workspace\.configured && !workspace\.migrationRequired/u)
-  assert.match(editor, /disabled=\{!canSave \|\| \(!dirty && workspace\.version !== null\)\}/u)
+  assert.match(editor, /disabled=\{retryImport \? !canImportLegacyMedia : !canSave \|\| \(!dirty && !saveError && workspace\.version !== null\)\}/u)
   assert.match(editor, /Organisationsinställningarna är ännu inte aktiverade/u)
 })

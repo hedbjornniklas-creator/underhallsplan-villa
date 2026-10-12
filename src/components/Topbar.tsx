@@ -130,6 +130,7 @@ function TopbarContent() {
   const hasUser = isLoggedIn
   const normalizedPath = (pathname || '').toLowerCase()
   const isAdminContext = normalizedPath.startsWith('/admin')
+  const isSettingsContext = normalizedPath === '/settings' || normalizedPath.startsWith('/settings/')
   const isDashboardLanding = normalizedPath === '/dashboard-v1'
   const isObHome = normalizedPath === '/ob'
   const isEbHome = normalizedPath === '/eb'
@@ -193,7 +194,7 @@ function TopbarContent() {
     ? '/admin'
     : isDashboardLanding
       ? '/'
-      : isObHome || isEbHome || isTuHome || isMoistureHome || isTasksHome
+      : isSettingsContext || isObHome || isEbHome || isTuHome || isMoistureHome || isTasksHome
         ? '/dashboard-v1'
         : isEbContext
           ? '/eb'

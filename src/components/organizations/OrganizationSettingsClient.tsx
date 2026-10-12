@@ -5,7 +5,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Building2, CheckCircle2, ImagePlus, Plug, Plus, Save, ShieldCheck, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
+import { Building2, CheckCircle2, ImagePlus, Plug, Plus, Save, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
 import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
 import OrganizationSenderProfiles from './OrganizationSenderProfiles'
 import type { OrganizationAdministrationWorkspace, OrganizationProfileValues } from '@/lib/organizations/administrationTypes'
@@ -116,17 +116,7 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
 
   return (
     <div className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="rounded-xl bg-indigo-50 p-3 text-indigo-600"><Building2 size={24} aria-hidden /></span>
-            <div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Aktiv arbetsorganisation</p><h1 className="mt-1 break-words text-2xl font-semibold tracking-tight text-slate-950">{workspace.organization.name}</h1></div>
-          </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700"><ShieldCheck size={14} aria-hidden />{roleLabel(workspace.role)}</span>
-        </div>
-        <p className="mt-4 text-sm leading-6 text-slate-600">Företagets gemensamma uppgifter, medlemmar och anslutningar finns här. Du hittar dina egna kontaktuppgifter, profilbild och underskrift under Min profil.</p>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4"><p className="text-sm text-slate-600">Arbetar du även för ett annat företag?</p><Link href="/settings/organisation/skapa" onClick={event => { if (!canNavigate()) event.preventDefault() }} className={secondaryClass}><Plus size={16} aria-hidden />Skapa organisation</Link></div>
-      </header>
+      <h1 className="sr-only">Organisationsinställningar för {workspace.organization.name}</h1>
 
       <nav aria-label="Organisationsinställningar" className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
         {([{ id: 'organization', label: 'Organisation', icon: Building2 }, { id: 'sender-profiles', label: 'Avsändarprofiler', icon: ImagePlus }, ...(isAdmin ? [{ id: 'members', label: 'Medlemmar', icon: UsersRound }] : []), { id: 'integrations', label: 'Integrationer', icon: Plug }] as const).map(item => {
@@ -134,6 +124,7 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
           return <button key={item.id} type="button" aria-current={tab === item.id ? 'page' : undefined} onClick={() => { if (item.id !== tab && canNavigate()) setTab(item.id as Tab) }} className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${tab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Icon size={17} aria-hidden />{item.label}</button>
         })}
         <Link href={`/settings/profil?orgId=${encodeURIComponent(orgId)}`} onClick={event => { if (!canNavigate()) event.preventDefault() }} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><UserRound size={17} aria-hidden />Min profil</Link>
+        <Link href={`/settings/kunder?orgId=${encodeURIComponent(orgId)}`} onClick={event => { if (!canNavigate()) event.preventDefault() }} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><UsersRound size={17} aria-hidden />Kundregister</Link>
       </nav>
 
       {workspace.migrationRequired && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Organisationsinställningarna förbereds. Du kan läsa uppgifterna, men ändringar och inbjudningar är tillfälligt avstängda.</p>}
@@ -154,6 +145,7 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
         {notice && <p role="status" className="mt-5 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 size={17} aria-hidden />{notice}</p>}
         {isAdmin && <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5"><p className="text-sm text-slate-500">{dirty ? 'Du har osparade ändringar.' : workspace.organization.configured ? 'Alla ändringar är sparade.' : 'Kontrollera uppgifterna och spara organisationsprofilen.'}</p><button type="submit" className={primaryClass} disabled={!canEdit || (!dirty && workspace.organization.configured) || Boolean(busy) || !form.name.trim()}><Save size={17} aria-hidden />{busy === 'save' ? 'Sparar…' : 'Spara företagsuppgifter'}</button></div>}
       </form>}
+      {tab === 'organization' && <div className="flex flex-wrap items-center justify-between gap-3 px-1"><p className="text-sm text-slate-600">Vill du lägga till ett annat företag på ditt konto?</p><Link href="/settings/organisation/skapa" onClick={event => { if (!canNavigate()) event.preventDefault() }} className={secondaryClass}><Plus size={16} aria-hidden />Skapa organisation</Link></div>}
       {tab === 'sender-profiles' && <OrganizationSenderProfiles key={orgId} orgId={orgId} />}
       {tab === 'members' && isAdmin && <OrganizationMembers key={orgId} orgId={orgId} viewerProfileId={workspace.profileId} disabled={workspace.migrationRequired} />}
       {tab === 'integrations' && (isAdmin ? <FortnoxConnectionCard preferredOrgId={orgId} externalNavigationBlocked={dirty || Boolean(busy) || workspace.migrationRequired} /> : <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600"><h2 className="mb-2 text-lg font-semibold text-slate-950">Integrationer</h2>Organisationens administratör hanterar Fortnox och andra anslutningar.</section>)}

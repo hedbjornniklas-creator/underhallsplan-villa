@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getOrganizationWorkspace } from '@/lib/organizations/administration'
 import { getOrganizationProfileWorkspace } from '@/lib/organizations/profileCard'
 import TuOrganizationProfileEditor from '@/components/tu/TuOrganizationProfileEditor'
+import OrganizationProfileExtras from '@/components/organizations/OrganizationProfileExtras'
 import SettingsNav from '@/components/settings/SettingsNav'
 
 export const dynamic = 'force-dynamic'
@@ -22,7 +23,8 @@ export default async function MemberProfilePage({ searchParams }: { searchParams
   }
   return <div className="mx-auto max-w-6xl space-y-5 px-4 py-6">
       <SettingsNav />
-      <header className="rounded-2xl bg-white p-5"><h1 className="text-2xl font-semibold text-slate-950">Min profil i {context.organization.name}</h1><p className="mt-2 text-slate-600">Dina personliga uppgifter på visitkortet. Företagets uppgifter hanteras gemensamt för organisationen. Dessa uppgifter används i TU; ÖB/EB använder tills vidare den tidigare profilvyn.</p><Link className="mt-3 inline-block text-sm text-indigo-700 underline" href="/ob/settings">Tidigare profilvy för ÖB/EB</Link></header>
+      <header className="rounded-2xl bg-white p-5"><h1 className="text-2xl font-semibold text-slate-950">Min profil i {context.organization.name}</h1><p className="mt-2 text-slate-600">Dina personliga uppgifter på visitkortet. Företagets uppgifter hanteras gemensamt för organisationen. Dessa uppgifter används i TU; ÖB/EB använder tills vidare den tidigare profilvyn.</p></header>
       <TuOrganizationProfileEditor key={context.organization.id} initialWorkspace={workspace} />
+      <OrganizationProfileExtras orgId={context.organization.id} profileId={context.profileId} />
     </div>
 }

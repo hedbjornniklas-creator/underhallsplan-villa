@@ -4,7 +4,7 @@
 
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   Building2,
   CheckCircle2,
@@ -18,6 +18,14 @@ import type {
   OrganizationProfileCardValues,
   OrganizationProfileWorkspace,
 } from '@/lib/organizations/profileCardTypes'
+import {
+  checkedProfileWorkspace,
+  mergeSavedProfileCard,
+  personalProfileValues,
+  profileValidationErrors,
+  savedPersonalValuesMatch,
+  serializeProfileCard,
+} from '@/lib/organizations/profileCardAutosave'
 
 type MediaField = 'avatarPath' | 'signaturePath'
 type TextField = Exclude<keyof OrganizationProfileCardValues, MediaField>
@@ -28,10 +36,6 @@ type ApiBody = {
   workspace?: OrganizationProfileWorkspace
   path?: string
   publicUrl?: string
-}
-
-function serialize(card: OrganizationProfileCardValues) {
-  return JSON.stringify(card)
 }
 
 function publicMediaUrl(path: string | null) {
@@ -52,22 +56,36 @@ export default function TuOrganizationProfileEditor({
 }: {
   initialWorkspace: OrganizationProfileWorkspace
 }) {
+  // Same-organization refreshes must not discard a local draft. A different
+  // organization or signed-in profile gets a fresh editor and request lifetime.
+  return <ProfileEditor key={`${initialWorkspace.organization.id}:${initialWorkspace.profileId}`} initialWorkspace={initialWorkspace} />
+}
+
+function ProfileEditor({ initialWorkspace }: { initialWorkspace: OrganizationProfileWorkspace }) {
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [form, setForm] = useState(initialWorkspace.card)
-  const [savedSnapshot, setSavedSnapshot] = useState(() => serialize(initialWorkspace.card))
+  const [savedSnapshot, setSavedSnapshot] = useState(() => serializeProfileCard(initialWorkspace.card))
   const [saving, setSaving] = useState(false)
   const [importingLegacyMedia, setImportingLegacyMedia] = useState(false)
   const [uploadingField, setUploadingField] = useState<MediaField | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const dirty = serialize(form) !== savedSnapshot
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveConflict, setSaveConflict] = useState(false)
+  const [retryImport, setRetryImport] = useState(false)
+  const operation = useRef<'save' | 'upload' | 'import' | null>(null)
+  const lifetime = useRef(0)
+  const dirty = serializeProfileCard(form) !== savedSnapshot
+  const validationErrors = profileValidationErrors(form)
   const organizationName = workspace.organization.name || 'Namnlös organisation'
   const canSave =
     !workspace.migrationRequired &&
     !saving &&
     !importingLegacyMedia &&
     !uploadingField &&
-    form.displayName.trim().length > 0 &&
+    !saveConflict &&
+    !retryImport &&
+    Object.keys(validationErrors).length === 0 &&
     form.companyName.trim().length > 0
   const legacyMediaFields = (['avatarPath', 'signaturePath'] as const).filter(
     (field) => !form[field] && workspace.legacyMediaAvailable[field]
@@ -81,29 +99,60 @@ export default function TuOrganizationProfileEditor({
     && !saving
     && !uploadingField
     && !importingLegacyMedia
+    && (!saveError || retryImport)
+    && !saveConflict
 
   useEffect(() => {
-    setWorkspace(initialWorkspace)
-    setForm(initialWorkspace.card)
-    setSavedSnapshot(serialize(initialWorkspace.card))
-    setError(null)
-    setSuccess(null)
-  }, [initialWorkspace])
+    lifetime.current += 1
+    return () => { lifetime.current += 1 }
+  }, [])
 
   useEffect(() => {
+    let linkApproved = false
+    let approvalTimer: number | undefined
     const beforeSwitch = (event: Event) => {
-      if ((saving || uploadingField || importingLegacyMedia) || (dirty && !window.confirm('Du har osparade profiländringar. Vill du lämna dem?'))) event.preventDefault()
+      if (operation.current || saving || uploadingField || importingLegacyMedia) { event.preventDefault(); return }
+      const detail = (event as CustomEvent<{ confirmed?: boolean }>).detail
+      if (linkApproved) { if (detail) detail.confirmed = true; return }
+      if (event.defaultPrevented) return
+      if ((dirty || saveError) && !detail?.confirmed) {
+        if (!window.confirm('Profiländringarna är inte sparade ännu. Vill du lämna dem?')) event.preventDefault()
+        else if (detail) detail.confirmed = true
+      }
     }
     const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (dirty || saving || uploadingField) { event.preventDefault(); event.returnValue = '' }
+      if (dirty || saveError || operation.current || saving || uploadingField || importingLegacyMedia) { event.preventDefault(); event.returnValue = '' }
+    }
+    // Next client-side links do not trigger beforeunload. Cover the topbar and
+    // other same-tab links as well as the explicit organization switch event.
+    const beforeLink = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null
+      if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download') || (link.target && link.target !== '_self')) return
+      const target = new URL(link.href, window.location.href)
+      const current = new URL(window.location.href)
+      if (!['http:', 'https:'].includes(target.protocol) ||
+        (target.origin === current.origin && target.pathname === current.pathname && target.search === current.search)) return
+      const allowed = window.dispatchEvent(new CustomEvent('hushub:before-organization-switch', {
+        cancelable: true, detail: { orgId: workspace.organization.id },
+      }))
+      if (!allowed) { event.preventDefault(); event.stopPropagation(); return }
+      linkApproved = true
+      // A browser can run microtasks between capture and React's bubble handler.
+      // Keep this click's approval until the next task to avoid a second prompt.
+      window.clearTimeout(approvalTimer)
+      approvalTimer = window.setTimeout(() => { linkApproved = false }, 0)
     }
     window.addEventListener('hushub:before-organization-switch', beforeSwitch)
     window.addEventListener('beforeunload', beforeUnload)
+    document.addEventListener('click', beforeLink, true)
     return () => {
       window.removeEventListener('hushub:before-organization-switch', beforeSwitch)
       window.removeEventListener('beforeunload', beforeUnload)
+      document.removeEventListener('click', beforeLink, true)
+      window.clearTimeout(approvalTimer)
     }
-  }, [dirty, saving, uploadingField, importingLegacyMedia])
+  }, [dirty, saveError, saving, uploadingField, importingLegacyMedia, workspace.organization.id])
 
   const previewAddress = useMemo(
     () =>
@@ -117,6 +166,7 @@ export default function TuOrganizationProfileEditor({
   )
 
   const setText = (field: TextField, value: string) => {
+    if (workspace.migrationRequired || retryImport || operation.current === 'import') return
     setSuccess(null)
     setForm((current) => ({
       ...current,
@@ -132,8 +182,10 @@ export default function TuOrganizationProfileEditor({
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>, field: MediaField) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-    if (!file || workspace.migrationRequired || importingLegacyMedia) return
+    if (!file || workspace.migrationRequired || saveConflict || retryImport || operation.current) return
 
+    operation.current = 'upload'
+    const generation = lifetime.current
     setUploadingField(field)
     setError(null)
     setSuccess(null)
@@ -151,22 +203,28 @@ export default function TuOrganizationProfileEditor({
         credentials: 'same-origin',
       })
       const payload = await readApiBody(response)
+      if (generation !== lifetime.current) return
       if (!response.ok || typeof payload.path !== 'string') {
         throw new Error(payload.error || 'Bilden kunde inte laddas upp.')
       }
       setMedia(field, payload.path)
     } catch (uploadError) {
+      if (generation !== lifetime.current) return
       setError(uploadError instanceof Error ? uploadError.message : 'Bilden kunde inte laddas upp.')
     } finally {
-      setUploadingField(null)
+      if (generation === lifetime.current) { operation.current = null; setUploadingField(null) }
     }
   }
 
   const handleLegacyMediaImport = async () => {
-    if (!canImportLegacyMedia || workspace.version === null) return
+    if (!canImportLegacyMedia || workspace.version === null || operation.current) return
 
+    operation.current = 'import'
+    const generation = lifetime.current
+    const submitted = form
     setImportingLegacyMedia(true)
     setError(null)
+    setSaveError(null)
     setSuccess(null)
     try {
       const response = await fetch('/api/organizations/member-profile', {
@@ -184,35 +242,43 @@ export default function TuOrganizationProfileEditor({
         credentials: 'same-origin',
       })
       const payload = await readApiBody(response)
+      if (generation !== lifetime.current) return
       if (!response.ok || !payload.workspace) {
+        if (response.status === 409) {
+          setSaveConflict(true)
+          throw new Error('Profilen har ändrats på annat håll. Ladda om profilen innan du hämtar bilder igen.')
+        }
         throw new Error(payload.error || 'De tidigare profilbilderna kunde inte hämtas.')
       }
-      if (payload.workspace.organization.id !== workspace.organization.id) {
-        throw new Error('Servern svarade med fel organisation. Ladda om sidan.')
-      }
-
-      setWorkspace(payload.workspace)
-      setForm(payload.workspace.card)
-      setSavedSnapshot(serialize(payload.workspace.card))
+      const confirmed = checkedProfileWorkspace(payload.workspace, workspace)
+      setWorkspace(confirmed)
+      setForm(current => mergeSavedProfileCard(current, submitted, confirmed.card))
+      setSavedSnapshot(serializeProfileCard(confirmed.card))
+      setRetryImport(false)
       setSuccess('Tidigare profilbild och underskrift har hämtats där de saknades.')
     } catch (importError) {
-      setError(
+      if (generation !== lifetime.current) return
+      setRetryImport(true)
+      // Import also writes the card. An uncertain response must stop later PUTs
+      // from claiming the old version is still current.
+      setSaveError(
         importError instanceof Error
           ? importError.message
           : 'De tidigare profilbilderna kunde inte hämtas.'
       )
     } finally {
-      setImportingLegacyMedia(false)
+      if (generation === lifetime.current) { operation.current = null; setImportingLegacyMedia(false) }
     }
   }
 
-  const handleSave = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!canSave) return
+  const saveProfile = useCallback(async () => {
+    if (!canSave || operation.current || (!dirty && !saveError && workspace.version !== null)) return
 
+    operation.current = 'save'
+    const generation = lifetime.current
+    const submitted = form
     setSaving(true)
-    setError(null)
-    setSuccess(null)
+    setSaveError(null)
     try {
       const response = await fetch('/api/organizations/member-profile', {
         method: 'PUT',
@@ -223,34 +289,56 @@ export default function TuOrganizationProfileEditor({
         body: JSON.stringify({
           orgId: workspace.organization.id,
           expectedVersion: workspace.version,
-          card: {
-            displayName: form.displayName, title: form.title, phone: form.phone,
-            email: form.email, avatarPath: form.avatarPath, signaturePath: form.signaturePath,
-          },
+          card: personalProfileValues(submitted),
         }),
         cache: 'no-store',
         credentials: 'same-origin',
       })
       const payload = await readApiBody(response)
+      if (generation !== lifetime.current) return
       if (!response.ok || !payload.workspace) {
-        throw new Error(payload.error || 'Företagsprofilen kunde inte sparas.')
+        if (response.status === 409) {
+          setSaveConflict(true)
+          throw new Error('Profilen har ändrats på annat håll. Dina ändringar finns kvar här. Kopiera dem innan du laddar om sidan.')
+        }
+        throw new Error(payload.error || 'Autosparandet kunde inte bekräftas. Dina ändringar finns kvar här. Försök spara igen.')
       }
-      if (payload.workspace.organization.id !== workspace.organization.id) {
-        throw new Error('Servern svarade med fel organisation. Ladda om sidan.')
+      const confirmed = checkedProfileWorkspace(payload.workspace, workspace)
+      if (!savedPersonalValuesMatch(confirmed.card, submitted)) {
+        throw new Error('De sparade uppgifterna kunde inte bekräftas. Dina ändringar finns kvar här. Ladda om sidan innan du fortsätter.')
       }
-
-      setWorkspace(payload.workspace)
-      setForm(payload.workspace.card)
-      setSavedSnapshot(serialize(payload.workspace.card))
-      setSuccess(`Din profil är sparad för ${organizationName}.`)
+      setWorkspace(confirmed)
+      setForm(current => mergeSavedProfileCard(current, submitted, confirmed.card))
+      setSavedSnapshot(serializeProfileCard(confirmed.card))
     } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : 'Företagsprofilen kunde inte sparas.'
+      if (generation !== lifetime.current) return
+      setSaveError(
+        saveError instanceof Error && !(saveError instanceof TypeError) ? saveError.message : 'Kunde inte nå servern. Dina ändringar finns kvar här. Försök spara igen.'
       )
     } finally {
-      setSaving(false)
+      if (generation === lifetime.current) { operation.current = null; setSaving(false) }
     }
+  }, [canSave, dirty, form, saveError, workspace])
+
+  useEffect(() => {
+    if (!dirty || !canSave || saveError) return
+    const timer = window.setTimeout(() => { void saveProfile() }, 700)
+    return () => window.clearTimeout(timer)
+  }, [canSave, dirty, saveError, saveProfile])
+
+  const handleSave = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (retryImport) void handleLegacyMediaImport()
+    else void saveProfile()
   }
+
+  const status = saving ? 'Sparar…'
+    : uploadingField ? 'Laddar upp bild…'
+      : importingLegacyMedia ? 'Hämtar tidigare bilder…'
+        : workspace.migrationRequired ? 'Autosparning är inte tillgänglig.'
+          : saveError ? 'Inte sparat – autosparningen är pausad.'
+            : dirty ? canSave ? 'Osparade ändringar – sparas automatiskt…' : 'Kontrollera uppgifterna – inte sparat.'
+              : workspace.version === null ? 'Profilen är inte sparad ännu.' : 'Alla ändringar är sparade.'
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -267,6 +355,7 @@ export default function TuOrganizationProfileEditor({
             <p className="mt-1 text-sm text-slate-600">
               Här ändrar du dina egna uppgifter i {organizationName}. Företagsuppgifterna och logotypen är gemensamma för alla medlemmar.
             </p>
+            <p className="mt-1 text-xs text-slate-500">Dina ändringar sparas automatiskt efter en kort paus i skrivandet.</p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800">
             <ShieldCheck size={14} aria-hidden />
@@ -280,7 +369,7 @@ export default function TuOrganizationProfileEditor({
           </div>
         ) : !workspace.configured ? (
           <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-            {!workspace.companyConfigured ? 'Organisationens gemensamma företagsuppgifter behöver först bekräftas av en organisationsadministratör. Du kan spara dina personuppgifter redan nu.' : 'Spara din personprofil innan du skickar uppdragsbekräftelser eller fastställer TU-utlåtanden.'}
+            {!workspace.companyConfigured ? 'Organisationens gemensamma företagsuppgifter behöver först bekräftas av en organisationsadministratör. Dina personuppgifter kan sparas redan nu.' : 'Fyll i din personprofil. Ändringarna sparas automatiskt. Är uppgifterna redan rätt kan du välja Bekräfta min profil.'}
           </div>
         ) : (
           <div className="mt-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
@@ -295,7 +384,7 @@ export default function TuOrganizationProfileEditor({
               <p className="text-sm font-semibold text-violet-950">Tidigare profilbilder finns</p>
               <p className="mt-0.5 text-xs leading-5 text-violet-800">
                 Hämta saknade bilder till just {organizationName}. Befintliga bilder ersätts inte.
-                {dirty ? ' Spara först dina övriga ändringar.' : ''}
+                {dirty ? ' Vänta tills dina övriga ändringar har sparats.' : ''}
               </p>
             </div>
             <button
@@ -322,10 +411,10 @@ export default function TuOrganizationProfileEditor({
         ) : null}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <TextInput label="Namn" required value={form.displayName} onChange={(value) => setText('displayName', value)} />
-          <TextInput label="Titel/roll" value={form.title ?? ''} onChange={(value) => setText('title', value)} placeholder="Exempelvis certifierad besiktningsman" />
-          <TextInput label="Telefon" value={form.phone ?? ''} onChange={(value) => setText('phone', value)} autoComplete="tel" />
-          <TextInput label="Arbetsmejl i organisationen" type="email" value={form.email ?? ''} onChange={(value) => setText('email', value)} autoComplete="email" />
+          <TextInput label="Namn" required maxLength={200} disabled={workspace.migrationRequired || importingLegacyMedia || retryImport} error={dirty ? validationErrors.displayName : undefined} value={form.displayName} onChange={(value) => setText('displayName', value)} />
+          <TextInput label="Titel/roll" maxLength={160} disabled={workspace.migrationRequired || importingLegacyMedia || retryImport} error={dirty ? validationErrors.title : undefined} value={form.title ?? ''} onChange={(value) => setText('title', value)} placeholder="Exempelvis certifierad besiktningsman" />
+          <TextInput label="Telefon" maxLength={80} disabled={workspace.migrationRequired || importingLegacyMedia || retryImport} error={dirty ? validationErrors.phone : undefined} value={form.phone ?? ''} onChange={(value) => setText('phone', value)} autoComplete="tel" />
+          <TextInput label="Arbetsmejl i organisationen" type="email" maxLength={320} disabled={workspace.migrationRequired || importingLegacyMedia || retryImport} error={dirty ? validationErrors.email : undefined} value={form.email ?? ''} onChange={(value) => setText('email', value)} autoComplete="email" />
         </div>
 
         <div className="mt-5 rounded-xl border border-violet-100 bg-violet-50 p-4 text-sm text-violet-950">
@@ -343,7 +432,7 @@ export default function TuOrganizationProfileEditor({
             value={form.avatarPath}
             shape="round"
             busy={uploadingField === 'avatarPath'}
-            disabled={workspace.migrationRequired || Boolean(uploadingField) || importingLegacyMedia}
+            disabled={workspace.migrationRequired || saving || saveConflict || retryImport || Boolean(uploadingField) || importingLegacyMedia}
             onUpload={handleUpload}
             onRemove={() => setMedia('avatarPath', null)}
           />
@@ -352,25 +441,27 @@ export default function TuOrganizationProfileEditor({
             field="signaturePath"
             value={form.signaturePath}
             busy={uploadingField === 'signaturePath'}
-            disabled={workspace.migrationRequired || Boolean(uploadingField) || importingLegacyMedia}
+            disabled={workspace.migrationRequired || saving || saveConflict || retryImport || Boolean(uploadingField) || importingLegacyMedia}
             onUpload={handleUpload}
             onRemove={() => setMedia('signaturePath', null)}
           />
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
-          <p className="text-xs text-slate-500">
-            {dirty ? 'Du har osparade ändringar.' : `Sparat för ${organizationName}.`}
+          <p role="status" aria-live="polite" aria-atomic="true" className="min-h-5 text-sm text-slate-600">
+            {status}
           </p>
           <button
             type="submit"
-            disabled={!canSave || (!dirty && workspace.version !== null)}
+            disabled={retryImport ? !canImportLegacyMedia : !canSave || (!dirty && !saveError && workspace.version !== null)}
+            aria-busy={saving || importingLegacyMedia}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
           >
             <Save size={17} aria-hidden />
-            {saving ? 'Sparar…' : 'Spara min profil'}
+            {saving ? 'Sparar…' : importingLegacyMedia ? 'Hämtar bilder…' : retryImport ? 'Försök hämta bilder igen' : saveError ? 'Försök spara igen' : workspace.version === null ? 'Bekräfta min profil' : 'Spara nu'}
           </button>
         </div>
+        {saveError && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"><p>{saveError}</p><button type="button" className="mt-2 font-semibold underline" disabled={saving || importingLegacyMedia || Boolean(uploadingField)} onClick={() => { if (window.confirm('Ladda om profilen från servern? Osparade ändringar på den här sidan försvinner.')) window.location.reload() }}>Ladda om profilen</button></div>}
       </form>
 
       <aside className="h-fit rounded-2xl border border-violet-100 bg-white p-5 shadow-sm lg:sticky lg:top-20">
@@ -422,6 +513,7 @@ function TextInput({
   onChange,
   required,
   type = 'text',
+  error,
   ...inputProps
 }: {
   label: string
@@ -429,10 +521,14 @@ function TextInput({
   onChange: (value: string) => void
   required?: boolean
   type?: 'text' | 'email'
+  error?: string
+  disabled?: boolean
+  maxLength?: number
   placeholder?: string
   autoComplete?: string
   inputMode?: 'text' | 'numeric' | 'tel' | 'email'
 }) {
+  const errorId = useId()
   return (
     <label className="space-y-1.5">
       <span className="text-sm font-medium text-slate-800">
@@ -443,9 +539,12 @@ function TextInput({
         type={type}
         required={required}
         value={value}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? errorId : undefined}
         onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
       />
+      <span id={errorId} className="block min-h-5 text-xs text-rose-700">{error}</span>
     </label>
   )
 }
