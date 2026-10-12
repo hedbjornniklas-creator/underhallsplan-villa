@@ -46,7 +46,7 @@ function SettingsNavContent() {
       <div className="grid gap-2 sm:grid-cols-3">
         {ITEMS.map((item) => {
           const active =
-            pathname === item.href || (item.href === '/settings/organisation' && pathname === '/settings')
+            pathname === item.href || (item.href === '/settings/organisation' && ['/settings', '/settings/organisation/skapa'].includes(pathname))
           const Icon = item.icon
           return (
             <Link

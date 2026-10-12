@@ -403,7 +403,57 @@ Every new login or entry point must document:
 
 This must be documented before the implementation is considered complete.
 
+## Organization self-service (2026-10-12)
+
+The approved first step is creation of a **new** organization from Settings →
+Organisation. It reuses the signed-in account; it does not register another
+account, join an existing organization or change existing memberships.
+
+- `/settings/organisation/skapa` requires authentication, not an existing
+  Dashboard membership. Its isolated route-group intentionally does not inherit
+  the existing Dashboard-only settings layout. The other settings routes keep
+  their current guards.
+- `POST /api/organizations` requires a confirmed account email and a same-origin
+  JSON request. Only `requestId`, `name` and `organizationNumber` are accepted.
+  The actor is derived from the verified server session, never from form data.
+  An Auth account without a profile receives only a minimal non-global-admin
+  profile from its verified email, inside the same transaction. Existing profile
+  fields are never overwritten. Users without a workspace get a creation link
+  on `/app`; the exact creation route is also an allowed login return address.
+- Creation gives that actor an active `admin` membership and a scoped
+  `dashboard_admin` assignment **only in the new organization**. It gives no
+  `hushub_admin`, RenoApp, ÖB, EB, TU, Uppdrag or other work-module assignment.
+  ÖB and TU organization entitlements start explicitly disabled.
+- Existing default organizations, grants, customers and assignments are not
+  moved or modified. Success opens the new organization's company profile using
+  an explicit `orgId`; this is not a change of the user's saved default.
+- A normalized organization-number collision refuses creation and directs the
+  user to request an invitation. It never returns the existing organization's
+  name, membership or ID. Historical duplicate organization numbers are not
+  merged or rewritten. Number validation is not proof of authority to represent
+  a company, and this flow does not create a verified-company badge.
+- Creation is atomic and service-only in SQL. Matching retries reuse the
+  resulting organization; a changed payload conflicts and another actor cannot
+  retrieve that result. Request keys are scoped to the actor. Successful
+  creations are limited to three per account in a rolling 24-hour period, with
+  retries excluded from that limit.
+- Profiles still depending on legacy Dashboard fallback are refused with an
+  access-review message. We do not silently replace their old access when adding
+  the first managed assignment.
+
+Deployment requires
+`docs/db/2026-10-12_01_organization_self_service.sql` and the application release.
+The migration adds the creation mechanism only; installation does not create
+organizations or backfill permissions. This description is not confirmation
+that the migration or release has been applied in production.
+
+Company-profile setup, module activation by HusHub administration and scoped
+work-module assignments remain separate steps. Selecting an issuing
+organization for **Uppdrag** contracts/PDFs/email is a later feature and is not
+made ready by organization creation alone.
+
 ## Summary
+
 The long-term model is:
 - shared identity
 - separate product access

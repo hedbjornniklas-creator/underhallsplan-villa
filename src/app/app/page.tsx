@@ -131,6 +131,17 @@ function EmptyWorkspaceState() {
           Öppna Mina uppdrag
           <ArrowRight size={16} aria-hidden="true" />
         </Link>
+        <div className="mt-7 border-t border-stone-200 pt-5">
+          <p className="max-w-2xl text-sm leading-6 text-stone-600">
+            Vill du lägga till ett nytt företag i BesiktApp? Du kan skapa organisationen
+            med ditt befintliga konto. Arbetsområden aktiveras separat. Finns företaget
+            redan ska du i stället be dess administratör om en inbjudan.
+          </p>
+          <Link href="/settings/organisation/skapa" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-indigo-700 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+            Skapa organisation för BesiktApp
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+        </div>
       </section>
     </PageShell>
   )

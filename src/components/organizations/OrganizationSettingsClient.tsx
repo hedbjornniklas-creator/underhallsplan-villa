@@ -5,7 +5,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Building2, CheckCircle2, ImagePlus, Plug, Save, ShieldCheck, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
+import { Building2, CheckCircle2, ImagePlus, Plug, Plus, Save, ShieldCheck, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
 import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
 import type { OrganizationAdministrationWorkspace, OrganizationProfileValues } from '@/lib/organizations/administrationTypes'
 
@@ -124,6 +124,7 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
           <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700"><ShieldCheck size={14} aria-hidden />{roleLabel(workspace.role)}</span>
         </div>
         <p className="mt-4 text-sm leading-6 text-slate-600">Företagets gemensamma uppgifter, medlemmar och anslutningar finns här. Du hittar dina egna kontaktuppgifter, profilbild och underskrift under Min profil.</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4"><p className="text-sm text-slate-600">Arbetar du även för ett annat företag?</p><Link href="/settings/organisation/skapa" onClick={event => { if (!canNavigate()) event.preventDefault() }} className={secondaryClass}><Plus size={16} aria-hidden />Skapa organisation</Link></div>
       </header>
 
       <nav aria-label="Organisationsinställningar" className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
