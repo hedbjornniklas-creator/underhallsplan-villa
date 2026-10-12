@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Building2, CheckCircle2, ImagePlus, Plug, Plus, Save, ShieldCheck, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
 import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
+import OrganizationSenderProfiles from './OrganizationSenderProfiles'
 import type { OrganizationAdministrationWorkspace, OrganizationProfileValues } from '@/lib/organizations/administrationTypes'
 
 type Role = 'admin' | 'inspector'
@@ -15,7 +16,7 @@ type OrganizationSettingsWorkspace = OrganizationAdministrationWorkspace
 type Member = { profileId: string; displayName: string | null; email: string | null; role: Role; isActive: boolean; modules: string[] }
 type Invitation = { id: string; email: string; fullName: string; role: Role; modules: string[]; status: 'pending' | 'accepted' | 'revoked'; expiresAt: string; revision: number; notificationState: string }
 type MembersPayload = { members: Member[]; invitations: Invitation[]; enabledModules: string[] }
-type Tab = 'organization' | 'members' | 'integrations'
+type Tab = 'organization' | 'sender-profiles' | 'members' | 'integrations'
 const WORK_MODULES = [
   { key: 'inspections', label: 'ÖB – överlåtelsebesiktning' },
   { key: 'technical_investigations', label: 'TU – teknisk utredning' },
@@ -128,7 +129,7 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
       </header>
 
       <nav aria-label="Organisationsinställningar" className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        {([{ id: 'organization', label: 'Organisation', icon: Building2 }, ...(isAdmin ? [{ id: 'members', label: 'Medlemmar', icon: UsersRound }] : []), { id: 'integrations', label: 'Integrationer', icon: Plug }] as const).map(item => {
+        {([{ id: 'organization', label: 'Organisation', icon: Building2 }, { id: 'sender-profiles', label: 'Avsändarprofiler', icon: ImagePlus }, ...(isAdmin ? [{ id: 'members', label: 'Medlemmar', icon: UsersRound }] : []), { id: 'integrations', label: 'Integrationer', icon: Plug }] as const).map(item => {
           const Icon = item.icon
           return <button key={item.id} type="button" aria-current={tab === item.id ? 'page' : undefined} onClick={() => { if (item.id !== tab && canNavigate()) setTab(item.id as Tab) }} className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${tab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Icon size={17} aria-hidden />{item.label}</button>
         })}
@@ -153,6 +154,7 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
         {notice && <p role="status" className="mt-5 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 size={17} aria-hidden />{notice}</p>}
         {isAdmin && <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5"><p className="text-sm text-slate-500">{dirty ? 'Du har osparade ändringar.' : workspace.organization.configured ? 'Alla ändringar är sparade.' : 'Kontrollera uppgifterna och spara organisationsprofilen.'}</p><button type="submit" className={primaryClass} disabled={!canEdit || (!dirty && workspace.organization.configured) || Boolean(busy) || !form.name.trim()}><Save size={17} aria-hidden />{busy === 'save' ? 'Sparar…' : 'Spara företagsuppgifter'}</button></div>}
       </form>}
+      {tab === 'sender-profiles' && <OrganizationSenderProfiles key={orgId} orgId={orgId} />}
       {tab === 'members' && isAdmin && <OrganizationMembers key={orgId} orgId={orgId} viewerProfileId={workspace.profileId} disabled={workspace.migrationRequired} />}
       {tab === 'integrations' && (isAdmin ? <FortnoxConnectionCard preferredOrgId={orgId} externalNavigationBlocked={dirty || Boolean(busy) || workspace.migrationRequired} /> : <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600"><h2 className="mb-2 text-lg font-semibold text-slate-950">Integrationer</h2>Organisationens administratör hanterar Fortnox och andra anslutningar.</section>)}
     </div>

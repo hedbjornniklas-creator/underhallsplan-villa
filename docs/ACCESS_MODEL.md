@@ -452,6 +452,56 @@ work-module assignments remain separate steps. Selecting an issuing
 organization for **Uppdrag** contracts/PDFs/email is a later feature and is not
 made ready by organization creation alone.
 
+## Organization sender profiles (2026-10-12)
+
+Approved model: one legal organization can use multiple sender names, including
+a registered secondary business name. These are **sender profiles**, not user
+accounts, memberships or separate organizations. The same organization number,
+customer register, members, module access and Fortnox connection remain shared.
+Do not create another organization solely to represent another company name.
+
+The implemented first step is administration only:
+
+- Settings → Organisation → Avsändarprofiler, also addressable with
+  `tab=sender-profiles`. The existing authenticated settings guards remain in
+  place. Active organization members can read; only an active organization
+  administrator can save the registered legal name or sender profiles.
+- `GET/PUT /api/organizations/sender-profiles?orgId=...` always validates the
+  current session and explicit organization membership. Writes additionally
+  require the admin role, a same-origin JSON request and a bounded exact payload.
+  The client cannot choose the acting profile or add permissions.
+- `organizations.legal_name` is a separate, explicitly entered registered name.
+  No existing organization display name is assumed to be the legal name or
+  rewritten. Sender profiles contain their own name, logo and contact fields,
+  but no separate organization number, Fortnox connection or permission grants.
+- SQL writes use service-only functions, serialized organization/admin checks,
+  independent optimistic versions and identifier-only audit entries. Creation
+  retries reuse the same sender-profile UUID and exact values; stale edits
+  conflict. Names are unique within an organization, including archived profiles.
+  Up to 20 profiles can be retained per organization. Archive/restore preserves
+  the profile identity; there is no hard-delete operation.
+- Logo uploads reuse the admin-only organization media route. References must
+  point to an existing immutable logo object owned by that organization. Neither
+  an arbitrary external image nor a different organization's logo is accepted.
+- An unconfirmed save locks the UI to the exact pending request until it is
+  retried or the user explicitly reloads the saved state. Unsaved changes guard
+  tab/organization navigation and page unload.
+
+Deployment requires `docs/db/2026-10-12_02_organization_sender_profiles.sql`
+and the application release. The additive, rerunnable migration creates no
+company names or sender profiles and does not rewrite historical data. Before
+installation the UI explains the missing schema and disables saving. This
+document is not confirmation of a production deployment or migration.
+
+**Not implemented by this step:** selecting a sender profile on an Uppdrag,
+TU/ÖB assignment or outgoing document. Existing branding resolvers, PDF/email
+senders and frozen documents are deliberately unchanged. Next, an explicit
+choice on each applicable assignment must be frozen with the legal identity
+when creating/sending its document. The Uppdrag contract PDF and online-offer
+email flow are distinct paths and must both use the same selected identity;
+TU/ÖB snapshot schemas must be handled separately. Do not retrofit or silently
+change already sent/signed documents when that next step is introduced.
+
 ## Summary
 
 The long-term model is:
