@@ -38,6 +38,14 @@ function harness(options = {}) {
     signed = [],
     prepared = []
   const draft = structuredClone(workspace.draft)
+  if (options.senderProfile) {
+    draft.senderProfile = structuredClone(options.senderProfile)
+    draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test')
+    Object.assign(draft.contractParties, { street: 'Kundgatan 1', postalCode: '11122', city: 'Stockholm' })
+    Object.assign(draft.contractParties.contractor, { companyName: options.senderProfile.name, organizationNumber: options.senderProfile.organizationNumber,
+      street: options.senderProfile.address ?? '', postalCode: options.senderProfile.postalCode ?? '', city: options.senderProfile.city ?? '',
+      email: options.senderProfile.email ?? '', phone: options.senderProfile.phone ?? '', fTax: 'yes' })
+  }
   if (!options.legacyDraft) draft.items = draft.items.filter((i) => i.kind !== 'option')
   let saved = options.saved ?? null
   let sendFailed = Boolean(options.sendFailed)
@@ -161,6 +169,8 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (name === 'assert_action_case_contract_sender_body' && options.senderSchemaMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'assert_contract_assignment' && options.assignmentMissing)
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_scope_conditions' && options.conditionsMissing)
@@ -303,6 +313,55 @@ test('workspace exposes an independent saved offer alongside the contract, witho
   assert.equal(estimate.draft.title, 'Bara offert')
   assert.equal(estimate.offerDraft, undefined)
   assert.equal(h.sent.length, 0)
+})
+
+const senderSnapshot = () => ({ version: 1, organizationId: id(90), profileId: id(75), profileVersion: 3, legalNameVersion: 2,
+  legalName: 'Juridiskt testbolag AB', organizationNumber: '559281-0823', name: 'Projektprofil', address: 'Profilgatan 2',
+  postalCode: '22233', city: 'Profilstad', email: 'projekt@example.test', phone: '0701234567', website: null,
+  logoPath: null, logoDataUrl: null, reportFooterText: 'Profilens sparade sidfot' })
+
+test('selected sender publishes frozen identity and reply address without reading the live organization or user profile', async () => {
+  const frozen = senderSnapshot(), h = harness({ senderProfile: frozen })
+  await h.run()
+  assert.equal(h.saved().snapshot.issuerName, frozen.name)
+  assert.equal(h.saved().snapshot.replyEmail, frozen.email)
+  assert.deepEqual(h.saved().snapshot.senderProfile, frozen)
+  assert.equal(h.sent[0].replyTo, frozen.email)
+  assert.match(h.sent[0].text, /^Projektprofil har skickat/u)
+  assert.doesNotMatch(h.sent[0].text, /Exempelbygg/)
+  assert.equal(h.reads.some(r => ['organizations', 'profiles'].includes(r.table)), false)
+  assert.equal(h.calls.filter(c => c.name === 'assert_action_case_contract_sender_body').length, 1)
+})
+
+test('publication retry resends its original sender payload even if current draft/profile identity changes', async () => {
+  const h = harness({ senderProfile: senderSnapshot(), sendFailed: true })
+  await assert.rejects(h.run(), /SEND_FAILED/)
+  const originalSnapshot = structuredClone(h.saved().snapshot), originalEmail = structuredClone(h.sent[0])
+  h.draft.senderProfile.name = 'A later profile name'
+  h.draft.senderProfile.email = 'later@example.test'
+  h.draft.contractParties.contractor.companyName = 'A later profile name'
+  h.recover()
+  await h.run()
+  assert.deepEqual(h.saved().snapshot, originalSnapshot)
+  assert.deepEqual(h.sent[1], originalEmail)
+  assert.equal(h.calls.filter(c => c.p_operation === 'publish').length, 1)
+  assert.equal(h.reads.some(r => ['organizations', 'profiles'].includes(r.table)), false)
+})
+
+test('selected sender with missing contact email never silently falls back to the account email', async () => {
+  const h = harness({ senderProfile: { ...senderSnapshot(), email: null } })
+  await assert.rejects(h.run(), /INCOMPLETE|RECIPIENT/)
+  assert.equal(h.sent.length, 0)
+  assert.equal(h.copies.length, 0)
+  assert.equal(h.reads.some(r => r.table === 'profiles'), false)
+})
+
+test('missing sender migration stops save and publish before any write, copy, preparation or email', async () => {
+  const h = harness({ senderProfile: senderSnapshot(), senderSchemaMissing: true }), ctx = { orgId: id(90), userId: id(91) }
+  await assert.rejects(h.run(), /CUSTOMER_SENDER_SCHEMA/)
+  await assert.rejects(h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: h.draft }), /CUSTOMER_SENDER_SCHEMA/)
+  assert.equal(h.calls.some(c => c.p_operation === 'publish' || c.p_operation === 'save' || c.name === 'writeContractCustomer'), false)
+  assert.equal(h.sent.length, 0); assert.equal(h.copies.length, 0); assert.equal(h.prepared.length, 0)
 })
 
 test('saving offer content uses the offer RPC, never the contract parties or contract costing writer', async () => {

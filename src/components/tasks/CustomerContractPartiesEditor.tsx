@@ -27,15 +27,18 @@ export function ContractCustomerEditor({ value, onChange }: { value: ContractPar
   </div>
 }
 
-export function ContractContractorEditor({ value, source, onChange }: { value: ContractContractor; source?: Partial<ContractContractor>; onChange: (value: ContractContractor) => void }) {
+const profileCompanyFields = new Set<keyof ContractContractor>(['companyName', 'organizationNumber', 'street', 'postalCode', 'city', 'phone', 'email'])
+
+export function ContractContractorEditor({ value, source, companyFieldsReadonly = false, onChange }: { value: ContractContractor; source?: Partial<ContractContractor>; companyFieldsReadonly?: boolean; onChange: (value: ContractContractor) => void }) {
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
       <a className="gizmo-back underline" href="/settings/organisation" target="_blank" rel="noreferrer">Organisationens företagsuppgifter</a>
-      {source && <button className={button} onClick={() => onChange({ ...value, ...source })}><RotateCcw size={16} /> Hämta företagsuppgifter</button>}
+      {source && !companyFieldsReadonly && <button className={button} onClick={() => onChange({ ...value, ...source })}><RotateCcw size={16} /> Hämta företagsuppgifter</button>}
     </div>
+    {companyFieldsReadonly && <p className="text-sm text-slate-600">Företagsuppgifterna kommer från uppdragets valda avsändarprofil. Välj eller uppdatera profilen ovan om de ska ändras.</p>}
     <div className="grid gap-4 sm:grid-cols-2">
       {([['companyName', 'Firma', true], ['organizationNumber', 'Organisationsnummer', true], ['contactName', 'Kontaktperson', false], ['mobile', 'Mobiltelefon', false], ['street', 'Gata/Box', true], ['postalCode', 'Postnummer', true], ['city', 'Ort', true], ['phone', 'Telefon', false], ['fax', 'Fax', false], ['email', 'E-postadress', true]] as const).map(([key, label, required]) => <label key={key} className={`min-w-0 text-sm ${key === 'street' ? 'sm:col-span-2' : ''}`}>
-        {label}{required ? ' *' : ' (valfritt)'}<input className={field} aria-label={`Entreprenör: ${label}`} type={key === 'email' ? 'email' : ['mobile', 'phone', 'fax'].includes(key) ? 'tel' : 'text'} maxLength={250} value={value[key]} onChange={(event) => onChange({ ...value, [key]: event.target.value })} />
+        {label}{required ? ' *' : ' (valfritt)'}<input className={field} aria-label={`Entreprenör: ${label}`} type={key === 'email' ? 'email' : ['mobile', 'phone', 'fax'].includes(key) ? 'tel' : 'text'} maxLength={key === 'street' ? 300 : key === 'email' ? 320 : 250} value={value[key]} disabled={companyFieldsReadonly && profileCompanyFields.has(key)} onChange={(event) => { if (!companyFieldsReadonly || !profileCompanyFields.has(key)) onChange({ ...value, [key]: event.target.value }) }} />
       </label>)}
       <label className="text-sm">Godkänd för F-skatt *<select className={field} value={value.fTax} onChange={(event) => onChange({ ...value, fTax: event.target.value as ContractContractor['fTax'] })}>
         <option value="unreviewed">Ej kontrollerat</option><option value="yes">Ja</option><option value="no">Nej</option>

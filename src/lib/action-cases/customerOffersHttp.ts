@@ -32,6 +32,16 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    CUSTOMER_SENDER_SCHEMA: [503, 'Avsändarval för avtal behöver aktiveras i databasen. Befintliga avtal är oförändrade.'],
+    CUSTOMER_SENDER_INVALID: [400, 'Spara avtalsutkastet och kontrollera valet av avsändarprofil.'],
+    CUSTOMER_SENDER_FORBIDDEN: [403, 'Du saknar behörighet till uppdraget eller organisationen.'],
+    CUSTOMER_SENDER_PROFILE: [409, 'Välj en aktiv avsändarprofil som tillhör uppdragets organisation.'],
+    CUSTOMER_SENDER_STALE: [409, 'Avsändaruppgifterna har ändrats. Hämta profilerna igen innan du väljer.'],
+    CUSTOMER_SENDER_IDENTITY_REQUIRED: [409, 'Organisationens juridiska namn och organisationsnummer behöver kompletteras först.'],
+    CUSTOMER_SENDER_MEDIA: [409, 'Avsändarprofilens logotyp kunde inte sparas med avtalet. Kontrollera eller ladda upp logotypen igen.'],
+    CUSTOMER_SENDER_IMMUTABLE: [409, 'Avtalets avsändaruppgifter kommer från vald profil. Välj profilen igen för att hämta uppdaterade uppgifter.'],
+    CUSTOMER_SENDER_WITHDRAW_FIRST: [409, 'Återkalla det öppna avtalet innan du byter avsändarprofil.'],
+    CUSTOMER_SENDER_FAILED: [500, 'Avsändarvalet kunde inte bekräftas. Kontrollera den sparade avtalsversionen innan du fortsätter.'],
     CUSTOMER_OFFER_DELIVERY_SCHEMA: [503, 'Delning och registrering av underskriven kopia behöver aktiveras av administratören.'],
     CUSTOMER_OFFER_SIGNING_METHOD: [409, 'Kontrollera valt signeringssätt. Digitalt godkännande och papperssignering är separata flöden.'],
     CUSTOMER_OFFER_SIGNED_COPY: [400, 'Välj en PDF, högst 20 MB, och bekräfta att samtliga parter har skrivit under rätt avtalsversion.'],

@@ -493,14 +493,38 @@ company names or sender profiles and does not rewrite historical data. Before
 installation the UI explains the missing schema and disables saving. This
 document is not confirmation of a production deployment or migration.
 
-**Not implemented by this step:** selecting a sender profile on an Uppdrag,
-TU/ÖB assignment or outgoing document. Existing branding resolvers, PDF/email
-senders and frozen documents are deliberately unchanged. Next, an explicit
-choice on each applicable assignment must be frozen with the legal identity
-when creating/sending its document. The Uppdrag contract PDF and online-offer
-email flow are distinct paths and must both use the same selected identity;
-TU/ÖB snapshot schemas must be handled separately. Do not retrofit or silently
-change already sent/signed documents when that next step is introduced.
+Phase 1 above only administers profiles; it does not itself change document
+senders. The next approved step (2026-10-12) adds an explicit sender-profile
+selection to **Uppdrag → Avtal**, not a global user/topbar preference:
+
+- Select an active profile from the same organization, then explicitly confirm
+  replacing the saved draft's company details. Other contract content and the
+  personal contact/F-tax fields are preserved. Save pending edits first.
+- The selected profile, legal identity and an embedded server-normalized PNG
+  logo are copied into the contract draft. Updating/archiving the profile later
+  does not silently update the draft. Re-select explicitly to fetch changes.
+- Company fields from the selected profile cannot be overwritten by ordinary
+  draft saves. A dedicated revision-checked operation verifies organization,
+  module access and profile versions. Stable request IDs make uncertain retries
+  safe; the UI does not assume a failed response means the save failed.
+- Contract PDF, customer contract view and new online-contract email content /
+  Reply-To use the same saved identity. Mail still uses the configured verified
+  transport sender; this is not arbitrary sending from the profile's domain.
+- Existing published/signed versions, stored PDFs and retry email payloads are
+  never rewritten. Profile selection does not change organization ownership,
+  customers, memberships, Fortnox or the independent estimate draft.
+- Legal name and organization number remain visible alongside the selected
+  sender name. Long profile footer text flows at the end of the document rather
+  than being clipped into the fixed page-number footer.
+
+This contract integration requires the additive migration
+`docs/db/2026-10-12_03_action_case_contract_sender_profiles.sql` followed by
+application deployment. Install it after sender-profile SQL 02 and contract
+delivery `2026-10-11_04`; it does not select a profile for any existing project.
+The UI is read-only for profile selection until the schema is available.
+This description is not evidence of installation.
+TU/ÖB, other outgoing documents, independent estimate branding and UE/RFQ
+communication are outside this step and retain their existing senders.
 
 ## Summary
 

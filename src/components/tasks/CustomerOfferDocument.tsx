@@ -57,6 +57,16 @@ export default function CustomerOfferDocument({
   return (
     <article className="min-w-0 break-words bg-white" aria-label={purpose === 'offer' ? 'Kundoffert' : 'Kundavtal'}>
       <header className="border-b border-slate-200 py-6">
+        {s.senderProfile && <div className="mb-6 flex flex-wrap items-center gap-4 border-b border-slate-100 pb-5">
+          {/* Frozen, server-generated PNG; never request a live organization image. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {s.senderProfile.logoDataUrl && <img src={s.senderProfile.logoDataUrl} alt={`${s.senderProfile.name} logotyp`} className="h-16 w-auto max-w-48 object-contain object-left" />}
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">{s.senderProfile.name}</p>
+            <p className="mt-1 text-sm text-slate-600">Juridiskt bolag: {s.senderProfile.legalName}</p>
+            <p className="text-sm text-slate-600">Org.nr {s.senderProfile.organizationNumber}</p>
+          </div>
+        </div>}
         <p className="text-sm text-slate-500">
           {accepted ? 'Godkänt avtal' : purpose === 'offer' ? 'Offert' : 'Avtal'} · Version{' '}
           {offer.version || 'utkast'}
@@ -313,6 +323,10 @@ export default function CustomerOfferDocument({
           </p>
         )}
       </footer>
+      {s.senderProfile && (s.senderProfile.website || s.senderProfile.reportFooterText) && <div className="border-b border-slate-200 py-5 text-sm leading-6 text-slate-600">
+        {s.senderProfile.website && <p>{s.senderProfile.website}</p>}
+        {s.senderProfile.reportFooterText && <p className="whitespace-pre-wrap">{s.senderProfile.reportFooterText}</p>}
+      </div>}
     </article>
   )
 }

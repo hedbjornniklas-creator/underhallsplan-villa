@@ -71,6 +71,7 @@ import CustomerContractChanges from './CustomerContractChanges'
 import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 import CustomerContractSigning from './CustomerContractSigning'
+import CustomerContractSenderProfile from './CustomerContractSenderProfile'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -157,9 +158,12 @@ export default function CustomerOfferEditor({
   const [planningReset, setPlanningReset] = useState(0)
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
-  const [busy, setBusy] = useState(''),
+  const [actionBusy, setBusy] = useState(''),
     running = useRef(false),
     toast = useToast()
+  const [senderPending, setSenderPending] = useState(false)
+  const senderOperation = useRef(false)
+  const busy = senderPending ? 'sender_profile' : actionBusy
   const [confirmed, setConfirmed] = useState(false)
   const [confirmItemized, setConfirmItemized] = useState(false)
   const parties = draft.contractParties ?? emptyContractParties(customer?.name ?? actionCase.customerName, customer?.email ?? '', customer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
@@ -240,6 +244,7 @@ export default function CustomerOfferEditor({
     } catch { /* Browser storage may be unavailable; keep the normal server save path. */ }
   }
   const update = (patch: Partial<CustomerOfferDraft>) => {
+    if (senderOperation.current) return
     const current = currentSnapshot.current
     let nextDraft = { ...current.draft, ...patch }
     if (draftTarget === 'contract' && !locked) {
@@ -263,6 +268,7 @@ export default function CustomerOfferEditor({
   }
   applyDraftUpgrade.current = () => update(currentSnapshot.current.draft)
   const updateCosting = (id: string, calculation: CustomerOfferCosting[string]) => {
+    if (senderOperation.current) return
     const current = currentSnapshot.current
     const nextCosting = { ...current.costing, [id]: calculation }
     currentSnapshot.current = { draft: current.draft, costing: nextCosting }
@@ -344,19 +350,19 @@ export default function CustomerOfferEditor({
     heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }, [view, active, embedded])
   useEffect(() => {
-    if (!dirty && !planningDirty && !billingDirty) return
+    if (!dirty && !planningDirty && !billingDirty && !senderPending) return
     const prevent = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', prevent)
     return () => window.removeEventListener('beforeunload', prevent)
-  }, [dirty, planningDirty, billingDirty])
+  }, [dirty, planningDirty, billingDirty, senderPending])
   async function action(
     operation: string,
     extra: Record<string, unknown> = {}
   ) {
-    if (running.current || autosave.isPending()) return false
+    if (senderOperation.current || running.current || autosave.isPending()) return false
     const signingAction = ['freeze', 'new_draft', 'share', 'withdraw_share', 'upload_signed'].includes(operation)
     if (signingAction && (dirty || autosave.state?.status === 'error')) return false
     if (operation === 'save' && autosave.state?.status === 'error') return autosave.retry()
@@ -478,6 +484,17 @@ export default function CustomerOfferEditor({
       setBusy('')
     }
   }
+  function applySenderWorkspace(result: CustomerOfferWorkspace) {
+    autosave.reset(result.revision)
+    acknowledgedDraft.current = result.draft
+    const next = { draft: result.draft, costing: result.costing ?? {} }
+    currentSnapshot.current = next
+    setWorkspace(result)
+    setDraft(next.draft)
+    setCosting(next.costing)
+    persistDocuments(next.draft)
+    setConfirmed(false)
+  }
   function move(index: number, delta: number) {
     const items = [...draft.items]
     const peers = items.map((item, position) => ({ item, position })).filter(({ item }) => item.kind === items[index].kind)
@@ -492,8 +509,8 @@ export default function CustomerOfferEditor({
     propertyAddress: actionCase.propertyAddress,
     customerName: customer?.name ?? actionCase.customerName,
     customerEmail: customer?.email ?? '',
-    issuerName,
-    replyEmail
+    issuerName: draft.senderProfile?.name ?? issuerName,
+    replyEmail: draft.senderProfile ? draft.senderProfile.email ?? '' : replyEmail
   }
   const draftOffer: CustomerOffer = {
     id: 'draft',
@@ -587,7 +604,7 @@ export default function CustomerOfferEditor({
         {!embedded && <PendingLink autoPending pendingLabel="Öppnar projektlistan…" icon={<ArrowLeft size={17} />}
           href="/uppdrag"
           onClick={(e) => {
-            if ((dirty || planningDirty || billingDirty) && !window.confirm('Lämna osparade ändringar?'))
+            if ((dirty || planningDirty || billingDirty || senderPending) && !window.confirm(senderPending ? 'Profilbytet är inte bekräftat. Vill du ändå lämna uppdraget?' : 'Lämna osparade ändringar?'))
               e.preventDefault()
           }}
           className="inline-flex items-center gap-2 text-sm text-violet-700"
@@ -654,6 +671,20 @@ export default function CustomerOfferEditor({
           </button>
         ))}
       </nav>}
+      {draftTarget === 'contract' && <div hidden={!contractView}>
+        <CustomerContractSenderProfile caseId={actionCase.id} organizationId={workspace.customerLink?.organizationId}
+          selected={draft.senderProfile ?? null} revision={workspace.revision} currentCompanyName={parties.contractor.companyName}
+          active={active && contractView} blockedReason={accepted || signingVersion?.delivery?.signedCopy ? 'Avtalet är godkänt eller underskrivet. Avsändaren i det avtalet kan inte ändras.'
+            : locked ? 'Avtalet är låst. Skapa ett nytt avtalsutkast innan avsändarprofilen kan ändras.'
+            : workspace.offers.some(offer => offer.status === 'published') ? 'Återkalla det utskickade avtalet innan du byter avsändarprofil.'
+            : busy ? 'Ett arbete pågår. Vänta tills det är klart.'
+            : autosave.state?.status === 'error' ? 'Sparningen av utkastet behöver kontrolleras innan du byter avsändarprofil.'
+            : dirty || autosave.isSaving || !workspace.revision ? 'Spara avtalsutkastet innan du väljer avsändarprofil.'
+            : documentRecovery ? 'Hantera det lokala handlingsutkastet innan du byter avsändarprofil.'
+            : planningDirty || billingDirty || sourcePending ? 'Spara pågående ändringar i uppdraget innan du byter avsändarprofil.' : null}
+          onPendingChange={pending => { senderOperation.current = pending; setSenderPending(pending) }} onApplied={applySenderWorkspace}
+          onReload={async () => { if (dirty || autosave.isPending() || autosave.state?.status === 'error') return false; return action('refresh') }} />
+      </div>}
       {legacyChoices.length > 0 && !locked && view !== 'customer' && <section className="my-5 border-l-4 border-amber-500 bg-amber-50 p-4">
         <h2 className="text-base font-semibold">{legacyChoices.length} val behöver skiljas från grundavtalet</h2>
         <p className="mt-2 text-sm">Priser, alternativgrupper och interna kalkyler flyttas till Val och tillval. Grundpriset ändras inte och inget delas med kunden.</p>
@@ -796,7 +827,7 @@ export default function CustomerOfferEditor({
             </ProjectEditorRow>
             <ProjectEditorRow title="Entreprenör" summary={parties.contractor.companyName || 'Företagsuppgifter saknas'}
               open={expanded === 'contractor'} onToggle={() => setExpanded(expanded === 'contractor' ? null : 'contractor')}>
-              <ContractContractorEditor value={parties.contractor} source={contractorSource}
+              <ContractContractorEditor value={parties.contractor} source={contractorSource} companyFieldsReadonly={Boolean(draft.senderProfile)}
                 onChange={(contractor) => update({ contractParties: { ...parties, contractor } })} />
             </ProjectEditorRow>
             {contractSection('controls', 'Övriga medverkande', ['controls'])}

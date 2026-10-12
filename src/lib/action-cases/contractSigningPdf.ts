@@ -1,6 +1,6 @@
 import React from 'react'
 import { join } from 'node:path'
-import { Document, Font, Page, StyleSheet, Text, View, type DocumentProps } from '@react-pdf/renderer'
+import { Document, Font, Image, Page, StyleSheet, Text, View, type DocumentProps } from '@react-pdf/renderer'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { renderPdfDocument } from '../pdf/renderDocument.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
@@ -36,7 +36,7 @@ export function contractSigningSections({ snapshot: s, files }: SigningPdfInput)
     result.push(section('parties', 'Beställare', ...p.customers.map((c, i) => `Beställare ${i + 1}: ${c.name}${c.personalNumber ? `\nPersonnummer: ${c.personalNumber}` : ''}`),
       `${p.street}\n${p.postalCode} ${p.city}`, `Telefon: ${p.phone}\nMobiltelefon: ${p.mobile}\nE-post: ${p.email}`))
     const c = p.contractor
-    result.push(section('parties', 'Entreprenör', `${c.companyName}\nOrganisationsnummer: ${c.organizationNumber}`, `${c.street}\n${c.postalCode} ${c.city}`,
+    result.push(section('parties', 'Entreprenör', `${c.companyName}${s.senderProfile ? `\nJuridiskt bolag: ${s.senderProfile.legalName}` : ''}\nOrganisationsnummer: ${c.organizationNumber}`, `${c.street}\n${c.postalCode} ${c.city}`,
       `Kontaktperson: ${c.contactName}\nTelefon: ${c.phone}\nMobiltelefon: ${c.mobile}\nFax: ${c.fax}\nE-post: ${c.email}\nF-skatt: ${c.fTax === 'yes' ? 'Ja' : c.fTax === 'no' ? 'Nej' : ''}`))
   } else result.push(section('parties', 'Parter', `Beställare: ${s.customerName}\n${s.customerEmail}`, `Entreprenör: ${s.issuerName}\n${s.replyEmail}`))
   if (d?.controlParticipants) result.push(section('controls', 'Övriga medverkande', ...contractParticipantFields.map(({ key, title }) => `${title}\n${d.controlParticipants![key]}`)))
@@ -121,6 +121,8 @@ const styles = StyleSheet.create({
   cover: { paddingTop: 70 },
   masthead: { flexDirection: 'row', justifyContent: 'space-between', gap: 14, borderBottomWidth: 1, borderBottomColor: '#252A2D', paddingBottom: 10, marginBottom: 15, marginTop: -38 },
   issuer: { fontSize: 9, fontWeight: 700, flexGrow: 1, flexBasis: 0 },
+  senderLogo: { width: 120, height: 40, objectFit: 'contain', objectPosition: 'left center' },
+  senderNote: { fontSize: 9, lineHeight: 1.4, color: '#596368', marginTop: 12 },
   accent: { height: 3, width: 42, backgroundColor: '#F2D76A', marginTop: -18, marginBottom: 15 },
   contractType: { fontSize: 23, fontWeight: 700, lineHeight: 1.2, marginBottom: 4 },
   formLabel: { fontSize: 13, fontWeight: 700, lineHeight: 1.2, marginBottom: 10 },
@@ -263,6 +265,7 @@ function renderParties(s: CustomerOfferSnapshot, parts: SigningPdfSection[]) {
       fact('Adress', [p.street, `${p.postalCode} ${p.city}`.trim()].filter(Boolean).join('\n')),
       fact('E-post', p.email), fact('Telefon / mobil', [p.phone, p.mobile].filter(Boolean).join(' / '))),
     h(View, { style: styles.column }, text('Entreprenör (näringsidkare)', { style: styles.partyTitle }), c.companyName.trim() ? text(c.companyName, { style: styles.partyName }) : fact('Företag', ''),
+      ...(s.senderProfile ? [fact('Juridiskt bolag', s.senderProfile.legalName)] : []),
       fact('Organisationsnummer', c.organizationNumber), fact('Adress', [c.street, `${c.postalCode} ${c.city}`.trim()].filter(Boolean).join('\n')),
       fact('Kontaktperson', c.contactName), fact('E-post', c.email), fact('Telefon / mobil', [c.phone, c.mobile].filter(Boolean).join(' / ')),
       ...(c.fax ? [fact('Fax', c.fax)] : []), c.fTax === 'yes' || c.fTax === 'no' ? fact('Godkänd för F-skatt', c.fTax === 'yes' ? 'Ja' : 'Nej')
@@ -307,7 +310,9 @@ export async function renderContractSigningPdf(input: SigningPdfInput): Promise<
       text(role, { style: styles.signatureCaption }), ...(detail ? [text(detail, { style: styles.signatureCaption })] : [])))
   const document = h(Document, { title: `${heading.title} - ${heading.form}${s.title ? ` - ${s.title}` : ''}`, author: s.issuerName, creator: 'HusHub', language: 'sv-SE', creationDate: new Date(input.createdAt), modificationDate: new Date(input.createdAt) },
     h(Page, { size: 'A4', style: [styles.page, styles.cover], wrap: true },
-      h(View, { style: styles.masthead }, text(s.contractParties?.contractor.companyName || s.issuerName || 'Entreprenör', { style: styles.issuer })),
+      h(View, { style: styles.masthead },
+        ...(s.senderProfile?.logoDataUrl ? [h(Image, { src: s.senderProfile.logoDataUrl, style: styles.senderLogo })] : []),
+        text(s.contractParties?.contractor.companyName || s.issuerName || 'Entreprenör', { style: styles.issuer })),
       h(View, { style: styles.accent }), text(heading.title, { style: styles.contractType }), text(heading.form, { style: styles.formLabel }),
       ...(s.title ? [text(s.title, { style: styles.title })] : []),
       h(View, { style: [styles.sectionFrame, styles.coverFrame] }, band(number('parties'), 'Avtalsparter'), renderParties(s, coverParts)),
@@ -325,6 +330,9 @@ export async function renderContractSigningPdf(input: SigningPdfInput): Promise<
       h(View, { style: [styles.sectionFrame, { paddingBottom: 12 }], wrap: false }, band(groups.length + 1, 'Underskrifter'),
         text('Ort och datum: ____________________________________________________', { style: styles.signingDate }),
         h(View, { style: styles.columns }, ...customers.map((c, i) => h(View, { key: i, style: styles.column }, signature(c.name, `Beställare ${i + 1}`)))),
-        signature(s.contractParties?.contractor.companyName || s.issuerName, 'Entreprenör', s.contractParties?.contractor.contactName)), footer())) as React.ReactElement<DocumentProps>
+        signature(s.contractParties?.contractor.companyName || s.issuerName, 'Entreprenör', s.contractParties?.contractor.contactName)),
+      ...(s.senderProfile?.website ? [text(s.senderProfile.website, { style: styles.senderNote })] : []),
+      ...(s.senderProfile?.reportFooterText ? [text(s.senderProfile.reportFooterText, { style: styles.senderNote })] : []),
+      footer())) as React.ReactElement<DocumentProps>
   return renderPdfDocument(document)
 }

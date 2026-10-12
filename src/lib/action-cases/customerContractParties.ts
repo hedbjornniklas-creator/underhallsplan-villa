@@ -47,7 +47,7 @@ export function normalizeContractParties(value: unknown): ContractParties {
   const result = emptyContractParties()
   result.customers = customers
   for (const key of ['street', 'postalCode', 'city', 'phone', 'mobile', 'email'] as const) result[key] = text(input[key])
-  for (const key of ['companyName', 'organizationNumber', 'contactName', 'mobile', 'street', 'postalCode', 'city', 'phone', 'fax', 'email'] as const) result.contractor[key] = text(contractor[key])
+  for (const key of ['companyName', 'organizationNumber', 'contactName', 'mobile', 'street', 'postalCode', 'city', 'phone', 'fax', 'email'] as const) result.contractor[key] = text(contractor[key], key === 'street' ? 300 : key === 'email' ? 320 : 250)
   result.contractor.fTax = contractor.fTax as ContractContractor['fTax']
   return result
 }
