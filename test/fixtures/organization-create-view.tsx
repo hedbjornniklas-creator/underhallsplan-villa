@@ -9,7 +9,7 @@ const params = new URLSearchParams(location.search)
 // The native browser dialog is stubbed only in this synthetic fixture. Unit tests
 // cover accepting/cancelling it; display its real text for visual QA here.
 window.confirm = message => {
-  document.getElementById('preview-confirmation')!.textContent = message
+  document.getElementById('preview-confirmation')!.textContent = message ?? ''
   return true
 }
 window.fetch = async (url, options) => {
