@@ -139,6 +139,7 @@ export type ReportBlock =
 export type ReportSection = {
   id: string
   layoutVersion?: 2
+  observationPagination?: 'flow'
   coverImageFrame?: boolean
   title?: string
   startOnNewPage: boolean
@@ -729,6 +730,7 @@ export function buildReportSpec(params?: {
   const modernLayout = params?.layoutVersion === 2
   if (modernLayout) {
     spec[0].layoutVersion = 2
+    spec[0].observationPagination = 'flow'
     spec[0].coverImageFrame = false
   }
 

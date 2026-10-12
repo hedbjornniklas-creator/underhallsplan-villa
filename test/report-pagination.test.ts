@@ -105,3 +105,26 @@ test('floor headings stay with observations and oversized photo groups still pre
   const large = Array.from({ length: 5 }, (_, i) => ({ ...block(`photo${i}`, 55, 'Garage'), keepWithNext: i < 4 }))
   assert.deepEqual(paginate(large).flat().filter(e => !e.id.startsWith('heading:')), large)
 })
+
+test('a long observation keeps fitting recommendation and comment text with its note while photos continue', () => {
+  const entries = [block('section', 20), { ...block('floor', 10), keepWithNext: true },
+    { ...block('note', 20, 'Allrum'), keepWithNext: true },
+    { ...block('recommendation', 15, 'Allrum'), keepWithNext: true },
+    { ...block('comment', 10, 'Allrum'), keepWithNext: true },
+    { ...block('photos-1-2', 40, 'Allrum'), keepWithNext: true }, block('photo-3', 20, 'Allrum')]
+  const pages = paginateReportEntries(entries, 100, entry => entry.height, heading, true)
+  assert.deepEqual(ids(pages), [['section', 'floor', 'note', 'recommendation', 'comment'],
+    ['heading:Allrum', 'photos-1-2', 'photo-3']])
+  assert.deepEqual(pages.flat().filter(entry => !entry.id.startsWith('heading:')), entries)
+  for (const page of pages) assert.ok(page.reduce((height, entry) => height + entry.height, 0) <= 100)
+  // Frozen report specifications that predate the flow setting retain their pagination.
+  assert.deepEqual(ids(paginate(entries)), [['section', 'floor', 'note'],
+    ['heading:Allrum', 'recommendation', 'comment', 'photos-1-2', 'photo-3']])
+})
+
+test('a floor heading stays with its first note even when the complete observation exceeds a page', () => {
+  const entries = [block('previous', 80), { ...block('floor', 10), keepWithNext: true },
+    { ...block('note', 20, 'Garage'), keepWithNext: true }, block('photo', 85, 'Garage')]
+  assert.deepEqual(ids(paginateReportEntries(entries, 100, entry => entry.height, heading, true)),
+    [['previous'], ['floor', 'note'], ['heading:Garage', 'photo']])
+})

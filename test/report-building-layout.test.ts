@@ -14,6 +14,8 @@ test('new reports put all buildings before unchanged standard appendices; histor
   const before = structuredClone(old)
   const spec = buildReportSpec({ layoutVersion: 2, inspectionSide: 'buyer', dynamicAppendices })
   assert.equal(spec[0].layoutVersion, 2)
+  assert.equal(spec[0].observationPagination, 'flow')
+  assert.equal(old[0].observationPagination, undefined)
   assert.equal(spec[0].coverImageFrame, false)
   assert.equal(old[0].coverImageFrame, undefined)
   const firstAppendix = spec.findIndex(s => s.id === 'appendix-1')

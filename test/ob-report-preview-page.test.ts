@@ -58,6 +58,9 @@ function harness(options: { side?: string; locked?: boolean; accessError?: strin
   } }
   const stubs: Record<string, unknown> = {
     'server-only': {},
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ storage: { from: () => ({
+      getPublicUrl: (path: string) => ({ data: { publicUrl: `https://storage.example.test/${path}` } }),
+    }) } }) },
     'next/headers': { cookies: async () => ({ getAll: () => [] }) },
     '../../_components/AutoPrintTrigger': () => null,
     '../../_components/ReportToolbar': () => createElement('nav', null, 'Report toolbar'),

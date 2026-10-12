@@ -9,7 +9,8 @@ export function paginateReportEntries<T extends MeasuredEntry>(
   entries: readonly T[],
   availableHeight: number,
   heightOf: (entry: T) => number,
-  pageHeading: (entry: T) => { entry: T; height: number } | null = () => null
+  pageHeading: (entry: T) => { entry: T; height: number } | null = () => null,
+  flowOversizedGroups = false
 ): T[][] {
   const pages: T[][] = []
   let current: T[] = []
@@ -31,8 +32,18 @@ export function paginateReportEntries<T extends MeasuredEntry>(
       if (!next || next.kind === 'spacer' || next.sectionStartOnNewPage) break
       groupHeight += heightOf(next)
     }
-    const freshGroupHeight = groupHeight + (entry.keepWithNext ? pageHeading(entry)?.height ?? 0 : 0)
-    if (entry.keepWithNext && freshGroupHeight <= availableHeight && height + groupHeight > availableHeight && current.length) flush()
+    const startsGroup = !flowOversizedGroups || index === 0 ||
+      !entries[index - 1].keepWithNext || entries[index - 1].kind === 'spacer' || entry.sectionStartOnNewPage
+    const headingHeight = entry.keepWithNext ? pageHeading(entry)?.height ?? 0 : 0
+    // A long observation can span pages. Do not move its remaining text/photos
+    // as a new group after its first segment has already been placed.
+    if (flowOversizedGroups && groupHeight + headingHeight > availableHeight) {
+      const next = entries[index + 1]
+      groupHeight = next && next.kind === 'block' && !next.sectionStartOnNewPage
+        ? entryHeight + heightOf(next) : entryHeight
+    }
+    if (startsGroup && entry.keepWithNext && groupHeight + headingHeight <= availableHeight &&
+        height + groupHeight > availableHeight && current.length) flush()
     if (height + entryHeight > availableHeight && current.length) {
       flush()
       if (entry.kind === 'spacer') continue
