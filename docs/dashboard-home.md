@@ -6,7 +6,8 @@ entreprenadbesiktning, tekniska utredningar, fuktsäkerhet och Uppdrag.
 ## Innehåll och flöden
 
 - Kompakta modulkort visar aktiva uppdrag och antal nästa steg. Moduler utan
-  behörighet saknar navigerbar länk och läses inte in.
+  behörighet visas inte och läses inte in. Tillgängliga moduler visas även
+  när de saknar aktuella uppdrag.
 - Åtgärdslistan skiljer besiktningar, uppdragsbekräftelser och övriga uppgifter.
   Befintliga statusar bestämmer nästa steg. Länkarna öppnar modulens vanliga
   arbetsflöde; startsidan skickar inte bekräftelser och godkänner inte uppgifter.
