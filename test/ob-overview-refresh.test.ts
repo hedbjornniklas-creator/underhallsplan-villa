@@ -48,6 +48,7 @@ function harness() {
     'lucide-react': {},
     '@/components/ui/ActionButton': { default: 'ActionButton' },
     '@/components/ui/PendingLink': { default: 'PendingLink' },
+    './ObOverviewAssignmentActions': { default: 'ObOverviewAssignmentActions' },
     '@/lib/ob/overview': { selectObOverview: (items: unknown[]) => items },
     './ob-overview.css': {},
     './ObOrganizationBoundary': { useObOrganization: () => ({ id: 'organization-a', name: 'A' }), withObOrganization: (path: string, orgId: string) => `${path}?orgId=${orgId}` },

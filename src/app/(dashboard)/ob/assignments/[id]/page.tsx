@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
 import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
-import { ArrowLeft, BookOpen, ChevronsLeft } from 'lucide-react'
+import { ArrowLeft, BookOpen } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 import ObAssignmentWorkflowBoundary from '@/components/ob/ObAssignmentWorkflowBoundary'
@@ -581,15 +581,6 @@ function AssignmentDetailsContent() {
               <button
                 type="button"
                 onClick={() => router.push(withObOrganization('/ob', orgId))}
-                aria-label="Till huvudsidan"
-                title="Till huvudsidan"
-                className="ob-assignment-nav"
-              >
-                <ChevronsLeft size={15} strokeWidth={2.2} />
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push(withObOrganization('/ob/assignments', orgId))}
                 aria-label="Tillbaka"
                 title="Tillbaka"
                 className="ob-assignment-nav"

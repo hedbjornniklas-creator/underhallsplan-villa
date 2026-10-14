@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronsLeft, Loader2, Save, Send } from 'lucide-react'
+import { ArrowLeft, Loader2, Save, Send } from 'lucide-react'
 import Protected from '@/components/Protected'
 import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 import { loadObOrganizationInspectorProfile } from '@/lib/ob/profileCardClient'
@@ -344,15 +344,6 @@ function NewAssignmentContent({
               <button
                 type="button"
                 onClick={() => router.push(withObOrganization('/ob', orgId))}
-                aria-label="Till huvudsidan"
-                title="Till huvudsidan"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
-              >
-                <ChevronsLeft size={15} strokeWidth={2.2} />
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push(withObOrganization('/ob/assignments', orgId))}
                 aria-label="Tillbaka"
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
               >

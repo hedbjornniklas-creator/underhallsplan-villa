@@ -70,6 +70,7 @@ export async function testHomeActions(base, output) {
     assert.equal(await page.$eval('.obh-email input', node => node.value), '')
     assert.equal(await page.$eval('.obh-dialog', node => node.open), false, 'success closes dialog')
     await page.click('.obh-quick-trigger')
+    await page.click('.obh-roles label:first-child')
     await page.type('.obh-email input', 'failure@example.invalid')
     await page.type('.obh-quick-form input[inputmode=decimal]', '500')
     await page.evaluate(() => { window.__obHomeTest.quickStatus = 502 })
@@ -102,5 +103,15 @@ export async function testHomeActions(base, output) {
     }
     assert.deepEqual(errors, [])
     console.log('Home actions: modal placement, keyboard/focus, responsive layout, preserved form, success close, busy dismiss guard, synthetic scoped server creation, no client table writes, atomic failure, quick-send payload, list refresh, visible error toast, PDF links and 200% reflow passed.')
+  } catch (error) {
+    await page.screenshot({ path: resolve(output, 'home-actions-failure.png'), fullPage: true })
+    console.error(JSON.stringify(await page.evaluate(() => ({ width: innerWidth,
+      pageWidth: document.documentElement.scrollWidth,
+      overflow: Array.from(document.querySelectorAll('body *')).filter(node => {
+        const rect = node.getBoundingClientRect()
+        return node.checkVisibility() && (rect.right > innerWidth + 1 || rect.left < -1)
+      }).slice(0, 15).map(node => ({ tag: node.tagName, class: node.className, width: node.getBoundingClientRect().width })),
+    }))))
+    throw error
   } finally { await browser.close() }
 }

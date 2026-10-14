@@ -268,7 +268,7 @@ function InspectionDetailContent() {
   }, [inspectionId])
   const handleBackToInspections = useCallback(() => {
     if (!confirmLeaveIfTextDrafts()) return
-    router.push(withObOrganization('/inspections', orgId))
+    router.push(withObOrganization('/ob', orgId))
   }, [confirmLeaveIfTextDrafts, router, orgId])
   const handleInspectionAddonSelectionChanged = useCallback((keys: string[]) => {
     setSelectedAddonKeys((prev) => (areAddonKeyListsEqual(prev, keys) ? prev : keys))

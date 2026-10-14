@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Download, FileCheck2, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import ActionButton from '@/components/ui/ActionButton'
 import PendingLink from '@/components/ui/PendingLink'
+import ObOverviewAssignmentActions from './ObOverviewAssignmentActions'
 import type { ObOverviewItem, ObOverviewPage, OverviewFilter, OverviewSort } from '@/lib/ob/overview'
 import './ob-overview.css'
 import { useObOrganization, withObOrganization } from './ObOrganizationBoundary'
@@ -22,7 +23,7 @@ function dateLabel(value: string | null) {
   })
 }
 
-function OverviewRow({ item }: { item: ObOverviewItem }) {
+function OverviewRow({ item, onChanged }: { item: ObOverviewItem; onChanged: () => Promise<void> }) {
   const { id: orgId } = useObOrganization()
   const [expanded, setExpanded] = useState(false)
   const detailsId = useId()
@@ -41,11 +42,12 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
       <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
       <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Bekräftelse</span><span className="obo-cell-text" title={item.confirmation}>{item.confirmation}</span></td>
       <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Besiktning</span><span className="obo-cell-text" title={item.inspection}>{item.inspection}</span></td>
-      <td className="obo-details-toggle obo-desktop-only">
+      <td className="obo-details-toggle">
         <button type="button" className="obo-icon obo-row-toggle" aria-label={attentionLabel + detailsLabel}
           title={attentionLabel + detailsLabel} aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined}
           data-attention={item.attention.length > 0} onClick={() => setExpanded(value => !value)}>
           {item.attention.length ? <TriangleAlert size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
+          <span className="obo-mobile-only">Detaljer och åtgärder</span>
         </button>
       </td>
       <td className="obo-actions"><div className="obo-action-links">
@@ -61,7 +63,7 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
         </a>}
       </div></td>
     </tr>
-    {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={8}>
+    {expanded && <tr className="obo-detail-row"><td colSpan={8}>
       <div id={detailsId} className="obo-row-details">
         <dl>
           <div><dt>Besiktningsdag</dt><dd>{dateLabel(item.date)}</dd></div>
@@ -73,6 +75,7 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
         </dl>
         {item.attention.length > 0 && <div className="obo-detail-attention"><strong>Kräver åtgärd</strong>
           <ul className="obo-attention">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
+        {item.assignment && <ObOverviewAssignmentActions assignment={item.assignment} address={item.address} orgId={orgId} onChanged={onChanged} />}
       </div>
     </td></tr>}
   </>
@@ -213,7 +216,7 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
         <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Adress</th><th scope="col">Ort</th><th scope="col">Kund</th>
           <th scope="col">Uppdragsbekräftelse</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Detaljer och åtgärdsbehov</span></th>
           <th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead>
-        <tbody>{rows.map(item => <OverviewRow key={item.id} item={item} />)}</tbody>
+        <tbody>{rows.map(item => <OverviewRow key={item.id} item={item} onChanged={load} />)}</tbody>
       </table>}
       {result !== null && <div className="obo-pagination">
         <span role="status" aria-live="polite">{total ? `${start + 1}–${start + rows.length} av ${total} uppdrag` : '0 uppdrag'}</span>

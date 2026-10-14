@@ -57,6 +57,7 @@ test('archiving a confirmation does not hide its ongoing inspection', () => {
   const [row] = build([assignment({ inspection_id: 'inspection-1', archived_at: '2026-09-20' })], [inspection()], [])
   assert.equal(row.archived, false)
   assert.match(row.confirmation, /Arkiverad/)
+  assert.deepEqual(row.assignment, { id: 'assignment-1', status: 'sent', archived: true })
   assert.equal(select([row], options).length, 1)
 })
 test('reissue uses workflow pointer and retains a single inspection row', () => {
@@ -69,6 +70,7 @@ test('reissue uses workflow pointer and retains a single inspection row', () => 
   assert.equal(rows.length, 1)
   assert.equal(rows[0].confirmation, 'Utkast')
   assert.equal(rows[0].confirmationHref, '/ob/assignments/current')
+  assert.deepEqual(rows[0].assignment, { id: 'current', status: 'draft', archived: false })
 })
 test('workflow can link current assignment even without its inspection_id', () => {
   const rows = build([assignment()], [inspection()], [{ inspection_id: 'inspection-1', initial_assignment_id: 'assignment-1',
@@ -82,6 +84,7 @@ test('unlinked legacy inspection is retained and not labelled approved', () => {
   const [row] = build([], [inspection({ status: 'completed' })], [])
   assert.equal(row.confirmation, 'Ingen kopplad')
   assert.equal(row.confirmationHref, null)
+  assert.equal(row.assignment, undefined, 'No confirmation commands without an accessible assignment')
   assert.equal(row.closed, true)
 })
 test('inaccessible linked inspection gets no link and is not labelled not started', () => {
