@@ -33,6 +33,7 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
       <td className="obo-date">{item.date ? <time dateTime={item.date}>{dateLabel(item.date)}</time> : 'Datum saknas'}</td>
       <td className="obo-identity">
         <span className="obo-address obo-cell-text" title={item.address}>{item.address}</span>
+        {item.canEdit === false && <span className="obo-meta">Kollegans uppdrag · Endast läsning</span>}
         <span className="obo-mobile-only">{item.customer}</span>
         {item.city && <span className="obo-mobile-only obo-meta">{item.city}</span>}
         {item.attention.length > 0 && <ul className="obo-attention obo-mobile-only">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul>}
@@ -50,8 +51,8 @@ function OverviewRow({ item }: { item: ObOverviewItem }) {
       </td>
       <td className="obo-actions"><div className="obo-action-links">
         {item.inspectionHref && <PendingLink className="obo-inspection-link" href={withObOrganization(item.inspectionHref, orgId)} prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
-          aria-label={`Öppna besiktning: ${item.address}`} title="Öppna besiktning"
-          icon={<ClipboardList size={18} aria-hidden="true" />}>Öppna besiktning</PendingLink>}
+          aria-label={`${item.canEdit === false ? 'Läs utlåtande' : 'Öppna besiktning'}: ${item.address}`} title={item.canEdit === false ? 'Läs kollegans utlåtande' : 'Öppna besiktning'}
+          icon={<ClipboardList size={18} aria-hidden="true" />}>{item.canEdit === false ? 'Läs utlåtande' : 'Öppna besiktning'}</PendingLink>}
         {item.confirmationHref && <PendingLink className="obo-confirmation-link" href={withObOrganization(item.confirmationHref, orgId)} prefetch={false} autoPending pendingLabel="Öppnar bekräftelse…"
           aria-label={`${item.confirmationAction}: ${item.address}`} title={item.confirmationAction}
           icon={<FileCheck2 size={18} aria-hidden="true" />}>{item.confirmationAction}</PendingLink>}

@@ -5,6 +5,7 @@ import { isOrganizationUuid } from '@/lib/organizations/administrationHttp'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { OrganizationSwitcherContext } from '@/lib/organizations/server'
+import { canViewColleagueObAssignments } from '@/lib/ob/memberVisibility'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 type InspectionAccessRow = {
@@ -12,6 +13,13 @@ type InspectionAccessRow = {
   inspection_family: string | null
   type: string | null
   properties: { owner: string } | { owner: string }[] | null
+}
+export type ObReadContext = OrgContext & { canEdit: boolean }
+type AccessMode = 'read' | 'write'
+
+function organizationOnly(context: ObReadContext): OrgContext {
+  return { userId: context.userId, orgId: context.orgId, role: context.role,
+    orgName: context.orgName, orgEmailFrom: context.orgEmailFrom }
 }
 
 function parseId(value: unknown, errorCode: string): string {
@@ -142,57 +150,118 @@ export async function requireObContext(requestedOrgId?: unknown, requireExplicit
 
 export async function requireObAssignmentContext(assignmentIdValue: unknown, requestedOrgIdValue?: unknown): Promise<OrgContext> {
   const actor = await authenticatedObActor()
+  return organizationOnly(await assignmentContext(actor, () => createSupabaseAdminClient(), assignmentIdValue, requestedOrgIdValue,
+    orgId => explicitObContext(orgId, actor), requireObInspectionContext))
+}
+
+/** Explicit read permission never authorizes assignment mutations. */
+export async function requireObAssignmentReadContext(assignmentIdValue: unknown, requestedOrgIdValue?: unknown): Promise<ObReadContext> {
+  const actor = await authenticatedObActor()
   return assignmentContext(actor, () => createSupabaseAdminClient(), assignmentIdValue, requestedOrgIdValue,
-    orgId => explicitObContext(orgId, actor), requireObInspectionContext)
+    orgId => explicitObContext(orgId, actor), requireObInspectionReadContext, 'read')
 }
 
 async function assignmentContext(
   actor: string, getAdmin: () => AdminClient, assignmentIdValue: unknown, requestedOrgIdValue: unknown,
   resolveOrganization: (orgId: string) => Promise<OrgContext>,
-  resolveInspection: (id: unknown, requestedOrgId?: unknown) => Promise<OrgContext>
-): Promise<OrgContext> {
+  resolveInspection: (id: unknown, requestedOrgId?: unknown) => Promise<OrgContext | ObReadContext>,
+  mode: AccessMode = 'write'
+): Promise<ObReadContext> {
   const assignmentId = parseId(assignmentIdValue, 'OB_ASSIGNMENT_INVALID')
   const requestedOrgId = requestedOrgIdValue === undefined ? undefined : parseId(requestedOrgIdValue, 'ORG_SELECTION_INVALID')
   const admin = getAdmin()
   const { data, error } = await admin.from('assignments')
-    .select('id,org_id,inspection_id,assignment_type').eq('id', assignmentId).maybeSingle()
+    .select('id,org_id,inspection_id,assignment_type,responsible_profile_id').eq('id', assignmentId).maybeSingle()
   if (error) throw new Error('OB_ORGANIZATION_READ_FAILED')
   if (!data || !['OB', 'STATUS'].includes(data.assignment_type)) throw new Error('OB_ASSIGNMENT_NOT_FOUND')
   if (!isOrganizationUuid(data.org_id)) throw new Error('OB_ORGANIZATION_READ_FAILED')
+  const responsible = data.responsible_profile_id === actor
+  // Responsibility is required even before conversion creates an owned property.
+  if (mode === 'write' && !responsible) throw new Error('OB_ORGANIZATION_FORBIDDEN')
   const context = data.inspection_id
     ? await resolveInspection(data.inspection_id, data.org_id)
     : await resolveOrganization(data.org_id.toLowerCase())
   if (context.userId !== actor) throw new Error('OB_ORGANIZATION_FORBIDDEN')
+  if (context.orgId !== data.org_id.toLowerCase()) throw new Error('OB_ORGANIZATION_MISMATCH')
+  if (!responsible && !await canViewColleagueObAssignments(context.orgId, actor, admin)) {
+    throw new Error('OB_ORGANIZATION_FORBIDDEN')
+  }
   if (requestedOrgId !== undefined && requestedOrgId !== context.orgId) throw new Error('OB_ORGANIZATION_MISMATCH')
-  return context
+  return { ...context, canEdit: responsible && (!('canEdit' in context) || context.canEdit === true) }
 }
 
 /** Binding determines identity without expanding the existing owner boundary. */
 export async function requireObInspectionContext(inspectionIdValue: unknown, requestedOrgIdValue?: unknown): Promise<OrgContext> {
   const actor = await authenticatedObActor()
+  return organizationOnly(await inspectionContext(actor, () => createSupabaseAdminClient(), inspectionIdValue, requestedOrgIdValue,
+    orgId => explicitObContext(orgId, actor)))
+}
+
+/** List responses use the same responsible/owner boundary as entity guards. */
+export async function filterObAssignmentList<T extends {
+  id: string; org_id: string; assignment_type: string; responsible_profile_id: string; inspection_id: string | null
+}>(items: T[], context: OrgContext): Promise<Array<T & { canEdit: boolean }>> {
+  const admin = createSupabaseAdminClient()
+  const colleagues = await canViewColleagueObAssignments(context.orgId, context.userId, admin)
+  const candidates = items.filter(item => item.org_id === context.orgId && ['OB', 'STATUS'].includes(item.assignment_type) &&
+    (colleagues || item.responsible_profile_id === context.userId))
+  const ids = [...new Set(candidates.flatMap(item => item.inspection_id ? [item.inspection_id] : []))]
+  const inspections = new Map<string, InspectionAccessRow>()
+  const bindings = new Map<string, string>()
+  for (let start = 0; start < ids.length; start += 100) {
+    const batch = ids.slice(start, start + 100)
+    const [inspectionResult, bindingResult] = await Promise.all([
+      admin.from('inspections').select('id,inspection_family,type,properties!inner(owner)').in('id', batch),
+      admin.from('ob_organization_bindings').select('inspection_id,org_id').in('inspection_id', batch),
+    ])
+    if (inspectionResult.error || bindingResult.error || !Array.isArray(inspectionResult.data) || !Array.isArray(bindingResult.data)) {
+      throw new Error('OB_ORGANIZATION_READ_FAILED')
+    }
+    for (const inspection of inspectionResult.data as unknown as InspectionAccessRow[]) inspections.set(inspection.id, inspection)
+    for (const binding of bindingResult.data) bindings.set(binding.inspection_id, binding.org_id)
+  }
+  return candidates.flatMap(item => {
+    const responsible = item.responsible_profile_id === context.userId
+    if (!item.inspection_id) return [{ ...item, canEdit: responsible }]
+    const inspection = inspections.get(item.inspection_id)
+    const property = Array.isArray(inspection?.properties) ? inspection.properties[0] : inspection?.properties
+    if (!inspection || !isObInspection(inspection) || bindings.get(inspection.id) !== context.orgId ||
+      !isOrganizationUuid(property?.owner) || (!colleagues && property.owner !== context.userId)) return []
+    return [{ ...item, canEdit: responsible && property.owner === context.userId }]
+  })
+}
+
+/** Read-only colleague access; callers must not use this context for writes. */
+export async function requireObInspectionReadContext(inspectionIdValue: unknown, requestedOrgIdValue?: unknown): Promise<ObReadContext> {
+  const actor = await authenticatedObActor()
   return inspectionContext(actor, () => createSupabaseAdminClient(), inspectionIdValue, requestedOrgIdValue,
-    orgId => explicitObContext(orgId, actor))
+    orgId => explicitObContext(orgId, actor), 'read')
 }
 
 async function inspectionContext(
   actor: string, getAdmin: () => AdminClient, inspectionIdValue: unknown, requestedOrgIdValue: unknown,
-  resolveOrganization: (orgId: string) => Promise<OrgContext>
-): Promise<OrgContext> {
+  resolveOrganization: (orgId: string) => Promise<OrgContext>, mode: AccessMode = 'write'
+): Promise<ObReadContext> {
   const inspectionId = parseId(inspectionIdValue, 'OB_INSPECTION_INVALID')
   const requestedOrgId = requestedOrgIdValue === undefined
     ? undefined : parseId(requestedOrgIdValue, 'ORG_SELECTION_INVALID')
   const admin = getAdmin()
-  const { data: inspectionData, error: inspectionError } = await admin.from('inspections')
+  let query = admin.from('inspections')
     .select('id,inspection_family,type,properties!inner(owner)')
-    .eq('id', inspectionId).eq('properties.owner', actor).maybeSingle()
+    .eq('id', inspectionId)
+  if (mode === 'write') query = query.eq('properties.owner', actor)
+  const { data: inspectionData, error: inspectionError } = await query.maybeSingle()
   if (inspectionError) throw new Error('OB_ORGANIZATION_READ_FAILED')
   const inspection = inspectionData as InspectionAccessRow | null
   const property = Array.isArray(inspection?.properties) ? inspection.properties[0] : inspection?.properties
-  if (!inspection || inspection.id !== inspectionId || property?.owner !== actor || !isObInspection(inspection)) {
+  const owner = property?.owner === actor
+  if (!inspection || inspection.id !== inspectionId || !isOrganizationUuid(property?.owner) ||
+      (mode === 'write' && !owner) || !isObInspection(inspection)) {
     throw new Error('OB_ORGANIZATION_FORBIDDEN')
   }
 
-  // Do not even read a binding until authenticated ownership has been verified.
+  // Writes verify ownership before reading any binding. Reads use the immutable
+  // binding to verify membership, OB access and the explicit visibility flag.
   const { data: binding, error: bindingError } = await admin.from('ob_organization_bindings')
     .select('inspection_id,org_id').eq('inspection_id', inspectionId).maybeSingle()
   if (bindingError) {
@@ -209,9 +278,10 @@ async function inspectionContext(
 
   // Always explicit; the default/bootstrap membership branch is unreachable.
   const context = await resolveOrganization(orgId)
-  // Only an authorized owner learns that their requested organization mismatches.
+  if (!owner && !await canViewColleagueObAssignments(orgId, actor, admin)) throw new Error('OB_ORGANIZATION_FORBIDDEN')
+  // Only an authorized reader learns that their requested organization mismatches.
   if (requestedOrgId !== undefined && requestedOrgId !== orgId) throw new Error('OB_ORGANIZATION_MISMATCH')
-  return context
+  return { ...context, canEdit: owner }
 }
 
 type ObNavigationMembership = {
@@ -289,12 +359,12 @@ export async function getObOrganizationSwitcherContext(
     }
   }
   const resolveInspection = (id: unknown, orgId?: unknown) =>
-    inspectionContext(access.userId, () => admin, id, orgId, resolveOrganization)
-  // Ownership is verified before reading bindings, memberships or module access.
+    inspectionContext(access.userId, () => admin, id, orgId, resolveOrganization, 'read')
+  // Navigation follows read permissions, never granting permission to edit.
   let selected = entity.inspectionId !== undefined
     ? await resolveInspection(entity.inspectionId, requestedOrgId)
     : entity.assignmentId !== undefined
-      ? await assignmentContext(access.userId, () => admin, entity.assignmentId, requestedOrgId, resolveOrganization, resolveInspection)
+      ? await assignmentContext(access.userId, () => admin, entity.assignmentId, requestedOrgId, resolveOrganization, resolveInspection, 'read')
       : requestedOrgId !== undefined ? await resolveOrganization(requestedOrgId) : null
   const members = await memberships()
   if (!members.length) throw new Error('ORG_MEMBERSHIP_REQUIRED')

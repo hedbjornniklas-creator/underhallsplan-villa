@@ -4,9 +4,10 @@ import Link from 'next/link'
 
 type ReportToolbarProps = {
   backHref: string
+  readOnly?: boolean
 }
 
-export default function ReportToolbar({ backHref }: ReportToolbarProps) {
+export default function ReportToolbar({ backHref, readOnly = false }: ReportToolbarProps) {
   const handlePrint = () => {
     const start = Date.now()
     const maxWaitMs = 15000
@@ -29,7 +30,7 @@ export default function ReportToolbar({ backHref }: ReportToolbarProps) {
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-white px-4 py-3 text-sm text-gray-700 print:hidden">
-      <div className="font-semibold text-gray-900">Utlåtande (testläge)</div>
+      <div className="font-semibold text-gray-900">{readOnly ? 'Kollegans utlåtande · Endast läsning' : 'Utlåtande (testläge)'}</div>
       <div className="flex items-center gap-3">
         <Link href={backHref} className="text-sm text-gray-700 hover:underline">
           Tillbaka

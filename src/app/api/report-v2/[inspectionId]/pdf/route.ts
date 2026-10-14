@@ -6,7 +6,7 @@ import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -187,7 +187,7 @@ export async function GET(
     const inspectionFamily = String(inspectionRow.inspection_family ?? '').trim().toUpperCase()
     const isOb = inspectionFamily === 'OB' || (!inspectionFamily && ['OB', 'STATUS'].includes(inspectionRow.type ?? ''))
     const orgContext = isOb
-      ? await requireObInspectionContext(inspectionId, requestedOrgId)
+      ? await requireObInspectionReadContext(inspectionId, requestedOrgId)
       : inspectionFamily === 'TU' ? await requireTuContext(requestedOrgId) : await requireOrgContext(requestedOrgId)
 
     const hasAccess = isOb ? true : inspectionFamily === 'TU'

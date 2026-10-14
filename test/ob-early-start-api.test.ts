@@ -133,7 +133,7 @@ test('stored final PDF cannot be downloaded before approval and review', async (
   Object.assign(dependencies, {
     '@/lib/supabase/admin': { createSupabaseAdminClient: readOnlyAdmin },
     '@/lib/supabase/server': { createSupabaseServerClient: () => ({ auth: { getUser: async () => ({ data: { user: { id: org.userId } }, error: null }) } }) },
-    '@/lib/ob/organizationBindings': { requireObInspectionContext: async () => org },
+    '@/lib/ob/organizationBindings': { requireObInspectionReadContext: async () => ({ ...org, canEdit: false }) },
     '@/lib/assignments/server': { requireOrgContext: async () => org },
     '@/lib/ob/assignmentWorkflowServer': workflowDependency,
   })

@@ -8,6 +8,7 @@ import Protected from '@/components/Protected'
 import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 
 type Inspection = {
+  canEdit: boolean
   id: string
   property_id: string
   date: string | null
@@ -487,7 +488,8 @@ function InspectionsContent() {
   }
 
   const openInspection = (row: InspectionWithProperty) => {
-    router.push(withObOrganization(`/properties/${row.property_id}/ob/${row.id}`, orgId))
+    router.push(withObOrganization(row.canEdit === true
+      ? `/properties/${row.property_id}/ob/${row.id}` : `/utlatande/${row.property_id}/${row.id}`, orgId))
   }
 
   const handleBack = () => {
@@ -511,6 +513,7 @@ function InspectionsContent() {
   }
 
   const openUnlockDialog = (row: InspectionWithProperty) => {
+    if (row.canEdit !== true) return
     setMutationError(null)
     setUnlockTarget(row)
     setUnlockReason('')
@@ -523,7 +526,7 @@ function InspectionsContent() {
   }
 
   const submitUnlock = async () => {
-    if (!unlockTarget || unlockSubmitting) return
+    if (!unlockTarget || unlockTarget.canEdit !== true || unlockSubmitting) return
 
     const reason = unlockReason.trim()
     if (reason.length < 10) {
@@ -823,7 +826,7 @@ function InspectionsContent() {
 
                           <td className="px-3 py-1.5 align-middle text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {isLocked ? (
+                              {isLocked && row.canEdit === true ? (
                                 <UnlockInspectionActionButton
                                   onClick={() => openUnlockDialog(row)}
                                   disabled={isUnlockingThis}
@@ -879,7 +882,7 @@ function InspectionsContent() {
                       </div>
 
                       <div className="mt-3 flex items-center justify-end gap-2">
-                        {isLocked ? (
+                        {isLocked && row.canEdit === true ? (
                           <UnlockInspectionActionButton
                             onClick={() => openUnlockDialog(row)}
                             disabled={isUnlockingThis}

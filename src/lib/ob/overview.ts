@@ -41,6 +41,7 @@ export type OverviewWorkflow = {
 }
 
 export type ObOverviewItem = {
+  canEdit?: boolean
   pdfHref?: string | null
   id: string
   date: string | null

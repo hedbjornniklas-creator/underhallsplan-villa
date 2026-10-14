@@ -42,18 +42,24 @@ function request(path: string, method = 'GET', body?: unknown, headers: Record<s
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
-function harness(path: string, options: { deny?: string; identityError?: string; rpcError?: { code?: string; message: string }; rpcData?: unknown } = {}) {
-  const calls = { access: [] as { name: string; args: unknown[] }[], db: [] as string[], rpc: [] as { name: string; args: unknown }[], created: [] as Record<string, unknown>[] }
-  const context = { userId: ACTOR, orgId: ORG, role: 'inspector', orgName: 'Företaget', orgEmailFrom: null }
+function harness(path: string, options: { deny?: string; denyWrite?: boolean; identityError?: string; rpcError?: { code?: string; message: string }; rpcData?: unknown } = {}) {
+  const calls = { access: [] as { name: string; args: unknown[] }[], db: [] as string[], rpc: [] as { name: string; args: unknown }[], created: [] as Record<string, unknown>[], updated: [] as Record<string, unknown>[] }
+  const context = { userId: ACTOR, orgId: ORG, role: 'inspector', orgName: 'Företaget', orgEmailFrom: null, canEdit: !options.denyWrite }
   const guard = (name: string) => async (...args: unknown[]) => {
     calls.access.push({ name, args })
     if (options.deny) throw new Error(options.deny)
+    if (options.denyWrite && ['assignment', 'inspection'].includes(name)) throw new Error('OB_ORGANIZATION_FORBIDDEN')
     return context
   }
   const server = {
     createAssignment: async (input: Record<string, unknown>) => { calls.created.push(input); return { id: ID, responsible_profile_id: ACTOR } },
     listAssignmentsByOrg: async () => [],
     getAssignmentById: async () => ({ id: ID, responsible_profile_id: ACTOR, assignment_type: 'OB' }),
+    updateAssignmentById: async (input: Record<string, unknown>) => {
+      calls.updated.push(input)
+      return { id: ID, responsible_profile_id: ACTOR, assignment_type: 'OB', status: 'draft', ...(input.patch as object) }
+    },
+    listAssignmentAddonOrders: async () => [],
     getProfileContact: async () => ({ email: 'inspector@example.test' }),
     sendAssignmentConfirmation: async () => ({ acceptUrl: 'https://hushub.test/accept/test' }),
     buildBaseUrl: () => 'https://hushub.test', isMissingEnvError: () => false,
@@ -72,6 +78,8 @@ function harness(path: string, options: { deny?: string; identityError?: string;
     '@/lib/organizations/administrationHttp': administrationHttp,
     '@/lib/ob/organizationBindings': {
       requireObContext: guard('workspace'), requireObAssignmentContext: guard('assignment'), requireObInspectionContext: guard('inspection'),
+      requireObAssignmentReadContext: guard('assignment-read'), requireObInspectionReadContext: guard('inspection-read'),
+      filterObAssignmentList: async (items: unknown[]) => items,
     },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => {
       calls.db.push('admin')
@@ -119,6 +127,51 @@ test('every OB API handler denies before business queries when its organization 
   }
 })
 
+test('colleague read permission cannot invoke any existing entity mutation endpoint', async () => {
+  const directory = fileURLToPath(new URL('../src/app/api/ob', import.meta.url))
+  for (const absolute of routePaths(directory).filter(path => path.includes('[id]'))) {
+    const path = `src/app/api/ob/${absolute.slice(directory.length + 1).replaceAll('\\', '/')}`
+    const h = harness(path, { denyWrite: true })
+    for (const method of ['POST', 'PATCH', 'DELETE', 'PUT']) {
+      if (typeof h.api[method] !== 'function') continue
+      const response = await h.api[method](request(`/api/test?orgId=${ORG}`, method, {}), {
+        params: Promise.resolve({ id: ID, kind: 'radon' }),
+      })
+      assert.equal(response.status, 403, `${path} ${method}`)
+      assert.equal((await response.json()).code, 'OB_ORGANIZATION_FORBIDDEN')
+    }
+    assert.deepEqual(h.calls.db, [], path)
+    assert.deepEqual(h.calls.created, [], path)
+  }
+})
+
+test('assignment detail explicitly returns read-only metadata for a permitted colleague', async () => {
+  const h = harness('src/app/api/ob/assignments/[id]/route.ts', { denyWrite: true })
+  const response = await h.api.GET(request(`/api/test?orgId=${ORG}`), { params: Promise.resolve({ id: ID, kind: '' }) })
+  assert.equal(response.status, 200)
+  const result = await response.json()
+  assert.equal(result.assignment.canEdit, false)
+  assert.equal(result.canEdit, false)
+  assert.equal(h.calls.access[0].name, 'assignment-read')
+  assert.match(response.headers.get('cache-control') ?? '', /private, no-store/)
+})
+
+test('an owner PATCH preserves canEdit in the replacement row for autosave and archive consumers', async () => {
+  for (const patch of [{ customer_name: 'Updated customer' }, { archived_at: '2026-10-12T10:00:00Z' }, { archived_at: null }]) {
+    const h = harness('src/app/api/ob/assignments/[id]/route.ts')
+    const response = await h.api.PATCH(request(`/api/test?orgId=${ORG}`, 'PATCH', patch), {
+      params: Promise.resolve({ id: ID, kind: '' }),
+    })
+    assert.equal(response.status, 200)
+    const result = await response.json()
+    assert.equal(result.assignment.id, ID)
+    assert.equal(result.assignment.canEdit, true)
+    assert.equal(h.calls.access[0].name, 'assignment')
+    assert.equal(h.calls.updated.length, 1)
+    assert.match(response.headers.get('cache-control') ?? '', /private, no-store/)
+  }
+})
+
 test('organization selector rejects duplicate/malformed/empty IDs and requires workspace selection', () => {
   for (const suffix of ['', '?orgId=', '?orgId=bad', `?orgId=${ORG}&orgId=${ORG}`]) {
     assert.throws(() => http.obRequestOrgId(request(`/api/test${suffix}`), true), { message: 'ORG_SELECTION_INVALID' })
@@ -151,7 +204,7 @@ test('creation rejects body actors, organizations, invalid property and cross-si
 })
 
 test('inspection list is scoped by explicit organization and optional property in the guarded RPC', async () => {
-  const row = { id: ID, property_id: PROPERTY, hasReadyPdf: true }
+  const row = { id: ID, property_id: PROPERTY, hasReadyPdf: true, canEdit: true }
   const h = harness('src/app/api/ob/inspections/route.ts', { rpcData: [row] })
   const response = await h.api.GET(request(`/api/ob/inspections?orgId=${ORG}&propertyId=${PROPERTY}`))
   assert.equal(response.status, 200)

@@ -21,9 +21,9 @@ const helpers = load<typeof import('../src/lib/ob/publishedReport')>('src/lib/ob
 })
 const inspectionId = '10000000-0000-4000-8000-000000000001'
 const linkId = '10000000-0000-4000-8000-000000000002'
-const access = { orgId: 'our-org', userId: 'our-user' }
+const access = { orgId: 'our-org', userId: 'our-user', canEdit: true }
 const snapshot = { schemaVersion: 'v1', inspectionId, propertyId: 'property', reportSpec: [], reportData: { marker: 'published, not current draft' } }
-function database(options: { owner?: boolean; assignment?: boolean; revoked?: boolean; foreign?: boolean; missing?: boolean; family?: string; snapshot?: unknown; fail?: string } = {}) {
+function database(options: { binding?: boolean; bindingOrg?: string; revoked?: boolean; foreign?: boolean; missing?: boolean; family?: string | null; type?: string; snapshot?: unknown; fail?: string } = {}) {
   const calls: { table: string; filters: Record<string, unknown> }[] = []
   return {
     calls,
@@ -36,9 +36,9 @@ function database(options: { owner?: boolean; assignment?: boolean; revoked?: bo
         maybeSingle: async () => {
           calls.push({ table, filters })
           if (options.fail === table) return { data: null, error: Error('database failure') }
-          const data = table === 'inspections' ? { property_id: 'property', inspection_family: options.family ?? 'OB' }
-            : table === 'assignments' ? (options.assignment === false ? null : { id: 'assignment' })
-            : table === 'properties' ? (options.owner ? { id: 'property' } : null)
+          assert.ok(['inspections', 'ob_organization_bindings', 'inspection_report_links'].includes(table), `Unexpected authority fallback: ${table}`)
+          const data = table === 'inspections' ? { property_id: 'property', inspection_family: options.family === undefined ? 'OB' : options.family, type: options.type ?? 'OB' }
+            : table === 'ob_organization_bindings' ? (options.binding === false ? null : { inspection_id: inspectionId, org_id: options.bindingOrg ?? access.orgId })
             : options.revoked || options.foreign || options.missing ? null : { id: linkId, snapshot_payload: options.snapshot ?? snapshot }
           return { data, error: null }
         },
@@ -57,13 +57,17 @@ test('reads exactly the selected active snapshot within the inspection and organ
   assert.equal(helpers.obPublishedReportHref(inspectionId, linkId), `/ob/inspections/${inspectionId}/digital?report=${linkId}`)
 })
 
-test('owner fallback checks owner identity and unauthorized readers never load report contents', async () => {
-  const denied = database({ assignment: false })
-  assert.equal(await helpers.getObPublishedReport(denied.admin, inspectionId, linkId, access), null)
-  assert.ok(!denied.calls.some(call => call.table === 'inspection_report_links'))
-  const owner = database({ assignment: false, owner: true })
-  assert.equal(await helpers.getObPublishedReport(owner.admin, inspectionId, linkId, access), snapshot)
-  assert.deepEqual(owner.calls.find(call => call.table === 'properties')?.filters, { id: 'property', owner: access.userId })
+test('authorized colleague reads use the immutable binding for both standalone and linked inspections', async () => {
+  const colleague = database()
+  const before = structuredClone(snapshot)
+  assert.equal(await helpers.getObPublishedReport(colleague.admin, inspectionId, linkId, { ...access, canEdit: false }), snapshot)
+  assert.deepEqual(colleague.calls.map(call => call.table), ['inspections', 'ob_organization_bindings', 'inspection_report_links'])
+  assert.deepEqual(snapshot, before)
+  for (const options of [{ binding: false }, { bindingOrg: 'foreign-org' }]) {
+    const denied = database(options)
+    assert.equal(await helpers.getObPublishedReport(denied.admin, inspectionId, linkId, access), null)
+    assert.ok(!denied.calls.some(call => call.table === 'inspection_report_links'))
+  }
 })
 
 test('missing, revoked, foreign, malformed, wrong-module and mismatched snapshots never fall back to live data', async () => {
@@ -74,8 +78,8 @@ test('missing, revoked, foreign, malformed, wrong-module and mismatched snapshot
   const invalid = database()
   assert.equal(await helpers.getObPublishedReport(invalid.admin, 'invalid', linkId, access), null)
   assert.equal(invalid.calls.length, 0)
-  for (const table of ['inspections', 'assignments', 'properties', 'inspection_report_links']) {
-    await assert.rejects(helpers.getObPublishedReport(database({ fail: table, assignment: table !== 'properties' }).admin, inspectionId, linkId, access))
+  for (const table of ['inspections', 'ob_organization_bindings', 'inspection_report_links']) {
+    await assert.rejects(helpers.getObPublishedReport(database({ fail: table }).admin, inspectionId, linkId, access))
   }
 })
 
@@ -88,31 +92,35 @@ test('delivery metadata only exposes active links in the current organization an
 
 test('digital page authenticates before database access and renders the stored payload through the customer renderer', async () => {
   const path = 'src/app/ob/inspections/[id]/digital/page.tsx'
-  for (const mode of ['allowed', 'unauthenticated', 'denied'] as const) {
+  for (const mode of ['allowed', 'colleague', 'unauthenticated', 'forbidden', 'denied'] as const) {
     let reads = 0
+    const context = { ...access, canEdit: mode !== 'colleague' }
     const view = () => null
-    const page = load<{ default: (props: unknown) => Promise<{ type: unknown; props: { snapshot: unknown; shareUrl?: string } }> }>(path, {
+    const page = load<{ default: (props: unknown) => Promise<{ type: unknown; props: { snapshot: unknown; shareUrl?: string; shareEndpoint?: string; showPdfActions?: boolean } }> }>(path, {
       'next/navigation': { redirect: (url: string) => { throw Error('REDIRECT:' + url) }, notFound: () => { throw Error('NOT_FOUND') } },
       'react/jsx-runtime': { jsx: (type: unknown, props: unknown) => ({ type, props }) },
-      '@/lib/ob/organizationBindings': { requireObInspectionContext: async (id: string, orgId: unknown) => {
+      '@/lib/ob/organizationBindings': { requireObInspectionReadContext: async (id: string, orgId: unknown) => {
         assert.equal(id, inspectionId)
         assert.equal(orgId, undefined, 'Old digital links must use their inspection binding, not a default organization')
         if (mode === 'unauthenticated') throw Error('UNAUTHORIZED')
-        return access
+        if (mode === 'forbidden') throw Error('OB_ORGANIZATION_FORBIDDEN')
+        return context
       } },
       '@/lib/supabase/admin': { createSupabaseAdminClient: () => { reads++; return {} } },
-      '@/lib/ob/publishedReport': { getObPublishedReport: async (_admin: unknown, id: string, report: string, context: unknown) => {
-        assert.equal(id, inspectionId); assert.equal(report, linkId); assert.equal(context, access)
+      '@/lib/ob/publishedReport': { getObPublishedReport: async (_admin: unknown, id: string, report: string, suppliedContext: unknown) => {
+        assert.equal(id, inspectionId); assert.equal(report, linkId); assert.equal(suppliedContext, context)
         return mode === 'denied' ? null : snapshot
       } },
       '@/components/report/ReportSnapshotView': { __esModule: true, default: view },
     })
     const result = page.default({ params: Promise.resolve({ id: inspectionId }), searchParams: Promise.resolve({ report: linkId }) })
-    if (mode === 'allowed') {
+    if (mode === 'allowed' || mode === 'colleague') {
       const element = await result
       assert.equal(element.type, view); assert.equal(element.props.snapshot, snapshot)
       assert.equal(element.props.shareUrl, undefined, 'Never offer an authenticated URL as a public sharing link')
-    } else await assert.rejects(result, mode === 'denied' ? /NOT_FOUND/ : /REDIRECT:\/login/)
-    assert.equal(reads, mode === 'unauthenticated' ? 0 : 1)
+      assert.equal(element.props.shareEndpoint, undefined, 'Read access never enables public report sharing')
+      assert.equal(element.props.showPdfActions, false, 'This route cannot trigger public PDF regeneration')
+    } else await assert.rejects(result, ['denied', 'forbidden'].includes(mode) ? /NOT_FOUND/ : /REDIRECT:\/login/)
+    assert.equal(reads, ['unauthenticated', 'forbidden'].includes(mode) ? 0 : 1)
   }
 })

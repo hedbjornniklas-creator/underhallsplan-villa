@@ -36,6 +36,17 @@ function ob(overrides: Partial<ObOverviewItem> = {}): ObOverviewItem {
     assignmentNumber: '', confirmation: 'Utkast', inspection: 'Ej startad', confirmationHref: '/ob/assignments/a', inspectionHref: null,
     confirmationAction: 'Öppna bekräftelse', attention: ['Färdigställ uppdragsbekräftelsen'], closed: false, archived: false, marker: 'attention', ...overrides }
 }
+
+test('OB colleague read access does not assign their tasks or bookings to the current inspector', () => {
+  const result = buildObDashboard([
+    ob({ canEdit: true }),
+    ob({ id: 'inspection:colleague', canEdit: false, inspectionHref: '/utlatande/p/colleague', inspection: 'Pågår' }),
+    ob({ id: 'assignment:colleague', canEdit: false, confirmation: 'Godkänd och accepterad' }),
+  ], new Map(), today)
+  assert.equal(result.activeCount, 1)
+  assert.deepEqual(result.actions.map(item => item.id), ['ob:assignment:a:confirmation'])
+  assert.deepEqual(result.bookings, [])
+})
 test('OB excludes cancelled/completed rows and requested confirmation dates are not appointments', () => {
   const result = buildObDashboard([ob(), ob({ id: 'b', closed: true }), ob({ id: 'c', confirmation: 'Avbokad' }),
     ob({ id: 'inspection:d', inspection: 'Pågår', inspectionHref: '/properties/p/ob/d', confirmation: 'Inväntar kund', attention: [] })],

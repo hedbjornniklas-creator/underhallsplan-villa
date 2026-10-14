@@ -9,6 +9,7 @@ import Protected from '@/components/Protected'
 import ObOrganizationBoundary, { useObOrganization, useObOrganizationSwitchGuard, withObOrganization } from '@/components/ob/ObOrganizationBoundary'
 
 type AssignmentItem = {
+  canEdit: boolean
   id: string
   org_id: string
   status: 'draft' | 'sent' | 'ordered' | 'booked' | 'completed' | 'expired' | 'cancelled'
@@ -478,16 +479,18 @@ function AssignmentsContent() {
 
   const isArchived = (item: AssignmentItem) => Boolean(item.archived_at)
   const canArchiveAssignment = (item: AssignmentItem) => {
+    if (item.canEdit !== true) return false
     if (isArchived(item)) return true
     return !['sent', 'ordered', 'booked'].includes(item.status)
   }
 
   const canStartInspection = (item: AssignmentItem) =>
-    item.status === 'booked' && !item.inspection_id && !item.archived_at
+    item.canEdit === true && item.status === 'booked' && !item.inspection_id && !item.archived_at
 
-  const canCancelAssignment = (item: AssignmentItem) => item.status !== 'cancelled'
+  const canCancelAssignment = (item: AssignmentItem) => item.canEdit === true && item.status !== 'cancelled'
 
   const handleArchive = async (item: AssignmentItem) => {
+    if (!canArchiveAssignment(item)) return
     const nextArchived = !isArchived(item)
     const confirmed = window.confirm(
       nextArchived
@@ -843,6 +846,7 @@ function AssignmentsContent() {
                           <td className="px-3 py-2 align-middle whitespace-nowrap">{formatDate(item.created_at)}</td>
                           <td className="px-3 py-2 align-middle">
                             <div>{item.customer_name || '-'}</div>
+                            {item.canEdit !== true && <span className="text-xs text-slate-500">Kollegans uppdrag · Endast läsning</span>}
                           </td>
                           <td className="px-3 py-2 align-middle">{getAddress(item)}</td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
@@ -857,7 +861,7 @@ function AssignmentsContent() {
                             {linkIssues?.items.some(issue => issue.assignment_id === item.id) ? <AssignmentLinkIssueBadge /> : null}
                           </td>
                           <td className="px-3 py-2 align-middle whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1">
+                            {item.canEdit === true && <div className="flex items-center justify-end gap-1">
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -920,7 +924,7 @@ function AssignmentsContent() {
                               >
                                 <Play size={13} />
                               </button>
-                            </div>
+                            </div>}
                           </td>
                         </tr>
                       )

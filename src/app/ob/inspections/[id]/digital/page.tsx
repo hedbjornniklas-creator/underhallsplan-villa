@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getObPublishedReport } from '@/lib/ob/publishedReport'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
@@ -19,7 +19,7 @@ export default async function ObPublishedDigitalReport({ params, searchParams }:
   const { report, orgId } = await searchParams
   if (typeof report !== 'string') notFound()
   let access
-  try { access = await requireObInspectionContext(id, orgId) }
+  try { access = await requireObInspectionReadContext(id, orgId) }
   catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect('/login')
     if (error instanceof Error && ['ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED',

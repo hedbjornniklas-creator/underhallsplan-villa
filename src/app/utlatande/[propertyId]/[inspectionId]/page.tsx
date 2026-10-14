@@ -11,7 +11,7 @@ import {
 } from '@/lib/report/inspectionDocumentReportLine'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import { readEnvironmentalAppendices } from '@/lib/report/environmentalAppendices'
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { resolveObReportIdentity } from '@/lib/ob/reportIdentity'
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { readBuildingReportState } from '@/lib/ob/buildingReport'
@@ -21,7 +21,7 @@ import {
   buildBuildingTypeParts,
   renderBuildingDataTextFromTemplate,
 } from '@/lib/report/buildingData'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
 import { readObNoteText } from '@/lib/ob/noteText'
 import { modelFloorLabel, modelFloorRank } from '@/lib/ob/floorModel'
@@ -113,21 +113,25 @@ export default async function Page({
 }) {
   const resolvedParams = await Promise.resolve(params)
   const resolvedSearchParams: Record<string, string | string[] | undefined> = await Promise.resolve(searchParams ?? {})
-  const organization = await requireObInspectionContext(resolvedParams.inspectionId, resolvedSearchParams.orgId)
+  const organization = await requireObInspectionReadContext(resolvedParams.inspectionId, resolvedSearchParams.orgId)
+  const backHref = organization.canEdit
+    ? `/properties/${resolvedParams.propertyId}/ob/${resolvedParams.inspectionId}?orgId=${organization.orgId}`
+    : `/ob?orgId=${organization.orgId}`
   const isEmbed = resolvedSearchParams?.embed === '1'
   const isAutoPrint = resolvedSearchParams?.autoprint === '1'
   const isPdf = resolvedSearchParams?.pdf === '1'
-  const supabase: any = createSupabaseServerClient()
+  // This server-rendered preview only reads. Editing and publication stay owner-only.
+  const supabase: any = createSupabaseAdminClient()
   const { data: inspectionProfile } = await supabase.from('inspections')
     .select('inspection_side,inspection_variant,type')
     .eq('id', resolvedParams.inspectionId).maybeSingle()
   if (isStatusInspection(inspectionProfile ?? {}) || await readBuildingReportState(supabase, resolvedParams.inspectionId)) {
-    const data = await buildReportDataV2(resolvedParams)
+    const data = await buildReportDataV2(resolvedParams, undefined, { readOnly: true })
     const side = data.mock.inspections.side
     const appendices = data.mock.appendices
     return <div className="min-h-screen bg-neutral-100 print:bg-white">
       {isAutoPrint && <AutoPrintTrigger />}
-      {!isEmbed && <ReportToolbar backHref={`/properties/${resolvedParams.propertyId}/ob/${resolvedParams.inspectionId}`} />}
+      {!isEmbed && <ReportToolbar backHref={backHref} readOnly={!organization.canEdit} />}
       <ReportRenderer mockData={data} inspectionSide={side} rootClassName={isPdf ? 'report-root--pdf' : undefined}
         spec={buildReportSpec({ layoutVersion: 2, inspectionSide: side, objectType: data.mock.properties?.object_type, dynamicAppendices: {
           includeAreaMeasurement: appendices.area_measurement?.enabled === true,
@@ -341,7 +345,7 @@ export default async function Page({
 
   const { data: propertyData, error: propertyError } = await supabase
     .from('properties')
-    .select('id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
+    .select('id, owner, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
     .eq('id', resolvedPropertyId)
     .maybeSingle()
 
@@ -402,7 +406,8 @@ export default async function Page({
     throw new Error('OB_ORGANIZATION_FORBIDDEN')
   }
 
-  const userId = organization.userId
+  const userId = propertyData?.owner
+  if (typeof userId !== 'string') throw new Error('OB_ORGANIZATION_FORBIDDEN')
   const profileError = null
 
   let frozenProfileFromSnapshot = null
@@ -1639,10 +1644,11 @@ export default async function Page({
       {isAutoPrint && <AutoPrintTrigger />}
       {!isEmbed && (
         <ReportToolbar
-          backHref={`/properties/${resolvedParams.propertyId}/ob/${resolvedParams.inspectionId}`}
+          backHref={backHref}
+          readOnly={!organization.canEdit}
         />
       )}
-      {showDiagnostics && (
+      {showDiagnostics && organization.canEdit && (
         <div className="mx-auto w-full max-w-3xl px-4 pt-4 print:hidden">
           <details className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
             <summary className="cursor-pointer font-semibold">

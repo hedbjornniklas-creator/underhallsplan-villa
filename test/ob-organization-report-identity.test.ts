@@ -95,7 +95,8 @@ test('unconfigured or mismatched company and missing personal card cannot enter 
 test('both OB preview builders resolve authorized bound identity and no longer read global company fields', () => {
   for (const path of ['src/lib/report/pdfV2/buildReportDataV2.ts', 'src/app/utlatande/[propertyId]/[inspectionId]/page.tsx']) {
     const source = readFileSync(path, 'utf8')
-    assert.match(source, /requireObInspectionContext\(/)
+    assert.match(source, /requireObInspectionReadContext\(/)
+    assert.match(source, /const userId = propertyData\?\.owner/)
     assert.match(source, /resolveObReportIdentity\(/)
     assert.match(source, /\.eq\('org_id', organization.orgId\)/)
     assert.match(source, /company_website: profile.company_website/)

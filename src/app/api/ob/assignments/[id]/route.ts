@@ -1,4 +1,4 @@
-import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { requireObAssignmentContext, requireObAssignmentReadContext } from '@/lib/ob/organizationBindings'
 import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { parseObObjectType, resolveObObjectType } from '@/lib/ob/objectType'
@@ -26,7 +26,7 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params
-    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
+    const org = await requireObAssignmentReadContext((await context.params).id, obRequestOrgId(request))
     const assignment = await getAssignmentById(org.orgId, id)
 
     if (!assignment) return jsonError('Uppdraget hittades inte.', 404)
@@ -43,7 +43,8 @@ export async function GET(
       })
     }
 
-    return NextResponse.json({ assignment, addonOrders, linkIssues: await listAssignmentLinkIssues(org.orgId, [id]) })
+    return NextResponse.json({ assignment: { ...assignment, canEdit: org.canEdit }, canEdit: org.canEdit,
+      addonOrders, linkIssues: await listAssignmentLinkIssues(org.orgId, [id]) }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)
     if (organizationFailure) return organizationFailure
@@ -359,7 +360,11 @@ export async function PATCH(
       }
     }
 
-    return NextResponse.json({ assignment, bookingEmailSent })
+    // This response replaces the row in both editor and list state. Preserve
+    // the capability established by the owner-only mutation guard.
+    return NextResponse.json({ assignment: { ...assignment, canEdit: true }, bookingEmailSent }, {
+      headers: { 'Cache-Control': 'private, no-store' },
+    })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)
     if (organizationFailure) return organizationFailure

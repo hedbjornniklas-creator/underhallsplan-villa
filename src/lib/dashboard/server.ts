@@ -43,17 +43,18 @@ async function readOb(orgId: string, today: string): Promise<DashboardModuleSumm
   const userClient = createSupabaseServerClient() as unknown as SupabaseClient
   const items: ObOverviewItem[] = [], times = new Map<string, string | null>(), inspectionDates = new Map<string, string | null>()
   let page = 1, total = 0
-  // The existing invoker RPC supplies only normalized rows visible to this user,
-  // including the current confirmation after a reissue. No admin fallback.
+  // The authenticated RPC supplies only authorized rows, including the current
+  // confirmation after a reissue. The dashboard uses only the actor's own work.
   do {
     const result = await loadObOverview({ userClient, orgId, options: {
       search: '', filter: 'active', sort: 'date-asc', attentionOnly: false,
       showArchived: false, page, pageSize: 50,
     } })
     total = result.total
-    items.push(...result.items)
-    const inspectionRows = result.items.filter(item => item.id.startsWith('inspection:'))
-    const assignmentRows = result.items.filter(item => item.id.startsWith('assignment:'))
+    const ownItems = result.items.filter(item => item.canEdit !== false)
+    items.push(...ownItems)
+    const inspectionRows = ownItems.filter(item => item.id.startsWith('inspection:'))
+    const assignmentRows = ownItems.filter(item => item.id.startsWith('assignment:'))
     for (const inspection of inspectionRows) inspectionDates.set(inspection.id, null)
     const [inspections, assignments] = await Promise.all([
       inspectionRows.length ? userClient.from('inspections').select('id,date,inspection_time')

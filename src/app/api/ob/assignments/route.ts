@@ -1,4 +1,4 @@
-import { requireObContext } from '@/lib/ob/organizationBindings'
+import { requireObContext, filterObAssignmentList } from '@/lib/ob/organizationBindings'
 import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { parseObObjectType } from '@/lib/ob/objectType'
@@ -18,9 +18,7 @@ function jsonError(message: string, status: number) {
 export async function GET(request: Request) {
   try {
     const context = await requireObContext(obRequestOrgId(request, true), true)
-    const items = (await listAssignmentsByOrg(context.orgId)).filter(
-      (item) => item.assignment_type === 'OB' || item.assignment_type === 'STATUS'
-    )
+    const items = await filterObAssignmentList(await listAssignmentsByOrg(context.orgId), context)
 
     return NextResponse.json({
       items,
@@ -29,7 +27,7 @@ export async function GET(request: Request) {
         id: context.orgId,
         name: context.orgName,
       },
-    })
+    }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)
     if (organizationFailure) return organizationFailure

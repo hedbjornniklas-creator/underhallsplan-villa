@@ -63,6 +63,7 @@ function harness(options: {
   authError?: boolean
   inspection?: Row | null
   assignment?: Row | null
+  visibility?: Row | null
   binding?: Row | null
   entitlement?: Row | null
   entitlements?: Row[]
@@ -77,9 +78,10 @@ function harness(options: {
     permissions: [] as unknown[],
   }
   const rows: Record<string, Row[]> = {
-    assignments: options.assignment === null ? [] : [options.assignment ?? {
+    assignments: options.assignment === null ? [] : [{ responsible_profile_id: ACTOR, ...(options.assignment ?? {
       id: OTHER_INSPECTION, org_id: ORG, inspection_id: null, assignment_type: 'OB',
-    }],
+    }) }],
+    organization_member_ob_visibility: options.visibility ? [options.visibility] : [],
     inspections: options.inspection === null ? [] : [options.inspection ?? {
       id: INSPECTION, inspection_family: 'OB', type: 'OB', properties: { owner: ACTOR },
     }],
@@ -137,9 +139,11 @@ function harness(options: {
   const access = load<typeof AccessServer>('src/lib/access/server.ts', dependencies)
   const assignments = load<typeof AssignmentServer>('src/lib/assignments/server.ts', dependencies, true)
   const http = load<Record<string, unknown>>('src/lib/organizations/administrationHttp.ts', {})
+  const visibility = load<Record<string, unknown>>('src/lib/ob/memberVisibility.ts', dependencies)
   const server = load<typeof BindingServer>('src/lib/ob/organizationBindings.ts', {
     ...dependencies,
     '@/lib/organizations/administrationHttp': http,
+    '@/lib/ob/memberVisibility': visibility,
     '@/lib/access/server': {
       ...access,
       hasCurrentUserAccess: async (input: Parameters<typeof access.hasCurrentUserAccess>[0]) => {
@@ -470,6 +474,8 @@ test('all new context entry points authenticate before privileged reads', async 
   for (const run of [
     (server: typeof BindingServer) => server.requireObContext(ORG),
     (server: typeof BindingServer) => server.requireObAssignmentContext(OTHER_INSPECTION),
+    (server: typeof BindingServer) => server.requireObAssignmentReadContext(OTHER_INSPECTION),
+    (server: typeof BindingServer) => server.requireObInspectionReadContext(INSPECTION),
     (server: typeof BindingServer) => server.hasOrganizationObAccess(ORG, ACTOR),
   ]) {
     const h = harness({ user: null })
@@ -562,7 +568,7 @@ test('navigation uses exactly the same managed and legacy decisions as the prote
   }
 })
 
-test('navigation authenticates before reads and rejects non-owner before bindings or memberships', async () => {
+test('navigation authenticates before reads and rejects colleague without explicit visibility', async () => {
   for (const options of [{ user: null }, { authError: true }]) {
     const h = harness(options)
     await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG), { message: 'UNAUTHORIZED' })
@@ -570,7 +576,7 @@ test('navigation authenticates before reads and rejects non-owner before binding
   }
   const h = harness({ inspection: { id: INSPECTION, inspection_family: 'OB', type: 'OB', properties: { owner: OTHER_ACTOR } } })
   await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG, { inspectionId: INSPECTION }), { message: 'OB_ORGANIZATION_FORBIDDEN' })
-  assert.deepEqual(h.calls.queries.map(query => query.table), ['inspections'])
+  assert.ok(h.calls.queries.some(query => query.table === 'organization_member_ob_visibility'))
 })
 
 test('navigation preserves bound organization, assignment linkage and authorized-only mismatch errors', async () => {
@@ -589,5 +595,102 @@ test('navigation fails closed on member/access reads, never silently hiding an u
   for (const table of ['org_members', 'organization_enabled_modules', 'platform_access_assignments', 'profiles']) {
     const h = harness({ tableErrors: { [table]: { message: 'private database details' } } })
     await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG), { message: 'OB_ORGANIZATION_READ_FAILED' })
+  }
+})
+
+const colleagueInspection = { id: INSPECTION, inspection_family: 'OB', type: 'OB', properties: { owner: OTHER_ACTOR } }
+const colleagueAssignment = { id: OTHER_INSPECTION, org_id: ORG, inspection_id: null,
+  assignment_type: 'OB', responsible_profile_id: OTHER_ACTOR }
+const colleagueVisibility = { org_id: ORG, profile_id: ACTOR, can_view_colleagues: true }
+
+test('colleague visibility is absent/off by default and permits only explicit reads when enabled', async () => {
+  for (const visibility of [null, { ...colleagueVisibility, can_view_colleagues: false }, colleagueVisibility]) {
+    const h = harness({ visibility, inspection: colleagueInspection, assignment: colleagueAssignment })
+    const reads = [() => h.server.requireObInspectionReadContext(INSPECTION, ORG),
+      () => h.server.requireObAssignmentReadContext(OTHER_INSPECTION, ORG)]
+    for (const read of reads) {
+      if (visibility?.can_view_colleagues) assert.equal((await read()).canEdit, false)
+      else await assert.rejects(read(), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+    }
+    await assert.rejects(h.server.requireObInspectionContext(INSPECTION, ORG), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+    await assert.rejects(h.server.requireObAssignmentContext(OTHER_INSPECTION, ORG), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+    assert.deepEqual(h.calls.mutations, [])
+  }
+})
+
+test('own read access stays editable while assignment writes require responsibility and linked property ownership', async () => {
+  const h = harness()
+  assert.equal((await h.server.requireObInspectionReadContext(INSPECTION)).canEdit, true)
+  assert.equal((await h.server.requireObAssignmentReadContext(OTHER_INSPECTION)).canEdit, true)
+  for (const assignment of [{ ...colleagueAssignment, inspection_id: INSPECTION },
+    { ...colleagueAssignment, inspection_id: INSPECTION, responsible_profile_id: ACTOR }]) {
+    const linked = harness({ visibility: colleagueVisibility, assignment,
+      inspection: assignment.responsible_profile_id === ACTOR ? colleagueInspection : undefined })
+    assert.equal((await linked.server.requireObAssignmentReadContext(OTHER_INSPECTION)).canEdit, false)
+    await assert.rejects(linked.server.requireObAssignmentContext(OTHER_INSPECTION), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+  }
+})
+
+test('colleague flag never bypasses membership, module activation, grant expiry or family checks', async () => {
+  const cases: [Parameters<typeof harness>[0], string][] = [
+    [{ memberships: [] }, 'ORG_MEMBERSHIP_REQUIRED'],
+    [{ memberships: [membership(ORG, { is_active: false })] }, 'ORG_MEMBERSHIP_REQUIRED'],
+    [{ entitlement: { is_active: false } }, 'MODULE_ACCESS_REQUIRED'],
+    [{ entitlement: { is_active: true }, grants: [] }, 'MODULE_ACCESS_REQUIRED'],
+    [{ entitlement: { is_active: true }, grants: [grant({ scope_id: OTHER_ORG })] }, 'MODULE_ACCESS_REQUIRED'],
+    [{ entitlement: { is_active: true }, grants: [grant({ expires_at: '2000-01-01T00:00:00Z' })] }, 'MODULE_ACCESS_REQUIRED'],
+    [{ inspection: { ...colleagueInspection, inspection_family: 'EB' } }, 'OB_ORGANIZATION_FORBIDDEN'],
+  ]
+  for (const [options, message] of cases) {
+    const h = harness({ inspection: colleagueInspection, visibility: colleagueVisibility, ...options })
+    await assert.rejects(h.server.requireObInspectionReadContext(INSPECTION, ORG), { message })
+  }
+  const other = harness({ inspection: colleagueInspection, visibility: { ...colleagueVisibility, org_id: OTHER_ORG } })
+  await assert.rejects(other.server.requireObInspectionReadContext(INSPECTION), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+})
+
+test('legacy membership-only owner access does not authorize colleagues even when their flag is on', async () => {
+  const own = harness({ grants: [], visibility: colleagueVisibility })
+  assert.equal((await own.server.requireObInspectionReadContext(INSPECTION)).canEdit, true)
+  const colleague = harness({ grants: [], visibility: colleagueVisibility, inspection: colleagueInspection, assignment: colleagueAssignment })
+  await assert.rejects(colleague.server.requireObInspectionReadContext(INSPECTION), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+  await assert.rejects(colleague.server.requireObAssignmentReadContext(OTHER_INSPECTION), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+  for (const expires_at of ['invalid', '', '2000-01-01T00:00:00Z']) {
+    const h = harness({ grants: [grant({ expires_at })], visibility: colleagueVisibility, inspection: colleagueInspection })
+    await assert.rejects(h.server.requireObInspectionReadContext(INSPECTION), /MODULE_ACCESS_REQUIRED|OB_ORGANIZATION_FORBIDDEN/)
+  }
+})
+
+test('missing visibility schema disables colleague reads and cannot broaden writes; unexpected errors fail closed', async () => {
+  for (const code of ['42P01', '42703', 'PGRST204', 'PGRST205', 'XX001']) {
+    const h = harness({ visibility: colleagueVisibility, inspection: colleagueInspection, assignment: colleagueAssignment,
+      tableErrors: { organization_member_ob_visibility: { code, message: 'private schema information' } } })
+    const message = code === 'XX001' ? 'OB_ORGANIZATION_READ_FAILED' : 'OB_ORGANIZATION_FORBIDDEN'
+    await assert.rejects(h.server.requireObInspectionReadContext(INSPECTION), { message })
+    await assert.rejects(h.server.requireObAssignmentReadContext(OTHER_INSPECTION), { message })
+    await assert.rejects(h.server.requireObAssignmentContext(OTHER_INSPECTION), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+  }
+})
+
+test('navigation uses colleague read access and revocation is visible on the next request', async () => {
+  const h = harness({ visibility: colleagueVisibility, inspection: colleagueInspection, assignment: colleagueAssignment })
+  for (const entity of [{ inspectionId: INSPECTION }, { assignmentId: OTHER_INSPECTION }]) {
+    assert.equal((await h.server.getObOrganizationSwitcherContext(ORG, entity)).organization.id, ORG)
+  }
+  h.rows.organization_member_ob_visibility[0].can_view_colleagues = false
+  await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG, { inspectionId: INSPECTION }), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+  await assert.rejects(h.server.getObOrganizationSwitcherContext(ORG, { assignmentId: OTHER_INSPECTION }), { message: 'OB_ORGANIZATION_FORBIDDEN' })
+})
+
+test('assignment lists filter colleagues when off and report canEdit independently of visibility', async () => {
+  const own = { ...colleagueAssignment, id: '55555555-5555-4555-8555-555555555555', responsible_profile_id: ACTOR }
+  const linked = { ...own, id: '66666666-6666-4666-8666-666666666666', inspection_id: INSPECTION }
+  const otherOrg = { ...colleagueAssignment, id: '77777777-7777-4777-8777-777777777777', org_id: OTHER_ORG }
+  for (const enabled of [false, true]) {
+    const h = harness({ inspection: colleagueInspection, visibility: { ...colleagueVisibility, can_view_colleagues: enabled } })
+    const context = await h.server.requireObContext(ORG)
+    const items = await h.server.filterObAssignmentList([own, linked, colleagueAssignment, otherOrg], context)
+    assert.deepEqual(items.map(item => [item.id, item.canEdit]), enabled
+      ? [[own.id, true], [linked.id, false], [colleagueAssignment.id, false]] : [[own.id, true]])
   }
 })

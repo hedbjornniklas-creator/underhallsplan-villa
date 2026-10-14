@@ -125,7 +125,8 @@ function confirmationNextStep(status: string, accepted: boolean): { nextStep: st
 
 export function buildObDashboard(items: ObOverviewItem[], times: Map<string, string | null>, today: string,
   inspectionDates?: Map<string, string | null>): DashboardModuleSummary {
-  const rows = items.filter(item => !item.closed && !item.archived
+  // Colleague visibility does not make their tasks or appointments the actor's.
+  const rows = items.filter(item => item.canEdit !== false && !item.closed && !item.archived
     && !(item.confirmation.startsWith('Avbokad') && !item.inspectionHref))
   const actions: DashboardAction[] = [], bookings: DashboardBooking[] = []
   for (const row of rows) {
