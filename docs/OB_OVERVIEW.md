@@ -10,6 +10,46 @@ Implementerad 2026-09-23. Publiceringsunderlag och verifieringsgränser finns i
 De gamla listorna `/ob/assignments` och `/inspections` samt deras funktioner
 finns kvar som länkar. Visitkortet tas bort från startsidan, inte från profilen.
 
+### Granskning av äldre ingångar 2026-10-14
+
+Kodgranskningen visar att övergången fortfarande är aktiv. Detta är inte
+en mätning av hur ofta användare öppnar sidorna och inte ett beslut att ta bort dem.
+
+- Startsidan länkar uttryckligen till `/ob/assignments` och `/inspections`.
+- Tillbaka från besiktningen går till `/inspections`. Tillbaka från skapande
+  och redigering av en bekräftelse går till `/ob/assignments`.
+- Den äldre UB-listan har avbokning, arkivering, återföring från arkiv och
+  filter för utgångna kundlänkar. Den gemensamma listan visar arkiverade poster,
+  men har inte dessa mutationskommandon.
+- Den äldre besiktningslistans skapa-, öppna-, PDF- och upplåsningsfunktioner
+  har alternativ på startsidan respektive Skicka utlåtande.
+- `/properties/[id]/ob` är dessutom en separat, fortfarande nåbar
+  fastighetslista med skapa-, öppna- och raderingsfunktion. Den ska bedömas
+  separat, särskilt vad gäller skyddet för historiska dokument.
+- `/ob/assignments/new`, `/ob/assignments/[id]`, besiktningens arbetsvy och
+  kundens godkännandesida är aktuella arbetsflöden, inte överflödiga listvyer.
+
+Rekommenderad nästa etapp, ännu inte implementerad eller beslutad: flytta
+saknade UB-kommandon till den gemensamma listan/detaljsidan, rikta tillbaka-
+länkar till `/ob`, och ersätt sedan de två gamla generella listorna med
+omdirigeringar som bevarar organisationsvalet. Detaljsidor, API:er, kundlänkar
+och historiska dokument ska behållas.
+
+### Digitala rapportverktyg 2026-10-14 (lokalt, inte publicerat)
+
+Den interna digitala vyn får delning och PDF-hämtning för exakt det valda
+rapport-ID:t. Den får aldrig falla tillbaka till en annan färdig version eller
+bygga ett nytt utlåtande. ÖB och statusbesiktning använder samma verktyg.
+
+Äldre kundtoken finns bara som hash och kan inte återskapas. Delningsdialogen
+tar därför emot den ursprungliga kundlänken och kontrollerar dess ursprung och
+token mot den valda aktiva rapporten innan kopiering eller utskick. Ingen ny
+kundlänk, snapshot eller PDF skapas. Kundens befintliga delningsflöde behålls.
+
+Bildrutorna i den digitala vyn är kvadratiska, två per rad på mobil och tre på
+dator. Hela bilden visas utan beskärning och kan öppnas större. Den frysta
+utskriftslayouten och arkiverade PDF-filer ändras inte.
+
 Listan följer [varumärkesprofil 1.2](OB_BRAND_PROFILE.md): blå handlingar,
 Manrope, neutrala statustexter och vita rader med tunna avdelare. Mobilen
 använder samma rader och länkar i en vertikal layout utan sidscroll.

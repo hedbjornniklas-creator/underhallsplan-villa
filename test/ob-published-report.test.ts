@@ -91,7 +91,7 @@ test('digital page authenticates before database access and renders the stored p
   for (const mode of ['allowed', 'unauthenticated', 'denied'] as const) {
     let reads = 0
     const view = () => null
-    const page = load<{ default: (props: unknown) => Promise<{ type: unknown; props: { snapshot: unknown; shareUrl?: string } }> }>(path, {
+    const page = load<{ default: (props: unknown) => Promise<{ type: unknown; props: { snapshot: unknown; shareUrl?: string; [key: string]: unknown } }> }>(path, {
       'next/navigation': { redirect: (url: string) => { throw Error('REDIRECT:' + url) }, notFound: () => { throw Error('NOT_FOUND') } },
       'react/jsx-runtime': { jsx: (type: unknown, props: unknown) => ({ type, props }) },
       '@/lib/ob/organizationBindings': { requireObInspectionContext: async (id: string, orgId: unknown) => {
@@ -101,9 +101,9 @@ test('digital page authenticates before database access and renders the stored p
         return access
       } },
       '@/lib/supabase/admin': { createSupabaseAdminClient: () => { reads++; return {} } },
-      '@/lib/ob/publishedReport': { getObPublishedReport: async (_admin: unknown, id: string, report: string, context: unknown) => {
+      '@/lib/ob/publishedReport': { obPublishedPdfStatus: () => 'ready', getObPublishedReportRecord: async (_admin: unknown, id: string, report: string, context: unknown) => {
         assert.equal(id, inspectionId); assert.equal(report, linkId); assert.equal(context, access)
-        return mode === 'denied' ? null : snapshot
+        return mode === 'denied' ? null : { snapshot }
       } },
       '@/components/report/ReportSnapshotView': { __esModule: true, default: view },
     })
@@ -112,6 +112,10 @@ test('digital page authenticates before database access and renders the stored p
       const element = await result
       assert.equal(element.type, view); assert.equal(element.props.snapshot, snapshot)
       assert.equal(element.props.shareUrl, undefined, 'Never offer an authenticated URL as a public sharing link')
+      assert.equal(element.props.requireCustomerLink, true)
+      assert.equal(element.props.showPdfActions, true)
+      assert.equal(element.props.pdfStatus, 'ready')
+      assert.ok(String(element.props.pdfDownloadUrl).includes(`report=${linkId}&orgId=${access.orgId}`))
     } else await assert.rejects(result, mode === 'denied' ? /NOT_FOUND/ : /REDIRECT:\/login/)
     assert.equal(reads, mode === 'unauthenticated' ? 0 : 1)
   }

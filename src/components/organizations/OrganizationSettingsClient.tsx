@@ -5,7 +5,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Building2, CheckCircle2, ImagePlus, Plug, Plus, Save, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
+import { Building2, CheckCircle2, ImagePlus, Plug, Plus, RefreshCw, Save, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
 import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
 import OrganizationSenderProfiles from './OrganizationSenderProfiles'
 import type { OrganizationAdministrationWorkspace, OrganizationProfileValues } from '@/lib/organizations/administrationTypes'
@@ -165,17 +165,53 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
   const [selectedModules, setSelectedModules] = useState<string[]>(['technical_investigations'])
   const requestId = useRef<string | null>(null)
   const inFlight = useRef(false)
+  const refreshingRef = useRef(false)
+  const refreshGeneration = useRef(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [hasDirtyMembers, setHasDirtyMembers] = useState(false)
+  const dirtyMembers = useRef(new Set<string>())
+  const editingRef = useRef(false)
+  editingRef.current = Boolean(fullName || email || busy)
+  const onDirtyChange = useCallback((profileId: string, dirty: boolean) => {
+    if (dirty) dirtyMembers.current.add(profileId)
+    else dirtyMembers.current.delete(profileId)
+    setHasDirtyMembers(dirtyMembers.current.size > 0)
+  }, [])
   useUnsavedChanges(Boolean(fullName || email), busy)
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    const result = await requestJson<MembersPayload>(`/api/organizations/members?orgId=${encodeURIComponent(orgId)}`, { signal })
-    if (!Array.isArray(result.members) || !Array.isArray(result.invitations) || !Array.isArray(result.enabledModules)) throw new Error('Medlemslistan kunde inte läsas.')
-    setData(result)
+  const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
+    if (refreshingRef.current && !signal && !force) return
+    const generation = ++refreshGeneration.current
+    refreshingRef.current = true; setRefreshing(true)
+    try {
+      const result = await requestJson<MembersPayload>(`/api/organizations/members?orgId=${encodeURIComponent(orgId)}`, { signal })
+      if (!Array.isArray(result.members) || !Array.isArray(result.invitations) || !Array.isArray(result.enabledModules)) throw new Error('Medlemslistan kunde inte läsas.')
+      if (signal?.aborted || generation !== refreshGeneration.current) return
+      setData(current => {
+        if (!current) return result
+        // Keep edited rows mounted even if an earlier background request finishes now.
+        const previous = new Map(current.members.map(member => [member.profileId, member]))
+        const members = result.members.map(member => dirtyMembers.current.has(member.profileId)
+          ? previous.get(member.profileId) ?? member : member)
+        for (const member of current.members) if (dirtyMembers.current.has(member.profileId) &&
+          !members.some(row => row.profileId === member.profileId)) members.push(member)
+        return { ...result, members }
+      })
+    } finally { if (generation === refreshGeneration.current) { refreshingRef.current = false; setRefreshing(false) } }
   }, [orgId])
   useEffect(() => {
     if (disabled) { setLoading(false); return }
     const controller = new AbortController()
     void refresh(controller.signal).catch(failure => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'Kunde inte läsa medlemmar.') }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
+  }, [disabled, refresh])
+  useEffect(() => {
+    const update = () => {
+      if (disabled || document.visibilityState !== 'visible' || editingRef.current || dirtyMembers.current.size) return
+      void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte uppdatera medlemslistan.'))
+    }
+    window.addEventListener('focus', update)
+    document.addEventListener('visibilitychange', update)
+    return () => { window.removeEventListener('focus', update); document.removeEventListener('visibilitychange', update) }
   }, [disabled, refresh])
   async function action(body: Record<string, unknown>) {
     if (inFlight.current || disabled) return
@@ -184,7 +220,7 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
       const result = await requestJson<{ message: string }>('/api/organizations/invitations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, ...body }) })
       setNotice(result.message)
       if (body.action === 'create') { setFullName(''); setEmail(''); setRole('inspector'); setSelectedModules(['technical_investigations']); requestId.current = null }
-      await refresh()
+      await refresh(undefined, true)
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Inbjudan kunde inte sparas.') }
     finally { inFlight.current = false; setBusy(false) }
   }
@@ -213,12 +249,19 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
     </section>
     {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p>{error}</p><button type="button" className="mt-2 underline" disabled={busy || disabled} onClick={() => { setError(''); void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte läsa listan.')) }}>Hämta aktuell medlemslista</button></div>}
     {notice && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-lg font-semibold text-slate-950">Medlemmar {data && <span className="ml-1 text-sm font-normal text-slate-500">({data.members.length})</span>}</h2><p className="mt-1 text-sm leading-6 text-slate-600">När en medlem avaktiveras sparas tidigare uppdrag och dokument. Organisationen måste ha minst en aktiv administratör.</p>{loading && <p role="status" className="mt-4 text-sm text-slate-500">Laddar medlemmar…</p>}<div className="mt-5 space-y-3">{data?.members.map(member => <MemberEditor key={`${member.profileId}:${JSON.stringify(member)}`} member={member} orgId={orgId} isSelf={member.profileId === viewerProfileId} disabled={disabled || busy} enabledModules={data.enabledModules} onSaved={refresh} />)}</div></section>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-950">Medlemmar {data && <span className="ml-1 text-sm font-normal text-slate-500">({data.members.length})</span>}</h2>
+        <button type="button" aria-label="Uppdatera medlemslistan" title="Uppdatera medlemslistan" className={secondaryClass} disabled={disabled || busy || refreshing || hasDirtyMembers || Boolean(fullName || email)} onClick={() => { setError(''); void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte uppdatera medlemslistan.')) }}><RefreshCw size={17} className={refreshing ? 'animate-spin' : ''} aria-hidden /></button>
+      </div>
+      <p className="mt-1 text-sm leading-6 text-slate-600">När en medlem avaktiveras sparas tidigare uppdrag och dokument. Organisationen måste ha minst en aktiv administratör.</p>
+      {loading && <p role="status" className="mt-4 text-sm text-slate-500">Laddar medlemmar…</p>}
+      <div className="mt-5 space-y-3">{data?.members.map(member => <MemberEditor key={`${member.profileId}:${JSON.stringify(member)}`} member={member} orgId={orgId} isSelf={member.profileId === viewerProfileId} disabled={disabled || busy} enabledModules={data.enabledModules} onSaved={() => refresh(undefined, true)} onDirtyChange={onDirtyChange} />)}</div>
+    </section>
     {pending.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-lg font-semibold text-slate-950">Väntande inbjudningar</h2><div className="mt-4 divide-y divide-slate-100">{pending.map(invitation => <div key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div className="min-w-0"><p className="break-words font-medium text-slate-900">{invitation.fullName}</p><p className="break-all text-sm text-slate-600">{invitation.email}</p><p className="mt-1 text-xs text-slate-500">{roleLabel(invitation.role)} · {invitation.modules.map(moduleLabel).join(', ')} · Giltig till {new Date(invitation.expiresAt).toLocaleDateString('sv-SE')}</p>{invitation.notificationState === 'failed' && <p className="mt-1 text-xs text-amber-800">Mejlet kunde inte bekräftas. Skicka en ny länk.</p>}</div><div className="flex flex-wrap gap-2"><button type="button" className={secondaryClass} disabled={disabled || busy} onClick={() => void action({ action: 'resend', id: invitation.id, revision: invitation.revision })}>Skicka ny länk</button><button type="button" className="rounded-xl px-3 py-2 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" disabled={disabled || busy} onClick={() => void action({ action: 'revoke', id: invitation.id, revision: invitation.revision })}>Återkalla</button></div></div>)}</div></section>}
   </div>
 }
 
-export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, onSaved }: { member: Member; orgId: string; isSelf: boolean; enabledModules: string[]; disabled: boolean; onSaved: () => Promise<void> }) {
+export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, onSaved, onDirtyChange }: { member: Member; orgId: string; isSelf: boolean; enabledModules: string[]; disabled: boolean; onSaved: () => Promise<void>; onDirtyChange?: (profileId: string, dirty: boolean) => void }) {
   const router = useRouter()
   const [role, setRole] = useState(member.role)
   const [isActive, setActive] = useState(member.isActive)
@@ -227,6 +270,10 @@ export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, 
   const [error, setError] = useState('')
   const inFlight = useRef(false)
   const dirty = role !== member.role || isActive !== member.isActive || JSON.stringify(modules) !== JSON.stringify(member.modules)
+  useEffect(() => {
+    onDirtyChange?.(member.profileId, dirty || busy)
+    return () => onDirtyChange?.(member.profileId, false)
+  }, [onDirtyChange, member.profileId, dirty, busy])
   useUnsavedChanges(dirty, busy)
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -234,9 +281,10 @@ export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, 
     inFlight.current = true; setBusy(true); setError('')
     try {
       await requestJson('/api/organizations/members', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, moduleSetVersion: 2, profileId: member.profileId, role, isActive, modules: isActive ? modules.filter(key => WORK_MODULES.some(module => module.key === key)) : [] }) })
+      onDirtyChange?.(member.profileId, false)
       if (isSelf && (role !== member.role || isActive !== member.isActive)) { router.refresh(); return }
       await onSaved()
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Medlemmen kunde inte uppdateras.') }
+    } catch (failure) { onDirtyChange?.(member.profileId, dirty); setError(failure instanceof Error ? failure.message : 'Medlemmen kunde inte uppdateras.') }
     finally { inFlight.current = false; setBusy(false) }
   }
   const otherModules = member.modules.filter(key => !WORK_MODULES.some(module => module.key === key))

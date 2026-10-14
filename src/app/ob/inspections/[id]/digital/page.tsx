@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { getObPublishedReport } from '@/lib/ob/publishedReport'
+import { getObPublishedReportRecord, obPublishedPdfStatus } from '@/lib/ob/publishedReport'
 import ReportSnapshotView from '@/components/report/ReportSnapshotView'
 
 export const runtime = 'nodejs'
@@ -27,8 +27,11 @@ export default async function ObPublishedDigitalReport({ params, searchParams }:
       'OB_INSPECTION_INVALID', 'OB_ORGANIZATION_UNASSIGNED'].includes(error.message)) notFound()
     throw error
   }
-  const snapshot = await getObPublishedReport(createSupabaseAdminClient(), id, report, access)
-  if (!snapshot) notFound()
+  const published = await getObPublishedReportRecord(createSupabaseAdminClient(), id, report, access)
+  if (!published) notFound()
+  const endpoint = `/api/ob/inspections/${encodeURIComponent(id)}/published-report?report=${encodeURIComponent(report)}&orgId=${encodeURIComponent(access.orgId)}`
   // Use the customer's digital renderer and frozen payload, never live inspection data.
-  return <ReportSnapshotView snapshot={snapshot} showPdfActions={false} />
+  return <ReportSnapshotView snapshot={published.snapshot} showPdfActions
+    pdfDownloadUrl={endpoint} pdfStatus={obPublishedPdfStatus(published)} pdfStatusEndpoint={`${endpoint}&status=1`}
+    shareEndpoint={endpoint} requireCustomerLink />
 }

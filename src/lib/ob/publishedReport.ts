@@ -16,7 +16,7 @@ export async function getLatestObPublishedReportId(admin: Admin, inspectionId: s
   return (data?.id as string | undefined) ?? null
 }
 
-export async function getObPublishedReport(admin: Admin, inspectionId: string, linkId: string, access: Access) {
+export async function getObPublishedReportRecord(admin: Admin, inspectionId: string, linkId: string, access: Access) {
   if (!UUID.test(inspectionId) || !UUID.test(linkId)) return null
   const { data: inspection, error: inspectionError } = await admin.from('inspections')
     .select('id,property_id,inspection_family').eq('id', inspectionId).maybeSingle()
@@ -33,10 +33,22 @@ export async function getObPublishedReport(admin: Admin, inspectionId: string, l
     if (!property) return null
   }
   const { data, error } = await admin.from('inspection_report_links')
-    .select('snapshot_payload').eq('id', linkId).eq('inspection_id', inspectionId)
+    .select('snapshot_payload,token_hash,pdf_status,pdf_base64,pdf_storage_bucket,pdf_storage_path').eq('id', linkId).eq('inspection_id', inspectionId)
     .eq('org_id', access.orgId).is('revoked_at', null).maybeSingle()
   if (error) throw Error('Kunde inte hämta det publicerade utlåtandet.')
+  if (!data) return null
   const snapshot = data?.snapshot_payload
   if (!isReportSnapshotPayloadV1(snapshot) || snapshot.inspectionId !== inspectionId || snapshot.propertyId !== inspection.property_id) return null
-  return snapshot
+  return { snapshot, tokenHash: String(data.token_hash ?? ''), pdfStatus: String(data.pdf_status ?? 'pending'),
+    pdfBase64: String(data.pdf_base64 ?? ''), pdfStorageBucket: String(data.pdf_storage_bucket ?? ''),
+    pdfStoragePath: String(data.pdf_storage_path ?? '') }
+}
+
+export async function getObPublishedReport(admin: Admin, inspectionId: string, linkId: string, access: Access) {
+  return (await getObPublishedReportRecord(admin, inspectionId, linkId, access))?.snapshot ?? null
+}
+
+export function obPublishedPdfStatus(report: NonNullable<Awaited<ReturnType<typeof getObPublishedReportRecord>>>): 'ready' | 'pending' | 'processing' | 'failed' {
+  if (report.pdfBase64.trim() || (report.pdfStorageBucket.trim() && report.pdfStoragePath.trim())) return 'ready'
+  return report.pdfStatus === 'ready' ? 'failed' : report.pdfStatus === 'failed' || report.pdfStatus === 'processing' ? report.pdfStatus : 'pending'
 }

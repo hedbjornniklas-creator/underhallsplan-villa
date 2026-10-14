@@ -39,19 +39,19 @@ export default function SnapshotPhotoGrid({
 
   return (
     <>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div data-snapshot-photo-grid className="mt-3 grid max-w-4xl grid-cols-2 gap-2 sm:grid-cols-3">
         {photos.map((photoUrl, photoIndex) => (
           <button
             key={`${title}-${itemIndex}-photo-${photoIndex}`}
             type="button"
             onClick={() => setActiveIndex(photoIndex)}
-            className="block rounded-md text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            className="relative block aspect-square min-w-0 overflow-hidden rounded-md border border-gray-200 bg-gray-50 text-left focus:outline-none focus:ring-2 focus:ring-[#245EB5] focus:ring-offset-2"
             title="Visa bilden"
           >
             <img
               src={photoUrl}
               alt={`Foto ${photoIndex + 1}`}
-              className="h-36 w-full rounded-md border border-gray-200 object-cover transition hover:brightness-95"
+              className="absolute inset-0 h-full w-full object-contain transition hover:brightness-95"
             />
           </button>
         ))}

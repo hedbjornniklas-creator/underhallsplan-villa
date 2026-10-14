@@ -88,12 +88,27 @@ export async function listOrganizationMembers(orgId: string) {
   check(members.error)
   check(grants.error)
   check(managed.error)
+  const memberRows = members.data ?? []
+  const profileIds = memberRows.map(row => row.profile_id)
+  const [cards, acceptedInvitations] = profileIds.length ? await Promise.all([
+    db.from('profile_org_cards').select('profile_id,display_name,email')
+      .eq('org_id', context.organization.id).in('profile_id', profileIds).limit(1000),
+    db.from(TABLE).select('accepted_by_profile_id,full_name,email')
+      .eq('org_id', context.organization.id).eq('status', 'accepted')
+      .in('accepted_by_profile_id', profileIds).order('accepted_at', { ascending: false }).limit(1000),
+  ]) : [{ data: [], error: null }, { data: [], error: null }]
+  check(cards.error)
+  check(acceptedInvitations.error)
+  const text = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : null
   const managedOb = (managed.data ?? []).some(row => row.module_key === 'inspections')
   const now = Date.now()
-  return (members.data ?? []).map(row => ({
+  return memberRows.map(row => {
+    const card = (cards.data ?? []).find(card => card.profile_id === row.profile_id)
+    const invitation = (acceptedInvitations.data ?? []).find(invitation => invitation.accepted_by_profile_id === row.profile_id)
+    return {
     profileId: row.profile_id as string,
-    displayName: relation(row.profile).full_name as string | null,
-    email: relation(row.profile).email as string | null,
+    displayName: text(card?.display_name) ?? text(relation(row.profile).full_name) ?? text(invitation?.full_name),
+    email: text(relation(row.profile).email) ?? text(invitation?.email) ?? text(card?.email),
     role: row.role as Role,
     isActive: row.is_active as boolean,
     // Unmanaged OB grants are not an editable selection yet. The SQL writer
@@ -103,7 +118,8 @@ export async function listOrganizationMembers(orgId: string) {
         grant.profile_id === row.profile_id && relation(grant.product).key === 'dashboard' &&
         relation(grant.module).key === module.key && relation(grant.role).key === 'inspector' &&
         (!grant.expires_at || Date.parse(grant.expires_at) > now))).map(module => module.key) : [],
-  }))
+    }
+  })
 }
 
 export async function listOrganizationInvitations(orgId: string) {

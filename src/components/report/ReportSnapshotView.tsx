@@ -144,6 +144,7 @@ type ReportSnapshotViewProps = {
   showHeader?: boolean
   shareEndpoint?: string | null
   shareUrl?: string | null
+  requireCustomerLink?: boolean
   environmentalFilesEndpoint?: string
 }
 
@@ -525,10 +526,11 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 />
               </div>
               <div className="flex flex-wrap gap-2 md:justify-self-end">
-                {props.shareEndpoint && props.shareUrl ? (
+                {props.shareEndpoint && (props.shareUrl || props.requireCustomerLink) ? (
                   <ReportShareButton
                     shareEndpoint={props.shareEndpoint}
-                    shareUrl={props.shareUrl}
+                    shareUrl={props.shareUrl ?? ''}
+                    requireCustomerLink={props.requireCustomerLink}
                   />
                 ) : null}
                 {props.showPdfActions !== false ? (

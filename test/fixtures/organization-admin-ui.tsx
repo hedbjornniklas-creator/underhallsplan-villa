@@ -9,6 +9,14 @@ const params = new URLSearchParams(location.search)
 const enabledModules = params.has('no-modules') ? [] : params.has('ob-only') ? ['inspections'] : params.has('both') ? ['inspections', 'technical_investigations'] : ['technical_investigations']
 const calls: { url: string; body: Record<string, unknown> }[] = []
 Object.assign(window, { organizationUiCalls: calls })
+let accepted = false
+let deferNextRead = false
+let releaseStale: (() => void) | null = null
+const members = [{ profileId: 'viewer', displayName: 'Niklas Test', email: 'niklas@example.test', role: 'admin', isActive: true, modules: enabledModules }]
+Object.assign(window, { organizationRefreshQa: {
+  accept: () => { accepted = true; members.push({ profileId: 'colleague', displayName: 'Testgubbe 1', email: 'colleague@example.test', role: 'inspector', isActive: true, modules: enabledModules }) },
+  defer: () => { deferNextRead = true }, release: () => releaseStale?.(),
+} })
 const workspace: OrganizationAdministrationWorkspace = {
   profileId: 'viewer', role: params.has('member') ? 'inspector' : 'admin', modules: enabledModules, migrationRequired: params.has('migration'),
   organization: { id: orgId, name: 'BBSAB', organizationNumber: '559281-0823', address: 'Testgatan 1', postalCode: '111 22', city: 'Stockholm', website: 'https://example.test', logoPath: null, reportFooterText: 'Gemensam rapportsidfot', configured: !params.has('unconfigured'), version: 4 },
@@ -21,10 +29,12 @@ window.fetch = async (url, options) => {
   if (path === '/api/organizations/profile') return params.has('conflict')
     ? json({ error: 'Uppgifterna har ändrats. Ladda om sidan och försök igen.' }, 409)
     : json({ workspace: { ...workspace, organization: { ...workspace.organization, ...(body.profile as object), configured: true, version: 5 } } })
-  if (path.startsWith('/api/organizations/members')) return json({
-    members: [{ profileId: 'viewer', displayName: 'Niklas Test', email: 'niklas@example.test', role: 'admin', isActive: true, modules: enabledModules }],
-    invitations: [{ id: 'pending', email: 'pending@example.test', fullName: 'Väntande kollega', role: 'inspector', modules: enabledModules, status: 'pending', expiresAt: '2099-01-01', revision: 1, notificationState: 'accepted' }], enabledModules,
-  })
+  if (path.startsWith('/api/organizations/members')) {
+    if (options?.method === 'PATCH') { Object.assign(members.find(member => member.profileId === body.profileId)!, body); return json({ saved: true }) }
+    const result = { members: structuredClone(members), invitations: [{ id: 'pending', email: 'pending@example.test', fullName: 'Väntande kollega', role: 'inspector', modules: enabledModules, status: accepted ? 'accepted' : 'pending', expiresAt: '2099-01-01', revision: 1, notificationState: 'accepted' }], enabledModules }
+    if (deferNextRead) { deferNextRead = false; return new Promise<Response>(resolve => { releaseStale = () => resolve(json(result)) }) }
+    return json(result)
+  }
   if (path === '/api/organizations/invitations') return json({ message: 'Inbjudan skickad.', emailAccepted: true })
   if (path === '/api/organizations/invitations/accept') return body.action === 'preview'
     ? json({ invitation: { organizationName: 'BBSAB', email: 'colleague@example.test', fullName: 'Kollega Test', role: params.has('admin-only') ? 'admin' : 'inspector', modules: params.has('admin-only') ? [] : enabledModules, accepted: false }, hasSession: false, requiresSignIn: false })
