@@ -26,6 +26,6 @@ test('delivery opens the frozen customer report, never the live print preview', 
   assert.match(page, /requireObInspectionContext\(id, orgId\)/)
   assert.doesNotMatch(page, /requireOrgContext\(/)
   assert.match(page, /getObPublishedReport/)
-  assert.match(page, /<ReportSnapshotView snapshot=\{snapshot\}/)
+  assert.match(page, /<ReportSnapshotView snapshot=\{published\.snapshot\}/)
   assert.doesNotMatch(page, /buildReportData|iframe|ReportSnapshotPrintDocument/)
 })

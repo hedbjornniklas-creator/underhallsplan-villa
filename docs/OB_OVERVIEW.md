@@ -73,6 +73,12 @@ separat efter godkännande.
 
 ### Digitala rapportverktyg 2026-10-14 (lokalt, inte publicerat)
 
+Skicka utlåtande skiljer på klarmarkering och faktiskt låsdatum. En tidigare
+klarmarkerad men upplåst besiktning visar **Skicka och lås**, inte **Skicka och
+behåll låst**. Utskick utan ändrad låsning bevarar befintligt låsläge och
+resultattexten beskriver det, inte enbart klarmarkeringsstatus. Ingen ändring
+görs av serverns skickande, låsning eller sparade utlåtanden.
+
 Den interna digitala vyn får delning och PDF-hämtning för exakt det valda
 rapport-ID:t. Den får aldrig falla tillbaka till en annan färdig version eller
 bygga ett nytt utlåtande. ÖB och statusbesiktning använder samma verktyg.

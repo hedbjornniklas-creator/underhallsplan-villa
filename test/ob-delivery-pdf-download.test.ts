@@ -18,9 +18,9 @@ function entry(id: string, type: 'report_sent' | 'report_created' | 'report_unlo
   return { id, type, title: id, subtitle: null, occurred_at: '2026-09-25T13:57:24Z', download_url: downloadable ? pdfHref : null }
 }
 
-function renderDelivery(activityLog: ReturnType<typeof entry>[], ready = true) {
+function renderDelivery(activityLog: ReturnType<typeof entry>[], ready = true, state: { status?: string; lockedAt?: string | null } = {}) {
   const meta = {
-    inspectionId, inspectionStatus: 'completed', canSend: true,
+    inspectionId, inspectionStatus: state.status ?? 'completed', canSend: true,
     hasStoredPdf: ready, pdfStatus: ready ? 'ready' : 'processing', pdfError: null,
     canDownloadPdf: ready, reason: null, defaultRecipientEmail: null, ordererEmail: null,
     history: [], activityLog,
@@ -45,7 +45,7 @@ function renderDelivery(activityLog: ReturnType<typeof entry>[], ready = true) {
   }, compiled, compiled.exports)
   return renderToStaticMarkup(React.createElement(compiled.exports.default, {
     property: { id: '7604799b-b346-4eec-a489-ee98c85ee4b9', name: 'Test' },
-    inspection: { id: inspectionId, status: 'completed' },
+    inspection: { id: inspectionId, status: state.status ?? 'completed', locked_at: state.lockedAt ?? null },
     activeSection: 'delivery',
   }))
 }
@@ -94,4 +94,22 @@ test('a send outside the visible log does not hide the only PDF download', () =>
 test('a PDF that is not ready has no download', () => {
   const html = renderDelivery([entry('Created report', 'report_created', false)], false)
   assert.equal(downloads(html).length, 0)
+})
+
+test('delivery labels distinguish completion from the actual lock, including legacy status names', () => {
+  for (const status of ['completed', 'klar', 'done']) {
+    const open = renderDelivery([], true, { status, lockedAt: null })
+    assert.match(open, /Nuvarande läge: Upplåst/)
+    assert.match(open, /Status: Klarmarkerad/)
+    assert.match(open, /Skicka och lås/)
+    assert.match(open, /Skicka och behåll upplåst/)
+    assert.doesNotMatch(open, /Skicka och behåll låst/)
+    const locked = renderDelivery([], true, { status, lockedAt: '2026-10-14T08:00:00Z' })
+    assert.match(locked, /Skicka och behåll låst/)
+    assert.match(locked, /Skicka utan ändrad låsning/)
+    assert.doesNotMatch(locked, /Skicka och behåll upplåst/)
+  }
+  const ongoing = renderDelivery([], true, { status: 'ongoing' })
+  assert.match(ongoing, /Skicka, klarmarkera och lås/)
+  assert.match(ongoing, /Skicka utan låsning/)
 })

@@ -16,7 +16,7 @@ export const overview = { available: true,
   buildings: parts.map(part => ({ id: part.building_id, name: part.name })),
   categories: [{ key: 'main', label: 'Huvudbyggnad' }, { key: 'guesthouse', label: 'Gästhus' }],
 }
-export const inspection: Row = { id: inspectionId, property_id: 'synthetic-property', status: 'ongoing',
+export const inspection: Row = { id: inspectionId, property_id: 'synthetic-property', status: new URLSearchParams(location.search).has('completed') ? 'completed' : 'ongoing',
   inspection_side: new URLSearchParams(location.search).has('status') ? 'status' : 'seller', locked_at: new URLSearchParams(location.search).has('locked') ? '2026-09-21T10:00:00Z' : null,
   assignment_number: '2026-0921-01', date: '2026-09-21', inspection_time: '09:00', scope: '',
   cover_path: new URLSearchParams(location.search).has('no-cover') ? null : `${location.origin}/photo.png`, client_name: 'Alex Testsson', attendees: 'Fastighetsägare', attendees_other: '',
@@ -175,8 +175,23 @@ window.fetch = async (input, init) => {
   }
   if (url === `/api/ob/inspections/${inspectionId}/frozen-inspector`) return Response.json({ locked: true, hasSnapshot: true, profile: db.profiles[0] })
   if (url === `/api/ob/inspections/${inspectionId}/addon-orders` && !init?.method) return Response.json({ addonOrders: [] })
+  if (url === `/api/ob/inspections/${inspectionId}/report-delivery` && init?.method === 'POST' && new URLSearchParams(location.search).has('simulate-delivery')) {
+    const body = JSON.parse(String(init.body))
+    qa.writes.push({ table: 'synthetic_report_delivery', operation: body.action, values: body })
+    if (body.action === 'send_and_complete') {
+      inspection.status = 'completed'
+      inspection.locked_at = '2026-10-14T10:00:00Z'
+    }
+    return Response.json({ inspectionId, inspectionStatus: inspection.status,
+      inspectionLockedAt: body.action === 'send_and_complete' ? inspection.locked_at : null,
+      sentRecipients: [body.primary_recipient], failedRecipients: [], primaryRecipientEmail: body.primary_recipient,
+      defaultRecipientEmail: 'test@example.invalid', ordererEmail: 'test@example.invalid',
+      hasStoredPdf: false, pdfStatus: 'pending', pdfError: null, canDownloadPdf: false,
+      history: [], activityLog: [], publicLink: `${location.origin}/synthetic-report`, linkId: '',
+    })
+  }
   if (url === `/api/ob/inspections/${inspectionId}/report-delivery` && !init?.method) return Response.json({
-    inspectionStatus: 'ongoing', canSend: false, reason: 'Syntetisk förhandsvisning. Inga mejl skickas.',
+    inspectionStatus: inspection.status, canSend: new URLSearchParams(location.search).has('simulate-delivery'), reason: 'Syntetisk förhandsvisning. Inga mejl skickas.',
     pdfStatus: 'ready', hasStoredPdf: true, canDownloadPdf: true, history: [], activityLog: [],
     defaultRecipientEmail: 'test@example.invalid', ordererEmail: 'test@example.invalid',
   })

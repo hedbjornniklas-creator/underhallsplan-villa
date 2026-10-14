@@ -499,9 +499,11 @@ function ObWizardContent({
         setDeliveryResult('Besiktningen klarmarkerades och låstes. Inget utskick gjordes.')
       } else {
         const completionText =
-          okPayload.inspectionStatus === 'completed'
+          action === 'send_and_complete'
             ? ' Besiktningen är nu klarmarkerad och låst.'
-            : ' Besiktningen är fortsatt öppen för ändringar.'
+            : isCurrentlyLocked
+              ? ' Besiktningen är fortsatt låst.'
+              : ' Besiktningen är fortsatt öppen för ändringar.'
         setDeliveryResult(
           `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText}${completionText} PDF genereras i bakgrunden. Länk: ${okPayload.publicLink}`
         )
@@ -730,7 +732,8 @@ function ObWizardContent({
                         <strong>Klarmarkera och lås:</strong> Utlåtandet skickas och besiktningen låses.
                       </div>
                       <div>
-                        <strong>Skicka utan låsning:</strong> Utlåtandet skickas men besiktningen förblir öppen.
+                        <strong>{isCurrentlyLocked ? 'Skicka utan ändrad låsning:' : 'Skicka utan låsning:'}</strong>{' '}
+                        {isCurrentlyLocked ? 'Utlåtandet skickas och besiktningen förblir låst.' : 'Utlåtandet skickas men besiktningen förblir öppen.'}
                       </div>
                       <div>
                         <strong>Enbart klarmarkera:</strong> Besiktningen klarmarkeras och låses utan utskick.
@@ -745,7 +748,7 @@ function ObWizardContent({
                         className="obm-primary"
                       >
                         {isCurrentlyCompleted
-                          ? 'Skicka och behåll låst'
+                          ? isCurrentlyLocked ? 'Skicka och behåll låst' : 'Skicka och lås'
                           : 'Skicka, klarmarkera och lås'}
                       </button>
                       <button
@@ -754,9 +757,8 @@ function ObWizardContent({
                         disabled={deliverySendDisabled}
                         className="ob-delivery-secondary"
                       >
-                        {isCurrentlyCompleted
-                          ? 'Skicka och lämna upplåst'
-                          : 'Skicka utan låsning'}
+                        {isCurrentlyLocked ? 'Skicka utan ändrad låsning' : isCurrentlyCompleted
+                          ? 'Skicka och behåll upplåst' : 'Skicka utan låsning'}
                       </button>
                       <button
                         type="button"
