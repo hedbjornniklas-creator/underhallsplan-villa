@@ -148,6 +148,10 @@ function tentativeState(confirmationStatus: string): Pick<DashboardBooking, 'sta
   return { status: 'tentative', confirmationStatus }
 }
 
+function draftConfirmation(source: DashboardConfirmationBookingSource | undefined): string | undefined {
+  return source?.status === 'draft' && !source.archived_at ? 'Bekräftelse ej skickad' : undefined
+}
+
 export function buildObDashboard(items: ObOverviewItem[], times: Map<string, string | null>, today: string,
   inspectionDates?: Map<string, string | null>, confirmations?: Map<string, DashboardConfirmationBookingSource>): DashboardModuleSummary {
   const rows = items.filter(item => (!('canEdit' in item) || item.canEdit !== false) && !item.closed && !item.archived
@@ -157,8 +161,8 @@ export function buildObDashboard(items: ObOverviewItem[], times: Map<string, str
     const title = row.address === 'Adress saknas' ? first(row.customer, 'Överlåtelsebesiktning') : row.address
     const subtitle = joined(row.customer, row.city)
     const displayedDate = row.date ? getStockholmDate(row.date) : ''
-    // The ordinary overview falls back to a customer's preferred date. That is
-    // useful for confirmation work, but must not create a visit appointment.
+    // The ordinary overview falls back to a customer's preferred date. Read the
+    // actual inspection date separately so an unsent draft cannot move a visit.
     const sourceDate = row.inspectionHref && inspectionDates?.has(row.id) ? inspectionDates.get(row.id) : row.date
     const date = sourceDate ? getStockholmDate(sourceDate) : ''
     const cancelledConfirmation = row.confirmation.startsWith('Avbokad')
@@ -168,7 +172,9 @@ export function buildObDashboard(items: ObOverviewItem[], times: Map<string, str
     const presentationPending = !confirmation && (['Inväntar kund', 'Länk behöver förnyas'].includes(row.confirmation)
       ? 'Inväntar kund' : row.confirmation === 'Godkänd av kund' ? 'Inväntar bokning'
         : row.inspectionHref && row.confirmation === 'Länken har gått ut' ? 'Bekräftelselänken har gått ut' : undefined)
-    const pendingConfirmation = tentativeConfirmation(confirmation) || presentationPending
+    const draftStatus = !row.inspectionHref || !date ? draftConfirmation(confirmation)
+      || (!confirmation && row.inspection === 'Ej startad' && row.confirmation === 'Utkast' ? 'Bekräftelse ej skickad' : undefined) : undefined
+    const pendingConfirmation = tentativeConfirmation(confirmation) || presentationPending || draftStatus
     const confirmationPending = !cancelledConfirmation && (row.attention.length > 0 || row.confirmation === 'Inväntar kund'
       || (!row.inspectionHref && row.confirmationAction === 'Starta besiktning'))
     if (row.confirmationHref && confirmationPending) {
@@ -180,8 +186,9 @@ export function buildObDashboard(items: ObOverviewItem[], times: Map<string, str
     if (row.inspectionHref) actions.push(action({ id: `ob:${row.id}:inspection`, moduleId: 'ob', title, subtitle,
       nextStep: cancelledConfirmation ? 'Kontrollera besiktningen efter avbokningen' : row.inspection === 'Status saknas' ? 'Kontrollera besiktningens status' : inspectionNextStep(date, today),
       category: 'inspection', href: row.inspectionHref, actionLabel: 'Öppna besiktning' }, cancelledConfirmation || row.inspection === 'Status saknas' ? undefined : date, today))
-    // A sent/reissued confirmation reserves its proposed visit without asserting
-    // that it is booked. Use its own date/time, never a superseded inspection slot.
+    // Current drafts and sent/reissued confirmations reserve their proposed
+    // visit without asserting that it is booked. An existing visit keeps its
+    // actual date while an attached confirmation remains an unsent draft.
     const missingInspectionDate = Boolean(row.inspectionHref && !date)
     const fallbackConfirmation = missingInspectionDate && confirmation && !confirmation.archived_at
       && ['sent', 'ordered', 'booked'].includes(confirmation.status)
@@ -294,12 +301,30 @@ export function buildEbDashboard(orgId: string, projects: EbProjectListItem[], c
       const pendingConfirmation = tentativeConfirmation(bookingSource, true) || (!bookingSource && confirmation
         && (confirmation.status === 'sent' && !confirmation.acceptedAt ? 'Inväntar kund'
           : confirmation.status === 'expired' && confirmation.lastSentAt ? 'Bekräftelselänken har gått ut' : undefined))
-      const fallbackConfirmation = !inspection.date && bookingSource && !bookingSource.archived_at
+      // "draft" is also the report's editing state after an accepted booking.
+      // Only the initial unsent confirmation (or an initial inspection without
+      // one) makes its planned visit tentative. A reissue or an existing sent
+      // invitation must not displace an actual visit while it is still unsent.
+      const currentStatus = bookingSource?.status || confirmation?.status || 'not_created'
+      const initialDraft = ['draft', 'utkast'].includes(inspection.status?.trim().toLowerCase() || '')
+        && !inspection.invitationSentAt && !inspection.invitationDate && (confirmation?.versionNo ?? 1) === 1
+        && ['draft', 'not_created'].includes(currentStatus)
+      const missingInspectionDate = !inspection.date || !getStockholmDate(inspection.date)
+      const draftStatus = !bookingSource?.archived_at && initialDraft ? 'Bekräftelse ej skickad'
+        : missingInspectionDate ? draftConfirmation(bookingSource) : undefined
+      const fallbackConfirmation = missingInspectionDate && bookingSource && !bookingSource.archived_at
         && ['sent', 'ordered', 'booked'].includes(bookingSource.status) && (bookingSource.last_sent_at || bookingSource.accepted_at)
-      const confirmationStatus = pendingConfirmation || (fallbackConfirmation ? 'Tid behöver bekräftas' : undefined)
-      const startsAt = cancelledConfirmation || bookingSource?.status === 'cancelled' ? undefined : confirmationStatus
-        ? dashboardBookingStart(bookingSource ? bookingSource.preferred_date : inspection.date, bookingSource ? bookingSource.preferred_time : null)
-        : dashboardBookingStart(inspection.date, inspection.inspectionTime || inspection.startMeetingTime)
+      const confirmationStatus = pendingConfirmation || draftStatus || (fallbackConfirmation ? 'Tid behöver bekräftas' : undefined)
+      let startsAt: string | undefined
+      if (!cancelledConfirmation && bookingSource?.status !== 'cancelled' && !(initialDraft && bookingSource?.archived_at)) {
+        if (draftStatus) {
+          startsAt = bookingSource?.preferred_date
+            ? dashboardBookingStart(bookingSource.preferred_date, bookingSource.preferred_time)
+            : dashboardBookingStart(inspection.date, inspection.inspectionTime || inspection.startMeetingTime)
+        } else if (confirmationStatus) {
+          startsAt = dashboardBookingStart(bookingSource ? bookingSource.preferred_date : inspection.date, bookingSource ? bookingSource.preferred_time : null)
+        } else startsAt = dashboardBookingStart(inspection.date, inspection.inspectionTime || inspection.startMeetingTime)
+      }
       if (startsAt) bookings.push({ id: `eb:${inspection.inspectionId}`, moduleId: 'eb', title, href: confirmationStatus ? href : inspectionHref, startsAt,
         ...(confirmationStatus ? tentativeState(confirmationStatus) : {}),
         ...(project.address ? { address: [project.address, project.postalCode, project.city].filter(Boolean).join(', ') } : {}) })

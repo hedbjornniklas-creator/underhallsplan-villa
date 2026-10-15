@@ -12,6 +12,7 @@ import { listEbProjects } from '@/lib/eb/server'
 import { listEbAssignmentConfirmationSummaries } from '@/lib/eb/assignmentConfirmationServer'
 import { listMoistureProjects, requireMoistureContext } from '@/lib/moisture/server'
 import { getTaskWorkspace } from '@/lib/tasks/server'
+import { buildActionCaseDashboard, type DashboardActionCaseSource } from './actionCases'
 import {
   buildObDashboard, buildTuDashboard, buildEbDashboard, buildMoistureDashboard, buildTaskDashboard,
   getStockholmDate, sortDashboardActions,
@@ -48,6 +49,22 @@ async function readConfirmationBookings(userClient: SupabaseClient, orgId: strin
   if (error) throw new Error('DASHBOARD_CONFIRMATION_BOOKING_READ_FAILED')
   for (const assignment of data || []) result.set(assignment.id, assignment)
   return result
+}
+
+async function readActionCaseVisits(orgId: string): Promise<DashboardModuleSummary> {
+  const userClient = createSupabaseServerClient() as unknown as SupabaseClient
+  const cases: DashboardActionCaseSource[] = []
+  const pageSize = 500
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await userClient.from('action_cases')
+      .select('id,org_id,title,status,site_visit_at,property_address').eq('org_id', orgId)
+      .order('id', { ascending: true }).range(offset, offset + pageSize - 1)
+    if (error) throw new Error('DASHBOARD_ACTION_CASE_VISIT_READ_FAILED')
+    const page = (data || []) as DashboardActionCaseSource[]
+    cases.push(...page)
+    if (page.length < pageSize) break
+  }
+  return buildActionCaseDashboard(orgId, cases)
 }
 
 async function readOb(orgId: string, today: string): Promise<DashboardModuleSummary> {
@@ -128,9 +145,14 @@ export async function getDashboardData(requestedOrgId?: unknown): Promise<Dashbo
       const selected = await requireMoistureContext(context.orgId)
       return buildMoistureDashboard(selected.orgId, await listMoistureProjects(selected), today)
     },
-    tasks: async () => buildTaskDashboard(await getTaskWorkspace({
-      orgId: context.orgId, userId: context.userId, isOrgAdmin: context.role === 'admin',
-    }), today),
+    tasks: async () => {
+      const [workspace, cases] = await Promise.all([
+        getTaskWorkspace({ orgId: context.orgId, userId: context.userId, isOrgAdmin: context.role === 'admin' }),
+        readActionCaseVisits(context.orgId),
+      ])
+      const tasks = buildTaskDashboard(workspace, today)
+      return { activeCount: tasks.activeCount + cases.activeCount, actions: tasks.actions, bookings: [...tasks.bookings, ...cases.bookings] }
+    },
   }
   const results = await Promise.allSettled(MODULES.map((module, index) => access[index]
     ? readers[module.id]() : Promise.resolve<DashboardModuleSummary>({ activeCount: 0, actions: [], bookings: [] })))

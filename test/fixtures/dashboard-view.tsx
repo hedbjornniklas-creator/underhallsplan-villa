@@ -30,6 +30,12 @@ const bookings = [
   { id: 'booking-nextweek', moduleId: 'eb' as const, title: 'Nästa veckas besiktning', startsAt: '2026-10-19T07:00:00.000Z', href: scoped('/eb/projects/test-nextweek'), address: 'Exempelvägen 2' },
   { id: 'restricted-booking', moduleId: 'moisture' as const, title: 'DOLD BOKNING', startsAt: '2026-10-12T07:00:00.000Z', href: scoped('/fuktsakerhet/projekt/forbidden'), address: 'DOLD ADRESS' },
 ]
+const draftBookings = [
+  { id: 'booking-draft-ob', moduleId: 'ob' as const, title: 'Klövervägen 3', startsAt: '2026-10-12T08:00:00.000Z', href: scoped('/ob/assignments/test-draft-ob'), address: 'Klövervägen 3, Nacka', status: 'tentative' as const, confirmationStatus: 'Bekräftelse ej skickad' },
+  { id: 'booking-draft-eb', moduleId: 'eb' as const, title: 'Kvarteret Linden', startsAt: '2026-10-12T10:15:00.000Z', href: scoped('/eb/projects/test-draft-eb'), address: 'Lindvägen 6, Stockholm', status: 'tentative' as const, confirmationStatus: 'Bekräftelse ej skickad' },
+  { id: 'booking-draft-tu', moduleId: 'tu' as const, title: 'Utredning · Ekvägen 11', startsAt: '2026-10-12T11:30:00.000Z', href: scoped('/tu/assignments/test-draft-tu'), address: 'Ekvägen 11, Solna', status: 'tentative' as const, confirmationStatus: 'Bekräftelse ej skickad' },
+  { id: 'booking-draft-case', moduleId: 'tasks' as const, title: 'Platsbesök · Brf Syrenen', startsAt: '2026-10-12T13:00:00.000Z', href: '/uppdrag/test-draft-case', address: 'Syrenvägen 9, Bromma', status: 'tentative' as const, confirmationStatus: 'Planerat platsbesök' },
+]
 
 const state = new URLSearchParams(location.search).get('state')
 const data = {
@@ -37,7 +43,7 @@ const data = {
   actions: state === 'empty' ? [] : state === 'long' ? [...actions, ...Array.from({ length: 7 }, (_, index) => ({
     ...actions[0], id: `extra-${index}`, title: `Exempeluppdrag ${index + 1}`, priority: 'normal' as const,
   }))] : actions,
-  bookings: state === 'empty' ? [] : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : bookings,
+  bookings: state === 'empty' ? [] : state === 'multi-module-drafts' ? draftBookings : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : bookings,
   issues: [],
 }
 declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean } } }
@@ -58,7 +64,12 @@ window.fetch = async (input, init) => {
   }
   if (url.pathname === '/api/dashboard/map') return Response.json({
     organizationId, date: url.searchParams.get('date'),
-    locations: url.searchParams.get('date') === data.today ? [
+    locations: url.searchParams.get('date') === data.today ? state === 'multi-module-drafts' ? [
+      { id: 'booking-draft-ob', latitude: 59.3107, longitude: 18.1817, status: 'located' },
+      { id: 'booking-draft-eb', latitude: 59.3371, longitude: 18.0897, status: 'located' },
+      { id: 'booking-draft-tu', latitude: 59.3604, longitude: 18.0249, status: 'located' },
+      { id: 'booking-draft-case', latitude: 59.3407, longitude: 17.9517, status: 'located' },
+    ] : [
       { id: 'booking-ob', latitude: 59.3107, longitude: 18.1817, status: 'located' },
       { id: 'booking-tentative', latitude: 59.4404, longitude: 18.0694, status: 'located' },
       { id: 'booking-eb', latitude: 59.3371, longitude: 18.0897, status: 'located' },
