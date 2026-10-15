@@ -249,8 +249,9 @@ export function buildTuDashboard(orgId: string, assignments: TuAssignmentListIte
     actions.push(action({ id: `tu:${assignment.id}:confirmation`, moduleId: 'tu', title,
       subtitle: joined(assignment.customer_name, assignment.property_city), ...next, category: 'confirmation', href }, assignment.preferred_date, today))
     const confirmationStatus = tentativeConfirmation(assignment)
-    // Unsent drafts do not reserve calendar time. Issued proposals remain visibly
-    // tentative until the ordinary booking workflow has completed.
+      || (assignment.status === 'draft' ? 'Bekräftelse ej skickad' : undefined)
+    // A dated TU draft is also a planned visit. Keep it tentative and point to
+    // the unsent confirmation; a linked investigation keeps its own visit above.
     if (confirmationStatus || (assignment.status === 'booked' && assignment.booked_at)) {
       const startsAt = dashboardBookingStart(assignment.preferred_date, assignment.preferred_time)
       const address = first(assignment.property_address, assignment.preliminary_address)

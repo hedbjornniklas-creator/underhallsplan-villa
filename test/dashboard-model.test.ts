@@ -181,13 +181,41 @@ test('TU deduplicates linked work, renews expired confirmations and preserves an
   assert.equal(buildTuDashboard(tuPreviewOrg, [], [tuInvestigation({ status: 'completed' })], today).activeCount, 0)
 })
 
-test('TU includes unbooked unfinished work while excluding preferred dates from calendar', () => {
-  const result = buildTuDashboard(tuPreviewOrg, [tuAssignment({ status: 'draft', preferred_date: today })],
+test('TU includes unscheduled unfinished work without inventing calendar visits', () => {
+  const result = buildTuDashboard(tuPreviewOrg, [tuAssignment({ status: 'draft', preferred_date: null })],
     [tuInvestigation({ inspectionId: 'unlinked', assignmentId: null, date: null })], today)
   assert.equal(result.activeCount, 2)
   assert.equal(result.bookings.length, 0)
   assert.equal(result.actions.find(item => item.category === 'inspection')?.dueDate, undefined)
   assert.equal(result.actions.find(item => item.category === 'inspection')?.priority, 'normal')
+})
+
+test('TU dated drafts appear as unsent tentative visits, including the planned 13:30 visit', () => {
+  const date = '2026-10-15'
+  const assignment = tuAssignment({ status: 'draft', preferred_date: date, preferred_time: '13:30:00',
+    accepted_at: null, booked_at: null, last_sent_at: null, inspection_id: null })
+  const result = buildTuDashboard(tuPreviewOrg, [assignment], [], date)
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].startsAt, '2026-10-15T13:30:00+02:00')
+  assert.equal(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].confirmationStatus, 'Bekräftelse ej skickad')
+  assert.equal(result.bookings[0].href, `/tu/assignments/${assignment.id}?orgId=${tuPreviewOrg}`)
+  const dateOnly = buildTuDashboard(tuPreviewOrg, [{ ...assignment, preferred_time: null }], [], date)
+  assert.equal(dateOnly.bookings[0].startsAt, date)
+  for (const source of [{ ...assignment, preferred_date: null }, { ...assignment, preferred_date: '2026-02-30' },
+    { ...assignment, archived_at: date }, { ...assignment, status: 'cancelled' as const }]) {
+    assert.equal(buildTuDashboard(tuPreviewOrg, [source], [], date).bookings.length, 0)
+  }
+})
+
+test('TU linked investigation retains its confirmed visit when its attached confirmation is a draft', () => {
+  const assignment = tuAssignment({ status: 'draft', inspection_id: 'inspection-1', preferred_date: '2026-10-15', preferred_time: '13:30' })
+  const investigation = tuInvestigation({ assignmentId: assignment.id, date: today, inspectionTime: '11:00' })
+  const result = buildTuDashboard(tuPreviewOrg, [assignment], [investigation], today)
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].startsAt, '2026-10-12T11:00:00+02:00')
+  assert.notEqual(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].href, `/tu/investigations/${investigation.inspectionId}?orgId=${tuPreviewOrg}`)
 })
 
 test('TU sent and accepted proposals appear tentatively, deduplicate linked visits, and confirm through booking', () => {
@@ -210,7 +238,7 @@ test('TU sent and accepted proposals appear tentatively, deduplicate linked visi
   const noTime = buildTuDashboard(tuPreviewOrg, [{ ...assignment, preferred_time: null }], [], today)
   assert.equal(noTime.bookings[0].startsAt, today)
   assert.equal(buildTuDashboard(tuPreviewOrg, [{ ...assignment, preferred_date: null }], [], today).bookings.length, 0)
-  for (const source of [{ ...assignment, archived_at: today }, { ...assignment, status: 'cancelled' as const }, { ...assignment, status: 'draft' as const },
+  for (const source of [{ ...assignment, archived_at: today }, { ...assignment, status: 'cancelled' as const },
     { ...assignment, status: 'expired' as const, last_sent_at: null }]) assert.equal(buildTuDashboard(tuPreviewOrg, [source], [], today).bookings.length, 0)
 })
 

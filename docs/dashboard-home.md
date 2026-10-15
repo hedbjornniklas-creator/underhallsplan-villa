@@ -15,8 +15,12 @@ entreprenadbesiktning, tekniska utredningar, fuktsäkerhet och Uppdrag.
   Kategorifiltret gäller enbart åtgärdslistan.
 - Kalendern visar en hel vecka inklusive helger. Skickade uppdragsbekräftelser
   med ett föreslaget datum visas som gula, streckade preliminära uppdrag med
-  aktuell bekräftelsestatus. Utkast och avbrutna uppdrag skapar inga preliminära
-  besök. När uppdraget bokas visas samma uppdrag som bekräftat utan dubblett.
+  aktuell bekräftelsestatus. Även TU-utkast med ett planerat datum visas
+  preliminärt med statusen ”Bekräftelse ej skickad”. Utkast utan datum,
+  övriga modulers utkast och avbrutna eller arkiverade bekräftelser skapar inga
+  preliminära besök. En redan startad TU-utredning behåller sitt besöksdatum
+  även om dess bekräftelse är ett utkast. När uppdraget bokas visas samma
+  uppdrag som bekräftat utan dubblett.
   Vald dag styr uppdragslista och karta. Tider och datum visas i Europe/Stockholm.
   Besök utan registrerad tid visas med ”Tid ej angiven”. Uppgiftsdeadlines
   skapar inte kalenderbesök.
