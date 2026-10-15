@@ -2,6 +2,7 @@ import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
 import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { parseObObjectType, resolveObObjectType } from '@/lib/ob/objectType'
+import { canEditObAssignment, OB_ASSIGNMENT_CONTENT_LOCKED_MESSAGE } from '@/lib/ob/assignmentEditLock'
 import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import { getAssignmentById, listAssignmentAddonOrders, sendAssignmentOrderReceipt, type AssignmentStatus, type AssignmentType, updateAssignmentById } from '@/lib/assignments/server'
 
@@ -72,10 +73,8 @@ export async function PATCH(
     const archiveValue = hasArchivedAtInBody ? body.archived_at : undefined
     const isArchiveSetValue =
       archiveValue !== undefined && archiveValue !== null && archiveValue !== ''
-    const isArchiveClearValue = archiveValue === null || archiveValue === ''
     const isStatusOnlyPatch = bodyKeys.length === 1 && bodyKeys[0] === 'status'
     const isArchiveTogglePatch = bodyKeys.length === 1 && bodyKeys[0] === 'archived_at'
-    const isArchiveClearOnlyPatch = isArchiveTogglePatch && isArchiveClearValue
     const isCancelAndArchivePatch =
       requestedStatus === 'cancelled' &&
       bodyKeys.length >= 1 &&
@@ -87,15 +86,9 @@ export async function PATCH(
       requestedStatus === 'booked' &&
       isStatusOnlyPatch
 
-    if (
-      (existing.status === 'sent' ||
-        existing.status === 'ordered' ||
-        existing.status === 'booked') &&
-      !allowOrderedToBookedTransition &&
-      !isArchiveClearOnlyPatch &&
-      !isCancelAndArchivePatch
-    ) {
-      return jsonError('Skickad, beställd eller bokad uppdragsbekräftelse är låst för redigering.', 409)
+    const isLifecycleOnlyPatch = allowOrderedToBookedTransition || isArchiveTogglePatch || isCancelAndArchivePatch
+    if (!canEditObAssignment(existing) && !isLifecycleOnlyPatch) {
+      return jsonError(OB_ASSIGNMENT_CONTENT_LOCKED_MESSAGE, 409)
     }
     const patch: Parameters<typeof updateAssignmentById>[0]['patch'] = {}
 
@@ -257,7 +250,7 @@ export async function PATCH(
       Object.prototype.hasOwnProperty.call(body, 'scope_description'))) {
       patch.scope_description = safeString(body.scope_description ?? body.scopeDescription)
     }
-    if (effectiveType === 'STATUS') patch.orderer_role = 'Statusbesiktning'
+    if (effectiveType === 'STATUS' && !isLifecycleOnlyPatch) patch.orderer_role = 'Statusbesiktning'
     if (Object.prototype.hasOwnProperty.call(body, 'statusCancellationFee')) {
       const raw = body.statusCancellationFee
       const fee = raw === null || raw === '' ? null : Number(String(raw).replace(',', '.'))
@@ -339,6 +332,7 @@ export async function PATCH(
       orgId: org.orgId,
       assignmentId: id,
       updatedBy: org.userId,
+      requireUnissuedDraft: !isLifecycleOnlyPatch,
       patch,
     })
     let bookingEmailSent = false
@@ -367,6 +361,9 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_MEMBERSHIP_REQUIRED') return jsonError('Ingen organisationskoppling hittades.', 403)
+    if (message.includes('OB_ASSIGNMENT_CONTENT_LOCKED')) {
+      return jsonError(OB_ASSIGNMENT_CONTENT_LOCKED_MESSAGE, 409)
+    }
     if (message.includes('OB_STATUS_OBJECT_AGREEMENT_LOCKED') || message.includes('OB_STATUS_PROFILE_AGREEMENT_LOCKED')) {
       return jsonError('Uppdragets typ och objekttyp är låsta i en redan utfärdad uppdragsbekräftelse. Skapa en ny uppdragsbekräftelse för att ändra dem.', 409)
     }

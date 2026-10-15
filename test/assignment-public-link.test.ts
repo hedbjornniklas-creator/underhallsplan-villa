@@ -295,7 +295,7 @@ test('POST delegates one-time acceptance to the token consumer and sends one con
   const h = routeHarness()
   const responses = await Promise.all([h.post(), h.post()])
   assert.deepEqual(responses.map(r => r.status).sort(), [200, 409])
-  assert.deepEqual(h.counts(), { acceptedCount: 1, mails: 1, writes: 1 })
+  assert.deepEqual(h.counts(), { acceptedCount: 1, mails: 1, writes: 0 })
 })
 
 test('POST rejects revoked and expired links without sending a confirmation', async () => {
@@ -329,10 +329,21 @@ test('technical open and acceptance failures return a reference and defer diagno
   }
 })
 
-test('a thrown follow-up contact sync failure cannot undo a saved acceptance', async () => {
-  const h = routeHarness(link(), false, { contactFails: true })
+test('approved OB contents are not rewritten by a post-acceptance compatibility sync', async () => {
+  const h = routeHarness(link())
   assert.equal((await h.post()).status, 200)
-  assert.equal(h.counts().acceptedCount, 1)
+  assert.deepEqual(h.counts(), { acceptedCount: 1, mails: 1, writes: 0 })
+})
+
+test('TU retains compatibility sync and a sync failure cannot undo a saved acceptance', async () => {
+  const row = link()
+  row.assignments.assignment_type = 'TU'
+  for (const contactFails of [false, true]) {
+    const h = routeHarness(row, false, { contactFails })
+    assert.equal((await h.post()).status, 200)
+    assert.equal(h.counts().acceptedCount, 1)
+    assert.equal(h.counts().writes, contactFails ? 0 : 1)
+  }
 })
 
 test('expected invalid-link and consent errors do not create incident notifications', async () => {

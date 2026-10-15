@@ -843,6 +843,7 @@ export async function updateAssignmentById(input: {
   orgId: string
   assignmentId: string
   updatedBy: string
+  requireUnissuedDraft?: boolean
   patch: Partial<{
     customer_name: string | null
     customer_email: string | null
@@ -889,15 +890,23 @@ export async function updateAssignmentById(input: {
     updated_by: input.updatedBy,
   }
 
-  const { data, error } = await admin
+  let query = admin
     .from('assignments')
     .update(payload)
     .eq('org_id', input.orgId)
     .eq('id', input.assignmentId)
-    .select(ASSIGNMENT_DETAIL_SELECT)
-    .single()
+
+  if (input.requireUnissuedDraft) {
+    // Recheck on the write: another tab may have issued the draft since it was read.
+    query = query.eq('status', 'draft').is('last_sent_at', null).is('accepted_at', null)
+      .is('booked_at', null).is('archived_at', null)
+  }
+  const { data, error } = await query.select(ASSIGNMENT_DETAIL_SELECT).single()
 
   if (error || !data) {
+    if (input.requireUnissuedDraft && (!error || error.code === 'PGRST116')) {
+      throw new Error('OB_ASSIGNMENT_CONTENT_LOCKED')
+    }
     throw new Error(error?.message ?? 'Kunde inte uppdatera uppdrag.')
   }
 

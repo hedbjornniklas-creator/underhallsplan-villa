@@ -292,8 +292,7 @@ test('public STATUS GET and acceptance use the issued exact source, never today\
   assert.deepEqual(payload?.assignment_details,{statusCancellationFee:0,...(frozenIssue.statusObjectType?{objectType:frozenIssue.statusObjectType}:{})})
   assert.equal(payload?.apartment_number,apartment?'1201':null)
   assert.equal(payload?.property_owner_name,apartment?null:'Owner')
-  assert.equal(updates[0].apartment_number,apartment?'1201':null)
-  assert.deepEqual(updates[0].assignment_details,payload?.assignment_details)
+  assert.deepEqual(updates, [], 'approved STATUS contents are not rewritten after acceptance')
   }
 })
 

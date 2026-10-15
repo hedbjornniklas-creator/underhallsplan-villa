@@ -15,6 +15,7 @@ import '@/components/ob/ob-assignment-form.css'
 import { validateObEarlyStartReason, type ObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflow'
 import { obInspectionProfileLabel, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
 import { parseObObjectType, resolveObObjectType, type ObObjectType } from '@/lib/ob/objectType'
+import { canEditObAssignment } from '@/lib/ob/assignmentEditLock'
 
 type AssignmentStatus =
   | 'draft'
@@ -199,6 +200,7 @@ function AssignmentDetailsContent() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [editingConflict, setEditingConflict] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [sending, setSending] = useState(false)
   const [booking, setBooking] = useState(false)
@@ -239,15 +241,13 @@ function AssignmentDetailsContent() {
     return Number.isFinite(parsed) && parsed >= 0
   }, [form])
 
-  const canSend = assignment?.status === 'draft' && hasOrdererRole && hasValidPrice
+  const isEditingLocked = editingConflict || !canEditObAssignment(assignment)
+  const canSend = !isEditingLocked && hasOrdererRole && hasValidPrice
   const canBook = assignment?.status === 'ordered' && !assignment.archived_at
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
   const canStartEarly = assignment?.assignment_type === 'OB' && assignment.status === 'sent' && !assignment.inspection_id && !assignment.accepted_at && !assignment.archived_at
-  const isSent = assignment?.status === 'sent'
-  const isOrdered = assignment?.status === 'ordered'
-  const isBookedLocked = assignment?.status === 'booked'
-  const isEditingLocked = isSent || isOrdered || isBookedLocked
-  const canReissue = isEditingLocked
+  const canReissue = Boolean(assignment && !assignment.archived_at &&
+    ['sent', 'ordered', 'booked'].includes(assignment.status))
 
   const loadAssignment = useCallback(async () => {
     try {
@@ -394,6 +394,10 @@ function AssignmentDetailsContent() {
 
         const payload = await response.json().catch(() => null)
         if (!response.ok) {
+          if (response.status === 409) {
+            setEditingConflict(true)
+            await loadAssignment()
+          }
           throw new Error(jsonToErrorMessage(payload, 'Kunde inte spara uppdraget.'))
         }
 
@@ -422,7 +426,7 @@ function AssignmentDetailsContent() {
         setSaving(false)
       }
     },
-    [id, isEditingLocked, orgId]
+    [id, isEditingLocked, orgId, loadAssignment]
   )
 
   useEffect(() => {
@@ -671,17 +675,12 @@ function AssignmentDetailsContent() {
               {success}
             </div>
           ) : null}
-          {isBookedLocked ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Uppdragsbekräftelsen är bokad och låst för redigering.
-            </div>
-          ) : isOrdered ? (
-            <div className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
-              Uppdragsbekräftelsen är beställd och låst för redigering. Klicka på Acceptera uppdrag eller Skicka om uppdragsbekräftelse.
-            </div>
-          ) : isSent ? (
-            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
-              Uppdragsbekräftelsen är skickad och låst för redigering. Klicka på Skicka om uppdragsbekräftelse för att skapa en ny redigerbar version.
+          {!loading && assignment && isEditingLocked ? (
+            <div className="border-y border-slate-200 py-3 text-sm" role="status">
+              Uppdragsbekräftelsen är låst för redigering. Uppgifterna ändras inte när besiktningen öppnas eller låses upp.
+              {' '}{canReissue ? 'Välj Skicka om uppdragsbekräftelse för att skapa en ny version för nytt godkännande.' : (
+                <a className="underline" href={withObOrganization('/ob/assignments/new', orgId)}>Skapa en ny uppdragsbekräftelse</a>
+              )}
             </div>
           ) : null}
 
