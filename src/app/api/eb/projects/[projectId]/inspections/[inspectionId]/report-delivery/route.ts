@@ -637,9 +637,17 @@ function buildDeliveryStatus(
   currentVersionHistory: OutboundMessageRow[]
 ) {
   if (!activeLink) return 'draft'
-  if (currentVersionHistory.some((row) => row.status === 'sent')) return 'sent'
-  if (currentVersionHistory.some((row) => row.status === 'pending')) return 'sending'
-  if (currentVersionHistory.some((row) => row.status === 'failed')) return 'failed'
+  // History is newest first. The latest attempt for each recipient determines
+  // the current result, just as in the EB overview and dashboard summary.
+  const latestByRecipient = new Map<string, OutboundMessageRow>()
+  for (const row of currentVersionHistory) {
+    const recipient = row.recipient_email?.trim().toLowerCase() || ''
+    if (!latestByRecipient.has(recipient)) latestByRecipient.set(recipient, row)
+  }
+  const latest = [...latestByRecipient.values()]
+  if (latest.some((row) => row.status === 'failed')) return 'failed'
+  if (latest.some((row) => row.status === 'pending')) return 'sending'
+  if (latest.length && latest.every((row) => row.status === 'sent')) return 'sent'
   return 'finalized'
 }
 

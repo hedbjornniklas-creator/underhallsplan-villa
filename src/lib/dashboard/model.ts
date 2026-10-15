@@ -1,7 +1,5 @@
 import type { ObOverviewItem } from '@/lib/ob/overview'
 import type { TuAssignmentListItem, TuInspectionSummary } from '@/lib/tu/server'
-import type { EbProjectListItem } from '@/lib/eb/server'
-import type { EbAssignmentConfirmationSummary } from '@/lib/eb/assignmentConfirmationTypes'
 import type { MoistureProject } from '@/lib/moisture/domain'
 import type { TaskWorkspace } from '@/lib/tasks/contracts'
 
@@ -148,6 +146,10 @@ function tentativeState(confirmationStatus: string): Pick<DashboardBooking, 'sta
   return { status: 'tentative', confirmationStatus }
 }
 
+function draftConfirmation(source: DashboardConfirmationBookingSource | undefined): string | undefined {
+  return source?.status === 'draft' && !source.archived_at ? 'Bekräftelse ej skickad' : undefined
+}
+
 export function buildObDashboard(items: ObOverviewItem[], times: Map<string, string | null>, today: string,
   inspectionDates?: Map<string, string | null>, confirmations?: Map<string, DashboardConfirmationBookingSource>): DashboardModuleSummary {
   const rows = items.filter(item => (!('canEdit' in item) || item.canEdit !== false) && !item.closed && !item.archived
@@ -157,8 +159,8 @@ export function buildObDashboard(items: ObOverviewItem[], times: Map<string, str
     const title = row.address === 'Adress saknas' ? first(row.customer, 'Överlåtelsebesiktning') : row.address
     const subtitle = joined(row.customer, row.city)
     const displayedDate = row.date ? getStockholmDate(row.date) : ''
-    // The ordinary overview falls back to a customer's preferred date. That is
-    // useful for confirmation work, but must not create a visit appointment.
+    // The ordinary overview falls back to a customer's preferred date. Read the
+    // actual inspection date separately so an unsent draft cannot move a visit.
     const sourceDate = row.inspectionHref && inspectionDates?.has(row.id) ? inspectionDates.get(row.id) : row.date
     const date = sourceDate ? getStockholmDate(sourceDate) : ''
     const cancelledConfirmation = row.confirmation.startsWith('Avbokad')
@@ -168,7 +170,9 @@ export function buildObDashboard(items: ObOverviewItem[], times: Map<string, str
     const presentationPending = !confirmation && (['Inväntar kund', 'Länk behöver förnyas'].includes(row.confirmation)
       ? 'Inväntar kund' : row.confirmation === 'Godkänd av kund' ? 'Inväntar bokning'
         : row.inspectionHref && row.confirmation === 'Länken har gått ut' ? 'Bekräftelselänken har gått ut' : undefined)
-    const pendingConfirmation = tentativeConfirmation(confirmation) || presentationPending
+    const draftStatus = !row.inspectionHref || !date ? draftConfirmation(confirmation)
+      || (!confirmation && row.inspection === 'Ej startad' && row.confirmation === 'Utkast' ? 'Bekräftelse ej skickad' : undefined) : undefined
+    const pendingConfirmation = tentativeConfirmation(confirmation) || presentationPending || draftStatus
     const confirmationPending = !cancelledConfirmation && (row.attention.length > 0 || row.confirmation === 'Inväntar kund'
       || (!row.inspectionHref && row.confirmationAction === 'Starta besiktning'))
     if (row.confirmationHref && confirmationPending) {
@@ -180,8 +184,9 @@ export function buildObDashboard(items: ObOverviewItem[], times: Map<string, str
     if (row.inspectionHref) actions.push(action({ id: `ob:${row.id}:inspection`, moduleId: 'ob', title, subtitle,
       nextStep: cancelledConfirmation ? 'Kontrollera besiktningen efter avbokningen' : row.inspection === 'Status saknas' ? 'Kontrollera besiktningens status' : inspectionNextStep(date, today),
       category: 'inspection', href: row.inspectionHref, actionLabel: 'Öppna besiktning' }, cancelledConfirmation || row.inspection === 'Status saknas' ? undefined : date, today))
-    // A sent/reissued confirmation reserves its proposed visit without asserting
-    // that it is booked. Use its own date/time, never a superseded inspection slot.
+    // Current drafts and sent/reissued confirmations reserve their proposed
+    // visit without asserting that it is booked. An existing visit keeps its
+    // actual date while an attached confirmation remains an unsent draft.
     const missingInspectionDate = Boolean(row.inspectionHref && !date)
     const fallbackConfirmation = missingInspectionDate && confirmation && !confirmation.archived_at
       && ['sent', 'ordered', 'booked'].includes(confirmation.status)
@@ -249,8 +254,9 @@ export function buildTuDashboard(orgId: string, assignments: TuAssignmentListIte
     actions.push(action({ id: `tu:${assignment.id}:confirmation`, moduleId: 'tu', title,
       subtitle: joined(assignment.customer_name, assignment.property_city), ...next, category: 'confirmation', href }, assignment.preferred_date, today))
     const confirmationStatus = tentativeConfirmation(assignment)
-    // Unsent drafts do not reserve calendar time. Issued proposals remain visibly
-    // tentative until the ordinary booking workflow has completed.
+      || (assignment.status === 'draft' ? 'Bekräftelse ej skickad' : undefined)
+    // A dated TU draft is also a planned visit. Keep it tentative and point to
+    // the unsent confirmation; a linked investigation keeps its own visit above.
     if (confirmationStatus || (assignment.status === 'booked' && assignment.booked_at)) {
       const startsAt = dashboardBookingStart(assignment.preferred_date, assignment.preferred_time)
       const address = first(assignment.property_address, assignment.preliminary_address)
@@ -262,50 +268,8 @@ export function buildTuDashboard(orgId: string, assignments: TuAssignmentListIte
   return { activeCount, actions, bookings }
 }
 
-export function buildEbDashboard(orgId: string, projects: EbProjectListItem[], confirmations: EbAssignmentConfirmationSummary[], today: string,
-  confirmationBookings?: Map<string, DashboardConfirmationBookingSource>): DashboardModuleSummary {
-  const byInspection = new Map(confirmations.map(item => [item.inspectionId, item]))
-  const actions: DashboardAction[] = [], bookings: DashboardBooking[] = []
-  let activeCount = 0
-  for (const project of projects) {
-    if (project.orgId !== orgId || closed(project.status)) continue
-    const open = project.inspections.filter(item => !closed(item.status) && !item.reportLockedAt)
-    if (project.inspections.length > 0 && open.length === 0) continue
-    activeCount += open.length || 1
-    const href = `/eb/projects/${encodeURIComponent(project.id)}`
-    if (!project.inspections.length) actions.push(action({ id: `eb:${project.id}:project`, moduleId: 'eb', title: project.title,
-      subtitle: joined(project.clientName, project.address), nextStep: 'Planera projektets första besiktning', category: 'other', href, actionLabel: 'Öppna projekt' }, undefined, today))
-    for (const inspection of open) {
-      const title = `${inspection.variantLabel} · ${project.title}`
-      const subtitle = joined(inspection.clientName || project.clientName, project.address)
-      const confirmation = byInspection.get(inspection.inspectionId)
-      const bookingSource = confirmation ? confirmationBookings?.get(confirmation.assignmentId) : undefined
-      const cancelledConfirmation = confirmation?.status === 'cancelled'
-      const next = confirmationNextStep(confirmation?.status || 'not_created', Boolean(confirmation?.acceptedAt))
-      if (next) actions.push(action({ id: `eb:${inspection.inspectionId}:confirmation`, moduleId: 'eb', title, subtitle,
-        ...next, category: 'confirmation', href }, inspection.date, today))
-      const inspectionHref = `${href}/inspections/${encodeURIComponent(inspection.inspectionId)}/perform`
-      actions.push(action({ id: `eb:${inspection.inspectionId}:inspection`, moduleId: 'eb', title, subtitle,
-        nextStep: cancelledConfirmation ? 'Kontrollera besiktningen efter avbokningen' : knownOpenStatus(inspection.status) ? inspectionNextStep(inspection.date, today) : 'Kontrollera besiktningens status',
-        category: 'inspection', href: inspectionHref, actionLabel: 'Öppna besiktning' }, !cancelledConfirmation && knownOpenStatus(inspection.status) ? inspection.date : undefined, today))
-      // EB accepts the customer's order directly; there is no separate internal
-      // booking step. A sent confirmation still uses its current proposal slot.
-      const pendingConfirmation = tentativeConfirmation(bookingSource, true) || (!bookingSource && confirmation
-        && (confirmation.status === 'sent' && !confirmation.acceptedAt ? 'Inväntar kund'
-          : confirmation.status === 'expired' && confirmation.lastSentAt ? 'Bekräftelselänken har gått ut' : undefined))
-      const fallbackConfirmation = !inspection.date && bookingSource && !bookingSource.archived_at
-        && ['sent', 'ordered', 'booked'].includes(bookingSource.status) && (bookingSource.last_sent_at || bookingSource.accepted_at)
-      const confirmationStatus = pendingConfirmation || (fallbackConfirmation ? 'Tid behöver bekräftas' : undefined)
-      const startsAt = cancelledConfirmation || bookingSource?.status === 'cancelled' ? undefined : confirmationStatus
-        ? dashboardBookingStart(bookingSource ? bookingSource.preferred_date : inspection.date, bookingSource ? bookingSource.preferred_time : null)
-        : dashboardBookingStart(inspection.date, inspection.inspectionTime || inspection.startMeetingTime)
-      if (startsAt) bookings.push({ id: `eb:${inspection.inspectionId}`, moduleId: 'eb', title, href: confirmationStatus ? href : inspectionHref, startsAt,
-        ...(confirmationStatus ? tentativeState(confirmationStatus) : {}),
-        ...(project.address ? { address: [project.address, project.postalCode, project.city].filter(Boolean).join(', ') } : {}) })
-    }
-  }
-  return { activeCount, actions, bookings }
-}
+// @ts-expect-error Node strip-types requires the explicit extension.
+export { buildEbDashboard } from '../eb/dashboard.ts'
 
 export function buildMoistureDashboard(orgId: string, projects: MoistureProject[], today: string): DashboardModuleSummary {
   const rows = projects.filter(project => project.orgId === orgId && project.status !== 'archived')

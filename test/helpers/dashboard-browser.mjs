@@ -60,7 +60,8 @@ export async function testDashboard(base, output) {
   const tentativeMarker = '.leaflet-marker-icon[data-booking-id="booking-tentative"]'
   const routePath = '.leaflet-overlay-pane path.leaflet-interactive'
   async function waitForMap(count) {
-    await page.$eval(mapSelector, node => node.scrollIntoView())
+    await page.$eval('.dh-map-panel', node => node.scrollIntoView())
+    await page.waitForSelector(mapSelector)
     await page.waitForFunction(expected => document.querySelectorAll('.leaflet-marker-icon').length === expected, {}, count)
   }
   async function assertMixedMap() {
@@ -193,6 +194,82 @@ export async function testDashboard(base, output) {
     assert.ok((await page.evaluate(() => window.__dashboardTest.requests)).some(url => url.startsWith('/api/dashboard/map?') && new URL(url, base).searchParams.getAll('bookingId').includes('booking-tentative')), 'A tentative-only day resolves its address')
     await noOverflow('Tentative-only dashboard')
     await page.screenshot({ path: resolve(output, 'dashboard-tentative-only.png'), fullPage: true })
+    const draftVisits = [
+      { id: 'booking-draft-ob', module: 'ob', moduleName: 'Överlåtelsebesiktning', title: 'Klövervägen 3', time: '10:00', address: 'Klövervägen 3, Nacka', href: '/ob/assignments/test-draft-ob?orgId=11111111-1111-4111-8111-111111111111', status: 'Preliminärt · Bekräftelse ej skickad' },
+      { id: 'booking-draft-eb', module: 'eb', moduleName: 'Entreprenadbesiktning', title: 'Kvarteret Linden', time: '12:15', address: 'Lindvägen 6, Stockholm', href: '/eb/projects/test-draft-eb?orgId=11111111-1111-4111-8111-111111111111', status: 'Preliminärt · Bekräftelse ej skickad' },
+      { id: 'booking-draft-tu', module: 'tu', moduleName: 'Tekniska utredningar', title: 'Utredning · Ekvägen 11', time: '13:30', address: 'Ekvägen 11, Solna', href: '/tu/assignments/test-draft-tu?orgId=11111111-1111-4111-8111-111111111111', status: 'Preliminärt · Bekräftelse ej skickad' },
+      { id: 'booking-draft-case', module: 'tasks', moduleName: 'Uppdrag', title: 'Platsbesök · Brf Syrenen', time: '15:00', address: 'Syrenvägen 9, Bromma', href: '/uppdrag/test-draft-case', status: 'Preliminärt · Planerat platsbesök' },
+    ]
+    for (const width of [390, 1440]) {
+      await page.setViewport({ width, height: 1000 })
+      await page.goto(`${base}/dashboard-v1?state=multi-module-drafts`, { waitUntil: 'networkidle0' })
+      await ready()
+      await waitForMap(4)
+      const calendarSelector = width <= 640 ? '.dh-calendar-mobile-booking' : '.dh-calendar-booking'
+      const cards = await page.$$eval(calendarSelector, nodes => nodes.map(node => ({
+        module: node.dataset.module, status: node.dataset.bookingStatus, title: node.textContent,
+        time: node.querySelector('time').textContent, tooltip: node.title, href: node.getAttribute('href'),
+        visible: node.checkVisibility(), border: getComputedStyle(node).borderLeftStyle,
+      })))
+      assert.equal(cards.length, 4, `${width}px: OB, EB, TU drafts and Uppdrag site visits all appear in the calendar`)
+      for (const [index, visit] of draftVisits.entries()) {
+        const card = cards[index]
+        assert.equal(card.module, visit.module)
+        assert.equal(card.status, 'tentative')
+        assert.equal(card.visible, true)
+        assert.equal(card.border, 'dashed')
+        assert.ok(card.title.includes(visit.title) && card.title.includes('Preliminärt'))
+        assert.equal(card.time, visit.time)
+        assert.ok(card.tooltip.includes(visit.status), 'Draft status is available in calendar text')
+        assert.equal(card.href, visit.href)
+        const row = await page.$eval(`.dh-agenda-row[data-booking-id="${visit.id}"]`, node => ({
+          text: node.textContent, status: node.dataset.bookingStatus, hasClock: Boolean(node.querySelector('.dh-tentative-stop svg')),
+          time: node.querySelector('time').textContent, href: node.querySelector('.dh-agenda-open').getAttribute('href'),
+        }))
+        assert.equal(row.status, 'tentative')
+        assert.equal(row.hasClock, true)
+        assert.equal(row.time, visit.time)
+        assert.ok(row.text.includes(visit.title) && row.text.includes(visit.moduleName) && row.text.includes(visit.status) && row.text.includes(visit.address), 'Day list identifies draft, module, status and address')
+        assert.equal(row.href, card.href)
+      }
+      assert.match(await page.$eval('.dh-calendar .dh-panel-heading p', node => node.textContent), /0 bekräftade · 4 preliminära denna vecka/)
+      assert.match(await page.$eval('.dh-agenda .dh-count', node => node.textContent), /0 bekräftade · 4 preliminära/)
+      assert.deepEqual(await page.$$eval('.dh-agenda-row[data-booking-id]', nodes => nodes.map(node => node.dataset.bookingId)), draftVisits.map(visit => visit.id), 'Scheduled drafts stay in chronological order')
+      const draftMarkers = await page.$$eval('.leaflet-marker-icon', nodes => nodes.map(node => ({
+        id: node.dataset.bookingId, status: node.dataset.bookingStatus, text: node.textContent,
+        clock: Boolean(node.querySelector('svg')), background: getComputedStyle(node).backgroundColor, border: getComputedStyle(node).borderStyle,
+      })))
+      assert.deepEqual(draftMarkers.map(marker => marker.id), draftVisits.map(visit => visit.id))
+      assert.ok(draftMarkers.every(marker => marker.status === 'tentative' && marker.text === '' && marker.clock && marker.border === 'dashed' && marker.background === 'rgb(255, 244, 214)'), 'All four draft map markers are yellow clocks without confirmed stop numbers')
+      assert.equal(await page.$('.dh-route-button'), null, 'Draft-only work offers no confirmed driving route')
+      assert.equal((await page.$$(routePath)).length, 0, 'Draft-only work has no confirmed route polyline')
+      const draftRequests = await page.evaluate(() => window.__dashboardTest.requests.filter(url => url.startsWith('/api/dashboard/map?')))
+      assert.ok(draftRequests.some(url => draftVisits.every(visit => new URL(url, base).searchParams.getAll('bookingId').includes(visit.id))), 'Every draft module resolves its synthetic visit address')
+      await noOverflow(`Scheduled module drafts ${width}px`)
+      await page.screenshot({ path: resolve(output, `dashboard-module-drafts-${width}.png`), fullPage: true })
+      for (const visit of draftVisits) {
+        // Keyboard targets the exact marker while earlier popups finish panning.
+        await page.focus(`.leaflet-marker-icon[data-booking-id="${visit.id}"]`)
+        await page.keyboard.press('Enter')
+        await page.waitForFunction(title => document.querySelector('.leaflet-popup-content')?.textContent.includes(title), {}, visit.title)
+        const popup = await page.$eval('.leaflet-popup-content', node => ({ text: node.textContent, href: node.querySelector('a').getAttribute('href') }))
+        assert.ok(popup.text.includes(visit.title) && popup.text.includes(visit.status) && popup.text.includes(visit.address), 'Every draft popup identifies its visit and preliminary status')
+        assert.equal(popup.href, visit.href)
+        await page.click('.leaflet-popup-close-button')
+      }
+      for (const visit of draftVisits) {
+        await page.select('select[aria-label="Filtrera arbetsområde"]', visit.module)
+        await waitForMap(1)
+        assert.deepEqual(await page.$$eval(calendarSelector, nodes => nodes.map(node => node.dataset.module)), [visit.module], 'Module filter isolates calendar drafts')
+        assert.deepEqual(await page.$$eval('.dh-agenda-row[data-booking-id]', nodes => nodes.map(node => node.dataset.bookingId)), [visit.id], 'Module filter isolates the day list')
+        assert.deepEqual(await page.$$eval('.leaflet-marker-icon', nodes => nodes.map(node => node.dataset.bookingId)), [visit.id], 'Module filter isolates map draft markers')
+        assert.equal(await page.$('.dh-route-button'), null)
+        assert.equal((await page.$$(routePath)).length, 0)
+        await noOverflow(`${visit.module} draft filter ${width}px`)
+      }
+      assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
+    }
+    await page.setViewport({ width: 1440, height: 1000 })
     await page.goto(`${base}/dashboard-v1?state=client`, { waitUntil: 'networkidle0' })
     await ready()
     await waitForMap(4)
@@ -254,7 +331,7 @@ export async function testDashboard(base, output) {
     assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
-    console.log('PASS: dashboard 390/768/1440px layouts; tentative calendar/day/map entries, clock markers, status text and distinct color; confirmed/tentative totals; confirmed-only route numbering, polyline and Google directions; tentative geocoding; GET-only map confirmation navigation; tentative-only map; tentative-to-confirmed refresh updates markers, popup, route and line; active-organization links; disabled-module isolation; module menu; action tabs/module/search; show all/fewer; calendar navigation; empty states; load retry; foreign-organization rejection; transient snapshot preservation and 403 clearing. Synthetic data and tiles only; no external requests or writes.')
+    console.log('PASS: dashboard 390/768/1440px layouts; tentative calendar/day/map entries, clock markers, status text and distinct color; scheduled OB/EB/TU drafts and Uppdrag site visits at 390/1440px, preliminary labels, map popups, workflow links and module filters; confirmed/tentative totals; confirmed-only route numbering, polyline and Google directions; tentative geocoding; GET-only map confirmation navigation; tentative-only map; tentative-to-confirmed refresh updates markers, popup, route and line; active-organization links; disabled-module isolation; module menu; action tabs/module/search; show all/fewer; calendar navigation; empty states; load retry; foreign-organization rejection; transient snapshot preservation and 403 clearing. Synthetic data and tiles only; no external requests or writes.')
   } catch (error) {
     console.error(await page.$eval('body', node => node.innerText))
     await page.screenshot({ path: resolve(output, 'dashboard-failure.png'), fullPage: true })

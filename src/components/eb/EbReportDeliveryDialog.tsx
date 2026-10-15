@@ -445,7 +445,7 @@ export default function EbReportDeliveryDialog({
               {inspection.variantLabel}
             </p>
             <h2 id="eb-report-delivery-title" className="mt-1 text-xl font-semibold text-gray-950">
-              Fastställ och leverera
+              Klarmarkera och leverera
             </h2>
             <p className="mt-1 text-sm leading-6 text-gray-600">
               Fastställ en fryst version, välj mottagare och skicka samma version digitalt.
@@ -510,7 +510,7 @@ export default function EbReportDeliveryDialog({
                 {locked ? '✓' : '1'}
               </span>
               <div>
-                <p className="text-sm font-semibold text-gray-950">Fastställ utlåtandet</p>
+                <p className="text-sm font-semibold text-gray-950">Klarmarkera och lås utlåtandet</p>
                 <p className="mt-1 text-xs leading-5 text-gray-600">
                   {locked
                     ? `Fastställt ${formatDateTime(meta?.reportLockedAt)}.`
@@ -548,7 +548,7 @@ export default function EbReportDeliveryDialog({
 
           {!loading && !locked ? (
             <section className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
-              <h3 className="text-sm font-semibold text-gray-950">Steg 1 · Fastställ versionen</h3>
+              <h3 className="text-sm font-semibold text-gray-950">Steg 1 · Klarmarkera och lås</h3>
               <p className="mt-1 text-sm leading-6 text-gray-600">
                 När utlåtandet fastställs låses redigeringen och den version som ska levereras sparas.
               </p>
@@ -563,7 +563,7 @@ export default function EbReportDeliveryDialog({
                 ) : (
                   <LockKeyhole size={16} aria-hidden="true" />
                 )}
-                {busyAction === 'lock_only' ? 'Fastställer utlåtandet...' : 'Fastställ utlåtandet'}
+                {busyAction === 'lock_only' ? 'Klarmarkerar och låser...' : 'Klarmarkera och lås utlåtandet'}
               </button>
             </section>
           ) : null}

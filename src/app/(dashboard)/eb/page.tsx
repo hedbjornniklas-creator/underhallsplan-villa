@@ -17,7 +17,7 @@ export default async function EntreprenadbesiktningPage() {
     if (message === 'UNAUTHORIZED') {
       redirect('/login')
     }
-    initialError = 'Kunde inte hämta EB-projekt. Kontrollera att EB-migrationen är körd.'
+    initialError = 'Besiktningarna kunde inte hämtas. Försök uppdatera listan.'
   }
 
   return <EbDashboardClient initialProjects={projects} initialError={initialError} />

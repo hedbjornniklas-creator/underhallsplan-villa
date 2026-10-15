@@ -7,8 +7,18 @@ import type { DashboardConfirmationBookingSource } from '../src/lib/dashboard/mo
 import type { ObOverviewItem } from '../src/lib/ob/overview'
 import type { EbProjectListItem } from '../src/lib/eb/server'
 import type { EbAssignmentConfirmationSummary } from '../src/lib/eb/assignmentConfirmationTypes'
+import type { DashboardActionCaseSource } from '../src/lib/dashboard/actionCases'
 // @ts-expect-error Node strip-types requires explicit TypeScript extension.
 import * as model from '../src/lib/dashboard/model.ts'
+
+const caseModule = { exports: {} }
+new Function('require', 'module', 'exports', ts.transpileModule(
+  readFileSync(new URL('../src/lib/dashboard/actionCases.ts', import.meta.url), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText)((name: string) => {
+  if (name !== './model') throw new Error(`Unexpected case dependency ${name}`)
+  return model
+}, caseModule, caseModule.exports)
 
 const orgId = '11111111-1111-4111-8111-111111111111', otherOrgId = '22222222-2222-4222-8222-222222222222'
 const context = { orgId, userId: 'me', role: 'admin', orgName: 'Test' }
@@ -16,7 +26,8 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
   accessOrgId = orgId, orgError = null as Error | null, failed = '', overviewItems = [] as ObOverviewItem[],
   assignmentRows = [] as Array<DashboardConfirmationBookingSource & { id: string; org_id: string }>,
   inspectionRows = [] as Array<{ id: string; date: string | null; inspection_time: string | null }>,
-  ebProjects = [] as EbProjectListItem[], ebConfirmations = [] as EbAssignmentConfirmationSummary[] } = {}) {
+  ebProjects = [] as EbProjectListItem[], ebConfirmations = [] as EbAssignmentConfirmationSummary[],
+  actionCaseRows = [] as DashboardActionCaseSource[] } = {}) {
   const checks: Array<Record<string, unknown>> = [], reads: Array<{ module: string; orgId: string }> = [], selections: unknown[] = []
   const bookingReads: Array<{ table: string; columns: string; orgId: unknown; ids: string[] }> = []
   const read = (module: string, selected: string, result: unknown) => {
@@ -25,7 +36,7 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
     return result
   }
   const deps: Record<string, unknown> = {
-    'server-only': {}, './model': model,
+    'server-only': {}, './model': model, './actionCases': caseModule.exports,
     '@/lib/access/server': { hasCurrentUserAccess: async (check: Record<string, unknown>) => {
       checks.push(check)
       return check.scopeType === 'organization' && check.scopeId === accessOrgId && (!check.moduleKey || allowed.includes(String(check.moduleKey)))
@@ -36,11 +47,19 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
       return { ...context, orgId: selected || orgId }
     } },
     '@/lib/supabase/server': { createSupabaseServerClient: () => ({ from: (table: string) => {
-      assert.ok(['assignments', 'inspections'].includes(table), `Unexpected table ${table}`)
+      assert.ok(['assignments', 'inspections', 'action_cases'].includes(table), `Unexpected table ${table}`)
       let columns = '', selectedOrg: unknown
       const query = {
         select: (selected: string) => { columns = selected; return query },
         eq: (column: string, value: unknown) => { assert.equal(column, 'org_id'); selectedOrg = value; return query },
+        order: (column: string, options: { ascending: boolean }) => {
+          assert.equal(column, 'id'); assert.equal(options.ascending, true); return query
+        },
+        range: async (from: number, to: number) => {
+          assert.equal(table, 'action_cases')
+          bookingReads.push({ table, columns, orgId: selectedOrg, ids: [] })
+          return { data: actionCaseRows.filter(row => row.org_id === selectedOrg).slice(from, to + 1), error: null }
+        },
         in: async (column: string, ids: string[]) => {
           assert.equal(column, 'id')
           bookingReads.push({ table, columns, orgId: selectedOrg, ids })
@@ -190,4 +209,50 @@ test('EB supplemental schedule reads use only current confirmation IDs and remai
   assert.equal(hiddenResult.issues?.length, 0)
   assert.equal(hiddenResult.bookings[0].status, 'tentative', 'current sent evidence must not be upgraded to confirmed when supplementary metadata is hidden')
   assert.equal(hiddenResult.bookings[0].startsAt, '2026-10-12', 'never borrow an old actual time for an unreadable proposal')
+})
+
+test('Uppdrag reads scheduled site visits through the signed-in org scope and includes them as tentative', async () => {
+  const planned: DashboardActionCaseSource = { id: 'case', org_id: orgId, title: 'Planerat platsbesök', status: 'preparing',
+    site_visit_at: '2026-10-15T11:30:00Z', property_address: 'Testgatan 4, Stockholm' }
+  const h = harness({ allowed: ['tasks'], actionCaseRows: [planned, { ...planned, id: 'foreign', org_id: otherOrgId },
+    { ...planned, id: 'cancelled', status: 'cancelled' }] })
+  const result = await h.server.getDashboardData(orgId)
+  assert.equal(result.issues?.length, 0)
+  assert.equal(result.modules.find(module => module.id === 'tasks')?.activeCount, 1)
+  assert.deepEqual(result.bookings.map(booking => ({ id: booking.id, startsAt: booking.startsAt, status: booking.status, href: booking.href })), [
+    { id: 'tasks:case:case', startsAt: planned.site_visit_at, status: 'tentative', href: '/uppdrag/case' },
+  ])
+  assert.deepEqual(h.bookingReads, [{ table: 'action_cases', columns: 'id,org_id,title,status,site_visit_at,property_address', orgId, ids: [] }])
+  const denied = harness({ allowed: [], actionCaseRows: [planned] })
+  assert.equal((await denied.server.getDashboardData(orgId)).bookings.length, 0)
+  assert.equal(denied.bookingReads.length, 0, 'denied modules must never read case visits')
+})
+
+test('Uppdrag site visits are not truncated by the database default row limit', async () => {
+  const rows = Array.from({ length: 1001 }, (_, index): DashboardActionCaseSource => ({ id: `case-${index}`, org_id: orgId,
+    title: `Platsbesök ${index}`, status: 'preparing', site_visit_at: '2026-10-15T11:30:00Z', property_address: null }))
+  const h = harness({ allowed: ['tasks'], actionCaseRows: rows })
+  const result = await h.server.getDashboardData(orgId)
+  assert.equal(result.bookings.length, 1001)
+  assert.equal(h.bookingReads.filter(read => read.table === 'action_cases').length, 3)
+})
+
+test('OB and EB draft metadata reach tentative calendar bookings without reading superseded confirmations', async () => {
+  const obRow: ObOverviewItem = { id: 'assignment:ob-draft', date: '2026-10-15', createdAt: '2026-10-01', address: 'Testgatan 1', city: 'Stockholm',
+    customer: 'Kund', assignmentNumber: '', confirmation: 'Utkast', inspection: 'Ej startad', confirmationHref: '/ob/assignments/ob-draft',
+    inspectionHref: null, confirmationAction: 'Öppna bekräftelse', attention: [], closed: false, archived: false, marker: 'active' }
+  const ebProject = { id: 'p', orgId, title: 'Takrenovering', status: 'active', address: 'Takvägen 2',
+    inspections: [{ inspectionId: 'i', status: 'draft', reportLockedAt: null, date: '2026-10-15', inspectionTime: '09:00', variantLabel: 'Slutbesiktning' }] } as EbProjectListItem
+  const summary = { assignmentId: 'eb-draft', inspectionId: 'i', versionNo: 1, status: 'draft', acceptedAt: null, lastSentAt: null } as EbAssignmentConfirmationSummary
+  const h = harness({ allowed: ['inspections', 'construction_inspections'], overviewItems: [obRow], ebProjects: [ebProject], ebConfirmations: [summary],
+    assignmentRows: [scheduledConfirmation('ob-draft', { status: 'draft', preferred_date: '2026-10-15', preferred_time: '12:30', last_sent_at: null }),
+      scheduledConfirmation('eb-draft', { status: 'draft', preferred_date: '2026-10-15', preferred_time: '13:30', last_sent_at: null }),
+      scheduledConfirmation('superseded', { status: 'draft' })] })
+  const result = await h.server.getDashboardData(orgId)
+  assert.equal(result.issues?.length, 0)
+  assert.deepEqual(result.bookings.map(booking => [booking.moduleId, booking.startsAt, booking.status, booking.confirmationStatus]), [
+    ['ob', '2026-10-15T12:30:00+02:00', 'tentative', 'Bekräftelse ej skickad'],
+    ['eb', '2026-10-15T13:30:00+02:00', 'tentative', 'Bekräftelse ej skickad'],
+  ])
+  assert.deepEqual(h.bookingReads.flatMap(read => read.ids).sort(), ['eb-draft', 'ob-draft'])
 })

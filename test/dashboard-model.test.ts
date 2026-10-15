@@ -40,7 +40,7 @@ function ob(overrides: Partial<ObOverviewItem> = {}): ObOverviewItem {
     assignmentNumber: '', confirmation: 'Utkast', inspection: 'Ej startad', confirmationHref: '/ob/assignments/a', inspectionHref: null,
     confirmationAction: 'Öppna bekräftelse', attention: ['Färdigställ uppdragsbekräftelsen'], closed: false, archived: false, marker: 'attention', ...overrides }
 }
-test('OB excludes cancelled/completed rows and unsent requested dates while marking sent visits tentative', () => {
+test('OB excludes cancelled/completed rows while keeping dated drafts and sent visits tentative', () => {
   const result = buildObDashboard([ob(), ob({ id: 'b', closed: true }), ob({ id: 'c', confirmation: 'Avbokad' }),
     ob({ id: 'inspection:d', inspection: 'Pågår', inspectionHref: '/properties/p/ob/d', confirmation: 'Inväntar kund', attention: [] })],
   new Map([['inspection:d', '13:15']]), today, undefined,
@@ -48,10 +48,11 @@ test('OB excludes cancelled/completed rows and unsent requested dates while mark
   assert.equal(result.activeCount, 2)
   assert.equal(result.actions.filter(item => item.category === 'confirmation').length, 2)
   assert.equal(result.actions.filter(item => item.category === 'inspection').length, 1)
-  assert.equal(result.bookings.length, 1)
-  assert.equal(result.bookings[0].startsAt, '2026-10-12T13:15:00+02:00')
-  assert.equal(result.bookings[0].address, 'Testgatan 1, Stockholm')
-  assert.equal(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings.length, 2)
+  assert.ok(result.bookings.every(item => item.status === 'tentative'))
+  assert.equal(result.bookings[0].confirmationStatus, 'Bekräftelse ej skickad')
+  assert.equal(result.bookings[1].startsAt, '2026-10-12T13:15:00+02:00')
+  assert.equal(result.bookings[1].address, 'Testgatan 1, Stockholm')
 })
 
 function confirmation(overrides: Partial<DashboardConfirmationBookingSource> = {}): DashboardConfirmationBookingSource {
@@ -85,13 +86,13 @@ test('OB sent confirmations reserve the proposed date and remain one booking on 
   assert.notEqual(accepted.bookings[0].status, 'tentative')
 })
 
-test('OB tentative confirmations never invent dates or visit times and exclude draft/cancelled/archive', () => {
+test('OB tentative confirmations never invent dates or visit times and exclude cancelled/archive', () => {
   const row = ob({ confirmation: 'Inväntar kund', attention: [] })
   const run = (source: DashboardConfirmationBookingSource) => buildObDashboard([row], new Map(), today, undefined, new Map([[row.id, source]]))
   assert.equal(run(confirmation({ preferred_date: null })).bookings.length, 0)
   assert.equal(run(confirmation({ preferred_date: '2026-02-30' })).bookings.length, 0)
   assert.equal(run(confirmation({ preferred_time: null })).bookings[0].startsAt, today)
-  for (const source of [confirmation({ status: 'draft' }), confirmation({ status: 'cancelled' }), confirmation({ archived_at: today }),
+  for (const source of [confirmation({ status: 'cancelled' }), confirmation({ archived_at: today }),
     confirmation({ status: 'expired', last_sent_at: null })]) assert.equal(run(source).bookings.length, 0)
   const expired = run(confirmation({ status: 'expired' })).bookings[0]
   assert.equal(expired.status, 'tentative')
@@ -99,6 +100,52 @@ test('OB tentative confirmations never invent dates or visit times and exclude d
   const accepted = run(confirmation({ status: 'ordered', accepted_at: today })).bookings[0]
   assert.equal(accepted.status, 'tentative')
   assert.equal(accepted.confirmationStatus, 'Inväntar bokning')
+})
+
+test('OB current dated drafts use canonical time and remain one visit through sending and booking', () => {
+  const row = ob()
+  const source = confirmation({ status: 'draft', preferred_time: '12:30:00', last_sent_at: null })
+  const run = (current: DashboardConfirmationBookingSource, label = 'Utkast') => buildObDashboard([{ ...row, confirmation: label }],
+    new Map([[row.id, '08:00']]), today, undefined, new Map([[row.id, current]])).bookings
+  const drafts = run(source)
+  assert.equal(drafts.length, 1)
+  assert.equal(drafts[0].startsAt, '2026-10-12T12:30:00+02:00')
+  assert.equal(drafts[0].status, 'tentative')
+  assert.equal(drafts[0].confirmationStatus, 'Bekräftelse ej skickad')
+  assert.equal(drafts[0].href, row.confirmationHref)
+  const sent = run({ ...source, status: 'sent', last_sent_at: today }, 'Inväntar kund')
+  const booked = run({ ...source, status: 'booked', accepted_at: today, booked_at: today }, 'Godkänd och accepterad')
+  assert.equal(sent.length, 1)
+  assert.equal(booked.length, 1)
+  assert.equal(sent[0].id, drafts[0].id)
+  assert.equal(booked[0].id, drafts[0].id)
+  assert.equal(sent[0].confirmationStatus, 'Inväntar kund')
+  assert.notEqual(booked[0].status, 'tentative')
+  assert.equal(run({ ...source, preferred_time: null })[0].startsAt, today)
+  for (const current of [{ ...source, preferred_date: null }, { ...source, preferred_date: '2026-02-30' },
+    { ...source, archived_at: today }, { ...source, status: 'cancelled' }]) assert.equal(run(current).length, 0)
+  assert.equal(buildObDashboard([ob({ date: null })], new Map(), today).bookings.length, 0)
+  assert.equal(buildObDashboard([ob({ date: '2026-02-30' })], new Map(), today).bookings.length, 0)
+})
+
+test('OB unsent linked reissue cannot move or downgrade an existing visit, but can schedule an undated one tentatively', () => {
+  const row = ob({ id: 'inspection:i', inspectionHref: '/properties/p/ob/i', inspection: 'Utkast', confirmationHref: '/ob/assignments/current' })
+  const source = confirmation({ status: 'draft', preferred_date: '2026-10-15', preferred_time: '13:30', last_sent_at: null })
+  const result = buildObDashboard([row], new Map([[row.id, '12:30']]), today,
+    new Map([[row.id, today]]), new Map([[row.id, source]]))
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].id, 'ob:inspection:i')
+  assert.equal(result.bookings[0].startsAt, '2026-10-12T12:30:00+02:00')
+  assert.notEqual(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].href, row.inspectionHref)
+  const unscheduled = buildObDashboard([row], new Map(), today,
+    new Map([[row.id, null]]), new Map([[row.id, source]]))
+  assert.equal(unscheduled.bookings.length, 1)
+  assert.equal(unscheduled.bookings[0].startsAt, '2026-10-15T13:30:00+02:00')
+  assert.equal(unscheduled.bookings[0].status, 'tentative')
+  assert.equal(unscheduled.bookings[0].href, '/ob/assignments/current')
+  const unavailable = buildObDashboard([ob({ inspection: 'Ej tillgänglig' })], new Map(), today)
+  assert.equal(unavailable.bookings.length, 0, 'a missing linked inspection cannot become a standalone draft from its label')
 })
 
 test('OB current reissue supplies one tentative event at its proposal instead of a superseded inspection slot', () => {
@@ -181,13 +228,41 @@ test('TU deduplicates linked work, renews expired confirmations and preserves an
   assert.equal(buildTuDashboard(tuPreviewOrg, [], [tuInvestigation({ status: 'completed' })], today).activeCount, 0)
 })
 
-test('TU includes unbooked unfinished work while excluding preferred dates from calendar', () => {
-  const result = buildTuDashboard(tuPreviewOrg, [tuAssignment({ status: 'draft', preferred_date: today })],
+test('TU includes unscheduled unfinished work without inventing calendar visits', () => {
+  const result = buildTuDashboard(tuPreviewOrg, [tuAssignment({ status: 'draft', preferred_date: null })],
     [tuInvestigation({ inspectionId: 'unlinked', assignmentId: null, date: null })], today)
   assert.equal(result.activeCount, 2)
   assert.equal(result.bookings.length, 0)
   assert.equal(result.actions.find(item => item.category === 'inspection')?.dueDate, undefined)
   assert.equal(result.actions.find(item => item.category === 'inspection')?.priority, 'normal')
+})
+
+test('TU dated drafts appear as unsent tentative visits, including the planned 13:30 visit', () => {
+  const date = '2026-10-15'
+  const assignment = tuAssignment({ status: 'draft', preferred_date: date, preferred_time: '13:30:00',
+    accepted_at: null, booked_at: null, last_sent_at: null, inspection_id: null })
+  const result = buildTuDashboard(tuPreviewOrg, [assignment], [], date)
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].startsAt, '2026-10-15T13:30:00+02:00')
+  assert.equal(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].confirmationStatus, 'Bekräftelse ej skickad')
+  assert.equal(result.bookings[0].href, `/tu/assignments/${assignment.id}?orgId=${tuPreviewOrg}`)
+  const dateOnly = buildTuDashboard(tuPreviewOrg, [{ ...assignment, preferred_time: null }], [], date)
+  assert.equal(dateOnly.bookings[0].startsAt, date)
+  for (const source of [{ ...assignment, preferred_date: null }, { ...assignment, preferred_date: '2026-02-30' },
+    { ...assignment, archived_at: date }, { ...assignment, status: 'cancelled' as const }]) {
+    assert.equal(buildTuDashboard(tuPreviewOrg, [source], [], date).bookings.length, 0)
+  }
+})
+
+test('TU linked investigation retains its confirmed visit when its attached confirmation is a draft', () => {
+  const assignment = tuAssignment({ status: 'draft', inspection_id: 'inspection-1', preferred_date: '2026-10-15', preferred_time: '13:30' })
+  const investigation = tuInvestigation({ assignmentId: assignment.id, date: today, inspectionTime: '11:00' })
+  const result = buildTuDashboard(tuPreviewOrg, [assignment], [investigation], today)
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].startsAt, '2026-10-12T11:00:00+02:00')
+  assert.notEqual(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].href, `/tu/investigations/${investigation.inspectionId}?orgId=${tuPreviewOrg}`)
 })
 
 test('TU sent and accepted proposals appear tentatively, deduplicate linked visits, and confirm through booking', () => {
@@ -210,7 +285,7 @@ test('TU sent and accepted proposals appear tentatively, deduplicate linked visi
   const noTime = buildTuDashboard(tuPreviewOrg, [{ ...assignment, preferred_time: null }], [], today)
   assert.equal(noTime.bookings[0].startsAt, today)
   assert.equal(buildTuDashboard(tuPreviewOrg, [{ ...assignment, preferred_date: null }], [], today).bookings.length, 0)
-  for (const source of [{ ...assignment, archived_at: today }, { ...assignment, status: 'cancelled' as const }, { ...assignment, status: 'draft' as const },
+  for (const source of [{ ...assignment, archived_at: today }, { ...assignment, status: 'cancelled' as const },
     { ...assignment, status: 'expired' as const, last_sent_at: null }]) assert.equal(buildTuDashboard(tuPreviewOrg, [source], [], today).bookings.length, 0)
 })
 
@@ -226,11 +301,13 @@ function eb(overrides: Partial<EbProjectListItem> = {}): EbProjectListItem {
     ...overrides } as EbProjectListItem
 }
 test('EB distinguishes current confirmation states and excludes closed/foreign work', () => {
-  const projects = [eb(), eb({ id: 'closed', status: 'Klar' }), eb({ id: 'foreign', orgId: 'other' })]
+  const projects = [eb(), eb({ id: 'closed', status: 'archived' }), eb({ id: 'foreign', orgId: 'other' })]
   const missing = buildEbDashboard(tuPreviewOrg, projects, [], today)
   assert.equal(missing.activeCount, 1)
   assert.equal(missing.actions[0].nextStep, 'Skapa uppdragsbekräftelsen')
   assert.equal(missing.bookings.length, 1)
+  assert.equal(missing.bookings[0].status, 'tentative')
+  assert.equal(missing.bookings[0].confirmationStatus, 'Bekräftelse ej skickad')
   const approved = buildEbDashboard(tuPreviewOrg, projects, [{ inspectionId: 'i', status: 'ordered', acceptedAt: today } as EbAssignmentConfirmationSummary], today)
   assert.equal(approved.actions.filter(item => item.category === 'confirmation').length, 0)
   const cancelled = buildEbDashboard(tuPreviewOrg, projects, [{ inspectionId: 'i', status: 'cancelled', acceptedAt: null } as EbAssignmentConfirmationSummary], today)
@@ -238,6 +315,71 @@ test('EB distinguishes current confirmation states and excludes closed/foreign w
   assert.equal(cancelled.actions.length, 1)
   assert.equal(cancelled.actions[0].nextStep, 'Kontrollera besiktningen efter avbokningen')
   assert.equal(cancelled.bookings.length, 0)
+})
+
+test('EB initial dated drafts use the current proposal and become confirmed without duplicating the visit', () => {
+  const summary = { assignmentId: 'current', inspectionId: 'i', versionNo: 1, status: 'draft', acceptedAt: null, lastSentAt: null } as EbAssignmentConfirmationSummary
+  const source = confirmation({ status: 'draft', preferred_date: '2026-10-15', preferred_time: '12:30', last_sent_at: null })
+  const result = buildEbDashboard(tuPreviewOrg, [eb()], [summary], today, new Map([['current', source]]))
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].startsAt, '2026-10-15T12:30:00+02:00')
+  assert.equal(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].confirmationStatus, 'Bekräftelse ej skickad')
+  assert.equal(result.bookings[0].href, '/eb/projects/p')
+  const sent = buildEbDashboard(tuPreviewOrg, [eb()], [{ ...summary, status: 'sent', lastSentAt: today }], today,
+    new Map([['current', { ...source, status: 'sent', last_sent_at: today }]]))
+  const accepted = buildEbDashboard(tuPreviewOrg, [eb()], [{ ...summary, status: 'ordered', acceptedAt: today }], today,
+    new Map([['current', { ...source, status: 'ordered', accepted_at: today }]]))
+  assert.equal(sent.bookings.length, 1)
+  assert.equal(accepted.bookings.length, 1)
+  assert.equal(sent.bookings[0].id, result.bookings[0].id)
+  assert.equal(accepted.bookings[0].id, result.bookings[0].id)
+  assert.equal(sent.bookings[0].confirmationStatus, 'Inväntar kund')
+  assert.notEqual(accepted.bookings[0].status, 'tentative', 'a report can remain a draft after the customer has accepted its visit')
+  assert.equal(accepted.bookings[0].startsAt, '2026-10-12T08:00:00+02:00')
+})
+
+test('EB unsent proposals preserve date-only visits and never invent dates from invalid or archived drafts', () => {
+  const summary = { assignmentId: 'current', inspectionId: 'i', versionNo: 1, status: 'draft', acceptedAt: null, lastSentAt: null } as EbAssignmentConfirmationSummary
+  const source = confirmation({ status: 'draft', preferred_date: '2026-10-15', preferred_time: null, last_sent_at: null })
+  const run = (current: DashboardConfirmationBookingSource, project = eb()) => buildEbDashboard(tuPreviewOrg, [project], [summary], today,
+    new Map([['current', current]])).bookings
+  assert.equal(run(source)[0].startsAt, '2026-10-15', 'an unknown proposed time must not reuse the actual inspection time')
+  assert.equal(run({ ...source, preferred_date: null })[0].startsAt, '2026-10-12T08:00:00+02:00', 'an initial unsent confirmation may use the inspection planned slot')
+  for (const current of [{ ...source, preferred_date: '2026-02-30' }, { ...source, archived_at: today }, { ...source, status: 'cancelled' }]) {
+    assert.equal(run(current).length, 0)
+  }
+  const withoutDate = eb({ inspections: [{ ...eb().inspections[0], date: null, inspectionTime: '13:30' }] })
+  assert.equal(run({ ...source, preferred_date: null }, withoutDate).length, 0)
+  assert.equal(buildEbDashboard(tuPreviewOrg, [withoutDate], [], today).bookings.length, 0)
+  const dateOnly = eb({ inspections: [{ ...eb().inspections[0], inspectionTime: null, startMeetingTime: null }] })
+  assert.equal(buildEbDashboard(tuPreviewOrg, [dateOnly], [], today).bookings[0].startsAt, today)
+  const invalid = eb({ inspections: [{ ...eb().inspections[0], date: '2026-02-30' }] })
+  assert.equal(buildEbDashboard(tuPreviewOrg, [invalid], [], today).bookings.length, 0)
+  const fallbackTime = eb({ inspections: [{ ...eb().inspections[0], inspectionTime: null, startMeetingTime: '13:30' }] })
+  assert.equal(buildEbDashboard(tuPreviewOrg, [fallbackTime], [], today).bookings[0].startsAt, '2026-10-12T13:30:00+02:00')
+})
+
+test('EB current unsent reissues, sent invitations and started inspections keep the existing actual visit', () => {
+  const summary = { assignmentId: 'current', inspectionId: 'i', versionNo: 2, status: 'draft', acceptedAt: null, lastSentAt: null } as EbAssignmentConfirmationSummary
+  const source = confirmation({ status: 'draft', preferred_date: '2026-10-15', preferred_time: '13:30', last_sent_at: null })
+  const sources = new Map([['old', confirmation({ preferred_date: '2026-10-14', preferred_time: '10:00' })], ['current', source]])
+  const reissue = buildEbDashboard(tuPreviewOrg, [eb()], [summary], today, sources)
+  assert.equal(reissue.bookings.length, 1)
+  assert.equal(reissue.bookings[0].startsAt, '2026-10-12T08:00:00+02:00')
+  assert.notEqual(reissue.bookings[0].status, 'tentative')
+  assert.equal(reissue.bookings[0].href, '/eb/projects/p/inspections/i/perform')
+  const unscheduled = buildEbDashboard(tuPreviewOrg, [eb({ inspections: [{ ...eb().inspections[0], date: null }] })], [summary], today, sources)
+  assert.equal(unscheduled.bookings.length, 1)
+  assert.equal(unscheduled.bookings[0].startsAt, '2026-10-15T13:30:00+02:00')
+  assert.equal(unscheduled.bookings[0].confirmationStatus, 'Bekräftelse ej skickad')
+  for (const inspection of [{ ...eb().inspections[0], status: 'ongoing' }, { ...eb().inspections[0], invitationSentAt: today },
+    { ...eb().inspections[0], invitationDate: today }]) {
+    const result = buildEbDashboard(tuPreviewOrg, [eb({ inspections: [inspection] })], [{ ...summary, versionNo: 1 }], today, sources)
+    assert.equal(result.bookings.length, 1)
+    assert.equal(result.bookings[0].startsAt, '2026-10-12T08:00:00+02:00')
+    assert.notEqual(result.bookings[0].status, 'tentative')
+  }
 })
 
 test('EB sent confirmation uses its current proposed slot and confirms the same inspection after customer acceptance', () => {

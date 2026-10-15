@@ -2588,7 +2588,7 @@ export default function EbInspectionReportView({
                   <Send size={17} aria-hidden="true" />
                   {report.inspection.reportLockedAt
                     ? 'Leverera och visa status'
-                    : 'Fastställ och leverera'}
+                    : 'Klarmarkera och leverera'}
                 </button>
               </div>
             ) : publicActions}

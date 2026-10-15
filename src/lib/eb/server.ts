@@ -121,11 +121,12 @@ export type EbInspectionSummary = {
   invoiceCity: string | null
   reportLockedAt: string | null
   reportLockedBy: string | null
+  reportReopenedAt?: string | null
   reportPdfStatus: EbReportPdfStatus | null
   reportPdfError: string | null
   reportPdfDownloadUrl: string | null
   reportPdfCreatedAt: string | null
-  reportDeliveryStatus: 'not_sent' | 'sent' | 'failed'
+  reportDeliveryStatus: 'not_sent' | 'sending' | 'sent' | 'failed'
   reportLastSentAt: string | null
   createdAt: string | null
 }
@@ -803,6 +804,7 @@ type InspectionRow = {
   id: string
   property_id: string
   status: string | null
+  locked_at?: string | null
   date: string | null
   inspection_time: string | null
   client_name: string | null
@@ -819,13 +821,14 @@ type EbReportLinkRow = {
 
 type EbReportDeliveryRow = {
   inspection_id: string
+  recipient_email?: string | null
   status: string | null
   sent_at: string | null
   created_at: string | null
 }
 
 type EbReportDeliverySummary = {
-  status: 'not_sent' | 'sent' | 'failed'
+  status: 'not_sent' | 'sending' | 'sent' | 'failed'
   lastSentAt: string | null
 }
 
@@ -1720,7 +1723,8 @@ function mapInspectionSummary(
   inspection: InspectionRow | undefined,
   project: EbProjectRow,
   reportLink?: EbReportLinkRow,
-  reportDelivery?: EbReportDeliverySummary
+  reportDelivery?: EbReportDeliverySummary,
+  reportReopenedAt?: string | null
 ): EbInspectionSummary {
   const variant = toVariant(detail.inspection_variant)
   const reportPdfStatus = reportLink ? normalizeEbReportPdfStatus(reportLink.pdf_status) : null
@@ -1778,6 +1782,7 @@ function mapInspectionSummary(
     invoiceCity: detail.invoice_city ?? project.invoice_city ?? project.client_city ?? null,
     reportLockedAt: detail.report_locked_at ?? null,
     reportLockedBy: detail.report_locked_by ?? null,
+    reportReopenedAt: detail.report_locked_at || inspection?.locked_at ? null : reportReopenedAt ?? null,
     reportPdfStatus,
     reportPdfError: reportLink?.pdf_error ?? null,
     reportPdfDownloadUrl: getEbReportPdfDownloadUrl(detail.inspection_id, reportLink),
@@ -1793,7 +1798,8 @@ function mapProject(
   detailsByProjectId: Map<string, EbInspectionDetailRow[]>,
   inspectionsById: Map<string, InspectionRow>,
   reportLinksByInspectionId: Map<string, EbReportLinkRow>,
-  reportDeliveriesByInspectionId: Map<string, EbReportDeliverySummary>
+  reportDeliveriesByInspectionId: Map<string, EbReportDeliverySummary>,
+  reopenedAtByInspectionId: Map<string, string>
 ): EbProjectListItem {
   const inspections = (detailsByProjectId.get(project.id) ?? [])
     .map((detail) =>
@@ -1802,7 +1808,8 @@ function mapProject(
         inspectionsById.get(detail.inspection_id),
         project,
         reportLinksByInspectionId.get(detail.inspection_id),
-        reportDeliveriesByInspectionId.get(detail.inspection_id)
+        reportDeliveriesByInspectionId.get(detail.inspection_id),
+        reopenedAtByInspectionId.get(detail.inspection_id)
       )
     )
     .sort((left, right) => {
@@ -2014,7 +2021,7 @@ async function fetchInspectionsByIds(inspectionIds: string[]) {
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('inspections')
-    .select('id,property_id,status,date,inspection_time,client_name,assignment_number,created_at')
+    .select('id,property_id,status,locked_at,date,inspection_time,client_name,assignment_number,created_at')
     .in('id', inspectionIds)
 
   if (error) {
@@ -2057,7 +2064,7 @@ async function fetchReportDeliveriesByInspectionIds(
   const admin = createSupabaseAdminClient()
   const { data, error } = await admin
     .from('outbound_messages')
-    .select('inspection_id,status,sent_at,created_at')
+    .select('inspection_id,recipient_email,status,sent_at,created_at')
     .in('inspection_id', inspectionIds)
     .eq('template_key', 'eb_report_delivery')
     .order('created_at', { ascending: false })
@@ -2082,9 +2089,19 @@ async function fetchReportDeliveriesByInspectionIds(
       const rowTimestamp = row.created_at ? Date.parse(row.created_at) : Number.NaN
       return Number.isFinite(rowTimestamp) && rowTimestamp >= activeLinkTimestamp
     })
-    const sentRow = currentRows.find((row) => row.status === 'sent')
+    // A later resend replaces the recipient's earlier attempt, but one
+    // successful recipient must not hide another recipient's failed delivery.
+    const latestByRecipient = new Map<string, EbReportDeliveryRow>()
+    for (const row of currentRows) {
+      const recipient = row.recipient_email?.trim().toLowerCase() || ''
+      if (!latestByRecipient.has(recipient)) latestByRecipient.set(recipient, row)
+    }
+    const latestRows = [...latestByRecipient.values()]
+    const sentRow = latestRows.find((row) => row.status === 'sent')
     deliveries.set(inspectionId, {
-      status: sentRow ? 'sent' : currentRows.some((row) => row.status === 'failed') ? 'failed' : 'not_sent',
+      status: latestRows.some((row) => row.status === 'failed') ? 'failed'
+        : latestRows.some((row) => row.status === 'pending') ? 'sending'
+        : latestRows.length > 0 && latestRows.every((row) => row.status === 'sent') ? 'sent' : 'not_sent',
       lastSentAt: sentRow?.sent_at ?? null,
     })
   }
@@ -2092,14 +2109,45 @@ async function fetchReportDeliveriesByInspectionIds(
   return deliveries
 }
 
+async function fetchLatestEbUnlocks(orgId: string, inspectionIds: string[]) {
+  const unlocks = new Map<string, string>()
+  if (!inspectionIds.length) return unlocks
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.from('inspection_lock_events')
+    .select('inspection_id,performed_at')
+    .eq('org_id', orgId)
+    .in('inspection_id', inspectionIds)
+    .eq('action', 'unlock')
+    .order('performed_at', { ascending: false })
+  if (error) {
+    if (isMissingRelationError(error)) return unlocks
+    throw new Error(error.message ?? 'Kunde inte hämta besiktningarnas upplåsningsstatus.')
+  }
+  for (const row of (data ?? []) as Array<{ inspection_id: string; performed_at: string | null }>) {
+    if (row.performed_at && !unlocks.has(row.inspection_id)) unlocks.set(row.inspection_id, row.performed_at)
+  }
+  return unlocks
+}
+
 async function buildProjectItems(projectRows: EbProjectRow[]) {
   const projectIds = projectRows.map((project) => project.id)
   const details = await fetchDetailsForProjects(projectRows[0]?.org_id ?? '', projectIds)
   const inspectionIds = details.map((detail) => detail.inspection_id)
-  const [inspectionsById, reportLinksByInspectionId] = await Promise.all([
+  const [inspectionsById, reportLinksByInspectionId, reopenedAtByInspectionId] = await Promise.all([
     fetchInspectionsByIds(inspectionIds),
     fetchLatestReportLinksByInspectionIds(inspectionIds),
+    fetchLatestEbUnlocks(projectRows[0]?.org_id ?? '', inspectionIds),
   ])
+  // Published links survive unlock. Once a new lock is made, the old cycle's
+  // PDF/mail must not make the new version appear already delivered.
+  for (const detail of details) {
+    const link = reportLinksByInspectionId.get(detail.inspection_id)
+    const unlockedAt = reopenedAtByInspectionId.get(detail.inspection_id)
+    if (detail.report_locked_at && unlockedAt && link?.created_at
+      && Date.parse(link.created_at) <= Date.parse(unlockedAt)) {
+      reportLinksByInspectionId.delete(detail.inspection_id)
+    }
+  }
   const reportDeliveriesByInspectionId = await fetchReportDeliveriesByInspectionIds(
     inspectionIds,
     reportLinksByInspectionId
@@ -2118,7 +2166,8 @@ async function buildProjectItems(projectRows: EbProjectRow[]) {
       detailsByProjectId,
       inspectionsById,
       reportLinksByInspectionId,
-      reportDeliveriesByInspectionId
+      reportDeliveriesByInspectionId,
+      reopenedAtByInspectionId
     )
   )
 }
@@ -4664,6 +4713,9 @@ export async function createEbInspectionForProject(
   }
 
   const propertyId = await resolveProjectPropertyId(project)
+  if (['archived', 'arkiverad', 'cancelled', 'canceled', 'avbokad', 'avbruten'].includes(project.status?.trim().toLowerCase() || '')) {
+    throw new Error('EB_PROJECT_CLOSED')
+  }
   if (!propertyId) {
     throw new Error('EB_PROJECT_PROPERTY_MISSING')
   }
