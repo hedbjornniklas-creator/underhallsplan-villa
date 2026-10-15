@@ -1,6 +1,6 @@
 import type { TuAssignmentListItem, TuInspectionSummary } from './server'
 // @ts-expect-error Node strip-types tests require the explicit TypeScript extension.
-import { tuAssignmentState, type TuProgressAssignment } from './assignmentProgress.ts'
+import { canStartTuBeforeApproval, tuAssignmentState, type TuProgressAssignment } from './assignmentProgress.ts'
 
 export type TuOverviewInvestigation = TuInspectionSummary & { hasReadyPdf?: boolean }
 export type TuOverviewFilter = 'all' | 'active' | 'closed'
@@ -32,8 +32,8 @@ const text = (value: string | null | undefined) => value?.trim() || ''
 const timestamp = (value: string | null) => value ? Date.parse(value) || 0 : 0
 
 export function canStartTuOverviewAssignment(assignment: TuProgressAssignment) {
-  return ['ordered', 'booked'].includes(assignment.status) && tuAssignmentState(assignment).verified
-    && !assignment.inspection_id && !assignment.archived_at
+  return canStartTuBeforeApproval(assignment) || (['ordered', 'booked'].includes(assignment.status) && tuAssignmentState(assignment).verified
+    && !assignment.inspection_id && !assignment.archived_at)
 }
 
 function confirmationLabel(assignment: TuAssignmentListItem | null) {

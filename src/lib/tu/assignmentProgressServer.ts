@@ -30,10 +30,14 @@ export async function loadTuAssignmentProgress(orgId: string, assignments: Pick<
         if (!response.data || response.data.length < 500) break
       }
     }
+    const workflows = await admin.from('tu_assignment_workflows').select('current_assignment_id')
+      .eq('org_id', orgId).in('current_assignment_id', ids).range(0, 99)
+    if (workflows.error) { available = false; console.error('[tu.assignments] workflow status unavailable', workflows.error) }
     for (const assignment of batch) {
       const link = links.find(item => item.assignment_id === assignment.id)
       result.set(assignment.id, {
         available,
+        earlyStarted: workflows.data?.some(item => item.current_assignment_id === assignment.id) ?? false,
         approvalRecorded: approvals.some(item => item.assignment_id === assignment.id),
         approvalVerified: available && Boolean(assignment.accepted_at && approvals.some(item =>
           item.assignment_id === assignment.id && Date.parse(item.accepted_at) === Date.parse(assignment.accepted_at!))),

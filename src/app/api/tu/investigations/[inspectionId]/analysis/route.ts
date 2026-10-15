@@ -43,6 +43,8 @@ function record(value: unknown): Record<string, unknown> {
 
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
+  if (message === 'TU_WORK_PAUSED') return jsonError('Arbetet är pausat. Öppna uppdragsbekräftelsen och kontrollera dess status innan du fortsätter.', 409)
+  if (message === 'TU_DELIVERY_BLOCKED') return jsonError('Uppdraget måste godkännas, accepteras och stämmas av innan utlåtandet kan fastställas eller skickas.', 409)
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)

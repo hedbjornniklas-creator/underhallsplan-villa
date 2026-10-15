@@ -120,6 +120,7 @@ export type TuPrintSignature = {
 }
 
 export type TuPrintPagedDocumentProps = {
+  pendingAssignmentApproval?: boolean
   companyLogoUrl: string | null
   companyLogoAlt: string
   header: TuPrintHeader
@@ -1509,9 +1510,17 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
   return (
     <div
       className="report-root tu-print-paged-document"
+      data-tu-assignment-pending={props.pendingAssignmentApproval ? 'true' : undefined}
       data-report-pagination-ready={pagePlan ? '1' : '0'}
       data-tu-print-pagination-ready={pagePlan ? '1' : '0'}
     >
+      {props.pendingAssignmentApproval && <style>{`
+        [data-tu-assignment-pending="true"] .tu-report-page::before {
+          content: "UTKAST – uppdragets godkännande och avstämning är inte klara";
+          position: absolute; top: 2mm; left: 12mm; right: 12mm;
+          text-align: center; color: #9a3412; font: bold 10px Arial, sans-serif;
+        }
+      `}</style>}
       <div
         className="tu-print-measure pointer-events-none absolute left-[-10000px] top-0 opacity-0"
         aria-hidden="true"

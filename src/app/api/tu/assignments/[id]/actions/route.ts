@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireTuContext } from '@/lib/tu/server'
 import { assertAssignmentCustomerSameOrigin } from '@/lib/assignment-customers/http'
 import { runTuAssignmentAction } from '@/lib/tu/assignmentActionsServer'
+import { tuAssignmentWorkflowError } from '@/lib/tu/assignmentWorkflow'
 import { TU_ACTION_LABELS, type TuAssignmentAction } from '@/lib/tu/assignmentProgress'
 
 export const runtime = 'nodejs'
@@ -23,6 +24,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return json(await runTuAssignmentAction({ orgId: org.orgId, userId: org.userId, assignmentId: (await context.params).id,
       expectedUpdatedAt: body.expectedUpdatedAt, action: body.action as TuAssignmentAction }))
   } catch (error) {
+    const workflowError = tuAssignmentWorkflowError(error)
+    if (workflowError) return NextResponse.json({ error: workflowError[1] }, { status: workflowError[0], headers: { 'Cache-Control': 'private, no-store' } })
     const code = error instanceof Error ? error.message : ''
     const known: Record<string, [number, string]> = {
       UNAUTHORIZED: [401, 'Logga in igen.'], ORG_SELECTION_INVALID: [400, 'Välj arbetsorganisation.'],

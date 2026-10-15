@@ -4,6 +4,7 @@ export type TuAssignmentProgress = {
   available: boolean
   approvalVerified: boolean
   approvalRecorded?: boolean
+  earlyStarted?: boolean
   linkState: 'active' | 'expired' | 'used' | 'revoked' | 'missing'
   linkExpiresAt: string | null
 }
@@ -27,9 +28,11 @@ export function tuAssignmentState(assignment: TuProgressAssignment) {
   else if (verified) {
     label = assignment.booked_at ? 'Godkänd och accepterad' : 'Godkänd av kund'
     attention = assignment.inspection_id ? null : assignment.booked_at ? 'Starta utredningen' : 'Acceptera uppdraget'
+    if (progress.earlyStarted && !assignment.booked_at) attention = 'Acceptera uppdraget'
   } else if (!assignment.accepted_at && !progress.approvalRecorded && ['sent', 'expired'].includes(status)) {
     label = progress.linkState === 'active' ? 'Inväntar kund' : progress.linkState === 'expired' ? 'Länken har gått ut' : 'Länk behöver förnyas'
     attention = progress.linkState === 'active' ? null : 'Förnya godkännandelänken'
+    if (progress.earlyStarted && progress.linkState === 'active') { label = 'Startad · inväntar kund'; attention = 'Kundgodkännande saknas' }
   }
   return { label: archived ? `Arkiverad · ${label}` : label, attention: archived ? null : attention, verified }
 }
@@ -41,10 +44,15 @@ export function canTuAssignmentAction(assignment: TuProgressAssignment, action: 
   if (action === 'cancel') return assignment.status !== 'cancelled'
   const verified = tuAssignmentState(assignment).verified
   if (action === 'send') return Boolean(assignment.progress?.available) && !assignment.accepted_at && !assignment.progress?.approvalRecorded && ['draft', 'sent', 'expired'].includes(assignment.status)
-  if (action === 'book') return verified && assignment.status === 'ordered' && !assignment.booked_at && !assignment.inspection_id
+  if (action === 'book') return verified && assignment.status === 'ordered' && !assignment.booked_at && (!assignment.inspection_id || assignment.progress?.earlyStarted === true)
   if (action === 'receipt') return verified && ['ordered', 'booked', 'completed'].includes(assignment.status)
   if (action === 'bookingReceipt') return verified && Boolean(assignment.booked_at) && ['booked', 'completed'].includes(assignment.status)
-  return !assignment.inspection_id && ['sent', 'expired', 'ordered', 'booked'].includes(assignment.status)
+  return (!assignment.inspection_id || assignment.progress?.earlyStarted === true) && ['sent', 'expired', 'ordered', 'booked'].includes(assignment.status)
+}
+
+export function canStartTuBeforeApproval(assignment: TuProgressAssignment) {
+  return assignment.status === 'sent' && !assignment.inspection_id && !assignment.archived_at && !assignment.accepted_at
+    && assignment.progress?.available === true && !assignment.progress.approvalRecorded && assignment.progress.linkState === 'active'
 }
 
 export function canEditTuAssignmentDetails(assignment: TuProgressAssignment) {

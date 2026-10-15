@@ -55,6 +55,7 @@ type DeliveryResponse = {
   revisionStatus?: 'finalized' | 'published' | null
   publishedRevisionNumber?: number | null
   analysisStale?: boolean
+  assignmentWorkflowBlocker?: string | null
   analysisStaleAt?: string | null
   qualityIssues?: Array<{
     id: string
@@ -193,6 +194,7 @@ export default function TuPrintActions({
       setRecipient((current) => current.trim() || payload.defaultRecipientEmail || '')
       onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? null })
     } catch (loadError) {
+      setMeta(null)
       showDeliveryError(loadError, 'Kunde inte hämta leveransstatus.')
     } finally {
       if (!options?.silent) setLoading(false)
@@ -201,6 +203,12 @@ export default function TuPrintActions({
 
   useEffect(() => {
     void loadMeta()
+  }, [loadMeta])
+
+  useEffect(() => {
+    const refresh = () => { void loadMeta() }
+    window.addEventListener('tu:assignment-workflow-updated', refresh)
+    return () => window.removeEventListener('tu:assignment-workflow-updated', refresh)
   }, [loadMeta])
 
   useEffect(() => {
@@ -363,10 +371,10 @@ export default function TuPrintActions({
       setCopyingLink(false)
     }
   }
-  const canSend = (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
+  const canSend = Boolean(meta) && !loading && !meta?.assignmentWorkflowBlocker && (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
-  const effectiveFinalizationBlockedReason = meta?.analysisStale ? null : finalizationBlockedReason
-  const canFinalize = !locked
+  const effectiveFinalizationBlockedReason = meta?.assignmentWorkflowBlocker ?? (meta?.analysisStale ? null : finalizationBlockedReason)
+  const canFinalize = Boolean(meta) && !loading && !locked
     && !effectiveFinalizationBlockedReason
     && (!meta?.analysisStale || staleAnalysisAcknowledged)
     && !serverQualityBlocker

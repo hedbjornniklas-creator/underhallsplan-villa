@@ -7,9 +7,12 @@ import { tuAssignment } from './tu-overview-data'
 import type { AssignmentDetails, AssignmentStatus } from '../../src/lib/assignments/server'
 import type { TuAssignmentProgress, TuAssignmentMessage } from '../../src/lib/tu/assignmentProgress'
 import { parseTuAssignmentEdit } from '../../src/lib/tu/assignmentEditing'
+import TuAssignmentWorkflowBoundary from '../../src/components/tu/TuAssignmentWorkflowBoundary'
+import type { TuAssignmentWorkflow } from '../../src/lib/tu/assignmentWorkflow'
 
 const mode = new URLSearchParams(location.search).get('state') || 'sent'
 const listView = new URLSearchParams(location.search).get('view') === 'list'
+const workflowView = new URLSearchParams(location.search).get('view') === 'workflow'
 let sequence = 0
 const version = () => new Date(Date.UTC(2026, 9, 15, 8, 0, ++sequence)).toISOString()
 let record: AssignmentDetails & { progress?: TuAssignmentProgress } = {
@@ -25,8 +28,28 @@ let record: AssignmentDetails & { progress?: TuAssignmentProgress } = {
 if (mode === 'expired') record.progress = { available: true, approvalVerified: false, linkState: 'expired', linkExpiresAt: '2026-10-01T08:00:00Z' }
 let messages: TuAssignmentMessage[] = mode === 'draft' ? [] : [{ id: 'msg-1', created_at: '2026-10-14T08:00:00Z', sent_at: '2026-10-14T08:00:00Z', recipient_email: record.customer_email, template_key: 'assignment_confirmation', status: 'sent' }]
 let fail = false, slow = false, actions = 0
+let workflow: TuAssignmentWorkflow = {
+  inspectionId: 'test-investigation', assignmentId: record.id, status: mode, startedAt: version(), startReason: 'Bokat platsbesök, kundens svar inväntas',
+  acceptedAt: mode === 'booked' ? version() : null, bookedAt: mode === 'booked' ? version() : null,
+  initialSnapshot: { customer_name: 'Anna Andersson', customer_phone: null, scope_description: 'Kontroll av vinden' },
+  currentSnapshot: { customer_name: 'Anna Andersson', customer_phone: '0701234567', scope_description: 'Kontroll av vinden och takfoten' },
+  inspectionSnapshot: { customer_name: 'Anna Andersson', customer_phone: null, scope_description: 'Kontroll av vinden' },
+  reviewToken: 'a'.repeat(32), needsReview: true, paused: mode === 'draft', canDeliver: false,
+  reason: mode === 'booked' ? 'Stäm av kundens godkända uppgifter mot utredningen före slutleverans.' : 'Inväntar kundens godkännande.',
+}
 window.fetch = async (input, init) => {
   const url = new URL(String(input), location.href)
+  if (url.pathname.endsWith('/assignment-workflow')) {
+    if (slow) await new Promise(resolve => setTimeout(resolve, 1800))
+    if (fail) return Response.json({ error: 'Uppdragsstatus kunde inte uppdateras. Försök igen.' }, { status: 503 })
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body))
+      if (body.confirmed !== true || body.reviewToken !== workflow.reviewToken) return Response.json({error:'Kontrollera avstämningen igen.'},{status:409})
+      workflow = {...workflow, canDeliver:true, needsReview:false, reason:null}
+      document.getElementById('request-count')!.textContent = String(++actions)
+    }
+    return Response.json({workflow})
+  }
   if (url.pathname === '/api/tu/assignments') return Response.json({ items: [record], org: { id: record.org_id, name: 'Testbolaget' } })
   if (!url.pathname.startsWith(`/api/tu/assignments/${record.id}`)) throw new Error('Unexpected preview request')
   if (!init?.method || init.method === 'GET') return Response.json({ assignment: record, customerType: 'consumer', currentTerms: { version: 'v1', documentHash: 'hash', text: 'Syntetiska testvillkor', matchesAcceptedVersion: true }, withdrawal: null, linkIssues: { available: true, items: [] }, messages,
@@ -35,7 +58,11 @@ window.fetch = async (input, init) => {
   const body = JSON.parse(String(init.body))
   if (slow) await new Promise(resolve => setTimeout(resolve, 1800))
   if (fail) return Response.json({ error: 'Åtgärden kunde inte slutföras. Uppdatera status innan du försöker igen.' }, { status: 503 })
-  if (url.pathname.endsWith('/convert')) { actions++; return Response.json({ inspectionId: 'new-investigation' }) }
+  if (url.pathname.endsWith('/convert')) {
+    if (record.status === 'sent' && (!body.confirmEarlyStart || body.earlyStartReason?.trim().length < 5)) return Response.json({error:'Ange anledning och bekräfta.'},{status:400})
+    document.getElementById('request-count')!.textContent = String(++actions)
+    return Response.json({ inspectionId: 'new-investigation' })
+  }
   if (body.expectedUpdatedAt !== record.updated_at) return Response.json({ error: 'Uppdraget har ändrats. Uppdatera status innan du försöker igen.' }, { status: 409 })
   actions++
   document.getElementById('request-count')!.textContent = String(actions)
@@ -66,6 +93,8 @@ function Preview() {
     <button type="button" onClick={() => { record.updated_at = version() }}>Ändra i annan flik</button>
     <button type="button" onClick={() => setKey(value => value + 1)}>Ladda om testvy</button>
     <output>Åtgärder: <span id="request-count">0</span></output><output id="navigation-result" />
-  </aside>{listView ? <ListPage key={key} /> : <DetailPage key={key} />}</AppToastProvider>
+  </aside>{workflowView ? <TuAssignmentWorkflowBoundary key={key} initialWorkflow={workflow} inspectionId={workflow.inspectionId} orgId={record.org_id}>
+    <div className="mx-auto max-w-5xl p-4"><h1 className="mb-3 text-xl font-semibold">Granska utlåtandet</h1><label>Rapporttext<textarea className="mt-2 min-h-40 w-full border p-3" defaultValue="Denna manuellt redigerade rapporttext ska bevaras." /></label></div>
+  </TuAssignmentWorkflowBoundary> : listView ? <ListPage key={key} /> : <DetailPage key={key} />}</AppToastProvider>
 }
 createRoot(document.getElementById('root')!).render(<Preview />)

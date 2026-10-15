@@ -18,6 +18,7 @@ import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
 import type { TuAssignmentProgress } from '@/lib/tu/assignmentProgress'
 import { loadTuAssignmentProgress } from '@/lib/tu/assignmentProgressServer'
+import { tuWorkflowRpc } from '@/lib/tu/assignmentWorkflowServer'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import {
   requireConfiguredOrganizationProfileCard,
@@ -1401,99 +1402,22 @@ export async function convertTuAssignmentToInvestigation(input: {
   assignmentId: string
   reportTemplateKey?: string | null
   requestedByUserId: string
+  earlyStartReason?: string | null
 }) {
-  const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const assignment = await getTuAssignmentById(input.orgId, input.assignmentId)
   if (!assignment) throw new Error('TU_ASSIGNMENT_NOT_FOUND')
-
-  if (assignment.inspection_id) {
-    if (!assignment.property_id) throw new Error('TU_ASSIGNMENT_CONVERTED_WITHOUT_PROPERTY')
-    return { propertyId: assignment.property_id, inspectionId: assignment.inspection_id }
-  }
-
-  if (!['ordered', 'booked'].includes(assignment.status) || assignment.archived_at || !assignment.accepted_at) {
-    throw new Error('TU_ASSIGNMENT_NOT_ACCEPTED')
-  }
-  const progress = await loadTuAssignmentProgress(input.orgId, [assignment])
-  if (!progress.get(assignment.id)?.approvalVerified) throw new Error('TU_ASSIGNMENT_NOT_ACCEPTED')
-
-  const reportTemplate = await getActiveTuReportTemplateByKey(input.reportTemplateKey ?? '')
-
+  const reportTemplate = assignment.inspection_id ? null : await getActiveTuReportTemplateByKey(input.reportTemplateKey ?? '')
   const objectType = inferTuObjectType({
     assignment,
     brfName: assignment.brf_name,
     apartmentNumber: assignment.apartment_number,
   })
-  const property = await createPropertyForTu({
-    ownerProfileId: assignment.responsible_profile_id ?? input.requestedByUserId,
-    titleFallback: 'Teknisk utredning',
-    objectType,
-    address: assignment.property_address ?? assignment.preliminary_address,
-    postalCode: assignment.property_postal_code,
-    city: assignment.property_city,
-    municipality: assignment.property_municipality,
-    cadastralId: objectType === 'villa' ? assignment.cadastral_id : null,
-    ownerName: assignment.property_owner_name,
-    clientName: assignment.customer_name,
+  return tuWorkflowRpc<{ propertyId: string; inspectionId: string }>('tu_start_assignment_investigation', {
+    p_assignment_id: assignment.id, p_org_id: input.orgId, p_actor: input.requestedByUserId,
+    p_expected_updated_at: assignment.updated_at, p_template: reportTemplate, p_object_type: objectType,
+    p_report_draft: reportTemplate ? createTuReportDraftFromTemplate(reportTemplate, { assignment_scope: assignment.scope_description ?? '' }) : null,
+    p_early_reason: input.earlyStartReason ?? null,
   })
-
-  let createdInspectionId: string | null = null
-  try {
-    const inspection = await createInspectionForTu({
-      propertyId: property.id,
-      date: assignment.preferred_date,
-      inspectionTime: assignment.preferred_time,
-      scopeDescription: assignment.scope_description,
-      customerName: assignment.customer_name,
-      customerEmail: assignment.customer_email,
-      customerPhone: assignment.customer_phone,
-      customerAddress: assignment.customer_address,
-      customerPostalCode: assignment.customer_postal_code,
-      customerCity: assignment.customer_city,
-    })
-    createdInspectionId = inspection.id
-
-    await createTuDetail({
-      inspectionId: inspection.id,
-      orgId: input.orgId,
-      inspectorProfileId: assignment.responsible_profile_id ?? input.requestedByUserId,
-      assignmentId: assignment.id,
-      propertyId: property.id,
-      title: reportTemplate.documentTitle,
-      projectType: reportTemplate.projectType,
-      reportTemplate,
-      objectType,
-      scopeDescription: assignment.scope_description,
-      brfName: assignment.brf_name,
-      apartmentNumber: assignment.apartment_number,
-      apartmentHolderName: assignment.apartment_holder_name,
-      reportDraft: createTuReportDraftFromTemplate(reportTemplate, {
-        assignment_scope: assignment.scope_description ?? '',
-      }),
-      createdBy: input.requestedByUserId,
-    })
-
-    await updateAssignmentById({
-      orgId: input.orgId,
-      assignmentId: assignment.id,
-      updatedBy: input.requestedByUserId,
-      expectedUpdatedAt: assignment.updated_at,
-      patch: {
-        status: 'completed',
-        property_id: property.id,
-        inspection_id: inspection.id,
-        converted_at: new Date().toISOString(),
-      } as Parameters<typeof updateAssignmentById>[0]['patch'] & Record<string, unknown>,
-    })
-
-    return { propertyId: property.id, inspectionId: inspection.id }
-  } catch (error) {
-    if (createdInspectionId) {
-      await admin.from('inspections').delete().eq('id', createdInspectionId)
-    }
-    await admin.from('properties').delete().eq('id', property.id)
-    throw error
-  }
 }
 
 function buildSummary(detail: TuDetailRow, inspection?: InspectionRow | null, property?: PropertyRow | null): TuInspectionSummary {

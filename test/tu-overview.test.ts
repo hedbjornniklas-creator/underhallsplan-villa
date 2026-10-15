@@ -27,7 +27,7 @@ test('includes unlinked investigations and every standalone TU confirmation', ()
   const rows = buildTuOverviewItems({ organizationId: tuPreviewOrg, ...tuOverviewDemo() })
   assert.equal(rows.length, 16)
   assert.equal(rows.filter(item => item.confirmation === 'Utan bekräftelse').length, 11)
-  assert.equal(rows.filter(item => item.startAssignment).length, 1)
+  assert.equal(rows.filter(item => item.startAssignment).length, 2)
 })
 
 test('rejects confirmations from other modules or organizations', () => {
@@ -54,9 +54,10 @@ test('approval and investigation status are separate; a converted confirmation i
   assert.equal(build([tuAssignment({ status: 'sent', inspection_id: 'inspection-1' })])[0].confirmation, 'Inväntar kund')
 })
 
-test('only approved, unarchived, unlinked assignments can start', () => {
+test('approved or sent with a valid link can start; archives and existing investigations cannot', () => {
   assert.equal(canStartTuOverviewAssignment(tuAssignment()), true)
-  for (const override of [{ status: 'sent' as const }, { inspection_id: 'i' }, { archived_at: '2026-10-01' }]) {
+  assert.equal(canStartTuOverviewAssignment(tuAssignment({ status: 'sent' })), true)
+  for (const override of [{ status: 'draft' as const }, { inspection_id: 'i' }, { archived_at: '2026-10-01' }]) {
     assert.equal(canStartTuOverviewAssignment(tuAssignment(override)), false)
   }
   const missing = build([tuAssignment({ inspection_id: 'missing' })], [])[0]

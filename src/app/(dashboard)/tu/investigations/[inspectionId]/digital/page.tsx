@@ -3,6 +3,7 @@ import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotVi
 import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getTuInvestigationById, requireTuContext } from '@/lib/tu/server'
+import { getTuAssignmentWorkflow } from '@/lib/tu/assignmentWorkflowServer'
 import {
   isTuReportSnapshotPayloadV1,
   type TuReportSnapshotPayloadV1,
@@ -46,6 +47,8 @@ export default async function TuInvestigationDigitalReportPage({
       inspectionId,
     })
     if (!investigation) notFound()
+    const workflow = await getTuAssignmentWorkflow(inspectionId, context.orgId)
+    if (workflow && !workflow.canDeliver) redirect(`/tu/investigations/${encodeURIComponent(inspectionId)}?orgId=${encodeURIComponent(context.orgId)}`)
 
     const admin = createSupabaseAdminClient()
     const { data, error } = await admin

@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Archive, ArchiveRestore, Ban, Check, CopyPlus, Loader2, Mail, MoreHorizontal, Play, X } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
-import { canTuAssignmentAction, TU_ACTION_LABELS, tuSendLabel, type TuAssignmentAction, type TuProgressAssignment } from '@/lib/tu/assignmentProgress'
+import { canStartTuBeforeApproval, canTuAssignmentAction, TU_ACTION_LABELS, tuSendLabel, type TuAssignmentAction, type TuProgressAssignment } from '@/lib/tu/assignmentProgress'
 
 export const tuActionButton = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
 export function allowTuAssignmentNavigation() {
@@ -23,7 +23,8 @@ export function tuActionConfirmation(action: TuAssignmentAction, assignment: Act
     case 'book': return `Acceptera uppdraget och skicka en bekräftelse till ${recipient}? Kundens godkännande finns redan registrerat.`
     case 'receipt': return `Skicka bekräftelsen på kundens godkännande till ${recipient} igen? Inget nytt godkännande begärs och uppdragets status ändras inte.`
     case 'bookingReceipt': return `Meddela ${recipient} igen att besiktningsmannen har accepterat uppdraget? Uppdragets status ändras inte.`
-    case 'reissue': return 'Skapa ett nytt redigerbart utkast? Den tidigare uppdragsbekräftelsen avbokas och dess oanvända länk stängs. Tidigare godkännande finns kvar i historiken men gäller inte det nya utkastet. Inget mejl skickas förrän du väljer att skicka den nya versionen.'
+    case 'reissue': return 'Skapa ett nytt redigerbart utkast? Den tidigare uppdragsbekräftelsen avbokas och dess oanvända länk stängs. Tidigare godkännande finns kvar i historiken men gäller inte det nya utkastet. Inget mejl skickas förrän du väljer att skicka den nya versionen.' +
+      (assignment.progress?.earlyStarted ? ' Utredningen och allt arbetsmaterial behålls. Arbetet pausas tills den nya bekräftelsen har skickats.' : '')
     case 'cancel': return 'Avboka uppdraget och flytta bekräftelsen till arkivet? Kundens oanvända godkännandelänk stängs. En befintlig utredning eller rapport raderas inte. Inget kundmejl skickas; meddela kunden separat.'
     case 'archive': return 'Flytta uppdragsbekräftelsen till arkivet? Ingen utredning eller rapport raderas.'
     case 'restore': return 'Återför bekräftelsen till listan? En tidigare avbokning ändras inte och ingen kundlänk öppnas igen.'
@@ -85,7 +86,7 @@ export default function TuAssignmentActions({ assignment, compact = false, disab
     }
   }
   const buttons = (inDialog = false) => <div className="flex flex-wrap gap-2">
-    {onStart && <button type="button" className={tuActionButton} disabled={disabled || busy} onClick={() => { close(); if (allowTuAssignmentNavigation()) onStart() }}><Play size={16} aria-hidden />Starta utredning</button>}
+    {onStart && <button type="button" className={tuActionButton} disabled={disabled || busy} onClick={() => { close(); if (allowTuAssignmentNavigation()) onStart() }}><Play size={16} aria-hidden />{canStartTuBeforeApproval(assignment) ? 'Starta före godkännande' : 'Starta utredning'}</button>}
     {allowed.map(action => {
       const Icon = icons[action]
       return <button key={action} type="button" className={`${tuActionButton} ${action === 'send' || action === 'book' ? '!border-violet-600 !bg-violet-600 !text-white' : ''}`}

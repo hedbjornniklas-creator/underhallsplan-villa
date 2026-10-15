@@ -8,6 +8,9 @@ import type * as Actions from '../src/lib/tu/assignmentActionsServer'
 import type * as Progress from '../src/lib/tu/assignmentProgressServer'
 import type * as Route from '../src/app/api/tu/assignments/[id]/actions/route'
 import type * as DetailRoute from '../src/app/api/tu/assignments/[id]/route'
+import type * as Workflow from '../src/lib/tu/assignmentWorkflow'
+import type * as WorkflowRoute from '../src/app/api/tu/investigations/[inspectionId]/assignment-workflow/route'
+import type * as ConvertRoute from '../src/app/api/tu/assignments/[id]/convert/route'
 
 function load<T>(path: string, dependencies: Record<string, unknown> = {}): T {
   const output = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
@@ -16,6 +19,7 @@ function load<T>(path: string, dependencies: Record<string, unknown> = {}): T {
   return compiled.exports as T
 }
 const domain = load<typeof Domain>('src/lib/tu/assignmentProgress.ts')
+const workflow = load<typeof Workflow>('src/lib/tu/assignmentWorkflow.ts')
 const editing = load<typeof Editing>('src/lib/tu/assignmentEditing.ts')
 const http = load('src/lib/assignment-customers/http.ts', { 'server-only': {} })
 const ORG = '11111111-1111-4111-8111-111111111111'
@@ -28,6 +32,79 @@ const base = (overrides: Partial<Domain.TuProgressAssignment> = {}) => ({
   progress: { available: true, approvalVerified: false, linkState: 'active' as const, linkExpiresAt: '2099-10-01' }, ...overrides,
 })
 const approved = () => base({ status: 'ordered', accepted_at: VERSION, progress: { available: true, approvalVerified: true, linkState: 'used', linkExpiresAt: null } })
+
+test('paused work and delivery guards return useful messages in every TU editing API', () => {
+  const routes = ['route.ts', 'observations/route.ts', 'observations/transcribe/route.ts', 'measurements/route.ts',
+    'preparation/route.ts', 'images/route.ts', 'documents/route.ts', 'report-review/route.ts', 'analysis/route.ts',
+    'evidence-draft/route.ts', 'report-draft/route.ts', 'ai-draft/route.ts']
+  for (const route of routes) {
+    const source = readFileSync(new URL(`../src/app/api/tu/investigations/[inspectionId]/${route}`, import.meta.url), 'utf8')
+    const ast = ts.createSourceFile(route, source, ts.ScriptTarget.ES2022, true)
+    const mapper = ast.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === 'mapError')
+    assert.ok(mapper, route)
+    const compiled = ts.transpileModule(mapper.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+    const mapError = new Function('jsonError', `${compiled}; return mapError`)((error: string, status: number) => ({ error, status }))
+    for (const code of ['TU_WORK_PAUSED', 'TU_DELIVERY_BLOCKED']) {
+      const response = mapError(new Error(code))
+      assert.equal(response.status, 409, route)
+      assert.doesNotMatch(response.error, /TU_|SQL|trigger/, route)
+      assert.match(response.error, /uppdragsbekräftelsen|Uppdraget/, route)
+    }
+  }
+})
+
+test('only a sent, current, unapproved confirmation with verified link state offers early start', () => {
+  assert.equal(domain.canStartTuBeforeApproval(base()), true)
+  for (const record of [approved(), base({ status: 'draft' }), base({ inspection_id: 'existing' }), base({ archived_at: VERSION }),
+    base({ progress: undefined }), base({ progress: { ...base().progress, approvalRecorded: true } }),
+    base({ progress: { ...base().progress, linkState: 'expired' } })]) assert.equal(domain.canStartTuBeforeApproval(record), false)
+  const early = { ...approved(), inspection_id: 'existing', progress: { ...approved().progress, earlyStarted: true } }
+  assert.equal(domain.canTuAssignmentAction(early, 'book'), true)
+  assert.equal(domain.canTuAssignmentAction(early, 'reissue'), true)
+})
+
+test('convert requires the explicit early-start choice, exact organization and same-origin', async () => {
+  const calls: unknown[] = []
+  const route = load<typeof ConvertRoute>('src/app/api/tu/assignments/[id]/convert/route.ts', {
+    'next/server': { NextResponse: { json: Response.json } }, '@/lib/assignment-customers/http': http,
+    '@/lib/tu/assignmentWorkflow': workflow,
+    '@/lib/tu/server': {
+      requireTuContext: async (id:string) => { assert.equal(id,ORG); return {orgId:ORG,userId:'actor'} },
+      convertTuAssignmentToInvestigation: async (input:unknown) => { calls.push(input); return { inspectionId:'inspection' } },
+    },
+  })
+  const post = (body:unknown,origin='https://hushub.se') => route.POST(new Request('https://hushub.se/api/tu/assignments/a/convert', {
+    method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify(body),
+  }),{params:Promise.resolve({id:'a'})})
+  const valid={orgId:ORG,reportTemplateKey:'template',earlyStartReason:'Client pending',confirmEarlyStart:true}
+  assert.equal((await post(valid,'https://evil.test')).status,403)
+  for(const invalid of [null,[],{...valid,confirmEarlyStart:false},{...valid,earlyStartReason:''},{reportTemplateKey:'template'}]) assert.equal((await post(invalid)).status,400)
+  assert.equal(calls.length,0)
+  assert.equal((await post(valid)).status,200)
+  assert.deepEqual(calls,[{orgId:ORG,assignmentId:'a',reportTemplateKey:'template',requestedByUserId:'actor',earlyStartReason:'Client pending'}])
+})
+
+test('workflow acknowledgement validates payload, scopes access and does not send field changes', async()=>{
+  const calls: unknown[]=[]
+  const route=load<typeof WorkflowRoute>('src/app/api/tu/investigations/[inspectionId]/assignment-workflow/route.ts',{
+    'next/server':{NextResponse:{json:Response.json}},'@/lib/assignment-customers/http':http,
+    '@/lib/tu/assignmentWorkflow':workflow,
+    '@/lib/tu/server':{
+      requireTuRequestContext:async(request:Request)=>{assert.equal(new URL(request.url).searchParams.get('orgId'),ORG);return{orgId:ORG,userId:'actor'}},
+      getTuInvestigationById:async(input:unknown)=>{calls.push(input);return{orgId:ORG}},
+    },
+    '@/lib/tu/assignmentWorkflowServer':{tuWorkflowRpc:async(name:string,args:unknown)=>{calls.push({name,args});return{canDeliver:true}}},
+  })
+  const post=(body:unknown,origin='https://hushub.se')=>route.POST(new Request('https://hushub.se/api/tu/investigations/i/assignment-workflow?orgId='+ORG,{
+    method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify(body),
+  }),{params:Promise.resolve({inspectionId:'i'})})
+  const valid={confirmed:true,reviewToken:'a'.repeat(32)}
+  assert.equal((await post(valid,'https://evil.test')).status,403)
+  for(const invalid of [{...valid,confirmed:false},{...valid,reviewToken:'bad'},{...valid,reportDraft:'Overwrite'}]) assert.equal((await post(invalid)).status,400)
+  assert.equal(calls.length,0)
+  assert.equal((await post(valid)).status,200)
+  assert.deepEqual(calls,[{orgId:ORG,inspectionId:'i'},{name:'tu_review_assignment_workflow',args:{p_inspection_id:'i',p_org_id:ORG,p_actor:'actor',p_review_token:valid.reviewToken}}])
+})
 
 test('status distinguishes real approval, active links, expired links and missing data', () => {
   assert.equal(domain.tuAssignmentState(base()).label, 'Inväntar kund')
@@ -75,6 +152,7 @@ function actionHarness(record = base()) {
   const state = { record, mailFails: false, termsMatch: true, writeConflict: false }
   const server = load<typeof Actions>('src/lib/tu/assignmentActionsServer.ts', {
     'server-only': {}, './assignmentProgress': domain,
+    './assignmentWorkflowServer': { tuWorkflowRpc: async (name: string, args: unknown) => { calls.push({ name, value: args }); return 'early-draft' } },
     './assignmentProgressServer': { loadTuAssignmentProgress: async (org: string) => { assert.equal(org, ORG); return new Map([[state.record.id, state.record.progress]]) } },
     '@/lib/tu/server': {
       getTuAssignmentById: async (org: string, id: string) => { assert.equal(org, ORG); assert.equal(id, 'assignment'); return state.record },
@@ -227,6 +305,7 @@ function actionRoute(error?: Error) {
   const route = load<typeof Route>('src/app/api/tu/assignments/[id]/actions/route.ts', {
     'next/server': { NextResponse: { json: Response.json } }, '@/lib/tu/assignmentProgress': domain,
     '@/lib/assignment-customers/http': http,
+    '@/lib/tu/assignmentWorkflow': workflow,
     '@/lib/tu/server': { requireTuContext: async (orgId: string) => { assert.equal(orgId, ORG); return { orgId, userId: 'user' } } },
     '@/lib/tu/assignmentActionsServer': { runTuAssignmentAction: async (input: unknown) => { calls.push(input); if (error) throw error; return { message: 'Klart' } } },
   })

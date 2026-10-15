@@ -1,4 +1,6 @@
 import { NextResponse, after } from 'next/server'
+import { getTuAssignmentWorkflow, assertTuAssignmentDelivery } from '@/lib/tu/assignmentWorkflowServer'
+import { tuAssignmentWorkflowError } from '@/lib/tu/assignmentWorkflow'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { decryptTuReportLinkToken, encryptTuReportLinkToken } from '@/lib/tu/reportLinkToken'
@@ -921,6 +923,7 @@ export async function GET(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
+    const assignmentWorkflow = await getTuAssignmentWorkflow(inspectionId, org.orgId)
     if (new URL(request.url).searchParams.get('status') === '1') {
       const activeLink = await getLatestReportLink(admin, org.orgId, inspectionId)
       if (!activeLink || activeLink.org_id !== org.orgId) {
@@ -982,8 +985,11 @@ export async function GET(
       improvementReview,
       analysisStale: isTuAnalysisStaleForFinalization(analysisState),
       analysisStaleAt: analysisState?.analysisStaleAt ?? null,
+      assignmentWorkflowBlocker: assignmentWorkflow?.reason ?? null,
     }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error) {
+    const workflowError = tuAssignmentWorkflowError(error)
+    if (workflowError) return jsonError(workflowError[1], workflowError[0])
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
@@ -1023,6 +1029,7 @@ export async function POST(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
     const usesFrozenRevision = action === 'resend' || (action === 'send_and_lock' && Boolean(investigation.reportLockedAt))
+    await assertTuAssignmentDelivery(inspectionId, org.orgId)
     if (action !== 'regenerate_pdf' && !usesFrozenRevision) {
       if (!investigation.inspectorProfileId) {
         return jsonError('TU-utredningen saknar ansvarig besiktningsman.', 409)
@@ -1433,6 +1440,8 @@ export async function POST(
       publishedRevisionNumber: hasPublishedLink ? publishedRevision?.revision_number ?? null : null,
     }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error) {
+    const workflowError = tuAssignmentWorkflowError(error)
+    if (workflowError) return jsonError(workflowError[1], workflowError[0])
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)

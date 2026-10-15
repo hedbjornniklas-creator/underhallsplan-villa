@@ -20,7 +20,7 @@ import type { AssignmentDetails } from '@/lib/assignments/server'
 import type { TuReportTemplateOption } from '@/lib/tu/server'
 import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
 import { AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
-import { tuAssignmentState, tuMessageLabel, type TuAssignmentMessage, type TuAssignmentProgress } from '@/lib/tu/assignmentProgress'
+import { canStartTuBeforeApproval, tuAssignmentState, tuMessageLabel, type TuAssignmentMessage, type TuAssignmentProgress } from '@/lib/tu/assignmentProgress'
 import { canStartTuOverviewAssignment } from '@/lib/tu/overview'
 import TuAssignmentActions, { allowTuAssignmentNavigation, tuActionButton } from '@/components/tu/TuAssignmentActions'
 import TuAssignmentEditor from '@/components/tu/TuAssignmentEditor'
@@ -219,7 +219,7 @@ export default function TuAssignmentDetailPage() {
                 <TuAssignmentActions key={`${assignment.org_id}:${assignment.id}`} assignment={assignment} onChanged={refresh} onNavigate={path => router.push(path)} />
                 <div className="flex flex-wrap gap-2">
                   <TuAssignmentEditor key={`edit:${assignment.org_id}:${assignment.id}:${data.loadRevision}`} assignment={assignment} onSaved={refresh} />
-                  {canStartTuOverviewAssignment(assignment) && <TuAssignmentStartDialog assignmentId={assignment.id} organizationId={assignment.org_id} templates={data.reportTemplates ?? []} onStarted={path => router.push(path)} onChanged={refresh} />}
+                  {canStartTuOverviewAssignment(assignment) && <TuAssignmentStartDialog assignmentId={assignment.id} organizationId={assignment.org_id} early={canStartTuBeforeApproval(assignment)} templates={data.reportTemplates ?? []} onStarted={path => router.push(path)} onChanged={refresh} />}
                 </div>
               </section>
               <AssignmentLinkIssueNotice issues={data.linkIssues} />

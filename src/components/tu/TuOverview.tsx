@@ -9,6 +9,7 @@ import { buildTuOverviewItems, selectTuOverviewPage, type TuOverviewFilter, type
 import '../ob/ob-overview.css'
 import './tu-overview.css'
 import TuAssignmentActions from './TuAssignmentActions'
+import { canStartTuBeforeApproval } from '@/lib/tu/assignmentProgress'
 
 const filters: Array<{ value: TuOverviewFilter; label: string }> = [
   { value: 'all', label: 'Alla' }, { value: 'active', label: 'Aktuella' }, { value: 'closed', label: 'Avslutade' },
@@ -24,6 +25,8 @@ function OverviewRow({ item, busy, onStartAssignment, onRefresh }: {
   onRefresh: () => void
 }) {
   const router = useRouter()
+  const early = item.startAssignment ? canStartTuBeforeApproval(item.startAssignment) : false
+  const startLabel = early ? 'Starta före godkännande' : 'Starta utredning'
   const [expanded, setExpanded] = useState(false)
   const detailsId = useId()
   const detailsLabel = `${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.address}`
@@ -52,8 +55,8 @@ function OverviewRow({ item, busy, onStartAssignment, onRefresh }: {
         {item.investigationHref && <PendingLink href={item.investigationHref} className="obo-inspection-link" prefetch={false} autoPending pendingLabel="Öppnar utredning..."
           aria-label={`Öppna utredning: ${item.address}`} title="Öppna utredning" icon={<FileText size={18} aria-hidden />}>Öppna utredning</PendingLink>}
         {item.startAssignment && <button type="button" className="obo-inspection-link tu-start-investigation" disabled={busy}
-          aria-label={`Starta utredning: ${item.address}`} title="Starta utredning" onClick={() => onStartAssignment(item.startAssignment!)}>
-          <Play size={18} aria-hidden /><span>Starta utredning</span>
+          aria-label={`${startLabel}: ${item.address}`} title={startLabel} onClick={() => early && item.confirmationHref ? router.push(item.confirmationHref) : onStartAssignment(item.startAssignment!)}>
+          <Play size={18} aria-hidden /><span>{startLabel}</span>
         </button>}
         {item.confirmationHref && <PendingLink href={item.confirmationHref} className="obo-confirmation-link" prefetch={false} autoPending pendingLabel="Öppnar bekräftelse..."
           aria-label={`Öppna uppdragsbekräftelse: ${item.address}`} title="Öppna uppdragsbekräftelse" icon={<FileCheck2 size={18} aria-hidden />}>Öppna bekräftelse</PendingLink>}

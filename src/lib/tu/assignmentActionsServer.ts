@@ -5,6 +5,7 @@ import { createReissuedAssignmentDraft, sendAssignmentAcceptedNotice, sendAssign
 import { getAssignmentTermsDocument } from '@/lib/assignments/terms'
 import { canTuAssignmentAction, type TuAssignmentAction } from './assignmentProgress'
 import { loadTuAssignmentProgress } from './assignmentProgressServer'
+import { tuWorkflowRpc } from './assignmentWorkflowServer'
 
 export async function runTuAssignmentAction(input: {
   orgId: string; userId: string; assignmentId: string; expectedUpdatedAt: string; action: TuAssignmentAction
@@ -21,6 +22,12 @@ export async function runTuAssignmentAction(input: {
     return { message: 'Uppdragsbekräftelsen har skickats.' }
   }
   if (input.action === 'reissue') {
+    if (assignment.inspection_id && progress?.earlyStarted) {
+      const draftId = await tuWorkflowRpc<string>('tu_reissue_started_assignment', {
+        p_assignment_id: assignment.id, p_org_id: input.orgId, p_actor: input.userId, p_expected_updated_at: input.expectedUpdatedAt,
+      })
+      return { message: 'Ett nytt utkast har skapats. Utredningen är kvar och pausas tills bekräftelsen har skickats.', draftId }
+    }
     const { draft } = await createReissuedAssignmentDraft({
       orgId: input.orgId, sourceAssignmentId: assignment.id, createdBy: input.userId, expectedUpdatedAt: input.expectedUpdatedAt,
     })

@@ -6,7 +6,7 @@ import ts from 'typescript'
 const ID = '11111111-1111-4111-8111-111111111111'
 const ORG = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-function harness(options: { signedIn?: boolean; bindingError?: string; family?: string | null; type?: string; canEdit?: boolean } = {}) {
+function harness(options: { signedIn?: boolean; bindingError?: string; family?: string | null; type?: string; canEdit?: boolean; tuBlocked?: boolean } = {}) {
   const calls: string[] = []
   const selectors: unknown[] = []
   const admin = { from(table: string) {
@@ -42,6 +42,9 @@ function harness(options: { signedIn?: boolean; bindingError?: string; family?: 
       calls.push('legacy-org'); selectors.push(orgId); return context
     } },
     '@/lib/tu/server': { requireTuContext: async (orgId: unknown) => { calls.push('tu-org'); selectors.push(orgId); return context } },
+    '@/lib/tu/assignmentWorkflowServer': { getTuAssignmentWorkflow: async (_id: string, orgId: string) => {
+      assert.equal(orgId, ORG); return options.tuBlocked ? { canDeliver: false, reason: 'Inväntar kundens godkännande.' } : null
+    } },
     '@/lib/ob/assignmentWorkflowServer': { getObAssignmentWorkflow: async (_id: string, orgId: string) => {
       assert.equal(orgId, ORG); return { canDeliver: true }
     } },
@@ -103,4 +106,10 @@ test('TU and EB PDF branches retain their existing contexts and do not enter OB 
     assert.ok(!h.calls.includes('binding'))
     assert.deepEqual(h.selectors, [ORG])
   }
+})
+
+test('early-start TU cannot download an archived final PDF before approval and review', async () => {
+  const h = harness({ family: 'TU', tuBlocked: true })
+  assert.equal((await h.get(`?orgId=${ORG}`)).status, 409)
+  assert.ok(!h.calls.includes('inspection_report_links'))
 })
