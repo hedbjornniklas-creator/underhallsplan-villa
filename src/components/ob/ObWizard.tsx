@@ -11,10 +11,12 @@ import ObStepAreamatning from './ObStepAreamatning'
 import ObStepEnvironmental from './ObStepEnvironmental'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
 import ObUnlockInspection from './ObUnlockInspection'
+import ObWordExport from './ObWordExport'
 import type { Tables } from '@/types/supabase'
 import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
 import { obPublishedReportHref } from '@/lib/ob/publishedReportLink'
+import { obWordExportHref } from '@/lib/ob/wordExportLink'
 import type { ObObjectType } from '@/lib/ob/objectType'
 
 type DbInspection = Tables<'inspections'>
@@ -113,6 +115,7 @@ type ReportDeliveryLogEntry = {
 
 type ReportDeliveryMeta = {
   digitalReportUrl?: string | null
+  wordExportUrl?: string | null
   inspectionId: string
   inspectionStatus: string
   canSend: boolean
@@ -484,6 +487,7 @@ function ObWizardContent({
           history: okPayload.history ?? [],
           activityLog: okPayload.activityLog ?? prev?.activityLog ?? [],
           digitalReportUrl: okPayload.linkId ? obPublishedReportHref(inspectionId, okPayload.linkId) : prev?.digitalReportUrl ?? null,
+          wordExportUrl: okPayload.linkId ? obWordExportHref(inspectionId, okPayload.linkId) : prev?.wordExportUrl ?? null,
       }))
       if (action !== 'complete_only') {
         setPrimaryRecipientInput(okPayload.primaryRecipientEmail ?? '')
@@ -630,16 +634,21 @@ function ObWizardContent({
           <div className="ob-form-root ob-delivery-workspace space-y-5">
             {hasValidIds ? (
               <div className="space-y-4">
-                {deliveryMeta?.digitalReportUrl ? <Link
-                  href={deliveryMeta.digitalReportUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ob-delivery-link"
-                >
-                  <ExternalLink size={18} aria-hidden="true" />
-                  Öppna kundens digitala utlåtande
-                  <span className="sr-only"> (öppnas i ny flik)</span>
-                </Link> : deliveryMeta && !deliveryMetaLoading && !deliveryMetaError ? <p className="text-sm text-gray-600">Inget publicerat digitalt utlåtande ännu.</p> : null}
+                <div className="flex flex-wrap items-center gap-3">
+                  {deliveryMeta?.wordExportUrl ? <ObWordExport key={deliveryMeta.wordExportUrl}
+                    href={deliveryMeta.wordExportUrl} published={Boolean(deliveryMeta.digitalReportUrl)}
+                    disabled={sendingReport || deliveryMetaLoading} /> : null}
+                  {deliveryMeta?.digitalReportUrl ? <Link
+                    href={deliveryMeta.digitalReportUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ob-delivery-link"
+                  >
+                    <ExternalLink size={18} aria-hidden="true" />
+                    Öppna kundens digitala utlåtande
+                    <span className="sr-only"> (öppnas i ny flik)</span>
+                  </Link> : deliveryMeta && !deliveryMetaLoading && !deliveryMetaError ? <p className="text-sm text-gray-600">Inget publicerat digitalt utlåtande ännu.</p> : null}
+                </div>
                 <aside className="ob-delivery-section space-y-4">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">

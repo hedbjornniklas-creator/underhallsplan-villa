@@ -36,11 +36,13 @@ function renderDelivery(activityLog: ReturnType<typeof entry>[], ready = true, s
     if (name === 'next/link') return { default: 'a' }
     if (name.startsWith('./ObStep')) return { default: () => null }
     if (name === './ObUnlockInspection') return { default: () => null }
+    if (name === './ObWordExport') return { default: () => null }
     if (name === './ObBuildingContext') return { useObBuilding: () => null }
     if (name === './ObFloorProvider') return {
       ObFloorProvider: ({ children }: React.PropsWithChildren) => children,
     }
     if (name === '@/lib/ob/publishedReportLink') return { obPublishedReportHref: () => null }
+    if (name === '@/lib/ob/wordExportLink') return { obWordExportHref: () => null }
     throw new Error(`Unexpected dependency: ${name}`)
   }, compiled, compiled.exports)
   return renderToStaticMarkup(React.createElement(compiled.exports.default, {

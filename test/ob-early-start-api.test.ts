@@ -111,6 +111,7 @@ test('all final delivery actions stop before writes, PDF generation or mail', as
       '@/lib/assignments/server': { requireOrgContext: async () => org },
       '@/lib/ob/assignmentWorkflowServer': workflowDependency,
       '@/lib/ob/publishedReport': {},
+      '@/lib/ob/wordExportLink': {},
       '@/lib/ob/inspectionProfile': { resolveObInspectionProfile },
     }
     for (const path of ['assignments/tokens', 'assignments/mailer', 'report/pdfJobs', 'report/reportSnapshotPayload', 'report/pdfV2/buildReportDataV2', 'report/reportSpec', 'inspections/reportEmailTemplates']) dependencies[`@/lib/${path}`] = {}

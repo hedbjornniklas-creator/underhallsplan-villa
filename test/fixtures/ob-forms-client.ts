@@ -90,7 +90,7 @@ if (new URLSearchParams(location.search).has('documents-density')) {
   }))
 }
 if (new URLSearchParams(location.search).has('legacy')) db.inspection_overview_selections = db.inspection_overview_selections.filter(row => row.building_part_id === parts[0].id)
-export const qa = { failSaves: false, saveDelay: 30, writes: [] as Row[], reads: [] as string[],
+export const qa = { failSaves: false, saveDelay: 30, writes: [] as Row[], reads: [] as string[], wordRequests: [] as string[],
   snapshot: () => structuredClone({ parts, db }),
 }
 Object.assign(window, { __obFormTest: qa, __obMobileTest: qa })
@@ -151,6 +151,7 @@ export const supabase: any = {
   },
   storage: { from: () => ({ getPublicUrl: () => ({ data: { publicUrl: '/photo.png' } }), upload: async () => ({ error: null }) }) },
 }
+const previewFetch = window.fetch.bind(window)
 window.fetch = async (input, init) => {
   const url = String(input).split('?')[0]
   const organization = { id: '11111111-1111-4111-8111-111111111111', name: 'Testorganisation', isDefault: true }
@@ -174,6 +175,16 @@ window.fetch = async (input, init) => {
     return Response.json({ ok: true, inspection_id: inspectionId, locked_at: null, locked_by: null })
   }
   if (url === `/api/ob/inspections/${inspectionId}/frozen-inspector`) return Response.json({ locked: true, hasSnapshot: true, profile: db.profiles[0] })
+  if (url === `/api/ob/inspections/${inspectionId}/word` && new URLSearchParams(location.search).has('word')) {
+    qa.wordRequests.push(String(input))
+    await new Promise(resolve => setTimeout(resolve, qa.saveDelay))
+    if (qa.failSaves) return Response.json({ error: 'Word-filen kunde inte skapas. Försök igen.' }, { status: 503 })
+    if (new URLSearchParams(location.search).has('word-file')) return previewFetch('/word-example.docx')
+    return new Response('PK-synthetic-docx', { headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': "attachment; filename*=UTF-8''Utl%C3%A5tande.docx",
+    } })
+  }
   if (url === `/api/ob/inspections/${inspectionId}/addon-orders` && !init?.method) return Response.json({ addonOrders: [] })
   if (url === `/api/ob/inspections/${inspectionId}/report-delivery` && init?.method === 'POST' && new URLSearchParams(location.search).has('simulate-delivery')) {
     const body = JSON.parse(String(init.body))
@@ -193,6 +204,10 @@ window.fetch = async (input, init) => {
   if (url === `/api/ob/inspections/${inspectionId}/report-delivery` && !init?.method) return Response.json({
     inspectionStatus: inspection.status, canSend: new URLSearchParams(location.search).has('simulate-delivery'), reason: 'Syntetisk förhandsvisning. Inga mejl skickas.',
     pdfStatus: 'ready', hasStoredPdf: true, canDownloadPdf: true, history: [], activityLog: [],
+    ...(new URLSearchParams(location.search).has('word') ? {
+      digitalReportUrl: new URLSearchParams(location.search).has('published') ? `/ob/inspections/${inspectionId}/digital?report=selected` : null,
+      wordExportUrl: `/api/ob/inspections/${inspectionId}/word?${new URLSearchParams(location.search).has('published') ? 'report=selected' : 'draft=1'}`,
+    } : {}),
     defaultRecipientEmail: 'test@example.invalid', ordererEmail: 'test@example.invalid',
   })
   if (url !== `/api/ob/inspections/${inspectionId}/buildings` || init?.method !== 'POST') throw Error(`Blocked fixture request: ${url}`)

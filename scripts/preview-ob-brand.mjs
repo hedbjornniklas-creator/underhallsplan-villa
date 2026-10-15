@@ -37,6 +37,10 @@ for (const [url, path, type] of [
   ['/ob/brand/manrope.ttf', 'public/ob/brand/manrope.ttf', 'font/ttf'],
   ['/report-assets/BesiktApp.png', 'public/report-assets/BesiktApp.png', 'image/png'],
 ]) assets.set(url, { body: await readFile(path), type })
+if (process.argv.includes('--word-sample')) assets.set('/word-example.docx', {
+  body: await readFile('.cache/ob-word-export/ob-sample.docx'),
+  type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+})
 const icon = component => renderToStaticMarkup(createElement(component, { size: 20, 'aria-hidden': true }))
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://127.0.0.1')
@@ -50,6 +54,7 @@ const server = createServer(async (request, response) => {
     response.end('<!doctype html><html lang="sv"><body><h1>Syntetiskt utlåtande</h1><p>Rapportinnehållet ersätts i detta layoutprov.</p></body></html>'); return
   }
   if (assets.has(url.pathname)) {
+    if (url.pathname === '/word-example.docx') response.setHeader('Content-Disposition', "attachment; filename*=UTF-8''Exempelutl%C3%A5tande.docx")
     const asset = assets.get(url.pathname); response.setHeader('Content-Type', asset.type); response.end(asset.body); return
   }
   if (!['/', '/round'].includes(url.pathname)) { response.writeHead(404); response.end('Not found'); return }
@@ -83,9 +88,10 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB brand preview (synthetic only): ${base}`)
-if (process.argv.includes('--test') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors') || process.argv.includes('--test-layout') || process.argv.includes('--test-documents') || process.argv.includes('--test-unlock') || process.argv.includes('--test-status-object')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-word') || process.argv.includes('--test-autosave') || process.argv.includes('--test-floors') || process.argv.includes('--test-layout') || process.argv.includes('--test-documents') || process.argv.includes('--test-unlock') || process.argv.includes('--test-status-object')) {
   try {
-    if (process.argv.includes('--test-status-object')) { const { testStatusObject } = await import('../test/helpers/ob-status-object-browser.mjs'); await testStatusObject(base, output) }
+    if (process.argv.includes('--test-word')) { const { testWordExport } = await import('../test/helpers/ob-word-export-browser.mjs'); await testWordExport(base, output) }
+    else if (process.argv.includes('--test-status-object')) { const { testStatusObject } = await import('../test/helpers/ob-status-object-browser.mjs'); await testStatusObject(base, output) }
     else if (process.argv.includes('--test-unlock')) { const { testUnlock } = await import('../test/helpers/ob-unlock-browser.mjs'); await testUnlock(base, output) }
     else if (process.argv.includes('--test-documents')) { const { testDocumentLayout } = await import('../test/helpers/ob-document-layout-browser.mjs'); await testDocumentLayout(base, output) }
     else if (process.argv.includes('--test-layout')) { const { testInspectionLayout } = await import('../test/helpers/ob-inspection-layout-browser.mjs'); await testInspectionLayout(base, output) }
