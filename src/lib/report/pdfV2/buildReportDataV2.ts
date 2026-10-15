@@ -1,7 +1,8 @@
 ﻿import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BUILDING_DATA_OVERVIEW_ITEM_KEYS, buildBuildingDataMap, buildBuildingTypeParts, renderBuildingDataTextFromTemplate } from '@/lib/report/buildingData'
 import { readObFloorModel } from '@/lib/ob/floorModelStore'
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionContext, requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { resolveObReportIdentity } from '@/lib/ob/reportIdentity'
 import { readInspectionReportNote } from '@/lib/report/inspectionNoteText'
 import { isStatusInspection } from '@/lib/ob/inspectionProfile'
@@ -161,10 +162,14 @@ export type ReportDataV2 = {
 export async function buildReportDataV2(params: {
   propertyId?: string | null
   inspectionId: string
-}, scopedPart?: ObBuildingPart): Promise<ReportDataV2> {
-  const organization = await requireObInspectionContext(params.inspectionId)
+}, scopedPart?: ObBuildingPart, options: { readOnly?: boolean } = {}): Promise<ReportDataV2> {
+  const organization = options.readOnly
+    ? await requireObInspectionReadContext(params.inspectionId)
+    : await requireObInspectionContext(params.inspectionId)
   const resolvedParams = params
-const supabase: any = createSupabaseServerClient()
+  // Read-only previews authorize the immutable binding first. Editor and PDF
+  // publication callers retain the stricter owner guard and owner RLS.
+  const supabase: any = options.readOnly ? createSupabaseAdminClient() : createSupabaseServerClient()
   const buildingState = await readBuildingReportState(supabase, params.inspectionId)
   const part = scopedPart ?? buildingState?.parts.find(p => p.id === buildingState.structure.primary_part_id) ?? null
   if (scopedPart && !buildingState?.parts.some(p => p.id === scopedPart.id)) throw Error('Byggnaden ingår inte i besiktningen.')
@@ -358,7 +363,7 @@ const supabase: any = createSupabaseServerClient()
   const { data: propertyData, error: propertyError } = resolvedPropertyId
     ? await supabase
         .from('properties')
-        .select('id, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
+        .select('id, owner, name, address, postal_code, city, municipality, cadastral_id, owner_name, cover_path')
         .eq('id', resolvedPropertyId)
         .maybeSingle()
     : { data: null, error: null }
@@ -451,7 +456,8 @@ const supabase: any = createSupabaseServerClient()
     })
   }
 
-  const userId = organization.userId
+  const userId = propertyData?.owner
+  if (typeof userId !== 'string') throw new Error('OB_ORGANIZATION_FORBIDDEN')
   const profileError = null
 
   let frozenProfileFromSnapshot: Record<string, unknown> | null = null
@@ -1625,7 +1631,7 @@ const supabase: any = createSupabaseServerClient()
     if (!scopedPart) {
       const buildings = []
       for (const extra of buildingState.parts.filter(p => p.id !== buildingState.structure.primary_part_id)) {
-        const extraData = await buildReportDataV2(params, extra)
+        const extraData = await buildReportDataV2(params, extra, options)
         buildings.push({ id: extra.id, buildingId: extra.building_id, name: extra.name, categoryKey: extra.category_key,
           introduction: [{ title: extra.name, noteText: extra.scope_note ?? '', riskText: '', ftuText: '', hasDeviations: false,
             photoUrls: extraData.mock.properties.cover_path ? [extraData.mock.properties.cover_path] : [] }],

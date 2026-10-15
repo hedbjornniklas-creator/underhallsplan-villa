@@ -6,7 +6,7 @@ import ts from 'typescript'
 const ID = '11111111-1111-4111-8111-111111111111'
 const ORG = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-function harness(options: { signedIn?: boolean; bindingError?: string; family?: string | null; type?: string } = {}) {
+function harness(options: { signedIn?: boolean; bindingError?: string; family?: string | null; type?: string; canEdit?: boolean } = {}) {
   const calls: string[] = []
   const selectors: unknown[] = []
   const admin = { from(table: string) {
@@ -26,14 +26,14 @@ function harness(options: { signedIn?: boolean; bindingError?: string; family?: 
     }
     return query
   } }
-  const context = { orgId: ORG, userId: 'owner' }
+  const context = { orgId: ORG, userId: 'owner', canEdit: options.canEdit !== false }
   const dependencies: Record<string, unknown> = {
     'next/server': { NextResponse: Response },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/supabase/server': { createSupabaseServerClient: () => ({ auth: { getUser: async () => {
       calls.push('auth'); return { data: { user: options.signedIn === false ? null : { id: 'owner' } }, error: null }
     } } }) },
-    '@/lib/ob/organizationBindings': { requireObInspectionContext: async (id: string, orgId: unknown) => {
+    '@/lib/ob/organizationBindings': { requireObInspectionReadContext: async (id: string, orgId: unknown) => {
       calls.push('binding'); selectors.push([id, orgId])
       if (options.bindingError) throw new Error(options.bindingError)
       return context
@@ -68,6 +68,15 @@ test('old OB PDF links resolve immutable organization before accessing frozen PD
     assert.deepEqual(h.calls, ['auth', 'inspections', 'binding', 'inspection_report_links'])
     assert.deepEqual(h.selectors, [[ID, undefined]])
   }
+})
+
+test('permitted colleague reads download the original PDF without generating, storing or sending anything', async () => {
+  const h = harness({ canEdit: false })
+  const response = await h.get(`?orgId=${ORG}`)
+  assert.equal(response.status, 200)
+  assert.equal(await response.text(), '%PDF-original-frozen-document')
+  assert.deepEqual(h.calls, ['auth', 'inspections', 'binding', 'inspection_report_links'])
+  assert.match(response.headers.get('cache-control') ?? '', /no-store/)
 })
 
 test('wrong-org, non-owner, missing membership and unbound OB PDF requests cannot read archived content', async () => {

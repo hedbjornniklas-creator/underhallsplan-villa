@@ -3,14 +3,22 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import type * as Server from '../src/lib/dashboard/server'
+import type { DashboardConfirmationBookingSource } from '../src/lib/dashboard/model'
+import type { ObOverviewItem } from '../src/lib/ob/overview'
+import type { EbProjectListItem } from '../src/lib/eb/server'
+import type { EbAssignmentConfirmationSummary } from '../src/lib/eb/assignmentConfirmationTypes'
 // @ts-expect-error Node strip-types requires explicit TypeScript extension.
 import * as model from '../src/lib/dashboard/model.ts'
 
 const orgId = '11111111-1111-4111-8111-111111111111', otherOrgId = '22222222-2222-4222-8222-222222222222'
 const context = { orgId, userId: 'me', role: 'admin', orgName: 'Test' }
 function harness({ allowed = ['inspections', 'construction_inspections', 'technical_investigations', 'moisture_safety', 'tasks'],
-  accessOrgId = orgId, orgError = null as Error | null, failed = '' } = {}) {
+  accessOrgId = orgId, orgError = null as Error | null, failed = '', overviewItems = [] as ObOverviewItem[],
+  assignmentRows = [] as Array<DashboardConfirmationBookingSource & { id: string; org_id: string }>,
+  inspectionRows = [] as Array<{ id: string; date: string | null; inspection_time: string | null }>,
+  ebProjects = [] as EbProjectListItem[], ebConfirmations = [] as EbAssignmentConfirmationSummary[] } = {}) {
   const checks: Array<Record<string, unknown>> = [], reads: Array<{ module: string; orgId: string }> = [], selections: unknown[] = []
+  const bookingReads: Array<{ table: string; columns: string; orgId: unknown; ids: string[] }> = []
   const read = (module: string, selected: string, result: unknown) => {
     reads.push({ module, orgId: selected })
     if (failed === module) throw new Error('DATABASE_FAILED')
@@ -27,15 +35,31 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
       if (orgError) throw orgError
       return { ...context, orgId: selected || orgId }
     } },
-    '@/lib/supabase/server': { createSupabaseServerClient: () => ({}) },
+    '@/lib/supabase/server': { createSupabaseServerClient: () => ({ from: (table: string) => {
+      assert.ok(['assignments', 'inspections'].includes(table), `Unexpected table ${table}`)
+      let columns = '', selectedOrg: unknown
+      const query = {
+        select: (selected: string) => { columns = selected; return query },
+        eq: (column: string, value: unknown) => { assert.equal(column, 'org_id'); selectedOrg = value; return query },
+        in: async (column: string, ids: string[]) => {
+          assert.equal(column, 'id')
+          bookingReads.push({ table, columns, orgId: selectedOrg, ids })
+          return { data: table === 'assignments'
+            ? assignmentRows.filter(row => ids.includes(row.id) && row.org_id === selectedOrg)
+            : inspectionRows.filter(row => ids.includes(row.id)), error: null }
+        },
+      }
+      return query
+    } }) },
     '@/lib/ob/overviewLoader': { loadObOverview: async ({ orgId: selected, options }: { orgId: string; options: { page: number } }) => read('ob', selected,
-      { items: [], total: 0, page: options.page, pageSize: 50, counts: { active: 0, closed: 0, all: 0 } }) },
+      { items: overviewItems, total: overviewItems.length, page: options.page, pageSize: 50,
+        counts: { active: overviewItems.length, closed: 0, all: overviewItems.length } }) },
     '@/lib/tu/server': {
       requireTuContext: async (selected: string) => { selections.push(selected); return { ...context, orgId: selected } },
       listTuAssignments: async (selected: string) => read('tu', selected, []), listTuInvestigations: async (selected: string) => read('tu', selected, []),
     },
-    '@/lib/eb/server': { listEbProjects: async (selected: string) => read('eb', selected, []) },
-    '@/lib/eb/assignmentConfirmationServer': { listEbAssignmentConfirmationSummaries: async ({ orgId: selected }: { orgId: string }) => read('eb-confirmations', selected, []) },
+    '@/lib/eb/server': { listEbProjects: async (selected: string) => read('eb', selected, ebProjects) },
+    '@/lib/eb/assignmentConfirmationServer': { listEbAssignmentConfirmationSummaries: async ({ orgId: selected }: { orgId: string }) => read('eb-confirmations', selected, ebConfirmations) },
     '@/lib/moisture/server': {
       requireMoistureContext: async (selected: string) => { selections.push(selected); return { ...context, orgId: selected } },
       listMoistureProjects: async ({ orgId: selected }: { orgId: string }) => read('moisture', selected, []),
@@ -50,7 +74,7 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
     if (!(name in deps)) throw new Error(`Unexpected dependency ${name}`)
     return deps[name]
   }, compiled, compiled.exports)
-  return { server: compiled.exports as typeof Server, checks, reads, selections }
+  return { server: compiled.exports as typeof Server, checks, reads, selections, bookingReads }
 }
 
 test('dashboard validates membership before readers and never reads a denied module', async () => {
@@ -63,6 +87,7 @@ test('dashboard validates membership before readers and never reads a denied mod
   assert.ok(h.selections.every(selected => selected === orgId || selected === undefined), 'module contexts cannot silently choose another organization')
   assert.equal(result.bookings.length, 0)
   assert.equal(result.actions.length, 0)
+  assert.equal(h.bookingReads.length, 0, 'denied OB/EB modules must not read confirmation metadata')
 })
 
 test('an access grant in another organization never authorizes dashboard reads in the selected one', async () => {
@@ -105,4 +130,64 @@ test('one failed authorized reader reports its module while other data still loa
   assert.ok(h.reads.some(read => read.module === 'tasks'))
   assert.ok(h.reads.some(read => read.module === 'moisture'))
   assert.ok(h.reads.every(read => read.orgId === orgId))
+})
+
+const scheduledConfirmation = (id: string, overrides: Partial<DashboardConfirmationBookingSource> = {}) => ({
+  id, org_id: orgId, status: 'sent', preferred_date: '2026-10-14', preferred_time: '14:00', accepted_at: null,
+  booked_at: null, last_sent_at: '2026-10-12T10:00:00Z', archived_at: null, ...overrides,
+})
+
+test('OB supplemental reads follow the current reissue ID inside the selected organization and keep one event', async () => {
+  const row: ObOverviewItem = { id: 'inspection:i', date: '2026-10-12', createdAt: '2026-10-01', address: 'Testgatan 1', city: 'Stockholm',
+    customer: 'Kund', assignmentNumber: '', confirmation: 'Inväntar kund', inspection: 'Pågår', confirmationHref: '/ob/assignments/current',
+    inspectionHref: '/properties/p/ob/i', confirmationAction: 'Öppna bekräftelse', attention: [], closed: false, archived: false, marker: 'active' }
+  const h = harness({ allowed: ['inspections'], overviewItems: [row], inspectionRows: [{ id: 'i', date: '2026-10-12', inspection_time: '09:00' }],
+    assignmentRows: [scheduledConfirmation('old', { preferred_date: '2026-10-11' }), scheduledConfirmation('current'),
+      { ...scheduledConfirmation('foreign'), org_id: otherOrgId }] })
+  const result = await h.server.getDashboardData(orgId)
+  assert.equal(result.issues?.length, 0)
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].startsAt, '2026-10-14T14:00:00+02:00')
+  assert.equal(result.bookings[0].href, '/ob/assignments/current')
+  const assignmentRead = h.bookingReads.find(read => read.table === 'assignments')!
+  assert.equal(assignmentRead.orgId, orgId)
+  assert.deepEqual(assignmentRead.ids, ['current'], 'superseded/foreign/unlisted confirmations are never requested')
+  assert.ok(assignmentRead.columns.includes('preferred_date'))
+  assert.ok(assignmentRead.columns.includes('last_sent_at'))
+  assert.deepEqual(h.bookingReads.find(read => read.table === 'inspections')?.ids, ['i'])
+})
+
+test('OB read-only colleague rows are excluded before supplemental assignment and inspection reads', async () => {
+  const shared = { id: 'inspection:colleague', date: '2026-10-12', createdAt: '2026-10-01', address: 'Testgatan 1', city: 'Stockholm',
+    customer: 'Kund', assignmentNumber: '', confirmation: 'Inväntar kund', inspection: 'Pågår', confirmationHref: '/ob/assignments/colleague',
+    inspectionHref: '/properties/p/ob/colleague', confirmationAction: 'Öppna bekräftelse', attention: [], closed: false, archived: false,
+    marker: 'active' as const, canEdit: false }
+  const h = harness({ allowed: ['inspections'], overviewItems: [shared], assignmentRows: [scheduledConfirmation('colleague')],
+    inspectionRows: [{ id: 'colleague', date: '2026-10-12', inspection_time: '09:00' }] })
+  const result = await h.server.getDashboardData(orgId)
+  assert.equal(result.modules.find(item => item.id === 'ob')?.activeCount, 0)
+  assert.equal(result.bookings.length, 0)
+  assert.equal(result.actions.length, 0)
+  assert.equal(h.bookingReads.length, 0)
+})
+
+test('EB supplemental schedule reads use only current confirmation IDs and remain tentative if RLS hides the source', async () => {
+  const project = { id: 'p', orgId, title: 'Takrenovering', status: 'active', address: 'Takvägen 2',
+    inspections: [{ inspectionId: 'i', status: 'draft', reportLockedAt: null, date: '2026-10-12', inspectionTime: '08:00', variantLabel: 'Slutbesiktning' }] } as EbProjectListItem
+  const summary = { assignmentId: 'current', inspectionId: 'i', status: 'sent', acceptedAt: null, lastSentAt: '2026-10-12' } as EbAssignmentConfirmationSummary
+  const config = { allowed: ['construction_inspections'], ebProjects: [project], ebConfirmations: [summary] }
+  const h = harness({ ...config, assignmentRows: [scheduledConfirmation('current'), scheduledConfirmation('old')] })
+  const result = await h.server.getDashboardData(orgId)
+  assert.equal(result.bookings.length, 1)
+  assert.equal(result.bookings[0].status, 'tentative')
+  assert.equal(result.bookings[0].startsAt, '2026-10-14T14:00:00+02:00')
+  assert.deepEqual(h.bookingReads.map(read => ({ table: read.table, orgId: read.orgId, ids: read.ids })), [
+    { table: 'assignments', orgId, ids: ['current'] },
+  ])
+  const hidden = harness(config)
+  const hiddenResult = await hidden.server.getDashboardData(orgId)
+  assert.equal(hiddenResult.issues?.length, 0)
+  assert.equal(hiddenResult.bookings[0].status, 'tentative', 'current sent evidence must not be upgraded to confirmed when supplementary metadata is hidden')
+  assert.equal(hiddenResult.bookings[0].startsAt, '2026-10-12', 'never borrow an old actual time for an unreadable proposal')
 })

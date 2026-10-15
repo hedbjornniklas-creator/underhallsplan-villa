@@ -15,7 +15,7 @@ import { getTaskWorkspace } from '@/lib/tasks/server'
 import {
   buildObDashboard, buildTuDashboard, buildEbDashboard, buildMoistureDashboard, buildTaskDashboard,
   getStockholmDate, sortDashboardActions,
-  type DashboardData, type DashboardModule, type DashboardModuleId, type DashboardModuleSummary,
+  type DashboardData, type DashboardModule, type DashboardModuleId, type DashboardModuleSummary, type DashboardConfirmationBookingSource,
 } from './model'
 
 export { getStockholmDate } from './model'
@@ -39,9 +39,21 @@ async function allowedInOrganization(orgId: string, moduleKey?: PlatformModuleKe
   return organization || global
 }
 
+async function readConfirmationBookings(userClient: SupabaseClient, orgId: string, ids: string[]) {
+  const result = new Map<string, DashboardConfirmationBookingSource>()
+  if (!ids.length) return result
+  const { data, error } = await userClient.from('assignments')
+    .select('id,status,preferred_date,preferred_time,accepted_at,booked_at,last_sent_at,archived_at')
+    .eq('org_id', orgId).in('id', [...new Set(ids)])
+  if (error) throw new Error('DASHBOARD_CONFIRMATION_BOOKING_READ_FAILED')
+  for (const assignment of data || []) result.set(assignment.id, assignment)
+  return result
+}
+
 async function readOb(orgId: string, today: string): Promise<DashboardModuleSummary> {
   const userClient = createSupabaseServerClient() as unknown as SupabaseClient
   const items: ObOverviewItem[] = [], times = new Map<string, string | null>(), inspectionDates = new Map<string, string | null>()
+  const confirmations = new Map<string, DashboardConfirmationBookingSource>()
   let page = 1, total = 0
   // The existing invoker RPC supplies only normalized rows visible to this user,
   // including the current confirmation after a reissue. No admin fallback.
@@ -51,25 +63,35 @@ async function readOb(orgId: string, today: string): Promise<DashboardModuleSumm
       showArchived: false, page, pageSize: 50,
     } })
     total = result.total
-    items.push(...result.items)
-    const inspectionRows = result.items.filter(item => item.id.startsWith('inspection:'))
-    const assignmentRows = result.items.filter(item => item.id.startsWith('assignment:'))
+    const ownItems = result.items.filter(item => !('canEdit' in item) || item.canEdit !== false)
+    items.push(...ownItems)
+    const inspectionRows = ownItems.filter(item => item.id.startsWith('inspection:'))
+    // The overview already resolves reissued confirmations. Fetch only its
+    // current confirmation IDs rather than searching by inspection/date/address.
+    const assignmentIds = new Map(ownItems.flatMap(item => {
+      const id = item.confirmationHref?.match(/^\/ob\/assignments\/([^/?#]+)$/)?.[1]
+      return id ? [[item.id, id] as const] : []
+    }))
     for (const inspection of inspectionRows) inspectionDates.set(inspection.id, null)
     const [inspections, assignments] = await Promise.all([
       inspectionRows.length ? userClient.from('inspections').select('id,date,inspection_time')
         .in('id', inspectionRows.map(item => item.id.slice('inspection:'.length))) : Promise.resolve({ data: [], error: null }),
-      assignmentRows.length ? userClient.from('assignments').select('id,preferred_time').eq('org_id', orgId)
-        .in('id', assignmentRows.map(item => item.id.slice('assignment:'.length))) : Promise.resolve({ data: [], error: null }),
+      readConfirmationBookings(userClient, orgId, [...assignmentIds.values()]),
     ])
-    if (inspections.error || assignments.error) throw new Error('DASHBOARD_OB_BOOKING_READ_FAILED')
+    if (inspections.error) throw new Error('DASHBOARD_OB_BOOKING_READ_FAILED')
     for (const inspection of inspections.data || []) {
       times.set(`inspection:${inspection.id}`, inspection.inspection_time)
       inspectionDates.set(`inspection:${inspection.id}`, inspection.date)
     }
-    for (const assignment of assignments.data || []) times.set(`assignment:${assignment.id}`, assignment.preferred_time)
+    for (const [rowId, assignmentId] of assignmentIds) {
+      const source = assignments.get(assignmentId)
+      if (!source) continue
+      confirmations.set(rowId, source)
+      if (rowId.startsWith('assignment:')) times.set(rowId, source.preferred_time)
+    }
     page += 1
   } while ((page - 1) * 50 < total)
-  return buildObDashboard([...new Map(items.map(item => [item.id, item])).values()], times, today, inspectionDates)
+  return buildObDashboard([...new Map(items.map(item => [item.id, item])).values()], times, today, inspectionDates, confirmations)
 }
 
 export async function getDashboardData(requestedOrgId?: unknown): Promise<DashboardData> {
@@ -98,7 +120,9 @@ export async function getDashboardData(requestedOrgId?: unknown): Promise<Dashbo
       const confirmations = await listEbAssignmentConfirmationSummaries({
         orgId: context.orgId, inspectionIds: projects.flatMap(project => project.inspections.map(inspection => inspection.inspectionId)),
       })
-      return buildEbDashboard(context.orgId, projects, confirmations, today)
+      const confirmationBookings = await readConfirmationBookings(
+        createSupabaseServerClient() as unknown as SupabaseClient, context.orgId, confirmations.map(item => item.assignmentId))
+      return buildEbDashboard(context.orgId, projects, confirmations, today, confirmationBookings)
     },
     moisture: async () => {
       const selected = await requireMoistureContext(context.orgId)

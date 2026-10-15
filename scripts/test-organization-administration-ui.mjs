@@ -168,6 +168,16 @@ try {
   assert.equal(await role.evaluate(node => node.value), 'admin')
   assert.ok(await page.$eval('button[aria-label="Uppdatera medlemslistan"]', node => node.disabled))
   await role.select('inspector')
+  const visibility = 'section[aria-label="ÖB-läsbehörighet för Testgubbe 1"] input[type="checkbox"]'
+  await page.click(visibility)
+  const visibilityReads = (await calls()).length
+  await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')) })
+  await new Promise(resolve => setTimeout(resolve, 100))
+  assert.equal((await calls()).length, visibilityReads, 'Focus must not discard pending visibility edits')
+  assert.ok(await page.$eval(visibility, node => node.checked))
+  assert.ok(await page.$eval('button[aria-label="Uppdatera medlemslistan"]', node => node.disabled))
+  await page.click(visibility)
+  await page.waitForFunction(() => !document.querySelector('button[aria-label="Uppdatera medlemslistan"]').disabled)
   await page.evaluate(() => window.organizationRefreshQa.defer())
   await page.click('button[aria-label="Uppdatera medlemslistan"]')
   await role.select('admin')

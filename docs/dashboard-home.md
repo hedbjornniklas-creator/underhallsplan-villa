@@ -6,17 +6,23 @@ entreprenadbesiktning, tekniska utredningar, fuktsäkerhet och Uppdrag.
 ## Innehåll och flöden
 
 - Kompakta modulkort visar aktiva uppdrag och antal nästa steg. Moduler utan
-  behörighet saknar navigerbar länk och läses inte in.
+  behörighet visas inte och läses inte in. Tillgängliga moduler visas även
+  när de saknar aktuella uppdrag.
 - Åtgärdslistan skiljer besiktningar, uppdragsbekräftelser och övriga uppgifter.
   Befintliga statusar bestämmer nästa steg. Länkarna öppnar modulens vanliga
   arbetsflöde; startsidan skickar inte bekräftelser och godkänner inte uppgifter.
 - Sökning och modulfilter gäller åtgärdslistan, kalendern, uppdragen och kartan.
   Kategorifiltret gäller enbart åtgärdslistan.
-- Kalendern visar en hel vecka inklusive helger. Vald dag styr uppdragslista
-  och karta. Tider och datum visas i Europe/Stockholm. Besök utan registrerad
-  tid visas med ”Tid ej angiven”. Uppgiftsdeadlines och önskade besöksdatum
-  skapar inte bokade besök.
-- Kartans numrerade stopp följer uppdragslistan. Den streckade linjen visar
+- Kalendern visar en hel vecka inklusive helger. Skickade uppdragsbekräftelser
+  med ett föreslaget datum visas som gula, streckade preliminära uppdrag med
+  aktuell bekräftelsestatus. Utkast och avbrutna uppdrag skapar inga preliminära
+  besök. När uppdraget bokas visas samma uppdrag som bekräftat utan dubblett.
+  Vald dag styr uppdragslista och karta. Tider och datum visas i Europe/Stockholm.
+  Besök utan registrerad tid visas med ”Tid ej angiven”. Uppgiftsdeadlines
+  skapar inte kalenderbesök.
+- Kartans numrerade stopp följer uppdragslistans bekräftade besök. Preliminära
+  uppdrag ingår i kalendern men läggs till i karta och resväg först när de
+  bekräftas. Den streckade linjen visar
   stoppens ordning. ”Öppna resväg” öppnar Google Maps med köranvisningar från
   användarens position. Dagar med fler än fyra stopp delas i flera länkar för
   att även mobila webbläsares gräns för mellanstopp ska fungera.

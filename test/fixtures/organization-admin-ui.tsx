@@ -12,9 +12,10 @@ Object.assign(window, { organizationUiCalls: calls })
 let accepted = false
 let deferNextRead = false
 let releaseStale: (() => void) | null = null
-const members = [{ profileId: 'viewer', displayName: 'Niklas Test', email: 'niklas@example.test', role: 'admin', isActive: true, modules: enabledModules }]
+const obVisibility = { canViewColleagues: false, revision: 0, canEnable: enabledModules.includes('inspections') }
+const members = [{ profileId: 'viewer', displayName: 'Niklas Test', email: 'niklas@example.test', role: 'admin', isActive: true, modules: enabledModules, obVisibility }]
 Object.assign(window, { organizationRefreshQa: {
-  accept: () => { accepted = true; members.push({ profileId: 'colleague', displayName: 'Testgubbe 1', email: 'colleague@example.test', role: 'inspector', isActive: true, modules: enabledModules }) },
+  accept: () => { accepted = true; members.push({ profileId: 'colleague', displayName: 'Testgubbe 1', email: 'colleague@example.test', role: 'inspector', isActive: true, modules: enabledModules, obVisibility: { ...obVisibility } }) },
   defer: () => { deferNextRead = true }, release: () => releaseStale?.(),
 } })
 const workspace: OrganizationAdministrationWorkspace = {

@@ -34,7 +34,7 @@ const css = [globalCss, ...await Promise.all([
 ].map(path => readFile(path, 'utf8')))].join('\n').replaceAll(/@import '[^']+';/g, '')
 const font = await readFile('public/ob/brand/manrope.ttf')
 const js = await readFile(resolve(output, 'view.js'))
-const assignment = { id: 'synthetic-assignment', org_id: 'synthetic-org', status: 'sent', assignment_type: 'OB',
+const assignment = { id: 'synthetic-assignment', org_id: 'synthetic-org', canEdit: true, status: 'sent', assignment_type: 'OB',
   customer_name: 'Testkund', customer_email: 'test@example.test', customer_phone: '0700000000',
   customer_address: 'Testgatan 1', customer_postal_code: '12345', customer_city: 'Teststad',
   property_address: 'Testgatan 1', preliminary_address: 'Testgatan 1', property_postal_code: '12345',

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadOverviewPdfIds } from './overviewPdfs'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
   makeObOverviewItem, type ObOverviewPage, type OverviewAssignment, type OverviewInspection,
   type OverviewPageOptions, type OverviewWorkflow,
@@ -9,14 +10,15 @@ type OverviewRow = {
   assignment: OverviewAssignment | null
   inspection: OverviewInspection | null
   workflow: OverviewWorkflow | null
+  canEdit: boolean
 }
 type DatabasePage = Omit<ObOverviewPage, 'items'> & { rows: OverviewRow[] }
 
 const nonnegativeInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 
-// One invoker RPC keeps inspection/property/snapshot reads inside the signed-in
-// user's RLS boundary. Filtering, counts and LIMIT share one database snapshot.
+// One authenticated RPC verifies active membership, OB access and colleague
+// visibility. Filtering, counts and LIMIT share one database snapshot.
 // Only this page is returned; never fall back to fetching all inspection data.
 export async function loadObOverview(input: {
   userClient: SupabaseClient; orgId: string; options: OverviewPageOptions
@@ -38,14 +40,20 @@ export async function loadObOverview(input: {
     throw new Error('Uppdragslistans svar kunde inte verifieras.')
   }
   const items = result.rows.map(row => {
-    if (!row || (!row.assignment && !row.inspection)) throw new Error('Uppdragslistans rad saknar underlag.')
+    if (!row || (!row.assignment && !row.inspection) || typeof row.canEdit !== 'boolean') throw new Error('Uppdragslistans rad saknar underlag.')
     if (row.workflow && row.assignment && row.workflow.current_assignment_id !== row.assignment.id) {
       throw new Error('Uppdraget ändrades medan listan lästes. Försök igen.')
     }
-    return makeObOverviewItem(row.assignment ?? undefined, row.inspection ?? undefined, row.workflow ?? undefined)
+    const item = makeObOverviewItem(row.assignment ?? undefined, row.inspection ?? undefined, row.workflow ?? undefined)
+    return { ...item, canEdit: row.canEdit,
+      ...(row.inspection && !row.canEdit ? { inspectionHref: `/utlatande/${row.inspection.property_id}/${row.inspection.id}` } : {}),
+      ...(!row.canEdit ? { confirmationAction: 'Visa bekräftelse' } : {}),
+    }
   })
   if (new Set(items.map(item => item.id)).size !== items.length) throw new Error('Uppdragslistan innehåller dubbla rader.')
-  const pdfIds = await loadOverviewPdfIds(userClient, orgId,
+  // These IDs came only from the authorization-enforcing RPC above. The admin
+  // client reads bounded PDF metadata for that page; no additional entity IDs.
+  const pdfIds = await loadOverviewPdfIds(createSupabaseAdminClient(), orgId,
     result.rows.flatMap(row => row.inspection ? [row.inspection.id] : []))
   result.rows.forEach((row, index) => {
     if (row.inspection && pdfIds.has(row.inspection.id)) {

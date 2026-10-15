@@ -1,4 +1,4 @@
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionContext, requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -35,9 +35,9 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params
-    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
+    const org = await requireObInspectionReadContext((await context.params).id, obRequestOrgId(request))
     const addonOrders = await listInspectionAddonOrders(org.orgId, id)
-    return NextResponse.json({ addonOrders })
+    return NextResponse.json({ addonOrders, canEdit: org.canEdit }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)
     if (organizationFailure) return organizationFailure

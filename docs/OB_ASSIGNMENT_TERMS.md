@@ -33,7 +33,10 @@ The public acceptance handler no longer performs its old post-acceptance field
 sync for OB/STATUS: contents must be committed in the acceptance transaction,
 before snapshot capture. TU/EB compatibility behavior is unchanged.
 
-This correction is not yet published or applied to the production database.
+On 2026-10-15 the user confirmed applying this SQL and authorized publication.
+The release also integrates the existing production colleague-read permission:
+read-only colleagues cannot edit even an unissued draft. Publication verification
+is recorded separately in `OB_RELEASE_2026-10-15.md`.
 
 ## Published, activation setting confirmed
 

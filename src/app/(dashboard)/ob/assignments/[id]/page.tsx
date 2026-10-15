@@ -29,6 +29,7 @@ type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB'
 type OrdererRole = ObInspectionProfileKey | ''
 
 type AssignmentDetails = {
+  canEdit: boolean
   id: string
   org_id: string
   status: AssignmentStatus
@@ -241,7 +242,7 @@ function AssignmentDetailsContent() {
     return Number.isFinite(parsed) && parsed >= 0
   }, [form])
 
-  const isEditingLocked = editingConflict || !canEditObAssignment(assignment)
+  const isEditingLocked = assignment?.canEdit !== true || editingConflict || !canEditObAssignment(assignment)
   const canSend = !isEditingLocked && hasOrdererRole && hasValidPrice
   const canBook = assignment?.status === 'ordered' && !assignment.archived_at
   const canConvert = assignment?.status === 'booked' && !assignment.inspection_id
@@ -252,6 +253,7 @@ function AssignmentDetailsContent() {
   const loadAssignment = useCallback(async () => {
     try {
       setLoading(true)
+      setAssignment(null)
       setError(null)
       setSuccess(null)
       setAddonOrders([])
@@ -575,6 +577,27 @@ function AssignmentDetailsContent() {
     } finally {
       setReissuing(false)
     }
+  }
+  if (assignment && assignment.canEdit !== true) {
+    return <Protected><main className="ob-form-shell ob-assignment-page"><div className="ob-assignment-shell space-y-4">
+      <header className="ob-form-root ob-form-compact"><h1>Uppdragsbekräftelse</h1>
+        <p className="mt-2 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900">Kollegans ÖB-uppdrag · Endast läsning. Du kan inte ändra, skicka eller ta över uppdraget.</p>
+        <button type="button" className="mt-3 underline" onClick={() => router.push(withObOrganization('/ob', orgId))}>Tillbaka till ÖB</button>
+      </header>
+      <section className="ob-form-root ob-form-compact"><h2>Uppdragsuppgifter</h2><dl className="mt-4 grid gap-4 sm:grid-cols-2">
+        {[
+          ['Kund', assignment.customer_name || assignment.customer_email], ['E-post', assignment.customer_email],
+          ['Telefon', assignment.customer_phone], ['Objekt', assignment.property_address || assignment.preliminary_address],
+          ['Ort', assignment.property_city], ['Status', assignmentStatusToLabel(assignment.status)],
+          ['Önskat datum', assignment.preferred_date], ['Önskad tid', assignment.preferred_time],
+          ['Pris', assignment.price_amount === null ? null : `${assignment.price_amount} ${assignment.currency}`],
+          ['Omfattning', assignment.scope_description], ['Intern anteckning', assignment.notes_internal],
+        ].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="whitespace-pre-wrap text-sm">{value || '–'}</dd></div>)}
+      </dl>
+        {assignment.last_sent_at && <a className="mt-4 inline-block underline" href={withObOrganization(`/api/ob/assignments/${assignment.id}/pdf`, orgId)} target="_blank" rel="noopener noreferrer">Visa sparad uppdragsbekräftelse (PDF)</a>}
+        {assignment.inspection_id && assignment.property_id && <a className="ml-4 mt-4 inline-block underline" href={withObOrganization(`/utlatande/${assignment.property_id}/${assignment.inspection_id}`, orgId)}>Läs besiktningens utlåtande</a>}
+      </section>
+    </div></main></Protected>
   }
   return (
     <Protected>

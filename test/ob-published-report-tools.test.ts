@@ -24,7 +24,7 @@ const token = 'a'.repeat(40)
 const url = 'https://hushub.se/api/ob/inspections/inspection/published-report?report=selected-version'
 const context = { params: Promise.resolve({ id: 'inspection' }) }
 type Route = { GET: (request: Request, context: unknown) => Promise<Response>; POST: (request: Request, context: unknown) => Promise<Response> }
-function harness({ denied = false, missing = false, side = 'buyer', state = 'ready', storage = false, mailStatus = 200 } = {}) {
+function harness({ denied = false, colleague = false, missing = false, side = 'buyer', state = 'ready', storage = false, mailStatus = 200 } = {}) {
   const calls = { reads: 0, signed: [] as unknown[][], shares: [] as { token: string; body: unknown }[] }
   const pdf = '%PDF-1.7\nFrozen selected-version bytes'
   const report = { snapshot: { inspectionSide: side, reportData: { mock: { inspections: {
@@ -34,7 +34,14 @@ function harness({ denied = false, missing = false, side = 'buyer', state = 'rea
   const route = load<Route>('src/app/api/ob/inspections/[id]/published-report/route.ts', {
     'next/server': { NextResponse: { redirect: (location: string, init: ResponseInit) => new Response(null, { ...init, headers: { ...init.headers, Location: location } }) } },
     '@/lib/assignments/tokens': { hashAssignmentToken: hash },
-    '@/lib/ob/organizationBindings': { requireObInspectionContext: async () => { if (denied) throw Error('UNAUTHORIZED'); return { orgId: 'org', userId: 'user' } } },
+    '@/lib/ob/organizationBindings': {
+      requireObInspectionReadContext: async () => { if (denied) throw Error('UNAUTHORIZED'); return { orgId: 'org', userId: 'user', canEdit: !colleague } },
+      requireObInspectionContext: async () => {
+        if (denied) throw Error('UNAUTHORIZED')
+        if (colleague) throw Error('OB_ORGANIZATION_FORBIDDEN')
+        return { orgId: 'org', userId: 'user' }
+      },
+    },
     '@/lib/ob/organizationHttp': failures,
     '@/lib/ob/publishedReport': { getObPublishedReportRecord: async (_db: unknown, id: string, reportId: string) => {
       assert.equal(id, 'inspection'); assert.equal(reportId, 'selected-version'); calls.reads++; return missing ? null : report
@@ -69,6 +76,19 @@ test('exact-version PDF download returns stored bytes and uses the frozen STB/OB
   const response = await route.GET(new Request(url), context)
   assert.equal(response.status, 302)
   assert.deepEqual(calls.signed, [['inspection-reports', 'frozen/selected.pdf', 120, { download: 'Utlåtande ÖB 2026-0101-01.pdf' }]])
+})
+
+test('an authorized colleague can download the frozen PDF, but cannot validate or forward its customer link', async () => {
+  const { route, post, calls, pdf } = harness({ colleague: true })
+  const response = await route.GET(new Request(url), context)
+  assert.equal(response.status, 200)
+  assert.equal(await response.text(), pdf)
+  const reads = calls.reads
+  for (const action of ['validate-link', 'share']) {
+    assert.equal((await post({ action, publicUrl: `https://hushub.se/rapport/${token}`, email: 'recipient@example.test' })).status, 403)
+  }
+  assert.equal(calls.reads, reads, 'write authorization is checked before reading report metadata')
+  assert.deepEqual(calls.shares, [])
 })
 
 test('PDF pending and failed never return another ready version; missing and unauthorized reports fail closed', async () => {

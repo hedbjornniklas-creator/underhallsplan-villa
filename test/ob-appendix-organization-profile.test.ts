@@ -35,7 +35,9 @@ function fixture(options: { locked?: boolean; frozen?: Record<string, unknown> |
       return { summary: { sbr_group: 'org group', sbr_status: null, membership_number: null,
         certification_number: 'org cert', is_sbr_diplomerad_areamatning: true, all_selected_items: [] } }
     } },
-    '@/lib/supabase/admin': {},
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ storage: { from: () => ({
+      getPublicUrl: (path: string) => ({ data: { publicUrl: `https://storage.example.test/${path}` } }),
+    }) } }) },
   }
   const identity = load('src/lib/ob/reportIdentity.ts', deps)
   const appendix = load<typeof import('../src/lib/ob/appendixProfile')>('src/lib/ob/appendixProfile.ts', {

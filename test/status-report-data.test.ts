@@ -21,7 +21,7 @@ function fixture(status = true, failureTable?: string) {
     inspections: [{ id: 'inspection', property_id: 'property', date: '2026-10-02',
       inspection_side: status ? 'status' : 'buyer', inspection_variant: status ? 'SB' : 'OB', type: 'OB',
       assignment_number: '2026-1002-01', scope: 'main_building', assignment_confirmation_delivered_date: '2026-10-01' }],
-    properties: [{ id: 'property', cadastral_id: 'TEST 1:1', address: 'Testgatan 1' }],
+    properties: [{ id: 'property', owner: 'inspector', cadastral_id: 'TEST 1:1', address: 'Testgatan 1' }],
     assignments: [{ ...frozenAssignment, assignment_type: status ? 'STATUS' : 'OB', inspection_id: 'inspection' }],
     assignment_confirmation_snapshots: [{ org_id: 'org', assignment_id: 'assignment',
       schema_version: 'ob-confirmation-v1', accepted_at: frozenAssignment.accepted_at,
@@ -75,15 +75,22 @@ function fixture(status = true, failureTable?: string) {
   return { rows, calls, db }
 }
 
-function loadBuilder(db: unknown) {
+function loadBuilder(db: unknown, options: { events?: string[]; accessError?: string } = {}) {
   const cache = new Map<string, { exports: any }>()
   const stubs: Record<string, unknown> = {
     'server-only': {},
-    '@/lib/supabase/server': { createSupabaseServerClient: () => db },
-    '@/lib/supabase/admin': { createSupabaseAdminClient: () => db },
+    '@/lib/supabase/server': { createSupabaseServerClient: () => { options.events?.push('user-client'); return db } },
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => { options.events?.push('admin-client'); return db } },
     '@/lib/ob/organizationBindings': { requireObInspectionContext: async (id: string) => {
       assert.equal(id, 'inspection')
+      options.events?.push('write-guard')
+      if (options.accessError) throw Error(options.accessError)
       return { orgId: 'org', userId: 'inspector' }
+    }, requireObInspectionReadContext: async (id: string) => {
+      assert.equal(id, 'inspection')
+      options.events?.push('read-guard')
+      if (options.accessError) throw Error(options.accessError)
+      return { orgId: 'org', userId: 'viewer', canEdit: false }
     } },
     '@/lib/ob/reportIdentity': { resolveObReportIdentity: async (input: { orgId: string; profileId: string }) => {
       assert.equal(input.orgId, 'org'); assert.equal(input.profileId, 'inspector')
@@ -119,8 +126,35 @@ function loadBuilder(db: unknown) {
     return mod.exports
   }
   return load(resolve(root, 'src/lib/report/pdfV2/buildReportDataV2.ts')).buildReportDataV2 as
-    (params: { propertyId: string; inspectionId: string }) => Promise<{ mock: any }>
+    (params: { propertyId: string; inspectionId: string }, scopedPart?: unknown, options?: { readOnly?: boolean }) => Promise<{ mock: any }>
 }
+
+test('the report builder remains owner-only by default and opts into guarded colleague reads explicitly', async () => {
+  for (const readOnly of [false, true]) {
+    const f = fixture(false), events: string[] = [], before = structuredClone(f.rows)
+    const result = await loadBuilder(f.db, { events })({ propertyId: 'property', inspectionId: 'inspection' }, undefined, readOnly ? { readOnly } : undefined)
+    assert.deepEqual(events.slice(0, 2), readOnly ? ['read-guard', 'admin-client'] : ['write-guard', 'user-client'])
+    assert.equal(result.mock.profile.full_name, 'Inspector')
+    assert.deepEqual(f.rows, before, 'reading does not alter the inspection, assignment or snapshots')
+  }
+})
+
+test('a denied report read cannot create a privileged client or load inspection data', async () => {
+  const f = fixture(false), events: string[] = []
+  await assert.rejects(loadBuilder(f.db, { events, accessError: 'OB_ORGANIZATION_FORBIDDEN' })({
+    propertyId: 'property', inspectionId: 'inspection',
+  }, undefined, { readOnly: true }), /OB_ORGANIZATION_FORBIDDEN/)
+  assert.deepEqual(events, ['read-guard'])
+  assert.deepEqual(f.calls, [])
+})
+
+test('a read-only report rejects a foreign property parameter before loading that property or any issuer identity', async () => {
+  const f = fixture(false)
+  f.rows.properties.push({ id: 'other-property', owner: 'unrelated-inspector', address: 'Private unrelated address' })
+  await assert.rejects(loadBuilder(f.db)({ propertyId: 'other-property', inspectionId: 'inspection' }, undefined, { readOnly: true }),
+    /OB_ORGANIZATION_FORBIDDEN/)
+  assert.ok(!f.calls.some(call => call.table === 'properties'))
+})
 
 test('STB builder freezes scope and source and excludes untouched rooms and exterior placeholders', async () => {
   const f = fixture()

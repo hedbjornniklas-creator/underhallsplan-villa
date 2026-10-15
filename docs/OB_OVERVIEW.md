@@ -29,7 +29,7 @@ Detta är inte en mätning av hur ofta användare öppnade sidorna.
 - `/ob/assignments/new`, `/ob/assignments/[id]`, besiktningens arbetsvy och
   kundens godkännandesida är aktuella arbetsflöden, inte överflödiga listvyer.
 
-### Avveckling 2026-10-14 (lokalt, inte publicerat)
+### Avveckling 2026-10-14 (publicering godkänd 2026-10-15)
 
 Användaren har beslutat att avveckla de två gamla generella listorna.
 
@@ -71,7 +71,7 @@ leveransens filer.
 Inga kunduppgifter ändras av testerna. Produktionspublicering redovisas
 separat efter godkännande.
 
-### Digitala rapportverktyg 2026-10-14 (lokalt, inte publicerat)
+### Digitala rapportverktyg 2026-10-14 (publicering godkänd 2026-10-15)
 
 Skicka utlåtande skiljer på klarmarkering och faktiskt låsdatum. En tidigare
 klarmarkerad men upplåst besiktning visar **Skicka och lås**, inte **Skicka och
@@ -82,6 +82,11 @@ görs av serverns skickande, låsning eller sparade utlåtanden.
 Den interna digitala vyn får delning och PDF-hämtning för exakt det valda
 rapport-ID:t. Den får aldrig falla tillbaka till en annan färdig version eller
 bygga ett nytt utlåtande. ÖB och statusbesiktning använder samma verktyg.
+
+Vid sammanslagningen med produktionsversionen 2026-10-15 behålls kollegors
+läsbehörighet. Den ger hämtning av den sparade PDF-versionen, men inte
+delningsåtgärder, avbokning eller arkivering av kollegans uppdrag. Den privata
+PDF-statusvägen är enbart läsande och bygger aldrig om ett historiskt utlåtande.
 
 Äldre kundtoken finns bara som hash och kan inte återskapas. Delningsdialogen
 tar därför emot den ursprungliga kundlänken och kontrollerar dess ursprung och

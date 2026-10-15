@@ -13,9 +13,9 @@ import type { OrganizationAdministrationWorkspace, OrganizationProfileValues } f
 type Role = 'admin' | 'inspector'
 type OrganizationProfile = OrganizationProfileValues
 type OrganizationSettingsWorkspace = OrganizationAdministrationWorkspace
-type Member = { profileId: string; displayName: string | null; email: string | null; role: Role; isActive: boolean; modules: string[] }
+type Member = { profileId: string; displayName: string | null; email: string | null; role: Role; isActive: boolean; modules: string[]; obVisibility?: { canViewColleagues: boolean; revision: number; canEnable: boolean } }
 type Invitation = { id: string; email: string; fullName: string; role: Role; modules: string[]; status: 'pending' | 'accepted' | 'revoked'; expiresAt: string; revision: number; notificationState: string }
-type MembersPayload = { members: Member[]; invitations: Invitation[]; enabledModules: string[] }
+type MembersPayload = { members: Member[]; invitations: Invitation[]; enabledModules: string[]; obVisibilityMigrationRequired?: boolean }
 type Tab = 'organization' | 'sender-profiles' | 'members' | 'integrations'
 const WORK_MODULES = [
   { key: 'inspections', label: 'ÖB – överlåtelsebesiktning' },
@@ -249,6 +249,7 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
     </section>
     {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p>{error}</p><button type="button" className="mt-2 underline" disabled={busy || disabled} onClick={() => { setError(''); void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte läsa listan.')) }}>Hämta aktuell medlemslista</button></div>}
     {notice && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
+    {data?.obVisibilityMigrationRequired && <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Databasstödet för ÖB-läsbehörighet behöver installeras innan du kan ändra det. Övrig medlemshantering fungerar som tidigare.</p>}
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-950">Medlemmar {data && <span className="ml-1 text-sm font-normal text-slate-500">({data.members.length})</span>}</h2>
         <button type="button" aria-label="Uppdatera medlemslistan" title="Uppdatera medlemslistan" className={secondaryClass} disabled={disabled || busy || refreshing || hasDirtyMembers || Boolean(fullName || email)} onClick={() => { setError(''); void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte uppdatera medlemslistan.')) }}><RefreshCw size={17} className={refreshing ? 'animate-spin' : ''} aria-hidden /></button>
@@ -266,12 +267,19 @@ export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, 
   const [role, setRole] = useState(member.role)
   const [isActive, setActive] = useState(member.isActive)
   const [modules, setModules] = useState(member.isActive ? member.modules : [])
+  const visibilityDirty = useRef(false)
+  const memberDirty = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const inFlight = useRef(false)
   const dirty = role !== member.role || isActive !== member.isActive || JSON.stringify(modules) !== JSON.stringify(member.modules)
+  memberDirty.current = dirty || busy
+  const onVisibilityDirtyChange = useCallback((value: boolean) => {
+    visibilityDirty.current = value
+    onDirtyChange?.(member.profileId, memberDirty.current || value)
+  }, [onDirtyChange, member.profileId])
   useEffect(() => {
-    onDirtyChange?.(member.profileId, dirty || busy)
+    onDirtyChange?.(member.profileId, dirty || busy || visibilityDirty.current)
     return () => onDirtyChange?.(member.profileId, false)
   }, [onDirtyChange, member.profileId, dirty, busy])
   useUnsavedChanges(dirty, busy)
@@ -288,7 +296,7 @@ export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, 
     finally { inFlight.current = false; setBusy(false) }
   }
   const otherModules = member.modules.filter(key => !WORK_MODULES.some(module => module.key === key))
-  return <form onSubmit={save} className="rounded-xl border border-slate-200 p-4">
+  return <div className="rounded-xl border border-slate-200 p-4"><form onSubmit={save}>
     <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-semibold text-slate-900">{member.displayName || member.email || 'Medlem'}</h3><p className="break-all text-sm text-slate-500">{member.email}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${member.isActive ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{member.isActive ? 'Aktiv' : 'Avaktiverad'}</span></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium text-slate-600">Roll för {member.displayName || member.email}<select value={role} onChange={event => setRole(event.target.value as Role)} disabled={disabled || busy} className={inputClass}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label><label className="text-xs font-medium text-slate-600">Medlemskap<select value={isActive ? 'active' : 'inactive'} onChange={event => { const active = event.target.value === 'active'; setActive(active); if (!active) setModules([]) }} disabled={disabled || busy} className={inputClass}><option value="active">Aktivt</option><option value="inactive">Avaktiverat</option></select></label></div>
     <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><fieldset className="flex flex-wrap gap-4"><legend className="mb-2 text-xs font-medium text-slate-600">Arbetsområden i den här organisationen</legend>{WORK_MODULES.map(module => <label key={module.key} className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={modules.includes(module.key)} disabled={disabled || busy || !isActive || (!enabledModules.includes(module.key) && !modules.includes(module.key))} onChange={event => setModules(current => event.target.checked ? [...current.filter(key => key !== module.key), module.key] : current.filter(key => key !== module.key))} />{moduleLabel(module.key)}</label>)}</fieldset><button type="submit" className={secondaryClass} disabled={!dirty || disabled || busy}>{busy ? 'Sparar…' : 'Spara medlem'}</button></div>
@@ -296,4 +304,59 @@ export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, 
     {otherModules.length > 0 && <p className="mt-2 text-xs text-slate-500">Övriga befintliga arbetsområden: {otherModules.map(moduleLabel).join(', ')}</p>}
     {error && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
   </form>
+    <ObVisibilityEditor key={`${member.profileId}:${JSON.stringify(member.obVisibility)}`} member={member} orgId={orgId}
+      disabled={disabled || busy || dirty || !member.obVisibility} onSaved={onSaved} onDirtyChange={onVisibilityDirtyChange} />
+  </div>
+}
+
+export function ObVisibilityEditor({ member, orgId, disabled, onSaved, onDirtyChange }: {
+  member: Member; orgId: string; disabled: boolean; onSaved: () => Promise<void>; onDirtyChange?: (dirty: boolean) => void
+}) {
+  const [selected, setSelected] = useState(member.obVisibility?.canViewColleagues === true)
+  const [saved, setSaved] = useState(member.obVisibility?.canViewColleagues === true)
+  const [revision, setRevision] = useState(member.obVisibility?.revision ?? 0)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const inFlight = useRef(false)
+  const dirty = selected !== saved
+  useEffect(() => {
+    onDirtyChange?.(dirty || busy)
+    return () => onDirtyChange?.(false)
+  }, [onDirtyChange, dirty, busy])
+  useUnsavedChanges(dirty, busy)
+  const canEnable = member.isActive && member.obVisibility?.canEnable === true
+  async function save() {
+    if (disabled || inFlight.current || !dirty || (selected && !canEnable)) return
+    inFlight.current = true; setBusy(true); setError(''); setMessage('')
+    try {
+      const result = await requestJson<{ saved: boolean; canViewColleagues: boolean; revision: number }>('/api/organizations/members/ob-visibility', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId, profileId: member.profileId, canViewColleagues: selected, revision }),
+      })
+      if (result.saved !== true || result.canViewColleagues !== selected || !Number.isInteger(result.revision)) throw new Error('Läsbehörigheten kunde inte bekräftas. Ladda om sidan.')
+      setSaved(result.canViewColleagues); setRevision(result.revision)
+      onDirtyChange?.(false)
+      setMessage('Läsbehörigheten är sparad.')
+      await onSaved()
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Läsbehörigheten kunde inte sparas.') }
+    finally { inFlight.current = false; setBusy(false) }
+  }
+  return <section className="mt-4 border-t border-slate-100 pt-4" aria-label={`ÖB-läsbehörighet för ${member.displayName || member.email || 'medlem'}`}>
+    <label className="flex items-start gap-2 text-sm font-medium text-slate-800">
+      <input type="checkbox" className="mt-0.5 h-4 w-4 accent-indigo-600" checked={selected}
+        disabled={disabled || busy || (!canEnable && !selected)} onChange={event => {
+          onDirtyChange?.(event.target.checked !== saved || busy)
+          setSelected(event.target.checked); setMessage('')
+        }} />
+      Se kollegornas ÖB-uppdrag
+    </label>
+    <p className="mt-1 text-xs leading-5 text-slate-600">Läs uppdragsbekräftelser och utlåtanden inom den här organisationen. Ger inte rätt att ändra, skicka eller ta över kollegans uppdrag. Avstängt innebär endast egna ÖB-uppdrag. Kundregistret påverkas inte.</p>
+    {!canEnable && <p className="mt-1 text-xs text-slate-500">Medlemmen behöver ett aktivt medlemskap och arbetsområdet ÖB för att få läsbehörighet.</p>}
+    <button type="button" className={`${secondaryClass} mt-3`} disabled={disabled || busy || !dirty || (selected && !canEnable)} onClick={() => void save()}>
+      {busy ? 'Sparar läsbehörighet…' : 'Spara läsbehörighet'}
+    </button>
+    {message && <p role="status" className="mt-2 text-sm text-emerald-800">{message}</p>}
+    {error && <p role="alert" className="mt-2 text-sm text-rose-800">{error}</p>}
+  </section>
 }

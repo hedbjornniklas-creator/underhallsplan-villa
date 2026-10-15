@@ -29,6 +29,8 @@ const failures: Record<string, [number, string]> = {
   ORG_SENDER_NAME_EXISTS: [409, 'Det finns redan en avsändarprofil med detta namn, även bland arkiverade profiler.'],
   ORG_SENDER_MEDIA_INVALID: [400, 'Logotypen måste vara uppladdad till den här organisationen. Ladda upp bilden igen.'],
   ORG_CONFLICT: [409, 'Uppgifterna har ändrats. Ladda om sidan och försök igen.'],
+  ORG_OB_VISIBILITY_SCHEMA_REQUIRED: [503, 'Databasstödet för ÖB-läsbehörighet behöver installeras. Ingen behörighet har ändrats.'],
+  ORG_OB_VISIBILITY_MODULE_REQUIRED: [403, 'Medlemmen behöver aktiv ÖB-behörighet i den här organisationen innan läsbehörigheten kan slås på.'],
   ORG_REQUEST_TOO_LARGE: [413, 'Begäran är för stor.'],
   ORG_CONTENT_TYPE_INVALID: [415, 'Begäran har ett format som inte stöds.'],
   ORG_NOT_FOUND: [404, 'Organisationen kunde inte hittas.'],

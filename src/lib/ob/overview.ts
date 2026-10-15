@@ -42,6 +42,7 @@ export type OverviewWorkflow = {
 
 export type ObOverviewItem = {
   assignment?: { id: string; status: string; archived: boolean }
+  canEdit?: boolean
   pdfHref?: string | null
   id: string
   date: string | null

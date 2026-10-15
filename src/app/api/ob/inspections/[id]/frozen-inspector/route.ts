@@ -1,4 +1,4 @@
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -30,7 +30,7 @@ type FrozenInspectorPayload = {
 }
 
 function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status })
+  return NextResponse.json({ error: message }, { status, headers: { 'Cache-Control': 'private, no-store' } })
 }
 
 function normalizeText(value: unknown): string | null {
@@ -110,7 +110,7 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params
-    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
+    const org = await requireObInspectionReadContext((await context.params).id, obRequestOrgId(request))
     const admin = createSupabaseAdminClient()
 
     const { data: inspection, error: inspectionError } = await admin
@@ -124,27 +124,12 @@ export async function GET(
     }
     if (!inspection) return jsonError('Besiktningen hittades inte.', 404)
 
-    const { data: property, error: propertyError } = await admin
-      .from('properties')
-      .select('id,owner')
-      .eq('id', inspection.property_id)
-      .maybeSingle()
-
-    if (propertyError) {
-      throw new Error(propertyError.message ?? 'Kunde inte läsa fastighet.')
-    }
-
-    const propertyOwner = String(property?.owner ?? '').trim()
-    if (!propertyOwner || propertyOwner !== org.userId) {
-      return jsonError('Du får bara läsa dina egna besiktningar.', 403)
-    }
-
     if (!inspection.locked_at) {
       return NextResponse.json({
         locked: false,
         hasSnapshot: false,
         profile: null,
-      })
+      }, { headers: { 'Cache-Control': 'private, no-store' } })
     }
 
     const { data: reportLinks, error: reportLinksError } = await admin
@@ -175,7 +160,7 @@ export async function GET(
       locked: true,
       hasSnapshot: Boolean(frozenProfile),
       profile: frozenProfile,
-    })
+    }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)
     if (organizationFailure) return organizationFailure

@@ -7,13 +7,17 @@ const tile = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="256" he
 export async function testDashboard(base, output) {
   const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
   const page = await browser.newPage()
-  const errors = [], external = []
+  const errors = [], external = [], workflowNavigations = []
   page.on('pageerror', error => errors.push(error.message))
   // Tiles use a deterministic fixture, so addresses and coordinates never leave
   // the isolated browser. All other external requests are blocked and reported.
   await page.setRequestInterception(true)
   page.on('request', request => {
     const url = new URL(request.url())
+    if (['127.0.0.1', 'localhost'].includes(url.hostname) && url.pathname === '/ob/assignments/test-tentative') {
+      workflowNavigations.push({ method: request.method(), url: request.url() })
+      void request.respond({ status: 200, contentType: 'text/html; charset=utf-8', body: '<html lang="sv"><body><h1>Uppdragsbekräftelse · testdata</h1></body></html>' }); return
+    }
     if (url.hostname === 'tile.openstreetmap.org' || url.hostname.endsWith('.tile.openstreetmap.org')) {
       void request.respond({ status: 200, contentType: 'image/svg+xml', body: tile }); return
     }
@@ -67,6 +71,24 @@ export async function testDashboard(base, output) {
       const links = await page.$$eval('a[href]', nodes => nodes.map(node => node.getAttribute('href')))
       assert.equal(links.some(link => link.includes('/fuktsakerhet')), false, 'Disabled module has no workflow links')
       assert.ok(links.filter(link => /^\/(ob|eb|tu|uppdrag)(\/|\?)/.test(link)).every(link => link.includes('orgId=11111111-1111-4111-8111-111111111111')), 'Internal workflows keep active organization')
+      const tentativeSelector = `${width <= 640 ? '.dh-calendar-mobile-booking' : '.dh-calendar-booking'}[data-booking-status="tentative"]`
+      assert.equal(await page.$eval(tentativeSelector, node => node.checkVisibility()), true, 'Unconfirmed work remains visible at every viewport')
+      assert.match(await page.$eval(tentativeSelector, node => node.textContent), /Äppelvägen 5/)
+      assert.match(await page.$eval(tentativeSelector, node => `${node.textContent} ${node.getAttribute('aria-label') ?? ''}`), /Ej bekräftat|Obekräftat|Preliminärt|Inväntar kund/i, 'Tentative calendar status is conveyed in text as well as color')
+      assert.equal(await page.$eval(tentativeSelector, node => getComputedStyle(node).borderLeftStyle), 'dashed', 'Unconfirmed work has a distinct dashed border')
+      assert.notEqual(await page.$eval(tentativeSelector, node => getComputedStyle(node).backgroundColor), await page.$eval(`${width <= 640 ? '.dh-calendar-mobile-booking' : '.dh-calendar-booking'}[data-module="ob"]:not([data-booking-status="tentative"])`, node => getComputedStyle(node).backgroundColor), 'Unconfirmed work has a different color from confirmed work in the same module')
+      assert.match(await page.$eval('.dh-calendar .dh-panel-heading p', node => node.textContent), /4.*bekräftade.*1.*(?:ej bekräftat|obekräftat|preliminärt)/i, 'Weekly totals distinguish confirmed and unconfirmed work')
+      assert.match(await page.$eval('.dh-agenda .dh-heading-count', node => node.textContent), /3.*bekräftade.*1.*(?:ej bekräftat|obekräftat|preliminärt)/i, 'Selected-day totals distinguish confirmed and unconfirmed work')
+      const agenda = await page.$$eval('[data-booking-id]', nodes => nodes.map(node => ({ id: node.dataset.bookingId, stop: node.querySelector('.dh-stop-number')?.getAttribute('aria-label') ?? null })))
+      assert.deepEqual(agenda.map(booking => booking.id), ['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'], 'Confirmed and unconfirmed work share chronological order')
+      assert.deepEqual(agenda.filter(booking => booking.id !== 'booking-tentative').map(booking => booking.stop), ['Stopp 1', 'Stopp 2', 'Stopp 3'], 'Tentative work does not shift confirmed route stop numbering')
+      assert.equal(/^Stopp \d+$/.test(agenda.find(booking => booking.id === 'booking-tentative').stop ?? ''), false, 'Unconfirmed work is not numbered as a route stop')
+      const route = await page.$eval('.dh-route-button', node => node.href)
+      const routeParams = new URL(route).searchParams
+      assert.deepEqual([...(routeParams.get('waypoints')?.split('|') ?? []), routeParams.get('destination')], ['Tallstigen 12, Nacka', 'Björkvägen 8, Stockholm', 'Storgatan 24, Solna'], 'Directions include only confirmed stops in route order')
+      const mapRequests = await page.evaluate(() => window.__dashboardTest.requests.filter(url => url.startsWith('/api/dashboard/map?')))
+      assert.ok(mapRequests.length > 0, 'The lazy map geocoding request ran')
+      assert.ok(mapRequests.every(url => !new URL(url, base).searchParams.getAll('bookingId').includes('booking-tentative')), 'Unconfirmed work is excluded from geocoding requests')
       await page.screenshot({ path: resolve(output, `dashboard-${width}.png`), fullPage: true })
     }
     await page.setViewport({ width: 1440, height: 1000 })
@@ -119,6 +141,23 @@ export async function testDashboard(base, output) {
     await page.click('.leaflet-marker-icon')
     assert.match(await page.$eval('body', node => node.textContent), /Tallstigen 12/)
     await page.screenshot({ path: resolve(output, 'dashboard-map.png'), fullPage: true })
+    assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      page.click('.dh-calendar-booking[data-booking-status="tentative"]'),
+    ])
+    assert.equal(new URL(page.url()).pathname, '/ob/assignments/test-tentative', 'Opening unconfirmed work navigates to its confirmation')
+    assert.equal(new URL(page.url()).searchParams.get('orgId'), '11111111-1111-4111-8111-111111111111')
+    assert.deepEqual(workflowNavigations.map(request => request.method), ['GET'], 'Opening a confirmation never sends or accepts it')
+    await page.goto(`${base}/dashboard-v1?state=tentative-only`, { waitUntil: 'networkidle0' })
+    await ready()
+    assert.equal((await page.$$('[data-booking-id]')).length, 1, 'A day with only unconfirmed work retains its agenda entry')
+    assert.equal(await page.$('.dh-route-button'), null, 'A day with only unconfirmed work offers no confirmed driving route')
+    assert.equal((await page.$$('.leaflet-marker-icon')).length, 0)
+    assert.equal(await page.$eval('.dh-map-panel', node => /Äppelvägen 5|saknar adress/.test(node.textContent)), false, 'A tentative appointment is not described as a missing confirmed location')
+    assert.deepEqual(await page.evaluate(() => window.__dashboardTest.requests), [], 'Tentative work alone does not trigger geocoding')
+    await noOverflow('Tentative-only dashboard')
+    await page.screenshot({ path: resolve(output, 'dashboard-tentative-only.png'), fullPage: true })
     await page.goto(`${base}/dashboard-v1?state=empty`, { waitUntil: 'networkidle0' })
     await ready()
     assert.deepEqual(await actionIds(), [])
@@ -162,7 +201,7 @@ export async function testDashboard(base, output) {
     assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
-    console.log('PASS: dashboard 390/768/1440px layouts; active-organization links; disabled-module isolation; module menu; action tabs/module/search; show all/fewer; calendar week/date/today navigation; empty states; map markers; load retry; foreign-organization rejection; transient snapshot preservation and 403 clearing. Synthetic data and tiles only; no external requests or writes.')
+    console.log('PASS: dashboard 390/768/1440px layouts; tentative calendar/day entries, status text and distinct color; confirmed/tentative totals; route numbering and geocoding isolation; GET-only confirmation navigation; tentative-only day; active-organization links; disabled-module isolation; module menu; action tabs/module/search; show all/fewer; calendar week/date/today navigation; empty states; map markers; load retry; foreign-organization rejection; transient snapshot preservation and 403 clearing. Synthetic data and tiles only; no external requests or writes.')
   } catch (error) {
     console.error(await page.$eval('body', node => node.innerText))
     await page.screenshot({ path: resolve(output, 'dashboard-failure.png'), fullPage: true })

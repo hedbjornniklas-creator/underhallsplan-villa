@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionContext, requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { getObPublishedReportRecord, obPublishedPdfStatus } from '@/lib/ob/publishedReport'
 import { obOrganizationFailure, obRequestOrgId } from '@/lib/ob/organizationHttp'
 import { readOrganizationJson, ORGANIZATION_RESPONSE_HEADERS } from '@/lib/organizations/administrationHttp'
@@ -13,9 +13,11 @@ export const dynamic = 'force-dynamic'
 type Context = { params: Promise<{ id: string }> }
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: ORGANIZATION_RESPONSE_HEADERS })
 
-async function readReport(request: Request, context: Context) {
+async function readReport(request: Request, context: Context, forSharing = false) {
   const { id } = await context.params
-  const access = await requireObInspectionContext(id, obRequestOrgId(request))
+  const access = forSharing
+    ? { ...await requireObInspectionContext(id, obRequestOrgId(request)), canEdit: true }
+    : await requireObInspectionReadContext(id, obRequestOrgId(request))
   const reports = new URL(request.url).searchParams.getAll('report')
   if (reports.length !== 1) throw Error('ORG_REQUEST_INVALID')
   const admin = createSupabaseAdminClient()
@@ -49,7 +51,7 @@ export async function GET(request: Request, context: Context) {
 export async function POST(request: Request, context: Context) {
   try {
     const body = await readOrganizationJson(request)
-    const result = await readReport(request, context)
+    const result = await readReport(request, context, true)
     if (!result) return json({ error: 'Den publicerade rapportversionen kunde inte hittas.' }, 404)
     const base = new URL(process.env.APP_BASE_URL || request.url)
     let link: URL
