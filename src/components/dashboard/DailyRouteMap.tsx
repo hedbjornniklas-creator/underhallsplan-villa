@@ -1,16 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MapPin, RotateCcw } from 'lucide-react'
+import { Clock3, MapPin, RotateCcw } from 'lucide-react'
 import type { DashboardBooking } from '@/lib/dashboard/model'
 import type { DashboardMapLocation } from '@/lib/dashboard/geocoding'
+import { bookingStatusLabel, isTentativeBooking } from '@/lib/dashboard/calendar'
 import 'leaflet/dist/leaflet.css'
 import styles from './DailyRouteMap.module.css'
 
 type Props = { bookings: DashboardBooking[]; organizationId?: string; date: string }
 type MapResponse = { organizationId?: string; date: string; locations: DashboardMapLocation[] }
 type RequestState = { key: string; phase: 'loading' | 'ready' | 'error'; locations: DashboardMapLocation[] }
-type PlottedBooking = DashboardBooking & { latitude: number; longitude: number; order: number; approximate?: boolean }
+type PlottedBooking = DashboardBooking & { latitude: number; longitude: number; order: number | null; approximate?: boolean }
+
+const clockMarker = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
 
 function validCoordinates(latitude: unknown, longitude: unknown): boolean {
   return typeof latitude === 'number' && Number.isFinite(latitude) && Math.abs(latitude) <= 90
@@ -41,15 +44,25 @@ function MapCanvas({ points, mapKey }: { points: PlottedBooking[]; mapKey: strin
       }).addTo(map)
 
       const coordinates = points.map(point => [point.latitude, point.longitude] as [number, number])
-      if (coordinates.length > 1) {
-        L.polyline(coordinates, { color: '#245eb5', opacity: 0.7, weight: 3, dashArray: '5 9' }).addTo(map)
+      map.fitBounds(L.latLngBounds(coordinates), { padding: [45, 45], maxZoom: 14 })
+      const confirmedCoordinates = points.filter(point => !isTentativeBooking(point))
+        .map(point => [point.latitude, point.longitude] as [number, number])
+      if (confirmedCoordinates.length > 1) {
+        L.polyline(confirmedCoordinates, { color: '#245eb5', opacity: 0.7, weight: 3, dashArray: '5 9' }).addTo(map)
       }
       for (const point of points) {
+        const tentative = isTentativeBooking(point)
+        const pointTitle = tentative ? point.title : `${point.order}. ${point.title}`
+        const statusLabel = bookingStatusLabel(point)
         const popup = document.createElement('div')
         popup.className = styles.popup
         const title = document.createElement('strong')
-        title.textContent = `${point.order}. ${point.title}`
+        title.textContent = pointTitle
         popup.append(title)
+        const status = document.createElement('p')
+        status.className = tentative ? styles.tentativeStatus : styles.confirmedStatus
+        status.textContent = statusLabel
+        popup.append(status)
         const address = document.createElement('p')
         address.textContent = point.address || 'Position registrerad på uppdraget'
         popup.append(address)
@@ -64,19 +77,23 @@ function MapCanvas({ points, mapKey }: { points: PlottedBooking[]; mapKey: strin
           link.textContent = 'Öppna uppdrag'
           popup.append(link)
         }
-        L.marker([point.latitude, point.longitude], {
+        const markerLabel = `${tentative ? 'Preliminärt uppdrag' : `Bekräftat stopp ${point.order}`}: ${point.title}. ${statusLabel}`
+        const marker = L.marker([point.latitude, point.longitude], {
           icon: L.divIcon({
-            className: styles.marker,
-            html: `<span>${point.order}</span>`,
+            className: `${styles.marker}${tentative ? ` ${styles.tentativeMarker}` : ''}`,
+            html: tentative ? clockMarker : `<span>${point.order}</span>`,
             iconSize: [36, 36],
             iconAnchor: [18, 18],
           }),
-          title: `${point.order}. ${point.title}${point.approximate ? ' – ungefärlig position' : ''}`,
-          alt: `Stopp ${point.order}: ${point.title}`,
+          title: `${pointTitle} – ${statusLabel}${point.approximate ? ' – ungefärlig position' : ''}`,
+          alt: markerLabel,
           keyboard: true,
         }).bindPopup(popup).addTo(map)
+        const markerElement = marker.getElement()
+        markerElement?.setAttribute('data-booking-id', point.id)
+        markerElement?.setAttribute('data-booking-status', tentative ? 'tentative' : 'confirmed')
+        markerElement?.setAttribute('aria-label', markerLabel)
       }
-      map.fitBounds(L.latLngBounds(coordinates), { padding: [45, 45], maxZoom: 14 })
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(() => map?.invalidateSize({ animate: false, pan: false }))
         resizeObserver.observe(canvasRef.current)
@@ -93,16 +110,23 @@ function MapCanvas({ points, mapKey }: { points: PlottedBooking[]; mapKey: strin
   }, [points, mapKey])
 
   const currentError = error?.key === mapKey ? error : null
+  const confirmedPointCount = points.filter(point => !isTentativeBooking(point)).length
   return (
-    <div className={styles.mapFrame}>
-      <div ref={canvasRef} className={styles.canvas} aria-label="Karta över dagens bokade uppdrag" />
-      {currentError && (
-        <div className={styles.mapError} role="status">
-          {currentError.tiles ? 'Kartbakgrunden kunde inte laddas. Öppna vägbeskrivningen för att se körvägen.' : 'Kartan kunde inte laddas. Öppna vägbeskrivningen för dagens uppdrag.'}
-        </div>
-      )}
-      {points.length > 1 && <p className={styles.orderLabel}><span /> Stopp i bokningsordning</p>}
-    </div>
+    <>
+      <div className={styles.mapFrame}>
+        <div ref={canvasRef} className={styles.canvas} aria-label="Karta över uppdrag för vald dag" />
+        {currentError && (
+          <div className={styles.mapError} role="status">
+            {currentError.tiles ? 'Kartbakgrunden kunde inte laddas. Uppdragens markörer visas ändå.' : 'Kartan kunde inte laddas. Öppna uppdragen för mer information.'}
+          </div>
+        )}
+      </div>
+      <div className={styles.legend} aria-label="Förklaring till kartmarkörerna">
+        <span><i className={styles.confirmedLegend} aria-hidden="true">1</i> Bekräftat</span>
+        <span><i className={styles.tentativeLegend} aria-hidden="true"><Clock3 size={13} /></i> Preliminärt</span>
+        {confirmedPointCount > 1 && <span><i className={styles.routeLegend} aria-hidden="true" /> Bekräftade stopp i tidsordning</span>}
+      </div>
+    </>
   )
 }
 
@@ -172,13 +196,16 @@ export default function DailyRouteMap({ bookings, organizationId, date }: Props)
   const currentRequest = request?.key === key ? request : null
   const points = useMemo(() => {
     const locations = new Map(currentRequest?.locations.map(location => [location.id, location]))
-    return bookings.flatMap((booking, index): PlottedBooking[] => {
+    const stopNumbers = new Map(bookings.filter(booking => !isTentativeBooking(booking))
+      .map((booking, index) => [booking.id, index + 1]))
+    return bookings.flatMap((booking): PlottedBooking[] => {
+      const order = stopNumbers.get(booking.id) ?? null
       if (validCoordinates(booking.latitude, booking.longitude)) {
-        return [{ ...booking, latitude: booking.latitude as number, longitude: booking.longitude as number, order: index + 1 }]
+        return [{ ...booking, latitude: booking.latitude as number, longitude: booking.longitude as number, order }]
       }
       const location = locations.get(booking.id)
       return location?.status === 'located' && validCoordinates(location.latitude, location.longitude)
-        ? [{ ...booking, latitude: location.latitude as number, longitude: location.longitude as number, order: index + 1, approximate: location.approximate }]
+        ? [{ ...booking, latitude: location.latitude as number, longitude: location.longitude as number, order, approximate: location.approximate }]
         : []
     })
   }, [bookings, currentRequest])
@@ -187,14 +214,15 @@ export default function DailyRouteMap({ bookings, organizationId, date }: Props)
   const loading = needsGeocoding && (!currentRequest || currentRequest.phase === 'loading')
   const unavailable = currentRequest?.phase === 'error' || currentRequest?.locations.some(location => location.status === 'unavailable')
   const unresolved = bookings.length - points.length - missingAddress
+  const confirmedPointCount = points.filter(point => !isTentativeBooking(point)).length
 
   return (
     <div ref={wrapperRef} className={styles.wrapper}>
       {points.length > 0 ? <MapCanvas points={points} mapKey={key} /> : (
         <div className={styles.empty} role="status">
           <span className={styles.emptyIcon}><MapPin size={26} strokeWidth={1.6} /></span>
-          <strong>{bookings.length === 0 ? 'Inga bokade uppdrag den här dagen' : loading ? 'Letar upp dagens adresser…' : 'Uppdragen kan inte placeras på kartan'}</strong>
-          <p>{bookings.length === 0 ? 'När ett uppdrag bokas visas platsen här.' : loading ? 'Kartan visas så snart adresserna är hittade.' : missingAddress === bookings.length ? 'Lägg till besöksadress i uppdragen för att se dem här.' : 'Använd vägbeskrivningen eller kontrollera uppdragens besöksadresser.'}</p>
+          <strong>{bookings.length === 0 ? 'Inga uppdrag den här dagen' : loading ? 'Letar upp dagens adresser…' : 'Uppdragen kan inte placeras på kartan'}</strong>
+          <p>{bookings.length === 0 ? 'Bekräftade och preliminära uppdrag med besöksadress visas här.' : loading ? 'Kartan visas så snart adresserna är hittade.' : missingAddress === bookings.length ? 'Lägg till besöksadress i uppdragen för att se dem här.' : 'Kontrollera uppdragens besöksadresser eller öppna dem för mer information.'}</p>
         </div>
       )}
       {(points.length > 0 || missingAddress > 0 || unavailable) && (
@@ -205,7 +233,7 @@ export default function DailyRouteMap({ bookings, organizationId, date }: Props)
             {missingAddress > 0 && `${missingAddress} uppdrag saknar adress. `}
             {!loading && unresolved > 0 && !unavailable && `${unresolved} ${unresolved === 1 ? 'adress kunde' : 'adresser kunde'} inte hittas. `}
             {unavailable && 'Några adresser kunde inte hämtas just nu. '}
-            {points.length > 1 && 'Streckad linje visar stoppens ordning. Körvägen visas i vägbeskrivningen.'}
+            {confirmedPointCount > 1 && 'Streckad linje visar de bekräftade stoppens ordning. Körvägen visas i vägbeskrivningen.'}
           </p>
           {unavailable && <button type="button" onClick={() => setRetry(value => value + 1)}><RotateCcw size={14} /> Försök igen</button>}
         </div>

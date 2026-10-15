@@ -20,11 +20,12 @@ entreprenadbesiktning, tekniska utredningar, fuktsäkerhet och Uppdrag.
   Vald dag styr uppdragslista och karta. Tider och datum visas i Europe/Stockholm.
   Besök utan registrerad tid visas med ”Tid ej angiven”. Uppgiftsdeadlines
   skapar inte kalenderbesök.
-- Kartans numrerade stopp följer uppdragslistans bekräftade besök. Preliminära
-  uppdrag ingår i kalendern men läggs till i karta och resväg först när de
-  bekräftas. Den streckade linjen visar
+- Kartans blå, numrerade stopp följer uppdragslistans bekräftade besök.
+  Preliminära uppdrag visas med gula klockmarkörer och tydlig status när de
+  öppnas. Kartan anpassas för att visa båda typerna. Den streckade linjen visar
   stoppens ordning. ”Öppna resväg” öppnar Google Maps med köranvisningar från
-  användarens position. Dagar med fler än fyra stopp delas i flera länkar för
+  användarens position via bekräftade uppdrag. Preliminära uppdrag ingår inte
+  i linjen eller köranvisningen. Dagar med fler än fyra stopp delas i flera länkar för
   att även mobila webbläsares gräns för mellanstopp ska fungera.
 - Manuellt uppdateringsval och återgång till fliken läser om data. Fel i en
   enskild modul visas tydligt; övriga moduler fortsätter fungera. Vid förlorad

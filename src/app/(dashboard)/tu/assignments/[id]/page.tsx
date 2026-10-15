@@ -14,6 +14,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import TuAssignmentScheduleEditor from '@/components/tu/TuAssignmentScheduleEditor'
 import type { AssignmentDetails } from '@/lib/assignments/server'
 
 type DetailResponse = {
@@ -43,13 +44,6 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Startad',
   expired: 'Utgången länk',
   cancelled: 'Avbruten',
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return 'Ej angivet'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('sv-SE')
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -136,13 +130,14 @@ export default function TuAssignmentDetailPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  if (!window.dispatchEvent(new CustomEvent('hushub:before-organization-switch', { cancelable: true }))) return
                   router.push(
                     organizationId
                       ? organizationUrl('/tu/assignments', organizationId)
                       : '/tu/assignments'
                   )
-                }
+                }}
                 aria-label="Till uppdragsbekräftelser"
                 title="Till uppdragsbekräftelser"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -260,8 +255,12 @@ export default function TuAssignmentDetailPage() {
 
                 <DetailSection icon={<CalendarDays size={18} aria-hidden />} title="Tid och pris">
                   <FactGrid>
-                    <Fact label="Datum" value={formatDate(assignment.preferred_date)} />
-                    <Fact label="Tid" value={display(assignment.preferred_time)} />
+                    <TuAssignmentScheduleEditor
+                      key={`${assignment.org_id}:${assignment.id}`}
+                      assignment={assignment}
+                      onSaved={updated => setData(current => current?.assignment.id === updated.id && current.assignment.org_id === updated.org_id
+                        ? { ...current, assignment: { ...current.assignment, ...updated } } : current)}
+                    />
                     <Fact label="Pris" value={money(assignment.price_amount, assignment.currency, data.customerType)} />
                   </FactGrid>
                 </DetailSection>

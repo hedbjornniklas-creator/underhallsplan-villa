@@ -50,11 +50,11 @@ test('map only geocodes server-authorized records for the selected Stockholm dat
   const response = await h.route.GET(request(`orgId=${orgId}&date=2026-10-12`))
   assert.equal(response.status, 200)
   assert.deepEqual(h.reads, [orgId])
-  assert.deepEqual(h.lookups[0].map(row => row.id), ['today-ob', 'today-tu'])
+  assert.deepEqual(h.lookups[0].map(row => row.id), ['today-ob', 'today-tu', 'tentative'])
   const result = await response.json()
   assert.equal(result.date, '2026-10-12')
   assert.equal(result.organizationId, orgId)
-  assert.equal(result.locations.length, 2)
+  assert.equal(result.locations.length, 3)
   assert.equal(response.headers.get('cache-control'), 'private, no-store, max-age=0')
   assert.equal('bookings' in result, false)
 })
@@ -67,12 +67,15 @@ test('booking selection only narrows authorized records and never admits unknown
   assert.deepEqual(h.reads, [undefined])
 })
 
-test('tentative slots cannot be geocoded even when selected explicitly', async () => {
+test('authorized tentative slots can be geocoded for the selected day', async () => {
   const h = harness()
   const response = await h.route.GET(request('date=2026-10-12&bookingId=tentative'))
   assert.equal(response.status, 200)
-  assert.deepEqual(h.lookups[0], [])
-  assert.deepEqual((await response.json()).locations, [])
+  assert.deepEqual(h.lookups[0].map(row => row.id), ['tentative'])
+  assert.deepEqual((await response.json()).locations.map((location: { id: string }) => location.id), ['tentative'])
+  const otherDay = await h.route.GET(request('date=2026-10-13&bookingId=tentative'))
+  assert.equal(otherDay.status, 200)
+  assert.deepEqual(h.lookups[1], [], 'the tentative status never bypasses the selected-date boundary')
 })
 
 test('arbitrary addresses, ambiguous organization/date and malformed dates fail before readers or geocoding', async () => {

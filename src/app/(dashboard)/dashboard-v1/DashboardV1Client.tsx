@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ArrowRight, CalendarDays, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clock3, ExternalLink, Lock, MapPin, Plus, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import DailyRouteMap from '@/components/dashboard/DailyRouteMap'
 import type { DashboardAction, DashboardBooking, DashboardData, DashboardModule, DashboardModuleId } from '@/lib/dashboard/model'
-import { bookingCountLabel, bookingDate, bookingLocation, bookingMapUrl, bookingStatusLabel, bookingTime, bookingTimeLabel, calendarDateLabel, calendarWeek, compareBookings, directionsLinks, isCalendarDate, isTentativeBooking, shiftCalendarDate } from '@/lib/dashboard/calendar'
+import { bookingCountLabel, bookingDate, bookingMapUrl, bookingStatusLabel, bookingTime, bookingTimeLabel, calendarDateLabel, calendarWeek, compareBookings, directionsLinks, isCalendarDate, isTentativeBooking, shiftCalendarDate } from '@/lib/dashboard/calendar'
 import './dashboard.css'
 
 type ActionFilter = 'all' | DashboardAction['category']
@@ -125,7 +125,6 @@ export function DashboardContent({ data, onRefresh, refreshing = false, error }:
   const stopNumbers = new Map(confirmedDayBookings.map((booking, index) => [booking.id, index + 1]))
   const tentativeDayCount = dayBookings.length - confirmedDayBookings.length
   const routeLinks = directionsLinks(confirmedDayBookings)
-  const locatedCount = confirmedDayBookings.filter(booking => bookingLocation(booking)).length
   const isToday = selectedDate === data.today
   const changeCategory = (value: ActionFilter) => { setCategory(value); setShowAll(false) }
 
@@ -161,11 +160,10 @@ export function DashboardContent({ data, onRefresh, refreshing = false, error }:
       </section>
     </div><div className="dh-column dh-plan-column">
       <BookingCalendar bookings={bookings} modules={activeModules} selectedDate={selectedDate} today={data.today} onSelectDate={setSelectedDate} />
-      <section className="dh-panel dh-map-panel" aria-labelledby="dh-map-heading"><div className="dh-panel-heading"><div className="dh-heading-count"><h2 id="dh-map-heading">{isToday ? 'Dagens resväg' : 'Resväg för vald dag'}</h2><span className="dh-muted">{confirmedDayBookings.length} stopp</span></div>{routeLinks.length === 1 && <a className="dh-button dh-primary dh-route-button" href={routeLinks[0]} target="_blank" rel="noopener noreferrer">Öppna resväg<ExternalLink size={15} aria-hidden /></a>}</div>
-        <DailyRouteMap key={`${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}:${search}`} bookings={confirmedDayBookings} date={selectedDate} organizationId={data.organizationId} />
+      <section className="dh-panel dh-map-panel" aria-labelledby="dh-map-heading"><div className="dh-panel-heading"><div className="dh-heading-count"><h2 id="dh-map-heading">{isToday ? 'Dagens karta' : 'Karta för vald dag'}</h2><span className="dh-muted">{bookingCountLabel(dayBookings)}</span></div>{routeLinks.length === 1 && <a className="dh-button dh-primary dh-route-button" href={routeLinks[0]} target="_blank" rel="noopener noreferrer">Öppna resväg<ExternalLink size={15} aria-hidden /></a>}</div>
+        <DailyRouteMap key={`${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}:${search}`} bookings={dayBookings} date={selectedDate} organizationId={data.organizationId} />
         {routeLinks.length > 1 && <div className="dh-route-legs">{routeLinks.map((href, index) => <a className="dh-button" href={href} key={href} target="_blank" rel="noopener noreferrer">Resväg del {index + 1}<ExternalLink size={15} aria-hidden /></a>)}</div>}
-        {tentativeDayCount > 0 && <p className="dh-location-note">{tentativeDayCount} {tentativeDayCount === 1 ? 'preliminärt uppdrag läggs' : 'preliminära uppdrag läggs'} till i resvägen när {tentativeDayCount === 1 ? 'det bekräftas' : 'de bekräftas'}.</p>}
-        {confirmedDayBookings.length > locatedCount && <p className="dh-location-note">{confirmedDayBookings.length - locatedCount} uppdrag saknar adress och kan inte ingå i resvägen.</p>}
+        {tentativeDayCount > 0 && <p className="dh-location-note">Köranvisningen följer bekräftade uppdrag.</p>}
       </section>
     </div></div>
   </div></div>

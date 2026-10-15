@@ -53,6 +53,17 @@
   outline-offset: 4px;
 }
 
+.tentativeMarker {
+  border-style: dashed;
+  border-color: #bd811b;
+  background: #fff4d6;
+  color: #754a03;
+}
+
+.tentativeMarker:focus-visible {
+  outline-color: #8a5807;
+}
+
 .popup {
   min-width: 160px;
   color: #233e32;
@@ -68,6 +79,16 @@
   color: #63746c;
 }
 
+.popup .confirmedStatus {
+  color: #245eb5;
+  font-weight: 600;
+}
+
+.popup .tentativeStatus {
+  color: #754a03;
+  font-weight: 600;
+}
+
 .popup a {
   display: inline-block;
   margin-top: 5px;
@@ -75,26 +96,44 @@
   color: #245eb5;
 }
 
-.orderLabel {
-  position: absolute;
-  left: 12px;
-  bottom: 13px;
-  z-index: 800;
+.legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
-  margin: 0;
-  border: 1px solid #e2e8e4;
-  border-radius: 7px;
-  padding: 7px 9px;
-  background: #fffffff2;
+  gap: 7px 14px;
+  margin-top: 10px;
   color: #4b6658;
   font-size: 10px;
   font-weight: 600;
-  pointer-events: none;
 }
 
-.orderLabel span {
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confirmedLegend,
+.tentativeLegend {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid #245eb5;
+  border-radius: 50%;
+  background: #245eb5;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.tentativeLegend {
+  border: 1px dashed #bd811b;
+  background: #fff4d6;
+  color: #754a03;
+}
+
+.routeLegend {
   width: 22px;
   border-top: 2px dashed #245eb5;
 }

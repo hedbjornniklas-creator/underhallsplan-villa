@@ -20,10 +20,10 @@ export async function GET(request: Request) {
   }
   try {
     // Never accept arbitrary addresses from the browser. Reload permission-scoped
-    // data before geocoding the selected day's actual booked assignments.
+    // data before geocoding the selected day's confirmed and tentative assignments.
     const dashboard = await getDashboardData(url.searchParams.get('orgId') ?? undefined)
     const selectedIds = new Set(url.searchParams.getAll('bookingId'))
-    const bookings = dashboard.bookings.filter(booking => booking.status !== 'tentative' && getStockholmDate(booking.startsAt) === date
+    const bookings = dashboard.bookings.filter(booking => getStockholmDate(booking.startsAt) === date
       && (selectedIds.size === 0 || selectedIds.has(booking.id)))
     return NextResponse.json({
       organizationId: dashboard.organizationId,
