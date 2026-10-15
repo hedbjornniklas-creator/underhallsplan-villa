@@ -22,7 +22,7 @@ const actions = [
 ]
 const bookings = [
   { id: 'booking-ob', moduleId: 'ob' as const, title: 'Tallstigen 12', startsAt: '2026-10-12T07:00:00.000Z', endsAt: '2026-10-12T09:00:00.000Z', href: scoped('/ob/inspections/test-ob'), address: 'Tallstigen 12, Nacka', latitude: 59.3107, longitude: 18.1817 },
-  { id: 'booking-tentative', moduleId: 'ob' as const, title: 'Äppelvägen 5', startsAt: '2026-10-12T08:30:00.000Z', href: scoped('/ob/assignments/test-tentative'), address: 'Äppelvägen 5, Täby', latitude: 59.4404, longitude: 18.0694, status: 'tentative' as const, confirmationStatus: 'Inväntar kund' },
+  { id: 'booking-tentative', moduleId: 'ob' as const, title: 'Äppelvägen 5', startsAt: '2026-10-12T08:30:00.000Z', href: scoped('/ob/assignments/test-tentative'), address: 'Äppelvägen 5, Täby', status: 'tentative' as const, confirmationStatus: 'Inväntar kund' },
   { id: 'booking-eb', moduleId: 'eb' as const, title: 'Kvarteret Björken', startsAt: '2026-10-12T11:00:00.000Z', href: scoped('/eb/projects/test-eb'), address: 'Björkvägen 8, Stockholm', latitude: 59.3371, longitude: 18.0897 },
   { id: 'booking-tu', moduleId: 'tu' as const, title: 'Storgatan 24', startsAt: '2026-10-12T13:30:00.000Z', href: scoped('/tu/investigations/test-tu'), address: 'Storgatan 24, Solna' },
   { id: 'booking-midweek', moduleId: 'tu' as const, title: 'Torsdagsutredningen', startsAt: '2026-10-15T08:00:00.000Z', href: scoped('/tu/investigations/test-midweek'), address: 'Exempelgatan 3, Solna' },
@@ -40,8 +40,8 @@ const data = {
   bookings: state === 'empty' ? [] : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : bookings,
   issues: [],
 }
-declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number } } }
-window.__dashboardTest = { refreshes: 0, writes: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0 }
+declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean } } }
+window.__dashboardTest = { refreshes: 0, writes: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0, confirmTentative: false }
 window.fetch = async (input, init) => {
   const url = new URL(String(input), location.href)
   window.__dashboardTest.requests.push(`${url.pathname}${url.search}`)
@@ -49,12 +49,18 @@ window.fetch = async (input, init) => {
   if (url.pathname === '/api/dashboard') {
     await new Promise(resolve => setTimeout(resolve, window.__dashboardTest.delay))
     if (window.__dashboardTest.fail) return Response.json({ error: 'Översikten kunde inte hämtas. Försök igen.' }, { status: window.__dashboardTest.failureStatus })
-    return Response.json({ ...data, organizationId: window.__dashboardTest.wrongOrg ? 'foreign-organization' : organizationId })
+    return Response.json({ ...data,
+      bookings: data.bookings.map(booking => window.__dashboardTest.confirmTentative && booking.id === 'booking-tentative'
+        ? { ...booking, status: 'confirmed', confirmationStatus: undefined, href: scoped('/ob/inspections/test-tentative-converted') }
+        : booking),
+      organizationId: window.__dashboardTest.wrongOrg ? 'foreign-organization' : organizationId,
+    })
   }
   if (url.pathname === '/api/dashboard/map') return Response.json({
     organizationId, date: url.searchParams.get('date'),
     locations: url.searchParams.get('date') === data.today ? [
       { id: 'booking-ob', latitude: 59.3107, longitude: 18.1817, status: 'located' },
+      { id: 'booking-tentative', latitude: 59.4404, longitude: 18.0694, status: 'located' },
       { id: 'booking-eb', latitude: 59.3371, longitude: 18.0897, status: 'located' },
       { id: 'booking-tu', latitude: 59.3604, longitude: 18.0249, status: 'located' },
     ] : [],
