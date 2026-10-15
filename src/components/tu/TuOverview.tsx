@@ -1,12 +1,14 @@
 'use client'
 
 import { useId, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronLeft, ChevronRight, Download, FileCheck2, FileText, Play, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import PendingLink from '@/components/ui/PendingLink'
 import type { TuAssignmentListItem } from '@/lib/tu/server'
 import { buildTuOverviewItems, selectTuOverviewPage, type TuOverviewFilter, type TuOverviewItem, type TuOverviewSort, type TuOverviewInvestigation } from '@/lib/tu/overview'
 import '../ob/ob-overview.css'
 import './tu-overview.css'
+import TuAssignmentActions from './TuAssignmentActions'
 
 const filters: Array<{ value: TuOverviewFilter; label: string }> = [
   { value: 'all', label: 'Alla' }, { value: 'active', label: 'Aktuella' }, { value: 'closed', label: 'Avslutade' },
@@ -17,9 +19,11 @@ function dateLabel(value: string | null) {
   return !date || Number.isNaN(date.getTime()) ? 'Datum saknas' : date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
 }
 
-function OverviewRow({ item, busy, onStartAssignment }: {
+function OverviewRow({ item, busy, onStartAssignment, onRefresh }: {
   item: TuOverviewItem; busy: boolean; onStartAssignment: (assignment: TuAssignmentListItem) => void
+  onRefresh: () => void
 }) {
+  const router = useRouter()
   const [expanded, setExpanded] = useState(false)
   const detailsId = useId()
   const detailsLabel = `${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.address}`
@@ -56,6 +60,7 @@ function OverviewRow({ item, busy, onStartAssignment }: {
         {item.pdfHref && <a href={item.pdfHref} className="obo-pdf-link" target="_blank" rel="noopener noreferrer" aria-label={`Ladda ner PDF: ${item.address}`} title="Ladda ner PDF">
           <Download size={18} aria-hidden /><span>Ladda ner PDF</span>
         </a>}
+        {item.assignment && <TuAssignmentActions key={`${item.assignment.org_id}:${item.assignment.id}:${item.assignment.updated_at}`} compact disabled={busy} assignment={item.assignment} onChanged={onRefresh} onNavigate={path => router.push(path)} />}
       </div></td>
     </tr>
     {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={8}>
@@ -66,6 +71,11 @@ function OverviewRow({ item, busy, onStartAssignment }: {
         <div><dt>Kund</dt><dd>{item.customer}</dd></div>
         <div><dt>Uppdragsbekräftelse</dt><dd>{item.confirmation}</dd></div>
         <div><dt>Utredningens status</dt><dd>{item.investigationStatus}</dd></div>
+        {item.assignment && <>
+          <div><dt>Senaste utskick</dt><dd>{item.assignment.last_sent_at ? new Date(item.assignment.last_sent_at).toLocaleString('sv-SE') : 'Inte registrerat'}</dd></div>
+          <div><dt>Kundens godkännande</dt><dd>{item.assignment.progress?.approvalVerified && item.assignment.accepted_at ? new Date(item.assignment.accepted_at).toLocaleString('sv-SE') : 'Inte verifierat'}</dd></div>
+          <div><dt>Accepterat av besiktningsmannen</dt><dd>{item.assignment.booked_at ? new Date(item.assignment.booked_at).toLocaleString('sv-SE') : 'Inte registrerat'}</dd></div>
+        </>}
       </dl>
       {item.attention.length > 0 && <ul className="obo-attention">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       </div>
@@ -137,7 +147,7 @@ export default function TuOverview({ organizationId, assignments, investigations
         <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Adress</th><th scope="col">Ort</th><th scope="col">Kund</th>
           <th scope="col">Uppdragsbekräftelse</th><th scope="col">Utredning</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th>
         </tr></thead>
-        <tbody>{result.items.map(item => <OverviewRow key={item.id} item={item} busy={busy || loading} onStartAssignment={onStartAssignment} />)}</tbody>
+        <tbody>{result.items.map(item => <OverviewRow key={item.id} item={item} busy={busy || loading} onStartAssignment={onStartAssignment} onRefresh={onRefresh} />)}</tbody>
       </table>}
       <div className="obo-pagination">
         <span role="status" aria-live="polite">{result.total ? `${result.start + 1}–${result.start + result.items.length} av ${result.total} uppdrag` : '0 uppdrag'}</span>

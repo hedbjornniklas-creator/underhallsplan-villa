@@ -20,7 +20,7 @@ test('only active, unissued drafts can be edited; early-start replacement links 
 })
 
 type UpdateInput = {
-  orgId: string; assignmentId: string; updatedBy: string; requireUnissuedDraft?: boolean
+  orgId: string; assignmentId: string; updatedBy: string; requireUnissuedDraft?: boolean; expectedUpdatedAt?: string
   patch: { customer_name?: string; status?: string }
 }
 
@@ -74,4 +74,11 @@ test('existing non-OB consumers and lifecycle writes do not acquire the draft fi
   await h.update({ ...input, requireUnissuedDraft: undefined, patch: { status: 'booked' } })
   assert.deepEqual(h.filters, [['eq', 'org_id', 'org'], ['eq', 'id', 'assignment']])
   assert.ok((h.writes[0] as Record<string, unknown>).booked_at)
+})
+
+test('optional version check is atomic and reports a conflict without changing existing callers', async () => {
+  const h = serverHarness({ data: { id: 'assignment' }, error: null })
+  await h.update({ ...input, expectedUpdatedAt: '2026-10-15T08:00:00Z' })
+  assert.ok(h.filters.some(filter => filter[0] === 'eq' && filter[1] === 'updated_at' && filter[2] === '2026-10-15T08:00:00Z'))
+  await assert.rejects(serverHarness({ data: null, error: { code: 'PGRST116' } }).update({ ...input, expectedUpdatedAt: '2026-10-15T08:00:00Z' }), /ASSIGNMENT_VERSION_CONFLICT/)
 })

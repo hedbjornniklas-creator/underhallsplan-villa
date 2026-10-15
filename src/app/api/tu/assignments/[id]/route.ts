@@ -1,34 +1,20 @@
 import { NextResponse } from 'next/server'
-import { getTuAssignmentById, requireTuContext } from '@/lib/tu/server'
-import { updateAssignmentById, type AssignmentStatus } from '@/lib/assignments/server'
+import { getTuAssignmentById, listTuReportTemplateOptions, requireTuContext } from '@/lib/tu/server'
+import { updateAssignmentById } from '@/lib/assignments/server'
 import { resolveAssignmentCustomerType } from '@/lib/assignments/consumer'
 import { getAssignmentTermsDocument } from '@/lib/assignments/terms'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { loadTuAssignmentMessages, loadTuAssignmentProgress } from '@/lib/tu/assignmentProgressServer'
+import { listAssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
+import { assertAssignmentCustomerSameOrigin } from '@/lib/assignment-customers/http'
+import { canEditTuAssignmentDetails } from '@/lib/tu/assignmentProgress'
+import { parseTuAssignmentEdit } from '@/lib/tu/assignmentEditing'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
-}
-
-function text(body: Record<string, unknown>, key: string) {
-  const value = body[key]
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function nullableText(body: Record<string, unknown>, key: string) {
-  return key in body ? text(body, key) || null : undefined
-}
-
-function parsePrice(value: unknown) {
-  if (value === undefined) return undefined
-  const raw = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : ''
-  if (!raw) return null
-  const parsed = Number(raw.replace(',', '.'))
-  return Number.isFinite(parsed) && parsed >= 0 ? Number(parsed.toFixed(2)) : Number.NaN
 }
 
 function mapAccessError(error: unknown) {
@@ -73,8 +59,15 @@ export async function GET(
       })
     }
 
+    const progress = (await loadTuAssignmentProgress(orgContext.orgId, [assignment])).get(assignment.id)
+    const messages = await loadTuAssignmentMessages(orgContext.orgId, assignment.id)
+    const linkIssues = await listAssignmentLinkIssues(orgContext.orgId, [assignment.id])
+    const reportTemplates = await listTuReportTemplateOptions()
     return NextResponse.json({
-      assignment,
+      assignment: { ...assignment, progress },
+      messages,
+      linkIssues,
+      reportTemplates,
       customerType: resolveAssignmentCustomerType('TU', assignment.assignment_details),
       currentTerms: {
         version: currentTerms.version,
@@ -85,7 +78,8 @@ export async function GET(
             ? true
             : Boolean(
                 assignment.terms_version &&
-                  assignment.terms_version === currentTerms.version
+                  assignment.terms_version === currentTerms.version &&
+                  assignment.terms_document_hash === currentTerms.documentHash
               ),
       },
       withdrawal: withdrawalData
@@ -98,7 +92,7 @@ export async function GET(
             resolutionNote: withdrawalData.resolution_note,
           }
         : null,
-    })
+    }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const accessError = mapAccessError(error)
     if (accessError) return accessError
@@ -106,149 +100,31 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await context.params
-    const searchParams = new URL(request.url).searchParams
-    if (
-      [...searchParams.keys()].some((key) => key !== 'orgId') ||
-      searchParams.getAll('orgId').length !== 1
-    ) {
-      return jsonError('Välj arbetsorganisation innan uppdraget ändras.', 400)
-    }
-    const orgContext = await requireTuContext(searchParams.get('orgId'))
-    const existing = await getTuAssignmentById(orgContext.orgId, id)
+    assertAssignmentCustomerSameOrigin(request)
+    const search = new URL(request.url).searchParams
+    if (search.getAll('orgId').length !== 1 || [...search.keys()].some(key => key !== 'orgId')) return jsonError('Välj arbetsorganisation.', 400)
+    const org = await requireTuContext(search.get('orgId'))
+    const existing = await getTuAssignmentById(org.orgId, (await context.params).id)
     if (!existing) return jsonError('TU-uppdraget hittades inte.', 404)
-
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-    const patch: Record<string, unknown> = {}
-    const editableStatuses = new Set(['draft', 'sent'])
-    const bodyKeys = Object.keys(body)
-    const hasArchivedAtInBody = Object.prototype.hasOwnProperty.call(body, 'archived_at')
-    const archiveValue = hasArchivedAtInBody ? body.archived_at : undefined
-    const isArchiveSetValue =
-      archiveValue !== undefined && archiveValue !== null && archiveValue !== ''
-    const isArchiveClearValue = archiveValue === null || archiveValue === ''
-    const isArchiveTogglePatch = bodyKeys.length === 1 && bodyKeys[0] === 'archived_at'
-    const isArchiveClearOnlyPatch = isArchiveTogglePatch && isArchiveClearValue
-    const isCancelAndArchivePatch =
-      typeof body.status === 'string' &&
-      body.status.trim().toLowerCase() === 'cancelled' &&
-      bodyKeys.length >= 1 &&
-      bodyKeys.length <= 2 &&
-      bodyKeys.includes('archived_at') &&
-      bodyKeys.every((key) => key === 'status' || key === 'archived_at')
-
-    const statusRaw = typeof body.status === 'string' ? body.status.trim().toLowerCase() : ''
-    if (statusRaw) {
-      if (!['draft', 'sent', 'ordered', 'booked', 'completed', 'expired', 'cancelled'].includes(statusRaw)) {
-        return jsonError('Ogiltig status.', 400)
-      }
-      patch.status = statusRaw as AssignmentStatus
-      if (statusRaw === 'cancelled') {
-        patch.archived_at = new Date().toISOString()
-        patch.archived_by = orgContext.userId
-      }
-    }
-
-    if (
-      statusRaw &&
-      statusRaw !== 'cancelled' &&
-      !editableStatuses.has(existing.status)
-    ) {
-      return jsonError('Endast utkast och skickade TU-uppdrag kan redigeras.', 409)
-    }
-
-    if (hasArchivedAtInBody) {
-      if (archiveValue === null || archiveValue === '') {
-        patch.archived_at = null
-        patch.archived_by = null
-      } else if (typeof archiveValue === 'string') {
-        const effectiveStatus = (patch.status as AssignmentStatus | undefined) ?? existing.status
-        if (
-          isArchiveSetValue &&
-          effectiveStatus !== 'cancelled' &&
-          (effectiveStatus === 'sent' || effectiveStatus === 'ordered' || effectiveStatus === 'booked')
-        ) {
-          return jsonError('Skickad, godkänd och bokad uppdragsbekräftelse kan inte arkiveras.', 409)
-        }
-        const parsed = new Date(archiveValue)
-        if (Number.isNaN(parsed.getTime())) {
-          return jsonError('Ogiltigt arkivdatum.', 400)
-        }
-        patch.archived_at = parsed.toISOString()
-        patch.archived_by = orgContext.userId
-      } else {
-        return jsonError('Ogiltigt värde för arkivering.', 400)
-      }
-    }
-
-    if (
-      !editableStatuses.has(existing.status) &&
-      !isArchiveClearOnlyPatch &&
-      !isCancelAndArchivePatch &&
-      !isArchiveTogglePatch
-    ) {
-      return jsonError('Endast utkast och skickade TU-uppdrag kan redigeras.', 409)
-    }
-
-    const textFields: Array<[string, string]> = [
-      ['customerName', 'customer_name'],
-      ['customerEmail', 'customer_email'],
-      ['customerPhone', 'customer_phone'],
-      ['customerPostalCode', 'customer_postal_code'],
-      ['customerCity', 'customer_city'],
-      ['customerAddress', 'customer_address'],
-      ['propertyAddress', 'property_address'],
-      ['propertyPostalCode', 'property_postal_code'],
-      ['propertyCity', 'property_city'],
-      ['propertyMunicipality', 'property_municipality'],
-      ['propertyOwnerName', 'property_owner_name'],
-      ['cadastralId', 'cadastral_id'],
-      ['brfName', 'brf_name'],
-      ['apartmentNumber', 'apartment_number'],
-      ['apartmentHolderName', 'apartment_holder_name'],
-      ['scopeDescription', 'scope_description'],
-      ['preferredDate', 'preferred_date'],
-      ['preferredTime', 'preferred_time'],
-      ['notesInternal', 'notes_internal'],
-    ]
-
-    for (const [inputKey, dbKey] of textFields) {
-      const value = nullableText(body, inputKey)
-      if (value !== undefined) patch[dbKey] = value
-    }
-
-    const invoiceEmail = nullableText(body, 'invoiceEmail')
-    if (invoiceEmail !== undefined) {
-      if (invoiceEmail && !EMAIL_REGEX.test(invoiceEmail)) {
-        return jsonError('Ange en giltig fakturae-post.', 400)
-      }
-      patch.invoice_email = invoiceEmail?.toLowerCase() ?? null
-    }
-
-    const priceAmount = parsePrice(body.priceAmount)
-    if (Number.isNaN(priceAmount)) return jsonError('Ange ett giltigt pris.', 400)
-    if (priceAmount !== undefined) patch.price_amount = priceAmount
-
-    if (Object.keys(patch).length === 0) {
-      return NextResponse.json({ assignment: existing })
-    }
-
+    if (!canEditTuAssignmentDetails(existing)) return jsonError('Skapa en ny version för att ändra ett skickat eller godkänt uppdrag. Datum och tid ändras separat före godkännande.', 409)
+    let edit: ReturnType<typeof parseTuAssignmentEdit>
+    try { edit = parseTuAssignmentEdit(await request.json().catch(() => null)) }
+    catch (error) { return jsonError(error instanceof Error ? error.message : 'Kontrollera uppgifterna.', 400) }
     const assignment = await updateAssignmentById({
-      orgId: orgContext.orgId,
-      assignmentId: id,
-      updatedBy: orgContext.userId,
-      patch: patch as Parameters<typeof updateAssignmentById>[0]['patch'] & Record<string, unknown>,
+      orgId: org.orgId, assignmentId: existing.id, updatedBy: org.userId,
+      expectedUpdatedAt: edit.expectedUpdatedAt, requireUnissuedDraft: true,
+      patch: edit.patch as Parameters<typeof updateAssignmentById>[0]['patch'],
     })
-
-    return NextResponse.json({ assignment })
+    return NextResponse.json({ assignment }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
-    const accessError = mapAccessError(error)
-    if (accessError) return accessError
-    return jsonError('Kunde inte uppdatera TU-uppdrag.', 500)
+    const access = mapAccessError(error)
+    if (access) return access
+    const code = error instanceof Error ? error.message : ''
+    if (code === 'ASSIGNMENT_CUSTOMER_ORIGIN_FORBIDDEN') return jsonError('Otillåten begäran.', 403)
+    if (code === 'ASSIGNMENT_VERSION_CONFLICT' || code === 'OB_ASSIGNMENT_CONTENT_LOCKED') return jsonError('Uppdraget har ändrats. Hämta aktuell version innan du sparar igen.', 409)
+    console.error('[tu.assignments.edit] failed', error)
+    return jsonError('Kunde inte spara uppgifterna. Dina ändringar finns kvar här.', 500)
   }
 }

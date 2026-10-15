@@ -47,11 +47,11 @@ test('all action URLs stay in TU and preserve the active organization', () => {
 })
 
 test('approval and investigation status are separate; a converted confirmation is not assumed approved', () => {
-  const item = build([tuAssignment({ status: 'completed', inspection_id: 'inspection-1' })])[0]
-  assert.equal(item.confirmation, 'Utredning startad')
+  const item = build([tuAssignment({ status: 'completed', inspection_id: 'inspection-1', accepted_at: null })])[0]
+  assert.equal(item.confirmation, 'Godkännande behöver kontrolleras')
   assert.equal(item.investigationStatus, 'Utkast')
   assert.equal(item.closed, false)
-  assert.equal(build([tuAssignment({ status: 'sent', inspection_id: 'inspection-1' })])[0].confirmation, 'Skickad')
+  assert.equal(build([tuAssignment({ status: 'sent', inspection_id: 'inspection-1' })])[0].confirmation, 'Inväntar kund')
 })
 
 test('only approved, unarchived, unlinked assignments can start', () => {
@@ -96,7 +96,7 @@ test('filters, sorting, page boundaries and counts derive from the same set of r
   assert.equal(closed.total, 4)
   assert.ok(closed.items.every(item => item.closed))
   const attention = selectTuOverviewPage(rows, { ...options, attentionOnly: true })
-  assert.equal(attention.total, 1)
+  assert.equal(attention.total, 2)
   assert.equal(attention.items[0].address, 'Långgatan 18')
   const customer = selectTuOverviewPage(rows, { ...options, sort: 'customer', pageSize: 50 })
   assert.equal(customer.items[0].customer, 'Anna Andersson')

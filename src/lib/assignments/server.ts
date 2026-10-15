@@ -209,6 +209,7 @@ type SupabaseResponse<T> = Promise<{ data: T | null; error: SupabaseError }>
 type SupabaseListResponse<T> = { data: T[] | null; error: SupabaseError }
 
 type QueryBuilder<T = Record<string, unknown>> = {
+  in(column: string, values: readonly unknown[]): QueryBuilder<T>
   then: <TResult1 = SupabaseListResponse<T>, TResult2 = never>(
     onfulfilled?:
       | ((value: SupabaseListResponse<T>) => TResult1 | PromiseLike<TResult1>)
@@ -844,6 +845,7 @@ export async function updateAssignmentById(input: {
   assignmentId: string
   updatedBy: string
   requireUnissuedDraft?: boolean
+  expectedUpdatedAt?: string
   patch: Partial<{
     customer_name: string | null
     customer_email: string | null
@@ -896,6 +898,7 @@ export async function updateAssignmentById(input: {
     .eq('org_id', input.orgId)
     .eq('id', input.assignmentId)
 
+  if (input.expectedUpdatedAt) query = query.eq('updated_at', input.expectedUpdatedAt)
   if (input.requireUnissuedDraft) {
     // Recheck on the write: another tab may have issued the draft since it was read.
     query = query.eq('status', 'draft').is('last_sent_at', null).is('accepted_at', null)
@@ -904,6 +907,7 @@ export async function updateAssignmentById(input: {
   const { data, error } = await query.select(ASSIGNMENT_DETAIL_SELECT).single()
 
   if (error || !data) {
+    if (input.expectedUpdatedAt && (!error || error.code === 'PGRST116')) throw new Error('ASSIGNMENT_VERSION_CONFLICT')
     if (input.requireUnissuedDraft && (!error || error.code === 'PGRST116')) {
       throw new Error('OB_ASSIGNMENT_CONTENT_LOCKED')
     }
@@ -934,6 +938,7 @@ export async function createReissuedAssignmentDraft(input: {
   orgId: string
   sourceAssignmentId: string
   createdBy: string
+  expectedUpdatedAt?: string
 }): Promise<{ draft: AssignmentDetails; cancelledSource: AssignmentDetails }> {
   const admin = createSupabaseAdminClient() as unknown as SupabaseAdminClient
   const source = await getAssignmentById(input.orgId, input.sourceAssignmentId)
@@ -941,6 +946,7 @@ export async function createReissuedAssignmentDraft(input: {
   if (!source) {
     throw new Error('ASSIGNMENT_NOT_FOUND')
   }
+  if (input.expectedUpdatedAt && source.updated_at !== input.expectedUpdatedAt) throw new Error('ASSIGNMENT_VERSION_CONFLICT')
 
   if (source.assignment_type === 'OB' && source.inspection_id && await getObAssignmentWorkflow(source.inspection_id, input.orgId)) {
     const draftId = await obWorkflowRpc<string>('ob_reissue_started_assignment', {
@@ -952,7 +958,7 @@ export async function createReissuedAssignmentDraft(input: {
     return { draft, cancelledSource }
   }
 
-  if (source.status !== 'sent' && source.status !== 'ordered' && source.status !== 'booked') {
+  if (source.status !== 'sent' && source.status !== 'ordered' && source.status !== 'booked' && !(source.assignment_type === 'TU' && source.status === 'expired')) {
     throw new Error('ASSIGNMENT_REISSUE_NOT_ALLOWED')
   }
 
@@ -988,10 +994,18 @@ export async function createReissuedAssignmentDraft(input: {
     invoiceName: source.invoice_name,
     invoiceAddress: source.invoice_address,
     personalIdentityNumber: source.personal_identity_number,
-    assignmentDetails: source.assignment_details,
+    assignmentDetails: source.assignment_type === 'TU'
+      ? { ...source.assignment_details, reissuedFromAssignmentId: source.id }
+      : source.assignment_details,
   })
 
   try {
+    if (source.assignment_type === 'TU' && source.organization_customer_id) {
+      const { error } = await admin.from('assignments')
+        .update({ organization_customer_id: source.organization_customer_id })
+        .eq('org_id', input.orgId).eq('id', draft.id)
+      if (error) throw new Error('Kunde inte kopiera kundkopplingen.')
+    }
     const addonOrders = await listAssignmentAddonOrders({
       orgId: input.orgId,
       assignmentId: source.id,
@@ -1020,11 +1034,18 @@ export async function createReissuedAssignmentDraft(input: {
       orgId: input.orgId,
       assignmentId: source.id,
       updatedBy: input.createdBy,
+      expectedUpdatedAt: input.expectedUpdatedAt,
       patch: { status: 'cancelled' },
     })
 
     return { draft, cancelledSource }
   } catch (error) {
+    if (source.assignment_type === 'TU') {
+      // Cancellation can succeed before link revocation fails. Keep the replacement
+      // if cancellation happened, or if the current source state cannot be read.
+      const currentSource = await getAssignmentById(input.orgId, source.id).catch(() => null)
+      if (!currentSource || currentSource.status === 'cancelled') throw error
+    }
     await admin.from('assignments').delete().eq('org_id', input.orgId).eq('id', draft.id)
     throw error instanceof Error
       ? error
@@ -1264,7 +1285,7 @@ export async function sendAssignmentConfirmation(input: {
         ? input.assignment.status
         : 'sent'
 
-    await admin
+    let statusUpdate = admin
       .from('assignments')
       .update({
         status: nextAssignmentStatus,
@@ -1273,6 +1294,12 @@ export async function sendAssignmentConfirmation(input: {
       })
       .eq('id', input.assignment.id)
       .eq('org_id', input.assignment.org_id)
+    if (input.assignment.assignment_type === 'TU') {
+      // A customer may approve while the provider processes the email.
+      statusUpdate = statusUpdate.in('status', ['draft', 'sent', 'expired']).is('accepted_at', null).is('archived_at', null)
+    }
+    const { error: statusError } = await statusUpdate
+    if (statusError) console.error('[assignments.send] email sent, status update failed', { assignmentId: input.assignment.id, error: statusError })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel vid mejlutskick.'
     await admin

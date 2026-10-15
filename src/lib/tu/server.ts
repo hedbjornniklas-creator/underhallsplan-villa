@@ -16,6 +16,8 @@ import {
 import { resolveInspectorCertificationSummary } from '@/lib/certifications/profileResolver'
 import { formatCertificationDisplayLines } from '@/lib/certifications/display'
 import type { InspectorCertificationListItem } from '@/lib/certifications/profileSummary'
+import type { TuAssignmentProgress } from '@/lib/tu/assignmentProgress'
+import { loadTuAssignmentProgress } from '@/lib/tu/assignmentProgressServer'
 import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
 import {
   requireConfiguredOrganizationProfileCard,
@@ -83,6 +85,7 @@ export type TuReportDraft = {
 
 export type TuAssignmentListItem = AssignmentListItem & {
   assignment_type: 'TU'
+  progress?: TuAssignmentProgress
 }
 
 export type TuPropertySummary = {
@@ -1039,7 +1042,9 @@ export async function requireTuRequestContext(request: Request) {
 
 export async function listTuAssignments(orgId: string): Promise<TuAssignmentListItem[]> {
   const assignments = await listAssignmentsByOrg(orgId)
-  return assignments.filter((assignment): assignment is TuAssignmentListItem => assignment.assignment_type === 'TU')
+  const scoped = assignments.filter((assignment): assignment is TuAssignmentListItem => assignment.assignment_type === 'TU')
+  const progress = await loadTuAssignmentProgress(orgId, scoped)
+  return scoped.map(assignment => ({ ...assignment, progress: progress.get(assignment.id) }))
 }
 
 export async function getTuAssignmentById(orgId: string, assignmentId: string) {
@@ -1125,12 +1130,20 @@ export async function sendTuAssignmentConfirmation(input: {
   requestedByUserId: string
 }) {
   if (input.assignment.assignment_type !== 'TU') throw new Error('TU_ASSIGNMENT_NOT_FOUND')
+  if (input.assignment.archived_at || input.assignment.accepted_at || !['draft', 'sent', 'expired'].includes(input.assignment.status)) throw new Error('TU_ACTION_NOT_ALLOWED')
+  const progress = (await loadTuAssignmentProgress(input.assignment.org_id, [input.assignment])).get(input.assignment.id)
+  if (!progress?.available || progress.approvalRecorded) throw new Error('TU_ACTION_NOT_ALLOWED')
   const responsibleProfile = await requireTuOrganizationProfileCard({
     orgId: input.assignment.org_id,
     profileId: input.assignment.responsible_profile_id,
   })
+  // Claim the version before replacing any customer link. Stale tabs must not send.
+  const assignment = await updateAssignmentById({
+    orgId: input.assignment.org_id, assignmentId: input.assignment.id, updatedBy: input.requestedByUserId,
+    expectedUpdatedAt: input.assignment.updated_at, patch: {},
+  })
   return sendAssignmentConfirmation({
-    assignment: input.assignment,
+    assignment,
     orgName: responsibleProfile.companyName || input.orgName,
     requestedByUserId: input.requestedByUserId,
     responsibleEmail: responsibleProfile.email,
@@ -1398,9 +1411,11 @@ export async function convertTuAssignmentToInvestigation(input: {
     return { propertyId: assignment.property_id, inspectionId: assignment.inspection_id }
   }
 
-  if (assignment.status !== 'ordered') {
+  if (!['ordered', 'booked'].includes(assignment.status) || assignment.archived_at || !assignment.accepted_at) {
     throw new Error('TU_ASSIGNMENT_NOT_ACCEPTED')
   }
+  const progress = await loadTuAssignmentProgress(input.orgId, [assignment])
+  if (!progress.get(assignment.id)?.approvalVerified) throw new Error('TU_ASSIGNMENT_NOT_ACCEPTED')
 
   const reportTemplate = await getActiveTuReportTemplateByKey(input.reportTemplateKey ?? '')
 
@@ -1462,6 +1477,7 @@ export async function convertTuAssignmentToInvestigation(input: {
       orgId: input.orgId,
       assignmentId: assignment.id,
       updatedBy: input.requestedByUserId,
+      expectedUpdatedAt: assignment.updated_at,
       patch: {
         status: 'completed',
         property_id: property.id,

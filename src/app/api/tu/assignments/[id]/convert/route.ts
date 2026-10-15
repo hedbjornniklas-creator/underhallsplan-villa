@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { convertTuAssignmentToInvestigation, requireTuContext } from '@/lib/tu/server'
+import { assertAssignmentCustomerSameOrigin } from '@/lib/assignment-customers/http'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -10,6 +11,8 @@ function jsonError(message: string, status: number) {
 
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
+  if (message === 'ASSIGNMENT_CUSTOMER_ORIGIN_FORBIDDEN') return jsonError('Otillåten begäran.', 403)
+  if (message === 'ASSIGNMENT_VERSION_CONFLICT') return jsonError('Uppdraget har ändrats. Uppdatera status innan du startar igen.', 409)
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
@@ -29,6 +32,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAssignmentCustomerSameOrigin(request)
     const { id } = await context.params
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     if (!Object.prototype.hasOwnProperty.call(body, 'orgId')) {

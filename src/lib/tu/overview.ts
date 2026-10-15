@@ -1,4 +1,6 @@
 import type { TuAssignmentListItem, TuInspectionSummary } from './server'
+// @ts-expect-error Node strip-types tests require the explicit TypeScript extension.
+import { tuAssignmentState, type TuProgressAssignment } from './assignmentProgress.ts'
 
 export type TuOverviewInvestigation = TuInspectionSummary & { hasReadyPdf?: boolean }
 export type TuOverviewFilter = 'all' | 'active' | 'closed'
@@ -18,6 +20,7 @@ export type TuOverviewItem = {
   confirmationHref: string | null
   pdfHref: string | null
   startAssignment: TuAssignmentListItem | null
+  assignment: TuAssignmentListItem | null
   attention: string[]
   archived: boolean
   closed: boolean
@@ -28,21 +31,14 @@ const collator = new Intl.Collator('sv-SE', { sensitivity: 'base', numeric: true
 const text = (value: string | null | undefined) => value?.trim() || ''
 const timestamp = (value: string | null) => value ? Date.parse(value) || 0 : 0
 
-export function canStartTuOverviewAssignment(assignment: TuAssignmentListItem) {
-  return assignment.status === 'ordered' && !assignment.inspection_id && !assignment.archived_at
+export function canStartTuOverviewAssignment(assignment: TuProgressAssignment) {
+  return ['ordered', 'booked'].includes(assignment.status) && tuAssignmentState(assignment).verified
+    && !assignment.inspection_id && !assignment.archived_at
 }
 
 function confirmationLabel(assignment: TuAssignmentListItem | null) {
   if (!assignment) return 'Utan bekräftelse'
-  if (assignment.archived_at) return 'Arkiverad'
-  if (assignment.status === 'cancelled') return 'Avbruten'
-  if (assignment.status === 'expired') return 'Utgången länk'
-  if (assignment.accepted_at || assignment.status === 'ordered') return 'Godkänd'
-  if (assignment.status === 'booked') return 'Bokad'
-  if (assignment.status === 'completed') return 'Utredning startad'
-  if (assignment.status === 'sent') return 'Skickad'
-  if (assignment.status === 'draft') return 'Utkast'
-  return 'Okänd status'
+  return tuAssignmentState(assignment).label
 }
 
 function investigationLabel(investigation: TuOverviewInvestigation | null, linkedId: string | null) {
@@ -72,14 +68,15 @@ export function buildTuOverviewItems({ organizationId, assignments, investigatio
     const customer = text(investigation?.customerName) || text(assignment?.customer_name) || text(investigation?.customerEmail) || text(assignment?.customer_email) || 'Kund saknas'
     const title = text(investigation?.title) || 'Teknisk utredning'
     const startAssignment = !inspectionId && assignment && canStartTuOverviewAssignment(assignment) ? assignment : null
-    const attention = startAssignment ? ['Godkänt uppdrag att starta'] : []
+    const action = assignment ? tuAssignmentState(assignment).attention : null
+    const attention = action ? [action] : []
     if (inspectionId && !investigation) attention.push('Utredningens status kunde inte läsas')
     const investigationStatus = investigationLabel(investigation, inspectionId)
     // Archiving a confirmation must not hide an investigation that is still in use.
     const archived = Boolean(assignment?.archived_at) && !inspectionId
     const closed = investigation
       ? ['Låst', 'Klar'].includes(investigationStatus)
-      : !inspectionId && (archived || ['cancelled', 'expired'].includes(assignment?.status ?? ''))
+      : !inspectionId && (archived || assignment?.status === 'cancelled')
     return {
       id: investigation ? `investigation:${investigation.inspectionId}` : `assignment:${assignment!.id}`,
       date: investigation?.date || assignment?.preferred_date || null,
@@ -89,7 +86,7 @@ export function buildTuOverviewItems({ organizationId, assignments, investigatio
       investigationHref: inspectionId ? url(`/tu/investigations/${encodeURIComponent(inspectionId)}`) : null,
       confirmationHref: assignment ? url(`/tu/assignments/${encodeURIComponent(assignment.id)}`) : null,
       pdfHref: investigation?.hasReadyPdf ? url(`/api/report-v2/${encodeURIComponent(investigation.inspectionId)}/pdf`) : null,
-      startAssignment, attention, archived, closed,
+      startAssignment, assignment, attention, archived, closed,
       searchText: [address, city, customer, title, investigation?.assignmentNumber, investigation?.customerEmail,
         assignment?.customer_email, investigation?.cadastralId, assignment?.cadastral_id, investigation?.brfName,
         assignment?.brf_name, investigation?.apartmentNumber, assignment?.apartment_number,

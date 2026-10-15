@@ -3,6 +3,7 @@ import type { TuAssignmentListItem, TuInspectionSummary } from '../../src/lib/tu
 export const tuPreviewOrg = '11111111-1111-4111-8111-111111111111'
 
 export function tuAssignment(overrides: Partial<TuAssignmentListItem> = {}): TuAssignmentListItem {
+  const approved = ['ordered', 'booked', 'completed'].includes(overrides.status ?? 'ordered')
   return {
     id: 'assignment-1', org_id: tuPreviewOrg, assignment_type: 'TU', organization_customer_id: null,
     status: 'ordered', customer_name: 'Anna Andersson', customer_email: 'anna@example.invalid',
@@ -10,7 +11,8 @@ export function tuAssignment(overrides: Partial<TuAssignmentListItem> = {}): TuA
     preferred_date: '2026-10-02', preferred_time: '10:00', preliminary_address: null,
     scope_description: 'Kontroll av vinden', property_address: 'Testgatan 1', property_postal_code: '111 11',
     property_city: 'Stockholm', cadastral_id: 'Exemplet 1:1', brf_name: null, apartment_number: null,
-    apartment_holder_name: null, accepted_at: null, booked_at: null, converted_at: null,
+    apartment_holder_name: null, accepted_at: approved ? '2026-10-01T08:00:00Z' : null, booked_at: null, converted_at: null,
+    progress: { available: true, approvalVerified: approved, linkState: approved ? 'used' : 'active', linkExpiresAt: '2099-10-15T08:00:00Z' },
     inspection_id: null, responsible_profile_id: 'preview-user', created_at: '2026-10-01T08:00:00Z',
     updated_at: '2026-10-01T08:00:00Z', last_sent_at: null, archived_at: null, archived_by: null,
     ...overrides,
