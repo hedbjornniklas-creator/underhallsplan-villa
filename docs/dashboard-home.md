@@ -33,9 +33,16 @@ entreprenadbesiktning, tekniska utredningar, fuktsäkerhet och Uppdrag.
 - Kartans blå, numrerade stopp följer uppdragslistans bekräftade besök.
   Preliminära uppdrag visas med gula klockmarkörer och tydlig status när de
   öppnas. Kartan anpassas för att visa båda typerna. Den streckade linjen visar
-  stoppens ordning. ”Öppna resväg” öppnar Google Maps med köranvisningar från
-  användarens position via bekräftade uppdrag. Preliminära uppdrag ingår inte
-  i linjen eller köranvisningen. Dagar med fler än fyra stopp delas i flera länkar för
+  de bekräftade stoppens ordning.
+- ”Restid från företaget” visar beräknad körtid och sträcka från organisationens
+  registrerade företagsadress till första uppdraget och sedan mellan uppdragen
+  i kalenderns tidsordning. Även en dag med ett enda uppdrag får en restid.
+  Preliminära uppdrag ingår som standard och kan väljas bort i beräkningen.
+  Tiderna använder vägnätet, utan aktuell trafik eller återresa till företaget.
+  Generella gatpositioner märks som ungefärliga. Saknad företagsadress eller
+  olokaliserade stopp ger ett tydligt meddelande, ingen ofullständig totalsumma.
+  ”Öppna resväg” använder samma företagsstart och uppdragsurval i Google Maps.
+  Dagar med fler än fyra stopp delas i flera länkar för
   att även mobila webbläsares gräns för mellanstopp ska fungera.
 - Manuellt uppdateringsval och återgång till fliken läser om data. Fel i en
   enskild modul visas tydligt; övriga moduler fortsätter fungera. Vid förlorad
@@ -70,10 +77,25 @@ misslyckade uppslag förblir synliga i uppdragslistan. Köranvisningarna kan
 Google Maps-länkarna följer dess
 [dokumenterade URL-format](https://developers.google.com/maps/documentation/urls/get-started).
 
+Körtider hämtas på servern från OSRM, normalt
+`https://routing.openstreetmap.de/routed-car/route/v1/driving/`, enligt dess
+[API](https://project-osrm.org/docs/v5.24.0/api/) och
+[användningsregler](https://routing.openstreetmap.de/about.html). Endast
+koordinater skickas till routingtjänsten. Anrop identifierar HusHub och köas
+med minst 1,1 sekunder mellan anrop; koordinatbaserade resultat cachelagras i
+en timme utan användar-, kund- eller uppdragsidentiteter. Gränsen är 25 punkter
+inklusive företaget: större resvägar får ingen uppskattning som tyst utelämnar
+stopp. `DASHBOARD_ROUTING_URL` kan ange en egen kompatibel OSRM-tjänst och
+`DASHBOARD_ROUTING_ENABLED=false` stänger av beräkningen. Den publika tjänsten
+är avsedd för måttlig användning; större trafik kräver egen tjänst och gemensam
+anropsbegränsning över serverinstanser. Kartans stopp och Google Maps-länkar
+fungerar även när körtidstjänsten är otillgänglig.
+
 ## Kontroll och förhandsvisning
 
 ```powershell
 node --experimental-strip-types --test test/dashboard-model.test.ts test/dashboard-action-cases.test.ts test/dashboard-server.test.ts test/dashboard-calendar.test.ts test/dashboard-geocoding.test.ts test/dashboard-map-api.test.ts
+node --experimental-strip-types --test test/dashboard-routing.test.ts test/dashboard-travel-api.test.ts
 node scripts/preview-dashboard.mjs --test
 ```
 

@@ -91,15 +91,15 @@ export function bookingMapUrl(booking: DashboardBooking) {
 
 // Google Maps supports three waypoints in mobile browsers. Larger days are
 // split into consecutive legs so no appointment is silently left out.
-export function directionsLinks(bookings: DashboardBooking[]) {
-  const locations = bookings.filter(booking => !isTentativeBooking(booking)).map(bookingLocation).filter((location): location is string => Boolean(location))
+export function directionsLinks(bookings: DashboardBooking[], options: { includeTentative?: boolean; origin?: string } = {}) {
+  const locations = bookings.filter(booking => options.includeTentative || !isTentativeBooking(booking)).map(bookingLocation).filter((location): location is string => Boolean(location))
   const links: string[] = []
   for (let index = 0; index < locations.length;) {
     let count = Math.min(4, locations.length - index)
     const build = (includeOrigin: boolean) => {
       const stops = locations.slice(index, index + count)
       const params = new URLSearchParams({ api: '1', travelmode: 'driving', destination: stops[stops.length - 1] })
-      if (includeOrigin && index > 0) params.set('origin', locations[index - 1])
+      if (includeOrigin && (index > 0 || options.origin)) params.set('origin', index > 0 ? locations[index - 1] : options.origin!)
       if (stops.length > 1) params.set('waypoints', stops.slice(0, -1).join('|'))
       return `https://www.google.com/maps/dir/?${params}`
     }
@@ -107,7 +107,10 @@ export function directionsLinks(bookings: DashboardBooking[]) {
     while (href.length > 2048 && count > 1) { count -= 1; href = build(true) }
     // If two individually valid long addresses cannot share a URL, start this
     // leg from the device location. Keep the actual destination intact.
-    if (href.length > 2048) href = build(false)
+    if (href.length > 2048) {
+      if (options.origin) return []
+      href = build(false)
+    }
     links.push(href)
     index += count
   }

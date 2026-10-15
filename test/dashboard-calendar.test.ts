@@ -76,3 +76,15 @@ test('tentative addresses and coordinates never enter driving directions', () =>
   assert.deepEqual(directionsLinks([first, tentative, last]), directionsLinks([first, last]))
   assert.deepEqual(directionsLinks([tentative]), [])
 })
+
+test('planned directions can include tentative visits and start at the company address', () => {
+  const visits = [booking('first', '2026-10-12', 'Första gatan 1'),
+    { ...booking('draft', '2026-10-12', 'Andra gatan 2'), status: 'tentative' as const }]
+  const links = directionsLinks(visits, { includeTentative: true, origin: 'Kontorsgatan 3, Stockholm' })
+  const params = new URL(links[0]).searchParams
+  assert.equal(params.get('origin'), 'Kontorsgatan 3, Stockholm')
+  assert.equal(params.get('waypoints'), 'Första gatan 1')
+  assert.equal(params.get('destination'), 'Andra gatan 2')
+  const confirmed = new URL(directionsLinks(visits, { origin: 'Kontorsgatan 3, Stockholm' })[0]).searchParams
+  assert.equal(confirmed.get('destination'), 'Första gatan 1')
+})

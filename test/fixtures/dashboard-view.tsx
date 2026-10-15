@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import DashboardV1Client, { DashboardContent } from '../../src/app/(dashboard)/dashboard-v1/DashboardV1Client'
+import { bookingDate, compareBookings } from '../../src/lib/dashboard/calendar'
 
 const organizationId = '11111111-1111-4111-8111-111111111111'
 const scoped = (path: string) => `${path}?orgId=${organizationId}`
@@ -43,11 +44,11 @@ const data = {
   actions: state === 'empty' ? [] : state === 'long' ? [...actions, ...Array.from({ length: 7 }, (_, index) => ({
     ...actions[0], id: `extra-${index}`, title: `Exempeluppdrag ${index + 1}`, priority: 'normal' as const,
   }))] : actions,
-  bookings: state === 'empty' ? [] : state === 'multi-module-drafts' ? draftBookings : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : bookings,
+  bookings: state === 'empty' ? [] : state === 'multi-module-drafts' ? draftBookings : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : state === 'travel-known-coordinates' ? bookings.map(booking => ({ ...booking, latitude: 59.3107, longitude: 18.1817 })) : bookings,
   issues: [],
 }
-declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean } } }
-window.__dashboardTest = { refreshes: 0, writes: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0, confirmTentative: false }
+declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean; travelFail: boolean; travelWrongOrg: boolean; travelWrongDate: boolean; travelDelay: number; travelMissingOrigin: boolean } } }
+window.__dashboardTest = { refreshes: 0, writes: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0, confirmTentative: false, travelFail: state === 'travel-error', travelWrongOrg: state === 'travel-wrong-org', travelWrongDate: state === 'travel-wrong-date', travelDelay: 0, travelMissingOrigin: state === 'travel-missing-origin' || state === 'client-travel-missing-origin' }
 window.fetch = async (input, init) => {
   const url = new URL(String(input), location.href)
   window.__dashboardTest.requests.push(`${url.pathname}${url.search}`)
@@ -76,6 +77,38 @@ window.fetch = async (input, init) => {
       { id: 'booking-tu', latitude: 59.3604, longitude: 18.0249, status: 'located' },
     ] : [],
   })
+  if (url.pathname === '/api/dashboard/travel') {
+    await new Promise(resolve => setTimeout(resolve, window.__dashboardTest.travelDelay))
+    if (window.__dashboardTest.travelFail) return Response.json({ error: 'Restiden kunde inte hämtas. Försök igen.' }, { status: 503 })
+    const selectedIds = url.searchParams.getAll('bookingId')
+    const includesTentative = url.searchParams.get('includeTentative') !== '0'
+    const selected = data.bookings.filter(booking => booking.moduleId !== 'moisture'
+      && bookingDate(booking.startsAt) === url.searchParams.get('date')
+      && selectedIds.includes(booking.id)
+      && (includesTentative || !('status' in booking && booking.status === 'tentative' && !(window.__dashboardTest.confirmTentative && booking.id === 'booking-tentative'))))
+      .sort(compareBookings)
+    const legs = selected.map((booking, index) => ({
+      fromId: index === 0 ? 'company-origin' : selected[index - 1].id,
+      toId: booking.id, durationSeconds: (index + 1) * 600, distanceMeters: (index + 1) * 5000,
+    }))
+    const locations = ['Kontorsvägen 1, Stockholm', ...selected.map(booking => booking.address!)]
+    const directionsLinks = selected.length ? [`https://www.google.com/maps/dir/?${new URLSearchParams({
+      api: '1', travelmode: 'driving', origin: locations[0], destination: locations.at(-1)!,
+      ...(locations.length > 2 ? { waypoints: locations.slice(1, -1).join('|') } : {}),
+    })}`] : []
+    return Response.json({
+      organizationId: window.__dashboardTest.travelWrongOrg ? 'foreign-organization' : organizationId,
+      date: window.__dashboardTest.travelWrongDate ? '2026-10-01' : url.searchParams.get('date'),
+      bookingIds: selected.map(booking => booking.id), includesTentative,
+      origin: window.__dashboardTest.travelMissingOrigin
+        ? { status: 'address_missing', label: 'Företaget' }
+        : { status: 'located', label: 'Företaget', address: 'Kontorsvägen 1, Stockholm', latitude: 59.3, longitude: 18.1 },
+      route: window.__dashboardTest.travelMissingOrigin
+        ? { status: 'origin_missing', legs: [], geometry: [] }
+        : { status: 'ready', durationSeconds: legs.reduce((total, leg) => total + leg.durationSeconds, 0), distanceMeters: legs.reduce((total, leg) => total + leg.distanceMeters, 0), legs, geometry: [] },
+      directionsLinks: window.__dashboardTest.travelMissingOrigin ? [] : directionsLinks,
+    })
+  }
   return Response.json({}, { status: 404 })
 }
 

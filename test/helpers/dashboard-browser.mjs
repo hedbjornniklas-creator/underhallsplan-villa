@@ -57,12 +57,32 @@ export async function testDashboard(base, output) {
     }, date)
   }
   const mapSelector = '[aria-label="Karta över uppdrag för vald dag"]'
+  const travelSelector = '[data-testid="dashboard-travel"]'
+  const travelTotal = `${travelSelector} [data-testid="travel-total"]`
+  const travelDirections = `${travelSelector} a[href^="https://www.google.com/maps/dir/"]`
   const tentativeMarker = '.leaflet-marker-icon[data-booking-id="booking-tentative"]'
   const routePath = '.leaflet-overlay-pane path.leaflet-interactive'
   async function waitForMap(count) {
     await page.$eval('.dh-map-panel', node => node.scrollIntoView())
     await page.waitForSelector(mapSelector)
     await page.waitForFunction(expected => document.querySelectorAll('.leaflet-marker-icon').length === expected, {}, count)
+  }
+  async function waitForTravel(ids) {
+    await page.$eval(travelSelector, node => node.scrollIntoView())
+    await page.waitForFunction((selector, expected) => {
+      const rows = [...document.querySelectorAll(`${selector} [data-to-id]`)]
+      return JSON.stringify(rows.map(node => node.dataset.toId)) === JSON.stringify(expected)
+        && Boolean(document.querySelector(`${selector} [data-testid="travel-total"]`))
+    }, {}, travelSelector, ids)
+  }
+  async function assertTravelRoute(ids, locations) {
+    await waitForTravel(ids)
+    const legs = await page.$$eval(`${travelSelector} [data-to-id]`, nodes => nodes.map(node => ({ from: node.dataset.fromId, to: node.dataset.toId })))
+    assert.deepEqual(legs, ids.map((id, index) => ({ from: index === 0 ? 'company-origin' : ids[index - 1], to: id })), 'Driving legs start at the company and continue in appointment order')
+    const route = new URL(await page.$eval(travelDirections, node => node.href))
+    assert.equal(route.searchParams.get('origin'), 'Kontorsvägen 1, Stockholm', 'Directions start at the company address')
+    assert.equal(route.searchParams.get('travelmode'), 'driving')
+    assert.deepEqual([...(route.searchParams.get('waypoints')?.split('|') ?? []), route.searchParams.get('destination')], locations, 'Directions match the selected travel appointments')
   }
   async function assertMixedMap() {
     const markers = await page.$$eval('.leaflet-marker-icon', nodes => nodes.map(node => ({
@@ -107,13 +127,29 @@ export async function testDashboard(base, output) {
       assert.deepEqual(agenda.map(booking => booking.id), ['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'], 'Confirmed and unconfirmed work share chronological order')
       assert.deepEqual(agenda.filter(booking => booking.id !== 'booking-tentative').map(booking => booking.stop), ['Stopp 1', 'Stopp 2', 'Stopp 3'], 'Tentative work does not shift confirmed route stop numbering')
       assert.equal(/^Stopp \d+$/.test(agenda.find(booking => booking.id === 'booking-tentative').stop ?? ''), false, 'Unconfirmed work is not numbered as a route stop')
-      const route = await page.$eval('.dh-route-button', node => node.href)
-      const routeParams = new URL(route).searchParams
-      assert.deepEqual([...(routeParams.get('waypoints')?.split('|') ?? []), routeParams.get('destination')], ['Tallstigen 12, Nacka', 'Björkvägen 8, Stockholm', 'Storgatan 24, Solna'], 'Directions include only confirmed stops in route order')
+      await assertTravelRoute(['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'], ['Tallstigen 12, Nacka', 'Äppelvägen 5, Täby', 'Björkvägen 8, Stockholm', 'Storgatan 24, Solna'])
+      assert.match(await page.$eval(travelSelector, node => node.textContent), /Restid från företaget.*Kontorsvägen 1, Stockholm/s, 'Company origin is visible alongside the calculated travel time')
+      const checkbox = `${travelSelector} input[type="checkbox"]`
+      assert.equal(await page.$eval(checkbox, node => node.checked), true, 'Tentative work is included in travel estimates by default')
+      assert.match(await page.$eval(travelTotal, node => node.textContent), /1\s*(?:tim|h).*40\s*min|100\s*min/i, 'Total driving time is the sum of company-to-first and inter-appointment legs')
+      await page.click(checkbox)
+      await assertTravelRoute(['booking-ob', 'booking-eb', 'booking-tu'], ['Tallstigen 12, Nacka', 'Björkvägen 8, Stockholm', 'Storgatan 24, Solna'])
+      assert.equal(await page.$eval(checkbox, node => node.checked), false)
+      assert.equal(await page.$eval(travelSelector, node => node.textContent.includes('Äppelvägen 5')), false, 'Excluding tentative work removes its travel leg')
+      assert.match(await page.$eval(travelTotal, node => node.textContent), /1\s*(?:tim|h)|60\s*min/i)
+      await page.click(checkbox)
+      await waitForTravel(['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'])
       const mapRequests = await page.evaluate(() => window.__dashboardTest.requests.filter(url => url.startsWith('/api/dashboard/map?')))
       assert.ok(mapRequests.length > 0, 'The lazy map geocoding request ran')
       assert.ok(mapRequests.some(url => new URL(url, base).searchParams.getAll('bookingId').includes('booking-tentative')), 'Tentative work without coordinates is included in geocoding requests')
       assert.ok(mapRequests.every(url => !new URL(url, base).searchParams.getAll('bookingId').includes('restricted-booking')), 'Disabled work is excluded from geocoding requests')
+      const travelRequests = await page.evaluate(() => window.__dashboardTest.requests.filter(url => url.startsWith('/api/dashboard/travel?')))
+      assert.ok(travelRequests.length > 0, 'Travel estimates are requested separately from map geocoding')
+      assert.ok(travelRequests.every(url => {
+        const params = new URL(url, base).searchParams
+        return params.get('date') === '2026-10-12' && params.get('orgId') === '11111111-1111-4111-8111-111111111111' && !params.getAll('bookingId').includes('restricted-booking')
+      }), 'Travel requests retain date and organization scope and exclude inaccessible work')
+      assert.ok(travelRequests.some(url => new URL(url, base).searchParams.get('includeTentative') === '0'), 'The checkbox explicitly requests a confirmed-only estimate')
       await assertMixedMap()
       await page.screenshot({ path: resolve(output, `dashboard-${width}.png`), fullPage: true })
     }
@@ -158,7 +194,12 @@ export async function testDashboard(base, output) {
     await setDate('2026-10-15')
     await page.waitForFunction(() => document.querySelector('input[aria-label="Visa uppdrag för datum"]').value === '2026-10-15')
     assert.match(await page.$eval('body', node => node.textContent), /Torsdagsutredningen/)
+    await assertTravelRoute(['booking-midweek'], ['Exempelgatan 3, Solna'])
+    assert.equal(await page.$eval(travelSelector, node => /Tallstigen 12|Äppelvägen 5|Kvarteret Björken/.test(node.textContent)), false, 'Changing dates clears prior-day travel legs')
     await setDate('2026-10-13')
+    await page.waitForFunction(selector => document.querySelector(selector)?.textContent.includes('Inga uppdrag den här dagen'), {}, travelSelector)
+    assert.equal(await page.$(travelTotal), null, 'An empty day does not invent a zero-minute estimate')
+    assert.equal(await page.$(travelDirections), null)
     await noOverflow('Empty selected day')
     await page.screenshot({ path: resolve(output, 'dashboard-no-bookings.png'), fullPage: true })
     await clickText('button', /^I dag$/)
@@ -187,7 +228,8 @@ export async function testDashboard(base, output) {
     await page.goto(`${base}/dashboard-v1?state=tentative-only`, { waitUntil: 'networkidle0' })
     await ready()
     assert.equal((await page.$$('.dh-agenda-row[data-booking-id]')).length, 1, 'A day with only unconfirmed work retains its agenda entry')
-    assert.equal(await page.$('.dh-route-button'), null, 'A day with only unconfirmed work offers no confirmed driving route')
+    await assertTravelRoute(['booking-tentative'], ['Äppelvägen 5, Täby'])
+    assert.match(await page.$eval(travelTotal, node => node.textContent), /10\s*min/i, 'A single tentative visit has travel time from the company')
     await waitForMap(1)
     assert.equal((await page.$$(routePath)).length, 0, 'A tentative-only day has no confirmed ordering line')
     assert.equal(await page.$eval(tentativeMarker, node => node.dataset.bookingStatus), 'tentative')
@@ -241,7 +283,7 @@ export async function testDashboard(base, output) {
       })))
       assert.deepEqual(draftMarkers.map(marker => marker.id), draftVisits.map(visit => visit.id))
       assert.ok(draftMarkers.every(marker => marker.status === 'tentative' && marker.text === '' && marker.clock && marker.border === 'dashed' && marker.background === 'rgb(255, 244, 214)'), 'All four draft map markers are yellow clocks without confirmed stop numbers')
-      assert.equal(await page.$('.dh-route-button'), null, 'Draft-only work offers no confirmed driving route')
+      await assertTravelRoute(draftVisits.map(visit => visit.id), draftVisits.map(visit => visit.address))
       assert.equal((await page.$$(routePath)).length, 0, 'Draft-only work has no confirmed route polyline')
       const draftRequests = await page.evaluate(() => window.__dashboardTest.requests.filter(url => url.startsWith('/api/dashboard/map?')))
       assert.ok(draftRequests.some(url => draftVisits.every(visit => new URL(url, base).searchParams.getAll('bookingId').includes(visit.id))), 'Every draft module resolves its synthetic visit address')
@@ -263,7 +305,7 @@ export async function testDashboard(base, output) {
         assert.deepEqual(await page.$$eval(calendarSelector, nodes => nodes.map(node => node.dataset.module)), [visit.module], 'Module filter isolates calendar drafts')
         assert.deepEqual(await page.$$eval('.dh-agenda-row[data-booking-id]', nodes => nodes.map(node => node.dataset.bookingId)), [visit.id], 'Module filter isolates the day list')
         assert.deepEqual(await page.$$eval('.leaflet-marker-icon', nodes => nodes.map(node => node.dataset.bookingId)), [visit.id], 'Module filter isolates map draft markers')
-        assert.equal(await page.$('.dh-route-button'), null)
+        await assertTravelRoute([visit.id], [visit.address])
         assert.equal((await page.$$(routePath)).length, 0)
         await noOverflow(`${visit.module} draft filter ${width}px`)
       }
@@ -283,7 +325,7 @@ export async function testDashboard(base, output) {
     assert.equal((await page.$$('.leaflet-marker-icon')).length, 4, 'Status transitions replace markers without duplicates')
     assert.equal(await page.$eval(routePath, node => (node.getAttribute('d').match(/L/g) ?? []).length), 3, 'Confirming the appointment adds it to the ordering line')
     assert.deepEqual(await page.$$eval('.leaflet-marker-icon', nodes => nodes.map(node => node.textContent.trim())), ['1', '2', '3', '4'])
-    assert.equal(new URL(await page.$eval('.dh-route-button', node => node.href)).searchParams.get('waypoints').includes('Äppelvägen 5, Täby'), true, 'Confirming the appointment adds it to Google directions')
+    await assertTravelRoute(['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'], ['Tallstigen 12, Nacka', 'Äppelvägen 5, Täby', 'Björkvägen 8, Stockholm', 'Storgatan 24, Solna'])
     await page.click(tentativeMarker)
     assert.equal(await page.$eval('.leaflet-popup-content a', node => node.getAttribute('href')), '/ob/inspections/test-tentative-converted?orgId=11111111-1111-4111-8111-111111111111', 'Map popup refreshes to the confirmed inspection link')
     assert.match(await page.$eval('.leaflet-popup-content', node => node.textContent), /Bekräftat/i)
@@ -291,6 +333,8 @@ export async function testDashboard(base, output) {
     await page.goto(`${base}/dashboard-v1?state=empty`, { waitUntil: 'networkidle0' })
     await ready()
     assert.deepEqual(await actionIds(), [])
+    assert.equal(await page.$(travelTotal), null, 'No appointment means no calculated duration')
+    assert.equal(await page.$(travelDirections), null)
     await noOverflow('Empty dashboard')
     await page.screenshot({ path: resolve(output, 'dashboard-empty.png'), fullPage: true })
     assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
@@ -301,6 +345,47 @@ export async function testDashboard(base, output) {
     assert.equal((await actionIds()).length, 12)
     await clickText('button', /^Visa färre/)
     assert.equal((await actionIds()).length, 8)
+    await page.goto(`${base}/dashboard-v1?state=travel-known-coordinates`, { waitUntil: 'networkidle0' })
+    await ready()
+    await waitForMap(4)
+    await waitForTravel(['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'])
+    const coordinateRequests = await page.evaluate(() => window.__dashboardTest.requests)
+    assert.equal(coordinateRequests.some(url => url.startsWith('/api/dashboard/map?')), false, 'Known coordinates do not need a map address lookup')
+    assert.ok(coordinateRequests.some(url => url.startsWith('/api/dashboard/travel?')), 'Known map coordinates still request actual driving time')
+    await page.goto(`${base}/dashboard-v1?state=travel-error`, { waitUntil: 'networkidle0' })
+    await ready()
+    await page.$eval(travelSelector, node => node.scrollIntoView())
+    await page.waitForFunction(selector => document.querySelector(selector)?.textContent.includes('Restiden kunde inte beräknas'), {}, travelSelector)
+    assert.equal(await page.$(travelTotal), null, 'Provider failure never becomes an estimated number')
+    assert.equal(await page.$(travelDirections), null, 'Provider failure does not retain an old route link')
+    assert.ok((await page.$$('.dh-agenda-row')).length > 0, 'Travel failure leaves the rest of the dashboard usable')
+    await page.screenshot({ path: resolve(output, 'dashboard-travel-unavailable.png'), fullPage: true })
+    await page.evaluate(() => { window.__dashboardTest.travelFail = false })
+    await clickText(`${travelSelector} button`, /^Försök igen$/)
+    await assertTravelRoute(['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'], ['Tallstigen 12, Nacka', 'Äppelvägen 5, Täby', 'Björkvägen 8, Stockholm', 'Storgatan 24, Solna'])
+    // A changed filter must discard the last estimate before a foreign response
+    // is considered. None of its total, links or customer names may survive.
+    await page.evaluate(() => { window.__dashboardTest.travelWrongOrg = true; window.__dashboardTest.travelDelay = 100 })
+    await page.select('select[aria-label="Filtrera arbetsområde"]', 'ob')
+    assert.equal(await page.$(travelTotal), null, 'Changing the selected appointments clears an obsolete total while loading')
+    await page.waitForFunction(selector => document.querySelector(selector)?.textContent.includes('Restiden kunde inte beräknas'), {}, travelSelector)
+    assert.equal(await page.$(travelTotal), null, 'Foreign-organization travel response is rejected')
+    assert.equal(await page.$(travelDirections), null)
+    assert.equal(await page.$eval(travelSelector, node => /Tallstigen 12|Äppelvägen 5|Kvarteret Björken|Storgatan 24/.test(node.textContent)), false, 'Scope failures clear prior appointment travel data')
+    await page.goto(`${base}/dashboard-v1?state=travel-wrong-date`, { waitUntil: 'networkidle0' })
+    await ready()
+    await page.$eval(travelSelector, node => node.scrollIntoView())
+    await page.waitForFunction(selector => document.querySelector(selector)?.textContent.includes('Restiden kunde inte beräknas'), {}, travelSelector)
+    assert.equal(await page.$(travelTotal), null, 'Travel data for another date is rejected')
+    await page.goto(`${base}/dashboard-v1?state=travel-missing-origin`, { waitUntil: 'networkidle0' })
+    await ready()
+    await page.$eval(travelSelector, node => node.scrollIntoView())
+    await page.waitForFunction(selector => document.querySelector(selector)?.textContent.includes('Företagets adress saknas'), {}, travelSelector)
+    assert.equal(await page.$(travelTotal), null, 'Missing company address cannot produce a company-origin estimate')
+    assert.equal(await page.$(travelDirections), null)
+    await noOverflow('Missing company address')
+    await page.screenshot({ path: resolve(output, 'dashboard-travel-missing-origin.png'), fullPage: true })
+    await testDashboardTravelRefresh(page, base)
     await page.goto(`${base}/dashboard-v1?state=client-error`, { waitUntil: 'networkidle0' })
     await page.waitForSelector('[role="alert"]')
     await page.evaluate(() => { window.__dashboardTest.fail = false })
@@ -331,10 +416,50 @@ export async function testDashboard(base, output) {
     assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
-    console.log('PASS: dashboard 390/768/1440px layouts; tentative calendar/day/map entries, clock markers, status text and distinct color; scheduled OB/EB/TU drafts and Uppdrag site visits at 390/1440px, preliminary labels, map popups, workflow links and module filters; confirmed/tentative totals; confirmed-only route numbering, polyline and Google directions; tentative geocoding; GET-only map confirmation navigation; tentative-only map; tentative-to-confirmed refresh updates markers, popup, route and line; active-organization links; disabled-module isolation; module menu; action tabs/module/search; show all/fewer; calendar navigation; empty states; load retry; foreign-organization rejection; transient snapshot preservation and 403 clearing. Synthetic data and tiles only; no external requests or writes.')
+    console.log('PASS: dashboard 390/768/1440px layouts; company-origin and appointment driving legs, summed travel time, tentative inclusion toggle and matching Google directions; single/draft-only visits, date/module scopes, known-coordinate travel requests, provider failure/retry, missing company and rejected foreign org/date responses without stale totals; changed company address reread on dashboard refresh with unchanged bookings, no repeated routing for ordinary local UI renders; tentative calendar/day/map entries, status text/color; scheduled OB/EB/TU drafts and Uppdrag site visits at 390/1440px; confirmed/tentative totals; confirmed-only map numbering/polyline; tentative geocoding and GET-only workflow navigation; status refresh; active-organization links; disabled-module isolation; module menu; action filters; show all/fewer; calendar navigation; empty states; load retry; transient snapshot preservation and 403 clearing. Synthetic data and tiles only; no external requests or writes.')
   } catch (error) {
     console.error(await page.$eval('body', node => node.innerText))
     await page.screenshot({ path: resolve(output, 'dashboard-failure.png'), fullPage: true })
     throw error
   } finally { await browser.close() }
+}
+
+// Exported separately so changes to refresh dependencies can run this regression
+// directly without repeating the full layout and navigation suite.
+export async function testDashboardTravelRefresh(page, base) {
+  const travel = '[data-testid="dashboard-travel"]'
+  const total = `${travel} [data-testid="travel-total"]`
+  const travelRequests = () => page.evaluate(() => window.__dashboardTest.requests.filter(url => url.startsWith('/api/dashboard/travel?')))
+  const agendaSnapshot = () => page.$$eval('.dh-agenda-row[data-booking-id]', nodes => nodes.map(node => ({
+    id: node.dataset.bookingId, time: node.querySelector('time')?.textContent, status: node.dataset.bookingStatus,
+  })))
+  await page.goto(`${base}/dashboard-v1?state=client-travel-missing-origin`, { waitUntil: 'networkidle0' })
+  await page.waitForSelector('[data-testid="dashboard-actions"]')
+  await page.$eval(travel, node => node.scrollIntoView())
+  await page.waitForFunction(selector => document.querySelector(selector)?.textContent.includes('Företagets adress saknas'), {}, travel)
+  assert.equal(await page.$(total), null)
+  const before = await travelRequests()
+  const bookingsBefore = await agendaSnapshot()
+  assert.equal(before.length, 1, 'The initial dashboard reads the missing company origin once')
+
+  await page.evaluate(() => { window.__dashboardTest.travelMissingOrigin = false })
+  await page.click('button[aria-label="Uppdatera översikten"]')
+  await page.waitForSelector('.dh-dashboard[aria-busy="false"]')
+  await page.$eval(travel, node => node.scrollIntoView())
+  await page.waitForSelector(total)
+  const after = await travelRequests()
+  assert.equal(after.length, before.length + 1, 'Refreshing unchanged bookings requests the company origin again')
+  assert.equal(after.at(-1), before[0], 'The refreshed route uses the same date, organization and appointments')
+  assert.deepEqual(await agendaSnapshot(), bookingsBefore, 'The company-only change leaves all appointment dates and statuses unchanged')
+  assert.match(await page.$eval(total, node => node.textContent), /1 tim 40 min/)
+  assert.match(await page.$eval(travel, node => node.textContent), /Kontorsvägen 1, Stockholm/)
+  assert.equal((await page.$$(`${travel} [data-to-id]`)).length, 4)
+
+  // Changing an action tab rerenders DashboardContent without changing bookings.
+  // Flush React effects and two frames before checking for an accidental refetch.
+  await page.$eval('[aria-label="Filtrera nästa steg"] button:nth-child(2)', node => node.click())
+  await page.waitForFunction(() => document.querySelectorAll('[data-action-id]').length === 2)
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  assert.equal((await travelRequests()).length, after.length, 'An ordinary action-tab render does not repeat the travel request')
+  assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
 }
