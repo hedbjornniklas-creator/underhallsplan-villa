@@ -11,6 +11,7 @@ const records: DashboardBooking[] = [
   { id: 'today-ob', moduleId: 'ob', title: 'Synlig besiktning', href: '/ob', startsAt: '2026-10-12', address: 'Testgatan 1, Teststad' },
   { id: 'today-tu', moduleId: 'tu', title: 'Synlig utredning', href: '/tu', startsAt: '2026-10-11T22:30:00Z', address: 'Testgatan 2, Teststad' },
   { id: 'tomorrow', moduleId: 'eb', title: 'Annat datum', href: '/eb', startsAt: '2026-10-13', address: 'Testgatan 3, Teststad' },
+  { id: 'tentative', moduleId: 'ob', title: 'Skickad bekräftelse', href: '/ob/assignments/sent', startsAt: '2026-10-12', address: 'Preliminära gatan 4, Teststad', status: 'tentative' },
 ]
 
 function harness(error?: string) {
@@ -64,6 +65,14 @@ test('booking selection only narrows authorized records and never admits unknown
   assert.equal(response.status, 200)
   assert.deepEqual(h.lookups[0].map(row => row.id), ['today-tu'])
   assert.deepEqual(h.reads, [undefined])
+})
+
+test('tentative slots cannot be geocoded even when selected explicitly', async () => {
+  const h = harness()
+  const response = await h.route.GET(request('date=2026-10-12&bookingId=tentative'))
+  assert.equal(response.status, 200)
+  assert.deepEqual(h.lookups[0], [])
+  assert.deepEqual((await response.json()).locations, [])
 })
 
 test('arbitrary addresses, ambiguous organization/date and malformed dates fail before readers or geocoding', async () => {

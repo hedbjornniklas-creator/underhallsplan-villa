@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node strip-types requires explicit TypeScript extensions.
-import { bookingDate, bookingTimeLabel, calendarWeek, compareBookings, directionsLinks, isCalendarDate, shiftCalendarDate } from '../src/lib/dashboard/calendar.ts'
+import { bookingCountLabel, bookingDate, bookingStatusLabel, bookingTimeLabel, calendarWeek, compareBookings, directionsLinks, isCalendarDate, isTentativeBooking, shiftCalendarDate } from '../src/lib/dashboard/calendar.ts'
 import type { DashboardBooking } from '../src/lib/dashboard/model'
 
 function booking(id: string, startsAt: string, address = id): DashboardBooking {
@@ -57,4 +57,22 @@ test('a missing address creates no invented map location or destination', () => 
   assert.deepEqual(directionsLinks([{ ...booking('missing', '2026-10-12'), address: undefined }]), [])
   const result = directionsLinks([{ ...booking('coordinates', '2026-10-12'), address: undefined, latitude: 59.3, longitude: 18.1 }])
   assert.equal(new URL(result[0]).searchParams.get('destination'), '59.3,18.1')
+})
+
+test('tentative slots have explicit labels while legacy bookings remain confirmed', () => {
+  const confirmed = booking('confirmed', '2026-10-12')
+  const tentative: DashboardBooking = { ...booking('sent', '2026-10-12'), status: 'tentative', confirmationStatus: 'Inväntar kund' }
+  assert.equal(isTentativeBooking(confirmed), false)
+  assert.equal(bookingStatusLabel(confirmed), 'Bekräftat')
+  assert.equal(bookingStatusLabel(tentative), 'Preliminärt · Inväntar kund')
+  assert.equal(bookingCountLabel([confirmed, tentative]), '1 bekräftat · 1 preliminärt')
+  assert.equal(bookingCountLabel([tentative, tentative]), '0 bekräftade · 2 preliminära')
+})
+
+test('tentative addresses and coordinates never enter driving directions', () => {
+  const first = booking('first', '2026-10-12', 'Första gatan 1')
+  const tentative: DashboardBooking = { ...booking('tentative', '2026-10-12', 'Preliminära gatan 2'), status: 'tentative', latitude: 59.4, longitude: 18.2 }
+  const last = booking('last', '2026-10-12', 'Sista gatan 3')
+  assert.deepEqual(directionsLinks([first, tentative, last]), directionsLinks([first, last]))
+  assert.deepEqual(directionsLinks([tentative]), [])
 })
