@@ -38,6 +38,9 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_PROJECT_NOT_FOUND') {
     return jsonError('Entreprenaden hittades inte.', 404)
   }
+  if (message === 'EB_PROJECT_CLOSED') {
+    return jsonError('Entreprenaden är arkiverad eller avbokad. Välj en aktiv entreprenad.', 409)
+  }
   if (message === 'EB_PROJECT_PROPERTY_MISSING') {
     return jsonError('Entreprenaden saknar fastighetskoppling.', 409)
   }

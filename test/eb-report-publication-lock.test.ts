@@ -352,7 +352,7 @@ function routeFixture(options: FixtureOptions = {}) {
     }
   )
   return {
-    links, previousLink, frozenOriginal, events, insertedSnapshots, scheduled, live, sentMessages,
+    links, previousLink, frozenOriginal, events, insertedSnapshots, scheduled, live, sentMessages, outbound,
     reportReads: () => reportReads,
     customer: () => ({ ...deliveryCustomer }),
     get: () => route.GET(new Request('https://example.test/api/delivery'), {
@@ -419,6 +419,19 @@ test('canonical EB overrides old OB/SB types and known legacy EB types still pub
     assert.deepEqual(f.events, ['stage', 'lock', 'publish', 'revoke-previous', 'schedule-pdf'])
     assert.equal(snapshotReport(f.created().snapshot_payload).report.inspection.reportLockedAt, lockedAt)
   }
+})
+
+test('delivery dialog reports partial recipient failures, pending attempts and successful retries consistently', async () => {
+  const f = routeFixture({ frozen: true })
+  const row = (recipient: string, status: string, id: string) => ({ id, org_id: 'org', eb_project_id: 'project', inspection_id: 'inspection', template_key: 'eb_report_delivery',
+    recipient_email: recipient, status, created_at: '2026-10-15T10:00:00Z', sent_at: status === 'sent' ? '2026-10-15T10:00:00Z' : null })
+  f.outbound.push(row('buyer@example.test', 'sent', 'a'), row('contractor@example.test', 'failed', 'b'))
+  assert.equal((await (await f.get()).json()).deliveryStatus, 'failed')
+  f.outbound.unshift(row('CONTRACTOR@example.test', 'pending', 'c'))
+  assert.equal((await (await f.get()).json()).deliveryStatus, 'sending')
+  f.outbound.unshift(row('contractor@example.test', 'sent', 'd'))
+  assert.equal((await (await f.get()).json()).deliveryStatus, 'sent')
+  assert.equal(f.sentMessages.length, 0)
 })
 
 test('lock-only publication stages privately, persists the RPC timestamp, then revokes the previous version and queues PDF', async () => {

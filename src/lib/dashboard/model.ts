@@ -1,7 +1,5 @@
 import type { ObOverviewItem } from '@/lib/ob/overview'
 import type { TuAssignmentListItem, TuInspectionSummary } from '@/lib/tu/server'
-import type { EbProjectListItem } from '@/lib/eb/server'
-import type { EbAssignmentConfirmationSummary } from '@/lib/eb/assignmentConfirmationTypes'
 import type { MoistureProject } from '@/lib/moisture/domain'
 import type { TaskWorkspace } from '@/lib/tasks/contracts'
 
@@ -270,68 +268,8 @@ export function buildTuDashboard(orgId: string, assignments: TuAssignmentListIte
   return { activeCount, actions, bookings }
 }
 
-export function buildEbDashboard(orgId: string, projects: EbProjectListItem[], confirmations: EbAssignmentConfirmationSummary[], today: string,
-  confirmationBookings?: Map<string, DashboardConfirmationBookingSource>): DashboardModuleSummary {
-  const byInspection = new Map(confirmations.map(item => [item.inspectionId, item]))
-  const actions: DashboardAction[] = [], bookings: DashboardBooking[] = []
-  let activeCount = 0
-  for (const project of projects) {
-    if (project.orgId !== orgId || closed(project.status)) continue
-    const open = project.inspections.filter(item => !closed(item.status) && !item.reportLockedAt)
-    if (project.inspections.length > 0 && open.length === 0) continue
-    activeCount += open.length || 1
-    const href = `/eb/projects/${encodeURIComponent(project.id)}`
-    if (!project.inspections.length) actions.push(action({ id: `eb:${project.id}:project`, moduleId: 'eb', title: project.title,
-      subtitle: joined(project.clientName, project.address), nextStep: 'Planera projektets första besiktning', category: 'other', href, actionLabel: 'Öppna projekt' }, undefined, today))
-    for (const inspection of open) {
-      const title = `${inspection.variantLabel} · ${project.title}`
-      const subtitle = joined(inspection.clientName || project.clientName, project.address)
-      const confirmation = byInspection.get(inspection.inspectionId)
-      const bookingSource = confirmation ? confirmationBookings?.get(confirmation.assignmentId) : undefined
-      const cancelledConfirmation = confirmation?.status === 'cancelled'
-      const next = confirmationNextStep(confirmation?.status || 'not_created', Boolean(confirmation?.acceptedAt))
-      if (next) actions.push(action({ id: `eb:${inspection.inspectionId}:confirmation`, moduleId: 'eb', title, subtitle,
-        ...next, category: 'confirmation', href }, inspection.date, today))
-      const inspectionHref = `${href}/inspections/${encodeURIComponent(inspection.inspectionId)}/perform`
-      actions.push(action({ id: `eb:${inspection.inspectionId}:inspection`, moduleId: 'eb', title, subtitle,
-        nextStep: cancelledConfirmation ? 'Kontrollera besiktningen efter avbokningen' : knownOpenStatus(inspection.status) ? inspectionNextStep(inspection.date, today) : 'Kontrollera besiktningens status',
-        category: 'inspection', href: inspectionHref, actionLabel: 'Öppna besiktning' }, !cancelledConfirmation && knownOpenStatus(inspection.status) ? inspection.date : undefined, today))
-      // EB accepts the customer's order directly; there is no separate internal
-      // booking step. A sent confirmation still uses its current proposal slot.
-      const pendingConfirmation = tentativeConfirmation(bookingSource, true) || (!bookingSource && confirmation
-        && (confirmation.status === 'sent' && !confirmation.acceptedAt ? 'Inväntar kund'
-          : confirmation.status === 'expired' && confirmation.lastSentAt ? 'Bekräftelselänken har gått ut' : undefined))
-      // "draft" is also the report's editing state after an accepted booking.
-      // Only the initial unsent confirmation (or an initial inspection without
-      // one) makes its planned visit tentative. A reissue or an existing sent
-      // invitation must not displace an actual visit while it is still unsent.
-      const currentStatus = bookingSource?.status || confirmation?.status || 'not_created'
-      const initialDraft = ['draft', 'utkast'].includes(inspection.status?.trim().toLowerCase() || '')
-        && !inspection.invitationSentAt && !inspection.invitationDate && (confirmation?.versionNo ?? 1) === 1
-        && ['draft', 'not_created'].includes(currentStatus)
-      const missingInspectionDate = !inspection.date || !getStockholmDate(inspection.date)
-      const draftStatus = !bookingSource?.archived_at && initialDraft ? 'Bekräftelse ej skickad'
-        : missingInspectionDate ? draftConfirmation(bookingSource) : undefined
-      const fallbackConfirmation = missingInspectionDate && bookingSource && !bookingSource.archived_at
-        && ['sent', 'ordered', 'booked'].includes(bookingSource.status) && (bookingSource.last_sent_at || bookingSource.accepted_at)
-      const confirmationStatus = pendingConfirmation || draftStatus || (fallbackConfirmation ? 'Tid behöver bekräftas' : undefined)
-      let startsAt: string | undefined
-      if (!cancelledConfirmation && bookingSource?.status !== 'cancelled' && !(initialDraft && bookingSource?.archived_at)) {
-        if (draftStatus) {
-          startsAt = bookingSource?.preferred_date
-            ? dashboardBookingStart(bookingSource.preferred_date, bookingSource.preferred_time)
-            : dashboardBookingStart(inspection.date, inspection.inspectionTime || inspection.startMeetingTime)
-        } else if (confirmationStatus) {
-          startsAt = dashboardBookingStart(bookingSource ? bookingSource.preferred_date : inspection.date, bookingSource ? bookingSource.preferred_time : null)
-        } else startsAt = dashboardBookingStart(inspection.date, inspection.inspectionTime || inspection.startMeetingTime)
-      }
-      if (startsAt) bookings.push({ id: `eb:${inspection.inspectionId}`, moduleId: 'eb', title, href: confirmationStatus ? href : inspectionHref, startsAt,
-        ...(confirmationStatus ? tentativeState(confirmationStatus) : {}),
-        ...(project.address ? { address: [project.address, project.postalCode, project.city].filter(Boolean).join(', ') } : {}) })
-    }
-  }
-  return { activeCount, actions, bookings }
-}
+// @ts-expect-error Node strip-types requires the explicit extension.
+export { buildEbDashboard } from '../eb/dashboard.ts'
 
 export function buildMoistureDashboard(orgId: string, projects: MoistureProject[], today: string): DashboardModuleSummary {
   const rows = projects.filter(project => project.orgId === orgId && project.status !== 'archived')

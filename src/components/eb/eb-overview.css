@@ -1,0 +1,34 @@
+.eb-home-actions { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; font: .875rem/1.5 'ObOverviewManrope',sans-serif; }
+.eb-home-actions :is(a,button) { display:inline-flex; align-items:center; gap:.5rem; min-height:48px; padding:.6rem 1rem; border:1px solid #d4dce4; border-radius:4px; background:#fff; color:#245eb5; text-decoration:none; font-weight:600; }
+.eb-home-actions .eb-primary { background:#245eb5; border-color:#245eb5; color:#fff; }
+.eb-home :is(a,button):focus-visible { outline:3px solid #245eb5; outline-offset:3px; }
+.eb-overview .obo-table th:nth-child(3) { width:15%; }
+.eb-overview .obo-table th:nth-child(4) { width:14%; }
+.eb-overview .obo-table th:nth-child(5) { width:12rem; }
+.eb-overview .obo-table th:nth-child(6) { width:8rem; }
+.eb-overview .eb-time { display:block; font-size:.75rem; }
+.eb-overview .eb-delivery-action { display:inline-flex; align-items:center; justify-content:center; min-height:44px; width:44px; padding:0; border:0; color:#245eb5; background:transparent; }
+.eb-overview .eb-delivery-action span { display:none; }
+.eb-detail-actions { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem; }
+.eb-detail-actions :is(a,button) { display:inline-flex; align-items:center; gap:.5rem; min-height:44px; color:#245eb5; }
+.eb-overview .eb-mobile-context { display:none; }
+.eb-empty-projects { margin-top:1.5rem; padding:1rem; border:1px solid #d4dce4; background:white; font: .875rem/1.5 'ObOverviewManrope',sans-serif; }
+.eb-empty-projects summary { cursor:pointer; }
+.eb-empty-projects ul { list-style:none; padding:0; }
+.eb-empty-projects li { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:.75rem 0; }
+.eb-empty-projects :is(a,button) { min-height:44px; display:inline-flex; align-items:center; color:#245eb5; }
+@media (max-width:639px) {
+  .eb-home .obo-home-heading h1 { font-size:1.125rem; }
+}
+@media (max-width:359px) {
+  .eb-home .obo-home-heading { flex-wrap:wrap; }
+  .eb-home .obo-home-heading h1 { order:3; flex-basis:100%; }
+  .eb-home .obo-guide-trigger { margin-left:auto; }
+}
+@container ob-overview (width < 56rem) {
+  .eb-overview .eb-delivery-action { flex:1 1 9rem; width:auto; min-height:48px; justify-content:flex-start; gap:.5rem; font-size:.875rem; }
+  .eb-overview .eb-delivery-action span { display:block; }
+  .eb-overview .eb-mobile-context { display:block; padding:0 1rem 1rem; border-bottom:1px solid #d4dce4; }
+  .eb-overview .eb-mobile-context td { display:flex; gap:1rem; flex-wrap:wrap; }
+  .eb-mobile-context :is(a,button) { display:inline-flex; align-items:center; gap:.5rem; min-height:44px; color:#245eb5; font-size:.875rem; }
+}

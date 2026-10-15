@@ -301,7 +301,7 @@ function eb(overrides: Partial<EbProjectListItem> = {}): EbProjectListItem {
     ...overrides } as EbProjectListItem
 }
 test('EB distinguishes current confirmation states and excludes closed/foreign work', () => {
-  const projects = [eb(), eb({ id: 'closed', status: 'Klar' }), eb({ id: 'foreign', orgId: 'other' })]
+  const projects = [eb(), eb({ id: 'closed', status: 'archived' }), eb({ id: 'foreign', orgId: 'other' })]
   const missing = buildEbDashboard(tuPreviewOrg, projects, [], today)
   assert.equal(missing.activeCount, 1)
   assert.equal(missing.actions[0].nextStep, 'Skapa uppdragsbekräftelsen')
