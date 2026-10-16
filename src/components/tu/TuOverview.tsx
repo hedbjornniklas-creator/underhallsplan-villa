@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronLeft, ChevronRight, Download, FileCheck2, FileText, Play, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import PendingLink from '@/components/ui/PendingLink'
+import TuCopyInvestigationLink from './TuCopyInvestigationLink'
 import type { TuAssignmentListItem } from '@/lib/tu/server'
 import { buildTuOverviewItems, selectTuOverviewPage, type TuOverviewFilter, type TuOverviewItem, type TuOverviewSort, type TuOverviewInvestigation } from '@/lib/tu/overview'
 import '../ob/ob-overview.css'
@@ -20,9 +21,10 @@ function dateLabel(value: string | null) {
   return !date || Number.isNaN(date.getTime()) ? 'Datum saknas' : date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
 }
 
-function OverviewRow({ item, busy, onStartAssignment, onRefresh }: {
+function OverviewRow({ item, busy, onStartAssignment, onRefresh, organizationId }: {
   item: TuOverviewItem; busy: boolean; onStartAssignment: (assignment: TuAssignmentListItem) => void
   onRefresh: () => void
+  organizationId: string
 }) {
   const router = useRouter()
   const early = item.startAssignment ? canStartTuBeforeApproval(item.startAssignment) : false
@@ -64,6 +66,7 @@ function OverviewRow({ item, busy, onStartAssignment, onRefresh }: {
           <Download size={18} aria-hidden /><span>Ladda ner PDF</span>
         </a>}
         {item.assignment && <TuAssignmentActions key={`${item.assignment.org_id}:${item.assignment.id}:${item.assignment.updated_at}`} compact disabled={busy} assignment={item.assignment} onChanged={onRefresh} onNavigate={path => router.push(path)} />}
+        {item.inspectionId && <TuCopyInvestigationLink inspectionId={item.inspectionId} organizationId={organizationId} iconOnly className="obo-icon" />}
       </div></td>
     </tr>
     {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={8}>
@@ -150,7 +153,7 @@ export default function TuOverview({ organizationId, assignments, investigations
         <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Adress</th><th scope="col">Ort</th><th scope="col">Kund</th>
           <th scope="col">Uppdragsbekräftelse</th><th scope="col">Utredning</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th>
         </tr></thead>
-        <tbody>{result.items.map(item => <OverviewRow key={item.id} item={item} busy={busy || loading} onStartAssignment={onStartAssignment} onRefresh={onRefresh} />)}</tbody>
+        <tbody>{result.items.map(item => <OverviewRow key={item.id} item={item} busy={busy || loading} onStartAssignment={onStartAssignment} onRefresh={onRefresh} organizationId={organizationId} />)}</tbody>
       </table>}
       <div className="obo-pagination">
         <span role="status" aria-live="polite">{result.total ? `${result.start + 1}–${result.start + result.items.length} av ${result.total} uppdrag` : '0 uppdrag'}</span>

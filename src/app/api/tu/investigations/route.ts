@@ -213,6 +213,14 @@ export async function POST(request: Request) {
       customerPostalCode: text(body, 'customerPostalCode') || null,
       customerCity: text(body, 'customerCity') || null,
       invoiceEmail: invoiceEmail || null,
+      ...(body.customerDetails && typeof body.customerDetails === 'object' && !Array.isArray(body.customerDetails) ? {
+        customerDetails: {
+          customerIdentityNumber: text(body.customerDetails as Record<string, unknown>, 'customerIdentityNumber'),
+          customerRole: text(body.customerDetails as Record<string, unknown>, 'customerRole'),
+          invoiceName: text(body.customerDetails as Record<string, unknown>, 'invoiceName'),
+          invoiceAddress: text(body.customerDetails as Record<string, unknown>, 'invoiceAddress'),
+        },
+      } : {}),
       date: text(body, 'date') || null,
       time: text(body, 'time') || null,
     })

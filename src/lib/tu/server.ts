@@ -30,6 +30,7 @@ import {
   type TuReportAuthoringMode,
 } from '@/lib/tu/authoring'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
+import { EMPTY_TU_COPY_EXTRAS, tuCopyPartiesText, type TuCopyExtraFields } from '@/lib/tu/copy'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type {
   TuReportTemplateOption,
@@ -1082,6 +1083,10 @@ export async function createTuAssignmentDraft(input: {
   preferredTime?: string | null
   priceAmount?: number | null
   notesInternal?: string | null
+  invoiceName?: string | null
+  invoiceAddress?: string | null
+  customerRole?: string | null
+  customerIdentityNumber?: string | null
 }) {
   const objectType = inferTuObjectType({
     objectType: input.objectType,
@@ -1111,8 +1116,11 @@ export async function createTuAssignmentDraft(input: {
     apartmentNumber: objectType === 'apartment' ? input.apartmentNumber : null,
     apartmentHolderName: objectType === 'apartment' ? input.apartmentHolderName : null,
     invoiceEmail: input.invoiceEmail,
+    invoiceName: input.invoiceName,
+    invoiceAddress: input.invoiceAddress,
+    personalIdentityNumber: input.customerIdentityNumber,
     scopeDescription: input.scopeDescription,
-    ordererRole: null,
+    ordererRole: normalizeTuOrdererRole(input.customerRole),
     preferredDate: input.preferredDate,
     preferredTime: input.preferredTime,
     priceAmount: input.priceAmount,
@@ -1328,6 +1336,7 @@ export async function createScratchTuInvestigation(input: {
   invoiceEmail?: string | null
   date?: string | null
   time?: string | null
+  customerDetails?: TuCopyExtraFields
 }) {
   const reportTemplate = await getActiveTuReportTemplateByKey(input.reportTemplateKey ?? '')
   const ownerProfileId = cleanText(input.responsibleProfileId) ?? input.createdBy
@@ -1382,6 +1391,9 @@ export async function createScratchTuInvestigation(input: {
       invoiceEmail: input.invoiceEmail,
       reportDraft: createTuReportDraftFromTemplate(reportTemplate, {
         assignment_scope: input.scopeDescription ?? '',
+        ...(input.customerDetails ? {
+          assignment_parties: tuCopyPartiesText({ ...input, ...EMPTY_TU_COPY_EXTRAS, ...input.customerDetails }),
+        } : {}),
       }),
       createdBy: input.createdBy,
     })

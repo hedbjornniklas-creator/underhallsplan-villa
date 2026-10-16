@@ -50,7 +50,12 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`TU overview preview (synthetic only): ${base}/tu`)
-if (process.argv.includes('--test')) {
+if (process.argv.includes('--test-copy')) {
+  try {
+    const { testTuCopy } = await import('../test/helpers/tu-copy-browser.mjs')
+    await testTuCopy(base, output)
+  } finally { server.close() }
+} else if (process.argv.includes('--test')) {
   try {
     const { testTuOverview } = await import('../test/helpers/tu-overview-browser.mjs')
     await testTuOverview(base, output)

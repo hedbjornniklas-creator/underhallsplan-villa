@@ -17,6 +17,7 @@ export type TuOverviewItem = {
   confirmation: string
   investigationStatus: string
   investigationHref: string | null
+  inspectionId?: string | null
   confirmationHref: string | null
   pdfHref: string | null
   startAssignment: TuAssignmentListItem | null
@@ -84,6 +85,7 @@ export function buildTuOverviewItems({ organizationId, assignments, investigatio
       address: address || 'Adress saknas', city, customer, title,
       confirmation: confirmationLabel(assignment), investigationStatus,
       investigationHref: inspectionId ? url(`/tu/investigations/${encodeURIComponent(inspectionId)}`) : null,
+      inspectionId,
       confirmationHref: assignment ? url(`/tu/assignments/${encodeURIComponent(assignment.id)}`) : null,
       pdfHref: investigation?.hasReadyPdf ? url(`/api/report-v2/${encodeURIComponent(investigation.inspectionId)}/pdf`) : null,
       startAssignment, assignment, attention, archived, closed,

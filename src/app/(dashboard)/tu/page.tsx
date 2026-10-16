@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
 import TuDashboardClient from '@/components/tu/TuDashboardClient'
+import { getTuCopySource } from '@/lib/tu/copyServer'
+import type { TuCopySource } from '@/lib/tu/copy'
 import {
   getTuInspectorProfileCard,
   listTuReportTemplateOptions,
@@ -17,7 +19,7 @@ export const dynamic = 'force-dynamic'
 export default async function TechnicalInvestigationsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ orgId?: string | string[] }>
+  searchParams?: Promise<{ orgId?: string | string[]; copyFrom?: string | string[] }>
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : {}
   let assignments: TuAssignmentListItem[] = []
@@ -27,6 +29,8 @@ export default async function TechnicalInvestigationsPage({
   let initialError: string | null = null
   let organizationId: string | null = null
   let organizationName: string | null = null
+  let copySource: TuCopySource | null = null
+  let copyError: string | null = null
 
   try {
     const context = await requireTuContext(resolvedSearchParams.orgId)
@@ -38,6 +42,16 @@ export default async function TechnicalInvestigationsPage({
       getTuInspectorProfileCard({ orgId: context.orgId, profileId: context.userId }),
       listTuReportTemplateOptions(),
     ])
+    if (resolvedSearchParams.copyFrom) {
+      try {
+        copySource = typeof resolvedSearchParams.copyFrom === 'string'
+          ? await getTuCopySource(context.orgId, resolvedSearchParams.copyFrom)
+          : null
+        if (!copySource) copyError = 'Utredningen kunde inte hittas i den valda organisationen.'
+      } catch {
+        copyError = 'Uppgifterna kunde inte hämtas. Öppna den tidigare utredningen och försök igen.'
+      }
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') redirect('/login')
@@ -62,7 +76,7 @@ export default async function TechnicalInvestigationsPage({
 
   return (
     <TuDashboardClient
-      key={organizationId}
+      key={`${organizationId}:${typeof resolvedSearchParams.copyFrom === 'string' ? resolvedSearchParams.copyFrom : ''}`}
       organizationId={organizationId}
       organizationName={organizationName}
       initialAssignments={assignments}
@@ -70,6 +84,8 @@ export default async function TechnicalInvestigationsPage({
       initialReportTemplates={reportTemplates}
       inspectorProfile={inspectorProfile}
       initialError={initialError}
+      initialCopySource={copySource}
+      initialCopyError={copyError}
     />
   )
 }

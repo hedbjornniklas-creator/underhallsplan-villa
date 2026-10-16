@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { TU_ANALYSIS_UPDATED_EVENT } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
+import TuCopyInvestigationLink from './TuCopyInvestigationLink'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
 import { effectiveTuReportImageCaption, isGenericTuImageCaption } from '@/lib/tu/imageAppendix'
 import {
@@ -2388,6 +2389,7 @@ export default function TuInvestigationEditorClient({
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
+              <TuCopyInvestigationLink inspectionId={investigation.inspectionId} organizationId={investigation.orgId} />
               {!aiWorkflowEnabled ? <button
                 type="button"
                 onClick={openAssignmentScopeEditor}

@@ -1,4 +1,5 @@
 'use client'
+import TuCopyInvestigationLink from '@/components/tu/TuCopyInvestigationLink'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -664,6 +665,8 @@ export default function TuInvestigationsPage() {
                                 organizationId={organizationId}
                               />
                             ) : null}
+                            {organizationId && <TuCopyInvestigationLink inspectionId={item.inspectionId} organizationId={organizationId} iconOnly
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-violet-200 bg-white text-violet-700 hover:bg-violet-50" />}
                             {item.hasPublishedLink ? (
                               <button
                                 type="button"
