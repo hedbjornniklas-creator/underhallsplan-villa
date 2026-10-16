@@ -88,13 +88,12 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
       && locked
     )
 
-  const preparationRequired = source.workflowProfile === 'post_damage_review'
+  const preparationAvailable = source.workflowProfile === 'post_damage_review'
   const preparation = source.preparation
   const preparationRun = preparation?.run ?? null
   const includedControlItems = preparation?.items.filter((item) => item.reviewStatus !== 'rejected').length ?? 0
   let preparationStatus: TuWorkflowStepState = 'not_started'
   let preparationStatusText = 'Lägg till tidigare underlag'
-  let preparationBlockers = 1
   if (preparationRun?.status === 'queued' || preparationRun?.status === 'processing') {
     preparationStatus = 'in_progress'
     preparationStatusText = preparationRun.progressMessage || 'Kontrollinriktningen skapas i bakgrunden'
@@ -109,11 +108,9 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     preparationStatusText = includedControlItems > 0
       ? `${includedControlItems} områden föreslagna · godkänn inriktningen`
       : 'Välj minst ett uppmärksamhetsområde'
-    preparationBlockers = 1
   } else if (preparation?.case.status === 'plan_approved') {
     preparationStatus = 'complete'
     preparationStatusText = `${preparation.items.filter((item) => item.reviewStatus === 'accepted').length} uppmärksamhetsområden`
-    preparationBlockers = 0
   } else if ((preparation?.readableSourceDocumentCount ?? 0) > 0) {
     preparationStatus = 'in_progress'
     preparationStatusText = `${preparation?.readableSourceDocumentCount ?? 0} underlag redo för analys`
@@ -232,15 +229,15 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   }
 
   const steps: Array<Omit<TuWorkflowStep, 'number'>> = []
-  if (preparationRequired) {
+  if (preparationAvailable) {
     steps.push({
       id: 'preparation',
       title: 'Förbered kontrollen',
       shortTitle: 'Förbered',
       description: 'Underlag och kontrollinriktning',
       status: preparationStatus,
-      statusText: preparationStatusText,
-      blockerCount: preparationBlockers,
+      statusText: `Valfritt · ${preparationStatusText}`,
+      blockerCount: 0,
     })
   }
   steps.push(

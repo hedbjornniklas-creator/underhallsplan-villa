@@ -373,6 +373,7 @@ export default function TuPrintActions({
   }
   const canSend = Boolean(meta) && !loading && !meta?.assignmentWorkflowBlocker && (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
+  const visibleQualityIssues = meta?.qualityIssues?.filter((issue) => !meta.improvementReview || issue.severity === 'blocker') ?? []
   const effectiveFinalizationBlockedReason = meta?.assignmentWorkflowBlocker ?? finalizationBlockedReason
   const canFinalize = Boolean(meta) && !loading && !locked
     && !effectiveFinalizationBlockedReason
@@ -488,11 +489,11 @@ export default function TuPrintActions({
           </div>
         ) : null}
 
-        {!locked && !meta?.improvementReview && meta?.qualityIssues?.length ? (
+        {!locked && visibleQualityIssues.length > 0 ? (
           <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
             <h3 className="text-sm font-semibold text-amber-950">Teknisk slutkontroll</h3>
             <ul className="mt-2 space-y-1.5 text-sm leading-5 text-amber-950">
-              {meta.qualityIssues.map((issue) => (
+              {visibleQualityIssues.map((issue) => (
                 <li key={issue.id} className="flex items-start gap-2">
                   <span
                     className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${issue.severity === 'blocker' ? 'bg-rose-600' : 'bg-amber-500'}`}

@@ -488,9 +488,6 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   const controlPlan = investigation.reportWorkflowProfile === 'post_damage_review'
     ? await getApprovedTuControlPlanSnapshot(input)
     : null
-  if (investigation.reportWorkflowProfile === 'post_damage_review' && !controlPlan) {
-    throw new Error('TU_CONTROL_PLAN_NOT_APPROVED')
-  }
   const sourceImages = images.filter(isTuAnalysisSourceImage)
   const sourceImageIds = new Set(sourceImages.map((image) => image.id))
 

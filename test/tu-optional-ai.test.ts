@@ -12,6 +12,27 @@ import { deriveTuWorkflowSteps, type TuWorkflowSource } from '../src/lib/tu/work
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const section = (text = 'Manuellt skriven och granskad text.') => ({ key: 'summary', title: 'Sammanfattning', text, isRequired: true })
 
+test('blocking quality issues remain visible alongside the collapsed improvement review', () => {
+  const code = read('src/components/tu/TuPrintActions.tsx')
+  assert.match(code, /filter\(\(issue\) => !meta.improvementReview \|\| issue.severity === 'blocker'\)/)
+  assert.match(code, /!locked && visibleQualityIssues.length > 0/)
+  assert.match(code, /visibleQualityIssues.map/)
+})
+
+test('preparation is optional and only approved preparation is supplied to AI', () => {
+  const source: TuWorkflowSource = { workflowProfile: 'post_damage_review', preparation: null, validation: null,
+    workflow: null, reportDraft: null, delivery: null, queue: { total: 0, failed: 0 }, reportSectionCount: 2, reportFilledSectionCount: 2 }
+  const steps = deriveTuWorkflowSteps(source)
+  assert.equal(steps.find(step => step.id === 'preparation')?.blockerCount, 0)
+  assert.match(steps.find(step => step.id === 'preparation')?.statusText ?? '', /Valfritt/)
+  assert.equal(steps.find(step => step.id === 'report')?.status, 'complete')
+  for (const path of ['src/lib/tu/analysisServer.ts', 'src/lib/tu/reportDraftServer.ts']) {
+    const code = read(path)
+    assert.doesNotMatch(code, /TU_CONTROL_PLAN_NOT_APPROVED/)
+    assert.match(code, /await getApprovedTuControlPlanSnapshot\(input\)/)
+  }
+})
+
 function loadGate(qualityBlocker: string | null = null) {
   const source = read('src/app/api/tu/investigations/[inspectionId]/report-delivery/route.ts')
   const code = ts.transpileModule(source + '\nexport { getFinalizationBlocker };', {
