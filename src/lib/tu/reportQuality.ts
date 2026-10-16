@@ -380,8 +380,8 @@ export function evaluateTuReportQuality(input: {
     if (!hasAssignmentDisclaimer) {
       issues.push({
         id: 'post-damage-assignment-nature-missing',
-        severity: 'blocker',
-        message: `Förtydliga uppdragets karaktär i avgränsningen: ${POST_DAMAGE_REPORT_DISCLAIMER}`,
+        severity: 'warning',
+        message: `Överväg att förtydliga uppdragets karaktär om det behövs. Exempel, om det stämmer med uppdraget: ${POST_DAMAGE_REPORT_DISCLAIMER}`,
       })
     }
 
