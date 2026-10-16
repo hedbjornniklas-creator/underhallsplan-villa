@@ -212,7 +212,7 @@ export default function TuPrintActions({
   }, [loadMeta])
 
   useEffect(() => {
-    if (!meta?.analysisStale) setStaleAnalysisAcknowledged(false)
+    setStaleAnalysisAcknowledged(false)
   }, [meta?.analysisStale, meta?.analysisStaleAt])
 
   useEffect(() => {
@@ -373,7 +373,7 @@ export default function TuPrintActions({
   }
   const canSend = Boolean(meta) && !loading && !meta?.assignmentWorkflowBlocker && (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
-  const effectiveFinalizationBlockedReason = meta?.assignmentWorkflowBlocker ?? (meta?.analysisStale ? null : finalizationBlockedReason)
+  const effectiveFinalizationBlockedReason = meta?.assignmentWorkflowBlocker ?? finalizationBlockedReason
   const canFinalize = Boolean(meta) && !loading && !locked
     && !effectiveFinalizationBlockedReason
     && (!meta?.analysisStale || staleAnalysisAcknowledged)
@@ -472,9 +472,9 @@ export default function TuPrintActions({
 
         {!locked && meta?.analysisStale ? (
           <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950">
-            <p className="text-sm font-semibold">Underlaget har ändrats efter AI-analysen</p>
+            <p className="text-sm font-semibold">Kontrollera ändrat underlag</p>
             <p className="mt-1 text-sm leading-5">
-              Din redigerade rapporttext behålls. Du kan uppdatera analysen eller fastställa den text du själv har granskat.
+              Din rapporttext behålls. Granska den mot det aktuella underlaget. Ingen ny AI-körning krävs.
             </p>
             <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm leading-5">
               <input

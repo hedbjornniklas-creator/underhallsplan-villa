@@ -31,7 +31,7 @@ import {
 import {
   evaluateTuReportImprovements,
   evaluateTuReportQuality,
-  isTuSystemGeneratedReportSection,
+  getTuRequiredReportSectionsBlocker,
 } from '@/lib/tu/reportQuality'
 
 export const runtime = 'nodejs'
@@ -871,16 +871,8 @@ async function getFinalizationBlocker(
   })
   if (analysisBlocker) return analysisBlocker
 
-  const missingSections = investigation.reportDraft.sections.filter((section) => {
-    if (isTuSystemGeneratedReportSection(section.key)) return false
-    if (!section.isRequired) return false
-    return !section.text.trim() && !section.subsections?.some((subsection) => subsection.text.trim())
-  })
-  if (missingSections.length > 0) {
-    const titles = missingSections.slice(0, 3).map((section) => section.title).join(', ')
-    const suffix = missingSections.length > 3 ? ` och ${missingSections.length - 3} till` : ''
-    return `Fyll i obligatoriska rapportdelar: ${titles}${suffix}.`
-  }
+  const missingSections = getTuRequiredReportSectionsBlocker(investigation.reportDraft.sections)
+  if (missingSections) return missingSections
   const qualityIssues = await getReportQualityIssues(investigation)
   const qualityBlocker = qualityIssues.find((issue) => issue.severity === 'blocker')
   if (qualityBlocker) return qualityBlocker.message

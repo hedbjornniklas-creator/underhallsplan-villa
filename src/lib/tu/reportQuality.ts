@@ -48,6 +48,19 @@ export function isTuSystemGeneratedReportSection(sectionKey: string) {
   return sectionKey === 'assignment_parties' || sectionKey === 'signature'
 }
 
+export function getTuRequiredReportSectionsBlocker(sections: Array<{
+  key: string; title: string; isRequired?: boolean; text: string
+  subsections?: Array<{ text: string }>
+}>) {
+  const missing = sections.filter(section => !isTuSystemGeneratedReportSection(section.key)
+    && section.isRequired && !section.text.trim()
+    && !section.subsections?.some(subsection => subsection.text.trim()))
+  if (!missing.length) return null
+  const titles = missing.slice(0, 3).map(section => section.title).join(', ')
+  const suffix = missing.length > 3 ? ` och ${missing.length - 3} till` : ''
+  return `Fyll i obligatoriska rapportdelar: ${titles}${suffix}.`
+}
+
 function isGenericCaption(value: string | null | undefined) {
   const caption = clean(value).toLocaleLowerCase('sv-SE')
   return !caption || /^(?:bild|foto|besiktningsbild)(?:\s+\d+)?$/.test(caption)

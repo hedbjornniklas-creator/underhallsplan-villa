@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { TU_ANALYSIS_UPDATED_EVENT } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
+import { getTuRequiredReportSectionsBlocker } from '@/lib/tu/reportQuality'
 import TuCopyInvestigationLink from './TuCopyInvestigationLink'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
 import { effectiveTuReportImageCaption, isGenericTuImageCaption } from '@/lib/tu/imageAppendix'
@@ -1487,17 +1488,11 @@ export default function TuInvestigationEditorClient({
   })
   const refreshWorkflowState = workflowState.refresh
   const finalizationBlockedReason = useMemo(() => {
+    if (autosave.status === 'saving') return 'Vänta tills rapportens ändringar har sparats.'
+    if (autosave.status === 'error') return 'Rapportens ändringar kunde inte sparas. Försök spara igen innan du fastställer.'
     if (!aiWorkflowEnabled) return null
-    const assessmentStep = workflowState.steps.find((step) => step.id === 'assessment')
-    const reportStep = workflowState.steps.find((step) => step.id === 'report')
-    if (assessmentStep?.status !== 'complete') {
-      return assessmentStep?.statusText ?? 'Bedömningen måste slutföras.'
-    }
-    if (reportStep?.status !== 'complete') {
-      return reportStep?.statusText ?? 'Utlåtandet måste slutgranskas.'
-    }
-    return null
-  }, [aiWorkflowEnabled, workflowState.steps])
+    return getTuRequiredReportSectionsBlocker(draft.sections)
+  }, [aiWorkflowEnabled, autosave.status, draft.sections])
   const handleDeliveryStatusChange = useCallback(({ reportLockedAt }: { reportLockedAt: string | null }) => {
     setInvestigation((current) => (
       current.reportLockedAt === reportLockedAt ? current : { ...current, reportLockedAt }
@@ -2564,9 +2559,10 @@ export default function TuInvestigationEditorClient({
             <button
               type="button"
               onClick={() => setWorkspaceView('delivery')}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+              disabled={autosave.isSaving}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-wait disabled:opacity-50"
             >
-              {locked ? 'Gå vidare till leverans' : 'Gå vidare till fastställande'}
+              {locked ? 'Gå vidare till leverans' : 'Klar med granskningen'}
               <ArrowRight size={16} aria-hidden />
             </button>
             <span className="text-xs text-gray-500">
@@ -3974,7 +3970,7 @@ export default function TuInvestigationEditorClient({
                 </label>
 
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                  Om analysen redan är klar behöver den uppdateras mot de nya uppgifterna. Text som du själv har redigerat ersätts inte automatiskt.
+                  Granska utlåtandet mot de ändrade uppgifterna. En ny AI-analys är valfri och ersätter inte din text automatiskt.
                 </div>
               </div>
 

@@ -160,13 +160,13 @@ test('allows an inspector to keep reviewed report text after acknowledging stale
   )
 })
 
-test('still blocks a report that has never reached an approved analysis', () => {
-  assert.match(
+test('allows manual report finalization without an approved AI analysis', () => {
+  assert.equal(
     getTuAnalysisFinalizationBlocker({
       state: { status: 'analysis_ready', analysisStaleAt: null },
       staleAnalysisAcknowledged: false,
-    }) ?? '',
-    /måste vara aktuell och godkänd/
+    }),
+    null
   )
 })
 

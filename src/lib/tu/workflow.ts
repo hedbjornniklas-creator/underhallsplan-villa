@@ -194,35 +194,27 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   }
 
   let reportStatus: TuWorkflowStepState = 'not_started'
-  let reportStatusText = 'Väntar på godkänd bedömning'
-  let reportBlockers = workflow?.status === 'analysis_approved' ? 0 : 1
-  if (analysisStale && source.reportFilledSectionCount > 0) {
+  let reportStatusText = 'Skriv eller granska utlåtandet'
+  let reportBlockers = 0
+  if (workflow?.analysisStaleAt && source.reportFilledSectionCount > 0) {
     reportStatus = 'needs_attention'
     reportStatusText = 'Underlaget ändrades · kontrollera utlåtandet'
     reportBlockers = 1
-  } else if (reportProcessing) {
-    reportStatus = 'in_progress'
-    reportStatusText = reportRun?.progressMessage || 'Utlåtandeförslag skapas i bakgrunden'
-    reportBlockers = 0
-  } else if (reportFailed) {
-    reportStatus = 'needs_attention'
-    reportStatusText = 'Utlåtandeförslaget kunde inte skapas'
-    reportBlockers = 1
-  } else if (reportRun?.status === 'completed' && !reportApplied) {
-    reportStatus = 'needs_attention'
-    reportStatusText = 'Förslaget är klart för granskning'
-    reportBlockers = source.reportDraft?.sections.filter((section) => section.status === 'pending').length ?? 1
-  } else if (
-    workflow?.status === 'analysis_approved'
-    && (reportApplied || source.reportFilledSectionCount > 0)
-  ) {
+  } else if (source.reportFilledSectionCount > 0) {
     reportStatus = 'in_progress'
     reportStatusText = `${source.reportFilledSectionCount} av ${source.reportSectionCount} delar har text`
-    reportBlockers = 0
     if (source.reportSectionCount > 0 && source.reportFilledSectionCount >= source.reportSectionCount) {
       reportStatus = 'complete'
       reportStatusText = 'Utlåtandet är klart för slutgranskning'
     }
+  } else if (reportProcessing) {
+    reportStatus = 'in_progress'
+    reportStatusText = reportRun?.progressMessage || 'Utlåtandeförslag skapas i bakgrunden'
+    reportBlockers = 0
+  } else if (reportRun?.status === 'completed' && !reportApplied) {
+    reportStatus = 'needs_attention'
+    reportStatusText = 'Förslaget är klart för granskning'
+    reportBlockers = source.reportDraft?.sections.filter((section) => section.status === 'pending').length ?? 1
   }
 
   let deliveryStatus: TuWorkflowStepState = 'not_started'
@@ -272,11 +264,11 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     },
     {
       id: 'assessment',
-      title: 'Skapa utlåtandet',
-      shortTitle: 'Skapa',
-      description: 'Samlad analys och sammanhållet textförslag',
+      title: 'Skapa med AI',
+      shortTitle: 'AI (valfritt)',
+      description: 'Valfritt textförslag',
       status: assessmentStatus,
-      statusText: assessmentStatusText,
+      statusText: `Valfritt · ${assessmentStatusText}`,
       blockerCount: assessmentBlockers,
     },
     {
