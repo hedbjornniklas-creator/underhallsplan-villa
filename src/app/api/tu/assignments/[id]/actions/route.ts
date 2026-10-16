@@ -36,6 +36,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       TU_SEND_INCOMPLETE: [400, 'Fyll i kundens e-post, omfattning och pris innan du skickar.'],
       TU_ACCEPTED_COPY_UNAVAILABLE: [409, 'Den godkända versionen kan inte återskapas säkert. Använd den tidigare skickade bekräftelsen. Kundens godkännande finns kvar.'],
       ORG_PROFILE_CARD_REQUIRED: [409, 'Fyll i företagets visitkort innan du skickar.'],
+      ASSIGNMENT_ISSUER_IDENTITY_INVALID: [409, 'Bekräftelsen kunde inte skickas eftersom avsändaruppgifterna inte kunde användas. Kontrollera företagets visitkort.'],
+      ORG_PROFILE_CARD_MIGRATION_REQUIRED: [503, 'Bekräftelsen kunde inte skickas eftersom företagets avsändaruppgifter behöver uppdateras i systemet. Kontakta supporten.'],
+    }
+    if (code === 'ASSIGNMENT_ISSUER_IDENTITY_INVALID' || code === 'ORG_PROFILE_CARD_MIGRATION_REQUIRED') {
+      console.error('[tu.assignments.actions] sender validation failed', error)
     }
     if (known[code]) return json({ error: known[code][1] }, known[code][0])
     console.error('[tu.assignments.actions] failed', error)

@@ -57,7 +57,9 @@ window.fetch = async (input, init) => {
   })
   const body = JSON.parse(String(init.body))
   if (slow) await new Promise(resolve => setTimeout(resolve, 1800))
-  if (fail) return Response.json({ error: 'Åtgärden kunde inte slutföras. Uppdatera status innan du försöker igen.' }, { status: 503 })
+  if (fail) return Response.json({ error: body.action === 'send'
+    ? 'Bekräftelsen kunde inte skickas eftersom avsändaruppgifterna inte kunde användas. Kontrollera företagets visitkort.'
+    : 'Åtgärden kunde inte slutföras. Uppdatera status innan du försöker igen.' }, { status: 503 })
   if (url.pathname.endsWith('/convert')) {
     if (record.status === 'sent' && (!body.confirmEarlyStart || body.earlyStartReason?.trim().length < 5)) return Response.json({error:'Ange anledning och bekräfta.'},{status:400})
     document.getElementById('request-count')!.textContent = String(++actions)

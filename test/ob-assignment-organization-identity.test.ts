@@ -33,7 +33,7 @@ const assignment = { id: '22222222-2222-4222-8222-222222222222', org_id: ORG, re
   inspection_id: '66666666-6666-4666-8666-666666666666', property_id: '77777777-7777-4777-8777-777777777777',
 }
 
-test('new OB issuance validates exact organization branding before revocation and freezes mail/reply identity', async () => {
+for (const assignmentType of ['OB', 'TU'] as const) test(`new ${assignmentType} issuance accepts multiline footer and freezes mail/reply identity before revocation`, async () => {
   const events: string[] = []
   const inserts: { table: string; value: Record<string, unknown> }[] = []
   const messages: Record<string, unknown>[] = []
@@ -42,13 +42,14 @@ test('new OB issuance validates exact organization branding before revocation an
     displayName: frozen.inspector.displayName, title: null, phone: null, email: frozen.inspector.email,
     avatarPath: null, signaturePath: null, companyName: 'Stale card company',
     companyOrgNo: null, companyAddress: null, companyPostalCode: null, companyCity: null,
-    logoPath: null, reportFooterText: null, migrationRequired: false }
+    logoPath: null, reportFooterText: 'info@example.test\n08 - 12 34 56', migrationRequired: false }
+  const expectedCompany = assignmentType === 'OB' ? currentIdentity.company_name : card.companyName
   const admin = { from: (table: string) => {
     assert.ok(['assignment_links', 'outbound_messages', 'assignments'].includes(table))
     const chain = {
       insert: (value: Record<string, unknown>) => { inserts.push({ table, value }); return chain },
       update: () => { events.push('update:' + table); return chain },
-      eq: () => chain, is: () => chain, select: () => chain,
+      eq: () => chain, is: () => chain, in: () => chain, select: () => chain,
       single: async () => ({ data: { id: 'row' }, error: null }),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(resolve),
     }
@@ -71,7 +72,7 @@ test('new OB issuance validates exact organization branding before revocation an
     '@/lib/assignments/tokens': { generateAssignmentToken: () => 'test-token', hashAssignmentToken: () => 'test-hash' },
     '@/lib/assignments/terms': { resolveAssignmentTermsRole: () => 'buyer', getAssignmentTermsDocument: () => terms },
     '@/lib/assignments/emailTemplates': { buildAssignmentConfirmationEmail: (input: { orgName: string }) => {
-      assert.equal(input.orgName, currentIdentity.company_name); return { subject: input.orgName, text: 'test', html: 'test' }
+      assert.equal(input.orgName, expectedCompany); return { subject: input.orgName, text: 'test', html: 'test' }
     } },
     '@/lib/assignments/mailer': { sendAssignmentEmail: async (input: Record<string, unknown>) => {
       messages.push(input); return { provider: 'test', providerMessageId: 'test' }
@@ -81,16 +82,20 @@ test('new OB issuance validates exact organization branding before revocation an
   const previous = process.env.ASSIGNMENTS_MAIL_FROM
   process.env.ASSIGNMENTS_MAIL_FROM = 'noreply@example.test'
   try {
-    await server.sendAssignmentConfirmation({ assignment: assignment as never, orgName: 'Wrong caller company',
+    await server.sendAssignmentConfirmation({ assignment: { ...assignment, assignment_type: assignmentType } as never, orgName: 'Wrong caller company',
       responsibleEmail: 'wrong@example.test', requestedByUserId: ACTOR, baseUrl: 'https://app.example.test' })
   } finally {
     if (previous === undefined) delete process.env.ASSIGNMENTS_MAIL_FROM
     else process.env.ASSIGNMENTS_MAIL_FROM = previous
   }
-  assert.ok(events.indexOf('identity') < events.indexOf('update:assignment_links'))
+  assert.ok(events.indexOf('card') < events.indexOf('update:assignment_links'))
+  assert.equal(events.includes('identity'), assignmentType === 'OB')
+  if (assignmentType === 'OB') assert.ok(events.indexOf('identity') < events.indexOf('update:assignment_links'))
   const captured = inserts.find(row => row.table === 'assignment_links')?.value.issuer_identity_snapshot
   const parsed = issuer.parseAssignmentIssuerIdentitySnapshot(captured, { orgId: ORG })!
-  assert.equal(parsed.company.name, currentIdentity.company_name)
+  assert.equal(parsed.company.name, expectedCompany)
+  assert.equal(parsed.company.reportFooterText, card.reportFooterText)
+  assert.equal(messages.length, 1)
   assert.equal(messages[0].replyTo, frozen.inspector.email)
   assert.equal(inserts.find(row => row.table === 'outbound_messages')?.value.reply_to_email, frozen.inspector.email)
 })

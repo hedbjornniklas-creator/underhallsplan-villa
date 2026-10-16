@@ -97,6 +97,32 @@ test('creates the versioned schema through the same strict parser', () => {
   assert.deepEqual(created, validSnapshot())
 })
 
+test('report footer preserves line breaks through issuance and later snapshot reads', () => {
+  for (const footer of ['info@example.test\n08 - 12 34 56', 'First line\r\nSecond line', 'Contact\tDetails']) {
+    const input = validSnapshotInput()
+    const created = createAssignmentIssuerIdentitySnapshotV1({
+      ...input, company: { ...input.company, reportFooterText: footer },
+    })
+    assert.equal(created.company.reportFooterText, footer)
+    assert.deepEqual(parseAssignmentIssuerIdentitySnapshot(created, EXPECTED), created)
+  }
+})
+
+test('multiline footer still rejects unsafe controls, invalid types and excessive length', () => {
+  const input = validSnapshot()
+  for (const footer of ['Contact\u0000Details', 'Contact\u001bDetails', 'Contact\u007fDetails', '', ' ', 'x'.repeat(2001), 123, undefined]) {
+    assert.equal(parseAssignmentIssuerIdentitySnapshot({
+      ...input, company: { ...input.company, reportFooterText: footer },
+    }, EXPECTED), null)
+  }
+  for (const email of ['sender@example.test\nBcc: other@example.test', 'sender@example.test\r\nBcc: other@example.test']) {
+    assert.equal(parseAssignmentIssuerIdentitySnapshot({ ...input, replyToEmail: email }, EXPECTED), null)
+  }
+  assert.equal(parseAssignmentIssuerIdentitySnapshot({
+    ...input, company: { ...input.company, name: 'Company\nInjected header' },
+  }, EXPECTED), null)
+})
+
 test('exports the central parser API with optional context checks', () => {
   const input = validSnapshot()
 

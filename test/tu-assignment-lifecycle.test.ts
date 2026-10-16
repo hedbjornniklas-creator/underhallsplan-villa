@@ -325,11 +325,16 @@ test('action API enforces same-origin, exact organization and strict payloads', 
   assert.equal(h.calls.length, 1)
 })
 test('action API returns useful errors, no private diagnostics, and disables caching', async () => {
-  for (const [code, status] of [['ASSIGNMENT_VERSION_CONFLICT', 409], ['TU_ACCEPTED_COPY_UNAVAILABLE', 409], ['PRIVATE_SQL_TOKEN', 500]] as const) {
+  for (const [code, status] of [['ASSIGNMENT_VERSION_CONFLICT', 409], ['TU_ACCEPTED_COPY_UNAVAILABLE', 409], ['ASSIGNMENT_ISSUER_IDENTITY_INVALID', 409], ['ORG_PROFILE_CARD_MIGRATION_REQUIRED', 503], ['PRIVATE_SQL_TOKEN', 500]] as const) {
     const response = await actionRoute(new Error(code)).post({ action: 'send', expectedUpdatedAt: VERSION })
     assert.equal(response.status, status)
     assert.match(response.headers.get('Cache-Control')!, /no-store/)
-    assert.ok(!(await response.text()).includes(code))
+    const body = await response.json()
+    assert.ok(!body.error.includes(code))
+    if (code === 'ASSIGNMENT_ISSUER_IDENTITY_INVALID') {
+      assert.match(body.error, /kunde inte skickas/)
+      assert.match(body.error, /visitkort/)
+    }
   }
 })
 

@@ -62,24 +62,31 @@ export default function TuAssignmentActions({ assignment, compact = false, disab
     inFlight.current = true
     setBusy(true)
     let destination: string | null = null
+    let feedback: { tone: 'success' | 'warning' | 'error'; message: unknown } | null = null
     try {
       const response = await fetch(`/api/tu/assignments/${encodeURIComponent(assignment.id)}/actions?orgId=${encodeURIComponent(assignment.org_id)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: selected, expectedUpdatedAt: assignment.updated_at }),
       }).catch(() => { throw new Error('Kunde inte bekräfta resultatet. Uppdatera status och kontrollera utskicken innan du försöker igen.') })
-      const payload = await response.json().catch(() => ({}))
+      const payload = await response.json().catch(() => null)
+      if (!payload || typeof payload !== 'object') throw new Error('Kunde inte bekräfta resultatet. Uppdatera status och kontrollera utskicken innan du försöker igen.')
       if (!response.ok) throw new Error(payload.error || 'Åtgärden kunde inte slutföras. Uppdatera status.')
+      if (typeof payload.message !== 'string' || !payload.message.trim()) throw new Error('Kunde inte bekräfta resultatet. Uppdatera status och kontrollera utskicken innan du försöker igen.')
       if (!mounted.current) return
-      if (payload.warning) toast.warning(payload.message, { appearance: 'dark' })
-      else toast.success(payload.message, { appearance: 'dark' })
+      feedback = { tone: payload.warning ? 'warning' : 'success', message: payload.message }
       if (typeof payload.draftId === 'string') destination = `/tu/assignments/${encodeURIComponent(payload.draftId)}?orgId=${encodeURIComponent(assignment.org_id)}`
-    } catch (error) { if (mounted.current) toast.error(error, { appearance: 'dark' }) }
+    } catch (error) { feedback = { tone: 'error', message: error } }
     finally {
       inFlight.current = false
       if (mounted.current) {
         setBusy(false)
         dialog.current?.close()
         setSelected(null)
+        // Close the modal before showing feedback in the shared toast layer.
+        if (feedback) toast.show(feedback.message, {
+          tone: feedback.tone, appearance: 'dark',
+          durationMs: feedback.tone === 'success' ? 4000 : 12000,
+        })
         if (destination) onNavigate(destination)
         else await onChanged()
       }
