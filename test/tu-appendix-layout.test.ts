@@ -56,7 +56,7 @@ test('four enlarged photos and the appendix heading fit on one page', () => {
   for (const count of [1, 2, 3, 4, 8, 9, 10, 11]) {
     const blocks = printer.buildPrintableBlocks(props(count))
     const heights = new Map(blocks.map(block => [block.id,
-      (block.type === 'appendix-title' ? 11 : block.images!.length > 2 ? 202.3 : block.images!.length === 1 ? 190 : 145) * 96 / 25.4,
+      (block.type === 'appendix-title' ? 10.5 : block.images!.length > 2 ? 207 : block.images!.length === 1 ? 190 : 145) * 96 / 25.4,
     ]))
     const { pages } = printer.createPagePlan(blocks, heights)
     assert.equal(pages.length, Math.ceil(count / 4))
@@ -78,6 +78,7 @@ test('print photos preserve the complete image and use sufficient resolution for
   const block = printer.buildPrintableBlocks(props(4))[1]
   const html = renderToStaticMarkup(createElement(printer.PrintableBlockView, { block }))
   assert.match(html, /height:96mm/)
+  assert.match(html, /row-gap:10mm/)
   assert.match(html, /grid-cols-2/)
   assert.match(html, /w-full object-contain object-center/)
   assert.match(html, /max=1600/)

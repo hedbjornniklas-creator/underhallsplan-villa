@@ -995,8 +995,8 @@ function ImageGridBlock({
   const figureHeightMm = singleImage ? 185 : images.length === 2 ? 140 : 96
   return (
     <section
-      className={`tu-report-block tu-report-image-grid-block grid ${singleImage ? 'grid-cols-1 justify-items-center' : 'grid-cols-2 gap-x-4 gap-y-5'}`}
-      style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+      className={`tu-report-block tu-report-image-grid-block grid ${singleImage ? 'grid-cols-1 justify-items-center' : 'grid-cols-2 gap-x-4'}`}
+      style={{ marginBottom: mm(BLOCK_GAP_MM), rowGap: mm(10) }}
     >
       {images.map((image) => (
         <figure
