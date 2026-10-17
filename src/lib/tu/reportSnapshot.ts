@@ -314,7 +314,7 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
       : investigation.cadastralId
   const objectIdentifierLabel =
     investigation.objectType === 'apartment' ? 'BRF/lägenhet' : 'Fastighetsbeteckning'
-  const inspectionDate = formatInspectionDate(assignment?.preferred_date ?? investigation.inspection.date)
+  const inspectionDate = formatInspectionDate(investigation.inspection.date ?? assignment?.preferred_date)
   const inspectionTime = formatInspectionTime(assignment?.preferred_time ?? investigation.inspection.inspection_time)
 
   return {

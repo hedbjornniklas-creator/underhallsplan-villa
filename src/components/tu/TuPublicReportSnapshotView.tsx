@@ -319,7 +319,7 @@ export default function TuPublicReportSnapshotView({
                   <dd className="mt-1 font-semibold text-slate-950">{report.header.reportDate}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Arbetsnummer</dt>
+                  <dt className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Uppdragsnummer</dt>
                   <dd className="mt-1 font-semibold text-slate-950">{report.header.assignmentNumber}</dd>
                 </div>
                 <div className="sm:col-span-2">

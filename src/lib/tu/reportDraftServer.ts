@@ -523,7 +523,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
     if (normalized) sourceFields.push({ key, label, value: normalized, sourceRole })
   }
   addSourceField('assignment.title', 'Uppdragets titel', investigation.title)
-  addSourceField('assignment.assignmentNumber', 'Arbetsnummer', investigation.assignmentNumber)
+  addSourceField('assignment.assignmentNumber', 'Uppdragsnummer', investigation.assignmentNumber)
   addSourceField('assignment.scopeDescription', 'Uppdragets omfattning', investigation.scopeDescription)
   addSourceField('assignment.inspectionDate', 'Besiktningsdatum', investigation.date)
   addSourceField('assignment.inspectionTime', 'Besiktningstid', investigation.inspectionTime)

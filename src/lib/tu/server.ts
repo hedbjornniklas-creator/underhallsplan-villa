@@ -19,7 +19,8 @@ import type { InspectorCertificationListItem } from '@/lib/certifications/profil
 import type { TuAssignmentProgress } from '@/lib/tu/assignmentProgress'
 import { loadTuAssignmentProgress } from '@/lib/tu/assignmentProgressServer'
 import { tuWorkflowRpc } from '@/lib/tu/assignmentWorkflowServer'
-import { getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
+import { buildInspectionAssignmentNumberPrefix, getNextInspectionAssignmentNumber } from '@/lib/inspections/assignmentNumber'
+import { validTuSchedule } from '@/lib/tu/assignmentSchedule'
 import {
   requireConfiguredOrganizationProfileCard,
   resolveOrganizationProfileCard,
@@ -339,6 +340,7 @@ type QueryBuilder<T = Record<string, unknown>> = {
   update: (values: unknown) => QueryBuilder<T>
   delete: () => QueryBuilder<T>
   eq: (column: string, value: unknown) => QueryBuilder<T>
+  like: (column: string, pattern: string) => QueryBuilder<T>
   is: (column: string, value: unknown) => QueryBuilder<T>
   in: (column: string, values: unknown[]) => QueryBuilder<T>
   order: (column: string, options?: { ascending?: boolean }) => QueryBuilder<T>
@@ -1216,11 +1218,11 @@ async function createInspectionForTu(input: {
     const { data: assignmentNumberRows, error: assignmentNumberError } = await admin
       .from('inspections')
       .select('assignment_number')
-      .eq('date', inspectionDate)
+      .like('assignment_number', `${buildInspectionAssignmentNumberPrefix(inspectionDate)}-%`)
       .eq('inspection_family', 'TU')
 
     if (assignmentNumberError) {
-      throw new Error(assignmentNumberError.message ?? 'Kunde inte generera arbetsnummer för TU.')
+      throw new Error(assignmentNumberError.message ?? 'Kunde inte generera uppdragsnummer för TU.')
     }
 
     assignmentNumber = getNextInspectionAssignmentNumber(inspectionDate, assignmentNumberRows ?? [])
@@ -1469,11 +1471,11 @@ async function ensureTuInspectionAssignmentNumber(
   const { data: assignmentNumberRows, error: assignmentNumberError } = await admin
     .from('inspections')
     .select('assignment_number')
-    .eq('date', inspection.date)
+    .like('assignment_number', `${buildInspectionAssignmentNumberPrefix(inspection.date)}-%`)
     .eq('inspection_family', 'TU')
 
   if (assignmentNumberError) {
-    throw new Error(assignmentNumberError.message ?? 'Kunde inte generera arbetsnummer för TU.')
+    throw new Error(assignmentNumberError.message ?? 'Kunde inte generera uppdragsnummer för TU.')
   }
 
   const assignmentNumber = getNextInspectionAssignmentNumber(inspection.date, assignmentNumberRows ?? [])
@@ -1490,7 +1492,7 @@ async function ensureTuInspectionAssignmentNumber(
     .maybeSingle()
 
   if (updateError) {
-    throw new Error(updateError.message ?? 'Kunde inte spara arbetsnummer för TU.')
+    throw new Error(updateError.message ?? 'Kunde inte spara uppdragsnummer för TU.')
   }
 
   return (updatedInspection as InspectionRow | null) ?? inspection
@@ -1550,6 +1552,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
 export async function getTuInvestigationById(input: {
   orgId: string
   inspectionId: string
+  ensureAssignmentNumber?: boolean
 }): Promise<TuInvestigationDetails | null> {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const { data: detailData, error: detailError } = await admin
@@ -1586,7 +1589,9 @@ export async function getTuInvestigationById(input: {
   if (inspectionError) throw new Error(inspectionError.message ?? 'Kunde inte hämta TU-inspektion.')
   if (propertyError) throw new Error(propertyError.message ?? 'Kunde inte hämta TU-fastighet.')
 
-  const inspection = await ensureTuInspectionAssignmentNumber(admin, inspectionData as InspectionRow | null)
+  const inspection = input.ensureAssignmentNumber === false || detail.report_locked_at
+    ? inspectionData as InspectionRow | null
+    : await ensureTuInspectionAssignmentNumber(admin, inspectionData as InspectionRow | null)
   const property = propertyData as PropertyRow | null
   const assignment = detail.assignment_id
     ? await getAssignmentById(input.orgId, detail.assignment_id)
@@ -1728,6 +1733,7 @@ export async function updateTuInvestigationDraft(input: {
   inspectionId: string
   updatedBy: string
   patch: {
+    inspectionDate?: string | null
     title?: string | null
     projectType?: string | null
     scopeDescription?: string | null
@@ -1745,10 +1751,19 @@ export async function updateTuInvestigationDraft(input: {
     reportDraft?: TuReportDraft
   }
 }) {
+  const hasInspectionDatePatch = 'inspectionDate' in input.patch
+  const nextInspectionDate = cleanText(input.patch.inspectionDate)
+  if (hasInspectionDatePatch && nextInspectionDate && !validTuSchedule({
+    preferredDate: nextInspectionDate,
+    preferredTime: '',
+  })) {
+    throw new Error('TU_INSPECTION_DATE_INVALID')
+  }
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const existing = await getTuInvestigationById({
     orgId: input.orgId,
     inspectionId: input.inspectionId,
+    ensureAssignmentNumber: false,
   })
   if (!existing) throw new Error('TU_INVESTIGATION_NOT_FOUND')
   if (existing.reportLockedAt) throw new Error('TU_REPORT_LOCKED')
@@ -1902,13 +1917,24 @@ export async function updateTuInvestigationDraft(input: {
     }
   }
 
-  if ('scopeDescription' in input.patch || 'reportDraft' in input.patch) {
-    await admin
+  if (hasInspectionDatePatch || 'scopeDescription' in input.patch || 'reportDraft' in input.patch) {
+    const inspectionPayload: Record<string, unknown> = {}
+    if (hasInspectionDatePatch) inspectionPayload.date = nextInspectionDate
+    if ('scopeDescription' in input.patch || 'reportDraft' in input.patch) {
+      inspectionPayload.scope = 'scopeDescription' in input.patch
+        ? cleanText(input.patch.scopeDescription)
+        : existing.scopeDescription
+    }
+    const { data: savedInspection, error: inspectionError } = await admin
       .from('inspections')
-      .update({
-        scope: 'scopeDescription' in input.patch ? cleanText(input.patch.scopeDescription) : existing.scopeDescription,
-      })
+      .update(inspectionPayload)
       .eq('id', input.inspectionId)
+      .eq('inspection_family', 'TU')
+      .select('id')
+      .maybeSingle()
+    if (inspectionError || !savedInspection) {
+      throw new Error(hasInspectionDatePatch ? 'TU_INSPECTION_DATE_SAVE_FAILED' : 'Kunde inte spara TU-utredning.')
+    }
   }
 
   return getTuInvestigationById({

@@ -1196,7 +1196,7 @@ function ReportHeader({
         />
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
-        <HeaderValue label="Arbetsnummer" value={header.assignmentNumber} nowrap />
+        <HeaderValue label="Uppdragsnummer" value={header.assignmentNumber} nowrap />
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
         <HeaderValue label="Sida" value={pageValue} nowrap />

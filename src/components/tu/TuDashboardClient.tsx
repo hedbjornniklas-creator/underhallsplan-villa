@@ -11,7 +11,6 @@ import {
   ArrowLeft,
   CalendarDays,
   IdCard,
-  FilePlus2,
   Loader2,
   Mail,
   Play,
@@ -754,9 +753,6 @@ export default function TuDashboardClient({
             <div className="obh-actions">
               <button type="button" className="obh-primary" disabled={Boolean(busy)} onClick={() => openCreationDialog('scratch')}>
                 <Plus size={20} aria-hidden /><span>Ny utredning</span>
-              </button>
-              <button type="button" disabled={Boolean(busy)} onClick={() => openCreationDialog('quick')}>
-                <FilePlus2 size={20} aria-hidden /><span>Skapa uppdragsbekräftelse</span>
               </button>
               <nav className="obh-list-links ml-auto flex flex-wrap gap-x-5 gap-y-1 [&>a]:min-h-11 [&>a]:text-[#245eb5]" aria-label="TU-listor och profil">
                 <PendingLink href={organizationUrl('/tu/assignments', organizationId)} autoPending pendingLabel="Öppnar bekräftelser...">Alla uppdragsbekräftelser</PendingLink>

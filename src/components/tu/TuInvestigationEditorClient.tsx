@@ -142,6 +142,7 @@ type ObjectDetailsForm = {
 }
 
 type AssignmentScopeForm = {
+  inspectionDate: string
   propertyAddress: string
   propertyPostalCode: string
   propertyCity: string
@@ -559,6 +560,7 @@ function ReadOnlyInfoRow({ label, value }: { label: string; value: string | null
 
 function buildAssignmentScopeForm(investigation: TuInvestigationDetails): AssignmentScopeForm {
   return {
+    inspectionDate: investigation.date ?? investigation.inspection.date ?? '',
     propertyAddress: investigation.property?.address ?? investigation.propertyAddress ?? '',
     propertyPostalCode: investigation.property?.postal_code ?? '',
     propertyCity: investigation.property?.city ?? investigation.propertyCity ?? '',
@@ -1065,6 +1067,7 @@ export default function TuInvestigationEditorClient({
     setAssignmentScopeSaving(true)
     try {
       await savePatch({
+        inspectionDate: assignmentScopeForm.inspectionDate,
         propertyAddress: assignmentScopeForm.propertyAddress,
         propertyPostalCode: assignmentScopeForm.propertyPostalCode,
         propertyCity: assignmentScopeForm.propertyCity,
@@ -2806,7 +2809,7 @@ export default function TuInvestigationEditorClient({
                   value={objectAddress || investigation.propertyAddress || investigation.property?.address}
                 />
                 <ReadOnlyInfoRow
-                  label="Arbetsnummer"
+                  label="Uppdragsnummer"
                   value={investigation.assignmentNumber ?? investigation.inspection.assignment_number}
                 />
                 <ReadOnlyInfoRow
@@ -3908,6 +3911,20 @@ export default function TuInvestigationEditorClient({
               </header>
 
               <div className="space-y-5 px-4 py-5 sm:px-5">
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-semibold text-gray-950">Besiktningsdatum</span>
+                  <input
+                    type="date"
+                    value={assignmentScopeForm.inspectionDate}
+                    onChange={(event) => setAssignmentScopeForm((current) => ({
+                      ...current,
+                      inspectionDate: event.target.value,
+                    }))}
+                    disabled={assignmentScopeSaving}
+                    className="h-10 w-full min-w-0 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                  />
+                </label>
+
                 <label className="block space-y-1.5">
                   <span className="text-sm font-semibold text-gray-950">Objektadress eller adresser *</span>
                   <textarea
