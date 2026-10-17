@@ -194,7 +194,7 @@ function ImageAppendix({ images, startNumber }: { images: TuPrintImage[]; startN
           <ClickableImage
             key={image.id}
             image={image}
-            className="aspect-[4/3] w-full object-cover transition group-hover:scale-[1.01]"
+            className="h-auto max-h-[640px] w-full object-contain"
           />
         ))}
       </div>
