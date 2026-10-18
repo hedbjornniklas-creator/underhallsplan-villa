@@ -531,7 +531,60 @@ den sammanslagna versionen. Anonym direktatkomst till kundvals-RPC:er och
 valtabell nekas i produktion. Projektets sparade uppgifter jamfors fore/efter
 leveransen; ingen verklig kunddelning eller testbestallning ingar.
 
+### Alternativpanel och PDF-underlag (beslut 2026-10-18)
+
+- Anvandaren godkande sidopanel till hoger for varje alternativ, med namn,
+  beskrivning, kundprisunderlag och PDF-bilagor. Kategorilistan ligger kvar bakom.
+  Panelen fyller mobilskarmen och har tangentbordsfokus, Escape och tydlig sparstatus.
+  Stangning behaller osparade andringar i den interna planeringen.
+- Status och alternativets aldre beslutsdatum tas bort ur redigering/kundvy.
+  Befintliga sparade varden bevaras; endast kategorins onskade beslutsdatum styr
+  nya kategorivyn och dess beslutslista.
+- PDF kan kopplas fran projektets kundgranskade filer eller laddas upp privat.
+  Kanda leverantors-/UE-offertdokument ar inte valbara eller delbara har. Ingen
+  fil kopplas automatiskt. Granskning av bilagornas innehall sker fore kunddelning.
+  Hogst 30 kopplingar, 20 MB per PDF och 50 MB sammanlagt. Att ta bort en koppling
+  raderar inte originalfilen. Allman filbehorighet/grants andras inte.
+- Explicit kunddelning fryser verifierade PDF-bytes med hash i privata,
+  oforanderliga kopior. Senare originalandringar paverkar inte delat underlag.
+  PDF kan oppnas i ny flik och laddas ner i kundvy/lasbar forhandsgranskning.
+  Kundlank, mottagare och aktuell delning kontrolleras vid varje hamtning; dold,
+  aterkallad, utgangen eller annan kund/UE-lank kan inte hamta PDF. Inga sokvagar,
+  kallsystem-ID:n, hashvarden eller privata kalkyler ingar i kundprojektionen.
+- Nya delade PDF-underlag ger berord kategori en ny version och kraver nytt
+  kundval. Andra kategoriers val och historik bevaras. Sparning, uppladdning,
+  delning och val skriver aldrig till avtal, offert, pris, betalplan eller
+  signeringsunderlag. Inga mejl skickas.
+- Databaskrav: `docs/db/2026-10-18_02_customer_choice_files.sql`, efter migration 01.
+  Transaktionell och omkorbar utan omtolkning av befintliga uppgifter. Saknas
+  migrationen fungerar kategorier fortfarande men PDF-funktionen ar avstangd.
+  Aldre klienter kan spara utan att tappa kopplingar men inte dela och utelamna
+  valda PDF-filer. SQL och app publiceras inte som del av den lokala andringen.
+- Beslutslogg: godkant i rostsamtal 2026-10-18: en sidopanel per alternativ,
+  ett gemensamt kategoridatum, inget statusfalt samt PDF som bestallaren kan
+  lasa och ladda ner. Frysta delade kopior och fortsatt avtalsseparation godkandes.
+
 ## Tester
+
+Lokal kontroll 2026-10-18 for alternativpanel/PDF: 531 regressionstester passerar,
+inklusive riktiga SQL-funktioner i PGlite och servertester for filbytes, hash,
+revisionskonflikter, frysta kopior och osakra sparbesked. Endast bekraftat avslutad
+transaktion tillater stadning; en fortfarande pagande/okand delning far aldrig
+forlora sin fil. Produktionsbygge och riktad ESLint passerar. Klicktester med
+fiktiv lokal backend omfattar dator/mobil, stangning/ateroppning, sparfel/aterforsok,
+privat PDF-uppladdning, projektfilval, borttagning/angra, explicit delning och
+Escape efter sparning. Kundens PDF-nedladdning ger samma hash som testoriginalet;
+Oppna anvander ny flik. Inga verkliga projekt, offertfiler, kunddelningar eller
+avtal andrades. Databasmigration 02 maste koras separat fore apppublicering.
+
+Publiceringskontroll 2026-10-18: anvandaren har godkant publicering. Lasande
+kontroll i Supabase bekraftar kolumnerna for privata och frysta PDF-kopplingar,
+filreferensvalideraren och filhamtningsfunktionen. Ogiltig kundlank nekas aven
+med service-anrop; anonym direktatkomst till filfunktionen nekas. Senaste main
+ar bas for leveransen. Fingeravtryck av projektets planering, avtals-/offertdata,
+kundval, historik, filer och signeringsunderlag sparas fore leveransen for en
+skrivskyddad jamforelse efter publicering. Ingen kunddelning, filuppladdning,
+registrering av val eller andring i verkliga avtalsuppgifter ingar i kontrollen.
 
 Lokal kontroll 2026-10-18 for kategorier/kundval: 497 action-case-tester passerar,
 inklusive faktiska SQL-funktioner i PGlite, omkorning med sparade val, revisions-

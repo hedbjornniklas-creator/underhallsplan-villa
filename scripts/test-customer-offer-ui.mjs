@@ -23,7 +23,7 @@ import {
   mapCustomerOffer
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
-import { categoryOptions, legacyChoiceCategories, normalizeChoiceCategories, normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
+import { categoryOptions, legacyChoiceCategories, normalizeChoiceCategories, normalizeChoiceFileRefs, normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
 import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
 import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
@@ -55,7 +55,7 @@ await new Promise((done, reject) =>
       output: { path: output, filename: 'view.js' },
       resolve: {
         extensions: ['.tsx', '.ts', '.js'],
-        alias: { '@/lib/supabaseClient': resolve('test/helpers/project-supabase-stub.ts'), '@': resolve('src') }
+        alias: { '@/lib/supabaseClient': resolve(process.argv.includes('--choice-files') ? 'test/helpers/choice-pdf-upload-stub.ts' : 'test/helpers/project-supabase-stub.ts'), '@': resolve('src') }
       },
       module: {
         rules: [
@@ -124,14 +124,19 @@ if (process.argv.includes('--choice-categories')) {
   state.planning.sharedItems = []; state.planning.costing = {}; delete state.planning.sharedChoices
 }
 let choiceRecords = [], choiceRevision = 0
+if (process.argv.includes('--choice-files')) Object.assign(state.planning, { filesAvailable: true, optionFiles: [], sharedFileRefs: [] })
 function publishChoiceCategories() {
   const old = state.planning.sharedChoices
   const categories = structuredClone(state.planning.categories), items = structuredClone(state.planning.items)
   state.planning.sharedItems = items
+  const oldRefs = state.planning.sharedFileRefs ?? []
+  const refs = structuredClone(state.planning.optionFiles ?? [])
+  state.planning.sharedFileRefs = refs
   state.planning.sharedChoices = { revision: ++choiceRevision, categories, items,
+    files: refs.map((ref) => { const source = projects.cases[0].attachments.find((f) => f.id === ref.fileId); const prior = old?.files?.find((f) => f.optionId === ref.optionId && f.fileName === source.fileName); return prior ?? { id: randomUUID(), optionId: ref.optionId, fileName: source.fileName, fileSizeBytes: source.fileSizeBytes } }),
     versions: Object.fromEntries(categories.map((category) => {
       const prior = old?.categories.find((c) => c.id === category.id)
-      const unchanged = JSON.stringify(prior) === JSON.stringify(category) && JSON.stringify(categoryOptions(category, old?.items ?? [])) === JSON.stringify(categoryOptions(category, items))
+      const unchanged = JSON.stringify(prior) === JSON.stringify(category) && JSON.stringify(categoryOptions(category, old?.items ?? [])) === JSON.stringify(categoryOptions(category, items)) && JSON.stringify(oldRefs.filter((f) => category.optionIds.includes(f.optionId))) === JSON.stringify(refs.filter((f) => category.optionIds.includes(f.optionId)))
       return [category.id, unchanged ? old.versions[category.id] : randomUUID()]
     })), choices: structuredClone(choiceRecords.filter((record) => categories.some((c) => c.id === record.categoryId))) }
 }
@@ -262,6 +267,7 @@ const contractSnapshot = () => {
   return structuredClone({ ...state.draft, projectTitle: projects.cases[0].title, propertyAddress: projects.cases[0].propertyAddress,
     customerName: p?.customers[0]?.name ?? '', customerEmail: p?.email ?? '', issuerName: p?.contractor.companyName ?? '', replyEmail: p?.contractor.email ?? '' })
 }
+const choiceUploads = new Map()
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
   if (['/__test__/viewport/390','/__test__/viewport/344'].includes(path)) {
@@ -277,11 +283,22 @@ const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify(body))
   }
+  if (process.argv.includes('--choice-files') && path.startsWith('/__test__/choice-pdf-upload/') && req.method === 'PUT') {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk)
+    choiceUploads.set(decodeURIComponent(path.split('/').at(-1)), Buffer.concat(chunks)); json({ ok: true }); return
+  }
   if (path === '/project-fixture') { json(projects); return }
   if (customerRegistryTest && path === '/api/settings/customers') { json({ workspace: registry }); return }
   if (propertyRegistryTest && path.endsWith('/properties') && req.method === 'GET') { json({ properties }); return }
   if (path === '/__test__/writes') { json(writes); return }
   if (path.endsWith('/customer-choices') && req.method === 'GET') { json(state.planning.sharedChoices ?? { error: 'Valen visas inte längre för beställaren.' }, state.planning.sharedChoices ? 200 : 404); return }
+  if (path.includes('/customer-choices/files/') && req.method === 'GET') {
+    const fileId = path.split('/').at(-1), file = state.planning.sharedChoices?.files?.find((f) => f.id === fileId)
+    if (!file) { json({ error: 'PDF:en visas inte längre.' }, 404); return }
+    res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Cache-Control', 'private, no-store')
+    res.setHeader('Content-Disposition', `${req.url.includes('download=1') ? 'attachment' : 'inline'}; filename="TEST-underlag.pdf"`)
+    res.end(await readFile(ABS18_TERMS.assetPath)); return
+  }
   if (path.endsWith('/contract-signing/pdf') && req.method === 'GET') {
     const revision=Number(new URL(req.url,'http://localhost').searchParams.get('revision'))
     if (revision!==state.revision) { json({error:'Utkastet har ändrats.'},409); return }
@@ -382,7 +399,15 @@ const server = createServer(async (req, res) => {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
       const payload = body.payload ?? {}
       let itemId, caseId
-      if (body.action === 'update_item' || body.action === 'save_item_scope') {
+      if (process.argv.includes('--choice-files') && body.action === 'create_signed_upload') {
+        json({ upload: { bucket: 'local-test-only', filePath: randomUUID(), token: 'local-test-only', contentType: 'application/pdf' } }); return
+      } else if (process.argv.includes('--choice-files') && body.action === 'complete_upload') {
+        const uploaded = choiceUploads.get(payload.filePath)
+        if (!uploaded || uploaded.length !== payload.fileSize || payload.participantIds.length) { json({ error: 'Invalid test upload' }, 400); return }
+        projects.cases[0].attachments.push({ id: randomUUID(), actionCaseItemId: null, type: 'document', title: payload.fileName, fileName: payload.fileName, contentType: 'application/pdf', fileSizeBytes: uploaded.length, grantedParticipantIds: [], createdAt: new Date().toISOString() })
+      } else if (process.argv.includes('--choice-files') && body.action === 'abort_upload') {
+        choiceUploads.delete(payload.filePath)
+      } else if (body.action === 'update_item' || body.action === 'save_item_scope') {
         const item = projects.cases.flatMap((c) => c.items).find((i) => i.id === payload.itemId)
         if (!item) { json({ error: 'Åtgärden saknas.' }, 404); return }
         if (payload.expectedUpdatedAt !== item.updatedAt) { json({ error: 'Åtgärden har ändrats i en annan session.' }, 409); return }
@@ -471,12 +496,13 @@ const server = createServer(async (req, res) => {
           state.planning.costing = normalizeCustomerOfferCosting(body.costing, state.planning.items)
           state.planning.categories = normalizeChoiceCategories(body.categories ?? legacyChoiceCategories(state.planning.items), state.planning.items)
           state.planning.categoriesStored = true
+          if (state.planning.filesAvailable) state.planning.optionFiles = normalizeChoiceFileRefs(body.optionFiles ?? [], state.planning.items)
         }
         else if (body.operation === 'share') {
           if (!body.confirmed || JSON.stringify(body.items) !== JSON.stringify(state.planning.items)) throw new Error('Bekräfta den sparade planeringen.')
           state.planning.sharedItems = normalizePlannedItems(body.items, true)
           if (body.categories) { state.planning.categories = normalizeChoiceCategories(body.categories, state.planning.items, true); publishChoiceCategories() }
-        } else if (body.operation === 'unshare') { state.planning.sharedItems = []; delete state.planning.sharedChoices; choiceRevision++ }
+        } else if (body.operation === 'unshare') { state.planning.sharedItems = []; state.planning.sharedFileRefs = []; delete state.planning.sharedChoices; choiceRevision++ }
         else throw new Error('Okänd åtgärd')
         state.planning.revision++
         json(state.planning)
@@ -593,7 +619,7 @@ const server = createServer(async (req, res) => {
     return
   }
   if (path.endsWith('/customer-planning')) { json(state.planning); return }
-  if (path === '/abs18-2018-06.pdf' || path.endsWith(`/attachments/${id(140)}`)) {
+  if (path === '/abs18-2018-06.pdf' || path.endsWith(`/attachments/${id(140)}`) || (process.argv.includes('--choice-files') && path.endsWith(`/attachments/${id(4)}`))) {
     res.setHeader('Content-Type', 'application/pdf')
     res.end(await readFile(ABS18_TERMS.assetPath)); return
   }

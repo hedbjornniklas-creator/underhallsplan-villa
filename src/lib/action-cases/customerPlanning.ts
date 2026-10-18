@@ -26,7 +26,13 @@ export type CustomerPlanning = {
   categoriesStored?: boolean
   categories?: CustomerChoiceCategory[]
   sharedChoices?: SharedCustomerChoices
+  filesAvailable?: boolean
+  optionFiles?: CustomerChoiceFileRef[]
+  sharedFileRefs?: CustomerChoiceFileRef[]
 }
+
+export type CustomerChoiceFileRef = { optionId: string; fileId: string }
+export type CustomerChoiceFile = { id: string; optionId: string; fileName: string; fileSizeBytes: number }
 
 export type CustomerChoiceCategory = {
   id: string
@@ -48,6 +54,7 @@ export type SharedCustomerChoices = {
   items: CustomerPlannedItem[]
   versions: Record<string, string>
   choices: CustomerChoice[]
+  files?: CustomerChoiceFile[]
 }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -71,10 +78,31 @@ export function categoryOptions(category: CustomerChoiceCategory, items: Custome
 }
 
 export function choiceDecisionDates(items: CustomerPlannedItem[], shared?: SharedCustomerChoices): { id: string; title: string; decisionBy: string }[] {
-  const rows = shared ? shared.categories.flatMap((category) => category.decisionBy
-    ? [{ id: category.id, title: category.title, decisionBy: category.decisionBy }]
-    : categoryOptions(category, shared.items).filter((item) => item.decisionBy)) : items.filter((item) => item.decisionBy)
+  const rows = shared ? shared.categories.filter((category) => category.decisionBy) : items.filter((item) => item.decisionBy)
   return rows.map(({ id, title, decisionBy }) => ({ id, title, decisionBy })).sort((a, b) => a.decisionBy.localeCompare(b.decisionBy))
+}
+
+export function normalizeChoiceFileRefs(value: unknown, items: CustomerPlannedItem[]): CustomerChoiceFileRef[] {
+  if (!Array.isArray(value) || value.length > 30) throw new Error('CUSTOMER_CHOICE_FILES')
+  const seen = new Set<string>()
+  return value.map((raw) => {
+    if (!raw || typeof raw !== 'object' || !uuid.test(raw.optionId) || !uuid.test(raw.fileId) || !items.some((i) => i.id === raw.optionId)) throw new Error('CUSTOMER_CHOICE_FILES')
+    const key = `${raw.optionId}/${raw.fileId}`
+    if (seen.has(key)) throw new Error('CUSTOMER_CHOICE_FILES')
+    seen.add(key)
+    return { optionId: raw.optionId as string, fileId: raw.fileId as string }
+  }).sort((a, b) => a.optionId.localeCompare(b.optionId) || a.fileId.localeCompare(b.fileId))
+}
+
+export function normalizeSharedChoiceFiles(value: unknown, items: CustomerPlannedItem[]): CustomerChoiceFile[] {
+  if (!Array.isArray(value) || value.length > 30) throw new Error('CUSTOMER_CHOICE_FILES')
+  const ids = new Set<string>()
+  return value.map((raw) => {
+    if (!raw || !uuid.test(raw.id) || ids.has(raw.id) || !items.some((i) => i.id === raw.optionId) || typeof raw.fileName !== 'string' || !raw.fileName.trim() || raw.fileName.length > 250 ||
+      !Number.isSafeInteger(raw.fileSizeBytes) || raw.fileSizeBytes < 100 || raw.fileSizeBytes > 20_000_000) throw new Error('CUSTOMER_CHOICE_FILES')
+    ids.add(raw.id)
+    return { id: raw.id as string, optionId: raw.optionId as string, fileName: raw.fileName as string, fileSizeBytes: raw.fileSizeBytes as number }
+  })
 }
 
 export function normalizeChoiceCategories(value: unknown, items: CustomerPlannedItem[], complete = false): CustomerChoiceCategory[] {
@@ -125,7 +153,8 @@ export function normalizeSharedChoices(raw: Record<string, unknown>): SharedCust
     if (choice.categoryVersion === versions[category.id] && choice.optionId !== null && !category.optionIds.includes(choice.optionId)) throw new Error('CUSTOMER_CHOICE_INVALID')
     return { categoryId: choice.categoryId, categoryVersion: choice.categoryVersion, optionId: choice.optionId, revision: choice.revision, selectedAt: choice.selectedAt }
   })
-  return { revision: Number(raw.revision), categories, items, versions: Object.fromEntries(categories.map((c) => [c.id, versions[c.id]])), choices: safeChoices }
+  return { revision: Number(raw.revision), categories, items, versions: Object.fromEntries(categories.map((c) => [c.id, versions[c.id]])), choices: safeChoices,
+    ...(raw.files !== undefined ? { files: normalizeSharedChoiceFiles(raw.files, items) } : {}) }
 }
 export function normalizePlannedItems(
   value: unknown,

@@ -1,17 +1,18 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Check, ChevronDown, Loader2, RefreshCw, Save, Undo2 } from 'lucide-react'
-import { categoryOptions, currentCategoryChoice, normalizeSharedChoices, planningStatuses, type CustomerChoiceCategory, type SharedCustomerChoices } from '@/lib/action-cases/customerPlanning'
+import { Check, ChevronDown, Download, ExternalLink, Loader2, RefreshCw, Save, Undo2 } from 'lucide-react'
+import { categoryOptions, currentCategoryChoice, normalizeSharedChoices, type CustomerChoiceCategory, type SharedCustomerChoices } from '@/lib/action-cases/customerPlanning'
 import { money } from '@/lib/action-cases/customerOffers'
 import ProjectEditorRow from './ProjectEditorRow'
 
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 py-2 text-sm font-semibold disabled:opacity-50'
 
-export default function CustomerChoiceCategories({ shared, onSaved, token, readOnly = false }: {
+export default function CustomerChoiceCategories({ shared, onSaved, token, previewCaseId, readOnly = false }: {
   shared: SharedCustomerChoices
   onSaved: (value: SharedCustomerChoices) => void
   token?: string
+  previewCaseId?: string
   readOnly?: boolean
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -19,6 +20,7 @@ export default function CustomerChoiceCategories({ shared, onSaved, token, readO
   const [draft, setDraft] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [stale, setStale] = useState(false)
   const running = useRef(false)
+  const fileUrl = (id: string) => previewCaseId ? `/api/action-cases/${previewCaseId}/customer-choices/files/${id}` : token ? `/api/action-cases/public/${token}/customer-choices/files/${id}` : null
   async function refresh() {
     if (!token || readOnly || running.current) return
     running.current = true; setBusy('refresh')
@@ -70,7 +72,7 @@ export default function CustomerChoiceCategories({ shared, onSaved, token, readO
                 <label className="grid min-h-11 min-w-0 flex-1 cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-x-3 gap-y-1 py-2 text-sm sm:flex">
                   <input type="radio" disabled={readOnly} className="mt-0.5 h-5 w-5 shrink-0 accent-[#206961]" name={`customer-choice-${category.id}`} value={option.id} checked={selectedId === option.id}
                     onChange={() => { setDraft((current) => ({ ...current, [category.id]: option.id })); setError('') }} />
-                  <span className="min-w-0 flex-1 break-words font-semibold">{option.title}{option.status !== 'planned' && <span className="mt-1 block text-xs font-normal text-[#596368]">{planningStatuses[option.status]}</span>}</span>
+                  <span className="min-w-0 flex-1 break-words font-semibold">{option.title}</span>
                   <span className="col-start-2 shrink-0 tabular-nums sm:text-right">{option.budgetOre === null ? 'Pris ej fastställt' : money(option.budgetOre)}</span>
                 </label>
                 <button type="button" className="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[#D5DCDD] disabled:opacity-50"
@@ -78,7 +80,10 @@ export default function CustomerChoiceCategories({ shared, onSaved, token, readO
                   <ChevronDown size={17} className={details === option.id ? 'rotate-180' : ''} /></button>
               </div>
               <div hidden={details !== option.id} id={`choice-details-${option.id}`} className="max-w-3xl px-3 pb-4 text-sm leading-6"><p className="whitespace-pre-wrap break-words">{option.scope}</p>
-                {option.decisionBy && option.decisionBy !== category.decisionBy && <p className="mt-2 text-[#596368]">Alternativets beslutsdatum: {option.decisionBy}</p>}</div>
+                {shared.files?.some((f) => f.optionId === option.id) && <ul className="mt-3 divide-y divide-[#D5DCDD] border-t border-[#D5DCDD]" aria-label={`PDF-bilagor för ${option.title}`}>{shared.files.filter((f) => f.optionId === option.id).map((file) => {
+                  const url = fileUrl(file.id)
+                  return <li key={file.id} className="flex min-w-0 flex-wrap items-center gap-2 py-2"><span className="min-w-0 flex-1 break-words">{file.fileName}</span>{url && <><a className={`${button} text-[#206961]`} href={url} target="_blank" rel="noreferrer"><ExternalLink size={16} /> Öppna</a><a className={`${button} w-11 px-0 text-[#206961]`} aria-label={`Ladda ner ${file.fileName}`} title="Ladda ner PDF" href={`${url}?download=1`} target="_blank" rel="noreferrer"><Download size={16} /></a></>}</li>
+                })}</ul>}</div>
             </div>)}
           </fieldset>
           <div className="mt-4 flex flex-wrap items-center gap-3">

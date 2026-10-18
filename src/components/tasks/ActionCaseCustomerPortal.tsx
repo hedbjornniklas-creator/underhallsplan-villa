@@ -344,7 +344,7 @@ export default function ActionCaseCustomerPortal({
             : 'Valen kan förberedas nu. Du behöver inte välja något här för att godkänna grundavtalet.'}
           {' '}En senare beställning behöver en separat överenskommelse om omfattning, pris och tid.
         </p>
-        {plannedChoices ? <CustomerChoiceCategories shared={plannedChoices} onSaved={setPlannedChoices} token={token} readOnly={preview || !token} />
+        {plannedChoices ? <CustomerChoiceCategories shared={plannedChoices} onSaved={setPlannedChoices} token={token} previewCaseId={preview ? previewCaseId : undefined} readOnly={preview || !token} />
           : <CustomerPlannedItems items={plannedItems} />}
         {offeredOptions.length > 0 && <details className="border-t border-slate-200 py-5">
           <summary className="cursor-pointer text-sm font-semibold">Val i tidigare avtalsversion</summary>

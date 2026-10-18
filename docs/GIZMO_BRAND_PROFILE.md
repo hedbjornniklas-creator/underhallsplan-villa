@@ -84,7 +84,9 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 - Val och tillval använder kategorirader med antal alternativ och kundens val,
   inte en summering av alternativens priser. En kategori öppnas åt gången;
   gemensam specifikation och beslutsdatum ligger över de kompakta alternativraderna.
-  Alternativets egna texter öppnas i samma arbetsyta. På mobil får långa namn och
+  Alternativets egna texter, pris och PDF-bilagor öppnas i en sidopanel till höger,
+  med kategorilistan kvar bakom. På mobil fyller panelen skärmen. Status och
+  alternativdatum visas inte; beslutsdatum tillhör kategorin. På mobil får långa namn och
   prisunderlag egna rader. Kundens alternativ använder en radiogrupp per kategori
   och ett separat sparkommando. Öppen kategori markeras med neutral rubrik och
   grönblå vänsterkant, utan nästlade kort. Detta följer produktbeslutet 2026-10-18

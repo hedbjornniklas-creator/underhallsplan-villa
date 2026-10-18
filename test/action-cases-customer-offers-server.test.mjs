@@ -243,6 +243,7 @@ function harness(options = {}) {
     './customerOffers': domain,
     './customerOfferCosting': costingDomain,
     './customerPlanning': planningDomain,
+    './customerChoiceFilesServer': { async getCustomerChoiceFiles() { return { filesAvailable: false } } },
     './standardContractTerms': { ...standardTerms, withStandardContractTerms: options.standardTerms ? standardTerms.withStandardContractTerms : (draft) => draft },
     './standardContractTermsServer': {
       standardTermsFileId: () => id(4),

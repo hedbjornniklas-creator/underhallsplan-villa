@@ -41,7 +41,7 @@ test('shared category deadlines replace duplicate alternative dates without chan
   const items = [{ ...item(1), decisionBy: '2026-12-01' }, { ...item(2), decisionBy: '2026-12-01' }, { ...item(3, 'Golv'), decisionBy: '2026-10-30' }]
   const shared = { categories: [category(10, [1, 2]), { ...category(11, [3], 'Golv'), decisionBy: '' }], items }
   const before = JSON.stringify({ items, shared })
-  assert.deepEqual(choiceDecisionDates(items, shared), [{ id: id(3), title: 'Golv', decisionBy: '2026-10-30' }, { id: id(10), title: 'Fönster', decisionBy: '2026-11-20' }])
+  assert.deepEqual(choiceDecisionDates(items, shared), [{ id: id(10), title: 'Fönster', decisionBy: '2026-11-20' }])
   assert.equal(choiceDecisionDates(items).length, 3)
   assert.equal(JSON.stringify({ items, shared }), before)
 })

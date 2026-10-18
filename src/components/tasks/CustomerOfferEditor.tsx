@@ -697,7 +697,7 @@ export default function CustomerOfferEditor({
         {(dirty || planningDirty) && <p className="mt-2 text-sm">Spara ändringarna innan valen flyttas.</p>}
       </section>}
       <div hidden={view !== 'planning'}>
-        <CustomerPlanningEditor key={planningReset} caseId={actionCase.id} initial={planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />
+        <CustomerPlanningEditor key={planningReset} caseId={actionCase.id} files={actionCase.attachments} initial={planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />
       </div>
       <div hidden={view !== 'payments'} className="py-6">
         <h2 className="text-xl">Betalning och fakturering</h2>
