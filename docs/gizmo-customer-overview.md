@@ -524,6 +524,12 @@ valideringsfunktionen accepterar giltig tom struktur. Publiceringen anvander
 befintligt Git/Vercel-flode och ska bevara senaste publicerade main. Ingen
 projektdata, kunddelning, bestallning eller avtalsuppgift andras av leveransen.
 Produktionsstatus och skrivskyddad UI-kontroll verifieras efter push.
+Releasekontroll: senaste publicerade main togs in utan att parallellt opublicerat
+arbete foljde med. Felhantering och tester bevarar bade kundval och redan
+publicerade avsandarprofiler. 516 action-case-/avsandarprofiltester passerar pa
+den sammanslagna versionen. Anonym direktatkomst till kundvals-RPC:er och
+valtabell nekas i produktion. Projektets sparade uppgifter jamfors fore/efter
+leveransen; ingen verklig kunddelning eller testbestallning ingar.
 
 ## Tester
 
