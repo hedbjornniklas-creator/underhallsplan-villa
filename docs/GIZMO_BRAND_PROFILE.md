@@ -81,6 +81,14 @@ Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
   tillstånd. Markerade rader är grönblå, oberoende av vilken rad som är öppen.
   Verktygsraden har fast minhöjd även utan markering. Borttagning och byte
   mellan grundåtagande/avgränsning bekräftas med berörda rader och konsekvens.
+- Val och tillval använder kategorirader med antal alternativ och kundens val,
+  inte en summering av alternativens priser. En kategori öppnas åt gången;
+  gemensam specifikation och beslutsdatum ligger över de kompakta alternativraderna.
+  Alternativets egna texter öppnas i samma arbetsyta. På mobil får långa namn och
+  prisunderlag egna rader. Kundens alternativ använder en radiogrupp per kategori
+  och ett separat sparkommando. Öppen kategori markeras med neutral rubrik och
+  grönblå vänsterkant, utan nästlade kort. Detta följer produktbeslutet 2026-10-18
+  i gizmo-customer-overview.md; avtalets utseende, innehåll och belopp ändras inte.
 - Avtalsstatus är en hopfällbar fullbreddsrad över formuläret. Grundstatus och
   belopp syns direkt; utskick, granskning och versionshistorik öppnas vid behov.
   Ingen fast högerspalt tränger ihop avtalsfälten.

@@ -1,371 +1,189 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Eye, EyeOff, Loader2, Plus, Save, Trash2, Undo2 } from 'lucide-react'
+import { ChevronDown, Eye, EyeOff, Loader2, Plus, RefreshCw, Save, Trash2, Undo2 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
-import {
-  planningStatuses,
-  type CustomerPlannedItem,
-  type CustomerPlanning
-} from '@/lib/action-cases/customerPlanning'
+import { categoryOptions, currentCategoryChoice, legacyChoiceCategories, planningStatuses, type CustomerChoiceCategory, type CustomerPlannedItem, type CustomerPlanning } from '@/lib/action-cases/customerPlanning'
 import { money } from '@/lib/action-cases/customerOffers'
+import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
+import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import PriceInput from './CustomerOfferPriceInput'
 import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
-import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
 import ProjectEditorRow from './ProjectEditorRow'
-import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 
-const field =
-  'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
-const button =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
-export default function CustomerPlanningEditor({
-  caseId,
-  initial,
-  onDirty,
-  onSaved
-}: {
+const field = 'mt-1 block w-full rounded-md border border-[#D5DCDD] bg-white px-3 py-2 text-sm'
+const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 py-2 text-sm font-semibold disabled:opacity-50'
+const iconButton = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-[#D5DCDD] disabled:opacity-50'
+
+export default function CustomerPlanningEditor({ caseId, initial, onDirty, onSaved }: {
   caseId: string
   initial: CustomerPlanning
   onDirty: (dirty: boolean) => void
   onSaved: (value: CustomerPlanning) => void
 }) {
-  const [saved, setSaved] = useState(initial),
-    [items, setItems] = useState(initial.items)
+  const [saved, setSaved] = useState(initial), [items, setItems] = useState(initial.items)
+  const [categories, setCategories] = useState(initial.categories ?? legacyChoiceCategories(initial.items))
   const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
-  const [busy, setBusy] = useState(''),
-    [confirmed, setConfirmed] = useState(false)
-  const [removed, setRemoved] = useState<CustomerPlannedItem | null>(null)
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const running = useRef(false),
-    toast = useToast()
-  const dirty = JSON.stringify(items) !== JSON.stringify(saved.items) ||
-    JSON.stringify(costing) !== JSON.stringify(saved.costing ?? {})
-  const shared =
-    JSON.stringify(saved.items) === JSON.stringify(saved.sharedItems)
-  useEffect(() => {
-    onDirty(dirty || Boolean(busy))
-  }, [dirty, busy, onDirty])
-  function change(next: CustomerPlannedItem[]) {
-    setItems(next)
-    setConfirmed(false)
+  const [busy, setBusy] = useState(''), [confirmed, setConfirmed] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null), [expandedOption, setExpandedOption] = useState<string | null>(null)
+  const [removed, setRemoved] = useState<{ categories: CustomerChoiceCategory[]; items: CustomerPlannedItem[]; costing: CustomerOfferCosting; index: number } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const running = useRef(false), toast = useToast()
+  const ready = saved.available && saved.categoriesAvailable === true
+  const structured = saved.categoriesStored === true
+  const dirty = JSON.stringify(items) !== JSON.stringify(saved.items) || JSON.stringify(categories) !== JSON.stringify(saved.categories ?? legacyChoiceCategories(saved.items)) || JSON.stringify(costing) !== JSON.stringify(saved.costing ?? {})
+  const shared = Boolean(saved.sharedChoices) && JSON.stringify(saved.items) === JSON.stringify(saved.sharedChoices?.items) && JSON.stringify(saved.categories) === JSON.stringify(saved.sharedChoices?.categories)
+  useEffect(() => { onDirty(dirty || Boolean(busy)) }, [dirty, busy, onDirty])
+  function changeItems(next: CustomerPlannedItem[]) { setItems(next); setConfirmed(false) }
+  function changeCategories(next: CustomerChoiceCategory[]) { setCategories(next); setConfirmed(false) }
+  function patchCategory(id: string, patch: Partial<CustomerChoiceCategory>) { changeCategories(categories.map((c) => c.id === id ? { ...c, ...patch } : c)) }
+  function patchOption(id: string, patch: Partial<CustomerPlannedItem>) { changeItems(items.map((i) => i.id === id ? { ...i, ...patch } : i)) }
+  function addOption(category: CustomerChoiceCategory) {
+    const id = crypto.randomUUID()
+    changeItems([...items, { id, title: '', scope: '', status: 'planned', budgetOre: null, decisionBy: '' }])
+    patchCategory(category.id, { optionIds: [...category.optionIds, id] }); setExpandedOption(id)
+  }
+  function removeOption(id: string) {
+    const category = categories.find((c) => c.optionIds.includes(id))
+    if (!category) return
+    setRemoved({ categories: [category], items: items.filter((i) => i.id === id), costing: costing[id] ? { [id]: costing[id] } : {}, index: categories.indexOf(category) })
+    changeItems(items.filter((item) => item.id !== id))
+    changeCategories(categories.map((c) => ({ ...c, optionIds: c.optionIds.filter((optionId) => optionId !== id) })))
+  }
+  function removeCategory(id: string) {
+    const category = categories.find((c) => c.id === id)
+    if (!category) return
+    setRemoved({ categories: [category], items: categoryOptions(category, items), costing: Object.fromEntries(Object.entries(costing).filter(([key]) => category.optionIds.includes(key))), index: categories.indexOf(category) })
+    changeCategories(categories.filter((c) => c.id !== id))
+    changeItems(items.filter((i) => !category.optionIds.includes(i.id)))
+    setPendingDelete(null); setExpanded(null)
+  }
+  function moveOption(optionId: string, destination: string) {
+    changeCategories(categories.map((category) => ({ ...category, optionIds: category.id === destination ? [...category.optionIds, optionId] : category.optionIds.filter((id) => id !== optionId) })))
+    setExpanded(destination)
+  }
+  function restoreRemoved() {
+    if (!removed) return
+    const next = [...categories]
+    for (const restored of removed.categories) {
+      const existing = next.findIndex((c) => c.id === restored.id)
+      if (existing < 0) next.splice(Math.min(removed.index, next.length), 0, restored)
+      else {
+        const optionIds = [...next[existing].optionIds]
+        for (const restoredItem of removed.items.filter((item) => restored.optionIds.includes(item.id))) {
+          if (optionIds.includes(restoredItem.id)) continue
+          const following = restored.optionIds.slice(restored.optionIds.indexOf(restoredItem.id) + 1).find((id) => optionIds.includes(id))
+          optionIds.splice(following ? optionIds.indexOf(following) : optionIds.length, 0, restoredItem.id)
+        }
+        next[existing] = { ...next[existing], optionIds }
+      }
+    }
+    changeCategories(next)
+    changeItems([...items, ...removed.items.filter((restored) => !items.some((i) => i.id === restored.id))])
+    setCosting((current) => ({ ...removed.costing, ...current })); setRemoved(null)
   }
   async function action(operation: 'save' | 'share' | 'unshare') {
-    if (running.current) return
-    running.current = true
-    setBusy(operation)
+    if (!ready || running.current) return
+    running.current = true; setBusy(operation)
     try {
-      const response = await fetch(
-        `/api/action-cases/${caseId}/customer-planning`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            operation,
-            revision: saved.revision,
-            items,
-            ...(saved.costingAvailable && operation === 'save' ? { costing } : {}),
-            confirmed
-          })
-        }
-      )
+      const response = await fetch(`/api/action-cases/${caseId}/customer-planning`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation, revision: saved.revision, items, categories,
+          ...(saved.costingAvailable && operation === 'save' ? { costing } : {}), confirmed })
+      })
       const result = await response.json()
-      if (!response.ok)
-        throw new Error(result.error || 'Tillvalen kunde inte sparas.')
+      if (!response.ok) throw new Error(result.error || 'Kategorierna kunde inte sparas.')
       setSaved(result)
       setItems((current) => retainNewerDraft(current, items, result.items))
+      setCategories((current) => retainNewerDraft(current, categories, result.categories ?? legacyChoiceCategories(result.items)))
       setCosting((current) => retainNewerDraft(current, costing, result.costing ?? {}))
-      setConfirmed(false)
-      onSaved(result)
-      toast.success(
-        operation === 'save'
-          ? 'Val och tillval sparades.'
-          : operation === 'share'
-            ? 'Planerade tillval visas nu för beställaren. Inget är beställt.'
-            : 'Planerade tillval är nu interna.'
-      )
-    } catch (error) {
-      toast.error(error, 'Tillvalen kunde inte hanteras.')
-    } finally {
-      running.current = false
-      setBusy('')
-    }
+      setConfirmed(false); onSaved(result)
+      toast.success(operation === 'save' ? 'Val och tillval sparades.' : operation === 'share' ? 'Kategorierna visas nu för beställaren. Avtalet är oförändrat.' : 'Val och tillval är nu interna.')
+    } catch (error) { toast.error(error, 'Val och tillval kunde inte hanteras.') }
+    finally { running.current = false; setBusy('') }
   }
-  return (
-    <section className="py-6" aria-label="Val och tillval">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
-        <div>
-          <h2 className="text-xl">Val och tillval</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Inte beställda · Ingår inte i avtalssumman
-          </p>
-        </div>
-        <p role="status" className="text-sm text-slate-500">
-          {busy ? 'Sparar…' : dirty ? 'Osparade ändringar' : 'Sparat'}
-        </p>
-      </div>
-      {!saved.available ? (
-        <p className="py-6 text-sm text-amber-800">
-          Planerade tillval behöver aktiveras av administratören.
-        </p>
-      ) : (
-        <>
-          <fieldset
-            disabled={Boolean(busy) && busy !== 'save'}
-            className="min-w-0 divide-y divide-slate-200"
-          >
-            {items.map((item) => {
-              const patch = (value: Partial<CustomerPlannedItem>) =>
-                change(
-                  items.map((i) => (i.id === item.id ? { ...i, ...value } : i))
-                )
-              return (
-                <ProjectEditorRow key={item.id} title={item.title || 'Nytt val eller tillval'}
-                  summary={[item.optionGroup, planningStatuses[item.status], item.decisionBy && `Beslut ${item.decisionBy}`, !item.scope.trim() && 'Omfattning saknas'].filter(Boolean).join(' · ')}
-                  amount={item.budgetOre === null ? 'Pris ej fastställt' : money(item.budgetOre)}
-                  open={expanded === item.id} onToggle={() => setExpanded(expanded === item.id ? null : item.id)}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="flex items-start gap-3 sm:col-span-2">
-                    <label className="min-w-0 flex-1 text-sm">
-                      Val eller tillval *
-                      <input
-                        className={field}
-                        value={item.title}
-                        maxLength={250}
-                        onChange={(e) => patch({ title: e.target.value })}
-                      />
-                    </label>
-                    <button
-                      className="mt-5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300 text-rose-700"
-                      aria-label={`Ta bort planerat tillval ${item.title}`}
-                      title="Ta bort tillval"
-                      onClick={() => {
-                        setRemoved(item)
-                        change(items.filter((i) => i.id !== item.id))
-                      }}
-                    >
-                      <Trash2 size={17} />
-                    </button>
-                  </div>
-                  <label className="text-sm">
-                    Status
-                    <select
-                      className={field}
-                      value={item.status}
-                      onChange={(e) =>
-                        patch({
-                          status: e.target
-                            .value as CustomerPlannedItem['status']
-                        })
-                      }
-                    >
-                      {Object.entries(planningStatuses).map(([key, title]) => (
-                        <option key={key} value={key}>
-                          {title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-sm">
-                    Önskat beslutsdatum
-                    <input
-                      className={field}
-                      type="date"
-                      value={item.decisionBy}
-                      onChange={(e) => patch({ decisionBy: e.target.value })}
-                    />
-                  </label>
-                  <label className="text-sm sm:col-span-2">
-                    Omfattning *
-                    <textarea
-                      className={field}
-                      rows={3}
-                      value={item.scope}
-                      maxLength={12000}
-                      onChange={(e) => patch({ scope: e.target.value })}
-                    />
-                  </label>
-                  <PriceInput
-                    label="Prisunderlag inkl. moms (kr, valfritt)"
-                    value={item.budgetOre}
-                    onChange={(budgetOre) => patch({ budgetOre })}
-                  />
-                  <label className="text-sm">
-                    Alternativgrupp (valfri)
-                    <input className={field} maxLength={100} list="planned-choice-groups"
-                      value={item.optionGroup ?? ''}
-                      onChange={(e) => patch({ optionGroup: e.target.value })} />
-                  </label>
-                  {saved.costingAvailable && <div className="sm:col-span-2">
-                    <CustomerOfferCostCalculator value={costing[item.id]} customerPrice={item.budgetOre}
-                      onChange={(calculation) => setCosting((current) => ({ ...current, [item.id]: calculation }))}
-                      onApply={(budgetOre) => patch({ budgetOre })} />
-                  </div>}
-                </div>
-                </ProjectEditorRow>
-              )
-            })}
-          </fieldset>
-          <datalist id="planned-choice-groups">
-            {[...new Set(items.map((i) => i.optionGroup).filter(Boolean))].map((group) => <option key={group} value={group} />)}
-          </datalist>
-          {!items.length && (
-            <p className="py-6 text-sm text-slate-500">
-              Inga val eller tillval har lagts till.
-            </p>
-          )}
-          <div className="flex flex-wrap gap-3 py-4">
-            <button
-              className={button}
-              disabled={Boolean(busy) && busy !== 'save'}
-              onClick={() => {
-                const id = crypto.randomUUID()
-                setExpanded(id)
-                change([
-                  ...items,
-                  {
-                    id,
-                    title: '',
-                    scope: '',
-                    status: 'planned',
-                    budgetOre: null,
-                    decisionBy: ''
-                  }
-                ])
-              }}
-            >
-              <Plus size={17} /> Lägg till val eller tillval
-            </button>
-            {removed && (
-              <button
-                className={button}
-                disabled={Boolean(busy)}
-                onClick={() => {
-                  change([...items, removed])
-                  setRemoved(null)
-                }}
-              >
-                <Undo2 size={17} /> Ångra borttagning
-              </button>
-            )}
-            <button
-              className={`${button} bg-slate-950 text-white`}
-              disabled={Boolean(busy) || !dirty}
-              onClick={() => void action('save')}
-            >
-              {busy === 'save' ? (
-                <Loader2 size={17} className="animate-spin" />
-              ) : (
-                <Save size={17} />
-              )}{' '}
-              Spara planering
-            </button>
+  async function refreshChoices() {
+    if (dirty || running.current) return
+    running.current = true; setBusy('refresh')
+    try {
+      const response = await fetch(`/api/action-cases/${caseId}/customer-planning`, { cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Kundvalen kunde inte hämtas.')
+      setSaved(result); setItems(result.items); setCategories(result.categories ?? legacyChoiceCategories(result.items)); setCosting(result.costing ?? {}); setConfirmed(false); onSaved(result)
+    } catch (error) { toast.error(error, 'Kundvalen kunde inte hämtas.') }
+    finally { running.current = false; setBusy('') }
+  }
+  if (!ready) return <section className="mx-auto max-w-5xl"><p role="status" className="border-l-4 border-amber-400 bg-amber-50 p-3 text-sm">Kategorier och kundval behöver aktiveras av administratören.</p><CustomerPlannedItems items={items} /></section>
+  const incomplete = !categories.length || categories.some((c) => !c.title.trim() || !c.optionIds.length) || items.some((i) => !i.title.trim() || !i.scope.trim())
+  return <section className="gizmo-choice-categories mx-auto max-w-5xl py-6 text-[#252A2D]" aria-label="Val och tillval">
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[#D5DCDD] pb-4">
+      <div><h2 className="text-xl">Val och tillval</h2><p className="mt-2 text-sm text-[#596368]">Inte beställda · Påverkar inte avtalet</p></div>
+      <div className="flex items-center gap-3"><p role="status" className="text-sm text-[#596368]">{busy === 'refresh' ? 'Hämtar…' : busy ? 'Sparar…' : dirty ? 'Osparade ändringar' : 'Sparat'}</p><button type="button" className={iconButton} title="Uppdatera kundval" aria-label="Uppdatera kundval" disabled={Boolean(busy) || dirty} onClick={() => void refreshChoices()}><RefreshCw size={17} /></button></div>
+    </div>
+    <fieldset disabled={!ready || (Boolean(busy) && busy !== 'save')} className="min-w-0 divide-y divide-[#D5DCDD] border-b border-[#D5DCDD]">
+      {categories.map((category) => {
+        const options = categoryOptions(category, items), choice = currentCategoryChoice(saved.sharedChoices, category.id)
+        const chosen = saved.sharedChoices?.items.find((i) => i.id === choice?.optionId)
+        const previous = saved.sharedChoices?.choices.find((c) => c.categoryId === category.id)
+        const summary = [`${options.length} alternativ`, chosen ? `Kundens val: ${chosen.title}` : previous?.optionId ? 'Nytt kundval behövs' : 'Inget alternativ valt', category.decisionBy && `Beslut ${category.decisionBy}`].filter(Boolean).join(' · ')
+        return <ProjectEditorRow key={category.id} title={category.title || 'Ny kategori'} summary={summary} open={expanded === category.id} onToggle={() => setExpanded(expanded === category.id ? null : category.id)}>
+          <div className="mb-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px_auto]">
+            <label className="text-sm">Kategori<input aria-label={`Kategori: ${category.title || 'Ny kategori'}`} className={field} value={category.title} maxLength={250} onChange={(e) => patchCategory(category.id, { title: e.target.value })} /></label>
+            <label className="text-sm">Önskat beslutsdatum<input aria-label={`Beslutsdatum för ${category.title}`} className={field} type="date" max="9999-12-31" value={category.decisionBy} onChange={(e) => patchCategory(category.id, { decisionBy: e.target.value })} /></label>
+            <button type="button" className={`${iconButton} sm:mt-6`} aria-label={`Ta bort kategori ${category.title}`} title="Ta bort kategori" onClick={() => setPendingDelete(category.id)}><Trash2 size={17} /></button>
+            <label className="text-sm sm:col-span-3">Gemensam specifikation<textarea aria-label={`Specifikation för ${category.title}`} className={field} rows={3} maxLength={12000} value={category.specification} onChange={(e) => patchCategory(category.id, { specification: e.target.value })} /></label>
           </div>
-          <section className="mt-4 border-t border-slate-200 py-5">
-            <h3 className="font-semibold">Kundens vy</h3>
-            <p className="mt-2 text-sm text-slate-600">
-              {saved.sharedItems.length
-                ? `${saved.sharedItems.length} ${saved.sharedItems.length === 1 ? 'planerat tillval är synligt' : 'planerade tillval är synliga'} för beställaren.`
-                : 'Planeringen är intern.'}{' '}
-              {!shared && saved.sharedItems.length
-                ? 'Den sparade planeringen skiljer sig från kundens vy.'
-                : ''}
-            </p>
-            {!shared && items.length > 0 && (
-              <label className="mt-4 flex items-start gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 h-5 w-5 shrink-0"
-                  checked={confirmed}
-                  disabled={Boolean(busy) || dirty}
-                  onChange={(e) => setConfirmed(e.target.checked)}
-                />
-                Jag har granskat innehållet som ska visas för beställaren som
-                planering, inte beställning.
-              </label>
-            )}
-            <div className="mt-4 flex flex-wrap gap-3">
-              {!shared && items.length > 0 && (
-                <button
-                  className={button}
-                  disabled={
-                    Boolean(busy) ||
-                    dirty ||
-                    !confirmed ||
-                    items.some((i) => !i.title.trim() || !i.scope.trim())
-                  }
-                  onClick={() => void action('share')}
-                >
-                  {busy === 'share' ? (
-                    <Loader2 size={17} className="animate-spin" />
-                  ) : (
-                    <Eye size={17} />
-                  )}{' '}
-                  Visa för beställaren
-                </button>
-              )}
-              {saved.sharedItems.length > 0 && (
-                <button
-                  className={button}
-                  disabled={Boolean(busy) || dirty}
-                  onClick={() => void action('unshare')}
-                >
-                  {busy === 'unshare' ? (
-                    <Loader2 size={17} className="animate-spin" />
-                  ) : (
-                    <EyeOff size={17} />
-                  )}{' '}
-                  Dölj planerade tillval
-                </button>
-              )}
-            </div>
-          </section>
-        </>
-      )}
+          {pendingDelete === category.id && <div role="alert" className="mb-4 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm"><p>Ta bort kategorin {category.title} och dess {options.length} alternativ ur den interna planeringen?</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => setPendingDelete(null)}>Avbryt</button><button type="button" className={`${button} bg-white text-rose-700`} onClick={() => removeCategory(category.id)}><Trash2 size={16} /> Ta bort kategori</button></div></div>}
+          <div className="flex justify-between gap-3 bg-[#EDF1F1] px-3 py-2 text-xs font-semibold"><span>Alternativ</span><span className="text-right">Prisunderlag inkl. moms</span></div>
+          <div className="divide-y divide-[#D5DCDD]">
+            {options.map((option) => <section key={option.id}>
+              <h4><button type="button" className="flex min-h-12 w-full items-center gap-3 px-3 py-3 text-left text-sm hover:bg-[#F4F6F6]" aria-expanded={expandedOption === option.id} aria-controls={`planning-option-${option.id}`} onClick={() => setExpandedOption(expandedOption === option.id ? null : option.id)}>
+                <span className="min-w-0 flex-1 break-words font-semibold">{option.title || 'Nytt alternativ'}</span><span className="shrink-0 text-right tabular-nums">{option.budgetOre === null ? 'Pris ej fastställt' : money(option.budgetOre)}</span><ChevronDown size={17} className={`shrink-0 ${expandedOption === option.id ? 'rotate-180' : ''}`} /></button></h4>
+              <div hidden={expandedOption !== option.id} id={`planning-option-${option.id}`} className="border-l-2 border-[#206961] px-3 pb-4 pt-2">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm">Alternativ<input aria-label={`Alternativets namn: ${option.title || 'Nytt alternativ'}`} className={field} value={option.title} maxLength={250} onChange={(e) => patchOption(option.id, { title: e.target.value })} /></label>
+                  <PriceInput label="Prisunderlag inkl. moms (kr, valfritt)" value={option.budgetOre} onChange={(budgetOre) => patchOption(option.id, { budgetOre })} />
+                  <label className="text-sm sm:col-span-2">Beskrivning<textarea aria-label={`Beskrivning för ${option.title}`} className={field} rows={3} value={option.scope} maxLength={12000} onChange={(e) => patchOption(option.id, { scope: e.target.value })} /></label>
+                  <label className="text-sm">Status<select aria-label={`Status för ${option.title}`} className={field} value={option.status} onChange={(e) => patchOption(option.id, { status: e.target.value as CustomerPlannedItem['status'] })}>{Object.entries(planningStatuses).map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></label>
+                  {categories.length > 1 && <label className="text-sm">Kategori<select aria-label={`Flytta ${option.title} till kategori`} className={field} value={category.id} onChange={(e) => moveOption(option.id, e.target.value)}>{categories.map((c) => <option key={c.id} value={c.id}>{c.title || 'Ny kategori'}</option>)}</select></label>}
+                  {option.decisionBy && <label className="text-sm">Alternativets tidigare beslutsdatum<input className={field} type="date" max="9999-12-31" value={option.decisionBy} onChange={(e) => patchOption(option.id, { decisionBy: e.target.value })} /></label>}
+                  {saved.costingAvailable && <div className="sm:col-span-2"><CustomerOfferCostCalculator value={costing[option.id]} customerPrice={option.budgetOre} onChange={(calculation) => { setCosting((current) => ({ ...current, [option.id]: calculation })); setConfirmed(false) }} onApply={(budgetOre) => patchOption(option.id, { budgetOre })} /></div>}
+                </div>
+                <button type="button" className={`${button} mt-3 text-rose-700`} aria-label={`Ta bort alternativ ${option.title}`} onClick={() => removeOption(option.id)}><Trash2 size={16} /> Ta bort alternativ</button>
+              </div>
+            </section>)}
+          </div>
+          <button type="button" className={`${button} mt-3`} disabled={items.length >= 200} onClick={() => addOption(category)}><Plus size={16} /> Lägg till alternativ</button>
+          {chosen && <p className="mt-3 text-sm text-[#596368]">Registrerat i delad version: {chosen.title}</p>}
+        </ProjectEditorRow>
+      })}
+    </fieldset>
+    {!categories.length && <p className="py-5 text-sm text-[#596368]">Inga kategorier har lagts till.</p>}
+    <div className="flex flex-wrap gap-3 py-4">
+      <button type="button" className={button} disabled={!ready || Boolean(busy) || categories.length >= 200} onClick={() => {
+        const id = crypto.randomUUID(); changeCategories([...categories, { id, title: '', specification: '', decisionBy: '', optionIds: [] }]); setExpanded(id)
+      }}><Plus size={17} /> Lägg till kategori</button>
+      {removed && <button type="button" className={button} disabled={!ready || Boolean(busy)} onClick={restoreRemoved}><Undo2 size={17} /> Ångra borttagning</button>}
+      <button type="button" className={`${button} bg-[#252A2D] text-white`} disabled={!ready || Boolean(busy) || (!dirty && structured)} onClick={() => void action('save')}>{busy === 'save' ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} {structured ? 'Spara planering' : 'Spara kategorier'}</button>
+    </div>
+    <section className="mt-2 border-t border-[#D5DCDD] py-4"><h3 className="font-semibold">Kundens vy</h3>
+      <p className="mt-2 text-sm text-[#596368]">{saved.sharedItems.length ? `${saved.sharedChoices?.categories.length ?? legacyChoiceCategories(saved.sharedItems).length} kategorier visas för beställaren.` : 'Planeringen är intern.'}{saved.sharedItems.length && !shared ? ' Det finns ändringar som inte visas för beställaren.' : ''}</p>
+      {!shared && categories.length > 0 && <label className="mt-4 flex items-start gap-3 text-sm"><input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[#206961]" checked={confirmed} disabled={!ready || !structured || Boolean(busy) || dirty} onChange={(e) => setConfirmed(e.target.checked)} />Jag har granskat kategorier, alternativ och kundpriser. Valen är inte beställningar och påverkar inte avtalet.</label>}
+      <div className="mt-3 flex flex-wrap gap-3">
+        {!shared && categories.length > 0 && <button type="button" className={button} disabled={!ready || !structured || Boolean(busy) || dirty || !confirmed || incomplete} onClick={() => void action('share')}>{busy === 'share' ? <Loader2 size={17} className="animate-spin" /> : <Eye size={17} />} Visa för beställaren</button>}
+        {saved.sharedItems.length > 0 && <button type="button" className={button} disabled={!ready || Boolean(busy) || dirty} onClick={() => void action('unshare')}>{busy === 'unshare' ? <Loader2 size={17} className="animate-spin" /> : <EyeOff size={17} />} Dölj val och tillval</button>}
+      </div>
     </section>
-  )
+  </section>
 }
 
-export function CustomerPlannedItems({
-  items
-}: {
-  items: CustomerPlannedItem[]
-}) {
-  return (
-    <section aria-label="Val och tillval" className="py-6">
-      <h2 className="text-xl">Val och tillval</h2>
-      <p className="mt-2 text-sm text-slate-600">
-        Inte beställda · Ingår inte i avtalssumman
-      </p>
-      {items.map((item) => (
-        <article key={item.id} className="border-b border-slate-200 py-5">
-          {item.optionGroup && <p className="mb-2 text-sm font-medium text-violet-700">{item.optionGroup} · Alternativ</p>}
-          <div className="flex flex-wrap justify-between gap-3">
-            <h3 className="font-semibold">{item.title}</h3>
-            <span className="text-sm text-slate-500">
-              {planningStatuses[item.status]}
-            </span>
-          </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-            {item.scope}
-          </p>
-          <p className="mt-3 text-sm">
-            {item.budgetOre === null
-              ? 'Pris ej fastställt'
-              : `Prisunderlag: ${money(item.budgetOre)} inklusive moms · Inte beställt`}
-          </p>
-          {item.decisionBy && (
-            <p className="mt-2 text-sm text-slate-500">
-              Önskat beslut senast {item.decisionBy}
-            </p>
-          )}
-        </article>
-      ))}
-      {!items.length && (
-        <p className="mt-5 text-sm text-slate-500">
-          Inga val eller tillval har delats ännu.
-        </p>
-      )}
-    </section>
-  )
+// Previously shared, flat plans remain read-only until explicitly shared as categories.
+export function CustomerPlannedItems({ items }: { items: CustomerPlannedItem[] }) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  return <section aria-label="Val och tillval" className="gizmo-choice-categories py-6"><h2 className="text-xl">Val och tillval</h2><p className="mt-2 text-sm text-[#596368]">Inte beställda · Påverkar inte avtalet</p>
+    {legacyChoiceCategories(items).map((category) => <ProjectEditorRow key={category.id} title={category.title} summary={`${category.optionIds.length} alternativ · Inget val registrerat`} open={expanded === category.id} onToggle={() => setExpanded(expanded === category.id ? null : category.id)}>
+      {categoryOptions(category, items).map((item) => <article key={item.id} className="border-b border-[#D5DCDD] py-3"><div className="flex flex-wrap justify-between gap-3"><h4 className="font-semibold">{item.title}</h4><span className="text-sm text-[#596368]">{planningStatuses[item.status]}</span></div><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.scope}</p><p className="mt-2 text-sm">{item.budgetOre === null ? 'Pris ej fastställt' : `Prisunderlag: ${money(item.budgetOre)} inklusive moms`}</p>{item.decisionBy && <p className="mt-2 text-sm text-[#596368]">Önskat beslut senast {item.decisionBy}</p>}</article>)}
+    </ProjectEditorRow>)}
+    {!items.length && <p className="mt-5 text-sm text-[#596368]">Inga val eller tillval har delats ännu.</p>}
+  </section>
 }

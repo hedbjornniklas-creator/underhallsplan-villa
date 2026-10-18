@@ -88,6 +88,12 @@ export function customerOfferError(error: unknown) {
       'Kundofferter är inte aktiverade ännu. Administratören behöver uppdatera databasen.'
     ],
     CUSTOMER_OFFER_INVALID: [400, 'Kontrollera uppgifterna och försök igen.'],
+    CUSTOMER_CHOICE_INVALID: [400, 'Kontrollera kategorierna och deras alternativ. Varje alternativ ska tillhöra en kategori.'],
+    CUSTOMER_CHOICE_SCHEMA: [503, 'Kategorier och kundval behöver aktiveras av administratören.'],
+    CUSTOMER_CHOICE_NOT_SHARED: [404, 'Dessa val visas inte längre för beställaren.'],
+    CUSTOMER_CHOICE_STALE: [409, 'Alternativen eller det sparade valet har ändrats. Uppdatera vyn innan du sparar igen.'],
+    CUSTOMER_CHOICE_CLOSED: [410, 'Länken till projektet är inte längre tillgänglig.'],
+    CUSTOMER_CHOICE_RATE_LIMIT: [429, 'För många ändringar på kort tid. Vänta en minut innan du försöker igen.'],
     CUSTOMER_OFFER_SEPARATE_CHOICES: [409, 'Flytta valen till Val och tillval innan grundavtalet skickas.'],
     CUSTOMER_OFFER_WITHDRAW_FIRST: [409, 'Återkalla den öppna offertversionen innan valen flyttas. Ett godkänt avtal kan inte ändras.'],
     CUSTOMER_OFFER_INCOMPLETE: [

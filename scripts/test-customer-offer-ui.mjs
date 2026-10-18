@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import { ABS18_TERMS, withStandardContractTerms } from '../src/lib/action-cases/standardContractTerms.ts'
 import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import puppeteer from 'puppeteer-core'
@@ -22,7 +23,7 @@ import {
   mapCustomerOffer
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
-import { normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
+import { categoryOptions, legacyChoiceCategories, normalizeChoiceCategories, normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
 import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
 import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
@@ -88,7 +89,7 @@ if (process.argv.includes('--legacy-controls')) {
   state.draft.contractDetails.fields.controls = { status: 'specified', text: 'TEST: Tidigare gemensamma rolluppgifter.' }
   state.draft.contractDetails.controlParticipants = { controlOfficer: '', customerInspector: '', previousDetails: state.draft.contractDetails.fields.controls }
 }
-state.planning = { available: true, revision: 0, items: [], sharedItems: [], costingAvailable: true, costing: {} }
+state.planning = { available: true, revision: 0, items: [], sharedItems: [], costingAvailable: true, costing: {}, categoriesAvailable: true, categoriesStored: false, categories: [] }
 function separateChoices() {
   const choices = state.draft.items.filter((i) => i.kind === 'option')
   state.planning.items.push(...choices.map((i) => ({ id: i.id, title: i.title, scope: i.scope,
@@ -100,6 +101,7 @@ function separateChoices() {
   state.draft.items = state.draft.items.filter((i) => i.kind !== 'option')
 }
 if (!process.argv.includes('--legacy-draft')) separateChoices()
+state.planning.categories = legacyChoiceCategories(state.planning.items)
 if (process.argv.includes('--payment-plan')) {
   const total = state.draft.baseAmountOre
   state.draft.paymentTerms = 'FIKTIV TESTPLAN. Betalningsvillkor enligt den granskade avtalshandlingen.'
@@ -112,6 +114,26 @@ if (process.argv.includes('--payment-plan')) {
 if (process.argv.includes('--serve') && !process.argv.includes('--legacy-draft')) {
   state.offers = [published(state.draft)]
   state.planning.sharedItems = structuredClone(state.planning.items)
+}
+if (process.argv.includes('--choice-categories')) {
+  state.planning.items = [['VELFAC Classic Alu', 100000], ['Ekstrands med skjutparti', 125000], ['Ekstrands med parfönsterdörrar', 115000], ['Nordiska Fönster', 95000], ['Invändig målning', 50000]].map(([title, price], index) => ({
+    id: id(850 + index), title, scope: `FIKTIVT TESTUNDERLAG: ${title}. Leverans och montage enligt gemensam specifikation. Inga verkliga priser eller beställningar.`, status: 'planned', budgetOre: price * 100, decisionBy: '', optionGroup: index < 4 ? 'Fönster' : 'Målning'
+  }))
+  state.planning.categories = legacyChoiceCategories(state.planning.items)
+  state.planning.categories[0].specification = 'FIKTIVA TESTKRAV: Fönster för tillbyggnaden. Mått, kulör och öppningsfunktioner kontrolleras före beställning.'
+  state.planning.sharedItems = []; state.planning.costing = {}; delete state.planning.sharedChoices
+}
+let choiceRecords = [], choiceRevision = 0
+function publishChoiceCategories() {
+  const old = state.planning.sharedChoices
+  const categories = structuredClone(state.planning.categories), items = structuredClone(state.planning.items)
+  state.planning.sharedItems = items
+  state.planning.sharedChoices = { revision: ++choiceRevision, categories, items,
+    versions: Object.fromEntries(categories.map((category) => {
+      const prior = old?.categories.find((c) => c.id === category.id)
+      const unchanged = JSON.stringify(prior) === JSON.stringify(category) && JSON.stringify(categoryOptions(category, old?.items ?? [])) === JSON.stringify(categoryOptions(category, items))
+      return [category.id, unchanged ? old.versions[category.id] : randomUUID()]
+    })), choices: structuredClone(choiceRecords.filter((record) => categories.some((c) => c.id === record.categoryId))) }
 }
 const writes = []
 const projects = projectFixture(actionCase)
@@ -245,7 +267,9 @@ const server = createServer(async (req, res) => {
   if (['/__test__/viewport/390','/__test__/viewport/344'].includes(path)) {
     const width = path.split('/').at(-1)
     res.setHeader('Content-Type','text/html; charset=utf-8')
-    res.end(`<!doctype html><html lang="sv"><head><title>Gizmo mobiltest ${width}</title><style>body{margin:0}iframe{display:block;border:0;width:${width}px;height:844px}</style></head><body><iframe title="Fiktivt mobilprojekt" src="/uppdrag/${id(1)}?view=contract"></iframe></body></html>`)
+    const query = new URL(req.url, 'http://localhost').searchParams
+    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${query.get('view') === 'choices' ? 'choices' : 'contract'}`
+    res.end(`<!doctype html><html lang="sv"><head><title>Gizmo mobiltest ${width}</title><style>body{margin:0}iframe{display:block;border:0;width:${width}px;height:844px}</style></head><body><iframe title="Fiktivt mobilprojekt" src="${target}"></iframe></body></html>`)
     return
   }
   const json = (body, status = 200) => {
@@ -257,6 +281,7 @@ const server = createServer(async (req, res) => {
   if (customerRegistryTest && path === '/api/settings/customers') { json({ workspace: registry }); return }
   if (propertyRegistryTest && path.endsWith('/properties') && req.method === 'GET') { json({ properties }); return }
   if (path === '/__test__/writes') { json(writes); return }
+  if (path.endsWith('/customer-choices') && req.method === 'GET') { json(state.planning.sharedChoices ?? { error: 'Valen visas inte längre för beställaren.' }, state.planning.sharedChoices ? 200 : 404); return }
   if (path.endsWith('/contract-signing/pdf') && req.method === 'GET') {
     const revision=Number(new URL(req.url,'http://localhost').searchParams.get('revision'))
     if (revision!==state.revision) { json({error:'Utkastet har ändrats.'},409); return }
@@ -291,6 +316,7 @@ const server = createServer(async (req, res) => {
   }
   if (path === '/__test__/fail-save' && req.method === 'POST') { failSave = true; json({ ok: true }); return }
   if (path === '/__test__/slow-save' && req.method === 'POST') { slowSave = true; json({ ok: true }); return }
+  if (path === '/__test__/stale-choice' && req.method === 'POST' && process.argv.includes('--choice-categories')) { state.planning.items[0].budgetOre += 100; publishChoiceCategories(); json({ ok: true }); return }
   if (path === '/__test__/accept-contract' && req.method === 'POST') {
     state.offers = [{ ...published(state.draft), status: 'accepted', acceptedAt: new Date().toISOString(), acceptedBy: 'Anna Test', acceptedTotalOre: state.draft.baseAmountOre }]
     json({ ok: true }); return
@@ -303,7 +329,21 @@ const server = createServer(async (req, res) => {
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
     if (slowSave && (['save', 'autosave'].includes(body.operation) || body.action === 'save_item_scope' || path.endsWith('/billing'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
-    writes.push(body.operation ?? body.action ?? `billing_${body.mode}`)
+    writes.push(path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
+    if (path.endsWith('/customer-choices')) {
+      const shared = state.planning.sharedChoices
+      if (!shared) { json({ error: 'Valen visas inte längre för beställaren.' }, 404); return }
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Valet är inte sparat.' }, 503); return }
+      const category = shared.categories.find((c) => c.id === body.categoryId)
+      if (!category || shared.versions[category.id] !== body.categoryVersion) { json({ error: 'Alternativen har ändrats. Uppdatera vyn.' }, 409); return }
+      if (body.optionId !== null && !category.optionIds.includes(body.optionId)) { json({ error: 'Alternativet tillhör inte kategorin.' }, 400); return }
+      const previous = choiceRecords.find((c) => c.categoryId === category.id)
+      if ((previous?.revision ?? 0) !== body.revision) { json({ error: 'Valet har ändrats. Uppdatera vyn.' }, 409); return }
+      const record = { categoryId: category.id, categoryVersion: body.categoryVersion, optionId: body.optionId, revision: (previous?.revision ?? 0) + 1, selectedAt: new Date().toISOString() }
+      choiceRecords = [...choiceRecords.filter((c) => c.categoryId !== category.id), record]
+      shared.choices = structuredClone(choiceRecords.filter((record) => shared.categories.some((c) => c.id === record.categoryId)))
+      json(shared); return
+    }
     if (path.endsWith('/contract-signing')) {
       const active = state.signingVersions.find((v) => !v.releasedAt)
       if (body.revision !== state.revision || body.confirmed !== true) { json({error:'Utkastet har ändrats.'},409); return }
@@ -429,11 +469,14 @@ const server = createServer(async (req, res) => {
           if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
           state.planning.items = normalizePlannedItems(body.items)
           state.planning.costing = normalizeCustomerOfferCosting(body.costing, state.planning.items)
+          state.planning.categories = normalizeChoiceCategories(body.categories ?? legacyChoiceCategories(state.planning.items), state.planning.items)
+          state.planning.categoriesStored = true
         }
         else if (body.operation === 'share') {
           if (!body.confirmed || JSON.stringify(body.items) !== JSON.stringify(state.planning.items)) throw new Error('Bekräfta den sparade planeringen.')
           state.planning.sharedItems = normalizePlannedItems(body.items, true)
-        } else if (body.operation === 'unshare') state.planning.sharedItems = []
+          if (body.categories) { state.planning.categories = normalizeChoiceCategories(body.categories, state.planning.items, true); publishChoiceCategories() }
+        } else if (body.operation === 'unshare') { state.planning.sharedItems = []; delete state.planning.sharedChoices; choiceRevision++ }
         else throw new Error('Okänd åtgärd')
         state.planning.revision++
         json(state.planning)

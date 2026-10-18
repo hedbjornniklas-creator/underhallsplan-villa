@@ -64,6 +64,8 @@ function harness(options = {}) {
       const result = () => {
         if (table === 'action_case_customer_planning' && options.planningMissing)
           return { error: { code: '42P01' } }
+        if (table === 'action_case_customer_planning' && read.columns.includes('categories') && options.categoriesMissing)
+          return { error: { code: '42703' } }
         if (table === 'action_case_customer_contract_drafts' && read.columns.includes('internal_costing') && options.costingMissing)
           return { error: { code: '42703' } }
         if (table === 'action_case_customer_offers') {
@@ -161,6 +163,10 @@ function harness(options = {}) {
     },
     async rpc(name, args) {
       calls.push({ name, ...args })
+      if (['customer_choices_snapshot', 'read_customer_choices', 'record_customer_choice'].includes(name))
+        return options.choiceError ? { error: options.choiceError } : { data: options.sharedChoices ?? null }
+      if (name === 'assert_customer_choice_categories' && options.categoriesMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'assert_contract_assignment' && options.assignmentMissing)
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_scope_conditions' && options.conditionsMissing)
@@ -303,6 +309,61 @@ test('workspace exposes an independent saved offer alongside the contract, witho
   assert.equal(estimate.draft.title, 'Bara offert')
   assert.equal(estimate.offerDraft, undefined)
   assert.equal(h.sent.length, 0)
+})
+
+function choiceFixture() {
+  const items = [{ id: id(800), title: 'VELFAC', scope: 'Granskat kundunderlag.', status: 'planned', budgetOre: 10000000, decisionBy: '', optionGroup: 'Fönster' },
+    { id: id(801), title: 'Ekstrands', scope: 'Annat kundunderlag.', status: 'planned', budgetOre: 20000000, decisionBy: '', optionGroup: 'Fönster' }]
+  const categories = [{ id: id(810), title: 'Fönster', specification: 'Gemensamma krav.', decisionBy: '2026-11-20', optionIds: items.map((i) => i.id) }]
+  return { revision: 4, categories, items, versions: { [id(810)]: id(820) }, choices: [] }
+}
+
+test('category saving uses only the independent planning writer and leaves contract data untouched', async () => {
+  const h = harness(), value = choiceFixture(), before = JSON.stringify(h.draft)
+  await h.api.writeCustomerPlanning({ orgId: id(90), userId: id(91) }, id(1), { operation: 'save', revision: 2, items: value.items, categories: value.categories, costing: {} })
+  assert.deepEqual(h.calls.map((c) => c.name), ['assert_customer_choice_categories', 'save_customer_planning_costing'])
+  assert.deepEqual(h.calls[1].p_data.categories, value.categories)
+  assert.equal(JSON.stringify(h.draft), before)
+  assert.deepEqual(h.sent, []); assert.deepEqual(h.copies, []); assert.deepEqual(h.signed, [])
+})
+
+test('legacy plans are proposed as categories without writes; missing category schema remains read-only', async () => {
+  const value = choiceFixture(), planning = { revision: 2, items: value.items, shared_items: [], internal_costing: {} }
+  const h = harness({ planning, categoriesMissing: true })
+  const read = await h.api.getCustomerPlanning({ orgId: id(90), userId: id(91) }, id(1))
+  assert.equal(read.categoriesAvailable, false)
+  assert.equal(read.categories.length, 1)
+  assert.deepEqual(read.categories[0].optionIds, value.items.map((i) => i.id))
+  assert.equal(h.calls.length, 0)
+  await assert.rejects(h.api.writeCustomerPlanning({ orgId: id(90), userId: id(91) }, id(1), { operation: 'save', revision: 2, items: value.items, categories: value.categories }), /CUSTOMER_CHOICE_SCHEMA/)
+  assert.equal(h.calls.filter((c) => c.name === 'write_customer_planning').length, 0)
+})
+
+test('shared category data is scoped to one recipient and contains no private draft or costing', async () => {
+  const value = choiceFixture(), h = harness({ sharedChoices: value, planning: { shared_items: value.items } })
+  const shared = await h.api.getSharedCustomerOffers(id(90), id(1), id(2))
+  assert.deepEqual(shared.plannedChoices, value)
+  assert.deepEqual(h.calls.find((c) => c.name === 'customer_choices_snapshot'), { name: 'customer_choices_snapshot', p_org_id: id(90), p_case_id: id(1), p_participant_id: id(2) })
+  assert.doesNotMatch(JSON.stringify(shared.plannedChoices), /internal_costing|draft|contractDetails|paymentPlan/)
+})
+
+test('public selection hashes the bearer link and calls only the customer-choice RPC, never contract or email writers', async () => {
+  const value = choiceFixture(), h = harness({ sharedChoices: value })
+  await h.api.recordCustomerChoice(token, { categoryId: id(810), categoryVersion: id(820), optionId: id(800), revision: 0, contractAmount: 1 })
+  assert.deepEqual(h.calls, [{ name: 'record_customer_choice', p_token_hash: crypto.createHash('sha256').update(token).digest('hex'), p_category_id: id(810), p_category_version: id(820), p_option_id: id(800), p_revision: 0 }])
+  assert.equal(h.reads.length, 0)
+  assert.deepEqual(h.sent, []); assert.deepEqual(h.copies, []); assert.deepEqual(h.signed, [])
+  assert.deepEqual(await h.api.readCustomerChoices(token), value)
+  await assert.rejects(h.api.recordCustomerChoice('invalid', {}), /CLOSED/)
+  assert.equal(h.calls.length, 2)
+})
+
+test('public customer choice fails closed for stale, hidden and unavailable schema responses', async () => {
+  const payload = { categoryId: id(810), categoryVersion: id(820), optionId: id(800), revision: 0 }
+  await assert.rejects(harness().api.readCustomerChoices(token), /NOT_SHARED/)
+  await assert.rejects(harness({ choiceError: { message: 'CUSTOMER_CHOICE_STALE' } }).api.recordCustomerChoice(token, payload), /CUSTOMER_CHOICE_STALE/)
+  await assert.rejects(harness({ choiceError: { code: 'PGRST202' } }).api.recordCustomerChoice(token, payload), /CUSTOMER_CHOICE_SCHEMA/)
+  await assert.rejects(harness().api.recordCustomerChoice(token, { ...payload, revision: -1 }), /INVALID/)
 })
 
 test('saving offer content uses the offer RPC, never the contract parties or contract costing writer', async () => {

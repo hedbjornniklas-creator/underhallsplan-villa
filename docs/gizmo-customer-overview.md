@@ -236,7 +236,7 @@ kundens publicerade version forblir oforandrad.
 2. Ange rubrik, prismodell och giltighet. Hamta arbeten fran projektet eller
    lagg till dem manuellt. Markera grundatagande eller relevant avgransning.
    Ange grundpris eller delpriser. Val och tillval har en separat redigerare
-   med alternativgrupp, prisunderlag och privata kalkyler.
+   med kategorier, gemensam specifikation, alternativ, prisunderlag och privata kalkyler.
 3. Komplettera tider, betalningsvillkor, villkor och utvalda bilagor. En PDF bland
    bilagorna maste utses till avtalshandling nar ABS 18 valts.
 4. Spara utkast och granska offertutkastet. Kundens startsida visar bara det som
@@ -438,7 +438,9 @@ Direkt klientatkomst till tidsplanen nekas. Befintliga avtal ar inte omskrivna.
   bekraftat publiceringssteg delar en kopia med projektets bestallare, utan mejl.
   Kopian kan doljas igen. UE ser inte denna planering genom sin portal.
 - En eventuell planeringsbudget ar inte ett bestallningsbart pris och ingar
-  aldrig i offertens totalsumma. Kunden kan inte godkanna planerade poster.
+  aldrig i offertens totalsumma. Kunden kan registrera ett separat, icke-bindande
+  alternativval per delad kategori enligt beslutet 2026-10-18 nedan. Det ar inte
+  ett godkannande av en bestallning eller ett avtal.
   Etiketten ersatter inte behovet att bedoma prisuppgifters avtalsrattsliga betydelse.
 - Kundens nya vy heter `Val och tillval`. Alla nya val skiljs fran
   huvudavtalet. Separata ATA med
@@ -475,7 +477,66 @@ kundoffertsidorna. Ovriga sidors varumarkesandringar ingar inte i denna release.
 6. Vid aterstallning: behall versionsdata, privat bucket och fungerande lasning av
    redan utskickade avtal. Ta inte bort migrationen eller originalhistoriken.
 
+### Kategorier och separata kundval (beslut 2026-10-18)
+
+- Godkant produktbeslut: `Val och tillval` har kategorier, exempelvis Fonster,
+  med gemensam specifikation och onskat beslutsdatum. Alternativen har egna
+  beskrivningar och valfria kundprisunderlag inklusive moms. Bestallaren kan
+  registrera exakt ett alternativ per kategori, byta det eller rensa valet.
+- Valet ar planering, inte bestallning, avtal eller signering. Ingenting i
+  Val och tillval far skriva om offert, avtalsutkast, avtalssumma, betalningsplan,
+  lasning, signerade snapshots eller PDF-bevis. Bindande tillvals-/ATA-bestallningar
+  ar fortfarande ett separat, ej implementerat flode. Befintliga historiska
+  avtal far inte tolkas om.
+- Intern sparning och kunddelning ar separata aktiva kommandon. Att oppna en sida
+  skriver ingenting. Aldre alternativgrupper visas som forslag till kategorier;
+  de aktiveras forst med `Spara kategorier`, darefter granskning och uttrycklig
+  kunddelning. Aldre delade, platta planer forblir lasbara men kan inte valjas i.
+  Inga befintliga projekt, offerter eller kundval migreras automatiskt.
+- Kundens val avser en fryst delad kategori med dess alternativ. Andrad gemensam
+  specifikation, medlemskap, text eller pris vid ny delning ger kategorin en ny
+  version och kraver nytt kundval. Privata utkast och andringar i andra kategorier
+  ogiltigforklarar inte valet. Dold planering kan inte valjas; efter ny delning
+  maste tidigare val bekraftas igen.
+- Ett sparat val per projekt/bestallare/kategori och en separat historik lagras i
+  egna tabeller. Revisioner skyddar mot samtidiga andringar. Upprepade identiska
+  anrop skapar inte dubbla historikposter. Intern vy kan hamta aktuella kundval
+  med uppdateringsknappen utan att skriva nagot.
+- Kundlanken kontrolleras mot organisation, projekt, deltagarroll, mottagare,
+  giltighet och aterkallelse vid varje val. Bearer-lankens innehav ar inte en
+  verifierad juridisk identitet. UE och forhandsgranskningen kan inte spara kundval.
+  Endast service-role far anvanda valtabeller/RPC efter API-kontroll. Privata
+  kalkyler och lagringssokvagar ingar aldrig i kundprojektionen. Inga mejl skickas.
+- Databaskrav fore apppublicering:
+  `docs/db/2026-10-18_01_customer_choice_categories.sql`, efter befintliga
+  planerings-/kalkylmigrationer. Migrationen ar transaktionell och omkorbar.
+  Saknas den visas aldre planering lasbart; nya kategorier/kundval kan inte sparas.
+  Ingen produktionsmigration eller kunddelning ingar i den lokala implementationen.
+- Beslutslogg: anvandaren godkande kategori med alternativ under, ett kundval per
+  kategori och uttrycklig fullstandig separation fran avtalsdelen 2026-10-18.
+  Leverantorsofferternas innehall/priser och faktisk publicering for Lokevagen 6
+  ska granskas separat. De lokala UI-fixturerna innehaller endast fiktiva uppgifter.
+
+Publiceringsforberedelse 2026-10-18: anvandaren har kort SQL och godkant
+apppublicering. Lasande kontroll bekraftar de nya planeringskolumnerna,
+bada valtabellerna och alla tre kundvals-RPC:erna i Supabase. Den rena
+valideringsfunktionen accepterar giltig tom struktur. Publiceringen anvander
+befintligt Git/Vercel-flode och ska bevara senaste publicerade main. Ingen
+projektdata, kunddelning, bestallning eller avtalsuppgift andras av leveransen.
+Produktionsstatus och skrivskyddad UI-kontroll verifieras efter push.
+
 ## Tester
+
+Lokal kontroll 2026-10-18 for kategorier/kundval: 497 action-case-tester passerar,
+inklusive faktiska SQL-funktioner i PGlite, omkorning med sparade val, revisions-
+och mottagargranser, aterkallade/utgangna lankar, frekvensbegransning och
+oforandrade avtals-/offert-/betalnings-/PDF-uppgifter. Produktionsbygget passerar.
+Klicktester med riktiga komponenter och fiktiv HTTP-backend omfattar kategorier,
+alternativ, borttagning/angra, sparning/ny session, separat delning, ett val per
+kategori, byte/rensning, sparfel/aterforsok, nya kategoriversioner, skrivskyddad
+forhandsgranskning, internt uppdaterat kundval och gemensamt beslutsdatum.
+Dator- och mobilvy (390 px) har granskats visuellt. Inga riktiga projektuppgifter,
+kundval, mejl eller produktionsdatabaser andrades. SQL/app ar inte publicerade.
 
 Kontroll av avtalsuppgifter/planering 2026-09-29: 148 action-case-tester passerar,
 inklusive 32 offert-/planeringstester med servermock och riktiga SQL-migrationer

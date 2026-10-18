@@ -28,6 +28,8 @@ import {
 } from '@/lib/action-cases/customerOffers'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import { CustomerPlannedItems } from './CustomerPlanningEditor'
+import CustomerChoiceCategories from './CustomerChoiceCategories'
+import { choiceDecisionDates } from '@/lib/action-cases/customerPlanning'
 import { PaymentPlanDocument } from './CustomerPaymentPlan'
 
 const button =
@@ -66,6 +68,8 @@ export default function ActionCaseCustomerPortal({
   const external = externalContracts.find((entry) => entry.document.id === offer?.id)
   const latestExternal = externalContracts.find((entry) => entry.document.id === latest?.id)
   const plannedItems = portal.customerOffers?.plannedItems ?? []
+  const [plannedChoices, setPlannedChoices] = useState(portal.customerOffers?.plannedChoices)
+  const decisionDates = choiceDecisionDates(plannedItems, plannedChoices)
   const offeredOptions = latest?.snapshot.items.filter((i) => i.kind === 'option') ?? []
   const contract = latestExternal && !latestExternal.releasedAt ? latest : accepted ?? offers.find((o) => o.status === 'published')
   const sharedFiles = c.attachments.filter(
@@ -340,7 +344,8 @@ export default function ActionCaseCustomerPortal({
             : 'Valen kan förberedas nu. Du behöver inte välja något här för att godkänna grundavtalet.'}
           {' '}En senare beställning behöver en separat överenskommelse om omfattning, pris och tid.
         </p>
-        <CustomerPlannedItems items={plannedItems} />
+        {plannedChoices ? <CustomerChoiceCategories shared={plannedChoices} onSaved={setPlannedChoices} token={token} readOnly={preview || !token} />
+          : <CustomerPlannedItems items={plannedItems} />}
         {offeredOptions.length > 0 && <details className="border-t border-slate-200 py-5">
           <summary className="cursor-pointer text-sm font-semibold">Val i tidigare avtalsversion</summary>
           {offeredOptions.map((item) => <div key={item.id} className="border-b border-slate-200 py-4">
@@ -366,9 +371,9 @@ export default function ActionCaseCustomerPortal({
           <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{contract.snapshot.schedule}</p>
           <p className="mt-4 text-sm text-slate-500">Avtalsversion {contract.version}</p>
         </> : <p className="mt-3 text-sm text-slate-600">Inga avtalstider har delats ännu.</p>}
-        {plannedItems.some((i) => i.decisionBy) && <div className="mt-6 border-t border-slate-200 pt-5">
+        {decisionDates.length > 0 && <div className="mt-6 border-t border-slate-200 pt-5">
           <h3 className="font-semibold">Önskade beslutsdatum</h3>
-          {plannedItems.filter((i) => i.decisionBy).sort((a,b) => a.decisionBy.localeCompare(b.decisionBy)).map((i) =>
+          {decisionDates.map((i) =>
             <div key={i.id} className="flex flex-wrap justify-between gap-3 border-b border-slate-200 py-3 text-sm">
               <span>{i.title}</span><time dateTime={i.decisionBy}>{i.decisionBy}</time>
             </div>)}

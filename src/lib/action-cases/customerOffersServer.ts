@@ -9,7 +9,7 @@ import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
 import { getSharedSigningContracts } from './contractSigningDeliveryServer'
-import { normalizePlannedItems, type CustomerPlanning, type CustomerPlannedItem } from './customerPlanning'
+import { legacyChoiceCategories, normalizeChoiceCategories, normalizePlannedItems, normalizeSharedChoices, type CustomerPlanning, type CustomerPlannedItem, type SharedCustomerChoices } from './customerPlanning'
 import { writeContractCustomer } from './customerRegistryServer'
 import { getContractSigningVersions } from './contractSigningServer'
 import { getProjectPropertyLink } from './propertyRegistryServer'
@@ -39,7 +39,7 @@ function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
   if (schemaMissing(error.code)) throw new Error('CUSTOMER_OFFER_SCHEMA')
   throw new Error(
-    error.message?.match(/CUSTOMER_OFFER_[A-Z_]+/)?.[0] ??
+    error.message?.match(/CUSTOMER_(?:OFFER|CHOICE)_[A-Z_]+/)?.[0] ??
       'CUSTOMER_OFFER_FAILED'
   )
 }
@@ -510,7 +510,7 @@ export async function getSharedCustomerOffers(
   orgId: string,
   caseId: string,
   participantId: string
-): Promise<{ enabled: boolean; offers: CustomerOffer[]; externalContracts?: import('./customerOffers').SharedSigningContract[]; plannedItems?: CustomerPlannedItem[] }> {
+): Promise<{ enabled: boolean; offers: CustomerOffer[]; externalContracts?: import('./customerOffers').SharedSigningContract[]; plannedItems?: CustomerPlannedItem[]; plannedChoices?: SharedCustomerChoices }> {
   const db = createSupabaseAdminClient()
   const rows = await db
     .from('action_case_customer_offers')
@@ -525,11 +525,13 @@ export async function getSharedCustomerOffers(
     .eq('org_id', orgId).eq('action_case_id', caseId).eq('participant_id', participantId).maybeSingle()
   if (!schemaMissing(planning.error?.code)) checked(planning.error)
   const plannedItems = normalizePlannedItems(planning.data?.shared_items ?? [])
+  const plannedChoices = await getSharedCustomerChoices(orgId, caseId, participantId)
   const externalContracts = await getSharedSigningContracts(orgId, caseId, participantId)
   return {
     enabled: Boolean(rows.data?.length || plannedItems.length || externalContracts.length),
     ...(externalContracts.length ? { externalContracts } : {}),
     ...(plannedItems.length ? { plannedItems } : {}),
+    ...(plannedChoices ? { plannedChoices } : {}),
     offers: (rows.data ?? []).map(mapCustomerOffer)
   }
 }
@@ -537,20 +539,30 @@ export async function getCustomerPlanning(ctx: Context, caseId: string): Promise
   await requireCase(ctx, caseId)
   const db = createSupabaseAdminClient()
   const result = await db.from('action_case_customer_planning')
-    .select('revision,items,shared_items,internal_costing').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+    .select('revision,items,shared_items,internal_costing,categories,participant_id').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
   let saved = result.data, error = result.error
-  let costingAvailable = true
+  let costingAvailable = true, categoriesAvailable = true
   if (result.error && ['42703', 'PGRST204'].includes(result.error.code)) {
-    costingAvailable = false
+    categoriesAvailable = false
     const legacy = await db.from('action_case_customer_planning')
-      .select('revision,items,shared_items').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
-    saved = legacy.data ? { ...legacy.data, internal_costing: {} } : null
+      .select('revision,items,shared_items,internal_costing').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+    saved = legacy.data ? { ...legacy.data, categories: null, participant_id: null } : null
     error = legacy.error
+    if (error && ['42703', 'PGRST204'].includes(error.code)) {
+      costingAvailable = false
+      const oldest = await db.from('action_case_customer_planning').select('revision,items,shared_items')
+        .eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+      saved = oldest.data ? { ...oldest.data, internal_costing: {}, categories: null, participant_id: null } : null
+      error = oldest.error
+    }
   }
   if (schemaMissing(error?.code)) return { available: false, revision: 0, items: [], sharedItems: [] }
   checked(error)
   const items = normalizePlannedItems(saved?.items ?? [])
-  return { available: true, revision: saved?.revision ?? 0, costingAvailable,
+  const categories = saved?.categories == null ? legacyChoiceCategories(items) : normalizeChoiceCategories(saved.categories, items)
+  const sharedChoices = categoriesAvailable && saved?.participant_id ? await getSharedCustomerChoices(ctx.orgId, caseId, saved.participant_id) : undefined
+  return { available: true, revision: saved?.revision ?? 0, costingAvailable, categoriesAvailable, categoriesStored: saved?.categories != null, categories,
+    ...(sharedChoices ? { sharedChoices } : {}),
     costing: normalizeCustomerOfferCosting(saved?.internal_costing, items),
     items, sharedItems: normalizePlannedItems(saved?.shared_items ?? []) }
 }
@@ -560,10 +572,16 @@ export async function writeCustomerPlanning(ctx: Context, caseId: string, payloa
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (payload.operation === 'share' && payload.confirmed !== true) throw new Error('CUSTOMER_OFFER_CONFIRM')
   const items = payload.operation === 'unshare' ? [] : normalizePlannedItems(payload.items, payload.operation === 'share')
+  const categories = payload.categories === undefined || payload.operation === 'unshare' ? undefined : normalizeChoiceCategories(payload.categories, items, payload.operation === 'share')
+  if (categories) {
+    const ready = await createSupabaseAdminClient().rpc('assert_customer_choice_categories', { p_categories: categories, p_items: items, p_complete: payload.operation === 'share' })
+    if (schemaMissing(ready.error?.code)) throw new Error('CUSTOMER_CHOICE_SCHEMA')
+    checked(ready.error)
+  }
   if (payload.operation === 'save' && payload.costing !== undefined) {
     const result = await createSupabaseAdminClient().rpc('save_customer_planning_costing', {
       p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
-      p_data: { revision: payload.revision, items, costing: normalizeCustomerOfferCosting(payload.costing, items) }
+      p_data: { revision: payload.revision, items, ...(categories ? { categories } : {}), costing: normalizeCustomerOfferCosting(payload.costing, items) }
     })
     checked(result.error)
     return
@@ -572,9 +590,39 @@ export async function writeCustomerPlanning(ctx: Context, caseId: string, payloa
     p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
     p_operation: payload.operation,
     p_data: { revision: payload.revision, confirmed: payload.confirmed === true,
-      items }
+      items, ...(categories ? { categories } : {}) }
   })
   checked(result.error)
+}
+
+async function getSharedCustomerChoices(orgId: string, caseId: string, participantId: string): Promise<SharedCustomerChoices | undefined> {
+  const result = await createSupabaseAdminClient().rpc('customer_choices_snapshot', { p_org_id: orgId, p_case_id: caseId, p_participant_id: participantId })
+  if (schemaMissing(result.error?.code)) return undefined
+  checked(result.error)
+  return result.data == null ? undefined : normalizeSharedChoices(result.data as Record<string, unknown>)
+}
+
+export async function readCustomerChoices(token: string): Promise<SharedCustomerChoices> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('CUSTOMER_CHOICE_CLOSED')
+  const result = await createSupabaseAdminClient().rpc('read_customer_choices', { p_token_hash: hashAssignmentToken(token) })
+  if (schemaMissing(result.error?.code)) throw new Error('CUSTOMER_CHOICE_SCHEMA')
+  checked(result.error)
+  if (!result.data) throw new Error('CUSTOMER_CHOICE_NOT_SHARED')
+  return normalizeSharedChoices(result.data as Record<string, unknown>)
+}
+
+export async function recordCustomerChoice(token: string, payload: Payload): Promise<SharedCustomerChoices> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('CUSTOMER_CHOICE_CLOSED')
+  const categoryId = offerId(payload.categoryId), version = offerId(payload.categoryVersion)
+  const optionId = payload.optionId === null ? null : offerId(payload.optionId)
+  if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0) throw new Error('CUSTOMER_CHOICE_INVALID')
+  const result = await createSupabaseAdminClient().rpc('record_customer_choice', {
+    p_token_hash: hashAssignmentToken(token), p_category_id: categoryId, p_category_version: version, p_option_id: optionId, p_revision: payload.revision
+  })
+  if (schemaMissing(result.error?.code)) throw new Error('CUSTOMER_CHOICE_SCHEMA')
+  checked(result.error)
+  if (!result.data) throw new Error('CUSTOMER_CHOICE_NOT_SHARED')
+  return normalizeSharedChoices(result.data as Record<string, unknown>)
 }
 async function resolveOffer(token: string, id: string) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token))

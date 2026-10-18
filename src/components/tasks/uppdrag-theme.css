@@ -396,6 +396,15 @@
 .gizmo-editor-row-toggle > svg { flex-shrink: 0; }
 .gizmo-editor-row-body { padding: 8px 8px 24px; }
 .gizmo-editor-row-body[hidden] { display: none; }
+.gizmo-choice-categories .gizmo-editor-row-toggle { min-height: 56px; padding: 8px 12px; }
+.gizmo-choice-categories .gizmo-editor-row[data-open='true'] { border-left: 3px solid #206961; }
+.gizmo-choice-categories .gizmo-editor-row[data-open='true'] > h3 { background: #EDF1F1; }
+.gizmo-choice-categories .gizmo-editor-row-body { padding: 12px 12px 16px; }
+.gizmo-choice-categories fieldset { min-inline-size: 0; }
+@media (max-width: 639px) {
+  .gizmo-choice-categories :is(input:not([type='radio']):not([type='checkbox']),textarea,select) { font-size: 16px; }
+  .gizmo-choice-categories .gizmo-editor-row-toggle { min-height: 64px; }
+}
 /* Raised register tabs join the active sheet without changing its content height. */
 .uppdrag-scope .gizmo-register-tabs[role='tablist'] {
   display: flex; align-items: flex-end; flex-shrink: 0; gap: 9px;

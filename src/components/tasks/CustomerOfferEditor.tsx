@@ -528,7 +528,7 @@ export default function CustomerOfferEditor({
       companyName: null,
       phone: null
     },
-    customerOffers: { enabled: true, offers: workspace.offers, plannedItems: planning?.sharedItems,
+    customerOffers: { enabled: true, offers: workspace.offers, plannedItems: planning?.sharedItems, plannedChoices: planning?.sharedChoices,
       externalContracts: workspace.signingVersions?.filter((v) => v.delivery?.sharedAt && !v.delivery.withdrawnAt).map((v) => ({
         document: mapCustomerOffer({ id: v.id, version: v.version, snapshot: v.snapshot, files: v.files, status: 'published', published_at: v.delivery!.sharedAt!, accepted_option_ids: [] }),
         createdAt: v.createdAt, sharedAt: v.delivery!.sharedAt!, releasedAt: v.releasedAt, signedCopyRegisteredAt: v.delivery?.signedCopy?.registeredAt || null,
@@ -709,7 +709,7 @@ export default function CustomerOfferEditor({
         </>}
       </section> : view === 'customer' ? (
         <ActionCaseCustomerPortal
-          key={JSON.stringify([workspace.offers, planning?.sharedItems])}
+          key={JSON.stringify([workspace.offers, planning?.sharedItems, planning?.sharedChoices])}
           portal={portal}
           preview
           previewCaseId={actionCase.id}
